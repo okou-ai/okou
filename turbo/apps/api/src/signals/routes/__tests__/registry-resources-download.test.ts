@@ -37,6 +37,24 @@ describe("registry resource download", () => {
     expect(response.body.error.code).toBe("NOT_FOUND");
   });
 
+  it("reports an unpublished native PPTX package without substituting HTML", async () => {
+    const response = await accept(
+      client().downloadPresentationTemplate({
+        headers: authHeaders(),
+        query: { id: "template:pptx-schoolhouse-runbook" },
+      }),
+      [404],
+    );
+
+    expect(response.body).toStrictEqual({
+      error: {
+        code: "NOT_FOUND",
+        message:
+          'Current archive for "template:pptx-schoolhouse-runbook" was not found',
+      },
+    });
+  });
+
   it("rejects an unpublished presentation registry digest through the route", async () => {
     const response = await accept(
       client().download({

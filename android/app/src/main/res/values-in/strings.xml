@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="output_live">Respons langsung</string>
+    <string name="output_waiting">Menunggu respons langsung</string>
+    <string name="output_catching_up">Menyelaraskan pesan tersimpan. Teks yang diterima tetap disimpan.</string>
     <string name="settings">Setelan</string>
     <string name="back">Kembali</string>
     <string name="appearance">Tampilan</string>

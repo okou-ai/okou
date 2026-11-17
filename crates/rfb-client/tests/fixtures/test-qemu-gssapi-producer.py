@@ -1274,6 +1274,73 @@ finally:
                 self.producer.extract_deb(archive, root)
             self.assertEqual(list(root.iterdir()), [])
 
+    def test_post_spawn_interruption_joins_the_acquired_decoder(self):
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            with self.subTest(signal=signum), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                base = pathlib.Path(directory)
+                archive = self.public_payload_deb(base, b'\0' * 10240)
+                original_bytes = archive.read_bytes()
+                children = []
+                failure = InterruptedError('first post-spawn decoder step')
+                original_mask = signal.pthread_sigmask(signal.SIG_BLOCK, set())
+                original_trace = sys.gettrace()
+
+                def interrupt(_number, _frame):
+                    raise failure
+
+                def observe(frame, event, _argument):
+                    if event == 'line' and frame.f_code is self.producer.decode_package_payload.__code__ and not children:
+                        child = frame.f_locals.get('process')
+                        if isinstance(child, subprocess.Popen):
+                            # Actual bounded dpkg/prlimit, never an invented
+                            # signed package or successful native admission.
+                            children.append(child)
+                            os.kill(os.getpid(), signum)
+                    return observe
+
+                previous = signal.signal(signum, interrupt)
+                try:
+                    with tempfile.TemporaryFile(dir=base) as output:
+                        sys.settrace(observe)
+                        with self.assertRaises(InterruptedError) as raised:
+                            self.producer.decode_package_payload(archive, output, 10240)
+                    self.assertIs(raised.exception, failure)
+                    self.assertEqual(len(children), 1)
+                    with self.assertRaises(ChildProcessError):
+                        os.waitid(os.P_PID, children[0].pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+                    self.assertEqual(signal.pthread_sigmask(signal.SIG_BLOCK, set()), original_mask)
+                    self.assertEqual(archive.read_bytes(), original_bytes)
+                    self.assertEqual(list(base.glob('package-decode-*')), [])
+                finally:
+                    sys.settrace(original_trace)
+                    signal.signal(signum, previous)
+                    # Reap the exact child even when the original owner fails.
+                    for child in children:
+                        if child.poll() is None:
+                            child.kill()
+                        child.wait(timeout=5)
+
+    def test_failed_decoder_spawn_preserves_error_without_group_cleanup(self):
+        for failure in (OSError(errno.ENOSPC, 'spawn refused'), ChildProcessError(errno.ECHILD, 'spawn refused')):
+            with self.subTest(error=type(failure).__name__), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                base = pathlib.Path(directory)
+                archive = self.public_payload_deb(base, b'\0' * 10240)
+                original_bytes = archive.read_bytes()
+                original_mask = signal.pthread_sigmask
+                before = original_mask(signal.SIG_BLOCK, set())
+                with tempfile.TemporaryFile(dir=base) as output, \
+                        mock.patch.object(subprocess, 'Popen', side_effect=failure), \
+                        mock.patch.object(os, 'killpg', wraps=os.killpg) as groups, \
+                        mock.patch.object(signal, 'pthread_sigmask', wraps=original_mask) as masks:
+                    with self.assertRaises(type(failure)) as raised:
+                        self.producer.decode_package_payload(archive, output, 10240)
+                    self.assertIs(raised.exception, failure)
+                groups.assert_not_called()
+                self.assertEqual(masks.call_args_list, [mock.call(signal.SIG_BLOCK, set())])
+                self.assertEqual(original_mask(signal.SIG_BLOCK, set()), before)
+                self.assertEqual(archive.read_bytes(), original_bytes)
+                self.assertEqual(list(base.glob('package-decode-*')), [])
+
     def test_cancelled_decoder_retains_leader_before_actual_group_signal(self):
         # Public bytes use the REAL dpkg-deb/prlimit. Observers delegate real
         # syscalls and inject SIGINT only after kernel-confirmed zombie state.

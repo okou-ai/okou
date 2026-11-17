@@ -233,7 +233,9 @@ final class NotificationService {
         try await workspace.sync.acknowledgePrefetchReport(receipt.id)
       }
     } catch {
-      log.info("Cannot flush prefetch receipts: \(error.localizedDescription, privacy: .public)")
+      log.info(
+        "event=notifications.prefetch.receipts.flush.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+      )
     }
   }
 
@@ -325,7 +327,7 @@ final class NotificationService {
     pendingDestination = nil
     do { try await unregister() } catch {
       log.error(
-        "Cannot unregister notification binding before session revocation: \(error.localizedDescription, privacy: .public)"
+        "event=notifications.binding.unregister.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
       )
     }
     guard authentication.presentationScopeID == scopeID else {
@@ -412,7 +414,9 @@ final class NotificationService {
         try await system.setBadgeCount(count)
         return true
       } catch {
-        log.error("Cannot update app icon badge: \(error.localizedDescription, privacy: .public)")
+        log.error(
+          "event=notifications.badge.update.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+        )
         return false
       }
     }
@@ -555,7 +559,8 @@ final class NotificationService {
     } catch {
       guard ownsRequest() else { return }
       log.error(
-        "Cannot reconcile notification read state: \(error.localizedDescription, privacy: .public)")
+        "event=notifications.read_state.reconcile.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+      )
     }
   }
 
@@ -657,7 +662,7 @@ final class NotificationService {
     }
     backgroundTasks[id] = nil
     log.info(
-      "Notification prefetch finished: notification=\(destination.notificationId, privacy: .public) duration=\(started.duration(to: .now)) saved=\(result) cancelled=\(Task.isCancelled)"
+      "event=notifications.prefetch.finished notification_id=\(destination.notificationId, privacy: .private) duration=\(started.duration(to: .now)) saved=\(result) cancelled=\(Task.isCancelled)"
     )
     return result && !Task.isCancelled
   }
@@ -688,7 +693,7 @@ final class NotificationService {
       return true
     } catch {
       log.error(
-        "Notification prefetch failed: notification=\(destination.notificationId, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+        "event=notifications.prefetch.failed notification_id=\(destination.notificationId, privacy: .private) error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
       )
       return false
     }

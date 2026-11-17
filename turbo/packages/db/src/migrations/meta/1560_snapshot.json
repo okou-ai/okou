@@ -1,5 +1,5 @@
 {
-  "id": "88b522b2-442d-4a6f-b24f-3493bb55884d",
+  "id": "11e1c22e-413d-42fc-a5a4-47e05eec1ced",
   "prevId": "fe28666f-5ee9-4528-98e0-c29077077964",
   "version": "7",
   "dialect": "postgresql",
@@ -461,92 +461,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.agent_run_phase_timings": {
-      "name": "agent_run_phase_timings",
-      "schema": "",
-      "columns": {
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "schema_version": {
-          "name": "schema_version",
-          "type": "smallint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "research_started_at": {
-          "name": "research_started_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "generation_started_at": {
-          "name": "generation_started_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "research_skipped": {
-          "name": "research_skipped",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "generation_kind": {
-          "name": "generation_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "agent_run_phase_timings_run_id_agent_runs_id_fk": {
-          "name": "agent_run_phase_timings_run_id_agent_runs_id_fk",
-          "tableFrom": "agent_run_phase_timings",
-          "tableTo": "agent_runs",
-          "columnsFrom": [
-            "run_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "agent_run_phase_timings_version": {
-          "name": "agent_run_phase_timings_version",
-          "value": "\"agent_run_phase_timings\".\"schema_version\" = 1"
-        },
-        "agent_run_phase_timings_nonempty": {
-          "name": "agent_run_phase_timings_nonempty",
-          "value": "\"agent_run_phase_timings\".\"research_started_at\" IS NOT NULL OR \"agent_run_phase_timings\".\"generation_started_at\" IS NOT NULL"
-        },
-        "agent_run_phase_timings_order": {
-          "name": "agent_run_phase_timings_order",
-          "value": "\"agent_run_phase_timings\".\"research_started_at\" IS NULL OR \"agent_run_phase_timings\".\"generation_started_at\" IS NULL OR \"agent_run_phase_timings\".\"research_started_at\" <= \"agent_run_phase_timings\".\"generation_started_at\""
-        },
-        "agent_run_phase_timings_skip": {
-          "name": "agent_run_phase_timings_skip",
-          "value": "NOT \"agent_run_phase_timings\".\"research_skipped\" OR (\"agent_run_phase_timings\".\"research_started_at\" IS NULL AND \"agent_run_phase_timings\".\"generation_started_at\" IS NOT NULL)"
-        },
-        "agent_run_phase_timings_kind": {
-          "name": "agent_run_phase_timings_kind",
-          "value": "(\"agent_run_phase_timings\".\"generation_started_at\" IS NULL AND \"agent_run_phase_timings\".\"generation_kind\" IS NULL) OR (\"agent_run_phase_timings\".\"generation_started_at\" IS NOT NULL AND \"agent_run_phase_timings\".\"generation_kind\" IS NOT NULL AND \"agent_run_phase_timings\".\"generation_kind\" IN ('image', 'presentation', 'document', 'spreadsheet', 'website', 'report', 'video', 'audio', 'mixed', 'other'))"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.agent_runs": {
@@ -20017,18 +19931,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
-        },
-        "widget_push_token": {
-          "name": "widget_push_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "widget_pushed_at": {
-          "name": "widget_pushed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         },
         "updated_at": {
           "name": "updated_at",

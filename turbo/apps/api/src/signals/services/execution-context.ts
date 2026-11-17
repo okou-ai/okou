@@ -1,12 +1,10 @@
-import {
-  preparedExecutionContextSchema,
-  type ExecutionInput,
-} from "@okouai/api-contracts/contracts/runners";
+import { preparedExecutionContextSchema } from "@okouai/api-contracts/contracts/runners";
 import type { agentRuns } from "@okouai/db/runtime/agent-run";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import { computed, type Computed } from "ccstate";
 import { createExecutionRuntimeContext } from "./execution-runtime-context";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
+import type { ModelFirstPin } from "./model-selection.service";
 
 /** Captured inputs for one admitted Thread Run. */
 export type ExecutionContextRun = Pick<
@@ -14,11 +12,8 @@ export type ExecutionContextRun = Pick<
   | "id"
   | "orgId"
   | "userId"
-  | "modelProvider"
   | "modelProviderId"
-  | "modelProviderCredentialScope"
   | "modelProviderAccountIdentity"
-  | "selectedModel"
   | "modelRuntimeProvider"
   | "modelRuntimeModel"
   | "builtInModelKeyId"
@@ -28,6 +23,8 @@ export type ExecutionContextRun = Pick<
   | "codexServiceTier"
   | "officialWorkflowProvenance"
 > & {
+  readonly modelProvider: ModelFirstPin["modelProviderType"];
+  readonly selectedModel: string;
   readonly agentId: string;
   readonly chatThreadId: string;
   readonly framework: "claude-code" | "codex" | "pi";
@@ -40,7 +37,6 @@ export function createExecutionContext(
   input$: Computed<
     Promise<{
       readonly run: ExecutionContextRun;
-      readonly context: ExecutionInput;
       readonly facts: AdmittedExecutionFacts;
     }>
   >,

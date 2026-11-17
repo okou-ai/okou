@@ -16,7 +16,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 
-describe("workflow skill storage presigned URL cache", () => {
+describe("content bundle presigned URL cache", () => {
   const context = testContext();
   const BUCKET = "test-user-storages";
 
@@ -59,7 +59,7 @@ describe("workflow skill storage presigned URL cache", () => {
       model: "claude-fable-5-1",
     });
     const agent = await bdd.createAgent(actor, {
-      displayName: "Workflow skill storage cache agent",
+      displayName: "Content bundle cache agent",
       visibility: "private",
     });
     return { actor, agentId: agent.agentId, runnerGroup };

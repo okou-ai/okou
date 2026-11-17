@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.12.72](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.71...codex-mock-v0.12.72) (2026-11-16)
+
+
+### Refactoring
+
+* **rust:** borrow files for advisory locking ([#47963](https://github.com/okou-ai/okou/issues/47963)) ([1ce772e](https://github.com/okou-ai/okou/commit/1ce772ecd56bd86b0bb212327e78fa4ba28d5b1a))
+
+## [0.12.71](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.70...codex-mock-v0.12.71) (2026-11-16)
+
+
+### Refactoring
+
+* **rust:** use typed waitid for owned-child observation ([#47916](https://github.com/okou-ai/okou/issues/47916)) ([63c1cb4](https://github.com/okou-ai/okou/commit/63c1cb42b3e5ddec5e783b089540bb315a19fffe))
+
+## [0.12.70](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.69...codex-mock-v0.12.70) (2026-11-16)
+
 ## [0.12.69](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.68...codex-mock-v0.12.69) (2026-11-16)
 
 ## [0.12.68](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.67...codex-mock-v0.12.68) (2026-11-16)

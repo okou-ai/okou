@@ -13,6 +13,60 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1138.0](https://github.com/okou-ai/okou/compare/app-v0.1137.1...app-v0.1138.0) (2026-11-16)
+
+
+### Features
+
+* route presentation templates by output format ([#47842](https://github.com/okou-ai/okou/issues/47842)) ([b342805](https://github.com/okou-ai/okou/commit/b342805293be679b34781d7ff4811669feccbb77))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.75.0
+    * @okouai/core bumped to 8.845.0
+    * @okouai/ui bumped to 1.21.34
+
+## [0.1137.1](https://github.com/okou-ai/okou/compare/app-v0.1137.0...app-v0.1137.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* **app:** refine visualization selection chips ([#47888](https://github.com/okou-ai/okou/issues/47888)) ([c64cef6](https://github.com/okou-ai/okou/commit/c64cef650edd4ad914514bb20f5a87c8431edff2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.844.3
+    * @okouai/ui bumped to 1.21.33
+
+## [0.1137.0](https://github.com/okou-ai/okou/compare/app-v0.1136.1...app-v0.1137.0) (2026-11-16)
+
+
+### Features
+
+* **android:** stream active-run output with web data semantics ([#47766](https://github.com/okou-ai/okou/issues/47766)) ([7ab9764](https://github.com/okou-ai/okou/commit/7ab9764c662ec7ea5d8d261cdc714334aa4973d4))
+
+
+### Bug Fixes
+
+* **app:** restore bounded search tool controls in the composer ([#47860](https://github.com/okou-ai/okou/issues/47860)) ([d25a226](https://github.com/okou-ai/okou/commit/d25a2263333aa7e0a107dbcddb2062b6754ccba5))
+* **app:** smooth for you card pagination ([#47847](https://github.com/okou-ai/okou/issues/47847)) ([5044cf1](https://github.com/okou-ai/okou/commit/5044cf149c0fbe0866df11e12193f7e5b77cc75f))
+* make system updates configurable ([#47882](https://github.com/okou-ai/okou/issues/47882)) ([f1bf918](https://github.com/okou-ai/okou/commit/f1bf918e9c3d2033a956b51a8bcb3ee0ad77cb3c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.74.0
+    * @okouai/core bumped to 8.844.2
+    * @okouai/ui bumped to 1.21.32
+
 ## [0.1136.1](https://github.com/okou-ai/okou/compare/app-v0.1136.0...app-v0.1136.1) (2026-11-16)
 
 

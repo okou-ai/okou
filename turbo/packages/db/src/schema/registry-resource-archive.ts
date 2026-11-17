@@ -54,7 +54,7 @@ export const registryResourceHeads = pgTable(
     return [
       check(
         "chk_registry_resource_head_id",
-        sql`${table.resourceId} ~ '^template:html-ppt-[a-z0-9]+(-[a-z0-9]+)*-runbook$'`,
+        sql`${table.resourceId} ~ '^template:(html-ppt|pptx)-[a-z0-9]+(-[a-z0-9]+)*-runbook$'`,
       ),
       foreignKey({
         name: "fk_registry_resource_head_archive",

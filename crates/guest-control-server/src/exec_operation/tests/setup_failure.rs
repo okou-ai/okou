@@ -1,7 +1,7 @@
 use super::*;
 use crate::test_support::{kill_pidfd_and_wait, open_pidfd};
 use crate::threading::ThreadTask;
-use std::os::fd::AsRawFd;
+use std::os::fd::AsFd;
 use std::os::unix::net::UnixDatagram;
 use std::sync::Condvar;
 
@@ -120,7 +120,7 @@ impl SetupFailureChild {
         assert!(
             matches!(&outcome, Err(error) if error.raw_os_error() == Some(libc::ECHILD)),
             "setup child must already be reaped at failure completion; \
-             waitid returned {outcome:?} (0 means live; a PID means zombie)"
+             waitid returned {outcome:?} (false means live; true means zombie)"
         );
     }
 }
@@ -206,7 +206,7 @@ fn observe_ready_child(ready: &UnixDatagram, child: &Mutex<Option<ObservedChild>
     let observed = child.as_ref().unwrap();
     // The fixture is blocked on its private socket, so cleanup cannot win
     // the pidfd-open race. Verify parentage without consuming any wait status.
-    assert_eq!(observed.wait_without_reaping().unwrap(), 0);
+    assert!(!observed.wait_without_reaping().unwrap());
     // SAFETY: getpgid only observes the live child identified by the fixture.
     assert_eq!(unsafe { libc::getpgid(pid) }, pid);
 }
@@ -216,26 +216,19 @@ struct ObservedChild {
 }
 
 impl ObservedChild {
-    fn wait_without_reaping(&self) -> io::Result<libc::pid_t> {
+    fn wait_without_reaping(&self) -> io::Result<bool> {
+        use rustix::process::{WaitId, WaitIdOptions, waitid};
+
         loop {
-            let mut info = std::mem::MaybeUninit::<libc::siginfo_t>::zeroed();
-            // SAFETY: info is writable and the pidfd stays owned throughout
-            // the call. WNOWAIT observes but does not repair missing reaping.
-            let result = unsafe {
-                libc::waitid(
-                    libc::P_PIDFD,
-                    self.pidfd.as_raw_fd() as libc::id_t,
-                    info.as_mut_ptr(),
-                    libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
-                )
-            };
-            if result == 0 {
-                // SAFETY: successful waitid initialized the siginfo fields.
-                return Ok(unsafe { info.assume_init().si_pid() });
-            }
-            let error = io::Error::last_os_error();
-            if error.kind() != io::ErrorKind::Interrupted {
-                return Err(error);
+            // The borrowed pidfd stays bound to the original child. NOWAIT
+            // observes but cannot repair missing production reaping.
+            match waitid(
+                WaitId::PidFd(self.pidfd.as_fd()),
+                WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT,
+            ) {
+                Ok(status) => return Ok(status.is_some()),
+                Err(rustix::io::Errno::INTR) => continue,
+                Err(error) => return Err(error.into()),
             }
         }
     }
@@ -243,28 +236,22 @@ impl ObservedChild {
 
 impl ObservedChild {
     fn reap(self) {
+        use rustix::process::{WaitId, WaitIdOptions, waitid};
+
         loop {
-            let mut info = std::mem::MaybeUninit::<libc::siginfo_t>::zeroed();
-            // SAFETY: pidfd binds this nonblocking reap to the original child.
-            let result = unsafe {
-                libc::waitid(
-                    libc::P_PIDFD,
-                    self.pidfd.as_raw_fd() as libc::id_t,
-                    info.as_mut_ptr(),
-                    libc::WEXITED | libc::WNOHANG,
-                )
-            };
-            if result == 0 {
-                break;
+            // Cleanup deliberately consumes status after the worker retires.
+            match waitid(
+                WaitId::PidFd(self.pidfd.as_fd()),
+                WaitIdOptions::EXITED | WaitIdOptions::NOHANG,
+            ) {
+                Ok(_) | Err(rustix::io::Errno::CHILD) => break,
+                Err(rustix::io::Errno::INTR) => continue,
+                Err(error) => {
+                    let error = io::Error::from(error);
+                    eprintln!("failed to reap exec setup fixture: {error}");
+                    break;
+                }
             }
-            let error = io::Error::last_os_error();
-            if error.kind() == io::ErrorKind::Interrupted {
-                continue;
-            }
-            if error.raw_os_error() != Some(libc::ECHILD) {
-                eprintln!("failed to reap exec setup fixture: {error}");
-            }
-            break;
         }
     }
 }

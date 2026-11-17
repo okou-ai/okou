@@ -1,5 +1,45 @@
 # Changelog
 
+## [8.845.0](https://github.com/okou-ai/okou/compare/core-v8.844.3...core-v8.845.0) (2026-11-16)
+
+
+### Features
+
+* route presentation templates by output format ([#47842](https://github.com/okou-ai/okou/issues/47842)) ([b342805](https://github.com/okou-ai/okou/commit/b342805293be679b34781d7ff4811669feccbb77))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.75.0
+
+## [8.844.3](https://github.com/okou-ai/okou/compare/core-v8.844.2...core-v8.844.3) (2026-11-16)
+
+
+### Bug Fixes
+
+* **app:** refine visualization selection chips ([#47888](https://github.com/okou-ai/okou/issues/47888)) ([c64cef6](https://github.com/okou-ai/okou/commit/c64cef650edd4ad914514bb20f5a87c8431edff2))
+
+
+### Refactoring
+
+* **api:** remove workflow storage launch remnants ([#47913](https://github.com/okou-ai/okou/issues/47913)) ([5093a7d](https://github.com/okou-ai/okou/commit/5093a7d563b2290b988726b3ef4bdb5ac1459e08))
+
+## [8.844.2](https://github.com/okou-ai/okou/compare/core-v8.844.1...core-v8.844.2) (2026-11-16)
+
+
+### Refactoring
+
+* **api:** consolidate execution admission facts ([#47899](https://github.com/okou-ai/okou/issues/47899)) ([270a932](https://github.com/okou-ai/okou/commit/270a932913e030a8d3628889d04d7a11ff213761))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.74.0
+
 ## [8.844.1](https://github.com/okou-ai/okou/compare/core-v8.844.0...core-v8.844.1) (2026-11-16)
 
 

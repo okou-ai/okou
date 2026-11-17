@@ -240,8 +240,6 @@ function createStorageIndexSignals(
                   systemStoragePresignedUrlCache.cacheKey,
                   storageVersionCacheKeySql({
                     orgId: sql`${request.lookup.orgId}`,
-                    userId: sql`${request.lookup.userId}`,
-                    name: sql`${request.lookup.name}`,
                     versionId: sql`${storageVersions.id}`,
                     s3Key: sql`${storageVersions.s3Key}`,
                   }),

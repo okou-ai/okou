@@ -115,13 +115,6 @@ Presentation template guide:
             throw new Error(`Unknown registry resource: ${id}`);
           }
 
-          const archive = entry.source.archive;
-          if (!archive) {
-            throw new Error(
-              `Registry resource ${entry.id} does not provide an R2 archive source`,
-            );
-          }
-
           console.log(chalk.dim(`Pulling ${entry.id}...`));
           let buffer: Buffer;
           if (findPresentationRunbookResource(entry.id)) {
@@ -130,6 +123,12 @@ Presentation template guide:
             });
             buffer = await downloadArchive(download.url);
           } else {
+            const archive = entry.source.archive;
+            if (!archive) {
+              throw new Error(
+                `Registry resource ${entry.id} does not provide an R2 archive source`,
+              );
+            }
             const download = await getRegistryResourceDownload({
               id: entry.id,
               expectedSha256: archive.sha256,

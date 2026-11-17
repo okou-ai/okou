@@ -1,4 +1,4 @@
-import { Command, InvalidArgumentError } from "commander";
+import { Command, InvalidArgumentError, Option } from "commander";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { dispatchGenerate } from "../generate/lib/dispatch";
 import { isPaidToolEnabled } from "../../lib/command/paid-tools";
@@ -7,6 +7,10 @@ import {
   findPresentationRunbookPackage,
   listPresentationRunbookPackages,
 } from "@okouai/core/resource-registry";
+import {
+  PRESENTATION_OUTPUT_FORMATS,
+  type PresentationOutputFormat,
+} from "@okouai/core/presentation-output-format";
 import {
   presentationImageInstructions,
   PRESENTATION_STATIC_HTML_INSTRUCTION,
@@ -25,6 +29,7 @@ type PresentationRunbookPackage = ReturnType<
 >[number];
 
 interface PresentationOptions {
+  format: PresentationOutputFormat;
   prompt?: string;
   slides: number;
   title?: string;
@@ -44,16 +49,19 @@ function parseSlideCount(value: string): number {
   return slideCount;
 }
 
-function unknownTemplateError(id: string): Error {
-  const templates = listPresentationRunbookPackages();
+function unknownTemplateError(
+  id: string,
+  outputFormat: PresentationOutputFormat,
+): Error {
+  const templates = listPresentationRunbookPackages(outputFormat);
   const message = [
-    `Unknown template for presentation: ${id}`,
+    `Unknown template for ${outputFormat.toUpperCase()} presentation: ${id}`,
     "",
-    "Available templates for presentation:",
+    `Available templates for ${outputFormat.toUpperCase()} presentation:`,
     formatPresentationTemplateListing(templates),
     "",
     "Example:",
-    `  okou generate presentation --template ${
+    `  okou generate presentation --format ${outputFormat} --template ${
       templates[0]?.templateId ?? "<template-id>"
     } --prompt "..."`,
   ].join("\n");
@@ -68,7 +76,7 @@ function formatPresentationTemplateListing(
   }
   return templates
     .map((template) => {
-      return `  ${template.templateId}\n    ${template.description}`;
+      return `  ${template.templateId}\n    ${template.description}\n    Package: ${template.resourceId}`;
     })
     .join("\n\n");
 }
@@ -76,24 +84,34 @@ function formatPresentationTemplateListing(
 export function createPresentationGenerateCommand(): Command {
   return new Command()
     .name("presentation")
-    .description("Generate an HTML presentation from a prompt")
+    .description("Generate an HTML or native PPTX presentation from a prompt")
     .option(
       "--prompt <text>",
       "Presentation prompt; can also be piped via stdin",
     )
-    .option("--site-slug <slug>", "Hosted site slug override")
+    .option("--site-slug <slug>", "Hosted HTML site slug override")
     .option("--title <text>", "Requested deck title")
+    .addOption(
+      new Option(
+        "--format <format>",
+        "Output format; selects the matching presentation template package",
+      )
+        .choices(PRESENTATION_OUTPUT_FORMATS)
+        .default("html"),
+    )
     .addOption(createArtifactVisibilityOption())
     .option(
       "--template <id>",
-      "Presentation template id (see Templates below). Accepts either 'html-ppt-playful-launch' or 'template:html-ppt-playful-launch'.",
+      "Presentation style id for the requested format (see Templates below). Accepts either 'html-ppt-playful-launch' or 'template:html-ppt-playful-launch'.",
     )
     .option("--slides <count>", "Slide count: 4-20", parseSlideCount, 8)
-    .addHelpText("after", () => {
-      const templates = listPresentationRunbookPackages();
+    .addHelpText("after", ({ command }) => {
+      const { format } = command.opts<PresentationOptions>();
+      const templates = listPresentationRunbookPackages(format);
       return `
 Examples:
-  Generate deck:         okou generate presentation --prompt "A strategy deck for reducing support volume"
+  Generate HTML:         okou generate presentation --prompt "A strategy deck for reducing support volume"
+  Generate native PPTX:  okou generate presentation --format pptx --prompt "A strategy deck for reducing support volume"
   Pipe prompt:           cat brief.txt | okou generate presentation
   Pick slide count:      okou generate presentation --slides 10 --prompt "A product launch narrative"
   Custom site slug:      okou generate presentation --site-slug api-migration-plan --prompt "API migration plan"
@@ -105,11 +123,13 @@ Output:
 Notes:
   - Authenticates via OKOU_TOKEN
   - Without --template, the agent reads the source and selects a built-in template by tone, audience fit, and visual preferences
-  - The agent authors and checks HTML first and delivers HTML by default
-  - Use okou host for HTML; follow the platform's conversion instructions only when the user explicitly requests PowerPoint/PPTX
+  - --format selects separate HTML or native PPTX template packages; HTML is the default
+  - For --format html, author and check HTML, then deliver it with okou host
+  - For --format pptx, follow the native PPTX workflow and upload the .pptx file; do not author HTML and convert it
   - Deliver one format unless the user requests multiple formats
+  - Use --format pptx --help to see the native PPTX package catalog
 
-Templates (presentation):
+Templates (presentation, ${format}):
 ${formatPresentationTemplateListing(templates)}`;
     })
     .action(
@@ -120,6 +140,11 @@ ${formatPresentationTemplateListing(templates)}`;
         });
         if (dispatch.outcome === "handled") return;
         const prompt = dispatch.prompt;
+        const outputFormat = options.format;
+        const resourceDir =
+          outputFormat === "pptx"
+            ? "./generated/resources/pptx"
+            : "./generated/resources";
         const visibilityFlag =
           options.visibility === undefined
             ? ""
@@ -127,14 +152,21 @@ ${formatPresentationTemplateListing(templates)}`;
         const displayTitle = options.title
           ? `'${options.title.replaceAll("'", "'\\''")}'`
           : '"<presentation title>"';
-        const hostCommand = `okou host <output-dir> --site ${options.siteSlug ?? "<slug>"} --title ${displayTitle} --artifact-kind presentation-html${visibilityFlag} --preview ./generated/previews/cover.png --json`;
+        const hostCommand =
+          outputFormat === "html"
+            ? `okou host <output-dir> --site ${options.siteSlug ?? "<slug>"} --title ${displayTitle} --artifact-kind presentation-html${visibilityFlag} --preview ./generated/previews/cover.png --json`
+            : undefined;
         const deliveryInstructions = [
-          `- For hosted HTML delivery: ${hostedSiteDeliveryInstructions}`,
+          ...(outputFormat === "html"
+            ? [`- For hosted HTML delivery: ${hostedSiteDeliveryInstructions}`]
+            : []),
           options.visibility === undefined
-            ? `- Uploaded and generated files default to only-me. ${hostedSiteVisibilityInstructions}`
+            ? outputFormat === "html"
+              ? `- Uploaded and generated files default to only-me. ${hostedSiteVisibilityInstructions}`
+              : "- Uploaded and generated files default to only-me."
             : `- Deliver the final deck with ${options.visibility} visibility.`,
           "- Keep supporting generated media at its default visibility and bundle local copies. The selected visibility applies to the final deck; do not make supporting media public separately.",
-          `- For file delivery, use \`okou web upload-file -f <file>${visibilityFlag}\`.`,
+          `- For file delivery, use \`okou web upload-file -f ${outputFormat === "pptx" ? "<deck.pptx>" : "<file>"}${visibilityFlag}\`.`,
         ];
 
         if (options.template !== undefined) {
@@ -142,13 +174,18 @@ ${formatPresentationTemplateListing(templates)}`;
             "template",
             options.template,
           );
-          const template = findPresentationRunbookPackage(canonical);
+          const template = findPresentationRunbookPackage(
+            canonical,
+            outputFormat,
+          );
           if (!template) {
-            throw unknownTemplateError(options.template);
+            throw unknownTemplateError(options.template, outputFormat);
           }
           console.log(
             [
               "# Presentation Generation (template)",
+              "",
+              `Requested output format: ${outputFormat}`,
               "",
               ...buildPresentationRunbookInstructionLines({
                 runbookPackage: template,
@@ -174,6 +211,7 @@ ${formatPresentationTemplateListing(templates)}`;
             prompt,
             "",
             "## Requested Parameters",
+            `- Requested output format: ${outputFormat}`,
             `- Slide count: ${options.slides}`,
             `- Requested deck title: ${options.title ?? "not specified"}`,
             "",
@@ -190,7 +228,7 @@ ${formatPresentationTemplateListing(templates)}`;
             "- Keep the choice internal: do not announce the selected template or ask the user to choose or confirm one. Proceed with generation.",
             "",
             "## Built-in Template Catalog",
-            ...listPresentationRunbookPackages().map((template) => {
+            ...listPresentationRunbookPackages(outputFormat).map((template) => {
               return [
                 `### ${template.name} (${template.templateId})`,
                 template.description,
@@ -199,16 +237,19 @@ ${formatPresentationTemplateListing(templates)}`;
               ].join("\n");
             }),
             "## Use the Selected Template",
-            "- Pull only the selected package once: `okou resource pull <Package from the catalog> --dir ./generated/resources`.",
+            `- Pull only the selected package once: \`okou resource pull <Package from the catalog> --dir ${resourceDir}\`.`,
             "- Read SKILL.md in the source directory printed by the pull command fully, then read the workflow instructions it references. Follow that package's authoring, worker startup, layout and verification workflow, using its listed default color system unless the request specifies another supported palette.",
             "- Use the source understanding above in the selected workflow; do not restart source preparation unnecessarily. Preserve the requested slide count and substantive content rather than copying the reference deck's sample story, wording, metrics, imagery or page count.",
-            PRESENTATION_STATIC_HTML_INSTRUCTION,
+            outputFormat === "html"
+              ? PRESENTATION_STATIC_HTML_INSTRUCTION
+              : "- Author the deck natively as PPTX using the selected package's workflow; keep slide content editable instead of authoring HTML and converting it. If the package is unavailable, report the failure instead of substituting an HTML package.",
             ...presentationImageInstructions(
               isPaidToolEnabled("image-generation"),
             ),
             "",
             "## Delivery",
             ...presentationDeliveryInstructions({
+              outputFormat,
               hostCommand,
             }),
             ...deliveryInstructions,

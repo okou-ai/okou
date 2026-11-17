@@ -157,7 +157,7 @@ export const selectDirectRunOwner$ = command(
   },
 );
 
-/** A fresh ordinary lifecycle read, never a payload or dispatch-ledger lookup. */
+/** Read the Run's current lifecycle state. */
 export const readDirectRunState$ = command(
   async ({ get }, runId: string, signal: AbortSignal) => {
     const [run] = await get(db$)

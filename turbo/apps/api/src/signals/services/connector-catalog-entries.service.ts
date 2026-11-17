@@ -4,7 +4,6 @@ import {
   connectorCatalog,
   connectorCatalogEntries,
 } from "@okouai/db/runtime/connector-catalog";
-import type { ImmutableConnectorCatalogEntry } from "@okouai/db/jsonb-contracts/immutable-connector-catalog";
 import { SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { db$ } from "../external/db";
@@ -13,15 +12,17 @@ import {
   evaluateConnectorCatalogCompatibility,
 } from "./connector-catalog-compatibility.service";
 import {
+  connectorRuntimeCatalogDetail,
   materializeConnectorRuntimeLookup,
   uniqueSortedConnectorSlugs,
   type ConnectorRuntimeLookup,
-  type ConnectorRuntimeSelection,
+  type ConnectorExecutionRuntimeSelection,
 } from "./connector-catalog-runtime.service";
 import { catalogIdentityFromCapture } from "./connector-catalog-view";
 import {
-  connectorCatalogRuntimeColumns,
-  materializeConnectorCatalogRuntimeRow,
+  connectorCatalogExecutionColumns,
+  materializeConnectorCatalogExecutionRow,
+  type ConnectorCatalogExecutionConnector,
 } from "./connector-catalog-columns";
 
 export interface ImmutableConnectorCatalogCapture {
@@ -53,7 +54,7 @@ interface SelectionInput {
 interface CapturedEntries {
   readonly input: SelectionInput;
   readonly capturedCatalog: ImmutableConnectorCatalogCapture;
-  readonly entries: readonly ImmutableConnectorCatalogEntry[];
+  readonly entries: readonly ConnectorCatalogExecutionConnector[];
 }
 
 /** Capture the pointer and requested union in one database statement. */
@@ -85,7 +86,7 @@ function capturedEntries(
                 schemaVersion: connectorCatalog.schemaVersion,
                 hash: connectorCatalog.hash,
               },
-              entry: connectorCatalogRuntimeColumns,
+              entry: connectorCatalogExecutionColumns,
             })
             .from(connectorCatalog)
             .leftJoin(
@@ -103,17 +104,12 @@ function capturedEntries(
             )
         : await db
             .select({
-              slug: connectorCatalogRuntimeColumns.slug,
-              label: connectorCatalogRuntimeColumns.label,
-              description: connectorCatalogRuntimeColumns.description,
-              category: connectorCatalogRuntimeColumns.category,
-              icon: connectorCatalogRuntimeColumns.icon,
-              tags: connectorCatalogRuntimeColumns.tags,
-              generation: connectorCatalogRuntimeColumns.generation,
-              authMethods: connectorCatalogRuntimeColumns.authMethods,
-              mcp: connectorCatalogRuntimeColumns.mcp,
-              skill: connectorCatalogRuntimeColumns.skill,
-              firewall: connectorCatalogRuntimeColumns.firewall,
+              slug: connectorCatalogExecutionColumns.slug,
+              authMethods: connectorCatalogExecutionColumns.authMethods,
+              mcp: connectorCatalogExecutionColumns.mcp,
+              label: connectorCatalogExecutionColumns.label,
+              skill: connectorCatalogExecutionColumns.skill,
+              firewall: connectorCatalogExecutionColumns.firewall,
             })
             .from(connectorCatalogEntries)
             .where(
@@ -122,18 +118,18 @@ function capturedEntries(
                 inArray(connectorCatalogEntries.slug, [...slugs]),
               ),
             );
-    const entries = new Map<string, ImmutableConnectorCatalogEntry>();
+    const entries = new Map<string, ConnectorCatalogExecutionConnector>();
     for (const row of rows) {
       if ("current" in row) {
         captured = row.current;
         if (row.entry !== null) {
           entries.set(
             row.entry.slug,
-            materializeConnectorCatalogRuntimeRow(row.entry),
+            materializeConnectorCatalogExecutionRow(row.entry),
           );
         }
       } else {
-        entries.set(row.slug, materializeConnectorCatalogRuntimeRow(row));
+        entries.set(row.slug, materializeConnectorCatalogExecutionRow(row));
       }
     }
     if (captured === undefined) {
@@ -180,7 +176,7 @@ interface CatalogRequest {
 
 export function createConnectorRuntimeSelection(
   requested$: Computed<Promise<CatalogRequest | null>>,
-): Computed<Promise<ConnectorRuntimeSelection | null>> {
+): Computed<Promise<ConnectorExecutionRuntimeSelection | null>> {
   const input$ = computed(async (get) => {
     const requested = await get(requested$);
     return requested
@@ -223,6 +219,7 @@ function materializeImmutableSelection(
         capability.digest,
       ),
       connectors: entries,
+      catalogDetailForConnector: connectorRuntimeCatalogDetail,
       filteredMethodKeys: new Set(
         filtered.map((method) => {
           return `${method.connectorSlug}\0${method.authMethodId}`;

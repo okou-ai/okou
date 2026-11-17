@@ -106,7 +106,8 @@ public final class ProjectDisclosureStorage: @unchecked Sendable {
       do { result.yield(.success(try operation(self))) } catch {
         Logger(subsystem: "ai.okou.ios", category: "ProjectDisclosure")
           .error(
-            "Cannot persist project disclosure: \(error.localizedDescription, privacy: .public)")
+            "event=projects.disclosure.operation.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+          )
         result.yield(.failure(error))
       }
       result.finish()

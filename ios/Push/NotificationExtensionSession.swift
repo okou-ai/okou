@@ -83,7 +83,7 @@ final class NotificationExtensionSession {
       await cache.close()
       Logger(subsystem: "ai.okou.ios", category: "NotificationExtension")
         .error(
-          "Prefetch failed: notification=\(destination.notificationId, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+          "event=notifications.prefetch.failed notification_id=\(destination.notificationId, privacy: .private) error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
         )
       throw error
     }

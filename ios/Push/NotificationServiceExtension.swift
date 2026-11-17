@@ -76,7 +76,7 @@ private final class NotificationExtensionDelivery {
       do { try await session.synchronize(destination) } catch {
         Logger(subsystem: "ai.okou.ios", category: "NotificationExtension")
           .info(
-            "Notification delivered with available cache: \(error.localizedDescription, privacy: .public)"
+            "event=notifications.delivery.prefetch.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
           )
       }
       guard requestID == id else { return }
@@ -96,9 +96,11 @@ private final class NotificationExtensionDelivery {
         return belongs ? snapshot.markingFinished(threadID: destination.threadId, at: .now) : nil
       }
     } catch {
+      let failure = error as NSError
       Logger(subsystem: "ai.okou.ios", category: "NotificationExtension")
         .error(
-          "Cannot update the widget snapshot: \(error.localizedDescription, privacy: .public)")
+          "event=widgets.snapshot.mark.failed error_domain=\(failure.domain, privacy: .public) error_code=\(failure.code) error=\(failure.localizedDescription, privacy: .private)"
+        )
     }
     if belongs { WidgetCenter.shared.reloadTimelines(ofKind: OkouWidgetSnapshot.widgetKind) }
   }

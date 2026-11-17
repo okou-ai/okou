@@ -20,6 +20,17 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 
+@Serializable
+data class SessionOutputDelta(
+    val `threadId`: String,
+    val `runId`: String,
+    val `eventId`: String,
+    val `runEventId`: String,
+    val `createdAt`: String,
+    val `chunkIndex`: Long,
+    val `delta`: String,
+)
+
 @Serializable data object RealtimeTokenRequest
 
 @Serializable
@@ -335,8 +346,17 @@ enum class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant1Type {
 }
 
 @Serializable
+enum class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant1SelectionOutputFormat {
+    @SerialName("html") HTML,
+    @SerialName("pptx") PPTX,
+}
+
+@Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant1Selection(
     val `templateId`: String,
+    val `outputFormat`:
+        SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant1SelectionOutputFormat? =
+        null,
     val `colorSystemId`: String? = null,
     val `previewUrl`: String? = null,
 )
@@ -1109,8 +1129,17 @@ enum class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4Templ
 }
 
 @Serializable
+enum class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1SelectionOutputFormat {
+    @SerialName("html") HTML,
+    @SerialName("pptx") PPTX,
+}
+
+@Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1Selection(
     val `templateId`: String,
+    val `outputFormat`:
+        SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1SelectionOutputFormat? =
+        null,
     val `colorSystemId`: String? = null,
     val `previewUrl`: String? = null,
 )

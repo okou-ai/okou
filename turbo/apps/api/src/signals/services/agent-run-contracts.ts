@@ -1,5 +1,4 @@
 import type {
-  ModelProviderCredentialScope,
   ModelProviderType,
   ModelProviderCodexRuntimeConfig,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -14,13 +13,6 @@ import type {
   NetworkPolicies,
 } from "@okouai/connectors/firewall-types";
 import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
-
-export interface AgentRunModelPin {
-  readonly modelProvider: string | null;
-  readonly modelProviderId: string | null;
-  readonly modelProviderCredentialScope: ModelProviderCredentialScope | null;
-  readonly selectedModel: string | null;
-}
 
 export interface InternalRunCallback {
   readonly internalKind: InternalRunCallbackKind;
@@ -51,13 +43,13 @@ export interface ResolvedModelProviderEnvironment {
   readonly concreteType?: ModelProviderType;
   readonly environment: Record<string, string>;
   readonly secrets: Record<string, string>;
-  readonly selectedModel: string | null;
+  readonly selectedModel: string;
   readonly secretConnectorMap?: Record<string, string>;
   readonly secretConnectorMetadataMap?: Record<string, SecretConnectorMetadata>;
   readonly codexRuntimeConfig?: ModelProviderCodexRuntimeConfig;
   readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
   /** Catalog route `upstream_model` placed into the provider environment. */
-  readonly upstreamModel?: string;
+  readonly upstreamModel: string;
 }
 
 type BuiltinRuntimeTargetRegistration = Extract<

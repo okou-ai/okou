@@ -64,8 +64,11 @@ public struct OkouWidgetFeed: Equatable, Sendable {
     } catch is CancellationError {
       throw CancellationError()
     } catch {
+      let failure = error as NSError
       Logger(subsystem: "ai.okou.ios", category: "widgets")
-        .info("Skipping an unlisted widget chat: \(error.localizedDescription, privacy: .public)")
+        .info(
+          "event=widgets.refresh.chat_skipped error_domain=\(failure.domain, privacy: .public) error_code=\(failure.code) error=\(failure.localizedDescription, privacy: .private)"
+        )
       return nil
     }
   }

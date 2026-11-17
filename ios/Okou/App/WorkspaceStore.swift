@@ -673,7 +673,9 @@ final class WorkspaceStore {
           guard !closed, !Task.isCancelled else { return }
           handle(error)
           Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-            .error("Cannot warm chat history: \(error.localizedDescription, privacy: .public)")
+            .error(
+              "event=chat.history.warm.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+            )
         }
       } while warmAgain && !closed && !needsUpgrade && !Task.isCancelled
     }

@@ -25,6 +25,7 @@ import {
   presentationDeliveryInstructions,
 } from "@okouai/core/presentation-generation-instructions";
 import { artifactPreviewInstructions } from "@okouai/core/artifact-preview-instructions";
+import type { PresentationOutputFormat } from "@okouai/core/presentation-output-format";
 import { websiteImageInstructions } from "@okouai/core/website-generation-instructions";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import { userTemplateDirectory } from "@okouai/core/user-template-selection";
@@ -34,6 +35,7 @@ interface PresentationGenerationTemplateInput {
   readonly type: "presentation";
   readonly selection: {
     readonly templateId: string;
+    readonly outputFormat?: PresentationOutputFormat;
     readonly colorSystemId?: string;
     readonly previewUrl?: string;
   };
@@ -383,7 +385,10 @@ function buildPresentationGenerationTemplatePrompt(
   // Presentation picker selections are valid only when they resolve to a
   // self-contained runbook package. The legacy multi-resource registry flow has
   // been retired, so ids without a runbook package are rejected.
-  const runbookPackage = findPresentationRunbookPackage(templateId);
+  const runbookPackage = findPresentationRunbookPackage(
+    templateId,
+    generationTemplate.selection.outputFormat,
+  );
   if (!runbookPackage) {
     return { status: "invalid", message: "Unknown generation template" };
   }
@@ -460,7 +465,11 @@ function buildPresentationRunbookPrompt(
           colorSystemToken: color.token,
           imageGenerationEnabled,
         }),
-        "- Check `okou host --help` and, when supported, add `--title` with a concise human-readable presentation name, independently of the URL slug.",
+        ...(runbookPackage.outputFormat === "html"
+          ? [
+              "- Check `okou host --help` and, when supported, add `--title` with a concise human-readable presentation name, independently of the URL slug.",
+            ]
+          : []),
       ].join("\n");
     },
   };

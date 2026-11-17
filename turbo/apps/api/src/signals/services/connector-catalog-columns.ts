@@ -45,6 +45,18 @@ export const connectorCatalogRuntimeColumns = Object.freeze({
   firewall: entry.firewall,
 });
 
+export const connectorCatalogExecutionColumns = Object.freeze({
+  ...connectorCatalogCompatibilityColumns,
+  label: entry.label,
+  skill: entry.skill,
+  firewall: entry.firewall,
+});
+
+export type ConnectorCatalogExecutionConnector = Pick<
+  ConnectorCatalogArtifactConnector,
+  "slug" | "label" | "authMethods" | "mcp" | "skill" | "firewall"
+>;
+
 // Catalog-wide diagnostics and change detection do not consume display copy or skills.
 const catalogRuntimeColumns = Object.freeze({
   ...connectorCatalogCompatibilityColumns,
@@ -131,6 +143,13 @@ export function materializeConnectorCatalogSearchRow(
 export function materializeConnectorCatalogRuntimeRow(
   row: ColumnRow<ConnectorCatalogArtifactConnector>,
 ): ConnectorCatalogArtifactConnector {
+  const { mcp, ...fields } = row;
+  return { ...fields, ...(mcp === null ? {} : { mcp }) };
+}
+
+export function materializeConnectorCatalogExecutionRow(
+  row: ColumnRow<ConnectorCatalogExecutionConnector>,
+): ConnectorCatalogExecutionConnector {
   const { mcp, ...fields } = row;
   return { ...fields, ...(mcp === null ? {} : { mcp }) };
 }

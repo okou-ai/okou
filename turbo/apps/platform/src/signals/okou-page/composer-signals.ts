@@ -976,15 +976,20 @@ function createSubmitCurrentInput({
       signal.throwIfAborted();
       const mode = get(create.mode$);
       const selectedTask = get(taskChips.task$);
+      const visualization =
+        selectedTask === "visualization"
+          ? get(taskChips.visualization.preferences$)
+          : undefined;
+      const presentationFormat =
+        get(presentationOutputFormatEnabled$) &&
+        (mode === "presentation" || visualization?.output === "presentation")
+          ? get(presentationOutputFormat$)
+          : undefined;
       const composerAdditionalInfo = buildComposerAdditionalInfo(
         mode,
         get(create.presentationSlideCount$),
-        selectedTask === "visualization"
-          ? get(taskChips.visualization.preferences$)
-          : undefined,
-        get(presentationOutputFormatEnabled$)
-          ? get(presentationOutputFormat$)
-          : undefined,
+        visualization,
+        presentationFormat,
       );
       const additionalInfo = joinAdditionalInfo(
         callerAdditionalInfo,
@@ -996,6 +1001,7 @@ function createSubmitCurrentInput({
               submission.editorDocument.toEditorDocument(),
             ),
             additionalInfo,
+            presentationFormat,
           )
         : submission.editorDocument;
       const nextSubmission: ComposerSubmission = {

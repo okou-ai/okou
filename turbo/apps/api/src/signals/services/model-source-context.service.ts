@@ -11,7 +11,7 @@ import {
 } from "@okouai/db/schema/model-provider-account";
 import { usagePricing } from "@okouai/db/runtime/usage-pricing";
 import { computed, type Computed } from "ccstate";
-import { and, eq, getTableColumns, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { array, object, string, unknown as zUnknown } from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import {
@@ -30,7 +30,7 @@ import {
 function providerProjection() {
   return {
     // Only identity and runtime configuration participate in these facts.
-    // Account health/default/expiry fences remain on the full account projection.
+    // Account selection and identity remain on the account projection.
     provider: {
       id: modelProviders.id,
       type: modelProviders.type,
@@ -84,6 +84,27 @@ const sourceSecretSchema = object({
   name: string(),
 }).nullable();
 
+const accountSourceColumns = Object.freeze({
+  id: modelProviderAccounts.id,
+  modelProviderId: modelProviderAccounts.modelProviderId,
+  orgId: modelProviderAccounts.orgId,
+  userId: modelProviderAccounts.userId,
+  type: modelProviderAccounts.type,
+  authMethod: modelProviderAccounts.authMethod,
+  isActive: modelProviderAccounts.isActive,
+  disconnectedAt: modelProviderAccounts.disconnectedAt,
+  needsReconnect: modelProviderAccounts.needsReconnect,
+  externalAccountId: modelProviderAccounts.externalAccountId,
+  // Older Claude accounts bind Runs by email/workspace instead of upstream ID.
+  accountEmail: modelProviderAccounts.accountEmail,
+  workspaceName: modelProviderAccounts.workspaceName,
+});
+
+type AccountSourceRow = Pick<
+  typeof modelProviderAccounts.$inferSelect,
+  keyof typeof accountSourceColumns
+>;
+
 /**
  * The same member-source join as one JSON aggregate, for statements that
  * already read this member. Column decoders still own timestamps and enums.
@@ -95,16 +116,15 @@ export function memberModelSourcesAggregate(
   runId?: string,
 ) {
   const on = memberModelSourcePredicates(orgId, userId, runId);
-  const accountColumns = getTableColumns(modelProviderAccounts);
   const payload = sql`COALESCE(jsonb_agg(jsonb_build_object(
       'provider', ${contextJsonProjection(providerProjection().provider)},
       'account', CASE WHEN ${modelProviderAccounts.id} IS NULL THEN NULL
-        ELSE ${contextJsonProjection(accountColumns)} END,
+        ELSE ${contextJsonProjection(accountSourceColumns)} END,
       'secret', CASE WHEN ${modelProviderAccountSecrets.modelProviderAccountId} IS NULL THEN NULL
         ELSE jsonb_build_object('name', ${modelProviderAccountSecrets.name}) END)), '[]'::jsonb)`;
   const rowSchema = object({
     provider: contextProjectionSchema(providerProjection().provider),
-    account: contextProjectionSchema(accountColumns).nullable(),
+    account: contextProjectionSchema(accountSourceColumns).nullable(),
     secret: sourceSecretSchema,
   });
   return {
@@ -124,7 +144,7 @@ export function memberModelSourcesFromRows(
   orgId: string,
   userId: string,
   joined: readonly (ProviderRow & {
-    readonly account: typeof modelProviderAccounts.$inferSelect | null;
+    readonly account: AccountSourceRow | null;
     readonly secret: {
       readonly name: string;
     } | null;

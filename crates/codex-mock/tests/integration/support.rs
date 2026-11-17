@@ -280,41 +280,30 @@ fn wait_process_group_child_with_timeout(
 
 #[cfg(unix)]
 fn child_exited_without_reaping(child_pid: u32) -> std::io::Result<bool> {
+    use rustix::process::{Pid, WaitId, WaitIdOptions, waitid};
+
     let child_pid = libc::pid_t::try_from(child_pid).map_err(|_| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "app-server child PID does not fit in pid_t",
         )
     })?;
-    let child_wait_id = libc::id_t::try_from(child_pid).map_err(|_| {
+    let child_wait_id = Pid::from_raw(child_pid).ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "app-server child PID does not fit in id_t",
+            "app-server child PID does not fit in rustix::process::Pid",
         )
     })?;
 
     loop {
-        let mut info = std::mem::MaybeUninit::<libc::siginfo_t>::zeroed();
-        // SAFETY: this owner still retains the direct child. WNOWAIT observes
-        // terminal state without releasing its PID/process-group identity.
-        let result = unsafe {
-            libc::waitid(
-                libc::P_PID,
-                child_wait_id,
-                info.as_mut_ptr(),
-                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
-            )
-        };
-        if result == 0 {
-            // SAFETY: zero is valid for siginfo_t, and waitid may have updated
-            // it. si_pid remains zero when WNOHANG observes no status.
-            let info = unsafe { info.assume_init() };
-            return Ok(unsafe { info.si_pid() } != 0);
-        }
-
-        let error = std::io::Error::last_os_error();
-        if error.kind() != std::io::ErrorKind::Interrupted {
-            return Err(error);
+        // Keep the direct child's PID/process-group identity through cleanup.
+        match waitid(
+            WaitId::Pid(child_wait_id),
+            WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT,
+        ) {
+            Ok(status) => return Ok(status.is_some()),
+            Err(rustix::io::Errno::INTR) => continue,
+            Err(error) => return Err(error.into()),
         }
     }
 }

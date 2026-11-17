@@ -93,6 +93,9 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Choose HTML or PPTX for presentations and remember the preference on this device. Requires Home capabilities.",
     enabled: false,
+    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
+    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+    restrictOverridesToAudience: true,
   },
   [FeatureSwitchKey.PastedTextAttachments]: {
     maintainer: "bingjie@okou.ai",
@@ -191,7 +194,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     displayName: "Chat visualization summaries",
     description:
-      "Show selected output formats and chart types on user messages.",
+      "Show selected output formats and chart types as compact chips in drafts and user messages.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,

@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.109.92](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.91...guest-agent-v0.109.92) (2026-11-16)
+
+## [0.109.91](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.90...guest-agent-v0.109.91) (2026-11-16)
+
+
+### Refactoring
+
+* **rust:** use typed waitid for owned-child observation ([#47916](https://github.com/okou-ai/okou/issues/47916)) ([63c1cb4](https://github.com/okou-ai/okou/commit/63c1cb42b3e5ddec5e783b089540bb315a19fffe))
+
+## [0.109.90](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.89...guest-agent-v0.109.90) (2026-11-16)
+
+
+### Refactoring
+
+* **runtime:** share sorted environment entry validation ([#47883](https://github.com/okou-ai/okou/issues/47883)) ([2170f64](https://github.com/okou-ai/okou/commit/2170f647745a06ae5957e4e230ff3701a9b14e1f))
+
 ## [0.109.89](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.88...guest-agent-v0.109.89) (2026-11-16)
 
 

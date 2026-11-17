@@ -11,7 +11,11 @@ import {
   CHAT_EVENT_TYPES,
   isChatRunTerminalEventType,
 } from "../contracts/chat-events";
-import { deriveServerRunStateFromChatEvents } from "../contracts/chat-run-state";
+import {
+  chatRunEventContextFromChatEvents,
+  deriveServerRunStateFromChatEvents,
+  liveRunIdsFromChatEvents,
+} from "../contracts/chat-run-state";
 
 const threadId = "11111111-1111-4111-8111-111111111111";
 const runA = "99999999-9999-4999-8999-999999999999";
@@ -202,6 +206,11 @@ function expected(rows: readonly ChatEventRow[]) {
     return isChatRunTerminalEventType(event.eventType);
   });
   return {
+    activeRunId:
+      liveRunIdsFromChatEvents(
+        events,
+        chatRunEventContextFromChatEvents(events),
+      ).at(-1) ?? null,
     // Visible identity and order come directly from Web, including synthetic interruption.
     events: ordered.map(({ event, isQueued }) => {
       return {

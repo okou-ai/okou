@@ -1,12 +1,6 @@
 import { getFrameworkForType } from "@okouai/api-contracts/contracts/model-providers";
-import {
-  DISABLED_PAID_TOOLS_ENV_VAR,
-  paidToolIdSchema,
-} from "@okouai/api-contracts/contracts/paid-tools";
-import type {
-  ExecutionInput as AdmittedExecutionInput,
-  PreparedExecutionContext,
-} from "@okouai/api-contracts/contracts/runners";
+import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
+import type { PreparedExecutionContext } from "@okouai/api-contracts/contracts/runners";
 import { AUTO_RUN_PROVIDER } from "@okouai/core/auto-run-model";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -14,10 +8,8 @@ import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { computed, type Computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import { array } from "zod";
 import { previewAutomationBypassSecret } from "../../lib/preview-automation-bypass";
 import { db$ } from "../external/db";
-import { safeJsonParse } from "../utils";
 import { billableFirewallsForPermissions } from "./built-in-route-pricing";
 import { createExecutionConnectorSources } from "./agent-run-context.signals";
 import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
@@ -75,7 +67,6 @@ export interface ExecutionNetworkPolicyInputs {
 
 type ExecutionInput = {
   readonly run: ExecutionContextRun;
-  readonly context: AdmittedExecutionInput;
   readonly facts: AdmittedExecutionFacts;
 };
 
@@ -86,7 +77,7 @@ type ExecutionSources = ReturnType<typeof createExecutionConnectorSources>;
 type ExecutionModel$ = ReturnType<typeof createExecutionModel>;
 type ExecutionModel =
   ExecutionModel$ extends Computed<infer T> ? Awaited<T> : never;
-type DisabledTools$ = Computed<Promise<readonly string[]>>;
+type DisabledTools$ = Computed<Promise<readonly PaidToolId[]>>;
 
 /** Assemble runtime input from this Run's authoritative sources. */
 export function createExecutionRuntimeContext(input$: ExecutionInput$) {
@@ -117,7 +108,9 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
   );
   const seedSkills$ = createExecutionSeedSkills();
   const preferences$ = createExecutionPreferences(run$);
-  const disabledTools$ = createExecutionDisabledTools(input$);
+  const disabledTools$ = computed(async (get) => {
+    return (await get(input$)).facts.disabledPaidTools;
+  });
   const connectors = createExecutionConnectorContext(
     input$,
     identities,
@@ -125,7 +118,7 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
   );
   const model$ = createExecutionModel(input$);
   const modelRoute$ = computed(async (get) => {
-    return (await get(model$))?.provider ?? null;
+    return (await get(model$)).provider;
   });
   const modelEnvironment$ = createModelProviderEnvironmentSignals(
     connectors.runVariables$,
@@ -206,25 +199,23 @@ function createExecutionIdentities(input$: ExecutionInput$) {
   });
   const currentFeatures$ = createUserFeatureSwitchContext(memberIdentity$);
   const features$ = computed(async (get) => {
-    const [current, input] = await Promise.all([
-      get(currentFeatures$),
-      get(input$),
-    ]);
-    const overrides = { ...current.overrides };
-    for (const key of [
-      FeatureSwitchKey.SingleAgent,
-      FeatureSwitchKey.ConnectorChatAccountAccess,
-    ]) {
-      const captured = input.context.featureFlags?.[key];
-      if (captured !== undefined) {
-        overrides[key] = captured;
-      }
-    }
+    const { run, facts } = await get(input$);
+    // Only custom connector network bindings consume unpinned overrides.
+    const currentOverrides = facts.connectorRuntimeTargets.some((target) => {
+      return target.kind === "custom";
+    })
+      ? (await get(currentFeatures$)).overrides
+      : undefined;
     return {
-      ...current,
-      userId: input.run.userId,
-      orgId: input.run.orgId,
-      overrides,
+      userId: run.userId,
+      orgId: run.orgId,
+      overrides: {
+        ...currentOverrides,
+        [FeatureSwitchKey.SingleAgent]:
+          facts.featureFlags[FeatureSwitchKey.SingleAgent],
+        [FeatureSwitchKey.ConnectorChatAccountAccess]:
+          facts.featureFlags[FeatureSwitchKey.ConnectorChatAccountAccess],
+      },
     };
   });
   return { run$, identity$, features$ };
@@ -243,17 +234,6 @@ function createExecutionPreferences(run$: ExecutionRun$) {
         ),
       );
     return { timezone: row?.timezone ?? undefined };
-  });
-}
-
-function createExecutionDisabledTools(input$: ExecutionInput$) {
-  return computed(async (get) => {
-    // The emitted prompt already embodies this Run's tool choices. Current
-    // preferences cannot reconstruct that decision after a later edit.
-    const { context } = await get(input$);
-    return array(paidToolIdSchema).parse(
-      safeJsonParse(context.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]),
-    );
   });
 }
 
@@ -316,9 +296,6 @@ function createExecutionModel(input$: ExecutionInput$) {
   const memberModels$ = createRunModelSources(memberIdentity$);
   return computed(async (get) => {
     const { run, facts } = await get(input$);
-    if (run.modelProvider === null) {
-      return null;
-    }
     if (
       !run.selectedModel ||
       !run.modelRuntimeModel ||
@@ -482,14 +459,14 @@ function createExecutionPlatform(
   disabledTools$: DisabledTools$,
 ) {
   return computed(async (get) => {
-    const [{ run, context, facts }, model, disabledTools] = await Promise.all([
+    const [{ run, facts }, model, disabledTools] = await Promise.all([
       get(input$),
       get(model$),
       get(disabledTools$),
     ]);
     const framework = run.framework;
     const integration = facts.integration;
-    const bypass = context.previewBypassAuthorized
+    const bypass = facts.previewBypassAuthorized
       ? previewAutomationBypassSecret()
       : undefined;
     return {
@@ -500,7 +477,7 @@ function createExecutionPlatform(
         ...paidToolPlatformEnvironment({
           disabledTools,
           framework,
-          modelProviderType: model?.provider.type ?? null,
+          modelProviderType: model.provider.type,
           piExecution: framework === "pi",
         }),
         ...(integration ? { OKOU_CURRENT_INTEGRATION: integration } : {}),
@@ -525,7 +502,7 @@ function createExecutionEnvironment(
   platform$: ReturnType<typeof createExecutionPlatform>,
 ) {
   return computed(async (get) => {
-    const { context } = await get(input$);
+    const { facts } = await get(input$);
     const [modelEnvironment, platform, connectorEnvironment] =
       await Promise.all([
         get(modelEnvironment$),
@@ -536,12 +513,11 @@ function createExecutionEnvironment(
       throw new Error("Run execution sources are unavailable");
     }
     const data = dataRouterEnvironment();
-    const token = context.platformEnvironment.OKOU_TOKEN;
+    const token = facts.okouToken;
     const tokenEnvironment = {
       ...emptyEnvironment(),
-      platformEnvironment:
-        token === undefined ? undefined : { OKOU_TOKEN: token },
-      secrets: token === undefined ? undefined : { OKOU_TOKEN: token },
+      platformEnvironment: { OKOU_TOKEN: token },
+      secrets: { OKOU_TOKEN: token },
     };
     const environment = mergeEnvironments(
       [
@@ -561,10 +537,7 @@ function createExecutionEnvironment(
     );
     const untrustedEnvironment = Object.fromEntries(
       Object.entries(environment.environment ?? {}).filter(([key]) => {
-        return (
-          !key.startsWith("OKOU_") &&
-          (token === undefined || !key.startsWith("ZERO_"))
-        );
+        return !key.startsWith("OKOU_") && !key.startsWith("ZERO_");
       }),
     );
     const effective = {
@@ -604,7 +577,7 @@ function createExecutionPreparedContext(
   },
 ) {
   return computed(async (get) => {
-    const { run, context, facts } = await get(input$);
+    const { run, facts } = await get(input$);
     const [model, preferences, packages, resolved, storage] = await Promise.all(
       [
         get(dependencies.model$),
@@ -616,13 +589,16 @@ function createExecutionPreparedContext(
     );
     const { environment, untrustedEnvironment, secretKeys } = resolved;
     const prepared: PreparedExecutionContext = {
-      ...context,
       ...executionModelConfiguration(run, model),
+      customWorkflowSelection: facts.customWorkflowSelection,
+      featureFlags: facts.featureFlags,
+      realAgentInPreview: facts.realAgentInPreview,
+      apiStartTime: facts.apiStartTime,
       storageMounts: storage.storageMounts,
       nativeContinuation: {
-        ...context.nativeContinuation,
+        ...facts.nativeContinuation,
         recoveryPrompt:
-          context.nativeContinuation.recoveryPrompt === null
+          facts.nativeContinuation.recoveryPrompt === null
             ? null
             : NATIVE_CONTEXT_RECOVERY_PROMPT,
       },
@@ -641,7 +617,7 @@ function createExecutionPreparedContext(
         environment.secretConnectorMetadataMap ?? null,
       connectorRuntimeTargets: [...environment.runtimeTargets],
       billableFirewalls: billableFirewallsForPermissions({
-        modelProvider: model?.provider ?? null,
+        modelProvider: model.provider,
         permissions: environmentPermissionManifest(environment),
       }),
       disallowedTools: [...DEFAULT_DISALLOWED_TOOLS],
@@ -687,13 +663,13 @@ function executionModelConfiguration(
     modelUsageProvider:
       run.modelProvider === "built-in"
         ? (run.modelUsageProvider ?? undefined)
-        : (run.selectedModel ?? undefined),
+        : run.selectedModel,
     modelUsageLongContextMinTotalInputTokens:
       run.modelProvider === "built-in"
         ? (run.modelLongContextMinTotalInputTokens ?? undefined)
         : 0,
-    codexRuntimeConfig: model?.provider.codexRuntimeConfig ?? null,
-    piModelConfig: model?.piModelConfig,
+    codexRuntimeConfig: model.provider.codexRuntimeConfig ?? null,
+    piModelConfig: model.piModelConfig,
     piLaunchConfig: framework === "pi" ? { schemaVersion: 2 } : undefined,
     piSessionId:
       framework === "pi"

@@ -98,15 +98,6 @@ export function executionWorkflowInput(
         ? "/home/user/.codex/skills"
         : "/home/user/.claude/skills";
   const selection = officialWorkflowSelection(context, skillRoot);
-  const ordinaryMount = /^custom-skill@[a-f0-9-]{36}$/u;
-  for (const mount of context.storageMounts) {
-    if (
-      mount.name.startsWith("custom-skill@") &&
-      !ordinaryMount.test(mount.name)
-    ) {
-      throw new Error("Unsupported legacy Workflow identity");
-    }
-  }
   return {
     selection,
     skillRoot,

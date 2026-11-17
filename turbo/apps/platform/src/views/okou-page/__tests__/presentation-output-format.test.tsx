@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
+import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   click,
   fill,
@@ -22,6 +23,13 @@ import {
 const context = testContext();
 const reloadedContext = createTestRuntime(context);
 const { mockTemplateChat } = createTemplateGalleryHelpers(context);
+const ownerAuth = Object.freeze({
+  user: Object.freeze({
+    id: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
+    fullName: "Bingjie Zang",
+    email: "bingjie@okou.ai",
+  }),
+});
 const enabledFeatures = Object.freeze({
   [FeatureSwitchKey.HomeCapabilities]: true,
   [FeatureSwitchKey.PresentationOutputFormat]: true,
@@ -67,6 +75,7 @@ test.each(["HTML", "PPTX"] as const)(
     await setupPage({
       context,
       path: `/agents/${AGENT_ID}/chat`,
+      auth: ownerAuth,
       featureSwitches: enabledFeatures,
     });
     const editor = await findComposerEditor();
@@ -93,6 +102,10 @@ test.each(["HTML", "PPTX"] as const)(
     ]);
     expect(capture.selectedTemplates[0]).toMatchObject({
       type: "presentation",
+      selection: {
+        templateId: template.templateId,
+        outputFormat: format.toLowerCase(),
+      },
     });
     expect(capture.sentMessages[0]?.parts).toContainEqual({
       type: "additional_info",
@@ -107,10 +120,103 @@ test.each(["HTML", "PPTX"] as const)(
   },
 );
 
+test("A format changed after choosing a template is frozen at send time", async () => {
+  const capture = mockTemplateChat();
+  await setupPage({
+    context,
+    auth: ownerAuth,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: enabledFeatures,
+  });
+  const editor = await findComposerEditor();
+  const formats = await openPresentation();
+  await fill(editor, "Prepare the quarterly deck");
+  const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
+  const shelf = screen.getByRole("group", { name: "Presentation templates" });
+  click(button(template.title, shelf));
+  click(button("PPTX", formats));
+  click(button("Send"));
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  expect(capture.selectedTemplates[0]).toMatchObject({
+    type: "presentation",
+    selection: { templateId: template.templateId, outputFormat: "pptx" },
+  });
+});
+
+test("A restored feedback template freezes the changed format when sent", async () => {
+  const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
+  const feedback = {
+    type: "feedback" as const,
+    quote: "Revise the launch deck.",
+    note: [
+      { type: "text" as const, text: "Use " },
+      {
+        type: "template" as const,
+        titleSnapshot: template.title,
+        template: {
+          type: "presentation" as const,
+          selection: {
+            templateId: template.templateId,
+            outputFormat: "html" as const,
+          },
+        },
+      },
+      { type: "text" as const, text: " for this revision." },
+    ],
+  };
+  const capture = mockTemplateChat();
+  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+    return respond(200, {
+      draftUserMessage: { version: 1, parts: [feedback] },
+      draftAttachments: null,
+    });
+  });
+  await setupPage({
+    context,
+    auth: ownerAuth,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: enabledFeatures,
+  });
+  const editor = await findComposerEditor();
+  await waitFor(() => {
+    expect(editor).toHaveTextContent(template.title);
+    expect(editor).toHaveTextContent(feedback.quote);
+  });
+  const formats = await openPresentation();
+  expect(button("HTML", formats)).toHaveAttribute("aria-pressed", "true");
+  click(button("PPTX", formats));
+  expect(button("PPTX", formats)).toHaveAttribute("aria-pressed", "true");
+  click(button("Send"));
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  const sentFeedback = capture.sentMessages[0]?.parts.find((part) => {
+    return part.type === "feedback";
+  });
+  expect(sentFeedback).toMatchObject({
+    quote: feedback.quote,
+    note: [
+      feedback.note[0],
+      {
+        type: "template",
+        titleSnapshot: template.title,
+        template: {
+          type: "presentation",
+          selection: { templateId: template.templateId, outputFormat: "pptx" },
+        },
+      },
+      feedback.note[2],
+    ],
+  });
+});
+
 test("A changed format survives a fresh page and is shared by Chart presentation output", async () => {
   mockTemplateChat();
   await setupPage({
     context,
+    auth: ownerAuth,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: enabledFeatures,
   });
@@ -130,6 +236,7 @@ test("A changed format survives a fresh page and is shared by Chart presentation
   const capture = mockTemplateChat();
   await setupPage({
     context: reloadedContext,
+    auth: ownerAuth,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: enabledFeatures,
   });
@@ -154,6 +261,12 @@ test("A changed format survives a fresh page and is shared by Chart presentation
       "- Preferred output format: presentation (PPTX format)",
     ),
   });
+  expect(capture.sentMessages[0]?.parts).toContainEqual({
+    type: "additional_info",
+    text: expect.stringContaining(
+      'okou generate presentation --format pptx --prompt "<user request>"',
+    ),
+  });
   // Keep the structured selection compatible with message summaries.
   expect(capture.sentMessages[0]?.parts).toContainEqual({
     type: "additional_info",
@@ -167,6 +280,7 @@ test("Chart presentation output uses HTML until the user changes the preference"
   const capture = mockTemplateChat();
   await setupPage({
     context,
+    auth: ownerAuth,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: enabledFeatures,
   });
@@ -196,6 +310,7 @@ test("A presentation format preference does not change another Chart output type
   const capture = mockTemplateChat();
   await setupPage({
     context,
+    auth: ownerAuth,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: enabledFeatures,
   });
@@ -221,6 +336,33 @@ test("A presentation format preference does not change another Chart output type
   expect(instructions?.text).not.toContain("PPTX");
 });
 
+test("Peers cannot enable presentation format through a stored opt-in", async () => {
+  const capture = mockTemplateChat();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: enabledFeatures,
+  });
+  const editor = await findComposerEditor();
+  const discovery = await screen.findByRole("group", {
+    name: "Explore Okou capabilities",
+  });
+  click(button("Presentation", discovery));
+  const shelf = await screen.findByRole("group", {
+    name: "Presentation templates",
+  });
+  expect(screen.queryByRole("group", { name: "Output format" })).toBeNull();
+  await fill(editor, "Prepare our deck");
+  click(button(PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!.title, shelf));
+  click(button("Send"));
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  expect(capture.selectedTemplates[0]).not.toHaveProperty(
+    "selection.outputFormat",
+  );
+});
+
 test.each([
   { home: true, format: false },
   { home: false, format: true },
@@ -231,6 +373,7 @@ test.each([
     await setupPage({
       context,
       path: `/agents/${AGENT_ID}/chat`,
+      auth: ownerAuth,
       featureSwitches: {
         [FeatureSwitchKey.HomeCapabilities]: home,
         [FeatureSwitchKey.PresentationOutputFormat]: format,
@@ -244,10 +387,20 @@ test.each([
     await screen.findByRole("group", { name: "Presentation templates" });
     expect(screen.queryByRole("group", { name: "Output format" })).toBeNull();
     await fill(editor, "Prepare our deck");
+    const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
+    const shelf = screen.getByRole("group", { name: "Presentation templates" });
+    click(button(template.title, shelf));
     click(button("Send"));
     await waitFor(() => {
       expect(capture.sentMessages).toHaveLength(1);
     });
+    expect(capture.selectedTemplates[0]).toMatchObject({
+      type: "presentation",
+      selection: { templateId: template.templateId },
+    });
+    expect(capture.selectedTemplates[0]).not.toHaveProperty(
+      "selection.outputFormat",
+    );
     expect(capture.sentMessages[0]?.parts).toContainEqual({
       type: "additional_info",
       text: [

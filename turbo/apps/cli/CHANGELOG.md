@@ -1,5 +1,42 @@
 # Changelog
 
+## [10.30.0](https://github.com/okou-ai/okou/compare/cli-v10.29.4...cli-v10.30.0) (2026-11-16)
+
+
+### Features
+
+* route presentation templates by output format ([#47842](https://github.com/okou-ai/okou/issues/47842)) ([b342805](https://github.com/okou-ai/okou/commit/b342805293be679b34781d7ff4811669feccbb77))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.75.0
+    * @okouai/core bumped to 8.845.0
+    * @okouai/pi-agent-runtime bumped to 1.51.140
+
+## [10.29.4](https://github.com/okou-ai/okou/compare/cli-v10.29.3...cli-v10.29.4) (2026-11-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.844.3
+    * @okouai/pi-agent-runtime bumped to 1.51.139
+
+## [10.29.3](https://github.com/okou-ai/okou/compare/cli-v10.29.2...cli-v10.29.3) (2026-11-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.74.0
+    * @okouai/core bumped to 8.844.2
+    * @okouai/pi-agent-runtime bumped to 1.51.138
+
 ## [10.29.2](https://github.com/okou-ai/okou/compare/cli-v10.29.1...cli-v10.29.2) (2026-11-16)
 
 

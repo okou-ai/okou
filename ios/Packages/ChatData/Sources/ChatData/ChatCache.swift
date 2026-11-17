@@ -243,7 +243,9 @@ public actor ChatCache {
       // An unreadable cache is not a Project list. Rebuild from the canonical
       // snapshot instead of inventing a cursor for the unversioned warm display.
       Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error("Invalid cached Project baseline: \(error.localizedDescription, privacy: .public)")
+        .error(
+          "event=chat.cache.projects.baseline.invalid error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+        )
       return nil
     }
   }
@@ -568,7 +570,9 @@ public actor ChatCache {
       } catch {
         // A damaged old cache must not reset a newer store created by the NSE.
         Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-          .error("Cannot import previous cache: \(error.localizedDescription, privacy: .public)")
+          .error(
+            "event=chat.cache.import.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+          )
       }
     }
     for suffix in ["", "-wal", "-shm"] {

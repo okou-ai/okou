@@ -1,4 +1,5 @@
 import ChatData
+import Foundation
 import OSLog
 import SwiftUI
 import WidgetKit
@@ -26,7 +27,8 @@ struct OkouStatusProvider: TimelineProvider {
       return try store.read()
     } catch {
       Self.log.error(
-        "Cannot read the widget snapshot: \(error.localizedDescription, privacy: .public)")
+        "event=widgets.snapshot.read.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+      )
       return nil
     }
   }
@@ -85,7 +87,7 @@ struct OkouStatusProvider: TimelineProvider {
 struct OkouWidgetPushHandler: WidgetPushHandler {
   func pushTokenDidChange(_ pushInfo: WidgetPushInfo, widgets: [WidgetInfo]) {
     Logger(subsystem: "ai.okou.ios.widgets", category: "push")
-      .info("Widget push token changed for \(widgets.count, privacy: .public) widgets")
+      .info("event=widgets.push_token.changed widget_count=\(widgets.count, privacy: .public)")
   }
 }
 

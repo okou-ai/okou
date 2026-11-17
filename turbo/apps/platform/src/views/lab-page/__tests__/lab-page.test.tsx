@@ -72,7 +72,10 @@ test("Lab groups active feature switches", async () => {
     context,
     path: "/_/lab",
     auth: {
-      user: { id: "data-rollout-lab-user", fullName: "Rollout Tester" },
+      user: {
+        id: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
+        fullName: "Bingjie Zang",
+      },
       organization: {
         activeOrg: { id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe", name: "Staff" },
         memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
@@ -114,6 +117,33 @@ test("Lab groups active feature switches", async () => {
   ).toBeVisible();
   expect(buttonNamed("Reset all")).toBeEnabled();
 });
+
+test.each(["org_external", "org_3ANttyrbWYJk6JKRSTRLEsbsDLe"])(
+  "Peers cannot opt into presentation format in Lab: %s",
+  async (orgId) => {
+    await setupPage({
+      context,
+      path: "/_/lab",
+      auth: {
+        user: { id: "presentation-format-peer", fullName: "Peer" },
+        organization: {
+          activeOrg: { id: orgId, name: "Test workspace" },
+          memberships: [{ id: orgId }],
+        },
+      },
+      featureSwitches: {
+        [FeatureSwitchKey.Lab]: true,
+        [FeatureSwitchKey.PresentationOutputFormat]: true,
+      },
+    });
+
+    await screen.findByRole("heading", { name: "Lab" });
+    expect(screen.getByText(FeatureSwitchKey.Banking)).toBeInTheDocument();
+    expect(
+      screen.queryByText("Presentation output format"),
+    ).not.toBeInTheDocument();
+  },
+);
 
 test("External members cannot opt into long pasted text attachments in Lab", async () => {
   await setupPage({

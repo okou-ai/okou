@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.22.111](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.110...claude-mock-v0.22.111) (2026-11-16)
+
+
+### Refactoring
+
+* **rust:** use typed waitid for owned-child observation ([#47916](https://github.com/okou-ai/okou/issues/47916)) ([63c1cb4](https://github.com/okou-ai/okou/commit/63c1cb42b3e5ddec5e783b089540bb315a19fffe))
+
+## [0.22.110](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.109...claude-mock-v0.22.110) (2026-11-16)
+
 ## [0.22.109](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.108...claude-mock-v0.22.109) (2026-11-16)
 
 ## [0.22.108](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.107...claude-mock-v0.22.108) (2026-11-16)

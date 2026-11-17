@@ -1,5 +1,4 @@
 import { contentBundleSchema } from "@okouai/api-contracts/contracts/content-bundle";
-import type { ExecutionInput } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { command, computed, type Computed } from "ccstate";
@@ -11,6 +10,7 @@ import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { agentInstructionsSelectionSql } from "./execution-instructions-selection";
 import { createExecutionContext } from "./execution-context";
 import { contentBundleAvailableCondition } from "./execution-content-bundle";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   cachedContentBundleUrlSchema,
   contentBundleUrlCacheContext$,
@@ -36,8 +36,7 @@ import {
 /** Receipt from durable Thread Run admission, before first-run classification. */
 export interface AdmittedRunLaunch {
   readonly run: Omit<ExecutionPublicationRun, "isFirstRun">;
-  readonly executionContext: ExecutionInput;
-  readonly executionFacts: AdmittedExecutionFacts;
+  readonly facts: AdmittedExecutionFacts;
   readonly runnerGroup: string;
   readonly profile: string;
   readonly reuseKey: string;
@@ -57,15 +56,7 @@ const packageSelectionSchema = object({
 export function createDirectRunPreparation(
   input$: Computed<Promise<AdmittedRunLaunch>>,
 ) {
-  const executionInput$ = computed(async (get) => {
-    const input = await get(input$);
-    return {
-      run: input.run,
-      context: input.executionContext,
-      facts: input.executionFacts,
-    };
-  });
-  const prepared$ = createExecutionContext(executionInput$);
+  const prepared$ = createExecutionContext(input$);
   const packages$ = computed(async (get) => {
     const [input, prepared] = await Promise.all([get(input$), get(prepared$)]);
     const db = get(rawSqlReadDb$);
@@ -76,7 +67,7 @@ export function createDirectRunPreparation(
       SELECT ${agentRuns.id} AS "id",${agentRuns.chatThreadId} AS "chatThreadId",${agentRuns.agentId} AS "agentId",
         ${agentRuns.userId} AS "userId",${agentRuns.orgId} AS "orgId",${agentRuns.triggerSource} AS "triggerSource",${agentRuns.workflowAutomationId} AS "workflowAutomationId"
       FROM ${agentRuns} WHERE ${and(eq(agentRuns.id, input.run.id), eq(agentRuns.userId, input.run.userId), eq(agentRuns.orgId, input.run.orgId), eq(agentRuns.status, "pending"))}
-    ), ${agentInstructionsSelectionSql(sql`${input.executionContext.featureFlags?.singleAgent === true}`)},
+    ), ${agentInstructionsSelectionSql(sql`${input.facts.featureFlags[FeatureSwitchKey.SingleAgent]}`)},
       ${executionWorkflowSelectionSql(selection)}
     SELECT EXISTS(SELECT 1 FROM workflow_admission)
       AND COALESCE((SELECT "bundlesAvailable" FROM workflow_selection),false)
@@ -173,7 +164,7 @@ export const prepareDirectRun$ = command(
         workflowIds: packages.row.workflows.map((workflow) => {
           return workflow.id;
         }),
-        singleAgent: context.featureFlags?.singleAgent === true,
+        singleAgent: input.facts.featureFlags[FeatureSwitchKey.SingleAgent],
       },
       contextSnapshot: {
         runId: run.id,

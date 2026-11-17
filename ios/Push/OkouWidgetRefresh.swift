@@ -50,8 +50,10 @@ final class OkouWidgetRefresh {
     do {
       snapshot = try store.read()
     } catch {
+      let failure = error as NSError
       log.error(
-        "Cannot read the widget snapshot: \(error.localizedDescription, privacy: .public)")
+        "event=widgets.snapshot.read.failed error_domain=\(failure.domain, privacy: .public) error_code=\(failure.code) error=\(failure.localizedDescription, privacy: .private)"
+      )
       return nil
     }
     // A snapshot from an older App names no account; the App rewrites it on its next launch.
@@ -71,8 +73,10 @@ final class OkouWidgetRefresh {
       }
       return try store.read()
     } catch {
+      let failure = error as NSError
       log.info(
-        "Widget keeps its last snapshot: \(error.localizedDescription, privacy: .public)")
+        "event=widgets.refresh.failed error_domain=\(failure.domain, privacy: .public) error_code=\(failure.code) error=\(failure.localizedDescription, privacy: .private)"
+      )
       return snapshot
     }
   }
