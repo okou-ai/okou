@@ -1,40 +1,28 @@
 use super::*;
+use nix::sys::resource::{Resource, getrlimit, rlim_t, setrlimit};
 use std::os::fd::OwnedFd;
 use std::os::unix::process::CommandExt;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 /// Only used in the isolated test process, after all required descriptors exist.
-struct ExhaustedFileDescriptors(libc::rlimit);
+struct ExhaustedFileDescriptors((rlim_t, rlim_t));
 
 impl ExhaustedFileDescriptors {
     fn new() -> Self {
-        let mut previous = libc::rlimit {
-            rlim_cur: 0,
-            rlim_max: 0,
-        };
-        // SAFETY: the output points to initialized storage. This exact-test
-        // subprocess has no other tests whose descriptor limit could change.
-        assert_eq!(
-            unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut previous) },
-            0
-        );
-        let exhausted = libc::rlimit {
-            rlim_cur: 0,
-            rlim_max: previous.rlim_max,
-        };
-        // SAFETY: reducing the soft limit preserves every existing descriptor.
-        assert_eq!(
-            unsafe { libc::setrlimit(libc::RLIMIT_NOFILE, &exhausted) },
-            0
-        );
+        let previous = getrlimit(Resource::RLIMIT_NOFILE).unwrap();
+        // Reducing the soft limit preserves every existing descriptor.
+        assert_eq!(setrlimit(Resource::RLIMIT_NOFILE, 0, previous.1), Ok(()));
         Self(previous)
     }
 }
 
 impl Drop for ExhaustedFileDescriptors {
     fn drop(&mut self) {
-        // SAFETY: restore the original soft limit before harness diagnostics.
-        assert_eq!(unsafe { libc::setrlimit(libc::RLIMIT_NOFILE, &self.0) }, 0);
+        // Restore the original soft limit before harness diagnostics.
+        assert_eq!(
+            setrlimit(Resource::RLIMIT_NOFILE, self.0.0, self.0.1),
+            Ok(())
+        );
     }
 }
 

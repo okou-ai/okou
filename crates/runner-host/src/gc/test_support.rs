@@ -1,6 +1,8 @@
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
+use nix::sys::resource::{Resource, getrlimit, rlim_t, setrlimit};
+
 use crate::paths::HomePaths;
 
 mod removal;
@@ -35,58 +37,51 @@ pub fn set_mtime(path: &Path, mtime: SystemTime) -> crate::HostResult<()> {
 }
 
 pub struct SoftNofileLimitGuard {
-    original: nix::libc::rlimit,
+    original: (rlim_t, rlim_t),
 }
 
 impl Drop for SoftNofileLimitGuard {
     fn drop(&mut self) {
-        unsafe {
-            let rc = nix::libc::setrlimit(nix::libc::RLIMIT_NOFILE, &self.original);
-            if rc != 0 {
-                let message = format!(
-                    "restore RLIMIT_NOFILE failed: {}",
-                    std::io::Error::last_os_error()
-                );
-                if std::thread::panicking() {
-                    eprintln!("{message}");
-                } else {
-                    assert!(rc == 0, "{message}");
-                }
+        let result = setrlimit(Resource::RLIMIT_NOFILE, self.original.0, self.original.1);
+        if let Err(error) = result {
+            let message = format!(
+                "restore RLIMIT_NOFILE failed: {}",
+                std::io::Error::from(error)
+            );
+            if std::thread::panicking() {
+                eprintln!("{message}");
+            } else {
+                assert!(result.is_ok(), "{message}");
             }
         }
     }
 }
 
 pub fn set_soft_nofile_limit_for_child(limit: u64) -> SoftNofileLimitGuard {
-    unsafe {
-        let mut current = std::mem::MaybeUninit::<nix::libc::rlimit>::uninit();
-        let rc = nix::libc::getrlimit(nix::libc::RLIMIT_NOFILE, current.as_mut_ptr());
-        assert_eq!(
-            rc,
-            0,
-            "getrlimit(RLIMIT_NOFILE) failed: {}",
-            std::io::Error::last_os_error()
-        );
-        let current = current.assume_init();
-        let target = std::cmp::min(limit as nix::libc::rlim_t, current.rlim_max);
+    let mut current = (0, 0);
+    let result = getrlimit(Resource::RLIMIT_NOFILE).inspect(|limits| current = *limits);
+    if let Err(error) = result {
         assert!(
-            target >= 64,
-            "RLIMIT_NOFILE hard limit {target} is too low for this regression test"
+            result.is_ok(),
+            "getrlimit(RLIMIT_NOFILE) failed: {}",
+            std::io::Error::from(error)
         );
-
-        let next = nix::libc::rlimit {
-            rlim_cur: target,
-            rlim_max: current.rlim_max,
-        };
-        let rc = nix::libc::setrlimit(nix::libc::RLIMIT_NOFILE, &next);
-        assert_eq!(
-            rc,
-            0,
-            "setrlimit(RLIMIT_NOFILE) failed: {}",
-            std::io::Error::last_os_error()
-        );
-        SoftNofileLimitGuard { original: current }
     }
+    let target = std::cmp::min(limit as nix::libc::rlim_t, current.1);
+    assert!(
+        target >= 64,
+        "RLIMIT_NOFILE hard limit {target} is too low for this regression test"
+    );
+
+    let result = setrlimit(Resource::RLIMIT_NOFILE, target, current.1);
+    if let Err(error) = result {
+        assert!(
+            result.is_ok(),
+            "setrlimit(RLIMIT_NOFILE) failed: {}",
+            std::io::Error::from(error)
+        );
+    }
+    SoftNofileLimitGuard { original: current }
 }
 
 #[cfg(unix)]

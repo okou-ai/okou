@@ -2,6 +2,7 @@ use super::*;
 
 use std::io::Write;
 
+use nix::sys::resource::{Resource, getrlimit, rlim_t, setrlimit};
 use tracing_subscriber::prelude::*;
 use tracing_test_support::{CapturedEvent, CapturedEvents};
 
@@ -10,28 +11,13 @@ use crate::control::protocol::read_frame;
 const FD_PRESSURE_CHILD: &str = "OKOU_CONTROL_ACCEPT_FD_PRESSURE_CHILD";
 
 /// Process limits may only change in the exact, guarded child below.
-struct ExhaustedDescriptors(libc::rlimit);
+struct ExhaustedDescriptors((rlim_t, rlim_t));
 
 impl ExhaustedDescriptors {
     fn new() -> Self {
-        let mut previous = libc::rlimit {
-            rlim_cur: 0,
-            rlim_max: 0,
-        };
-        // SAFETY: initialized output storage in a single-test child process.
-        assert_eq!(
-            unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut previous) },
-            0
-        );
-        let exhausted = libc::rlimit {
-            rlim_cur: 0,
-            rlim_max: previous.rlim_max,
-        };
-        // SAFETY: only the child's soft limit changes; existing FDs stay open.
-        assert_eq!(
-            unsafe { libc::setrlimit(libc::RLIMIT_NOFILE, &exhausted) },
-            0
-        );
+        let previous = getrlimit(Resource::RLIMIT_NOFILE).unwrap();
+        // Only the child's soft limit changes; existing FDs stay open.
+        assert_eq!(setrlimit(Resource::RLIMIT_NOFILE, 0, previous.1), Ok(()));
         let guard = Self(previous);
         assert_eq!(
             std::fs::File::open("/dev/null").unwrap_err().raw_os_error(),
@@ -43,8 +29,11 @@ impl ExhaustedDescriptors {
 
 impl Drop for ExhaustedDescriptors {
     fn drop(&mut self) {
-        // SAFETY: restore the unchanged hard limit and original soft limit.
-        assert_eq!(unsafe { libc::setrlimit(libc::RLIMIT_NOFILE, &self.0) }, 0);
+        // Restore the unchanged hard limit and original soft limit.
+        assert_eq!(
+            setrlimit(Resource::RLIMIT_NOFILE, self.0.0, self.0.1),
+            Ok(())
+        );
     }
 }
 

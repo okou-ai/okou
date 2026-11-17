@@ -24,6 +24,7 @@ guest-telemetry.workspace = true
 nix = { workspace = true, features = ["fs", "time"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+nix = { workspace = true, features = ["resource"] }
 rustix = { workspace = true, features = ["event", "fs", "std"] }
 
 [dev-dependencies]

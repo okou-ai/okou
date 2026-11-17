@@ -34,5 +34,8 @@ shell-quote.workspace = true
 tempfile = { workspace = true, features = ["getrandom"] }
 uuid = { workspace = true, features = ["std", "v4", "v5"] }
 
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["resource"] }
+
 [lints]
 workspace = true
