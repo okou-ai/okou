@@ -2,11 +2,13 @@ import { literal, object, string, tuple } from "zod";
 import {
   formatRunBalanceError,
   MODEL_UNAVAILABLE_MESSAGE,
+  PROVIDER_INSUFFICIENT_CREDITS_MESSAGE,
 } from "./run-balance-errors";
 import type { ModelProviderType } from "./model-providers";
 import type { ModelProviderFramework } from "./model-provider-types";
 import {
   knownRunFailureReasonSchema,
+  normalizeRunFailureReason,
   type KnownRunFailureReason,
   type RunFailureReasonToken,
 } from "./run-failure-reasons";
@@ -791,7 +793,6 @@ function actionableRunErrorOrDefault(
 
 function formatStructuredRunError(params: {
   readonly failureReason: RunFailureReasonToken;
-  readonly errorMessage: string;
   readonly framework?: ModelProviderFramework | null;
   readonly selectedModelLabel?: string | null;
   readonly modelProviderType?: ModelProviderType | null;
@@ -856,16 +857,10 @@ function formatStructuredRunError(params: {
       );
     }
     case "usage-limit": {
-      return actionableRunErrorOrDefault(
-        params.errorMessage,
-        CHAT_RUN_USAGE_LIMIT_MESSAGE,
-      );
+      return CHAT_RUN_USAGE_LIMIT_MESSAGE;
     }
     case "unsupported-model": {
-      return actionableRunErrorOrDefault(
-        params.errorMessage,
-        CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE,
-      );
+      return CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE;
     }
     case "model-restricted": {
       return MODEL_UNAVAILABLE_MESSAGE;
@@ -876,8 +871,31 @@ function formatStructuredRunError(params: {
   }
 }
 
+/** Client presentation accepts structured facts, never retained diagnostics. */
+export function formatRunFailureForExternalSurface(params: {
+  readonly failureReason?: RunFailureReasonToken | null;
+  readonly framework?: ModelProviderFramework | null;
+  readonly selectedModelLabel?: string | null;
+  readonly modelProviderType?: ModelProviderType | null;
+  readonly claudeCodeCredentialRecovery?: ClaudeCodeCredentialRecovery;
+}): string {
+  return formatStructuredRunError({
+    ...params,
+    failureReason: normalizeRunFailureReason(params.failureReason),
+  });
+}
+
+/** Public event causes already mask platform-owned provider balance failures. */
+export function formatChatRunFailure(
+  failureReason: RunFailureReasonToken | null | undefined,
+): string {
+  return failureReason === "provider_insufficient_credits"
+    ? PROVIDER_INSUFFICIENT_CREDITS_MESSAGE
+    : formatRunFailureForExternalSurface({ failureReason });
+}
+
 /**
- * Plain-text run error copy shared by Web chat and external integrations.
+ * Existing API/integration formatting is retained until the separate cutover.
  * Web may wrap generic failures with its report-link affordance after this
  * shared classification step.
  */
@@ -905,14 +923,17 @@ export function formatRunErrorForExternalSurface(params: {
   const errorMessage = params.message.trim() || "Run failed";
   const modelProviderType = params.modelProviderType;
   if (params.failureReason !== undefined) {
-    return formatStructuredRunError({
+    const structured = formatStructuredRunError({
       failureReason: params.failureReason,
-      errorMessage,
       framework: params.framework,
       selectedModelLabel: params.selectedModelLabel,
       modelProviderType,
       claudeCodeCredentialRecovery: params.claudeCodeCredentialRecovery,
     });
+    return params.failureReason === "usage_limit" ||
+      params.failureReason === "unsupported_model"
+      ? actionableRunErrorOrDefault(errorMessage, structured)
+      : structured;
   }
 
   if (isAgentExecutionTimeoutRunError(errorMessage)) {

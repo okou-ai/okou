@@ -7,7 +7,7 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import { chatEventFromRow } from "@okouai/api-contracts/contracts/chat-event-row-projection";
+import { chatEventFromRowForDisplay } from "@okouai/api-contracts/contracts/chat-event-row-projection";
 import type { ChatEvent as ApiChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { captureTaskCompletedSuccessfully } from "../../lib/posthog.ts";
 import type { ChatEventDataKey } from "../../shared-database/data-key.ts";
@@ -42,7 +42,7 @@ type PersistentChatEvents$ = State<PersistedChatEvent[]>;
  */
 function storedChatEvent(row: ChatEventRow): PersistedChatEvent {
   return {
-    ...chatEventFromRow(row),
+    ...chatEventFromRowForDisplay(row),
     contextType: row.contextType,
   };
 }

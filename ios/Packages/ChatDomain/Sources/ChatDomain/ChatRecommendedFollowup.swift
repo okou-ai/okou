@@ -72,8 +72,7 @@ enum ChatFollowupProjection {
       let semantic: ChatEvent
       if row.eventType == .controlInterrupt, let runID = row.runId {
         semantic = ChatEvent(
-          id: row.id, runId: runID, createdAt: row.createdAt, eventType: .runCancelled,
-          payload: .init(content: "Run cancelled", error: "Run cancelled"))
+          id: row.id, runId: runID, createdAt: row.createdAt, eventType: .runCancelled)
       } else {
         semantic = row
       }
@@ -95,8 +94,7 @@ enum ChatFollowupProjection {
         let followups = ChatRecommendedFollowup.parse(row.payload?.content)
         return followups.isEmpty ? nil : .init(eventID: row.id, followups: followups)
       }
-      if row.eventType == .outputMessage || row.eventType == .outputError
-        || row.eventType.isTerminal,
+      if row.eventType == .outputMessage || row.eventType == .outputError,
         !(row.payload?.content?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
       {
         return nil
@@ -121,16 +119,20 @@ enum ChatFollowupProjection {
       guard
         phase.contains(where: { row in
           !isAssistant(row.eventType)
-            || row.eventType != .outputFollowups
-              && (row.payload?.content?.isEmpty == false || row.payload?.error?.isEmpty == false)
+            || hasStatusOutcome(row)
+            || (row.eventType == .outputMessage || row.eventType == .outputError)
+              && row.payload?.content?.isEmpty == false
         })
       else { continue }
       let anchor = phase.lastIndex { $0.eventType == .outputMessage }
-      hasTail = phase.dropFirst((anchor ?? -1) + 1).contains { row in
-        isAssistant(row.eventType) && row.payload?.error?.isEmpty == false
-      }
+      hasTail = phase.dropFirst((anchor ?? -1) + 1).contains(where: hasStatusOutcome)
     }
     return hasTail
+  }
+
+  private static func hasStatusOutcome(_ row: ChatEvent) -> Bool {
+    row.eventType == .runFailed || row.eventType == .runCancelled
+      || row.eventType == .outputError && row.payload?.error?.isEmpty == false
   }
 
   private static func isAssistant(_ type: ChatEventType) -> Bool {

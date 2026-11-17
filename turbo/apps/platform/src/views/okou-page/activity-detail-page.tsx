@@ -26,9 +26,10 @@ import {
 import { useTranslation } from "react-i18next";
 import {
   MODEL_PROVIDER_TYPES,
+  modelProviderTypeSchema,
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
-import { RUN_ERROR_GUIDANCE } from "@okouai/api-contracts/contracts/errors";
+import { formatRunFailureForExternalSurface } from "@okouai/api-contracts/contracts/errors";
 import type { SandboxStartupPath } from "@okouai/api-contracts/contracts/runner-primitives";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -89,135 +90,31 @@ import { DiscordMark } from "./components/discord-mark.tsx";
 // Error Banner
 // ---------------------------------------------------------------------------
 
-function getErrorGuidance(error: string) {
-  for (const [code, guidance] of Object.entries(RUN_ERROR_GUIDANCE)) {
-    if (error.toLowerCase().includes(guidance.title.toLowerCase())) {
-      return { code, guidance };
-    }
-  }
-  return null;
-}
-
-function RunErrorBanner({ error }: { error: string }) {
+function RunFailureBanner({
+  detail,
+}: {
+  detail: Pick<LogDetail, "status" | "modelProvider" | "failureReason">;
+}) {
   const { t } = useTranslation();
-  const match = getErrorGuidance(error);
-  if (match) {
-    let localized = {
-      title: match.guidance.title,
-      guidance: match.guidance.guidance,
-    };
-    switch (match.code) {
-      case "COMPUTER_USE_AUTHORIZATION_REQUIRED": {
-        localized = {
-          title: t(($) => {
-            return $.activity.detail.errorGuidance
-              .computerUseAuthorizationRequired.title;
-          }),
-          guidance: t(($) => {
-            return $.activity.detail.errorGuidance
-              .computerUseAuthorizationRequired.guidance;
-          }),
-        };
-        break;
-      }
-      case "NO_MODEL_PROVIDER": {
-        localized = {
-          title: t(($) => {
-            return $.activity.detail.errorGuidance.noModelProvider.title;
-          }),
-          guidance: t(($) => {
-            return $.activity.detail.errorGuidance.noModelProvider.guidance;
-          }),
-        };
-        break;
-      }
-      case "INSUFFICIENT_CREDITS": {
-        localized = {
-          title: t(($) => {
-            return $.activity.detail.errorGuidance.creditsDepleted.title;
-          }),
-          guidance: t(($) => {
-            return $.activity.detail.errorGuidance.creditsDepleted.guidance;
-          }),
-        };
-        break;
-      }
-      case "PRO_REQUIRED": {
-        localized = {
-          title: t(($) => {
-            return $.activity.detail.errorGuidance.paidPlanRequired.title;
-          }),
-          guidance: t(($) => {
-            return $.activity.detail.errorGuidance.paidPlanRequired.guidance;
-          }),
-        };
-        break;
-      }
-      case "PROVIDER_INCOMPATIBLE": {
-        localized = {
-          title: t(($) => {
-            return $.activity.detail.errorGuidance.providerIncompatible.title;
-          }),
-          guidance: t(($) => {
-            return $.activity.detail.errorGuidance.providerIncompatible
-              .guidance;
-          }),
-        };
-        break;
-      }
-      case "PROVIDER_UNAVAILABLE": {
-        localized = {
-          title: t(($) => {
-            return $.activity.detail.errorGuidance
-              .providerTemporarilyUnavailable.title;
-          }),
-          guidance: t(($) => {
-            return $.activity.detail.errorGuidance
-              .providerTemporarilyUnavailable.guidance;
-          }),
-        };
-        break;
-      }
-      case "MODEL_PROVIDER_UNAVAILABLE": {
-        localized = {
-          title: t(($) => {
-            return $.runErrors.modelTemporarilyUnavailable;
-          }),
-          guidance: t(($) => {
-            return $.runErrors.modelRoutesUnavailable;
-          }),
-        };
-        break;
-      }
-      case "TOO_MANY_REQUESTS": {
-        localized = {
-          title: t(($) => {
-            return $.activity.detail.errorGuidance.concurrentRunLimitReached
-              .title;
-          }),
-          guidance: t(($) => {
-            return $.activity.detail.errorGuidance.concurrentRunLimitReached
-              .guidance;
-          }),
-        };
-        break;
-      }
-    }
-    return (
-      <div className="mt-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-        <div className="font-medium">{localized.title}</div>
-        <div className="mt-1 text-destructive/80">{localized.guidance}</div>
-        {match.guidance.cliHint && (
-          <div className="mt-1 font-mono text-xs text-destructive/60">
-            $ {match.guidance.cliHint}
-          </div>
-        )}
-      </div>
-    );
-  }
+  const modelProviderType = modelProviderTypeSchema.safeParse(
+    detail.modelProvider,
+  ).data;
+  const message =
+    detail.status === "timeout"
+      ? t(($) => {
+          return $.activity.statuses.timeout;
+        })
+      : formatRunFailureForExternalSurface({
+          failureReason: detail.failureReason,
+          modelProviderType,
+          claudeCodeCredentialRecovery: {
+            modelProviderType,
+            modelProvidersUrl: "/?settings=model",
+          },
+        });
   return (
     <div className="mt-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive break-words whitespace-pre-wrap">
-      {localizedRunError(error)}
+      {localizedRunError(message)}
     </div>
   );
 }
@@ -304,7 +201,7 @@ export function ActivityHeaderCard({
     modelProvider?: string | null;
     selectedModel?: string | null;
     framework?: string | null;
-    error?: string | null;
+    failureReason?: LogDetail["failureReason"];
   };
   logDetail?: LogDetail;
   duration: string | null | undefined;
@@ -468,8 +365,14 @@ export function ActivityHeaderCard({
           </div>
         </div>
       </div>
-      {detail.error && status === "failed" && (
-        <RunErrorBanner error={detail.error} />
+      {(status === "failed" || status === "timeout") && (
+        <RunFailureBanner
+          detail={{
+            status,
+            modelProvider: detail.modelProvider ?? null,
+            failureReason: detail.failureReason,
+          }}
+        />
       )}
     </div>
   );
@@ -1285,7 +1188,7 @@ function downloadJson(
       framework: runtimeFramework ?? detail.framework,
       prompt: detail.prompt,
       appendSystemPrompt: detail.appendSystemPrompt,
-      error: detail.error,
+      failureReason: detail.failureReason,
       createdAt: detail.createdAt,
       startedAt: detail.startedAt,
       completedAt: detail.completedAt,
