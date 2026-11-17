@@ -6,8 +6,39 @@ import {
   composerDraftSchema,
 } from "../validators/chat-threads";
 import { apiErrorSchema } from "./errors";
+import { conditionalComposerDraftSchema } from "./composer-draft";
 const c = initContract();
 export const projectChatContract = c.router({
+  replaceAgentDraft: {
+    method: "PUT",
+    path: "/api/project-chat/agents/:id/draft",
+    pathParams: object({ id: uuid() }),
+    headers: authHeadersSchema,
+    body: conditionalComposerDraftSchema,
+    responses: {
+      204: c.noBody(),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+    },
+  },
+  replaceDraft: {
+    method: "PUT",
+    path: "/api/project-chat/:id/draft",
+    pathParams: object({ id: uuid() }),
+    headers: authHeadersSchema,
+    body: conditionalComposerDraftSchema,
+    responses: {
+      204: c.noBody(),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+    },
+  },
   agentDraft: {
     method: "GET",
     path: "/api/project-chat/agents/:id/draft",

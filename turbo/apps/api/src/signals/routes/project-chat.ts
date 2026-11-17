@@ -13,7 +13,9 @@ import {
   updateChatThreadDraft$,
 } from "../services/chat-thread.service";
 import { chatThreadOrganizationPredicate } from "../services/chat-thread-organization.service";
-import { notFound, resourceUnavailable } from "../../lib/error";
+import { conflict, notFound, resourceUnavailable } from "../../lib/error";
+import { replaceThreadDraft$ } from "../services/composer-draft-write.service";
+import { conditionalComposerDraftsEnabled$ } from "../services/composer-draft-access";
 import type { RouteEntry } from "../route-entry";
 
 const missing = notFound("Project or conversation not found");
@@ -92,7 +94,48 @@ const saveDraft$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   return { status: 204 as const, body: undefined };
 });
+const replaceDraft$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const enabled = await get(conditionalComposerDraftsEnabled$);
+  signal.throwIfAborted();
+  if (!enabled) {
+    return missing;
+  }
+  const projects = await get(projectAccess$);
+  signal.throwIfAborted();
+  if (!projects) {
+    return missing;
+  }
+  const id = get(pathParamsOf(projectChatContract.replaceDraft)).id;
+  const access = await get(ownedThread(id));
+  signal.throwIfAborted();
+  if (access !== true) {
+    return access === false ? missing : access;
+  }
+  const body = await get(bodyResultOf(projectChatContract.replaceDraft));
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  if (
+    !(await set(
+      replaceThreadDraft$,
+      { threadId: id, userId: get(organizationAuthContext$).userId },
+      body.data,
+      signal,
+    ))
+  ) {
+    return conflict("Composer draft changed; reload before replacing it");
+  }
+  return { status: 204 as const, body: undefined };
+});
 export const projectChatRoutes: readonly RouteEntry[] = [
+  {
+    route: projectChatContract.replaceDraft,
+    handler: authRoute(
+      { requireOrganization: true, requiredCapability: "chat-thread:write" },
+      replaceDraft$,
+    ),
+  },
   {
     route: projectChatContract.send,
     handler: authRoute(

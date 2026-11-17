@@ -8,6 +8,7 @@ import {
 import { requireUserMessageForDraftAttachments } from "./draft-user-message";
 import { apiErrorSchema } from "./errors";
 import { agentDraftResponseSchema } from "../validators/agent-draft";
+import { conditionalComposerDraftSchema } from "./composer-draft";
 
 export { agentDraftResponseSchema } from "../validators/agent-draft";
 
@@ -19,6 +20,23 @@ export const agentDraftRequestSchema = object({
 }).superRefine(requireUserMessageForDraftAttachments);
 
 export const agentDraftContract = c.router({
+  replace: {
+    method: "PUT",
+    path: "/api/agents/:id/draft",
+    headers: authHeadersSchema,
+    pathParams: object({ id: uuid() }),
+    body: conditionalComposerDraftSchema,
+    responses: {
+      204: c.noBody(),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+    },
+    summary:
+      "Replace an agent draft only if its complete current value matches",
+  },
   get: {
     method: "GET",
     path: "/api/agents/:id/draft",

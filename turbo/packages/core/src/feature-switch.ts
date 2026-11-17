@@ -89,6 +89,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
     restrictOverridesToAudience: true,
   },
+  [FeatureSwitchKey.ConditionalComposerDrafts]: {
+    maintainer: "liangyou@okou.ai",
+    displayName: "Draft conflict protection",
+    description:
+      "Allow clients to save drafts only when their previously read content still matches.",
+    enabled: false,
+  },
   [FeatureSwitchKey.SingleAgent]: {
     maintainer: "lancy@okou.ai",
     displayName: "My Okou",

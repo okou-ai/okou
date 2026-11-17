@@ -7,6 +7,18 @@ import type { ClientDescriptor } from "./types";
 export const agentDraftContract: ClientDescriptor<
   typeof OriginalAgentDraftContract
 > = {
+  replace: {
+    method: "PUT",
+    path: "/api/agents/:id/draft",
+    statuses: {
+      204: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+      409: true,
+    },
+  },
   get: {
     method: "GET",
     path: "/api/agents/:id/draft",

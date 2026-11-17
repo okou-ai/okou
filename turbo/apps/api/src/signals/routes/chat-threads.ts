@@ -51,6 +51,7 @@ import { chatThreadConnectorSelectionRoutes } from "./chat-threads-connector-sel
 import { chatThreadCreateRoutes } from "./chat-threads-create";
 import { chatThreadDeleteRoutes } from "./chat-threads-delete";
 import { chatThreadDraftGetRoutes } from "./chat-threads-draft-get";
+import { chatThreadDraftReplaceRoutes } from "./chat-threads-draft-replace";
 import { chatThreadGetRoutes } from "./chat-threads-get";
 import { chatThreadMarkAgentReadRoutes } from "./chat-threads-mark-agent-read";
 import { chatThreadMarkReadRoutes } from "./chat-threads-mark-read";
@@ -463,6 +464,7 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   ...chatThreadCreateRoutes,
   ...chatThreadDeleteRoutes,
   ...chatThreadDraftGetRoutes,
+  ...chatThreadDraftReplaceRoutes,
   ...chatThreadGetRoutes,
   ...chatThreadMarkAgentReadRoutes,
   ...chatThreadMarkReadRoutes,

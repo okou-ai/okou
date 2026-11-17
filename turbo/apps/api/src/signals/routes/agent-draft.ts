@@ -11,9 +11,11 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
-import { notFound } from "../../lib/error";
+import { conflict, notFound } from "../../lib/error";
 import { visibleAgentIdentityCondition } from "../services/agent-data.service";
 import { projectReferenceWritesEnabled } from "../services/project-reference.service";
+import { replaceAgentDraft$ } from "../services/composer-draft-write.service";
+import { conditionalComposerDraftsEnabled$ } from "../services/composer-draft-access";
 import type { RouteEntry } from "../route-entry";
 
 const agentReadAuth = {
@@ -31,6 +33,7 @@ type AgentDraftContract =
   | {
       get: typeof projectChatContract.agentDraft;
       patch: typeof projectChatContract.saveAgentDraft;
+      replace: typeof projectChatContract.replaceAgentDraft;
     };
 function createAgentDraftReader(
   contract: AgentDraftContract,
@@ -89,6 +92,54 @@ function createAgentDraftRoutes(
   projectEndpoint: boolean,
 ): readonly RouteEntry[] {
   const getAgentDraftInner$ = createAgentDraftReader(contract, projectEndpoint);
+  const replaceAgentDraftInner$ = command(
+    async ({ get, set }, signal: AbortSignal) => {
+      const enabled = await get(conditionalComposerDraftsEnabled$);
+      signal.throwIfAborted();
+      if (!enabled) {
+        return notFound("Conditional composer drafts unavailable");
+      }
+      if (projectEndpoint) {
+        const projects = await get(projectAccess$);
+        signal.throwIfAborted();
+        if (!projects) {
+          return notFound("Projects unavailable");
+        }
+      }
+      const auth = get(organizationAuthContext$);
+      const params = get(pathParamsOf(contract.replace));
+      const body = await get(bodyResultOf(contract.replace));
+      signal.throwIfAborted();
+      if (!body.ok) {
+        return body.response;
+      }
+      const references = await get(
+        projectReferenceWritesEnabled(auth, body.data.draft.draftUserMessage),
+      );
+      signal.throwIfAborted();
+      if (!references) {
+        return notFound("Projects unavailable");
+      }
+      const scope = {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        agentId: params.id,
+      };
+      const [visibleAgent] = await get(db$)
+        .select({ id: agents.id })
+        .from(agents)
+        .where(visibleAgentIdentityCondition(scope))
+        .limit(1);
+      signal.throwIfAborted();
+      if (!visibleAgent) {
+        return agentNotFound(params.id);
+      }
+      if (!(await set(replaceAgentDraft$, scope, body.data, signal))) {
+        return conflict("Composer draft changed; reload before replacing it");
+      }
+      return { status: 204 as const, body: undefined };
+    },
+  );
   const patchAgentDraftInner$ = command(
     async ({ get, set }, signal: AbortSignal) => {
       if (projectEndpoint && !(await get(projectAccess$))) {
@@ -179,6 +230,10 @@ function createAgentDraftRoutes(
 
   return [
     {
+      route: contract.replace,
+      handler: authRoute(agentReadAuth, replaceAgentDraftInner$),
+    },
+    {
       route: contract.get,
       handler: authRoute(agentReadAuth, getAgentDraftInner$),
     },
@@ -196,6 +251,7 @@ export const projectAgentDraftRoutes = createAgentDraftRoutes(
   {
     get: projectChatContract.agentDraft,
     patch: projectChatContract.saveAgentDraft,
+    replace: projectChatContract.replaceAgentDraft,
   },
   true,
 );

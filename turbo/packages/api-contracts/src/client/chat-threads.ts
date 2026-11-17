@@ -175,6 +175,17 @@ export const chatThreadConnectorSelectionContract: ClientDescriptor<
 export const chatThreadDraftContract: ClientDescriptor<
   typeof OriginalChatThreadDraftContract
 > = {
+  replace: {
+    method: "PUT",
+    path: "/api/chat-threads/:id/draft",
+    statuses: {
+      204: true,
+      400: true,
+      401: true,
+      404: true,
+      409: true,
+    },
+  },
   get: {
     method: "GET",
     path: "/api/chat-threads/:id/draft",

@@ -44,6 +44,7 @@ import {
 import { apiErrorSchema } from "./errors";
 import { initialRemoteAccessOverrideSchema } from "./chat-remote-access";
 import { requireUserMessageForDraftAttachments } from "./draft-user-message";
+import { conditionalComposerDraftSchema } from "./composer-draft";
 import { hostedArtifactKindSchema } from "./host";
 import { runFailureReasonTokenSchema } from "./run-failure-reasons";
 import {
@@ -660,6 +661,22 @@ export const chatThreadByIdContract = c.router({
  * draft hydration does not require the larger current-thread detail payload.
  */
 export const chatThreadDraftContract = c.router({
+  replace: {
+    method: "PUT",
+    path: "/api/chat-threads/:id/draft",
+    headers: authHeadersSchema,
+    pathParams: chatThreadIdPathParamsSchema,
+    body: conditionalComposerDraftSchema,
+    responses: {
+      204: c.noBody(),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+    },
+    summary:
+      "Replace a thread draft only if its complete current value matches",
+  },
   get: {
     method: "GET",
     path: "/api/chat-threads/:id/draft",

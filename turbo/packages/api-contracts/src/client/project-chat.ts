@@ -7,6 +7,30 @@ import type { ClientDescriptor } from "./types";
 export const projectChatContract: ClientDescriptor<
   typeof OriginalProjectChatContract
 > = {
+  replaceAgentDraft: {
+    method: "PUT",
+    path: "/api/project-chat/agents/:id/draft",
+    statuses: {
+      204: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+      409: true,
+    },
+  },
+  replaceDraft: {
+    method: "PUT",
+    path: "/api/project-chat/:id/draft",
+    statuses: {
+      204: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+      409: true,
+    },
+  },
   agentDraft: {
     method: "GET",
     path: "/api/project-chat/agents/:id/draft",
