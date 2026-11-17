@@ -22,13 +22,13 @@ import {
 
 const CREATED_AT = "2026-08-08T10:00:00.000Z";
 
-describe("client Run failure presentation before API cutover", () => {
+describe("structured Run failure presentation", () => {
   it.each([
     [undefined, CHAT_RUN_TRANSIENT_ERROR_MESSAGE],
     ["future_reason", CHAT_RUN_TRANSIENT_ERROR_MESSAGE],
     ["usage_limit", CHAT_RUN_USAGE_LIMIT_MESSAGE],
   ] as const)(
-    "presents retained diagnostics independently of reason %s without changing server output",
+    "presents reason %s without mutating retained archive data",
     (failureReason, expected) => {
       const row = canonicalRow({
         eventType: "run.failed",
@@ -42,7 +42,7 @@ describe("client Run failure presentation before API cutover", () => {
         },
       });
       const original = JSON.stringify(row);
-      const displayed = chatEventFromRowForDisplay(row);
+      const displayed = chatEventFromRow(row);
       expect(displayed).toMatchObject({
         id: row.id,
         seqId: row.seqId,
@@ -55,10 +55,6 @@ describe("client Run failure presentation before API cutover", () => {
           failureReason === "usage_limit" ? "usage_limit" : "unknown",
       });
       expect(displayed).not.toHaveProperty("error");
-      expect(chatEventFromRow(row)).toMatchObject({
-        content: "retained diagnostic",
-        error: "retained diagnostic",
-      });
       expect(JSON.stringify(row)).toBe(original);
     },
   );
@@ -70,7 +66,7 @@ describe("client Run failure presentation before API cutover", () => {
       failureReason: "usage_limit",
       payload: null,
     });
-    expect(chatEventFromRowForDisplay(failed)).toMatchObject({
+    expect(chatEventFromRow(failed)).toMatchObject({
       content: CHAT_RUN_USAGE_LIMIT_MESSAGE,
       failureReason: "usage_limit",
     });
@@ -82,18 +78,12 @@ describe("client Run failure presentation before API cutover", () => {
         error: "Stopped by user",
       },
     });
-    expect(chatEventFromRowForDisplay(cancelled)).toMatchObject({
+    expect(chatEventFromRow(cancelled)).toMatchObject({
       content: "Run cancelled",
     });
-    expect(chatEventFromRowForDisplay(cancelled)).not.toHaveProperty("error");
+    expect(chatEventFromRow(cancelled)).not.toHaveProperty("error");
     const output = projectableRow("output.error");
-    expect(chatEventFromRowForDisplay(output)).toStrictEqual(
-      chatEventFromRow(output),
-    );
-    expect(chatEventFromRowForDisplay(output)).toHaveProperty(
-      "error",
-      "output error",
-    );
+    expect(chatEventFromRow(output)).toHaveProperty("error", "output error");
   });
 });
 

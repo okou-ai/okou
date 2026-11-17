@@ -411,10 +411,11 @@ describe("integration model recovery in Slack", () => {
     ]);
   });
 
-  it("continues native quota errors that have no structured failure reason", async () => {
+  it("keeps an unclassified Run manual when switching subscription accounts", async () => {
     const fixture = await failedSlackConversation(null);
-    const modal = await fixture.open();
-    expect(modal.private_metadata).toBeDefined();
+    await expect(
+      chat.api.readRun(fixture.owner.actor, fixture.runId),
+    ).resolves.toMatchObject({ status: "failed", failureReason: "unknown" });
     const id = await fixture.owner.run(() => {
       return addRecoverySubscription(context, fixture.owner.actor);
     });
@@ -432,7 +433,7 @@ describe("integration model recovery in Slack", () => {
           [200],
         )
       ).body.data,
-    ).toHaveLength(2);
+    ).toHaveLength(1);
   });
 
   it("continues after replacing the active subscription credentials", async () => {

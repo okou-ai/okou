@@ -784,6 +784,13 @@ function formatOverloadedRunError(
   return CHAT_RUN_TRANSIENT_ERROR_MESSAGE;
 }
 
+function actionableRunErrorOrDefault(
+  errorMessage: string,
+  defaultMessage: string,
+): string {
+  return isActionableRunError(errorMessage) ? errorMessage : defaultMessage;
+}
+
 function formatStructuredRunError(params: {
   readonly failureReason: RunFailureReasonToken;
   readonly framework?: ModelProviderFramework | null;
@@ -985,32 +992,6 @@ export function formatRunErrorForExternalSurface(params: {
   return isActionableRunError(errorMessage)
     ? errorMessage
     : CHAT_RUN_TRANSIENT_ERROR_MESSAGE;
-}
-
-function nativePersonalSubscriptionUsageLimit(message: string): boolean {
-  return (
-    /^you(?:'|’)ve hit your (?:usage|session|weekly|5[- ]hour|five[- ]hour|opus(?:\s+[\w.-]+)?|sonnet(?:\s+[\w.-]+)?|haiku(?:\s+[\w.-]+)?) limit\b/iu.test(
-      message.trim(),
-    ) || isClaudeCodeLimitError(message)
-  );
-}
-
-export function isPersonalSubscriptionUsageLimitFailure(params: {
-  readonly failureReason?: RunFailureReasonToken | null;
-  readonly modelProviderType: string | null | undefined;
-  readonly message: string;
-}): boolean {
-  if (
-    params.modelProviderType !== "codex-oauth-token" &&
-    params.modelProviderType !== "claude-code-oauth-token"
-  ) {
-    return false;
-  }
-  return (
-    params.failureReason === "usage_limit" ||
-    ((params.failureReason === undefined || params.failureReason === null) &&
-      nativePersonalSubscriptionUsageLimit(params.message))
-  );
 }
 
 /** Subscription limits belong to the captured personal account, not Okou billing. */

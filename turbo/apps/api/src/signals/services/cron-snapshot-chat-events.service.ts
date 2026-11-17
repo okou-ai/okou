@@ -1,5 +1,5 @@
 import {
-  chatEventRowFromDbRow,
+  rawChatEventRowFromDbRow,
   ARCHIVE_ROW_CONTRACT_REVISION,
   LEGACY_ARCHIVE_OBJECT_KEY_PATTERN,
   isCurrentChatEventSnapshotObjectKey,
@@ -203,7 +203,7 @@ function encodeArchiveLine(line: ChatEventRow): Buffer {
  */
 
 function archiveLine(row: ArchiveEventRow): Buffer {
-  return encodeArchiveLine(chatEventRowFromDbRow(row));
+  return encodeArchiveLine(rawChatEventRowFromDbRow(row));
 }
 
 function sha256Hex(buffer: Buffer): string {

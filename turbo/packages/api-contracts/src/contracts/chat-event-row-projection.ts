@@ -42,17 +42,14 @@ export function projectRunFailureRow(row: ChatEventRow): ChatEventRow {
       },
     };
   }
-  if (row.eventType === "run.cancelled") {
-    return {
-      ...row,
-      failureReason: undefined,
-      payload: {
-        ...retainedPayload,
-        content: "Run cancelled",
-      },
-    };
-  }
-  return row;
+  return {
+    ...row,
+    failureReason: undefined,
+    payload: {
+      ...retainedPayload,
+      content: "Run cancelled",
+    },
+  };
 }
 
 /**

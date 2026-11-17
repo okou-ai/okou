@@ -430,7 +430,7 @@ describe("formatRunErrorForExternalSurface", () => {
   });
 
   it.each([undefined, "usage_limit"] as const)(
-    "formats Codex quota errors with structured reason %s",
+    "shows Codex usage limit errors verbatim with reason %s",
     (failureReason) => {
       const codexUsageLimit =
         "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 6:17 AM.";
@@ -439,17 +439,13 @@ describe("formatRunErrorForExternalSurface", () => {
         message: codexUsageLimit,
         failureReason,
       });
-      expect(formatted).toBe(
-        failureReason === "usage_limit"
-          ? CHAT_RUN_USAGE_LIMIT_MESSAGE
-          : codexUsageLimit,
-      );
+      expect(formatted).toBe(codexUsageLimit);
       expect(formatted).not.toContain("switch to another model");
     },
   );
 
   it.each([undefined, "usage_limit"] as const)(
-    "formats Claude session limits with structured reason %s",
+    "shows Claude session limit errors verbatim with reason %s",
     (failureReason) => {
       const sessionLimit =
         "You've hit your session limit · resets 12:50pm (Asia/Shanghai)";
@@ -459,16 +455,12 @@ describe("formatRunErrorForExternalSurface", () => {
           message: sessionLimit,
           failureReason,
         }),
-      ).toBe(
-        failureReason === "usage_limit"
-          ? CHAT_RUN_USAGE_LIMIT_MESSAGE
-          : sessionLimit,
-      );
+      ).toBe(sessionLimit);
     },
   );
 
   it.each([undefined, "usage_limit"] as const)(
-    "formats Claude weekly limits with structured reason %s",
+    "shows Claude weekly limit errors verbatim with reason %s",
     (failureReason) => {
       const weeklyLimit =
         "You've hit your weekly limit · resets 10am (Asia/Shanghai)";
@@ -478,16 +470,12 @@ describe("formatRunErrorForExternalSurface", () => {
           message: weeklyLimit,
           failureReason,
         }),
-      ).toBe(
-        failureReason === "usage_limit"
-          ? CHAT_RUN_USAGE_LIMIT_MESSAGE
-          : weeklyLimit,
-      );
+      ).toBe(weeklyLimit);
     },
   );
 
   it.each([undefined, "usage_limit"] as const)(
-    "formats Claude five-hour limits with structured reason %s",
+    "shows raw Claude five-hour limit reset messages verbatim with reason %s",
     (failureReason) => {
       for (const message of [
         "You've hit your 5-hour limit · resets 1:50am (Asia/Shanghai)",
@@ -499,11 +487,7 @@ describe("formatRunErrorForExternalSurface", () => {
             message,
             failureReason,
           }),
-        ).toBe(
-          failureReason === "usage_limit"
-            ? CHAT_RUN_USAGE_LIMIT_MESSAGE
-            : message,
-        );
+        ).toBe(message);
         expect(isActionableRunError(message)).toBe(true);
         expect(isGenericRunErrorForDisplay(message)).toBe(false);
       }
@@ -636,7 +620,7 @@ describe("formatRunErrorForExternalSurface", () => {
   });
 
   it.each([undefined, "unsupported_model"] as const)(
-    "formats Codex account model support errors with structured reason %s",
+    "shows Codex ChatGPT account model support errors verbatim with reason %s",
     (failureReason) => {
       const unsupportedModel =
         '{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'gpt-5.6-sol\' model is not supported when using Codex with a ChatGPT account."}}';
@@ -646,11 +630,7 @@ describe("formatRunErrorForExternalSurface", () => {
           message: unsupportedModel,
           failureReason,
         }),
-      ).toBe(
-        failureReason === "unsupported_model"
-          ? CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE
-          : unsupportedModel,
-      );
+      ).toBe(unsupportedModel);
       expect(isActionableRunError(unsupportedModel)).toBe(true);
       expect(
         isCodexChatGptAccountUnsupportedModelRunError(unsupportedModel),
@@ -1136,11 +1116,10 @@ describe("personal subscription usage guidance for integrations", () => {
     },
   );
 
-  it("gives account recovery when the provider supplies no reset details", () => {
+  it("explains automatic continuation after switching subscription accounts", () => {
     const result = formatPersonalSubscriptionUsageLimitForExternalSurface({
       failureReason: "usage_limit",
       modelProviderType: "codex-oauth-token",
-      message: CHAT_RUN_USAGE_LIMIT_MESSAGE,
       modelProvidersUrl: "https://app.example.test/?settings=model",
     });
     expect(result).toContain("Wait for your subscription allowance to reset");
@@ -1149,20 +1128,6 @@ describe("personal subscription usage guidance for integrations", () => {
       "Switching accounts automatically continues this conversation.",
     );
     expect(result).not.toContain("choose a different model");
-  });
-
-  it("keeps a subscription-wide limit authoritative over a model-switch suggestion", () => {
-    const result = formatPersonalSubscriptionUsageLimitForExternalSurface({
-      failureReason: "usage_limit",
-      modelProviderType: "codex-oauth-token",
-      message: "Selected model is at capacity. Please try a different model.",
-      modelProvidersUrl: "https://app.example.test/?settings=model",
-    });
-    expect(result).toContain(
-      "Your ChatGPT (Codex) subscription has reached its usage limit",
-    );
-    expect(result).toContain("switch to an available subscription account");
-    expect(result).not.toContain("try a different model");
   });
 
   it("leaves a platform usage limit with its existing recovery surface", () => {

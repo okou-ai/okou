@@ -1,4 +1,3 @@
-import { isPersonalSubscriptionUsageLimitFailure } from "@okouai/api-contracts/contracts/errors";
 import { command, computed } from "ccstate";
 import {
   and,
@@ -113,8 +112,6 @@ const loadIntegrationModelRecovery$ = command(
         updatedAt: sql`${chatThreads.updatedAt}::text`.mapWith(pgTextDecoder),
         failureReason: chatEvents.failureReason,
         runFailureReason: agentRuns.failureReason,
-        runError: agentRuns.error,
-        runModelProvider: agentRuns.modelProvider,
         payload: chatEvents.payload,
       })
       .from(chatEvents)
@@ -169,12 +166,7 @@ const loadIntegrationModelRecovery$ = command(
         ));
     if (
       !(reason !== null && MODEL_FAILURES.includes(reason)) &&
-      !admissionModelError &&
-      !isPersonalSubscriptionUsageLimitFailure({
-        failureReason: reason,
-        modelProviderType: event.runModelProvider,
-        message: event.runError ?? event.payload?.content ?? "",
-      })
+      !admissionModelError
     ) {
       return null;
     }
