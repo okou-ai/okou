@@ -993,6 +993,32 @@ export function formatRunErrorForExternalSurface(params: {
     : CHAT_RUN_TRANSIENT_ERROR_MESSAGE;
 }
 
+function nativePersonalSubscriptionUsageLimit(message: string): boolean {
+  return (
+    /^you(?:'|’)ve hit your (?:usage|session|weekly|5[- ]hour|five[- ]hour|opus(?:\s+[\w.-]+)?|sonnet(?:\s+[\w.-]+)?|haiku(?:\s+[\w.-]+)?) limit\b/iu.test(
+      message.trim(),
+    ) || isClaudeCodeLimitError(message)
+  );
+}
+
+export function isPersonalSubscriptionUsageLimitFailure(params: {
+  readonly failureReason?: RunFailureReasonToken | null;
+  readonly modelProviderType: string | null | undefined;
+  readonly message: string;
+}): boolean {
+  if (
+    params.modelProviderType !== "codex-oauth-token" &&
+    params.modelProviderType !== "claude-code-oauth-token"
+  ) {
+    return false;
+  }
+  return (
+    params.failureReason === "usage_limit" ||
+    ((params.failureReason === undefined || params.failureReason === null) &&
+      nativePersonalSubscriptionUsageLimit(params.message))
+  );
+}
+
 /** Subscription limits belong to the captured personal account, not Okou billing. */
 export function formatPersonalSubscriptionUsageLimitForExternalSurface(params: {
   readonly failureReason?: RunFailureReasonToken | null;
@@ -1009,19 +1035,10 @@ export function formatPersonalSubscriptionUsageLimitForExternalSurface(params: {
   if (subscription === undefined) {
     return undefined;
   }
-  // The run error contract also accepts unstructured native quota messages.
-  const nativeLimit =
-    /^you(?:'|’)ve hit your (?:usage|session|weekly|5[- ]hour|five[- ]hour|opus(?:\s+[\w.-]+)?|sonnet(?:\s+[\w.-]+)?|haiku(?:\s+[\w.-]+)?) limit\b/iu.test(
-      params.message.trim(),
-    ) || isClaudeCodeLimitError(params.message);
-  if (params.failureReason !== "usage_limit") {
-    if (params.failureReason !== undefined && params.failureReason !== null) {
-      return undefined;
-    }
-    if (!nativeLimit) {
-      return undefined;
-    }
+  if (!isPersonalSubscriptionUsageLimitFailure(params)) {
+    return undefined;
   }
+  const nativeLimit = nativePersonalSubscriptionUsageLimit(params.message);
   const hasQuotaDetails =
     nativeLimit ||
     /\b(?:usage[_ -]limit|(?:session|weekly|5[- ]hour|five[- ]hour) limit)\b/iu.test(
@@ -1037,7 +1054,7 @@ export function formatPersonalSubscriptionUsageLimitForExternalSurface(params: {
   parts.push(
     "Wait for your subscription allowance to reset, or switch to an available subscription account.",
     `Manage subscriptions: ${params.modelProvidersUrl}`,
-    'After restoring access, reply "continue" in this conversation.',
+    'Switching accounts automatically continues this conversation. If you wait for the allowance to reset, reply "continue" here.',
   );
   return parts.join("\n\n");
 }

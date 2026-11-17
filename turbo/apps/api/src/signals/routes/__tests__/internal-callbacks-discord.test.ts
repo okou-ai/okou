@@ -663,6 +663,8 @@ describe("canonical Discord terminal replies", () => {
       throw new Error("Expected the private model selector");
     }
     expect(menu.options).toContainEqual({ value: "auto" });
+    const typingBeforeRecovery = started.provider.typingChannels.length;
+    mockNow(now() + 2000);
     const saved = await press({
       component_type: 3,
       custom_id: menu.custom_id,
@@ -679,6 +681,26 @@ describe("canonical Discord terminal replies", () => {
         )
       ).selectedModel,
     ).toBe("auto");
+    const continued = (
+      await readProjectedChatEvents(context, {
+        threadId: started.threadId,
+        headers: { authorization: "Bearer clerk-session" },
+      })
+    ).find((event) => {
+      return (
+        event.eventType === "input.prompt" &&
+        event.runId &&
+        event.runId !== started.runId
+      );
+    });
+    expect(continued).toMatchObject({
+      userMessage: {
+        parts: expect.arrayContaining([{ type: "text", text: "continue" }]),
+      },
+    });
+    expect(started.provider.typingChannels.length).toBeGreaterThan(
+      typingBeforeRecovery,
+    );
     const replayed = await press({
       component_type: 3,
       custom_id: menu.custom_id,
