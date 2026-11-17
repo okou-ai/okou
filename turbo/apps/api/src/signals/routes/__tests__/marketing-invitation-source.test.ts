@@ -89,12 +89,111 @@ test("authenticates the dedicated capability before reading any retained invitat
     });
     expect(denied.status).toBe(401);
     expect(denied.headers.get("cache-control")).toBe("no-store");
+    expect(
+      (
+        await client().observeClaim({
+          params: { claimId: params.eventId },
+          headers: { authorization: `Bearer ${credential}` },
+        })
+      ).status,
+    ).toBe(401);
   }
   expect((await client().observe({ params, headers })).status).toBe(404);
   mockEnv("MARKETING_REWARDS_SOURCE_SECRET", undefined);
   const disabled = await client().observe({ params, headers });
   expect(disabled.status).toBe(503);
   expect(disabled.headers.get("cache-control")).toBe("no-store");
+  expect(
+    (
+      await client().observeClaim({
+        params: { claimId: params.eventId },
+        headers,
+      })
+    ).status,
+  ).toBe(503);
+});
+
+test("reads original claim provenance separately from event identity and never treats provider acceptance as an award", async () => {
+  await setupApp({
+    context,
+    routes: marketingInvitationSourceRoutes,
+    isolatePg: true,
+  });
+  mockNow(new Date("2026-11-17T09:00:00.000Z"));
+  const fixture = await invited();
+  const params = { claimId: fixture.source.claimId };
+  server.use(
+    http.get(fixture.url, () => {
+      return HttpResponse.json(fixture.provider);
+    }),
+  );
+  const observed = await accept(
+    client().observeClaim({ params, headers }),
+    [200],
+  );
+  expect(observed.headers.get("cache-control")).toBe("no-store");
+  expect(observed.body.source).toStrictEqual({
+    kind: "legacy-invitation",
+    claimId: fixture.source.claimId,
+    createdAt: "2026-11-17T09:00:00.000Z",
+    orgId: fixture.actor.orgId,
+    actorUserId: fixture.actor.userId,
+    inviterUserId: fixture.actor.userId,
+    sourceKey: fixture.source.sourceKey,
+    invitationId: fixture.source.invitationId,
+  });
+  expect(observed.body.observation).toStrictEqual({
+    kind: "invitation",
+    status: "pending",
+    expiresAt: "2026-11-18T09:20:00.000Z",
+  });
+  expect(JSON.stringify(observed.body)).not.toContain(
+    "private-invitation-ticket",
+  );
+  expect(JSON.stringify(observed.body)).not.toContain(
+    fixture.provider.email_address,
+  );
+  expect(
+    (
+      await client().observeClaim({
+        params: { claimId: fixture.source.id },
+        headers,
+      })
+    ).status,
+  ).toBe(404);
+  server.use(
+    http.get(fixture.url, () => {
+      return HttpResponse.json({ ...fixture.provider, status: "accepted" });
+    }),
+  );
+  expect(
+    (await accept(client().observeClaim({ params, headers }), [200])).body
+      .observation,
+  ).toMatchObject({ kind: "invitation", status: "accepted" });
+  expect(
+    (await readGetStartedStatus(context, fixture.actor)).quests,
+  ).toContainEqual(
+    expect.objectContaining({
+      key: "invite",
+      claimedCount: 0,
+      pendingCount: 1,
+    }),
+  );
+  server.use(
+    http.get(fixture.url, () => {
+      return new HttpResponse(null, { status: 503 });
+    }),
+  );
+  expect((await client().observeClaim({ params, headers })).status).toBe(503);
+  server.use(
+    http.get(fixture.url, () => {
+      return new HttpResponse(null, { status: 404 });
+    }),
+  );
+  expect(
+    (await accept(client().observeClaim({ params, headers }), [200])).body
+      .observation,
+  ).toStrictEqual({ kind: "unavailable" });
 });
 
 test("returns the provider's exact status and expiry with the original inviter while omitting invitation secrets and personal content", async () => {
