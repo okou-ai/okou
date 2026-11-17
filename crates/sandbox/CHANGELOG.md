@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.36](https://github.com/okou-ai/okou/compare/sandbox-v0.28.35...sandbox-v0.28.36) (2026-11-17)
+
+
+### Performance Improvements
+
+* **runner:** attribute archive staging writes ([#48338](https://github.com/okou-ai/okou/issues/48338)) ([1aeffbc](https://github.com/okou-ai/okou/commit/1aeffbc8c757415acb407157dba177305ed1b210))
+
 ## [0.28.35](https://github.com/okou-ai/okou/compare/sandbox-v0.28.34...sandbox-v0.28.35) (2026-11-17)
 
 ## [0.28.34](https://github.com/okou-ai/okou/compare/sandbox-v0.28.33...sandbox-v0.28.34) (2026-11-17)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.38](https://github.com/okou-ai/okou/compare/runner-storage-v0.10.37...runner-storage-v0.10.38) (2026-11-17)
+
+
+### Performance Improvements
+
+* **runner:** attribute archive staging writes ([#48338](https://github.com/okou-ai/okou/issues/48338)) ([1aeffbc](https://github.com/okou-ai/okou/commit/1aeffbc8c757415acb407157dba177305ed1b210))
+
 ## [0.10.37](https://github.com/okou-ai/okou/compare/runner-storage-v0.10.36...runner-storage-v0.10.37) (2026-11-17)
 
 ## [0.10.36](https://github.com/okou-ai/okou/compare/runner-storage-v0.10.35...runner-storage-v0.10.36) (2026-11-17)

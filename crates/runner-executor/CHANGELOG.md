@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.49](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.48...runner-executor-v0.21.49) (2026-11-17)
+
+
+### Performance Improvements
+
+* **runner:** attribute archive staging writes ([#48338](https://github.com/okou-ai/okou/issues/48338)) ([1aeffbc](https://github.com/okou-ai/okou/commit/1aeffbc8c757415acb407157dba177305ed1b210))
+
 ## [0.21.48](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.47...runner-executor-v0.21.48) (2026-11-17)
 
 ## [0.21.47](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.46...runner-executor-v0.21.47) (2026-11-17)

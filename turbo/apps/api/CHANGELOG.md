@@ -10,6 +10,33 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.86.0](https://github.com/okou-ai/okou/compare/api-v2.85.0...api-v2.86.0) (2026-11-17)
+
+
+### Features
+
+* **api:** allow scoped native oauth companion access ([#48263](https://github.com/okou-ai/okou/issues/48263)) ([6c27338](https://github.com/okou-ai/okou/commit/6c273389fcde806f2b8067941a4fb3750c6375ac))
+
+
+### Bug Fixes
+
+* **api:** scope committed work to owners and reduce test isolation ([#48329](https://github.com/okou-ai/okou/issues/48329)) ([af5863f](https://github.com/okou-ai/okou/commit/af5863fc181e298829cd5f1ea2a4bc4dc63d89fa))
+
+
+### Performance Improvements
+
+* **runner:** attribute archive staging writes ([#48338](https://github.com/okou-ai/okou/issues/48338)) ([1aeffbc](https://github.com/okou-ai/okou/commit/1aeffbc8c757415acb407157dba177305ed1b210))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.83.1
+    * @okouai/core bumped to 8.848.1
+    * @okouai/db bumped to 2.43.1
+    * @okouai/pi-agent-runtime bumped to 1.51.150
+
 ## [2.85.0](https://github.com/okou-ai/okou/compare/api-v2.84.1...api-v2.85.0) (2026-11-17)
 
 
