@@ -14,6 +14,13 @@ export const MCP_DEFAULT_SCOPES = [
   "offline_access",
 ] as const;
 
+// Optional native-client grants are advertised, not added to MCP's default consent.
+export const MCP_SUPPORTED_SCOPES = [
+  ...MCP_DEFAULT_SCOPES,
+  "okou:project:read",
+  "okou:voice:transcribe",
+] as const;
+
 // Add browser clients here as exact HTTPS origins when support is needed.
 const MCP_ALLOWED_ORIGINS = Object.freeze(new Set<string>([]));
 

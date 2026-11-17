@@ -2,7 +2,10 @@ import { command } from "ccstate";
 import { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 
 import { requiredAuthContext$, setAuthContext$ } from "../auth/auth-context";
-import { createPlatformRealtimeToken } from "../external/realtime";
+import {
+  createOAuthChatRealtimeToken,
+  createPlatformRealtimeToken,
+} from "../external/realtime";
 import type { RouteEntry } from "../route-entry";
 
 const unauthenticated = Object.freeze({
@@ -16,7 +19,11 @@ const unauthenticated = Object.freeze({
 });
 
 const createInner$ = command(async ({ set }, signal: AbortSignal) => {
-  const auth = await set(requiredAuthContext$, {}, signal);
+  const auth = await set(
+    requiredAuthContext$,
+    { oauthScope: "okou:chat:read" },
+    signal,
+  );
   signal.throwIfAborted();
   if ("status" in auth) {
     return unauthenticated;
@@ -24,12 +31,19 @@ const createInner$ = command(async ({ set }, signal: AbortSignal) => {
 
   set(setAuthContext$, auth);
 
-  const token = await createPlatformRealtimeToken(
-    auth.userId,
-    auth.orgId,
-    signal,
-  );
+  const token =
+    auth.tokenType === "oauth"
+      ? await createOAuthChatRealtimeToken(
+          auth.userId,
+          auth.orgId,
+          auth.expiresAt * 1000,
+          signal,
+        )
+      : await createPlatformRealtimeToken(auth.userId, auth.orgId, signal);
   signal.throwIfAborted();
+  if (token === null) {
+    return unauthenticated;
+  }
 
   return { status: 200 as const, body: token };
 });

@@ -14,6 +14,7 @@ import {
   vertexVoiceResponse,
 } from "./helpers/google-voice";
 import { voiceIoPolishRoutes } from "../voice-io-polish";
+import { createMcpWebApi } from "./helpers/mcp-web-api";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -38,6 +39,7 @@ async function setupVoicePolish() {
   }
   await createBddApi(context).completeOnboarding(actor);
   mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
+  return actor;
 }
 
 describe("POST /api/voice-io/polish", () => {
@@ -300,69 +302,78 @@ describe("POST /api/voice-io/polish", () => {
     }
   });
 
-  it("merges ordered segments without answering speech or translating it", async () => {
-    await setupVoicePolish();
-    let requestBody: unknown;
-    server.use(
-      http.post(VERTEX_VOICE_URL, async ({ request }) => {
-        requestBody = await request.json();
-        return HttpResponse.json({
-          candidates: [
-            {
-              finishReason: "STOP",
-              content: { parts: [{ text: "Ship the release on Monday." }] },
-            },
-          ],
-        });
-      }),
-    );
+  it.each(["session", "oauth"])(
+    "merges ordered segments with %s without answering speech or translating it",
+    async (credential) => {
+      const actor = await setupVoicePolish();
+      const authorization =
+        credential === "oauth"
+          ? `Bearer ${createMcpWebApi(context).authorize(actor)({ scope: "user:org:read okou:voice:transcribe" })}`
+          : "Bearer clerk-session";
+      let requestBody: unknown;
+      server.use(
+        http.post(VERTEX_VOICE_URL, async ({ request }) => {
+          requestBody = await request.json();
+          return HttpResponse.json({
+            candidates: [
+              {
+                finishReason: "STOP",
+                content: { parts: [{ text: "Ship the release on Monday." }] },
+              },
+            ],
+          });
+        }),
+      );
 
-    const response = await accept(
-      client().post({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          segments: ["um ship the nebula release Friday", "no Monday"],
-        },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      text: "Ship the release on Monday.",
-    });
-    expect(requestBody).toMatchObject({
-      generationConfig: {
-        maxOutputTokens:
-          "um ship the nebula release Friday".length +
-          "no Monday".length +
-          4096,
-        thinkingConfig: { thinkingLevel: "MINIMAL" },
-      },
-      systemInstruction: {
-        parts: [
-          {
-            text: expect.stringContaining(
-              "Include every segment, not just the last one.",
-            ),
+      const response = await accept(
+        client().post({
+          headers: { authorization },
+          body: {
+            segments: ["um ship the nebula release Friday", "no Monday"],
           },
-        ],
-      },
-      contents: [
-        {
-          role: "user",
+        }),
+        [200],
+      );
+
+      expect(response.body).toStrictEqual({
+        text: "Ship the release on Monday.",
+      });
+      expect(requestBody).toMatchObject({
+        generationConfig: {
+          maxOutputTokens:
+            "um ship the nebula release Friday".length +
+            "no Monday".length +
+            4096,
+          thinkingConfig: { thinkingLevel: "MINIMAL" },
+        },
+        systemInstruction: {
           parts: [
             {
-              text: JSON.stringify({
-                segments: ["um ship the nebula release Friday", "no Monday"],
-              }),
+              text: expect.stringContaining(
+                "Include every segment, not just the last one.",
+              ),
             },
           ],
         },
-      ],
-    });
-    expect(requestBody).toHaveProperty("generationConfig.temperature", 0);
-    expect(requestBody).not.toHaveProperty("generationConfig.responseMimeType");
-  });
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: JSON.stringify({
+                  segments: ["um ship the nebula release Friday", "no Monday"],
+                }),
+              },
+            ],
+          },
+        ],
+      });
+      expect(requestBody).toHaveProperty("generationConfig.temperature", 0);
+      expect(requestBody).not.toHaveProperty(
+        "generationConfig.responseMimeType",
+      );
+    },
+  );
 
   it.each([
     {
@@ -381,7 +392,7 @@ describe("POST /api/voice-io/polish", () => {
     },
   );
 
-  it("requires session auth", async () => {
+  it("requires authentication", async () => {
     const unauthenticated = await client().post({
       headers: {},
       body: { segments: ["Hello"] },
