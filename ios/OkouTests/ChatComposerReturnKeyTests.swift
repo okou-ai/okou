@@ -31,7 +31,10 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     XCTAssertEqual(conversation.draft, prompt)
     XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
     input.insertText("\n")
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(
+      message: recommendedFollowupSendStatus(
+        conversation, fixture: fixture, input: input, prompt: prompt)
+    ) {
       conversation.pending.isEmpty && conversation.draft.isEmpty
         && conversation.messages.contains { $0.text == prompt }
     }
@@ -39,6 +42,27 @@ final class ChatComposerReturnKeyTests: XCTestCase {
       try $0.messages.map { try JSONDecoder().decode(AttachmentFlowFixture.Message.self, from: $0) }
     }
     XCTAssertEqual(sent.map { $0.userMessage.parts.compactMap(\.text).joined() }, [prompt])
+  }
+
+  private func recommendedFollowupSendStatus(
+    _ conversation: ConversationStore, fixture: AttachmentFlowFixture,
+    input: ComposerTextView, prompt: String
+  ) -> String {
+    let pending = conversation.pending.map { "\($0.id):retry=\($0.needsRetry)" }
+    let messages = conversation.messages.map { "\($0.id):matchesPrompt=\($0.text == prompt)" }
+    let persisted = conversation.history?.persistedEventIDs.sorted() ?? []
+    let delivery = fixture.state.value.withLock {
+      (writes: $0.messages.count, accepted: $0.accepted != nil)
+    }
+    return "Recommended followup send after waiter join: "
+      + "sending=\(conversation.isSending); loading=\(conversation.isLoading); "
+      + "pending=\(pending); draft=\(String(reflecting: conversation.draft)); "
+      + "messages=\(messages); persisted=\(persisted); "
+      + "writes=\(delivery.writes); accepted=\(delivery.accepted); "
+      + "error=\(String(describing: conversation.error)); "
+      + "syncError=\(String(describing: conversation.syncError)); "
+      + "returnKey=\(input.returnKeyPreference); editable=\(input.isEditable); submitted input: "
+      + mentionInputStatus(input)
   }
 
   func testRepeatedKeyboardSendDoesNotStopTheExistingWorkAfterTheDraftClears() async throws {
