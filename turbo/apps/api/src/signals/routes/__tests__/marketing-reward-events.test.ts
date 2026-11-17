@@ -7,7 +7,9 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import {
   marketingRewardOAuthEventSchema,
+  marketingRewardSourceEventSchema,
   type MarketingRewardOAuthEvent,
+  type MarketingRewardSourceEvent,
 } from "../../../lib/marketing-reward-events";
 import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
@@ -19,6 +21,12 @@ import {
   mockGitHubConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { readGetStartedStatus } from "./helpers/get-started";
+import {
+  createAgentPhoneBddApi,
+  uniquePhoneHandle,
+} from "./helpers/api-bdd-agentphone";
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
+import { uniqueSlackUserId } from "./helpers/slack-public-install";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -63,7 +71,7 @@ async function connectGitHub(actor: ApiTestUser) {
   return connectors.readDefaultBuiltinAccount(actor, "github");
 }
 
-function receipt(event: MarketingRewardOAuthEvent) {
+function receipt(event: MarketingRewardSourceEvent) {
   // Compute the external receiver's digest independently from the sender helper.
   return {
     version: 1,
@@ -289,5 +297,199 @@ test("does not publish manual credentials or a declined OAuth authorization as a
     state,
   });
   enableDelivery();
+  expect((await cron()).processed).toBe(0);
+});
+
+test("retains iMessage link facts through lost acknowledgements, repeated requests, switching and source deletion", async () => {
+  await setupApp({
+    context,
+    routes: cronProcessBackgroundJobsRoutes,
+    isolatePg: true,
+  });
+  mockNow(new Date("2026-01-01T08:00:00.000Z"));
+  const integrations = createBddIntegrationApi(context);
+  const phone = createAgentPhoneBddApi(context);
+  integrations.configureAgentPhoneProvider();
+  integrations.configureAgentPhoneWebhook();
+  const sends = phone.captureAgentPhoneSends();
+  const actor = integrations.user();
+  const proof = await phone.requestConnectLink(uniquePhoneHandle(), sends);
+  await integrations.requestConnectAgentPhone(actor, proof, [200]);
+  await integrations.requestConnectAgentPhone(actor, proof, [200]);
+  expect((await cron()).processed).toBe(0);
+  const received: MarketingRewardSourceEvent[] = [];
+  server.use(
+    http.post(path, async ({ request }) => {
+      expect(request.headers.get("authorization")).toBe(`Bearer ${secret}`);
+      const event = marketingRewardSourceEventSchema.parse(
+        await request.json(),
+      );
+      received.push(event);
+      return received.length === 1
+        ? HttpResponse.error()
+        : HttpResponse.json(receipt(event));
+    }),
+  );
+  enableDelivery();
+  expect((await cron()).processed).toBe(1);
+  expect((await cron()).processed).toBe(1);
+  expect(received).toHaveLength(2);
+  expect(received[1]).toStrictEqual(received[0]);
+  expect(received[0]).toStrictEqual({
+    version: 2,
+    id: expect.any(String),
+    environment: "development",
+    type: "imessage.identity-linked",
+    occurredAt: "2026-01-01T08:00:00.000Z",
+    orgId: actor.orgId,
+    userId: actor.userId,
+    linkId: expect.any(String),
+  });
+  const next = await phone.requestConnectLink(uniquePhoneHandle(), sends);
+  await integrations.requestConnectAgentPhone(actor, next, [409]);
+  const replacement = { ...next, replacePhoneHandle: proof.phoneHandle };
+  await integrations.requestConnectAgentPhone(actor, replacement, [200]);
+  await integrations.requestConnectAgentPhone(actor, replacement, [200]);
+  await integrations.requestUnlinkAgentPhone(actor, [204]);
+  await expect(
+    integrations.getAgentPhoneLinkStatus(actor),
+  ).resolves.toMatchObject({
+    linked: false,
+  });
+  expect((await cron()).processed).toBe(1);
+  expect(received).toHaveLength(3);
+  const first = received[0];
+  const switched = received[2];
+  if (
+    first?.type !== "imessage.identity-linked" ||
+    switched?.type !== "imessage.identity-linked"
+  ) {
+    throw new Error("Expected iMessage source facts");
+  }
+  expect(switched.id).not.toBe(first.id);
+  expect(switched.linkId).not.toBe(first.linkId);
+  expect(switched.orgId).toBe(actor.orgId);
+  expect(switched.userId).toBe(actor.userId);
+  expect((await cron()).processed).toBe(0);
+});
+
+test("delivers owned Slack OAuth facts even when the OAuth version queue is rejected", async () => {
+  await setupApp({
+    context,
+    routes: cronProcessBackgroundJobsRoutes,
+    isolatePg: true,
+  });
+  mockNow(new Date("2026-01-01T08:00:00.000Z"));
+  const actor = bdd.user({ orgRole: "org:admin" });
+  await connectGitHub(actor);
+  const integrations = createBddIntegrationApi(context);
+  integrations.configureSlackAppMocks();
+  const installed = await integrations.installSlackWorkspace(actor);
+  const received: MarketingRewardSourceEvent[] = [];
+  let rejectOAuth = true;
+  server.use(
+    http.post(path, async ({ request }) => {
+      const event = marketingRewardSourceEventSchema.parse(
+        await request.json(),
+      );
+      received.push(event);
+      if (rejectOAuth && event.version === 1) {
+        return HttpResponse.json(
+          { error: "temporarily rejected" },
+          { status: 409 },
+        );
+      }
+      return HttpResponse.json(receipt(event));
+    }),
+  );
+  enableDelivery();
+  expect((await cron()).processed).toBe(2);
+  const links = received.filter((event) => {
+    return event.version === 2;
+  });
+  expect(links).toStrictEqual([
+    {
+      version: 2,
+      id: expect.any(String),
+      environment: "development",
+      type: "slack.oauth-authorized",
+      occurredAt: "2026-01-01T08:00:00.000Z",
+      orgId: actor.orgId,
+      userId: actor.userId,
+      workspaceId: installed.teamId,
+    },
+  ]);
+  rejectOAuth = false;
+  expect((await cron()).processed).toBeGreaterThan(0);
+  expect(
+    received.filter((event) => {
+      return event.version === 2;
+    }),
+  ).toHaveLength(1);
+  expect((await cron()).processed).toBe(0);
+});
+
+test("publishes an anonymous Slack installation only after administrator authorization binds its organization", async () => {
+  await setupApp({
+    context,
+    routes: cronProcessBackgroundJobsRoutes,
+    isolatePg: true,
+  });
+  const integrations = createBddIntegrationApi(context);
+  integrations.configureSlackAppMocks();
+  const installed = await integrations.installSlackWorkspace(null);
+  const actor = bdd.user({ orgRole: "org:admin" });
+  const received: MarketingRewardSourceEvent[] = [];
+  server.use(
+    http.post(path, async ({ request }) => {
+      const event = marketingRewardSourceEventSchema.parse(
+        await request.json(),
+      );
+      received.push(event);
+      return HttpResponse.json(receipt(event));
+    }),
+  );
+  enableDelivery();
+  expect((await cron()).processed).toBe(0);
+  const binding = {
+    workspaceId: installed.teamId,
+    slackUserId: uniqueSlackUserId(),
+  };
+  await integrations.connectSlackUser(actor, binding);
+  expect((await cron()).processed).toBeGreaterThan(0);
+  expect(
+    received.filter((event) => {
+      return event.version === 2;
+    }),
+  ).toHaveLength(0);
+  await integrations.installSlackWorkspace(actor, {
+    teamId: installed.teamId,
+    installerSlackUserId: binding.slackUserId,
+  });
+  const owned = await integrations.requestSlackIntegrationStatus(actor, [200]);
+  expect(owned.body).toMatchObject({ isInstalled: true });
+  expect((await cron()).processed).toBeGreaterThan(0);
+  const links = received.filter((event) => {
+    return event.version === 2;
+  });
+  expect(links).toStrictEqual([
+    {
+      version: 2,
+      id: expect.any(String),
+      environment: "development",
+      type: "slack.oauth-authorized",
+      occurredAt: expect.any(String),
+      orgId: actor.orgId,
+      userId: actor.userId,
+      workspaceId: installed.teamId,
+    },
+  ]);
+  await integrations.connectSlackUser(actor, binding);
+  expect((await cron()).processed).toBeGreaterThan(0);
+  expect(
+    received.filter((event) => {
+      return event.version === 2;
+    }),
+  ).toHaveLength(1);
   expect((await cron()).processed).toBe(0);
 });

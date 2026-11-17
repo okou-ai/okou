@@ -3,8 +3,8 @@ import { env } from "../../lib/env";
 import {
   marketingRewardEventHash,
   marketingRewardEventReceiptSchema,
-  marketingRewardOAuthEventSchema,
-  type MarketingRewardOAuthEvent,
+  marketingRewardSourceEventSchema,
+  type MarketingRewardSourceEvent,
 } from "../../lib/marketing-reward-events";
 import { nowDate } from "../../lib/time";
 import { settle } from "../utils";
@@ -15,13 +15,14 @@ import {
 import {
   MARKETING_REWARD_EVENT_HANDLER_VERSION,
   MARKETING_REWARD_EVENT_JOB_KIND,
+  MARKETING_REWARD_LINK_EVENT_HANDLER_VERSION,
 } from "./marketing-reward-event-publication";
 
 const requestEventReceipt$ = command(
   async (
     _,
     args: {
-      readonly event: MarketingRewardOAuthEvent;
+      readonly event: MarketingRewardSourceEvent;
       readonly origin: string;
       readonly secret: string;
     },
@@ -62,30 +63,23 @@ const requestEventReceipt$ = command(
   },
 );
 
-/** Cron owns recovery. A lost receipt retries the identical stored event. */
-export const deliverMarketingRewardEvents$ = command(
+const deliverEventVersion$ = command(
   async (
     { set },
-    _args: Record<string, never>,
+    args: {
+      readonly origin: string;
+      readonly secret: string;
+      readonly handlerVersion: 1 | 2;
+    },
     signal: AbortSignal,
   ): Promise<{ readonly processed: number }> => {
-    const origin = env("MARKETING_REWARDS_EVENTS_ORIGIN");
-    const secret = env("MARKETING_REWARDS_EVENTS_SECRET");
-    if (!origin && !secret) {
-      return { processed: 0 };
-    }
-    if (!origin || !secret) {
-      throw new Error(
-        "Marketing reward event delivery is partially configured",
-      );
-    }
     let processed = 0;
     while (processed < 10) {
       const job = await set(
         claimBackgroundJob$,
         {
           kind: MARKETING_REWARD_EVENT_JOB_KIND,
-          handlerVersion: MARKETING_REWARD_EVENT_HANDLER_VERSION,
+          handlerVersion: args.handlerVersion,
         },
         signal,
       );
@@ -93,8 +87,9 @@ export const deliverMarketingRewardEvents$ = command(
       if (!job) {
         break;
       }
-      const event = marketingRewardOAuthEventSchema.parse(job.input);
+      const event = marketingRewardSourceEventSchema.parse(job.input);
       if (
+        event.version !== job.handlerVersion ||
         event.id !== job.id ||
         event.orgId !== job.orgId ||
         event.userId !== job.userId ||
@@ -105,7 +100,7 @@ export const deliverMarketingRewardEvents$ = command(
       const attempt = await settle(
         set(
           requestEventReceipt$,
-          { event, origin, secret },
+          { event, origin: args.origin, secret: args.secret },
           AbortSignal.any([signal, AbortSignal.timeout(5000)]),
         ),
         signal,
@@ -145,5 +140,45 @@ export const deliverMarketingRewardEvents$ = command(
       signal.throwIfAborted();
     }
     return { processed };
+  },
+);
+
+/** Independent version queues retain bounded progress during a mixed rollout. */
+export const deliverMarketingRewardEvents$ = command(
+  async (
+    { set },
+    _args: Record<string, never>,
+    signal: AbortSignal,
+  ): Promise<{ readonly processed: number }> => {
+    const origin = env("MARKETING_REWARDS_EVENTS_ORIGIN");
+    const secret = env("MARKETING_REWARDS_EVENTS_SECRET");
+    if (!origin && !secret) {
+      return { processed: 0 };
+    }
+    if (!origin || !secret) {
+      throw new Error(
+        "Marketing reward event delivery is partially configured",
+      );
+    }
+    const results = await Promise.all(
+      (
+        [
+          MARKETING_REWARD_EVENT_HANDLER_VERSION,
+          MARKETING_REWARD_LINK_EVENT_HANDLER_VERSION,
+        ] as const
+      ).map((handlerVersion) => {
+        return set(
+          deliverEventVersion$,
+          { origin, secret, handlerVersion },
+          signal,
+        );
+      }),
+    );
+    signal.throwIfAborted();
+    return {
+      processed: results.reduce((sum, result) => {
+        return sum + result.processed;
+      }, 0),
+    };
   },
 );

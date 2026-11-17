@@ -5,6 +5,7 @@ import {
   literal,
   object,
   string,
+  union,
   uuid,
   enum as zEnum,
   type infer as zInfer,
@@ -38,6 +39,43 @@ export type MarketingRewardOAuthEvent = zInfer<
   typeof marketingRewardOAuthEventSchema
 >;
 
+const linkedSourceIdentity = Object.freeze({
+  version: literal(2),
+  id: uuid(),
+  environment,
+});
+const linkedSourceOwnership = Object.freeze({
+  occurredAt: iso.datetime(),
+  orgId: string().min(1).max(256),
+  userId: string().min(1).max(256),
+});
+
+const marketingRewardLinkEventSchema = discriminatedUnion("type", [
+  object({
+    ...linkedSourceIdentity,
+    type: literal("imessage.identity-linked"),
+    ...linkedSourceOwnership,
+    linkId: uuid(),
+  }).strict(),
+  object({
+    ...linkedSourceIdentity,
+    type: literal("slack.oauth-authorized"),
+    ...linkedSourceOwnership,
+    workspaceId: string().min(1).max(255),
+  }).strict(),
+]);
+export type MarketingRewardLinkEvent = zInfer<
+  typeof marketingRewardLinkEventSchema
+>;
+
+export const marketingRewardSourceEventSchema = union([
+  marketingRewardOAuthEventSchema,
+  marketingRewardLinkEventSchema,
+]);
+export type MarketingRewardSourceEvent = zInfer<
+  typeof marketingRewardSourceEventSchema
+>;
+
 export const marketingRewardEventReceiptSchema = object({
   version: literal(1),
   environment,
@@ -46,8 +84,8 @@ export const marketingRewardEventReceiptSchema = object({
   receivedAt: iso.datetime(),
 }).strict();
 
-export function marketingRewardEventHash(event: MarketingRewardOAuthEvent) {
+export function marketingRewardEventHash(event: MarketingRewardSourceEvent) {
   return createHash("sha256")
-    .update(JSON.stringify(marketingRewardOAuthEventSchema.parse(event)))
+    .update(JSON.stringify(marketingRewardSourceEventSchema.parse(event)))
     .digest("hex");
 }
