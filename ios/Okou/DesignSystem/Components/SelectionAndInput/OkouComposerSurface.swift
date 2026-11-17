@@ -7,8 +7,6 @@ struct OkouComposerSurface<Content: View, Leading: View, Trailing: View>: View {
   @ViewBuilder let leading: () -> Leading
   @ViewBuilder let trailing: () -> Trailing
 
-  @State private var trailingWidth = OkouControl.minimumTarget
-
   private let actionSize = OkouControl.minimumTarget
   private var cornerRadius: CGFloat {
     isExpanded ? 28 : OkouControl.composerCompactHeight / 2
@@ -17,8 +15,9 @@ struct OkouComposerSurface<Content: View, Leading: View, Trailing: View>: View {
   var body: some View {
     content()
       .padding(.leading, isExpanded ? 18 : actionSize + OkouSpace.sm)
-      // Compact input shares its line with the model picker and primary action.
-      .padding(.trailing, isExpanded ? 18 : trailingWidth + OkouSpace.sm)
+      // Only the primary action shares the compact input's line. Hidden expansion
+      // controls keep their toolbar geometry without reserving space in the editor.
+      .padding(.trailing, isExpanded ? 18 : actionSize + OkouSpace.sm)
       .padding(.top, isExpanded ? 17 : OkouSpace.six)
       .padding(.bottom, isExpanded ? 62 : OkouSpace.six)
       .frame(
@@ -32,11 +31,6 @@ struct OkouComposerSurface<Content: View, Leading: View, Trailing: View>: View {
       }
       .overlay(alignment: .bottomTrailing) {
         trailing()
-          .onGeometryChange(for: CGFloat.self) {
-            $0.size.width
-          } action: {
-            trailingWidth = $0
-          }
           // Resolve motion at the toolbar so fading controls inherit its animated
           // position while the keyboard raises the surface.
           .geometryGroup()
@@ -46,7 +40,7 @@ struct OkouComposerSurface<Content: View, Leading: View, Trailing: View>: View {
   }
 }
 
-/// The composer's model control, beside the mic as Web's narrow composer draws it: the
+/// The open composer's model control, beside the mic as Web's narrow composer draws it: the
 /// model's company mark, or `cpu` for a model the catalog does not know, on the 44 pt toolbar
 /// target. The name, effort and Fast belong to its VoiceOver value and the model sheet.
 struct OkouComposerModelMark: View {

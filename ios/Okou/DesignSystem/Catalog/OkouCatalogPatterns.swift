@@ -8,7 +8,7 @@
       OkouCatalogPage(.chat, close: close) {
         OkouCatalogSection("Header") {
           // The menu circle on the left, the chat's "…" on the right; no title. The model
-          // control is in the composer's toolbar.
+          // control is in the open composer's toolbar.
           HStack(spacing: OkouSpace.md) {
             OkouToolbarIcon("menu").modifier(OkouGlassControl(shape: .circle))
             Spacer(minLength: 0)
@@ -27,22 +27,14 @@
             }
             .buttonStyle(.plain).accessibilityLabel("Add attachments and tools")
           } trailing: {
-            HStack(spacing: OkouSpace.xs) {
-              Button {
-              } label: {
-                OkouComposerModelMark(mark: .okou)
-              }
-              .buttonStyle(.plain).accessibilityLabel("Model settings")
-              .accessibilityValue("Auto")
-              Button {
-              } label: {
-                OkouToolbarIcon("arrow-up").foregroundStyle(OkouColor.primaryForeground)
-              }
-              .buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(OkouColor.primary)
-              .accessibilityLabel("Send message")
-              .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
-              .contentShape(Circle())
+            Button {
+            } label: {
+              OkouToolbarIcon("arrow-up").foregroundStyle(OkouColor.primaryForeground)
             }
+            .buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(OkouColor.primary)
+            .accessibilityLabel("Send message")
+            .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+            .contentShape(Circle())
           }
           // Open, empty under Auto and with a draft under a ChatGPT model: the model's mark
           // sits beside the mic, and send is a solid circle on the glass surface, disabled
