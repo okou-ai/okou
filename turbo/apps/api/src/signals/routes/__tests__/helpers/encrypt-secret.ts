@@ -24,6 +24,7 @@ export function decryptSecretForTests(encrypted: string): string {
     "aes-256-gcm",
     TEST_DATA_KEY,
     Buffer.from(kms.iv, "base64"),
+    { authTagLength: 16 },
   );
   decipher.setAuthTag(Buffer.from(kms.authTag, "base64"));
   return Buffer.concat([
