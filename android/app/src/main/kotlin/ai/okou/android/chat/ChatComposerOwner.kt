@@ -87,8 +87,12 @@ internal class ChatComposerOwner(
             contextJob?.cancel()
             contextJob = null
             contextConnection = null
-            mutable.value =
-                mutable.value.copy(context = ComposerContext.Idle, defaultAgentId = null)
+            if (
+                mutable.value.context != ComposerContext.Ready ||
+                    connections.none { it !== connection && it.current() }
+            )
+                mutable.value =
+                    mutable.value.copy(context = ComposerContext.Idle, defaultAgentId = null)
         }
         operations.values
             .filter { it.connection === connection }

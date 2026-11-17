@@ -332,6 +332,29 @@ class ChatComposerModelTest {
         }
 
     @Test
+    fun remainingControllerKeepsConfirmedAgentAndSavesAfterTheReaderRetires() =
+        check { service, _, create ->
+            val remaining = create(false, identity)
+            val retiring = create(false, identity)
+            val target = ComposerTarget()
+            retiring.open(target)
+            remaining.open(target)
+            runCurrent()
+            assertEquals(ComposerContext.Ready, remaining.uiState.value.context)
+            retiring.edit(target, "Shared input survives its fetching window")
+            runCurrent()
+            create(true, identity)
+            advanceUntilIdle()
+            assertEquals(ComposerContext.Ready, remaining.uiState.value.context)
+            assertTrue(remaining.uiState.value.canSend(target))
+            assertEquals(ComposerSync.Saved, remaining.uiState.value.sync(target))
+            assertEquals(
+                "Shared input survives its fetching window",
+                service.drafts[ServerDraftTarget(CHAT_AGENT, false)]!!.plainText(),
+            )
+        }
+
+    @Test
     fun changedDefaultAgentRetainsOldInputUntilExplicitRestoration() = check { service, _, create ->
         val model = create(false, identity)
         val target = ComposerTarget()
