@@ -267,8 +267,12 @@
   --animate-capability-tray-in: capability-tray-in 520ms
     cubic-bezier(0.32, 0.72, 0, 1) both;
 
-  --animate-card-fly-out: card-fly-out 520ms cubic-bezier(0.4, 0, 0.2, 1)
-    forwards;
+  --duration-card-fly-out: 520ms;
+  --animate-card-fly-out: card-fly-out var(--duration-card-fly-out)
+    cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  --duration-completion-in: 220ms;
+  --animate-completion-in: completion-in var(--duration-completion-in) ease-out
+    var(--duration-card-fly-out) backwards;
   --animate-card-page-next-in: card-page-next-in 220ms ease-out both;
   --animate-card-page-next-out: card-page-next-out 220ms ease-out both;
   --animate-card-page-previous-in: card-page-previous-in 220ms ease-out both;
@@ -298,7 +302,10 @@
    Inline references resolve on each themed element, not the document root. */
 @theme inline {
   --animate-completion-dot: completion-dot 520ms ease-out
-    var(--completion-dot-delay);
+    calc(
+      var(--duration-card-fly-out) + var(--duration-completion-in) +
+        var(--completion-dot-stagger)
+    );
 
   /* On the session's first home, the capability rows and the compliance block
      under them settle in after the greeting: an 8px rise and a fade on the
@@ -775,6 +782,17 @@ body {
     transform: translate(80%, -110px) rotate(16deg);
     opacity: 0;
     visibility: hidden;
+  }
+}
+
+@keyframes completion-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
