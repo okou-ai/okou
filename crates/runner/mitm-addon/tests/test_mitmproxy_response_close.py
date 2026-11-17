@@ -149,6 +149,7 @@ async def _exercise_http1_response(
     release_hook = asyncio.Event()
     terminal_done = asyncio.Event()
     client_body = loop.create_future()
+    client_done = loop.create_future()
     provider_done = loop.create_future()
     hook_tasks: list[asyncio.Task[None]] = []
     closed_connections = []
@@ -171,6 +172,7 @@ async def _exercise_http1_response(
         finally:
             writer.close()
             await writer.wait_closed()
+            client_done.set_result(None)
 
     class ProviderReader(asyncio.StreamReader):
         first = True
@@ -267,14 +269,15 @@ async def _exercise_http1_response(
                     if not task.done():
                         task.cancel()
                 await asyncio.gather(*hook_tasks, return_exceptions=True)
-                for task in hook_tasks:
-                    if not task.cancelled():
-                        task.result()
                 provider_writer.close()
                 client_writer.close()
                 await provider_writer.wait_closed()
                 await client_writer.wait_closed()
                 await asyncio.wait_for(provider_done, timeout=5)
+                await asyncio.wait_for(client_done, timeout=5)
+                for task in hook_tasks:
+                    if not task.cancelled():
+                        task.result()
 
     interrupted = terminal == "external-cancel"
     quantities = {event["category"]: event["quantity"] for event in webhook.usage_events()}
