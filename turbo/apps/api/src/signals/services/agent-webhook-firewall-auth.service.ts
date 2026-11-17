@@ -101,7 +101,7 @@ import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import { command } from "ccstate";
 import { pgNullDecoder, pgTextDecoder } from "../../lib/db-structured-result";
-import { optionalEnv } from "../../lib/env";
+import { env, optionalEnv } from "../../lib/env";
 import { badRequestMessage, insufficientCredits } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
@@ -4502,6 +4502,21 @@ const prepareNonCustomFirewallSecrets$ = command(
         return { ok: false, response: connectorNotConfigured() };
       }
       secrets[managedSecretName] = key.apiKey;
+    }
+    if (referenced.secrets.has("OKOU_DATA_TOKEN")) {
+      delete secrets.OKOU_DATA_TOKEN;
+      if (
+        body.matchedFirewall === undefined &&
+        !Object.hasOwn(body.secretConnectorMap ?? {}, "OKOU_DATA_TOKEN") &&
+        !Object.hasOwn(body.secretConnectorMetadataMap ?? {}, "OKOU_DATA_TOKEN")
+      ) {
+        const url = env("OKOU_DATA_ROUTER_URL");
+        const token = env("OKOU_DATA_TOKEN");
+        if (!url || !token) {
+          return { ok: false, response: connectorNotConfigured() };
+        }
+        secrets.OKOU_DATA_TOKEN = token;
+      }
     }
     return {
       ok: true,

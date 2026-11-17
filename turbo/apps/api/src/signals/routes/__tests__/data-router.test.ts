@@ -18,12 +18,15 @@ import { dataRouterHistoryRoutes } from "../data-router-history";
 import { webhooksAgentDataRequestRoutes } from "../webhooks-agent-data-request";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
+import { decryptSecretForTests } from "./helpers/encrypt-secret";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const runs = createRunsApi(context);
+const firewall = createFirewallApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const ROUTER = "https://data-router.test/mcp";
 
@@ -98,7 +101,7 @@ async function finish(run: Awaited<ReturnType<typeof createRun>>) {
 }
 
 describe("Data Router accounting when a run ends", () => {
-  it("totals reported request credits once at completion and keeps the service token out of the sandbox environment", async () => {
+  it("resolves the service token only at auth and totals reported request credits once", async () => {
     const run = await createRun();
     expect(run.execution.platformEnvironment.OKOU_DATA_ROUTER_URL).toBe(ROUTER);
     expect(
@@ -107,6 +110,55 @@ describe("Data Router accounting when a run ends", () => {
         run.execution.platformEnvironment,
       ]),
     ).not.toContain("router-test-service-token");
+    const encryptedSecrets = run.execution.encryptedSecrets;
+    if (!encryptedSecrets) {
+      throw new Error("Expected the remaining global secret envelope");
+    }
+    expect(JSON.stringify(run.execution)).not.toContain(
+      "router-test-service-token",
+    );
+    expect(decryptSecretForTests(encryptedSecrets)).not.toContain(
+      "router-test-service-token",
+    );
+    const authHeaders = {
+      Authorization: `Bearer ${secretTemplate("OKOU_DATA_TOKEN")}`,
+    };
+    const resolved = await firewall.requestFirewallAuth(
+      run.headers,
+      { encryptedSecrets, authHeaders, firewallBillable: true },
+      [200],
+    );
+    expect(resolved.body).toMatchObject({
+      headers: { Authorization: "Bearer router-test-service-token" },
+      resolvedSecrets: ["OKOU_DATA_TOKEN"],
+      expiresAt: expect.any(Number),
+    });
+    const personalSource = Object.values(
+      run.execution.secretConnectorMetadataMap ?? {},
+    ).find((source) => {
+      return source.sourceType === "model-provider";
+    });
+    if (!personalSource?.metadataKey) {
+      throw new Error("Expected the dispatched personal model source");
+    }
+    for (const secretConnectorMap of [
+      { OKOU_DATA_TOKEN: personalSource.metadataKey },
+      undefined,
+    ]) {
+      const mapped = await firewall.requestFirewallAuth(
+        run.headers,
+        {
+          encryptedSecrets,
+          authHeaders,
+          secretConnectorMap,
+          secretConnectorMetadataMap: { OKOU_DATA_TOKEN: personalSource },
+        },
+        [424],
+      );
+      expect(mapped.body).toMatchObject({
+        error: { code: "CONNECTOR_NOT_CONFIGURED" },
+      });
+    }
     const requestId = randomUUID();
     const secondRequestId = randomUUID();
     await accept(register(run, requestId), [200]);
@@ -151,8 +203,40 @@ describe("Data Router accounting when a run ends", () => {
     );
     await finish(run);
     await expect(credits(run.actor)).resolves.toBe(before - 7);
+    await firewall.requestFirewallAuth(
+      run.headers,
+      { encryptedSecrets, authHeaders, firewallBillable: true },
+      [403],
+    );
     await finish(run);
     await expect(credits(run.actor)).resolves.toBe(before - 7);
+  });
+
+  it("dispatches a healthy Run without Data Router configuration and refuses its auth", async () => {
+    mockEnv("OKOU_DATA_TOKEN", undefined);
+    const run = await createRun();
+    expect(run.execution.billableFirewalls).not.toContain("data-router");
+    const encryptedSecrets = run.execution.encryptedSecrets;
+    if (!encryptedSecrets) {
+      throw new Error("Expected the remaining global secret envelope");
+    }
+    const unavailable = await firewall.requestFirewallAuth(
+      run.headers,
+      {
+        encryptedSecrets,
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("OKOU_DATA_TOKEN")}`,
+        },
+      },
+      [424],
+    );
+    expect(unavailable.body).toMatchObject({
+      error: { code: "CONNECTOR_NOT_CONFIGURED" },
+    });
+    await expect(runs.readRun(run.actor, run.runId)).resolves.toMatchObject({
+      status: "running",
+    });
+    await finish(run);
   });
 
   it("settles captured usage after the completed Agent and Run are deleted", async () => {
