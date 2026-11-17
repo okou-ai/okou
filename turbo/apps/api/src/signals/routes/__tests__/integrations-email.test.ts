@@ -1,3 +1,4 @@
+import { switchRecoverySubscription } from "./helpers/subscription-recovery";
 import { mockNow, now } from "../../../lib/time";
 import { randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -175,7 +176,7 @@ beforeEach(() => {
 describe("email model recovery", () => {
   it("links a model failure to the original Web conversation", async () => {
     mockEnv("OKOU_WEB_URL", "https://app.okou.ai");
-    const { actor, execution, runId } = await startEmailFileExecution();
+    const { actor, execution, runId, group } = await startEmailFileExecution();
     await webhooks.requestAgentComplete(
       {
         runId,
@@ -202,6 +203,13 @@ describe("email model recovery", () => {
         expect.objectContaining({ eventType: "run.failed", runId }),
       ]),
     });
+    await switchRecoverySubscription(context, actor);
+    await flushWaitUntilForTest();
+    await runs.heartbeatRunner(group);
+    const continued = await runs.nextReceivedExecution(group);
+    expect(continued.runId).not.toBe(runId);
+    expect(continued.prompt).toBe("continue");
+    expect(continued.appendSystemPrompt).toContain("Requested report");
   });
 });
 

@@ -1,3 +1,7 @@
+import {
+  subscriptionSwitchRecoveries,
+  resumeSubscriptionConversations$,
+} from "../services/subscription-switch-recovery.service";
 import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
 import { command } from "ccstate";
 
@@ -77,6 +81,11 @@ const completeCodexDeviceAuthInner$ = command(
       return body.response;
     }
 
+    const recoveries = await get(
+      subscriptionSwitchRecoveries({ ...auth, type: "codex-oauth-token" }),
+    );
+    signal.throwIfAborted();
+
     const result = await set(
       completeCodexDeviceAuth$,
       {
@@ -99,6 +108,16 @@ const completeCodexDeviceAuthInner$ = command(
         };
       }
       case "complete": {
+        await set(
+          resumeSubscriptionConversations$,
+          {
+            ...auth,
+            recoveries,
+            account: result.body.provider,
+            change: "credentials",
+          },
+          signal,
+        );
         return {
           status: 200 as const,
           body: {

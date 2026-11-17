@@ -1,3 +1,7 @@
+import {
+  subscriptionSwitchRecoveries,
+  resumeSubscriptionConversations$,
+} from "../services/subscription-switch-recovery.service";
 import { command } from "ccstate";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
@@ -81,13 +85,16 @@ const upsertInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
 
+  const recoveries = await get(subscriptionSwitchRecoveries({ ...auth, type }));
+  signal.throwIfAborted();
+
   // Branch 1: codex-oauth-token + auth_json paste flow
   if (type === "codex-oauth-token" && authMethod === "auth_json") {
     const raw = secrets?.CODEX_AUTH_JSON;
     if (!raw) {
       return badRequestMessage("Missing CODEX_AUTH_JSON secret");
     }
-    return await set(
+    const result = await set(
       upsertPersonalCodexAuthJson$,
       {
         orgId: auth.orgId,
@@ -97,6 +104,19 @@ const upsertInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       },
       signal,
     );
+    if (result.status === 200 || result.status === 201) {
+      await set(
+        resumeSubscriptionConversations$,
+        {
+          ...auth,
+          recoveries,
+          account: result.body.provider,
+          change: "credentials",
+        },
+        signal,
+      );
+    }
+    return result;
   }
 
   // Codex subscriptions are connected only through the auth_json paste flow.
@@ -126,6 +146,13 @@ const upsertInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
+  if (!("status" in result)) {
+    await set(
+      resumeSubscriptionConversations$,
+      { ...auth, recoveries, account: result.provider, change: "credentials" },
+      signal,
+    );
+  }
   return "status" in result
     ? result
     : shapeAccountUpsertResult(result.provider, result.created);

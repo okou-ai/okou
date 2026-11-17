@@ -1059,6 +1059,9 @@ describe("personal subscription usage guidance for integrations", () => {
     });
     expect(result).toContain("Wait for your subscription allowance to reset");
     expect(result).toContain("switch to an available subscription account");
+    expect(result).toContain(
+      "Switching accounts automatically continues this conversation.",
+    );
     expect(result).not.toContain("choose a different model");
   });
 

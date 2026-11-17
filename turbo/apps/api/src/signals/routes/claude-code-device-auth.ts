@@ -1,3 +1,7 @@
+import {
+  subscriptionSwitchRecoveries,
+  resumeSubscriptionConversations$,
+} from "../services/subscription-switch-recovery.service";
 import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/contracts/claude-code-device-auth";
 import { command } from "ccstate";
 
@@ -79,6 +83,14 @@ const completeClaudeCodeDeviceAuthInner$ = command(
       return body.response;
     }
 
+    const recoveries = await get(
+      subscriptionSwitchRecoveries({
+        ...auth,
+        type: "claude-code-oauth-token",
+      }),
+    );
+    signal.throwIfAborted();
+
     const result = await set(
       completeClaudeCodeDeviceAuth$,
       {
@@ -93,6 +105,16 @@ const completeClaudeCodeDeviceAuthInner$ = command(
 
     switch (result.status) {
       case "complete": {
+        await set(
+          resumeSubscriptionConversations$,
+          {
+            ...auth,
+            recoveries,
+            account: result.body.provider,
+            change: "credentials",
+          },
+          signal,
+        );
         return {
           status: 200 as const,
           body: {
