@@ -60,7 +60,7 @@ async function setupMenus({
     featureSwitches: {
       [FeatureSwitchKey.HomeCapabilities]: homeCapabilities,
       [FeatureSwitchKey.SlashActions]: slashActions,
-      [FeatureSwitchKey.Projects]: false,
+      [FeatureSwitchKey.SingleAgent]: false,
     },
   });
   return { editor: await findComposerEditor(), lifecycle: capture.lifecycle };

@@ -30,6 +30,7 @@ function installWorkspace() {
     caseId: 121,
     threads: [thread],
   });
+  context.mocks.data.onboardingStatus({ defaultAgentId: thread.agentId });
   context.mocks.api(agentDraftContract.get, ({ respond }) => {
     return respond(200, { draftUserMessage: null, draftAttachments: null });
   });
@@ -39,7 +40,7 @@ function installWorkspace() {
   return {
     ...workspace.pageOptions,
     path: `/chats/${thread.id}`,
-    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
     sharedWorkerTestTransport: "message-port" as const,
   };
 }
@@ -135,7 +136,7 @@ test("An empty cached chat list discovers a newly published snapshot", async () 
   await setupPage({
     context,
     ...options,
-    path: `/agents/${thread.agentId}/chat`,
+    path: "/",
     cachedChatThreadEvents: {
       snapshot: { chatThreads: [], latestEventId: null, latestSeqId: null },
       events: [],

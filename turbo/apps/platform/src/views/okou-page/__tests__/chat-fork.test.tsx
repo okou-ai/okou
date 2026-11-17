@@ -86,99 +86,83 @@ test.each([
   {
     name: "Fork keeps the source project",
     sourceProjectId: PROJECT_ID,
-    projectsEnabled: true,
     fork: true,
     expectedProjectId: PROJECT_ID,
   },
   {
     name: "Fork keeps an unassigned source outside projects",
     sourceProjectId: null,
-    projectsEnabled: true,
     fork: true,
     expectedProjectId: null,
   },
   {
-    name: "Fork remains available when Projects is disabled",
+    name: "Forward in legacy mode creates a chat outside Projects",
     sourceProjectId: PROJECT_ID,
-    projectsEnabled: false,
-    fork: true,
-    expectedProjectId: null,
-  },
-  {
-    name: "Forward to an agent keeps its independent project placement",
-    sourceProjectId: PROJECT_ID,
-    projectsEnabled: true,
     fork: false,
     expectedProjectId: null,
   },
-])(
-  "$name",
-  async ({ sourceProjectId, projectsEnabled, fork, expectedProjectId }) => {
-    installProjectConversation(sourceProjectId);
-    await setupPage({
-      context,
-      path: RUN_PATH,
-      featureSwitches: {
-        [FeatureSwitchKey.SingleAgent]: fork,
-        [FeatureSwitchKey.Projects]: projectsEnabled,
-      },
-    });
-    const originalComposer = await screen.findByRole("textbox", {
-      name: "Message",
-    });
-    await fill(originalComposer, "Keep my unfinished notes");
-    if (projectsEnabled && sourceProjectId) {
-      const toggle = await findEnabledButton("Show or hide chats in Launch");
-      if (toggle.getAttribute("aria-expanded") === "false") {
-        click(toggle);
-      }
+])("$name", async ({ sourceProjectId, fork, expectedProjectId }) => {
+  installProjectConversation(sourceProjectId);
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.SingleAgent]: fork,
+    },
+  });
+  const originalComposer = await screen.findByRole("textbox", {
+    name: "Message",
+  });
+  await fill(originalComposer, "Keep my unfinished notes");
+  if (fork && sourceProjectId) {
+    const toggle = await findEnabledButton("Show or hide chats in Launch");
+    if (toggle.getAttribute("aria-expanded") === "false") {
+      click(toggle);
     }
-    await waitFor(() => {
-      expect(
-        document.querySelector(
-          `[data-sidebar-chat-thread-id="${RUN_THREAD_ID}"]`,
-        ),
-      ).toBeInTheDocument();
-    });
-    await selectPassage(PASSAGE);
-    click(await findEnabledButton(fork ? "Fork" : "Forward"));
-    if (!fork) {
-      const picker = await screen.findByRole("dialog", { name: "Forward to" });
-      click(await within(picker).findByRole("option", { name: "Okou" }));
-    }
-    const dialog = await screen.findByRole("dialog", { name: "Okou" });
-    await fill(
-      await within(dialog).findByRole("textbox", { name: "Add a message" }),
-      "Explore another launch plan",
-    );
-    click(await findEnabledButton("Send", dialog));
+  }
+  await waitFor(() => {
+    expect(
+      document.querySelector(
+        `[data-sidebar-chat-thread-id="${RUN_THREAD_ID}"]`,
+      ),
+    ).toBeInTheDocument();
+  });
+  await selectPassage(PASSAGE);
+  click(await findEnabledButton(fork ? "Fork" : "Forward"));
+  if (!fork) {
+    const picker = await screen.findByRole("dialog", { name: "Forward to" });
+    click(await within(picker).findByRole("option", { name: "Okou" }));
+  }
+  const dialog = await screen.findByRole("dialog", { name: "Okou" });
+  await fill(
+    await within(dialog).findByRole("textbox", { name: "Add a message" }),
+    "Explore another launch plan",
+  );
+  click(await findEnabledButton("Send", dialog));
 
-    await screen.findByText(
-      fork ? "New chat created" : "Forwarded successfully",
+  await screen.findByText(fork ? "New chat created" : "Forwarded successfully");
+  const newThread = await waitFor(() => {
+    const link = document.querySelector<HTMLElement>(
+      `[data-sidebar-chat-thread-id]:not([data-sidebar-chat-thread-id="${RUN_THREAD_ID}"])`,
     );
-    const newThread = await waitFor(() => {
-      const link = document.querySelector<HTMLElement>(
-        `[data-sidebar-chat-thread-id]:not([data-sidebar-chat-thread-id="${RUN_THREAD_ID}"])`,
-      );
-      expect(link).toBeInTheDocument();
-      return link!;
-    });
-    expect(
-      newThread.closest<HTMLElement>("[data-project-row-id]")?.dataset
-        .projectRowId ?? null,
-    ).toBe(expectedProjectId);
-    const sourceThread = document.querySelector<HTMLElement>(
-      `[data-sidebar-chat-thread-id="${RUN_THREAD_ID}"]`,
-    );
-    expect(sourceThread).toBeInTheDocument();
-    expect(
-      sourceThread?.closest<HTMLElement>("[data-project-row-id]")?.dataset
-        .projectRowId ?? null,
-    ).toBe(projectsEnabled ? sourceProjectId : null);
-    expect(location.pathname).toBe(RUN_PATH);
-    expect(originalComposer).toHaveTextContent("Keep my unfinished notes");
-  },
-);
+    expect(link).toBeInTheDocument();
+    return link!;
+  });
+  expect(
+    newThread.closest<HTMLElement>("[data-project-row-id]")?.dataset
+      .projectRowId ?? null,
+  ).toBe(expectedProjectId);
+  const sourceThread = document.querySelector<HTMLElement>(
+    `[data-sidebar-chat-thread-id="${RUN_THREAD_ID}"]`,
+  );
+  expect(sourceThread).toBeInTheDocument();
+  expect(
+    sourceThread?.closest<HTMLElement>("[data-project-row-id]")?.dataset
+      .projectRowId ?? null,
+  ).toBe(fork ? sourceProjectId : null);
+  expect(location.pathname).toBe(RUN_PATH);
+  expect(originalComposer).toHaveTextContent("Keep my unfinished notes");
+});
 
 test("F opens a Fork composer carrying the captured selection", async () => {
   installCapabilityChat({
