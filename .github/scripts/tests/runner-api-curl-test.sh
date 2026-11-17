@@ -42,6 +42,31 @@ assert_file_excludes() {
     fi
 }
 
+assert_response_summary() {
+    local http_status="$1" content_type="$2" summary
+    assert_file_excludes "$stderr_file" "$E2E_API_TOKEN"
+    assert_file_excludes "$stderr_file" "$VERCEL_AUTOMATION_BYPASS_SECRET"
+    assert_file_excludes "$stderr_file" "sensitive-request-payload"
+    assert_file_excludes "$stderr_file" "sensitive-query-value"
+    summary="$(sed -n 's/^E2E API response: //p' "$stderr_file")"
+    jq -e \
+        --arg url "${MOCK_CURL_EXPECTED_URL%%[\?#]*}" \
+        --argjson httpStatus "$http_status" \
+        --argjson curlExit "$request_status" \
+        --argjson attempt "$3" \
+        --arg contentType "$content_type" '
+        .url == $url and .http_status == $httpStatus and
+        .curl_exit == $curlExit and .attempt == $attempt and
+        .content_type == (if $contentType == "" then null else $contentType end) and
+        (.method == "GET" or .method == "POST") and
+        .response_bytes == 0 and .duration_seconds == 0 and
+        (.observed_at | test("^[0-9-]+T[0-9:]+Z$"))
+    ' <<<"$summary" >/dev/null || fail "unexpected response summary"
+    # Keep the existing exact checks for transport errors and correlation links.
+    sed '/^E2E API response: /d' "$stderr_file" >"${stderr_file}.filtered"
+    mv "${stderr_file}.filtered" "$stderr_file"
+}
+
 # The mocked curl runs inside a command substitution, so its attempt counter
 # lives in a file rather than a shell variable.
 reset_curl_attempts() {
@@ -72,6 +97,7 @@ curl() {
     local saw_no_fail_with_body=false
     local saw_vercel_write_out=false
     local write_out='' connect_timeout='' max_time='' request_payload=''
+    local mock_metadata_file='' request_method=GET
     local attempt
     attempt="$(record_curl_attempt)"
 
@@ -90,9 +116,15 @@ curl() {
             --write-out)
                 shift
                 write_out="$1"
-                if [[ "$write_out" == "$MOCK_CURL_EXPECTED_VERCEL_WRITE_OUT" ]]; then
+                if [[ "$write_out" == '%output{'*'}%{json}'"$MOCK_CURL_EXPECTED_VERCEL_WRITE_OUT" ]]; then
                     saw_vercel_write_out=true
+                    mock_metadata_file="${write_out#'%output{'}"
+                    mock_metadata_file="${mock_metadata_file%%\}*}"
                 fi
+                ;;
+            -X)
+                shift
+                request_method="$1"
                 ;;
             --connect-timeout)
                 shift
@@ -105,6 +137,7 @@ curl() {
             -d)
                 shift
                 request_payload="$1"
+                request_method=POST
                 ;;
         esac
         shift
@@ -127,6 +160,33 @@ curl() {
         echo "curl received unexpected timeout budgets: ${connect_timeout}/${max_time}" >&2
         return 98
     }
+
+    # Model curl's private JSON write-out when it is the selected format. The
+    # real-curl loopback tests cover actual byte counts and transport timings.
+    if [[ "$write_out" == "%output{${mock_metadata_file}}"* ]]; then
+        local http_status=200 content_type=application/json
+        case "$MOCK_CURL_MODE" in
+            failure) http_status=429 ;;
+            agent-http-error) http_status=409 ;;
+            no-response | agent-no-response)
+                http_status=0 content_type='' ;;
+            no-response-then-success | agent-no-response-then-success)
+                if ((attempt == 1)); then
+                    http_status=0 content_type=''
+                fi
+                ;;
+        esac
+        jq -cn \
+            --argjson httpStatus "$http_status" \
+            --arg contentType "$content_type" \
+            --arg method "$request_method" \
+            --arg url "$request_url" '{
+                http_code: $httpStatus,
+                content_type: (if $contentType == "" then null else $contentType end),
+                method: $method, size_download: 0, time_total: 0,
+                url_effective: $url
+            }' >"$mock_metadata_file"
+    fi
 
     case "$MOCK_CURL_MODE" in
         success)
@@ -259,13 +319,10 @@ MOCK_CURL_EXPECTED_URL="https://pr-27981-api.vm6.ai/api/chat/events?cursor=sensi
 run_request "/api/chat/events?cursor=sensitive-query-value" -X POST -d "$payload"
 assert_status 22
 assert_file_equals $'{"error":"rate limited"}\n' "$stdout_file"
+assert_response_summary 429 application/json 1
 assert_file_equals \
     $'curl: (22) The requested URL returned error: 429\nVercel logs: '"$MOCK_CURL_EXPECTED_VERCEL_URL"$'\nrunner_api_curl failed: url=https://pr-27981-api.vm6.ai/api/chat/events curl_status=22\n' \
     "$stderr_file"
-assert_file_excludes "$stderr_file" "$E2E_API_TOKEN"
-assert_file_excludes "$stderr_file" "$VERCEL_AUTOMATION_BYPASS_SECRET"
-assert_file_excludes "$stderr_file" "sensitive-request-payload"
-assert_file_excludes "$stderr_file" "sensitive-query-value"
 
 MOCK_CURL_MODE=no-fail-with-body
 MOCK_CURL_EXPECTED_URL="https://pr-27981-api.vm6.ai/api/agents/agent-1"
@@ -332,11 +389,10 @@ run_request "/api/runs/run-1/context"
 assert_status 28
 assert_curl_attempts 2
 assert_file_equals '' "$stdout_file"
+assert_response_summary 0 '' 2
 assert_file_equals \
     "${stall_stderr}${retry_stderr}${stall_stderr}"$'runner_api_curl failed: url=https://pr-27981-api.vm6.ai/api/runs/run-1/context curl_status=28\nrunner_api_curl timed out waiting for a complete response from https://pr-27981-api.vm6.ai/api/runs/run-1/context with a 5s per-attempt deadline across 2 attempt(s); the API may have answered after the client gave up: '"${context_vercel_logs_search}"$'&timeline=past12Hours\n' \
     "$stderr_file"
-assert_file_excludes "$stderr_file" "$E2E_API_TOKEN"
-assert_file_excludes "$stderr_file" "$VERCEL_AUTOMATION_BYPASS_SECRET"
 
 # A write may already have been applied by the API, so it is never repeated.
 MOCK_CURL_EXPECTED_CONNECT_TIMEOUT=10
