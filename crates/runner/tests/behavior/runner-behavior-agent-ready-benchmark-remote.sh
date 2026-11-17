@@ -80,7 +80,6 @@ submit_agent_ready_benchmark_run() {
   if ! result=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
     --chat-thread-id "$chat_thread_id" \
     --session-id "$session_id" \
-    --feature-flag sandboxReuse=true \
     --prompt 'true' 2>&1); then
     AGENT_READY_SUBMIT_ERROR="local submit failed: $result"
     return 1
