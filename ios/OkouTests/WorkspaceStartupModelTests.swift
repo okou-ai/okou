@@ -149,6 +149,7 @@ final class WorkspaceStartupFixture: Sendable {
   init(
     beforeModelRead: (@Sendable (String) async throws -> Void)? = nil,
     beforeNavigationRead: (@Sendable () async throws -> Void)? = nil,
+    beforeRealtimeToken: (@Sendable () async throws -> Void)? = nil,
     realtimeToken: String? = nil,
     indicators: ChatHTTPFixture.Handler? = nil
   ) {
@@ -181,6 +182,7 @@ final class WorkspaceStartupFixture: Sendable {
           return ChatHTTPResponse(
             body: #"{"revision":"0","document":null,"clientMutationId":null}"#)
         case "/api/realtime/token":
+          try await beforeRealtimeToken?()
           if let realtimeToken { return ChatHTTPResponse(body: realtimeToken) }
           // Exercise startup's HTTP fallback without connecting the SDK to a live service.
           return ChatHTTPResponse(status: 503, body: #"{"error":{"message":"Fixture offline"}}"#)

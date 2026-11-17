@@ -455,9 +455,17 @@ final class WorkspaceModelRecoveryTests: XCTestCase {
   }
 
   func testResumedChannelPreservesTheBaselineAndStillAppliesPreferenceNotifications() async throws {
-    let fixture = try ModelRecoveryFixture(bootstrap: WorkspaceReadBootstrap())
-    addTeardownBlock { await fixture.close() }
+    let deadline = ModelResponseGate()
+    let registered = expectation(description: "The workspace channel is registered for injection")
+    let fixture = try ModelRecoveryFixture(
+      bootstrap: WorkspaceReadBootstrap { await deadline.wait() },
+      onChannelAttach: { registered.fulfill() })
+    addTeardownBlock {
+      deadline.open()
+      await fixture.close()
+    }
     try await fixture.start()
+    await fulfillment(of: [registered], timeout: 3)
     fixture.http.setRemoteModel("claude-model")
 
     try fixture.server.attached(fixture.channel, resumed: true)
@@ -478,8 +486,16 @@ final class WorkspaceIndicatorRecoveryTests: XCTestCase {
     async throws
   {
     let remote = Mutex("active")
+    let releaseToken = ModelResponseGate()
+    let tokenRequested = expectation(description: "Realtime token delivery is held before attachment")
+    let registered = expectation(description: "The workspace channel is registered for injection")
     let fixture = try ModelRecoveryFixture(
-      bootstrap: WorkspaceReadBootstrap(),
+      bootstrap: WorkspaceReadBootstrap(waitForTimeout: {}),
+      beforeRealtimeToken: {
+        tokenRequested.fulfill()
+        await releaseToken.wait()
+      },
+      onChannelAttach: { registered.fulfill() },
       indicators: { _ in
         let state = remote.withLock { $0 }
         let thread = ConversationHistoryFixture.threadID
@@ -492,8 +508,18 @@ final class WorkspaceIndicatorRecoveryTests: XCTestCase {
             "unreadAt":\(unread ? "{\"\(thread)\":\"2026-11-13T00:00:00Z\"}" : "{}")}
             """)
       })
-    addTeardownBlock { await fixture.close() }
+    addTeardownBlock {
+      releaseToken.open()
+      await fixture.close()
+    }
     try await fixture.start()
+    await fulfillment(of: [tokenRequested], timeout: 3)
+    XCTAssertEqual(fixture.workspace.list.threads.first?.indicator, .active)
+
+    releaseToken.open()
+    await fulfillment(of: [registered], timeout: 3)
+    // Late initial subscriptions schedule a catch-up read before reporting connected.
+    try await waitForBusinessResult { fixture.workspace.connectionStatus == .connected }
     await fixture.workspace.resumePendingRefresh()?.value
     XCTAssertEqual(fixture.workspace.list.threads.first?.indicator, .active)
     let initial = fixture.http.history.requests.values.withLock { $0 }
@@ -541,16 +567,23 @@ private final class ModelRecoveryFixture {
 
   init(
     bootstrap: WorkspaceReadBootstrap,
+    beforeRealtimeToken: (@Sendable () async throws -> Void)? = nil,
+    onChannelAttach: @escaping @Sendable () -> Void = {},
     indicators: ChatHTTPFixture.Handler? = nil
   ) throws {
     self.bootstrap = bootstrap
-    realtime = try LoopbackRealtimeFixture(clientID: userID)
+    let expectedChannel = "user-org:\(userID):\(workspaceID)"
+    realtime = try LoopbackRealtimeFixture(clientID: userID) { action, channel in
+      guard action == 10, channel == expectedChannel else { return }
+      onChannelAttach()
+    }
     let token = try JSONSerialization.data(withJSONObject: [
       "keyName": "fixture.key", "timestamp": Int64(Date().timeIntervalSince1970 * 1000),
       "ttl": 3_600_000, "nonce": "fixture-nonce", "mac": "ZmFrZQ==",
       "clientId": userID, "capability": "{\"*\":[\"subscribe\"]}",
     ])
     http = WorkspaceStartupFixture(
+      beforeRealtimeToken: beforeRealtimeToken,
       realtimeToken: String(decoding: token, as: UTF8.self), indicators: indicators)
   }
 
