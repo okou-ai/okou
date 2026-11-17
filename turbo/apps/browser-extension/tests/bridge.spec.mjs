@@ -138,9 +138,14 @@ async function fixture() {
       filter: [{ type: "service_worker" }, { exclude: true }],
     });
     try {
-      await Promise.all([
-        wire.request("Extensions.loadUnpacked", { path: extension }),
-        activated.promise,
+      await Promise.race([
+        Promise.all([
+          wire.request("Extensions.loadUnpacked", { path: extension }),
+          activated.promise,
+        ]),
+        closed.then(() => {
+          throw new Error("Owned browser closed during extension installation");
+        }),
       ]);
       await Promise.all(releases);
     } finally {
