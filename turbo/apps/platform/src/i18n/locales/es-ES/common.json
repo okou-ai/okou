@@ -2426,10 +2426,10 @@
       "loading": "Cargando teléfonos…",
       "noPhones": "No hay teléfonos en línea",
       "openApp": "Abrir Okou iOS Use",
-      "openAppDescription": "Instala la versión de desarrollo en tu iPhone, inicia sesión con la misma cuenta y espacio de trabajo, e inicia una ventana de control.",
+      "openAppDescription": "Instala la versión de desarrollo en tu iPhone, inicia sesión con la misma cuenta y espacio de trabajo y selecciona Go online.",
       "setupDescription": "Permite que Okou use tu iPhone desde este chat.",
       "startTask": "Enviar tu próxima tarea",
-      "startTaskDescription": "Tras autorizar el acceso, envía un mensaje nuevo aquí. Mantén activa la ventana de control en tu teléfono.",
+      "startTaskDescription": "Tras permitir el acceso, envía un nuevo mensaje aquí. Mantén tu iPhone en línea y desbloqueado.",
       "yourPhone": "Tu teléfono"
     },
     "promptDocumentTitle": "Prompt",

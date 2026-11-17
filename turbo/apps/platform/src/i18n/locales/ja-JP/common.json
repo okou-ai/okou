@@ -2381,10 +2381,10 @@
       "loading": "読み込み中…",
       "noPhones": "オンラインのスマートフォンはありません",
       "openApp": "Okou iOS Use を開く",
-      "openAppDescription": "iPhone に開発版をインストールし、同じアカウントとワークスペースでサインインして、操作ウィンドウを開始してください。",
+      "openAppDescription": "iPhone に開発版をインストールし、同じアカウントとワークスペースでサインインして、Go online を選択してください。",
       "setupDescription": "このチャットで Okou に iPhone の操作を許可します。",
       "startTask": "次のタスクを送信",
-      "startTaskDescription": "許可後、ここに新しいメッセージを送信してください。スマートフォンの操作ウィンドウを有効に保ってください。",
+      "startTaskDescription": "アクセスを許可したら、ここで新しいメッセージを送信してください。iPhone をオンラインにして、ロックを解除したままにしてください。",
       "yourPhone": "あなたのスマートフォン"
     },
     "promptDocumentTitle": "プロンプト",
