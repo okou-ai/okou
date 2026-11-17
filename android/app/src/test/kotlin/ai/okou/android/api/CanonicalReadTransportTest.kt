@@ -67,10 +67,12 @@ class CanonicalReadTransportTest {
                         assertTrue(control.cause is InterruptedIOException)
                         val returned = history.await().events.getValue(CHAT_PERSONAL).single()
                         assertEquals(
-                            HistoryEvent.decode(wire).wire,
-                            historyJson.encodeToJsonElement(returned).jsonObject,
+                            HistoryEvent.decode(wire),
+                            HistoryEvent.decode(
+                                historyJson.encodeToJsonElement(returned).jsonObject
+                            ),
                         )
-                        assertEquals(HistoryEvent.decode(wire).wire, archive.await().single().wire)
+                        assertEquals(HistoryEvent.decode(wire), archive.await().single())
                         assertEquals(3, server.requestCount)
                     }
                 }
