@@ -985,8 +985,8 @@ function FeishuSetupWizardFooter({
       </Button>
       <Button
         type="submit"
-        variant="neutral"
-        className="min-w-28 border-foreground bg-foreground text-background hover:bg-foreground/90"
+        variant="default"
+        className="min-w-28"
         disabled={!canContinue}
       >
         {saving ? <Loader2 size={16} className="animate-spin" /> : null}
@@ -1614,7 +1614,7 @@ function FeishuPageHeader({
     <header
       className={cn(
         "shrink-0 bg-transparent",
-        guide ? "pb-5 pt-4 @3xl/feishu-setup:pt-5" : "px-4 pb-3 pt-10 sm:px-6",
+        guide ? "pb-5 pt-6" : "px-4 pb-3 pt-10 sm:px-6",
       )}
     >
       <div className={guide ? "min-w-0" : "mx-auto max-w-[900px]"}>

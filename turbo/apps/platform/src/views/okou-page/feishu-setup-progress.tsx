@@ -77,7 +77,9 @@ export function FeishuSetupProgress({
           </Select>
         ) : (
           <span className="min-w-0 text-right text-sm font-medium">
-            {items[currentIndex]?.label}
+            {t(($) => {
+              return $.connectors.providerSettings[platform].steps[step];
+            })}
           </span>
         )}
       </div>
@@ -89,7 +91,7 @@ export function FeishuSetupProgress({
               <span
                 className={cn(
                   "flex size-5 shrink-0 items-center justify-center rounded-full border border-surface-border text-[10px]",
-                  active && "border-foreground bg-foreground text-background",
+                  active && "border-primary bg-primary text-primary-foreground",
                 )}
               >
                 {index + 1}
