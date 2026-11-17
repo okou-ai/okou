@@ -18,7 +18,10 @@ pub fn png_base64(width: u32, height: u32) -> std::io::Result<String> {
     header.extend_from_slice(&height.to_be_bytes());
     header.extend_from_slice(&[8, 2, 0, 0, 0]);
     chunk(&mut png, b"IHDR", &header);
-    let mut pixels = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::none());
+    // Write IDAT into the final PNG instead of copying a separate payload Vec.
+    let idat_offset = png.len();
+    png.extend_from_slice(b"\0\0\0\0IDAT");
+    let mut pixels = flate2::write::ZlibEncoder::new(png, flate2::Compression::none());
     // RGB values repeat every 256 columns and rows. Build each distinct row
     // once, while retaining every pixel and the same per-row zlib writes.
     let mut scanlines = Vec::with_capacity(height.min(256) as usize);
@@ -38,7 +41,14 @@ pub fn png_base64(width: u32, height: u32) -> std::io::Result<String> {
     for scanline in scanlines.iter().cycle().take(height as usize) {
         pixels.write_all(scanline)?;
     }
-    chunk(&mut png, b"IDAT", &pixels.finish()?);
+    let mut png = pixels.finish()?;
+    let idat_bytes = (png.len() - idat_offset - 8) as u32;
+    let (_, idat) = png.split_at_mut(idat_offset);
+    let (length, data) = idat.split_at_mut(4);
+    length.copy_from_slice(&idat_bytes.to_be_bytes());
+    let mut crc = flate2::Crc::new();
+    crc.update(data);
+    png.extend_from_slice(&crc.sum().to_be_bytes());
     chunk(&mut png, b"IEND", &[]);
     Ok(base64::engine::general_purpose::STANDARD.encode(png))
 }

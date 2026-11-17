@@ -50,6 +50,7 @@ const publishAcceptedReward$ = command(
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
+    const marketingRewardEventId = randomUUID();
     const { rowCount } = await db.execute(
       getStartedMemberRewardSql({
         claim: plan.claim,
@@ -58,7 +59,7 @@ const publishAcceptedReward$ = command(
         at: plan.at,
         acceptance: plan.acceptance,
         invitationEvent: {
-          id: randomUUID(),
+          id: marketingRewardEventId,
           environment: env("ENV"),
           type: "invitation.accepted",
           occurredAt: plan.acceptance.completedAt.toISOString(),
@@ -66,7 +67,11 @@ const publishAcceptedReward$ = command(
       }),
     );
     signal.throwIfAborted();
-    return rowCount;
+
+    if (rowCount !== 0 && rowCount !== 1) {
+      throw new Error("Invitation reward grant was not committed");
+    }
+    return rowCount === 1 ? marketingRewardEventId : undefined;
   },
 );
 
@@ -82,6 +87,7 @@ const publishUnfundedAcceptance$ = command(
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
+    const marketingRewardEventId = randomUUID();
     const accepted = db
       .update(getStartedClaims)
       .set({
@@ -92,10 +98,10 @@ const publishUnfundedAcceptance$ = command(
       })
       .where(unresolvedClaimWhere(args.claim))
       .returning();
-    await db.execute(
+    const { rowCount } = await db.execute(
       sql`WITH accepted_invitation AS (${accepted.getSQL()}) ${marketingRewardInvitationEventInsert(
         {
-          id: randomUUID(),
+          id: marketingRewardEventId,
           environment: env("ENV"),
           type: "invitation.accepted",
           occurredAt: args.acceptance.completedAt.toISOString(),
@@ -104,6 +110,7 @@ const publishUnfundedAcceptance$ = command(
       )}`,
     );
     signal.throwIfAborted();
+    return rowCount === 1 ? marketingRewardEventId : undefined;
   },
 );
 
@@ -113,7 +120,7 @@ export const acceptGetStartedInvitation$ = command(
     { set },
     args: AcceptedGetStartedInvitation,
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<string | undefined> => {
     if (!args.invitationId && !args.getStartedClaimId && !args.purchaseId) {
       return;
     }
@@ -157,22 +164,22 @@ export const acceptGetStartedInvitation$ = command(
     if (
       getStartedRewardWriter("user", claim.beneficiaryUserId) === "marketing"
     ) {
-      await set(
+      const marketingRewardEventId = await set(
         publishUnfundedAcceptance$,
         { claim, acceptance, reason: null, at },
         signal,
       );
       signal.throwIfAborted();
-      return;
+      return marketingRewardEventId;
     }
     if (claim.beneficiaryUserId === args.userId) {
-      await set(
+      const marketingRewardEventId = await set(
         publishUnfundedAcceptance$,
         { claim, acceptance, reason: "self_invitation", at },
         signal,
       );
       signal.throwIfAborted();
-      return;
+      return marketingRewardEventId;
     }
     const rewardKey = `invite:${args.userId}`;
     const awards = await db
@@ -185,13 +192,13 @@ export const acceptGetStartedInvitation$ = command(
       awards,
     );
     if (availability.kind === "ineligible") {
-      await set(
+      const marketingRewardEventId = await set(
         publishUnfundedAcceptance$,
         { claim, acceptance, reason: availability.reason, at },
         signal,
       );
       signal.throwIfAborted();
-      return;
+      return marketingRewardEventId;
     }
     const slot = availability.slots[0];
     if (slot === undefined) {
@@ -215,10 +222,7 @@ export const acceptGetStartedInvitation$ = command(
     );
     signal.throwIfAborted();
     if (result.ok) {
-      if (result.value !== 0 && result.value !== 1) {
-        throw new Error("Invitation reward grant was not committed");
-      }
-      return;
+      return result.value;
     }
     if (
       isUniqueViolation(result.error, "uq_get_started_reward_key") ||

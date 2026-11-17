@@ -1,7 +1,6 @@
 # Inherit upstream defaults; adopt metric and naming policy separately.
 disabled_rules:
   - cyclomatic_complexity
-  - file_length
   - function_body_length
   - function_parameter_count
   - identifier_name
@@ -37,6 +36,11 @@ opening_brace:
   ignore_multiline_type_headers: true
   ignore_multiline_statement_conditions: true
   ignore_multiline_function_signatures: true
+
+# Strict lint enforces 800 total lines, including comments and blank lines.
+file_length:
+  warning: 800
+  error: 1000
 
 included:
   - Okou

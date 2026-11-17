@@ -51,7 +51,7 @@ name = "integration"
 path = "tests/integration.rs"
 
 [target.'cfg(unix)'.dev-dependencies]
-nix = { workspace = true, features = ["resource"] }
+nix = { workspace = true, features = ["fs", "resource"] }
 
 [lints]
 workspace = true

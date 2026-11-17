@@ -69,11 +69,11 @@ impl MockGates {
 
     fn create_fifo(fifo: &Path) -> TestResult<File> {
         let c_fifo = std::ffi::CString::new(fifo.as_os_str().as_bytes())?;
-        // SAFETY: c_fifo is a valid NUL-terminated path and the mode is a
-        // normal POSIX permission mask for a test-only FIFO.
-        if unsafe { libc::mkfifo(c_fifo.as_ptr(), 0o600) } != 0 {
-            return Err(io::Error::last_os_error().into());
-        }
+        nix::unistd::mkfifo(
+            c_fifo.as_c_str(),
+            nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+        )
+        .map_err(io::Error::from)?;
 
         // Keep both ends open until the guest exits, including when release
         // precedes the reader opening the FIFO during error cleanup.

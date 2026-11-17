@@ -10,6 +10,98 @@ fn http_client() -> HttpClient {
     http_client_for_api_url("http://localhost")
 }
 
+#[tokio::test]
+async fn staging_observations_reach_the_authenticated_bounded_telemetry_payload() {
+    let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
+        "200 OK",
+        r#"{"success":true}"#,
+    ))])
+    .await;
+    let run_id = RunId::new_v4();
+    let mut telemetry = JobTelemetry::new(
+        http_client_for_api_url(&server.url()),
+        run_id,
+        "stage-token".into(),
+        None,
+    );
+    let zero = Some(Duration::ZERO);
+    let full = sandbox::FileWriteTiming {
+        admission: zero,
+        request: sandbox::FileWriteRequestTiming {
+            validation: zero,
+            path_lock_wait: zero,
+            file_gate_wait: zero,
+            host: sandbox::RequestTiming {
+                setup: zero,
+                frame_builder_wait: zero,
+                frame_encode: zero,
+                writer_wait: zero,
+                frame_write: Some(Duration::from_micros(23)),
+                response_wait: zero,
+                result_decode: zero,
+            },
+        },
+    };
+    let mut partial = full;
+    partial.request.host.response_wait = None;
+    partial.request.host.frame_write = Some(Duration::from_secs(u64::MAX));
+    for (success, timing) in [
+        (true, full),
+        (false, partial),
+        (true, sandbox::FileWriteTiming::default()),
+    ] {
+        runner_storage::StorageTelemetry::record_stage_write(
+            &mut telemetry,
+            SandboxOpRecord::new(
+                "storage_cache_stage_batch_write",
+                Duration::from_millis(140),
+                success,
+                (!success).then_some("stage_write_failed"),
+            ),
+            runner_storage::StorageStageWrite::new(2, 42, Duration::ZERO, &timing),
+        );
+    }
+    telemetry.flush().await;
+    let requests = server.assert_finished_with_requests().await;
+    assert_eq!(requests.len(), 1);
+    assert!(
+        requests[0]
+            .to_lowercase()
+            .contains("authorization: bearer stage-token")
+    );
+    let payload: serde_json::Value =
+        serde_json::from_str(requests[0].split_once("\r\n\r\n").unwrap().1).unwrap();
+    assert_eq!(payload["runId"], run_id.to_string());
+    let ops = payload["sandboxOperations"].as_array().unwrap();
+    assert_eq!(ops.len(), 3);
+    for op in ops {
+        assert_eq!(op["action_type"], "storage_cache_stage_batch_write");
+        assert_eq!(op["duration_ms"], 140);
+        assert_eq!(op["storage_stage_write"]["file_count"], 2);
+        assert_eq!(op["storage_stage_write"]["content_bytes"], 42);
+        assert_eq!(op["storage_stage_write"]["lock_wait_us"], 0);
+    }
+    assert_eq!(ops[0]["storage_stage_write"]["host_timing"], "complete");
+    assert_eq!(ops[0]["storage_stage_write"]["frame_write_us"], 23);
+    assert_eq!(ops[0]["storage_stage_write"]["admission_us"], 0);
+    assert_eq!(ops[0]["storage_stage_write"].as_object().unwrap().len(), 15);
+    assert_eq!(ops[1]["success"], false);
+    assert_eq!(ops[1]["error"], "stage_write_failed");
+    assert_eq!(ops[1]["storage_stage_write"]["host_timing"], "partial");
+    assert!(
+        ops[1]["storage_stage_write"]
+            .get("frame_write_us")
+            .is_none()
+    );
+    assert!(
+        ops[1]["storage_stage_write"]
+            .get("response_wait_us")
+            .is_none()
+    );
+    assert_eq!(ops[2]["storage_stage_write"]["host_timing"], "unavailable");
+    assert_eq!(ops[2]["storage_stage_write"].as_object().unwrap().len(), 4);
+}
+
 pub(super) fn http_client_for_api_url(api_url: &str) -> HttpClient {
     HttpClient::new(HttpClientConfig {
         api_url: api_url.to_string(),
@@ -365,6 +457,7 @@ fn sandbox_op_serializes_base_observations() {
         runner_resource_budget_lease_count_bucket: None,
         dns_readiness: None,
         storage_batch: None,
+        storage_stage_write: None,
         archive_size_mismatch: None,
         archive_connection_attempt: None,
         home: None,
@@ -454,13 +547,15 @@ fn storage_host_telemetry_preserves_coverage_units_and_missing_phases() {
     let full = StorageManifestTiming {
         admission: Some(Duration::from_millis(1)),
         request: StorageManifestRequestTiming {
-            setup: Some(Duration::from_millis(2)),
-            frame_builder_wait: Some(Duration::from_millis(3)),
-            frame_encode: Some(Duration::from_millis(4)),
-            writer_wait: Some(Duration::from_millis(5)),
-            frame_write: Some(Duration::from_millis(6)),
-            response_wait: Some(Duration::from_millis(7)),
-            result_decode: Some(Duration::from_millis(8)),
+            host: sandbox::RequestTiming {
+                setup: Some(Duration::from_millis(2)),
+                frame_builder_wait: Some(Duration::from_millis(3)),
+                frame_encode: Some(Duration::from_millis(4)),
+                writer_wait: Some(Duration::from_millis(5)),
+                frame_write: Some(Duration::from_millis(6)),
+                response_wait: Some(Duration::from_millis(7)),
+                result_decode: Some(Duration::from_millis(8)),
+            },
             guest: sandbox::StorageManifestGuestTiming {
                 request_ownership_us: Some(0),
                 worker_wait_us: Some(9_007_199_254_740_991),
@@ -490,7 +585,11 @@ fn storage_host_telemetry_preserves_coverage_units_and_missing_phases() {
     let partial = StorageManifestTiming {
         admission: Some(Duration::ZERO),
         request: StorageManifestRequestTiming {
-            setup: Some(Duration::from_nanos(1)),
+            host: sandbox::RequestTiming {
+                setup: Some(Duration::from_nanos(1)),
+                result_decode: Some(Duration::from_millis(u64::from(u32::MAX) + 1)),
+                ..sandbox::RequestTiming::default()
+            },
             guest: sandbox::StorageManifestGuestTiming {
                 request_ownership_us: Some(9_007_199_254_740_992),
                 worker_wait_us: Some(0),
@@ -501,8 +600,6 @@ fn storage_host_telemetry_preserves_coverage_units_and_missing_phases() {
                 memory_peak_bytes: Some(u64::MAX),
                 ..sandbox::StorageManifestResources::default()
             },
-            result_decode: Some(Duration::from_millis(u64::from(u32::MAX) + 1)),
-            ..StorageManifestRequestTiming::default()
         },
         ..StorageManifestTiming::default()
     };

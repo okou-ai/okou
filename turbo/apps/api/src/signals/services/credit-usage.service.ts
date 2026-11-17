@@ -1,3 +1,5 @@
+import { waitUntil } from "../context/wait-until";
+import { projectCommittedChatThreadSearch$ } from "./chat-event-publication.service";
 import { command } from "ccstate";
 import { usageEvent } from "@okouai/db/runtime/usage-event";
 import { and, asc, eq } from "drizzle-orm";
@@ -96,14 +98,20 @@ export const completeProcessedOrgUsage$ = command(
     }
 
     for (const runId of runIds) {
-      await tapError(set(maybeEmitRunUsageEvent$, runId, signal), (error) => {
-        L.error("Failed to emit chat usage message after usage processing", {
-          orgId,
-          runId,
-          error,
-        });
-      });
+      const publication = await tapError(
+        set(maybeEmitRunUsageEvent$, runId, signal),
+        (error) => {
+          L.error("Failed to emit chat usage message after usage processing", {
+            orgId,
+            runId,
+            error,
+          });
+        },
+      );
       signal.throwIfAborted();
+      if (publication) {
+        waitUntil(set(projectCommittedChatThreadSearch$, publication, signal));
+      }
     }
   },
 );

@@ -1,3 +1,7 @@
+import {
+  projectCommittedChatThreadSearch$,
+  publishChatThreadMessageCreated$,
+} from "../services/chat-event-publication.service";
 import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import {
   CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
@@ -27,14 +31,12 @@ import { badRequestMessage, notFound } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
+import { waitUntil } from "../context/wait-until";
 import { runnerAuth$, type RunnerAuthContext } from "../auth/runner-auth";
 import { authorization$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
-import {
-  createRunnerGroupRealtimeToken,
-  publishChatThreadMessageCreatedSafely,
-} from "../external/realtime";
+import { createRunnerGroupRealtimeToken } from "../external/realtime";
 import type { RouteEntry } from "../route-entry";
 import {
   declareSteeredInput$,
@@ -43,8 +45,7 @@ import {
 import { notifyRunningChatRunOfPendingInput$ } from "../services/chat-thread-queue-drain.service";
 import { connectorRunnerFirewallCatalog$ } from "../services/connector-runner-firewall-catalog.service";
 import { resolveConnectorRuntimeTargets$ } from "../services/connector-runtime-sync.service";
-
-const STALE_RUNNER_THRESHOLD_MS = 5 * 60 * 1000;
+import { cleanupStaleRunnerState$ } from "../services/runner-state-cleanup.service";
 
 const unauthorizedNotAuthenticated = Object.freeze({
   status: 401 as const,
@@ -218,14 +219,11 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     });
   signal.throwIfAborted();
 
-  await db
-    .delete(runnerState)
-    .where(
-      lt(
-        runnerState.lastSeenAt,
-        new Date(currentDate.getTime() - STALE_RUNNER_THRESHOLD_MS),
-      ),
-    );
+  await set(
+    cleanupStaleRunnerState$,
+    { runnerGroup: body.data.group, at: currentDate },
+    signal,
+  );
   signal.throwIfAborted();
 
   return { status: 200 as const, body: { ok: true as const } };
@@ -497,11 +495,26 @@ const declareSteeredInputInner$ = command(
       }
     }
     if (result.replacementsAppended) {
-      await publishChatThreadMessageCreatedSafely({
-        userId: auth.userId,
-        orgId: auth.orgId,
-        threadId: result.chatThreadId,
-      });
+      waitUntil(
+        set(
+          projectCommittedChatThreadSearch$,
+          {
+            userId: auth.userId,
+            orgId: auth.orgId,
+            threadId: result.chatThreadId,
+          },
+          signal,
+        ),
+      );
+      await set(
+        publishChatThreadMessageCreated$,
+        {
+          userId: auth.userId,
+          orgId: auth.orgId,
+          threadId: result.chatThreadId,
+        },
+        signal,
+      );
       signal.throwIfAborted();
       await set(
         notifyRunningChatRunOfPendingInput$,

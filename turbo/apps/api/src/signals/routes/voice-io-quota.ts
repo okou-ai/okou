@@ -20,7 +20,11 @@ export const voiceIoQuotaRoutes: readonly RouteEntry[] = [
   {
     route: voiceIoQuotaContract.get,
     handler: authRoute(
-      { requireOrganization: true, missingOrganizationStatus: 401 },
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        oauthScope: "okou:voice:transcribe",
+      },
       getVoiceIoQuotaInner$,
     ),
   },

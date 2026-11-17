@@ -18,7 +18,6 @@ import { API_TEST_CONNECTOR_CATALOG_ARTIFACT } from "../../../test-fixtures/conn
 import baselineSkillBundle from "../../../test-fixtures/connector-skill-bundle.json";
 import { connectorPermissionsRoutes } from "../connector-permissions";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
-import { chatEventsRoutes } from "../chat-events";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import {
   mockGitHubConnectorOAuth,
@@ -338,8 +337,6 @@ describe.each([false, true])(
     ] as const)(
       "evaluates the captured permission source and temporary deadline: %s",
       async (expiry) => {
-        // Heartbeats advanced across grant expiry prune the global fleet.
-        await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
         const expired = expiry !== "active";
         const startedAt = now();
         mockNow(startedAt);

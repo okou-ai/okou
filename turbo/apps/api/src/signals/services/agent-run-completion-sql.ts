@@ -355,6 +355,10 @@ export function completionPublicationPlan(input: CompletionPublicationInput) {
     ],
     from: locked,
     fields: {
+      marketingRewardEventId:
+        sql`(SELECT id FROM completion_workflow_source)`.mapWith(
+          zodDriverValueDecoder(uuid().nullable()),
+        ),
       run: {
         id: locked.id,
         error: locked.error,

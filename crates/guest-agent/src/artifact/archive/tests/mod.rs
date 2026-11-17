@@ -15,12 +15,14 @@ fn extract_archive(tar_path: &Path, extract_dir: &Path) -> io::Result<()> {
 fn make_fifo(path: &Path) -> io::Result<()> {
     let path = CString::new(path.as_os_str().as_bytes())
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-    let rc = unsafe { libc::mkfifo(path.as_ptr(), 0o644) };
-    if rc == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::last_os_error())
-    }
+    nix::unistd::mkfifo(
+        path.as_c_str(),
+        nix::sys::stat::Mode::S_IRUSR
+            | nix::sys::stat::Mode::S_IWUSR
+            | nix::sys::stat::Mode::S_IRGRP
+            | nix::sys::stat::Mode::S_IROTH,
+    )
+    .map_err(io::Error::from)
 }
 
 fn disable_system_log() {

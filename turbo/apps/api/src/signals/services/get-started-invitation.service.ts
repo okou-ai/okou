@@ -63,11 +63,12 @@ export const linkGetStartedInvitation$ = command(
     { set },
     claimId: string,
     invitationId: string,
-    signal?: AbortSignal,
-  ): Promise<void> => {
-    signal?.throwIfAborted();
+    signal: AbortSignal,
+  ): Promise<string | undefined> => {
+    signal.throwIfAborted();
     const db = set(writeDb$);
     const at = nowDate();
+    const marketingRewardEventId = randomUUID();
     const linked = db
       .update(getStartedClaims)
       .set({ invitationId, updatedAt: at })
@@ -78,10 +79,10 @@ export const linkGetStartedInvitation$ = command(
         ),
       )
       .returning();
-    await db.execute(
+    const { rowCount } = await db.execute(
       sql`WITH linked_invitation AS (${linked.getSQL()}) ${marketingRewardInvitationEventInsert(
         {
-          id: randomUUID(),
+          id: marketingRewardEventId,
           environment: env("ENV"),
           type: "invitation.attributed",
           occurredAt: at.toISOString(),
@@ -89,7 +90,8 @@ export const linkGetStartedInvitation$ = command(
         sql`SELECT * FROM linked_invitation`,
       )}`,
     );
-    signal?.throwIfAborted();
+    signal.throwIfAborted();
+    return rowCount === 1 ? marketingRewardEventId : undefined;
   },
 );
 
@@ -121,11 +123,12 @@ export const revokeGetStartedInvitation$ = command(
   async (
     { set },
     args: { readonly orgId: string; readonly invitationId: string },
-    signal?: AbortSignal,
-  ): Promise<void> => {
-    signal?.throwIfAborted();
+    signal: AbortSignal,
+  ): Promise<string | undefined> => {
+    signal.throwIfAborted();
     const db = set(writeDb$);
     const at = nowDate();
+    const marketingRewardEventId = randomUUID();
     const revoked = db
       .update(getStartedClaims)
       .set({
@@ -142,10 +145,10 @@ export const revokeGetStartedInvitation$ = command(
         ),
       )
       .returning();
-    await db.execute(
+    const { rowCount } = await db.execute(
       sql`WITH revoked_invitation AS (${revoked.getSQL()}) ${marketingRewardInvitationEventInsert(
         {
-          id: randomUUID(),
+          id: marketingRewardEventId,
           environment: env("ENV"),
           type: "invitation.revoked",
           occurredAt: at.toISOString(),
@@ -153,6 +156,7 @@ export const revokeGetStartedInvitation$ = command(
         sql`SELECT * FROM revoked_invitation`,
       )}`,
     );
-    signal?.throwIfAborted();
+    signal.throwIfAborted();
+    return rowCount === 1 ? marketingRewardEventId : undefined;
   },
 );

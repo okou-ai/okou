@@ -290,7 +290,11 @@ export const projectRoutes: readonly RouteEntry[] = [
   {
     route: projectsContract.snapshot,
     handler: authRoute(
-      { requireOrganization: true, requiredCapability: "project:read" },
+      {
+        requireOrganization: true,
+        requiredCapability: "project:read",
+        oauthScope: "okou:project:read",
+      },
       snapshot$,
     ),
   },
@@ -301,28 +305,44 @@ export const projectRoutes: readonly RouteEntry[] = [
       androidProjectSortOrderTransform,
     ],
     handler: authRoute(
-      { requireOrganization: true, requiredCapability: "project:read" },
+      {
+        requireOrganization: true,
+        requiredCapability: "project:read",
+        oauthScope: "okou:project:read",
+      },
       events$,
     ),
   },
   {
     route: projectsContract.list,
     handler: authRoute(
-      { requireOrganization: true, requiredCapability: "project:read" },
+      {
+        requireOrganization: true,
+        requiredCapability: "project:read",
+        oauthScope: "okou:project:read",
+      },
       list$,
     ),
   },
   {
     route: projectsContract.threads,
     handler: authRoute(
-      { requireOrganization: true, requiredCapability: "project:read" },
+      {
+        requireOrganization: true,
+        requiredCapability: "project:read",
+        oauthScope: "okou:project:read",
+      },
       threads$,
     ),
   },
   {
     route: projectsContract.get,
     handler: authRoute(
-      { requireOrganization: true, requiredCapability: "project:read" },
+      {
+        requireOrganization: true,
+        requiredCapability: "project:read",
+        oauthScope: "okou:project:read",
+      },
       read$,
     ),
   },

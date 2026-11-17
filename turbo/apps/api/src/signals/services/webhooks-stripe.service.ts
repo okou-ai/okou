@@ -1,3 +1,4 @@
+import { deliverMarketingRewardEvents$ } from "./marketing-reward-event-delivery.service";
 import {
   legacyPlanSubscriptionEntitlementPublication,
   trialShorteningWhere,
@@ -281,6 +282,7 @@ interface CheckoutSubscriptionContext {
 }
 
 interface CheckoutCompletedOutcome {
+  readonly marketingRewardEventId?: string;
   readonly drainOrgId: string | null;
   readonly orgIds: readonly string[];
 }
@@ -3258,6 +3260,7 @@ const handleCheckoutCompleted$ = command(
       return {
         drainOrgId: null,
         orgIds: usagePackInvitation.orgId ? [usagePackInvitation.orgId] : [],
+        marketingRewardEventId: usagePackInvitation.marketingRewardEventId,
       };
     }
 
@@ -3338,6 +3341,26 @@ const handleCheckoutCompleted$ = command(
         ]),
       ],
     };
+  },
+);
+
+const handlePaidCheckoutSession$ = command(
+  async (
+    { set },
+    session: CheckoutSessionInput,
+    paidAt: Date,
+    signal: AbortSignal,
+  ): Promise<CheckoutCompletedOutcome> => {
+    const setupResult = await set(
+      handleBillingSetupCheckoutCompleted$,
+      session,
+      signal,
+    );
+    signal.throwIfAborted();
+    return (
+      setupResult ??
+      (await set(handleCheckoutCompleted$, session, paidAt, signal))
+    );
   },
 );
 
@@ -3544,21 +3567,26 @@ const handleInvoicePaid$ = command(
     { set },
     invoice: InvoiceInput,
     signal: AbortSignal,
-  ): Promise<string | null> => {
+  ): Promise<{
+    readonly orgId: string | null;
+    readonly marketingRewardEventId?: string;
+  }> => {
     const liveInvoice = await invoiceWithoutArchivedBillingLines(
       invoice,
       signal,
     );
     signal.throwIfAborted();
     if (!liveInvoice) {
-      return null;
+      return { orgId: null };
     }
     invoice = liveInvoice;
     // Definitive archive roots own only the proven independent concurrency path.
     // Correlation handlers can re-fetch an unfiltered invoice, so never enter them.
     if (isArchivedBillingInvoice(invoice)) {
-      return (await set(handleConcurrencyInvoicePaid$, invoice, signal))
-        .drainOrgId;
+      return {
+        orgId: (await set(handleConcurrencyInvoicePaid$, invoice, signal))
+          .drainOrgId,
+      };
     }
     const migrationResult = await set(
       handleUsagePackMigrationInvoicePaid$,
@@ -3567,7 +3595,7 @@ const handleInvoicePaid$ = command(
     );
     signal.throwIfAborted();
     if (migrationResult.handled) {
-      return migrationResult.orgId;
+      return { orgId: migrationResult.orgId };
     }
 
     const invitationResult = await set(
@@ -3577,7 +3605,10 @@ const handleInvoicePaid$ = command(
     );
     signal.throwIfAborted();
     if (invitationResult.handled) {
-      return invitationResult.orgId;
+      return {
+        orgId: invitationResult.orgId,
+        marketingRewardEventId: invitationResult.marketingRewardEventId,
+      };
     }
 
     const usagePackResult = await set(
@@ -3593,7 +3624,7 @@ const handleInvoicePaid$ = command(
         invoice,
         signal,
       );
-      return concurrencyResult.drainOrgId ?? usagePackResult.orgId;
+      return { orgId: concurrencyResult.drainOrgId ?? usagePackResult.orgId };
     }
     if (!usagePackResult.handled) {
       const autoRechargeResult = await set(
@@ -3603,7 +3634,7 @@ const handleInvoicePaid$ = command(
       );
       signal.throwIfAborted();
       if (autoRechargeResult.handled) {
-        return autoRechargeResult.drainOrgId;
+        return { orgId: autoRechargeResult.drainOrgId };
       }
 
       const creditPurchaseResult = await set(
@@ -3613,7 +3644,7 @@ const handleInvoicePaid$ = command(
       );
       signal.throwIfAborted();
       if (creditPurchaseResult.handled) {
-        return creditPurchaseResult.drainOrgId;
+        return { orgId: creditPurchaseResult.drainOrgId };
       }
     }
 
@@ -3624,7 +3655,7 @@ const handleInvoicePaid$ = command(
     );
     signal.throwIfAborted();
     if (atomGrantResult.handled) {
-      return atomGrantResult.drainOrgId;
+      return { orgId: atomGrantResult.drainOrgId };
     }
 
     const hasPlanInvoiceLine = invoiceLines.some((line) => {
@@ -3650,19 +3681,20 @@ const handleInvoicePaid$ = command(
       invoice,
       signal,
     );
-    return concurrencyResult.drainOrgId ?? planDrainOrgId;
+    return { orgId: concurrencyResult.drainOrgId ?? planDrainOrgId };
   },
 );
 
 /** Only the verified invoice.paid webhook can confirm a referral reward. */
 const handlePaidInvoiceWebhook$ = command(
   async ({ set }, invoice: InvoiceInput, signal: AbortSignal) => {
-    const orgId = await set(handleInvoicePaid$, invoice, signal);
+    const result = await set(handleInvoicePaid$, invoice, signal);
+    const { orgId } = result;
     signal.throwIfAborted();
     if (orgId) {
       await set(grantPaidFriendReferralRewards$, invoice, orgId, signal);
     }
-    return orgId;
+    return result;
   },
 );
 
@@ -4190,6 +4222,21 @@ function endedScheduleOrgIds(
   });
 }
 
+const handleSubscriptionScheduleEnded$ = command(
+  async (
+    { set },
+    schedule: SubscriptionScheduleInput,
+  ): Promise<readonly string[]> => {
+    const db = set(writeDb$);
+    const rows = await db
+      .update(orgMetadata)
+      .set(endedScheduleUpdateValues())
+      .where(eq(orgMetadata.pendingSubscriptionScheduleId, schedule.id))
+      .returning({ orgId: orgMetadata.orgId });
+    return endedScheduleOrgIds(schedule, rows);
+  },
+);
+
 const handleSubscriptionDeletedLegacy$ = command(
   async function handleSubscriptionDeletedLegacy(
     { set },
@@ -4441,8 +4488,17 @@ export const reconcileStripeSubscriptionSnapshot$ = command(
       ? await set(handleInvoicePaid$, paidInvoice, signal)
       : null;
     signal.throwIfAborted();
-    if (invoiceOrgId) {
-      orgIds.add(invoiceOrgId);
+    if (invoiceOrgId?.orgId) {
+      orgIds.add(invoiceOrgId.orgId);
+    }
+    if (invoiceOrgId?.marketingRewardEventId) {
+      waitUntil(
+        set(
+          deliverMarketingRewardEvents$,
+          { jobId: invoiceOrgId.marketingRewardEventId, handlerVersion: 3 },
+          signal,
+        ),
+      );
     }
 
     return {
@@ -4513,21 +4569,23 @@ export const reconcilePaidStripeCheckoutSession$ = command(
       return [];
     }
 
-    const setupResult = await set(
-      handleBillingSetupCheckoutCompleted$,
+    const result = await set(
+      handlePaidCheckoutSession$,
       input.session,
+      input.paidAt,
       signal,
     );
-    const result =
-      setupResult ??
-      (await set(
-        handleCheckoutCompleted$,
-        input.session,
-        input.paidAt,
-        signal,
-      ));
     signal.throwIfAborted();
 
+    if (result.marketingRewardEventId) {
+      waitUntil(
+        set(
+          deliverMarketingRewardEvents$,
+          { jobId: result.marketingRewardEventId, handlerVersion: 3 },
+          signal,
+        ),
+      );
+    }
     const orgIds = new Set(result.orgIds);
     if (result.drainOrgId) {
       orgIds.add(result.drainOrgId);
@@ -4552,7 +4610,17 @@ export const reconcilePaidStripeInvoice$ = command(
     invoice: StripeInvoice,
     signal: AbortSignal,
   ): Promise<string | null> => {
-    const orgId = await set(handleInvoicePaid$, invoice, signal);
+    const result = await set(handleInvoicePaid$, invoice, signal);
+    const { orgId } = result;
+    if (result.marketingRewardEventId) {
+      waitUntil(
+        set(
+          deliverMarketingRewardEvents$,
+          { jobId: result.marketingRewardEventId, handlerVersion: 3 },
+          signal,
+        ),
+      );
+    }
     signal.throwIfAborted();
     if (!orgId) {
       return null;
@@ -4579,14 +4647,13 @@ export const handleStripeWebhookEvent$ = command(
     event: StripeWebhookEvent,
     signal: AbortSignal,
   ): Promise<void> => {
-    const db = set(writeDb$);
     let drainOrgId: string | null = null;
+    let marketingRewardEventId: string | undefined;
     const billingChangedOrgIds = new Set<string>();
     L.debug("stripe webhook received", { type: event.type, id: event.id });
 
     if (!shouldHandleStripeBillingEvent(event)) {
-      logIgnoredStripeBillingEvent(event);
-      return;
+      return logIgnoredStripeBillingEvent(event);
     }
 
     switch (event.kind) {
@@ -4598,6 +4665,7 @@ export const handleStripeWebhookEvent$ = command(
           signal,
         );
         signal.throwIfAborted();
+        marketingRewardEventId = usagePackInvitation.marketingRewardEventId;
         if (usagePackInvitation.handled) {
           if (usagePackInvitation.orgId) {
             billingChangedOrgIds.add(usagePackInvitation.orgId);
@@ -4609,20 +4677,14 @@ export const handleStripeWebhookEvent$ = command(
         break;
       }
       case "checkout.session.paid": {
-        const setupResult = await set(
-          handleBillingSetupCheckoutCompleted$,
+        const result = await set(
+          handlePaidCheckoutSession$,
           event.object,
+          new Date(event.created * 1000),
           signal,
         );
-        const result =
-          setupResult ??
-          (await set(
-            handleCheckoutCompleted$,
-            event.object,
-            new Date(event.created * 1000),
-            signal,
-          ));
         signal.throwIfAborted();
+        marketingRewardEventId = result.marketingRewardEventId;
         drainOrgId = result.drainOrgId;
         addBillingChangedOrgIds(billingChangedOrgIds, result.orgIds);
         break;
@@ -4636,14 +4698,24 @@ export const handleStripeWebhookEvent$ = command(
         break;
       }
       case "invoice.paid": {
-        drainOrgId = await set(handlePaidInvoiceWebhook$, event.object, signal);
+        const result = await set(
+          handlePaidInvoiceWebhook$,
+          event.object,
+          signal,
+        );
+        drainOrgId = result.orgId;
+        marketingRewardEventId = result.marketingRewardEventId;
         if (drainOrgId) {
           billingChangedOrgIds.add(drainOrgId);
         }
         break;
       }
-      case "customer.subscription.created": {
-        const orgIds = await set(handleSubscriptionCreated$, event.object);
+      case "customer.subscription.created":
+      case "customer.subscription.deleted": {
+        const orgIds =
+          event.kind === "customer.subscription.created"
+            ? await set(handleSubscriptionCreated$, event.object)
+            : await set(handleSubscriptionDeleted$, event.object);
         signal.throwIfAborted();
         addBillingChangedOrgIds(billingChangedOrgIds, orgIds);
         break;
@@ -4659,12 +4731,6 @@ export const handleStripeWebhookEvent$ = command(
         addBillingChangedOrgIds(billingChangedOrgIds, orgIds);
         break;
       }
-      case "customer.subscription.deleted": {
-        const orgIds = await set(handleSubscriptionDeleted$, event.object);
-        signal.throwIfAborted();
-        addBillingChangedOrgIds(billingChangedOrgIds, orgIds);
-        break;
-      }
       case "subscription_schedule.released": {
         const orgIds = await set(
           handleSubscriptionScheduleReleased$,
@@ -4676,16 +4742,10 @@ export const handleStripeWebhookEvent$ = command(
         break;
       }
       case "subscription_schedule.ended": {
-        const scheduleDb = db;
-        const schedule = event.object;
-        const orgIds = await (async (): Promise<readonly string[]> => {
-          const rows = await scheduleDb
-            .update(orgMetadata)
-            .set(endedScheduleUpdateValues())
-            .where(eq(orgMetadata.pendingSubscriptionScheduleId, schedule.id))
-            .returning({ orgId: orgMetadata.orgId });
-          return endedScheduleOrgIds(schedule, rows);
-        })();
+        const orgIds = await set(
+          handleSubscriptionScheduleEnded$,
+          event.object,
+        );
         signal.throwIfAborted();
         addBillingChangedOrgIds(billingChangedOrgIds, orgIds);
         break;
@@ -4696,6 +4756,13 @@ export const handleStripeWebhookEvent$ = command(
     }
 
     signal.throwIfAborted();
+    if (marketingRewardEventId) {
+      const delivery = {
+        jobId: marketingRewardEventId,
+        handlerVersion: 3 as const,
+      };
+      waitUntil(set(deliverMarketingRewardEvents$, delivery, signal));
+    }
     await set(publishBillingChanges$, billingChangedOrgIds, signal);
 
     if (drainOrgId) {

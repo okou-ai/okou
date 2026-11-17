@@ -73,6 +73,7 @@ const deliverEventVersion$ = command(
       readonly origin: string;
       readonly secret: string;
       readonly handlerVersion: 1 | 2 | 3 | 4 | 5;
+      readonly jobId?: string;
     },
     signal: AbortSignal,
   ): Promise<{ readonly processed: number }> => {
@@ -83,6 +84,7 @@ const deliverEventVersion$ = command(
         {
           kind: MARKETING_REWARD_EVENT_JOB_KIND,
           handlerVersion: args.handlerVersion,
+          jobId: args.jobId,
         },
         signal,
       );
@@ -150,7 +152,10 @@ const deliverEventVersion$ = command(
 export const deliverMarketingRewardEvents$ = command(
   async (
     { set },
-    _args: Record<string, never>,
+    args: {
+      readonly jobId?: string;
+      readonly handlerVersion?: 1 | 2 | 3 | 4 | 5;
+    },
     signal: AbortSignal,
   ): Promise<{ readonly processed: number }> => {
     const origin = env("MARKETING_REWARDS_EVENTS_ORIGIN");
@@ -172,13 +177,20 @@ export const deliverMarketingRewardEvents$ = command(
           MARKETING_REWARD_WORKFLOW_EVENT_HANDLER_VERSION,
           MARKETING_REWARD_CHECKIN_EVENT_HANDLER_VERSION,
         ] as const
-      ).map((handlerVersion) => {
-        return set(
-          deliverEventVersion$,
-          { origin, secret, handlerVersion },
-          signal,
-        );
-      }),
+      )
+        .filter((handlerVersion) => {
+          return (
+            args.handlerVersion === undefined ||
+            args.handlerVersion === handlerVersion
+          );
+        })
+        .map((handlerVersion) => {
+          return set(
+            deliverEventVersion$,
+            { origin, secret, handlerVersion, jobId: args.jobId },
+            signal,
+          );
+        }),
     );
     signal.throwIfAborted();
     return {

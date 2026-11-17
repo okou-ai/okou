@@ -11767,6 +11767,20 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             }),
           ]),
         });
+        await expect(
+          chat.searchChat(actor, "authenticated assistant output"),
+        ).resolves.toMatchObject({
+          results: expect.arrayContaining([
+            expect.objectContaining({
+              chatThreadId: threadId,
+              matchedMessage: expect.objectContaining({
+                runId,
+                role: "assistant",
+                content: "authenticated assistant output",
+              }),
+            }),
+          ]),
+        });
 
         await api.requestCancelRun(actor, runId, [200]);
         await flushWaitUntilForTest();

@@ -106,14 +106,11 @@ async function current() {
 }
 
 test("only delivers a published edition when its server-side feature switch is enabled", async () => {
-  await setupApp({
-    context,
-    routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
-    isolatePg: true,
-  });
   mockNow(NOW);
+  const viewer = await identity();
   const prepared = await prepare(
     draft({
+      audience: { users: [viewer] },
       content: {
         schemaVersion: 1,
         title: "Product update",
@@ -136,7 +133,7 @@ test("only delivers a published edition when its server-side feature switch is e
       },
     }),
   );
-  const viewer = await identity();
+  signIn(viewer);
   await enable();
   await expect(current()).resolves.toBeNull();
   await publish(prepared);
@@ -162,12 +159,9 @@ test("only delivers a published edition when its server-side feature switch is e
 });
 
 test("filters bound items by effective switches and leaves empty bindings unrestricted", async () => {
-  await setupApp({
-    context,
-    routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
-    isolatePg: true,
-  });
-  const input = draft();
+  const viewer = await identity();
+  const peer = await identity(viewer.orgId);
+  const input = draft({ audience: { users: [viewer, peer] } });
   const prepared = await prepare({
     ...input,
     content: {
@@ -192,13 +186,14 @@ test("filters bound items by effective switches and leaves empty bindings unrest
     },
   });
   await publish(prepared);
+  signIn(viewer);
   // My Okou is available by default; a retained member can keep it disabled.
   await enable();
   await expect(current()).resolves.toMatchObject({
     content: { items: prepared.input.content.items.slice(0, 4) },
   });
 
-  await identity();
+  signIn(peer);
   await enable();
   await enable(false, FeatureSwitchKey.SingleAgent);
   await expect(current()).resolves.toMatchObject({
@@ -215,16 +210,12 @@ test("filters bound items by effective switches and leaves empty bindings unrest
 });
 
 test("suppresses an entirely gated edition without revealing a backlog or consuming its receipt", async () => {
-  await setupApp({
-    context,
-    routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
-    isolatePg: true,
-  });
   mockNow(NOW);
-  const older = await prepare();
+  const viewer = await identity();
+  const older = await prepare(draft({ audience: { users: [viewer] } }));
   await publish(older);
   mockNow(NOW + 1000);
-  const input = draft();
+  const input = draft({ audience: { users: [viewer] } });
   const prepared = await prepare({
     ...input,
     content: {
@@ -235,7 +226,7 @@ test("suppresses an entirely gated edition without revealing a backlog or consum
     },
   });
   await publish(prepared);
-  await identity();
+  signIn(viewer);
   await enable();
   await enable(false, FeatureSwitchKey.SingleAgent);
   await expect(current()).resolves.toBeNull();
@@ -265,15 +256,19 @@ test("suppresses an entirely gated edition without revealing a backlog or consum
 });
 
 test("persists seen status per user and edition across workspaces and content revisions", async () => {
-  await setupApp({
-    context,
-    routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
-    isolatePg: true,
-  });
   mockNow(NOW);
-  const prepared = await prepare();
-  await publish(prepared);
   const viewer = await identity();
+  const peer = await identity(viewer.orgId);
+  const otherOrgId = `org_${randomUUID()}`;
+  const prepared = await prepare(
+    draft({
+      audience: {
+        users: [viewer, peer, { orgId: otherOrgId, userId: viewer.userId }],
+      },
+    }),
+  );
+  await publish(prepared);
+  signIn(viewer);
   await enable();
   await expect(current()).resolves.not.toBeNull();
   await accept(
@@ -285,10 +280,10 @@ test("persists seen status per user and edition across workspaces and content re
     [200],
   );
   await expect(current()).resolves.toBeNull();
-  await identity(`org_${randomUUID()}`, viewer.userId);
+  await identity(otherOrgId, viewer.userId);
   await enable();
   await expect(current()).resolves.toBeNull();
-  const peer = await identity(viewer.orgId);
+  signIn(peer);
   await enable();
   await expect(current()).resolves.not.toBeNull();
   signIn(prepared.staff);
@@ -319,11 +314,6 @@ test("persists seen status per user and edition across workspaces and content re
 });
 
 test("delivers an organization audience to its members without exposing the audience", async () => {
-  await setupApp({
-    context,
-    routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
-    isolatePg: true,
-  });
   const viewer = await identity();
   const otherOrg = await identity();
   const prepared = await prepare(
@@ -363,11 +353,6 @@ test("delivers an organization audience to its members without exposing the audi
 });
 
 test("matches targeted users by organization and user together and unions organization targets", async () => {
-  await setupApp({
-    context,
-    routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
-    isolatePg: true,
-  });
   const viewer = await identity();
   const otherUser = await identity();
   const wholeOrg = await identity();
@@ -470,11 +455,6 @@ test("selects the latest eligible edition per audience without resurfacing seen 
 });
 
 test("publishes audience changes only through a new immutable revision and preserves seen receipts", async () => {
-  await setupApp({
-    context,
-    routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
-    isolatePg: true,
-  });
   const viewer = await identity();
   const prepared = await prepare(draft({ audience: { users: [viewer] } }));
   await publish(prepared);
@@ -535,18 +515,14 @@ test.each([
 );
 
 test("a seen edition does not reveal an older backlog and a new edition can appear", async () => {
-  await setupApp({
-    context,
-    routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
-    isolatePg: true,
-  });
   mockNow(NOW);
-  const older = await prepare();
+  const viewer = await identity();
+  const older = await prepare(draft({ audience: { users: [viewer] } }));
   await publish(older);
   mockNow(NOW + 1000);
-  const newer = await prepare();
+  const newer = await prepare(draft({ audience: { users: [viewer] } }));
   await publish(newer);
-  const viewer = await identity();
+  signIn(viewer);
   await enable();
   await expect(current()).resolves.toMatchObject({ id: newer.editionId });
   await accept(
@@ -559,19 +535,15 @@ test("a seen edition does not reveal an older backlog and a new edition can appe
   );
   await expect(current()).resolves.toBeNull();
   mockNow(NOW + 2000);
-  const next = await prepare();
+  const next = await prepare(draft({ audience: { users: [viewer] } }));
   await publish(next);
   signIn(viewer);
   await expect(current()).resolves.toMatchObject({ id: next.editionId });
 });
 
 test("keeps drafts immutable and publishes only the selected revision", async () => {
-  await setupApp({
-    context,
-    routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
-    isolatePg: true,
-  });
-  const prepared = await prepare();
+  const viewer = await identity();
+  const prepared = await prepare(draft({ audience: { users: [viewer] } }));
   const repeated = await accept(
     clients().guide.import({ headers, body: prepared.input }),
     [200],
@@ -597,7 +569,7 @@ test("keeps drafts immutable and publishes only the selected revision", async ()
   );
   expect(changed.body.revisionId).not.toBe(prepared.revisionId);
   await publish(prepared);
-  await identity();
+  signIn(viewer);
   await enable();
   await expect(current()).resolves.toMatchObject({
     revisionId: prepared.revisionId,
@@ -612,15 +584,11 @@ test("keeps drafts immutable and publishes only the selected revision", async ()
     }),
     [200],
   );
+  signIn(viewer);
   await expect(current()).resolves.toBeNull();
 });
 
 test("respects scheduled and expired publication windows for targeted editions", async () => {
-  await setupApp({
-    context,
-    routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
-    isolatePg: true,
-  });
   mockNow(NOW);
   const viewer = await identity();
   const prepared = await prepare(

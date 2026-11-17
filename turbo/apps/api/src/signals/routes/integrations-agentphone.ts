@@ -1,3 +1,4 @@
+import { deliverMarketingRewardEvents$ } from "../services/marketing-reward-event-delivery.service";
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import {
   linkAgentPhoneIdentity$,
@@ -722,6 +723,15 @@ const connectAgentPhone$ = command(
       );
     }
 
+    if (result.marketingRewardEventId) {
+      waitUntil(
+        set(
+          deliverMarketingRewardEvents$,
+          { jobId: result.marketingRewardEventId, handlerVersion: 2 },
+          signal,
+        ),
+      );
+    }
     await publishAgentPhoneUserLinked(auth.userId);
     signal.throwIfAborted();
 
@@ -1459,6 +1469,15 @@ const handleAgentPhoneConnectionCode$ = command(
     }
 
     if (result.kind === "linked") {
+      if (result.marketingRewardEventId) {
+        waitUntil(
+          set(
+            deliverMarketingRewardEvents$,
+            { jobId: result.marketingRewardEventId, handlerVersion: 2 },
+            signal,
+          ),
+        );
+      }
       await publishAgentPhoneUserLinked(result.userId);
       signal.throwIfAborted();
     }

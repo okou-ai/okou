@@ -72,8 +72,8 @@ try {
     (await client.query(projectQuery.replace('sort_order AS "sortOrder",', "")))
       .rows,
   );
-  await client.query(await migration("1568_project_sort_order"));
-  const backfill = await migration("1569_backfill_project_sort_order");
+  await client.query(await migration("1569_project_sort_order"));
+  const backfill = await migration("1570_backfill_project_sort_order");
   // The event insertion failure must roll back ranks and sequence reservations.
   await client.query(
     "ALTER TABLE project_events ADD CONSTRAINT reject_sort_fixture CHECK (kind <> 'sort_updated')",

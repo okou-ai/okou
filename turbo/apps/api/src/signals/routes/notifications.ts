@@ -6,10 +6,16 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import {
+  deliverMailNotification$,
   mailNotification,
   queueMailNotification$,
 } from "../services/mail-notification.service";
 
+import { waitUntil } from "../context/wait-until";
+import { tapError } from "../utils";
+import { logger } from "../../lib/log";
+
+const log = logger("notifications");
 const mailBody$ = bodyResultOf(notificationsContract.mail);
 const getParams$ = pathParamsOf(notificationsContract.get);
 const mail$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -22,7 +28,23 @@ const mail$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  return await set(queueMailNotification$, auth, body.data, signal);
+  const result = await set(queueMailNotification$, auth, body.data, signal);
+  signal.throwIfAborted();
+  if (result.status === 200 && result.body.status === "queued") {
+    const notificationId = result.body.notificationId;
+    waitUntil(
+      tapError(
+        set(deliverMailNotification$, auth, notificationId, signal),
+        (error) => {
+          log.warn("Mail delivery will recover from its committed outbox", {
+            notificationId,
+            error,
+          });
+        },
+      ),
+    );
+  }
+  return result;
 });
 const get$ = command(async ({ get }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);

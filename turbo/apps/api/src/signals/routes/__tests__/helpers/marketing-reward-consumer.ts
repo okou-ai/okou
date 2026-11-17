@@ -1,24 +1,19 @@
 import { createHash } from "node:crypto";
-import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contracts/cron";
 import {
   marketingRewardIntentSchema,
   type MarketingRewardIntent,
 } from "@okouai/api-contracts/contracts/marketing-reward-settlement";
 import { http, HttpResponse } from "msw";
-import { accept, type TestContext } from "../../../../__tests__/test-context";
-import { setupApp } from "../../../../__tests__/test-helpers";
 import { mockEnv } from "../../../../lib/env";
 import {
   marketingRewardSourceEventSchema,
   type MarketingRewardSourceEvent,
 } from "../../../../lib/marketing-reward-events";
 import { server } from "../../../../mocks/server";
-import { cronProcessBackgroundJobsRoutes } from "../../cron-process-background-jobs";
 
 /** External Marketing consumer: observe the real HTTP feed and retain its exact facts. */
-export function marketingRewardConsumer(context: TestContext) {
+export function marketingRewardConsumer() {
   const received: MarketingRewardSourceEvent[] = [];
-  mockEnv("CRON_SECRET", "marketing-consumer-cron");
   mockEnv(
     "MARKETING_REWARDS_EVENTS_ORIGIN",
     "https://marketing-consumer.example.test",
@@ -47,19 +42,7 @@ export function marketingRewardConsumer(context: TestContext) {
       },
     ),
   );
-  return {
-    received,
-    deliver() {
-      return accept(
-        setupApp({ context, routes: cronProcessBackgroundJobsRoutes })(
-          cronProcessBackgroundJobsContract,
-        ).process({
-          headers: { authorization: "Bearer marketing-consumer-cron" },
-        }),
-        [200],
-      );
-    },
-  };
+  return { received };
 }
 
 /** The caller computes the published wire identity independently of App's validator. */

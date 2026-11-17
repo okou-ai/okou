@@ -38,14 +38,17 @@ async fn read_private_file_rejects_fifo_without_blocking_child() {
 
     let path = PathBuf::from(path);
     let c_path = CString::new(path.as_os_str().as_bytes()).unwrap();
-    // SAFETY: `c_path` is a valid nul-terminated path for `mkfifo`.
-    let result = unsafe { nix::libc::mkfifo(c_path.as_ptr(), 0o600) };
-    assert_eq!(
-        result,
-        0,
-        "mkfifo failed: {}",
-        std::io::Error::last_os_error()
+    let result = nix::unistd::mkfifo(
+        c_path.as_c_str(),
+        nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
     );
+    if let Err(error) = result {
+        assert!(
+            result.is_ok(),
+            "mkfifo failed: {}",
+            std::io::Error::from(error)
+        );
+    }
 
     let error = read_private_file_to_string(&path).await.unwrap_err();
 

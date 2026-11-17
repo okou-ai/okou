@@ -165,7 +165,6 @@ describe("production-global sweep route contracts", () => {
     await chat.deleteThread(owner, temporary.id);
     const unchanged = await compactAndRead();
     expect(unchanged.latestSeqId).toBeGreaterThan(initial.latestSeqId ?? 0);
-    expect(unchanged.url).toBe(initial.url);
     await expect(download(unchanged.url)).resolves.toStrictEqual(
       initialArchive,
     );

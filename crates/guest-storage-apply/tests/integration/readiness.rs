@@ -414,8 +414,13 @@ fn fifo_marker_is_rejected_without_blocking_the_real_helper() {
     runtime_paths::ensure_dir(descriptor.directory(&runtime)).unwrap();
     let path =
         std::ffi::CString::new(descriptor.ready_path(&runtime, 0).as_os_str().as_bytes()).unwrap();
-    // SAFETY: path is a live NUL-terminated pathname in this test's private directory.
-    assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+    assert_eq!(
+        nix::unistd::mkfifo(
+            path.as_c_str(),
+            nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+        ),
+        Ok(())
+    );
     let output = spawn(&manifest, &runtime)
         .unwrap()
         .wait_with_timeout(Duration::from_secs(2))

@@ -2,6 +2,8 @@
 
 use std::time::Duration;
 
+use crate::RequestTiming;
+
 /// Caller-owned observations, separate from the operation's result or authority.
 ///
 /// A missing phase was not observed, rather than taking zero time. Completed
@@ -25,20 +27,8 @@ pub struct StorageManifestTiming {
 /// It is not pure transport and must not alone be reduced by the Guest duration.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct StorageManifestRequestTiming {
-    /// Normal-operation reservation and pending-response registration.
-    pub setup: Option<Duration>,
-    /// Wait for the shared frame-builder gate before encoding.
-    pub frame_builder_wait: Option<Duration>,
-    /// Existing bounded request validation and frame construction.
-    pub frame_encode: Option<Duration>,
-    /// Canonical writer-lock wait, excluding write admission.
-    pub writer_wait: Option<Duration>,
-    /// Canonical frame write, excluding unlock/observation and write admission.
-    pub frame_write: Option<Duration>,
-    /// Complete request write through the original terminal-result wait.
-    pub response_wait: Option<Duration>,
-    /// Core result/resource validation and owned output construction.
-    pub result_decode: Option<Duration>,
+    /// Fixed Host phases shared with other normal requests.
+    pub host: RequestTiming,
     /// Completed Guest phases from bounded terminal metadata, independently
     /// available from the Host phases and original Guest-server duration.
     pub guest: StorageManifestGuestTiming,

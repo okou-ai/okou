@@ -338,6 +338,8 @@ struct SandboxOp {
     #[serde(flatten)]
     storage_batch: Option<StorageBatchTelemetryFields>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    storage_stage_write: Option<runner_storage::StorageStageWrite>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     archive_size_mismatch: Option<ArchiveSizeMismatch>,
     #[serde(skip_serializing_if = "Option::is_none")]
     archive_connection_attempt: Option<ArchiveConnectionAttempt>,
@@ -1175,6 +1177,16 @@ impl SandboxOpReporter {
 }
 
 impl runner_storage::StorageTelemetry for JobTelemetry {
+    fn record_stage_write(
+        &mut self,
+        record: SandboxOpRecord,
+        observation: runner_storage::StorageStageWrite,
+    ) {
+        let mut op = sandbox_op_from_record(record, self.run_id);
+        op.storage_stage_write = Some(observation);
+        self.push_operation(op);
+    }
+
     fn record(
         &mut self,
         action_type: &str,
@@ -1315,6 +1327,7 @@ fn sandbox_op_at(
         runner_resource_budget_lease_count_bucket: None,
         dns_readiness: None,
         storage_batch: None,
+        storage_stage_write: None,
         archive_size_mismatch: None,
         archive_connection_attempt: None,
         home: None,

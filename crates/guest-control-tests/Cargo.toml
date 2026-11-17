@@ -22,5 +22,8 @@ tokio = { workspace = true, features = ["fs", "macros", "net", "rt", "time"] }
 name = "integration"
 path = "tests/integration/main.rs"
 
+[target.'cfg(unix)'.dev-dependencies]
+nix = { workspace = true, features = ["fs"] }
+
 [lints]
 workspace = true

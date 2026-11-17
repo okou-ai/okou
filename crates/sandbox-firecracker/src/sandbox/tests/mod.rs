@@ -2898,13 +2898,13 @@ async fn apply_storage_manifest_preserves_terminal_metadata() {
     let result = result.unwrap();
 
     assert!(timing.admission.is_some());
-    assert!(timing.request.setup.is_some());
-    assert!(timing.request.frame_builder_wait.is_some());
-    assert!(timing.request.frame_encode.is_some());
-    assert!(timing.request.writer_wait.is_some());
-    assert!(timing.request.frame_write.is_some());
-    assert!(timing.request.response_wait.is_some());
-    assert!(timing.request.result_decode.is_some());
+    assert!(timing.request.host.setup.is_some());
+    assert!(timing.request.host.frame_builder_wait.is_some());
+    assert!(timing.request.host.frame_encode.is_some());
+    assert!(timing.request.host.writer_wait.is_some());
+    assert!(timing.request.host.frame_write.is_some());
+    assert!(timing.request.host.response_wait.is_some());
+    assert!(timing.request.host.result_decode.is_some());
     assert!(timing.resource_log.is_some());
     assert_eq!(timing.request.guest.request_ownership_us, Some(0));
     assert_eq!(timing.request.guest.worker_wait_us, Some(71));
@@ -2934,6 +2934,48 @@ async fn apply_storage_manifest_preserves_terminal_metadata() {
     assert_eq!(resources["memory_high_limit_bytes"], "max");
     assert!(resources["memory_pgscan"].is_null());
     assert!(!summaries[0].fields["resources"].contains("must-not-be-logged"));
+}
+
+#[tokio::test]
+async fn observed_file_batch_uses_the_existing_admission_and_request_owner() {
+    let sandbox = test_sandbox_with_state(SandboxState::Running);
+    let mut guest = attach_mock_shutdown_guest(&sandbox).await;
+    let files = [sandbox::WriteFileEntry {
+        path: "/tmp/staged",
+        content: b"exact\0bytes",
+    }];
+    let mut timing = sandbox::FileWriteTiming::default();
+    let write = sandbox.write_files_with_timing(&files, &mut timing);
+    let respond = async {
+        let request = read_vsock_message(&mut guest).await;
+        assert_eq!(request.msg_type, guest_control_proto::MSG_WRITE_FILES);
+        let files = guest_control_proto::decode_write_files(&request.payload).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "/tmp/staged");
+        assert_eq!(files[0].content, b"exact\0bytes");
+        guest
+            .write_all(
+                &guest_control_proto::encode(
+                    guest_control_proto::MSG_WRITE_FILES_RESULT,
+                    request.seq,
+                    &guest_control_proto::encode_write_files_result(false, "denied"),
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+    };
+    let (result, ()) = tokio::join!(write, respond);
+    assert!(result.unwrap_err().to_string().contains("denied"));
+    assert!(timing.admission.is_some());
+    assert!(timing.request.host.frame_write.is_some());
+    assert!(timing.request.host.result_decode.is_some());
+
+    let stopped = test_sandbox_with_state(SandboxState::Stopped);
+    let result = stopped.write_files_with_timing(&files, &mut timing).await;
+    assert!(result.is_err());
+    assert!(timing.admission.is_some());
+    assert_eq!(timing.request, sandbox::FileWriteRequestTiming::default());
 }
 
 #[tokio::test]

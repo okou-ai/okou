@@ -82,9 +82,12 @@ const commitSlackInstallation$ = command(
     { set },
     args: ConnectedSlackInstallationWrite,
     signal: AbortSignal,
-  ): Promise<SlackInstallation> => {
+  ): Promise<
+    SlackInstallation & { readonly marketingRewardEventId?: string }
+  > => {
     const db = set(writeDb$);
     const at = nowDate();
+    const sourceEventId = randomUUID();
     const installed = db.$with("published_slack_installation").as(
       db
         .insert(slackOrgInstallations)
@@ -124,7 +127,7 @@ const commitSlackInstallation$ = command(
     const sourceEvent = db.$with("slack_installation_source_event", {}).as(
       marketingRewardLinkEventInsert(
         {
-          id: randomUUID(),
+          id: sourceEventId,
           environment: env("ENV"),
           type: "slack.oauth-authorized",
           occurredAt: at.toISOString(),
@@ -149,7 +152,7 @@ const commitSlackInstallation$ = command(
     if (!installation) {
       throw new Error("Slack installation upsert did not return a row");
     }
-    return installation;
+    return { ...installation, marketingRewardEventId: sourceEventId };
   },
 );
 
@@ -159,7 +162,9 @@ export const persistSlackInstallation$ = command(
     { set },
     args: SlackInstallationWrite,
     signal: AbortSignal,
-  ): Promise<SlackInstallation> => {
+  ): Promise<
+    SlackInstallation & { readonly marketingRewardEventId?: string }
+  > => {
     if (args.orgId === null) {
       return await set(commitAnonymousSlackInstallation$, args, signal);
     }

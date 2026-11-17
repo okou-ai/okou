@@ -426,6 +426,7 @@ function feishuOAuthGrant(
 export function feishuOAuthPublicationSql(
   input: FeishuOAuthPublicationInput,
   encrypted: EncryptedFeishuTokens | null,
+  marketingRewardEventId: string,
 ): SQL {
   const args = { ...input, at: nowDate() };
   const query = new QueryBuilder();
@@ -463,7 +464,7 @@ export function feishuOAuthPublicationSql(
   const sourceEvent = query.$with("reward_source_event", {}).as(
     marketingRewardOAuthEventInsert(
       {
-        id: randomUUID(),
+        id: marketingRewardEventId,
         environment: env("ENV"),
         occurredAt: args.at.toISOString(),
         orgId: args.state.orgId,

@@ -9,14 +9,9 @@ import { createImageIoTestApp, tokenRequest } from "./public-image-run";
 import { createRouteMocks } from "./route-test";
 
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const cronHeaders = Object.freeze({
-  authorization: "Bearer image-reconciliation-secret",
-});
 
-export async function createDurableImageFixture(
-  context: TestContext,
-  preferences = setupApp({ context, routes: userModelPreferenceRoutes }),
-) {
+export async function createDurableImageFixture(context: TestContext) {
+  const preferences = setupApp({ context, routes: userModelPreferenceRoutes });
   mockEnv("CRON_SECRET", "image-reconciliation-secret");
   mockEnv("OPENAI_API_KEY", "test-openai-key");
   context.mocks.ably.createTokenRequest.mockResolvedValue(tokenRequest);
@@ -73,13 +68,6 @@ export async function createDurableImageFixture(
       );
       expect(response.status).toBe(200);
       return builtInGenerationResponseSchema.parse(await response.json());
-    },
-    async reconcile() {
-      const response = await app.request(
-        "/api/cron/reconcile-image-generations",
-        { headers: cronHeaders },
-      );
-      expect(response.status).toBe(200);
     },
   };
 }

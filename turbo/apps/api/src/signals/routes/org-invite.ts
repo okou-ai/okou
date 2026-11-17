@@ -1,3 +1,5 @@
+import { waitUntil } from "../context/wait-until";
+import { deliverMarketingRewardEvents$ } from "../services/marketing-reward-event-delivery.service";
 import {
   invalidateGetStartedInvitationClaim$,
   linkGetStartedInvitation$,
@@ -294,7 +296,21 @@ const inviteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     throw invitationResult.error;
   }
   const invitation = invitationResult.value;
-  await set(linkGetStartedInvitation$, rewardClaim.id, invitation.id, signal);
+  const marketingRewardEventId = await set(
+    linkGetStartedInvitation$,
+    rewardClaim.id,
+    invitation.id,
+    signal,
+  );
+  if (marketingRewardEventId) {
+    waitUntil(
+      set(
+        deliverMarketingRewardEvents$,
+        { jobId: marketingRewardEventId, handlerVersion: 3 },
+        signal,
+      ),
+    );
+  }
   signal.throwIfAborted();
 
   return {
@@ -327,11 +343,20 @@ const revokeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
+  if (result.status !== "not_found" && result.marketingRewardEventId) {
+    waitUntil(
+      set(
+        deliverMarketingRewardEvents$,
+        { jobId: result.marketingRewardEventId, handlerVersion: 3 },
+        signal,
+      ),
+    );
+  }
   if (result.status === "accepted") {
     return conflict("The invitation has already been accepted");
   }
   if (result.status === "revoked") {
-    await set(
+    const marketingRewardEventId = await set(
       revokeGetStartedInvitation$,
       {
         orgId: auth.orgId,
@@ -340,6 +365,15 @@ const revokeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       signal,
     );
     signal.throwIfAborted();
+    if (marketingRewardEventId) {
+      waitUntil(
+        set(
+          deliverMarketingRewardEvents$,
+          { jobId: marketingRewardEventId, handlerVersion: 3 },
+          signal,
+        ),
+      );
+    }
     return {
       status: 200 as const,
       body: { message: "Invitation revoked and refund initiated" },
@@ -352,7 +386,7 @@ const revokeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     invitationId: body.data.invitationId,
   });
   signal.throwIfAborted();
-  await set(
+  const marketingRewardEventId = await set(
     revokeGetStartedInvitation$,
     {
       orgId: auth.orgId,
@@ -362,6 +396,15 @@ const revokeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
 
+  if (marketingRewardEventId) {
+    waitUntil(
+      set(
+        deliverMarketingRewardEvents$,
+        { jobId: marketingRewardEventId, handlerVersion: 3 },
+        signal,
+      ),
+    );
+  }
   return {
     status: 200 as const,
     body: { message: "Invitation revoked" },
@@ -708,7 +751,15 @@ const purchaseConfirmInner$ = command(
       signal,
     );
     signal.throwIfAborted();
-    signal.throwIfAborted();
+    if (result.status === "confirmed" && result.marketingRewardEventId) {
+      waitUntil(
+        set(
+          deliverMarketingRewardEvents$,
+          { jobId: result.marketingRewardEventId, handlerVersion: 3 },
+          signal,
+        ),
+      );
+    }
     if (result.status === "not_found") {
       return invitationPurchaseError({
         phase: "confirm",

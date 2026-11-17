@@ -657,7 +657,6 @@ class TestFirewallHeaderCache:
         with (
             mitm_ctx(registry_path=str(reg_path)),
         ):
-            registry_cache.reset_cache_for_tests()
             registry_cache.load_registry(str(reg_path))
 
         assert not has_auth_state(cache_key)

@@ -5,7 +5,6 @@ import { beforeEach, describe, expect, it, onTestFinished, test } from "vitest";
 import { array, boolean, number, object, string } from "zod";
 import { encodeHTML } from "entities";
 import { webhookTelemetryContract } from "@okouai/api-contracts/contracts/webhooks";
-import { cronBrowserReconcileContract } from "@okouai/api-contracts/contracts/cron";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import { presentationTemplatesContract } from "@okouai/api-contracts/contracts/presentation-templates";
 import {
@@ -46,8 +45,8 @@ import { webhooksAgentHealthUsageTelemetryRoutes } from "../../signals/routes/we
 import { createDeferredPromise } from "../../signals/utils";
 import { flushWaitUntilForTest } from "../../signals/context/wait-until";
 import { healthRoutes } from "../../signals/routes/health";
-import { cronBrowserReconcileRoutes } from "../../signals/routes/cron-browser-reconcile";
 import { createBrowserFixtures } from "../../signals/routes/__tests__/helpers/browser-fixture";
+import { createChatFilesBddApi } from "../../signals/routes/__tests__/helpers/api-bdd-chat-files";
 import { controlBrowserDeadline } from "../../signals/routes/__tests__/helpers/browser-deadline";
 import { mockOptionalEnv } from "../env";
 import { clearMockMonotonicNow, mockMonotonicNow, mockNow, now } from "../time";
@@ -141,7 +140,7 @@ test("keeps OAuth callback stages and exception classes without private details"
 });
 
 // Logger-owned redaction contract: trigger failures at the external CDP boundary
-// through the authenticated production cron, without observing private services.
+// through an owner thread deletion, without observing private services.
 test.each([
   "cdp",
   "connection",
@@ -152,12 +151,6 @@ test.each([
 ] as const)(
   "keeps private provider details out of native window failure logs: %s",
   async (failure) => {
-    const app = await setupApp({
-      context,
-      routes: cronBrowserReconcileRoutes,
-      isolatePg: true,
-    });
-    const cron = app(cronBrowserReconcileContract);
     const { fixture, open, view } = createBrowserFixtures(context);
     const f = await fixture();
     await f.owned.run(async () => {
@@ -167,6 +160,11 @@ test.each([
       if (!providerSessionId) {
         throw new Error("Expected the external Browser provider session");
       }
+      const threads = createChatFilesBddApi(context);
+      const sibling = await threads.createThread(f.owned.actor, {
+        agentId: f.owned.agentId,
+        model: f.owned.model,
+      });
       const privateDetail = "private-provider-window-detail";
       const nativeClose = failure.endsWith("-close");
       const closeCode = failure === "normal-close" ? 1000 : 1013;
@@ -197,13 +195,7 @@ test.each([
         };
       }
 
-      const result = await accept(
-        cron.reconcile({
-          headers: { authorization: "Bearer test-cron-secret" },
-        }),
-        [200],
-      );
-      expect(result.body).toMatchObject({ checked: 1, errors: 1, stopped: 0 });
+      await threads.deleteThread(f.owned.actor, sibling.id);
       const warning = context.mocks.axiomLogging.warn.mock.calls
         .filter(([message]) => {
           return message === "Browser window reconciliation failed";
@@ -253,18 +245,6 @@ test.each([
       f.provider.native.windowReply = "reply";
       f.provider.native.onWithheldReply = undefined;
       f.provider.native.beforeNativeWindowReply = undefined;
-      expect((await view(chat)).window).toStrictEqual(first.window);
-      const recovered = await accept(
-        cron.reconcile({
-          headers: { authorization: "Bearer test-cron-secret" },
-        }),
-        [200],
-      );
-      expect(recovered.body).toMatchObject({
-        checked: 1,
-        errors: 0,
-        stopped: 0,
-      });
       expect((await view(chat)).window).toStrictEqual(first.window);
       expect(f.provider.sessionRequests).toHaveLength(1);
     });

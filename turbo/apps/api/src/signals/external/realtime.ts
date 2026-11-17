@@ -26,6 +26,7 @@ import {
 } from "@okouai/api-contracts/contracts/phone-use";
 
 import { env } from "../../lib/env";
+import { now } from "../../lib/time";
 import { logger } from "../../lib/log";
 import { singleton } from "../../lib/singleton";
 import { waitUntil } from "../context/wait-until";
@@ -176,6 +177,34 @@ async function createPlatformUserRealtimeToken(
   });
   L.debug(`Generated platform realtime token for user:${userId}`);
   return tokenRequest;
+}
+
+/** OAuth chat readers cannot subscribe to global user, organization or remote-control signals. */
+export async function createOAuthChatRealtimeToken(
+  userId: string,
+  orgId: string,
+  expiresAtMs: number,
+  signal: AbortSignal,
+): Promise<Ably.TokenRequest | null> {
+  signal.throwIfAborted();
+  const timestamp = now();
+  // Ably can redeem the signed request up to two minutes after its timestamp.
+  // TTL starts at redemption, so reserve that entire window before signing.
+  const ttl = Math.min(60 * 60 * 1000, expiresAtMs - timestamp - 120_000);
+  if (ttl <= 0) {
+    return null;
+  }
+  const token = await ablyClient().auth.createTokenRequest({
+    capability: {
+      [getUserOrgChannelName(userId, orgId)]: ["subscribe"],
+      [sessionOutputChannelName(userId, orgId, "*")]: ["subscribe"],
+    },
+    timestamp,
+    ttl,
+    clientId: userId,
+  });
+  signal.throwIfAborted();
+  return now() >= expiresAtMs ? null : token;
 }
 
 export async function createPlatformRealtimeToken(

@@ -110,6 +110,14 @@ impl SandboxOpReporter {
 /// [`Self::reporter`] supplies independently usable background reporting with the
 /// originating run attribution; buffering and delivery policy belong to the adapter.
 pub trait StorageTelemetry: Send {
+    /// Record one existing stage-write attempt with actual batch dimensions and
+    /// bounded optional Host phases. Reporting retains this sink's run ownership.
+    fn record_stage_write(
+        &mut self,
+        record: SandboxOpRecord,
+        observation: crate::StorageStageWrite,
+    );
+
     /// Record an operation with caller-measured elapsed time and its outcome.
     ///
     /// Use recording time as the event timestamp; this method receives no earlier

@@ -84,4 +84,12 @@ async fn full_warm_batch_failure_preserves_sources_and_cache() {
     let ops = telemetry.pending_ops_snapshot();
     assert_op(&ops, STORAGE_CACHE_STAGE_BATCH_WRITE, false);
     assert_op(&ops, STORAGE_CACHE_STAGE_TOTAL, false);
+    let observations = telemetry.pending_stage_write_payloads();
+    assert_eq!(observations.len(), 1);
+    assert_eq!(observations[0]["success"], false);
+    assert_eq!(observations[0]["error"], STORAGE_CACHE_STAGE_FAILED);
+    let stage = &observations[0]["storage_stage_write"];
+    assert_eq!(stage["file_count"], 64);
+    assert_eq!(stage["content_bytes"], 64 * body.len());
+    assert_eq!(stage["host_timing"], "unavailable");
 }

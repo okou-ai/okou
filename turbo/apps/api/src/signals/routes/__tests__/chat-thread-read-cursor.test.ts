@@ -2,13 +2,17 @@ import { randomUUID } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
-import { testContext } from "../../../__tests__/test-context";
+import { testContext, accept } from "../../../__tests__/test-context";
 import { mockOptionalEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createMcpWebApi } from "./helpers/mcp-web-api";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { chatThreadMarkReadContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatThreadMarkReadRoutes } from "../chat-threads-mark-read";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -108,6 +112,28 @@ async function unreadThreadIds(
 }
 
 describe("chat thread read cursor", () => {
+  it("advances the native read watermark with OAuth chat read scope", async () => {
+    const fixture = await createUnreadCursorFixture();
+    const before = await readCursor(fixture);
+    const token = createMcpWebApi(context).authorize(fixture.actor)({
+      scope: "user:org:read okou:chat:read",
+    });
+    const marked = await accept(
+      setupApp({ context, routes: chatThreadMarkReadRoutes })(
+        chatThreadMarkReadContract,
+      ).markRead({
+        headers: { authorization: `Bearer ${token}` },
+        params: { id: fixture.threadId },
+      }),
+      [200],
+    );
+    expect(marked.body.lastReadAt).not.toBe(before);
+    await expect(readCursor(fixture)).resolves.toBe(marked.body.lastReadAt);
+    await expect(unreadThreadIds(fixture)).resolves.not.toContain(
+      fixture.threadId,
+    );
+  });
+
   it("advances a read to the latest terminal marker and repeats without a second invalidation", async () => {
     const fixture = await createUnreadCursorFixture();
     const before = await readCursor(fixture);

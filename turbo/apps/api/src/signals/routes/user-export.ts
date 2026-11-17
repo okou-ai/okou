@@ -53,7 +53,9 @@ const postUserExportInner$ = command(
         tapError(
           set(
             executeDurableUserExportWork$,
-            { jobId: result.jobId, maxSteps: 10 },
+            // Use the bounded worker budget so small exports can finish
+            // without waiting for cron to resume an arbitrary step cutoff.
+            { jobId: result.jobId },
             backgroundSignal,
           ),
           (error) => {

@@ -114,6 +114,30 @@ function fixture() {
   return { token, userId, orgId };
 }
 describe("external MCP authentication and transport", () => {
+  it("advertises optional native-client scopes without expanding default MCP consent", async () => {
+    fixture();
+    const metadata = await accept(client().metadata(), [200]);
+    expect(metadata.body).toMatchObject({
+      resource,
+      authorization_servers: [issuer],
+      scopes_supported: [
+        ...defaultScopes.split(" "),
+        "okou:project:read",
+        "okou:voice:transcribe",
+      ],
+    });
+    const unauthenticated = await accept(
+      client().request({
+        extraHeaders: { accept: "application/json, text/event-stream" },
+        body: requestBody("tools/list"),
+      }),
+      [401],
+    );
+    expect(unauthenticated.headers.get("www-authenticate")).toContain(
+      `scope="${defaultScopes}"`,
+    );
+  });
+
   it.each([
     { iss: "https://other-clerk.example.test" },
     { aud: "https://different-resource.example.test/mcp" },

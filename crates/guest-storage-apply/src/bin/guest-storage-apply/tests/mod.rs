@@ -116,9 +116,13 @@ fn run_manifest_file_and_remove_rejects_fifo_without_blocking() {
     let path = dir.path().join("storage-manifest.json");
     let c_path = CString::new(path.as_os_str().as_bytes()).unwrap();
 
-    // SAFETY: `c_path` is a valid, NUL-terminated filesystem path.
-    let result = unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) };
-    assert_eq!(result, 0, "mkfifo failed: {}", io::Error::last_os_error());
+    let result = nix::unistd::mkfifo(
+        c_path.as_c_str(),
+        nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+    );
+    if let Err(error) = result {
+        assert!(result.is_ok(), "mkfifo failed: {}", io::Error::from(error));
+    }
 
     // Keep the FIFO and child lifetime in the parent: a blocking open must
     // be killed and reaped before the temporary directory is removed.

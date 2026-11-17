@@ -1,3 +1,5 @@
+import { waitUntil } from "../context/wait-until";
+import { deliverMarketingRewardEvents$ } from "../services/marketing-reward-event-delivery.service";
 import {
   cronGetStartedContract,
   getStartedContract,
@@ -85,6 +87,13 @@ const checkin$ = command(async ({ get, set }, signal: AbortSignal) => {
     requestMarketingRewardCheckin$,
     { orgId: auth.orgId, userId: auth.userId, requestedAt: at },
     signal,
+  );
+  waitUntil(
+    set(
+      deliverMarketingRewardEvents$,
+      { jobId: request.id, handlerVersion: 5 },
+      signal,
+    ),
   );
   const writer = getStartedRewardWriter("user", auth.userId);
   if (writer === "marketing") {

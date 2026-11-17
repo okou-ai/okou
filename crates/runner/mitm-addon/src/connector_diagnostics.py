@@ -117,8 +117,6 @@ _CONNECTOR_DIAGNOSTIC_ACTIVE_FIREWALL_NAMES = "_connector_diagnostic_active_fire
 _CONNECTOR_DIAGNOSTIC_CATALOG_SNAPSHOT = "_connector_diagnostic_catalog_snapshot"
 _CONNECTOR_DIAGNOSTIC_LOOKUP_DONE = "_connector_diagnostic_lookup_done"
 _CONNECTOR_DIAGNOSTIC_CANDIDATE = "_connector_diagnostic_candidate"
-_CONNECTOR_DIAGNOSTIC_AUTH_HEADER_NAMES = "_connector_diagnostic_auth_header_names"
-_CONNECTOR_DIAGNOSTIC_AUTH_QUERY_PARAM_NAMES = "_connector_diagnostic_auth_query_param_names"
 _CONNECTOR_DIAGNOSTIC_RESPONSE_STREAM = "_connector_diagnostic_response_stream"
 _CONNECTOR_DIAGNOSTIC_PROXY_ENTRY_LOGGED = "_connector_diagnostic_proxy_entry_logged"
 _CONNECTOR_DIAGNOSTIC_OWNERSHIP_REASON = "_connector_diagnostic_ownership_reason"
@@ -428,8 +426,6 @@ def release_flow_state(flow: http.HTTPFlow) -> None:
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_ACTIVE_FIREWALL_NAMES, None)
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_LOOKUP_DONE, None)
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_CANDIDATE, None)
-    flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_AUTH_HEADER_NAMES, None)
-    flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_AUTH_QUERY_PARAM_NAMES, None)
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_OWNERSHIP_REASON, None)
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_OWNERSHIP_CANDIDATES, None)
     stream = flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_RESPONSE_STREAM, None)
@@ -471,17 +467,15 @@ def _candidate_from_flow(
         return None
 
     env_names = _metadata_str_tuple(meta.get(metadata_keys.CONNECTOR_DIAGNOSTIC_ENV_NAMES))
-    auth_header_names = _metadata_str_tuple(meta.get(_CONNECTOR_DIAGNOSTIC_AUTH_HEADER_NAMES))
-    auth_query_param_names = _metadata_str_tuple(
-        meta.get(_CONNECTOR_DIAGNOSTIC_AUTH_QUERY_PARAM_NAMES)
-    )
+    # Public metadata is a reporting projection. Live auth hints remain in the
+    # complete cached candidate, which _resolve_candidate checks first.
     return builtin_connector_diagnostics.ConnectorDiagnosticCandidate(
         connector_slug=connector_slug,
         reason=reason,
         env_names=env_names,
         base=base,
-        auth_header_names=auth_header_names,
-        auth_query_param_names=auth_query_param_names,
+        auth_header_names=(),
+        auth_query_param_names=(),
     )
 
 
@@ -583,8 +577,6 @@ def _set_failure_metadata(
     candidate: builtin_connector_diagnostics.ConnectorDiagnosticCandidate,
 ) -> None:
     flow.metadata[_CONNECTOR_DIAGNOSTIC_CANDIDATE] = candidate
-    flow.metadata[_CONNECTOR_DIAGNOSTIC_AUTH_HEADER_NAMES] = candidate.auth_header_names
-    flow.metadata[_CONNECTOR_DIAGNOSTIC_AUTH_QUERY_PARAM_NAMES] = candidate.auth_query_param_names
     flow.metadata[metadata_keys.FIREWALL_BASE] = candidate.base
     flow.metadata[metadata_keys.FIREWALL_NAME] = candidate.connector_slug
     flow.metadata[metadata_keys.FIREWALL_PERMISSION] = ""
