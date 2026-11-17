@@ -6,7 +6,6 @@ import {
   createOAuthChatRealtimeToken,
   createPlatformRealtimeToken,
 } from "../external/realtime";
-import { now } from "../../lib/time";
 import type { RouteEntry } from "../route-entry";
 
 const unauthenticated = Object.freeze({
@@ -37,11 +36,14 @@ const createInner$ = command(async ({ set }, signal: AbortSignal) => {
       ? await createOAuthChatRealtimeToken(
           auth.userId,
           auth.orgId,
-          Math.max(1, auth.expiresAt * 1000 - now()),
+          auth.expiresAt * 1000,
           signal,
         )
       : await createPlatformRealtimeToken(auth.userId, auth.orgId, signal);
   signal.throwIfAborted();
+  if (token === null) {
+    return unauthenticated;
+  }
 
   return { status: 200 as const, body: token };
 });

@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
+import { http, HttpResponse } from "msw";
+import { array, number, object, record, string } from "zod";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createProjectOperationId } from "@okouai/core/project-operation-id";
 import { testContext, accept } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { now, mockNow } from "../../../lib/time";
+import { server } from "../../../mocks/server";
 import { projectRoutes } from "../projects";
 import { chatThreadRoutes } from "../chat-threads";
 import { realtimeTokenRoutes } from "../realtime-token";
@@ -82,6 +85,22 @@ async function thread(actor: ApiTestUser) {
     agentId: agent.agentId,
     model: null,
   });
+}
+
+async function signedTokenRequest(input: unknown) {
+  const params = object({
+    timestamp: number(),
+    ttl: number(),
+    capability: record(string(), array(string())),
+    clientId: string(),
+  }).parse(input);
+  return {
+    ...params,
+    capability: JSON.stringify(params.capability),
+    keyName: "key",
+    nonce: "nonce",
+    mac: "mac",
+  };
 }
 
 describe("native organization OAuth grants", () => {
@@ -214,35 +233,140 @@ describe("native organization OAuth grants", () => {
     },
   );
 
-  it("issues only chat subscriptions bounded by the OAuth grant's expiration", async () => {
+  it.each([121, 7200])(
+    "bounds chat credentials at the latest redemption time for a %is grant",
+    async (remainingSeconds) => {
+      mockNow(Math.floor(now() / 1000) * 1000);
+      const timestamp = now();
+      const actor = bdd.user();
+      const expiresAtMs = timestamp + remainingSeconds * 1000;
+      const token = mcp.authorize(actor)({
+        scope: "user:org:read okou:chat:read",
+        exp: expiresAtMs / 1000,
+      });
+      context.mocks.ably.createTokenRequest.mockImplementation(
+        signedTokenRequest,
+      );
+      const response = await request(token, "/api/realtime/token", "POST", {});
+      expect(response.status).toBe(200);
+      const signed = object({ timestamp: number(), ttl: number() }).parse(
+        response.body,
+      );
+      expect(response.body).toStrictEqual({
+        keyName: "key",
+        timestamp,
+        ttl: Math.min(3_600_000, remainingSeconds * 1000 - 120_000),
+        capability: JSON.stringify({
+          [`user-org:${actor.userId}:${actor.orgId}`]: ["subscribe"],
+          [`run-output:${actor.userId}:${actor.orgId}:*`]: ["subscribe"],
+        }),
+        clientId: actor.userId,
+        nonce: "nonce",
+        mac: "mac",
+      });
+      // Ably starts TTL at exchange, which may be delayed for the full window.
+      const latestRedemptionMs = signed.timestamp + 120_000;
+      expect(latestRedemptionMs + signed.ttl).toBeLessThanOrEqual(expiresAtMs);
+    },
+  );
+
+  it.each([0, 30, 119, 120])(
+    "rejects a realtime grant with only %is remaining using the existing 401 envelope",
+    async (remainingSeconds) => {
+      mockNow(Math.floor(now() / 1000) * 1000);
+      const token = mcp.authorize(bdd.user())({
+        scope: "user:org:read okou:chat:read",
+        exp: now() / 1000 + remainingSeconds,
+      });
+      context.mocks.ably.createTokenRequest.mockImplementation(
+        signedTokenRequest,
+      );
+      const response = await request(token, "/api/realtime/token", "POST", {});
+      expect(response.status).toBe(401);
+      expect(response.body).toStrictEqual({
+        error: { message: "Authentication required", code: "UNAUTHORIZED" },
+      });
+      expect(context.mocks.ably.createTokenRequest).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects credentials when provider work crosses the OAuth expiration", async () => {
     mockNow(Math.floor(now() / 1000) * 1000);
+    const expiresAtMs = now() + 300_000;
+    const token = mcp.authorize(bdd.user())({
+      scope: "user:org:read okou:chat:read",
+      exp: expiresAtMs / 1000,
+    });
+    context.mocks.ably.createTokenRequest.mockImplementation(
+      (input: unknown) => {
+        mockNow(expiresAtMs);
+        return signedTokenRequest(input);
+      },
+    );
+    const response = await request(token, "/api/realtime/token", "POST", {});
+    expect(response.status).toBe(401);
+    expect(response.body).toStrictEqual({
+      error: { message: "Authentication required", code: "UNAUTHORIZED" },
+    });
+  });
+
+  it("rejects a grant that expires during Clerk membership authentication", async () => {
+    mockNow(Math.floor(now() / 1000) * 1000);
+    const expiresAtMs = now() + 300_000;
     const actor = bdd.user();
-    const expiresAt = Math.floor(now() / 1000) + 120;
     const token = mcp.authorize(actor)({
       scope: "user:org:read okou:chat:read",
-      exp: expiresAt,
+      exp: expiresAtMs / 1000,
     });
-    const capability = {
-      [`user-org:${actor.userId}:${actor.orgId}`]: ["subscribe"],
-      [`run-output:${actor.userId}:${actor.orgId}:*`]: ["subscribe"],
-    };
-    const signed = {
-      keyName: "key",
-      timestamp: now(),
-      ttl: 120_000,
-      capability: JSON.stringify(capability),
-      clientId: actor.userId,
-      nonce: "nonce",
-      mac: "mac",
-    };
-    context.mocks.ably.createTokenRequest.mockResolvedValue(signed);
+    const sdk =
+      await vi.importActual<typeof import("@clerk/backend")>("@clerk/backend");
+    const client = sdk.createClerkClient({ secretKey: "sk_test_native_oauth" });
+    context.mocks.clerk.users.getOrganizationMembershipList.mockImplementation(
+      (input: unknown) => {
+        return client.users.getOrganizationMembershipList(
+          object({ userId: string(), limit: number().optional() }).parse(input),
+        );
+      },
+    );
+    server.use(
+      http.get(
+        "https://api.clerk.com/v1/users/:userId/organization_memberships",
+        () => {
+          mockNow(expiresAtMs);
+          return HttpResponse.json({
+            data: [
+              {
+                id: `mem_${actor.userId}`,
+                object: "organization_membership",
+                role: "org:member",
+                created_at: 1,
+                updated_at: 1,
+                organization: {
+                  id: actor.orgId,
+                  object: "organization",
+                  name: "Native OAuth",
+                  slug: null,
+                  image_url: "",
+                  has_image: false,
+                  created_at: 1,
+                  updated_at: 1,
+                },
+                public_user_data: { user_id: actor.userId },
+              },
+            ],
+            total_count: 1,
+          });
+        },
+      ),
+    );
+    context.mocks.ably.createTokenRequest.mockImplementation(
+      signedTokenRequest,
+    );
     const response = await request(token, "/api/realtime/token", "POST", {});
-    expect(response.status).toBe(200);
-    expect(response.body).toStrictEqual(signed);
-    expect(context.mocks.ably.createTokenRequest).toHaveBeenCalledWith({
-      capability,
-      clientId: actor.userId,
-      ttl: 120_000,
+    expect(response.status).toBe(401);
+    expect(response.body).toStrictEqual({
+      error: { message: "Authentication required", code: "UNAUTHORIZED" },
     });
+    expect(context.mocks.ably.createTokenRequest).not.toHaveBeenCalled();
   });
 });
