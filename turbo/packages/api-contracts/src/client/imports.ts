@@ -1226,6 +1226,11 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "marketing-workflow-source",
+    contracts: ["marketingWorkflowSourceContract"],
+    bindings: [],
+  },
+  {
     module: "mcp-chat-search",
     contracts: ["mcpChatSearchContract"],
     bindings: [],
