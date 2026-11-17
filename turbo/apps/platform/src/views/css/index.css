@@ -270,9 +270,12 @@
   --duration-card-fly-out: 520ms;
   --animate-card-fly-out: card-fly-out var(--duration-card-fly-out)
     cubic-bezier(0.4, 0, 0.2, 1) forwards;
-  --duration-completion-in: 220ms;
+  --duration-completion-in: 320ms;
   --animate-completion-in: completion-in var(--duration-completion-in) ease-out
     var(--duration-card-fly-out) backwards;
+  --animate-completion-check-in: completion-check-in
+    var(--duration-completion-in) ease-out var(--duration-card-fly-out)
+    backwards;
   --animate-card-page-next-in: card-page-next-in 220ms ease-out both;
   --animate-card-page-next-out: card-page-next-out 220ms ease-out both;
   --animate-card-page-previous-in: card-page-previous-in 220ms ease-out both;
@@ -788,11 +791,23 @@ body {
 @keyframes completion-in {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.96);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+@keyframes completion-check-in {
+  0% {
+    transform: scale(0.72);
+  }
+  55% {
+    transform: scale(1.22);
+  }
+  100% {
+    transform: scale(1);
   }
 }
 

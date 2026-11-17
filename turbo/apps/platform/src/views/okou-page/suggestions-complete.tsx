@@ -38,7 +38,10 @@ export function SuggestionsComplete({
         <span aria-hidden className="pointer-events-none relative size-14">
           <CircleCheck
             strokeWidth={1.5}
-            className="size-full text-muted-foreground"
+            className={cn(
+              "size-full text-muted-foreground",
+              celebrate && "motion-safe:animate-completion-check-in",
+            )}
           />
           {celebrate &&
             COMPLETION_DOTS.map((dot) => {
