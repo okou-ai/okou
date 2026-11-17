@@ -10,8 +10,10 @@ import {
 import { command } from "ccstate";
 import { nowDate } from "../../lib/time";
 import { generateSandboxToken } from "../auth/tokens";
-import type { ExecutionContextRun } from "./execution-context";
-import type { ExecutionNetworkPolicyInputs } from "./execution-runtime-context";
+import type {
+  ExecutionContextRun,
+  ExecutionNetworkPolicyInputs,
+} from "./execution-runtime-context";
 import {
   signExecutionContentBundle$,
   type ExecutionContentBundleSignature,
