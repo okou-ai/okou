@@ -1181,21 +1181,26 @@
         "name": "免费版"
       },
       "highlights": {
-        "addOnConcurrency": "随时加购并发",
-        "agentFanOut": "Okou 将工作分配给多个 AI 助手协作完成",
-        "automations": "定时和事件触发的自动化",
-        "builtInResearchData": "内置 SEO、线索、网页和市场数据",
-        "chatIntegrations": "Slack 和 Telegram 集成",
-        "computerUse": "Okou 操作桌面上的真实应用",
+        "addOnConcurrency": "随工作量增长增加任务容量",
+        "appPermissions": "按具体操作和有效期控制应用访问权限",
+        "browserAndComputer": "让 Okou 操作浏览器或已连接的电脑",
         "concurrentAgents": "同时运行 {{slots}} 项工作",
-        "everythingInBuiltForTeams": "包含{{plan}}的全部功能，并为团队打造",
+        "connectedAutomations": "跨已连接的应用自动处理工作",
+        "create": "制作演示文稿、文档、图片、网站和图表",
+        "everythingInBuiltForTeams": "包含 {{plan}} 的全部功能，支持团队协作",
+        "exports": "导出为 PDF、Excel、Google Docs 和 Sheets",
         "included": "已包含",
-        "liveBrowser": "查看 Okou 的实时浏览器并随时接管",
-        "moreConnectorsChannels": "更多自定义连接器和渠道集成",
-        "supportEmail": "邮件支持",
+        "memberManagement": "管理成员角色和个人用量包",
+        "peopleSearch": "寻找专业人士、公司和创作者",
+        "proDetails": "定时与事件触发自动化 · 语音输入：每天 {{requests}} 次、{{minutes}} 分钟 · 邮件支持",
+        "projectContext": "在相关对话间延续项目上下文",
+        "research": "开展网页、社交媒体和市场调研",
+        "sharedWorkflows": "在团队内共享可复用的工作流",
         "supportPriority": "优先支持",
-        "voiceInput": "语音输入，每天 {{requests}} 次请求、{{minutes}} 分钟",
-        "webhookAutomations": "一个 webhook 就能从任何系统发起运行"
+        "teamCompliance": "SOC 2 Type II 进行中 · 符合 GDPR 和 CCPA/CPRA 要求",
+        "templates": "使用现成模板或自带模板",
+        "voiceInput": "语音输入：每天 {{requests}} 次、{{minutes}} 分钟",
+        "webhookAutomations": "通过 Webhook 从外部工具触发工作流"
       },
       "legacy": "旧版",
       "loadError": "无法加载账单状态。",
@@ -1205,7 +1210,7 @@
       "perMonth": "/月",
       "pricePerMonth": "{{price}}/月",
       "pro": {
-        "description": "日常工作，按成员计费。",
+        "description": "从调研到成果交付，接手你的日常工作。",
         "name": "Pro"
       },
       "renews": "{{date}}续订",
@@ -1213,7 +1218,7 @@
       "sectionTitle": "套餐",
       "selectedPlan": "所选套餐",
       "team": {
-        "description": "适合全天使用 Okou 工作的团队。",
+        "description": "为团队工作提供更高容量与更多控制。",
         "name": "Team"
       },
       "upgrade": "升级",

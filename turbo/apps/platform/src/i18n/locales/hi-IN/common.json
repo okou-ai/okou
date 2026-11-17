@@ -1185,21 +1185,26 @@
         "name": "फ्री"
       },
       "highlights": {
-        "addOnConcurrency": "जब चाहें और समवर्तिता जोड़ें",
-        "agentFanOut": "Okou AI सहायकों की टीम को काम सौंपता है",
-        "automations": "शेड्यूल और इवेंट ऑटोमेशन",
-        "builtInResearchData": "बिल्ट-इन SEO, लीड, वेब और मार्केट डेटा",
-        "chatIntegrations": "Slack और Telegram इंटीग्रेशन",
-        "computerUse": "Okou आपके डेस्कटॉप के असली ऐप चलाता है",
+        "addOnConcurrency": "काम बढ़ने पर और क्षमता जोड़ें",
+        "appPermissions": "विशिष्ट, समय-सीमित अनुमतियों से ऐप एक्सेस नियंत्रित करें",
+        "browserAndComputer": "Okou को ब्राउज़र या अपना कनेक्टेड कंप्यूटर इस्तेमाल करने दें",
         "concurrentAgents": "एक साथ {{slots}} काम",
-        "everythingInBuiltForTeams": "{{plan}} की हर सुविधा, टीमों के लिए तैयार",
+        "connectedAutomations": "अपने कनेक्टेड ऐप्स में काम ऑटोमेट करें",
+        "create": "प्रेज़ेंटेशन, दस्तावेज़, इमेज, वेबसाइट और चार्ट बनाएं",
+        "everythingInBuiltForTeams": "{{plan}} की सभी सुविधाएं, टीमवर्क के लिए",
+        "exports": "PDF, Excel, Google Docs और Sheets में एक्सपोर्ट करें",
         "included": "शामिल",
-        "liveBrowser": "Okou का लाइव ब्राउज़र देखें और नियंत्रण लें",
-        "moreConnectorsChannels": "ज़्यादा कस्टम कनेक्टर और चैनल इंटीग्रेशन",
-        "supportEmail": "ईमेल सहायता",
+        "memberManagement": "सदस्यों की भूमिकाएं और व्यक्तिगत उपयोग पैकेज प्रबंधित करें",
+        "peopleSearch": "पेशेवरों, कंपनियों और क्रिएटर्स को खोजें",
+        "proDetails": "शेड्यूल और इवेंट से चलने वाले ऑटोमेशन · वॉइस इनपुट: रोज़ {{requests}} अनुरोध और {{minutes}} मिनट · ईमेल सहायता",
+        "projectContext": "संबंधित चैट में प्रोजेक्ट का संदर्भ बनाए रखें",
+        "research": "वेब, सोशल मीडिया और बाज़ारों पर रिसर्च करें",
+        "sharedWorkflows": "दोबारा इस्तेमाल होने वाले वर्कफ़्लो पूरी टीम के साथ साझा करें",
         "supportPriority": "प्राथमिकता सहायता",
-        "voiceInput": "वॉइस इनपुट: रोज़ {{requests}} रिक्वेस्ट और {{minutes}} मिनट",
-        "webhookAutomations": "किसी भी सिस्टम से एक webhook पर रन शुरू करें"
+        "teamCompliance": "SOC 2 Type II प्रगति में · GDPR और CCPA/CPRA का अनुपालन",
+        "templates": "तैयार टेम्पलेट इस्तेमाल करें या अपने टेम्पलेट लाएं",
+        "voiceInput": "वॉइस इनपुट: रोज़ {{requests}} अनुरोध और {{minutes}} मिनट",
+        "webhookAutomations": "वेबहुक के ज़रिए बाहरी टूल से वर्कफ़्लो शुरू करें"
       },
       "legacy": "पुराना",
       "loadError": "बिलिंग स्थिति लोड नहीं हो सकी.",
@@ -1209,7 +1214,7 @@
       "perMonth": "/महीना",
       "pricePerMonth": "{{price}}/माह",
       "pro": {
-        "description": "रोज़मर्रा के काम के लिए, प्रति सदस्य शुल्क।",
+        "description": "रिसर्च से तैयार नतीजों तक, आपका रोज़मर्रा का काम।",
         "name": "प्रो"
       },
       "renews": "{{date}} को नवीनीकृत होगा",
@@ -1217,7 +1222,7 @@
       "sectionTitle": "योजना",
       "selectedPlan": "चयनित योजना",
       "team": {
-        "description": "उस टीम के लिए जो पूरे दिन Okou के साथ काम करती है।",
+        "description": "आपकी टीम के काम के लिए ज़्यादा क्षमता और नियंत्रण।",
         "name": "टीम"
       },
       "upgrade": "अपग्रेड",

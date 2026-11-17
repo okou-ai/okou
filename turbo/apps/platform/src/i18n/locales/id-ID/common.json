@@ -1181,21 +1181,26 @@
         "name": "Gratis"
       },
       "highlights": {
-        "addOnConcurrency": "Tambah konkurensi kapan saja",
-        "agentFanOut": "Okou membagi pekerjaan ke tim asisten AI",
-        "automations": "Otomatisasi terjadwal dan berbasis event",
-        "builtInResearchData": "Data SEO, lead, web, dan pasar bawaan",
-        "chatIntegrations": "Integrasi Slack dan Telegram",
-        "computerUse": "Okou mengendalikan aplikasi nyata di desktop Anda",
+        "addOnConcurrency": "Tambah kapasitas seiring bertambahnya beban kerja",
+        "appPermissions": "Kontrol akses aplikasi dengan izin spesifik dan berbatas waktu",
+        "browserAndComputer": "Biarkan Okou menggunakan browser atau komputer Anda yang terhubung",
         "concurrentAgents": "{{slots}} tugas berjalan sekaligus",
-        "everythingInBuiltForTeams": "Semua di {{plan}}, dibuat untuk tim",
+        "connectedAutomations": "Otomatiskan pekerjaan di seluruh aplikasi yang terhubung",
+        "create": "Buat presentasi, dokumen, gambar, situs web, dan grafik",
+        "everythingInBuiltForTeams": "Semua fitur {{plan}}, dirancang untuk kerja tim",
+        "exports": "Ekspor ke PDF, Excel, Google Docs, dan Sheets",
         "included": "Termasuk",
-        "liveBrowser": "Lihat browser Okou secara langsung dan ambil alih",
-        "moreConnectorsChannels": "Lebih banyak custom connector & integrasi saluran",
-        "supportEmail": "Dukungan email",
+        "memberManagement": "Kelola peran anggota dan paket penggunaan per orang",
+        "peopleSearch": "Temukan profesional, perusahaan, dan kreator",
+        "proDetails": "Otomatisasi terjadwal dan berbasis peristiwa · Input suara: {{requests}} permintaan dan {{minutes}} menit/hari · Dukungan email",
+        "projectContext": "Pertahankan konteks proyek di seluruh chat terkait",
+        "research": "Lakukan riset web, media sosial, dan pasar",
+        "sharedWorkflows": "Bagikan workflow yang dapat digunakan kembali ke seluruh tim",
         "supportPriority": "Dukungan prioritas",
-        "voiceInput": "Input suara: {{requests}} permintaan dan {{minutes}} menit per hari",
-        "webhookAutomations": "Mulai run dari sistem mana pun lewat satu webhook"
+        "teamCompliance": "SOC 2 Type II sedang berlangsung · Mematuhi GDPR dan CCPA/CPRA",
+        "templates": "Gunakan template siap pakai atau template Anda sendiri",
+        "voiceInput": "Input suara: {{requests}} permintaan dan {{minutes}} menit/hari",
+        "webhookAutomations": "Picu workflow dari alat eksternal melalui webhook"
       },
       "legacy": "Lama",
       "loadError": "Tidak dapat memuat status penagihan.",
@@ -1205,7 +1210,7 @@
       "perMonth": "/bulan",
       "pricePerMonth": "{{price}}/bulan",
       "pro": {
-        "description": "Pekerjaan sehari-hari, dengan harga per anggota.",
+        "description": "Pekerjaan harian Anda, dari riset hingga hasil akhir.",
         "name": "Pro"
       },
       "renews": "Memperbarui {{date}}",
@@ -1213,7 +1218,7 @@
       "sectionTitle": "Paket",
       "selectedPlan": "paket yang dipilih",
       "team": {
-        "description": "Untuk tim yang bekerja dengan Okou sepanjang hari.",
+        "description": "Kapasitas dan kendali lebih besar untuk pekerjaan tim Anda.",
         "name": "Tim"
       },
       "upgrade": "Tingkatkan",

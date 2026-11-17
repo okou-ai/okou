@@ -869,48 +869,14 @@ function PlanPrice({
   );
 }
 
-/* Each plan keeps its complete value story in one list. Concurrency leads both
-   lists, so 3 against 10 is still the first comparison without becoming a
-   second visual hierarchy between the price and the bullets.
-
-   The built-in research APIs ship on Pro, so they sit in Pro's list. One line
-   covers SEO, lead, web, and market data instead of three, which names the
-   whole capability without pushing Pro's list past a scannable length.
-
-   Team's first three rows and its voice caps are the only real entitlement
-   differences: ORG_PLAN_ENTITLEMENT_TIER_VALUES varies baseConcurrencyLimit
-   3/10, canBuyConcurrency, workflowWebhookAutomationAllowed, audioDailyRateLimit
-   300/500 and audioDailyDurationSeconds 200/500, and nothing else.
-
-   The middle rows are capability both plans ship. They sit here because the
-   label says "Everything in Pro, built for teams" -- inherited, not exclusive.
-   They are phrased as the thing the agent does rather than the setting that
-   enables it: a plan column earns attention by naming an outcome, and "Choose
-   which models your workspace can use" named a settings screen.
-
-   The connector row is the one exception, and it is a promise ahead of the
-   code: custom connectors are unlimited on both plans today, with the only
-   check in custom-connector.service.ts being an org-admin test. It reads true
-   only once ORG_PLAN_ENTITLEMENT_TIER_VALUES carries a per-tier connector
-   limit and createCustomConnector$ enforces it.
-
-   The dialog is a fixed 43rem, leaving 570px for the columns. Any row that
-   wraps costs the same height as a new row. */
+/* Team also highlights inherited collaboration capabilities. Its label avoids
+   presenting shared workflows, member management, or permissions as exclusive. */
 function planHighlights(tier: UsagePackPlanTier): readonly string[] {
   const concurrentAgents = i18n.t(
     ($) => {
       return $.billing.plans.highlights.concurrentAgents;
     },
     { slots: formatLocalizedNumber(planConcurrentSlots(tier)) },
-  );
-  const voiceInput = i18n.t(
-    ($) => {
-      return $.billing.plans.highlights.voiceInput;
-    },
-    {
-      minutes: formatLocalizedNumber(planVoiceMinutes(tier)),
-      requests: formatLocalizedNumber(planVoiceRequests(tier)),
-    },
   );
   if (tier === "team") {
     return [
@@ -919,21 +885,17 @@ function planHighlights(tier: UsagePackPlanTier): readonly string[] {
         return $.billing.plans.highlights.addOnConcurrency;
       }),
       i18n.t(($) => {
-        return $.billing.plans.highlights.agentFanOut;
+        return $.billing.plans.highlights.sharedWorkflows;
+      }),
+      i18n.t(($) => {
+        return $.billing.plans.highlights.memberManagement;
+      }),
+      i18n.t(($) => {
+        return $.billing.plans.highlights.appPermissions;
       }),
       i18n.t(($) => {
         return $.billing.plans.highlights.webhookAutomations;
       }),
-      i18n.t(($) => {
-        return $.billing.plans.highlights.liveBrowser;
-      }),
-      i18n.t(($) => {
-        return $.billing.plans.highlights.computerUse;
-      }),
-      i18n.t(($) => {
-        return $.billing.plans.highlights.moreConnectorsChannels;
-      }),
-      voiceInput,
       i18n.t(($) => {
         return $.billing.plans.highlights.supportPriority;
       }),
@@ -942,19 +904,44 @@ function planHighlights(tier: UsagePackPlanTier): readonly string[] {
   return [
     concurrentAgents,
     i18n.t(($) => {
-      return $.billing.plans.highlights.automations;
+      return $.billing.plans.highlights.create;
     }),
     i18n.t(($) => {
-      return $.billing.plans.highlights.builtInResearchData;
+      return $.billing.plans.highlights.templates;
     }),
     i18n.t(($) => {
-      return $.billing.plans.highlights.chatIntegrations;
+      return $.billing.plans.highlights.peopleSearch;
     }),
-    voiceInput,
     i18n.t(($) => {
-      return $.billing.plans.highlights.supportEmail;
+      return $.billing.plans.highlights.research;
+    }),
+    i18n.t(($) => {
+      return $.billing.plans.highlights.exports;
+    }),
+    i18n.t(($) => {
+      return $.billing.plans.highlights.projectContext;
+    }),
+    i18n.t(($) => {
+      return $.billing.plans.highlights.connectedAutomations;
+    }),
+    i18n.t(($) => {
+      return $.billing.plans.highlights.browserAndComputer;
     }),
   ];
+}
+
+function planDetails(tier: UsagePackPlanTier): string {
+  const limits = {
+    minutes: formatLocalizedNumber(planVoiceMinutes(tier)),
+    requests: formatLocalizedNumber(planVoiceRequests(tier)),
+  };
+  return tier === "pro"
+    ? i18n.t(($) => {
+        return $.billing.plans.highlights.proDetails;
+      }, limits)
+    : i18n.t(($) => {
+        return $.billing.plans.highlights.voiceInput;
+      }, limits);
 }
 
 function planHighlightsLabel(tier: UsagePackPlanTier): string {
@@ -970,13 +957,6 @@ function planHighlightsLabel(tier: UsagePackPlanTier): string {
       });
 }
 
-/* Both columns open this block at the same y with a label of the same weight,
-   so the lists start on one line.
-
-   The block leads at mt-5 and rows sit 8px apart rather than 10px. Nine rows
-   at the old spacing measured 589px against the 570px the dialog gives the
-   columns, which cost both cards their bottom inset and left the CTAs sitting
-   on the note's rule. Type size is untouched; only the air between rows moved. */
 function PlanHighlights({ tier }: { readonly tier: UsagePackPlanTier }) {
   return (
     <div className="mt-5">
@@ -1000,6 +980,16 @@ function PlanHighlights({ tier }: { readonly tier: UsagePackPlanTier }) {
           );
         })}
       </ul>
+      <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+        {planDetails(tier)}
+      </p>
+      {tier === "team" && (
+        <p className="mt-3 text-xs font-medium leading-relaxed text-muted-foreground">
+          {i18n.t(($) => {
+            return $.billing.plans.highlights.teamCompliance;
+          })}
+        </p>
+      )}
     </div>
   );
 }
@@ -1072,8 +1062,6 @@ function PlanSelectionCard({
           {name}
         </h3>
       </div>
-      {/* One line, so the price band under it starts at the same y in both
-          columns without reserving a second line neither description needs. */}
       <p className="mt-2 min-h-[21px] text-sm leading-normal text-muted-foreground">
         {planDescription(plan.tier)}
       </p>

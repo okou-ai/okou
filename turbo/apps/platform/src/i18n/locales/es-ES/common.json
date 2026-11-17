@@ -1209,21 +1209,26 @@
         "name": "Gratis"
       },
       "highlights": {
-        "addOnConcurrency": "Añade concurrencia cuando quieras",
-        "agentFanOut": "Okou delega el trabajo a un equipo de asistentes de IA",
-        "automations": "Automatizaciones programadas y por eventos",
-        "builtInResearchData": "Datos SEO, de leads, web y de mercado integrados",
-        "chatIntegrations": "Integración con Slack y Telegram",
-        "computerUse": "Okou controla aplicaciones reales en tu escritorio",
+        "addOnConcurrency": "Añade capacidad a medida que crece tu carga de trabajo",
+        "appPermissions": "Controla el acceso a las apps con permisos específicos y temporales",
+        "browserAndComputer": "Deja que Okou use un navegador o tu ordenador conectado",
         "concurrentAgents": "{{slots}} tareas a la vez",
-        "everythingInBuiltForTeams": "Todo lo de {{plan}}, creado para equipos",
+        "connectedAutomations": "Automatiza el trabajo entre tus apps conectadas",
+        "create": "Crea presentaciones, documentos, imágenes, sitios web y gráficos",
+        "everythingInBuiltForTeams": "Todo lo de {{plan}}, pensado para trabajar en equipo",
+        "exports": "Exporta a PDF, Excel, Google Docs y Sheets",
         "included": "Incluido",
-        "liveBrowser": "Observa el navegador de Okou en directo y toma el control",
-        "moreConnectorsChannels": "Más conectores personalizados e integraciones de canal",
-        "supportEmail": "Soporte por correo",
+        "memberManagement": "Gestiona los roles y los paquetes de uso de cada miembro",
+        "peopleSearch": "Encuentra profesionales, empresas y creadores",
+        "proDetails": "Automatizaciones programadas y por eventos · Entrada de voz: {{requests}} solicitudes y {{minutes}} minutos/día · Soporte por correo electrónico",
+        "projectContext": "Mantén el contexto del proyecto entre chats relacionados",
+        "research": "Investiga en la web, las redes sociales y los mercados",
+        "sharedWorkflows": "Comparte workflows reutilizables con tu equipo",
         "supportPriority": "Soporte prioritario",
-        "voiceInput": "Entrada de voz: {{requests}} solicitudes y {{minutes}} minutos al día",
-        "webhookAutomations": "Lanza una ejecución desde cualquier sistema con un webhook"
+        "teamCompliance": "SOC 2 Type II en curso · Conforme con GDPR y CCPA/CPRA",
+        "templates": "Usa plantillas prediseñadas o trae las tuyas",
+        "voiceInput": "Entrada de voz: {{requests}} solicitudes y {{minutes}} minutos/día",
+        "webhookAutomations": "Activa workflows desde herramientas externas mediante webhooks"
       },
       "legacy": "Heredado",
       "loadError": "No se pudo cargar el estado de facturación.",
@@ -1233,7 +1238,7 @@
       "perMonth": "/mes",
       "pricePerMonth": "{{price}}/mes",
       "pro": {
-        "description": "Trabajo diario, con precio por miembro.",
+        "description": "Tu trabajo diario, desde la investigación hasta el resultado final.",
         "name": "Pro"
       },
       "renews": "Renueva {{date}}",
@@ -1241,7 +1246,7 @@
       "sectionTitle": "Plan",
       "selectedPlan": "El plan seleccionado",
       "team": {
-        "description": "Para equipos que trabajan con Okou todo el día.",
+        "description": "Más capacidad y control para el trabajo de tu equipo.",
         "name": "Equipo"
       },
       "upgrade": "Actualización",

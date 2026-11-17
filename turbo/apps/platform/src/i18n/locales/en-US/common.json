@@ -1185,21 +1185,26 @@
         "name": "Free"
       },
       "highlights": {
-        "addOnConcurrency": "Add more concurrency any time",
-        "agentFanOut": "Okou delegates work to a team of AI helpers",
-        "automations": "Scheduled and event automations",
-        "builtInResearchData": "Built-in SEO, lead, web, and market data",
-        "chatIntegrations": "Slack and Telegram integration",
-        "computerUse": "Okou controls real apps on your desktop",
+        "addOnConcurrency": "Add capacity as your workload grows",
+        "appPermissions": "Control app access with specific, time-limited permissions",
+        "browserAndComputer": "Let Okou use a browser or your connected computer",
         "concurrentAgents": "{{slots}} tasks running at once",
-        "everythingInBuiltForTeams": "Everything in {{plan}}, built for teams",
+        "connectedAutomations": "Automate work across your connected apps",
+        "create": "Create presentations, documents, images, websites, and charts",
+        "everythingInBuiltForTeams": "Everything in {{plan}}, built for teamwork",
+        "exports": "Export to PDF, Excel, Google Docs, and Sheets",
         "included": "Included",
-        "liveBrowser": "Watch Okou’s live browser and take the wheel",
-        "moreConnectorsChannels": "More custom connectors & channel integration",
-        "supportEmail": "Email support",
+        "memberManagement": "Manage member roles and individual usage packages",
+        "peopleSearch": "Find people, companies, and creators",
+        "proDetails": "Scheduled and event-triggered automations · Voice input: {{requests}} requests and {{minutes}} minutes/day · Email support",
+        "projectContext": "Keep project context across related chats",
+        "research": "Research the web, social media, and markets",
+        "sharedWorkflows": "Share reusable workflows across your team",
         "supportPriority": "Priority support",
-        "voiceInput": "Voice input, {{requests}} requests and {{minutes}} minutes a day",
-        "webhookAutomations": "Start a run from any system with one webhook"
+        "teamCompliance": "SOC 2 Type II in progress · GDPR & CCPA/CPRA compliant",
+        "templates": "Use ready-made templates or bring your own",
+        "voiceInput": "Voice input: {{requests}} requests and {{minutes}} minutes/day",
+        "webhookAutomations": "Trigger workflows from external tools via webhooks"
       },
       "legacy": "Legacy",
       "loadError": "Could not load billing status.",
@@ -1209,7 +1214,7 @@
       "perMonth": "/month",
       "pricePerMonth": "{{price}}/month",
       "pro": {
-        "description": "Everyday work, priced per member.",
+        "description": "Your everyday work, from research to finished results.",
         "name": "Pro"
       },
       "renews": "Renews {{date}}",
@@ -1217,7 +1222,7 @@
       "sectionTitle": "Plan",
       "selectedPlan": "the selected plan",
       "team": {
-        "description": "For a team that keeps Okou working all day.",
+        "description": "More capacity and control for your team’s work.",
         "name": "Team"
       },
       "upgrade": "Upgrade",

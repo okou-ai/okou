@@ -1185,21 +1185,26 @@
         "name": "Frei"
       },
       "highlights": {
-        "addOnConcurrency": "Parallelität jederzeit aufstocken",
-        "agentFanOut": "Okou verteilt Arbeit an ein Team von KI-Helfern",
-        "automations": "Zeit- und ereignisgesteuerte Automationen",
-        "builtInResearchData": "Integrierte SEO-, Lead-, Web- und Marktdaten",
-        "chatIntegrations": "Slack- und Telegram-Integration",
-        "computerUse": "Okou steuert echte Desktop-Apps",
+        "addOnConcurrency": "Erweitern Sie die Kapazität bei wachsendem Arbeitsaufkommen",
+        "appPermissions": "Steuern Sie App-Zugriffe mit gezielten, zeitlich begrenzten Berechtigungen",
+        "browserAndComputer": "Lassen Sie Okou einen Browser oder Ihren verbundenen Computer bedienen",
         "concurrentAgents": "{{slots}} Aufgaben gleichzeitig",
-        "everythingInBuiltForTeams": "Alles aus {{plan}}, gemacht für Teams",
+        "connectedAutomations": "Automatisieren Sie Arbeit über Ihre verbundenen Apps hinweg",
+        "create": "Erstellen Sie Präsentationen, Dokumente, Bilder, Websites und Diagramme",
+        "everythingInBuiltForTeams": "Alles aus {{plan}}, für die Zusammenarbeit im Team",
+        "exports": "Exportieren Sie in PDF, Excel, Google Docs und Sheets",
         "included": "Enthalten",
-        "liveBrowser": "Verfolge Okous Live-Browser und übernimm die Kontrolle",
-        "moreConnectorsChannels": "Mehr Custom Connectors & Kanal-Integrationen",
-        "supportEmail": "E-Mail-Support",
+        "memberManagement": "Verwalten Sie Mitgliederrollen und individuelle Nutzungspakete",
+        "peopleSearch": "Finden Sie Fachleute, Unternehmen und Creator",
+        "proDetails": "Zeit- und ereignisgesteuerte Automatisierungen · Spracheingabe: {{requests}} Anfragen und {{minutes}} Minuten/Tag · E-Mail-Support",
+        "projectContext": "Behalten Sie den Projektkontext über zugehörige Chats hinweg",
+        "research": "Recherchieren Sie im Web, in sozialen Medien und zu Märkten",
+        "sharedWorkflows": "Teilen Sie wiederverwendbare Workflows mit Ihrem Team",
         "supportPriority": "Priorisierter Support",
-        "voiceInput": "Spracheingabe: {{requests}} Anfragen und {{minutes}} Minuten pro Tag",
-        "webhookAutomations": "Einen Run aus jedem System per Webhook starten"
+        "teamCompliance": "SOC 2 Type II in Bearbeitung · GDPR- und CCPA/CPRA-konform",
+        "templates": "Nutzen Sie fertige oder eigene Vorlagen",
+        "voiceInput": "Spracheingabe: {{requests}} Anfragen und {{minutes}} Minuten/Tag",
+        "webhookAutomations": "Starten Sie Workflows aus externen Tools über Webhooks"
       },
       "legacy": "Legacy",
       "loadError": "Der Abrechnungsstatus konnte nicht geladen werden.",
@@ -1209,7 +1214,7 @@
       "perMonth": "/Monat",
       "pricePerMonth": "{{price}}/Monat",
       "pro": {
-        "description": "Tägliche Arbeit, pro Mitglied abgerechnet.",
+        "description": "Ihre tägliche Arbeit, von der Recherche bis zum fertigen Ergebnis.",
         "name": "Pro"
       },
       "renews": "Erneuert {{date}}",
@@ -1217,7 +1222,7 @@
       "sectionTitle": "Planen",
       "selectedPlan": "den ausgewählten Plan",
       "team": {
-        "description": "Für Teams, die den ganzen Tag mit Okou arbeiten.",
+        "description": "Mehr Kapazität und Kontrolle für die Arbeit Ihres Teams.",
         "name": "Team"
       },
       "upgrade": "Upgrade",
