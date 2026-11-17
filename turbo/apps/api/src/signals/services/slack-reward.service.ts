@@ -88,7 +88,7 @@ const commitSlackReward$ = command(
   },
 );
 
-const settleSlackReward$ = command(
+export const settleSlackReward$ = command(
   async ({ set }, claim: Claim, signal: AbortSignal): Promise<void> => {
     await set(ensureGetStartedRewardWallet$, claim.orgId, signal);
     await set(expireOrgCredits$, claim.orgId, signal);
