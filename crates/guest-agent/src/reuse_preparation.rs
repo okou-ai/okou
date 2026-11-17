@@ -790,14 +790,8 @@ fn process_containment_paths() -> ProcessContainmentPaths {
 fn is_cgroup2_filesystem(path: &Path) -> io::Result<bool> {
     let path = CString::new(path.as_os_str().as_bytes())
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "path contains NUL byte"))?;
-    let mut stats = std::mem::MaybeUninit::<libc::statfs>::uninit();
-    // SAFETY: `path` is NUL-terminated and `stats` points to writable memory.
-    let result = unsafe { libc::statfs(path.as_ptr(), stats.as_mut_ptr()) };
-    if result != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: successful statfs initialized the structure.
-    Ok(unsafe { stats.assume_init() }.f_type == 0x6367_7270)
+    let stats = rustix::fs::statfs(path.as_c_str())?;
+    Ok(stats.f_type == 0x6367_7270)
 }
 
 fn split_runtime_path(path: &Path) -> Result<(PathBuf, &OsStr), ReusePreparationError> {

@@ -32,7 +32,7 @@ use guest_contracts::process_containment::{
 const CGROUP_PROCS_FILE: &str = "cgroup.procs";
 const CPU_STAT_FILE: &str = "cpu.stat";
 const PROC_SELF_CGROUP: &str = "/proc/self/cgroup";
-const CGROUP2_SUPER_MAGIC: u64 = 0x6367_7270;
+const CGROUP2_SUPER_MAGIC: rustix::fs::FsWord = 0x6367_7270;
 const WORKLOAD_BOOTSTRAP_IO_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 #[cfg(debug_assertions)]
 const TEST_ALLOW_UNMANAGED_PROCESS_CONTROL_ENV: &str = "OKOU_TEST_ALLOW_UNMANAGED_PROCESS_CONTROL";
@@ -368,13 +368,8 @@ fn validate_descriptor(placement: &OwnedFd) -> io::Result<PathBuf> {
         ));
     }
 
-    let mut stats = std::mem::MaybeUninit::<libc::statfs>::uninit();
-    // SAFETY: `placement` is valid and `stats` points to writable memory.
-    if unsafe { libc::fstatfs(placement.as_raw_fd(), stats.as_mut_ptr()) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: successful fstatfs initialized `stats`.
-    if unsafe { stats.assume_init() }.f_type as u64 != CGROUP2_SUPER_MAGIC {
+    let stats = rustix::fs::fstatfs(placement)?;
+    if stats.f_type != CGROUP2_SUPER_MAGIC {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "workload placement fd is not on cgroup v2",
