@@ -244,13 +244,8 @@ fn buffered_payload_write_failure_is_not_successful() {
             if libc::signal(libc::SIGXFSZ, libc::SIG_IGN) == libc::SIG_ERR {
                 return Err(io::Error::last_os_error());
             }
-            let limit = libc::rlimit {
-                rlim_cur: 8192,
-                rlim_max: 8192,
-            };
-            if libc::setrlimit(libc::RLIMIT_FSIZE, &limit) != 0 {
-                return Err(io::Error::last_os_error());
-            }
+            nix::sys::resource::setrlimit(nix::sys::resource::Resource::RLIMIT_FSIZE, 8192, 8192)
+                .map_err(io::Error::from)?;
             Ok(())
         });
     }
@@ -330,13 +325,8 @@ fn low_descriptor_limit_keeps_supported_archives_extractable() {
     // syscall and constructs an error on failure. The parent limit is untouched.
     unsafe {
         child.pre_exec(|| {
-            let limit = libc::rlimit {
-                rlim_cur: 32,
-                rlim_max: 32,
-            };
-            if libc::setrlimit(libc::RLIMIT_NOFILE, &limit) != 0 {
-                return Err(io::Error::last_os_error());
-            }
+            nix::sys::resource::setrlimit(nix::sys::resource::Resource::RLIMIT_NOFILE, 32, 32)
+                .map_err(io::Error::from)?;
             Ok(())
         });
     }

@@ -50,5 +50,8 @@ guest-control-proto.workspace = true
 name = "integration"
 path = "tests/integration.rs"
 
+[target.'cfg(unix)'.dev-dependencies]
+nix = { workspace = true, features = ["resource"] }
+
 [lints]
 workspace = true

@@ -44,6 +44,7 @@ pub use cli_test_support::{
 };
 
 use cli_test_support::json_fixture::parse_json_lines;
+use nix::sys::resource::{Resource, getrlimit, rlim_t, setrlimit};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::future::Future;
@@ -177,7 +178,7 @@ pub fn build_and_locate_mock_codex() -> Result<PathBuf, String> {
 }
 
 pub struct SoftFileSizeLimitGuard {
-    original_limit: Option<libc::rlimit>,
+    original_limit: Option<(rlim_t, rlim_t)>,
     original_sigxfsz: libc::sighandler_t,
 }
 
@@ -190,12 +191,8 @@ impl SoftFileSizeLimitGuard {
         let Some(original_limit) = self.original_limit else {
             return Ok(());
         };
-        // SAFETY: original_limit was returned by getrlimit for this process.
-        if unsafe { libc::setrlimit(libc::RLIMIT_FSIZE, &original_limit) } != 0 {
-            return Err(format!(
-                "restore RLIMIT_FSIZE: {}",
-                io::Error::last_os_error()
-            ));
+        if let Err(error) = setrlimit(Resource::RLIMIT_FSIZE, original_limit.0, original_limit.1) {
+            return Err(format!("restore RLIMIT_FSIZE: {}", io::Error::from(error)));
         }
         // SAFETY: original_sigxfsz was returned by signal for SIGXFSZ.
         if unsafe { libc::signal(libc::SIGXFSZ, self.original_sigxfsz) } == libc::SIG_ERR {
@@ -218,18 +215,13 @@ impl Drop for SoftFileSizeLimitGuard {
 }
 
 pub fn set_soft_file_size_limit(limit: u64) -> Result<SoftFileSizeLimitGuard, String> {
-    let mut current = std::mem::MaybeUninit::<libc::rlimit>::uninit();
-    // SAFETY: current points to writable storage for one rlimit value.
-    if unsafe { libc::getrlimit(libc::RLIMIT_FSIZE, current.as_mut_ptr()) } != 0 {
-        return Err(format!("read RLIMIT_FSIZE: {}", io::Error::last_os_error()));
-    }
-    // SAFETY: successful getrlimit initialized current.
-    let current = unsafe { current.assume_init() };
+    let current = getrlimit(Resource::RLIMIT_FSIZE)
+        .map_err(|error| format!("read RLIMIT_FSIZE: {}", io::Error::from(error)))?;
     let target: libc::rlim_t = limit;
-    if target > current.rlim_max {
+    if target > current.1 {
         return Err(format!(
             "requested RLIMIT_FSIZE {target} exceeds hard limit {}",
-            current.rlim_max
+            current.1
         ));
     }
 
@@ -240,13 +232,8 @@ pub fn set_soft_file_size_limit(limit: u64) -> Result<SoftFileSizeLimitGuard, St
         return Err(format!("ignore SIGXFSZ: {}", io::Error::last_os_error()));
     }
 
-    let next = libc::rlimit {
-        rlim_cur: target,
-        rlim_max: current.rlim_max,
-    };
-    // SAFETY: next preserves the current hard limit and uses a checked soft limit.
-    if unsafe { libc::setrlimit(libc::RLIMIT_FSIZE, &next) } != 0 {
-        let limit_error = io::Error::last_os_error();
+    if let Err(error) = setrlimit(Resource::RLIMIT_FSIZE, target, current.1) {
+        let limit_error = io::Error::from(error);
         // SAFETY: original_sigxfsz came from the successful signal call above.
         let restore_result = unsafe { libc::signal(libc::SIGXFSZ, original_sigxfsz) };
         if restore_result == libc::SIG_ERR {
