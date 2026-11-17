@@ -384,6 +384,67 @@ class AssistantRecoveryModelTest {
     }
 
     @Test
+    fun resetCancelledBeforeDispatchDoesNotBlockFreshFailureRecovery() = runTest {
+        withRecovery { f ->
+            val original = f.history.uiState.value.thread!!
+            f.composer.recover(target, RecoveryApiFixture.FAILURE, true)
+            f.composer.uiState.first { it.entry(target).recovery?.reset != null }
+            f.history.open(original.copy(selectedModel = "another-model"))
+            f.idle()
+            assertTrue(f.remote.resets.isEmpty())
+            assertTrue(f.remote.inputs.isEmpty())
+
+            f.history.open(original)
+            f.history.uiState.first { it.phase == HistoryPhase.Ready }
+            val nextFailure = UUID.randomUUID().toString()
+            val nextRun = UUID.randomUUID().toString()
+            val earlier = f.remote.rows.get().map { it.wire.toString() }.toTypedArray()
+            f.remote.set(
+                *earlier,
+                RecoveryApiFixture.input(3, run = nextRun),
+                RecoveryApiFixture.failure(seq = 4, id = nextFailure, run = nextRun),
+            )
+            f.refresh()
+            f.recovery.uiState.first {
+                it.phase == ChatReadPhase.Ready && it.selection?.failureId == nextFailure
+            }
+            f.composer.recover(target, nextFailure, true)
+            f.idle()
+            assertEquals(1, f.remote.resets.size)
+            assertEquals(1, f.remote.inputs.size)
+        }
+    }
+
+    @Test
+    fun retiringBeforeResetDispatchRestoresUnsentContinueAndDraft() = runTest {
+        withRecovery { f ->
+            val original = f.history.uiState.value.thread!!
+            f.composer.edit(target, "Keep the unsent draft")
+            f.composer.recover(target, RecoveryApiFixture.FAILURE)
+            f.composer.uiState.first { it.entry(target).recovery != null }
+            f.history.open(original.copy(selectedModel = "another-model"))
+            f.idle()
+            val before = f.composer.uiState.value.entry(target).recovery!!
+            assertNull(before.reset)
+            assertTrue(f.remote.inputs.isEmpty())
+
+            f.history.open(original)
+            f.recovery.uiState.first {
+                it.phase == ChatReadPhase.Ready && it.selection?.model == original.selectedModel
+            }
+            f.composer.recover(target, RecoveryApiFixture.FAILURE, true)
+            f.composer.uiState.first { it.entry(target).recovery?.reset != null }
+            f.owners.clear()
+            val saved = f.journal.load(f.api.identity).journal.entries.getValue(target.key)
+            assertEquals(before, saved.recovery)
+            assertEquals("Keep the unsent draft", saved.text)
+            assertNull(saved.pending)
+            assertTrue(f.remote.resets.isEmpty())
+            assertTrue(f.remote.inputs.isEmpty())
+        }
+    }
+
+    @Test
     fun genericRetryCannotSendRecoveryForASupersededFailure() = runTest {
         withRecovery { f ->
             f.remote.send = {

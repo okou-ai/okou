@@ -662,6 +662,10 @@ unsent continue or start a new reset after a definitive no-credit result and a
 fresh positive balance. Unknown resets always reuse their original key. A
 confirmed reset on a replaced account cannot continue automatically; a fresh
 displayed account and another explicit action start a separate intent.
+The live transaction restores the preceding recovery intent if a newly prepared
+reset is cancelled before its network call, including controller retirement.
+Failure or cancellation during that call retains the original account and key
+as an unknown operation; restoration never assumes an old intent was unsent.
 
 The composer journal reads existing format 1 drafts and pending requests. Its
 first recovery intent upgrades the whole retained journal to format 2 without

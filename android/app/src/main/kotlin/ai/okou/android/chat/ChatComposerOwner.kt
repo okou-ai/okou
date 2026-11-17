@@ -48,7 +48,10 @@ internal class ChatComposerOwner(
         val checking: Boolean = false,
     ) {
         var job: Job? = null
+        var unsentReset: UnsentReset? = null
     }
+
+    private class UnsentReset(val previous: ComposerRecovery?, val prepared: ComposerRecovery)
 
     private val mutable = MutableStateFlow(ComposerState())
     val uiState = mutable.asStateFlow()
@@ -76,6 +79,7 @@ internal class ChatComposerOwner(
             .filter { it.connection === connection }
             .toList()
             .forEach { op ->
+                restoreUnsentReset(op)
                 operations.remove(op.key)
                 mutable.value =
                     mutable.value.copy(busy = operations.keys.toSet(), checking = checkingTargets())
@@ -302,6 +306,20 @@ internal class ChatComposerOwner(
             throw IOException("Exact recovery intent is not durable")
     }
 
+    private fun prepareRecovery(op: Operation, attempt: ComposerRecovery) {
+        val entry = mutable.value.journal?.entries?.get(op.key) ?: ComposerEntry()
+        put(op.key, entry.copy(recovery = attempt))
+        if (attempt.reset != null && attempt.reset != entry.recovery?.reset)
+            op.unsentReset = UnsentReset(entry.recovery, attempt)
+    }
+
+    private fun restoreUnsentReset(op: Operation) {
+        val unsent = op.unsentReset ?: return
+        op.unsentReset = null
+        val entry = mutable.value.journal?.entries?.get(op.key) ?: return
+        if (entry.recovery == unsent.prepared) put(op.key, entry.copy(recovery = unsent.previous))
+    }
+
     fun recover(connection: Connection, target: ComposerTarget, failureId: String, reset: Boolean) {
         val recovery = connection.recovery ?: return
         val selected =
@@ -352,7 +370,7 @@ internal class ChatComposerOwner(
                     if (attempt == null) {
                         if (reset && data.resetAccount == null) throw RecoveryUnavailable()
                         attempt = newRecovery(data, reset)
-                        put(op.key, mutable.value.entry(target).copy(recovery = attempt))
+                        prepareRecovery(op, attempt)
                     } else if (
                         reset &&
                             (attempt.reset == null ||
@@ -362,7 +380,7 @@ internal class ChatComposerOwner(
                         // attempted or noCredit definitively spent nothing. Keep the input UUIDs.
                         if (data.resetAccount == null) throw RecoveryUnavailable()
                         attempt = attempt.copy(reset = newRecoveryReset(data), outcome = null)
-                        put(op.key, mutable.value.entry(target).copy(recovery = attempt))
+                        prepareRecovery(op, attempt)
                     }
                     durableRecovery(op, attempt)
                     val resetIntent = attempt.reset
@@ -376,6 +394,9 @@ internal class ChatComposerOwner(
                         )
                             throw RecoveryUnavailable()
                         recovery.requireWritable(selected, generation)
+                        // From this call onward the outcome may be unknown. Never restore the
+                        // previous intent after a reset could have reached the provider.
+                        op.unsentReset = null
                         val result =
                             recovery.service.resetSubscription(
                                 resetIntent.accountId,
@@ -622,6 +643,7 @@ internal class ChatComposerOwner(
 
     private fun finish(op: Operation) {
         if (operations[op.key] === op) {
+            restoreUnsentReset(op)
             operations.remove(op.key)
             mutable.value =
                 mutable.value.copy(busy = operations.keys.toSet(), checking = checkingTargets())
