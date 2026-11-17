@@ -33,7 +33,7 @@ import { singleton } from "../../lib/singleton";
 import type { ExternalCatalogIdentity } from "./connector-catalog-view";
 
 const POLICY_VALUES = ["allow", "deny", "ask"] as const;
-const DEFAULT_FIREWALL_SECRET_PLACEHOLDER =
+export const DEFAULT_FIREWALL_SECRET_PLACEHOLDER =
   "c0ffee5afe10ca1c0ffee5afe10ca1c0ffee5afe";
 
 type AcceptedFirewallConfig = NonNullable<

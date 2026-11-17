@@ -1369,7 +1369,6 @@ function emptyCustomConnectorRuntimeContext(): CustomConnectorRuntimeContext {
 }
 
 export interface BuiltinConnectorRuntimeContext {
-  readonly secrets: Record<string, string> | undefined;
   readonly vars: Record<string, string> | undefined;
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly secretConnectorMetadataMap:
@@ -1442,7 +1441,6 @@ export interface StoredConnectorMaterializationSnapshot {
 
 export function emptyBuiltinConnectorRuntimeContext(): BuiltinConnectorRuntimeContext {
   return {
-    secrets: undefined,
     vars: undefined,
     secretConnectorMap: undefined,
     secretConnectorMetadataMap: undefined,
@@ -1531,18 +1529,16 @@ function connectorEnvBindingSets(
   });
 }
 
-export function storedConnectorCredentialNames(args: {
+function storedConnectorCredentialNames(args: {
   readonly runtimeBindings: readonly ConnectorRuntimeBindingEntry[];
   readonly kind: "secret" | "variable";
-  readonly names?: ReadonlySet<string>;
 }): readonly string[] {
   return [
     ...new Set(
       args.runtimeBindings.flatMap(({ source }) => {
         if (
           (args.kind === "secret" && source.kind !== "connector-secret") ||
-          (args.kind === "variable" && source.kind !== "connector-variable") ||
-          (args.names !== undefined && !args.names.has(source.name))
+          (args.kind === "variable" && source.kind !== "connector-variable")
         ) {
           return [];
         }
@@ -1614,7 +1610,6 @@ export function storedConnectorContextFromSnapshot(
     return emptyBuiltinConnectorRuntimeContext();
   }
   return {
-    secrets: undefined,
     vars: compactRecord(
       storedConnectorRuntimeVariables(
         snapshot.bindingSets,
@@ -1876,7 +1871,7 @@ function recordConnectorContextObservation(
   }
 }
 
-export function storedConnectorTimingDimensions(args: {
+function storedConnectorTimingDimensions(args: {
   readonly scopeSource: ConnectorScopeSource;
   readonly connectorCount?: number;
 }): ApiDispatchTimingDimensions {

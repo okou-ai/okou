@@ -294,12 +294,10 @@ function createExecutionConnectorContext(
     {
       runVariables$,
       permissionPolicies$: sources.signals.permissionPolicies$,
-      featureSwitches$: features$,
     },
     {
       connectorSelection$: connected.connectorSelection$,
       connectorSnapshot$: connected.connectorSnapshot$,
-      selectedConnectorSources$: connected.selectedStoredConnectorSources$,
       dispatchTiming$: timing$,
     },
   );

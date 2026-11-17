@@ -99,7 +99,6 @@ export interface ThreadContext extends ThreadWorkflowContext {
   readonly connectorSelection$: ConnectedAccounts["connectorSelection$"];
   readonly connectorSnapshot$: ConnectedAccounts["connectorSnapshot$"];
   readonly connectorThreadSelections$: ConnectedAccounts["threadSelections$"];
-  readonly selectedConnectorSources$: ConnectedAccounts["selectedStoredConnectorSources$"];
 }
 
 export function createThreadContext(
@@ -226,8 +225,6 @@ export function createThreadContext(
     connectorSelection$: connectedAccounts.connectorSelection$,
     connectorSnapshot$: connectedAccounts.connectorSnapshot$,
     connectorThreadSelections$: connectedAccounts.threadSelections$,
-    selectedConnectorSources$:
-      connectedAccounts.selectedStoredConnectorSources$,
   };
 }
 

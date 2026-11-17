@@ -4,6 +4,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { chatThreadRoutes } from "../chat-threads";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { publicChatActor } from "./helpers/public-chat-actor";
 
 const context = testContext();
@@ -128,9 +129,12 @@ describe("thread connector selection", () => {
     expect(run.threadId).toBe(thread.id);
     const execution = await runExecution(run.runId);
     expect(execution.execution.environment).toMatchObject({
-      OPENAI_TOKEN: "thread-selected-openai-key",
-      RUNTIME_API_KEY: "thread-runtime-key",
+      OPENAI_TOKEN: expect.stringMatching(/.+/),
+      RUNTIME_API_KEY: expect.stringMatching(/.+/),
     });
+    for (const key of ["thread-selected-openai-key", "thread-runtime-key"]) {
+      expect(JSON.stringify(execution.execution)).not.toContain(key);
+    }
     expect(
       execution.execution.secretConnectorMetadataMap?.OPENAI_TOKEN,
     ).toMatchObject({
@@ -142,6 +146,29 @@ describe("thread connector selection", () => {
     ).toMatchObject({
       sourceType: "connector",
       sourceId: runtimeConnection.id,
+    });
+    const selectedAuth = await own(() => {
+      return createFirewallApi(context).requestFirewallAuth(
+        execution.sandboxHeaders,
+        {
+          encryptedSecrets: execution.execution.encryptedSecrets ?? undefined,
+          secretConnectorMap:
+            execution.execution.secretConnectorMap ?? undefined,
+          secretConnectorMetadataMap:
+            execution.execution.secretConnectorMetadataMap ?? undefined,
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("OPENAI_TOKEN")}`,
+            "X-Runtime-Key": secretTemplate("RUNTIME_API_KEY"),
+          },
+        },
+        [200],
+      );
+    });
+    expect(selectedAuth.body).toMatchObject({
+      headers: {
+        Authorization: "Bearer thread-selected-openai-key",
+        "X-Runtime-Key": "thread-runtime-key",
+      },
     });
     // The active run keeps its own account snapshot, but queued input must
     // observe thread selections during its later successful preparation.
@@ -194,9 +221,12 @@ describe("thread connector selection", () => {
     expect(promoted.threadId).toBe(thread.id);
     const next = await runExecution(promoted.runId);
     expect(next.execution.environment).toMatchObject({
-      OPENAI_TOKEN: "thread-openai-key",
-      RUNTIME_API_KEY: "thread-runtime-key-updated",
+      OPENAI_TOKEN: expect.stringMatching(/.+/),
+      RUNTIME_API_KEY: expect.stringMatching(/.+/),
     });
+    for (const key of ["thread-openai-key", "thread-runtime-key-updated"]) {
+      expect(JSON.stringify(next.execution)).not.toContain(key);
+    }
     expect(
       next.execution.secretConnectorMetadataMap?.OPENAI_TOKEN,
     ).toMatchObject({
@@ -208,6 +238,28 @@ describe("thread connector selection", () => {
     ).toMatchObject({
       sourceType: "connector",
       sourceId: runtimeConnection.id,
+    });
+    const promotedAuth = await own(() => {
+      return createFirewallApi(context).requestFirewallAuth(
+        next.sandboxHeaders,
+        {
+          encryptedSecrets: next.execution.encryptedSecrets ?? undefined,
+          secretConnectorMap: next.execution.secretConnectorMap ?? undefined,
+          secretConnectorMetadataMap:
+            next.execution.secretConnectorMetadataMap ?? undefined,
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("OPENAI_TOKEN")}`,
+            "X-Runtime-Key": secretTemplate("RUNTIME_API_KEY"),
+          },
+        },
+        [200],
+      );
+    });
+    expect(promotedAuth.body).toMatchObject({
+      headers: {
+        Authorization: "Bearer thread-openai-key",
+        "X-Runtime-Key": "thread-runtime-key-updated",
+      },
     });
     await own(() => {
       return cancelChatRun(actor, promoted.runId, next.sandboxHeaders);

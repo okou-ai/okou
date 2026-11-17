@@ -93,7 +93,7 @@ async function configurePersonalRuntimeContext(
   });
 }
 
-describe("chat eager connector credentials", () => {
+describe("chat connector credential placeholders", () => {
   it("keeps firewall-only credentials deferred during Run preparation", async () => {
     const { actor, agentId } = await entitledChatActor();
     const figma = await connectors.connectManualGrant(
@@ -128,13 +128,13 @@ describe("chat eager connector credentials", () => {
     await cancelChatRun(actor, run.runId, sandboxHeaders);
   });
 
-  it("decrypts only the eager connector during preparation and delivers its plaintext to the runner", async () => {
+  it("dispatches every connector secret as a placeholder and resolves values on demand", async () => {
     const { actor, agentId } = await entitledChatActor();
     const openai = await connectors.connectManualGrant(
       actor,
       "openai",
       "api-token",
-      { apiKey: "eager-openai-token" },
+      { apiKey: "request-time-openai-token" },
       agentId,
     );
     await connectors.connectManualGrant(
@@ -148,32 +148,38 @@ describe("chat eager connector credentials", () => {
     const run = await sendChatRun(actor, {
       agentId,
       model: "claude-fable-5-1",
-      prompt: "Use eager and deferred connector credentials",
+      prompt: "Use request-time connector credentials",
     });
     const { execution, sandboxHeaders } = await runExecution(run.runId);
-    expect(kms.decryptCalls).toBe(1);
+    expect(kms.decryptCalls).toBe(0);
     expect(execution.environment).toMatchObject({
-      OPENAI_TOKEN: "eager-openai-token",
+      OPENAI_TOKEN: expect.stringMatching(/.+/),
       FIGMA_TOKEN: "fixture-figma-token",
     });
+    expect(JSON.stringify(execution)).not.toContain(
+      "request-time-openai-token",
+    );
     expect(execution.secretConnectorMetadataMap?.OPENAI_TOKEN).toMatchObject({
       sourceId: openai.id,
     });
     if (!execution.encryptedSecrets) {
       throw new Error("Expected runner launch secrets");
     }
-    const plaintext = await createFirewallApi(context).requestFirewallAuth(
+    const resolved = await createFirewallApi(context).requestFirewallAuth(
       sandboxHeaders,
       {
         encryptedSecrets: execution.encryptedSecrets,
+        secretConnectorMap: execution.secretConnectorMap ?? undefined,
+        secretConnectorMetadataMap:
+          execution.secretConnectorMetadataMap ?? undefined,
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("OPENAI_TOKEN")}`,
         },
       },
       [200],
     );
-    expect(plaintext.body).toMatchObject({
-      headers: { Authorization: "Bearer eager-openai-token" },
+    expect(resolved.body).toMatchObject({
+      headers: { Authorization: "Bearer request-time-openai-token" },
     });
     const deferred = await createFirewallApi(context).requestFirewallAuth(
       sandboxHeaders,
@@ -194,7 +200,7 @@ describe("chat eager connector credentials", () => {
     await cancelChatRun(actor, run.runId, sandboxHeaders);
   });
 
-  it("isolates an undecryptable unselected account from the selected eager account", async () => {
+  it("isolates an undecryptable unselected account from request-time selected account auth", async () => {
     const { actor, agentId } = await entitledChatActor();
     let badAccount = true;
     const kms = useSecretKmsProbe(
@@ -252,7 +258,7 @@ describe("chat eager connector credentials", () => {
       prompt: "Use only my selected healthy account",
     });
     const { execution, sandboxHeaders } = await runExecution(run.runId);
-    expect(kms.decryptCalls - beforeLaunch).toBe(1);
+    expect(kms.decryptCalls).toBe(beforeLaunch);
     expect(execution.secretConnectorMetadataMap?.OPENAI_TOKEN).toMatchObject({
       sourceId: good.id,
     });
@@ -263,6 +269,9 @@ describe("chat eager connector credentials", () => {
       sandboxHeaders,
       {
         encryptedSecrets: execution.encryptedSecrets,
+        secretConnectorMap: execution.secretConnectorMap ?? undefined,
+        secretConnectorMetadataMap:
+          execution.secretConnectorMetadataMap ?? undefined,
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("OPENAI_TOKEN")}`,
         },
