@@ -103,8 +103,8 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
       transitionTarget = showsSidebar
       sidebar.setTransitioning(true)
       presentation.beginTransition(showsChat: !showsSidebar)
-      navigationController.transitionCoordinator?.notifyWhenInteractionChanges {
-        [weak self] context in
+      let transition = navigationController.transitionCoordinator
+      transition?.notifyWhenInteractionChanges { [weak self] context in
         if showsSidebar && context.isCancelled { self?.presentation.cancelDeparture() }
       }
       // A native pop (including accessibility return) starts outside the SwiftUI selection.
