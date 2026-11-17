@@ -1,5 +1,4 @@
 use std::io::{Read, Write};
-use std::os::fd::AsRawFd;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::os::unix::net::{UnixListener as StdListener, UnixStream as StdStream};
 use std::sync::{Arc, Barrier};
@@ -116,17 +115,9 @@ fn set_acl(file: &File, name: &std::ffi::CStr) {
         acl.extend(permissions.to_le_bytes());
         acl.extend(qualifier.to_le_bytes());
     }
-    // The descriptor/name and Linux POSIX ACL buffer remain valid for the syscall.
-    let result = unsafe {
-        libc::fsetxattr(
-            file.as_raw_fd(),
-            name.as_ptr(),
-            acl.as_ptr().cast(),
-            acl.len(),
-            0,
-        )
-    };
-    assert_eq!(result, 0, "{}", io::Error::last_os_error());
+    let result = rustix::fs::fsetxattr(file, name, &acl, rustix::fs::XattrFlags::empty())
+        .map_err(io::Error::from);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
 }
 
 #[test]
@@ -139,9 +130,8 @@ fn inherited_default_acl_is_preserved_and_blocks_creation() {
     assert!(xattr_size(&parent, c"system.posix_acl_default") > 0);
 }
 
-fn xattr_size(file: &File, name: &std::ffi::CStr) -> libc::ssize_t {
-    // The descriptor and static name are valid; no output buffer is accessed.
-    unsafe { libc::fgetxattr(file.as_raw_fd(), name.as_ptr(), std::ptr::null_mut(), 0) }
+fn xattr_size(file: &File, name: &std::ffi::CStr) -> usize {
+    rustix::fs::fgetxattr_query(file, name).expect("query preserved inherited ACL size")
 }
 
 #[tokio::test]
