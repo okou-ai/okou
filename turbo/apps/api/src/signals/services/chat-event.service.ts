@@ -329,7 +329,6 @@ type RunFailedEvent = ChatEventIdentity & {
   readonly eventType: "run.failed";
   readonly runId: string;
   readonly content?: string | null;
-  readonly error?: string;
   readonly failureReason?: RunFailureReasonToken;
 };
 
@@ -337,7 +336,6 @@ type RunCancelledEvent = ChatEventIdentity & {
   readonly eventType: "run.cancelled";
   readonly runId: string;
   readonly content?: string | null;
-  readonly error?: string;
 };
 
 type ControlInterruptEvent = Omit<ChatEventIdentity, "runId"> & {
@@ -753,12 +751,7 @@ function canonicalChatEventPayload(
 ): ChatEventPayload | null {
   const content = "content" in values ? values.content : undefined;
   const userMessage = "userMessage" in values ? values.userMessage : undefined;
-  const error =
-    values.eventType !== "run.failed" &&
-    values.eventType !== "run.cancelled" &&
-    "error" in values
-      ? values.error
-      : undefined;
+  const error = "error" in values ? values.error : undefined;
   const usagePayload =
     "usagePayload" in values ? values.usagePayload : undefined;
   const payload: ChatEventPayload = {
