@@ -226,18 +226,29 @@
           .background(OkouColor.sidebar)
         }
         OkouCatalogSection("Bottom bar") {
-          // Account, search capsule, new chat: every bar control is the same clear glass.
+          // Account, new-message capsule, search: every bar control is the same clear glass.
           HStack(spacing: OkouSpace.md) {
             OkouProfileAvatar(
               imageURL: nil, hasImage: false, size: OkouControl.minimumTarget, name: "Tong")
-            OkouSearchBar(prompt: "Search chats")
             Button {
             } label: {
-              OkouToolbarIcon("square-pen")
+              Label("New Message", okouSymbol: "square-pen")
+                .font(.okou(.body))
+                .foregroundStyle(OkouColor.placeholder)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, OkouSpace.lg)
+                .modifier(OkouGlassControl(shape: .capsule))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("New Message")
+            Button {
+            } label: {
+              OkouToolbarIcon("search")
                 .modifier(OkouGlassControl(shape: .circle))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("New chat")
+            .accessibilityLabel("Search chats")
           }
         }
       }
