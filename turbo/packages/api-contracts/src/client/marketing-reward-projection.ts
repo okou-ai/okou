@@ -7,6 +7,18 @@ import type { ClientDescriptor } from "./types";
 export const marketingRewardProjectionContract: ClientDescriptor<
   typeof OriginalMarketingRewardProjectionContract
 > = {
+  notifyProgress: {
+    method: "POST",
+    path: "/api/internal/marketing/get-started/progress-projections",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      404: true,
+      409: true,
+      503: true,
+    },
+  },
   notify: {
     method: "POST",
     path: "/api/internal/marketing/get-started/projections",
