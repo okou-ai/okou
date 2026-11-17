@@ -165,7 +165,15 @@ function executionFiles(
 describe.each(ownerKinds)("%s bundle publication", (kind) => {
   it("uses the FIFO head's template when a later send supplies a different prefetch candidate", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const owner = await publicChatActor(context);
+    let waitingThreadId: string | undefined;
+    const owner = await publicChatActor(context, {
+      beforeRuns: async (actor) => {
+        if (waitingThreadId) {
+          await chat.chat.deleteThread(actor, waitingThreadId);
+          await flushWaitUntilForTest();
+        }
+      },
+    });
     const fixture = await owner.run(() => {
       return Promise.resolve(installS3Fixture(context));
     });
@@ -190,8 +198,14 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
       agentId: owner.agentId,
       prompt: "Occupy the organization slot",
     });
+    const blockerExecution = await owner.runExecution(blocker.runId);
+    const thread = await owner.run(() => {
+      return chat.chat.createThread(owner.actor, { agentId: owner.agentId });
+    });
+    waitingThreadId = thread.id;
     const head = await owner.sendWaitingChatInput(owner.actor, {
       agentId: owner.agentId,
+      threadId: thread.id,
       prompt: "Use the head template",
       template: selection(kind, headId),
     });
@@ -230,8 +244,13 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
         secondRun.runId,
         second.sandboxHeaders,
       );
-      await chat.cancelChatRun(owner.actor, blocker.runId);
+      await chat.cancelChatRun(
+        owner.actor,
+        blocker.runId,
+        blockerExecution.sandboxHeaders,
+      );
     });
+    waitingThreadId = undefined;
   });
 
   it.each([
