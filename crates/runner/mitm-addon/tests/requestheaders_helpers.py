@@ -7,9 +7,9 @@ from typing import cast
 import pytest
 from mitmproxy import http
 
-import flow_metadata_keys as metadata_keys
 import request_authority
 import request_classification
+import request_streaming
 
 
 async def await_requestheaders_result(result: object) -> None:
@@ -22,8 +22,8 @@ async def await_requestheaders_result(result: object) -> None:
 def _assert_no_request_stream(flow: http.HTTPFlow) -> None:
     """Assert that requestheaders left no stream or classification state."""
     assert flow.request.stream is False
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
-    assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
+    assert request_streaming.captured_request_stream_body(flow) is None
+    assert request_streaming.streamed_request_size(flow) is None
     assert request_classification.REQUEST_CLASSIFICATION_METADATA_KEY not in flow.metadata
 
 

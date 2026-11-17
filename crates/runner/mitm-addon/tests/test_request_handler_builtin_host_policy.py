@@ -10,6 +10,7 @@ import flow_metadata_keys as metadata_keys
 import mitm_addon
 import registry
 import request_classification
+import request_streaming
 import upstream_destination_binding
 from body_limits import STREAM_BUFFER_LIMIT
 from tests.builtin_firewall_cache_helpers import serialize_builtin_firewall_catalog_cache
@@ -507,7 +508,7 @@ async def test_runtime_host_policy_allows_requestheaders_credential_injection(
         auth_fetch.assert_awaited_once()
         assert flow.request.headers["Authorization"] == "Bearer resolved"
         assert callable(flow.request.stream)
-        assert metadata_keys.REQUEST_STREAM_BUFFER in flow.metadata
+        assert request_streaming.captured_request_stream_body(flow) is not None
         assert flow.metadata[mitm_addon._FIREWALL_AUTH_APPLIED_IN_REQUESTHEADERS] is True
         assert request_classification.REQUEST_CLASSIFICATION_METADATA_KEY in flow.metadata
 

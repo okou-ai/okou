@@ -13,6 +13,7 @@ from mitmproxy.flow import Error
 import body_decoding
 import flow_metadata_keys as metadata_keys
 import mitm_addon
+import stream_capture
 from tests.flow_helpers import response_stream
 from tests.model_provider_flow_helpers import RealFlowFactory, model_usage_source_entries
 from tests.model_provider_sse_usage_helpers import (
@@ -61,8 +62,7 @@ class TestOpenAIResponsesSseUsage:
             model_usage_provider="gpt-5.6-sol",
         )
         mitm_addon.responseheaders(flow)
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
         response_stream(flow)(
             b"event: response.completed\n"
             b'data: {"response":{"model":"gpt-5.6-sol",'
@@ -179,8 +179,8 @@ class TestOpenAIResponsesSseUsage:
         midpoint = len(compressed) // 2
         assert response_stream(flow)(compressed[:midpoint]) == compressed[:midpoint]
         assert response_stream(flow)(compressed[midpoint:]) == compressed[midpoint:]
-        assert (metadata_keys.STREAM_BUFFER in flow.metadata) is capture_body
-        assert (metadata_keys.STREAM_BUFFER_STATE in flow.metadata) is capture_body
+        assert (stream_capture.captured_response_stream_body(flow) is not None) is capture_body
+        assert (stream_capture.captured_response_stream_body(flow) is not None) is capture_body
 
         webhook = run_response(flow, self._usage_webhook_api)
 

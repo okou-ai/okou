@@ -25,9 +25,9 @@ from mitmproxy.test import taddons
 
 import auth
 import firewall_auth_client
-import flow_metadata_keys as metadata_keys
 import managed_upload
 import mitm_addon
+import request_streaming
 from body_limits import STREAM_BUFFER_LIMIT
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.managed_openrouter_helpers import PATHS, sandbox
@@ -240,7 +240,7 @@ async def test_failed_header_auth_responds_before_body_eof(
         assert flow.request.raw_content is None
         assert flow.request.stream is False
         assert "Authorization" not in flow.request.headers
-        assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
+        assert request_streaming.captured_request_stream_body(flow) is None
         assert managed_upload.get(flow) is None
         assert not http_layer.streams
         auth_fetch.assert_awaited_once()

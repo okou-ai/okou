@@ -8,6 +8,7 @@ import flow_metadata_keys as metadata_keys
 import http_network_log
 import mitm_addon
 import request_streaming
+import stream_capture
 from tests.flow_helpers import header_map, response_stream
 
 
@@ -52,8 +53,7 @@ def test_response_releases_streaming_state(tmp_path, real_flow, mitm_ctx):
 
     assert flow.response.stream is False
     assert metadata_keys.RESPONSE_STREAM_STATE not in flow.metadata
-    assert metadata_keys.STREAM_BUFFER not in flow.metadata
-    assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+    assert stream_capture.captured_response_stream_body(flow) is None
     assert "model_json_usage_finish" not in flow.metadata
 
 
@@ -76,8 +76,7 @@ def test_response_without_run_id_releases_x_json_streaming_state(real_flow):
 
     assert flow.response.stream is False
     assert metadata_keys.RESPONSE_STREAM_STATE not in flow.metadata
-    assert metadata_keys.STREAM_BUFFER not in flow.metadata
-    assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+    assert stream_capture.captured_response_stream_body(flow) is None
     assert "connector_response_finish" not in flow.metadata
 
 
@@ -92,8 +91,8 @@ def test_response_without_run_id_releases_request_stream_state(real_flow):
     mitm_addon.response(flow)
 
     assert flow.request.stream is False
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
-    assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
+    assert request_streaming.captured_request_stream_body(flow) is None
+    assert request_streaming.streamed_request_size(flow) is None
 
 
 def test_response_does_not_clear_replaced_request_stream_callback(real_flow):
@@ -112,8 +111,8 @@ def test_response_does_not_clear_replaced_request_stream_callback(real_flow):
     mitm_addon.response(flow)
 
     assert flow.request.stream is external_stream
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
-    assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
+    assert request_streaming.captured_request_stream_body(flow) is None
+    assert request_streaming.streamed_request_size(flow) is None
 
 
 def test_response_without_run_id_releases_sse_streaming_state(real_flow):
@@ -138,8 +137,7 @@ def test_response_without_run_id_releases_sse_streaming_state(real_flow):
     mitm_addon.response(flow)
 
     assert flow.response.stream is False
-    assert metadata_keys.STREAM_BUFFER not in flow.metadata
-    assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+    assert stream_capture.captured_response_stream_body(flow) is None
     assert "model_sse_usage_finish" not in flow.metadata
 
 
@@ -204,5 +202,5 @@ def test_response_does_not_clear_replaced_stream_callback(tmp_path, real_flow, m
         mitm_addon.response(flow)
 
     assert flow.response.stream is external_stream
-    assert metadata_keys.STREAM_BUFFER not in flow.metadata
+    assert stream_capture.captured_response_stream_body(flow) is None
     assert "model_json_usage_finish" not in flow.metadata

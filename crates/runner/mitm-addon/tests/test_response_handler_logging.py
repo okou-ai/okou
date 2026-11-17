@@ -17,6 +17,7 @@ import http_network_log
 import mitm_addon
 import request_classification
 import request_streaming
+import stream_capture
 from body_limits import BODY_CAPTURE_LIMIT, STREAM_BUFFER_LIMIT
 from tests.flow_helpers import header_map, response_stream
 from tests.jsonl_log_helpers import (
@@ -810,7 +811,7 @@ def test_missing_network_log_target_fails_response(tmp_path, real_flow, mitm_ctx
         mitm_addon.response(flow)
 
     assert metadata_keys.HTTP_REQUEST_START_MONOTONIC not in flow.metadata
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
+    assert request_streaming.captured_request_stream_body(flow) is None
     assert flow.request.stream is False
     assert not Path(log_path).exists()
 
@@ -870,8 +871,7 @@ def test_response_size_tracks_large_stream_without_body_buffer(tmp_path, real_fl
     mitm_addon.responseheaders(flow)
     assert response_stream(flow)(body[:123]) == body[:123]
     assert response_stream(flow)(body[123:]) == body[123:]
-    assert metadata_keys.STREAM_BUFFER not in flow.metadata
-    assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+    assert stream_capture.captured_response_stream_body(flow) is None
 
     with mitm_ctx():
         mitm_addon.response(flow)
@@ -921,8 +921,8 @@ def test_request_size_tracks_streamed_bytes_and_captures_stream_body(tmp_path, r
     assert entry["request_body"] == "x" * STREAM_BUFFER_LIMIT
     assert entry["request_body_encoding"] == "utf-8"
     assert entry["request_body_truncated"] is True
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
-    assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
+    assert request_streaming.captured_request_stream_body(flow) is None
+    assert request_streaming.streamed_request_size(flow) is None
     assert flow.request.stream is False
 
 
@@ -969,8 +969,8 @@ async def test_firewalled_streamed_request_logs_size_and_capture_body(
     assert entry["request_body"] == "x" * STREAM_BUFFER_LIMIT
     assert entry["request_body_encoding"] == "utf-8"
     assert entry["request_body_truncated"] is True
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
-    assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
+    assert request_streaming.captured_request_stream_body(flow) is None
+    assert request_streaming.streamed_request_size(flow) is None
     assert flow.request.stream is False
 
 
@@ -1054,8 +1054,8 @@ async def test_firewalled_empty_incomplete_streamed_request_marks_capture_trunca
     assert "request_body" not in entry
     assert "request_body_encoding" not in entry
     assert entry["request_body_truncated"] is True
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
-    assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
+    assert request_streaming.captured_request_stream_body(flow) is None
+    assert request_streaming.streamed_request_size(flow) is None
     assert flow.request.stream is False
 
 
@@ -1091,8 +1091,8 @@ async def test_unknown_length_get_without_body_logs_zero_request_size(
     assert "request_body" not in entry
     assert "request_body_encoding" not in entry
     assert "request_body_truncated" not in entry
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
-    assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
+    assert request_streaming.captured_request_stream_body(flow) is None
+    assert request_streaming.streamed_request_size(flow) is None
     assert flow.request.stream is False
 
 
@@ -1362,8 +1362,7 @@ def test_response_size_tracks_large_unbounded_stream_without_length(tmp_path, re
     mitm_addon.responseheaders(flow)
     response_stream(flow)(body[:123])
     response_stream(flow)(body[123:])
-    assert metadata_keys.STREAM_BUFFER not in flow.metadata
-    assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+    assert stream_capture.captured_response_stream_body(flow) is None
 
     with mitm_ctx():
         mitm_addon.response(flow)

@@ -1198,7 +1198,7 @@ async def test_request_stream_metadata_error_preserves_upstream_binding(
         host="api.github.com",
         path="/repos/octocat/hello",
     )
-    flow.metadata[metadata_keys.REQUEST_STREAM_BUFFER_STATE] = {}
+    flow.metadata[metadata_keys.REQUEST_STREAM_STATE] = {}
     seed_server_binding(
         flow.server_conn,
         client=flow.client_conn,

@@ -13,6 +13,7 @@ import flow_metadata_keys as metadata_keys
 import mitm_addon
 import registry
 import request_classification
+import request_streaming
 import upstream_admission
 import upstream_destination_binding
 from body_limits import STREAM_BUFFER_LIMIT
@@ -393,7 +394,7 @@ async def test_firewall_allow_header_auth_uses_connected_upstream_when_tls_verif
         await await_requestheaders_result(requestheaders_result)
 
         assert callable(flow.request.stream)
-        assert metadata_keys.REQUEST_STREAM_BUFFER in flow.metadata
+        assert request_streaming.captured_request_stream_body(flow) is not None
         assert flow.server_conn.address == ("172.66.0.243", 443)
         assert flow.request.headers["Authorization"] == "Bearer resolved"
 
@@ -787,7 +788,7 @@ async def test_firewall_allow_header_auth_unconnected_skips_prior_client_binding
         await await_requestheaders_result(requestheaders_result)
 
         assert callable(flow.request.stream)
-        assert metadata_keys.REQUEST_STREAM_BUFFER in flow.metadata
+        assert request_streaming.captured_request_stream_body(flow) is not None
         assert flow.server_conn.address == ("api.github.com", 443)
         assert flow.request.headers["Authorization"] == "Bearer resolved"
 
@@ -994,7 +995,7 @@ async def test_firewall_allow_unknown_body_length_retargets_unconnected_upstream
     ):
         await await_requestheaders_result(mitm_addon.requestheaders(flow))
         assert callable(flow.request.stream)
-        assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
+        assert request_streaming.captured_request_stream_body(flow) is None
         assert flow.request.headers["Authorization"] == "Bearer resolved"
         assert flow.server_conn.address == ("api.github.com", 443)
 

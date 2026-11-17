@@ -49,6 +49,7 @@ from tests.requestheaders_helpers import (
     await_requestheaders_result,
     track_trusted_authority_validations,
 )
+from tests.stream_buffer_helpers import request_stream_capture
 from tests.upstream_connection_helpers import bind_flow_upstream, mark_connected_tls_upstream
 
 _CLIENT_IP = "10.200.0.5"
@@ -223,9 +224,9 @@ async def test_payload_independent_sigv4_signs_before_streaming(
         assert callback(streamed_body) == streamed_body
         assert request_streaming.streamed_request_size(flow) == len(streamed_body)
         if capture_body:
-            assert len(flow.metadata[metadata_keys.REQUEST_STREAM_BUFFER]) == STREAM_BUFFER_LIMIT
+            assert len(request_stream_capture(flow).buffer) == STREAM_BUFFER_LIMIT
         else:
-            assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
+            assert request_streaming.captured_request_stream_body(flow) is None
             assert request_streaming.captured_request_stream_body(flow) is None
 
         assert f"Credential={RESOLVED_AWS_ACCESS_KEY_ID}/" in flow.request.headers["authorization"]
@@ -236,7 +237,7 @@ async def test_payload_independent_sigv4_signs_before_streaming(
 
     get_headers.assert_awaited_once()
     assert aws_sigv4_body_admission.state_for_tests() == (0, 0)
-    assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
+    assert request_streaming.streamed_request_size(flow) is None
 
 
 async def test_bounded_payload_independent_sigv4_classifies_once_before_auth(

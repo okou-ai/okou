@@ -86,9 +86,9 @@ flow.metadata.update(dict.fromkeys(("firewall_error" for value in rows), "auth_f
 flow.metadata.update(dict.fromkeys(["auth_cache_hit" for value in rows], False))
 flow.metadata.update(dict.fromkeys({"network_log_target" for value in rows}, {}))
 flow.metadata.update(dict.fromkeys({"sandbox_network_log_path": value for value in rows}, "path"))
-flow.metadata.update(dict([("stream_buffer", bytearray())]))
+flow.metadata.update(dict([("response_stream_capture", bytearray())]))
 flow.metadata.update({**{"capture_body": True}})
-flow.metadata = {"request_stream_buffer": bytearray()} | {"request_stream_buffer_state": {}}
+flow.metadata = {"request_stream_capture": bytearray()} | {"request_stream_state": {}}
 flow.metadata.update(**{"trusted_authority_host": "api.example.com"})
 flow.metadata.update([("http_request_start_monotonic", 1.0)])
 flow.metadata.__getitem__("sandbox_token")
