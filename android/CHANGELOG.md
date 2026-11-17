@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/okou-ai/okou/compare/android-v0.18.1...android-v0.19.0) (2026-11-17)
+
+
+### Features
+
+* **android:** recover current assistant failures ([#48167](https://github.com/okou-ai/okou/issues/48167)) ([d94db12](https://github.com/okou-ai/okou/commit/d94db123ec646331a1171085c281b2fa8d8b650b))
+
 ## [0.18.1](https://github.com/okou-ai/okou/compare/android-v0.18.0...android-v0.18.1) (2026-11-17)
 
 

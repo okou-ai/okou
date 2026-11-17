@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.84.1](https://github.com/okou-ai/okou/compare/api-v2.84.0...api-v2.84.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **phone-use:** remove local action review guidance ([#48248](https://github.com/okou-ai/okou/issues/48248)) ([72ef73a](https://github.com/okou-ai/okou/commit/72ef73aec992722ecd4b4173a02113a3e4f48327))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.82.0
+    * @okouai/core bumped to 8.847.6
+    * @okouai/db bumped to 2.42.4
+    * @okouai/pi-agent-runtime bumped to 1.51.148
+
 ## [2.84.0](https://github.com/okou-ai/okou/compare/api-v2.83.0...api-v2.84.0) (2026-11-17)
 
 
