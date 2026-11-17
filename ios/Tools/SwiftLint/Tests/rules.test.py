@@ -24,6 +24,7 @@ from subscription_replacement_cases import SUBSCRIPTION_REPLACEMENT_CASES
 from task_dictionary_cases import TASK_DICTIONARY_CASES
 from task_lifecycle_cases import TASK_LIFECYCLE_CASES
 from throwing_task_cases import THROWING_TASK_CASES
+from useless_catch_cases import USELESS_CATCH_CASES
 
 IOS = Path(__file__).resolve().parents[3]
 BINARY = (
@@ -37,6 +38,7 @@ BINARY = (
 CASES = [
     *COLLECTION_PUBLICATION_CASES,
     *THROWING_TASK_CASES,
+    *USELESS_CATCH_CASES,
     *CANCELLATION_CASES,
     *RESOURCE_CANCELLATION_BINDING_CASES,
     *RESOURCE_FAILURE_CASES,

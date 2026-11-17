@@ -15,6 +15,7 @@ only_rules:
   - okou_accessor_escape
   - okou_native_requests
   - okou_resource_failures
+  - okou_useless_catch
   - okou_test_synchronization
   - okou_check_after_await
   - okou_resource_cancellation
