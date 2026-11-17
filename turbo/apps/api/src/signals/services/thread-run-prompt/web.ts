@@ -99,11 +99,9 @@ export function createWebThreadPrompt(
     if (!message) {
       throw new Error("Queued input event is missing userMessage");
     }
-    const [framework, featureSwitchContext] = await Promise.all([
-      get(framework$),
-      get(featureSwitches$),
-    ]);
-    const projectContext = await get(projectContext$);
+    const [framework, featureSwitchContext, projectContext] = await Promise.all(
+      [get(framework$), get(featureSwitches$), get(projectContext$)],
+    );
     const triggerSource =
       pickedEvent.contextType === "agent_run" ? "agent" : "web";
     return {

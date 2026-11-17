@@ -17,6 +17,50 @@ const {
 } = createChatEventsFixture(context);
 
 describe("chat send authorization, validation and cancellation", () => {
+  it("rejects invalid model settings before resolving unavailable attachments", async () => {
+    const { actor, agentId } = await entitledNativeChatActor();
+    const thread = await chat.createThread(actor, {
+      agentId,
+      model: "claude-fable-5-1",
+    });
+    const before = await chat.listThreadEvents(actor, thread.id);
+    const fileId = randomUUID();
+    context.mocks.s3.send.mockRejectedValue(
+      new Error("attachment unavailable"),
+    );
+    const rejected = await requestSendEventRaw(actor, {
+      agentId,
+      threadId: thread.id,
+      prompt: "Reject before attachment preparation",
+      runOptions: { reasoningEffort: "xhigh" },
+      userMessage: {
+        version: 1,
+        parts: [
+          {
+            type: "file",
+            fileId,
+            filenameSnapshot: "missing.txt",
+            contentType: "text/plain",
+          },
+        ],
+      },
+      hasTextContent: true,
+    });
+    expect(rejected).toStrictEqual({
+      status: 400,
+      body: {
+        error: {
+          code: "BAD_REQUEST",
+          message: "Reasoning effort is not supported by the selected model",
+        },
+      },
+    });
+    await expect(flushWaitUntilForTest()).resolves.toBeUndefined();
+    expect(
+      (await chat.listThreadEvents(actor, thread.id)).events,
+    ).toStrictEqual(before.events);
+  });
+
   it("does not enqueue when the caller aborts during attachment lookup", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
     const thread = await chat.createThread(actor, { agentId });

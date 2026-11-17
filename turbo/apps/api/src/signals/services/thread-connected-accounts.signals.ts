@@ -243,13 +243,12 @@ function createChatAccountInputSignals(
       await get(execution.featureSwitches$),
     );
   });
-  const effectiveAccounts$ = computed(async (get) => {
-    const accounts = (await get(execution.connectors$)).connectorAccounts;
+  const accessOverrides$ = computed(async (get) => {
     if (!(await get(chatAccountsEnabled$))) {
-      return accounts;
+      return [];
     }
     const input = await get(connectorInput$);
-    const overrides = await get(db$)
+    return await get(db$)
       .select({
         connectorId: chatThreadConnectorAccessOverrides.connectorId,
         enabled: chatThreadConnectorAccessOverrides.enabled,
@@ -258,6 +257,17 @@ function createChatAccountInputSignals(
       .where(
         eq(chatThreadConnectorAccessOverrides.chatThreadId, input.chatThreadId),
       );
+  });
+  const effectiveAccounts$ = computed(async (get) => {
+    const [snapshot, overrides, chatAccountsEnabled] = await Promise.all([
+      get(execution.connectors$),
+      get(accessOverrides$),
+      get(chatAccountsEnabled$),
+    ]);
+    const accounts = snapshot.connectorAccounts;
+    if (!chatAccountsEnabled) {
+      return accounts;
+    }
     const enabledById = new Map(
       overrides.map((row) => {
         return [row.connectorId, row.enabled];
@@ -364,7 +374,7 @@ function createExecutionAccountInputs(
   });
   const currentAccounts = createChatAccountInputSignals(
     { featureSwitches$: args.features$, connectors$: args.connectors$ },
-    connectorInput$,
+    args.identity$,
   );
   const effectiveAccounts$ = computed(async (get) => {
     const [rows, targets] = await Promise.all([

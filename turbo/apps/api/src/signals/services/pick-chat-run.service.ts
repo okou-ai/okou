@@ -39,6 +39,7 @@ import {
   createThreadClaimRunObjects,
   type ThreadClaim,
 } from "./thread-claim-run.service";
+import { joinAllInOrder, settle } from "../utils";
 
 export interface OrgPickCursor {
   readonly queuedAt: Date;
@@ -450,6 +451,7 @@ function createPickObjects() {
       }
       // Load the run context only when this claim has work and capacity.
       set(preloadAgentRunContext$, claimed.context, signal);
+      waitUntil(settle(get(claimed.inputResources$)));
       signal.throwIfAborted();
       const pending = await set(claimed.admitRun$, signal);
       if (pending === null) {
@@ -458,8 +460,13 @@ function createPickObjects() {
       }
       // Activation is outside the admission-failure boundary. Slot scheduling
       // precedes terminal callbacks so they cannot delay the next queued input.
-      await set(claimed.publishPendingRun$, pending, signal);
-      const preparation = await set(claimed.prepareDispatch$, signal);
+      const [, preparation] = await joinAllInOrder(
+        [
+          set(claimed.publishPendingRun$, pending, signal),
+          set(claimed.prepareDispatch$, signal),
+        ],
+        signal,
+      );
       let dispatched: DirectRunDispatchResult;
       if (preparation.kind === "failed") {
         dispatched = preparation.result;

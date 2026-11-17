@@ -170,6 +170,7 @@ export function createThreadContext(
     pickedEvent$,
     templateOrgId$,
     sourceSettings.disabledPaidTools$,
+    bootstrap,
   );
   const computerUseHostGrant$ = createThreadHostGrant(bootstrap, thread$);
   const phoneUseGrant$ = createThreadPhoneUseGrant(bootstrap, thread$);

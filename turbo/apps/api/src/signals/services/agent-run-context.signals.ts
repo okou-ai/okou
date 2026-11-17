@@ -111,6 +111,7 @@ import {
   cappedBaseConcurrencyLimit,
   totalConcurrencyLimit,
 } from "./org-concurrency-entitlements.service";
+import { createRunTemplateSources } from "./run-template-sources.service";
 
 export interface BootstrapFeatureSwitchContext {
   readonly userId: string;
@@ -148,6 +149,9 @@ export interface AgentRunContextSignals {
   readonly modelPricing$: ReturnType<typeof createModelPricing>;
   readonly memberMetadata$: Computed<Promise<ExecutionMemberMetadata>>;
   readonly selectedImageModel$: Computed<Promise<ImageModel>>;
+  /** Request candidate rows are consumed only by this exact picked input. */
+  readonly requestTemplateInputId$: Computed<Promise<string | undefined>>;
+  readonly requestTemplateSources$: ReturnType<typeof createRunTemplateSources>;
   readonly connectorSelection$: Computed<Promise<AgentConnectorSelection>>;
   /** Connectors the Agent may use, derived from its connector selection. */
   readonly connectorScope$: Computed<Promise<AgentConnectorScopeSnapshot>>;
@@ -270,8 +274,19 @@ export function createAgentRunContextSignals(
   userId: string,
   orgId: string,
   agentId: string,
+  requestTemplates?: {
+    readonly inputId: string;
+    readonly presentationIds: readonly string[];
+    readonly userTemplateIds: readonly string[];
+  },
 ): AgentRunContextSignals {
-  return createIdentityContext(userId, orgId, agentId);
+  return createIdentityContext(
+    userId,
+    orgId,
+    agentId,
+    undefined,
+    requestTemplates,
+  );
 }
 
 /** Reuse by each group's authority key before wiring dependent computeds. */
@@ -492,8 +507,19 @@ function createIdentityContext(
   orgId: string,
   agentId: string,
   supplied?: AgentRunContextSignals,
+  requestTemplates?: Parameters<typeof createAgentRunContextSignals>[3],
 ): OwnedAgentRunContext {
   const scope = { userId, orgId, agentId };
+  const requestTemplateInputId$ = computed(() => {
+    return Promise.resolve(requestTemplates?.inputId);
+  });
+  const requestTemplateSources$ = createRunTemplateSources(
+    computed(() => {
+      return Promise.resolve(
+        requestTemplates ? { ...scope, ...requestTemplates } : null,
+      );
+    }),
+  );
   const {
     memberContext,
     orgRows$,
@@ -584,6 +610,8 @@ function createIdentityContext(
     memberModels$,
     ...modelSources,
     memberMetadata$,
+    requestTemplateInputId$,
+    requestTemplateSources$,
     selectedImageModel$:
       sharedMember?.selectedImageModel$ ??
       createSelectedImageModel(memberMetadata$),
@@ -611,6 +639,7 @@ export const preloadAgentRunContext$ = command(
       signals.catalog$,
       signals.authorizedConnectors$,
       signals.connectors$,
+      signals.requestTemplateSources$,
       signals.memory$,
       signals.agent$,
       signals.orgRows$,

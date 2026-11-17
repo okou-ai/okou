@@ -84,6 +84,7 @@ import {
 import {
   bestEffort,
   joinAll,
+  joinAllInOrder,
   safeSync,
   settle,
   settleIncludingAbort,
@@ -181,6 +182,7 @@ import type { ModelCatalog } from "./model-catalog.service";
 import { isCatalogFastServiceTierSupported } from "./model-route-capabilities.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { selectedUserPresentationTemplateIds } from "./presentation-template-data.service";
+import { selectedUserTemplateIds } from "./user-template-data.service";
 import {
   dispatchCancelSideEffects$,
   shouldDispatchCancelSideEffects,
@@ -2504,7 +2506,7 @@ const prepareNormalSendInput$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const attachFileMetadata = await measureChatEnqueue(
+    const attachments = measureChatEnqueue(
       args.enqueueTiming,
       "attachments",
       async () => {
@@ -2520,8 +2522,7 @@ const prepareNormalSendInput$ = command(
         );
       },
     );
-    signal.throwIfAborted();
-    const modelSelection = await measureChatEnqueue(
+    const model = measureChatEnqueue(
       args.enqueueTiming,
       "model_capture",
       async () => {
@@ -2539,6 +2540,10 @@ const prepareNormalSendInput$ = command(
           signal,
         );
       },
+    );
+    const [attachFileMetadata, modelSelection] = await joinAllInOrder(
+      [attachments, model],
+      signal,
     );
     signal.throwIfAborted();
     if ("status" in modelSelection) {
@@ -2560,10 +2565,11 @@ function preparedNormalSendEvent(
   threadId: string,
   modelSelection: Parameters<typeof normalSendEvent>[0]["modelSelection"],
   agentRunSource: ChatAgentRunSourceAnnotation | null,
+  inputId: string,
 ) {
   return normalSendEvent({
     modelSelection,
-    id: args.body.clientEventId ?? randomUUID(),
+    id: inputId,
     threadId: threadId,
     userMessage: normalSendUserMessage(args, agentRunSource),
     triggerSource: normalSendTriggerSource(args.auth),
@@ -2652,10 +2658,17 @@ const prepareNormalSendContext$ = command(
     ) {
       return badRequestMessage("MCP source annotations are server-managed");
     }
+    const inputId = args.body.clientEventId ?? randomUUID();
+    const templates = projectUserMessage(args.body.userMessage).templates;
     const context = createAgentRunContextSignals(
       args.userId,
       args.orgId,
       args.body.agentId,
+      {
+        inputId,
+        presentationIds: selectedUserPresentationTemplateIds(templates),
+        userTemplateIds: selectedUserTemplateIds(templates),
+      },
     );
     // The pool serves checkouts in dispatch order. Issue the request-critical
     // thread row before the preload's roots, several of which this request
@@ -2691,7 +2704,7 @@ const prepareNormalSendContext$ = command(
       return prepared;
     }
     const models = await set(prepareNormalSendModels$, context, signal);
-    return { ...prepared, ...models, context };
+    return { ...prepared, ...models, context, inputId };
   },
 );
 
@@ -2830,6 +2843,7 @@ export const sendNormalEvent$ = command(
       thread.threadId,
       modelSelection,
       prepared.agentRunSource,
+      prepared.inputId,
     );
     const enqueued = await settle(
       measureChatEnqueue(args.enqueueTiming, "publication", async () => {

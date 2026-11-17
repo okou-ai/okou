@@ -1147,6 +1147,8 @@ interface RejectedQueueHead {
 
 /** The Thread child's public surface: input readiness and run start. */
 export interface ThreadClaimRunObjects {
+  /** Entry-owned early reads; consumers retain their individual dependencies. */
+  readonly inputResources$: Computed<Promise<void>>;
   readonly threadHasActiveRun$: Computed<Promise<boolean>>;
   readonly hasFirstPickableChatEvent$: Computed<Promise<boolean>>;
   readonly orgHasCapacity$: Computed<Promise<boolean>>;
@@ -2471,6 +2473,13 @@ export function createThreadClaimRunObjects(
       return result.value;
     },
   );
+  const inputResources$ = computed(async (get) => {
+    const event = await get(pickedEvent$);
+    // Automation resource admission retains its budget/target ordering.
+    if (event && event.contextType !== "automation") {
+      await get(preparedPromptAndSkillVolumes$);
+    }
+  });
   const connectorAdmission$ = createConnectorAdmissionSignals(
     bootstrap,
     threadContext,
@@ -3920,6 +3929,7 @@ export function createThreadClaimRunObjects(
   );
   return {
     threadHasActiveRun$,
+    inputResources$,
     hasFirstPickableChatEvent$,
     orgHasCapacity$,
     admittedLaunch$,
