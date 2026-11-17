@@ -520,12 +520,20 @@ export const clientDescriptorManifest = [
     contracts: ["marketingHandoffsContract"],
   },
   {
+    module: "marketing-invitation-source",
+    contracts: ["marketingInvitationSourceContract"],
+  },
+  {
     module: "marketing-reward-projection",
     contracts: ["marketingRewardProjectionContract"],
   },
   {
     module: "marketing-reward-settlement",
     contracts: ["marketingRewardSettlementContract"],
+  },
+  {
+    module: "marketing-workflow-source",
+    contracts: ["marketingWorkflowSourceContract"],
   },
   {
     module: "mcp-chat-search",

@@ -11,6 +11,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
+  click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -40,6 +41,13 @@ function buttonIn(container: HTMLElement, name: string): HTMLElement {
 
 const BILLING_RUN_ID = "d0000000-0000-4000-a000-000000001401";
 const SURVEY_SWITCHES = { [FeatureSwitchKey.BillingSurvey]: true } as const;
+
+async function openExhaustionSurvey() {
+  click(await findButton("What's stopping you from upgrading today?"));
+  return screen.findByRole("form", {
+    name: "What's stopping you from upgrading today?",
+  });
+}
 
 function outOfCreditsChat(): MockChatEventInput[] {
   return [
@@ -151,19 +159,17 @@ test("Ask a free workspace admin why they are not upgrading and thank them with 
   });
   await readyChat();
 
-  const survey = await screen.findByRole("form", {
-    name: "What's stopping you from upgrading today?",
-  });
-  expect(
-    within(survey).getByText(
-      "The first eligible answer in this workspace earns 200 bonus credits, valid for 30 days.",
-    ),
-  ).toBeVisible();
-  // The upgrade action stays the card's primary choice.
+  // The upgrade action stays directly reachable outside the optional survey.
   expect(
     buttonIn(
       screen.getByTestId("assistant-error-card-shell"),
       "Upgrade to Pro",
+    ),
+  ).toBeVisible();
+  const survey = await openExhaustionSurvey();
+  expect(
+    within(survey).getByText(
+      "The first eligible answer in this workspace earns 200 bonus credits, valid for 30 days.",
     ),
   ).toBeVisible();
   const submit = buttonIn(survey, "Submit");
@@ -284,11 +290,7 @@ test("Wait while a recent Checkout may still be open in another tab", async () =
   });
   await readyChat();
 
-  await expect(
-    screen.findByRole("form", {
-      name: "What's stopping you from upgrading today?",
-    }),
-  ).resolves.toBeVisible();
+  await expect(openExhaustionSurvey()).resolves.toBeVisible();
   expect(
     screen.queryByRole("dialog", {
       name: "What stopped you from completing your purchase?",
@@ -340,9 +342,7 @@ test("Ask another admin for feedback without promising an already claimed organi
     path: RUN_PATH,
     featureSwitches: SURVEY_SWITCHES,
   });
-  const survey = await screen.findByRole("form", {
-    name: "What's stopping you from upgrading today?",
-  });
+  const survey = await openExhaustionSurvey();
   expect(
     within(survey).queryByText(
       "The first eligible answer in this workspace earns 200 bonus credits, valid for 30 days.",
@@ -365,9 +365,7 @@ test("Keep a completed Checkout out of the abandonment survey even without a suc
     path: RUN_PATH,
     featureSwitches: SURVEY_SWITCHES,
   });
-  await screen.findByRole("form", {
-    name: "What's stopping you from upgrading today?",
-  });
+  await openExhaustionSurvey();
   expect(
     screen.queryByRole("dialog", {
       name: "What stopped you from completing your purchase?",

@@ -298,7 +298,7 @@ describe("CHAT-02: web chat send and client ids", () => {
       throw new Error("Expected the picked input to launch a run");
     }
 
-    const run = await api.readRun(actor, runId);
+    const run = await api.executionInput(runId);
     expect(run.prompt).toBe(prompt);
     expect(run.appendSystemPrompt).toContain(
       "You are currently running inside: Web",
@@ -645,7 +645,7 @@ describe("CHAT-02: interrupting active chat runs", () => {
       threadId: first.threadId,
       prompt: "resume after interruptions",
     });
-    const thirdRun = await api.readRun(actor, third.runId);
+    const thirdRun = await api.executionInput(third.runId);
     const appended = thirdRun.appendSystemPrompt ?? "";
     expect(appended).toContain("# Incomplete Rounds Context");
     expect(appended).toContain("RUN_STATUS: cancelled");

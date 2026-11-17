@@ -38,31 +38,27 @@ def configure_request_stream(
     if callable(flow.request.stream):
         return
 
-    buf = bytearray()
-    state = {"truncated": False, "total_bytes": 0}
+    state = {"total_bytes": 0}
     buf_limit = STREAM_BUFFER_LIMIT
     retain_body = capture_body or inspect_body
+    capture = stream_capture.StreamCapture() if retain_body else None
 
     def stream_and_buffer(chunk: bytes) -> bytes:
         state["total_bytes"] += len(chunk)
-        if (
-            retain_body
-            and not state["truncated"]
-            and stream_capture.append_captured_chunk(buf, chunk, limit=buf_limit)
-        ):
-            state["truncated"] = True
+        if capture is not None:
+            capture.append(chunk, limit=buf_limit)
         return chunk
 
     flow.request.stream = stream_and_buffer
-    if retain_body:
-        flow.metadata[metadata_keys.REQUEST_STREAM_BUFFER] = buf
-    flow.metadata[metadata_keys.REQUEST_STREAM_BUFFER_STATE] = state
+    if capture is not None:
+        flow.metadata[metadata_keys.REQUEST_STREAM_CAPTURE] = capture
+    flow.metadata[metadata_keys.REQUEST_STREAM_STATE] = state
     flow.metadata[_REQUEST_STREAM_CALLBACK] = stream_and_buffer
 
 
 def streamed_request_size(flow: http.HTTPFlow) -> int | None:
     """Return total request bytes observed by the request stream callback."""
-    state = flow.metadata.get(metadata_keys.REQUEST_STREAM_BUFFER_STATE)
+    state = flow.metadata.get(metadata_keys.REQUEST_STREAM_STATE)
     if state is None:
         return None
     return int(state["total_bytes"])
@@ -73,15 +69,8 @@ def captured_request_stream_body(flow: http.HTTPFlow) -> stream_capture.Captured
 
     Request completeness is recorded separately in ``REQUEST_STREAM_COMPLETE``.
     """
-    stream_buf = flow.metadata.get(metadata_keys.REQUEST_STREAM_BUFFER)
-    stream_state = flow.metadata.get(metadata_keys.REQUEST_STREAM_BUFFER_STATE)
     return stream_capture.captured_stream_body(
-        stream_buf,
-        stream_state,
-        body_kind="request",
-        buffer_key=metadata_keys.REQUEST_STREAM_BUFFER,
-        state_key=metadata_keys.REQUEST_STREAM_BUFFER_STATE,
-        writer="request_streaming.configure_request_stream()",
+        flow.metadata.get(metadata_keys.REQUEST_STREAM_CAPTURE)
     )
 
 
@@ -92,8 +81,8 @@ def release_request_stream_state(flow: http.HTTPFlow) -> None:
     usage reporting.
     """
     stream_callback = flow.metadata.pop(_REQUEST_STREAM_CALLBACK, None)
-    flow.metadata.pop(metadata_keys.REQUEST_STREAM_BUFFER, None)
-    flow.metadata.pop(metadata_keys.REQUEST_STREAM_BUFFER_STATE, None)
+    flow.metadata.pop(metadata_keys.REQUEST_STREAM_CAPTURE, None)
+    flow.metadata.pop(metadata_keys.REQUEST_STREAM_STATE, None)
     flow.metadata.pop(metadata_keys.REQUEST_STREAM_COMPLETE, None)
     if stream_callback is not None and flow.request.stream is stream_callback:
         flow.request.stream = False

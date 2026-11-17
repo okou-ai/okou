@@ -146,7 +146,7 @@ describe("CHAT-02: personal subscription model selection", () => {
       model: "gpt-6-astra",
       runOptions: { codexServiceTier: "fast" },
     });
-    const firstCodexRun = await api.readRun(actor, firstCodex.runId);
+    const firstCodexRun = await api.executionInput(firstCodex.runId);
     expect(firstCodexRun.appendSystemPrompt).not.toContain(firstPiPrompt);
     expect(firstCodexRun.appendSystemPrompt).not.toContain(firstPiAnswer);
     const firstCodexExecution = await runExecution(firstCodex.runId);
@@ -205,7 +205,7 @@ describe("CHAT-02: personal subscription model selection", () => {
     expect(
       returnedPiExecution.execution.nativeContinuation?.recoveryPrompt,
     ).toContain("okou chat messages --output-dir /tmp/okou-chat-history");
-    const returnedPiRun = await api.readRun(actor, returnedPi.runId);
+    const returnedPiRun = await api.executionInput(returnedPi.runId);
     for (const prior of [
       firstPiPrompt,
       firstPiAnswer,
@@ -237,7 +237,7 @@ describe("CHAT-02: personal subscription model selection", () => {
       model: piModel,
     });
     await flushWaitUntilForTest();
-    const piFollowUpRun = await api.readRun(actor, piFollowUp.runId);
+    const piFollowUpRun = await api.executionInput(piFollowUp.runId);
     const piFollowUpAppend = piFollowUpRun.appendSystemPrompt ?? "";
     expect(piFollowUpAppend).not.toContain(firstPiPrompt);
     expect(piFollowUpAppend).not.toContain(firstCodexPrompt);
@@ -276,7 +276,7 @@ describe("CHAT-02: personal subscription model selection", () => {
     ).toBe("fast");
     expect(repeatedCodexExecution.execution.piLaunchConfig).toBeUndefined();
 
-    const repeatedCodexRun = await api.readRun(actor, repeatedCodex.runId);
+    const repeatedCodexRun = await api.executionInput(repeatedCodex.runId);
     expect(repeatedCodexRun.appendSystemPrompt).toContain(piFollowUpPrompt);
     expect(repeatedCodexRun.appendSystemPrompt).toContain("Run cancelled");
     chatCallbacks.mockChatOutputEvents([
@@ -312,7 +312,7 @@ describe("CHAT-02: personal subscription model selection", () => {
     const repeatedPiExecution = await runExecution(repeatedPi.runId);
 
     expect(repeatedPiExecution.execution.prompt).toBe(repeatedPiPrompt);
-    const repeatedPiRun = await api.readRun(actor, repeatedPi.runId);
+    const repeatedPiRun = await api.executionInput(repeatedPi.runId);
     const repeatedPiAppend = repeatedPiRun.appendSystemPrompt ?? "";
     for (const prior of [
       firstPiPrompt,

@@ -16,7 +16,6 @@ export const apiRunsHandlers = [
       runId: "a0000000-0000-4000-a000-000000000001",
       status: "completed",
       prompt: "Test prompt",
-      appendSystemPrompt: null,
       source: {
         providerType: null,
         runtimeProviderType: null,

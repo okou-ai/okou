@@ -225,7 +225,9 @@ const runGrant$ = command(async ({ get }, signal: AbortSignal) => {
   }
   return { id: grant.id, deviceId: grant.deviceId, runId: auth.runId };
 });
-function deviceView(value: typeof devices.$inferSelect, online = false) {
+function deviceView(value: typeof devices.$inferSelect, present = false) {
+  const online =
+    present && value.ready && value.lastSeenAt.getTime() > now() - 45_000;
   return {
     id: value.id,
     displayName: value.displayName,
@@ -233,7 +235,6 @@ function deviceView(value: typeof devices.$inferSelect, online = false) {
     appVersion: value.appVersion,
     generation: value.generation,
     online,
-    ready: value.ready && value.lastSeenAt.getTime() > now() - 45_000,
     lastSeenAt: value.lastSeenAt.toISOString(),
   };
 }
@@ -699,7 +700,7 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
     .limit(1);
   signal.throwIfAborted();
   if (!device) {
-    conflict("Open Okou iOS Use and start a native control window");
+    conflict("Open Okou iOS Use and go online");
   }
   const payloadHash = createHash("sha256")
     .update(JSON.stringify(body.data.action))

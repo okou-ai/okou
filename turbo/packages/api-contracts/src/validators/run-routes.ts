@@ -19,8 +19,10 @@ import {
  * Run context snapshot — launch-time execution context for debugging.
  * Environment secret values are redacted. Firewall auth retains the prepared
  * execution templates, including secret references, but never resolves them.
- * Dynamic fields (environment, firewalls, storageMounts) are stored in Axiom.
- * Static fields (prompt, vars, secretNames) are merged from agent_runs at query time.
+ * Diagnostic values come from Axiom; the database only authorizes the read and
+ * supplies query-time anchors. Vars are the original admitted launch variables,
+ * before prepared-context overrides, with known secret values redacted.
+ * Null vars means no capture; an empty object means captured empty variables.
  */
 export const runContextStorageMountSchema = object({
   name: string(),

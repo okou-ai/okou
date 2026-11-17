@@ -7,7 +7,6 @@ import {
   number,
   object,
   preprocess,
-  record,
   string,
   uuid,
   enum as zEnum,
@@ -96,8 +95,6 @@ const getRunResponseSchema = object({
   runId: string(),
   status: runStatusSchema,
   prompt: string(),
-  appendSystemPrompt: string().nullable(),
-  vars: record(string(), string()).optional(),
   sandboxId: string().optional(),
   result: object({
     output: string().optional(),

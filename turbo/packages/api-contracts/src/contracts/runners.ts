@@ -843,7 +843,7 @@ const preparedExecutionContextBaseSchema = object({
   // This field must not be included in the runner-facing ExecutionContext.
   secretValueEnvironmentKeys: array(string()).nullable(),
   // Connector-owned runtime vars used by proxy/firewall template resolution.
-  // Run vars stay in agent_runs.vars and merge during execution preparation.
+  // Original Run vars travel in the admitted launch and merge during execution preparation.
   vars: record(string(), string()).nullable(),
   nativeContinuation: nativeContinuationSchema,
   // AES-256-GCM encrypted Record<string, string>. Keys are the runtime secret
@@ -975,10 +975,6 @@ const executionContextObjectSchema = object({
   connectorRuntimeTargets: connectorRuntimeTargetsSchema,
   // Tools to disable in Claude CLI (passed as --disallowed-tools)
   disallowedTools: array(string()).optional(),
-  // Tools to make available in Claude CLI (passed as --tools)
-  tools: array(string()).optional(),
-  // Settings JSON to pass to Claude CLI (passed as --settings)
-  settings: string().optional(),
   // Feature flags evaluated at job creation time (all switch states for user/org)
   featureFlags: record(string(), boolean()).optional(),
   billableFirewalls: array(string()).optional(),

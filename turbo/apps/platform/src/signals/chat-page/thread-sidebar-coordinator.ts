@@ -22,7 +22,6 @@ import {
   restoreNarrowSidebarScroll$,
 } from "./chat-layout.ts";
 import { artifactCatalogSidebar } from "../artifacts-page/artifact-catalog-instance.ts";
-import { refreshComposerTaskOverflow$ } from "../okou-page/composer-task-overflow.ts";
 import { shellDocumentAttributesRef$ } from "../theme.ts";
 import type { TabStripMotion } from "../browser/tab-strip.ts";
 import { createThreadSidebarLayoutMotion } from "./thread-sidebar-layout-motion.ts";
@@ -117,7 +116,6 @@ const synchronizeWorkspaceLayout$ = command(
   ): Promise<void> => {
     signal.throwIfAborted();
     set(sidebarMotion.commit$, preparation);
-    set(refreshComposerTaskOverflow$);
     if (get(artifactCatalogSidebar.open$)) {
       set(artifactCatalogSidebar.imageCanvas.syncLayout$);
     }

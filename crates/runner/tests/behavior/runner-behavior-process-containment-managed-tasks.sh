@@ -703,7 +703,6 @@ echo "--- Managed tasks: native delegation, isolation and consumer lifetimes ---
 "$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
   --chat-thread-id "$CHAT_THREAD_ID" \
   --session-id e2e-process-containment-managed-tasks \
-  --feature-flag sandboxReuse=true \
   --prompt "$TASK_PROMPT" \
   || fail "managed-task native admission, isolation or consumer lifecycle failed"
 

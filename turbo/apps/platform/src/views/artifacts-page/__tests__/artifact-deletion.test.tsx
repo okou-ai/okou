@@ -8,11 +8,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   artifact,
@@ -57,20 +53,6 @@ function mockPreview(summary: ArtifactSummary = report) {
   context.mocks.http.get("https://files.example.test/report.txt", () => {
     return HttpResponse.text("Report content");
   });
-}
-
-async function openSharedConversationDeletion() {
-  await expect(findArtifactAction(report.title)).resolves.toBeInTheDocument();
-  click(getButtonByName(`More actions for ${report.title}`));
-  const menu = await screen.findByRole("menu");
-  const item = queryAllByRoleFast("menuitem", menu).find((element) => {
-    return element.textContent?.trim() === "Delete";
-  });
-  if (!item) {
-    throw new Error("Expected the shared-conversation delete action");
-  }
-  click(item);
-  return await screen.findByRole("dialog", { name: `Delete ${report.title}?` });
 }
 
 function currentPreview() {
@@ -226,39 +208,6 @@ test("a failed deletion can be cancelled, reopened, and retried", async () => {
   });
   const reopened = await openDeletion();
   click(getButtonByName("Delete", reopened));
-  await expect(
-    screen.findByText("Artifact deleted"),
-  ).resolves.toBeInTheDocument();
-  await expect(
-    screen.findByText("No artifacts found"),
-  ).resolves.toBeInTheDocument();
-});
-
-test("deleting a shared conversation explains that its shared link will stop working", async () => {
-  let removed = false;
-  const conversation = artifact({
-    kind: "shared-thread",
-    sharedThreadId: "b0000000-0000-4000-a000-000000000001",
-  });
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, {
-      artifacts: removed ? [] : [conversation],
-      nextCursor: null,
-    });
-  });
-  context.mocks.api(artifactCatalogContract.delete, ({ respond }) => {
-    removed = true;
-    return respond(200, { deleted: true });
-  });
-  await setupPage({
-    context,
-    path: "/artifacts?tab=shared-thread",
-  });
-  const dialog = await openSharedConversationDeletion();
-  expect(
-    within(dialog).getByText(/Its shared link will stop working/),
-  ).toBeInTheDocument();
-  click(getButtonByName("Delete", dialog));
   await expect(
     screen.findByText("Artifact deleted"),
   ).resolves.toBeInTheDocument();

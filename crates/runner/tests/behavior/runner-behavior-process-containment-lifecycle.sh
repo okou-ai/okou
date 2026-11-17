@@ -365,7 +365,6 @@ echo "--- Turn 1: leave detached user/root descendants ---"
 if TURN1_RESULT=$("$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
   --chat-thread-id "$CHAT_THREAD_ID" \
   --session-id "$SESSION_ID" \
-  --feature-flag sandboxReuse=true \
   --prompt "$LEAK_PROMPT"); then
   printf '%s\n' "$TURN1_RESULT"
 else
@@ -451,7 +450,6 @@ echo "--- Turn 2: prove descendants are gone and only this turn is owned ---"
 "$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
   --chat-thread-id "$CHAT_THREAD_ID" \
   --session-id "$SESSION_ID" \
-  --feature-flag sandboxReuse=true \
   --prompt "$VERIFY_PROMPT" \
   || fail "Turn 2 failed; sandbox was not safely reused"
 
@@ -459,7 +457,6 @@ echo "--- Turn 3: prove healthy Turn 2 cleanup was also reusable ---"
 "$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
   --chat-thread-id "$CHAT_THREAD_ID" \
   --session-id "$SESSION_ID" \
-  --feature-flag sandboxReuse=true \
   --prompt 'test -f /tmp/vm0-process-containment/sandbox-reuse-marker' \
   || fail "Turn 3 failed; healthy cleanup did not re-enter reuse"
 
@@ -478,7 +475,6 @@ exec {PRESSURE_SUBMIT_FD}>"$PRESSURE_SUBMIT_OUTPUT"
 "$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
   --chat-thread-id "$PRESSURE_CHAT_THREAD_ID" \
   --session-id "$PRESSURE_SESSION_ID" \
-  --feature-flag sandboxReuse=true \
   --prompt '@active-input-smoke-ready:5' \
   --active-input 'after=1ms,text=cpu-pressure-ready' \
   --active-input 'after=2s,text=cpu-pressure-one' \

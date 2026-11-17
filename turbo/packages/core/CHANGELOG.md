@@ -1,5 +1,28 @@
 # Changelog
 
+## [8.847.4](https://github.com/okou-ai/okou/compare/core-v8.847.3...core-v8.847.4) (2026-11-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.80.0
+
+## [8.847.3](https://github.com/okou-ai/okou/compare/core-v8.847.2...core-v8.847.3) (2026-11-17)
+
+
+### Refactoring
+
+* **platform:** remove pasted text attachments feature switch ([#48148](https://github.com/okou-ai/okou/issues/48148)) ([5a278f0](https://github.com/okou-ai/okou/commit/5a278f0c51cd4c8ac0939f973ce47f9c873fa0fb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.79.0
+
 ## [8.847.2](https://github.com/okou-ai/okou/compare/core-v8.847.1...core-v8.847.2) (2026-11-17)
 
 

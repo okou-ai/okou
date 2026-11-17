@@ -399,15 +399,6 @@ pub struct GuestConfig {
     /// string means there is no explicit deny list; the values become repeated
     /// `--disallowed-tools` arguments.
     pub disallowed_tools: String,
-    /// Comma-separated Claude Code tool names from
-    /// [`guest_contracts::env::RunPayload`] that should be allowed. An empty
-    /// string means there is no explicit allow list; the values become repeated
-    /// `--tools` arguments.
-    pub tools: String,
-    /// Opaque raw Claude Code settings payload from
-    /// [`guest_contracts::env::RunPayload`]. An empty string means there is no
-    /// settings override; a non-empty value is passed as `--settings`.
-    pub settings: String,
     /// Whether to launch the mock Claude binary. This is materialized from
     /// [`guest_contracts::env::USE_MOCK_CLAUDE_ENV`] and is true only for the
     /// exact string `"true"`.
@@ -593,8 +584,6 @@ impl GuestConfig {
             )?,
             secret_values: payload.secret_values,
             disallowed_tools: payload.disallowed_tools,
-            tools: payload.tools,
-            settings: payload.settings,
             use_mock_claude: bool_true_value(Some(&raw.use_mock_claude)),
             mock_claude_path: default_mock_path(
                 raw.mock_claude_path.as_deref(),

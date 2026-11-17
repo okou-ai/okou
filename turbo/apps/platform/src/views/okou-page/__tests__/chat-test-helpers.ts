@@ -974,7 +974,6 @@ export function mockChatLifecycle(
       runId: "a0000000-0000-4000-a000-000000000001",
       status: runStatus,
       prompt: runPrompt ?? "Hello",
-      appendSystemPrompt: null,
       source: {
         providerType: null,
         runtimeProviderType: null,

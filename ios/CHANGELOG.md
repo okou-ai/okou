@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.47.1](https://github.com/okou-ai/okou/compare/ios-v0.47.0...ios-v0.47.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **ios:** make the composer's toolbar concentric with its surface ([#48226](https://github.com/okou-ai/okou/issues/48226)) ([26cfe0e](https://github.com/okou-ai/okou/commit/26cfe0e3a66b115404d607b765220a7ed0ede274))
+
 ## [0.47.0](https://github.com/okou-ai/okou/compare/ios-v0.46.2...ios-v0.47.0) (2026-11-17)
 
 

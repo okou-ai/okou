@@ -203,6 +203,11 @@ test.each([
     });
     expect(window.location.pathname).toBe(path);
     const { dialog } = await openDeletion();
+    expect(dialog).toHaveTextContent(
+      kind === "shared-thread"
+        ? /Its shared link will stop working/
+        : /Copies .* will remain/,
+    );
     click(button("Delete", dialog));
     await waitFor(() => {
       expect(button("Deleting…", dialog)).toBeDisabled();

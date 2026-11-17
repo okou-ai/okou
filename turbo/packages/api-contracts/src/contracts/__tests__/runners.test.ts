@@ -1594,14 +1594,6 @@ describe("runner apiStartTime contract", () => {
   });
 });
 
-describe("runner Claude tool list contracts", () => {
-  it("keeps the runner wire schema tolerant of legacy tool list values", () => {
-    expect(
-      executionContextSchema.shape.tools.safeParse(["Bash,Read"]).success,
-    ).toBe(true);
-  });
-});
-
 describe("native continuation intent", () => {
   it("preserves fresh, resumed and Chat recovery launches", () => {
     for (const intent of [

@@ -1,5 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { ProjectDialogs } from "../projects/project-dialogs.tsx";
 import { PersonalSubscriptionDialogs } from "./subscription-linking.tsx";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
@@ -435,10 +433,7 @@ function SidebarWorkspaceFrame({
   const activeRoute = useGet(activeRoute$);
   const beside = chatListHidden ? "nav-rail" : "chat-list";
   const agentChatPage = useGet(agentChatPageActive$);
-  const capabilitiesEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.HomeCapabilities];
-  const sharedWorkspace =
-    capabilitiesEnabled && (agentChatPage || activeRoute === "project");
+  const sharedWorkspace = agentChatPage || activeRoute === "project";
 
   return activeRoute === "chat" || sharedWorkspace ? (
     <ChatWorkspace

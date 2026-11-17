@@ -10,25 +10,14 @@ fn build_claude_args_for_test(
     resume_id: &str,
     append_system_prompt: &str,
     disallowed_tools: &str,
-    tools: &str,
-    settings: &str,
 ) -> Vec<String> {
-    build_claude_args_for_test_with_replay(
-        resume_id,
-        append_system_prompt,
-        disallowed_tools,
-        tools,
-        settings,
-        true,
-    )
+    build_claude_args_for_test_with_replay(resume_id, append_system_prompt, disallowed_tools, true)
 }
 
 fn build_claude_args_for_test_with_replay(
     resume_id: &str,
     append_system_prompt: &str,
     disallowed_tools: &str,
-    tools: &str,
-    settings: &str,
     replay_user_messages: bool,
 ) -> Vec<String> {
     let _system_log_state_guard = crate::lock_system_log_test_state();
@@ -40,8 +29,6 @@ fn build_claude_args_for_test_with_replay(
         append_system_prompt_file: (!append_system_prompt.is_empty())
             .then_some(TEST_APPEND_SYSTEM_PROMPT_FILE),
         disallowed_tools,
-        tools,
-        settings,
         replay_user_messages,
     })
 }
@@ -62,8 +49,6 @@ fn build_claude_command_for_test(use_mock: bool) -> Vec<String> {
             resume_id: "",
             append_system_prompt_file: None,
             disallowed_tools: "",
-            tools: "",
-            settings: "",
             replay_user_messages: true,
         },
     )
@@ -78,8 +63,6 @@ fn build_claude_args_for_model_test(model: &str) -> Vec<String> {
         resume_id: "",
         append_system_prompt_file: None,
         disallowed_tools: "",
-        tools: "",
-        settings: "",
         replay_user_messages: true,
     })
 }
@@ -94,7 +77,7 @@ fn assert_claude_prompt_is_not_positional(args: &[String], prompt: &str) {
 
 #[test]
 fn build_claude_args_basic() {
-    let args = build_claude_args_for_test("", "", "", "", "");
+    let args = build_claude_args_for_test("", "", "");
     assert!(args.contains(&"--print".to_string()));
     let input_idx = args
         .iter()
@@ -111,7 +94,7 @@ fn build_claude_args_basic() {
 
 #[test]
 fn build_claude_args_omits_replay_user_messages_when_disabled() {
-    let args = build_claude_args_for_test_with_replay("", "", "", "", "", false);
+    let args = build_claude_args_for_test_with_replay("", "", "", false);
     assert!(!args.contains(&"--replay-user-messages".to_string()));
 }
 
@@ -128,8 +111,6 @@ fn build_claude_args_resume_log_omits_resume_id() {
         resume_id: "sess-secret-123",
         append_system_prompt_file: None,
         disallowed_tools: "",
-        tools: "",
-        settings: "",
         replay_user_messages: true,
     });
     guest_telemetry::log::clear_system_log_file();
@@ -158,36 +139,12 @@ fn build_claude_command_uses_mock_binary() {
 
 #[test]
 fn build_claude_args_with_disallowed_tools() {
-    let args = build_claude_args_for_test("", "", "CronCreate,CronDelete,CronList", "", "");
+    let args = build_claude_args_for_test("", "", "CronCreate,CronDelete,CronList");
     let dt_idx = args.iter().position(|a| a == "--disallowed-tools").unwrap();
     assert_eq!(args[dt_idx + 1], "CronCreate");
     assert_eq!(args[dt_idx + 2], "CronDelete");
     assert_eq!(args[dt_idx + 3], "CronList");
     assert_claude_prompt_is_not_positional(&args, "hello");
-}
-
-#[test]
-fn build_claude_args_with_tools() {
-    let args = build_claude_args_for_test("", "", "", "Bash,Edit,Read", "");
-    let t_idx = args.iter().position(|a| a == "--tools").unwrap();
-    assert_eq!(args[t_idx + 1], "Bash");
-    assert_eq!(args[t_idx + 2], "Edit");
-    assert_eq!(args[t_idx + 3], "Read");
-    assert_claude_prompt_is_not_positional(&args, "hello");
-}
-
-#[test]
-fn build_claude_args_with_settings() {
-    let args = build_claude_args_for_test("", "", "", "", r#"{"hooks":{}}"#);
-    let s_idx = args.iter().position(|a| a == "--settings").unwrap();
-    assert_eq!(args[s_idx + 1], r#"{"hooks":{}}"#);
-    assert_claude_prompt_is_not_positional(&args, "hello");
-}
-
-#[test]
-fn build_claude_args_empty_settings_omitted() {
-    let args = build_claude_args_for_test("", "", "", "", "");
-    assert!(!args.contains(&"--settings".to_string()));
 }
 
 #[test]
@@ -203,13 +160,7 @@ fn build_claude_args_other_models_omit_effort() {
 
 #[test]
 fn build_claude_args_all_options_combined() {
-    let args = build_claude_args_for_test(
-        "sess-abc",
-        "Be concise.",
-        "CronCreate,CronDelete",
-        "Bash,Read",
-        r#"{"hooks":{}}"#,
-    );
+    let args = build_claude_args_for_test("sess-abc", "Be concise.", "CronCreate,CronDelete");
     for expected in [
         "--resume",
         "sess-abc",
@@ -218,11 +169,6 @@ fn build_claude_args_all_options_combined() {
         "--disallowed-tools",
         "CronCreate",
         "CronDelete",
-        "--tools",
-        "Bash",
-        "Read",
-        "--settings",
-        r#"{"hooks":{}}"#,
     ] {
         assert!(args.iter().any(|a| a == expected), "missing: {expected}");
     }
@@ -231,24 +177,16 @@ fn build_claude_args_all_options_combined() {
 
 #[test]
 fn build_claude_args_disallowed_tools_whitespace_trimmed() {
-    let args = build_claude_args_for_test("", "", " CronCreate , CronDelete ", "", "");
+    let args = build_claude_args_for_test("", "", " CronCreate , CronDelete ");
     let dt_idx = args.iter().position(|a| a == "--disallowed-tools").unwrap();
     assert_eq!(args[dt_idx + 1], "CronCreate");
     assert_eq!(args[dt_idx + 2], "CronDelete");
 }
 
 #[test]
-fn build_claude_args_tools_whitespace_trimmed() {
-    let args = build_claude_args_for_test("", "", "", " Bash , Read ", "");
-    let t_idx = args.iter().position(|a| a == "--tools").unwrap();
-    assert_eq!(args[t_idx + 1], "Bash");
-    assert_eq!(args[t_idx + 2], "Read");
-}
-
-#[test]
 fn build_claude_args_disallowed_tools_empty_items_skipped() {
     // Trailing comma produces an empty token that should be skipped
-    let args = build_claude_args_for_test("", "", "CronCreate,,CronDelete,", "", "");
+    let args = build_claude_args_for_test("", "", "CronCreate,,CronDelete,");
     let dt_idx = args.iter().position(|a| a == "--disallowed-tools").unwrap();
     // Only non-empty tools should be present
     let tool_args: Vec<&str> = args[dt_idx + 1..]
@@ -260,21 +198,8 @@ fn build_claude_args_disallowed_tools_empty_items_skipped() {
 }
 
 #[test]
-fn build_claude_args_tools_empty_items_skipped() {
-    let args = build_claude_args_for_test("", "", "", "Bash,,Read,", "");
-    let t_idx = args.iter().position(|a| a == "--tools").unwrap();
-    let tool_args: Vec<&str> = args[t_idx + 1..]
-        .iter()
-        .take_while(|a| a.as_str() != "--" && !a.starts_with("--"))
-        .map(|s| s.as_str())
-        .collect();
-    assert_eq!(tool_args, vec!["Bash", "Read"]);
-}
-
-#[test]
-fn build_claude_args_comma_only_tool_values_omitted() {
-    let args = build_claude_args_for_test("", "", " , ,, ", ",,,", "");
+fn build_claude_args_comma_only_disallowed_tool_values_omitted() {
+    let args = build_claude_args_for_test("", "", " , ,, ");
     assert!(!args.contains(&"--disallowed-tools".to_string()));
-    assert!(!args.contains(&"--tools".to_string()));
     assert_claude_prompt_is_not_positional(&args, "test");
 }

@@ -19,6 +19,7 @@ import {
 import { slackRewardIneligibleValues } from "./slack-installation-reward";
 import { ensureGetStartedRewardWallet$ } from "./get-started-wallet.service";
 import { marketingRewardInvitationEventInsert } from "./marketing-reward-event-publication";
+import { getStartedRewardWriter } from "./marketing-reward-ownership";
 import {
   acceptedInvitationClaimQuery,
   acceptedInvitationPurchaseQuery,
@@ -75,7 +76,7 @@ const publishUnfundedAcceptance$ = command(
     args: {
       readonly claim: GetStartedClaimRow;
       readonly acceptance: ReturnType<typeof invitationAcceptanceValues>;
-      readonly reason: string;
+      readonly reason: string | null;
       readonly at: Date;
     },
     signal: AbortSignal,
@@ -84,7 +85,9 @@ const publishUnfundedAcceptance$ = command(
     const accepted = db
       .update(getStartedClaims)
       .set({
-        ...slackRewardIneligibleValues(args.reason, args.at),
+        ...(args.reason === null
+          ? { reason: null, updatedAt: args.at }
+          : slackRewardIneligibleValues(args.reason, args.at)),
         ...args.acceptance,
       })
       .where(unresolvedClaimWhere(args.claim))
@@ -148,6 +151,20 @@ export const acceptGetStartedInvitation$ = command(
     requireInvitationRewardIdentity(args, claim);
     const at = nowDate();
     const acceptance = invitationAcceptanceValues(args, claim.invitationId, at);
+    if (!claim.beneficiaryUserId) {
+      throw new Error("Invitation reward has no original inviter");
+    }
+    if (
+      getStartedRewardWriter("user", claim.beneficiaryUserId) === "marketing"
+    ) {
+      await set(
+        publishUnfundedAcceptance$,
+        { claim, acceptance, reason: null, at },
+        signal,
+      );
+      signal.throwIfAborted();
+      return;
+    }
     if (claim.beneficiaryUserId === args.userId) {
       await set(
         publishUnfundedAcceptance$,

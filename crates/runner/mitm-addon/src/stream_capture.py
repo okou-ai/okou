@@ -1,5 +1,6 @@
 """Shared captured stream-body writes, metadata access, validation and release."""
 
+from dataclasses import dataclass, field
 from typing import NamedTuple
 
 from mitmproxy import http
@@ -10,6 +11,18 @@ import flow_metadata_keys as metadata_keys
 class CapturedStreamBody(NamedTuple):
     buffer: bytearray
     truncated: bool
+
+
+@dataclass(slots=True, repr=False)
+class StreamCapture:
+    """Own a retained raw prefix and its truncation state together."""
+
+    buffer: bytearray = field(default_factory=bytearray)
+    truncated: bool = False
+
+    def append(self, chunk: bytes, *, limit: int) -> None:
+        if not self.truncated and append_captured_chunk(self.buffer, chunk, limit=limit):
+            self.truncated = True
 
 
 def append_captured_chunk(buffer: bytearray, chunk: bytes, *, limit: int) -> bool:
@@ -27,60 +40,20 @@ def append_captured_chunk(buffer: bytearray, chunk: bytes, *, limit: int) -> boo
 
 
 def captured_stream_body(
-    stream_buf: bytearray | None,
-    stream_state: object,
-    *,
-    body_kind: str,
-    buffer_key: str,
-    state_key: str,
-    writer: str,
+    capture: StreamCapture | None,
 ) -> CapturedStreamBody | None:
-    """Return captured bytes and truncation state from writer-owned metadata."""
-    if stream_buf is None:
+    """Return the current view of a writer-owned capture, including an empty one."""
+    if capture is None:
         return None
-
-    stream_truncated = False
-    if stream_buf:
-        if not isinstance(stream_state, dict) or "truncated" not in stream_state:
-            state_description = (
-                f"keys={sorted(str(key) for key in stream_state)}"
-                if isinstance(stream_state, dict)
-                else f"type={type(stream_state).__name__}"
-            )
-            raise RuntimeError(
-                f"Invalid {body_kind} body capture metadata: {buffer_key} is "
-                f"present and non-empty (len={len(stream_buf)}) but "
-                f"{state_key} is missing the truncated flag. "
-                f"{writer} must set {buffer_key} and {state_key} together "
-                f"({state_key} {state_description})."
-            )
-        stream_truncated = bool(stream_state["truncated"])
-    elif stream_state is not None and not isinstance(stream_state, dict):
-        raise RuntimeError(
-            f"Invalid {body_kind} body capture metadata: {buffer_key} is "
-            f"empty but {state_key} is not a dict "
-            f"({state_key} type={type(stream_state).__name__})."
-        )
-    elif stream_state:
-        stream_truncated = bool(stream_state.get("truncated", False))
-
-    return CapturedStreamBody(stream_buf, stream_truncated)
+    return CapturedStreamBody(capture.buffer, capture.truncated)
 
 
 def captured_response_stream_body(flow: http.HTTPFlow) -> CapturedStreamBody | None:
-    """Read the response bytes and truncation state written together by streaming."""
-    return captured_stream_body(
-        flow.metadata.get(metadata_keys.STREAM_BUFFER),
-        flow.metadata.get(metadata_keys.STREAM_BUFFER_STATE),
-        body_kind="response",
-        buffer_key=metadata_keys.STREAM_BUFFER,
-        state_key=metadata_keys.STREAM_BUFFER_STATE,
-        writer="response_streaming.configure_response_stream()",
-    )
+    """Read the response capture owned by streaming."""
+    return captured_stream_body(flow.metadata.get(metadata_keys.RESPONSE_STREAM_CAPTURE))
 
 
 def clear_response_capture_state(flow: http.HTTPFlow) -> None:
     """Remove byte accounting and optional body capture, leaving callbacks to their owners."""
     flow.metadata.pop(metadata_keys.RESPONSE_STREAM_STATE, None)
-    flow.metadata.pop(metadata_keys.STREAM_BUFFER, None)
-    flow.metadata.pop(metadata_keys.STREAM_BUFFER_STATE, None)
+    flow.metadata.pop(metadata_keys.RESPONSE_STREAM_CAPTURE, None)

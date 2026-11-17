@@ -170,8 +170,6 @@ fn guest_config_from_raw_builds_owned_config_without_process_env_mutation() {
         native_continuation: String::new(),
         secret_values: "encoded-secret".to_string(),
         disallowed_tools: "WebFetch".to_string(),
-        tools: "Bash".to_string(),
-        settings: "{}".to_string(),
         artifacts:
             r#"[{"name":"artifact","mountPath":"/mnt/a","storageId":"storage","versionId":"v1"}]"#
                 .to_string(),
@@ -218,8 +216,6 @@ fn guest_config_from_raw_builds_owned_config_without_process_env_mutation() {
     );
     assert_eq!(config.secret_values, "encoded-secret");
     assert_eq!(config.disallowed_tools, "WebFetch");
-    assert_eq!(config.tools, "Bash");
-    assert_eq!(config.settings, "{}");
     assert!(config.use_mock_claude);
     assert_eq!(config.mock_claude_path, DEFAULT_MOCK_CLAUDE_PATH);
     assert_eq!(config.cli_agent_type, "codex");
@@ -343,8 +339,6 @@ fn guest_config_from_raw_loads_run_payload_and_removes_private_file() {
         native_continuation: String::new(),
         secret_values: "payload-secret".to_string(),
         disallowed_tools: "WebFetch".to_string(),
-        tools: "Bash".to_string(),
-        settings: "{}".to_string(),
         artifacts:
             r#"[{"name":"artifact","mountPath":"/mnt/a","storageId":"storage","versionId":"v1"}]"#
                 .to_string(),
@@ -369,8 +363,6 @@ fn guest_config_from_raw_loads_run_payload_and_removes_private_file() {
     assert_eq!(config.append_system_prompt, "payload system");
     assert_eq!(config.secret_values, "payload-secret");
     assert_eq!(config.disallowed_tools, "WebFetch");
-    assert_eq!(config.tools, "Bash");
-    assert_eq!(config.settings, "{}");
     assert_eq!(config.artifacts.len(), 1);
     assert_eq!(config.feature_flags.get("flag"), Some(&true));
     assert_eq!(

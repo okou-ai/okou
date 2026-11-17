@@ -16,6 +16,10 @@ import {
 } from "./get-started-member-reward";
 import { slackRewardIneligibleValues } from "./slack-installation-reward";
 import { ensureGetStartedRewardWallet$ } from "./get-started-wallet.service";
+import {
+  getStartedRewardWriter,
+  type MarketingRewardWriter,
+} from "./marketing-reward-ownership";
 
 const currentClaim$ = command(
   async (
@@ -55,6 +59,7 @@ const publishReward$ = command(
   async (
     { set },
     plan: {
+      readonly writer?: MarketingRewardWriter;
       readonly claim: GetStartedClaimRow;
       readonly rewardKey: string;
       readonly slot: number | null;
@@ -66,6 +71,7 @@ const publishReward$ = command(
     const db = set(writeDb$);
     const { rowCount } = await db.execute(
       getStartedMemberRewardSql({
+        writer: plan.writer,
         claim: plan.claim,
         rewardKey: plan.rewardKey,
         rewardSlot: plan.slot,
@@ -83,6 +89,7 @@ export const grantGetStartedClaim$ = command(
   async (
     { set },
     args: {
+      readonly writer?: MarketingRewardWriter;
       readonly claim: GetStartedClaimRow;
       readonly rewardKey: string;
       readonly evidenceText?: string;
@@ -103,6 +110,15 @@ export const grantGetStartedClaim$ = command(
     signal.throwIfAborted();
     if (!claim) {
       throw new Error("Get started claim disappeared before redemption");
+    }
+    if (!claim.beneficiaryUserId) {
+      throw new Error("Personal reward has no beneficiary");
+    }
+    if (
+      getStartedRewardWriter("user", claim.beneficiaryUserId) !==
+      (args.writer ?? "app")
+    ) {
+      return claim;
     }
     if (
       claim.leaseId !== args.claim.leaseId ||
@@ -133,6 +149,7 @@ export const grantGetStartedClaim$ = command(
       set(
         publishReward$,
         {
+          writer: args.writer,
           claim,
           rewardKey: args.rewardKey,
           slot,

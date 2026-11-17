@@ -1051,7 +1051,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "share the report with my organization",
         });
-        const run = await api.readRun(actor, created.runId);
+        const run = await api.executionInput(created.runId);
         const prompt = run.appendSystemPrompt ?? "";
         expect(prompt.split("\n")).toContain(
           "- Private artifact sharing: for `/artifacts/xxx` links, only the owner can change visibility; use `okou artifact --help`.",
@@ -1094,7 +1094,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "send a message",
         });
-        const disabledRun = await api.readRun(actor, disabled.runId);
+        const disabledRun = await api.executionInput(disabled.runId);
         expect(disabledRun.appendSystemPrompt).not.toContain("okou lark");
         expect(disabledRun.appendSystemPrompt).toContain(
           "okou feishu message send --help",
@@ -1108,7 +1108,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "send a message",
         });
-        const enabledRun = await api.readRun(actor, enabled.runId);
+        const enabledRun = await api.executionInput(enabled.runId);
         expect(enabledRun.appendSystemPrompt).toContain(
           "Lark messages: when the task explicitly asks to send or post to Lark",
         );
@@ -1933,12 +1933,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(created.status).toBe("running");
         const execution = await api.executionInput(created.runId);
         expect(execution.prompt).toBe(prompt);
-        expect(context.mocks.axiom.ingest).toHaveBeenCalledWith("run-context", [
-          expect.objectContaining({
-            runId: created.runId,
-            prompt,
-          }),
-        ]);
+        await api.requestRunContext(actor, created.runId, [404]);
 
         await api.requestCancelRun(actor, created.runId, [200]);
       });
@@ -9317,7 +9312,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "summarize the safety policy",
         });
-        const stored = await api.readRun(actor, run.runId);
+        const stored = await api.executionInput(run.runId);
         const appendSystemPrompt = stored.appendSystemPrompt ?? "";
 
         expect(appendSystemPrompt).toContain("# Restricted Explicit Content");
@@ -9685,7 +9680,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "inspect my SSH hosts",
         });
         const prompt =
-          (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
+          (await api.executionInput(run.runId)).appendSystemPrompt ?? "";
         expect(prompt).toContain("okou ssh host list --json");
         expect(prompt).toContain("okou ssh exec");
         expect(prompt).toContain("okou ssh session");

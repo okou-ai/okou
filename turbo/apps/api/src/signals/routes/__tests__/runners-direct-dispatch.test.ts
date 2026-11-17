@@ -93,6 +93,7 @@ test("fails a Run with no serving process and releases its concurrency slot", as
     status: "failed",
     error: "No eligible serving Runner is available",
   });
+  await f.api.requestRunContext(f.actor, run.runId, [404]);
   expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
 });
 

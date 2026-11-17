@@ -222,6 +222,7 @@ final class WorkspaceLifecycle {
       measurementScope: cacheScope,
       modelBootstrap: WorkspaceReadBootstrap(),
       projectBootstrap: WorkspaceReadBootstrap(),
+      indicatorsBootstrap: WorkspaceReadBootstrap(),
       didRefreshReadState: { notifications.requestNotificationStateRefresh() })
   }
 

@@ -10,6 +10,56 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.83.0](https://github.com/okou-ai/okou/compare/api-v2.82.0...api-v2.83.0) (2026-11-17)
+
+
+### Features
+
+* **api:** expose read-only invitation source facts ([#48225](https://github.com/okou-ai/okou/issues/48225)) ([2ef7440](https://github.com/okou-ai/okou/commit/2ef744094b871e889eb74c4d50c5ee475ef6baab))
+
+
+### Bug Fixes
+
+* align phone availability with usable native control ([#48135](https://github.com/okou-ai/okou/issues/48135)) ([1744a58](https://github.com/okou-ai/okou/commit/1744a58d3f33923f71a34d07e85a87eeb86d03c1))
+* **app:** keep artifact categories visible and group pptx presentations ([#48154](https://github.com/okou-ai/okou/issues/48154)) ([ff91500](https://github.com/okou-ai/okou/commit/ff915007aee99db02847333166b8f4bd2962b0f3))
+
+
+### Performance Improvements
+
+* **api:** retire debug-only run fields from application sql ([#48082](https://github.com/okou-ai/okou/issues/48082)) ([a40cf00](https://github.com/okou-ai/okou/commit/a40cf00d2f9e5c63fcb2dfa6ea68485b13be4f13))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.80.0
+    * @okouai/core bumped to 8.847.4
+    * @okouai/db bumped to 2.42.2
+    * @okouai/pi-agent-runtime bumped to 1.51.146
+
+## [2.82.0](https://github.com/okou-ai/okou/compare/api-v2.81.0...api-v2.82.0) (2026-11-17)
+
+
+### Features
+
+* **api:** retain source-proven daily check-in requests ([#48157](https://github.com/okou-ai/okou/issues/48157)) ([2685448](https://github.com/okou-ai/okou/commit/26854487b208b5123e9c9e03f84d4154f12c6475))
+
+
+### Bug Fixes
+
+* automatically continue integration chats after model recovery ([#48152](https://github.com/okou-ai/okou/issues/48152)) ([70b6624](https://github.com/okou-ai/okou/commit/70b6624fcc16a0197b0dceb88fc587ac694c1c86))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.79.0
+    * @okouai/core bumped to 8.847.3
+    * @okouai/db bumped to 2.42.1
+    * @okouai/pi-agent-runtime bumped to 1.51.145
+
 ## [2.81.0](https://github.com/okou-ai/okou/compare/api-v2.80.0...api-v2.81.0) (2026-11-17)
 
 

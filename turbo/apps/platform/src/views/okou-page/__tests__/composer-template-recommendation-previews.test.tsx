@@ -1,7 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { DOCUMENT_TEMPLATE_ITEMS } from "@okouai/core/document-template-items";
 import {
@@ -36,7 +35,7 @@ const DRAFT = "Keep my quarterly launch brief.";
 type CustomKind = "presentation" | "document";
 
 function control(
-  role: "button" | "tab" | "link",
+  role: "button" | "tab" | "link" | "radio",
   name: string,
   container: ParentNode = document.body,
 ): HTMLElement {
@@ -57,17 +56,15 @@ async function openTray(task: "Presentation" | "Document") {
     context,
     path: `/agents/${AGENT_ID}/chat`,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: true },
   });
   const editor = await findComposerEditor();
   await fill(editor, DRAFT);
-  click(
-    control(
-      "button",
-      task,
-      screen.getByRole("group", { name: "Explore Okou capabilities" }),
-    ),
-  );
+  const create = within(
+    screen.getByRole("group", { name: "Explore Okou capabilities" }),
+  ).getByRole("region", { name: "Create" });
+  click(control("button", "Presentation", create));
+  const types = await screen.findByRole("radiogroup", { name: "Create" });
+  click(control("radio", task, types));
   const shelf = await screen.findByRole("group", {
     name: `${task} templates`,
   });

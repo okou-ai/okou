@@ -2,7 +2,6 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 
 export function logDetailRunSelection() {
   return {
-    appendSystemPrompt: agentRuns.appendSystemPrompt,
     completedAt: agentRuns.completedAt,
     createdAt: agentRuns.createdAt,
     error: agentRuns.error,

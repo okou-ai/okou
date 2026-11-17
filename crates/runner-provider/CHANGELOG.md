@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.20.18](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.17...runner-provider-v0.20.18) (2026-11-17)
+
+
+### Refactoring
+
+* **runner:** remove unused execution overrides ([#48162](https://github.com/okou-ai/okou/issues/48162)) ([1f0afc6](https://github.com/okou-ai/okou/commit/1f0afc6aa21f773b54c1d64b540280698e58f699))
+
+## [0.20.17](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.16...runner-provider-v0.20.17) (2026-11-17)
+
 ## [0.20.16](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.15...runner-provider-v0.20.16) (2026-11-17)
 
 ## [0.20.15](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.14...runner-provider-v0.20.15) (2026-11-17)

@@ -76,10 +76,10 @@ same thread/session:
 TASK_PRESSURE_THREAD_ID=$(cat /proc/sys/kernel/random/uuid)
 sudo "$BIN_DIR/runner" local submit --group "$GROUP" --timeout 240 \
   --chat-thread-id "$TASK_PRESSURE_THREAD_ID" --session-id nested-task-pressure \
-  --feature-flag sandboxReuse=true --prompt '@guest-wide-task-oom'
+  --prompt '@guest-wide-task-oom'
 sudo "$BIN_DIR/runner" local submit --group "$GROUP" --timeout 240 \
   --chat-thread-id "$TASK_PRESSURE_THREAD_ID" --session-id nested-task-pressure \
-  --feature-flag sandboxReuse=true --prompt 'true'
+  --prompt 'true'
 ```
 
 Retain the Guest `guest_wide=true`, `memcg_ooms=0` and `trigger=pressure` evidence,

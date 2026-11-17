@@ -13,9 +13,9 @@ from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook, HttpReque
 from mitmproxy.test import taddons
 
 import firewall_auth_client
-import flow_metadata_keys as metadata_keys
 import managed_upload
 import mitm_addon
+import request_streaming
 from tests.auth_endpoint_helpers import FakeAuthEndpoint, firewall_auth_success_response
 from tests.mitmproxy_http_framing_helpers import CLIENT_IP, start_http_layer
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
@@ -249,7 +249,7 @@ async def test_native_network_admission_url_limit(
         assert flow.error is None
         assert not native.streams
         assert managed_upload.get(flow) is None
-        assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
+        assert request_streaming.captured_request_stream_body(flow) is None
         if rejected and hook_phase == "requestheaders":
             assert flow.request.raw_content is None
             assert not any(isinstance(cmd, HttpRequestHook) for cmd in history)

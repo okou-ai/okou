@@ -1,8 +1,6 @@
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Route, Shapes, Telescope, UserRoundSearch } from "lucide-react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import type { HomeCapability } from "../../signals/okou-page/composer-home.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -70,7 +68,6 @@ export const WORKFLOW_KINDS = [
 /** The same capabilities, labels and activation used by the home tray. */
 export function useComposerCapabilities(signals: ComposerSignals) {
   const { t } = useTranslation();
-  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.HomeCapabilities];
   const open = useSet(signals.taskChips.home.openCapability$);
   const focusEditor = useSet(signals.editor.focus$);
   const pageSignal = useGet(pageSignal$);
@@ -97,36 +94,34 @@ export function useComposerCapabilities(signals: ComposerSignals) {
       detach(activate(capability), Reason.DomCallback);
     };
   };
-  return enabled
-    ? ([
-        {
-          id: "search",
-          Icon: UserRoundSearch,
-          label: labels.search,
-          keywords: ["find", "people", "search"],
-          run: run("search"),
-        },
-        {
-          id: "research",
-          Icon: Telescope,
-          label: labels.research,
-          keywords: ["research"],
-          run: run("research"),
-        },
-        {
-          id: "create",
-          Icon: Shapes,
-          label: labels.create,
-          keywords: ["create"],
-          run: run("create"),
-        },
-        {
-          id: "workflow",
-          Icon: Route,
-          label: workflow,
-          keywords: ["workflow"],
-          run: run("workflow"),
-        },
-      ] as const)
-    : null;
+  return [
+    {
+      id: "search",
+      Icon: UserRoundSearch,
+      label: labels.search,
+      keywords: ["find", "people", "search"],
+      run: run("search"),
+    },
+    {
+      id: "research",
+      Icon: Telescope,
+      label: labels.research,
+      keywords: ["research"],
+      run: run("research"),
+    },
+    {
+      id: "create",
+      Icon: Shapes,
+      label: labels.create,
+      keywords: ["create"],
+      run: run("create"),
+    },
+    {
+      id: "workflow",
+      Icon: Route,
+      label: workflow,
+      keywords: ["workflow"],
+      run: run("workflow"),
+    },
+  ] as const;
 }

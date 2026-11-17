@@ -1,5 +1,32 @@
 # Changelog
 
+## [10.30.6](https://github.com/okou-ai/okou/compare/cli-v10.30.5...cli-v10.30.6) (2026-11-17)
+
+
+### Bug Fixes
+
+* align phone availability with usable native control ([#48135](https://github.com/okou-ai/okou/issues/48135)) ([1744a58](https://github.com/okou-ai/okou/commit/1744a58d3f33923f71a34d07e85a87eeb86d03c1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.80.0
+    * @okouai/core bumped to 8.847.4
+    * @okouai/pi-agent-runtime bumped to 1.51.146
+
+## [10.30.5](https://github.com/okou-ai/okou/compare/cli-v10.30.4...cli-v10.30.5) (2026-11-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.79.0
+    * @okouai/core bumped to 8.847.3
+    * @okouai/pi-agent-runtime bumped to 1.51.145
+
 ## [10.30.4](https://github.com/okou-ai/okou/compare/cli-v10.30.3...cli-v10.30.4) (2026-11-17)
 
 

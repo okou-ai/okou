@@ -1,7 +1,6 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
 import {
   click,
@@ -128,7 +127,6 @@ test.each([
     await setupPage({
       context,
       path,
-      featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: true },
     });
     const editor = await findComposerEditor();
     const cards = await screen.findByRole("group", {

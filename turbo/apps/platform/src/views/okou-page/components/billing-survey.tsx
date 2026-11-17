@@ -1,4 +1,5 @@
 import type { FormEvent } from "react";
+import { MessageSquare } from "lucide-react";
 import { useLastResolved, useSet, useGet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -33,6 +34,7 @@ import {
 } from "../../../signals/billing-survey.ts";
 import { pageSignal$ } from "../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../signals/utils.ts";
+import { ChatCardDetails } from "./chat-card-details.tsx";
 
 interface SurveyOptionsProps<Answer extends string> {
   readonly name: string;
@@ -104,12 +106,43 @@ function SurveyOptions<Answer extends string>({
   );
 }
 
-/**
- * The upgrade question under the out-of-credits card's upgrade action. It
- * renders nothing until the member is known to be eligible, and stays as a
- * short thank-you line after the answer is sent.
- */
-export function CreditsExhaustedSurvey() {
+/** Keep asynchronous eligibility and the survey form inside a fixed action slot. */
+export function CreditsExhaustedSurvey({
+  eligible,
+}: {
+  readonly eligible: boolean;
+}) {
+  const { t } = useTranslation();
+  const reward = useLastResolved(creditsExhaustedSurveyReward$);
+  const thanks = useGet(creditsExhaustedThanks$);
+  if ((!eligible || reward === undefined || reward === null) && !thanks) {
+    return null;
+  }
+  const title = t(($) => {
+    return $.billing.survey.creditsExhausted.question;
+  });
+  return (
+    <ChatCardDetails
+      title={title}
+      trigger={
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
+          aria-label={title}
+          title={title}
+          className="shrink-0"
+        >
+          <MessageSquare size={16} />
+        </Button>
+      }
+    >
+      <CreditsExhaustedSurveyContent />
+    </ChatCardDetails>
+  );
+}
+
+function CreditsExhaustedSurveyContent() {
   const { t } = useTranslation();
   const reward = useLastResolved(creditsExhaustedSurveyReward$);
   const thanks = useGet(creditsExhaustedThanks$);

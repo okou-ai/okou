@@ -18,8 +18,6 @@ import {
   type AvailablePaidToolId,
 } from "./paid-tools.ts";
 import { i18n } from "../../i18n/index.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { createComputerUseGuideSignals } from "../computer-use-setup.ts";
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import { onRef, settle } from "../utils.ts";
@@ -923,8 +921,7 @@ function createReadComposerTaskSelection(
     const task = get(taskChips.task$) ?? get(create.mode$);
     const source = taskChips.visualization;
     const visualizationSubmission =
-      task === "visualization" &&
-      get(featureSwitch$)[FeatureSwitchKey.ChatMessageVisualizationSummary]
+      task === "visualization"
         ? { source, snapshot: { revision: get(source.revision$) } }
         : undefined;
     return {

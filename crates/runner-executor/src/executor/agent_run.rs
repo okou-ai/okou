@@ -2039,8 +2039,6 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     append_system_prompt_bytes = run_payload.append_system_prompt.len(),
                     secret_values_present = !run_payload.secret_values.is_empty(),
                     disallowed_tools_bytes = run_payload.disallowed_tools.len(),
-                    tools_bytes = run_payload.tools.len(),
-                    settings_bytes = run_payload.settings.len(),
                     artifacts_bytes = run_payload.artifacts.len(),
                     feature_flags_bytes = run_payload.feature_flags.len(),
                     "guest-agent run payload prepared"

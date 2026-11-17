@@ -218,8 +218,6 @@ export function agentRunById(args: {
         launchSnapshot: agentRuns.launchSnapshot,
         status: agentRuns.status,
         prompt: agentRuns.prompt,
-        appendSystemPrompt: agentRuns.appendSystemPrompt,
-        vars: agentRuns.vars,
         sandboxId: agentRuns.sandboxId,
         result: agentRuns.result,
         error: agentRuns.error,
@@ -296,9 +294,6 @@ export function agentRunById(args: {
       runId: run.id,
       status: run.status as RunStatus,
       prompt: run.prompt,
-      appendSystemPrompt: run.appendSystemPrompt,
-      vars:
-        run.vars === null ? undefined : (run.vars as Record<string, string>),
       sandboxId: run.sandboxId || undefined,
       result:
         run.result === null

@@ -9,6 +9,8 @@ from mitmproxy.test import tutils
 import connector_auth_material
 import flow_metadata_keys as metadata_keys
 import mitm_addon
+import request_streaming
+import stream_capture
 from tests.connector_diagnostic_helpers import (
     record_connector_diagnostic_requestheaders_context,
     write_connector_diagnostic_capture_registry,
@@ -275,8 +277,7 @@ async def test_streams_unauthenticated_connector_401_diagnostic_without_upstream
     assert "transfer-encoding" not in flow.response.headers
     assert flow.response.trailers is None
     assert flow.response.stream is False
-    assert metadata_keys.STREAM_BUFFER not in flow.metadata
-    assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+    assert stream_capture.captured_response_stream_body(flow) is None
     [entry] = read_jsonl_entries_after_flush(tmp_path / "net.jsonl")
     assert entry["response_size"] == len(diagnostic_body)
     response_headers = {name.lower(): value for name, value in entry["response_headers"].items()}
@@ -752,8 +753,8 @@ async def test_streamed_connector_401_gets_diagnostic(
     assert entry["request_size"] == len(b"partial request")
     assert entry["firewall_error"] == "connector_not_configured_for_run"
     assert entry["connector_diagnostic_slug"] == "fal"
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
-    assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
+    assert request_streaming.captured_request_stream_body(flow) is None
+    assert request_streaming.streamed_request_size(flow) is None
 
 
 def test_streamed_authenticated_connector_401_before_request_keeps_upstream_response(
@@ -797,8 +798,8 @@ def test_streamed_authenticated_connector_401_before_request_keeps_upstream_resp
     assert entry["status"] == 401
     assert entry["request_size"] == len(b"partial request")
     assert "firewall_error" not in entry
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
-    assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
+    assert request_streaming.captured_request_stream_body(flow) is None
+    assert request_streaming.streamed_request_size(flow) is None
 
 
 def test_streamed_query_authenticated_connector_401_before_request_keeps_upstream_response(
@@ -838,8 +839,8 @@ def test_streamed_query_authenticated_connector_401_before_request_keeps_upstrea
     assert entry["status"] == 401
     assert entry["request_size"] == len(b"partial request")
     assert "firewall_error" not in entry
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
-    assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
+    assert request_streaming.captured_request_stream_body(flow) is None
+    assert request_streaming.streamed_request_size(flow) is None
 
 
 def test_streamed_browser_connector_403_before_request_keeps_upstream_response(
@@ -886,8 +887,8 @@ def test_streamed_browser_connector_403_before_request_keeps_upstream_response(
     assert entry["request_size"] == len(b"partial request")
     assert entry["browser_user_agent"] is True
     assert "firewall_error" not in entry
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
-    assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
+    assert request_streaming.captured_request_stream_body(flow) is None
+    assert request_streaming.streamed_request_size(flow) is None
 
 
 def test_streamed_api_allow_response_before_request_logs_without_firewall_context(
@@ -929,8 +930,8 @@ def test_streamed_api_allow_response_before_request_logs_without_firewall_contex
     assert entry["response_size"] == len(b"api auth error")
     assert "firewall_base" not in entry
     assert "firewall_error" not in entry
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
-    assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
+    assert request_streaming.captured_request_stream_body(flow) is None
+    assert request_streaming.streamed_request_size(flow) is None
 
 
 async def test_replaces_connector_401_body_when_auth_header_has_empty_bearer_token(

@@ -1284,7 +1284,8 @@ describe("template usage Axiom transport", () => {
       await flushWaitUntilForTest();
       const persisted = await fixture.api.readRun(owned.actor, run.runId);
       expect(persisted.status).toBe("running");
-      expect(persisted.appendSystemPrompt).toContain(
+      const { execution } = await owned.runExecution(run.runId);
+      expect(execution.appendSystemPrompt).toContain(
         "Selected document template:",
       );
     });

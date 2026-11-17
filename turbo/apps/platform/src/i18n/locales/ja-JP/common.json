@@ -512,7 +512,6 @@
       "deleting": "削除中…",
       "description": "この作品を削除し、Okou のリンクを無効にします。ダウンロード済み、または他のサービスに保存されたコピーは残ります。",
       "hostedDescription": "このウェブサイトと公開済みの全バージョンを非公開にします。他のサービスに保存されたコピーは残ります。",
-      "menu": "{{title}}のその他の操作",
       "sharedDescription": "この共有された会話を作品から削除します。共有リンクは利用できなくなります。元の会話は残ります。",
       "success": "作品を削除しました",
       "title": "{{title}}を削除しますか？"
@@ -1037,8 +1036,10 @@
       "allowAll_other": "{{count}} 件すべての権限を許可",
       "allowed": "権限を許可しました",
       "allowedCount": "{{total}} 件中 {{allowed}} 件の権限を許可済み",
+      "alreadyAllowed_other": "{{count}} 件許可済み",
       "alwaysNote": "これらの権限は、変更または取り消すまで許可されたままになります。",
       "continued": "会話を再開しました。",
+      "continuedShort": "チャットを再開しました",
       "continueFailed": "権限は許可されましたが、会話を再開できませんでした。",
       "details": "権限の詳細を表示",
       "dismissed": "権限は変更されませんでした。",
@@ -1048,6 +1049,7 @@
       "myOkouScopeNote": "現在のタスクだけでなく、このワークスペースでのあなたのOkouの利用に適用されます。",
       "myOkouSharedScopeNote": "このワークスペース内のあなたのチャット全体で、このコネクタに適用されます。チームメンバーの権限はそれぞれ独立しています。",
       "notNow": "今はしない",
+      "pending_other": "{{count}} 件の権限を許可",
       "review": "権限を確認",
       "scopeNote": "現在のタスクだけでなく、このエージェントに適用されます。",
       "sharedScopeNote": "このコネクタの権限は、すべてのチャットとエージェントに適用されます。",
@@ -1519,6 +1521,7 @@
           "action": "チェックイン",
           "description": "1日1回チェックイン。UTC 00:00にリセットされます。",
           "name": "毎日チェックイン",
+          "pendingDescription": "チェックインを保存しました。確認後にクレジットが反映されます。",
           "unit": "1日あたり"
         },
         "connector": {
@@ -1831,14 +1834,6 @@
       "customAmountError": "1 ドルから 10,000 ドルの間で入力してください",
       "customDollarAmount": "カスタムドル額",
       "outOfCredits": "クレジットが不足しています",
-      "proCard": {
-        "creditsNow": "クレジット · 今すぐ",
-        "description": "高度な機能 · 3 台のクラウドコンピューター",
-        "priceUnavailable": "プランで最新の料金を確認",
-        "title": "残り約 5 件のタスク",
-        "upgradeFromPrice": "月額{{price}}からアップグレード",
-        "upgradeNow": "今すぐアップグレード"
-      },
       "redirecting": "リダイレクト中...",
       "upgradeToContinue": "{{assistantName}} とチャットを続けるには、Pro にアップグレードしてください。",
       "upgradeToPro": "プロにアップグレード",
@@ -2047,7 +2042,6 @@
       "slashPanel": {
         "browseAll": "すべてのテンプレートを見る",
         "hint": "ワークフローを検索するか、テンプレートを選択…",
-        "make": "作成",
         "useTemplate": "テンプレート {{title}} を使う"
       },
       "temporarilySwitchTo": "一時的な切り替え先",
@@ -2363,10 +2357,10 @@
       "loading": "読み込み中…",
       "noPhones": "オンラインのスマートフォンはありません",
       "openApp": "Okou iOS Use を開く",
-      "openAppDescription": "iPhone に開発版をインストールし、同じアカウントとワークスペースでサインインして、操作ウィンドウを開始してください。",
+      "openAppDescription": "iPhone に開発版をインストールし、同じアカウントとワークスペースでサインインして、Go online を選択してください。",
       "setupDescription": "このチャットで Okou に iPhone の操作を許可します。",
       "startTask": "次のタスクを送信",
-      "startTaskDescription": "許可後、ここに新しいメッセージを送信してください。スマートフォンの操作ウィンドウを有効に保ってください。",
+      "startTaskDescription": "アクセスを許可したら、ここで新しいメッセージを送信してください。iPhone をオンラインにして、ロックを解除したままにしてください。",
       "yourPhone": "あなたのスマートフォン"
     },
     "promptDocumentTitle": "プロンプト",
@@ -2574,206 +2568,6 @@
       "unsupported": "手動リセットには対応していません。使用量は自動的に回復します。"
     },
     "taskChips": {
-      "chooseTask": "タスクを選ぶ",
-      "ideas": {
-        "document": {
-          "contract": {
-            "label": "新しいクライアント向けの契約書を作成",
-            "prompt": "新しいクライアント向けの契約書を作成"
-          },
-          "creativeBrief": {
-            "label": "新製品発表のクリエイティブブリーフを作成",
-            "prompt": "新製品発表のクリエイティブブリーフを作成"
-          },
-          "invoice": {
-            "label": "明細付きの請求書を作成",
-            "prompt": "明細付きの請求書を作成"
-          },
-          "serviceAgreement": {
-            "label": "サービス契約書の概要を作成",
-            "prompt": "サービス契約書の概要を作成"
-          }
-        },
-        "image": {
-          "birthdayInvitation": {
-            "label": "誕生日の招待状をデザインする",
-            "prompt": "誕生日の招待状をデザインする"
-          },
-          "brandCharacter": {
-            "label": "ブランドのキャラクターを作る",
-            "prompt": "ブランドのキャラクターを作る"
-          },
-          "businessLogo": {
-            "label": "自分のビジネスのロゴを作る",
-            "prompt": "自分のビジネスのロゴを作る"
-          },
-          "cafeMenu": {
-            "label": "カフェのメニューをデザインする",
-            "prompt": "カフェのメニューをデザインする"
-          },
-          "eventPoster": {
-            "label": "イベントのポスターをデザインする",
-            "prompt": "イベントのポスターをデザインする"
-          },
-          "finishedSketch": {
-            "label": "スケッチを完成したビジュアルにする",
-            "prompt": "スケッチを完成したビジュアルにする"
-          },
-          "greetingCard": {
-            "label": "心のこもったグリーティングカードを作る",
-            "prompt": "心のこもったグリーティングカードを作る"
-          },
-          "headshot": {
-            "label": "仕事用のプロフィール写真を作る",
-            "prompt": "仕事用のプロフィール写真を作る"
-          },
-          "infographic": {
-            "label": "アイデアをインフォグラフィックにする",
-            "prompt": "アイデアをインフォグラフィックにする"
-          },
-          "newsletterCover": {
-            "label": "ニュースレターの表紙を作る",
-            "prompt": "ニュースレターの表紙を作る"
-          },
-          "packaging": {
-            "label": "商品のパッケージ案を考える",
-            "prompt": "商品のパッケージ案を考える"
-          },
-          "photoLighting": {
-            "label": "写真の明るさを改善する",
-            "prompt": "写真の明るさを改善する"
-          },
-          "presentationVisual": {
-            "label": "プレゼン用のビジュアルを作る",
-            "prompt": "プレゼン用のビジュアルを作る"
-          },
-          "productScene": {
-            "label": "商品を新しいシーンに配置する",
-            "prompt": "商品を新しいシーンに配置する"
-          },
-          "profileBanner": {
-            "label": "プロフィールのバナーを刷新する",
-            "prompt": "プロフィールのバナーを刷新する"
-          },
-          "roomDesign": {
-            "label": "部屋の新しい雰囲気を試す",
-            "prompt": "部屋の新しい雰囲気を試す"
-          },
-          "storePhoto": {
-            "label": "商品写真をオンラインストア向けに整える",
-            "prompt": "商品写真をオンラインストア向けに整える"
-          },
-          "websiteImage": {
-            "label": "ウェブサイトの画像を作る",
-            "prompt": "ウェブサイトの画像を作る"
-          }
-        },
-        "presentation": {
-          "clientProposal": {
-            "label": "クライアント向けの提案書を作る",
-            "prompt": "クライアント提案デッキを作成してください。クライアント、提案する業務、スケジュール、価格を質問してください。"
-          },
-          "companyOverview": {
-            "label": "自社の事業を説明する",
-            "prompt": "会社概要デッキを作成してください。事業内容、顧客層、聞き手に残したい印象を質問してください。"
-          },
-          "eventTalk": {
-            "label": "イベントの講演を準備する",
-            "prompt": "講演用のデッキを作成してください。イベント、聴衆、伝えたい中心的な考えを質問してください。"
-          },
-          "pitchDeck": {
-            "label": "投資家向けにピッチする",
-            "prompt": "事業の投資家向けピッチデッキを作成してください。課題、プロダクト、これまでの実績、調達額について質問してください。"
-          },
-          "productIntro": {
-            "label": "新しいプロダクトを紹介する",
-            "prompt": "新しいプロダクトを紹介するデッキを作成してください。機能、対象ユーザー、差別化要因を質問してください。"
-          },
-          "resultsReadout": {
-            "label": "成果を発表する",
-            "prompt": "成果を報告デッキにまとめてください。数値、対象期間、支える判断について質問してください。"
-          },
-          "teamUpdate": {
-            "label": "チーム向けの進捗報告をまとめる",
-            "prompt": "チームの進捗報告用デッキを作成してください。今期の出来事、次の予定、聞き手が誰かを質問してください。"
-          },
-          "training": {
-            "label": "チームに何かを教える",
-            "prompt": "指定したテーマの研修デッキを作成してください。受講者と、受講後にできるようになることを質問してください。"
-          }
-        },
-        "website": {
-          "bookingPage": {
-            "label": "予約してもらうためのページを作る",
-            "prompt": "サービスと予約方法を説明するページを作ってください。既存の予約リンクを使い、サービスの詳細を確認してください。"
-          },
-          "businessSite": {
-            "label": "自分のビジネスのサイトを作る",
-            "prompt": "事業、サービス、連絡方法を紹介するサイトを作ってください。事業の詳細と対象者を先に確認してください。"
-          },
-          "cafeMenu": {
-            "label": "カフェのメニューをオンラインにする",
-            "prompt": "提供する情報と写真で、メニュー、価格、営業時間、場所を掲載するカフェのサイトを作ってください。"
-          },
-          "coursePage": {
-            "label": "講座の紹介ページを作る",
-            "prompt": "講座、対象者、学べることを紹介するページを作ってください。申込方法には提供する登録リンクを使ってください。"
-          },
-          "eventPage": {
-            "label": "イベントのページを作る",
-            "prompt": "提供する日時、会場、プログラム、申込リンクでイベントページを作ってください。不足情報は確認してください。"
-          },
-          "linkPage": {
-            "label": "自分のリンクを一つのページにまとめる",
-            "prompt": "自己紹介、作品、SNSリンクをまとめたシンプルなプロフィールページを作ってください。載せるリンクを確認してください。"
-          },
-          "portfolio": {
-            "label": "作品をポートフォリオで紹介する",
-            "prompt": "作品を紹介するポートフォリオサイトを作ってください。プロジェクト、自己紹介、連絡先を整理してください。"
-          },
-          "productLaunch": {
-            "label": "商品の紹介ページを公開する",
-            "prompt": "商品の利点、画像、次の行動が伝わるランディングページを作ってください。商品と対象者を確認してください。"
-          }
-        },
-        "workflow": {
-          "emailBrief": {
-            "label": "毎朝、重要なメールをまとめる",
-            "prompt": "毎朝、注目すべきメールと返信・対応が必要な事項をまとめてください。使う受信トレイと受け取る時刻を先に確認してください。"
-          },
-          "fileOrganization": {
-            "label": "届いたファイルを整理する",
-            "prompt": "新しいファイルを決めた命名・分類ルールで整理してください。取得元、保存先、分類方法を先に確認してください。"
-          },
-          "meetingActions": {
-            "label": "議事録からアクションを整理する",
-            "prompt": "新しい議事録から行動項目、担当者、期限を抽出し、不明な点を示してください。議事録の保存先を確認してください。"
-          },
-          "meetingPrep": {
-            "label": "会議の準備を手伝ってもらう",
-            "prompt": "会議前に参加者、背景、議題を整理してください。カレンダー、資料、何分前に知らせるかを先に確認してください。"
-          },
-          "numbersBrief": {
-            "label": "毎日、気になる数字をまとめる",
-            "prompt": "追跡している数字と前回からの変化を毎日まとめてください。データの場所、指標、受け取る時刻を確認してください。"
-          },
-          "progressRecap": {
-            "label": "進捗と次にやることを整理する",
-            "prompt": "完了した仕事、未完了の事項、次の優先事項を定期的にまとめてください。記録の場所と、毎日か毎週かを確認してください。"
-          },
-          "replyWatch": {
-            "label": "メールに返信が来たら知らせる",
-            "prompt": "指定したメールへの返信を待ち、届いたら要点とともに知らせてください。対象のメールを先に確認してください。"
-          },
-          "topicUpdates": {
-            "label": "気になる話題の最新情報を追う",
-            "prompt": "関心のある話題を継続して調べ、重要な新情報を出典付きでまとめてください。話題と更新頻度を確認してください。"
-          }
-        }
-      },
-      "ideasLabel": "始めるためのアイデア",
-      "label": "タスクを始める",
-      "more": "その他",
       "presentationFormat": "プレゼンテーション形式",
       "presentationFormats": {
         "html": "HTML",
@@ -2786,8 +2580,7 @@
         "image": "画像スタイル",
         "nextPage": "次のページ",
         "previousPage": "前のページ",
-        "website": "ウェブサイトテンプレート",
-        "workflows": "ワークフロー"
+        "website": "ウェブサイトテンプレート"
       },
       "tasks": {
         "document": "ドキュメント",
@@ -2921,215 +2714,53 @@
       },
       "workflows": {
         "browse": "ワークフローを見る",
-        "close": "閉じる",
-        "contextPrefix": "重視したいこと：{{preference}}",
         "items": {
           "competitors": {
-            "cadence": "毎日または毎週",
             "description": "競合サイトの価格や機能の変化を監視し、内容を Notion に保存して Slack に通知します。",
-            "name": "競合モニタリング",
             "prompt": "次のワークフローの設定を手伝ってください：競合モニタリング. 選んだ競合ページを定期的に確認. 価格、プラン、訴求の重要な変化を検出. 情報源付きで Notion に保存し、必要なら Slack に通知. 使用する情報、対象範囲、実行タイミング、通知先を確認してから有効にしてください。まず下書きを作成してください。",
-            "steps": {
-              "one": "選んだ競合ページを定期的に確認",
-              "three": "情報源付きで Notion に保存し、必要なら Slack に通知",
-              "two": "価格、プラン、訴求の重要な変化を検出"
-            },
             "title": "競合の変化を把握する"
           },
           "inbox": {
-            "cadence": "新しいメールが届いたとき",
             "description": "受信トレイを分類し、必要なメールへの返信の下書きを作成します。",
-            "name": "Gmail と返信の下書きを並べ替える",
             "prompt": "次のワークフローの設定を手伝ってください：Gmail と返信の下書きを並べ替える. 指定した受信範囲のメールを読む. 合意したルールで緊急度を分類. 返信案を Gmail の下書きに保存. 使用する情報、対象範囲、実行タイミング、通知先を確認してから有効にしてください。まず下書きを作成してください。 メールの返信は下書きにとどめ、私が確認して送信します。",
-            "steps": {
-              "one": "指定した受信範囲のメールを読む",
-              "three": "返信案を Gmail の下書きに保存",
-              "two": "合意したルールで緊急度を分類"
-            },
             "title": "重要なメールへの対応を進める"
           },
           "invoices": {
-            "cadence": "請求書にラベルを付けたとき",
             "description": "請求書メールをドライブにファイルし、それぞれをシートに記録します。",
-            "name": "Gmail 請求書を Google Drive にファイルします",
             "prompt": "次のワークフローの設定を手伝ってください：Gmail 請求書を Google Drive にファイルします. 指定の Gmail ラベルから請求書を特定. 添付の請求書を指定の Drive フォルダに保存. 必要に応じて Google Sheets に詳細を記録. 使用する情報、対象範囲、実行タイミング、通知先を確認してから有効にしてください。まず下書きを作成してください。",
-            "steps": {
-              "one": "指定の Gmail ラベルから請求書を特定",
-              "three": "必要に応じて Google Sheets に詳細を記録",
-              "two": "添付の請求書を指定の Drive フォルダに保存"
-            },
             "title": "請求書を整理する"
           },
           "meetings": {
-            "cadence": "会議が追加されたとき",
             "description": "カレンダーの各イベントの前に、会う人について調べてください。",
-            "name": "カレンダー上の会議を調査する",
             "prompt": "次のワークフローの設定を手伝ってください：カレンダー上の会議を調査する. 新しい予定の参加者と詳細を読む. 仕事や会社に関する背景を調べる. 情報源と話題を含む事前資料を作成. 使用する情報、対象範囲、実行タイミング、通知先を確認してから有効にしてください。まず下書きを作成してください。",
-            "steps": {
-              "one": "新しい予定の参加者と詳細を読む",
-              "three": "情報源と話題を含む事前資料を作成",
-              "two": "仕事や会社に関する背景を調べる"
-            },
             "title": "準備を整えて会議に臨む"
           },
           "metrics": {
-            "cadence": "毎朝",
             "description": "毎日の訪問者、サインアップ、アクティベーション番号を Slack に投稿します。",
-            "name": "毎日のメトリクスを Slack に投稿します",
             "prompt": "次のワークフローの設定を手伝ってください：毎日のメトリクスを Slack に投稿します. 合意したサイトと登録の指標を取得. 対象期間を明示して日次の概要を作成. 指定した Slack に概要を共有. 使用する情報、対象範囲、実行タイミング、通知先を確認してから有効にしてください。まず下書きを作成してください。",
-            "steps": {
-              "one": "合意したサイトと登録の指標を取得",
-              "three": "指定した Slack に概要を共有",
-              "two": "対象期間を明示して日次の概要を作成"
-            },
             "title": "事業の状況を毎日確認する"
           },
           "morning": {
-            "cadence": "毎朝",
             "description": "Gmail、カレンダー、Notion の更新を短い一日の計画にして Slack に送ります。",
-            "name": "モーニングブリーフ",
             "prompt": "次のワークフローの設定を手伝ってください：モーニングブリーフ. 重要なメールと今日の予定を読む. 判断事項、フォローアップ、集中時間を優先順に整理. 短い朝の計画を Slack に届ける. 使用する情報、対象範囲、実行タイミング、通知先を確認してから有効にしてください。まず下書きを作成してください。",
-            "steps": {
-              "one": "重要なメールと今日の予定を読む",
-              "three": "短い朝の計画を Slack に届ける",
-              "two": "判断事項、フォローアップ、集中時間を優先順に整理"
-            },
             "title": "明確な計画で一日を始める"
           },
           "recap": {
-            "cadence": "新しい会議メモを定期的に確認",
             "description": "各会議の後に、決定事項と実行項目の要約を共有します。",
-            "name": "Slack で会議の概要を取得します",
             "prompt": "次のワークフローの設定を手伝ってください：Slack で会議の概要を取得します. 新しい会議の文字起こしを読む. 明示された決定、作業、担当者、期限を抽出. 指定先に短い議事録を届ける. 使用する情報、対象範囲、実行タイミング、通知先を確認してから有効にしてください。まず下書きを作成してください。",
-            "steps": {
-              "one": "新しい会議の文字起こしを読む",
-              "three": "指定先に短い議事録を届ける",
-              "two": "明示された決定、作業、担当者、期限を抽出"
-            },
             "title": "会議を次の行動につなげる"
           },
           "reply": {
-            "cadence": "対象の返信が届いたとき",
             "description": "一つのメールのやり取りを追跡し、新しい返信の要点と次の対応を知らせます。",
-            "name": "メール返信の見守り",
             "prompt": "次のワークフローの設定を手伝ってください：メール返信の見守り. 一つのメールスレッドと指定した送信者を追跡. 新しい返信を検出して要点をまとめる. 返信ごとに一度通知し、必要なら返信案を作成. 使用する情報、対象範囲、実行タイミング、通知先を確認してから有効にしてください。まず下書きを作成してください。 メールの返信は下書きにとどめ、私が確認して送信します。",
-            "steps": {
-              "one": "一つのメールスレッドと指定した送信者を追跡",
-              "three": "返信ごとに一度通知し、必要なら返信案を作成",
-              "two": "新しい返信を検出して要点をまとめる"
-            },
             "title": "待っている返信を見逃さない"
           },
           "weekly": {
-            "cadence": "毎週",
             "description": "GitHub、Gmail、カレンダーの動きを週次でまとめて Slack に送ります。",
-            "name": "個人の週次ダイジェスト",
             "prompt": "次のワークフローの設定を手伝ってください：個人の週次ダイジェスト. 選んだ情報源から活動を集める. 成果、未決事項、フォローアップを整理. 指定した Slack に週次まとめを届ける. 使用する情報、対象範囲、実行タイミング、通知先を確認してから有効にしてください。まず下書きを作成してください。",
-            "steps": {
-              "one": "選んだ情報源から活動を集める",
-              "three": "指定した Slack に週次まとめを届ける",
-              "two": "成果、未決事項、フォローアップを整理"
-            },
             "title": "一週間の仕事をすっきり振り返る"
           }
-        },
-        "preview": {
-          "competitors": {
-            "changed": "Changed",
-            "footer": "Source page and change history included",
-            "heading": "One change worth a closer look.",
-            "label": "競合モニタリング",
-            "now": "Now",
-            "plan": "Example company’s team plan",
-            "previous": "Previous",
-            "unit": "/ mo"
-          },
-          "inbox": {
-            "draft": "Reply draft",
-            "label": "Gmail と返信の下書きを並べ替える",
-            "later": "Your weekly digest",
-            "needsReply": "Needs reply",
-            "readLater": "Read later",
-            "review": "Review before sending",
-            "subject": "Re: Next steps",
-            "text": "Thanks for the details. I’ve reviewed the proposal and…"
-          },
-          "invoices": {
-            "amount": "Amount",
-            "example": "Example studio",
-            "file": "Invoice — September",
-            "filed": "Filed",
-            "footer": "An optional Sheet keeps the record together",
-            "label": "Gmail 請求書を Google Drive にファイルします",
-            "path": "Finance / Invoices / Sep",
-            "second": "Sample supply co.",
-            "status": "Status",
-            "vendor": "Vendor"
-          },
-          "meetings": {
-            "heading": "Your next conversation.",
-            "initials": "JL",
-            "label": "カレンダー上の会議を調査する",
-            "note": "A useful place to begin",
-            "person": "Jordan Lee",
-            "question": "Ask how the team handles customer handoffs.",
-            "role": "Operations lead · Example company",
-            "tagOne": "Company context",
-            "tagTwo": "Discussion points"
-          },
-          "metrics": {
-            "activated": "Activated",
-            "footer": "A clear period. Only the metrics you choose.",
-            "label": "毎日のメトリクスを Slack に投稿します",
-            "period": "Yesterday vs. prior day",
-            "signups": "Signups",
-            "visitors": "Visitors"
-          },
-          "morning": {
-            "footer": "2 emails need your attention",
-            "heading": "A little clarity for your day.",
-            "label": "モーニングブリーフ",
-            "meetingOne": "Team check-in",
-            "meetingTwo": "Client discovery",
-            "priority": "First things first",
-            "task": "Review the proposal before your client call"
-          },
-          "recap": {
-            "assign": "To assign",
-            "decision": "Decision: move ahead with a pilot",
-            "due": "Due",
-            "friday": "Fri",
-            "label": "Slack で会議の概要を取得します",
-            "monday": "Mon",
-            "one": "Send the revised brief",
-            "owner": "Owner",
-            "task": "Next step",
-            "team": "Team",
-            "three": "Book the next check-in",
-            "two": "Confirm the pilot scope",
-            "you": "You"
-          },
-          "reply": {
-            "heading": "The reply you were waiting for.",
-            "label": "メール返信の見守り",
-            "next": "Next step",
-            "quote": "“Thursday works for us. Could you share a short agenda?”",
-            "subject": "Re: Our next conversation",
-            "task": "Confirm the time and prepare an agenda"
-          },
-          "weekly": {
-            "heading": "A week worth looking back on.",
-            "label": "個人の週次ダイジェスト",
-            "next": "Carry into next week",
-            "one": "Shared the revised proposal",
-            "task": "Confirm the launch date with the team",
-            "two": "Wrapped up the onboarding guide"
-          }
-        },
-        "sample": "サンプル",
-        "tailor": "調整したいことはありますか？",
-        "use": "このワークフローを使う",
-        "whatHappens": "毎回の処理"
+        }
       }
     },
     "templates": {
@@ -3287,13 +2918,13 @@
   },
   "connectorChatAccess": {
     "accountAccess": "{{account}} のアクセス",
+    "accountsInChat": "このチャットで有効にするアカウントを選択します。",
     "enableByDefault": "{{account}} を既定で有効にする",
-    "enabledAccounts": "{{value}} 件が有効",
     "manageAccounts": "アカウントを管理",
-    "noEnabledAccount": "このチャットで有効なアカウントはありません",
     "permissions": "権限",
     "permissionsDescription": "このルールは、すべてのチャットとアカウントでこのコネクタに適用されます。",
-    "settingsDescription": "既定で有効にするアカウントを選択します。"
+    "settingsDescription": "チャットでOkouが使用できる{{connector}}アカウントを選択します。アクセスはチャットごとに変更できます。",
+    "totalAccounts": "{{value}} 個のアカウント"
   },
   "connectors": {
     "access": {

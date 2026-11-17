@@ -31,7 +31,6 @@ const ownerAuth = Object.freeze({
   }),
 });
 const enabledFeatures = Object.freeze({
-  [FeatureSwitchKey.HomeCapabilities]: true,
   [FeatureSwitchKey.PresentationOutputFormat]: true,
 });
 
@@ -363,54 +362,47 @@ test("Peers cannot enable presentation format through a stored opt-in", async ()
   );
 });
 
-test.each([
-  { home: true, format: false },
-  { home: false, format: true },
-])(
-  "Presentation preserves its existing behavior when home=$home and format=$format",
-  async ({ home, format }) => {
-    const capture = mockTemplateChat();
-    await setupPage({
-      context,
-      path: `/agents/${AGENT_ID}/chat`,
-      auth: ownerAuth,
-      featureSwitches: {
-        [FeatureSwitchKey.HomeCapabilities]: home,
-        [FeatureSwitchKey.PresentationOutputFormat]: format,
-      },
-    });
-    const editor = await findComposerEditor();
-    const tasks = screen.getByRole("group", {
-      name: home ? "Explore Okou capabilities" : "Choose a task",
-    });
-    click(button("Presentation", tasks));
-    await screen.findByRole("group", { name: "Presentation templates" });
-    expect(screen.queryByRole("group", { name: "Output format" })).toBeNull();
-    await fill(editor, "Prepare our deck");
-    const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
-    const shelf = screen.getByRole("group", { name: "Presentation templates" });
-    click(button(template.title, shelf));
-    click(button("Send"));
-    await waitFor(() => {
-      expect(capture.sentMessages).toHaveLength(1);
-    });
-    expect(capture.selectedTemplates[0]).toMatchObject({
-      type: "presentation",
-      selection: { templateId: template.templateId },
-    });
-    expect(capture.selectedTemplates[0]).not.toHaveProperty(
-      "selection.outputFormat",
-    );
-    expect(capture.sentMessages[0]?.parts).toContainEqual({
-      type: "additional_info",
-      text: [
-        "Create a presentation.",
-        "",
-        "# Presentation Generation Defaults",
-        "The user set these for presentations generated in this run:",
-        "- Slide count: 8-12",
-        "Where this run's message asks for a different slide count, the message wins.",
-      ].join("\n"),
-    });
-  },
-);
+test("Presentation uses its existing defaults when output format selection is disabled", async () => {
+  const capture = mockTemplateChat();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    auth: ownerAuth,
+    featureSwitches: {
+      [FeatureSwitchKey.PresentationOutputFormat]: false,
+    },
+  });
+  const editor = await findComposerEditor();
+  const tasks = screen.getByRole("group", {
+    name: "Explore Okou capabilities",
+  });
+  click(button("Presentation", tasks));
+  await screen.findByRole("group", { name: "Presentation templates" });
+  expect(screen.queryByRole("group", { name: "Output format" })).toBeNull();
+  await fill(editor, "Prepare our deck");
+  const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
+  const shelf = screen.getByRole("group", { name: "Presentation templates" });
+  click(button(template.title, shelf));
+  click(button("Send"));
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  expect(capture.selectedTemplates[0]).toMatchObject({
+    type: "presentation",
+    selection: { templateId: template.templateId },
+  });
+  expect(capture.selectedTemplates[0]).not.toHaveProperty(
+    "selection.outputFormat",
+  );
+  expect(capture.sentMessages[0]?.parts).toContainEqual({
+    type: "additional_info",
+    text: [
+      "Create a presentation.",
+      "",
+      "# Presentation Generation Defaults",
+      "The user set these for presentations generated in this run:",
+      "- Slide count: 8-12",
+      "Where this run's message asks for a different slide count, the message wins.",
+    ].join("\n"),
+  });
+});

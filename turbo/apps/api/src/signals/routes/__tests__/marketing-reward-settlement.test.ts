@@ -85,8 +85,15 @@ function missingIntent() {
 
 async function completedWorkflow(
   consumer: ReturnType<typeof marketingRewardConsumer>,
+  marketingOwned = false,
 ) {
   const { actor } = await workflows.setupWorkflowOrg({ tier: "team" });
+  if (marketingOwned) {
+    mockEnv(
+      "MARKETING_REWARDS_ROUTING",
+      JSON.stringify({ mode: "cohort", userIds: [actor.userId], orgIds: [] }),
+    );
+  }
   const { agentId } = await workflows.createAgent(actor, {
     visibility: "public",
   });
@@ -203,10 +210,12 @@ test("commits one original creator award across concurrent Marketing and legacy 
     isolatePg: true,
   });
   const consumer = marketingRewardConsumer(context);
-  const { actor, executor, workflowId, intent } =
-    await completedWorkflow(consumer);
+  const { actor, executor, workflowId, intent } = await completedWorkflow(
+    consumer,
+    true,
+  );
   const api = client();
-  expect((await api.lookup({ body: intent, headers })).status).toBe(202);
+  expect((await api.lookup({ body: intent, headers })).status).toBe(404);
   await createMiscRoutesApi(context).deleteWorkflow(actor, workflowId, [204]);
   await accept(api.settle({ body: intent, headers }), [200]);
   await Promise.all([
@@ -230,7 +239,6 @@ test("commits one original creator award across concurrent Marketing and legacy 
     rewardKey: `workflow:${actor.userId}`,
     memberCreditGrantId: expect.any(String),
   });
-  expect(first.body.receipt.id).not.toBe(intent.id);
   expect(
     Date.parse(first.body.receipt.expiresAt ?? "") -
       Date.parse(first.body.receipt.grantedAt ?? ""),
@@ -244,6 +252,7 @@ test("commits one original creator award across concurrent Marketing and legacy 
   expect(
     (await accept(api.lookup({ body: intent, headers }), [200])).body,
   ).toStrictEqual(first.body);
+  mockEnv("MARKETING_REWARDS_ROUTING", undefined);
   expect((await readGetStartedStatus(context, actor)).quests).toContainEqual(
     expect.objectContaining({
       key: "workflow",
@@ -352,7 +361,7 @@ test("returns a prior OAuth award by the complete request after a lost response 
   );
 });
 
-test("arbitrates a live legacy-review and Marketing settlement race under the same financial receipt", async () => {
+test("defers an unselected Marketing writer and fences legacy review after selecting the original beneficiary", async () => {
   await setupApp({
     context,
     routes: marketingRewardSettlementRoutes,
@@ -361,6 +370,11 @@ test("arbitrates a live legacy-review and Marketing settlement race under the sa
   const consumer = marketingRewardConsumer(context);
   const { actor, intent } = await completedWorkflow(consumer);
   const api = client();
+  expect((await api.settle({ body: intent, headers })).status).toBe(202);
+  mockEnv(
+    "MARKETING_REWARDS_ROUTING",
+    JSON.stringify({ mode: "cohort", userIds: [actor.userId], orgIds: [] }),
+  );
   await Promise.all([
     ...Array.from({ length: 4 }, () => {
       return accept(api.settle({ body: intent, headers }), [200, 202]);
@@ -376,6 +390,7 @@ test("arbitrates a live legacy-review and Marketing settlement race under the sa
   ]);
   const receipt = await accept(api.lookup({ body: intent, headers }), [200]);
   expect(receipt.body.receipt.status).toBe("granted");
+  mockEnv("MARKETING_REWARDS_ROUTING", undefined);
   expect((await readGetStartedStatus(context, actor)).quests).toContainEqual(
     expect.objectContaining({
       key: "workflow",
@@ -396,6 +411,10 @@ test("preserves the global ten-connector cap when Marketing settles real source 
   });
   const consumer = marketingRewardConsumer(context);
   const actor = bdd.user();
+  mockEnv(
+    "MARKETING_REWARDS_ROUTING",
+    JSON.stringify({ mode: "cohort", userIds: [actor.userId], orgIds: [] }),
+  );
   const anotherOrg = { ...actor, orgId: `org_${randomUUID()}` };
   const connectors = createConnectorBddApi(context);
   mockGmailConnectorOAuth();
@@ -437,6 +456,7 @@ test("preserves the global ten-connector cap when Marketing settles real source 
   });
   expect(facts).toHaveLength(12);
   const api = client();
+  mockEnv("MARKETING_REWARDS_ROUTING", JSON.stringify({ mode: "marketing" }));
   const outcomes = [];
   for (const fact of facts) {
     if (fact.connector.kind !== "builtin") {
@@ -474,6 +494,7 @@ test("preserves the global ten-connector cap when Marketing settles real source 
       return status === "ineligible";
     }),
   ).toHaveLength(2);
+  mockEnv("MARKETING_REWARDS_ROUTING", undefined);
   expect((await readGetStartedStatus(context, actor)).quests).toContainEqual(
     expect.objectContaining({
       key: "connector",
@@ -561,7 +582,94 @@ test("recovers the original iMessage and organization Slack receipts without rep
   );
 });
 
-test("recovers the inviter's original receipt from a genuinely signed acceptance and preserves the accepted invitee identity", async () => {
+test.each(["user", "org"] as const)(
+  "routes fresh iMessage and Slack sources by their %s scope",
+  async (target) => {
+    await setupApp({
+      context,
+      routes: marketingRewardSettlementRoutes,
+      isolatePg: true,
+    });
+    const consumer = marketingRewardConsumer(context);
+    const integrations = createBddIntegrationApi(context);
+    const actor = integrations.user();
+    mockEnv(
+      "MARKETING_REWARDS_ROUTING",
+      JSON.stringify({
+        mode: "cohort",
+        userIds: target === "user" ? [actor.userId] : [],
+        orgIds: target === "org" ? [actor.orgId] : [],
+      }),
+    );
+    integrations.configureAgentPhoneProvider();
+    integrations.configureAgentPhoneWebhook();
+    const phone = createAgentPhoneBddApi(context);
+    const proof = await phone.requestConnectLink(
+      uniquePhoneHandle(),
+      phone.captureAgentPhoneSends(),
+    );
+    await integrations.requestConnectAgentPhone(actor, proof, [200]);
+    integrations.configureSlackAppMocks();
+    await integrations.installSlackWorkspace(actor);
+    await consumer.deliver();
+    const facts = consumer.received.filter((fact) => {
+      return (
+        fact.type === "imessage.identity-linked" ||
+        fact.type === "slack.oauth-authorized"
+      );
+    });
+    expect(facts).toHaveLength(2);
+    const api = client();
+    for (const fact of facts) {
+      const slack = fact.type === "slack.oauth-authorized";
+      const sourceKey = slack ? fact.workspaceId : "agentphone-link";
+      const questKey = slack ? "slack" : "imessage";
+      const rewardTarget = slack ? "org" : "user";
+      const intent = campaignRequest({
+        version: 1,
+        environment: fact.environment,
+        policy: "get-started-v1",
+        sourceEventId: fact.id,
+        questKey,
+        sourceKey,
+        rewardKey: slack
+          ? `slack:${sourceKey}`
+          : `imessage:${fact.userId}:${sourceKey}`,
+        orgId: fact.orgId,
+        actorUserId: fact.userId,
+        beneficiaryUserId: slack ? null : fact.userId,
+        rewardTarget,
+        rewardAmount: slack ? 2000 : 1000,
+        completedAt: fact.occurredAt,
+      });
+      const lookup = await api.lookup({ body: intent, headers });
+      expect(lookup.status).toBe(
+        rewardTarget === target ? (slack ? 202 : 404) : 200,
+      );
+      const granted = await accept(
+        api.settle({ body: intent, headers }),
+        [200],
+      );
+      expect(granted.body.receipt).toMatchObject({
+        status: "granted",
+        rewardTarget,
+        beneficiaryUserId: slack ? null : actor.userId,
+      });
+      expect(
+        (await accept(api.settle({ body: intent, headers }), [200])).body,
+      ).toStrictEqual(granted.body);
+    }
+    mockEnv("MARKETING_REWARDS_ROUTING", undefined);
+    const status = await readGetStartedStatus(context, actor);
+    for (const key of ["slack", "imessage"]) {
+      expect(status.quests).toContainEqual(
+        expect.objectContaining({ key, claimedCount: 1 }),
+      );
+    }
+  },
+);
+
+test("captures a signed acceptance without legacy funding and settles the selected inviter exactly once", async () => {
   await setupApp({
     context,
     routes: marketingRewardSettlementRoutes,
@@ -570,6 +678,10 @@ test("recovers the inviter's original receipt from a genuinely signed acceptance
   const consumer = marketingRewardConsumer(context);
   const actor = bdd.user();
   await bdd.completeOnboarding(actor);
+  mockEnv(
+    "MARKETING_REWARDS_ROUTING",
+    JSON.stringify({ mode: "cohort", userIds: [actor.userId], orgIds: [] }),
+  );
   mocks.clerk.session(actor.userId, actor.orgId);
   const signingSecret = `whsec_${Buffer.from("marketing-acceptance-test-secret").toString("base64")}`;
   mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", signingSecret);
@@ -652,7 +764,8 @@ test("recovers the inviter's original receipt from a genuinely signed acceptance
     completedAt: fact.occurredAt,
   });
   const api = client();
-  const original = await accept(api.lookup({ body: intent, headers }), [200]);
+  expect((await api.lookup({ body: intent, headers })).status).toBe(202);
+  const original = await accept(api.settle({ body: intent, headers }), [200]);
   expect(original.body.receipt).toMatchObject({
     id: claimId,
     status: "granted",

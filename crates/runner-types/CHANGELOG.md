@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.18.10](https://github.com/okou-ai/okou/compare/runner-types-v0.18.9...runner-types-v0.18.10) (2026-11-17)
+
+
+### Refactoring
+
+* **runner:** remove unused execution overrides ([#48162](https://github.com/okou-ai/okou/issues/48162)) ([1f0afc6](https://github.com/okou-ai/okou/commit/1f0afc6aa21f773b54c1d64b540280698e58f699))
+
+## [0.18.9](https://github.com/okou-ai/okou/compare/runner-types-v0.18.8...runner-types-v0.18.9) (2026-11-17)
+
 ## [0.18.8](https://github.com/okou-ai/okou/compare/runner-types-v0.18.7...runner-types-v0.18.8) (2026-11-17)
 
 ## [0.18.7](https://github.com/okou-ai/okou/compare/runner-types-v0.18.6...runner-types-v0.18.7) (2026-11-16)
