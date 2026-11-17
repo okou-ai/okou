@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.40](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.39...runner-rs-v0.249.40) (2026-11-17)
+
+
+### Refactoring
+
+* **python:** centralize http network log publication ([#48418](https://github.com/okou-ai/okou/issues/48418)) ([5f3a362](https://github.com/okou-ai/okou/commit/5f3a36229fe7175964b75e9c1e3964be3cb432c8))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.39](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.38...runner-rs-v0.249.39) (2026-11-17)
 
 
