@@ -306,41 +306,56 @@ function SubscriptionResetTimes({
   readonly windows: ReturnType<typeof subscriptionUsageWindows>;
   readonly windowLabel: (kind: "fiveHour" | "week") => string;
 }) {
-  const { t } = useTranslation();
   return (
     <TooltipContent side="right" sideOffset={10} className="text-sm">
-      <div className="space-y-2">
-        {windows.length === 0
-          ? t(($) => {
-              return $.settings.accountMenu.subscriptions.resetTimeUnavailable;
-            })
-          : windows.map(({ kind, window }) => {
-              const reset = formatSubscriptionUsageReset(window.resetAt);
-              return (
-                <div key={kind} className="space-y-0.5">
-                  <div className="flex justify-between gap-4">
-                    <span>{windowLabel(kind)}</span>
-                    <span>
-                      {reset === null
-                        ? t(($) => {
-                            return $.settings.accountMenu.subscriptions
-                              .resetTimeUnavailable;
-                          })
-                        : "fallbackText" in reset
-                          ? reset.fallbackText
-                          : reset.tooltipTitle}
-                    </span>
-                  </div>
-                  {reset !== null && !("fallbackText" in reset) && (
-                    <p className="text-xs text-on-filled/60">
-                      {reset.absoluteText}
-                    </p>
-                  )}
-                </div>
-              );
-            })}
-      </div>
+      <SubscriptionResetTimesContent
+        windows={windows}
+        windowLabel={windowLabel}
+      />
     </TooltipContent>
+  );
+}
+
+function SubscriptionResetTimesContent({
+  windows,
+  windowLabel,
+}: {
+  readonly windows: ReturnType<typeof subscriptionUsageWindows>;
+  readonly windowLabel: (kind: "fiveHour" | "week") => string;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="space-y-2">
+      {windows.length === 0
+        ? t(($) => {
+            return $.settings.accountMenu.subscriptions.resetTimeUnavailable;
+          })
+        : windows.map(({ kind, window }) => {
+            const reset = formatSubscriptionUsageReset(window.resetAt);
+            return (
+              <div key={kind} className="space-y-0.5">
+                <div className="flex justify-between gap-4">
+                  <span>{windowLabel(kind)}</span>
+                  <span>
+                    {reset === null
+                      ? t(($) => {
+                          return $.settings.accountMenu.subscriptions
+                            .resetTimeUnavailable;
+                        })
+                      : "fallbackText" in reset
+                        ? reset.fallbackText
+                        : reset.tooltipTitle}
+                  </span>
+                </div>
+                {reset !== null && !("fallbackText" in reset) && (
+                  <p className="text-xs text-on-filled/60">
+                    {reset.absoluteText}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+    </div>
   );
 }
 
