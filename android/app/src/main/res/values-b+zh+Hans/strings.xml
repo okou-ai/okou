@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="composer_sync_loading">正在加载已保存的草稿…</string>
+    <string name="composer_sync_saving">正在同步草稿…</string>
+    <string name="composer_sync_failed">草稿同步失败，输入仍保存在此设备上。</string>
+    <string name="composer_sync_unsupported">此草稿包含可在 Web 继续编辑的内容。输入仍保存在此设备上，已暂停自动同步。</string>
+    <string name="composer_sync_retry">重试草稿同步</string>
+    <string name="composer_restore_draft">恢复保留的草稿</string>
     <string name="controls_storage_failed">待处理控制请求暂时无法保存。</string>
     <string name="controls_stop">停止运行中的任务</string>
     <string name="controls_queued_automation">排队中的自动任务</string>

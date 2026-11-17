@@ -51,6 +51,9 @@ data class ComposerEntry(
 data class ComposerJournal(
     @Required val format: Int = 1,
     val entries: Map<String, ComposerEntry> = emptyMap(),
+    val drafts: Map<String, EditableComposerDraft> = emptyMap(),
+    val retainedDrafts: Map<String, String> = emptyMap(),
+    val defaultAgentId: String? = null,
 )
 
 data class ComposerTarget(
@@ -86,8 +89,24 @@ data class ComposerState(
     val checking: Set<String> = emptySet(),
     val failed: Set<String> = emptySet(),
     val unobserved: Set<String> = emptySet(),
+    val synchronization: Map<String, ComposerSync> = emptyMap(),
 ) {
-    fun entry(target: ComposerTarget) = journal?.entries?.get(target.key) ?: ComposerEntry()
+    fun draftKey(target: ComposerTarget): String {
+        val redirected = journal?.entries?.get(target.key)?.createdThreadId
+        return redirected?.let { "thread:$it" }
+            ?: target.threadId?.let { "thread:$it" }
+            ?: (defaultAgentId ?: journal?.defaultAgentId)?.let { "agent:$it" }
+            ?: "new:"
+    }
+
+    fun entry(target: ComposerTarget): ComposerEntry {
+        val entry = journal?.entries?.get(target.key) ?: ComposerEntry()
+        return if (journal?.format == 3)
+            entry.copy(text = journal.drafts[draftKey(target)]?.text.orEmpty())
+        else entry
+    }
+
+    fun sync(target: ComposerTarget) = synchronization[draftKey(target)] ?: ComposerSync.Idle
 
     fun canSend(target: ComposerTarget): Boolean =
         journal != null &&

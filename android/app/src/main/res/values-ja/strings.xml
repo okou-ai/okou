@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="composer_sync_loading">保存済みの下書きを読み込み中…</string>
+    <string name="composer_sync_saving">下書きを同期中…</string>
+    <string name="composer_sync_failed">下書きを同期できませんでした。入力内容はこの端末に保存されています。</string>
+    <string name="composer_sync_unsupported">この下書きには Web で編集できる内容が含まれています。入力内容はこの端末に保存され、自動同期は一時停止しています。</string>
+    <string name="composer_sync_retry">下書きの同期を再試行</string>
+    <string name="composer_restore_draft">保持した下書きを復元</string>
     <string name="controls_storage_failed">保留中の操作リクエストを保存できません。</string>
     <string name="controls_stop">実行中の作業を停止</string>
     <string name="controls_queued_automation">待機中の自動処理</string>

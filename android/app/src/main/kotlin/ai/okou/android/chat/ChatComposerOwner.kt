@@ -21,8 +21,10 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** Main-thread transaction owner shared by attached workspace presentation controllers. */
 internal class ChatComposerOwner(
@@ -63,11 +65,24 @@ internal class ChatComposerOwner(
     private var contextConnection: Connection? = null
     private var revision = 0L
 
+    private class DraftWork(val connection: Connection, val target: ServerDraftTarget) {
+        var job: Job? = null
+        var refresh = false
+    }
+
+    private val draftWork = mutableMapOf<String, DraftWork>()
+    private val readableDrafts = mutableSetOf<String>()
+
     fun attach(connection: Connection) {
         connections += connection
     }
 
     fun detach(connection: Connection): Boolean {
+        val retired = draftWork.values.filter { it.connection === connection }.toList()
+        retired.forEach {
+            draftWork.remove(it.target.key)
+            it.job?.cancel()
+        }
         if (contextConnection === connection) {
             contextJob?.cancel()
             contextJob = null
@@ -86,6 +101,9 @@ internal class ChatComposerOwner(
                 op.job?.cancel()
             }
         connections -= connection
+        connections
+            .firstOrNull { it.current() }
+            ?.let { next -> retired.forEach { synchronize(next, it.target, refresh = true) } }
         if (connections.isNotEmpty()) return false
         localScope.cancel()
         return true
@@ -98,14 +116,20 @@ internal class ChatComposerOwner(
         if (!current(op)) throw CancellationException("Composer connection retired")
     }
 
-    private fun replace(journal: ComposerJournal) {
+    private fun replace(journal: ComposerJournal, readyAgent: String? = null) {
         val ticket = ++revision
         val value =
-            if (journal.entries.values.any { it.recovery != null }) journal.copy(format = 2)
+            if (journal.format < 2 && journal.entries.values.any { it.recovery != null })
+                journal.copy(format = 2)
             else journal
         val pending = store.persist(identity, value)
         mutable.value =
-            mutable.value.copy(journal = value, persistence = ComposerPersistence.Pending)
+            mutable.value.copy(
+                journal = value,
+                persistence = ComposerPersistence.Pending,
+                defaultAgentId = readyAgent ?: mutable.value.defaultAgentId,
+                context = if (readyAgent != null) ComposerContext.Ready else mutable.value.context,
+            )
         localScope.launch {
             val result =
                 try {
@@ -127,6 +151,7 @@ internal class ChatComposerOwner(
 
     private fun put(key: String, value: ComposerEntry) {
         val journal = mutable.value.journal ?: return
+        val value = if (journal.format == 3) value.copy(text = "") else value
         val entries =
             if (
                 value.text.isEmpty() &&
@@ -148,13 +173,16 @@ internal class ChatComposerOwner(
                 localScope.launch {
                     try {
                         val saved = store.load(identity)
+                        val restored = saved.journal.withServerDrafts()
                         mutable.value =
                             mutable.value.copy(
-                                journal = saved.journal,
+                                journal = restored,
                                 persistence =
                                     if (saved.durable) ComposerPersistence.Durable
                                     else ComposerPersistence.Failed,
                             )
+                        if (restored != saved.journal && saved.journal.entries.isNotEmpty())
+                            replace(restored)
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (_: Exception) {
@@ -170,14 +198,16 @@ internal class ChatComposerOwner(
                     try {
                         val agent = connection.service.newChatAgent()
                         currentCoroutineContext().ensureActive()
-                        if (connection.current())
-                            mutable.value =
-                                mutable.value.copy(
-                                    defaultAgentId = agent,
-                                    context =
-                                        if (agent == null) ComposerContext.Unavailable
-                                        else ComposerContext.Ready,
-                                )
+                        restoring?.join()
+                        if (connection.current()) {
+                            if (agent != null) selectAgent(agent)
+                            else
+                                mutable.value =
+                                    mutable.value.copy(
+                                        defaultAgentId = null,
+                                        context = ComposerContext.Unavailable,
+                                    )
+                        }
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (error: Exception) {
@@ -188,17 +218,235 @@ internal class ChatComposerOwner(
                     }
                 }
         }
+        connection.scope.launch {
+            restoring?.join()
+            if (target.threadId == null) contextJob?.join()
+            if (connection.current() && mutable.value.journal != null) {
+                val server =
+                    if (target.threadId != null) ServerDraftTarget(target.threadId, true)
+                    else
+                        mutable.value.defaultAgentId
+                            ?.takeIf { mutable.value.context == ComposerContext.Ready }
+                            ?.let { ServerDraftTarget(it, false) }
+                server?.let { synchronize(connection, it, refresh = true) }
+            }
+        }
+    }
+
+    private fun selectAgent(agent: String) {
+        val journal = mutable.value.journal
+        if (journal == null) {
+            mutable.value =
+                mutable.value.copy(defaultAgentId = agent, context = ComposerContext.Ready)
+            return
+        }
+        val key = "agent:$agent"
+        val provisional = journal.drafts["new:"]
+        var drafts = journal.drafts - "new:"
+        var retained = journal.retainedDrafts
+        if (provisional != null) {
+            if (drafts[key]?.text?.isNotEmpty() == true)
+                retained = retained + ("new:" to provisional.text)
+            else drafts = drafts + (key to provisional)
+        }
+        if (journal.defaultAgentId != null && journal.defaultAgentId != agent) {
+            val previous = "agent:${journal.defaultAgentId}"
+            drafts[previous]
+                ?.text
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { retained = retained + (previous to it) }
+            draftWork.remove(previous)?.job?.cancel()
+            readableDrafts.remove(previous)
+        }
+        if (journal.defaultAgentId != agent || provisional != null)
+            replace(
+                journal.copy(defaultAgentId = agent, drafts = drafts, retainedDrafts = retained),
+                readyAgent = agent,
+            )
+        else
+            mutable.value =
+                mutable.value.copy(defaultAgentId = agent, context = ComposerContext.Ready)
     }
 
     fun edit(connection: Connection, target: ComposerTarget, text: String) {
         if (!connection.current() || mutable.value.journal == null) return
-        val key = mutable.value.entry(target).createdThreadId?.let { "thread:$it" } ?: target.key
-        val old = mutable.value.journal?.entries?.get(key) ?: ComposerEntry()
-        if (old.text != text) put(key, old.copy(text = text))
+        val key = mutable.value.draftKey(target)
+        val journal = mutable.value.journal ?: return
+        val old = journal.drafts[key] ?: EditableComposerDraft()
+        if (old.text == text) return
+        replace(
+            journal.copy(
+                drafts =
+                    journal.drafts +
+                        (key to
+                            old.copy(
+                                text = text,
+                                dirty = true,
+                                revision = old.revision + 1,
+                                source = target.key,
+                            ))
+            )
+        )
+        serverTarget(key)?.let { synchronize(connection, it) }
+    }
+
+    fun restoreDraft(connection: Connection, target: ComposerTarget, key: String) {
+        val journal = mutable.value.journal ?: return
+        if (!connection.current() || mutable.value.entry(target).text.isNotEmpty()) return
+        val text = journal.retainedDrafts[key] ?: return
+        val draftKey = mutable.value.draftKey(target)
+        val draft = journal.drafts[draftKey] ?: EditableComposerDraft()
+        replace(
+            journal.copy(
+                retainedDrafts = journal.retainedDrafts - key,
+                drafts =
+                    journal.drafts +
+                        (draftKey to
+                            draft.copy(
+                                text = text,
+                                dirty = true,
+                                revision = draft.revision + 1,
+                                source = target.key,
+                            )),
+            )
+        )
+        serverTarget(draftKey)?.let { synchronize(connection, it) }
+    }
+
+    fun retrySync(connection: Connection, target: ComposerTarget) {
+        serverTarget(mutable.value.draftKey(target))?.let {
+            synchronize(connection, it, refresh = true)
+        }
+    }
+
+    private fun serverTarget(key: String): ServerDraftTarget? =
+        when {
+            key.startsWith("thread:") -> ServerDraftTarget(key.removePrefix("thread:"), true)
+            key.startsWith("agent:") -> ServerDraftTarget(key.removePrefix("agent:"), false)
+            else -> null
+        }
+
+    private fun syncStatus(key: String, status: ComposerSync) {
+        mutable.value =
+            mutable.value.copy(synchronization = mutable.value.synchronization + (key to status))
+    }
+
+    /**
+     * One serialized read/write worker per canonical target; newer edits never cancel an in-flight
+     * PATCH.
+     */
+    private fun synchronize(
+        connection: Connection,
+        target: ServerDraftTarget,
+        refresh: Boolean = false,
+    ) {
+        if (
+            !connection.current() ||
+                !target.thread &&
+                    (mutable.value.context != ComposerContext.Ready ||
+                        mutable.value.defaultAgentId != target.id)
+        )
+            return
+        draftWork[target.key]?.let {
+            it.refresh = it.refresh || refresh
+            return
+        }
+        if (!refresh && mutable.value.synchronization[target.key] == ComposerSync.Unsupported)
+            return
+        val work = DraftWork(connection, target)
+        draftWork[target.key] = work
+        work.job =
+            connection.scope.launch {
+                fun current() = connection.current() && draftWork[target.key] === work
+                try {
+                    var journal = mutable.value.journal ?: return@launch
+                    if (refresh || target.key !in readableDrafts) {
+                        val before = journal.drafts[target.key] ?: EditableComposerDraft()
+                        readableDrafts.remove(target.key)
+                        syncStatus(target.key, ComposerSync.Loading)
+                        val remote = connection.service.composerDraft(target).plainText()
+                        currentCoroutineContext().ensureActive()
+                        if (!current()) return@launch
+                        if (remote == null) {
+                            syncStatus(target.key, ComposerSync.Unsupported)
+                            return@launch
+                        }
+                        readableDrafts += target.key
+                        journal = mutable.value.journal ?: return@launch
+                        val local = journal.drafts[target.key] ?: EditableComposerDraft()
+                        if (
+                            !local.dirty &&
+                                local.revision == before.revision &&
+                                local.text != remote
+                        ) {
+                            replace(
+                                journal.copy(
+                                    drafts =
+                                        journal.drafts + (target.key to local.copy(text = remote))
+                                )
+                            )
+                        }
+                    }
+                    while (current()) {
+                        val draft = mutable.value.journal?.drafts?.get(target.key) ?: break
+                        if (!draft.dirty) break
+                        syncStatus(target.key, ComposerSync.Saving)
+                        // Web flushes explicit clears immediately; ordinary edits use its 500ms
+                        // debounce.
+                        if (
+                            draft.text.isNotEmpty() &&
+                                withTimeoutOrNull(500) {
+                                    uiState.first { it.journal?.drafts?.get(target.key) != draft }
+                                } != null
+                        )
+                            continue
+                        val latest = mutable.value.journal?.drafts?.get(target.key) ?: break
+                        if (latest != draft) continue
+                        val saved = store.load(identity)
+                        currentCoroutineContext().ensureActive()
+                        if (!current()) return@launch
+                        if (mutable.value.journal?.drafts?.get(target.key) != draft) continue
+                        if (!saved.durable || saved.journal.drafts[target.key] != draft)
+                            throw IOException("Draft is not durable")
+                        connection.service.saveComposerDraft(target, draft.text)
+                        currentCoroutineContext().ensureActive()
+                        if (!current()) return@launch
+                        journal = mutable.value.journal ?: return@launch
+                        if (journal.drafts[target.key] == draft)
+                            replace(
+                                journal.copy(
+                                    drafts =
+                                        journal.drafts + (target.key to draft.copy(dirty = false))
+                                )
+                            )
+                    }
+                    if (current()) syncStatus(target.key, ComposerSync.Saved)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    if (current()) {
+                        report(connection, error)
+                        syncStatus(target.key, ComposerSync.Failed)
+                    }
+                } finally {
+                    if (draftWork[target.key] === work) {
+                        draftWork.remove(target.key)
+                        if (work.refresh && connection.current())
+                            synchronize(connection, target, refresh = true)
+                    }
+                }
+            }
     }
 
     fun retryLocal(connection: Connection) {
-        if (connection.current()) mutable.value.journal?.let(::replace)
+        if (connection.current()) {
+            mutable.value.journal?.let { replace(it) }
+            mutable.value.journal
+                ?.drafts
+                ?.filterValues { it.dirty }
+                ?.keys
+                ?.forEach { key -> serverTarget(key)?.let { synchronize(connection, it) } }
+        }
     }
 
     fun beginNew(connection: Connection, projectId: String?) {
@@ -285,7 +533,26 @@ internal class ChatComposerOwner(
                 ),
                 TextStage.Prepared,
             )
-        put(op.key, entry.copy(text = "", pending = pending, receipt = null))
+        val journal = mutable.value.journal ?: return
+        val draftKey = mutable.value.draftKey(target)
+        val draft = journal.drafts[draftKey] ?: EditableComposerDraft()
+        replace(
+            journal.copy(
+                entries =
+                    journal.entries +
+                        (op.key to entry.copy(text = "", pending = pending, receipt = null)),
+                drafts =
+                    journal.drafts +
+                        (draftKey to
+                            draft.copy(
+                                text = "",
+                                dirty = true,
+                                revision = draft.revision + 1,
+                                source = target.key,
+                            )),
+            )
+        )
+        serverTarget(draftKey)?.let { synchronize(connection, it) }
         dispatch(op)
     }
 
@@ -584,8 +851,8 @@ internal class ChatComposerOwner(
         val destination = "thread:${pending.threadId}"
         if (
             destination != op.key &&
-                journal.entries[destination]?.let { it.text.isNotEmpty() || it.pending != null } ==
-                    true
+                (journal.drafts[destination]?.text?.isNotEmpty() == true ||
+                    journal.entries[destination]?.pending != null) == true
         )
             throw ApiFailure.IncompatibleResponse()
         val value =
@@ -610,7 +877,23 @@ internal class ChatComposerOwner(
         var entries = (meaningful - op.key) + (destination to value)
         if (pending.create != null)
             entries = entries + (op.key to ComposerEntry(createdThreadId = pending.threadId))
-        replace(journal.copy(entries = entries))
+        var drafts = journal.drafts
+        if (pending.create != null) {
+            val source = "agent:${pending.send.agentId}"
+            val draft = drafts[source]
+            if (draft != null && draft.source == op.key && draft.text.isNotEmpty()) {
+                drafts =
+                    drafts +
+                        (destination to draft.copy(dirty = true)) +
+                        (source to
+                            draft.copy(text = "", dirty = true, revision = draft.revision + 1))
+            }
+        }
+        replace(journal.copy(entries = entries, drafts = drafts))
+        if (pending.create != null) {
+            synchronize(op.connection, ServerDraftTarget(pending.send.agentId, false))
+            synchronize(op.connection, ServerDraftTarget(pending.threadId, true))
+        }
         op.connection.accepted(pending.threadId)
     }
 

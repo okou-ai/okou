@@ -100,9 +100,11 @@ export function renderKotlinFiles(
         return binding.name === request;
       });
       if (
-        !responseType ||
-        responseType.schema !== successResponse(route) ||
-        responseType.direction !== "output" ||
+        (isNoBody(successResponse(route))
+          ? response !== "Unit"
+          : !responseType ||
+            responseType.schema !== successResponse(route) ||
+            responseType.direction !== "output") ||
         (request &&
           (!requestType ||
             requestType.schema !== route.body ||

@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="composer_sync_loading">저장된 초안 불러오는 중…</string>
+    <string name="composer_sync_saving">초안 동기화 중…</string>
+    <string name="composer_sync_failed">초안을 동기화하지 못했습니다. 입력 내용은 이 기기에 보관됩니다.</string>
+    <string name="composer_sync_unsupported">이 초안에는 Web에서 편집할 수 있는 콘텐츠가 있습니다. 입력 내용은 이 기기에 보관되며 자동 동기화는 일시 중지됩니다.</string>
+    <string name="composer_sync_retry">초안 동기화 다시 시도</string>
+    <string name="composer_restore_draft">보관된 초안 복원</string>
     <string name="controls_storage_failed">대기 중인 제어 요청을 저장할 수 없습니다.</string>
     <string name="controls_stop">실행 중인 작업 중지</string>
     <string name="controls_queued_automation">대기 중인 자동화</string>

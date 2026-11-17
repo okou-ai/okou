@@ -8,7 +8,7 @@ import { projectsContract } from "../contracts/projects";
 import type { KotlinRouteBinding, KotlinTypeBinding } from "./bindings";
 
 /** Compile/read proofs only: these routes are not installed Android consumers. */
-export const kotlinFixtureRoutes: readonly KotlinRouteBinding[] = [
+export const kotlinFixtureRoutes = [
   {
     name: "chatSnapshot",
     response: "ChatSnapshot",
@@ -26,7 +26,7 @@ export const kotlinFixtureRoutes: readonly KotlinRouteBinding[] = [
   },
   { name: "agents", response: "Agents", route: agentsMainContract.list },
   { name: "projects", response: "Projects", route: projectsContract.list },
-];
+] satisfies readonly KotlinRouteBinding[];
 
 export const kotlinFixtureTypes: readonly KotlinTypeBinding[] = [
   ...kotlinFixtureRoutes.map(({ response, route }) => {

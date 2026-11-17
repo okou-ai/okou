@@ -169,7 +169,7 @@ jobs:
             --stacktrace --console=plain \
             2>&1 | tee build/reports/instrumentation/gradle.log
           python3 scripts/check-native-results.py \
-            app/build/outputs/androidTest-results/managedDevice/release/pixel2Api35 9
+            app/build/outputs/androidTest-results/managedDevice/release/pixel2Api35 10
       - name: Restore failed release stack traces
         if: always() && steps.native-tests.outcome != 'success'
         shell: bash

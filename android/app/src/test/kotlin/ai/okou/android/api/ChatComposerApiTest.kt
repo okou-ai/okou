@@ -9,7 +9,9 @@ import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.SendRequestVariant1
 import ai.okou.android.chat.HistoryCursor
 import ai.okou.android.chat.HistoryEvent
+import ai.okou.android.chat.ServerDraftTarget
 import ai.okou.android.chat.TextDisposition
+import ai.okou.android.chat.plainText
 import java.util.UUID
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -21,6 +23,36 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ChatComposerApiTest {
+    @Test
+    fun canonicalDraftsRoundTripBothTargetsAndAcceptActualEmpty204Responses() = runTest {
+        ComposerApiFixture().use { fixture ->
+            val targets =
+                listOf(ServerDraftTarget(CHAT_AGENT, false), ServerDraftTarget(CHAT_PERSONAL, true))
+            for (target in targets) {
+                assertEquals("", fixture.service.composerDraft(target).plainText())
+                val text = "Web ↔ Android 你好 👋\n**literal**"
+                fixture.service.saveComposerDraft(target, text)
+                assertEquals(text, fixture.service.composerDraft(target).plainText())
+                val patch = fixture.requests.last { it.method == "PATCH" }
+                assertEquals(
+                    if (target.thread) "/api/chat-threads/${target.id}"
+                    else "/api/agents/${target.id}/draft",
+                    patch.requestUrl!!.encodedPath,
+                )
+                val wire = Json.parseToJsonElement(patch.body.clone().readUtf8())
+                assertEquals(
+                    Json.parseToJsonElement(
+                        """{"draftUserMessage":{"version":1,"parts":[{"type":"text","text":${JsonPrimitive(text)}}]},"draftAttachments":null}"""
+                    ),
+                    wire,
+                )
+                assertTrue(patch.getHeader("Authorization")!!.startsWith("Bearer "))
+                fixture.service.saveComposerDraft(target, "")
+                assertEquals("", fixture.service.composerDraft(target).plainText())
+            }
+        }
+    }
+
     private fun input(thread: String, text: String = "你好 👋\n**verbatim**") =
         Json.decodeFromJsonElement<SendRequestVariant1>(
             Json.parseToJsonElement(
