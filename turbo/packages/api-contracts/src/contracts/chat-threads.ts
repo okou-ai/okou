@@ -1326,6 +1326,13 @@ export type ChatThreadDetail = zInfer<typeof chatThreadDetailSchema>;
 export type ChatThreadMetadata = zInfer<typeof chatThreadMetadataSchema>;
 export type ChatThreadDraft = zInfer<typeof composerDraftSchema>;
 export type ChatEvent = zInfer<typeof chatEventSchema>;
+type WithoutRunError<T> = T extends {
+  eventType: "run.failed" | "run.cancelled";
+}
+  ? Omit<T, "error">
+  : T;
+/** Client business events; the wire contract still accepts retained diagnostics. */
+export type ClientChatEvent = WithoutRunError<ChatEvent>;
 export type Indicator = zInfer<typeof indicatorSchema>;
 export type Indicators = zInfer<typeof indicatorsSchema>;
 

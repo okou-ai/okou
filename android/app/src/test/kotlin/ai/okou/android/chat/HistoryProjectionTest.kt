@@ -11,7 +11,10 @@ class HistoryProjectionTest {
     fun runFailuresIgnoreRetainedDiagnosticsWhileOutputErrorsRemainVisible() {
         for (payload in
             listOf("null", """{"content":"private diagnostic","error":"private diagnostic"}""")) {
-            val failed = transcript(event("failed", 1, "run.failed", payload = payload))
+            val decoded = event("failed", 1, "run.failed", payload = payload)
+            assertNull(decoded.inputError)
+            assertNull(decoded.outputError)
+            val failed = transcript(decoded)
             assertEquals(HistoryExecution.Failed, failed.execution)
             assertEquals("run.failed", failed.messages.single().status)
             assertFalse(

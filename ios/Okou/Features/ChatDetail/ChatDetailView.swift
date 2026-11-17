@@ -169,7 +169,8 @@ struct ChatDetailView: View {
       case .message(let message, _):
         if message.role == .user { return false }
         if let failure = message.failure {
-          return failure.error.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+          let outputError = failure.outputError ?? ""
+          return outputError.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             != "run cancelled"
         }
         next += 1

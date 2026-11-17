@@ -251,7 +251,12 @@ class ConversationHistoryTest {
         val root = temporary.newFolder()
         val store = cache(root)
         val lease = store.open(identity) { true }
-        val value = checkpoint()
+        val value =
+            HistoryCheckpoint(
+                CHAT_PERSONAL,
+                listOf(row(type = "run.failed", payload = """{"error":"private diagnostic"}""")),
+                HistoryCursor(HISTORY_LAST_EVENT, 37),
+            )
         lease.saveHistory(value, 100)
         assertEquals(value.rows, lease.loadHistory(CHAT_PERSONAL)!!.checkpoint.rows)
         store.close()

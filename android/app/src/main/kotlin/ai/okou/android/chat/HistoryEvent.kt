@@ -5,6 +5,7 @@ import java.io.InputStream
 import java.io.InputStreamReader
 import java.nio.charset.CodingErrorAction
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -20,7 +21,7 @@ internal val historyJson = Json {
 }
 
 /** Canonical validation owns wire types; this domain envelope retains every original JSON value. */
-class HistoryEvent private constructor(val wire: JsonObject) {
+class HistoryEvent private constructor(private val wire: JsonObject) {
     override fun equals(other: Any?) = other is HistoryEvent && wire == other.wire
 
     override fun hashCode() = wire.hashCode()
@@ -43,15 +44,44 @@ class HistoryEvent private constructor(val wire: JsonObject) {
     val revokesId: String?
         get() = wire["revokesEventId"]?.jsonPrimitive?.contentOrNull
 
-    val payload: JsonObject?
+    private val payload: JsonObject?
         get() = wire["payload"]?.takeUnless { it === JsonNull }?.jsonObject
+
+    val content: String?
+        get() =
+            if (type == "run.failed" || type == "run.cancelled") null else payload?.text("content")
+
+    val inputError: String?
+        get() = if (type == "input.rejected") payload?.text("error") else null
+
+    val outputError: String?
+        get() = if (type == "output.error") payload?.text("error") else null
+
+    val userMessage: JsonElement?
+        get() = payload?.get("userMessage")
+
+    val usage: JsonElement?
+        get() = payload?.get("usage")
+
+    val failureReason: String?
+        get() = wire.text("failureReason")
+
+    /** Raw cache input is retained separately from business fields. */
+    internal fun archiveJson(): String = wire.toString()
 
     val terminal: Boolean
         get() = type in setOf("run.completed", "run.failed", "run.cancelled")
 
     companion object {
         fun decode(wire: JsonObject): HistoryEvent {
-            historyJson.decodeFromJsonElement<RawHistoryRow>(wire)
+            val payload = wire["payload"] as? JsonObject
+            val terminal =
+                wire.text("eventType") in setOf("run.completed", "run.failed", "run.cancelled")
+            val validated =
+                if (terminal && payload != null)
+                    JsonObject(wire + ("payload" to JsonObject(payload - "error")))
+                else wire
+            historyJson.decodeFromJsonElement<RawHistoryRow>(validated)
             return HistoryEvent(wire)
         }
 
