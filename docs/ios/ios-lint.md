@@ -11,6 +11,7 @@ underlying ownership contracts. Setup commands belong in the
 
 | Rule                           | Contract                                                                                                                                                                                | Web counterpart                                                   |
 | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `duplicate_conditions`         | Reject duplicate condition sets in one if/else-if chain and duplicate switch case patterns with the same where clause.                                                                  | `no-dupe-else-if`, `no-duplicate-case`                            |
 | `okou_render_effects`          | No known imperative requests, graph writes/construction, Task launches, subscriptions, or external state assignments during native projection.                                          | `no-side-effect-in-render`                                        |
 | `okou_stable_graph`            | Construct graph definitions at the owner, not in repeated getters, graph callbacks, UI actions, or operation methods, including visible same-file graph factories.                      | `no-command-in-command`, `computed-const-args-package-scope`      |
 | `okou_private_atoms`           | Keep mutable CCState atoms private or fileprivate, including their enclosing owner; expose read signals and semantic commands.                                                          | `no-export-state`                                                 |
@@ -37,6 +38,11 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
 
 ## Native Semantics
 
+- `duplicate_conditions` uses the pinned upstream rule to compare visible
+  condition syntax within one `if`/`else if` chain or `switch`. Independent `if`
+  statements, different condition sets, different optional-binding sources, and
+  distinct `where` clauses remain valid. It does not prove that different
+  Boolean expressions are equivalent.
 - `body` and `@ViewBuilder` helpers project state. Builder content is checked;
   event/lifecycle callbacks are separate execution boundaries. An explicit
   `Button(action:)` leaves its label builder in render scope. Shared native
