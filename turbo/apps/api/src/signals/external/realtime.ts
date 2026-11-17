@@ -718,7 +718,9 @@ export async function publishMarketingRewardProjection(
         .publish("slack:changed", null),
     ]);
     for (const result of published) {
-      if (result.status === "rejected") throw result.reason;
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
     }
   }
   signal.throwIfAborted();
