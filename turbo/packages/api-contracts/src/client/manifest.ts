@@ -520,6 +520,10 @@ export const clientDescriptorManifest = [
     contracts: ["marketingHandoffsContract"],
   },
   {
+    module: "marketing-reward-settlement",
+    contracts: ["marketingRewardSettlementContract"],
+  },
+  {
     module: "mcp-chat-search",
     contracts: ["mcpChatSearchContract"],
   },

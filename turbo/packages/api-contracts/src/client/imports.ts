@@ -1216,6 +1216,11 @@ export const clientContractImportManifest = [
     ],
   },
   {
+    module: "marketing-reward-settlement",
+    contracts: ["marketingRewardSettlementContract"],
+    bindings: [],
+  },
+  {
     module: "mcp-chat-search",
     contracts: ["mcpChatSearchContract"],
     bindings: [],

@@ -153,6 +153,8 @@ export function completedGetStartedQuestPublication(
     readonly userId: string;
     readonly questKey: "connector" | "checkin" | "imessage";
     readonly sourceKey: string;
+    readonly claimId?: string;
+    readonly completedAt?: Date;
   },
   at: Date,
   acceptedSource?: SQL,
@@ -160,7 +162,7 @@ export function completedGetStartedQuestPublication(
   if (args.questKey === "imessage" && args.sourceKey !== "agentphone-link") {
     throw new Error("Unexpected iMessage quest source");
   }
-  const claimId = randomUUID();
+  const claimId = args.claimId ?? randomUUID();
   const grantId = randomUUID();
   const reward = GET_STARTED_REWARDS[args.questKey];
   const rewardKey = `${args.questKey}:${args.userId}:${args.sourceKey}`;
@@ -171,7 +173,7 @@ export function completedGetStartedQuestPublication(
   const expiresAt = new Date(at.getTime() + GET_STARTED_REWARD_TTL_MS);
   const values = sql`${claimId}::uuid, ${args.orgId}, ${args.userId}, ${args.userId}, ${args.questKey}, ${args.sourceKey},
       ${reward.amount}, 'user', 'granted', ${rewardKey}, ${rewardSlot}, ${grantId}::uuid,
-      ${sql.param(at, getStartedClaims.completedAt)}, ${sql.param(at, getStartedClaims.grantedAt)},
+      ${sql.param(args.completedAt ?? at, getStartedClaims.completedAt)}, ${sql.param(at, getStartedClaims.grantedAt)},
       ${sql.param(expiresAt, getStartedClaims.expiresAt)}, ${sql.param(at, getStartedClaims.nextAttemptAt)},
       ${sql.param(at, getStartedClaims.createdAt)}, ${sql.param(at, getStartedClaims.updatedAt)}`;
   const sources: SQL[] = [];
