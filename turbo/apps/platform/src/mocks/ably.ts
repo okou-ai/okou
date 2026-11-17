@@ -190,8 +190,9 @@ class FakeChannel {
   }
 
   triggerPresence(action: string, clientId: string, data: unknown): void {
-    for (const listener of this.presenceListeners)
+    for (const listener of this.presenceListeners) {
       listener({ action, clientId, data });
+    }
   }
   hasPresenceSubscription(): boolean {
     return this.presenceListeners.size > 0;
@@ -1062,8 +1063,9 @@ export function hasPhonePresenceSubscription(
         name.startsWith("phone-use:") &&
         name.endsWith(`:${deviceId}:${generation}`) &&
         channel.hasPresenceSubscription()
-      )
+      ) {
         return true;
+      }
     }
   }
   return false;
