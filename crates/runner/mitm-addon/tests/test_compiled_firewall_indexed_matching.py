@@ -414,24 +414,27 @@ def test_generated_indexed_matching_matches_linear():
             intent,
             is_asterisk_form=is_asterisk_form,
         )
-        failure_input = {
-            "seed": _GENERATED_CASE_SEED,
-            "caseIndex": case_index,
-            "variants": dict(
-                zip(
-                    (axis_name for axis_name, _values in _GENERATED_AXIS_VALUES),
-                    variants,
-                    strict=True,
-                )
-            ),
-            "url": url,
-            "method": method,
-            "isAsteriskForm": is_asterisk_form,
-            "intent": {"status": intent.status, "value": intent.value},
-            "firewalls": firewalls,
-            "networkPolicies": network_policies,
-        }
-        assert indexed == linear, json.dumps(failure_input, indent=2, sort_keys=True)
+        assert indexed == linear, json.dumps(
+            {
+                "seed": _GENERATED_CASE_SEED,
+                "caseIndex": case_index,
+                "variants": dict(
+                    zip(
+                        (axis_name for axis_name, _values in _GENERATED_AXIS_VALUES),
+                        variants,
+                        strict=True,
+                    )
+                ),
+                "url": url,
+                "method": method,
+                "isAsteriskForm": is_asterisk_form,
+                "intent": {"status": intent.status, "value": intent.value},
+                "firewalls": firewalls,
+                "networkPolicies": network_policies,
+            },
+            indent=2,
+            sort_keys=True,
+        )
 
 
 def test_indexed_matches_linear_for_asterisk_form_unknown_policy():
