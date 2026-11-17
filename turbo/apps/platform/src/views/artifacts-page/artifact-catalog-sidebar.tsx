@@ -76,6 +76,7 @@ export function ArtifactCatalogSidebar() {
           contentType: preview.contentType,
           kind: preview.kind,
           resourceUrl$: artifactCatalogSidebar.preview.resourceUrl$,
+          imageUrl$: artifactCatalogSidebar.preview.imageUrl$,
           shareUrl$: artifactCatalogSidebar.preview.shareUrl$,
         }}
         artifactKind={
