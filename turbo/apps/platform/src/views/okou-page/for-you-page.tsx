@@ -16,7 +16,7 @@ import { defaultAgentId$, defaultAgentName$ } from "../../signals/agent.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 import {
   type AgentSuggestionEntry,
-  enterSuggestionSession$,
+  reloadSuggestionSession$,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
 import { openAgentSuggestionComposer$ } from "../../signals/okou-page/agent-suggestions.ts";
 import {
@@ -327,7 +327,7 @@ export function ForYouPage() {
   const { t } = useTranslation();
   const deck = useLastLoadable(forYouDeck$);
   const [composer, openComposer] = useLoadableSet(openAgentSuggestionComposer$);
-  const [reloading, reload] = useLoadableSet(enterSuggestionSession$);
+  const [reloading, reload] = useLoadableSet(reloadSuggestionSession$);
   const signal = useGet(pageSignal$);
   const cards = deck.state === "hasData" ? deck.data.cards : [];
   const settled = deck.state === "hasData" ? deck.data.settled : [];
