@@ -97,7 +97,11 @@ test("Delete a chat after reviewing the impact", async () => {
     createThread(INCIDENT_THREAD_ID, "Incident notes"),
   ]);
 
-  await setupSidebarPage({ context, path: `/chats/${EXISTING_THREAD_ID}` });
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
+  });
 
   await waitFor(() => {
     expect(within(sidebar()).getByText("Release plan")).toBeInTheDocument();
@@ -131,12 +135,81 @@ test("Delete a chat after reviewing the impact", async () => {
   });
   click(buttonByText("Delete", confirmDialog));
 
+  await expect(screen.findByText("Chat deleted")).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(pathname()).toBe("/");
+  });
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeInTheDocument();
   await waitFor(() => {
     expect(
       within(sidebar()).queryByText("Release plan"),
     ).not.toBeInTheDocument();
     expect(within(sidebar()).getByText("Incident notes")).toBeInTheDocument();
   });
+});
+
+test.each([true, false])(
+  "Deleting the last chat opens a new chat (My Okou: %s)",
+  async (singleAgent) => {
+    prepareDefaultAgent();
+    mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
+
+    await setupSidebarPage({
+      context,
+      path: `/chats/${EXISTING_THREAD_ID}`,
+      featureSwitches: { [FeatureSwitchKey.SingleAgent]: singleAgent },
+    });
+
+    await screen.findByRole("textbox", { name: "Message" });
+    await waitFor(() => {
+      expect(within(sidebar()).getByText("Release plan")).toBeInTheDocument();
+    });
+    openThreadMenu("Release plan");
+    click(menuItemByText("Delete chat"));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Delete chat?",
+    });
+    click(buttonByText("Delete", dialog));
+
+    await expect(
+      screen.findByText("Chat deleted"),
+    ).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(pathname()).toBe(singleAgent ? "/" : `/agents/${AGENT_ID}/chat`);
+    });
+    await expect(
+      screen.findByRole("textbox", { name: "Message" }),
+    ).resolves.toBeInTheDocument();
+    expect(screen.queryByText("Chat thread not found")).not.toBeInTheDocument();
+  },
+);
+
+test("Deleting another chat keeps the current chat open", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "Release plan"),
+    createThread(INCIDENT_THREAD_ID, "Incident notes"),
+  ]);
+
+  await setupSidebarPage({ context, path: `/chats/${EXISTING_THREAD_ID}` });
+  await screen.findByRole("textbox", { name: "Message" });
+  await waitFor(() => {
+    expect(within(sidebar()).getByText("Incident notes")).toBeInTheDocument();
+  });
+
+  openThreadMenu("Incident notes");
+  click(menuItemByText("Delete chat"));
+  const dialog = await screen.findByRole("dialog", { name: "Delete chat?" });
+  click(buttonByText("Delete", dialog));
+
+  await expect(screen.findByText("Chat deleted")).resolves.toBeInTheDocument();
+  expect(pathname()).toBe(`/chats/${EXISTING_THREAD_ID}`);
+  expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
+  expect(
+    within(sidebar()).queryByText("Incident notes"),
+  ).not.toBeInTheDocument();
 });
 
 /**
