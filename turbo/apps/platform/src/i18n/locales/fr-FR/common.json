@@ -428,9 +428,6 @@
       "resizeChatList": "Redimensionner la liste des chats",
       "searchWorkspace": "Rechercher dans l’espace de travail",
       "showChatList": "Afficher la liste des chats",
-      "suggestionsWaiting_one": "{{count}} en attente",
-      "suggestionsWaiting_many": "{{count}} en attente",
-      "suggestionsWaiting_other": "{{count}} en attente",
       "workspaceSwitcher": {
         "create": "Créer un espace de travail",
         "creating": "Création…",

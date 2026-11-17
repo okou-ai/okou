@@ -429,15 +429,6 @@ describe("recurring automation auto-disable platform feed events", () => {
         return item.id;
       }),
     ).toStrictEqual([notice.id]);
-    await accept(
-      setupApp({ context, routes: featureSwitchesRoutes })(
-        featureSwitchesContract,
-      ).update({
-        headers: authHeaders(scenario.actor),
-        body: { switches: { [FeatureSwitchKey.ForYouSources]: true } },
-      }),
-      [200],
-    );
     const headers = authHeaders(scenario.actor);
     await accept(
       feedClient().updateSources({
@@ -501,15 +492,6 @@ describe("recurring automation auto-disable platform feed events", () => {
       isolatePg: true,
     });
     const scenario = await createScenario();
-    await accept(
-      setupApp({ context, routes: featureSwitchesRoutes })(
-        featureSwitchesContract,
-      ).update({
-        headers: authHeaders(scenario.actor),
-        body: { switches: { [FeatureSwitchKey.ForYouSources]: true } },
-      }),
-      [200],
-    );
     const changed = await accept(
       feedClient().updateSources({
         headers: authHeaders(scenario.actor),

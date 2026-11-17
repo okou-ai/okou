@@ -414,8 +414,6 @@
       "resizeChatList": "Resize chat list",
       "searchWorkspace": "Search workspace",
       "showChatList": "Show chat list",
-      "suggestionsWaiting_one": "{{count}} waiting",
-      "suggestionsWaiting_other": "{{count}} waiting",
       "workspaceSwitcher": {
         "create": "Create workspace",
         "creating": "Creating…",

@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
@@ -173,8 +173,9 @@ test("Chat navigation passes For you and New chat above the list without consumi
       "page",
     );
   });
-  // Passing the For you page leaves its card waiting.
-  await within(entryLink("/for-you")).findByLabelText("1 waiting");
+  // Passing the For you page leaves its card available on the next visit.
+  await pressChatNavigation("ArrowUp");
+  await screen.findByRole("article", { name: "Review the pending decision" });
 });
 
 test("Without For you, the first chat moves up to New chat and New chat moves down into the list", async () => {

@@ -8,14 +8,6 @@ import { authenticatedSessionKey$ } from "../auth.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { createDeferredPromise, onRef } from "../utils.ts";
 
-export const forYouSourcesEnabled$ = computed((get) => {
-  const switches = get(featureSwitch$);
-  return (
-    switches[FeatureSwitchKey.AgentSuggestion] === true &&
-    switches[FeatureSwitchKey.ForYouSources] === true
-  );
-});
-
 const sourceState$ = computed((get) => {
   get(authenticatedSessionKey$);
   return { version$: state(0), summaryVersion$: state(0) };
@@ -33,7 +25,7 @@ export const forYouSources$ = computed(async (get) => {
 });
 
 export const forYouHasUnread$ = computed(async (get) => {
-  if (!get(forYouSourcesEnabled$)) {
+  if (get(featureSwitch$)[FeatureSwitchKey.AgentSuggestion] !== true) {
     return false;
   }
   get(get(sourceState$).summaryVersion$);
@@ -82,7 +74,7 @@ export function createForYouReadRef(id: string) {
   return onRef(
     command(
       async ({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
-        if (!get(forYouSourcesEnabled$)) {
+        if (get(featureSwitch$)[FeatureSwitchKey.AgentSuggestion] !== true) {
           return;
         }
         if (document.hidden) {
