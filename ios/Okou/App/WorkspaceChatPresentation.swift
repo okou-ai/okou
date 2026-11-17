@@ -65,37 +65,39 @@ extension EnvironmentValues {
   @Entry var workspaceChatPresentation: WorkspaceChatPresentation?
 }
 
-final class WorkspaceChatHostingController: UIHostingController<AnyView> {
+final class WorkspaceChatHostingController: UIViewController {
   let presentation: WorkspaceChatPresentation
-  private var departureSnapshot: UIView?
+  private let host = UIHostingController(rootView: AnyView(EmptyView()))
+
+  var rootView: AnyView {
+    get { host.rootView }
+    set { host.rootView = newValue }
+  }
 
   init(presentation: WorkspaceChatPresentation) {
     self.presentation = presentation
-    super.init(rootView: AnyView(EmptyView()))
+    super.init(nibName: nil, bundle: nil)
+    // UIKit's layout guide owns keyboard geometry; SwiftUI still owns container safe areas.
+    host.safeAreaRegions = .container
   }
 
   @available(*, unavailable)
   required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-  func beginDeparture() {
-    guard departureSnapshot == nil, viewIfLoaded?.window != nil,
-      let snapshot = view.snapshotView(afterScreenUpdates: false)
-    else { return }
-    // UIKit still moves the page and keyboard. Hold only the departing page's contents
-    // so keyboard safe-area changes cannot recenter it during an interactive return.
-    snapshot.frame = view.bounds
-    snapshot.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    snapshot.isUserInteractionEnabled = false
-    snapshot.accessibilityElementsHidden = true
-    view.addSubview(snapshot)
-    departureSnapshot = snapshot
-  }
-
-  func finishDeparture() {
-    guard let departureSnapshot else { return }
-    view.layoutIfNeeded()
-    departureSnapshot.removeFromSuperview()
-    self.departureSnapshot = nil
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    view.backgroundColor = UIColor(OkouColor.background)
+    view.keyboardLayoutGuide.usesBottomSafeArea = false
+    addChild(host)
+    view.addSubview(host.view)
+    host.view.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      host.view.topAnchor.constraint(equalTo: view.topAnchor),
+      host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+      host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+      host.view.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor)
+    ])
+    host.didMove(toParent: self)
   }
 
   override func viewIsAppearing(_ animated: Bool) {

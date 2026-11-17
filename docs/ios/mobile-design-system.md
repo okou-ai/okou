@@ -798,11 +798,13 @@ feature; the catalog shows each one.
   Automatic composer focus waits for the chat host's native appearance, not just
   window attachment. Prepare new-message input expanded before entry; retain its
   expanded layout through departure. Cancelled interactive return restores the
-  same editor and selection through UIKit's transition coordinator. Keep system
-  keyboard safe-area avoidance as the geometry owner rather than adding keyboard offsets.
-  A temporary, noninteractive native snapshot holds the departing page's contents
-  until navigation completes or rolls back, so keyboard dismissal cannot recenter
-  its greeting or move its composer independently. The live editor stays mounted.
+  same editor and selection through UIKit's transition coordinator. Let UIKit's
+  `UIKeyboardLayoutGuide` own keyboard geometry: constrain the hosted
+  content above the guide and set `usesBottomSafeArea` to `false`, so SwiftUI can
+  retain its normal container safe area when the keyboard is hidden. Set the
+  child `UIHostingController.safeAreaRegions` to `.container` to avoid applying
+  keyboard avoidance twice. The live content and editor remain mounted through
+  native transitions; ordinary focus changes use a value-scoped SwiftUI animation.
 - **Sidebar layout**: the workspace switcher top left, and top right one 44 pt glass capsule
   that groups the chat list menu (Lucide `list-filter`) on the left and back to the chat
   (`arrow-right`, toward the page it returns to; "Close sidebar" for VoiceOver) on the right,

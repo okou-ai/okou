@@ -67,6 +67,12 @@ struct ChatComposerView: View {
   private var showsEditingLayout: Bool {
     isFocused || draftState?.focusRequest != nil || presentation?.keepsComposerExpanded == true
   }
+  private var focusAnimation: Animation? {
+    guard !reduceMotion, presentation?.isTransitioning != true,
+      presentation?.allowsFocus != false
+    else { return nil }
+    return sendTransition?.composerAnimation ?? .easeInOut(duration: 0.22)
+  }
   /// A draft keeps the open layout after the keyboard closes; collapsing it cut the text to
   /// one truncated line under the controls. Voice input opens it too, and the model sheet
   /// keeps it open while the keyboard is down under the sheet.
@@ -293,18 +299,7 @@ struct ChatComposerView: View {
             bounds: bounds, content: content, isDisabled: isBusy || needsUpgrade)
         }
       }
-      .transaction(value: isFocused) { transaction in
-        // Navigation and native keyboard avoidance already own the incoming/outgoing motion.
-        // Prepare the editor without adding a second focus-driven layout animation.
-        if reduceMotion || presentation?.isTransitioning == true
-          || presentation?.allowsFocus == false
-        {
-          transaction.animation = nil
-        } else {
-          transaction.animation =
-            sendTransition?.composerAnimation ?? .easeInOut(duration: 0.22)
-        }
-      }
+      .animation(focusAnimation, value: isFocused)
       .animation(
         !reduceMotion && sendTransition?.hidesBubbleID != nil
           ? sendTransition?.composerAnimation : nil,
