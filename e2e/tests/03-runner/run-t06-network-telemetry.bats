@@ -82,20 +82,46 @@ assert tcp_response[:2] == tcp_query[:2] and tcp_response[2] & 0x80
 print("TCP_DNS_PROBE_DONE")
 PY
 
-curl --silent --show-error --max-time 10 \
+diagnostic_curl_exit=0
+diagnostic_response_metadata=$(curl --silent --show-error --max-time 10 \
+    --write-out '%{http_code}\n%{content_type}' \
     --output /tmp/replicate-diagnostic.json \
-    https://api.replicate.com/v1/models || true
-python3 - <<'PY'
+    https://api.replicate.com/v1/models) || diagnostic_curl_exit=$?
+python3 - "$diagnostic_curl_exit" "$diagnostic_response_metadata" <<'PY'
 import json
+import sys
 from pathlib import Path
 
 
-diagnostic = json.loads(Path("/tmp/replicate-diagnostic.json").read_text())
-assert diagnostic["error"] == "connector_not_configured_for_run"
-assert diagnostic["connector"] == "replicate"
-assert diagnostic["reason"] == "not_configured_for_run"
-assert diagnostic["envNames"] == ["REPLICATE_TOKEN"]
-assert diagnostic["base"] == "https://api.replicate.com"
+response_body = None
+try:
+    response_body = Path("/tmp/replicate-diagnostic.json").read_bytes()
+    diagnostic = json.loads(response_body.decode("utf-8"))
+    assert diagnostic["error"] == "connector_not_configured_for_run"
+    assert diagnostic["connector"] == "replicate"
+    assert diagnostic["reason"] == "not_configured_for_run"
+    assert diagnostic["envNames"] == ["REPLICATE_TOKEN"]
+    assert diagnostic["base"] == "https://api.replicate.com"
+except (AssertionError, KeyError, OSError, TypeError, ValueError):
+    http_status, _, content_type = sys.argv[2].partition("\n")
+    preview_limit = 2048
+    details = {
+        "curl_exit": int(sys.argv[1]),
+        "http_status": http_status,
+        "content_type": content_type,
+        "body_bytes": len(response_body) if response_body is not None else None,
+        "body_preview": (
+            response_body[:preview_limit].decode("utf-8", errors="replace")
+            if response_body is not None
+            else None
+        ),
+        "body_truncated": (
+            len(response_body) > preview_limit if response_body is not None else None
+        ),
+    }
+    # This unauthenticated probe needs no request headers or environment values.
+    print("Replicate diagnostic request failed: " + json.dumps(details), file=sys.stderr)
+    raise
 print("REPLICATE_DIAGNOSTIC_DONE")
 PY
 
