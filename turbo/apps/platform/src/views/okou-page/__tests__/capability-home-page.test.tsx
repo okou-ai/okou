@@ -40,7 +40,6 @@ async function setupHome() {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: true },
   });
   return await findComposerEditor();
 }
@@ -78,12 +77,11 @@ function capabilityTab(label: string): HTMLElement {
   return tab;
 }
 
-test("An empty conversation offers capabilities without an avatar and sends its first message in the same conversation", async () => {
+test("An empty conversation offers capabilities by default without an avatar and sends its first message in the same conversation", async () => {
   const capture = mockTemplateChat();
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: true },
   });
   const editor = await findComposerEditor();
   const discovery = await screen.findByRole("group", {

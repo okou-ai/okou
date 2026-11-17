@@ -86,15 +86,17 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("defaults home capabilities to staff and honors Lab overrides", () => {
+  it("defaults home capabilities on for everyone and honors Lab overrides", () => {
     const key = FeatureSwitchKey.HomeCapabilities;
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("released");
     for (const [context, enabled] of [
-      [{}, false],
-      [{ userId: "external-user" }, false],
-      [{ orgId: "external-org" }, false],
-      [{ userId: "external-user", orgId: "external-org" }, false],
+      [{}, true],
+      [{ userId: "external-user" }, true],
+      [{ orgId: "external-org" }, true],
+      [{ userId: "external-user", orgId: "external-org" }, true],
       [{ orgId: "external-org", overrides: { [key]: true } }, true],
+      [{ orgId: "external-org", overrides: { [key]: false } }, false],
       [staff, true],
       [{ ...staff, overrides: { [key]: false } }, false],
     ] as const) {

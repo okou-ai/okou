@@ -285,6 +285,7 @@ test.each([
     await setupPage({
       context,
       path: `/agents/${AGENT_ID}/chat`,
+      featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
     });
     const editor = await findComposerEditor();
     await fill(editor, "Keep my launch brief /");

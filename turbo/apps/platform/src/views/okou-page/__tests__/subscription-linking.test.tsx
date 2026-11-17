@@ -109,6 +109,7 @@ function connectedCodex(needsReconnect = false): ModelProviderResponse {
 async function setupLinking(options?: {
   readonly accounts?: readonly ModelProviderResponse[];
   readonly enabled?: boolean;
+  readonly featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>;
   readonly path?: string;
   readonly mobile?: boolean;
 }) {
@@ -127,6 +128,7 @@ async function setupLinking(options?: {
     context,
     path: options?.path ?? `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
+      ...options?.featureSwitches,
       [FeatureSwitchKey.SubscriptionLinkingEntry]: options?.enabled ?? true,
     },
   });
@@ -151,7 +153,7 @@ test("An unlinked member finds the subscriptions in the composer's model slot", 
     "Pro or Max",
   );
   expect(
-    screen.getByRole("region", { name: "Tasks to get started" }),
+    screen.getByRole("group", { name: "Explore Okou capabilities" }),
   ).toBeInTheDocument();
 });
 
@@ -305,7 +307,10 @@ test.each([false, true])(
 );
 
 test("The feature switch removes every entry and preserves task chips", async () => {
-  await setupLinking({ enabled: false });
+  await setupLinking({
+    enabled: false,
+    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
+  });
   await screen.findByRole("region", { name: "Tasks to get started" });
   const menu = await openAccountMenu();
   expect(menu).not.toHaveTextContent("Use more models");

@@ -4,6 +4,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { uploadsContract } from "@okouai/api-contracts";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
   click,
@@ -35,7 +36,11 @@ async function setupComposer(): Promise<HTMLElement> {
   context.mocks.http.put(UPLOAD_URL, () => {
     return new HttpResponse(null, { status: 200 });
   });
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
+  });
   return await findComposerEditor();
 }
 

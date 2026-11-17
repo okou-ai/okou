@@ -11,6 +11,7 @@ import {
   WORKFLOW_TEMPLATE_ITEMS,
 } from "@okouai/core";
 import { expect, test } from "vitest";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
 
@@ -126,7 +127,9 @@ function workflowHighlights(editor: HTMLElement): HTMLElement[] {
 }
 
 function composerFileInput(): HTMLInputElement {
-  const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+  const input = document.querySelector<HTMLInputElement>(
+    '[data-slot="chat-composer-card"] input[type="file"]',
+  );
   if (!input) {
     throw new Error("Expected composer file input");
   }
@@ -225,7 +228,11 @@ test("Insert an attached workflow with slash suggestions", async () => {
     ];
   });
 
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
+  });
 
   const user = userEvent.setup();
   const editor = await findComposerEditor();

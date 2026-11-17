@@ -6,6 +6,7 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { screen, waitFor } from "@testing-library/react";
@@ -75,6 +76,7 @@ async function setupComposer(): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
   });
   return await findComposerEditor();
 }
@@ -200,6 +202,7 @@ async function setupQueuedCreateConversation(): Promise<UserMessageDocument[]> {
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
   });
   await screen.findByText("Review the launch brief");
   return queued;
