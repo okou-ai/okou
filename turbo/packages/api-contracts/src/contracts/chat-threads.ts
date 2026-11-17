@@ -306,22 +306,28 @@ const runCompletedEventSchema = chatEventBaseSchema
   })
   .strict();
 
-const runFailedEventSchema = chatEventBaseSchema
+const clientRunFailedEventSchema = chatEventBaseSchema.extend({
+  eventType: literal("run.failed"),
+  runId: string(),
+  failureReason: runFailureReasonTokenSchema.optional(),
+  runLifecycleEvent: literal("failed"),
+});
+
+const runFailedEventSchema = clientRunFailedEventSchema
   .extend({
-    eventType: literal("run.failed"),
-    runId: string(),
     error: string().optional(),
-    failureReason: runFailureReasonTokenSchema.optional(),
-    runLifecycleEvent: literal("failed"),
   })
   .strict();
 
-const runCancelledEventSchema = chatEventBaseSchema
+const clientRunCancelledEventSchema = chatEventBaseSchema.extend({
+  eventType: literal("run.cancelled"),
+  runId: string(),
+  runLifecycleEvent: literal("cancelled"),
+});
+
+const runCancelledEventSchema = clientRunCancelledEventSchema
   .extend({
-    eventType: literal("run.cancelled"),
-    runId: string(),
     error: string().optional(),
-    runLifecycleEvent: literal("cancelled"),
   })
   .strict();
 
@@ -1326,13 +1332,22 @@ export type ChatThreadDetail = zInfer<typeof chatThreadDetailSchema>;
 export type ChatThreadMetadata = zInfer<typeof chatThreadMetadataSchema>;
 export type ChatThreadDraft = zInfer<typeof composerDraftSchema>;
 export type ChatEvent = zInfer<typeof chatEventSchema>;
-type WithoutRunError<T> = T extends {
-  eventType: "run.failed" | "run.cancelled";
-}
-  ? Omit<T, "error">
-  : T;
-/** Client business events; the wire contract still accepts retained diagnostics. */
-export type ClientChatEvent = WithoutRunError<ChatEvent>;
+/** The event variants the client consumes. */
+export type ClientChatEvent = zInfer<
+  | typeof inputPromptEventSchema
+  | typeof inputAutomationEventSchema
+  | typeof inputBudgetEventSchema
+  | typeof inputRejectedEventSchema
+  | typeof outputMessageEventSchema
+  | typeof outputErrorEventSchema
+  | typeof outputFollowupsEventSchema
+  | typeof runCompletedEventSchema
+  | typeof clientRunFailedEventSchema
+  | typeof clientRunCancelledEventSchema
+  | typeof controlInterruptEventSchema
+  | typeof controlRevokeEventSchema
+  | typeof usageRecordedEventSchema
+>;
 export type Indicator = zInfer<typeof indicatorSchema>;
 export type Indicators = zInfer<typeof indicatorsSchema>;
 

@@ -1,9 +1,9 @@
-import { expect, expectTypeOf, it } from "vitest";
-import { logDetailForDisplay } from "../client-run-presentation";
-import { logsByIdContract } from "../logs";
+import { expect, it } from "vitest";
+import { logsByIdContract } from "../../contracts/logs";
+import { activityDetailSchema } from "../logs";
 
 it.each([undefined, "private diagnostic"])(
-  "projects Activity HTTP responses into the same structured business detail: %s",
+  "reads current Activity facts from old and new HTTP responses: %s",
   (error) => {
     const wire = logsByIdContract.getById.responses[200].parse({
       id: "a0000000-0000-4000-a000-000000000001",
@@ -24,8 +24,7 @@ it.each([undefined, "private diagnostic"])(
       completedAt: null,
     });
     const original = JSON.stringify(wire);
-    const displayed = logDetailForDisplay(wire);
-    expectTypeOf(displayed).not.toHaveProperty("error");
+    const displayed = activityDetailSchema.parse(wire);
     expect(displayed).toStrictEqual({
       id: wire.id,
       sessionId: null,

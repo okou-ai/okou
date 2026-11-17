@@ -1,18 +1,17 @@
 package ai.okou.android.chat
 
-import ai.okou.android.api.generated.RawHistoryRow
 import java.io.InputStream
 import java.io.InputStreamReader
 import java.nio.charset.CodingErrorAction
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.long
 
 internal val historyJson = Json {
     ignoreUnknownKeys = true
@@ -20,51 +19,72 @@ internal val historyJson = Json {
     encodeDefaults = false
 }
 
-/** Canonical validation owns wire types; this domain envelope retains every original JSON value. */
-class HistoryEvent private constructor(private val wire: JsonObject) {
+@Serializable
+private enum class HistoryEventType {
+    @SerialName("input.prompt") InputPrompt,
+    @SerialName("input.automation") InputAutomation,
+    @SerialName("input.budget") InputBudget,
+    @SerialName("input.rejected") InputRejected,
+    @SerialName("output.message") OutputMessage,
+    @SerialName("output.error") OutputError,
+    @SerialName("output.followups") OutputFollowups,
+    @SerialName("run.completed") RunCompleted,
+    @SerialName("run.failed") RunFailed,
+    @SerialName("run.cancelled") RunCancelled,
+    @SerialName("control.interrupt") ControlInterrupt,
+    @SerialName("control.revoke") ControlRevoke,
+    @SerialName("usage.recorded") UsageRecorded,
+}
+
+@Serializable
+private data class HistoryEventFacts(
+    val id: String,
+    val chatThreadId: String,
+    val seqId: Long,
+    val eventType: HistoryEventType,
+    val runId: String?,
+    val revokesEventId: String?,
+)
+
+@Serializable private data class HistoryContent(val content: String? = null)
+
+@Serializable private data class HistoryError(val error: String? = null)
+
+@Serializable private data class HistoryRunFailure(val failureReason: String? = null)
+
+/** Read facts and payloads have their own models; raw JSON belongs to the cache. */
+class HistoryEvent
+private constructor(
+    private val wire: JsonObject,
+    private val facts: HistoryEventFacts,
+    val content: String?,
+    val userMessage: JsonElement?,
+    val usage: JsonElement?,
+    val inputError: String?,
+    val outputError: String?,
+    val failureReason: String?,
+) {
     override fun equals(other: Any?) = other is HistoryEvent && wire == other.wire
 
     override fun hashCode() = wire.hashCode()
 
     val id: String
-        get() = wire.getValue("id").jsonPrimitive.content
+        get() = facts.id
 
     val threadId: String
-        get() = wire.getValue("chatThreadId").jsonPrimitive.content
+        get() = facts.chatThreadId
 
     val seqId: Long
-        get() = wire.getValue("seqId").jsonPrimitive.long
+        get() = facts.seqId
 
     val type: String
         get() = wire.getValue("eventType").jsonPrimitive.content
 
     val runId: String?
-        get() = wire["runId"]?.jsonPrimitive?.contentOrNull
+        get() = facts.runId
 
     val revokesId: String?
-        get() = wire["revokesEventId"]?.jsonPrimitive?.contentOrNull
-
-    private val payload: JsonObject?
-        get() = wire["payload"]?.takeUnless { it === JsonNull }?.jsonObject
-
-    val content: String?
-        get() =
-            if (type == "run.failed" || type == "run.cancelled") null else payload?.text("content")
-
-    val inputError: String?
-        get() = if (type == "input.rejected") payload?.text("error") else null
-
-    val outputError: String?
-        get() = if (type == "output.error") payload?.text("error") else null
-
-    val userMessage: JsonElement?
-        get() = payload?.get("userMessage")
-
-    val usage: JsonElement?
-        get() = payload?.get("usage")
-
-    val failureReason: String?
-        get() = wire.text("failureReason")
+        get() = facts.revokesEventId
 
     /** Raw cache input is retained separately from business fields. */
     internal fun archiveJson(): String = wire.toString()
@@ -74,15 +94,60 @@ class HistoryEvent private constructor(private val wire: JsonObject) {
 
     companion object {
         fun decode(wire: JsonObject): HistoryEvent {
-            val payload = wire["payload"] as? JsonObject
-            val terminal =
-                wire.text("eventType") in setOf("run.completed", "run.failed", "run.cancelled")
-            val validated =
-                if (terminal && payload != null)
-                    JsonObject(wire + ("payload" to JsonObject(payload - "error")))
-                else wire
-            historyJson.decodeFromJsonElement<RawHistoryRow>(validated)
-            return HistoryEvent(wire)
+            val facts = historyJson.decodeFromJsonElement<HistoryEventFacts>(wire)
+            val payload =
+                when (facts.eventType) {
+                    HistoryEventType.InputPrompt,
+                    HistoryEventType.InputAutomation,
+                    HistoryEventType.InputBudget,
+                    HistoryEventType.InputRejected,
+                    HistoryEventType.OutputMessage,
+                    HistoryEventType.OutputError,
+                    HistoryEventType.OutputFollowups,
+                    HistoryEventType.RunCompleted,
+                    HistoryEventType.UsageRecorded ->
+                        wire["payload"]?.takeUnless { it === JsonNull }?.jsonObject
+                    else -> null
+                }
+            val content =
+                when (facts.eventType) {
+                    HistoryEventType.OutputMessage,
+                    HistoryEventType.OutputError,
+                    HistoryEventType.OutputFollowups,
+                    HistoryEventType.RunCompleted ->
+                        payload?.let {
+                            historyJson.decodeFromJsonElement<HistoryContent>(it).content
+                        }
+                    else -> null
+                }
+            val userMessage =
+                when (facts.eventType) {
+                    HistoryEventType.InputPrompt,
+                    HistoryEventType.InputAutomation,
+                    HistoryEventType.InputBudget,
+                    HistoryEventType.InputRejected -> payload?.get("userMessage")
+                    else -> null
+                }
+            val error =
+                when (facts.eventType) {
+                    HistoryEventType.InputRejected,
+                    HistoryEventType.OutputError ->
+                        payload?.let { historyJson.decodeFromJsonElement<HistoryError>(it).error }
+                    else -> null
+                }
+            return HistoryEvent(
+                wire,
+                facts,
+                content,
+                userMessage,
+                if (facts.eventType == HistoryEventType.UsageRecorded) payload?.get("usage")
+                else null,
+                if (facts.eventType == HistoryEventType.InputRejected) error else null,
+                if (facts.eventType == HistoryEventType.OutputError) error else null,
+                if (facts.eventType == HistoryEventType.RunFailed)
+                    historyJson.decodeFromJsonElement<HistoryRunFailure>(wire).failureReason
+                else null,
+            )
         }
 
         fun decode(text: String): HistoryEvent =

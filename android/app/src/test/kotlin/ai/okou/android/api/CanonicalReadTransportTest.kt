@@ -27,7 +27,11 @@ import org.junit.Test
 class CanonicalReadTransportTest {
     @Test
     fun progressingHistoryAndArchiveReadsOutliveTheOrdinaryControlBudget() = runTest {
-        val wire = historyEventWire(payload = """{"content":"${"x".repeat(1_600)}"}""")
+        val wire =
+            historyEventWire(
+                type = "run.failed",
+                payload = """{"content":"${"x".repeat(1_600)}","error":"retained diagnostic"}""",
+            )
         MockWebServer().use { server ->
             server.dispatcher =
                 object : Dispatcher() {
@@ -66,12 +70,12 @@ class CanonicalReadTransportTest {
                         val control = failure<ApiFailure.Network> { api.realtimeToken() }
                         assertTrue(control.cause is InterruptedIOException)
                         val returned = history.await().events.getValue(CHAT_PERSONAL).single()
-                        assertEquals(
-                            HistoryEvent.decode(wire),
+                        val event =
                             HistoryEvent.decode(
                                 historyJson.encodeToJsonElement(returned).jsonObject
-                            ),
-                        )
+                            )
+                        assertEquals("run.failed", event.type)
+                        assertEquals(HistoryEvent.decode(wire), event)
                         assertEquals(HistoryEvent.decode(wire), archive.await().single())
                         assertEquals(3, server.requestCount)
                     }

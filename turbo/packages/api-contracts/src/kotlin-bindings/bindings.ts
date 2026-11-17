@@ -206,6 +206,8 @@ export interface KotlinTypeBinding {
   readonly name: string;
   readonly schema: ZodType;
   readonly direction: "input" | "output";
+  /** Raw transport/cache envelopes retain all JSON members; their consumer owns decoding. */
+  readonly representation?: "raw-object";
 }
 
 export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
@@ -347,7 +349,12 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
       direction: "output" as const,
     };
   }),
-  { name: "RawHistoryRow", schema: chatEventRowSchema, direction: "output" },
+  {
+    name: "RawHistoryRow",
+    schema: chatEventRowSchema,
+    direction: "output",
+    representation: "raw-object",
+  },
   {
     name: "ChatArchive",
     schema: chatThreadSnapshotArchiveSchema,

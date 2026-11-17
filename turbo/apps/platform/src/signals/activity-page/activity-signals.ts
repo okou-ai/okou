@@ -1,6 +1,6 @@
 import { command, computed, state } from "ccstate";
 import { logsByIdContract } from "@okouai/api-contracts/client/logs";
-import { logDetailForDisplay } from "@okouai/api-contracts/contracts/client-run-presentation";
+import { activityDetailSchema } from "@okouai/api-contracts/validators/logs";
 import { runAgentEventsContract } from "@okouai/api-contracts/client/run-routes";
 import type {
   InitClientArgs,
@@ -104,7 +104,7 @@ async function fetchActivityDetail(
     }),
     [200],
   );
-  return logDetailForDisplay(result.body);
+  return activityDetailSchema.parse(result.body);
 }
 
 export const activityEvents$ = computed(async (get) => {

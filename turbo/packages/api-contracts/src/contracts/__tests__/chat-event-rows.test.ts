@@ -1,4 +1,4 @@
-import { describe, expect, expectTypeOf, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   CHAT_EVENT_CONTEXT_TYPES,
   CHAT_EVENT_TYPES,
@@ -43,9 +43,6 @@ describe("client Run failure presentation before API cutover", () => {
       });
       const original = JSON.stringify(row);
       const displayed = chatEventFromRowForDisplay(row);
-      expectTypeOf<
-        Extract<typeof displayed, { eventType: "run.failed" }>
-      >().not.toHaveProperty("error");
       expect(displayed).toMatchObject({
         id: row.id,
         seqId: row.seqId,

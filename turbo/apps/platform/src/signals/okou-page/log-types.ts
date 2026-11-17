@@ -3,7 +3,7 @@ import type {
   LogStatus,
   TriggerSource,
 } from "@okouai/api-contracts/contracts/logs";
-import type { ClientLogDetail } from "@okouai/api-contracts/contracts/client-run-presentation";
+import type { ActivityDetail } from "@okouai/api-contracts/validators/logs";
 import type {
   AgentEventsResponse as ApiAgentEventsResponse,
   RunEvent,
@@ -109,7 +109,7 @@ export function getTriggerSourceLabel(
 }
 
 // Detail response - full log information
-export type LogDetail = ClientLogDetail;
+export type LogDetail = ActivityDetail;
 
 export type AgentEvent = RunEvent;
 export type AgentEventsResponse = ApiAgentEventsResponse;
