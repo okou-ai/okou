@@ -1,5 +1,4 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -24,7 +23,7 @@ const { mockTemplateChat } = createTemplateGalleryHelpers(context);
 
 function control(
   dialog: HTMLElement,
-  role: "tab" | "button" | "link",
+  role: "tab" | "button" | "link" | "radio",
   name: string,
 ): HTMLElement {
   const result = queryAllByRoleFast(role, dialog).find((element) => {
@@ -45,9 +44,19 @@ async function setup() {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
   });
   return { user, capture };
+}
+
+async function openDocumentTray() {
+  const cards = await screen.findByRole("group", {
+    name: "Explore Okou capabilities",
+  });
+  const create = within(cards).getByRole("region", { name: "Create" });
+  click(control(create, "button", "Presentation"));
+  const types = await screen.findByRole("radiogroup", { name: "Create" });
+  click(control(types, "radio", "Document"));
+  return await screen.findByRole("group", { name: "Document templates" });
 }
 
 test("Document category and scroll survive preview", async () => {
@@ -170,75 +179,19 @@ test("Meeting notes can be previewed and attached without sending the draft", as
   });
 });
 
-test("Document purposes are directly selectable without losing the draft or selected template", async () => {
+test("The Document tray opens its picker with the keyboard", async () => {
   const { user, capture } = await setup();
   const editor = await findComposerEditor();
-  await fill(editor, "Prepare the invoice for my client.");
-  click(
-    control(
-      screen.getByRole("group", { name: "Choose a task" }),
-      "button",
-      "Document",
-    ),
-  );
-  const shelf = await screen.findByRole("group", {
-    name: "Document templates",
-  });
-  const categories = within(shelf).getByRole("group", {
-    name: "Document category",
-  });
-  expect(control(categories, "button", "Creative brief")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  expect(control(categories, "button", "Custom")).toBeVisible();
-  expect(
-    within(shelf).queryByLabelText("Import your own document"),
-  ).not.toBeInTheDocument();
-  click(control(categories, "button", "Invoice"));
-  expect(control(categories, "button", "Invoice")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  expect(within(shelf).getAllByLabelText(/^Use template /u)).toHaveLength(7);
-  click(control(shelf, "button", "Use template Itemized invoice"));
-  expect(composerInlineTemplates()[0]).toHaveTextContent("Itemized invoice");
-  click(control(categories, "button", "Reports"));
-  expect(within(shelf).getAllByLabelText(/^Use template /u)).toHaveLength(6);
-  expect(
-    control(shelf, "button", "Use template Two-column report"),
-  ).toBeInTheDocument();
-  expect(editor).toHaveTextContent("Prepare the invoice for my client.");
-  expect(composerInlineTemplates()[0]).toHaveTextContent("Itemized invoice");
-  expect(capture.sentMessages).toHaveLength(0);
-  click(control(shelf, "button", "View all"));
-  const dialog = await screen.findByRole("dialog");
-  expect(control(dialog, "button", "Reports")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(6);
-  await user.keyboard("{Escape}");
-  click(control(document.body, "button", "Remove Document"));
-  await screen.findByRole("group", { name: "Choose a task" });
-  expect(editor).toHaveTextContent("Prepare the invoice for my client.");
-  expect(composerInlineTemplates()[0]).toHaveTextContent("Itemized invoice");
-});
-
-test("Slash Document opens its picker with the keyboard", async () => {
-  const { user, capture } = await setup();
-  const editor = await findComposerEditor();
-  await fill(editor, "Keep this draft /doc");
-  const menu = await screen.findByTestId("slash-workflow-menu");
-  expect(control(menu, "button", "Document")).toBeInTheDocument();
-  await user.keyboard("{ArrowDown}{Enter}");
+  await fill(editor, "Keep this draft");
+  await openDocumentTray();
+  control(screen.getByRole("tabpanel"), "button", "View all").focus();
+  await user.keyboard("{Enter}");
   const dialog = await screen.findByRole("dialog");
   expect(control(dialog, "tab", "Document")).toHaveAttribute(
     "aria-selected",
     "true",
   );
   expect(editor).toHaveTextContent("Keep this draft");
-  expect(editor).not.toHaveTextContent("/doc");
   await user.keyboard("{Escape}");
   expect(
     control(document.body, "button", "Remove Document"),
@@ -246,18 +199,13 @@ test("Slash Document opens its picker with the keyboard", async () => {
   expect(capture.sentMessages).toHaveLength(0);
 });
 
-test("A slash document cover attaches its template and keeps the draft", async () => {
-  const { user, capture } = await setup();
+test("A Document tray cover attaches its template and keeps the draft", async () => {
+  const { capture } = await setup();
   const editor = await findComposerEditor();
-  await fill(editor, "Keep this draft /doc");
-  const menu = await screen.findByTestId("slash-workflow-menu");
-  await user.hover(control(menu, "button", "Document"));
-  const previews = await within(menu).findByRole("region", {
-    name: "Document",
-  });
-  click(control(previews, "button", "Use template Itemized invoice"));
+  await fill(editor, "Keep this draft");
+  const shelf = await openDocumentTray();
+  click(control(shelf, "button", "Use template Itemized invoice"));
   expect(editor).toHaveTextContent("Keep this draft");
-  expect(editor).not.toHaveTextContent("/doc");
   expect(composerInlineTemplates()[0]).toHaveTextContent("Itemized invoice");
   expect(
     control(document.body, "button", "Remove Document"),
@@ -269,13 +217,7 @@ test("A slash document cover attaches its template and keeps the draft", async (
 test("Document sends its creation intent and keeps its task chip in the new thread", async () => {
   const { capture } = await setup();
   const editor = await findComposerEditor();
-  click(
-    control(
-      screen.getByRole("group", { name: "Choose a task" }),
-      "button",
-      "Document",
-    ),
-  );
+  await openDocumentTray();
   await fill(editor, "Prepare a project brief.");
   click(control(document.body, "button", "Send"));
   await waitFor(() => {

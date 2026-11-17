@@ -137,11 +137,22 @@ const marketingRewardWorkflowEventSchema = discriminatedUnion("type", [
   }).strict(),
 ]);
 
+export const marketingRewardCheckinEventSchema = object({
+  version: literal(5),
+  id: uuid(),
+  environment,
+  type: literal("checkin.requested"),
+  occurredAt: iso.datetime(),
+  orgId: string().min(1).max(256),
+  userId: string().min(1).max(256),
+}).strict();
+
 export const marketingRewardSourceEventSchema = union([
   marketingRewardOAuthEventSchema,
   marketingRewardLinkEventSchema,
   marketingRewardInvitationEventSchema,
   marketingRewardWorkflowEventSchema,
+  marketingRewardCheckinEventSchema,
 ]);
 export type MarketingRewardSourceEvent = zInfer<
   typeof marketingRewardSourceEventSchema

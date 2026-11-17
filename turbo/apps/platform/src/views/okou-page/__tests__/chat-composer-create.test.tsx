@@ -6,10 +6,9 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
@@ -30,7 +29,6 @@ import {
   createChatComposerHelpers,
 } from "./chat-composer-test-helpers.ts";
 import { buildRunModel } from "./chat-model-builders.ts";
-
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
@@ -48,9 +46,7 @@ function setupModels(): void {
       modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
     }),
   ]);
-  mockBillingCapabilities({
-    restrictedBuiltInModels: false,
-  });
+  mockBillingCapabilities({ restrictedBuiltInModels: false });
   context.mocks.data.userModelPreference({
     selectedModel: "claude-fable-5-1",
     serviceTier: null,
@@ -76,64 +72,44 @@ async function setupComposer(): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
   });
   return await findComposerEditor();
 }
 
-/** The panel's rows act on mousedown, which only a full pointer sequence fires. */
-async function clickPanelRow(label: string, menu: HTMLElement): Promise<void> {
-  await userEvent
-    .setup({ delay: null, skipHover: true })
-    .click(button(label, menu));
-  await closeTemplatePicker();
-}
-
-/** The panel row that enters a create mode, and the chip it leaves behind. */
-const CREATE_MODE_ROWS = {
-  presentation: { row: "Presentation", task: "Presentation" },
-  image: { row: "Illustration", task: "Image" },
-} as const;
-
-/** The footer chip is the type, and its accessible name is how to leave it. */
 function taskChip(task: "Presentation" | "Image"): HTMLElement {
   return button(`Remove ${task}`);
 }
 
-/**
- * A panel row opens the template picker as well as entering the mode, and the
- * open dialog covers the composer. Close it to go on reading the composer.
- */
-async function closeTemplatePicker(): Promise<void> {
-  const dialog = await screen.findByRole("dialog");
-  click(button("Close", dialog));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-}
-
-/** Lands the composer on a create mode from an already open slash panel. */
 async function enterCreateMode(
-  command: keyof typeof CREATE_MODE_ROWS,
-  menu: HTMLElement,
+  task: "Presentation" | "Image",
+  fromMenu = false,
 ): Promise<void> {
-  const { row, task } = CREATE_MODE_ROWS[command];
-  await clickPanelRow(row, menu);
+  if (fromMenu) {
+    await clickComposerAddMenuItem("Create");
+  } else {
+    const cards = await screen.findByRole("group", {
+      name: "Explore Okou capabilities",
+    });
+    const create = within(cards).getByRole("region", { name: "Create" });
+    click(button("Presentation", create));
+  }
+  const types = await screen.findByRole("radiogroup", { name: "Create" });
+  const choice = queryAllByRoleFast("radio", types).find((item) => {
+    return item.textContent?.trim() === task;
+  });
+  if (!choice) {
+    throw new Error(`Expected creation type ${task}`);
+  }
+  click(choice);
   await waitFor(() => {
     expect(taskChip(task)).toBeInTheDocument();
   });
 }
 
-async function chooseCommand(
-  editor: HTMLElement,
-  text: string,
-  command: keyof typeof CREATE_MODE_ROWS,
-): Promise<void> {
-  await fill(editor, text);
-  await enterCreateMode(
-    command,
-    await screen.findByTestId("slash-workflow-menu"),
-  );
+async function openCreationCatalog(task: "Presentation" | "Image") {
+  await enterCreateMode(task);
+  click(button("View all", screen.getByRole("tabpanel")));
+  return await screen.findByRole("dialog");
 }
 
 test("Persisted additional info stays out of the message and copied text", async () => {
@@ -159,10 +135,7 @@ test("Persisted additional info stays out of the message and copied text", async
       },
     ],
   });
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-  });
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
   const text = await screen.findByText("Our launch brief");
   const message = text.closest<HTMLElement>('[data-role="user"]');
   if (!message) {
@@ -199,11 +172,7 @@ async function setupQueuedCreateConversation(): Promise<UserMessageDocument[]> {
       }
     },
   });
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
-  });
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
   await screen.findByText("Review the launch brief");
   return queued;
 }
@@ -222,7 +191,8 @@ test("A queued Create message keeps its intent separate from user-authored text"
   const queued = await setupQueuedCreateConversation();
   const followupEditor = await findComposerEditor();
   const prompt = "Create a presentation. Keep these words in my message.";
-  await chooseCommand(followupEditor, `${prompt} /`, "presentation");
+  await enterCreateMode("Presentation", true);
+  await fill(followupEditor, prompt);
   await chooseSlideCount("20–24 slides");
   await waitFor(() => {
     expect(button("Send")).toBeEnabled();
@@ -256,8 +226,7 @@ test("A queued Create message keeps its intent separate from user-authored text"
 const createTemplateScenarios = [
   {
     mode: "image",
-    commandLabel: "Create image",
-    pickerLabel: "Add style",
+    task: "Image",
     selectLabel: "Select template",
     previewLabel: "Preview template",
     templates: ILLUSTRATION_TEMPLATE_ITEMS.map((template) => {
@@ -272,8 +241,7 @@ const createTemplateScenarios = [
   },
   {
     mode: "presentation",
-    commandLabel: "Create presentation",
-    pickerLabel: "Add template",
+    task: "Presentation",
     selectLabel: "Select template",
     previewLabel: "Preview template",
     templates: PRESENTATION_TEMPLATE_PICKER_ITEMS.map((template) => {
@@ -292,8 +260,8 @@ const createTemplateScenarios = [
 ] as const;
 
 test.each(createTemplateScenarios)(
-  "$commandLabel adds a template without replacing the existing text",
-  async ({ mode, selectLabel, templates }) => {
+  "$task adds a template without replacing the existing text",
+  async ({ mode, task, selectLabel, templates }) => {
     setupModels();
     mockChatLifecycle(context);
     const editor = await setupComposer();
@@ -301,13 +269,11 @@ test.each(createTemplateScenarios)(
     if (!first) {
       throw new Error(`Expected a ${mode} template`);
     }
-    await fill(editor, "Our launch /");
-    const menu = await screen.findByTestId("slash-workflow-menu");
-    await userEvent
-      .setup({ delay: null })
-      .click(button(CREATE_MODE_ROWS[mode].row, menu));
-    await screen.findByRole("dialog");
-    click(await screen.findByLabelText(`${selectLabel} ${first.title}`));
+    await fill(editor, "Our launch");
+    const dialog = await openCreationCatalog(task);
+    click(
+      await within(dialog).findByLabelText(`${selectLabel} ${first.title}`),
+    );
     await waitFor(() => {
       expect(composerInlineTemplates()).toHaveLength(1);
       expect(screen.queryByRole("dialog")).toBeNull();
@@ -315,14 +281,14 @@ test.each(createTemplateScenarios)(
     expect(composerInlineTemplates()[0]).toHaveTextContent(first.title);
     expect(queryComposerModelTrigger("Claude Fable 5.1")).toBeInTheDocument();
     expect(editor).toHaveTextContent("Our launch");
-    expect(taskChip(CREATE_MODE_ROWS[mode].task)).toBeInTheDocument();
+    expect(taskChip(task)).toBeInTheDocument();
   },
 );
 
 async function setupEditedDraftTemplate(
   scenario: (typeof createTemplateScenarios)[number],
 ) {
-  const { mode, selectLabel, previewLabel, templates } = scenario;
+  const { mode, task, selectLabel, previewLabel, templates } = scenario;
   setupModels();
   const submissions: UserMessageDocument[] = [];
   mockChatLifecycle(context, {
@@ -362,21 +328,16 @@ async function setupEditedDraftTemplate(
   await waitFor(() => {
     expect(composerInlineTemplates()).toHaveLength(2);
   });
-  const taskChoices = await screen.findByRole("group", {
-    name: "Choose a task",
-  });
-  click(button(CREATE_MODE_ROWS[mode].task, taskChoices));
-  await waitFor(() => {
-    expect(taskChip(CREATE_MODE_ROWS[mode].task)).toBeInTheDocument();
-  });
-
+  await enterCreateMode(task);
   const firstChip = composerInlineTemplates()[0];
   if (!firstChip) {
     throw new Error("Expected the first inline template");
   }
   click(button(`${previewLabel} ${first.title}`, firstChip));
-  await screen.findByRole("dialog");
-  click(await screen.findByLabelText(`${selectLabel} ${replacement.title}`));
+  const dialog = await screen.findByRole("dialog");
+  click(
+    await within(dialog).findByLabelText(`${selectLabel} ${replacement.title}`),
+  );
   await waitFor(() => {
     const chips = composerInlineTemplates();
     expect(chips).toHaveLength(2);
@@ -385,7 +346,7 @@ async function setupEditedDraftTemplate(
   });
   expect(editor).toHaveTextContent("Our launch");
   expect(editor).toHaveTextContent("for the cover.");
-  expect(taskChip(CREATE_MODE_ROWS[mode].task)).toBeInTheDocument();
+  expect(taskChip(task)).toBeInTheDocument();
   return { mode, replacement, second, submissions };
 }
 
@@ -443,13 +404,9 @@ async function setupSavedPresentationDraft() {
   return { editor, first, second };
 }
 
-test("The Presentation slash command preserves an existing draft template", async () => {
-  const { editor, first } = await setupSavedPresentationDraft();
-  const user = userEvent.setup({ delay: null });
-  await user.click(editor);
-  await user.paste(" /");
-  const menu = await screen.findByTestId("slash-workflow-menu");
-  await clickPanelRow("Presentation", menu);
+test("Entering Presentation preserves an existing draft template", async () => {
+  const { first } = await setupSavedPresentationDraft();
+  await enterCreateMode("Presentation");
   expect(taskChip("Presentation")).toBeInTheDocument();
   expect(composerInlineTemplates()).toHaveLength(1);
   expect(composerInlineTemplates()[0]).toHaveTextContent(first.title);
@@ -457,11 +414,7 @@ test("The Presentation slash command preserves an existing draft template", asyn
 
 test("Presentation adds another template when the draft already has one", async () => {
   const { first, second } = await setupSavedPresentationDraft();
-  const tasks = await screen.findByRole("group", { name: "Choose a task" });
-  click(button("Presentation", tasks));
-  await waitFor(() => {
-    expect(taskChip("Presentation")).toBeInTheDocument();
-  });
+  await enterCreateMode("Presentation");
   expect(composerInlineTemplates()).toHaveLength(1);
   await clickComposerAddMenuItem("Add template");
   await screen.findByRole("dialog");
@@ -474,35 +427,10 @@ test("Presentation adds another template when the draft already has one", async 
   });
 });
 
-test("The slash panel's Illustration row opens the image style flow", async () => {
-  setupModels();
-  const editor = await setupComposer();
-  const user = userEvent.setup({ delay: null });
-  await user.click(editor);
-  await user.keyboard("/");
-  const menu = await screen.findByTestId("slash-workflow-menu");
-  await userEvent
-    .setup({ delay: null, skipHover: true })
-    .click(button("Illustration", menu));
-  const dialog = await screen.findByRole("dialog");
-  await waitFor(() => {
-    const tab = queryAllByRoleFast("tab", dialog).find((item) => {
-      return item.textContent?.trim() === "Image";
-    });
-    expect(tab).toHaveAttribute("aria-selected", "true");
-  });
-  await closeTemplatePicker();
-  expect(taskChip("Image")).toBeInTheDocument();
-});
-
 test("Image mode opens its style picker from the Add menu", async () => {
   setupModels();
   await setupComposer();
-  const tasks = await screen.findByRole("group", { name: "Choose a task" });
-  click(button("Image", tasks));
-  await waitFor(() => {
-    expect(taskChip("Image")).toBeInTheDocument();
-  });
+  await enterCreateMode("Image");
   await clickComposerAddMenuItem("Add style");
   const dialog = await screen.findByRole("dialog");
   const tab = queryAllByRoleFast("tab", dialog).find((item) => {
@@ -549,11 +477,8 @@ async function setupCreateModeWithTemplate() {
     expect(composerInlineTemplates()).toHaveLength(1);
   });
   expect(submissions).toHaveLength(0);
-  const tasks = await screen.findByRole("group", { name: "Choose a task" });
-  click(button("Presentation", tasks));
-  const chip = await waitFor(() => {
-    return taskChip("Presentation");
-  });
+  await enterCreateMode("Presentation");
+  const chip = taskChip("Presentation");
   expect(editor).toHaveTextContent("Our launch /notes");
   expect(composerInlineTemplates()).toHaveLength(1);
   return { chip, editor, submissions, template };
@@ -563,9 +488,7 @@ test("Exiting Create mode sends the ordinary draft and template", async () => {
   const { chip, editor, submissions, template } =
     await setupCreateModeWithTemplate();
   click(chip);
-  await waitFor(() => {
-    expect(chip).not.toBeInTheDocument();
-  });
+  await screen.findByRole("group", { name: "Explore Okou capabilities" });
   expect(editor).toHaveFocus();
   expect(editor).toHaveTextContent("Our launch /notes");
   expect(composerInlineTemplates()).toHaveLength(1);
@@ -593,22 +516,6 @@ function inlineTemplateCover(index = 0): HTMLImageElement | null {
   return chip.querySelector("img");
 }
 
-async function addPresentationTemplate(
-  editor: HTMLElement,
-  title: string,
-): Promise<void> {
-  await fill(editor, "Our launch /");
-  const menu = await screen.findByTestId("slash-workflow-menu");
-  await userEvent
-    .setup({ delay: null, skipHover: true })
-    .click(button("Presentation", menu));
-  await screen.findByRole("dialog");
-  click(await screen.findByLabelText(`Select template ${title}`));
-  await waitFor(() => {
-    expect(composerInlineTemplates()).toHaveLength(1);
-  });
-}
-
 async function setupCoveredPresentationTemplate() {
   setupModels();
   mockChatLifecycle(context);
@@ -617,7 +524,15 @@ async function setupCoveredPresentationTemplate() {
   if (!first) {
     throw new Error("Expected a presentation template");
   }
-  await addPresentationTemplate(editor, first.title);
+  await fill(editor, "Our launch");
+  await enterCreateMode("Presentation");
+  const shelf = await screen.findByRole("group", {
+    name: "Presentation templates",
+  });
+  click(button(first.title, shelf));
+  await waitFor(() => {
+    expect(composerInlineTemplates()).toHaveLength(1);
+  });
   return { first };
 }
 

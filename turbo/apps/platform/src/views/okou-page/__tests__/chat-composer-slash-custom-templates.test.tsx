@@ -17,7 +17,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { findComposerEditor, tabByText } from "./chat-composer-test-helpers.ts";
+import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
   THREAD_ID,
@@ -70,16 +70,47 @@ function button(name: string, container: ParentNode = document.body) {
   return result;
 }
 
-async function openSlashMenu(path = `/agents/${AGENT_ID}/chat`) {
+async function openSlashCategory(
+  category: string,
+  path = `/agents/${AGENT_ID}/chat`,
+) {
+  context.mocks.browser.matchMedia(true);
   await setupPage({
     context,
     path,
-    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
+    featureSwitches: { [FeatureSwitchKey.SlashActions]: true },
   });
   const editor = await findComposerEditor();
   await fill(editor, "Keep my brief /");
   const menu = await screen.findByTestId("slash-workflow-menu");
-  return { editor, menu };
+  const entry = await waitFor(() => {
+    const templates = queryAllByRoleFast("button", menu).find((candidate) => {
+      return candidate.textContent
+        ?.replace(/\s+/gu, " ")
+        .trim()
+        .startsWith("Templates ");
+    });
+    if (!templates) {
+      throw new Error("Expected the Templates overview entry");
+    }
+    return templates;
+  });
+  await userEvent.setup({ delay: null }).hover(entry);
+  const pane = await within(menu).findByRole("region", { name: "Templates" });
+  const type = queryAllByRoleFast("button", pane).find((candidate) => {
+    return candidate.textContent
+      ?.replace(/\s+/gu, " ")
+      .trim()
+      .startsWith(`${category} `);
+  });
+  if (!type) {
+    throw new Error(`Expected template type ${category}`);
+  }
+  click(type);
+  await waitFor(() => {
+    expect(type).toHaveAttribute("aria-pressed", "true");
+  });
+  return { editor, pane };
 }
 
 const CATEGORIES = [
@@ -104,7 +135,7 @@ const CATEGORIES = [
 ] as const;
 
 test.each(CATEGORIES)(
-  "$category offers accessible custom templates and sends their custom references",
+  "The Templates overview's $category type offers accessible custom templates and sends their references",
   async ({ category, kind, builtInTitle, path }) => {
     const capture = mockTemplateChat();
     const own = template(kind);
@@ -124,9 +155,7 @@ test.each(CATEGORIES)(
         shared,
       ]);
     });
-    const { menu, editor } = await openSlashMenu(path);
-    await userEvent.setup().hover(button(category, menu));
-    const pane = await within(menu).findByRole("region", { name: category });
+    const { pane, editor } = await openSlashCategory(category, path);
     await within(pane).findByText(own.title);
     expect(within(pane).getByText(shared.title)).toBeInTheDocument();
     expect(within(pane).getByText(builtInTitle)).toBeInTheDocument();
@@ -155,46 +184,13 @@ test.each(CATEGORIES)(
   },
 );
 
-test("The Document row opens the document template picker", async () => {
-  mockTemplateChat();
-  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
-    return respond(200, [template("presentation"), template("document")]);
-  });
-  const { menu } = await openSlashMenu();
-  click(button("Document", menu));
-  const dialog = await screen.findByRole("dialog");
-  await within(dialog).findByText(template("document").title);
-  expect(tabByText("Document")).toHaveAttribute("aria-selected", "true");
-  expect(
-    within(dialog).queryByText(template("presentation").title),
-  ).not.toBeInTheDocument();
-});
-
-test("Custom documents appear alongside built-in documents", async () => {
-  mockTemplateChat();
-  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
-    return respond(200, [template("document")]);
-  });
-  const { menu } = await openSlashMenu();
-  await userEvent.setup().hover(button("Document", menu));
-  const pane = await within(menu).findByRole("region", { name: "Document" });
-  await within(pane).findByText(template("document").title);
-  expect(
-    within(pane).getByText(DOCUMENT_TEMPLATE_ITEMS[0]!.title),
-  ).toBeInTheDocument();
-});
-
-test("The open slash pane refreshes published and removed templates", async () => {
+test("The open Templates overview refreshes published and removed custom templates", async () => {
   mockTemplateChat();
   let catalog = [template("presentation")];
   context.mocks.api(userTemplatesContract.list, ({ respond }) => {
     return respond(200, catalog);
   });
-  const { menu } = await openSlashMenu();
-  await userEvent.setup().hover(button("Presentation", menu));
-  const pane = await within(menu).findByRole("region", {
-    name: "Presentation",
-  });
+  const { pane } = await openSlashCategory("Presentation");
   await within(pane).findByText(template("presentation").title);
   catalog = [
     { ...template("presentation"), title: "Newly published template" },
@@ -206,18 +202,14 @@ test("The open slash pane refreshes published and removed templates", async () =
   ).not.toBeInTheDocument();
 });
 
-test("A failed custom catalog keeps built-in templates visible", async () => {
+test("A failed custom catalog keeps built-in templates available in the overview", async () => {
   mockTemplateChat();
   context.mocks.api(userTemplatesContract.list, ({ respond }) => {
     return respond(500, {
       error: { code: "INTERNAL_ERROR", message: "Unavailable" },
     });
   });
-  const { menu } = await openSlashMenu();
-  await userEvent.setup().hover(button("Presentation", menu));
-  const pane = await within(menu).findByRole("region", {
-    name: "Presentation",
-  });
+  const { pane } = await openSlashCategory("Presentation");
   await within(pane).findByText("Couldn't load templates.");
   expect(
     within(pane).getByText(PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!.title),

@@ -14,30 +14,6 @@ import {
 } from "../../signals/okou-page/home-compliance.ts";
 
 /**
- * The compliance badges at the foot of the chat home. The row sits outside the
- * page's scroller, so it stays on the first screen however tall the composer
- * column grows; the column scrolls above it instead.
- *
- * Desktop only: below `sm` the composer is the page's footer, and a row under
- * it would sit between the field and the home indicator.
- */
-export function ChatHomeCompliance() {
-  const title = useComplianceTitle();
-
-  return (
-    <section
-      aria-label={title}
-      className="@container hidden shrink-0 justify-center border-t border-border/50 bg-gray-50 px-6 py-2 sm:flex"
-    >
-      <ComplianceBadges
-        quiet
-        className="flex flex-wrap justify-center gap-x-8 gap-y-2 @4xl:divide-x @4xl:divide-border/50 @4xl:gap-x-0 @4xl:[&>li]:px-4"
-      />
-    </section>
-  );
-}
-
-/**
  * Compliance at the foot of the capability cards: every framework and its
  * status, in a block one tier quieter than the cards — their surface at 60%,
  * no drawing, nothing to press but the hide control — so it closes the grid
@@ -46,7 +22,7 @@ export function ChatHomeCompliance() {
  * block then folds its own height away, so the cards settle instead of
  * jumping. On the first home of the session it rises in after the cards.
  *
- * Desktop only, like the footer row on the plain chat home.
+ * Desktop only; mobile keeps the composer at the foot of the page.
  */
 export function CapabilityHomeCompliance({
   entrance,

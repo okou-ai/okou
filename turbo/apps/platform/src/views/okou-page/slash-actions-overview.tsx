@@ -1275,7 +1275,7 @@ export function useSlashActionsMenu({
   const insertWorkflow = useSet(composer.workflow.insertWorkflow$);
   const chatActions = useSlashActions(composer, panel.leave);
   const capabilities = useComposerCapabilities(composer);
-  const capabilityActions = (capabilities ?? []).map((capability) => {
+  const capabilityActions = capabilities.map((capability) => {
     return {
       ...capability,
       run: () => {

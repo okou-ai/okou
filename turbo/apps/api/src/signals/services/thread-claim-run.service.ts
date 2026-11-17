@@ -1105,6 +1105,7 @@ function claimLaunchRecord(record: ClaimLaunchRecord): ClaimLaunchRecord {
         threadId: input.threadId,
         prompt: input.prompt,
         discordDelivery: input.discordDelivery,
+        wechatDelivery: input.wechatDelivery,
         triggerSource: input.triggerSource,
       },
     },

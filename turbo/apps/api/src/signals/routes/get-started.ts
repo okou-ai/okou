@@ -18,6 +18,7 @@ import {
   getStartedUtcDay,
 } from "../services/get-started-rewards.service";
 import { ensureGetStartedRewardWallet$ } from "../services/get-started-wallet.service";
+import { requestMarketingRewardCheckin$ } from "../services/marketing-reward-checkin.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
 const status$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -40,6 +41,11 @@ const checkin$ = command(async ({ get, set }, signal: AbortSignal) => {
   const db = set(writeDb$);
   const at = nowDate();
   const sourceKey = getStartedUtcDay(at);
+  await set(
+    requestMarketingRewardCheckin$,
+    { orgId: auth.orgId, userId: auth.userId, requestedAt: at },
+    signal,
+  );
   // Claim identity and credit publication are one statement; duplicate callers
   // observe the winner without an outer wallet transaction.
   await db.execute(

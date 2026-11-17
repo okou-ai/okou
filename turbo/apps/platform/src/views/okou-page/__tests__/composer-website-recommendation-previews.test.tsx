@@ -1,7 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import type { ComposerDraft } from "@okouai/api-contracts/contracts/chat-threads";
@@ -34,7 +33,7 @@ function originalDraft(): ComposerDraft {
 }
 
 function control(
-  role: "button" | "tab",
+  role: "button" | "tab" | "radio",
   name: string,
   container: ParentNode = document.body,
 ): HTMLElement {
@@ -50,7 +49,7 @@ function control(
   return found;
 }
 
-async function openShelf(homeCapabilities: boolean) {
+async function openShelf() {
   const capture = mockTemplateChat();
   let savedDraft = originalDraft();
   context.mocks.api(agentDraftContract.get, ({ respond }) => {
@@ -67,30 +66,20 @@ async function openShelf(homeCapabilities: boolean) {
     context,
     path: `/agents/${AGENT_ID}/chat`,
     host: "app.okou.ai",
-    featureSwitches: {
-      [FeatureSwitchKey.HomeCapabilities]: homeCapabilities,
-    },
   });
   const editor = await findComposerEditor();
   await waitFor(() => {
     expect(editor).toHaveTextContent(DRAFT);
   });
-  click(
-    control(
-      "button",
-      "Website",
-      screen.getByRole("group", {
-        name: homeCapabilities ? "Explore Okou capabilities" : "Choose a task",
-      }),
-    ),
-  );
+  const create = within(
+    screen.getByRole("group", { name: "Explore Okou capabilities" }),
+  ).getByRole("region", { name: "Create" });
+  click(control("button", "Presentation", create));
+  const types = await screen.findByRole("radiogroup", { name: "Create" });
+  click(control("radio", "Website", types));
   const shelf = await screen.findByRole("group", { name: "Website templates" });
   const eye = control("button", `Preview template ${website.title}`, shelf);
-  const browse = control(
-    "button",
-    "View all",
-    homeCapabilities ? screen.getByRole("tabpanel") : shelf,
-  );
+  const browse = control("button", "View all", screen.getByRole("tabpanel"));
   return {
     editor,
     shelf,
@@ -132,39 +121,35 @@ async function expectShelfReturn(eye: HTMLElement) {
   expect(composerInlineTemplates()).toHaveLength(0);
 }
 
-test.each([true, false])(
-  "Website recommendation dismissal returns to its Eye without changing the draft (HomeCapabilities=%s)",
-  async (homeCapabilities) => {
-    const { editor, shelf, eye, capture, readDraft } =
-      await openShelf(homeCapabilities);
-    // Exercise real pointer focus: closing both dialogs must restore the Eye,
-    // not the hidden parent gallery or the template selection button.
-    const user = userEvent.setup({ delay: null });
-    for (const dismissal of ["Close", "Escape"]) {
-      await user.click(eye);
-      const { dialog, frame, prefix } = await websitePreview();
-      await user.click(prefix);
-      expect(frame).toBeInTheDocument();
-      expect(composerInlineTemplates()).toHaveLength(0);
-      expect(editor).toHaveTextContent(DRAFT);
-      expect(capture.sentMessages).toHaveLength(0);
-      expect(readDraft()).toStrictEqual(originalDraft());
-      if (dismissal === "Escape") {
-        await user.keyboard("{Escape}");
-      } else {
-        click(control("button", dismissal, dialog));
-      }
-      await expectShelfReturn(eye);
-      expect(shelf).toBeInTheDocument();
-      expect(editor).toHaveTextContent(DRAFT);
-      expect(readDraft()).toStrictEqual(originalDraft());
-      expect(capture.sentMessages).toHaveLength(0);
+test("Website recommendation dismissal returns to its Eye without changing the draft", async () => {
+  const { editor, shelf, eye, capture, readDraft } = await openShelf();
+  // Exercise real pointer focus: closing both dialogs must restore the Eye,
+  // not the hidden parent gallery or the template selection button.
+  const user = userEvent.setup({ delay: null });
+  for (const dismissal of ["Close", "Escape"]) {
+    await user.click(eye);
+    const { dialog, frame, prefix } = await websitePreview();
+    await user.click(prefix);
+    expect(frame).toBeInTheDocument();
+    expect(composerInlineTemplates()).toHaveLength(0);
+    expect(editor).toHaveTextContent(DRAFT);
+    expect(capture.sentMessages).toHaveLength(0);
+    expect(readDraft()).toStrictEqual(originalDraft());
+    if (dismissal === "Escape") {
+      await user.keyboard("{Escape}");
+    } else {
+      click(control("button", dismissal, dialog));
     }
-  },
-);
+    await expectShelfReturn(eye);
+    expect(shelf).toBeInTheDocument();
+    expect(editor).toHaveTextContent(DRAFT);
+    expect(readDraft()).toStrictEqual(originalDraft());
+    expect(capture.sentMessages).toHaveLength(0);
+  }
+});
 
 test("The Website Eye is Tab reachable and Enter/Space preview without selecting", async () => {
-  const { eye, shelf, editor, capture, readDraft } = await openShelf(true);
+  const { eye, shelf, editor, capture, readDraft } = await openShelf();
   const user = userEvent.setup({ delay: null });
   control("button", `Use template ${website.title}`, shelf).focus();
   await user.keyboard("{Tab}");
@@ -182,7 +167,7 @@ test("The Website Eye is Tab reachable and Enter/Space preview without selecting
 });
 
 test("Selecting the original Website cover after preview attaches and serializes that website", async () => {
-  const { eye, shelf, editor, capture } = await openShelf(false);
+  const { eye, shelf, editor, capture } = await openShelf();
   const user = userEvent.setup({ delay: null });
   const prompt = "Build this launch site and keep the draft text.";
   await fill(editor, prompt);
@@ -212,7 +197,7 @@ test("Selecting the original Website cover after preview attaches and serializes
 });
 
 test("View all resets direct Website preview dismissal to the normal gallery", async () => {
-  const { eye, browse, editor, capture, readDraft } = await openShelf(true);
+  const { eye, browse, editor, capture, readDraft } = await openShelf();
   const user = userEvent.setup({ delay: null });
   await user.click(eye);
   const direct = await websitePreview();

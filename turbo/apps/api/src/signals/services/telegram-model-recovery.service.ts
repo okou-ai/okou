@@ -1,3 +1,5 @@
+import { waitUntil } from "../context/wait-until";
+import { continueIntegrationRecovery$ } from "./integration-recovery-continuation.service";
 import { createHash } from "node:crypto";
 import { escapeHtml } from "../../lib/telegram-format";
 import { command } from "ccstate";
@@ -75,21 +77,29 @@ export const handleTelegramModelRecovery$ = command(
       const model = recovery.choices.find((choice) => {
         return modelKey(choice.value) === key;
       });
-      const text = model
+      const saved = model
         ? await set(
             saveIntegrationModelChoice$,
             { ...identity, model: model.value, expectedModelState: recovery },
             signal,
           )
-        : MODEL_RECOVERY_STALE;
-      await answerTelegramCallbackQuery(botToken, query.id, text, signal);
+        : { message: MODEL_RECOVERY_STALE, input: null };
+      if (saved.input) {
+        waitUntil(set(continueIntegrationRecovery$, saved.input, signal));
+      }
+      await answerTelegramCallbackQuery(
+        botToken,
+        query.id,
+        saved.message,
+        signal,
+      );
       return true;
     }
     await answerTelegramCallbackQuery(botToken, query.id, undefined, signal);
     const result = await sendMessage(
       botToken,
       String(query.message.chat.id),
-      `Current model: ${escapeHtml(recovery.currentModelLabel)}. Select a model for this conversation, then send your previous request again.`,
+      `Current model: ${escapeHtml(recovery.currentModelLabel)}. Select a model to automatically continue this conversation.`,
       {
         replyToMessageId: query.message.message_id,
         messageThreadId: query.message.message_thread_id,

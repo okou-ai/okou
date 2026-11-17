@@ -1,6 +1,5 @@
 import { createComposerHomeSignals } from "./composer-home.ts";
 import { command, computed, state } from "ccstate";
-import type { DocumentTemplateCategory } from "@okouai/core/document-template-items";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ComposerTemplateAttachment } from "./tiptap-workflow-composer.ts";
 import {
@@ -12,67 +11,18 @@ import type {
   ComposerCreateSignals,
 } from "./composer-create.ts";
 import { createComposerVisualizationSignals } from "./composer-visualization.ts";
-import { settle } from "../utils.ts";
 import { customTemplateCatalog$ } from "./custom-template-library.ts";
-import { createComposerTaskOverflowSignals } from "./composer-task-overflow.ts";
 
 export type ComposerTask =
   ComposerCreateMode | "workflow" | "website" | "visualization";
-export type ComposerIdeaTask = Exclude<ComposerTask, "visualization">;
-/** The tasks whose ideas render as a prompt row; workflow has its own surface. */
-export type ComposerPromptRowTask = Exclude<ComposerIdeaTask, "workflow">;
-/**
- * The tasks served by the shared cover shelf. Presentation owns its import
- * tile, while Document owns its purpose filters; both build their own rows.
- */
-export type ComposerTemplateTask = Exclude<
-  ComposerPromptRowTask,
-  "presentation" | "document"
->;
+/** Presentation and Document build their own template rails. */
+export type ComposerTemplateTask = "image" | "website";
 
-/** A general task owns the chip row itself; the rest resolve to a create mode. */
+/** General tasks do not resolve to a create mode. */
 function isComposerGeneralTask(
   task: ComposerTask | null,
 ): task is "workflow" | "website" | "visualization" {
   return task === "workflow" || task === "website" || task === "visualization";
-}
-
-type ComposerDocumentCategory = DocumentTemplateCategory | "custom";
-
-function createDocumentCategorySignals() {
-  const internalDocumentCategory$ = state<ComposerDocumentCategory | null>(
-    null,
-  );
-  const defaultDocumentCategory$ = computed(
-    async (get): Promise<ComposerDocumentCategory> => {
-      // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
-      const result = await settle(get(customTemplateCatalog$));
-      if (!result.ok) {
-        // A failed custom catalog must leave the built-in shelf usable.
-        return "creative-brief";
-      }
-      return result.value.some((template) => {
-        return template.kind === "document";
-      })
-        ? "custom"
-        : "creative-brief";
-    },
-  );
-  const documentCategory$ = computed((get) => {
-    const selected = get(internalDocumentCategory$);
-    if (selected !== null) {
-      return selected;
-    }
-    // Resolve the default from the catalog. An explicit choice stops depending
-    // on this request, so a late response or refresh cannot replace that choice.
-    return get(defaultDocumentCategory$);
-  });
-  const setDocumentCategory$ = command(
-    ({ set }, category: ComposerDocumentCategory) => {
-      set(internalDocumentCategory$, category);
-    },
-  );
-  return { documentCategory$, setDocumentCategory$ };
 }
 
 export function createComposerTaskChipsSignals(
@@ -83,10 +33,7 @@ export function createComposerTaskChipsSignals(
     "workflow" | "website" | "visualization" | null
   >(null);
   const visualization = createComposerVisualizationSignals();
-  const overflow = createComposerTaskOverflowSignals();
-  const { documentCategory$, setDocumentCategory$ } =
-    createDocumentCategorySignals();
-  /** The task selected through the chip row, slash panel or template picker. */
+  /** The task selected through a capability, slash panel or template picker. */
   const task$ = computed((get): ComposerTask | null => {
     return get(create.mode$) ?? get(internalGeneralTask$);
   });
@@ -106,7 +53,6 @@ export function createComposerTaskChipsSignals(
     workflowActions,
   );
   const applyTask$ = command(({ set }, task: ComposerTask | null) => {
-    set(workflows.close$);
     set(home.show$);
     if (task === null || isComposerGeneralTask(task)) {
       set(internalGeneralTask$, task);
@@ -116,10 +62,7 @@ export function createComposerTaskChipsSignals(
     set(internalGeneralTask$, null);
     set(create.selectCommand$, task);
   });
-  /**
-   * The chip row toggles: choosing the task already showing clears it. The
-   * footer chip and the composer's Backspace clear the same way.
-   */
+  /** Choosing the active task or clearing it removes the current intent. */
   const selectTask$ = command(({ get, set }, task: ComposerTask | null) => {
     const nextTask = get(task$) === task ? null : task;
     if (nextTask === null) {
@@ -127,11 +70,7 @@ export function createComposerTaskChipsSignals(
     }
     set(applyTask$, nextTask);
   });
-  /**
-   * Opens a task without the chip's toggle. A caller outside the row states
-   * what the member has just started rather than pressing the chip, so
-   * repeating it has to leave the surface the last one opened standing.
-   */
+  /** Opens a task without toggling an already active intent off. */
   const openTask$ = command(({ get, set }, task: ComposerTask) => {
     set(home.show$);
     if (get(task$) === task) {
@@ -144,7 +83,6 @@ export function createComposerTaskChipsSignals(
     openTask$,
     selectTask$,
     workflowActions,
-    workflows.close$,
   );
   const selectTemplate$ = command(
     (
@@ -169,25 +107,15 @@ export function createComposerTaskChipsSignals(
       }
     },
   );
-  // Choosing a task hands focus to the composer and removes More. Ordinary
-  // dismissal returns focus to the trigger.
-  const taskMenuFinalFocus$ = command(({ get }) => {
-    const task = get(task$);
-    return task === null;
-  });
   return {
     home,
     task$,
     customTemplates$,
     selectTask$,
-    taskMenuFinalFocus$,
     openTask$,
     selectTemplate$,
     workflows,
     visualization,
-    overflow,
-    documentCategory$,
-    setDocumentCategory$,
   };
 }
 

@@ -1,5 +1,16 @@
-import { command } from "ccstate";
-import { and, eq, gt, inArray, isNull, notExists, or, sql } from "drizzle-orm";
+import { isPersonalSubscriptionUsageLimitFailure } from "@okouai/api-contracts/contracts/errors";
+import { command, computed } from "ccstate";
+import {
+  and,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  notExists,
+  or,
+  sql,
+} from "drizzle-orm";
 import { object, string, uuid } from "zod";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -22,6 +33,11 @@ import { memberModelRouteContextFromAccounts } from "./effective-model-route.ser
 import { memberSubscriptionModelRoutesFromCatalog } from "./member-subscription-models.service";
 import { catalogDisplayName, loadModelCatalog$ } from "./model-catalog.service";
 import { updateChatThreadMetadata$ } from "./chat-thread-metadata-update.service";
+import {
+  enqueueIntegrationRecovery$,
+  integrationRecoverySource,
+  type IntegrationRecoveryInput,
+} from "./integration-recovery-input.service";
 
 export const MODEL_RECOVERY_ACTION = "switch_model";
 export const MODEL_RECOVERY_STALE =
@@ -57,6 +73,32 @@ interface ModelRecoveryIdentity {
   readonly orgId: string;
 }
 
+/** Web model changes must retain the external conversation's continuation route. */
+export function latestThreadModelRecovery(args: {
+  readonly threadId: string;
+  readonly userId: string;
+  readonly orgId: string;
+}) {
+  return computed(async (get) => {
+    const [event] = await get(db$)
+      .select({ eventId: chatEvents.id })
+      .from(chatEvents)
+      .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
+      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+      .where(
+        and(
+          eq(chatThreads.id, args.threadId),
+          eq(chatThreads.userId, args.userId),
+          eq(agents.orgId, args.orgId),
+          inArray(chatEvents.eventType, ["run.failed", "output.error"]),
+        ),
+      )
+      .orderBy(desc(chatEvents.seqId))
+      .limit(1);
+    return event ? { ...args, eventId: event.eventId } : null;
+  });
+}
+
 /** The event is the identity of the recovery, never a client-supplied thread. */
 const loadIntegrationModelRecovery$ = command(
   async ({ get, set }, args: ModelRecoveryIdentity, signal: AbortSignal) => {
@@ -70,6 +112,8 @@ const loadIntegrationModelRecovery$ = command(
         updatedAt: sql`${chatThreads.updatedAt}::text`.mapWith(pgTextDecoder),
         failureReason: chatEvents.failureReason,
         runFailureReason: agentRuns.failureReason,
+        runError: agentRuns.error,
+        runModelProvider: agentRuns.modelProvider,
         payload: chatEvents.payload,
       })
       .from(chatEvents)
@@ -123,7 +167,12 @@ const loadIntegrationModelRecovery$ = command(
         ));
     if (
       !(reason !== null && MODEL_FAILURES.includes(reason)) &&
-      !admissionModelError
+      !admissionModelError &&
+      !isPersonalSubscriptionUsageLimitFailure({
+        failureReason: reason,
+        modelProviderType: event.runModelProvider,
+        message: event.runError ?? event.payload?.content ?? "",
+      })
     ) {
       return null;
     }
@@ -233,10 +282,10 @@ export const loadIntegrationModelChoices$ = command(
   },
 );
 
-/** Shares Web's validated write and event publication; never launches a Run. */
+/** A validated recovery choice continues the failed request on its original integration. */
 export const saveIntegrationModelChoice$ = command(
   async (
-    { set },
+    { get, set },
     args: ModelRecoveryIdentity & {
       readonly model: string;
       readonly expectedModelState: {
@@ -245,20 +294,30 @@ export const saveIntegrationModelChoice$ = command(
       };
     },
     signal: AbortSignal,
-  ): Promise<string> => {
+  ): Promise<{
+    readonly message: string;
+    readonly input: IntegrationRecoveryInput | null;
+  }> => {
     const recovery = await set(loadIntegrationModelChoices$, args, signal);
+    const source = await get(integrationRecoverySource(args));
+    signal.throwIfAborted();
     if (
       !recovery ||
+      !source ||
       recovery.selectedModel !== args.expectedModelState.selectedModel ||
       recovery.updatedAt !== args.expectedModelState.updatedAt
     ) {
-      return MODEL_RECOVERY_STALE;
+      return { message: MODEL_RECOVERY_STALE, input: null };
     }
     const model = recovery.choices.find((choice) => {
       return choice.value === args.model;
     });
     if (!model) {
-      return "This model is no longer available. Open the model selector again.";
+      return {
+        message:
+          "This model is no longer available. Open the model selector again.",
+        input: null,
+      };
     }
     const result = await set(
       updateChatThreadMetadata$,
@@ -273,10 +332,14 @@ export const saveIntegrationModelChoice$ = command(
       signal,
     );
     if (result.kind === "response") {
-      return "The model could not be selected. Open the model selector again.";
+      return {
+        message:
+          "The model could not be selected. Open the model selector again.",
+        input: null,
+      };
     }
     if (result.kind !== "ok") {
-      return MODEL_RECOVERY_STALE;
+      return { message: MODEL_RECOVERY_STALE, input: null };
     }
     await publishChatThreadDetailChangedSafely(args.userId, recovery.threadId);
     signal.throwIfAborted();
@@ -285,6 +348,20 @@ export const saveIntegrationModelChoice$ = command(
       orgId: args.orgId,
     });
     signal.throwIfAborted();
-    return `Switched to ${model.label}. Send your previous request again to continue.`;
+    const input = await set(
+      enqueueIntegrationRecovery$,
+      { ...args, selectedModel: args.model },
+      signal,
+    );
+    if (!input) {
+      return {
+        message: `Switched to ${model.label}. The conversation has already changed; send a new message to continue.`,
+        input: null,
+      };
+    }
+    return {
+      message: `Switched to ${model.label}. Continuing your previous request.`,
+      input,
+    };
   },
 );

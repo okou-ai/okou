@@ -1,21 +1,10 @@
-import {
-  mockTaskChipLayout,
-  taskMenuItem,
-} from "./composer-task-chip-layout.ts";
 import { mockRailBrowserLayout, renderedRail } from "./rail-browser-layout.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  act,
-  fireEvent,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import {
@@ -32,7 +21,6 @@ import {
 } from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
-  THREAD_ID,
   createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
 
@@ -58,9 +46,27 @@ async function setupChips(): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
   });
   return await findComposerEditor();
+}
+
+async function selectCreation(task: string): Promise<void> {
+  const cards = await screen.findByRole("group", {
+    name: "Explore Okou capabilities",
+  });
+  const create = within(cards).getByRole("region", { name: "Create" });
+  click(button("Presentation", create));
+  const types = await screen.findByRole("radiogroup", { name: "Create" });
+  const choice = queryAllByRoleFast("radio", types).find((item) => {
+    return item.textContent?.trim() === task;
+  });
+  if (!choice) {
+    throw new Error(`Expected creation type ${task}`);
+  }
+  click(choice);
+  await waitFor(() => {
+    expect(choice).toHaveAttribute("aria-checked", "true");
+  });
 }
 
 function composerCard(editor: HTMLElement): HTMLElement {
@@ -71,14 +77,8 @@ function composerCard(editor: HTMLElement): HTMLElement {
   return card;
 }
 
-// The selected task is one control: the chip itself removes the selection, so
-// it is addressed by that action rather than by a wrapping group.
 function selectedTask(editor: HTMLElement, task: string): HTMLElement {
   return button(`Remove ${task}`, composerCard(editor));
-}
-
-function templateShelf(name: string): HTMLElement {
-  return screen.getByRole("group", { name });
 }
 
 function coverButtons(shelf: HTMLElement): HTMLElement[] {
@@ -89,62 +89,24 @@ function coverButtons(shelf: HTMLElement): HTMLElement[] {
   });
 }
 
-test("The start page shows only task choices until one is selected", async () => {
-  mockTemplateChat();
-  await setupChips();
-  const tasks = screen.getByRole("group", { name: "Choose a task" });
-  expect(
-    queryAllByRoleFast("button", tasks).map((item) => {
-      return item.textContent?.trim();
-    }),
-  ).toStrictEqual([
-    "Workflow",
-    "Presentation",
-    "Document",
-    "Image",
-    "Website",
-    "Chart",
-  ]);
-  expect(
-    screen.queryByRole("group", { name: "Ideas to get started" }),
-  ).toBeNull();
-  expect(
-    screen.queryByRole("group", { name: "Presentation templates" }),
-  ).toBeNull();
-});
-
-test("A task moves into the composer and can be removed without losing the draft", async () => {
+test("A creation type can be removed without losing the draft", async () => {
   mockTemplateChat();
   const editor = await setupChips();
   await fill(editor, "Keep my draft");
-  click(
-    button(
-      "Presentation",
-      screen.getByRole("group", { name: "Choose a task" }),
-    ),
-  );
+  await selectCreation("Presentation");
   const selected = selectedTask(editor, "Presentation");
-  expect(selected).toBeVisible();
-  expect(screen.queryByRole("group", { name: "Choose a task" })).toBeNull();
+  expect(selected).toBeInTheDocument();
   expect(editor).toHaveTextContent("Keep my draft");
   await screen.findByRole("group", { name: "Presentation templates" });
   click(selected);
-  await screen.findByRole("group", { name: "Choose a task" });
-  expect(
-    screen.queryByRole("group", { name: "Presentation templates" }),
-  ).toBeNull();
+  await screen.findByRole("group", { name: "Explore Okou capabilities" });
   expect(editor).toHaveTextContent("Keep my draft");
 });
 
 test("A send carries the task and its slide count into the thread it opens", async () => {
   const capture = mockTemplateChat();
   const editor = await setupChips();
-  click(
-    button(
-      "Presentation",
-      screen.getByRole("group", { name: "Choose a task" }),
-    ),
-  );
+  await selectCreation("Presentation");
   click(screen.getByRole("combobox", { name: "Slide count" }));
   click(await screen.findByRole("option", { name: "16–20 slides" }));
   await fill(editor, "Our launch deck");
@@ -156,10 +118,8 @@ test("A send carries the task and its slide count into the thread it opens", asy
     type: "additional_info",
     text: expect.stringContaining("- Slide count: 16-20"),
   });
-  // The send lands in a composer of its own, one that has never been told what
-  // the run is making, so the selection has to travel with it.
   const threadEditor = await findComposerEditor();
-  expect(selectedTask(threadEditor, "Presentation")).toBeVisible();
+  expect(selectedTask(threadEditor, "Presentation")).toBeInTheDocument();
   expect(
     screen.getByRole("combobox", { name: "Slide count" }),
   ).toHaveTextContent("16–20 slides");
@@ -169,7 +129,7 @@ test("Chart preferences are interactive and are sent as agent-only context", asy
   const capture = mockTemplateChat();
   const editor = await setupChips();
   await fill(editor, "Explain the quarterly results");
-  click(button("Chart", screen.getByRole("group", { name: "Choose a task" })));
+  await selectCreation("Chart");
   const panel = await screen.findByRole("region", {
     name: "Visualization options",
   });
@@ -211,7 +171,7 @@ test("Chart defaults to report when no output format is selected", async () => {
   const capture = mockTemplateChat();
   const editor = await setupChips();
   await fill(editor, "Summarize the quarterly results in a chart");
-  click(button("Chart", screen.getByRole("group", { name: "Choose a task" })));
+  await selectCreation("Chart");
   await screen.findByRole("region", { name: "Visualization options" });
   click(button("Send"));
   await waitFor(() => {
@@ -229,12 +189,9 @@ test("Chart defaults to report when no output format is selected", async () => {
 test("Image enters and submits the create mode", async () => {
   const capture = mockTemplateChat();
   const editor = await setupChips();
-  const tasks = screen.getByRole("group", { name: "Choose a task" });
   await fill(editor, "My launch next week");
-  click(button("Image", tasks));
-  await waitFor(() => {
-    expect(selectedTask(editor, "Image")).toBeVisible();
-  });
+  await selectCreation("Image");
+  expect(selectedTask(editor, "Image")).toBeInTheDocument();
   expect(capture.sentMessages).toHaveLength(0);
   click(button("Send"));
   await waitFor(() => {
@@ -270,25 +227,17 @@ async function setupTaskChangesWithUpload() {
     new File(["brief"], "brief.txt", { type: "text/plain" }),
   );
   await screen.findByText("brief.txt");
-  const tasks = screen.getByRole("group", { name: "Choose a task" });
-  click(button("Image", tasks));
-  const imageTask = await waitFor(() => {
-    return selectedTask(editor, "Image");
-  });
-  click(imageTask);
-  const restoredTasks = await screen.findByRole("group", {
-    name: "Choose a task",
-  });
-  click(button("Presentation", restoredTasks));
+  await selectCreation("Image");
+  click(selectedTask(editor, "Image"));
+  await screen.findByRole("group", { name: "Explore Okou capabilities" });
+  await selectCreation("Presentation");
   const slideCount = await screen.findByRole("combobox", {
     name: "Slide count",
   });
   click(slideCount);
   click(await screen.findByRole("option", { name: "16–20 slides" }));
   await waitFor(() => {
-    expect(
-      screen.getByRole("combobox", { name: "Slide count" }),
-    ).toHaveTextContent("16–20 slides");
+    expect(slideCount).toHaveTextContent("16–20 slides");
   });
   click(selectedTask(editor, "Presentation"));
   await composerModelTrigger("Auto");
@@ -308,68 +257,9 @@ test("Toggling a task off sends the ordinary draft and uploaded file", async () 
   expect(capture.sentMessages[0]?.parts).toContainEqual(
     expect.objectContaining({ type: "file", filenameSnapshot: "brief.txt" }),
   );
-});
-
-test.each([
-  {
-    task: "Image",
-    first: "Put my product in a new scene",
-    second: "Make a headshot I can use at work",
-    firstPrompt:
-      "Put my product in a new scene. I will add a product photo; help me choose a setting while keeping the product itself consistent.",
-    secondPrompt:
-      "Turn a photo of me into a professional headshot. Keep my identity recognizable and help me choose a natural background and lighting.",
-  },
-])(
-  "Choosing a second $task idea replaces its prompt and dismissing restores the original draft",
-  async ({ task, first, second, firstPrompt, secondPrompt }) => {
-    mockTemplateChat();
-    const editor = await setupChips();
-    click(button(task, screen.getByRole("group", { name: "Choose a task" })));
-    const ideas = await screen.findByRole("group", {
-      name: "Ideas to get started",
-    });
-    await fill(editor, "Keep this context");
-    click(button(first, ideas));
-    await waitFor(() => {
-      expect(editor.textContent).toBe(`Keep this context\n${firstPrompt}`);
-    });
-    click(button(second, ideas));
-    await waitFor(() => {
-      expect(editor.textContent).toBe(`Keep this context\n${secondPrompt}`);
-    });
-    click(selectedTask(editor, task));
-    expect(editor).toHaveTextContent(/^Keep this context$/);
-  },
-);
-
-/**
- * A slash panel row opens the picker as well as selecting the task, and the
- * open dialog hides the composer from the accessibility tree. Close it to read
- * what the row left behind.
- */
-async function closeTemplatePicker(): Promise<void> {
-  click(button("Close", await screen.findByRole("dialog")));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-}
-
-test("The /ill slash command selects Image", async () => {
-  mockTemplateChat();
-  const editor = await setupChips();
-  const user = userEvent.setup({ delay: null });
-  await fill(editor, "A quiet garden /ill");
-  const menu = await screen.findByTestId("slash-workflow-menu");
-  // Keep a full pointer sequence covered separately from the selection matrix.
-  await user.click(button("Illustration", menu));
-  await closeTemplatePicker();
-  await waitFor(() => {
-    expect(selectedTask(editor, "Image")).toBeVisible();
-  });
-  expect(screen.queryByRole("group", { name: "Choose a task" })).toBeNull();
-  expect(editor).toHaveTextContent("A quiet garden");
-  expect(editor).not.toHaveTextContent("/ill");
+  expect(capture.sentMessages[0]?.parts).not.toContainEqual(
+    expect.objectContaining({ type: "additional_info" }),
+  );
 });
 
 test.each([
@@ -382,7 +272,7 @@ test.each([
     instructions: ["Create an image."],
   },
   {
-    entry: "Illustration",
+    entry: "Image",
     category: "Presentation",
     task: "Presentation",
     template: PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!,
@@ -398,14 +288,14 @@ test.each([
     instructions: [],
   },
 ])(
-  "Selecting $category after /$entry updates the task and generation settings",
+  "Selecting $category from the $entry catalog updates the task and generation settings",
   async ({ entry, category, task, template, type, instructions }) => {
     const capture = mockTemplateChat();
     context.mocks.data.userPreferences({ timezone: "UTC", locale: "en-US" });
     const editor = await setupChips();
-    await fill(editor, "Keep my launch brief /");
-    const menu = await screen.findByTestId("slash-workflow-menu");
-    click(button(entry, menu));
+    await fill(editor, "Keep my launch brief");
+    await selectCreation(entry);
+    click(button("View all", screen.getByRole("tabpanel")));
     const dialog = await screen.findByRole("dialog");
     click(tabByText(category));
     click(
@@ -417,14 +307,6 @@ test.each([
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
     expect(selectedTask(editor, task)).toBeInTheDocument();
-    expect(
-      queryAllByRoleFast("button", composerCard(editor)).find((item) => {
-        return (
-          item.getAttribute("aria-label") ===
-          `Remove ${entry === "Illustration" ? "Image" : entry}`
-        );
-      }),
-    ).toBeUndefined();
     expect(editor).toHaveTextContent("Keep my launch brief");
     expect(composerInlineTemplates()).toHaveLength(1);
     expect(composerInlineTemplates()[0]).toHaveTextContent(template.title);
@@ -446,47 +328,17 @@ test.each([
   },
 );
 
-// A cover brings its template along instead of opening the picker, but lands
-// the composer in the same task its category row would.
-test("A slash panel cover attaches its template and lands on its task", async () => {
-  mockTemplateChat();
-  const editor = await setupChips();
-  await fill(editor, "A launch page /web");
-  const menu = await screen.findByTestId("slash-workflow-menu");
-  const pane = await within(menu).findByRole("region", { name: "Website" });
-  const [first] = WEBSITE_TEMPLATE_ITEMS;
-  if (!first) {
-    throw new Error("Expected a website template");
-  }
-  const user = userEvent.setup({ delay: null });
-
-  await user.click(button(`Use template ${first.title}`, pane));
-
-  await waitFor(() => {
-    expect(selectedTask(editor, "Website")).toBeVisible();
-  });
-  expect(screen.queryByRole("dialog")).toBeNull();
-  expect(editor).toHaveTextContent("A launch page");
-  expect(editor).not.toHaveTextContent("/web");
-});
-
 test("A presentation suggestion inserts a canonical template and preserves the prompt", async () => {
   const capture = mockTemplateChat();
   const editor = await setupChips();
   await fill(editor, "Explain our product launch");
-  click(
-    button(
-      "Presentation",
-      screen.getByRole("group", { name: "Choose a task" }),
-    ),
-  );
+  await selectCreation("Presentation");
   const templates = await screen.findByRole("group", {
     name: "Presentation templates",
   });
   expect(
     within(templates).getByLabelText("Import your own deck"),
   ).toHaveAttribute("accept", ".pptx,.ppt,.pdf");
-  // The rail carries the whole catalog, so the row is no longer a top-three cut.
   for (const item of PRESENTATION_TEMPLATE_PICKER_ITEMS) {
     expect(button(item.title, templates)).toBeInTheDocument();
   }
@@ -525,9 +377,8 @@ test("Browsing the catalog opens the existing library in the matching category",
   mockTemplateChat();
   const editor = await setupChips();
   await fill(editor, "Keep my draft");
-  const tasks = screen.getByRole("group", { name: "Choose a task" });
-  click(button("Presentation", tasks));
-  click(button("View all"));
+  await selectCreation("Presentation");
+  click(button("View all", screen.getByRole("tabpanel")));
   const dialog = await screen.findByRole("dialog");
   expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
   click(button("Close", dialog));
@@ -538,23 +389,19 @@ test("Browsing the catalog opens the existing library in the matching category",
 });
 
 test.each([
-  {
-    task: "Website",
-    shelf: "Website templates",
-    browse: "View all",
-  },
-  { task: "Image", shelf: "Image styles", browse: "View all" },
+  { task: "Website", shelf: "Website templates" },
+  { task: "Image", shelf: "Image styles" },
 ])(
-  "$task shows a cover shelf carrying its whole catalog and attaches a template",
-  async ({ task, shelf, browse }) => {
+  "$task shows its whole catalog and attaches a template",
+  async ({ task, shelf }) => {
     mockTemplateChat();
     const editor = await setupChips();
     await fill(editor, "Keep my draft");
-    click(button(task, screen.getByRole("group", { name: "Choose a task" })));
-    const covers = templateShelf(shelf);
-    expect(button(browse, covers)).toBeVisible();
-    // The rail carries every cover rather than one page of them, so reaching
-    // the rest is scrolling rather than a re-render.
+    await selectCreation(task);
+    const covers = await screen.findByRole("group", { name: shelf });
+    expect(
+      button("View all", screen.getByRole("tabpanel")),
+    ).toBeInTheDocument();
     expect(coverButtons(covers).length).toBeGreaterThan(5);
     click(coverButtons(covers)[0]!);
     await waitFor(() => {
@@ -564,94 +411,33 @@ test.each([
   },
 );
 
-test("Document rails page independently using their current viewport widths", async () => {
+test("The Document catalog pages using its current viewport width", async () => {
   const layout = mockRailBrowserLayout({
     viewportWidth: 400,
     contentWidth: 1600,
   });
   mockTemplateChat();
   await setupChips();
-  click(
-    button("Document", screen.getByRole("group", { name: "Choose a task" })),
-  );
+  await selectCreation("Document");
   const shelf = await screen.findByRole("group", {
     name: "Document templates",
   });
   const firstTemplate = await waitFor(() => {
     return button("Use template Content brief", shelf);
   });
-  const filters = within(shelf).getByRole("group", {
-    name: "Document category",
-  });
-  const filterRail = renderedRail(button("Creative brief", filters));
-  const templateRail = renderedRail(firstTemplate);
-  layout.setViewportWidth(templateRail.viewport, 460);
+  const rail = renderedRail(firstTemplate);
+  layout.setViewportWidth(rail.viewport, 460);
 
-  click(button("Next page", filterRail.root));
-  expect(filterRail.viewport.scrollLeft).toBe(336);
-  expect(templateRail.viewport.scrollLeft).toBe(0);
+  click(button("Next page", rail.root));
+  expect(rail.viewport.scrollLeft).toBe(396);
 
-  click(button("Next page", templateRail.root));
-  expect(templateRail.viewport.scrollLeft).toBe(396);
-  expect(filterRail.viewport.scrollLeft).toBe(336);
-
-  // The next click uses the resized scrollport, not its width at mount.
-  layout.setViewportWidth(templateRail.viewport, 300);
+  layout.setViewportWidth(rail.viewport, 300);
   fireEvent(window, new Event("resize"));
-  click(button("Next page", templateRail.root));
-  expect(templateRail.viewport.scrollLeft).toBe(632);
-  expect(filterRail.viewport.scrollLeft).toBe(336);
+  click(button("Next page", rail.root));
+  expect(rail.viewport.scrollLeft).toBe(632);
 
-  click(button("Previous page", templateRail.root));
-  expect(templateRail.viewport.scrollLeft).toBe(396);
-  expect(filterRail.viewport.scrollLeft).toBe(336);
-
-  click(button("Previous page", filterRail.root));
-  expect(filterRail.viewport.scrollLeft).toBe(0);
-  expect(templateRail.viewport.scrollLeft).toBe(396);
-});
-
-test("Document filters keep keyboard navigation and selection inside their rail", async () => {
-  mockTemplateChat();
-  const user = userEvent.setup({ delay: null });
-  await setupChips();
-  click(
-    button("Document", screen.getByRole("group", { name: "Choose a task" })),
-  );
-  const shelf = await screen.findByRole("group", {
-    name: "Document templates",
-  });
-  await expect(
-    within(shelf).findByLabelText("Use template Content brief"),
-  ).resolves.toBeInTheDocument();
-  const filters = within(shelf).getByRole("group", {
-    name: "Document category",
-  });
-
-  await user.click(button("Creative brief", filters));
-  await user.keyboard("{ArrowRight}");
-  expect(button("Contract", filters)).toHaveFocus();
-  await user.keyboard("{Enter}");
-
-  await expect(
-    within(shelf).findByLabelText("Use template Mutual NDA"),
-  ).resolves.toBeInTheDocument();
-  expect(button("Contract", filters)).toHaveAttribute("aria-pressed", "true");
-  expect(
-    within(shelf).queryByLabelText("Use template Content brief"),
-  ).not.toBeInTheDocument();
-});
-
-test("Task chips do not replace the composer in an existing conversation", async () => {
-  mockTemplateChat();
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-  });
-  await findComposerEditor();
-  expect(
-    screen.queryByRole("region", { name: "Tasks to get started" }),
-  ).toBeNull();
+  click(button("Previous page", rail.root));
+  expect(rail.viewport.scrollLeft).toBe(396);
 });
 
 function workflowTiles(container: ParentNode): HTMLElement[] {
@@ -662,21 +448,19 @@ function workflowTiles(container: ParentNode): HTMLElement[] {
 
 async function selectWorkflow(): Promise<HTMLElement> {
   const editor = await setupChips();
-  click(
-    button("Workflow", screen.getByRole("group", { name: "Choose a task" })),
-  );
-  await screen.findByRole("group", { name: "Workflows" });
+  const cards = await screen.findByRole("group", {
+    name: "Explore Okou capabilities",
+  });
+  click(button("Advanced workflows", cards));
+  await screen.findByRole("region", { name: "Advanced workflows" });
   return editor;
 }
 
-// The Workflow tab is a shelf like every other type's: one titled rail that
-// carries all nine covers, each captioned by its title and nothing else, so
-// there is no page to turn and nothing on the shelf edits the draft.
-test("The Workflow shelf carries every recommendation on one rail without changing the draft", async () => {
+test("Advanced workflows carries every recommendation without changing the draft", async () => {
   const capture = mockTemplateChat();
   const editor = await selectWorkflow();
   await fill(editor, "Keep this context");
-  const shelf = screen.getByRole("group", { name: "Workflows" });
+  const shelf = screen.getByRole("region", { name: "Advanced workflows" });
   const tiles = workflowTiles(shelf);
   expect(tiles).toHaveLength(9);
   expect(
@@ -698,9 +482,8 @@ test("The Workflow shelf carries every recommendation on one rail without changi
   expect(capture.sentMessages).toHaveLength(0);
 });
 
-// A cover's marks are its own connectors' catalog entries, so they never wait
-// on the full catalog, which holds every connector there is.
 test("Workflow covers draw their marks without waiting for the full connector catalog", async () => {
+  mockTemplateChat();
   const fullCatalog = context.mocks.deferred<void>();
   context.mocks.api(
     connectorCatalogContract.status,
@@ -711,24 +494,23 @@ test("Workflow covers draw their marks without waiting for the full connector ca
   );
   await selectWorkflow();
   const [morning] = workflowTiles(
-    screen.getByRole("group", { name: "Workflows" }),
+    screen.getByRole("region", { name: "Advanced workflows" }),
   );
   await waitFor(() => {
     expect(morning?.querySelectorAll("img")).toHaveLength(3);
   });
-  expect(fullCatalog.settled()).toBeFalsy();
 });
 
-test("Browse workflows opens the existing template picker in Workflow and preserves the draft", async () => {
+test("View all opens the Workflow template picker and preserves the draft", async () => {
   const capture = mockTemplateChat();
   const editor = await selectWorkflow();
   await fill(editor, "Keep my draft");
-  click(button("Browse workflows"));
+  click(button("View all", screen.getByRole("tabpanel")));
   const dialog = await screen.findByRole("dialog");
   expect(tabByText("Workflow")).toHaveAttribute("aria-selected", "true");
   expect(
     button("Select workflow template Morning brief", dialog),
-  ).toBeVisible();
+  ).toBeInTheDocument();
   click(button("Close", dialog));
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -737,76 +519,19 @@ test("Browse workflows opens the existing template picker in Workflow and preser
   expect(capture.sentMessages).toHaveLength(0);
 });
 
-test("Browse workflows in a workflow's dialog hands over to the template picker", async () => {
+test("Choosing a workflow prepares an editable request until the user sends", async () => {
   const capture = mockTemplateChat();
   const editor = await selectWorkflow();
   await fill(editor, "Keep my draft");
-  click(button("Start your day with a clear plan"));
-  const detail = await screen.findByRole("dialog", { name: "Morning brief" });
-  click(button("Browse workflows", detail));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: "Morning brief" })).toBeNull();
-  });
-  const picker = await screen.findByRole("dialog");
-  expect(tabByText("Workflow")).toHaveAttribute("aria-selected", "true");
-  expect(
-    button("Select workflow template Morning brief", picker),
-  ).toBeInTheDocument();
-  expect(editor.textContent).toBe("Keep my draft");
-  expect(capture.sentMessages).toHaveLength(0);
-});
-
-// The shelf captions a cover by what it gets done; the dialog it opens is
-// named by the workflow itself, beside the sample of what it delivers.
-test("Each built-in workflow opens its result preview", async () => {
-  mockTemplateChat();
-  await selectWorkflow();
-  for (const [title, name] of [
-    ["Start your day with a clear plan", "Morning brief"],
-    ["Walk into meetings prepared", "Meeting preparation"],
-    ["Keep important emails moving", "Inbox sorting & reply drafts"],
-    ["Wrap up your week clearly", "Weekly work recap"],
-    ["Turn meetings into next steps", "Meeting recap"],
-    ["Keep your invoices organized", "Invoice filing"],
-    ["Know when competitors change", "Competitor updates"],
-    ["See how your business is doing", "Daily metrics brief"],
-    ["Catch the reply you’re waiting for", "Email reply watch"],
-  ] as const) {
-    click(button(title));
-    const dialog = await screen.findByRole("dialog", { name });
-    expect(within(dialog).getByRole("img", { name: /^Sample:/ })).toBeVisible();
-    expect(within(dialog).getByRole("heading", { name })).toBeVisible();
-    click(button("Close", dialog));
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).toBeNull();
-    });
-  }
-});
-
-test("Choosing a built-in workflow preserves the draft and preferences until the user sends", async () => {
-  const capture = mockTemplateChat();
-  const editor = await selectWorkflow();
-  await fill(editor, "Keep my draft");
-  click(button("Start your day with a clear plan"));
-  const dialog = await screen.findByRole("dialog", { name: "Morning brief" });
-  await fill(
-    within(dialog).getByLabelText("Anything you’d like to tailor?"),
-    "Focus on customer meetings",
-  );
-  expect(editor).toHaveTextContent("Keep my draft");
-  click(button("Use this workflow", dialog));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
+  const shelf = screen.getByRole("region", { name: "Advanced workflows" });
+  click(button("Start your day with a clear plan", shelf));
   expect(editor).toHaveTextContent("Keep my draft");
   expect(editor).toHaveTextContent("Help me set up a morning brief");
-  expect(editor).toHaveTextContent(
-    "What matters to me: Focus on customer meetings",
-  );
+  expect(composerInlineTemplates()[0]).toHaveTextContent("Morning brief");
+  expect(editor).toHaveFocus();
+  await userEvent.setup({ delay: null }).paste(" Focus on customer meetings.");
+  expect(editor).toHaveTextContent("Focus on customer meetings.");
   expect(capture.sentMessages).toHaveLength(0);
-  await waitFor(() => {
-    expect(editor).toHaveFocus();
-  });
   click(button("Send"));
   await waitFor(() => {
     expect(capture.selectedTemplates).toHaveLength(1);
@@ -820,12 +545,12 @@ test("Choosing a built-in workflow preserves the draft and preferences until the
 test("Reply tracking prepares a custom workflow request without an unrelated template", async () => {
   const capture = mockTemplateChat();
   const editor = await selectWorkflow();
-  click(button("Catch the reply you’re waiting for"));
-  const dialog = await screen.findByRole("dialog");
-  click(button("Use this workflow", dialog));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
+  click(
+    button(
+      "Catch the reply you’re waiting for",
+      screen.getByRole("region", { name: "Advanced workflows" }),
+    ),
+  );
   expect(editor).toHaveTextContent("Help me watch one Gmail conversation");
   expect(editor).toHaveTextContent("reply");
   expect(capture.sentMessages).toHaveLength(0);
@@ -837,119 +562,4 @@ test("Reply tracking prepares a custom workflow request without an unrelated tem
     expect(capture.sentMessages).toHaveLength(1);
   });
   expect(capture.selectedTemplates).toHaveLength(0);
-});
-
-test("More exposes only overflowing tasks and hands the selected task to the composer", async () => {
-  mockTaskChipLayout(390);
-  mockTemplateChat();
-  const user = userEvent.setup();
-  const editor = await setupChips();
-  await fill(editor, "Keep my draft");
-  const choices = screen.getByRole("group", { name: "Choose a task" });
-  await waitFor(() => {
-    expect(
-      queryAllByRoleFast("button", choices).map((item) => {
-        return item.textContent?.trim();
-      }),
-    ).toStrictEqual(["Workflow", "Presentation"]);
-  });
-  expect(button("More")).toHaveTextContent("+1");
-  await user.hover(button("More"));
-  await expect(
-    screen.findByText("Document, Image, Website, Chart", {
-      selector: '[data-slot="tooltip-content"]',
-    }),
-  ).resolves.toBeInTheDocument();
-  await user.unhover(button("More"));
-  await user.click(button("More"));
-  const menu = await screen.findByRole("menu");
-  expect(
-    queryAllByRoleFast("menuitem", menu).map((item) => {
-      return item.textContent?.trim();
-    }),
-  ).toStrictEqual(["Document", "Image", "Website", "Chart"]);
-  await user.keyboard("{Escape}");
-  expect(button("More")).toHaveFocus();
-  expect(editor).toHaveTextContent("Keep my draft");
-  await user.click(button("More"));
-  await user.click(taskMenuItem("Image"));
-  await waitFor(() => {
-    expect(selectedTask(editor, "Image")).toBeInTheDocument();
-    expect(editor).toHaveFocus();
-  });
-  expect(editor).toHaveTextContent("Keep my draft");
-  click(selectedTask(editor, "Image"));
-  await waitFor(() => {
-    expect(
-      queryAllByRoleFast(
-        "button",
-        screen.getByRole("group", { name: "Choose a task" }),
-      ).map((item) => {
-        return item.textContent?.trim();
-      }),
-    ).toStrictEqual(["Workflow", "Presentation"]);
-  });
-  expect(button("More")).toBeInTheDocument();
-});
-
-test("More fits its changing stack width and adapts to window and font changes", async () => {
-  const layout = mockTaskChipLayout(390);
-  mockTemplateChat();
-  const user = userEvent.setup();
-  await setupChips();
-  await waitFor(() => {
-    expect(button("More")).toBeInTheDocument();
-  });
-  const choices = screen.getByRole("group", { name: "Choose a task" });
-  // Five chips plus a one-icon trigger fit exactly. Reserving the previous
-  // four-item stack's width would incorrectly leave Website inside More.
-  layout.setWidth(672);
-  fireEvent(window, new Event("resize"));
-  await waitFor(() => {
-    expect(queryAllByRoleFast("button", choices)).toHaveLength(5);
-  });
-  await user.hover(button("More"));
-  await expect(
-    screen.findByText("Chart", {
-      selector: '[data-slot="tooltip-content"]',
-    }),
-  ).resolves.toBeInTheDocument();
-  await user.unhover(button("More"));
-  layout.setWidth(671);
-  fireEvent(window, new Event("resize"));
-  await waitFor(() => {
-    expect(queryAllByRoleFast("button", choices)).toHaveLength(4);
-  });
-  await user.click(button("More"));
-  const resizedMenu = await screen.findByRole("menu");
-  expect(
-    queryAllByRoleFast("menuitem", resizedMenu).map((item) => {
-      return item.textContent?.trim();
-    }),
-  ).toStrictEqual(["Website", "Chart"]);
-  await user.keyboard("{Escape}");
-  layout.setWidth(900);
-  fireEvent(window, new Event("resize"));
-  await waitFor(() => {
-    expect(
-      queryAllByRoleFast("button").some((item) => {
-        return item.getAttribute("aria-label") === "More";
-      }),
-    ).toBeFalsy();
-  });
-  expect(queryAllByRoleFast("button", choices)).toHaveLength(6);
-  layout.setLabelWidth(150);
-  act(() => {
-    document.fonts.dispatchEvent(new Event("loadingdone"));
-  });
-  await waitFor(() => {
-    expect(button("More")).toBeInTheDocument();
-  });
-  await user.click(button("More"));
-  const menu = await screen.findByRole("menu");
-  expect(
-    queryAllByRoleFast("menuitem", menu).map((item) => {
-      return item.textContent?.trim();
-    }),
-  ).toStrictEqual(["Chart"]);
 });

@@ -125,15 +125,11 @@ function sentMessage(chat: HTMLElement, prompt: string): HTMLElement {
 }
 
 async function setupCharts({
-  homeCapabilities = false,
-  visualizationSummary = true,
   path = HOME_PATH,
   sendGate,
   onRunCreate,
   rejectSend = false,
 }: {
-  readonly homeCapabilities?: boolean;
-  readonly visualizationSummary?: boolean;
   readonly path?: string;
   readonly sendGate?: Promise<void>;
   readonly onRunCreate?: () => void;
@@ -153,28 +149,14 @@ async function setupCharts({
   await setupPage({
     context,
     path: path === HOME_PATH ? `${path}?compose=1` : path,
-    auth: {
-      user: { id: "test-user-123", fullName: "Test User" },
-      organization: {
-        activeOrg: {
-          id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
-          name: "Okou",
-        },
-        memberships: [],
-      },
-    },
-    featureSwitches: {
-      [FeatureSwitchKey.HomeCapabilities]: homeCapabilities,
-      [FeatureSwitchKey.SingleAgent]: false,
-      [FeatureSwitchKey.ChatMessageVisualizationSummary]: visualizationSummary,
-    },
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: false },
   });
   const editor = await findComposerEditor();
   if (path !== HOME_PATH) {
     return { editor, options: await openThreadChartOptions(editor), lifecycle };
   }
   const choices = await screen.findByRole("group", {
-    name: homeCapabilities ? "Explore Okou capabilities" : "Choose a task",
+    name: "Explore Okou capabilities",
   });
   click(control("button", "Chart", choices));
   const options = await screen.findByRole("region", {
@@ -264,7 +246,9 @@ test("Removing Chart and choosing another task remembers its choices for the dra
   await expectSummary(editor, SPREADSHEET_BAR, /^Spreadsheet · Bar$/u);
 
   click(control("button", "Remove Chart", composerCard(editor)));
-  const choices = await screen.findByRole("group", { name: "Choose a task" });
+  const choices = await screen.findByRole("group", {
+    name: "Explore Okou capabilities",
+  });
   click(control("button", "Image", choices));
   await screen.findByRole("group", { name: "Image styles" });
   expect(
@@ -275,7 +259,7 @@ test("Removing Chart and choosing another task remembers its choices for the dra
 
   click(control("button", "Remove Image", composerCard(editor)));
   const restoredChoices = await screen.findByRole("group", {
-    name: "Choose a task",
+    name: "Explore Okou capabilities",
   });
   click(control("button", "Chart", restoredChoices));
   const restoredOptions = await screen.findByRole("region", {
@@ -291,59 +275,54 @@ test("Removing Chart and choosing another task remembers its choices for the dra
   expect(editor).toHaveTextContent(draft);
 });
 
-test.each([false, true])(
-  "The first Chart send keeps pending choices and consumes them only on acceptance with HomeCapabilities=%s",
-  async (homeCapabilities) => {
-    const gate = createDeferredPromise<void>(context.signal);
-    const {
-      editor: homeEditor,
-      options,
-      lifecycle,
-    } = await setupCharts({ homeCapabilities, sendGate: gate.promise });
-    click(control("button", "Spreadsheet", outputPicker(options)));
-    click(control("button", "Bar chart", chartPicker(options)));
-    await expectSummary(homeEditor, SPREADSHEET_BAR, /^Spreadsheet · Bar$/u);
-    const firstPrompt = "Compare our quarterly sales.";
-    await sendDraft(homeEditor, firstPrompt);
+test("The first Chart send keeps pending choices and consumes them only on acceptance", async () => {
+  const gate = createDeferredPromise<void>(context.signal);
+  const {
+    editor: homeEditor,
+    options,
+    lifecycle,
+  } = await setupCharts({ sendGate: gate.promise });
+  click(control("button", "Spreadsheet", outputPicker(options)));
+  click(control("button", "Bar chart", chartPicker(options)));
+  await expectSummary(homeEditor, SPREADSHEET_BAR, /^Spreadsheet · Bar$/u);
+  const firstPrompt = "Compare our quarterly sales.";
+  await sendDraft(homeEditor, firstPrompt);
 
-    const chat = await screen.findByRole("region", { name: "Chat thread" });
-    await within(chat).findByText(firstPrompt);
-    const editor = await findComposerEditor();
-    await expectSummary(editor, SPREADSHEET_BAR, /^Spreadsheet · Bar$/u);
-    expect(
-      control("button", "Remove Chart", composerCard(editor)),
-    ).toBeInTheDocument();
-    expect(
-      within(sentMessage(chat, firstPrompt)).getByRole("group", {
-        name: SPREADSHEET_BAR,
-      }),
-    ).toHaveTextContent("Spreadsheet · Bar");
-    expect(window.location.pathname).toMatch(/^\/chats\//u);
+  const chat = await screen.findByRole("region", { name: "Chat thread" });
+  await within(chat).findByText(firstPrompt);
+  const editor = await findComposerEditor();
+  await expectSummary(editor, SPREADSHEET_BAR, /^Spreadsheet · Bar$/u);
+  expect(
+    control("button", "Remove Chart", composerCard(editor)),
+  ).toBeInTheDocument();
+  expect(
+    within(sentMessage(chat, firstPrompt)).getByRole("group", {
+      name: SPREADSHEET_BAR,
+    }),
+  ).toHaveTextContent("Spreadsheet · Bar");
+  expect(window.location.pathname).toMatch(/^\/chats\//u);
 
-    gate.resolve();
-    await waitFor(() => {
-      expect(draftSummaries(editor)).toHaveLength(0);
-    });
-    lifecycle.completeRun("The quarterly comparison is ready.");
-    await within(chat).findByText("The quarterly comparison is ready.");
-    await waitFor(() => {
-      expect(
-        control("button", "Send", composerCard(editor)),
-      ).toBeInTheDocument();
-    });
-
-    const nextPrompt = "Explain the sales trend without choosing a chart.";
-    await sendDraft(editor, nextPrompt);
-    await within(chat).findByText(nextPrompt);
-    expect(
-      within(chat).getAllByRole("group", { name: SUMMARY_NAME }),
-    ).toHaveLength(1);
-    expect(
-      within(chat).getByRole("group", { name: SPREADSHEET_BAR }),
-    ).toHaveTextContent("Spreadsheet · Bar");
+  gate.resolve();
+  await waitFor(() => {
     expect(draftSummaries(editor)).toHaveLength(0);
-  },
-);
+  });
+  lifecycle.completeRun("The quarterly comparison is ready.");
+  await within(chat).findByText("The quarterly comparison is ready.");
+  await waitFor(() => {
+    expect(control("button", "Send", composerCard(editor))).toBeInTheDocument();
+  });
+
+  const nextPrompt = "Explain the sales trend without choosing a chart.";
+  await sendDraft(editor, nextPrompt);
+  await within(chat).findByText(nextPrompt);
+  expect(
+    within(chat).getAllByRole("group", { name: SUMMARY_NAME }),
+  ).toHaveLength(1);
+  expect(
+    within(chat).getByRole("group", { name: SPREADSHEET_BAR }),
+  ).toHaveTextContent("Spreadsheet · Bar");
+  expect(draftSummaries(editor)).toHaveLength(0);
+});
 
 test("A destination A-to-B-to-A Chart choice survives the first blocked send", async () => {
   const gate = createDeferredPromise<void>(context.signal);
@@ -353,7 +332,6 @@ test("A destination A-to-B-to-A Chart choice survives the first blocked send", a
     options,
     lifecycle,
   } = await setupCharts({
-    homeCapabilities: true,
     sendGate: gate.promise,
     onRunCreate: () => {
       runStarted.resolve();
@@ -418,7 +396,6 @@ test("A destination A-to-B-to-A Chart choice survives the first blocked send", a
 test("A failed first Chart send keeps the destination's choices available", async () => {
   const gate = createDeferredPromise<void>(context.signal);
   const { editor: homeEditor, options } = await setupCharts({
-    homeCapabilities: true,
     sendGate: gate.promise,
     rejectSend: true,
   });
@@ -447,7 +424,6 @@ test("A failed first Chart send keeps the destination's choices available", asyn
 
 test("Sending and queuing in an existing thread consume each draft without changing sent summaries", async () => {
   const { editor, options } = await setupCharts({
-    homeCapabilities: true,
     path: THREAD_PATH,
   });
   const chat = screen.getByRole("region", { name: "Chat thread" });
@@ -489,7 +465,6 @@ test("Sending and queuing in an existing thread consume each draft without chang
 test("An A-to-B-to-A next-draft Chart choice survives an earlier blocked send", async () => {
   const gate = createDeferredPromise<void>(context.signal);
   const { editor, options } = await setupCharts({
-    homeCapabilities: true,
     path: THREAD_PATH,
     sendGate: gate.promise,
   });
@@ -547,7 +522,6 @@ test("An A-to-B-to-A next-draft Chart choice survives an earlier blocked send", 
 
 test("A rejected Chart submission leaves the selected choices available", async () => {
   const { editor, options } = await setupCharts({
-    homeCapabilities: true,
     path: THREAD_PATH,
     rejectSend: true,
   });
@@ -567,36 +541,4 @@ test("A rejected Chart submission leaves the selected choices available", async 
   expect(
     control("button", "Bar chart", chartPicker(retainedOptions)),
   ).toHaveAttribute("aria-pressed", "true");
-});
-
-test("Chart choices remain remembered after sending when visualization summaries are disabled", async () => {
-  const { editor: homeEditor, options } = await setupCharts({
-    homeCapabilities: true,
-    visualizationSummary: false,
-  });
-  click(control("button", "Spreadsheet", outputPicker(options)));
-  click(control("button", "Bar chart", chartPicker(options)));
-  expect(control("button", "Bar chart", chartPicker(options))).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  expect(draftSummaries(homeEditor)).toHaveLength(0);
-  await sendDraft(homeEditor, "Compare the quarterly sales.");
-  const chat = await screen.findByRole("region", { name: "Chat thread" });
-  await within(chat).findByText("Compare the quarterly sales.");
-  const editor = await findComposerEditor();
-  await waitFor(() => {
-    expect(
-      control("button", "Remove Chart", composerCard(editor)),
-    ).toBeInTheDocument();
-  });
-  const rememberedOptions = await openThreadChartOptions(editor);
-  expect(
-    control("button", "Spreadsheet", outputPicker(rememberedOptions)),
-  ).toHaveAttribute("aria-pressed", "true");
-  expect(
-    control("button", "Bar chart", chartPicker(rememberedOptions)),
-  ).toHaveAttribute("aria-pressed", "true");
-  expect(draftSummaries(editor)).toHaveLength(0);
-  expect(within(chat).queryByRole("group", { name: SUMMARY_NAME })).toBeNull();
 });

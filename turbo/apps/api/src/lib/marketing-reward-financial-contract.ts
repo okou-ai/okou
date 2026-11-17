@@ -51,6 +51,16 @@ function automaticRewardTerms(
     rewardTarget: "user" as const,
   };
   switch (event.type) {
+    case "checkin.requested": {
+      const day = event.occurredAt.slice(0, 10);
+      return {
+        ...personal,
+        questKey: "checkin",
+        sourceKey: day,
+        rewardKey: `checkin:${event.userId}:${day}`,
+        rewardAmount: 100,
+      };
+    }
     case "connector.oauth-authorized": {
       const sourceKey =
         event.connector.kind === "custom"

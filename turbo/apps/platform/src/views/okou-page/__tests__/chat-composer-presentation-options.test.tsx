@@ -1,6 +1,5 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type {
   ChatRunOptionsRequest,
   UserMessageDocument,
@@ -76,17 +75,19 @@ async function setupComposer(): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
   });
   return await findComposerEditor();
 }
 
 async function enterPresentation(editor: HTMLElement): Promise<HTMLElement> {
   await fill(editor, "Our launch");
+  const cards = await screen.findByRole("group", {
+    name: "Explore Okou capabilities",
+  });
   click(
     button(
       "Presentation",
-      await screen.findByRole("group", { name: "Choose a task" }),
+      within(cards).getByRole("region", { name: "Create" }),
     ),
   );
   return await screen.findByRole("combobox", { name: "Slide count" });
@@ -104,15 +105,14 @@ function visibleText(message: SubmittedMessage | undefined): string {
   );
 }
 
-test("Presentation from the slash menu opens templates and keeps the draft", async () => {
+test("Create opens presentation templates and keeps the draft", async () => {
   setupModels();
   mockChatLifecycle(context);
   const editor = await setupComposer();
-  await fill(editor, "Our launch /");
-  const menu = await screen.findByTestId("slash-workflow-menu");
-  click(button("Presentation", menu));
-  const dialog = await screen.findByRole("dialog");
-  expect(dialog).toBeInTheDocument();
+  await enterPresentation(editor);
+  await expect(
+    screen.findByRole("group", { name: "Presentation templates" }),
+  ).resolves.toBeInTheDocument();
   expect(editor).toHaveTextContent(/^Our launch$/);
 });
 

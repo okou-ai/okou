@@ -8,7 +8,6 @@ import {
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import {
   click,
@@ -48,9 +47,24 @@ async function setupComposer() {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
   });
   return findComposerEditor();
+}
+
+async function enterImageCreation() {
+  const create = within(
+    screen.getByRole("group", { name: "Explore Okou capabilities" }),
+  ).getByRole("region", { name: "Create" });
+  click(button("Presentation", create));
+  const types = await screen.findByRole("radiogroup", { name: "Create" });
+  const image = queryAllByRoleFast("radio", types).find((candidate) => {
+    return candidate.textContent?.trim() === "Image";
+  });
+  if (!image) {
+    throw new Error("Expected the Image creation type");
+  }
+  click(image);
+  await screen.findByRole("group", { name: "Image styles" });
 }
 
 test("Explicit image creation shows the notice and stays blocked while image generation is off", async () => {
@@ -59,7 +73,7 @@ test("Explicit image creation shows the notice and stays blocked while image gen
     return respond(200, { disabledTools: ["image-generation"] });
   });
   const editor = await setupComposer();
-  click(button("Image", screen.getByRole("group", { name: "Choose a task" })));
+  await enterImageCreation();
   await screen.findByText("Image generation is off for you");
   expect(button("Open settings")).toBeInTheDocument();
   await fill(editor, "Create a launch scene");
@@ -94,7 +108,7 @@ test("An image creation notice opens settings and a confirmed save restores crea
     return respond(200, { toolId: params.toolId, disabled: body.disabled });
   });
   const editor = await setupComposer();
-  click(button("Image", screen.getByRole("group", { name: "Choose a task" })));
+  await enterImageCreation();
   await screen.findByText("Image generation is off for you");
   click(button("Open settings"));
   const dialog = await screen.findByRole("dialog", { name: "Settings" });
@@ -136,7 +150,7 @@ test("A failed preference read blocks explicit creation but ordinary chat remain
     });
   });
   const editor = await setupComposer();
-  click(button("Image", screen.getByRole("group", { name: "Choose a task" })));
+  await enterImageCreation();
   await screen.findByLabelText("Remove Image");
   await fill(editor, "Explain the launch plan");
   click(button("Send"));
