@@ -1,3 +1,4 @@
+import { env } from "../../lib/env";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import {
   runStatusSchema,
@@ -603,6 +604,7 @@ export function createAgentRunCompletion(runId: string, userId: string) {
           orgId: input.auth.orgId,
           expectedChatThreadId,
           at: nowDate(),
+          environment: env("ENV"),
         });
         const result = await (async () => {
           const rows = await db

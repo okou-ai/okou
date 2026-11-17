@@ -11,6 +11,7 @@ export const MARKETING_REWARD_EVENT_JOB_KIND = "marketing-reward-source-event";
 export const MARKETING_REWARD_EVENT_HANDLER_VERSION = 1;
 export const MARKETING_REWARD_LINK_EVENT_HANDLER_VERSION = 2;
 export const MARKETING_REWARD_INVITATION_EVENT_HANDLER_VERSION = 3;
+export const MARKETING_REWARD_WORKFLOW_EVENT_HANDLER_VERSION = 4;
 
 function sourceEventInsert(
   event: Pick<MarketingRewardSourceEvent, "id" | "orgId" | "userId">,

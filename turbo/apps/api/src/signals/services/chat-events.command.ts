@@ -171,6 +171,8 @@ import {
   type ChatAgentRunSourceAnnotation,
 } from "./chat-user-message.service";
 import { recordGetStartedWorkflowSql } from "./get-started-workflow.service";
+import { workflowRewardQueuedEventInsert } from "./workflow-reward-source-publication";
+import { env } from "../../lib/env";
 import type { ModelCatalog } from "./model-catalog.service";
 import { isCatalogFastServiceTierSupported } from "./model-route-capabilities.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
@@ -1966,6 +1968,21 @@ function normalSendFinalWrites(
   const writes: NormalChatInputWrite[] = [];
   let after = previous;
   if (args.getStartedWorkflowId) {
+    writes.push({
+      name: "normal_send_workflow_source",
+      statement: workflowRewardQueuedEventInsert(
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          workflowId: args.getStartedWorkflowId,
+          sourceEventId: event.id,
+          occurredAt: nowDate(),
+          environment: env("ENV"),
+        },
+        normalChatInputWriteGate(after),
+      ),
+    });
+    after = "normal_send_workflow_source";
     writes.push({
       name: "normal_send_get_started",
       statement: recordGetStartedWorkflowSql(

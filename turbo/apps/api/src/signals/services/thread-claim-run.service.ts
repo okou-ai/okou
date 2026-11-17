@@ -200,6 +200,7 @@ import { WechatLaunchUnavailableError } from "./wechat-context.service";
 import { isMemberSubscriptionRoute } from "./effective-model-route.service";
 
 import { recordGetStartedWorkflowSql } from "./get-started-workflow.service";
+import { workflowRewardRunEventInsert } from "./workflow-reward-source-publication";
 import { formatIntegrationRunError$ } from "./integration-run-errors.service";
 
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
@@ -4972,7 +4973,22 @@ function pendingAtomicLaunchPlan(
         sql`EXISTS (SELECT 1 FROM ${context.insertedRun})`,
       ),
     );
-  const ctes = [...context.ctes, attribution];
+  const rewardSource = new QueryBuilder()
+    .$with("launch_workflow_source", {})
+    .as(
+      workflowRewardRunEventInsert(
+        {
+          orgId: context.rowsArgs.orgId,
+          userId: context.rowsArgs.userId,
+          runId: context.rowsArgs.identity.runId,
+          sourceEventId: args.publication.queueFirst.input.revokesEventId,
+          occurredAt: context.createdAt,
+          environment: env("ENV"),
+        },
+        sql`EXISTS (SELECT 1 FROM ${context.insertedRun})`,
+      ),
+    );
+  const ctes = [...context.ctes, attribution, rewardSource];
   const names = ctes.map((cte) => {
     return cte._.alias;
   });

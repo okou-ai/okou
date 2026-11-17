@@ -104,10 +104,44 @@ export type MarketingRewardInvitationEvent = zInfer<
   typeof marketingRewardInvitationEventSchema
 >;
 
+const workflowIdentity = Object.freeze({
+  version: literal(4),
+  id: uuid(),
+  environment,
+});
+const workflowSource = Object.freeze({
+  sourceEventId: uuid(),
+  workflowId: uuid(),
+  creatorUserId: string().min(1).max(256),
+});
+const marketingRewardWorkflowEventSchema = discriminatedUnion("type", [
+  object({
+    ...workflowIdentity,
+    type: literal("workflow.input-queued"),
+    ...linkedSourceOwnership,
+    ...workflowSource,
+  }).strict(),
+  object({
+    ...workflowIdentity,
+    type: literal("workflow.run-created"),
+    ...linkedSourceOwnership,
+    ...workflowSource,
+    runId: uuid(),
+  }).strict(),
+  object({
+    ...workflowIdentity,
+    type: literal("workflow.run-completed"),
+    ...linkedSourceOwnership,
+    ...workflowSource,
+    runId: uuid(),
+  }).strict(),
+]);
+
 export const marketingRewardSourceEventSchema = union([
   marketingRewardOAuthEventSchema,
   marketingRewardLinkEventSchema,
   marketingRewardInvitationEventSchema,
+  marketingRewardWorkflowEventSchema,
 ]);
 export type MarketingRewardSourceEvent = zInfer<
   typeof marketingRewardSourceEventSchema
