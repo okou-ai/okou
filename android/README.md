@@ -432,15 +432,16 @@ runs. Like Turbo and Crates, release-please PRs, queued release PRs and release
 commits skip Android validation after release-context detection succeeds. The
 production release job independently builds, signs and verifies its exact-target
 APK; it does not consume validation artifacts. Ordinary change selection includes
-Android sources/docs, CI inputs, Web semantic colors,
-and shared font/color-evaluator assets. One native job runs all local tests,
+Android sources/docs, CI inputs, Web semantic colors, and shared font/color-evaluator
+assets. One native job runs all local tests,
 lints, assembles, and uploads the debug APK plus the optimized unsigned Release
 APK and compressed R8 map for seven days. CI uses the production unsigned-build
 script, including metadata/alignment checks and mapping retention.
 A separate Linux/KVM job runs the existing instrumented suite against Release on the managed API 35
-phone. The final `ci-gate-android` check always reports an aggregate result. It
-requires successful detection and both selected JVM/build and instrumentation
-jobs to succeed; only explicit unselected results permit skipped native checks.
+phone. The final `ci-gate-android` check always reports an aggregate result. For
+non-release changes it requires successful change detection and both selected
+JVM/build and instrumentation jobs to succeed; only explicit unselected results
+permit skipped native checks.
 Cancellation, failure or an unexpected skip fails the gate. Emulator functional
 evidence does not establish OEM input-method behavior or physical-device startup
 budgets.
