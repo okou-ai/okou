@@ -127,7 +127,8 @@ fun classifyFailure(
                 FailureClassification(FailureKind.Usage, personal, RecoveryLimit.Unknown)
             else -> FailureClassification(FailureKind.Unknown)
         }
-    val text = failure.error.replace(Regex("\\s+"), " ").trim()
+    // Match ECMAScript whitespace used by Web, including Unicode separators and BOM.
+    val text = failure.error.replace(Regex("[\\s\\p{Z}\\uFEFF]+"), " ").trim(' ')
     fun matches(pattern: String) = Regex(pattern, RegexOption.IGNORE_CASE).containsMatchIn(text)
     return when {
         text.lowercase() in setOf("insufficient_credits", "pro_required") ->

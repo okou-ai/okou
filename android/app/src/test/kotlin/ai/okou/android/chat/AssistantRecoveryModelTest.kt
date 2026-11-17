@@ -607,5 +607,11 @@ class AssistantRecoveryModelTest {
                 RecoveryFramework.Codex,
             )
         assertEquals(RecoveryLimit.Model, model.limit)
+        for (space in listOf('\u00a0', '\u2009', '\ufeff')) {
+            val diagnostic = "You've${space}hit your usage limit"
+            val failure = AssistantFailure("id", diagnostic, null, false)
+            assertEquals(FailureKind.Usage, classifyFailure(failure, RecoveryFramework.Codex).kind)
+            assertEquals(diagnostic, failure.error)
+        }
     }
 }
