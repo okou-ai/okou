@@ -59,7 +59,6 @@ import {
   initializeSharedDatabaseWorker$,
   querySharedDatabaseWorker$,
   refreshWorkerComputed$,
-  startChatThreadIndicatorsRefreshFromRealtime$,
   startSharedDatabaseWorkerDaemons$,
 } from "./worker-signals.ts";
 
@@ -219,15 +218,8 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
         subscription.listener(message);
       }
     }
-    // Run-state indicator changes use the production Worker loop command,
-    // including its shared refresh throttle.
-    if (message.name === "chatIndicatorsChanged") {
-      this.workerStore.set(
-        startChatThreadIndicatorsRefreshFromRealtime$,
-        this.workerSignal,
-      );
-      return;
-    }
+    // chatIndicatorsChanged is owned by the Worker's Ably subscription;
+    // refreshing here too would queue a duplicate trailing refresh.
     const computedKey: ComputedKey | null =
       message.name === "chatThreadReadCursorUpdated"
         ? "chat-thread-indicators"
