@@ -79,7 +79,7 @@ enum Command {
     Benchmark(cmd::BenchmarkArgs),
     /// Execute a command inside a running sandbox for debugging
     Exec(cmd::ExecArgs),
-    /// Start the runner and poll for jobs (must run setup + build first)
+    /// Start the runner and execute jobs (must run setup + build first)
     Start(Box<cmd::StartArgs>),
     /// Manage the runner as a systemd service
     Service(cmd::ServiceArgs),

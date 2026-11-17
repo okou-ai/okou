@@ -9,10 +9,14 @@ import XCTest
 final class WorkspaceStartupModelTests: XCTestCase {
   func testUnavailableRealtimeDoesNotBlockHTTPAndRestartRevalidatesTheWorkspace() async throws {
     let deadline = ModelResponseGate()
+    let indicatorsDeadline = ModelResponseGate()
     let fixture = WorkspaceStartupFixture()
     let workspace = fixture.workspace(
       modelBootstrap: WorkspaceReadBootstrap {
         await deadline.wait()
+      },
+      indicatorsBootstrap: WorkspaceReadBootstrap {
+        await indicatorsDeadline.wait()
       })
     let models = Task.immediate { await workspace.newModelSelection.open() }
     let startup = Task.immediate {
@@ -21,6 +25,7 @@ final class WorkspaceStartupModelTests: XCTestCase {
     addTeardownBlock { @MainActor in
       workspace.close()
       deadline.open()
+      indicatorsDeadline.open()
       models.cancel()
       startup.cancel()
       await models.value
@@ -31,11 +36,19 @@ final class WorkspaceStartupModelTests: XCTestCase {
     XCTAssertEqual(workspace.newModelSelection.selection.model, "codex-model")
     XCTAssertTrue(workspace.newModelSelection.canSend)
     XCTAssertEqual(fixture.modelRequests, fixture.expectedModelRequests(rounds: 1))
+    XCTAssertEqual(
+      fixture.history.requests.values.withLock {
+        $0.filter { $0 == "GET /api/indicators" }.count
+      }, 1)
 
     fixture.setRemoteModel("claude-model")
     await workspace.start(userID: "startup-user", workspaceID: "startup-workspace")
     XCTAssertEqual(workspace.newModelSelection.selection.model, "claude-model")
     XCTAssertEqual(fixture.modelRequests, fixture.expectedModelRequests(rounds: 2))
+    XCTAssertEqual(
+      fixture.history.requests.values.withLock {
+        $0.filter { $0 == "GET /api/indicators" }.count
+      }, 2)
   }
 
   func testStartupReadsSettingsChangedWhileNavigationWasPending() async throws {
@@ -149,6 +162,7 @@ final class WorkspaceStartupFixture: Sendable {
   init(
     beforeModelRead: (@Sendable (String) async throws -> Void)? = nil,
     beforeNavigationRead: (@Sendable () async throws -> Void)? = nil,
+    beforeRealtimeToken: (@Sendable () async throws -> Void)? = nil,
     realtimeToken: String? = nil,
     indicators: ChatHTTPFixture.Handler? = nil
   ) {
@@ -181,6 +195,7 @@ final class WorkspaceStartupFixture: Sendable {
           return ChatHTTPResponse(
             body: #"{"revision":"0","document":null,"clientMutationId":null}"#)
         case "/api/realtime/token":
+          try await beforeRealtimeToken?()
           if let realtimeToken { return ChatHTTPResponse(body: realtimeToken) }
           // Exercise startup's HTTP fallback without connecting the SDK to a live service.
           return ChatHTTPResponse(status: 503, body: #"{"error":{"message":"Fixture offline"}}"#)
@@ -192,10 +207,12 @@ final class WorkspaceStartupFixture: Sendable {
   @MainActor
   func workspace(
     modelBootstrap: WorkspaceReadBootstrap? = nil,
+    indicatorsBootstrap: WorkspaceReadBootstrap? = nil,
     createRealtime: RealtimeService.ClientFactory? = nil
   ) -> WorkspaceStore {
     WorkspaceStore(
       client: history.http.client, webURL: history.http.baseURL, modelBootstrap: modelBootstrap,
+      indicatorsBootstrap: indicatorsBootstrap,
       createRealtime: createRealtime)
   }
 

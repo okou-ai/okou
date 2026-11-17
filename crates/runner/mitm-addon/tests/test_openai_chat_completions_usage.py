@@ -13,6 +13,7 @@ from mitmproxy.test import tutils
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 import response_streaming
+import stream_capture
 import usage
 import usage.openai_chat_completions as openai_chat_completions
 from tests.flow_helpers import header_map, response_stream
@@ -408,7 +409,7 @@ class TestOpenAIChatCompletionsUsage:
         encoded = json.dumps(payload, separators=(",", ":")).encode()
 
         mitm_addon.responseheaders(flow)
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
         callback = response_stream(flow)
         callback(b"data: " + encoded[:37])
         callback(encoded[37:] + b"\n\ndata: [DONE]\n\n")
@@ -892,7 +893,7 @@ class TestOpenAIChatCompletionsUsage:
         midpoint = len(payload) // 2
         callback(payload[:midpoint])
         callback(payload[midpoint:])
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
 
         webhook = _run_response(flow, self._usage_webhook_api)
 
@@ -955,7 +956,7 @@ class TestOpenAIChatCompletionsUsage:
         midpoint = len(compressed) // 2
         assert response_stream(flow)(compressed[:midpoint]) == compressed[:midpoint]
         assert response_stream(flow)(compressed[midpoint:]) == compressed[midpoint:]
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
 
         webhook = _run_response(flow, self._usage_webhook_api)
 

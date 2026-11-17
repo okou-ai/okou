@@ -13,6 +13,148 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1141.5](https://github.com/okou-ai/okou/compare/app-v0.1141.4...app-v0.1141.5) (2026-11-17)
+
+
+### Bug Fixes
+
+* align phone availability with usable native control ([#48135](https://github.com/okou-ai/okou/issues/48135)) ([1744a58](https://github.com/okou-ai/okou/commit/1744a58d3f33923f71a34d07e85a87eeb86d03c1))
+* **app:** keep artifact categories visible and group pptx presentations ([#48154](https://github.com/okou-ai/okou/issues/48154)) ([ff91500](https://github.com/okou-ai/okou/commit/ff915007aee99db02847333166b8f4bd2962b0f3))
+* **app:** restore clerk automatic social button layout ([#48229](https://github.com/okou-ai/okou/issues/48229)) ([fd38783](https://github.com/okou-ai/okou/commit/fd38783a06afebe51cdaa6f29a16cdf6bd6da792))
+* **app:** stabilize chat notice and media card geometry ([#48209](https://github.com/okou-ai/okou/issues/48209)) ([982d717](https://github.com/okou-ai/okou/commit/982d7172dd2d929e18ba40dd2fd906d3f5fec312))
+* **platform:** compact batch permission cards and stabilize loading ([#48213](https://github.com/okou-ai/okou/issues/48213)) ([ff507fb](https://github.com/okou-ai/okou/commit/ff507fbafe1be0db00cdf321109deab1e658e67a))
+
+
+### Performance Improvements
+
+* **api:** retire debug-only run fields from application sql ([#48082](https://github.com/okou-ai/okou/issues/48082)) ([a40cf00](https://github.com/okou-ai/okou/commit/a40cf00d2f9e5c63fcb2dfa6ea68485b13be4f13))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.80.0
+    * @okouai/core bumped to 8.847.4
+    * @okouai/ui bumped to 1.21.40
+
+## [0.1141.4](https://github.com/okou-ai/okou/compare/app-v0.1141.3...app-v0.1141.4) (2026-11-17)
+
+
+### Bug Fixes
+
+* **app:** refine the for you completion transition ([#48145](https://github.com/okou-ai/okou/issues/48145)) ([dd61df6](https://github.com/okou-ai/okou/commit/dd61df6eca4dca0907cf5ecc180de5ebd65204be))
+* **app:** remove first-task upgrade panel from chat ([#48163](https://github.com/okou-ai/okou/issues/48163)) ([acd0576](https://github.com/okou-ai/okou/commit/acd0576df543974a76c650512f025e82a489cba1))
+* **app:** remove shared chat deletion from artifact list ([#48159](https://github.com/okou-ai/okou/issues/48159)) ([ed49f47](https://github.com/okou-ai/okou/commit/ed49f47efed3c99f2354a1c91d74f43c7a645538))
+
+
+### Refactoring
+
+* **platform:** remove pasted text attachments feature switch ([#48148](https://github.com/okou-ai/okou/issues/48148)) ([5a278f0](https://github.com/okou-ai/okou/commit/5a278f0c51cd4c8ac0939f973ce47f9c873fa0fb))
+
+
+### Performance Improvements
+
+* **app:** prepare referral content when its dialog mounts ([#48161](https://github.com/okou-ai/okou/issues/48161)) ([1519693](https://github.com/okou-ai/okou/commit/1519693b067555c9c7c6f6b2780475d538a29435))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.79.0
+    * @okouai/core bumped to 8.847.3
+    * @okouai/ui bumped to 1.21.39
+
+## [0.1141.3](https://github.com/okou-ai/okou/compare/app-v0.1141.2...app-v0.1141.3) (2026-11-17)
+
+
+### Bug Fixes
+
+* **app:** keep the capability greeting stable when opening cards ([#48138](https://github.com/okou-ai/okou/issues/48138)) ([3224f05](https://github.com/okou-ai/okou/commit/3224f0541759ef408cd7c0313fd2981002a05223))
+* **app:** stabilize lark and feishu setup guide layout ([#48076](https://github.com/okou-ai/okou/issues/48076)) ([ce218a7](https://github.com/okou-ai/okou/commit/ce218a75fb5d45c1f0549a1874c2c4449cdb8c82))
+* make projects follow the single agent switch ([#48142](https://github.com/okou-ai/okou/issues/48142)) ([c8c181a](https://github.com/okou-ai/okou/commit/c8c181a5d258306463622a74129e8f770ba00fd7))
+
+
+### Refactoring
+
+* prepare structured run failure clients ([#48006](https://github.com/okou-ai/okou/issues/48006)) ([4839506](https://github.com/okou-ai/okou/commit/483950651b69db523f06a72f7cf2490c913ff8ab))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.78.0
+    * @okouai/core bumped to 8.847.2
+    * @okouai/ui bumped to 1.21.38
+
+## [0.1141.2](https://github.com/okou-ai/okou/compare/app-v0.1141.1...app-v0.1141.2) (2026-11-17)
+
+
+### Refactoring
+
+* remove for you sources feature switch ([#48074](https://github.com/okou-ai/okou/issues/48074)) ([335f7b5](https://github.com/okou-ai/okou/commit/335f7b5c0410626867316382e92753d219e1e937))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.77.0
+    * @okouai/core bumped to 8.847.1
+    * @okouai/ui bumped to 1.21.37
+
+## [0.1141.1](https://github.com/okou-ai/okou/compare/app-v0.1141.0...app-v0.1141.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **app:** keep chart selections inline and clear accepted drafts ([#48045](https://github.com/okou-ai/okou/issues/48045)) ([70d643f](https://github.com/okou-ai/okou/commit/70d643faea0dd89455eb79c9bc3258c55c7ceaaf))
+
+## [0.1141.0](https://github.com/okou-ai/okou/compare/app-v0.1140.0...app-v0.1141.0) (2026-11-17)
+
+
+### Features
+
+* **core:** enable home capabilities for everyone ([#48000](https://github.com/okou-ai/okou/issues/48000)) ([5df5fc2](https://github.com/okou-ai/okou/commit/5df5fc264b933fdb4aa8210740221f921e6232d7))
+
+
+### Bug Fixes
+
+* **browser:** drain original input before viewer shutdown ([#48044](https://github.com/okou-ai/okou/issues/48044)) ([361c5d6](https://github.com/okou-ai/okou/commit/361c5d6aa4c71b15b004bd48a67bd3fb9ee66404))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.76.1
+    * @okouai/core bumped to 8.847.0
+    * @okouai/ui bumped to 1.21.36
+
+## [0.1140.0](https://github.com/okou-ai/okou/compare/app-v0.1139.0...app-v0.1140.0) (2026-11-17)
+
+
+### Features
+
+* **my-okou:** preserve initialized members and enable new-member defaults ([#47051](https://github.com/okou-ai/okou/issues/47051)) ([cf1c9e5](https://github.com/okou-ai/okou/commit/cf1c9e53c2076c58bd6bb85d51dedbd62c30b6d1))
+
+
+### Bug Fixes
+
+* **app:** highlight tools button while its panel is open ([#48002](https://github.com/okou-ai/okou/issues/48002)) ([f1896f1](https://github.com/okou-ai/okou/commit/f1896f1330d52a223f36c06f0204b0dea43db4db))
+* **app:** render heic photos in full image previews ([#48043](https://github.com/okou-ai/okou/issues/48043)) ([e42c4a4](https://github.com/okou-ai/okou/commit/e42c4a4d759cc86ef5c380721d9a099930c13988))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.76.0
+    * @okouai/core bumped to 8.846.0
+    * @okouai/ui bumped to 1.21.35
+
 ## [0.1139.0](https://github.com/okou-ai/okou/compare/app-v0.1138.0...app-v0.1139.0) (2026-11-17)
 
 

@@ -1,6 +1,7 @@
 package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
+import android.os.Looper
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
@@ -22,7 +23,9 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.junit.runners.model.MultipleFailureException
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 class ChatListApplication : TestOkouApplication() {
@@ -219,13 +222,26 @@ class ChatListRootTest {
     fun close() {
         val app = compose.activity.application as ChatListApplication
         app.responseGate.countDown()
-        compose.activityRule.scenario.close()
-        compose.waitUntil(10_000) { chatJob?.isCompleted != false }
-        try {
-            app.fixture.close()
-        } finally {
-            app.cacheSnapshot.restore()
+        val failures = mutableListOf<Throwable>()
+        for (cleanup in
+            listOf<() -> Unit>(
+                { compose.activityRule.scenario.close() },
+                {
+                    compose.waitUntil(10_000) {
+                        shadowOf(Looper.getMainLooper()).idle()
+                        chatJob?.isCompleted != false
+                    }
+                },
+                { app.fixture.close() },
+                { app.cacheSnapshot.restore() },
+            )) {
+            try {
+                cleanup()
+            } catch (error: Throwable) {
+                failures += error
+            }
         }
+        MultipleFailureException.assertEmpty(failures)
     }
 
     @Test

@@ -201,11 +201,6 @@ const forYouFeed$ = computed(async (get) => {
   return result.status === 200 ? result.body.items : [];
 });
 
-export const waitingSuggestionCount$ = computed(async (get) => {
-  return (await get(forYouFeed$)).filter((item) => {
-    return item.type === "event" || getSuggestionExpiresAt(item) > now();
-  }).length;
-});
 const reloadForYouFeed$ = command(({ get, set }) => {
   set(get(feedVersion$), (version) => {
     return version + 1;
@@ -216,17 +211,16 @@ const refreshForYouFeed$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(reloadForYouFeed$);
     set(reloadForYouSources$);
-    // Read even when the row shows an unread dot instead of the waiting count.
     await get(forYouFeed$);
     signal.throwIfAborted();
     return false;
   },
 );
 /**
- * The row owns background refreshes for both the count and the detail feed.
+ * The row owns background refreshes for both the unread summary and detail feed.
  * Subscription and continuity-gap reads also recover changes missed while away.
  */
-export const followWaitingSuggestionCountOnRef$ = onRef(
+export const followForYouFeedOnRef$ = onRef(
   command(({ set }, _row: HTMLElement, signal: AbortSignal) => {
     set(
       setAblyLoop$,

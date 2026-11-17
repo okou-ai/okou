@@ -3,14 +3,11 @@ import { statSync, readFileSync } from "fs";
 import { basename } from "path";
 import { Command } from "commander";
 import chalk from "chalk";
-import type {
-  SlackUploadInitResponse,
-  SlackUploadMaterializeResponse,
-} from "@okouai/api-contracts/contracts/integrations";
+import type { SlackUploadInitResponse } from "@okouai/api-contracts/contracts/integrations";
 import {
   completeSlackFileUpload,
   initSlackFileUpload,
-  materializeSlackFileUpload,
+  deliverSlackFileUpload,
 } from "../../lib/api/domains/integrations-slack";
 import { inferWebUploadContentType } from "../../lib/api/domains/web";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
@@ -47,10 +44,6 @@ type DirectUploadInitialization = Extract<
 type CanonicalUploadInitialization = Extract<
   SlackUploadInitResponse,
   { kind: "canonical" }
->;
-type PendingSlackDelivery = Extract<
-  SlackUploadMaterializeResponse["delivery"],
-  { status: "pending" }
 >;
 
 function readUploadFile(path: string): {
@@ -128,24 +121,6 @@ async function uploadCanonicalBody(
   }
 }
 
-async function uploadPendingSlackBody(
-  delivery: PendingSlackDelivery,
-  fileContent: Buffer,
-): Promise<string | undefined> {
-  try {
-    const uploadResponse = await fetch(delivery.uploadUrl, {
-      method: "POST",
-      body: fileContent,
-    });
-    if (!uploadResponse.ok) {
-      return `Slack upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`;
-    }
-    return undefined;
-  } catch (error) {
-    return error instanceof Error ? error.message : "Slack upload failed";
-  }
-}
-
 function failedSlackDelivery(
   operationId: string,
   error: string,
@@ -155,63 +130,22 @@ function failedSlackDelivery(
   return { messages: [], delivery: { status: "failed", error, operationId } };
 }
 
-async function completeCanonicalSlackDelivery(args: {
-  readonly initialized: CanonicalUploadInitialization;
-  readonly delivery: PendingSlackDelivery;
-  readonly options: UploadFileOptions;
-  readonly fileContent: Buffer;
-}): Promise<Pick<MessageSendOutput, "messages" | "delivery">> {
-  const { operationId } = args.initialized;
-  const uploadError = await uploadPendingSlackBody(
-    args.delivery,
-    args.fileContent,
-  );
-  let result: Awaited<ReturnType<typeof completeSlackFileUpload>>;
-  try {
-    result = await completeSlackFileUpload({
-      fileId: args.delivery.fileId,
-      ...args.options.destination,
-      ...(args.options.thread ? { threadTs: args.options.thread } : {}),
-      ...(args.options.title ? { title: args.options.title } : {}),
-      ...(args.options.comment ? { initialComment: args.options.comment } : {}),
-      canonicalAssetId: args.initialized.assetId,
-      operationId,
-      ...(uploadError ? { uploadError } : {}),
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    console.warn(
-      chalk.yellow(`⚠ Slack delivery status could not be recorded: ${message}`),
-    );
-    warnDeliveryRetry(operationId);
-    return {
-      messages: [],
-      delivery: { status: "pending", error: message, operationId },
-    };
-  }
-  if (result.deliveryStatus === "failed") {
-    return failedSlackDelivery(
-      operationId,
-      result.deliveryError ?? "Unknown error",
-    );
-  }
-  return {
-    messages: [{ id: result.fileId, url: result.permalink }],
-    delivery: { status: "delivered", operationId },
-  };
-}
-
 async function publishCanonicalFile(
   initialized: CanonicalUploadInitialization,
-  options: UploadFileOptions,
   contentType: string,
   fileContent: Buffer,
 ): Promise<SlackUploadOutput> {
   await uploadCanonicalBody(initialized, contentType, fileContent);
-  const materialized = await materializeSlackFileUpload({
-    assetId: initialized.assetId,
-    operationId: initialized.operationId,
-  });
+  let materialized: Awaited<ReturnType<typeof deliverSlackFileUpload>>;
+  try {
+    materialized = await deliverSlackFileUpload({
+      assetId: initialized.assetId,
+      operationId: initialized.operationId,
+    });
+  } catch (error) {
+    warnDeliveryRetry(initialized.operationId);
+    throw error;
+  }
   const fileUrl = materialized.url;
 
   if (materialized.delivery.status === "delivered") {
@@ -226,23 +160,12 @@ async function publishCanonicalFile(
       delivery: { status: "delivered", operationId: initialized.operationId },
     };
   }
-  if (materialized.delivery.status === "failed") {
-    return {
-      fileUrl,
-      ...failedSlackDelivery(
-        initialized.operationId,
-        materialized.delivery.message,
-      ),
-    };
-  }
   return {
     fileUrl,
-    ...(await completeCanonicalSlackDelivery({
-      initialized,
-      delivery: materialized.delivery,
-      options,
-      fileContent,
-    })),
+    ...failedSlackDelivery(
+      initialized.operationId,
+      materialized.delivery.message,
+    ),
   };
 }
 
@@ -308,7 +231,6 @@ async function uploadFile(cliOptions: UploadFileCliOptions): Promise<void> {
           chatId: initialized.channel,
           ...(await publishCanonicalFile(
             initialized,
-            options,
             contentType,
             file.content,
           )),
@@ -352,13 +274,13 @@ Notes:
   - You can DM other recipients, subject to the platform's bot delivery rules
   - Sending a DM does not grant access to its private history or attachments
   - Uses the bot token (not user SLACK_TOKEN), so no files:write permission is needed
-  - Run-scoped calls publish to Okou storage before Slack delivery
+  - Run-scoped calls upload to Okou storage; the server uploads and shares the Slack file
   - Delivery failures are reported on stderr with an --operation-id retry hint
 
 Output:
   Prints "✓ File uploaded" with the Slack file ID, permalink, and Okou file URL.
   With --json, prints one JSON object:
     {"integration":"slack","chatId":"C01234","messages":[{"id":"F0123","url":"https://..."}],"file":{"name":"report.pdf","contentType":"application/pdf","size":12345,"url":"https://..."},"delivery":{"status":"delivered","operationId":"..."}}
-  delivery is present for canonical uploads; status is delivered, pending, or failed.`,
+  delivery is present for canonical uploads; status is delivered or failed.`,
   )
   .action(withErrorHandler(uploadFile));

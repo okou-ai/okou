@@ -3,10 +3,7 @@ import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { feedPreferences } from "@okouai/db/schema/feed-preference";
 import { feedItems } from "@okouai/db/schema/feed-item";
 import type { FeedSources } from "@okouai/api-contracts/contracts/feed";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { organizationAuthContext$ } from "../auth/auth-context";
-import { createUserFeatureSwitchContext } from "./feature-switches.service";
 import { db$, writeDb$ } from "../external/db";
 import { publishAgentSuggestionsChangedSafely } from "../external/realtime";
 import { liveSuggestion } from "./agent-suggestions-lifecycle";
@@ -29,14 +26,6 @@ function activePlatformEvent() {
     sql`${feedItems.state}->>'status' = 'active'`,
   );
 }
-const switchContext$ = createUserFeatureSwitchContext(organizationAuthContext$);
-export const forYouSourcesEnabled$ = computed(async (get) => {
-  return isFeatureEnabled(
-    FeatureSwitchKey.ForYouSources,
-    await get(switchContext$),
-  );
-});
-
 export const readFeedSources$ = computed(async (get): Promise<FeedSources> => {
   const owner = get(organizationAuthContext$);
   const [row] = await get(db$)

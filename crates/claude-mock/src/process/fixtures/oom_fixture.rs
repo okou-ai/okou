@@ -226,17 +226,10 @@ while True:
 "#;
 
 pub(super) fn monotonic_deadline(deadline: Instant) -> Result<String, String> {
-    let mut now = libc::timespec {
-        tv_sec: 0,
-        tv_nsec: 0,
-    };
-    // SAFETY: now is a valid writable timespec, read only after a successful call.
-    if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut now) } != 0 {
-        return Err(format!(
-            "read task monotonic clock: {}",
-            std::io::Error::last_os_error()
-        ));
-    }
+    let now = rustix::time::clock_gettime_dynamic(rustix::time::DynamicClockId::Known(
+        rustix::time::ClockId::Monotonic,
+    ))
+    .map_err(|error| format!("read task monotonic clock: {}", std::io::Error::from(error)))?;
     let seconds =
         u64::try_from(now.tv_sec).map_err(|error| format!("task monotonic seconds: {error}"))?;
     let nanoseconds = u32::try_from(now.tv_nsec)

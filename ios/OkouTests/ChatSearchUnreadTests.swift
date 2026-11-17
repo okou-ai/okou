@@ -155,6 +155,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     await store.refresh()
     store.setPhase(.active)
     store.selectChat(SearchUnreadFixture.id(1))
+    store.sidebarInteraction.setOpen(false)
     let conversation = try XCTUnwrap(store.selectedConversation)
     let refresh = Task { await conversation.refresh() }
     addTeardownBlock {
@@ -212,6 +213,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     await store.refresh()
     store.setPhase(.active)
     store.selectChat(SearchUnreadFixture.id(1))
+    store.sidebarInteraction.setOpen(false)
     let conversation = try XCTUnwrap(store.selectedConversation)
     await conversation.refresh(waitForCurrent: true)
     let thread = try XCTUnwrap(store.list.threads.first { $0.id == SearchUnreadFixture.id(1) })
@@ -257,6 +259,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     await store.refresh()
     store.setPhase(.active)
     store.selectChat(SearchUnreadFixture.id(1))
+    store.sidebarInteraction.setOpen(false)
     let conversation = try XCTUnwrap(store.selectedConversation)
     await conversation.refresh(waitForCurrent: true)
     let thread = try XCTUnwrap(store.list.threads.first { $0.id == SearchUnreadFixture.id(1) })
@@ -391,6 +394,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     await store.refresh()
     store.setPhase(.active)
     store.selectChat(SearchUnreadFixture.id(1))
+    store.sidebarInteraction.setOpen(false)
     await store.selectedConversation?.refresh()
     let thread = try XCTUnwrap(store.list.threads.first { $0.id == SearchUnreadFixture.id(1) })
     fixture.state.value.withLock { $0.dropUnreadResponse = true }
@@ -980,20 +984,20 @@ private final class SearchUnreadFixture: Sendable {
     let state = LockedState()
     self.state = state
     http = ChatHTTPFixture { [state] request in
-      if let empty = emptySearchResources(request) { return empty }
+      if request.httpMethod == "GET", let empty = emptySearchResources(request) { return empty }
       let path = request.url?.path ?? ""
-      switch path {
-      case "/api/agents":
+      switch (request.httpMethod, path) {
+      case ("GET", "/api/agents"):
         return ChatHTTPResponse(
           body: """
             [{"agentId":"\(Self.agent)","displayName":"Okou","isDefaultAgent":true},{"agentId":"\(Self.otherAgent)","displayName":"Research","isDefaultAgent":false}]
             """)
 
-      case "/api/feature-switches":
+      case ("GET", "/api/feature-switches"):
         return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
-      case "/api/chat/search":
+      case ("GET", "/api/chat/search"):
         return searchResponse(content: "A matching needle in another agent's conversation")
-      case "/api/chat-threads/snapshot":
+      case ("GET", "/api/chat-threads/snapshot"):
         let threads = (1...40).map { index in
           """
           {"id":"\(Self.id(index))","agentId":"\(index.isMultiple(of: 2) ? Self.otherAgent : Self.agent)","title":"Chat \(index)","createdAt":"\(Self.timestamp)","updatedAt":"\(Self.timestamp)","sortAt":"\(Self.timestamp)","muted":\(index == 3),"archived":\(index == 5)}
@@ -1001,9 +1005,9 @@ private final class SearchUnreadFixture: Sendable {
         }.joined(separator: ",")
         return ChatHTTPResponse(
           body: "{\"chatThreads\":[\(threads)],\"latestEventId\":null,\"latestSeqId\":null}")
-      case "/api/chat-threads/events":
+      case ("GET", "/api/chat-threads/events"):
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
-      case "/api/indicators":
+      case ("GET", "/api/indicators"):
         let gate = state.value.withLock { value -> SearchResponseGate? in
           let gate = value.indicatorsGate
           value.indicatorsGate = nil
@@ -1031,7 +1035,7 @@ private final class SearchUnreadFixture: Sendable {
               "{\"agents\":{\(agents)},\"threads\":{\((["\"\(Self.id(1))\":\"active\""] + indicators).joined(separator: ","))},\"unreadAt\":{\(timestamps)}}"
           )
         }
-      case "/api/chat-thread-unreads/mark-read":
+      case ("POST", "/api/chat-thread-unreads/mark-read"):
         let gate = state.value.withLock { value -> SearchResponseGate? in
           let gate = value.bulkReadGate
           value.bulkReadGate = nil
@@ -1054,9 +1058,12 @@ private final class SearchUnreadFixture: Sendable {
       default:
         guard path.hasPrefix("/api/chat-threads/") else { throw URLError(.unsupportedURL) }
         let id = String(path.dropFirst("/api/chat-threads/".count).prefix(36))
-        let number = Int(id.suffix(12)) ?? 0
-        if path.hasSuffix("/mark-read") || path.hasSuffix("/mark-unread") {
-          let read = path.hasSuffix("/mark-read")
+        guard let number = Int(id.suffix(12)), (1...40).contains(number), id == Self.id(number)
+        else { throw URLError(.unsupportedURL) }
+        let threadPath = "/api/chat-threads/\(id)"
+        switch (request.httpMethod, path) {
+        case ("POST", threadPath + "/mark-read"), ("POST", threadPath + "/mark-unread"):
+          let read = path == threadPath + "/mark-read"
           let (gate, cancelled, finished) = state.value.withLock { value in
             let gate = read ? value.readGate : nil
             let cancelled = read ? value.readCancelled : nil
@@ -1095,15 +1102,13 @@ private final class SearchUnreadFixture: Sendable {
             throw URLError(.networkConnectionLost)
           }
           return response
-        }
-        if path.hasSuffix("/event-snapshot") {
+        case ("GET", threadPath + "/event-snapshot"):
           return ChatHTTPResponse(
             status: 404,
             body:
               "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}"
           )
-        }
-        if path.hasSuffix("/event-rows") {
+        case ("GET", threadPath + "/event-rows"):
           let after = Int(query(request, "sinceSeqId") ?? "0") ?? 0
           let last = min(161, after + 50)
           let rows =
@@ -1118,8 +1123,7 @@ private final class SearchUnreadFixture: Sendable {
             body:
               "{\"rows\":[\(rows)],\"cursor\":{\"lastEventId\":\"\(Self.rowID(last))\",\"lastSeqId\":\(last)},\"hasMore\":\(last < 161)}"
           )
-        }
-        if path == "/api/chat-threads/\(id)" {
+        case ("GET", threadPath):
           let gate = state.value.withLock { value -> SearchResponseGate? in
             let gate = value.recoveryGate
             value.recoveryGate = nil
@@ -1129,8 +1133,8 @@ private final class SearchUnreadFixture: Sendable {
           }
           if let gate { await gate.wait() }
           return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
+        default: throw URLError(.unsupportedURL)
         }
-        throw URLError(.unsupportedURL)
       }
     }
   }

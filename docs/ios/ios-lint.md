@@ -11,12 +11,14 @@ underlying ownership contracts. Setup commands belong in the
 
 | Rule                           | Contract                                                                                                                                                                                | Web counterpart                                                   |
 | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `duplicate_conditions`         | Reject duplicate condition sets in one if/else-if chain and duplicate switch case patterns with the same where clause.                                                                  | `no-dupe-else-if`, `no-duplicate-case`                            |
 | `okou_render_effects`          | No known imperative requests, graph writes/construction, Task launches, subscriptions, or external state assignments during native projection.                                          | `no-side-effect-in-render`                                        |
 | `okou_stable_graph`            | Construct graph definitions at the owner, not in repeated getters, graph callbacks, UI actions, or operation methods, including visible same-file graph factories.                      | `no-command-in-command`, `computed-const-args-package-scope`      |
 | `okou_private_atoms`           | Keep mutable CCState atoms private or fileprivate, including their enclosing owner; expose read signals and semantic commands.                                                          | `no-export-state`                                                 |
 | `okou_accessor_escape`         | Do not pass, store, return, or capture graph accessors into known deferred callbacks; ordinary helper parameters cannot expose Getter/CommandContext.                                   | `no-accessor-escape`, `no-getter-setter-params`                   |
 | `okou_native_requests`         | Raw URLSession operations and method references belong at their transport definition sites.                                                                                             | `no-direct-fetch`                                                 |
 | `okou_resource_failures`       | Preserve failures inside Computed/computedTask/Command/asyncCommand; reject optional try and unfiltered empty outcomes, plus cancellation catches that return successful resource data. | Error-swallowing helper restrictions and cancellation propagation |
+| `okou_useless_catch`           | Remove a sole unfiltered catch whose only statement rethrows its original error; preserve meaningful cleanup, recovery, reporting and error conversion.                                 | `no-useless-catch`                                                |
 | `okou_test_synchronization`    | Reject known fixed-duration sleeps and fixed-count yield loops in XCTest/Swift Testing code.                                                                                            | `no-test-delay` and test synchronization guidance                 |
 | `okou_check_after_await`       | Check cancellation or current owner identity after suspension before a direct graph or owner-state write.                                                                               | `signal-check-await`                                              |
 | `okou_resource_cancellation`   | Newly constructed resource Tasks connect to evaluation cancellation; retained original Tasks have explicit owner teardown.                                                              | `require-client-signal` and lifecycle ownership                   |
@@ -36,6 +38,11 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
 
 ## Native Semantics
 
+- `duplicate_conditions` uses the pinned upstream rule to compare visible
+  condition syntax within one `if`/`else if` chain or `switch`. Independent `if`
+  statements, different condition sets, different optional-binding sources, and
+  distinct `where` clauses remain valid. It does not prove that different
+  Boolean expressions are equivalent.
 - `body` and `@ViewBuilder` helpers project state. Builder content is checked;
   event/lifecycle callbacks are separate execution boundaries. An explicit
   `Button(action:)` leaves its label builder in render scope. Shared native
@@ -97,6 +104,12 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   separate; UI waiters can leave the original resource Task holding its error.
   Request phases belong to CCStateSwiftUI loadables; drafts, confirmed snapshots,
   and protocol phases follow their own business contracts.
+- A sole unfiltered `catch { throw error }` or `catch let failure { throw failure }`
+  adds no error handling. Remove that catch while preserving a `do` scope when
+  its locals or `defer` require the existing lifetime. The check does not flatten
+  scopes or autocorrect code. Cleanup, reporting, recovery and error conversion
+  remain meaningful handling; typed, filtered and multiple catch clauses retain
+  their selection contract. Swift's normal `do`/`catch` use remains valid.
 - Explicit `_ = Task { ... }` assignments and wildcard declarations such as
   `let _ = Task { ... }` cannot discard a Task with a visibly escaping `try` or
   `throw`. The same check covers direct `Task.init`, `Task.immediate`, and
@@ -283,6 +296,11 @@ cleanup, nested execution scopes, cross-file aliases, other qualified aliases,
 and generic substitutions keep their own review boundaries. Optional-try checks
 remain scoped to graph callbacks; helper error channels and arbitrary recovery
 effects are not inferred from a function's name.
+Useless-catch checks require a single unfiltered clause with an implicit error or
+simple named binding, and one direct throw of that binding (optionally grouped).
+They do not infer aliases, casts, helper effects or equivalent control flow.
+Typed, filtered and multiple catches remain review responsibilities; a typed
+rethrow can preserve selection before another recovery handler.
 Discarded-Task checks inspect explicit discards of direct native Task
 construction with an inline operation closure, including same-file functions
 whose explicit Task return type and every visible return prove that construction

@@ -46,7 +46,7 @@ pub(super) async fn relay<F: Future>(
 }
 
 pub(super) fn proxy(
-    listener: ts_netstack_smoltcp_socket::TcpListener,
+    listener: ts_netstack_smoltcp::netsock::TcpListener,
     target: std::net::SocketAddr,
 ) -> tokio_util::task::AbortOnDropHandle<()> {
     proxy_gated(listener, target, None)
@@ -59,7 +59,7 @@ struct BackendGate {
 }
 
 fn proxy_gated(
-    listener: ts_netstack_smoltcp_socket::TcpListener,
+    listener: ts_netstack_smoltcp::netsock::TcpListener,
     target: std::net::SocketAddr,
     gate: Option<Arc<BackendGate>>,
 ) -> tokio_util::task::AbortOnDropHandle<()> {

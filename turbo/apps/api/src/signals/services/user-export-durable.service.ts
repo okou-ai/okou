@@ -414,7 +414,9 @@ const collectStep$ = command(
         });
         continue;
       }
-      const head = await get(s3ObjectHead(bucket, sourceKey, signal));
+      const head = await get(
+        s3ObjectHead(bucket, sourceKey, undefined, signal),
+      );
       signal.throwIfAborted();
       if (
         head.kind !== "found" ||
@@ -792,7 +794,7 @@ const inventoryStep$ = command(
       putS3Object(bucket, sourceKey, bytes, "application/x-ndjson", signal),
     );
     signal.throwIfAborted();
-    const head = await get(s3ObjectHead(bucket, sourceKey, signal));
+    const head = await get(s3ObjectHead(bucket, sourceKey, undefined, signal));
     signal.throwIfAborted();
     if (head.kind !== "found" || !head.etag) {
       throw new Error("Export inventory was not stored");
@@ -903,7 +905,7 @@ const manifestStep$ = command(
       putS3Object(bucket, sourceKey, bytes, "application/json", signal),
     );
     signal.throwIfAborted();
-    const head = await get(s3ObjectHead(bucket, sourceKey, signal));
+    const head = await get(s3ObjectHead(bucket, sourceKey, undefined, signal));
     signal.throwIfAborted();
     if (head.kind !== "found" || !head.etag) {
       throw new Error("Export manifest was not stored");
@@ -1098,7 +1100,9 @@ const publishStep$ = command(
   async ({ get, set }, runtime: Runtime, signal: AbortSignal) => {
     const db = set(writeDb$);
     const { bucket, job, state } = runtime;
-    const head = await get(s3ObjectHead(bucket, state.resultKey, signal));
+    const head = await get(
+      s3ObjectHead(bucket, state.resultKey, undefined, signal),
+    );
     signal.throwIfAborted();
     if (head.kind === "missing") {
       const parts = await db

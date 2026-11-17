@@ -2,20 +2,26 @@ import { command, state } from "ccstate";
 import type { PresentationSlideCount } from "./composer-create.ts";
 import type { ComposerSignals } from "./composer-signals.ts";
 import type { ComposerTask } from "./composer-task-chips.ts";
-import type { VisualizationPreferences } from "./composer-visualization.ts";
+import type {
+  ComposerVisualizationSignals,
+  VisualizationPreferences,
+  VisualizationSubmission,
+} from "./composer-visualization.ts";
 
 /**
- * What the composer was set to make when it sent a message.
+ * The sticky task and retained parameters for the next draft.
  *
- * The type is composer state rather than message content: inside a thread it
- * survives a send, and the chip that states it stays. A send from the start
- * page ends in a different composer, so that one has to be handed the same
- * selection or the first send reads as having silently cleared it.
+ * A send from the start page opens a different composer, so it receives the
+ * next draft's selection rather than reading parameters from the sent message.
  */
 export interface ComposerTaskSelection {
   readonly task: ComposerTask | null;
   readonly presentationSlideCount: PresentationSlideCount;
   readonly visualization: VisualizationPreferences;
+  readonly visualizationSubmission?: {
+    readonly source: ComposerVisualizationSignals;
+    readonly snapshot: VisualizationSubmission;
+  };
 }
 
 /**
@@ -38,9 +44,8 @@ export const rememberComposerTaskForThread$ = command(
 );
 
 /**
- * Applies the selection to the thread composer, once, through the same
- * commands the controls use, so the thread carries the type and its parameters
- * into every message the user sends next.
+ * Applies the next draft's selection to the thread composer, once, through
+ * the same commands the controls use.
  */
 export const adoptComposerTaskHandoff$ = command(
   ({ get, set }, threadId: string, composer: ComposerSignals): void => {
@@ -49,13 +54,16 @@ export const adoptComposerTaskHandoff$ = command(
       return;
     }
     set(pendingSelection$, null);
-    const { task, presentationSlideCount, visualization } = pending.selection;
+    const { task, presentationSlideCount, visualizationSubmission } =
+      pending.selection;
+    const visualization = visualizationSubmission
+      ? get(visualizationSubmission.source.preferences$)
+      : pending.selection.visualization;
     if (task === null) {
       return;
     }
-    // The task chips own the three general tasks and gate them on their own
-    // switch; a create mode is also what a slash command leaves behind when
-    // the chips are off.
+    // General task intents use task selection; dedicated creation types use
+    // the create mode.
     if (task === "workflow" || task === "website" || task === "visualization") {
       set(composer.taskChips.selectTask$, task);
     } else {
@@ -70,6 +78,21 @@ export const adoptComposerTaskHandoff$ = command(
       }
       for (const chart of visualization.charts) {
         set(composer.taskChips.visualization.toggleChart$, chart);
+      }
+      if (
+        visualizationSubmission &&
+        get(visualizationSubmission.source.revision$) ===
+          visualizationSubmission.snapshot.revision
+      ) {
+        const target = composer.taskChips.visualization;
+        set(
+          visualizationSubmission.source.registerHandoff$,
+          visualizationSubmission.snapshot,
+          {
+            revision: get(target.revision$),
+            clearIfUnchanged$: target.clearIfUnchanged$,
+          },
+        );
       }
     }
   },

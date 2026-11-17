@@ -14,7 +14,7 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
-/** Prepared member metadata; legacy Storage remains authoritative in this stage. */
+/** Member-owned authority; the API temporarily mirrors legacy metadata for B/C overlap. */
 export const memberMemories = pgTable(
   "member_memories",
   {

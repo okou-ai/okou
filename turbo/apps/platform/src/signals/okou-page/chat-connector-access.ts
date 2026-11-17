@@ -282,7 +282,6 @@ export function createChatConnectorAccessSignals(threadId?: string) {
   const menuTarget$ = computed((get) => {
     return get(target$);
   });
-  const navigation = createChatConnectorMenuNavigationSignals(menuTarget$);
   const permissions$ = state<ConnectorPermissionsTarget | null>(null);
   const permissionSignals$ = computed((get) => {
     const entry = get(permissions$);
@@ -315,24 +314,21 @@ export function createChatConnectorAccessSignals(threadId?: string) {
     threadId,
   });
   const open$ = command(({ set }, parentSignal: AbortSignal) => {
-    set(navigation.reset$);
     set(requests$, accountAccessRequests(set(resetOwner$, parentSignal)));
     set(cache.open$, parentSignal);
   });
   const closeTarget$ = command(({ set }) => {
-    set(navigation.back$);
     set(target$, null);
     set(list.clearTarget$);
   });
+  const navigation = createChatConnectorMenuNavigationSignals(closeTarget$);
   const close$ = command(({ set }) => {
-    set(navigation.reset$);
     set(resetOwner$);
     set(requests$, null);
     set(closeTarget$);
   });
   const openTarget$ = command(
     ({ set }, target: ChatConnectorMenuTarget, signal: AbortSignal) => {
-      set(navigation.enter$, target.target);
       set(target$, target);
       set(list.setTarget$, target.target, signal);
     },

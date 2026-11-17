@@ -18,6 +18,7 @@ import {
   isNotNull,
   ne,
   notExists,
+  notLike,
   or,
   lt,
   lte,
@@ -25,6 +26,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import {
+  ARTIFACT_CATALOG_KINDS,
   chatArtifactCatalogChangedEvent,
   type ArtifactCatalogKind,
   type ArtifactDetail,
@@ -49,7 +51,7 @@ import {
   runUploadedFiles,
   type CanonicalAssetClassification,
 } from "@okouai/db/schema/run-uploaded-file";
-import { object, string, type infer as zInfer } from "zod";
+import { object, string, enum as zEnum, type infer as zInfer } from "zod";
 
 import { QueryBuilder } from "drizzle-orm/pg-core";
 
@@ -59,6 +61,7 @@ import {
   pgIntegerDecoder,
   pgBooleanDecoder,
   pgTextDecoder,
+  zodEnumDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { monotonicNow, nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
@@ -196,19 +199,26 @@ function catalogArtifactKind(
     : kind;
 }
 
-function artifactCatalogKindFilter(kind: ArtifactCatalogKind): SQL {
-  // Summary metadata is optional independently of creating-thread ownership.
-  // An absent display projection retains the base kind (or the shared snapshot
-  // kind encoded in its logical key), exactly as toArtifactSummary does.
-  return eq(
-    sql`coalesce(${artifacts.displayKind}, case
+function artifactCatalogEffectiveKind() {
+  // Native PPTX files belong to Presentations without changing their file-backed
+  // storage or detail contract. Derive this on reads so existing files move too.
+  // Other summaries retain their display projection or base-kind fallback.
+  return sql`case
+    when ${artifacts.kind} = 'file'
+      and ${artifacts.logicalKey} not like 'shared-thread:%'
+      and lower(${artifacts.title}) like '%.pptx'
+    then 'presentation'
+    else coalesce(${artifacts.displayKind}, case
       when ${artifacts.kind} = 'file'
         and ${artifacts.logicalKey} like 'shared-thread:%'
       then 'shared-thread'
       else ${artifacts.kind}
-    end)`,
-    kind,
-  );
+    end)
+  end`.mapWith(zodEnumDriverValueDecoder(zEnum(ARTIFACT_CATALOG_KINDS)));
+}
+
+function artifactCatalogKindFilter(kind: ArtifactCatalogKind): SQL {
+  return eq(artifactCatalogEffectiveKind(), kind);
 }
 
 function hostedArtifactKind(
@@ -1344,7 +1354,7 @@ export const listArtifactCatalog$ = command(
         entityId: artifacts.entityId,
         kind: artifacts.kind,
         logicalKey: artifacts.logicalKey,
-        displayKind: artifacts.displayKind,
+        displayKind: artifactCatalogEffectiveKind(),
         aliasUrl: artifacts.aliasUrl,
         sourceUrl: artifacts.sourceUrl,
         videoSourceUrl: artifacts.videoSourceUrl,
@@ -1406,7 +1416,8 @@ function artifactCatalogIdentityFilter(args: GetArtifactCatalogEntryArgs) {
       return or(
         eq(artifacts.projectionFileId, args.artifactId),
         and(
-          artifactCatalogKindFilter("file"),
+          eq(artifacts.kind, "file"),
+          notLike(artifacts.logicalKey, "shared-thread:%"),
           eq(artifacts.entityId, args.artifactId),
         ),
         and(

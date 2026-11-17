@@ -1,7 +1,6 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
 import {
   click,
@@ -40,7 +39,6 @@ async function setupHome() {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: true },
   });
   return await findComposerEditor();
 }
@@ -78,12 +76,11 @@ function capabilityTab(label: string): HTMLElement {
   return tab;
 }
 
-test("An empty conversation offers capabilities without an avatar and sends its first message in the same conversation", async () => {
+test("An empty conversation offers capabilities by default without an avatar and sends its first message in the same conversation", async () => {
   const capture = mockTemplateChat();
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: true },
   });
   const editor = await findComposerEditor();
   const discovery = await screen.findByRole("group", {
@@ -130,7 +127,6 @@ test.each([
     await setupPage({
       context,
       path,
-      featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: true },
     });
     const editor = await findComposerEditor();
     const cards = await screen.findByRole("group", {

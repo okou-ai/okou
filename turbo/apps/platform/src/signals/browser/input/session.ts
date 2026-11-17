@@ -505,7 +505,7 @@ function createSessionCleanup(graph: SessionActions) {
     },
   );
 
-  return { revoke$, suspend$, dispose$, retire$ };
+  return { revoke$, suspend$, settle$: settleInput$, dispose$, retire$ };
 }
 
 function createSessionReadiness(

@@ -12,7 +12,7 @@ import { rawSqlReadDb$ } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { agentInstructionsSelectionSql } from "./execution-instructions-selection";
-import { createExecutionContext } from "./execution-context";
+import { createExecutionRuntimeContext } from "./execution-runtime-context";
 import { contentBundleAvailableCondition } from "./execution-content-bundle";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -22,9 +22,7 @@ import {
 } from "./content-bundle-presigned-url-cache";
 import { encryptExecutionSecrets$ } from "./execution-secrets.service";
 import {
-  executionContextBody,
   prepareExecutionPublication$,
-  withExecutionContentBundles$,
   executionBundleHashes,
   type ExecutionPublicationRun,
 } from "./run-execution-publication.service";
@@ -63,7 +61,7 @@ const packageSelectionSchema = object({
 export function createDirectRunPreparation(
   input$: Computed<Promise<AdmittedRunLaunch>>,
 ) {
-  const { prepared$, packageContext$ } = createExecutionContext(input$);
+  const { prepared$, packageContext$ } = createExecutionRuntimeContext(input$);
   const packages$ = computed(async (get) => {
     const [input, packageContext] = await Promise.all([
       get(input$),
@@ -129,28 +127,15 @@ export const prepareDirectRun$ = command(
         signal,
       ),
     };
-    const response = await set(
+    const publication = await set(
       prepareExecutionPublication$,
       {
+        run,
+        reuseKey: input.reuseKey,
         preparedContext: context,
         networkPolicyInputs: prepared.networkPolicyInputs,
-      },
-      signal,
-    );
-    const publication = await set(
-      withExecutionContentBundles$,
-      {
-        executionContext: executionContextBody({
-          run,
-          reuseKey: input.reuseKey,
-          preparedContext: context,
-          ...response,
-        }),
         packages: packages.row,
         workflowInput: packages.selection,
-        officialWorkflowBundles: context.officialWorkflowBundles,
-        seedSkillBundles: context.seedSkillBundles,
-        templateGuidanceBundles: context.templateGuidanceBundles,
         bundleUrlCache: packages.cache,
       },
       signal,
@@ -177,12 +162,16 @@ export const prepareDirectRun$ = command(
         userId: run.userId,
         prompt: run.prompt,
         appendSystemPrompt: run.appendSystemPrompt,
+        vars: run.vars,
         context: {
           ...context,
-          networkPolicies: response.refreshedPolicies.networkPolicies,
+          networkPolicies: publication.executionContext.networkPolicies,
         },
         secretNames: Object.keys(prepared.secrets ?? {}),
-        secretValues: response.secretValues,
+        secretValues: [
+          ...Object.values(prepared.secrets ?? {}),
+          ...(publication.executionContext.secretValues ?? []),
+        ],
       },
     };
   },

@@ -19,6 +19,33 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 describe("Phone Use CLI", () => {
+  it.each([true, false])(
+    "reports whether a phone is online (%s)",
+    async (online) => {
+      const device = {
+        id: randomUUID(),
+        displayName: "Owner iPhone",
+        osVersion: "27.1",
+        appVersion: "1",
+        generation: 1,
+        online,
+        lastSeenAt: "2026-11-17T00:00:00.000Z",
+      };
+      server.use(
+        http.get("https://api.vm0.ai/api/phone-use/devices", () => {
+          return HttpResponse.json({ devices: [device] });
+        }),
+      );
+      const output = vi.spyOn(console, "log").mockImplementation(() => {});
+      await new Command()
+        .exitOverride()
+        .addCommand(phoneUseCommand)
+        .parseAsync(["phone-use", "devices"], { from: "user" });
+      expect(output).toHaveBeenCalledWith(
+        JSON.stringify({ devices: [device] }, null, 2),
+      );
+    },
+  );
   it("recovers a submitted operation by its identity and writes its screenshot privately", async () => {
     const id = randomUUID();
     const operation = {

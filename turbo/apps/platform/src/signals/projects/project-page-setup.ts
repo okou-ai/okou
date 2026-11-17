@@ -2,10 +2,7 @@ import { command } from "ccstate";
 import { createElement } from "react";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { AgentChatPage } from "../../views/okou-page/agent-chat-page.tsx";
-import { ProjectPage } from "../../views/projects/project-page.tsx";
 import { defaultAgentId$ } from "../agent.ts";
 import { setChatAgentId$ } from "../agent-chat.ts";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
@@ -44,9 +41,7 @@ export const setupProjectPage$ = command(
     set(resetChatPageModelSelection$);
     set(
       updatePage$,
-      get(featureSwitch$)[FeatureSwitchKey.HomeCapabilities]
-        ? createElement(AgentChatPage, { project: true })
-        : createElement(ProjectPage),
+      createElement(AgentChatPage, { project: true }),
       "sidebar",
     );
     set(setupProjectPageKeyboardShortcuts$, projectId, signal);

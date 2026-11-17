@@ -55,7 +55,6 @@ describe("get run response contract", () => {
       runId: "run-1",
       status: "pending",
       prompt: "inspect the run",
-      appendSystemPrompt: null,
       source: {
         providerType: "codex-oauth-token",
         runtimeProviderType: null,
@@ -70,7 +69,6 @@ describe("get run response contract", () => {
       runId: "run-1",
       status: "pending",
       prompt: "inspect the run",
-      appendSystemPrompt: null,
       source: {
         providerType: "codex-oauth-token",
         runtimeProviderType: null,

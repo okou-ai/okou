@@ -110,6 +110,7 @@ export function createTemplateGalleryHelpers(context: TestContext) {
     readonly threadId?: string;
     readonly tier?: string;
     readonly sendGate?: Promise<void>;
+    readonly onRunCreate?: () => void;
   }): TemplateChatCapture {
     const sentMessages: UserMessageDocument[] = [];
     const selectedTemplates: GenerationTemplateRequest[] = [];
@@ -149,6 +150,7 @@ export function createTemplateGalleryHelpers(context: TestContext) {
             }),
           );
         }
+        options?.onRunCreate?.();
       },
     });
 

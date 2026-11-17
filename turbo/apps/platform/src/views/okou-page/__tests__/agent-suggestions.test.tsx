@@ -382,22 +382,6 @@ test("A cached card still sends its action after server cleanup", async () => {
   await expect(consumedWith.promise).resolves.toBe(suggestion.consumeToken);
   expect(pathname()).toBe(suggestionPath);
 });
-test("The For you row's count follows committed suggestion changes", async () => {
-  const pool = mockPool(numberedSuggestions(2));
-  await openSuggestions();
-  await within(link(suggestionPath)).findByLabelText("2 waiting");
-  click(button("Dismiss"));
-  await within(link(suggestionPath)).findByLabelText("1 waiting");
-  pool.publish(numberedSuggestions(3)[2]);
-  notifySuggestionsChanged();
-  await within(link(suggestionPath)).findByLabelText("2 waiting");
-  pool.withdrawAll();
-  notifySuggestionsChanged();
-  const emptyCount = await within(link(suggestionPath)).findByLabelText(
-    "0 waiting",
-  );
-  expect(emptyCount).toBeInTheDocument();
-});
 test.each(["notification", "reconnect"] as const)(
   "For you opens background-updated cards after an Ably %s without waiting for another request",
   async (delivery) => {
@@ -424,7 +408,7 @@ test.each(["notification", "reconnect"] as const)(
       context.mocks.ably.triggerSharedWorkerConnectionState("suspended");
       context.mocks.ably.triggerSharedWorkerReconnect();
     }
-    await within(link(suggestionPath)).findByLabelText("2 waiting");
+    await within(link(suggestionPath)).findByText("Unread");
     const response = context.mocks.deferred<void>();
     context.mocks.api(feedContract.list, async ({ respond }) => {
       await response.promise;
@@ -449,7 +433,7 @@ test("For you preloads details when its sidebar shows an unread dot", async () =
     preloaded.resolve();
     return respond(200, { items: [suggestion] });
   });
-  await setupPage({ context, path: homePath, featureSwitches: sourceFeatures });
+  await setupPage({ context, path: homePath, featureSwitches: features });
   await within(link(suggestionPath)).findByText("Unread");
   await preloaded.promise;
   const response = context.mocks.deferred<void>();
@@ -987,7 +971,7 @@ test("Suggestion options start in the default Agent after visiting a secondary A
     path: `/agents/${secondary}/chat`,
     featureSwitches: features,
   });
-  expect(button("Workflow")).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Workflow" })).toBeInTheDocument();
   click(link(suggestionPath));
   await screen.findByText(makeSuggestion().content.title);
   expect(pathname()).toBe(suggestionPath);
@@ -1522,14 +1506,11 @@ test("For you moves suggestions out of the homepage into its own chat-list entry
   await setupPage({
     context,
     path: homePath,
-    featureSwitches: {
-      ...features,
-      [FeatureSwitchKey.HomeCapabilities]: true,
-    },
+    featureSwitches: features,
   });
   await screen.findByTestId("chat-tagline");
   const row = link("/for-you");
-  await within(row).findByLabelText("3 waiting");
+  await within(row).findByText("Unread");
   click(row);
   const card = await activeForYouCard("Suggested action 1");
   expect(within(card).getByText("A response is needed")).toBeInTheDocument();
@@ -1554,7 +1535,6 @@ test("For you browses without consuming and restores a card from its URL", async
   await activeForYouCard("Suggested action 2");
   expect(pool.consumed).toStrictEqual([]);
   await screen.findByText("3 to go");
-  await within(link("/for-you")).findByLabelText("3 waiting");
 });
 
 function holdCardDeparture(article: HTMLElement) {
@@ -1726,8 +1706,7 @@ test("An empty For you page stays accessible and reports zero suggestions", asyn
   mockPool([]);
   await openForYou();
   await screen.findByRole("heading", { name: "All caught up" });
-  const count = await within(link("/for-you")).findByLabelText("0 waiting");
-  expect(count).toBeInTheDocument();
+  expect(screen.getByText("0 to go")).toBeInTheDocument();
 });
 
 test("Disabling Suggestions returns a direct For you link to the regular homepage", async () => {
@@ -1797,18 +1776,13 @@ test("For you handles a suggestion and a platform event in the same deck", async
   expect(dismissed).toBeTruthy();
 });
 
-const sourceFeatures = {
-  ...features,
-  [FeatureSwitchKey.ForYouSources]: true,
-} as const;
-
 test("A hidden For you page leaves its card unread until the member sees it", async () => {
   mockPool();
   const visibility = context.mocks.browser.visibilityState("hidden");
   await setupPage({
     context,
     path: suggestionPath,
-    featureSwitches: sourceFeatures,
+    featureSwitches: features,
   });
   await activeForYouCard("Review the pending decision");
   click(link("/agents"));
@@ -1858,7 +1832,7 @@ test("A failed system update source change keeps the saved choice and allows an 
   await setupPage({
     context,
     path: suggestionPath,
-    featureSwitches: sourceFeatures,
+    featureSwitches: features,
   });
   await activeForYouCard("Suggested action 1");
   click(button("For you sources"));
@@ -1881,7 +1855,7 @@ test("A failed system update source change keeps the saved choice and allows an 
 test("For you marks only displayed cards as read and new deliveries restore its unread dot", async () => {
   const items = numberedSuggestions(4);
   const pool = mockPool(items.slice(0, 3));
-  await setupPage({ context, path: homePath, featureSwitches: sourceFeatures });
+  await setupPage({ context, path: homePath, featureSwitches: features });
   await within(link(suggestionPath)).findByText("Unread");
   click(link(suggestionPath));
   await activeForYouCard("Suggested action 1");
@@ -1914,7 +1888,7 @@ test("For you source choices persist without removing delivered cards and only e
   await setupPage({
     context,
     path: suggestionPath,
-    featureSwitches: sourceFeatures,
+    featureSwitches: features,
   });
   await activeForYouCard("Suggested action 1");
   let row = link(suggestionPath);
@@ -2011,7 +1985,7 @@ test("System updates remain unread with optional sources off until their card is
     notifySuggestionsChanged();
     return respond(200, { readAt: nowDate().toISOString() });
   });
-  await setupPage({ context, path: homePath, featureSwitches: sourceFeatures });
+  await setupPage({ context, path: homePath, featureSwitches: features });
   await within(link(suggestionPath)).findByText("Unread");
   click(link(suggestionPath));
   await screen.findByRole("heading", { name: "Automation disabled" });

@@ -1,5 +1,68 @@
 # Changelog
 
+## [0.249.35](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.34...runner-rs-v0.249.35) (2026-11-17)
+
+
+### Bug Fixes
+
+* **runner:** finish response inspection before native connection close ([#48224](https://github.com/okou-ai/okou/issues/48224)) ([ef207eb](https://github.com/okou-ai/okou/commit/ef207eba3382b061c414d118a0cf81b293a9e9af))
+
+
+### Refactoring
+
+* **python:** give streamed body capture one state owner ([#48215](https://github.com/okou-ai/okou/issues/48215)) ([135a178](https://github.com/okou-ai/okou/commit/135a178e3ad4fa1893dd4764fb7b712df2c6cdc4))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.34](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.33...runner-rs-v0.249.34) (2026-11-17)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.33](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.32...runner-rs-v0.249.33) (2026-11-17)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.32](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.31...runner-rs-v0.249.32) (2026-11-17)
+
+
+### Documentation
+
+* align runner descriptions with direct execution ([#48085](https://github.com/okou-ai/okou/issues/48085)) ([f3707aa](https://github.com/okou-ai/okou/commit/f3707aa037153905e98bfaa81d62db0b7feaa934))
+
+
+### Refactoring
+
+* **python:** retain canonical captured connector intent ([#48131](https://github.com/okou-ai/okou/issues/48131)) ([31495dd](https://github.com/okou-ai/okou/commit/31495dd2fd8fb265cf53f8e19cf4d9c7a9cad5b6))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.31](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.30...runner-rs-v0.249.31) (2026-11-17)
+
+
+### Refactoring
+
+* use typed fallible native clock queries ([#48072](https://github.com/okou-ai/okou/issues/48072)) ([4b16d0b](https://github.com/okou-ai/okou/commit/4b16d0b56361a1f955133d6a161ff21eb8083394))
+
+## [0.249.30](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.29...runner-rs-v0.249.30) (2026-11-17)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.29](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.28...runner-rs-v0.249.29) (2026-11-17)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.28](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.27...runner-rs-v0.249.28) (2026-11-17)
 
 

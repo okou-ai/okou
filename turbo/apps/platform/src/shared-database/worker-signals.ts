@@ -370,7 +370,7 @@ const startChatThreadIndicatorsRefresh$ = command(({ get, set }): void => {
  * Run output does not refetch them. Run-state signals share the throttle; a
  * user's own read-cursor change refreshes immediately.
  */
-export const startChatThreadIndicatorsRefreshFromRealtime$ = command(
+const startChatThreadIndicatorsRefreshFromRealtime$ = command(
   ({ set }, signal: AbortSignal): boolean => {
     signal.throwIfAborted();
     set(startChatThreadIndicatorsRefresh$);

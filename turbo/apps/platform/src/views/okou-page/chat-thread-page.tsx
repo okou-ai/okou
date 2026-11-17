@@ -176,7 +176,6 @@ import {
   CHAT_INLINE_VIDEO_ATTACHMENT_PREVIEW_CLASS,
   ChatImagePreviewLink,
   ChatVideoPreviewButton,
-  FirstTaskUpgradeCard,
 } from "./chat-body-cards.tsx";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
@@ -330,7 +329,6 @@ import {
   type ChatThreadEmojiItem,
 } from "../../signals/chat-page/chat-thread-emoji.ts";
 import { openRenameChatThreadDialogForThreadId$ } from "../../signals/chat-page/chat-thread-rename.ts";
-import type { ComposerLayout } from "./chat-composer.tsx";
 import { ChatComposer } from "./composer.tsx";
 import {
   ModelProviderPicker,
@@ -361,7 +359,7 @@ import {
   chatThreadContainerElement$,
   setChatKeyboardScrollRoot$,
 } from "../../signals/chat-page/chat-keyboard.ts";
-import { ChatCard } from "./components/chat-card.tsx";
+import { ChatNoticeCard } from "./components/chat-notice-card.tsx";
 import { ChatCardDetails } from "./components/chat-card-details.tsx";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 import {
@@ -3534,16 +3532,11 @@ function ChatThreadContent({ thread }: { thread: ChatPanelSignals }) {
 }
 
 function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
-  const capabilitiesEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.HomeCapabilities];
   const initialEventsReady = useGet(thread.initialEventsReady$);
   const hasEvents = useLastResolved(thread.hasEvents$);
   const sharingPhase = useGet(thread.sharing.phase$);
   const showCapabilities =
-    capabilitiesEnabled &&
-    initialEventsReady &&
-    hasEvents === false &&
-    sharingPhase === "idle";
+    initialEventsReady && hasEvents === false && sharingPhase === "idle";
 
   const header = <ChatThreadHeader thread={thread} />;
   const content = showCapabilities ? (
@@ -3554,27 +3547,14 @@ function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
   const footer = (
     <ChatThreadBottomBar
       thread={thread}
-      layout={capabilitiesEnabled ? "home" : "default"}
       discoveryInContent={showCapabilities}
     />
   );
   return (
     <>
-      {capabilitiesEnabled ? (
-        <ChatPageLayout header={header} footer={footer}>
-          {content}
-        </ChatPageLayout>
-      ) : (
-        <>
-          {header}
-          <div className="relative min-h-0 flex-1">
-            <div className="flex h-full min-w-0 flex-col">
-              {content}
-              {footer}
-            </div>
-          </div>
-        </>
-      )}
+      <ChatPageLayout header={header} footer={footer}>
+        {content}
+      </ChatPageLayout>
       <ChatThreadFeedbackSlot thread={thread} />
     </>
   );
@@ -3624,11 +3604,9 @@ function SharedThreadCreatedLink({
 
 function ChatThreadBottomBar({
   thread,
-  layout,
   discoveryInContent,
 }: {
   readonly thread: ChatPanelSignals;
-  readonly layout: ComposerLayout;
   readonly discoveryInContent: boolean;
 }) {
   const { t } = useTranslation();
@@ -3645,7 +3623,6 @@ function ChatThreadBottomBar({
     return withChatScrollLayout(
       <ChatThreadComposer
         thread={thread}
-        layout={layout}
         discoveryInContent={discoveryInContent}
       />,
     );
@@ -3938,11 +3915,9 @@ function RecommendedFollowupList({
 
 function ChatThreadComposer({
   thread,
-  layout,
   discoveryInContent,
 }: {
   readonly thread: ChatPanelSignals;
-  readonly layout: ComposerLayout;
   readonly discoveryInContent: boolean;
 }) {
   const composerLayoutRef = useSet(thread.composerLayoutOnRef$);
@@ -3954,7 +3929,7 @@ function ChatThreadComposer({
     <ChatComposerFooter ref={composerLayoutRef}>
       <ChatComposer
         signals={thread.composer}
-        layout={layout}
+        layout="home"
         discoveryInContent={discoveryInContent}
       />
     </ChatComposerFooter>
@@ -4253,18 +4228,6 @@ function FinishedRunRow({
   );
 }
 
-function CompletedResultUpgrade({ thread }: { thread: ChatPanelSignals }) {
-  const eligible = useLoadable(thread.firstTaskUpgradeEligible$);
-  if (eligible.state !== "hasData" || !eligible.data) {
-    return null;
-  }
-  return (
-    <div className="@container w-full max-w-2xl">
-      <FirstTaskUpgradeCard />
-    </div>
-  );
-}
-
 function ChatConnectorActionConnectModal() {
   const active = useGet(activeChatConnectorAction$);
 
@@ -4377,38 +4340,11 @@ function customCreditsFromForm(form: HTMLFormElement | null): number | null {
   return credits;
 }
 
-/** Let resolved billing copy wrap to its actual height, including longer
- * translations, without leaving an unused second line under short copy. */
-const BILLING_NOTICE_DESCRIPTION_CLASS =
-  "text-sm leading-5 text-muted-foreground";
+/** Actions remain reachable in one row without growing the transcript frame. */
+const CHAT_NOTICE_ACTION_SLOT_CLASS =
+  "flex h-9 w-full shrink-0 items-center gap-2 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden @[640px]:w-auto @[640px]:max-w-[60%]";
 
-/** A personal usage limit can resolve to an account plus two exhausted windows.
- * Ordinary usage limits need only their actual description height. */
-const USAGE_RECOVERY_DESCRIPTION_CLASS = "min-h-20 @[640px]:min-h-10";
-
-/**
- * The billing notice's action is the other row an asynchronous read introduces:
- * it appears only once `billingStatusAsync$` and `isOrgAdmin$` resolve, and the
- * credits-available state replaces the whole body without one. Below the card's
- * 640px breakpoint the body is a column, so mounting that row late would add its
- * own height plus the container gap and resize the transcript. Every billing
- * state therefore keeps this slot, filled or empty, at the shared action height,
- * and the error card's pending state reserves the same box for its own details
- * trigger.
- */
-const CHAT_NOTICE_ACTION_SLOT_CLASS = "flex min-h-8 shrink-0 items-center";
-
-/**
- * Recovery controls keep a one-row floor while classification loads, then grow
- * only when the controls actually wrap. Reserving a hypothetical second row
- * leaves resolved mobile cards with false bottom padding.
- */
-const ASSISTANT_ERROR_ACTION_SLOT_CLASS =
-  "flex min-h-8 shrink-0 items-center justify-end";
-
-/** Let translated recovery actions fit narrow chat cards without clipping. */
-const ERROR_CARD_ACTION_CLASS =
-  "h-auto min-h-8 max-w-full shrink-0 whitespace-normal break-words py-1 text-center";
+const ERROR_CARD_ACTION_CLASS = "h-8 shrink-0 whitespace-nowrap text-center";
 
 function creditsAvailableCopy(): {
   readonly headline: string;
@@ -4499,8 +4435,8 @@ function PaidCreditCheckoutActions({
   };
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap gap-2">
+    <div className="flex h-9 shrink-0 items-center gap-2">
+      <div className="flex h-9 shrink-0 items-center gap-2">
         {CREDIT_TOP_UP_OPTIONS.map((credits) => {
           return (
             <Button
@@ -4690,13 +4626,14 @@ function InsufficientCreditsCard({ error }: { readonly error: string }) {
 
   return (
     <>
-      <div className="flex flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
-        <div className="flex min-w-0 items-start gap-2.5">
+      <div className="flex h-full min-w-0 flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
+        <div className="flex min-w-0 items-start gap-2.5 @[640px]:flex-1">
           {icon}
           <div className="min-w-0">
             <p
+              title={headline}
               className={cn(
-                "break-words text-[0.9375rem] font-medium",
+                "h-6 truncate text-[0.9375rem] font-medium leading-6",
                 hasAvailableCredits
                   ? "text-emerald-700 dark:text-emerald-300"
                   : "text-foreground",
@@ -4704,12 +4641,16 @@ function InsufficientCreditsCard({ error }: { readonly error: string }) {
             >
               {headline}
             </p>
-            <p className={cn("mt-1", BILLING_NOTICE_DESCRIPTION_CLASS)}>
+            <p
+              title={helper}
+              className="mt-0.5 h-5 truncate text-sm leading-5 text-muted-foreground"
+            >
               {helper}
             </p>
           </div>
         </div>
         <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
+          <CreditsExhaustedSurvey eligible={showUpgradeSurvey} />
           {!canShowBillingAction ? null : shouldStartProCheckout ? (
             <Button
               type="button"
@@ -4735,7 +4676,6 @@ function InsufficientCreditsCard({ error }: { readonly error: string }) {
           )}
         </div>
       </div>
-      {showUpgradeSurvey ? <CreditsExhaustedSurvey /> : null}
     </>
   );
 }
@@ -4940,7 +4880,7 @@ function AssistantRecoveryActions({
     recovery.kind === "output-token-limit";
 
   return (
-    <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
+    <div className="flex h-9 shrink-0 items-center justify-end gap-2">
       <AssistantRecoveryModelPicker
         recovery={recovery}
         thread={thread}
@@ -5009,28 +4949,18 @@ interface AssistantErrorCardContent {
   readonly title: string;
   readonly description: ReactNode;
   readonly descriptionTitle?: string;
-  readonly descriptionClassName?: string;
   readonly details?: ReactNode;
   readonly actions?: ReactNode;
   readonly reserveActions?: boolean;
   readonly testId?: string;
 }
 
-/**
- * The classification behind this card resolves over two chained requests, so
- * `pending` is the state before either landed. It keeps the settled card's own
- * frame and renders its synchronous supporting copy invisibly, so short cards
- * can hug their content without collapsing during classification. Usage limits
- * reserve the account-and-window rows that load from the provider. Recovery
- * controls stay inline; only multiline or unusually long raw diagnostics keep
- * a details dialog.
- */
+/** Classification changes only bounded copy and actions inside the fixed frame. */
 function AssistantErrorCard({
   icon: Icon,
   title,
   description,
   descriptionTitle,
-  descriptionClassName,
   details,
   actions,
   reserveActions = false,
@@ -5045,7 +4975,7 @@ function AssistantErrorCard({
     <div
       role="status"
       data-testid={pending ? "assistant-error-card-loading" : testId}
-      className="flex w-full flex-col justify-between gap-3 p-3 text-foreground @[640px]:flex-row @[640px]:items-center"
+      className="flex h-full w-full min-w-0 flex-col justify-between gap-3 p-3 text-foreground @[640px]:flex-row @[640px]:items-center"
     >
       <div className="flex min-w-0 items-start gap-2.5 @[640px]:flex-1">
         {pending ? (
@@ -5058,8 +4988,9 @@ function AssistantErrorCard({
         )}
         <div className="min-w-0">
           <div
+            title={pending ? undefined : title}
             className={cn(
-              "min-h-6 break-words text-[0.9375rem] font-medium leading-6",
+              "h-6 truncate text-[0.9375rem] font-medium leading-6",
               pending && "invisible",
             )}
             aria-hidden={pending ? true : undefined}
@@ -5070,10 +5001,10 @@ function AssistantErrorCard({
             <div
               data-testid="assistant-error-description"
               className={cn(
-                "mt-0.5 break-words text-sm leading-5 text-muted-foreground",
-                descriptionClassName,
+                "mt-0.5 h-5 truncate text-sm leading-5 text-muted-foreground",
                 pending && "invisible",
               )}
+              title={pending ? undefined : accessibleDescription}
               aria-description={pending ? undefined : accessibleDescription}
               aria-hidden={pending ? true : undefined}
             >
@@ -5084,15 +5015,14 @@ function AssistantErrorCard({
       </div>
       {pending ? (
         reserveActions ? (
-          <div className={ASSISTANT_ERROR_ACTION_SLOT_CLASS} />
+          <div className={CHAT_NOTICE_ACTION_SLOT_CLASS} />
         ) : null
       ) : actions !== undefined || details !== undefined ? (
-        <div className={ASSISTANT_ERROR_ACTION_SLOT_CLASS}>
-          {actions !== undefined ? (
-            actions
-          ) : (
+        <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
+          {actions}
+          {details !== undefined ? (
             <ChatCardDetails title={title}>{details}</ChatCardDetails>
-          )}
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -5536,14 +5466,14 @@ function assistantRecoveryDescription(
       title: details.join(" · "),
       content: (
         <>
-          {sourceDescription && <div>{sourceDescription}</div>}
-          {resetTexts.length > 0 && (
-            <div className="flex flex-col @[640px]:flex-row @[640px]:flex-wrap @[640px]:gap-x-4">
-              {resetTexts.map((resetText) => {
-                return <span key={resetText}>{resetText}</span>;
-              })}
-            </div>
-          )}
+          {details.map((detail, index) => {
+            return (
+              <span key={detail}>
+                {index > 0 ? " · " : ""}
+                <span>{detail}</span>
+              </span>
+            );
+          })}
         </>
       ),
     };
@@ -5617,9 +5547,8 @@ function assistantErrorRecoveryContent(
     title: assistantRecoveryTitle(recovery, t),
     description: description.content,
     descriptionTitle: description.title,
-    ...(recovery.kind === "usage-limit" &&
-    (recovery.personalSubscription !== null || recovery.resetWindows.length > 0)
-      ? { descriptionClassName: USAGE_RECOVERY_DESCRIPTION_CLASS }
+    ...(recovery.kind === "usage-limit"
+      ? { details: <p>{description.title}</p> }
       : {}),
     ...(hasActions
       ? {
@@ -5692,15 +5621,6 @@ function isLegacyUsageLimitError(
   );
 }
 
-function structuredUsageDescriptionClass(
-  error: string,
-  reason: KnownRunFailureReason,
-): string {
-  return reason === "usage_limit" && isLegacyUsageLimitError(error, undefined)
-    ? USAGE_RECOVERY_DESCRIPTION_CLASS
-    : "";
-}
-
 function assistantErrorFallbackContent(
   error: string,
   failureReason: string | undefined,
@@ -5719,10 +5639,6 @@ function assistantErrorFallbackContent(
       icon: structuredFailureIcon(knownReason.data),
       title: structuredFailureTitle(knownReason.data),
       description: structuredFailureDescription(knownReason.data, t),
-      descriptionClassName: structuredUsageDescriptionClass(
-        error,
-        knownReason.data,
-      ),
       reserveActions: structuredFailureHasActions(knownReason.data),
     };
   }
@@ -5813,14 +5729,14 @@ function AssistantErrorContent({
   thread: ChatPanelSignals;
 }) {
   return (
-    <ChatCard data-testid="assistant-error-card-shell" className="w-full">
+    <ChatNoticeCard data-testid="assistant-error-card-shell">
       <AssistantErrorState
         error={error}
         eventId={eventId}
         failureReason={failureReason}
         thread={thread}
       />
-    </ChatCard>
+    </ChatNoticeCard>
   );
 }
 
@@ -7241,12 +7157,10 @@ function UserMessageView({
   threadId,
   document,
   elevatedFileIds,
-  showVisualizationPreferences,
 }: {
   threadId: string;
   document: UserMessageRenderDocument;
   elevatedFileIds: ReadonlySet<string>;
-  showVisualizationPreferences: boolean;
 }) {
   const partOccurrences = new Map<string, number>();
   const agentRunSourceTitle = document.parts.find((renderPart) => {
@@ -7260,10 +7174,7 @@ function UserMessageView({
       );
     },
   );
-  if (
-    bodyParts.length === 0 &&
-    !(showVisualizationPreferences && document.visualizationPreferences)
-  ) {
+  if (bodyParts.length === 0 && !document.visualizationPreferences) {
     return null;
   }
   const renderedParts: ReactNode[] = [];
@@ -7312,7 +7223,7 @@ function UserMessageView({
   return (
     <div data-structured-user-message="" className="whitespace-pre-wrap">
       {renderedParts}
-      {showVisualizationPreferences && document.visualizationPreferences ? (
+      {document.visualizationPreferences ? (
         <div className={renderedParts.length > 0 ? "mt-2" : undefined}>
           <VisualizationPreferencesChip
             preferences={document.visualizationPreferences}
@@ -7346,8 +7257,6 @@ function UserMessageContent({
   /** Sits directly left of the bubble, for example the pending spinner. */
   leading?: ReactNode;
 }) {
-  const showVisualizationPreferences =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatMessageVisualizationSummary];
   // Attachments read as their own object, so they all sit above the bubble
   // instead of interrupting the sentence they were dropped into. Attachments
   // without an id cannot be matched to a document part, so they stay inline.
@@ -7360,8 +7269,7 @@ function UserMessageContent({
     }),
   );
   const hasBody =
-    (showVisualizationPreferences &&
-      document.visualizationPreferences !== undefined) ||
+    document.visualizationPreferences !== undefined ||
     document.parts.some((renderPart) => {
       return (
         !isUserMessageHiddenPart(renderPart.part) &&
@@ -7388,7 +7296,6 @@ function UserMessageContent({
                 threadId={threadId}
                 document={document}
                 elevatedFileIds={elevatedFileIds}
-                showVisualizationPreferences={showVisualizationPreferences}
               />
             </div>
           </ChatUserMessageBubble>
@@ -7893,9 +7800,6 @@ function PagedRunWorkAssistantContent({
         thread={thread}
         mainActions={mainActions}
       />
-      {statusRow === "finished" ? (
-        <CompletedResultUpgrade thread={thread} />
-      ) : null}
       {(statusTailEvents?.length ?? 0) > 0 || statusRow !== undefined ? (
         <div
           data-chat-run-status-tail

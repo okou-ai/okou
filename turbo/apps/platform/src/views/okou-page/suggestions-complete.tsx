@@ -4,7 +4,14 @@ import { useTranslation } from "react-i18next";
 import { cn } from "@okouai/ui";
 import { focusSuggestionTitleOnRef$ } from "../../signals/okou-page/agent-suggestion-session.ts";
 
-import { playSuggestionConfettiOnRef$ } from "../../signals/okou-page/suggestions-complete.ts";
+const COMPLETION_DOTS = [
+  "size-0.75 [--completion-dot-x:-48px] [--completion-dot-y:-19px] [--completion-dot-stagger:0ms]",
+  "size-1 [--completion-dot-x:-29px] [--completion-dot-y:-38px] [--completion-dot-stagger:12ms]",
+  "size-0.75 [--completion-dot-x:-6px] [--completion-dot-y:-48px] [--completion-dot-stagger:24ms]",
+  "size-1 [--completion-dot-x:24px] [--completion-dot-y:-39px] [--completion-dot-stagger:36ms]",
+  "size-0.75 [--completion-dot-x:45px] [--completion-dot-y:-21px] [--completion-dot-stagger:48ms]",
+  "size-1 [--completion-dot-x:49px] [--completion-dot-y:8px] [--completion-dot-stagger:60ms]",
+] as const;
 
 export function SuggestionsComplete({
   className,
@@ -15,37 +22,50 @@ export function SuggestionsComplete({
 }) {
   const { t } = useTranslation();
   const focusTitle = useSet(focusSuggestionTitleOnRef$);
-  const playConfetti = useSet(playSuggestionConfettiOnRef$);
   return (
     <div
       className={cn(
-        "relative flex min-h-72 flex-col items-center justify-center gap-5 overflow-hidden py-10 text-center sm:min-h-80",
+        "relative flex min-h-72 flex-col items-center justify-center overflow-hidden py-10 text-center sm:min-h-80",
         className,
       )}
     >
-      {celebrate && (
-        <canvas
-          ref={playConfetti}
-          aria-hidden
-          width={1280}
-          height={720}
-          className="pointer-events-none absolute inset-0 size-full motion-reduce:hidden"
-        />
-      )}
-      <CircleCheck
-        aria-hidden
-        strokeWidth={1.5}
-        className="size-14 text-muted-foreground"
-      />
-      <h3
-        ref={focusTitle}
-        tabIndex={-1}
-        className="text-xl font-medium focus:outline-none"
+      <div
+        className={cn(
+          "flex flex-col items-center gap-5",
+          celebrate && "motion-safe:animate-completion-in",
+        )}
       >
-        {t(($) => {
-          return $.chat.agentSuggestions.homeCard.completeTitle;
-        })}
-      </h3>
+        <span aria-hidden className="pointer-events-none relative size-14">
+          <CircleCheck
+            strokeWidth={1.5}
+            className={cn(
+              "size-full text-muted-foreground",
+              celebrate && "motion-safe:animate-completion-check-in",
+            )}
+          />
+          {celebrate &&
+            COMPLETION_DOTS.map((dot) => {
+              return (
+                <span
+                  key={dot}
+                  className={cn(
+                    "absolute top-1/2 left-1/2 -translate-1/2 rounded-full bg-green-700/70 opacity-0 motion-safe:animate-completion-dot dark:bg-green-300/70",
+                    dot,
+                  )}
+                />
+              );
+            })}
+        </span>
+        <h3
+          ref={focusTitle}
+          tabIndex={-1}
+          className="text-xl font-medium focus:outline-none"
+        >
+          {t(($) => {
+            return $.chat.agentSuggestions.homeCard.completeTitle;
+          })}
+        </h3>
+      </div>
     </div>
   );
 }

@@ -1,6 +1,10 @@
 import { and, eq, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { storages, storageVersions } from "@okouai/db/schema/storage";
+import {
+  memberMemories,
+  memoryVersions,
+} from "@okouai/db/schema/member-memory";
+import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import {
   storageVersionCacheKeySql,
@@ -50,8 +54,8 @@ export function storageRequestKey(request: StorageRequest): string {
 export function isFullStorageVersionId(version: string): boolean {
   return /^[0-9a-f]{64}$/i.test(version);
 }
-const head = alias(storageVersions, "head_storage_versions");
-const exact = alias(storageVersions, "exact_storage_versions");
+const head = alias(memoryVersions, "head_storage_versions");
+const exact = alias(memoryVersions, "exact_storage_versions");
 
 function uniqueStorageRequests(requests: readonly StorageRequest[]) {
   return [
@@ -78,13 +82,13 @@ function uniqueStorageRequests(requests: readonly StorageRequest[]) {
 
 function requestedVersionCacheKeySql() {
   return storageVersionCacheKeySql({
-    orgId: sql`${storages.orgId}`,
+    orgId: sql`${memberMemories.orgId}`,
     versionId: sql`CASE WHEN requested.version_id IS NULL OR requested.version_id = ${head.id} THEN ${head.id} ELSE ${exact.id} END`,
-    s3Key: sql`CASE WHEN requested.version_id IS NULL OR requested.version_id = ${head.id} THEN ${head.s3Key} ELSE ${exact.s3Key} END`,
+    s3Key: sql`CASE WHEN requested.version_id IS NULL OR requested.version_id = ${head.id} THEN ${head.objectPrefix} ELSE ${exact.objectPrefix} END`,
   });
 }
 
-/** Shared query policy for Agent prefetch and thread/request-owned mounts. */
+/** Memory owns pre-queue selection; wire/cache keys retain their existing identity. */
 export function storageBaseIndexReadPlan(requests: readonly StorageRequest[]) {
   const unique = uniqueStorageRequests(requests);
   if (unique.length === 0) {
@@ -92,18 +96,18 @@ export function storageBaseIndexReadPlan(requests: readonly StorageRequest[]) {
   }
   return {
     columns: {
-      orgId: storages.orgId,
-      userId: storages.userId,
-      name: storages.name,
-      storageId: storages.id,
-      headVersionId: storages.headVersionId,
-      s3Prefix: storages.s3Prefix,
+      orgId: memberMemories.orgId,
+      userId: memberMemories.userId,
+      name: sql`${MEMORY_ARTIFACT_NAME}`.mapWith(memberMemories.userId),
+      storageId: memberMemories.id,
+      headVersionId: memberMemories.headVersionId,
+      s3Prefix: memberMemories.objectPrefix,
       headId: head.id,
-      headS3Key: head.s3Key,
+      headS3Key: head.objectPrefix,
       headArchiveSize: head.archiveSize,
       headFileCount: head.fileCount,
       exactId: exact.id,
-      exactS3Key: exact.s3Key,
+      exactS3Key: exact.objectPrefix,
       exactArchiveSize: exact.archiveSize,
       exactFileCount: exact.fileCount,
       cacheKey: systemStoragePresignedUrlCache.cacheKey,
@@ -111,7 +115,7 @@ export function storageBaseIndexReadPlan(requests: readonly StorageRequest[]) {
       presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
       expiresAt: systemStoragePresignedUrlCache.expiresAt,
     },
-    from: storages,
+    from: memberMemories,
     requested: sql`unnest(
     ${sql.param(
       unique.map((request) => {
@@ -135,19 +139,22 @@ export function storageBaseIndexReadPlan(requests: readonly StorageRequest[]) {
     )}::varchar(64)[]
   ) AS requested(org_id, user_id, name, version_id)`,
     requestedCondition: and(
-      eq(storages.orgId, sql`requested.org_id`),
-      eq(storages.userId, sql`requested.user_id`),
-      eq(storages.name, sql`requested.name`),
+      eq(memberMemories.orgId, sql`requested.org_id`),
+      eq(memberMemories.userId, sql`requested.user_id`),
+      eq(sql`${MEMORY_ARTIFACT_NAME}`, sql`requested.name`),
     ),
     head,
-    headCondition: eq(storages.headVersionId, head.id),
+    headCondition: and(
+      eq(memberMemories.headVersionId, head.id),
+      eq(head.memoryId, memberMemories.id),
+    ),
     exact,
     exactCondition: and(
       eq(
         exact.id,
-        sql`NULLIF(requested.version_id, ${storages.headVersionId})`,
+        sql`NULLIF(requested.version_id, ${memberMemories.headVersionId})`,
       ),
-      eq(exact.storageId, storages.id),
+      eq(exact.memoryId, memberMemories.id),
     ),
     cache: systemStoragePresignedUrlCache,
     cacheCondition: eq(

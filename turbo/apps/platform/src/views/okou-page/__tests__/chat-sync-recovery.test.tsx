@@ -171,11 +171,12 @@ test("A realtime continuity gap catches up without another chat notification", a
 test.each([
   { path: RUN_PATH, gap: "connection" },
   { path: RUN_PATH, gap: "credential" },
-  { path: `/agents/${AGENT_ID}/chat`, gap: "credential" },
+  { path: "/", gap: "credential" },
 ])(
   "A $gap gap catches up Project changes without another notification at $path",
   async ({ path, gap }) => {
     installChat();
+    context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
     const renamedId = "30000000-0000-4000-8000-000000000071";
     const deletedId = "30000000-0000-4000-8000-000000000072";
     const createdId = "30000000-0000-4000-8000-000000000073";
@@ -213,7 +214,7 @@ test.each([
       context,
       path,
       sharedWorkerTestTransport: "message-port",
-      featureSwitches: { [FeatureSwitchKey.Projects]: true },
+      featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
     });
     await expect(
       screen.findByText("Earlier Project"),

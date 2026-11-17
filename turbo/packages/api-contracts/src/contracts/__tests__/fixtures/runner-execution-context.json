@@ -90,8 +90,6 @@
   },
   "connectorRuntimeTargets": [],
   "disallowedTools": ["FixtureDangerousTool"],
-  "tools": ["Bash", "Read"],
-  "settings": "{\"fixture\":true}",
   "featureFlags": {
     "fixtureFlag": true
   },

@@ -13,9 +13,9 @@ implicit_exception_flow.py:129: use metadata_keys.AUTH_CACHE_HIT for flow.metada
 implicit_exception_flow.py:137: use metadata_keys.AUTH_URL_REWRITE for flow.metadata access
 implicit_exception_flow.py:145: use metadata_keys.AUTH_RESOLVED_SECRETS for flow.metadata access
 implicit_exception_flow.py:154: use metadata_keys.REQUEST_STREAM_COMPLETE for flow.metadata access
-implicit_exception_flow.py:163: use metadata_keys.REQUEST_STREAM_BUFFER for flow.metadata access
+implicit_exception_flow.py:163: use metadata_keys.REQUEST_STREAM_CAPTURE for flow.metadata access
 implicit_exception_flow.py:172: use metadata_keys.RESPONSE_STREAM_STATE for flow.metadata access
-implicit_exception_flow.py:181: use metadata_keys.STREAM_BUFFER_STATE for flow.metadata access
+implicit_exception_flow.py:181: use metadata_keys.RESPONSE_STREAM_CAPTURE for flow.metadata access
 implicit_exception_flow.py:188: use metadata_keys.CONNECTOR_DIAGNOSTIC_SLUG for flow.metadata access
 implicit_exception_flow.py:197: use metadata_keys.CONNECTOR_DIAGNOSTIC_REASON for flow.metadata access
 implicit_exception_flow.py:222: use metadata_keys.CONNECTOR_DIAGNOSTIC_BASE for flow.metadata access

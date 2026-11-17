@@ -368,7 +368,6 @@ struct ChatDetailView: View {
               }
             }, refresh: { await conversation.refresh() },
             modelSelection: conversation.modelSelection,
-            showsModelSelection: !scrolling.showsBottomButton,
             connectorSelection: conversation.modelSelection?.connectors,
             mentionSource: mentionSource,
             workflowSource: conversation.workflowSource, agentID: conversation.thread.agentID,

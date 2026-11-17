@@ -367,7 +367,6 @@ function createConnectorNavigation(
     openConnectorPermissions$,
     directoryFinalFocus$,
     searchConnectors$: command(({ get, set }, search: string) => {
-      set(chatAccess.navigation.reset$);
       if (get(chatAccess.target$)) {
         set(chatAccess.closeTarget$);
       }

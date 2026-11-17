@@ -31,8 +31,6 @@ import {
   TabsContent,
 } from "@okouai/ui";
 import { findWorkflowTemplateItem } from "@okouai/core/workflow-template-items";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type {
   HomeCapability,
@@ -319,7 +317,7 @@ export function CapabilityTray({
   readonly className: string;
 }) {
   const { t } = useTranslation();
-  const tabs = useComposerCapabilities(signals) ?? [];
+  const tabs = useComposerCapabilities(signals);
   const open = useSet(signals.taskChips.home.openCapability$);
   const pageSignal = useGet(pageSignal$);
   const group = capabilityGroup(selected);
@@ -392,11 +390,7 @@ export function CapabilityTray({
             {selected === "workflow" ? (
               <HomeWorkflowSuggestions signals={signals} />
             ) : (
-              <ComposerTaskTemplates
-                signals={signals}
-                selected={selected}
-                headerless
-              />
+              <ComposerTaskTemplates signals={signals} selected={selected} />
             )}
           </CapabilityTrayBody>
         )}
@@ -723,9 +717,8 @@ export function ComposerCapabilityTray({
 }: {
   readonly signals: ComposerSignals;
 }) {
-  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.HomeCapabilities];
   const selected = useGet(signals.taskChips.home.menuTask$);
-  if (!enabled || selected === null) {
+  if (selected === null) {
     return null;
   }
   return (

@@ -352,20 +352,22 @@ final class WorkspaceStoreTests: XCTestCase {
     XCTAssertNil(store.selectedThreadID)
   }
 
-  func testStartupShowsCachedRecentChatsBeforeNavigationAndPreservesArchiveVisibility() async throws
-  {
+  func testStartupRestoresCachedProjectsBeforeNetworkAndPreservesArchiveVisibility() async throws {
     let cacheDirectory = CacheTestDirectory(owner: self)
     let archivedID = "40000000-0000-4000-8000-000000000004"
+    let projectID = "30000000-0000-4000-8000-000000000071"
     let snapshot = ChatHTTPResponse(
       body: """
         {"chatThreads":[
-          {"id":"\(storeThreadID)","agentId":"\(storeAgentID)","title":"Recent cached chat",\
+          {"id":"\(storeThreadID)","agentId":"\(storeAgentID)","projectId":"\(projectID)",\
+        "title":"Recent cached chat",\
         "sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","archived":false},
           {"id":"\(archivedID)","agentId":"\(storeAgentID)","title":"Archived cached chat",\
         "sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","archived":true}
         ],"latestEventId":null,"latestSeqId":null}
         """)
     let navigationStarted = expectation(description: "Navigation is being loaded")
+    let holdNavigation = Mutex(false)
     let releaseNavigation = HTTPResponseGate()
     defer { releaseNavigation.open() }
     let catchUpStarted = expectation(
@@ -376,13 +378,24 @@ final class WorkspaceStoreTests: XCTestCase {
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
       case "/api/agents":
-        navigationStarted.fulfill()
-        await releaseNavigation.wait()
+        if holdNavigation.withLock({ $0 }) {
+          navigationStarted.fulfill()
+          await releaseNavigation.wait()
+        }
         return ChatHTTPResponse(
           body: """
             [{"agentId":"\(storeAgentID)","isDefaultAgent":true,"displayName":"Okou"}]
             """)
       case "/api/chat-threads/snapshot": return snapshot
+      case "/api/projects/snapshot":
+        return ChatHTTPResponse(
+          body: """
+            {"latestEventId":null,"latestSeqId":0,"projects":[{
+            "id":"\(projectID)","name":"Cached Project",\
+            "createdAt":"\(storeDate)","updatedAt":"\(storeDate)"}]}
+            """)
+      case "/api/projects/events":
+        return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
       case "/api/chat-threads/events":
         if holdCatchUp.withLock({ $0 }) {
           catchUpStarted.fulfill()
@@ -397,27 +410,41 @@ final class WorkspaceStoreTests: XCTestCase {
       default: throw URLError(.unsupportedURL)
       }
     }
-    let cache = cacheDirectory.cache(
-      scope: ChatCacheScope(
-        apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace"))
-    let previous = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL, cache: cache)
+    let scope = ChatCacheScope(
+      apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace")
+    let cache = cacheDirectory.cache(scope: scope)
+    let previous = WorkspaceStore(
+      client: fixture.client, webURL: fixture.baseURL, cache: cache,
+      projectDisclosure: ProjectDisclosureStorage(scope: scope, directory: cacheDirectory.url))
+    await previous.refreshNavigation()
     await previous.list.refresh()
+    await previous.projects.activate()
+    await previous.projects.expand(projectID)?.value
     XCTAssertNil(previous.list.error)
-    previous.close()
+    await previous.close().value
 
+    holdNavigation.withLock { $0 = true }
     holdCatchUp.withLock { $0 = true }
-    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL, cache: cache)
+    let store = WorkspaceStore(
+      client: fixture.client, webURL: fixture.baseURL, cache: cache,
+      projectDisclosure: ProjectDisclosureStorage(scope: scope, directory: cacheDirectory.url))
     defer { store.close() }
     store.startNewChat()
     let startup = Task { await store.start(userID: "user", workspaceID: "workspace") }
     addTeardownBlock { @MainActor in
-      store.close()
+      let closing = store.close()
       startup.cancel()
       releaseNavigation.open()
       releaseCatchUp.open()
       await startup.value
+      await closing.value
     }
     await fulfillment(of: [navigationStarted], timeout: 2)
+    let cached = try store.sidebar.stateStore.get(store.sidebar.presentation)
+    XCTAssertEqual(cached.projects.map(\.project.name), ["Cached Project"])
+    XCTAssertEqual(cached.projects.first?.section.rows.map(\.title), ["Recent cached chat"])
+    XCTAssertTrue(store.projects.isExpanded(projectID))
+    XCTAssertTrue(cached.chats.isEmpty)
     XCTAssertEqual(
       store.list.threads(agentID: storeAgentID, archived: false).map(\.title),
       ["Recent cached chat"])
@@ -986,6 +1013,7 @@ final class WorkspaceStoreTests: XCTestCase {
     XCTAssertTrue(unread.withLock { $0 })
 
     store.selectedThreadID = storeThreadID
+    store.sidebarInteraction.setOpen(false)
     await store.conversation(for: storeThreadID)?.refresh()
     XCTAssertNil(store.list.threads.first?.indicator)
     XCTAssertNil(store.conversation(for: storeThreadID)?.error)

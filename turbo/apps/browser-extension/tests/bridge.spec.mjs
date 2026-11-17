@@ -3,7 +3,6 @@ import { createServer } from "node:http";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
-import { once } from "node:events";
 import { createInterface } from "node:readline";
 import { OkouBrowserClient } from "@okouai/browser-extension-client";
 import { openWire, tabTargetForPage } from "./cdp.mjs";
@@ -47,12 +46,13 @@ async function fixture() {
       "--disable-popup-blocking",
       "--remote-debugging-port=0",
       `--user-data-dir=${profile}`,
-      `--disable-extensions-except=${extension}`,
-      `--load-extension=${extension}`,
       "about:blank",
     ],
     { stdio: ["ignore", "ignore", "pipe"] },
   );
+  const closed = new Promise((resolve) => {
+    owner.once("close", resolve);
+  });
   const lines = createInterface({
     input: owner.stderr,
     signal: AbortSignal.timeout(10000),
@@ -65,11 +65,11 @@ async function fixture() {
     wire?.close();
     await browser?.close();
     lines.close();
-    if (owner.exitCode === null && owner.signalCode === null) {
-      const exited = once(owner, "exit");
+    if (owner.exitCode === null && owner.signalCode === null)
       owner.kill("SIGTERM");
-      await exited;
-    }
+    // Chromium children inherit stderr and can write the profile after the
+    // parent exits. Wait for stdio closure before removing their files.
+    await closed;
     await rm(profile, { recursive: true, force: true, maxRetries: 3 });
   }
   try {
@@ -82,6 +82,81 @@ async function fixture() {
       }
     }
     if (!endpoint) throw new Error("Owned browser has no CDP endpoint");
+    wire = await openWire(endpoint);
+    const activated = Promise.withResolvers();
+    const releases = [];
+    const { targetInfos } = await wire.request("Target.getTargets");
+    const { sessionId: observer } = await wire.request(
+      "Target.attachToTarget",
+      {
+        targetId: targetInfos.find((target) => {
+          return target.type === "page";
+        }).targetId,
+        flatten: true,
+      },
+    );
+    const off = wire.onEvent((event) => {
+      if (
+        event.method === "Target.attachedToTarget" &&
+        event.params.targetInfo.type === "service_worker" &&
+        event.params.targetInfo.url.endsWith("/background.js")
+      ) {
+        if (!event.params.waitingForDebugger) {
+          activated.reject(
+            new Error("Initial worker was not held at creation"),
+          );
+          return;
+        }
+        const releasing = wire.request(
+          "Runtime.runIfWaitingForDebugger",
+          {},
+          event.params.sessionId,
+        );
+        releases.push(releasing);
+        releasing.catch(activated.reject);
+      }
+      if (
+        event.sessionId === observer &&
+        event.method === "ServiceWorker.workerVersionUpdated" &&
+        event.params.versions.some((version) => {
+          return (
+            version.scriptURL.endsWith("/background.js") &&
+            version.status === "activated" &&
+            version.runningStatus === "running"
+          );
+        })
+      )
+        activated.resolve();
+    });
+    await wire.request("ServiceWorker.enable", {}, observer);
+    // Chromium retains the initial pause-on-start flag across worker restarts.
+    // Attaching after command-line installation cannot establish that flag.
+    await wire.request("Target.setAutoAttach", {
+      autoAttach: true,
+      waitForDebuggerOnStart: true,
+      flatten: true,
+      filter: [{ type: "service_worker" }, { exclude: true }],
+    });
+    try {
+      await Promise.race([
+        Promise.all([
+          wire.request("Extensions.loadUnpacked", { path: extension }),
+          activated.promise,
+        ]),
+        closed.then(() => {
+          throw new Error("Owned browser closed during extension installation");
+        }),
+      ]);
+      await Promise.all(releases);
+    } finally {
+      off();
+      await expect
+        .soft(
+          wire.request("Target.detachFromTarget", { sessionId: observer }),
+          "detach the installation observer",
+        )
+        .resolves.toEqual({});
+    }
     browser = await chromium.connectOverCDP(endpoint);
     const context = browser.contexts()[0];
     const worker =
@@ -98,8 +173,13 @@ async function fixture() {
         return chrome.runtime.getManifest().name;
       }),
     ).toBe("Okou Browser");
+    // Keep the initial inspector until Playwright owns the running worker.
+    await wire.request("Target.setAutoAttach", {
+      autoAttach: false,
+      waitForDebuggerOnStart: false,
+      flatten: true,
+    });
     const runtimeId = new URL(worker.url()).hostname;
-    wire = await openWire(endpoint);
     return {
       context,
       worker,
@@ -620,10 +700,7 @@ async function pauseWorkerRestart(f, client, page = f.context.pages()[0]) {
   });
   const attached = Promise.withResolvers();
   const reloaded = Promise.withResolvers();
-  const paused = Promise.withResolvers();
   let sessionId;
-  let breakpointId;
-  let suspended = false;
   const off = f.wire.onEvent((event) => {
     if (
       event.method === "Target.attachedToTarget" &&
@@ -635,14 +712,6 @@ async function pauseWorkerRestart(f, client, page = f.context.pages()[0]) {
     if (event.sessionId !== sessionId) return;
     if (event.method === "Inspector.targetReloadedAfterCrash")
       reloaded.resolve();
-    if (
-      event.method === "Debugger.paused" &&
-      event.params.hitBreakpoints?.includes(breakpointId)
-    ) {
-      suspended = true;
-      paused.resolve(event.params.callFrames[0].callFrameId);
-      off();
-    }
   });
   await f.wire.request("Target.setAutoAttach", {
     autoAttach: true,
@@ -659,7 +728,7 @@ async function pauseWorkerRestart(f, client, page = f.context.pages()[0]) {
     },
   );
   // Playwright automatically resumes restarted workers. This fixture must be
-  // the sole owner that releases startup after installing the native breakpoint.
+  // the sole owner that releases the native startup wait.
   await f.disconnectPlaywright();
   await f.wire.request("ServiceWorker.enable", {}, pageSession);
   const invalidated = new Promise((resolve) => {
@@ -667,32 +736,18 @@ async function pauseWorkerRestart(f, client, page = f.context.pages()[0]) {
   });
   await f.wire.request("ServiceWorker.stopAllWorkers", {}, pageSession);
   await invalidated;
-  // Auto-attach holds the new context while its debugger is configured. Queuing
-  // commands on a crashed inspector alone can lose the race with module startup.
-  const armed = reloaded.promise.then(async () => {
-    await f.wire.request("Debugger.enable", {}, sessionId);
-    ({ breakpointId } = await f.wire.request(
-      "Debugger.setBreakpointByUrl",
-      { lineNumber: 0, url: worker.url },
-      sessionId,
-    ));
-    await f.wire.request("Runtime.runIfWaitingForDebugger", {}, sessionId);
+  // Inspect the context without releasing startup. Layering a module breakpoint
+  // over this wait lets runIfWaitingForDebugger consume that breakpoint's pause.
+  const ready = reloaded.promise.then(async () => {
+    await f.wire.request("Runtime.enable", {}, sessionId);
+    off();
   });
-  const ready = Promise.all([paused.promise, armed]).then(([frame]) => {
-    return frame;
-  });
-  async function resume() {
-    if (!suspended) return;
-    suspended = false;
-    await f.wire.request("Debugger.resume", {}, sessionId);
-  }
   return {
     ready,
-    async bridgeType(frame) {
+    async bridgeType() {
       const result = await f.wire.request(
-        "Debugger.evaluateOnCallFrame",
+        "Runtime.evaluate",
         {
-          callFrameId: frame,
           expression: "typeof globalThis.__okouBrowser",
           returnByValue: true,
         },
@@ -700,18 +755,31 @@ async function pauseWorkerRestart(f, client, page = f.context.pages()[0]) {
       );
       return result.result.value;
     },
-    resume,
+    async resume() {
+      await f.wire.request("Runtime.runIfWaitingForDebugger", {}, sessionId);
+    },
     async close() {
       off();
-      await resume();
-      await f.wire.request("Target.setAutoAttach", {
-        autoAttach: false,
-        waitForDebuggerOnStart: false,
-        flatten: true,
-      });
-      await f.wire.request("Target.detachFromTarget", {
-        sessionId: pageSession,
-      });
+      // Detach releases the startup owner even when the scenario failed before
+      // resume. Report each cleanup failure without skipping the next owner.
+      await expect
+        .soft(
+          f.wire.request("Target.setAutoAttach", {
+            autoAttach: false,
+            waitForDebuggerOnStart: false,
+            flatten: true,
+          }),
+          "disable startup auto-attach",
+        )
+        .resolves.toEqual({});
+      await expect
+        .soft(
+          f.wire.request("Target.detachFromTarget", {
+            sessionId: pageSession,
+          }),
+          "detach the startup page inspector",
+        )
+        .resolves.toEqual({});
     },
   };
 }
@@ -758,11 +826,10 @@ for (const completion of [
           id: f.runtimeId,
           targetId,
         });
-        const frame =
-          await test.step("pause the timeout fixture worker", () => {
-            return startup.ready;
-          });
-        expect(await startup.bridgeType(frame)).toBe("undefined");
+        await test.step("hold the timeout fixture worker", () => {
+          return startup.ready;
+        });
+        expect(await startup.bridgeType()).toBe("undefined");
       }
       const observing = Promise.withResolvers();
       const replacing = Promise.withResolvers();
@@ -859,13 +926,13 @@ for (const completion of [
       );
       if (!expires) {
         const started = await Promise.race([
-          startup.ready.then((frame) => {
-            return { frame };
+          startup.ready.then(() => {
+            return { ready: true };
           }),
           settled,
         ]);
-        expect(started).toHaveProperty("frame");
-        expect(await startup.bridgeType(started.frame)).toBe("undefined");
+        expect(started).toEqual({ ready: true });
+        expect(await startup.bridgeType()).toBe("undefined");
         expect(
           await Promise.race([observing.promise, hello.promise, connecting]),
         ).toBe("observing");
@@ -939,17 +1006,46 @@ for (const completion of [
     } finally {
       releaseObserver.resolve();
       owner.abort();
-      await test.step("release the startup inspector", () => {
-        return startup?.close();
-      });
-      await connecting?.then(
-        (client) => {
-          return client.close();
-        },
-        () => {},
-      );
-      await next?.close();
-      await f.close();
+      // Soft cleanup failures still fail the test, but preserve a body failure
+      // and let every later owner release its sessions, process and profile.
+      for (const [name, cleanup] of [
+        [
+          "release the startup inspector",
+          () => {
+            return startup?.close();
+          },
+        ],
+        [
+          "settle the connecting client",
+          () => {
+            return connecting?.then(
+              (client) => {
+                return client.close();
+              },
+              () => {},
+            );
+          },
+        ],
+        [
+          "close the next client",
+          () => {
+            return next?.close();
+          },
+        ],
+        [
+          "close the browser fixture",
+          () => {
+            return f.close();
+          },
+        ],
+      ])
+        await expect
+          .soft(
+            test.step(name, async () => {
+              await cleanup();
+            }),
+          )
+          .resolves.toBeUndefined();
     }
   });
 }

@@ -2,6 +2,7 @@ import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { sql, type SQL } from "drizzle-orm";
 import type {
   MarketingRewardLinkEvent,
+  MarketingRewardInvitationEvent,
   MarketingRewardOAuthEvent,
   MarketingRewardSourceEvent,
 } from "../../lib/marketing-reward-events";
@@ -9,6 +10,9 @@ import type {
 export const MARKETING_REWARD_EVENT_JOB_KIND = "marketing-reward-source-event";
 export const MARKETING_REWARD_EVENT_HANDLER_VERSION = 1;
 export const MARKETING_REWARD_LINK_EVENT_HANDLER_VERSION = 2;
+export const MARKETING_REWARD_INVITATION_EVENT_HANDLER_VERSION = 3;
+export const MARKETING_REWARD_WORKFLOW_EVENT_HANDLER_VERSION = 4;
+export const MARKETING_REWARD_CHECKIN_EVENT_HANDLER_VERSION = 5;
 
 function sourceEventInsert(
   event: Pick<MarketingRewardSourceEvent, "id" | "orgId" | "userId">,
@@ -66,4 +70,37 @@ export function marketingRewardLinkEventInsert(
     sql`${JSON.stringify(input)}::jsonb || ${source}`,
     acceptedSource,
   );
+}
+
+/** Copy attribution from the winning persisted transition, never caller fields. */
+export function marketingRewardInvitationEventInsert(
+  event: Pick<
+    MarketingRewardInvitationEvent,
+    "id" | "environment" | "type" | "occurredAt"
+  >,
+  acceptedSource: SQL,
+): SQL {
+  const input = {
+    version: 3,
+    id: event.id,
+    environment: event.environment,
+    type: event.type,
+    occurredAt: event.occurredAt,
+  };
+  const invitee =
+    event.type === "invitation.accepted"
+      ? sql`jsonb_build_object('inviteeUserId', source_invitation.invitee_user_id)`
+      : sql`'{}'::jsonb`;
+  return sql`INSERT INTO ${backgroundJobs}
+    (id, kind, handler_version, user_id, org_id, input, available_at, created_at, updated_at)
+    SELECT ${event.id}::uuid, ${MARKETING_REWARD_EVENT_JOB_KIND}, ${MARKETING_REWARD_INVITATION_EVENT_HANDLER_VERSION},
+      source_invitation.actor_user_id, source_invitation.org_id,
+      ${JSON.stringify(input)}::jsonb || jsonb_build_object(
+        'orgId', source_invitation.org_id, 'userId', source_invitation.actor_user_id,
+        'claimId', source_invitation.id::text, 'sourceKey', source_invitation.source_key,
+        'invitationId', source_invitation.invitation_id
+      ) || ${invitee},
+      timezone('UTC', clock_timestamp()), timezone('UTC', clock_timestamp()), timezone('UTC', clock_timestamp())
+    FROM (${acceptedSource}) AS source_invitation
+    RETURNING ${backgroundJobs.id}`;
 }

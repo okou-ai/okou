@@ -1,5 +1,71 @@
 # Changelog
 
+## [1.9.133](https://github.com/okou-ai/okou/compare/host-worker-v1.9.132...host-worker-v1.9.133) (2026-11-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.80.0
+    * @okouai/core bumped to 8.847.4
+    * @okouai/ui bumped to 1.21.40
+
+## [1.9.132](https://github.com/okou-ai/okou/compare/host-worker-v1.9.131...host-worker-v1.9.132) (2026-11-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.79.0
+    * @okouai/core bumped to 8.847.3
+    * @okouai/ui bumped to 1.21.39
+
+## [1.9.131](https://github.com/okou-ai/okou/compare/host-worker-v1.9.130...host-worker-v1.9.131) (2026-11-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.78.0
+    * @okouai/core bumped to 8.847.2
+    * @okouai/ui bumped to 1.21.38
+
+## [1.9.130](https://github.com/okou-ai/okou/compare/host-worker-v1.9.129...host-worker-v1.9.130) (2026-11-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.77.0
+    * @okouai/core bumped to 8.847.1
+    * @okouai/ui bumped to 1.21.37
+
+## [1.9.129](https://github.com/okou-ai/okou/compare/host-worker-v1.9.128...host-worker-v1.9.129) (2026-11-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.76.1
+    * @okouai/core bumped to 8.847.0
+    * @okouai/ui bumped to 1.21.36
+
+## [1.9.128](https://github.com/okou-ai/okou/compare/host-worker-v1.9.127...host-worker-v1.9.128) (2026-11-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.76.0
+    * @okouai/core bumped to 8.846.0
+    * @okouai/ui bumped to 1.21.35
+
 ## [1.9.127](https://github.com/okou-ai/okou/compare/host-worker-v1.9.126...host-worker-v1.9.127) (2026-11-16)
 
 

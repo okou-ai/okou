@@ -216,7 +216,7 @@ export function buildFeishuModelPickerMessage(args: {
     summary: "Select a model for this conversation",
     elements: [
       ...markdownElements(
-        `Current model: **${args.currentModelLabel}**\nChoose a model to save it for this conversation. Send your previous request again after switching.`,
+        `Current model: **${args.currentModelLabel}**\nChoose a model to automatically continue this conversation.`,
       ),
       {
         tag: "select_static",

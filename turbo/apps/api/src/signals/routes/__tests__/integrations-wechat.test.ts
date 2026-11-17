@@ -1,3 +1,4 @@
+import { switchRecoverySubscription } from "./helpers/subscription-recovery";
 import { integrationsWechatMessagesContract } from "@okouai/api-contracts/contracts/integrations-wechat-messages";
 import {
   integrationsWechatUploadInitContract,
@@ -349,6 +350,18 @@ describe("WeChat reply presentation and processing status", () => {
         expect.objectContaining({ eventType: "run.failed", runId: run.runId }),
       ]),
     });
+    await switchRecoverySubscription(context, fixture.actor);
+    await flushWaitUntilForTest();
+    const continued = await fixture.executionInput();
+    expect(continued.runId).not.toBe(run.runId);
+    expect(continued.prompt).toBe("continue");
+    expect(fixture.provider.typingStatuses.at(-1)).toBe(1);
+    await fixture.finish(continued, "The attachment review is complete.");
+    await flushWaitUntilForTest();
+    expect(fixture.sentTexts.at(-1)).toContain(
+      "The attachment review is complete.",
+    );
+    expect(fixture.provider.typingStatuses.at(-1)).toBe(2);
   });
 
   it("offers billing recovery when a running WeChat task runs out of credits", async () => {

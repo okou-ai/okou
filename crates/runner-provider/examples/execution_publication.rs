@@ -53,15 +53,9 @@ unsafe impl GlobalAlloc for AllocationObserver {
 static ALLOCATOR: AllocationObserver = AllocationObserver;
 
 fn cpu_ns() -> Result<u128, Box<dyn Error>> {
-    let mut time = nix::libc::timespec {
-        tv_sec: 0,
-        tv_nsec: 0,
-    };
-    // SAFETY: clock_gettime receives a valid writable timespec for this call.
-    if unsafe { nix::libc::clock_gettime(nix::libc::CLOCK_PROCESS_CPUTIME_ID, &mut time) } != 0 {
-        return Err(io::Error::last_os_error().into());
-    }
-    Ok(u128::try_from(time.tv_sec)? * 1_000_000_000 + u128::try_from(time.tv_nsec)?)
+    let time = nix::time::clock_gettime(nix::time::ClockId::CLOCK_PROCESS_CPUTIME_ID)
+        .map_err(io::Error::from)?;
+    Ok(u128::try_from(time.tv_sec())? * 1_000_000_000 + u128::try_from(time.tv_nsec())?)
 }
 
 fn main() -> Result<(), Box<dyn Error>> {

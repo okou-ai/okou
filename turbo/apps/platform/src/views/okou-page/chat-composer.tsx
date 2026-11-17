@@ -30,14 +30,12 @@ import {
 } from "./composer-connector-actions.ts";
 import { ComposerTaskControls } from "./composer-create.tsx";
 import { ComposerTools } from "./composer-tools.tsx";
-import { ComposerVisualizationPreferences } from "./composer-visualization-preferences.tsx";
 import { useComposerCapabilities } from "./composer-capabilities.ts";
 import {
   ComposerProjectControl,
   useComposerProjectMenuItem,
 } from "../projects/composer-project.tsx";
 import { useCustomTemplateRecommendations } from "./use-custom-template-recommendations.ts";
-import { ComposerTemplatePickerButton } from "./composer-template-picker-button.tsx";
 import { ComposerTemplateSuggestion } from "./composer-template-suggestion.tsx";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
@@ -3313,19 +3311,13 @@ function ComposerPresentationSuggestion({
 
 export function ComposerPresentationRecommendations({
   signals,
-  headerAction,
-  headerless = false,
 }: {
   readonly signals: ComposerSignals;
-  readonly headerAction?: ReactNode;
-  /** The host draws the title and "View all" in its own header. */
-  readonly headerless?: boolean;
 }) {
   const { t } = useTranslation();
   const picker = useComposerTemplatePicker(signals);
   const custom = useCustomTemplateRecommendations(signals, "presentation");
   const builtIn = PRESENTATION_TEMPLATE_PICKER_ITEMS;
-  const openTemplates = useSet(signals.template.openTemplatePicker$);
   const previewRecommendation = useSet(signals.template.previewRecommendation$);
   const presentationSelection =
     usePresentationTemplatePreviewSelection(signals);
@@ -3333,7 +3325,6 @@ export function ComposerPresentationRecommendations({
   const label = t(($) => {
     return $.chat.taskChips.presentationTemplates;
   });
-  // The same header line, rail and cover metrics as every other type's shelf.
   // The import tile leads the rail so members can start with their own deck.
   return (
     <div
@@ -3341,19 +3332,6 @@ export function ComposerPresentationRecommendations({
       role="group"
       aria-label={label}
     >
-      {!headerless && (
-        <div className="flex min-w-0 items-center justify-between gap-3">
-          <p className="min-w-0 truncate text-base font-medium">{label}</p>
-          <div className="flex shrink-0 items-center gap-2">
-            <ComposerTemplatePickerButton
-              onClick={() => {
-                openTemplates({ kind: "insert", category: "slides" });
-              }}
-            />
-            {headerAction}
-          </div>
-        </div>
-      )}
       <ComposerRail
         rail="templates:presentation"
         itemWidth={200}
@@ -5691,9 +5669,7 @@ function useComposerAddMenuGroups(
   const openSkillImportDialog = useSet(openSkillImportDialog$);
   const project = useComposerProjectMenuItem(signals);
   const capabilities = useComposerCapabilities(signals);
-  const capabilityItem = (
-    capability: NonNullable<typeof capabilities>[number],
-  ) => {
+  const capabilityItem = (capability: (typeof capabilities)[number]) => {
     return {
       ...capability,
       onSelect: () => {
@@ -5723,14 +5699,10 @@ function useComposerAddMenuGroups(
         onSelect: template.open,
       },
     ],
-    ...(capabilities
-      ? [
-          [
-            capabilityItem(capabilities[0]),
-            ...capabilities.slice(1).map(capabilityItem),
-          ] satisfies ComposerAddMenuGroup,
-        ]
-      : []),
+    [
+      capabilityItem(capabilities[0]),
+      ...capabilities.slice(1).map(capabilityItem),
+    ],
     [
       {
         id: "import-skills",
@@ -7095,7 +7067,6 @@ function ComposerCard({
             actions={actions}
             minimumHeightClassName={layoutHeightClassNames.input}
           />
-          <ComposerVisualizationPreferences signals={signals} />
           {/* Voice states share 8px/12px outer tray spacing and 12px/8px
               inner padding so their surfaces stay aligned through handoff. */}
           <ComposerFooter key={signals.voice.key} signals={signals}>

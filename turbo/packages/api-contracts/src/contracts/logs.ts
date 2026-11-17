@@ -16,6 +16,7 @@ import {
   timestampQueryNumberSchema,
 } from "./base";
 import { apiErrorSchema } from "./errors";
+import { knownRunFailureReasonSchema } from "./run-failure-reasons";
 import { triggerSourceSchema } from "../validators/logs";
 
 export { triggerSourceSchema } from "../validators/logs";
@@ -112,7 +113,8 @@ const logDetailSchema = object({
   status: logStatusSchema,
   prompt: string(),
   appendSystemPrompt: string().nullable(),
-  error: string().nullable(),
+  error: string().nullable().optional(),
+  failureReason: knownRunFailureReasonSchema.optional(),
   createdAt: string(),
   startedAt: string().nullable(),
   completedAt: string().nullable(),

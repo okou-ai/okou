@@ -2,6 +2,7 @@
 
 mod control_key;
 mod derp;
+mod diagnostics;
 mod fixture;
 mod history;
 mod map_reader;

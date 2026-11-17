@@ -402,6 +402,62 @@ describe("Memory publication authorization", () => {
     });
   });
 
+  it("deduplicates concurrent identical Memory publications and keeps their shared version readable", async () => {
+    const fixture = createPublicRunnerMemory(context);
+    await fixture.run(async () => {
+      const agentId = await fixture.initializeNative();
+      fixture.installObjects();
+      const writers = await Promise.all([
+        fixture.startExecution(agentId, "first identical writer"),
+        fixture.startExecution(agentId, "second identical writer"),
+      ]);
+      const prepared = await Promise.all(
+        writers.map((writer) => {
+          return fixture.prepare(writer, [
+            { path: "notes.md", content: "Shared verified fact" },
+          ]);
+        }),
+      );
+      const results = await Promise.all(
+        writers.map(async (writer, index) => {
+          const candidate = prepared[index];
+          if (!candidate) {
+            throw new Error("Expected this writer's prepared candidate");
+          }
+          return await fixture.webhooks.requestAgentStorageCommit(
+            {
+              runId: writer.run.runId,
+              storageId: writer.memory.storageId,
+              parentVersionId: writer.memory.versionId,
+              versionId: candidate.versionId,
+              files: candidate.files,
+            },
+            writer.headers,
+            [200],
+          );
+        }),
+      );
+      expect(
+        results
+          .map((result) => {
+            if (result.status !== 200) {
+              throw new Error(
+                "Expected both identical publications to succeed",
+              );
+            }
+            return result.body.deduplicated ?? false;
+          })
+          .sort(),
+      ).toStrictEqual([false, true]);
+      const next = await fixture.startExecution(
+        agentId,
+        "read the deduplicated Memory",
+      );
+      expect(next.memory.versionId).toBe(prepared[0]?.versionId);
+      expect(prepared[1]?.versionId).toBe(prepared[0]?.versionId);
+    });
+  });
+
   it("rejects a prepared Memory publication after its Run is cancelled", async () => {
     const fixture = createPublicRunnerMemory(context);
     await fixture.run(async () => {

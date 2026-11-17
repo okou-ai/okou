@@ -1,3 +1,9 @@
+import {
+  subscriptionSwitchRecoveries,
+  enqueueSubscriptionRecovery$,
+} from "../services/subscription-switch-recovery.service";
+import { waitUntil } from "../context/wait-until";
+import { continueIntegrationRecovery$ } from "../services/integration-recovery-continuation.service";
 import { command } from "ccstate";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
@@ -81,13 +87,16 @@ const upsertInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
 
+  const recoveries = await get(subscriptionSwitchRecoveries({ ...auth, type }));
+  signal.throwIfAborted();
+
   // Branch 1: codex-oauth-token + auth_json paste flow
   if (type === "codex-oauth-token" && authMethod === "auth_json") {
     const raw = secrets?.CODEX_AUTH_JSON;
     if (!raw) {
       return badRequestMessage("Missing CODEX_AUTH_JSON secret");
     }
-    return await set(
+    const result = await set(
       upsertPersonalCodexAuthJson$,
       {
         orgId: auth.orgId,
@@ -97,6 +106,24 @@ const upsertInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       },
       signal,
     );
+    if (result.status === 200 || result.status === 201) {
+      for (const recovery of recoveries) {
+        const input = await set(
+          enqueueSubscriptionRecovery$,
+          {
+            ...auth,
+            recovery,
+            account: result.body.provider,
+            change: "credentials",
+          },
+          signal,
+        );
+        if (input) {
+          waitUntil(set(continueIntegrationRecovery$, input, signal));
+        }
+      }
+    }
+    return result;
   }
 
   // Codex subscriptions are connected only through the auth_json paste flow.
@@ -126,6 +153,18 @@ const upsertInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
+  if (!("status" in result)) {
+    for (const recovery of recoveries) {
+      const input = await set(
+        enqueueSubscriptionRecovery$,
+        { ...auth, recovery, account: result.provider, change: "credentials" },
+        signal,
+      );
+      if (input) {
+        waitUntil(set(continueIntegrationRecovery$, input, signal));
+      }
+    }
+  }
   return "status" in result
     ? result
     : shapeAccountUpsertResult(result.provider, result.created);

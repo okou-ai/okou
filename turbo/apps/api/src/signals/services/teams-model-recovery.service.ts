@@ -1,3 +1,5 @@
+import { waitUntil } from "../context/wait-until";
+import { continueIntegrationRecovery$ } from "./integration-recovery-continuation.service";
 import { command } from "ccstate";
 import { literal, object, string, enum as zEnum } from "zod";
 import { integrationModelRecoveryIdentity$ } from "./integration-model-recovery-access.service";
@@ -63,7 +65,7 @@ export const handleTeamsModelRecovery$ = command(
     }
     if (activity.name === "task/submit") {
       const selection = submitSchema.safeParse(activity.value.data);
-      const text = selection.success
+      const saved = selection.success
         ? await set(
             saveIntegrationModelChoice$,
             {
@@ -73,8 +75,11 @@ export const handleTeamsModelRecovery$ = command(
             },
             signal,
           )
-        : MODEL_RECOVERY_STALE;
-      return Response.json({ task: { type: "message", value: text } });
+        : { message: MODEL_RECOVERY_STALE, input: null };
+      if (saved.input) {
+        waitUntil(set(continueIntegrationRecovery$, saved.input, signal));
+      }
+      return Response.json({ task: { type: "message", value: saved.message } });
     }
     return Response.json({
       task: {
@@ -91,7 +96,7 @@ export const handleTeamsModelRecovery$ = command(
               body: [
                 {
                   type: "TextBlock",
-                  text: `Current model: ${recovery.currentModelLabel}. This changes only this conversation. Send your previous request again after saving.`,
+                  text: `Current model: ${recovery.currentModelLabel}. This changes only this conversation and automatically continues your previous request.`,
                   wrap: true,
                 },
                 {

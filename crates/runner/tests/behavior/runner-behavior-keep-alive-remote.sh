@@ -258,7 +258,6 @@ echo "--- Turn 1: create marker file ---"
 sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
   --chat-thread-id "$CHAT_THREAD_ID" \
   --session-id "$SESSION_ID" \
-  --feature-flag sandboxReuse=true \
   --prompt 'touch /tmp/keepalive-marker /home/user/keepalive-home-marker /home/user/workspace/keepalive-cwd-marker && echo turn1-done' \
   || fail "Turn 1 failed"
 
@@ -269,7 +268,6 @@ echo "--- Turn 2: verify marker file persists (sandbox reused) ---"
 sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
   --chat-thread-id "$CHAT_THREAD_ID" \
   --session-id "$SESSION_ID" \
-  --feature-flag sandboxReuse=true \
   --prompt 'test -f /tmp/keepalive-marker && test -f /home/user/keepalive-home-marker && test -f /home/user/workspace/keepalive-cwd-marker' \
   || fail "Turn 2: marker checks or execution failed; inspect completion and invocation diagnostics"
 echo "PASS: Turn 2 completed (sandbox reused, filesystem persisted)"
@@ -280,7 +278,6 @@ echo "--- Turn 3: different chat thread creates new sandbox ---"
 sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
   --chat-thread-id "$ISOLATED_CHAT_THREAD_ID" \
   --session-id "$SESSION_ID" \
-  --feature-flag sandboxReuse=true \
   --prompt 'test ! -f /tmp/keepalive-marker && test ! -f /home/user/keepalive-home-marker && test ! -f /home/user/workspace/keepalive-cwd-marker' \
   || fail "Turn 3: marker file found — chat thread isolation broken"
 echo "PASS: Turn 3 completed (new sandbox for different chat thread)"
@@ -293,7 +290,6 @@ echo "--- Tamper turn 1: replace home mount before idle admission ---"
 sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
   --chat-thread-id "$TAMPER_CHAT_THREAD_ID" \
   --session-id "$TAMPER_SESSION_ID" \
-  --feature-flag sandboxReuse=true \
   --prompt 'set -eu
 touch /tmp/keepalive-tampered-mount-marker
 cd /tmp
@@ -304,7 +300,6 @@ echo "--- Tamper turn 2: rejected sandbox is replaced with a valid fresh mount -
 sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
   --chat-thread-id "$TAMPER_CHAT_THREAD_ID" \
   --session-id "$TAMPER_SESSION_ID" \
-  --feature-flag sandboxReuse=true \
   --prompt 'set -eu
 test ! -f /tmp/keepalive-tampered-mount-marker
 source=$(findmnt -rn -o SOURCE --target /home/user/workspace)
@@ -320,7 +315,6 @@ echo "--- Overlap turn 1: hold supervised turn open ---"
 sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
   --chat-thread-id "$OVERLAP_CHAT_THREAD_ID" \
   --session-id "$OVERLAP_SESSION_ID" \
-  --feature-flag sandboxReuse=true \
   --prompt 'set -eu
 touch /tmp/keepalive-overlap-marker
 rm -f /tmp/keepalive-overlap-release
@@ -419,7 +413,6 @@ echo "--- Overlap turn 2: busy sandbox was not reused ---"
 sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
   --chat-thread-id "$OVERLAP_CHAT_THREAD_ID" \
   --session-id "$OVERLAP_SESSION_ID" \
-  --feature-flag sandboxReuse=true \
   --prompt 'set -eu
 test ! -f /tmp/keepalive-overlap-marker
 source=$(findmnt -rn -o SOURCE --target /home/user/workspace)

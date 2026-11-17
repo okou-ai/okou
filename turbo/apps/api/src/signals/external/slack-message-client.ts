@@ -54,6 +54,10 @@ export interface SlackFileInfo {
   readonly filetype?: string;
   readonly size?: number;
   readonly permalink?: string;
+  readonly channels?: readonly string[];
+  readonly groups?: readonly string[];
+  readonly ims?: readonly string[];
+  readonly url_private_download?: string;
 }
 
 export interface SlackUserInfo {

@@ -288,6 +288,7 @@ class RunOutputModelTest {
             )
         owner.model.reconcile()
         assertEquals(HISTORY_RUN, owner.target.runId)
+        assertEquals(listOf(HISTORY_RUN), owner.current.controlRunIds(owner.model.state.value))
         owner.model.receive(owner.target, delta(1, " continuation"))
         assertEquals(
             "prefix continuation",
@@ -299,6 +300,7 @@ class RunOutputModelTest {
             )
         )
         assertNull(owner.model.target.value)
+        assertTrue(owner.current.controlRunIds(owner.model.state.value).isEmpty())
         assertEquals(
             "prefix continuation",
             owner.model.state.value.messages.single().blocks.single().text,

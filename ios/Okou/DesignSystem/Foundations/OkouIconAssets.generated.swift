@@ -35,6 +35,7 @@ enum OkouIconAssets {
     "clock",
     "code",
     "copy",
+    "cpu",
     "download",
     "ellipsis",
     "file",

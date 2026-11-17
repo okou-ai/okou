@@ -21,6 +21,7 @@ import flow_metadata_keys as metadata_keys
 import logging_utils
 import mitm_addon
 import response_streaming
+import stream_capture
 import usage
 from body_limits import LARGE_RESPONSE_DECOMPRESS_LIMIT, STREAM_BUFFER_LIMIT
 from tests.flow_helpers import response_stream
@@ -171,7 +172,7 @@ async def test_terminal_parser_yields_bounded_work_before_committing_usage(
         assert event["remainder"] == [{"reason": "identity_limit", "quantity": count}]
     assert flow.response is not None
     assert flow.response.stream is False
-    assert metadata_keys.STREAM_BUFFER not in flow.metadata
+    assert stream_capture.captured_response_stream_body(flow) is None
     assert not response_streaming.has_pending_response_inspection(flow)
 
 
@@ -298,7 +299,7 @@ async def test_interruption_discards_parser_input_and_a_later_flow_recovers(
         assert webhook.usage_events() == []
         assert flow.response is not None
         assert flow.response.stream is False
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
         assert not response_streaming.has_pending_response_inspection(flow)
 
         recovered = _user_flow(real_flow, tmp_path)
@@ -427,5 +428,5 @@ async def test_native_response_hook_waits_for_buffered_inspection(
         assert event["remainder"] == [{"reason": "identity_limit", "quantity": 1_000}]
     assert flow.response is not None
     assert flow.response.stream is False
-    assert metadata_keys.STREAM_BUFFER not in flow.metadata
+    assert stream_capture.captured_response_stream_body(flow) is None
     assert usage.delivery_snapshot()["flows"] == 0

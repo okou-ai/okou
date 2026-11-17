@@ -13,8 +13,11 @@ use std::{
 use ts_bart::{RoutingTable, Table};
 use ts_dataplane::DataPlane;
 use ts_keys::NodeKeyPair;
-use ts_netstack_smoltcp_core::{Channel, Config, HasChannel, Netstack, smoltcp};
-use ts_netstack_smoltcp_socket::{CreateSocket, TcpListener, TcpStream};
+use ts_netstack_smoltcp::{
+    netcore::{Channel, Config, HasChannel, Netstack},
+    netsock::{CreateSocket, TcpListener, TcpStream},
+    smoltcp,
+};
 use ts_packet::PacketMut;
 use ts_packetfilter::{Filter, PacketInfo, filter::CapIter};
 use ts_transport::{DynEndpoint, OverlayTransportId, PeerId, UnderlayTransportId};
@@ -204,7 +207,7 @@ fn external_plane(
     let mut out = Table::default();
     out.insert(
         ipnet::IpNet::from(peer_ip(1)),
-        ts_overlay_router::outbound::RouteAction::Wireguard(PeerId(1)),
+        ts_dataplane::overlay_router::outbound::RouteAction::Wireguard(PeerId(1)),
     );
     plane.or_out.swap(out);
     plane
@@ -214,7 +217,7 @@ fn external_plane(
     let mut incoming = Table::default();
     incoming.insert(
         ipnet::IpNet::from(peer_ip(ip)),
-        ts_overlay_router::inbound::RouteAction::ToOverlay(OverlayTransportId(1)),
+        ts_dataplane::overlay_router::inbound::RouteAction::ToOverlay(OverlayTransportId(1)),
     );
     plane.or_in.swap(incoming);
     let mut source = Table::default();

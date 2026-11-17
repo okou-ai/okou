@@ -1,4 +1,4 @@
-import { command, computed, state, type Command, type Computed } from "ccstate";
+import { command, computed, type Command, type Computed } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { WorkflowTemplateItem } from "@okouai/core/workflow-template-items";
 import { connectorCatalogItemBySlug } from "../external/connectors.ts";
@@ -173,7 +173,6 @@ export const WORKFLOW_RECOMMENDATIONS = [
 }[];
 
 export type WorkflowRecommendation = (typeof WORKFLOW_RECOMMENDATIONS)[number];
-export type WorkflowRecommendationId = WorkflowRecommendation["id"];
 
 // The recommendations and trigger examples are fixed, so their lookups are
 // built once, one connector each: drawing a handful of marks must not pull the
@@ -215,79 +214,11 @@ export function createWorkflowRecommendationSignals(
   visible$: Computed<boolean>,
   actions: WorkflowRecommendationActions,
 ) {
-  const internalView$ = state<WorkflowRecommendationId | null>(null);
-  const internalContext$ = state("");
-  const internalFocusAfterClose$ = state(false);
-  const view$ = computed((get) => {
-    return get(visible$) ? get(internalView$) : null;
-  });
-  const context$ = computed((get) => {
-    return get(internalContext$);
-  });
-  const open$ = command(({ get, set }, view: WorkflowRecommendationId) => {
-    if (!get(visible$)) {
-      return;
-    }
-    set(internalView$, view);
-    set(internalContext$, "");
-  });
-  const close$ = command(({ set }) => {
-    set(internalView$, null);
-    set(internalContext$, "");
-  });
   const browse$ = command(({ get, set }) => {
     if (!get(visible$)) {
       return;
     }
-    set(close$);
     set(actions.openTemplatePicker$, { kind: "insert", category: "workflow" });
   });
-  const use$ = command(
-    async (
-      { get, set },
-      draft: WorkflowRecommendationDraft,
-      signal: AbortSignal,
-    ) => {
-      if (get(view$) === null) {
-        return;
-      }
-      if (draft.template) {
-        set(
-          actions.insertTemplate$,
-          {
-            type: "workflow",
-            selection: { workflowTemplateId: draft.template.id },
-          },
-          {
-            type: "workflow",
-            title: draft.template.title,
-            category: "workflow",
-          },
-        );
-      }
-      set(actions.insertPrompt$, draft.prompt);
-      set(internalFocusAfterClose$, true);
-      set(close$);
-      await set(actions.saveDraft$, signal);
-    },
-  );
-  const completeClose$ = command(({ get, set }, isOpen: boolean) => {
-    if (!isOpen && get(internalFocusAfterClose$)) {
-      set(internalFocusAfterClose$, false);
-      set(actions.focusEditor$);
-    }
-  });
-  const setContext$ = command(({ set }, value: string) => {
-    set(internalContext$, value);
-  });
-  return {
-    view$,
-    context$,
-    open$,
-    close$,
-    browse$,
-    use$,
-    completeClose$,
-    setContext$,
-  };
+  return { browse$ };
 }

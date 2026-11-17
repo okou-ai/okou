@@ -3,6 +3,7 @@ only_rules:
   - force_cast
   - force_try
   - duplicate_imports
+  - duplicate_conditions
   - unused_closure_parameter
   - invalid_swiftlint_command
   - superfluous_disable_command
@@ -15,6 +16,7 @@ only_rules:
   - okou_accessor_escape
   - okou_native_requests
   - okou_resource_failures
+  - okou_useless_catch
   - okou_test_synchronization
   - okou_check_after_await
   - okou_resource_cancellation

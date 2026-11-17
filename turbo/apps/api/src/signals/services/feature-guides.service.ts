@@ -16,46 +16,65 @@ import {
   featureGuideReceipts,
   featureGuideRevisions,
 } from "@okouai/db/schema/feature-guide";
-import {
-  featureGuideContentSchema,
-  type ImportFeatureGuide,
-} from "@okouai/api-contracts/contracts/feature-guides";
+import type { ImportFeatureGuide } from "@okouai/api-contracts/contracts/feature-guides";
+import { featureGuideRevisionContentSchema } from "@okouai/db/jsonb-contracts/feature-guide";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 
-export const currentFeatureGuide$ = computed(async (get) => {
-  const now = nowDate();
-  const rows = await get(db$)
-    .select({
-      id: featureGuideEditions.id,
-      revisionId: featureGuideRevisions.id,
-      content: featureGuideRevisions.content,
-    })
-    .from(featureGuideEditions)
-    .innerJoin(
-      featureGuideRevisions,
-      eq(featureGuideEditions.publishedRevisionId, featureGuideRevisions.id),
-    )
-    .where(
-      and(
-        isNotNull(featureGuideEditions.publishedAt),
-        lte(featureGuideRevisions.startsAt, now),
-        or(
-          isNull(featureGuideRevisions.expiresAt),
-          gt(featureGuideRevisions.expiresAt, now),
+interface FeatureGuideViewer {
+  readonly orgId: string;
+  readonly userId: string;
+}
+
+function featureGuideAudienceCondition(viewer: FeatureGuideViewer) {
+  const audience = sql`${featureGuideRevisions.content}->'audience'`;
+  return or(
+    isNull(audience),
+    sql`${audience}->'orgIds' @> ${JSON.stringify([viewer.orgId])}::jsonb`,
+    sql`${audience}->'users' @> ${JSON.stringify([{ orgId: viewer.orgId, userId: viewer.userId }])}::jsonb`,
+  );
+}
+
+export function currentFeatureGuide(viewer$: Computed<FeatureGuideViewer>) {
+  return computed(async (get) => {
+    const viewer = get(viewer$);
+    const now = nowDate();
+    const rows = await get(db$)
+      .select({
+        id: featureGuideEditions.id,
+        revisionId: featureGuideRevisions.id,
+        content: featureGuideRevisions.content,
+      })
+      .from(featureGuideEditions)
+      .innerJoin(
+        featureGuideRevisions,
+        eq(featureGuideEditions.publishedRevisionId, featureGuideRevisions.id),
+      )
+      .where(
+        and(
+          isNotNull(featureGuideEditions.publishedAt),
+          featureGuideAudienceCondition(viewer),
+          lte(featureGuideRevisions.startsAt, now),
+          or(
+            isNull(featureGuideRevisions.expiresAt),
+            gt(featureGuideRevisions.expiresAt, now),
+          ),
         ),
-      ),
-    )
-    .orderBy(
-      desc(featureGuideEditions.publishedAt),
-      desc(featureGuideEditions.id),
-    )
-    .limit(1);
-  const row = rows[0];
-  return row
-    ? { ...row, content: featureGuideContentSchema.parse(row.content) }
-    : null;
-});
+      )
+      .orderBy(
+        desc(featureGuideEditions.publishedAt),
+        desc(featureGuideEditions.id),
+      )
+      .limit(1);
+    const row = rows[0];
+    if (!row) {
+      return null;
+    }
+    const { audience: _audience, ...content } =
+      featureGuideRevisionContentSchema.parse(row.content);
+    return { ...row, content };
+  });
+}
 
 interface FeatureGuideReceiptIdentity {
   readonly userId: string;
@@ -112,7 +131,9 @@ export function featureGuideRevision(
 }
 
 export function acknowledgeableFeatureGuideRevision(
-  identity$: Computed<Promise<FeatureGuideRevisionIdentity | null>>,
+  identity$: Computed<
+    Promise<(FeatureGuideRevisionIdentity & FeatureGuideViewer) | null>
+  >,
 ) {
   return computed(async (get) => {
     const identity = await get(identity$);
@@ -131,6 +152,7 @@ export function acknowledgeableFeatureGuideRevision(
           eq(featureGuideRevisions.editionId, identity.editionId),
           eq(featureGuideRevisions.id, identity.revisionId),
           isNotNull(featureGuideEditions.publishedRevisionId),
+          featureGuideAudienceCondition(identity),
         ),
       )
       .limit(1);
@@ -170,7 +192,10 @@ export const importFeatureGuide$ = command(
       .values({ id: input.editionId })
       .onConflictDoNothing();
     signal.throwIfAborted();
-    const content = featureGuideContentSchema.parse(input.content);
+    const content = featureGuideRevisionContentSchema.parse({
+      ...input.content,
+      ...(input.audience ? { audience: input.audience } : {}),
+    });
     const startsAt = new Date(input.startsAt);
     const expiresAt = input.expiresAt ? new Date(input.expiresAt) : null;
     const contentHash = createHash("sha256")

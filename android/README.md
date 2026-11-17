@@ -227,6 +227,23 @@ message, character or callback-queue limits that would discard data Web accepts.
 reconciles matching IDs, and the workspace owner releases remaining transient text on close.
 Its external SDK observations are controlled; this is not provider-live evidence.
 
+Run controls use the same authenticated event endpoint and generated request union.
+Stop freezes the displayed live-run IDs; skipping targets one canonical queued
+automation. HTTP acceptance is not completion. The workspace control owner checks
+canonical control/target evidence and never retargets an uncertain request.
+All current controllers of the same origin/user/workspace attach to one shared
+command owner, including target deduplication, phases and journal mutations.
+Retiring one controller cancels only its network requests; peers retain unknown
+commands and can explicitly check/retry their original identities.
+Frozen pending controls live separately in private `noBackupFilesDir/chat-controls`
+format-1 journals scoped by API origin, user and workspace. Disk commitment precedes
+POST, and restored intent only reads back until an explicit same-request retry.
+This adds no confirmed-cache or composer-journal migration and stores no stream text.
+Cancellation metadata reuses the conversation history owner's independent detail
+request and typed phase. Control outcome reads never take over that request's
+loading/completion state or create a second metadata producer.
+Both paths fail independently of ordinary history.
+
 Meaningful drafts and pending text operations live in `noBackupFilesDir/chat-input`,
 scoped by origin/user/workspace, separately from the rebuildable confirmed cache.
 Existing journal files require their stored format header. Unversioned or malformed
@@ -428,15 +445,20 @@ vectors use Lucide geometry; its shared license is also packaged under
 ## CI and Distribution
 
 `.github/workflows/android.yml` checks PRs, merge groups, main pushes and manual
-runs. Selection includes Android sources/docs, CI inputs, Web semantic colors,
-and shared font/color-evaluator assets. One native job runs all local tests,
+runs. Like Turbo and Crates, release-please PRs, queued release PRs and release
+commits skip Android validation after release-context detection succeeds. The
+production release job independently builds, signs and verifies its exact-target
+APK; it does not consume validation artifacts. Ordinary change selection includes
+Android sources/docs, CI inputs, Web semantic colors, and shared font/color-evaluator
+assets. One native job runs all local tests,
 lints, assembles, and uploads the debug APK plus the optimized unsigned Release
 APK and compressed R8 map for seven days. CI uses the production unsigned-build
 script, including metadata/alignment checks and mapping retention.
 A separate Linux/KVM job runs the existing instrumented suite against Release on the managed API 35
-phone. The final `ci-gate-android` check always reports an aggregate result. It
-requires successful detection and both selected JVM/build and instrumentation
-jobs to succeed; only explicit unselected results permit skipped native checks.
+phone. The final `ci-gate-android` check always reports an aggregate result. For
+non-release changes it requires successful change detection and both selected
+JVM/build and instrumentation jobs to succeed; only explicit unselected results
+permit skipped native checks.
 Cancellation, failure or an unexpected skip fails the gate. Emulator functional
 evidence does not establish OEM input-method behavior or physical-device startup
 budgets.

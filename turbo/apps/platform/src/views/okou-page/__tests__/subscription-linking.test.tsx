@@ -151,7 +151,7 @@ test("An unlinked member finds the subscriptions in the composer's model slot", 
     "Pro or Max",
   );
   expect(
-    screen.getByRole("region", { name: "Tasks to get started" }),
+    screen.getByRole("group", { name: "Explore Okou capabilities" }),
   ).toBeInTheDocument();
 });
 
@@ -304,9 +304,9 @@ test.each([false, true])(
   },
 );
 
-test("The feature switch removes every entry and preserves task chips", async () => {
+test("The subscription linking switch keeps capability discovery available", async () => {
   await setupLinking({ enabled: false });
-  await screen.findByRole("region", { name: "Tasks to get started" });
+  await screen.findByRole("group", { name: "Explore Okou capabilities" });
   const menu = await openAccountMenu();
   expect(menu).not.toHaveTextContent("Use more models");
   expect(findAction("Use more models")).toBeUndefined();

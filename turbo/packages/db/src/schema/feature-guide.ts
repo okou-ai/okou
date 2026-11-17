@@ -10,7 +10,7 @@ import {
   uuid,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import type { FeatureGuideContent } from "../jsonb-contracts/feature-guide";
+import type { FeatureGuideRevisionContent } from "../jsonb-contracts/feature-guide";
 
 export const featureGuideEditions = pgTable(
   "feature_guide_editions",
@@ -47,7 +47,7 @@ export const featureGuideRevisions = pgTable(
       .references((): AnyPgColumn => {
         return featureGuideEditions.id;
       }),
-    content: jsonb("content").$type<FeatureGuideContent>().notNull(),
+    content: jsonb("content").$type<FeatureGuideRevisionContent>().notNull(),
     contentHash: text("content_hash").notNull(),
     startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }),

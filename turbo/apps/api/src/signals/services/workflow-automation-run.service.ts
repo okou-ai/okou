@@ -38,6 +38,7 @@ import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { now, nowDate } from "../../lib/time";
+import { env } from "../../lib/env";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   workflowInputCommitSql,
@@ -433,6 +434,18 @@ function usesProactiveWorkflowInput(args: RunWorkflowAutomationNowArgs) {
   );
 }
 
+function workflowRewardSource({ args, plan }: PreparedWorkflowInputCommit) {
+  const { automation } = args.due;
+  return {
+    orgId: automation.orgId,
+    userId: automation.ownerUserId,
+    workflowId: automation.workflowId,
+    sourceEventId: plan.row.id,
+    occurredAt: plan.row.createdAt,
+    environment: env("ENV"),
+  };
+}
+
 const commitWorkflowInput$ = command(
   async (
     { set },
@@ -486,6 +499,7 @@ const commitWorkflowInput$ = command(
       scheduleClaim: args.scheduleClaim,
       queueStatement,
       replacement: replacementPlan,
+      rewardSource: workflowRewardSource(input),
     });
     let tickCount: number | undefined;
     const executionStartedAt = now();

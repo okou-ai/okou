@@ -399,8 +399,8 @@ def _parse_response_metadata(flow: http.HTTPFlow) -> dict:
     separately through ``parse_error``.
 
     Only when neither incremental state is present does the buffered JSON
-    fallback parse ``flow.metadata[metadata_keys.STREAM_BUFFER]``. On that path,
-    ``body_truncated`` retains ``STREAM_BUFFER_STATE["truncated"]`` because the
+    fallback parse the captured response stream body. On that path,
+    ``body_truncated`` retains the capture owner's truncation flag because the
     capped buffer is the billing input. Buffered fallback failures (truncated
     buffer, malformed JSON, unexpected shape) leave ``body_parsed=False`` and
     emit no count fields, so analysis can distinguish "field absent in

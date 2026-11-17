@@ -3,7 +3,7 @@ import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { getStartedHistoryRecordSchema } from "./get-started-history";
 
-const getStartedReceiptSchema = getStartedHistoryRecordSchema.pick({
+export const getStartedReceiptSchema = getStartedHistoryRecordSchema.pick({
   id: true,
   orgId: true,
   actorUserId: true,

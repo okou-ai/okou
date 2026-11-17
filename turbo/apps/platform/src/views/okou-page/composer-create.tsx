@@ -1,4 +1,5 @@
 import { ComposerPresentationOptions } from "./composer-presentation-options.tsx";
+import { ComposerVisualizationPreferences } from "./composer-visualization-preferences.tsx";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
@@ -146,11 +147,8 @@ function ComposerSelectedTask({
 /**
  * What the run will make, at the end of the footer's icon row.
  *
- * The divider marks the break the row now carries: everything left of it adds
- * content to the message and is cleared by a send, everything right of it is
- * the composer's own state and is not. The type's parameters follow it on the
- * same line -- the slide count here -- so a value sits beside the type it
- * belongs to instead of two rows above the controls that act on it.
+ * The selected task stays after a send. Its parameters follow it on the same
+ * line, so a value sits beside the task it belongs to.
  */
 export function ComposerTaskControls({
   signals,
@@ -169,6 +167,9 @@ export function ComposerTaskControls({
       <ComposerSelectedTask signals={signals} task={task} />
       {task === "presentation" && (
         <ComposerPresentationOptions signals={signals} />
+      )}
+      {task === "visualization" && (
+        <ComposerVisualizationPreferences signals={signals} />
       )}
     </>
   );

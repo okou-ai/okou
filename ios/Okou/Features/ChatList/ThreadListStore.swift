@@ -68,6 +68,7 @@ final class ThreadListStore {
   private let didLoadAgents: @MainActor ([AgentRecord]) -> Void
   private let didFail: @MainActor (Error) -> Void
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
+  private let indicatorsBootstrap: WorkspaceReadBootstrap?
   private var refreshAgain = false
   private var indicatorsAgain = false
   private var refreshGeneration = UUID()
@@ -115,6 +116,7 @@ final class ThreadListStore {
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     },
+    indicatorsBootstrap: WorkspaceReadBootstrap? = nil,
     lifecycleTasks: LifecycleTasks? = nil
   ) {
     self.lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
@@ -140,6 +142,7 @@ final class ThreadListStore {
     self.didLoadAgents = didLoadAgents
     self.didFail = didFail
     self.readRetrySleep = readRetrySleep
+    self.indicatorsBootstrap = indicatorsBootstrap
   }
 
   func restoreCached() async {
@@ -459,8 +462,10 @@ final class ThreadListStore {
     }
   }
 
-  func refreshIndicators() async {
+  func refreshIndicators(waitForSubscriptions: Bool = false) async {
     guard !closed, !blocked, !Task.isCancelled else { return }
+    // Real invalidations must also release a startup read still waiting for attachment.
+    if !waitForSubscriptions { indicatorsBootstrap?.allowHTTP() }
     if let indicatorsTask {
       indicatorsAgain = true
       await indicatorsTask.value
@@ -478,6 +483,9 @@ final class ThreadListStore {
       repeat {
         indicatorsAgain = false
         do {
+          try await indicatorsBootstrap?.wait()
+          try Task.checkCancellation()
+          indicatorsBootstrap?.didScheduleRead()
           let revision = readRevision
           let result = try await ChatReadRecovery.read("chat indicators", sleep: readRetrySleep) {
             try await sync.indicators()

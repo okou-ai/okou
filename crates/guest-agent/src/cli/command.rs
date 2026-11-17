@@ -24,14 +24,12 @@ pub(super) fn build_claude_command_for_runtime(
             append_system_prompt_file: (!runtime.append_system_prompt.is_empty())
                 .then_some(runtime.claude_append_system_prompt_file.as_ref()),
             disallowed_tools: runtime.disallowed_tools.as_ref(),
-            tools: runtime.tools.as_ref(),
-            settings: runtime.settings.as_ref(),
             replay_user_messages,
         },
     )
 }
 
-fn push_comma_separated_flag_values(args: &mut Vec<String>, flag: &str, values: &str) {
+fn push_disallowed_tools(args: &mut Vec<String>, values: &str) {
     let mut has_values = false;
 
     for value in values
@@ -40,7 +38,7 @@ fn push_comma_separated_flag_values(args: &mut Vec<String>, flag: &str, values: 
         .filter(|value| !value.is_empty())
     {
         if !has_values {
-            args.push(flag.to_string());
+            args.push("--disallowed-tools".to_string());
             has_values = true;
         }
         args.push(value.to_string());
@@ -54,8 +52,6 @@ struct ClaudeArgsConfig<'a> {
     resume_id: &'a str,
     append_system_prompt_file: Option<&'a str>,
     disallowed_tools: &'a str,
-    tools: &'a str,
-    settings: &'a str,
     replay_user_messages: bool,
 }
 
@@ -86,13 +82,7 @@ fn build_claude_args(config: ClaudeArgsConfig<'_>) -> Vec<String> {
         args.push(path.to_string());
     }
 
-    push_comma_separated_flag_values(&mut args, "--disallowed-tools", config.disallowed_tools);
-    push_comma_separated_flag_values(&mut args, "--tools", config.tools);
-
-    if !config.settings.is_empty() {
-        args.push("--settings".to_string());
-        args.push(config.settings.to_string());
-    }
+    push_disallowed_tools(&mut args, config.disallowed_tools);
 
     if let Some(effort) = config
         .effort

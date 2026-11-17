@@ -65,6 +65,8 @@ const allocatePreparedUpload$ = command(
       }
     }
 
+    const multipart =
+      bodyResult.data.multipart === true && size >= MULTIPART_PART_SIZE_BYTES;
     const artifact = await set(
       allocateUploadedArtifact$,
       {
@@ -74,6 +76,9 @@ const allocatePreparedUpload$ = command(
         contentType,
         size,
         purpose: bodyResult.data.purpose,
+        uploadProtocol: multipart
+          ? { kind: "multipart-v1" }
+          : { kind: "fixed-size-put-v1", size },
       },
       signal,
     );
@@ -82,7 +87,7 @@ const allocatePreparedUpload$ = command(
       filename,
       contentType,
       size,
-      multipart: bodyResult.data.multipart === true,
+      multipart,
     };
   },
 );
@@ -178,7 +183,7 @@ const prepareUploadInner$ = command(
         bucket,
         s3Key,
         contentType,
-        { usePublicEndpoint: true, metadata },
+        { usePublicEndpoint: true, metadata, contentLength: size },
         signal,
       ),
     );

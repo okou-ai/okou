@@ -8,7 +8,11 @@ export function createDatabaseClient(databaseUrl) {
   });
 }
 
-export async function loadPublicationState(sql, releases) {
+export async function loadPublicationState(
+  sql,
+  releases,
+  { initializeMissingHeads = false } = {},
+) {
   const state = new Map();
   for (const release of releases) {
     const [head] = await sql`
@@ -17,12 +21,15 @@ export async function loadPublicationState(sql, releases) {
       JOIN registry_resource_archives a USING (resource_id, sha256)
       WHERE h.resource_id = ${release.resourceId}
     `;
-    if (!head) {
+    if (!head && !initializeMissingHeads) {
       throw new Error(
         `${release.slug}: registry HEAD is missing; reconcile before publication`,
       );
     }
-    state.set(release.slug, { head, previousVersionId: head.version_id });
+    state.set(release.slug, {
+      head: head ?? null,
+      previousVersionId: head?.version_id ?? null,
+    });
   }
   return state;
 }
@@ -54,11 +61,18 @@ async function registerArchive(sql, release, current) {
       (resource_id, sha256, archive_bytes, version_id, file_count, total_bytes)
     SELECT ${release.resourceId}, ${release.newSha256}, ${current.archiveSize},
       ${release.newVersionId}, ${current.pkg.fileCount}, ${current.pkg.totalSize}
-    WHERE EXISTS (
-      SELECT 1 FROM registry_resource_heads
-      WHERE resource_id = ${release.resourceId} AND sha256 = ${current.head.sha256}
-        AND xmin::text = ${current.head.xmin}
-    )
+    WHERE ${
+      current.head === null
+        ? sql`NOT EXISTS (
+            SELECT 1 FROM registry_resource_heads
+            WHERE resource_id = ${release.resourceId}
+          )`
+        : sql`EXISTS (
+            SELECT 1 FROM registry_resource_heads
+            WHERE resource_id = ${release.resourceId} AND sha256 = ${current.head.sha256}
+              AND xmin::text = ${current.head.xmin}
+          )`
+    }
     ON CONFLICT (resource_id, sha256) DO NOTHING
   `;
   if (!(await verifyArchive(sql, release, current))) {
@@ -69,15 +83,23 @@ async function registerArchive(sql, release, current) {
 }
 
 async function publishHead(sql, release, current) {
-  if (current.head.sha256 === release.newSha256) {
+  if (current.head?.sha256 === release.newSha256) {
     return { ...current, publishedHeadXmin: current.head.xmin };
   }
-  const [published] = await sql`
-    UPDATE registry_resource_heads SET sha256 = ${release.newSha256}, updated_at = now()
-    WHERE resource_id = ${release.resourceId}
-      AND sha256 = ${current.head.sha256} AND xmin::text = ${current.head.xmin}
-    RETURNING xmin::text AS xmin
-  `;
+  const [published] =
+    current.head === null
+      ? await sql`
+          INSERT INTO registry_resource_heads (resource_id, sha256)
+          VALUES (${release.resourceId}, ${release.newSha256})
+          ON CONFLICT (resource_id) DO NOTHING
+          RETURNING xmin::text AS xmin
+        `
+      : await sql`
+          UPDATE registry_resource_heads SET sha256 = ${release.newSha256}, updated_at = now()
+          WHERE resource_id = ${release.resourceId}
+            AND sha256 = ${current.head.sha256} AND xmin::text = ${current.head.xmin}
+          RETURNING xmin::text AS xmin
+        `;
   if (!published) {
     throw new Error(
       `${release.slug}: registry HEAD publication conflicted with another writer`,

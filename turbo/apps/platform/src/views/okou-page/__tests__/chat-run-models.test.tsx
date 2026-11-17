@@ -335,7 +335,7 @@ const STRUCTURED_FAILURE_CASES = Object.entries(
 
 /** Every backend-owned failure gets concise copy and recovery on the card. */
 test.each(STRUCTURED_FAILURE_CASES)(
-  "Render structured failure %s without a recovery details dialog",
+  "Render structured failure %s with its available recovery actions",
   async (failureReason, expected) => {
     configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
     if (failureReason === "insufficient_credits") {
@@ -377,9 +377,10 @@ test.each(STRUCTURED_FAILURE_CASES)(
     ].map((control) => {
       return control.textContent?.replace(/\s+/gu, " ").trim();
     });
-    expect(actionLabels).toStrictEqual(
-      expected.action === undefined ? [] : [expected.action],
-    );
+    expect(actionLabels).toStrictEqual([
+      ...(expected.action === undefined ? [] : [expected.action]),
+      ...(failureReason === "usage_limit" ? ["View details"] : []),
+    ]);
     expect(within(card).queryByRole("combobox") !== null).toBe(
       expected.picker === true,
     );
@@ -849,6 +850,7 @@ test("Recover from a personal model account limit", async () => {
   configureCodexSubscriptionPolicies(["gpt-5.6-sol", "gpt-5.6-luna"]);
   context.mocks.data.personalModelProviders([
     codexSubscriptionAccount({
+      accountEmail: "long.subscription.account.for.recovery@example.com",
       subscriptionUsage: {
         fiveHour: {
           usedPercent: 100,
@@ -890,6 +892,29 @@ test("Recover from a personal model account limit", async () => {
   );
   expect(within(description).getByText(/5h resets/iu)).toBeVisible();
   expect(within(description).getByText(/Week resets/iu)).toBeVisible();
+
+  const detailsButton = await findButton("View details");
+  click(detailsButton);
+  const details = await screen.findByRole("dialog", {
+    name: "Model provider limit reached",
+  });
+  expect(details).toHaveTextContent(
+    "Personal subscription long.subscription.account.for.recovery@example.com",
+  );
+  expect(details).toHaveTextContent(/5h resets/iu);
+  expect(details).toHaveTextContent(/Week resets/iu);
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(detailsButton).toHaveFocus();
+  });
+  // Dismissal restores the actual trigger, so keyboard users can reopen it.
+  await user.keyboard("{Enter}");
+  await screen.findByRole("dialog", { name: "Model provider limit reached" });
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(detailsButton).toHaveFocus();
+  });
+
   const picker = within(recovery).getByRole("combobox");
   expect(picker).toBeVisible();
 

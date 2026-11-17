@@ -200,7 +200,7 @@ function ToolsPopover() {
             type="button"
             variant="quiet"
             size="sm"
-            className="shrink-0 gap-1.5 px-2 text-muted-foreground"
+            className="shrink-0 gap-1.5 px-2 text-muted-foreground data-popup-open:bg-state-hover data-popup-open:text-foreground"
           />
         }
       >

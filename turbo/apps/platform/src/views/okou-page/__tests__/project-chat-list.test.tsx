@@ -138,11 +138,12 @@ async function openChatList(
 ) {
   const workspace = installContinuityWorkspace(context, { caseId, threads });
   installProjects();
+  context.mocks.data.onboardingStatus({ defaultAgentId: threads[0].agentId });
   await setupPage({
     context,
     path,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   await waitFor(() => {
     expect(projectToggle("Launch")).toBeInTheDocument();
@@ -171,7 +172,7 @@ test.each([
     await openChatList(
       301,
       archivedOutside ? [member, archived] : [member],
-      `/agents/${member.agentId}/chat`,
+      "/",
     );
 
     expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
@@ -218,11 +219,12 @@ test.each([false, true])(
       threads: [archived],
     });
     installProjects([]);
+    context.mocks.data.onboardingStatus({ defaultAgentId: archived.agentId });
     await setupPage({
       context,
-      path: `/agents/${archived.agentId}/chat`,
+      path: "/",
       ...workspace.pageOptions,
-      featureSwitches: { [FeatureSwitchKey.Projects]: true },
+      featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
     });
 
     await expect(

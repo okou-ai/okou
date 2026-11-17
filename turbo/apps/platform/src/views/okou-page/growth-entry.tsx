@@ -247,29 +247,6 @@ function GrowthEntry({ slackInstalled }: { slackInstalled: boolean }) {
   );
 }
 
-/**
- * The corner the growth entry sits in.
- *
- * The row spans the page rather than the 900px content column, so the entry
- * lands in the top-right corner — the position the invite button has always
- * held, and the one the menu's `align="end"` is drawn against. It stays outside
- * the page's flex layout so loading it cannot shift the home content.
- *
- * It paints no background and reserves no band of its own: the home scroller
- * runs under it to the top of the page, and content that scrolls up passes
- * beneath the controls instead of being cut flat on an edge 56px down. The
- * scroller keeps that distance clear at rest with its own top padding.
- */
-function CornerHeader({ children }: { children: ReactNode }) {
-  return (
-    <header className="pointer-events-none absolute inset-x-0 top-0 z-10 hidden bg-transparent px-4 pb-2 pt-4 md:block sm:px-6">
-      <div className="pointer-events-auto flex items-center justify-end gap-2">
-        {children}
-      </div>
-    </header>
-  );
-}
-
 function AdminGrowthEntry() {
   const slackInstalled = useSlackInstalled();
   if (slackInstalled === null) {
@@ -295,13 +272,7 @@ function useGetStartedShown(): boolean {
   return summaryLoadable.state === "hasData" && summaryLoadable.data.total > 0;
 }
 
-export function GrowthEntryHeader({
-  children,
-  inFlow = false,
-}: {
-  children?: React.ReactNode;
-  inFlow?: boolean;
-}) {
+export function GrowthEntryHeader({ children }: { children?: ReactNode }) {
   const isAdminLoadable = useLastLoadable(isOrgAdmin$);
   const isAdmin = isAdminLoadable.state === "hasData" && isAdminLoadable.data;
   const getStartedShown = useGetStartedShown();
@@ -323,11 +294,9 @@ export function GrowthEntryHeader({
       {showGrowthEntry ? <AdminGrowthEntry /> : null}
     </>
   );
-  return inFlow ? (
+  return (
     <ChatPageHeader className="hidden justify-end gap-2 md:flex">
       {entries}
     </ChatPageHeader>
-  ) : (
-    <CornerHeader>{entries}</CornerHeader>
   );
 }

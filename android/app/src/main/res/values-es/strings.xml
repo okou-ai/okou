@@ -1,5 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="controls_storage_failed">No se pueden guardar las solicitudes de control pendientes.</string>
+    <string name="controls_stop">Detener el trabajo en curso</string>
+    <string name="controls_queued_automation">Automatización en cola</string>
+    <string name="controls_skip">Omitir automatización</string>
+    <string name="controls_preparing">Guardando solicitud de control…</string>
+    <string name="controls_sending">Enviando solicitud de control…</string>
+    <string name="controls_accepted">Solicitud aceptada. Esperando confirmación.</string>
+    <string name="controls_checking">Verificando el resultado…</string>
+    <string name="controls_unknown">El resultado aún se desconoce.</string>
+    <string name="controls_retryable">El destino original sigue disponible.</string>
+    <string name="controls_retry_original">Reintentar solicitud original</string>
+    <string name="controls_check">Verificar resultado</string>
+    <string name="controls_recorded">Solicitud registrada en el historial.</string>
+    <string name="controls_target_settled">El destino original ya se ha resuelto.</string>
+    <string name="controls_read_failed">No se pudo verificar el resultado.</string>
+    <string name="controls_recovery_failed">El estado de recuperación no está disponible.</string>
+    <string name="controls_recovering">Preparando la conversación para continuar.</string>
     <string name="output_live">Respuesta en directo</string>
     <string name="output_waiting">Esperando una respuesta en directo</string>
     <string name="output_catching_up">Actualizando los mensajes guardados. Se conserva el texto recibido.</string>

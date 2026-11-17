@@ -11,8 +11,6 @@ import { useEditorState } from "@tiptap/react";
 import { Popover, useMediaQuery, type KeyboardEventLike } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import type { ComposerAgentSuggestion } from "../../signals/okou-page/composer-agent-suggestion-domain.ts";
 import type { ComposerChatThreadSuggestion } from "../../signals/okou-page/chat-thread-suggestion-domain.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
@@ -42,7 +40,6 @@ import {
   SLASH_PANEL_NEW_WORKFLOW_ID,
   SLASH_PANEL_SHOW_MORE_ID,
   slashActionOptionId,
-  slashTemplateCategoryLabel,
 } from "./slash-template-panel.tsx";
 import type { SlashAction } from "./slash-actions.ts";
 import {
@@ -356,10 +353,8 @@ interface ComposerSuggestionMenuState {
   readonly selectedIndex: number;
   readonly close: (restoreEditorFocus?: boolean) => void;
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
-  readonly panelCategories: readonly SlashTemplateCategory[];
   readonly previewIndex: number | null;
   readonly previewSuggestion: (index: number | null) => void;
-  readonly selectCategory: (category: SlashTemplateCategory) => void;
   readonly selectTemplate: (
     preview: SlashTemplatePreview,
     category: SlashTemplateCategory,
@@ -388,12 +383,7 @@ interface ComposerSuggestionMenuState {
   readonly handleKeyDown: (event: KeyboardEvent) => boolean;
 }
 
-/**
- * Every row names one composer task, so choosing "Presentation" here leaves the
- * composer exactly where the Presentation chip would. Which of those tasks can
- * actually be entered is the chips' own call, and a row that cannot enter one
- * still opens the picker.
- */
+/** Selecting a template cover activates the category's composer task. */
 const SLASH_TEMPLATE_CATEGORY_TASK = {
   slides: "presentation",
   document: "document",
@@ -401,31 +391,9 @@ const SLASH_TEMPLATE_CATEGORY_TASK = {
   website: "website",
 } as const satisfies Record<SlashTemplateCategory, ComposerTask>;
 
-/** The template categories the typed slash query leaves, or none outside one. */
-function useSlashTemplateCategorySuggestions(
-  query: string | undefined,
-): readonly SlashTemplateCategory[] {
-  useTranslation();
-  const capabilitiesEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.HomeCapabilities];
-  if (query === undefined || capabilitiesEnabled) {
-    return [];
-  }
-  const normalized = query.toLowerCase().trim();
-  return SLASH_TEMPLATE_CATEGORIES.filter((category) => {
-    return slashTemplateCategoryLabel(category)
-      .toLowerCase()
-      .includes(normalized);
-  });
-}
-
-/**
- * Everything the two-pane panel needs: which rows the typed query leaves, and
- * what each row does when it is chosen.
- */
+/** The slash menu's template selection, browsing and workflow actions. */
 function useSlashTemplatePanelActions(
   composer: ComposerSignals,
-  query: string | undefined,
   close: () => void,
 ) {
   const clearSlashRange = useSet(composer.suggestion.clearSlashRange$);
@@ -434,30 +402,12 @@ function useSlashTemplatePanelActions(
   const openTemplatePicker = useSet(composer.template.openTemplatePicker$);
   const insertText = useSet(composer.editor.insertText$);
   const navigate = useSet(detachedNavigateTo$);
-  const categories = useSlashTemplateCategorySuggestions(query);
   return {
-    categories,
     /**
-     * Consume the token and retire the menu first, then land on the task, and
-     * only then open the dialog: the task activation focuses the editor, so
-     * opening the picker ahead of it would hand that focus straight back out.
-     */
-    selectCategory(category: SlashTemplateCategory): void {
-      clearSlashRange();
-      close();
-      openTask(SLASH_TEMPLATE_CATEGORY_TASK[category]);
-      openTemplatePicker({ kind: "insert", category });
-    },
-    /**
-     * The cover is a row of this menu, so choosing one consumes the token that
-     * opened it, the same way a category row and a workflow row do. The chip
-     * then lands where the token was rather than after it.
-     *
-     * It also names the same task its category row does, so it lands the
-     * composer there too — it just brings the template along instead of opening
-     * the picker to choose one. The chip goes in before the task, because
-     * landing on one ends by focusing the caret at the end of the draft;
-     * inserting after that would move the chip off the token it replaces.
+     * Choosing a cover consumes the token that opened the menu, so the chip
+     * lands where the token was rather than after it. Insert the chip before
+     * activating its task: task activation focuses the caret at the end of the
+     * draft, which would otherwise move the chip off the token it replaces.
      */
     selectTemplate(
       preview: SlashTemplatePreview,
@@ -556,8 +506,7 @@ function useComposerMentionSuggestions(
 
 interface SuggestionRows {
   readonly showWorkflows: boolean;
-  readonly panelCategories: readonly SlashTemplateCategory[];
-  /** The typed query's chat actions, indexed after the categories. */
+  /** The typed query's actions, indexed before the workflows. */
   readonly actions: readonly SlashAction[];
   /** How many rows sit above the workflow suggestions. */
   readonly headCount: number;
@@ -573,7 +522,6 @@ interface SuggestionRowActions {
   readonly expandWorkflows: () => void;
   readonly newWorkflow: () => void;
   readonly manageWorkflows: () => void;
-  readonly selectCategory: (category: SlashTemplateCategory) => void;
   readonly insertWorkflow: (workflow: ComposerSlashWorkflow) => void;
   readonly insertAgent: (agent: ComposerAgentSuggestion) => void;
   readonly insertChatThread: (chatThread: ComposerChatThreadSuggestion) => void;
@@ -585,7 +533,7 @@ function buildSuggestionRows({
 }: Omit<SuggestionRows, "headCount" | "expandIndex"> & {
   readonly collapseWorkflows: boolean;
 }): SuggestionRows {
-  const headCount = rows.panelCategories.length + rows.actions.length;
+  const headCount = rows.actions.length;
   const expandIndex =
     collapseWorkflows &&
     rows.workflows.length > SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT
@@ -615,21 +563,12 @@ function workflowActionRow(
   return offset === 0 ? "new" : offset === 1 ? "manage" : undefined;
 }
 
-/** The template category row for an index, if it is one. */
-function suggestionHeadRow(
-  index: number,
-  rows: SuggestionRows,
-): SlashTemplateCategory | undefined {
-  return rows.panelCategories[index];
-}
-
 /** The chat action row for an index, if it is one. */
 function suggestionActionRow(
   index: number,
   rows: SuggestionRows,
 ): SlashAction | undefined {
-  const offset = index - rows.panelCategories.length;
-  return offset < 0 ? undefined : rows.actions[offset];
+  return rows.actions[index];
 }
 
 function selectSlashSuggestionRow(
@@ -641,11 +580,6 @@ function selectSlashSuggestionRow(
     // The collapsed overview keeps the first hidden workflow's index.
     // Activating it reveals that row and keeps keyboard selection there.
     actions.expandWorkflows();
-    return;
-  }
-  const category = rows.panelCategories[index];
-  if (category) {
-    actions.selectCategory(category);
     return;
   }
   const chatAction = suggestionActionRow(index, rows);
@@ -691,10 +625,6 @@ function suggestionRowScrollTarget(
   if (index === rows.expandIndex) {
     return { id: SLASH_PANEL_SHOW_MORE_ID };
   }
-  const head = suggestionHeadRow(index, rows);
-  if (head !== undefined) {
-    return { id: head };
-  }
   const chatAction = suggestionActionRow(index, rows);
   if (chatAction !== undefined) {
     return { id: slashActionOptionId(chatAction.id) };
@@ -714,16 +644,15 @@ function suggestionRowScrollTarget(
 function suggestionNavigationOrder(
   count: number,
   reversed: boolean,
-  overviewCategoryCount: number | null,
+  overviewActionCount: number | null,
 ): readonly number[] {
   return Array.from({ length: count }, (_, visualIndex) => {
-    // Above the composer the overview reads workflows from most recent to
-    // least recent, then the creation categories in their existing anchored
-    // order below them. Below the composer it reads categories then workflows
-    // top-down, which is the index order, so callers pass null there.
-    if (overviewCategoryCount !== null) {
-      return visualIndex < count - overviewCategoryCount
-        ? overviewCategoryCount + visualIndex
+    // The desktop overview reads workflows from most recent to least recent,
+    // then actions in their anchored order below them. On narrow screens it
+    // reads actions then workflows top-down, so callers pass null there.
+    if (overviewActionCount !== null) {
+      return visualIndex < count - overviewActionCount
+        ? overviewActionCount + visualIndex
         : count - visualIndex - 1;
     }
     return reversed ? count - visualIndex - 1 : visualIndex;
@@ -774,12 +703,7 @@ function useComposerSuggestionMenu({
   const expandWorkflows = useSet(composer.suggestion.expandSlashWorkflows$);
   const workflowOverview = slashRange?.query === "";
   const collapseWorkflows = workflowOverview && !workflowsExpanded;
-  const templatePanel = useSlashTemplatePanelActions(
-    composer,
-    slashRange?.query,
-    close,
-  );
-  const panelCategories = templatePanel.categories;
+  const templatePanel = useSlashTemplatePanelActions(composer, close);
   const insertWorkflow = useSet(composer.workflow.insertWorkflow$);
   const insertAgent = useSet(composer.suggestion.insertAgent$);
   const insertChatThread = useSet(composer.suggestion.insertChatThread$);
@@ -790,7 +714,7 @@ function useComposerSuggestionMenu({
   const workflowSuggestions = workflowResult.workflows;
   const showWorkflows = slashRange !== null;
   // Search results and @ mentions follow priority from top to bottom.
-  // Only the desktop slash overview keeps its anchored category order.
+  // Only the desktop slash overview keeps its anchored action order.
   const reversedSuggestions = isDesktop && workflowOverview;
   const mentions = useComposerMentionSuggestions(composer, slashRange);
   const { agents, chatThreads, showMentions } = mentions;
@@ -804,7 +728,6 @@ function useComposerSuggestionMenu({
   const actionsOverview = slashActions.overview;
   const rows = buildSuggestionRows({
     showWorkflows,
-    panelCategories,
     actions: slashActions.searchActions,
     collapseWorkflows,
     workflows: workflowSuggestions,
@@ -855,10 +778,8 @@ function useComposerSuggestionMenu({
     selectedIndex,
     close,
     workflows: workflowSuggestions,
-    panelCategories,
     previewIndex,
     previewSuggestion,
-    selectCategory: templatePanel.selectCategory,
     selectTemplate: templatePanel.selectTemplate,
     browseAllTemplates: templatePanel.browseAll,
     workflowsLoading: workflowResult.loading,
@@ -995,7 +916,6 @@ function ComposerSuggestionSession({
               />
             ) : (
               <SlashTemplatePanel
-                categories={suggestionMenu.panelCategories}
                 actions={suggestionMenu.searchActions}
                 reversed={suggestionMenu.reversed}
                 reverseWorkflows={suggestionMenu.reverseWorkflows}
@@ -1012,12 +932,9 @@ function ComposerSuggestionSession({
                 selectedIndex={suggestionMenu.selectedIndex}
                 previewIndex={suggestionMenu.previewIndex}
                 onPreview={suggestionMenu.previewSuggestion}
-                onSelectCategory={suggestionMenu.selectCategory}
-                onSelectTemplate={suggestionMenu.selectTemplate}
                 onSelectWorkflow={suggestionMenu.selectWorkflow}
                 onBrowseAll={suggestionMenu.browseAllTemplates}
                 workflowOptionId={slashWorkflowOptionId}
-                categoryOptionId={slashWorkflowOptionId}
               />
             )}
           </SlashWorkflowMenu>

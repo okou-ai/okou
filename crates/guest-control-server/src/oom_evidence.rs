@@ -555,17 +555,12 @@ fn snapshots(
 }
 
 fn boottime_us() -> u64 {
-    let mut time = libc::timespec {
-        tv_sec: 0,
-        tv_nsec: 0,
-    };
-    // SAFETY: clock_gettime initializes a valid stack timespec.
-    if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut time) } != 0 {
+    let Ok(time) = nix::time::clock_gettime(nix::time::ClockId::CLOCK_MONOTONIC) else {
         return u64::MAX;
-    }
-    (time.tv_sec as u64)
+    };
+    (time.tv_sec() as u64)
         .saturating_mul(1_000_000)
-        .saturating_add(time.tv_nsec as u64 / 1000)
+        .saturating_add(time.tv_nsec() as u64 / 1000)
 }
 
 fn timestamp() -> String {

@@ -1,5 +1,4 @@
 import { useGet, useSet } from "ccstate-react";
-import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ToggleButton, cn } from "@okouai/ui";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
@@ -19,10 +18,8 @@ import { ComposerPresentationOutputPicker } from "./composer-presentation-output
 
 function VisualizationOutputPicker({
   signals,
-  headerAction,
 }: {
   readonly signals: ComposerSignals;
-  readonly headerAction?: ReactNode;
 }) {
   const { t } = useTranslation();
   const copy = t(
@@ -42,7 +39,6 @@ function VisualizationOutputPicker({
         })}
         selectedValue={selectedOutput}
         onSelect={setOutput}
-        headerAction={headerAction}
       />
       {selectedOutput === "presentation" && (
         <ComposerPresentationOutputPicker nested />
@@ -157,10 +153,8 @@ function VisualizationChartPicker({
 
 export function ComposerVisualizationOptions({
   signals,
-  headerAction,
 }: {
   readonly signals: ComposerSignals;
-  readonly headerAction?: ReactNode;
 }) {
   const { t } = useTranslation();
   const copy = t(
@@ -171,18 +165,11 @@ export function ComposerVisualizationOptions({
   );
   return (
     <section
-      // Two groups, so they take the air the other panels put between their own
-      // two: a shelf's `gap-3` is what a title keeps from its row, not what one
-      // group keeps from the next. Tracks the panel gap in `composer-task-chips`
-      // — the two modes have to read as the same surface.
-      className="flex min-w-0 flex-col gap-10 in-data-[slot=capability-tray]:gap-6"
+      className="flex min-w-0 flex-col gap-6"
       role="region"
       aria-label={copy.panelLabel}
     >
-      <VisualizationOutputPicker
-        signals={signals}
-        headerAction={headerAction}
-      />
+      <VisualizationOutputPicker signals={signals} />
       <VisualizationChartPicker signals={signals} />
     </section>
   );

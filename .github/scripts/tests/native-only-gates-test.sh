@@ -215,9 +215,11 @@ for event in ['pull_request', 'merge_group', 'push']:
 # Android must publish a result even when detection fails or native work is skipped.
 android = workflow('android')
 android_gate = android['ci-gate-android']
-assert {'detect', 'build-test', 'instrumentation'} <= set(android_gate['needs'])
+assert {'detect-release', 'detect', 'build-test', 'instrumentation'} <= set(android_gate['needs'])
 for needed in ['true', 'false']:
     values = {
+        'needs.detect-release.result': 'success',
+        'needs.detect-release.outputs.skip': 'false',
         'needs.detect.result': 'success',
         'needs.detect.outputs.needed': needed,
         'needs.build-test.result': 'success' if needed == 'true' else 'skipped',

@@ -68,6 +68,25 @@ for path in "${test_paths[@]}"; do
   rm "$fixture/$path/Duplicate.swift"
 done
 
+for path in "${production_paths[@]}" "${test_paths[@]}"; do
+  cat > "$fixture/$path/DuplicateCondition.swift" <<'SWIFT'
+func classify(_ value: Int) -> Int {
+  if value == 1 { return 10 }
+  else if value == 1 { return 20 }
+  return 0
+}
+SWIFT
+done
+if run_lint; then
+  echo 'Duplicate conditions passed the configured lint entry point.' >&2
+  exit 1
+fi
+for path in "${production_paths[@]}" "${test_paths[@]}"; do
+  grep -F "$path/DuplicateCondition.swift" "$test_root/lint.log" >/dev/null
+  rm "$fixture/$path/DuplicateCondition.swift"
+done
+grep -F 'duplicate_conditions' "$test_root/lint.log" >/dev/null
+
 # The production-only state rule must be enabled by the real root config.
 for path in "${production_paths[@]}"; do
   printf 'var sharedState = 0\n' > "$fixture/$path/GlobalState.swift"

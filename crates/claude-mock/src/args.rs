@@ -46,7 +46,7 @@ pub(crate) fn parse_args(args: &[String]) -> ParsedArgs {
                 // Parsed for CLI compat but not used by mock-claude
                 skip_flag_value(args, &mut i);
             }
-            "--disallowed-tools" | "--tools" => {
+            "--disallowed-tools" => {
                 // Variadic: consume all following non-option args until "--"
                 // or next "--flag". Matches Commander.js behavior where
                 // <tools...> greedily consumes subsequent positional args.
@@ -57,10 +57,6 @@ pub(crate) fn parse_args(args: &[String]) -> ParsedArgs {
                     }
                     i += 1; // skip tool name
                 }
-            }
-            "--settings" => {
-                // Skip the flag and its single JSON value argument
-                skip_flag_value(args, &mut i);
             }
             "--replay-user-messages" => {
                 replay_user_messages = true;

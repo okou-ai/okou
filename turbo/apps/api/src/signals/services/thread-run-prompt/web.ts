@@ -29,7 +29,7 @@ export function createWebThreadPrompt(
   const projectContext$ = computed(async (get) => {
     const picked = await get(pickedEvent$);
     const owner = await get(featureSwitches$);
-    if (!picked || !isFeatureEnabled(FeatureSwitchKey.Projects, owner)) {
+    if (!picked || !isFeatureEnabled(FeatureSwitchKey.SingleAgent, owner)) {
       return "";
     }
     const db = get(db$);

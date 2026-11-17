@@ -29,7 +29,7 @@ import {
 } from "../chat-page/chat-thread-event-sourcing.ts";
 
 export const projectsEnabled$ = computed((get) => {
-  return get(featureSwitch$)[FeatureSwitchKey.Projects] ?? false;
+  return get(featureSwitch$)[FeatureSwitchKey.SingleAgent] ?? false;
 });
 type OptimisticProjectRename = Pick<
   ProjectEvent,

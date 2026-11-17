@@ -13,6 +13,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { triggerSourceSchema } from "@okouai/api-contracts/validators/logs";
+import { knownRunFailureReasonSchema } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import type {
   LogStatus,
   TriggerSource,
@@ -168,7 +169,8 @@ function buildInspectDetail(meta: InspectLogData["meta"]) {
     modelProvider: nullableStringValue(meta?.modelProvider),
     selectedModel: nullableStringValue(meta?.selectedModel),
     framework: nullableStringValue(meta?.framework),
-    error: nullableStringValue(meta?.error),
+    failureReason: knownRunFailureReasonSchema.safeParse(meta?.failureReason)
+      .data,
   };
 }
 

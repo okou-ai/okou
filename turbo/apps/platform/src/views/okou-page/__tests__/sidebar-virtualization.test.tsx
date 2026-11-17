@@ -250,7 +250,7 @@ test("Collapse and expand a Project inside a scrolled virtual window", async () 
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   const sidebar = await screen.findByTestId("chat-list-column");
   const viewport = await within(sidebar).findByTestId("sidebar-scroll-area");
@@ -364,7 +364,7 @@ async function openFoldList({
   await setupPage({
     context,
     path: activeChat ? `/chats/${threadId(0)}` : `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   if (unread || archived) {
     await screen.findByLabelText("Open chat list menu");

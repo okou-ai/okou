@@ -80,19 +80,6 @@ pub const SECRET_VALUES_RUN_PAYLOAD_FIELD: &str = "OKOU_SECRET_VALUES";
 /// Unset or empty means there is no explicit deny list.
 pub const DISALLOWED_TOOLS_RUN_PAYLOAD_FIELD: &str = "OKOU_DISALLOWED_TOOLS";
 
-/// Logical run-payload field name for comma-separated Claude Code tool names
-/// that should be allowed.
-///
-/// Unset or empty means there is no explicit allow list.
-pub const TOOLS_RUN_PAYLOAD_FIELD: &str = "OKOU_TOOLS";
-
-/// Logical run-payload field name for the raw Claude Code settings payload
-/// passed to the guest-agent.
-///
-/// The runner treats this as an opaque string. Unset or empty means there is no
-/// settings override.
-pub const SETTINGS_RUN_PAYLOAD_FIELD: &str = "OKOU_SETTINGS";
-
 /// CLI framework selector, for example `claude-code` or `codex`.
 ///
 /// This runner-owned bootstrap key intentionally does not use the `OKOU_`
@@ -380,12 +367,6 @@ pub struct RunPayload {
     /// Comma-separated Claude Code tool names that should be disallowed.
     #[serde(default)]
     pub disallowed_tools: String,
-    /// Comma-separated Claude Code tool names that should be allowed.
-    #[serde(default)]
-    pub tools: String,
-    /// Raw Claude Code settings payload passed to the guest-agent.
-    #[serde(default)]
-    pub settings: String,
     /// JSON array describing artifact mounts prepared by the runner.
     #[serde(default)]
     pub artifacts: String,
@@ -417,15 +398,13 @@ pub struct RunPayloadField<'a> {
 
 impl RunPayload {
     /// Return all logical string fields carried by this run payload.
-    pub fn fields(&self) -> [RunPayloadField<'_>; 13] {
+    pub fn fields(&self) -> [RunPayloadField<'_>; 11] {
         let Self {
             prompt,
             append_system_prompt,
             native_continuation,
             secret_values,
             disallowed_tools,
-            tools,
-            settings,
             artifacts,
             feature_flags,
             codex_runtime_config,
@@ -454,14 +433,6 @@ impl RunPayload {
             RunPayloadField {
                 name: DISALLOWED_TOOLS_RUN_PAYLOAD_FIELD,
                 value: disallowed_tools,
-            },
-            RunPayloadField {
-                name: TOOLS_RUN_PAYLOAD_FIELD,
-                value: tools,
-            },
-            RunPayloadField {
-                name: SETTINGS_RUN_PAYLOAD_FIELD,
-                value: settings,
             },
             RunPayloadField {
                 name: ARTIFACTS_RUN_PAYLOAD_FIELD,

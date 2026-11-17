@@ -34,6 +34,7 @@ export class ChatEnqueueTimingCollector {
   private authType: AuthTokenType | undefined;
   private threadKind: "new" | "existing" | undefined;
   private outcome: "accepted" | "replayed" = "accepted";
+  private attachmentDetails: Record<string, unknown> = {};
 
   constructor(private readonly requestReceivedAt: number) {
     const startedAt = now();
@@ -53,6 +54,30 @@ export class ChatEnqueueTimingCollector {
 
   setOutcome(outcome: typeof this.outcome): void {
     this.outcome = outcome;
+  }
+
+  setAttachmentDetails(details: {
+    readonly references: number;
+    readonly unique: number;
+    readonly completedPrivate: number;
+    readonly verifiedPrivate: number;
+    readonly public: number;
+    readonly sqlReads: number;
+    readonly head: number;
+    readonly list: number;
+    readonly contentTypes: readonly string[];
+  }): void {
+    this.attachmentDetails = {
+      attachment_references: details.references,
+      attachment_unique_lookups: details.unique,
+      attachment_completed_private: details.completedPrivate,
+      attachment_verified_private: details.verifiedPrivate,
+      attachment_public: details.public,
+      attachment_sql_reads: details.sqlReads,
+      attachment_storage_head_calls: details.head,
+      attachment_storage_list_calls: details.list,
+      attachment_content_types: details.contentTypes,
+    };
   }
 
   recordAuth(success: boolean): void {
@@ -79,7 +104,10 @@ export class ChatEnqueueTimingCollector {
           durationMs: Math.max(0, durationMs),
           timestamp: new Date(observation?.finishedAt ?? now()).toISOString(),
           success,
-          dimensions: { span_kind: observation?.spanKind ?? "nested" },
+          dimensions: {
+            span_kind: observation?.spanKind ?? "nested",
+            ...(stage === "attachments" ? this.attachmentDetails : {}),
+          },
         });
       }
     });

@@ -413,8 +413,8 @@ export function CapabilityHomeContent({
         {selected === null ? (
           <div
             className={cn(
-              "mb-1 flex min-w-0 shrink-0 flex-col gap-5",
-              heading === undefined ? "mt-auto" : "row-start-2",
+              "flex min-w-0 shrink-0 flex-col gap-5",
+              heading === undefined ? "mt-auto mb-1" : "row-start-2",
             )}
           >
             {heading !== undefined && (
@@ -468,7 +468,7 @@ export function CapabilityHomePage({
   return (
     <ChatPageLayout
       header={
-        <GrowthEntryHeader inFlow>
+        <GrowthEntryHeader>
           <ExploreLink />
         </GrowthEntryHeader>
       }

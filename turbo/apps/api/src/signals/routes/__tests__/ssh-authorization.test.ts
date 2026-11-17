@@ -379,8 +379,7 @@ describe("SSH chat authorization", () => {
       throw new Error("Expected an approved SSH continuation Run");
     }
     resumed.push({ actor: s.run.actor, runId: continuation.runId });
-    const continued = await createRunsApi(context).readRun(
-      s.run.actor,
+    const continued = await createRunsApi(context).executionInput(
       continuation.runId,
     );
     expect(continued.appendSystemPrompt).toContain(

@@ -40,7 +40,6 @@ import {
 } from "./agent-suggestions.tsx";
 import { AgentAvatarImg } from "./sidebar-shared.tsx";
 import { SuggestionsComplete } from "./suggestions-complete.tsx";
-import { forYouSourcesEnabled$ } from "../../signals/okou-page/for-you-sources.ts";
 import { ForYouSources } from "./for-you-sources.tsx";
 import { PlatformFeedEvent } from "./platform-feed-event.tsx";
 
@@ -288,7 +287,6 @@ function ForYouNavigation() {
 
 function ForYouHeader({ count }: { readonly count: number | undefined }) {
   const { t } = useTranslation();
-  const sourcesEnabled = useGet(forYouSourcesEnabled$);
   return (
     <header className="flex min-h-20 shrink-0 items-center justify-between gap-4 px-5 py-4 sm:px-8">
       <div>
@@ -317,7 +315,7 @@ function ForYouHeader({ count }: { readonly count: number | undefined }) {
               )
             : null}
         </span>
-        {sourcesEnabled && <ForYouSources />}
+        <ForYouSources />
       </div>
     </header>
   );

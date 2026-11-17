@@ -7,7 +7,6 @@ import {
   number,
   object,
   preprocess,
-  record,
   string,
   uuid,
   enum as zEnum,
@@ -17,6 +16,7 @@ import {
 } from "zod";
 
 import { timestampQueryNumberSchema } from "./base";
+import { knownRunFailureReasonSchema } from "./run-failure-reasons";
 import {
   modelProviderCredentialScopeSchema,
   modelProviderTypeSchema,
@@ -95,8 +95,6 @@ const getRunResponseSchema = object({
   runId: string(),
   status: runStatusSchema,
   prompt: string(),
-  appendSystemPrompt: string().nullable(),
-  vars: record(string(), string()).optional(),
   sandboxId: string().optional(),
   result: object({
     output: string().optional(),
@@ -105,6 +103,7 @@ const getRunResponseSchema = object({
     .passthrough()
     .optional(),
   error: string().optional(),
+  failureReason: knownRunFailureReasonSchema.optional(),
   createdAt: string(),
   startedAt: string().optional(),
   completedAt: string().optional(),
@@ -157,6 +156,7 @@ const runStateSchema = object({
   status: runStatusSchema,
   result: runResultSchema.optional(),
   error: string().optional(),
+  failureReason: knownRunFailureReasonSchema.optional(),
   lastEventSequence: eventSequenceNumberSchema.optional(),
 });
 

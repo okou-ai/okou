@@ -1,24 +1,20 @@
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Layers } from "lucide-react";
-import { Badge, cn, getShortcutLabel } from "@okouai/ui";
+import { cn, getShortcutLabel } from "@okouai/ui";
 import { defaultAgentChatPageActive$ } from "../../signals/agent.ts";
 import { activeRoute$ } from "../../signals/active-route.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 import {
-  waitingSuggestionCount$,
-  followWaitingSuggestionCountOnRef$,
+  followForYouFeedOnRef$,
   suggestionsEnabled$,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { OkouLogomark } from "../components/okou-logomark.tsx";
 import { Link } from "../router/link.tsx";
-import {
-  forYouHasUnread$,
-  forYouSourcesEnabled$,
-} from "../../signals/okou-page/for-you-sources.ts";
+import { forYouHasUnread$ } from "../../signals/okou-page/for-you-sources.ts";
 import {
   ChatThreadStateIndicator,
   ChatThreadStateText,
@@ -99,21 +95,20 @@ export function ForYouChatListRow({
   const { t } = useTranslation();
   const enabled = useGet(suggestionsEnabled$);
   const active = useGet(activeRoute$) === "forYou";
-  const sourcesEnabled = useGet(forYouSourcesEnabled$);
   const unread = useLastResolved(forYouHasUnread$) === true;
-  const followCount = useSet(followWaitingSuggestionCountOnRef$);
+  const followFeed = useSet(followForYouFeedOnRef$);
   if (!enabled) {
     return null;
   }
   return (
     <Link
       pathname={ROUTES.forYou}
-      ref={followCount}
+      ref={followFeed}
       aria-current={active ? "page" : undefined}
       className={cn(
         ENTRY_ROW,
         active ? "bg-state-selected font-medium" : "hover:bg-state-hover",
-        sourcesEnabled && unread && "font-medium",
+        unread && "font-medium",
         touch && "min-h-11 px-3",
       )}
     >
@@ -125,11 +120,7 @@ export function ForYouChatListRow({
           return $.chat.agentSuggestions.forYou.title;
         })}
       </span>
-      {sourcesEnabled ? (
-        <ForYouUnreadIndicator unread={unread} />
-      ) : (
-        <ForYouWaitingCount />
-      )}
+      <ForYouUnreadIndicator unread={unread} />
     </Link>
   );
 }
@@ -144,27 +135,5 @@ function ForYouUnreadIndicator({ unread }: { readonly unread: boolean }) {
         </>
       )}
     </span>
-  );
-}
-
-function ForYouWaitingCount() {
-  const { t } = useTranslation();
-  const count = useLastResolved(waitingSuggestionCount$);
-  return (
-    <Badge
-      className="min-w-6 justify-center text-xs tabular-nums text-nav-copy-muted"
-      aria-label={
-        count !== undefined
-          ? t(
-              ($) => {
-                return $.appShell.sidebar.suggestionsWaiting;
-              },
-              { count },
-            )
-          : undefined
-      }
-    >
-      {count === undefined ? "–" : count > 9 ? "9+" : count}
-    </Badge>
   );
 }

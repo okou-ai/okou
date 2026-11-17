@@ -12,7 +12,7 @@ import {
   type SlackUploadInitBody,
   type SlackUploadInitResponse,
   type SlackUploadMaterializeBody,
-  type SlackUploadMaterializeResponse,
+  type SlackUploadDeliveryResponse,
   type SlackUploadCompleteBody,
   type SlackUploadCompleteResponse,
 } from "@okouai/api-contracts/contracts/integrations";
@@ -115,19 +115,19 @@ export async function completeSlackFileUpload(
   handleError(result, "Failed to complete Slack file upload");
 }
 
-export async function materializeSlackFileUpload(
+export async function deliverSlackFileUpload(
   body: SlackUploadMaterializeBody,
-): Promise<SlackUploadMaterializeResponse> {
+): Promise<SlackUploadDeliveryResponse> {
   const config = await getClientConfig();
   const client = initClient(integrationsSlackUploadMaterializeContract, config);
 
-  const result = await client.materialize({ body, headers: {} });
+  const result = await client.deliver({ body, headers: {} });
 
   if (result.status === 200) {
     return result.body;
   }
 
-  handleError(result, "Failed to materialize Slack file upload");
+  handleError(result, "Failed to deliver Slack file upload");
 }
 
 interface DownloadSlackFileResult {

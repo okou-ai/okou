@@ -23,7 +23,7 @@ use ts_bart::{RoutingTable, Table};
 use ts_control::{Node, NodeId, PeerUpdate, StateUpdate};
 use ts_dataplane::DataPlane;
 use ts_keys::{NodeKeyPair, NodePublicKey};
-use ts_netstack_smoltcp_core::smoltcp::wire::{
+use ts_netstack_smoltcp::smoltcp::wire::{
     IpProtocol, IpVersion, Ipv4Packet, Ipv6Packet, TcpPacket,
 };
 use ts_packet::PacketMut;
@@ -352,7 +352,9 @@ impl Peers {
         ] {
             incoming.insert(
                 ipnet::IpNet::from(ip),
-                ts_overlay_router::inbound::RouteAction::ToOverlay(OverlayTransportId(1)),
+                ts_dataplane::overlay_router::inbound::RouteAction::ToOverlay(OverlayTransportId(
+                    1,
+                )),
             );
         }
         plane.or_in.swap(incoming);
@@ -609,7 +611,7 @@ impl Peers {
                 let prefix = ipnet::IpNet::from(ip);
                 routes.insert(
                     prefix,
-                    ts_overlay_router::outbound::RouteAction::Wireguard(peer.handle),
+                    ts_dataplane::overlay_router::outbound::RouteAction::Wireguard(peer.handle),
                 );
                 sources.insert(prefix, peer.handle);
             }
