@@ -35,6 +35,7 @@ export const allocateUploadedArtifact$ = command(
     args: {
       readonly userId: string;
       readonly orgId: string | undefined;
+      readonly runId?: string;
       readonly filename: string;
       readonly contentType: string;
       readonly size: number;
@@ -131,6 +132,8 @@ export const uploadedArtifactObject$ = command(
         contentType: record.contentType,
         size: head.contentLength,
         lastModified: head.lastModified,
+        purpose: record.metadata.purpose,
+        producingRunId: record.metadata.producingRunId,
         isPrivate: true,
       };
     }
@@ -141,6 +144,8 @@ export const uploadedArtifactObject$ = command(
           ...object,
           bucket: env("R2_USER_ARTIFACTS_BUCKET_NAME"),
           isPrivate: false,
+          purpose: undefined,
+          producingRunId: undefined,
         }
       : null;
   },

@@ -72,6 +72,7 @@ const allocatePreparedUpload$ = command(
       {
         userId: auth.userId,
         orgId: auth.orgId,
+        runId: "runId" in auth ? auth.runId : undefined,
         filename,
         contentType,
         size,

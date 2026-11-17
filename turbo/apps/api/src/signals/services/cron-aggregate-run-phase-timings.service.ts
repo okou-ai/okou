@@ -4,7 +4,6 @@ import { inArray } from "drizzle-orm";
 import { number, object, tuple } from "zod";
 
 import { env } from "../../lib/env";
-import { runArtifactResultSelection } from "./run-artifact-result-sql";
 import {
   runPhaseTimingRollupSchema,
   type RunPhaseTimingMetadata,
@@ -104,7 +103,7 @@ export const readRunPhaseTimingMetadata$ = command(
           userId: agentRuns.userId,
           orgId: agentRuns.orgId,
           status: agentRuns.status,
-          artifactResult: runArtifactResultSelection(),
+          artifactResult: agentRuns.artifactResult,
           startedAt: agentRuns.startedAt,
           completedAt: agentRuns.completedAt,
         })

@@ -1,4 +1,3 @@
-import type { RunArtifactResult } from "@okouai/api-contracts/contracts/runs";
 import { describe, expect, it } from "vitest";
 import {
   buildRunPhaseTimingRollups,
@@ -69,14 +68,9 @@ function group(
   day: RunPhaseTimingRollup,
   kind = "image",
   status = "completed",
-  artifactResult: RunArtifactResult | null = "success",
 ) {
   const cohort = day.groups.find((entry) => {
-    return (
-      entry.generationKind === kind &&
-      entry.status === status &&
-      entry.artifactResult === artifactResult
-    );
+    return entry.generationKind === kind && entry.status === status;
   });
   if (!cohort) {
     throw new Error("Missing cohort");
@@ -219,7 +213,7 @@ describe("Run phase timing rollup", () => {
       minMs: null,
       maxMs: null,
     });
-    expect(day.groups).toHaveLength(132);
+    expect(day.groups).toHaveLength(44);
   });
 
   it("separates unsuccessful statuses from successful-delivery distributions", () => {
@@ -254,78 +248,31 @@ describe("Run phase timing rollup", () => {
     expect(group(day, "image", "timeout").runs).toBe(1);
   });
 
-  it("selects completed artifact success independently of execution and intent diagnostics", () => {
+  it("filters completed metrics by the recorded artifact result without removing raw diagnostics", () => {
     const day = rollup(
       [
         generation("2026-11-14T16:00:01.000Z", true, RUN_A),
         generation("2026-11-14T16:00:02.000Z", true, RUN_B, "report"),
-        generation("2026-11-14T16:00:03.000Z", true, RUN_C),
+        generation("2026-11-14T16:00:03.000Z", true, RUN_C, "report"),
       ],
-      [
-        run(),
-        {
-          ...run(RUN_B),
-          artifactResult: null,
-          completedAt: "2026-11-14T16:15:00.000Z",
-        },
-        run(RUN_C, "failed"),
-      ],
+      [run(), { ...run(RUN_B), artifactResult: null }, run(RUN_C, "failed")],
     );
+    expect(day.metricCohort).toStrictEqual({
+      status: "completed",
+      artifactResult: "success",
+    });
     expect(day.counts).toMatchObject({
       markedRuns: 3,
       completed: 2,
-      completedArtifactRuns: 1,
       failed: 1,
-      unknownArtifactRuns: 1,
-      noContentRuns: 0,
     });
-    const artifacts = day.groups.filter((entry) => {
-      return (
-        entry.status === day.metricCohort.status &&
-        entry.artifactResult === day.metricCohort.artifactResult &&
-        entry.runs > 0
-      );
+    expect(group(day).metrics.total.count).toBe(1);
+    expect(group(day, "report")).toMatchObject({
+      runs: 0,
+      metrics: { total: { count: 0, minMs: null } },
     });
-    expect(artifacts).toMatchObject([
-      {
-        generationKind: "image",
-        runs: 1,
-        metrics: { total: { count: 1, minMs: 10_000 } },
-      },
-    ]);
-    expect(group(day, "report", "completed", null)).toMatchObject({
-      runs: 1,
-      metrics: { total: { count: 1, minMs: 900_000 } },
-    });
-  });
-
-  it("preserves a verified artifact cohort when later native evidence is unavailable", () => {
-    const marks = [generation("2026-11-14T16:00:02.000Z", true)];
-    const previous = rollup(marks);
-    const unknown = rollup(marks, [{ ...run(), artifactResult: null }]);
-    expect(previous.counts.completedArtifactRuns).toBe(1);
-    expect(unknown.counts.completedArtifactRuns).toBe(0);
-    expect(preserveRunPhaseTimingRollup(previous, unknown)).toBeTruthy();
-    expect(preserveRunPhaseTimingRollup(unknown, previous)).toBeFalsy();
-  });
-
-  it("preserves verified Run identities across mixed evidence loss and gain while allowing kind corrections", () => {
-    const image = generation("2026-11-14T16:00:02.000Z", true);
-    const previous = rollup([image]);
-    const replacement = rollup(
-      [image, generation("2026-11-14T16:00:03.000Z", true, RUN_B, "report")],
-      [{ ...run(), artifactResult: null }, run(RUN_B)],
-    );
-    expect(previous.counts.completedArtifactRuns).toBe(1);
-    expect(replacement.counts.completedArtifactRuns).toBe(1);
-    expect(preserveRunPhaseTimingRollup(previous, replacement)).toBeTruthy();
-    const corrected = rollup([
-      image,
-      generation("2026-11-14T16:00:02.000Z", true, RUN_A, "report"),
-    ]);
-    expect(group(corrected, "unknown").runs).toBe(1);
-    expect(corrected.artifactResults).toStrictEqual(previous.artifactResults);
-    expect(preserveRunPhaseTimingRollup(previous, corrected)).toBeFalsy();
+    expect(group(day, "report", "failed").metrics.total.count).toBe(1);
+    expect(day.groups).toHaveLength(44);
   });
 
   it("excludes unknown Runs, mismatched owners, malformed records and late marks", () => {

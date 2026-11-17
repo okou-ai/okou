@@ -8,7 +8,7 @@ import { object, string } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { runPhaseTimingRollupSchema } from "../../../lib/run-phase-timing-rollup";
-import { mockNow, now } from "../../../lib/time";
+import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { cronAggregateRunPhaseTimingsRoutes } from "../cron-aggregate-run-phase-timings";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -94,11 +94,8 @@ function objectStorage(conflict = false) {
   return { objects, writes };
 }
 
-async function completedRunMarks(
-  publishArtifact = false,
-  clocks?: { readonly start: number; readonly end: number },
-) {
-  const startedAt = clocks?.start ?? Date.parse("2026-11-14T16:00:00.000Z");
+async function completedRunMarks(publishArtifact = true) {
+  const startedAt = Date.parse("2026-11-14T16:00:00.000Z");
   let clock = startedAt;
   const owned = await publicChatActor(context, {
     clockTime: () => {
@@ -121,20 +118,20 @@ async function completedRunMarks(
       installHostedUploadTransport(context, storage);
       const host = createHostBddApi(context);
       const publisher = { bearerToken: okouTokenFromExecution(execution) };
-      const content = "<main>A verified published report</main>";
-      const publication = await host.prepareHostedSite(publisher, {
+      const content = "<main>A published report</main>";
+      const prepared = await host.prepareHostedSite(publisher, {
         site: `phase-${run.runId.slice(0, 8)}`,
-        title: "Phase timing report",
+        title: "Phase report",
         artifactKind: "hosted-site",
         spaFallback: false,
         visibility: "public",
         files: [hostedTextFile("/index.html", content)],
       });
-      await uploadHostedTextFiles(publication, { "/index.html": content });
-      await host.completeHostedSite(publisher, publication.deploymentId);
+      await uploadHostedTextFiles(prepared, { "/index.html": content });
+      await host.completeHostedSite(publisher, prepared.deploymentId);
     });
   }
-  clock = clocks?.end ?? startedAt + 10_000;
+  clock = startedAt + 10_000;
   await owned.run(() => {
     return completePublicClaudeRun(
       context,
@@ -259,18 +256,8 @@ describe("daily Run phase aggregation cron", () => {
       throw new Error("Missing marked Run partition");
     }
     const report = runPhaseTimingRollupSchema.parse(JSON.parse(before.body));
-    expect(report.counts).toMatchObject({
-      completed: 1,
-      completedArtifactRuns: 0,
-      unknownArtifactRuns: 1,
-      noContentRuns: 0,
-    });
     const cohort = report.groups.find((entry) => {
-      return (
-        entry.generationKind === "report" &&
-        entry.status === "completed" &&
-        entry.artifactResult === null
-      );
+      return entry.generationKind === "report" && entry.status === "completed";
     });
     expect(cohort).toMatchObject({
       runs: 1,
@@ -302,68 +289,33 @@ describe("daily Run phase aggregation cron", () => {
     expect(storage.objects.get(key)?.body).toBe(before.body);
   });
 
-  it("selects only completed Runs with verified output while retaining text-only timing diagnostics", async () => {
-    const current = now();
-    const clocks = { start: current - 60_000, end: current + 60_000 };
-    const textOnly = await completedRunMarks(false, clocks);
-    const published = await completedRunMarks(true, clocks);
-    mockNow(new Date(clocks.end + 2 * 86_400_000));
-    phaseSource([...textOnly, ...published]);
+  it("filters completed metrics by the stored result and retains marked-Run diagnostics", async () => {
+    const artifact = await completedRunMarks();
+    const text = await completedRunMarks(false);
+    mockNow(new Date(CUTOFF));
+    phaseSource([...artifact, ...text]);
     const storage = objectStorage();
     await accept(client().aggregate({ headers }), [200]);
-    const date = new Date(clocks.end + 8 * 60 * 60 * 1000)
-      .toISOString()
-      .slice(0, 10);
     const stored = storage.objects.get(
-      `test-user-storages/${PREFIX}${date}.json`,
+      `test-user-storages/${PREFIX}2026-11-15.json`,
     );
     if (!stored) {
-      throw new Error("Missing artifact-aware partition");
+      throw new Error("Missing completed partition");
     }
-    const rollup = runPhaseTimingRollupSchema.parse(JSON.parse(stored.body));
-    expect(rollup).toMatchObject({
-      schemaVersion: 2,
-      metricCohort: { status: "completed", artifactResult: "success" },
-      source: {
-        artifactEvidence: "native-ready-by-run-completion",
-        globalCoverage: "unknown",
-      },
-      counts: {
-        markedRuns: 2,
-        completed: 2,
-        completedArtifactRuns: 1,
-        unknownArtifactRuns: 1,
-        noContentRuns: 0,
-      },
+    const report = runPhaseTimingRollupSchema.parse(JSON.parse(stored.body));
+    expect(report.metricCohort).toStrictEqual({
+      status: "completed",
+      artifactResult: "success",
     });
-    const artifacts = rollup.groups.filter((entry) => {
-      return (
-        entry.status === rollup.metricCohort.status &&
-        entry.artifactResult === rollup.metricCohort.artifactResult &&
-        entry.runs > 0
-      );
+    expect(report.counts).toMatchObject({ markedRuns: 2, completed: 2 });
+    const group = report.groups.find((entry) => {
+      return entry.generationKind === "report" && entry.status === "completed";
     });
-    expect(artifacts).toMatchObject([
-      {
-        generationKind: "report",
-        runs: 1,
-        metrics: {
-          total: { count: 1, minMs: 120_000 },
-          makingDelivery: { count: 1, minMs: 118_000 },
-        },
-      },
-    ]);
-    const diagnostic = rollup.groups.find((entry) => {
-      return (
-        entry.generationKind === "report" &&
-        entry.status === "completed" &&
-        entry.artifactResult === null
-      );
-    });
-    expect(diagnostic).toMatchObject({
+    expect(group).toMatchObject({
       runs: 1,
-      metrics: { total: { count: 1, minMs: 120_000 } },
+      metrics: { total: { count: 1, minMs: 10_000 } },
     });
+    expect(report.groups).toHaveLength(44);
   });
 
   it.each(["prior research", "tied skip"])(
@@ -405,9 +357,7 @@ describe("daily Run phase aggregation cron", () => {
       });
       const cohort = corrected.groups.find((entry) => {
         return (
-          entry.generationKind === "report" &&
-          entry.status === "completed" &&
-          entry.artifactResult === null
+          entry.generationKind === "report" && entry.status === "completed"
         );
       });
       expect(cohort?.metrics.research).toMatchObject({

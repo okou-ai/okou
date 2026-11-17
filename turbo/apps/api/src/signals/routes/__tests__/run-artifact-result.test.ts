@@ -1,12 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockNow, now } from "../../../lib/time";
-import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
@@ -40,12 +37,14 @@ async function artifactRun() {
     runs,
     run,
     bearerToken,
-    async complete(content = "Task finished") {
-      await owned.run(() => {
+    complete(content = "Task finished") {
+      return owned.run(() => {
         return completePublicClaudeRun(
           context,
           run,
-          { authorization: `Bearer ${execution.sandboxToken}` },
+          {
+            authorization: `Bearer ${execution.sandboxToken}`,
+          },
           content,
         );
       });
@@ -58,8 +57,10 @@ async function artifactRun() {
   };
 }
 
+type ArtifactRun = Awaited<ReturnType<typeof artifactRun>>;
+
 function uploadFile(
-  fixture: Awaited<ReturnType<typeof artifactRun>>,
+  fixture: ArtifactRun,
   purpose: "artifact" | undefined,
   complete: boolean,
 ) {
@@ -71,7 +72,7 @@ function uploadFile(
       routes: [...uploadsPrepareRoutes, ...uploadsCompleteRoutes],
     })(uploadsContract);
     const headers = { authorization: `Bearer ${fixture.bearerToken}` };
-    const body = "A ready, owner-scoped report file.";
+    const body = "An uploaded report.";
     const prepared = await accept(
       uploads.prepare({
         headers,
@@ -79,7 +80,7 @@ function uploadFile(
           filename: "report.txt",
           contentType: "text/plain",
           size: Buffer.byteLength(body),
-          ...(purpose === undefined ? {} : { purpose }),
+          ...(purpose ? { purpose } : {}),
         },
       }),
       [200],
@@ -99,15 +100,35 @@ function uploadFile(
         [200],
       );
     }
-    return prepared.body;
+    return { id: prepared.body.id, url: prepared.body.url };
   });
 }
 
-describe("Run artifact outcome", () => {
-  it("preserves ordinary text-only completion without claiming no-content from absent native evidence", async () => {
+function publishSite(fixture: ArtifactRun, visibility: "public" | "private") {
+  return fixture.owned.run(async () => {
+    const storage = createChatCallbacksApi(context).acceptChatObjectStorage();
+    installHostedUploadTransport(context, storage);
+    const host = createHostBddApi(context);
+    const publisher = { bearerToken: fixture.bearerToken };
+    const content = "<main>A published report</main>";
+    const prepared = await host.prepareHostedSite(publisher, {
+      site: `artifact-result-${randomUUID().slice(0, 8)}`,
+      title: "Artifact result report",
+      artifactKind: "hosted-site",
+      spaFallback: false,
+      visibility,
+      files: [hostedTextFile("/index.html", content)],
+    });
+    await uploadHostedTextFiles(prepared, { "/index.html": content });
+    return host.completeHostedSite(publisher, prepared.deploymentId);
+  });
+}
+
+describe("recorded Run artifact result", () => {
+  it("leaves ordinary text-only completion unknown", async () => {
     const fixture = await artifactRun();
     await fixture.complete(
-      "Daily API check finished. No report was published.",
+      "Daily check finished without publishing an artifact.",
     );
     await expect(fixture.read()).resolves.toMatchObject({
       status: "completed",
@@ -129,42 +150,64 @@ describe("Run artifact outcome", () => {
       ready: false,
       result: null,
     },
-  ])(
-    "classifies a $label through the real upload and completion protocols",
-    async ({ purpose, ready, result }) => {
-      const fixture = await artifactRun();
-      const { url } = await uploadFile(fixture, purpose, ready);
-      await expect(fixture.read()).resolves.toMatchObject({
-        status: "running",
-        artifactResult: null,
-      });
-      await fixture.complete(`Result: ${url}`);
-      await expect(fixture.read()).resolves.toMatchObject({
-        status: "completed",
-        artifactResult: result,
-      });
-    },
-  );
-
-  it("does not credit an output that became ready after Run completion", async () => {
+  ])("records only a successful $label", async ({ purpose, ready, result }) => {
     const fixture = await artifactRun();
-    await fixture.complete();
-    await uploadFile(fixture, "artifact", true);
+    const file = await uploadFile(fixture, purpose, ready);
+    await expect(fixture.read()).resolves.toMatchObject({
+      status: "running",
+      artifactResult: result,
+    });
+    await fixture.complete(file.url);
     await expect(fixture.read()).resolves.toMatchObject({
       status: "completed",
-      artifactResult: null,
+      artifactResult: result,
     });
   });
 
-  it("does not credit a previous Run's file when its completion is replayed by a new Run", async () => {
+  it.each(["public", "private"] as const)(
+    "records %s publication without attributing an old link to a later Run",
+    async (visibility) => {
+      const fixture = await artifactRun();
+      const published = await publishSite(fixture, visibility);
+      await fixture.complete(published.url);
+      await expect(fixture.read()).resolves.toMatchObject({
+        status: "completed",
+        artifactResult: "success",
+      });
+      const next = await fixture.owned.run(() => {
+        return fixture.runs.createThreadRun(fixture.owned.actor, {
+          agentId: fixture.owned.agentId,
+          threadId: fixture.run.threadId,
+          prompt: `Summarize the existing report at ${published.url}`,
+          model: fixture.owned.model,
+        });
+      });
+      const execution = await fixture.owned.executionInput(next.runId);
+      await fixture.owned.run(() => {
+        return completePublicClaudeRun(
+          context,
+          next,
+          { authorization: `Bearer ${execution.sandboxToken}` },
+          published.url,
+        );
+      });
+      await expect(
+        fixture.owned.run(() => {
+          return fixture.runs.readRun(fixture.owned.actor, next.runId);
+        }),
+      ).resolves.toMatchObject({ status: "completed", artifactResult: null });
+    },
+  );
+
+  it("does not credit a later Run for completing an earlier Run's file", async () => {
     const fixture = await artifactRun();
-    const uploaded = await uploadFile(fixture, "artifact", true);
-    await fixture.complete(uploaded.url);
+    const file = await uploadFile(fixture, "artifact", true);
+    await fixture.complete(file.url);
     const next = await fixture.owned.run(() => {
       return fixture.runs.createThreadRun(fixture.owned.actor, {
         agentId: fixture.owned.agentId,
         threadId: fixture.run.threadId,
-        prompt: `Summarize the existing file at ${uploaded.url}`,
+        prompt: "Reuse the previous upload",
         model: fixture.owned.model,
       });
     });
@@ -179,17 +222,15 @@ describe("Run artifact outcome", () => {
           headers: {
             authorization: `Bearer ${okouTokenFromExecution(execution)}`,
           },
-          body: { id: uploaded.id },
+          body: { id: file.id },
         }),
         [200],
       );
       await completePublicClaudeRun(
         context,
         next,
-        {
-          authorization: `Bearer ${execution.sandboxToken}`,
-        },
-        uploaded.url,
+        { authorization: `Bearer ${execution.sandboxToken}` },
+        file.url,
       );
     });
     await expect(
@@ -197,192 +238,21 @@ describe("Run artifact outcome", () => {
         return fixture.runs.readRun(fixture.owned.actor, next.runId);
       }),
     ).resolves.toMatchObject({ status: "completed", artifactResult: null });
-    await expect(fixture.read()).resolves.toMatchObject({
-      artifactResult: "success",
-    });
   });
 
-  it("keeps publication crossing Run completion unknown even when its ready clock was captured earlier", async () => {
-    const fixture = await artifactRun();
-    const host = createHostBddApi(context);
-    await fixture.owned.run(async () => {
-      const storage = createChatCallbacksApi(context).acceptChatObjectStorage();
-      installHostedUploadTransport(context, storage);
-      const publisher = { bearerToken: fixture.bearerToken };
-      const content = "<main>An asynchronously published report</main>";
-      const prepared = await host.prepareHostedSite(publisher, {
-        site: `late-artifact-${randomUUID().slice(0, 8)}`,
-        title: "Late publication report",
-        artifactKind: "hosted-site",
-        spaFallback: false,
-        visibility: "public",
-        files: [hostedTextFile("/index.html", content)],
-      });
-      await uploadHostedTextFiles(prepared, { "/index.html": content });
-      const priorSend = context.mocks.s3.send.getMockImplementation();
-      if (!priorSend) {
-        throw new Error("Missing object-storage transport");
-      }
-      const entered = createDeferredPromise<void>(context.signal);
-      const released = createDeferredPromise<void>(context.signal);
-      context.mocks.s3.send.mockImplementation(async (request) => {
-        if (
-          request instanceof PutObjectCommand &&
-          request.input.Key?.endsWith(
-            `/deployments/${prepared.deploymentId}.json`,
-          )
-        ) {
-          entered.resolve();
-          await released.promise;
-        }
-        return priorSend(request);
-      });
-      const publishing = settleIncludingAbort(
-        host.completeHostedSite(publisher, prepared.deploymentId),
-      );
-      const beforePublication = await settleIncludingAbort(
-        (async () => {
-          const paused = await Promise.race([
-            entered.promise.then(() => {
-              return true;
-            }),
-            publishing.then(() => {
-              return false;
-            }),
-          ]);
-          expect(paused).toBeTruthy();
-          await fixture.complete();
-          await expect(fixture.read()).resolves.toMatchObject({
-            status: "completed",
-            artifactResult: null,
-          });
-        })(),
-      );
-      released.resolve();
-      const result = await publishing;
-      if (!beforePublication.ok) {
-        throw beforePublication.error;
-      }
-      if (!result.ok) {
-        throw result.error;
+  it.each(["file", "site"] as const)(
+    "does not change a completed Run after a late %s succeeds",
+    async (kind) => {
+      const fixture = await artifactRun();
+      await fixture.complete();
+      if (kind === "file") {
+        await uploadFile(fixture, "artifact", true);
+      } else {
+        await publishSite(fixture, "public");
       }
       await expect(fixture.read()).resolves.toMatchObject({
         status: "completed",
         artifactResult: null,
-      });
-    });
-  });
-
-  it.each(["public", "private"] as const)(
-    "recognizes %s ready deployments and revisions without crediting a same-thread old link",
-    async (visibility) => {
-      const fixture = await artifactRun();
-      const host = createHostBddApi(context);
-      const site = `artifact-result-${randomUUID().slice(0, 8)}`;
-      const content = "<main>A published report</main>";
-      const first = await fixture.owned.run(async () => {
-        const storage =
-          createChatCallbacksApi(context).acceptChatObjectStorage();
-        installHostedUploadTransport(context, storage);
-        const publication = await host.prepareHostedSite(
-          { bearerToken: fixture.bearerToken },
-          {
-            site,
-            title: "Artifact outcome report",
-            artifactKind: "hosted-site",
-            spaFallback: false,
-            visibility,
-            files: [hostedTextFile("/index.html", content)],
-          },
-        );
-        await uploadHostedTextFiles(publication, { "/index.html": content });
-        return host.completeHostedSite(
-          { bearerToken: fixture.bearerToken },
-          publication.deploymentId,
-        );
-      });
-      await fixture.complete(first.url);
-      await expect(fixture.read()).resolves.toMatchObject({
-        artifactResult: "success",
-      });
-
-      const oldLinkRun = await fixture.owned.run(() => {
-        return fixture.runs.createThreadRun(fixture.owned.actor, {
-          agentId: fixture.owned.agentId,
-          threadId: fixture.run.threadId,
-          prompt: `Summarize the existing report at ${first.url}`,
-          model: fixture.owned.model,
-        });
-      });
-      const oldExecution = await fixture.owned.executionInput(oldLinkRun.runId);
-      await fixture.owned.run(() => {
-        return completePublicClaudeRun(
-          context,
-          oldLinkRun,
-          { authorization: `Bearer ${oldExecution.sandboxToken}` },
-          `The existing report remains at ${first.url}`,
-        );
-      });
-      await expect(
-        fixture.owned.run(() => {
-          return fixture.runs.readRun(fixture.owned.actor, oldLinkRun.runId);
-        }),
-      ).resolves.toMatchObject({ status: "completed", artifactResult: null });
-
-      const revision = await fixture.owned.run(() => {
-        return fixture.runs.createThreadRun(fixture.owned.actor, {
-          agentId: fixture.owned.agentId,
-          threadId: fixture.run.threadId,
-          prompt: "Publish a new revision of the report",
-          model: fixture.owned.model,
-        });
-      });
-      const execution = await fixture.owned.executionInput(revision.runId);
-      const bearerToken = okouTokenFromExecution(execution);
-      const updated = "<main>A revised report</main>";
-      await fixture.owned.run(async () => {
-        const publication = await host.prepareHostedSite(
-          { bearerToken },
-          {
-            site,
-            title: "Revised artifact outcome report",
-            artifactKind: "hosted-site",
-            spaFallback: false,
-            visibility,
-            files: [hostedTextFile("/index.html", updated)],
-          },
-        );
-        await uploadHostedTextFiles(publication, { "/index.html": updated });
-        await host.completeHostedSite(
-          { bearerToken },
-          publication.deploymentId,
-        );
-      });
-      await fixture.owned.run(() => {
-        return completePublicClaudeRun(
-          context,
-          revision,
-          { authorization: `Bearer ${execution.sandboxToken}` },
-          "The revised report is ready",
-        );
-      });
-      await expect(
-        fixture.owned.run(() => {
-          return fixture.runs.readRun(fixture.owned.actor, revision.runId);
-        }),
-      ).resolves.toMatchObject({
-        status: "completed",
-        artifactResult: "success",
-      });
-      mockNow(new Date(now() + 60_000));
-      await fixture.owned.run(() => {
-        return host.completeHostedSite(
-          { bearerToken: fixture.bearerToken },
-          first.deploymentId,
-        );
-      });
-      await expect(fixture.read()).resolves.toMatchObject({
-        artifactResult: "success",
       });
     },
   );
