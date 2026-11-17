@@ -108,8 +108,6 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_prepare_context_connector_context_pool_acquire"
   | "api_dispatch_prepare_context_connector_context_environment_materialize"
   | "api_dispatch_prepare_context_connector_context_sources_materialize"
-  | "api_dispatch_prepare_context_connector_context_builtin_resolve"
-  | "api_dispatch_prepare_context_connector_context_builtin_decrypt"
   | "api_dispatch_prepare_context_build_custom_connector_firewalls"
   | "api_dispatch_prepare_context_build_permission_manifest"
   | "api_dispatch_prepare_context_load_builtin_permission_indexes"

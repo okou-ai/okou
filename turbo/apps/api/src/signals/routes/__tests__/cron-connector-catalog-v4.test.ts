@@ -293,6 +293,103 @@ beforeEach(() => {
 });
 
 describe("connector catalog v4 preparation", () => {
+  it("keeps a Run operational without exposing a selected connector that has no usable firewall", async () => {
+    const isolatedCron = (
+      await setupApp({
+        context,
+        routes: cronConnectorCatalogRoutes,
+        isolatePg: true,
+      })
+    )(cronConnectorCatalogContract);
+    const candidate = release({});
+    const connectors = createConnectorBddApi(context);
+    const runs = createRunsApi(context);
+    const firewall = createFirewallApi(context);
+    const owned = await publicChatActor(context, {
+      beforeWorkspaceCleanup: async (actor) => {
+        for (const account of await connectors.listBuiltinConnectorAccounts(
+          actor,
+          "catalog-service",
+        )) {
+          await connectors.deleteBuiltinConnectorAccount(
+            actor,
+            "catalog-service",
+            account.id,
+          );
+        }
+      },
+    });
+    await owned.run(async () => {
+      const storage = context.mocks.s3.send.getMockImplementation();
+      if (!storage) {
+        throw new Error("Expected the public Run object-storage provider");
+      }
+      const catalogObjects = serveObjects(candidate.objects);
+      context.mocks.s3.send.mockImplementation(
+        (command: unknown, ...args: unknown[]) => {
+          const key = requestedKey(command);
+          return key !== undefined && candidate.objects.has(key)
+            ? catalogObjects(command)
+            : storage(command, ...args);
+        },
+      );
+      expect((await sync(isolatedCron)).body).toStrictEqual({
+        outcome: "accepted",
+        failureCode: null,
+      });
+      const account = await connectors.connectManualGrant(
+        owned.actor,
+        "catalog-service",
+        "api-token",
+        { credential: "unusable-native-token" },
+      );
+      await runs.enableAgentConnectors(owned.actor, owned.agentId, [
+        "catalog-service",
+      ]);
+      const run = await owned.sendChatRun(owned.actor, {
+        agentId: owned.agentId,
+        prompt: "Continue without usable connector authentication",
+      });
+      const { execution, sandboxHeaders } = await owned.runExecution(run.runId);
+      expect(execution.environment?.FIXTURE_TOKEN).toBeTruthy();
+      expect(JSON.stringify(execution)).not.toContain("unusable-native-token");
+      expect(execution.secretConnectorMetadataMap?.FIXTURE_TOKEN).toMatchObject(
+        {
+          sourceType: "connector",
+          sourceId: account.id,
+        },
+      );
+      const model = await firewall.requestFirewallAuth(
+        sandboxHeaders,
+        {
+          encryptedSecrets: execution.encryptedSecrets ?? undefined,
+          secretConnectorMap: execution.secretConnectorMap ?? undefined,
+          secretConnectorMetadataMap:
+            execution.secretConnectorMetadataMap ?? undefined,
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("CLAUDE_CODE_OAUTH_TOKEN")}`,
+          },
+        },
+        [200],
+      );
+      expect(model.body).toMatchObject({
+        headers: { Authorization: "Bearer bdd-personal-claude-token" },
+      });
+      await completePublicClaudeRun(
+        context,
+        run,
+        sandboxHeaders,
+        "Finished despite unusable connector authentication",
+      );
+      expect((await runs.readRun(owned.actor, run.runId)).status).toBe(
+        "completed",
+      );
+      await expect(
+        connectors.listBuiltinConnectorAccounts(owned.actor, "catalog-service"),
+      ).resolves.toContainEqual(expect.objectContaining({ id: account.id }));
+    });
+  });
+
   it.each(["legacy", "contracted"] as const)(
     "keeps the serving catalog until every %s Skill has a preparation receipt",
     async (layout) => {
