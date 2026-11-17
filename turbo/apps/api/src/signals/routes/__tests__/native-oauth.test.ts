@@ -87,20 +87,20 @@ async function thread(actor: ApiTestUser) {
   });
 }
 
-async function signedTokenRequest(input: unknown) {
+function signedTokenRequest(input: unknown) {
   const params = object({
     timestamp: number(),
     ttl: number(),
     capability: record(string(), array(string())),
     clientId: string(),
   }).parse(input);
-  return {
+  return Promise.resolve({
     ...params,
     capability: JSON.stringify(params.capability),
     keyName: "key",
     nonce: "nonce",
     mac: "mac",
-  };
+  });
 }
 
 describe("native organization OAuth grants", () => {
