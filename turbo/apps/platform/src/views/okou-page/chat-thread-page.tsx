@@ -4379,7 +4379,7 @@ function customCreditsFromForm(form: HTMLFormElement | null): number | null {
 
 /** Actions remain reachable in one row without growing the transcript frame. */
 const CHAT_NOTICE_ACTION_SLOT_CLASS =
-  "flex h-9 w-full shrink-0 items-center gap-2 overflow-x-auto @[640px]:w-auto @[640px]:max-w-[60%]";
+  "flex h-9 w-full shrink-0 items-center gap-2 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden @[640px]:w-auto @[640px]:max-w-[60%]";
 
 const ERROR_CARD_ACTION_CLASS = "h-8 shrink-0 whitespace-nowrap text-center";
 
@@ -5056,11 +5056,10 @@ function AssistantErrorCard({
         ) : null
       ) : actions !== undefined || details !== undefined ? (
         <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
-          {actions !== undefined ? (
-            actions
-          ) : (
+          {actions}
+          {details !== undefined ? (
             <ChatCardDetails title={title}>{details}</ChatCardDetails>
-          )}
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -5585,6 +5584,9 @@ function assistantErrorRecoveryContent(
     title: assistantRecoveryTitle(recovery, t),
     description: description.content,
     descriptionTitle: description.title,
+    ...(recovery.kind === "usage-limit"
+      ? { details: <p>{description.title}</p> }
+      : {}),
     ...(hasActions
       ? {
           actions: (
