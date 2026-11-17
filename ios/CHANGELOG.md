@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.46.0](https://github.com/okou-ai/okou/compare/ios-v0.45.4...ios-v0.46.0) (2026-11-17)
+
+
+### Features
+
+* **ios:** reject catch handlers that only rethrow ([#48008](https://github.com/okou-ai/okou/issues/48008)) ([7b37bf5](https://github.com/okou-ai/okou/commit/7b37bf575611ac645ecf968b450105a66da9dc2b))
+
+
+### Bug Fixes
+
+* **ios:** place billing after preferences in settings ([#47984](https://github.com/okou-ai/okou/issues/47984)) ([0c5b5fb](https://github.com/okou-ai/okou/commit/0c5b5fb346b5a7b5d20700ac3f4a5b0134feff86))
+
 ## [0.45.4](https://github.com/okou-ai/okou/compare/ios-v0.45.3...ios-v0.45.4) (2026-11-16)
 
 
