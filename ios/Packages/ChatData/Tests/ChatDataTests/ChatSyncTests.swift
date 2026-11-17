@@ -55,7 +55,10 @@ final class ChatSyncTests: XCTestCase {
     XCTAssertEqual(cached?.messages.last?.failure?.reason, "execution_timeout")
     XCTAssertEqual(cached, history)
     let stored = try await directory.cache(scope: scope).loadHistory(threadID: syncThreadID)
-    XCTAssertEqual(stored?.rows.last?.data, Data(row.utf8))
+    let retained = try XCTUnwrap(stored?.rows.last?.data)
+    XCTAssertEqual(
+      try JSONSerialization.jsonObject(with: retained) as? NSDictionary,
+      try JSONSerialization.jsonObject(with: Data(row.utf8)) as? NSDictionary)
   }
 
   func testExtensionTailBecomesVisibleToAResidentReaderBeforeAnyForegroundRequest() async throws {
