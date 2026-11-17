@@ -21,6 +21,10 @@ import { QueryBuilder } from "drizzle-orm/pg-core";
 import type { GetStartedClaimRow } from "./get-started-rewards.service";
 import type { MarketingRewardInvitationEvent } from "../../lib/marketing-reward-events";
 import { marketingRewardInvitationEventInsert } from "./marketing-reward-event-publication";
+import {
+  getStartedRewardWriter,
+  type MarketingRewardWriter,
+} from "./marketing-reward-ownership";
 
 export function getStartedRewardAvailabilityQuery(
   claim: GetStartedClaimRow,
@@ -61,6 +65,7 @@ export function getStartedRewardAvailabilityQuery(
  * uniqueness remain enforced by their unique indexes.
  */
 export function getStartedMemberRewardSql(args: {
+  readonly writer?: MarketingRewardWriter;
   readonly claim: GetStartedClaimRow;
   readonly rewardKey: string;
   readonly rewardSlot: number | null;
@@ -100,7 +105,7 @@ export function getStartedMemberRewardSql(args: {
     member_credit_grant_id = ${grantId}::uuid, org_credit_record_id = NULL,
     granted_at = ${sql.param(at, getStartedClaims.grantedAt)}, expires_at = ${sql.param(expiresAt, getStartedClaims.expiresAt)},
     updated_at = ${sql.param(at, getStartedClaims.updatedAt)}, reason = NULL, lease_id = NULL, lease_expires_at = NULL ${evidence} ${accepted}
-    WHERE ${unresolvedClaimWhere(claim)}
+    WHERE ${unresolvedClaimWhere(claim)} AND ${getStartedRewardWriter("user", claim.beneficiaryUserId) === (args.writer ?? "app")}
     RETURNING id, org_id, actor_user_id, source_key, invitation_id, invitee_user_id
   ) ${sourceEvent} INSERT INTO ${usagePackCreditGrants} (id, org_id, user_id, grant_type, idempotency_key, original_amount, remaining_amount, expires_at)
     SELECT ${grantId}::uuid, ${claim.orgId}, ${claim.beneficiaryUserId}, 'bonus', ${`get-started:${claim.id}`}, ${claim.rewardAmount}, ${claim.rewardAmount}, ${sql.param(expiresAt, usagePackCreditGrants.expiresAt)}
@@ -149,6 +154,7 @@ export function completedGetStartedQuestSql(
 /** Pure statement parts allow an owning publication to gate its automatic award. */
 export function completedGetStartedQuestPublication(
   args: {
+    readonly writer?: MarketingRewardWriter;
     readonly orgId: string;
     readonly userId: string;
     readonly questKey: "connector" | "checkin" | "imessage";
@@ -201,8 +207,8 @@ export function completedGetStartedQuestPublication(
   }
   const source =
     sources.length > 0
-      ? sql`SELECT ${values} FROM ${sql.join(sources, sql` CROSS JOIN `)} WHERE true${args.questKey === "connector" ? sql` ORDER BY connector_reward_slots.slot` : sql.empty()}`
-      : sql`VALUES (${values})`;
+      ? sql`SELECT ${values} FROM ${sql.join(sources, sql` CROSS JOIN `)} WHERE ${getStartedRewardWriter("user", args.userId) === (args.writer ?? "app")}${args.questKey === "connector" ? sql` ORDER BY connector_reward_slots.slot` : sql.empty()}`
+      : sql`SELECT ${values} WHERE ${getStartedRewardWriter("user", args.userId) === (args.writer ?? "app")}`;
   // Concurrent duplicates can collide on the source, reward key, or reward slot.
   // Arbitrate every unique index: targeting only the source can still raise a
   // uniqueness error on another index instead of returning the existing award.

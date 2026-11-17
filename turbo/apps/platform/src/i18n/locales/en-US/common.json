@@ -1524,6 +1524,7 @@
         "checkin": {
           "action": "Check in",
           "description": "Check in once a day. Resets at 00:00 UTC.",
+          "pendingDescription": "Your check-in was saved. Credits will update after confirmation.",
           "name": "Check in daily",
           "unit": "a day"
         },

@@ -106,6 +106,7 @@
     "src/signals/services/ios-notification-query.ts",
     "src/signals/services/managed-usage-attribution.ts",
     "src/signals/services/marketing-reward-event-publication.ts",
+    "src/signals/services/marketing-reward-ownership.ts",
     "src/signals/services/workflow-reward-source-publication.ts",
     "src/signals/services/model-provider-device-session-publication.ts",
     "src/signals/services/model-token-categories.ts",
