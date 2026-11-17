@@ -2441,6 +2441,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
+          submodules: recursive
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
           version: 10.33.4
@@ -2451,8 +2452,8 @@ jobs:
         run: cd e2e && pnpm install --frozen-lockfile
       - name: Check runner E2E model selection
         run: cd e2e && pnpm exec tsx --test scripts/runner-model-selection.test.ts scripts/runner-model-bootstrap.test.mjs scripts/runner-chat-model-default.test.mjs scripts/runner-chat-output.test.mjs
-      - name: Check runner E2E manual grant diagnostics
-        run: cd e2e && pnpm exec tsx --test scripts/runner-manual-grant.test.mjs
+      - name: Check runner E2E failure diagnostics
+        run: cd e2e && pnpm exec tsx --test scripts/runner-manual-grant.test.mjs scripts/runner-failure-diagnostics.test.mjs
       - name: Generate runner E2E shard matrix
         id: shards
         shell: bash

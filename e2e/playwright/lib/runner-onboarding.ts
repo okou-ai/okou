@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { apiFailureMessage } from "./api-response";
+import { readApiJson } from "./api-response";
 import { authHeadersForToken } from "./onboarding";
 
 interface RunnerOnboardingOptions {
@@ -87,18 +87,7 @@ async function requestRunnerApi(
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
-  if (!response.ok) {
-    await response.body?.cancel();
-    throw new Error(
-      apiFailureMessage(
-        path,
-        response.status,
-        requestId,
-        response.headers.get("retry-after"),
-      ),
-    );
-  }
-  return await response.json();
+  return await readApiJson(response, path, requestId);
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

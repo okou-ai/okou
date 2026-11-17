@@ -1,3 +1,5 @@
+import { readApiJson } from "./api-response";
+
 export interface CliTokenOptions {
   readonly apiUrl: string;
   readonly clerkSessionToken: string;
@@ -54,16 +56,7 @@ async function postJson(
     headers,
     body: JSON.stringify(body),
   });
-  if (!response.ok) {
-    await response.body?.cancel();
-    throw new Error(`${operation} failed with HTTP ${response.status}`);
-  }
-
-  try {
-    return (await response.json()) as unknown;
-  } catch (cause) {
-    throw new Error(`${operation} returned invalid JSON`, { cause });
-  }
+  return await readApiJson(response, operation);
 }
 
 function readStringProperty(

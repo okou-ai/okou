@@ -103,6 +103,41 @@ and validate this suite. Do not treat a local `./e2e/run.sh` invocation as
 validation for `03-runner`; running the script without file arguments also
 selects the CI-only runner tests.
 
+### Failure diagnostics
+
+All BATS files load the shared failure hook through `helpers/setup.bash`.
+An assertion failure prints test identity and the most recent 20 API response
+summaries before resource teardown. The shared API transport records method,
+query-free URL, curl exit code, HTTP status, content type, downloaded bytes and
+duration without mixing diagnostics into successful response bodies. Individual
+tests do not need to implement response reporting.
+
+Runner helpers also record run IDs in the current test's temporary directory,
+including IDs returned inside subshells and multi-run tests. On failure the hook
+reads one network page for at most three observed runs through the public Run
+API. It reports HTTP response metadata and protocol counts, with page limits
+visible in the summary. Collection uses short request deadlines and no retries;
+an unavailable report preserves the original test failure and cleanup. A hard
+process or job timeout may interrupt collection.
+
+Clerk, onboarding and CLI-token preparation share HTTP/JSON error reporting,
+including content type, declared content length, request ID, Retry-After and
+Cloudflare Ray ID when available. Browser tests retain their existing failure
+screenshots, Playwright traces and sign-in diagnostics.
+
+Shared reports omit request and response bodies, credential headers, URL query
+strings and arbitrary provider error text. JSON parser errors do not quote raw
+responses. Use the reported run and request IDs to inspect retained logs when
+payload details are necessary. Missing metadata is not evidence of an empty
+response or absent traffic.
+
+The local helper regression tests exercise real BATS and curl against loopback
+HTTP fixtures; they require the pinned BATS submodules and curl 8.3+ (as used by
+the Ubuntu CI host), but no deployed accounts. Curl's private write-out file
+keeps response bytes and caller-owned `--write-out` formats unchanged.
+These validate diagnostic output and failure preservation, not the deployed
+Runner or its external providers.
+
 ## Adding runner BATS tests
 
 Runner BATS files live in `e2e/tests/03-runner`. They share the accounts and

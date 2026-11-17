@@ -29,7 +29,7 @@ _runner_api_vercel_logs_url_prefix() {
 
     request_host="${base#*://}"
     request_host="${request_host%%/*}"
-    request_path="${path%%\?*}"
+    request_path="${path%%[\?#]*}"
     request_host_search="${request_host//%/%25}"
     request_host_search="${request_host_search//:/%3A}"
     request_path_search="${request_path//%/%25}"
@@ -56,6 +56,13 @@ _runner_api_request_is_repeatable() {
     return 0
 }
 
+_runner_e2e_record_run() {
+    if [[ -n "${BATS_TEST_TMPDIR:-}" && "$1" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+        printf '%s\n' "$1" >>"${BATS_TEST_TMPDIR}/runner-run-ids" || true
+    fi
+    return 0
+}
+
 runner_api_curl() {
     local max_attempts=1
     if _runner_api_request_is_repeatable "${@:2}"; then
@@ -76,11 +83,13 @@ _runner_api_curl() {
     token="$(runner_api_token)" || return 1
     base="$(runner_api_url)" || return 1
     request_url="$base$path"
-    diagnostic_url="${request_url%%\?*}"
+    diagnostic_url="${request_url%%[\?#]*}"
+    if [[ "$path" =~ ^/api/runs/([0-9a-f-]{36})(/|\?|$) ]]; then
+        _runner_e2e_record_run "${BASH_REMATCH[1]}"
+    fi
     vercel_logs_url_prefix="$(_runner_api_vercel_logs_url_prefix \
         "$base" "$path")"
     vercel_logs_url_prefix_write_out="${vercel_logs_url_prefix//%/%%}"
-    vercel_log_write_out="%{onerror}%{stderr}Vercel logs: ${vercel_logs_url_prefix_write_out}+status%%3A%{http_code}&timeline=past12Hours\n"
 
     local -a headers=(
         -H "Authorization: Bearer $token"
@@ -112,9 +121,18 @@ _runner_api_curl() {
     # the overall request fails so a recovered response remains machine-readable.
     local diagnostics_file
     diagnostics_file="$(mktemp "${BATS_TEST_TMPDIR:-/tmp}/runner-api-curl-stderr.XXXXXX")" || return
+    local metadata_file
+    if ! metadata_file="$(mktemp "${BATS_TEST_TMPDIR:-/tmp}/runner-api-curl-metadata.XXXXXX")"; then
+        rm -f "$diagnostics_file"
+        return 1
+    fi
+    # curl 8.3+ writes metadata to a private file, independently of response bytes.
+    # A caller-owned --write-out keeps its existing format and leaves metadata absent.
+    vercel_log_write_out="%output{${metadata_file}}%{json}%{onerror}%{stderr}Vercel logs: ${vercel_logs_url_prefix_write_out}+status%%3A%{http_code}&timeline=past12Hours\n"
 
-    local body="" curl_status=0 attempt
+    local body="" curl_status=0 attempt response_metadata response_summary
     for ((attempt = 1; attempt <= max_attempts; attempt += 1)); do
+        : >"$metadata_file"
         body="$(
             curl --fail-with-body --silent --show-error \
                 --write-out "$vercel_log_write_out" \
@@ -129,6 +147,32 @@ _runner_api_curl() {
         curl_status="${body##*"$exit_marker"}"
         body="${body%"$exit_marker"*}"
 
+        response_metadata=null
+        if [[ -s "$metadata_file" ]]; then
+            response_metadata="$(cat "$metadata_file")"
+        fi
+        response_summary=""
+        if [[ -n "${BATS_TEST_TMPDIR:-}" ]] || ((curl_status != 0)); then
+            response_summary=$(jq -cn \
+                --arg url "$diagnostic_url" \
+                --argjson curlExit "$curl_status" \
+                --argjson attempt "$attempt" \
+                --argjson response "$response_metadata" '
+                {
+                    observed_at: (now | strftime("%Y-%m-%dT%H:%M:%SZ")),
+                    url: $url, attempt: $attempt, curl_exit: $curlExit,
+                    method: $response.method,
+                    http_status: $response.http_code,
+                    content_type: ($response.content_type | if . == null then null else .[:128] end),
+                    response_bytes: $response.size_download,
+                    duration_seconds: $response.time_total
+                }
+            ' 2>/dev/null) || true
+            if [[ -n "${BATS_TEST_TMPDIR:-}" && -n "$response_summary" ]]; then
+                printf '%s\n' "$response_summary" >>"${BATS_TEST_TMPDIR}/http-responses.jsonl" || true
+            fi
+        fi
+
         if ((curl_status != timeout_status)) ||
             ((attempt == max_attempts)); then
             break
@@ -141,6 +185,9 @@ _runner_api_curl() {
 
     if ((curl_status != 0)); then
         cat "$diagnostics_file" >&2
+        if [[ -n "$response_summary" ]]; then
+            printf 'E2E API response: %s\n' "$response_summary" >&2
+        fi
         printf 'runner_api_curl failed: url=%s curl_status=%d\n' \
             "$diagnostic_url" "$curl_status" >&2
         if ((curl_status == timeout_status)); then
@@ -151,7 +198,7 @@ _runner_api_curl() {
                 "$attempt" "$vercel_logs_url_prefix" >&2
         fi
     fi
-    rm -f "$diagnostics_file"
+    rm -f "$diagnostics_file" "$metadata_file"
     return "$curl_status"
 }
 
@@ -401,6 +448,7 @@ _runner_chat_wait_for_input_run() {
                     | .runId
                     | select(type == "string" and length > 0))
             ' <<< "$response")"; then
+                _runner_e2e_record_run "$run_id"
                 printf '%s\n' "$run_id"
                 return 0
             fi

@@ -1,5 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 
+import { readApiJson } from "./api-response";
+
 type AuthHeaders = Readonly<
   Record<"Authorization", string> &
     Partial<Record<"x-vercel-protection-bypass", string>>
@@ -43,24 +45,10 @@ export async function ensureRunnerOrganizationReady(
       ),
     },
   );
-  if (!response.ok) {
-    await response.body?.cancel();
-    throw new Error(
-      `Runner organization onboarding status failed with HTTP ${response.status}`,
-    );
-  }
-
-  let body: unknown;
-  try {
-    body = (await response.json()) as unknown;
-  } catch (cause) {
-    throw new Error(
-      "Runner organization onboarding status returned invalid JSON",
-      {
-        cause,
-      },
-    );
-  }
+  const body = await readApiJson(
+    response,
+    "Runner organization onboarding status",
+  );
 
   if (!isReadyRunnerOrganization(body)) {
     throw new Error(

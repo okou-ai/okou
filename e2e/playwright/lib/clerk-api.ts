@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 
+import { apiResponseSummary, readApiJson } from "./api-response";
 import {
   assertClerkCleanupCanRequest,
   fetchClerkRequest,
@@ -1179,28 +1180,7 @@ async function readClerkJson(
   response: Response,
   operation: string,
 ): Promise<unknown> {
-  if (!response.ok) {
-    await response.body?.cancel();
-    throw new Error(
-      `${operation} failed with ${formatClerkResponseSummary(response)}`,
-    );
-  }
-
-  let responseBody: string;
-  try {
-    responseBody = await response.text();
-  } catch (cause) {
-    throw new Error(`${operation} response read failed`, { cause });
-  }
-
-  try {
-    const data: unknown = JSON.parse(responseBody);
-    return data;
-  } catch {
-    throw new Error(
-      `${operation} returned invalid JSON: ${formatClerkResponseSummary(response)}`,
-    );
-  }
+  return await readApiJson(response, operation);
 }
 
 async function readClerkUsers(
@@ -1374,23 +1354,5 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function formatClerkResponseSummary(response: Response): string {
-  return `HTTP ${response.status} (${classifyClerkResponse(response)})`;
-}
-
-function classifyClerkResponse(
-  response: Response,
-): "json" | "html" | "other" | "unknown" {
-  const contentType = response.headers.get("content-type");
-  if (!contentType) {
-    return "unknown";
-  }
-
-  const mediaType = contentType.split(";", 1)[0]?.trim().toLowerCase();
-  if (mediaType === "application/json" || mediaType?.endsWith("+json")) {
-    return "json";
-  }
-  if (mediaType === "text/html" || mediaType === "application/xhtml+xml") {
-    return "html";
-  }
-  return "other";
+  return apiResponseSummary(response);
 }
