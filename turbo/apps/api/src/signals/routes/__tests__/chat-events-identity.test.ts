@@ -104,7 +104,7 @@ describe("CHAT-02: default assistant identity", () => {
       agentId: defaultAgentId,
       prompt: "start an Okou run",
     });
-    const anchorRun = await api.readRun(actor, anchor.runId);
+    const anchorRun = await api.executionInput(anchor.runId);
     expect(anchorRun.appendSystemPrompt).toContain("Your name is Okou.");
 
     const anchorExecution = await runExecution(anchor.runId);
@@ -163,7 +163,7 @@ describe("CHAT-02: default assistant identity", () => {
     if (!promoted?.runId) {
       throw new Error("Expected the queued Okou message to auto-send");
     }
-    const promotedRun = await api.readRun(actor, promoted.runId);
+    const promotedRun = await api.executionInput(promoted.runId);
     expect(promotedRun.appendSystemPrompt).toContain("Your name is Okou.");
     const promotedExecution = await runExecution(promoted.runId);
     await expectRunAppContext({
@@ -183,7 +183,7 @@ describe("CHAT-02: default assistant identity", () => {
       agentId: customAgent.agentId,
       prompt: "keep my custom name",
     });
-    const customPrompt = (await api.readRun(actor, customRun.runId))
+    const customPrompt = (await api.executionInput(customRun.runId))
       .appendSystemPrompt;
     expect(customPrompt).toContain("Your name is Nova.");
     expect(customPrompt).not.toContain("Your name is Okou.");
@@ -417,7 +417,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         computerUseHostId: hostId,
       });
       const grantedRun = await owned.run(() => {
-        return api.readRun(actor, granted.runId);
+        return api.executionInput(granted.runId);
       });
       expect(grantedRun.appendSystemPrompt).toContain("# Computer Use");
       expect(grantedRun.appendSystemPrompt).toContain(
@@ -500,7 +500,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         computerUseHostId: hostId,
       });
       const staleRun = await owned.run(() => {
-        return api.readRun(actor, staleGranted.runId);
+        return api.executionInput(staleGranted.runId);
       });
       expect(staleRun.appendSystemPrompt).toContain(
         "Computer Use is enabled for this run on BDD Desktop.",

@@ -21,9 +21,7 @@ import type {
   AgentRunLaunchSnapshot,
   AgentRunOfficialWorkflowProvenance,
   AgentRunResult,
-  AgentRunSecretNames,
   AgentRunStorageMounts,
-  AgentRunVars,
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 
 /** Shared physical and runtime column builders. */
@@ -54,10 +52,6 @@ export function agentRunColumns() {
       "runner_cancellation_mode",
     ).$type<RunnerCancellationMode>(),
     prompt: text("prompt").notNull(),
-    appendSystemPrompt: text("append_system_prompt"),
-    vars: jsonb("vars").$type<AgentRunVars>(),
-    // Secret names for validation (values never stored - must be provided at runtime)
-    secretNames: jsonb("secret_names").$type<AgentRunSecretNames>(),
     // Canonical resolved mounts used by new run writers.
     storageMounts: jsonb("storage_mounts").$type<AgentRunStorageMounts>(),
     launchSnapshot: jsonb("launch_snapshot").$type<AgentRunLaunchSnapshot>(),
