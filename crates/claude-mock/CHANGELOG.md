@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.112](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.111...claude-mock-v0.22.112) (2026-11-17)
+
+
+### Refactoring
+
+* use typed fallible native clock queries ([#48072](https://github.com/okou-ai/okou/issues/48072)) ([4b16d0b](https://github.com/okou-ai/okou/commit/4b16d0b56361a1f955133d6a161ff21eb8083394))
+
 ## [0.22.111](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.110...claude-mock-v0.22.111) (2026-11-16)
 
 
