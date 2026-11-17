@@ -1,8 +1,10 @@
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { currentChatThreadNavigationList$ } from "../agent-chat.ts";
+import { suggestionsEnabled$ } from "../okou-page/agent-suggestion-session.ts";
 import { detachedNavigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
 import { rootSignal$ } from "../root-signal.ts";
+import { singleAgentEnabled$ } from "../single-agent.ts";
 import { currentLeftThread$ } from "./chat-thread-panes.ts";
 import {
   loadLeftThread$,
@@ -16,6 +18,22 @@ import {
 import { scrollToChatListRow$ } from "./sidebar-chat-thread-scroll.ts";
 
 type ChatListNavigationDirection = "prev" | "next";
+
+/** My Okou's New chat entry, whose page is the chat page at `/`. */
+export const NEW_CHAT_ENTRY_KEY = "entry:new-chat";
+/** The For you entry, shown while Suggestions are on. */
+export const FOR_YOU_ENTRY_KEY = "entry:for-you";
+
+/**
+ * The entries above the list's scroll viewport, in the order they appear.
+ * Keyboard navigation passes them like rows, and filters never hide them.
+ */
+const chatListEntryKeys$ = computed((get): readonly string[] => {
+  return [
+    ...(get(singleAgentEnabled$) ? [NEW_CHAT_ENTRY_KEY] : []),
+    ...(get(suggestionsEnabled$) ? [FOR_YOU_ENTRY_KEY] : []),
+  ];
+});
 
 /**
  * The nearest visible list item from the current position. A current item that
@@ -67,7 +85,9 @@ export const navigateChatList$ = command(
   async (
     { get, set },
     request: {
-      /** The row key of the current Project or chat, if the page has one. */
+      /**
+       * The key of the current entry, Project or chat, if the page has one.
+       */
       readonly currentKey: string | null;
       readonly direction: ChatListNavigationDirection;
       readonly pane: "main" | "side";
@@ -78,6 +98,7 @@ export const navigateChatList$ = command(
   ): Promise<void> => {
     const navigation = await get(currentChatThreadNavigationList$);
     signal.throwIfAborted();
+    const entryKeys = get(chatListEntryKeys$);
     const excludedKey =
       request.excludedThreadId === null
         ? null
@@ -85,17 +106,27 @@ export const navigateChatList$ = command(
     const targetKey = findAdjacentListedKey({
       currentKey: request.currentKey,
       direction: request.direction,
-      orderedKeys: navigation.orderedKeys,
-      listedKeys: navigation.listedKeys,
-      // A Project page only opens in the main pane.
+      orderedKeys: [...entryKeys, ...navigation.orderedKeys],
+      listedKeys: [...entryKeys, ...navigation.listedKeys],
+      // The entry and Project pages only open in the main pane.
       selectable: (key) => {
         return (
           key !== excludedKey &&
-          (request.pane === "main" || projectIdOfRowKey(key) === null)
+          (request.pane === "main" || threadIdOfRowKey(key) !== null)
         );
       },
     });
     if (!targetKey) {
+      return;
+    }
+    // The entries sit above the scroll viewport, so reaching one scrolls
+    // nothing.
+    if (targetKey === NEW_CHAT_ENTRY_KEY) {
+      set(detachedNavigateTo$, ROUTES.home);
+      return;
+    }
+    if (targetKey === FOR_YOU_ENTRY_KEY) {
+      set(detachedNavigateTo$, ROUTES.forYou);
       return;
     }
     const projectId = projectIdOfRowKey(targetKey);

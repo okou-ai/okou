@@ -2548,6 +2548,7 @@ export const prepareBuiltinConnectorTokenPublication$ = command(
       cleanup: tokenCleanupResult(args, existing, pendingTokenRevoke),
       publication: {
         orgId: args.orgId,
+        grantKind: args.runtimeMethod.method.grant.kind,
         metadata: tokenWriteArgs(
           values,
           resolution,

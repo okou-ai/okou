@@ -4,6 +4,13 @@ import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.auth.CanonicalWorkspaceSession
 import ai.okou.android.auth.WorkspaceIdentity
 import java.io.Closeable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.RecordedRequest
@@ -48,6 +55,47 @@ class ChatListApiFixture : Closeable {
     @Volatile var beforeResponse: () -> Unit = {}
     @Volatile var commandResponse: (RecordedRequest) -> MockResponse? = { null }
     @Volatile var beforeHistoryResponse: (RecordedRequest) -> Unit = {}
+    @Volatile var historyThreadIds = setOf(CHAT_PERSONAL, CHAT_IN_PROJECT)
+
+    private fun defaultHistory(thread: String, after: Long): List<String> =
+        listOf(
+                historyEventWire(
+                    "input",
+                    17,
+                    thread,
+                    "input.prompt",
+                    """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Hello history"}]}}""",
+                ),
+                historyEventWire("output", 23, thread),
+                historyEventWire(HISTORY_LAST_EVENT, 37, thread, "run.completed", "null"),
+            )
+            .filter {
+                Json.parseToJsonElement(it).jsonObject.getValue("seqId").jsonPrimitive.long > after
+            }
+
+    @Volatile
+    var historyCatchUp: (RecordedRequest) -> MockResponse = { request ->
+        val events =
+            Json.parseToJsonElement(request.body.clone().readUtf8()).jsonArray.associate { tuple ->
+                val items = tuple.jsonArray
+                val id = items[0].jsonPrimitive.content
+                id to
+                    JsonArray(
+                        defaultHistory(id, items[1].jsonPrimitive.long).map {
+                            Json.parseToJsonElement(it)
+                        }
+                    )
+            }
+        jsonResponse(
+            JsonObject(
+                    mapOf(
+                        "events" to JsonObject(events),
+                        "notFoundThreads" to JsonArray(emptyList()),
+                    )
+                )
+                .toString()
+        )
+    }
     val readRequests = java.util.concurrent.atomic.AtomicInteger()
     @Volatile
     var historyMarkRead: () -> MockResponse = { jsonResponse("""{"lastReadAt":"$CHAT_DATE"}""") }
@@ -66,19 +114,10 @@ class ChatListApiFixture : Closeable {
     @Volatile
     var historyRows: (RecordedRequest) -> MockResponse = { request ->
         val thread = checkNotNull(request.requestUrl).pathSegments[2]
-        val cold = request.requestUrl?.queryParameter("sinceSeqId") == "0"
-        val input =
-            historyEventWire(
-                "input",
-                17,
-                thread,
-                "input.prompt",
-                """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Hello history"}]}}""",
-            )
-        val output = historyEventWire("output", 23, thread)
-        val complete = historyEventWire(HISTORY_LAST_EVENT, 37, thread, "run.completed", "null")
+        val rows =
+            defaultHistory(thread, request.requestUrl?.queryParameter("sinceSeqId")?.toLong() ?: 0)
         jsonResponse(
-            """{"rows":[${if (cold) "$input,$output,$complete" else ""}],"cursor":{"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":37},"hasMore":false}"""
+            """{"rows":[${rows.joinToString(",")}],"cursor":{"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":37},"hasMore":false}"""
         )
     }
     @Volatile
@@ -137,7 +176,7 @@ class ChatListApiFixture : Closeable {
                         segments.size >= 3 &&
                             segments[0] == "api" &&
                             segments[1] == "chat-threads" &&
-                            segments[2] in setOf(CHAT_PERSONAL, CHAT_IN_PROJECT)
+                            segments[2] in historyThreadIds
                     ) {
                         beforeHistoryResponse(request)
                         return when (segments.getOrNull(3)) {
@@ -152,6 +191,7 @@ class ChatListApiFixture : Closeable {
                         }
                     }
                     return when (request.requestUrl?.encodedPath) {
+                        "/api/chat/events/catch-up" -> historyCatchUp(request)
                         "/api/feature-switches" -> flags()
                         "/api/chat-threads/snapshot" -> snapshot()
                         "/api/chat-threads/events" -> events(request)

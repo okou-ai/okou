@@ -2,8 +2,7 @@ package ai.okou.android.chat
 
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.SendRequestVariant1
-import kotlinx.serialization.EncodeDefault
-import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.Required
 import kotlinx.serialization.Serializable
 
 /** A pending operation is a frozen request, independent of the next editable draft. */
@@ -48,9 +47,8 @@ data class ComposerEntry(
 )
 
 @Serializable
-@OptIn(ExperimentalSerializationApi::class)
 data class ComposerJournal(
-    @EncodeDefault val format: Int = 1,
+    @Required val format: Int = 1,
     val entries: Map<String, ComposerEntry> = emptyMap(),
 )
 

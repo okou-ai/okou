@@ -3386,8 +3386,29 @@
     {
       "idx": 1562,
       "version": "7",
-      "when": 1794876964834,
-      "tag": "1562_ios_widget_push_token",
+      "when": 1794876610732,
+      "tag": "1562_prepare_member_memory_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 1563,
+      "version": "7",
+      "when": 1794876635401,
+      "tag": "1563_backfill_member_memory_preparation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1564,
+      "version": "7",
+      "when": 1794880308395,
+      "tag": "1564_preserve_initialized_single_agent_members",
+      "breakpoints": true
+    },
+    {
+      "idx": 1565,
+      "version": "7",
+      "when": 1794885106876,
+      "tag": "1565_ios_widget_push_token",
       "breakpoints": true
     }
   ]

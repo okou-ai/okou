@@ -44,6 +44,8 @@ on:
         required: false
       MARKETING_REWARDS_RECEIPT_SECRET:
         required: false
+      MARKETING_REWARDS_EVENTS_SECRET:
+        required: false
       NEON_API_KEY:
         required: false
       OFFICIAL_RUNNER_SECRET:
@@ -813,6 +815,11 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres@postgres:5432/postgres
         run: pnpm test:staff-single-agent-copy
+      - name: Test Single Agent Default Rollout
+        working-directory: turbo/packages/db
+        env:
+          DATABASE_URL: postgresql://postgres@postgres:5432/postgres
+        run: pnpm test:single-agent-default-rollout
       - name: Check Migration Immutability
         if: vars.CI_CHECK_IMMUTABLE_MIGRATE != '0'
         run: |

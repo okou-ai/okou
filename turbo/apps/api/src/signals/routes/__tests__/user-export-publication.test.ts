@@ -298,6 +298,8 @@ test("publishes an owned ZIP while isolating peers and preserving replay", async
   const outsider = actor();
   const app = await setupApp({ context, routes, isolatePg: true });
   const fixture = initialize(app, [owner, peer, outsider]);
+  // This export includes a retained named Agent and its private Workflow.
+  await updateFeatureSwitchesForUser(context, owner, { singleAgent: false });
   const agentId = await ownedAgent(fixture, owner);
   const rawInstructions =
     "[AGENT_PROFILE]\nLegacy display metadata\n[/AGENT_PROFILE]\nExported current instructions";

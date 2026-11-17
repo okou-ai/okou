@@ -15,6 +15,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -104,9 +105,40 @@ class ChatListModel(
     private val indicatorInvalidations = Channel<Unit>(Channel.CONFLATED)
     private var immediateIndicators = false
     private var indicatorsStartedAt: Long? = null
+    val warming =
+        ChatHistoryWarming(
+            service,
+            cache,
+            viewModelScope,
+            { current() },
+            candidates = {
+                val state = mutable.first { it.source != null && it.indicators != null }
+                withContext(dispatcher) {
+                    (state.threads
+                            .filter { it.hidden != true }
+                            .sortedWith(
+                                compareByDescending<ConfirmedChat> { it.sortAt }
+                                    .thenByDescending { it.id }
+                            )
+                            .take(100)
+                            .map { it.id } + checkNotNull(state.indicators).threads.keys)
+                        .distinct()
+                }
+            },
+            selected = { history.uiState.value.thread?.id },
+            onFailure,
+            dispatcher,
+            monotonicMillis,
+        )
     val updates =
-        ChatUpdatesModel(realtime, viewModelScope, { current() }, onFailure, history.output) {
-            changes ->
+        ChatUpdatesModel(
+            realtime,
+            viewModelScope,
+            { current() },
+            onFailure,
+            history.output,
+            foregroundChanged = warming::foreground,
+        ) { changes ->
             if (current()) {
                 if (changes.resync || changes.list) {
                     listInvalidations.trySend(Unit)
@@ -114,8 +146,14 @@ class ChatListModel(
                 }
                 if (changes.resync || changes.indicators || changes.readCursor)
                     requestIndicators(immediate = changes.resync || changes.readCursor)
-                if (changes.resync) history.invalidate()
-                else changes.threads.forEach { history.invalidate(it) }
+                if (changes.resync) {
+                    history.invalidate()
+                    history.invalidateDetail()
+                } else {
+                    changes.messageThreads.forEach { history.invalidate(it) }
+                    changes.detailThreads.forEach { history.invalidateDetail(it) }
+                }
+                if (changes.resync || changes.messageThreads.isNotEmpty()) warming.invalidate()
             }
         }
 
@@ -505,6 +543,7 @@ class ChatListModel(
     override fun onCleared() {
         retired = true
         updates.close()
+        warming.close()
         listInvalidations.close()
         projectInvalidations.close()
         indicatorInvalidations.close()

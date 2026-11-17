@@ -32,6 +32,7 @@ import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const personalModelProviderTestRoutes = Object.freeze([
   ...meModelProvidersListRoutes,
@@ -76,8 +77,23 @@ function metadataClient() {
   );
 }
 
-async function fixture(orgId?: string) {
-  const actor = bdd.user({ orgId });
+async function fixture(
+  options: {
+    readonly orgId?: string;
+    readonly singleAgent?: boolean;
+  } = {},
+) {
+  const actor = bdd.user({ orgId: options.orgId });
+  if (options.singleAgent !== undefined) {
+    if (!actor.orgId) {
+      throw new Error("Expected a welcome workspace");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { singleAgent: options.singleAgent },
+    );
+  }
   bdd.acceptAgentStorageWrites();
   await runs.grantProEntitlement(actor, {
     periodEndUnix: Math.floor(now() / 1000) - 90 * 86_400,
@@ -174,8 +190,8 @@ describe("POST /api/welcome-chat-threads", () => {
     );
   });
 
-  it("creates a complete ordinary runless welcome with default model/media and connector state", async () => {
-    const { actor, agentId } = await fixture();
+  it("creates a retained multi-Agent runless welcome with default model/media and connector state", async () => {
+    const { actor, agentId } = await fixture({ singleAgent: false });
     await runs.ensurePersonalSubscriptionModel(actor);
     context.mocks.ably.publish.mockRejectedValue(
       new Error("Notification unavailable"),
@@ -309,9 +325,9 @@ describe("POST /api/welcome-chat-threads", () => {
   });
 
   it.each(["en-US"] as const)(
-    "persists the complete %s copy and deployment-aware links",
+    "persists the retained multi-Agent %s copy and deployment-aware links",
     async (locale) => {
-      const { actor } = await fixture();
+      const { actor } = await fixture({ singleAgent: false });
       await bdd.updateUserLocale(actor, locale);
       mockEnv("APP_URL", "https://pr-33252-app.omby.ai");
       const { body } = await create(actor);
@@ -374,18 +390,9 @@ describe("POST /api/welcome-chat-threads", () => {
     "zh-Hans",
     "zh-Hant",
   ] as const)(
-    "delivers the My Okou welcome in %s without legacy media",
+    "delivers the My Okou welcome by default in %s without legacy media",
     async (locale) => {
       const { actor } = await fixture();
-      await accept(
-        setupApp({ context, routes: featureSwitchesRoutes })(
-          featureSwitchesContract,
-        ).update({
-          headers: headers(actor),
-          body: { switches: { [FeatureSwitchKey.SingleAgent]: true } },
-        }),
-        [200],
-      );
       await bdd.updateUserLocale(actor, locale);
       mockEnv("APP_URL", "https://pr-33252-app.omby.ai");
       const { body } = await create(actor);
@@ -424,7 +431,9 @@ describe("POST /api/welcome-chat-threads", () => {
   it.each([undefined, false] as const)(
     "respects staff defaults and an explicit %s override without rewriting an existing welcome",
     async (override) => {
-      const { actor } = await fixture(createUniqueStaffOrgIdFixture());
+      const { actor } = await fixture({
+        orgId: createUniqueStaffOrgIdFixture(),
+      });
       const switches = setupApp({ context, routes: featureSwitchesRoutes })(
         featureSwitchesContract,
       );

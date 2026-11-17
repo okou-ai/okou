@@ -63,7 +63,9 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     // Both key events arrive before the scheduled submission can clear the editor.
     input.insertText("\n")
     input.insertText("\n")
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(
+      message: repeatedSendStatus(conversation, fixture: fixture, input: input)
+    ) {
       !conversation.isSending && !conversation.isStopping
         && conversation.pending.contains { $0.needsRetry }
     }
@@ -73,6 +75,22 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     XCTAssertEqual(writes.map { $0["prompt"]?.string }, ["Keep the existing work running"])
     XCTAssertEqual(conversation.history?.canStop, true)
     XCTAssertNil(conversation.stopIssue)
+  }
+
+  private func repeatedSendStatus(
+    _ conversation: ConversationStore, fixture: ConversationHistoryFixture, input: ComposerTextView
+  ) -> String {
+    let pending = conversation.pending.map { "\($0.id):retry=\($0.needsRetry)" }
+    let requests = fixture.requests.values.withLock { $0 }
+    let writes = fixture.requests.sentMessages.withLock { $0.count }
+    return "Repeated keyboard send after waiter join: "
+      + "sending=\(conversation.isSending); stopping=\(conversation.isStopping); "
+      + "pending=\(pending); writes=\(writes); requests=\(requests); "
+      + "draft=\(String(reflecting: conversation.draft)); "
+      + "error=\(String(describing: conversation.error)); "
+      + "canStop=\(String(describing: conversation.history?.canStop)); "
+      + "stopIssue=\(String(describing: conversation.stopIssue)); submitted input: "
+      + mentionInputStatus(input)
   }
 
   func testDefaultReturnEditsTheDraftAndSavedSendPreferenceDeliversTheSameMessage() async throws {

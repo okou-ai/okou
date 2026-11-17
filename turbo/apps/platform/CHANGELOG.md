@@ -13,6 +13,18 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1139.0](https://github.com/okou-ai/okou/compare/app-v0.1138.0...app-v0.1139.0) (2026-11-17)
+
+
+### Features
+
+* **platform:** step through new chat and for you with chat navigation keys ([#47906](https://github.com/okou-ai/okou/issues/47906)) ([ae36c94](https://github.com/okou-ai/okou/commit/ae36c9477fc58ba9fc2bf66b1388430e30b43ff3))
+
+
+### Bug Fixes
+
+* **app:** preload for you feed with ably updates ([#47977](https://github.com/okou-ai/okou/issues/47977)) ([37e9143](https://github.com/okou-ai/okou/commit/37e9143ee0af84a84e3cf33463c4afdd12588015))
+
 ## [0.1138.0](https://github.com/okou-ai/okou/compare/app-v0.1137.1...app-v0.1138.0) (2026-11-16)
 
 

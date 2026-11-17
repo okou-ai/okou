@@ -152,8 +152,7 @@ export function recordRunContextSnapshot(args: {
     userId: args.userId,
     prompt: args.prompt,
     appendSystemPrompt: args.appendSystemPrompt,
-    sessionId:
-      context.piSessionId ?? context.nativeContinuation?.sessionId ?? null,
+    sessionId: context.piSessionId ?? context.nativeContinuation.sessionId,
     cliAgentType: context.cliAgentType,
     ...piModelConfigObservation(context.cliAgentType, context.piModelConfig),
     secretNames: [...args.secretNames],
@@ -171,7 +170,7 @@ export function recordRunContextSnapshot(args: {
       };
     }),
     featureFlagEntries: featureFlagsRecordToEntries(context.featureFlags),
-    ...(context.templateGuidanceBundles?.length
+    ...(context.templateGuidanceBundles.length
       ? { templateGuidanceBundles: context.templateGuidanceBundles }
       : {}),
   };
@@ -180,7 +179,7 @@ export function recordRunContextSnapshot(args: {
     return ingestToAxiom(getDatasetName("run-context"), [
       {
         ...snapshot,
-        officialWorkflowBundles: (context.officialWorkflowBundles ?? []).map(
+        officialWorkflowBundles: context.officialWorkflowBundles.map(
           (bundle) => {
             return {
               sha256: bundle.sha256,
@@ -546,7 +545,7 @@ function stringArrayFromUnknown(value: unknown): string[] {
   return stringArrayValue(value) ?? [];
 }
 
-export function environmentRecordToEntries(
+function environmentRecordToEntries(
   environment: Record<string, string>,
 ): RunContextEnvironmentEntry[] {
   return Object.entries(environment).map(([name, value]) => {
@@ -554,23 +553,17 @@ export function environmentRecordToEntries(
   });
 }
 
-export function networkPoliciesRecordToEntries(
-  networkPolicies: NetworkPolicies | null | undefined,
+function networkPoliciesRecordToEntries(
+  networkPolicies: NetworkPolicies,
 ): RunContextNetworkPolicyEntry[] {
-  if (!networkPolicies) {
-    return [];
-  }
   return Object.entries(networkPolicies).map(([name, policy]) => {
     return { name, policy };
   });
 }
 
-export function featureFlagsRecordToEntries(
-  featureFlags: Record<string, boolean> | null | undefined,
+function featureFlagsRecordToEntries(
+  featureFlags: Record<string, boolean>,
 ): RunContextFeatureFlagEntry[] {
-  if (!featureFlags) {
-    return [];
-  }
   return Object.entries(featureFlags).map(([name, enabled]) => {
     return { name, enabled };
   });
@@ -619,10 +612,10 @@ function inlineFirewallToAxiomEntry(
   };
 }
 
-export function executionFirewallsToAxiomEntries(
-  firewalls: ExecutionFirewalls | null | undefined,
+function executionFirewallsToAxiomEntries(
+  firewalls: ExecutionFirewalls,
 ): RunContextAxiomFirewall[] {
-  return (firewalls ?? []).map((entry) => {
+  return firewalls.map((entry) => {
     return entry.kind === "inline" ? inlineFirewallToAxiomEntry(entry) : entry;
   });
 }

@@ -533,6 +533,58 @@ object CanonicalEmptyArraySerializer : KSerializer<CanonicalEmptyArray> {
     return name;
   }
 
+  function renderTuple(value: JsonObject, name: string): string {
+    const items = value.prefixItems;
+    if (
+      !Array.isArray(items) ||
+      items.length === 0 ||
+      value.minItems !== items.length ||
+      value.maxItems !== items.length ||
+      (value.items !== undefined && value.items !== false)
+    )
+      throw new Error(`${name}: unsupported tuple`);
+    reserve(name);
+    reserve(`${name}Serializer`);
+    const types = items.map((item, index) => {
+      return render(item, `${name}Item${index + 1}`);
+    });
+    serializerImports();
+    imports.add("kotlinx.serialization.json.JsonArray");
+    imports.add("kotlinx.serialization.json.JsonElement");
+    imports.add("kotlinx.serialization.json.decodeFromJsonElement");
+    imports.add("kotlinx.serialization.json.encodeToJsonElement");
+    imports.add("kotlinx.serialization.builtins.ListSerializer");
+    declarations.push(`@Serializable(with = ${name}Serializer::class)
+data class ${name}(\n${types
+      .map((type, index) => {
+        return `    val item${index + 1}: ${type},`;
+      })
+      .join("\n")}\n)
+
+object ${name}Serializer : KSerializer<${name}> {
+    override val descriptor = ListSerializer(JsonElement.serializer()).descriptor
+    override fun deserialize(decoder: Decoder): ${name} {
+        val input = decoder as? JsonDecoder ?: throw SerializationException("Expected JSON tuple")
+        val values = input.decodeJsonElement() as? JsonArray ?: throw SerializationException("Expected JSON tuple")
+        if (values.size != ${items.length}) throw SerializationException("Unexpected tuple length")
+        return ${name}(\n${types
+          .map((type, index) => {
+            return `            input.json.decodeFromJsonElement<${type}>(values[${index}]),`;
+          })
+          .join("\n")}\n        )
+    }
+    override fun serialize(encoder: Encoder, value: ${name}) {
+        val output = encoder as? JsonEncoder ?: throw SerializationException("Expected JSON tuple")
+        output.encodeJsonElement(JsonArray(listOf(\n${types
+          .map((_, index) => {
+            return `            output.json.encodeToJsonElement(value.item${index + 1}),`;
+          })
+          .join("\n")}\n        )))
+    }
+}`);
+    return name;
+  }
+
   function renderValue(
     value: JsonObject,
     name: string,
@@ -556,7 +608,7 @@ object CanonicalEmptyArraySerializer : KSerializer<CanonicalEmptyArray> {
           (value.minItems === undefined || value.minItems === 0)
         )
           return emptyArray();
-        if (value.prefixItems) throw new Error(`${name}: unsupported tuple`);
+        if (value.prefixItems) return renderTuple(value, name);
         return `List<${render(value.items, `${name}Item`)}>`;
       }
       case "object":

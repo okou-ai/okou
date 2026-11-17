@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.109.93](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.92...guest-agent-v0.109.93) (2026-11-17)
+
+
+### Refactoring
+
+* **guest-agent:** use typed cgroup filesystem queries ([#47975](https://github.com/okou-ai/okou/issues/47975)) ([c5f39eb](https://github.com/okou-ai/okou/commit/c5f39eb9d6788912cbf100144e091075fcb8ad27))
+
 ## [0.109.92](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.91...guest-agent-v0.109.92) (2026-11-16)
 
 ## [0.109.91](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.90...guest-agent-v0.109.91) (2026-11-16)

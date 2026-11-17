@@ -10,6 +10,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.78.0](https://github.com/okou-ai/okou/compare/api-v2.77.0...api-v2.78.0) (2026-11-17)
+
+
+### Features
+
+* **api:** persist marketing reward oauth source events ([#47894](https://github.com/okou-ai/okou/issues/47894)) ([2a9ec88](https://github.com/okou-ai/okou/commit/2a9ec88aa67e09cd12bec71ac18b6379682fd2e3))
+
 ## [2.77.0](https://github.com/okou-ai/okou/compare/api-v2.76.1...api-v2.77.0) (2026-11-16)
 
 

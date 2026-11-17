@@ -13,8 +13,9 @@ import { accept } from "../../lib/accept.ts";
 import { now } from "../../lib/time.ts";
 import { defaultAgentId$ } from "../agent.ts";
 import { apiClient$ } from "../api-client.ts";
+import { authenticatedSessionKey$ } from "../auth.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { setAblyInvalidationLoop$ } from "../realtime.ts";
+import { setAblyLoop$ } from "../realtime.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { onDomEventFn, onRef, resetSignal } from "../utils.ts";
 import { createDraftSignals } from "./chat-draft.ts";
@@ -178,35 +179,18 @@ const agentSuggestionsEnabled$ = computed(async (get) => {
   return (await get(defaultAgentId$)) !== null;
 });
 
-const readForYouFeed$ = command(
-  async (
-    { get },
-    signal: AbortSignal,
-  ): Promise<readonly (Suggestion | PlatformEvent)[]> => {
-    const enabled = await get(agentSuggestionsEnabled$);
-    signal.throwIfAborted();
-    if (!enabled) {
-      return [];
-    }
-    const result = await accept(
-      get(apiClient$)(feedContract).list({ fetchOptions: { signal } }),
-      [200, 403],
-      signal,
-      { showErrorToast: false },
-    );
-    return result.status === 200 ? result.body.items : [];
-  },
-);
-
-const waitingSuggestionCountVersion$ = state(0);
+const feedVersion$ = computed((get) => {
+  get(authenticatedSessionKey$);
+  return state(0);
+});
 /**
- * The chat-list count reads the server's actionable cards independently of a
- * review visit's snapshot, so it follows every committed suggestion change.
+ * The sidebar preloads the same owner-scoped feed that each review visit uses.
+ * Ably refreshes it independently of the visit's cards and in-progress writes.
  */
-export const waitingSuggestionCount$ = computed(async (get) => {
-  get(waitingSuggestionCountVersion$);
+const forYouFeed$ = computed(async (get) => {
+  get(get(feedVersion$));
   if (!(await get(agentSuggestionsEnabled$))) {
-    return 0;
+    return [];
   }
   const result = await accept(
     get(apiClient$)(feedContract).list(),
@@ -214,31 +198,42 @@ export const waitingSuggestionCount$ = computed(async (get) => {
     undefined,
     { showErrorToast: false },
   );
-  if (result.status !== 200) {
-    return 0;
-  }
-  return result.body.items.filter((item) => {
+  return result.status === 200 ? result.body.items : [];
+});
+
+export const waitingSuggestionCount$ = computed(async (get) => {
+  return (await get(forYouFeed$)).filter((item) => {
     return item.type === "event" || getSuggestionExpiresAt(item) > now();
   }).length;
 });
-const reloadWaitingSuggestionCount$ = command(({ set }) => {
-  set(waitingSuggestionCountVersion$, (version) => {
+const reloadForYouFeed$ = command(({ get, set }) => {
+  set(get(feedVersion$), (version) => {
     return version + 1;
   });
 });
+
+const refreshForYouFeed$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(reloadForYouFeed$);
+    set(reloadForYouSources$);
+    // Read even when the row shows an unread dot instead of the waiting count.
+    await get(forYouFeed$);
+    signal.throwIfAborted();
+    return false;
+  },
+);
 /**
- * The count follows the API's notice of every committed suggestion change
- * while its row is shown. Each subscription reads it once more, so a row that
- * returns does not show a count from before it left.
+ * The row owns background refreshes for both the count and the detail feed.
+ * Subscription and continuity-gap reads also recover changes missed while away.
  */
 export const followWaitingSuggestionCountOnRef$ = onRef(
   command(({ set }, _row: HTMLElement, signal: AbortSignal) => {
     set(
-      setAblyInvalidationLoop$,
+      setAblyLoop$,
       {
         scope: "credential",
         topic: "agentSuggestionsChanged",
-        invalidations: [reloadWaitingSuggestionCount$, reloadForYouSources$],
+        loopCommand$: refreshForYouFeed$,
         options: { runOnSubscribe: true },
       },
       signal,
@@ -300,6 +295,7 @@ function createSuggestionSession() {
 
 const visit$ = state(0);
 const session$ = computed((get) => {
+  get(authenticatedSessionKey$);
   get(visit$);
   return createSuggestionSession();
 });
@@ -333,14 +329,24 @@ const loadAgentSuggestionEntries$ = command(
       .map(createSuggestionEntry);
   },
 );
-/** Each visit loads one owner-scoped feed snapshot. */
+/** Each visit takes a snapshot of the feed already followed by the sidebar. */
 export const enterSuggestionSession$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
     set(visit$, get(visit$) + 1);
-    set(get(session$).feed$, set(readForYouFeed$, signal));
+    set(get(session$).feed$, get(forYouFeed$));
     const entries = set(loadAgentSuggestionEntries$, signal);
     set(get(session$).entries$, entries);
     await entries;
+  },
+);
+
+/** A failed shared read needs invalidation before opening a new snapshot. */
+export const reloadSuggestionSession$ = command(
+  ({ set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    set(reloadForYouFeed$);
+    return set(enterSuggestionSession$, signal);
   },
 );
 
@@ -372,7 +378,8 @@ const refreshAfterUnavailableSuggestion$ = command(
     // The latest read replaces an earlier one, which could drop its cards.
     const signal = set(resetSuggestionRefresh$, pageSignal);
     const session = get(session$);
-    const offered = (await set(readForYouFeed$, signal)).filter((item) => {
+    set(reloadForYouFeed$);
+    const offered = (await get(forYouFeed$)).filter((item) => {
       return item.type === "suggestion";
     });
     const loaded = await get(session.entries$);

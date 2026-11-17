@@ -127,11 +127,11 @@ class ChatUpdatesModelTest {
         assertEquals(ChatChanges(readCursor = true), chatChanges("chatThreadReadCursorUpdated"))
         val thread = "11111111-1111-4111-8111-111111111111"
         assertEquals(
-            ChatChanges(threads = setOf(thread)),
+            ChatChanges(messageThreads = setOf(thread)),
             chatChanges("chatThreadMessageCreated:$thread"),
         )
         assertEquals(
-            ChatChanges(threads = setOf(thread)),
+            ChatChanges(detailThreads = setOf(thread)),
             chatChanges("chatThreadDetailChanged:$thread"),
         )
         assertNull(chatChanges("chatThreadMessageCreated:not-a-thread"))

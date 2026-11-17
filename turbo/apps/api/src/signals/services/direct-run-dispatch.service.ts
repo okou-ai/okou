@@ -32,6 +32,7 @@ import {
 import { preparedRunnerReusePreference } from "./runner-reuse-preference";
 import { joinAll, settleIncludingAbort } from "../utils";
 import { recordRunContextSnapshot } from "./run-context-snapshot.service";
+import type { StoragePresignedUrlCacheWrite } from "./system-storage-presigned-url-cache.service";
 
 function createDirectRunFleet(input$: Computed<Promise<AdmittedRunLaunch>>) {
   const fleet$ = computed(async (get) => {
@@ -132,8 +133,16 @@ export interface DirectRunDispatchResult {
   readonly failure: Error | undefined;
 }
 
-/** This graph consumes only its owning admission's durable write result. */
-export function createDirectRunDispatcher(
+type DirectRunDispatchPreparation =
+  | {
+      readonly kind: "prepared";
+      readonly delivery: PreparedRunDelivery;
+      readonly cacheWrites: readonly StoragePresignedUrlCacheWrite[];
+    }
+  | { readonly kind: "failed"; readonly result: DirectRunDispatchResult };
+
+/** Return prepared facts so the pick entry can own publication and delivery. */
+export function createDirectRunDispatchPreparation(
   input$: Computed<Promise<AdmittedRunLaunch>>,
 ) {
   const preparation$ = createDirectRunPreparation(input$);
@@ -142,7 +151,7 @@ export function createDirectRunDispatcher(
     async (
       { get, set },
       signal: AbortSignal,
-    ): Promise<DirectRunDispatchResult> => {
+    ): Promise<DirectRunDispatchPreparation> => {
       const input = await get(input$);
       signal.throwIfAborted();
       const prepared = await settleIncludingAbort(async () => {
@@ -166,11 +175,15 @@ export function createDirectRunDispatcher(
         );
         return {
           kind: "failed",
-          terminal,
-          failure: new Error("Run execution preparation failed"),
+          result: {
+            kind: "failed",
+            terminal,
+            failure: new Error("Run execution preparation failed"),
+          },
         };
       }
-      return await set(dispatchPreparedRun$, prepared.value, signal);
+      const { cacheWrites, ...delivery } = prepared.value;
+      return { kind: "prepared", delivery, cacheWrites };
     },
   );
 }
@@ -279,7 +292,7 @@ interface PreparedRunDelivery {
   >;
 }
 
-const dispatchPreparedRun$ = command(
+export const dispatchPreparedRun$ = command(
   async ({ get, set }, args: PreparedRunDelivery, signal: AbortSignal) => {
     signal.throwIfAborted();
     const input = args.input;

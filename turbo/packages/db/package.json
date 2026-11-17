@@ -82,6 +82,7 @@
     "test:single-agent-migration": "node --import tsx scripts/migrations/030-single-agent/test-tool.ts && node --import tsx scripts/migrations/030-single-agent/test-execution.ts && node --import tsx scripts/migrations/030-single-agent/test-production.ts",
     "test:single-agent-execution": "node --import tsx scripts/migrations/030-single-agent/test-execution.ts",
     "test:staff-single-agent-copy": "node --import tsx scripts/test-staff-single-agent-copy.ts",
+    "test:single-agent-default-rollout": "node --import tsx scripts/test-single-agent-default-rollout.ts",
     "single-agent:production": "tsx scripts/migrations/030-single-agent/production.ts",
     "single-agent:package": "tsx scripts/migrations/030-single-agent/production-package-cli.ts"
   },

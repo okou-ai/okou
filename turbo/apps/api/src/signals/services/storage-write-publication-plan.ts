@@ -27,7 +27,10 @@ import {
 } from "../../lib/db-raw-rows";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { conflict, notFound } from "../../lib/error";
-import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
+import {
+  MEMORY_ARTIFACT_NAME,
+  VOLUME_ORG_USER_ID,
+} from "@okouai/core/storage-names";
 import { PI_RESOURCE_EXTRACTOR_VERSION } from "../../lib/pi-resource-index";
 import {
   sandboxStorageRunCondition,
@@ -41,6 +44,11 @@ import type {
   StorageVersionRow,
   VerifiedStorageCommit,
 } from "./storage-write.service";
+
+import {
+  memberMemoryPreparationCtes,
+  memberMemoryPreparationLineage,
+} from "./member-memory-preparation";
 
 const ACTIVE_SANDBOX_STORAGE_RUN_STATUSES = ["pending", "running"] as const;
 const integerRow = union([int(), pgInt8ToSafeIntegerSchema]);
@@ -87,6 +95,7 @@ export const storageCommitPublicationRow = object({
   inserted: boolean(),
   indexed: boolean(),
   memoryConflict: boolean(),
+  memoryPrepared: boolean(),
 });
 
 function memoryParentVersion(input: CommitStorageForStorageInput) {
@@ -191,6 +200,7 @@ function insertSelectedStorageSql<T extends PgTable>(
     }),
   });
 }
+
 function storageCommitAdmission(
   input: CommitStorageForStorageInput,
   verification: VerifiedStorageCommit,
@@ -322,7 +332,8 @@ function storageCommitLineageInsert(input: CommitStorageForStorageInput) {
   const auth = input.sandboxAuth,
     parent = input.parentVersionId;
   if (!auth || !parent) {
-    return sql`SELECT NULL::uuid AS id WHERE false`;
+    return sql`SELECT NULL::uuid AS id,NULL::uuid AS "storageId",NULL::text AS "versionId",
+      NULL::text AS "parentVersionId",NULL::uuid AS "runId",NULL::timestamp AS "createdAt" WHERE false`;
   }
   return insertSelectedStorageSql(
     storageVersionLineage,
@@ -332,8 +343,9 @@ function storageCommitLineageInsert(input: CommitStorageForStorageInput) {
       parentVersionId: parent,
       runId: auth.runId,
     },
-    sql`locked_storage AS s CROSS JOIN published_version CROSS JOIN (SELECT count(*) FROM published_head) AS completed_head WHERE ${memoryPublicationAllowed(input)}`,
-    { id: storageVersionLineage.id },
+    sql`locked_storage AS s CROSS JOIN published_version CROSS JOIN (SELECT count(*) FROM published_head) AS completed_head WHERE ${memoryPublicationAllowed(input)}
+      AND (NOT (${memberMemoryPreparationRequired()}) OR EXISTS (SELECT 1 FROM memory_prepared_roots))`,
+    getTableColumns(storageVersionLineage),
   );
 }
 function storageCommitIndexInsert(changedAt: Date) {
@@ -371,26 +383,32 @@ function storageCommitIndexInsert(changedAt: Date) {
   });
 }
 
+function memberMemoryPreparationRequired() {
+  return sql`s.name=${MEMORY_ARTIFACT_NAME} AND s."userId"<>${VOLUME_ORG_USER_ID}`;
+}
+
 /** One statement publishes the version, HEAD, lineage and index work together. */
 export function storageCommitPublicationStatement(
   input: CommitStorageForStorageInput,
   verification: VerifiedStorageCommit,
   changedAt: Date,
 ) {
+  const changedAtValue = sql.param(changedAt, storages.updatedAt);
+  const headTransition = sql`s."headVersionId" IS DISTINCT FROM v.id AND ${memoryPublicationAllowed(input)}
+    AND (s.name <> ${MEMORY_ARTIFACT_NAME} OR ${input.sandboxAuth === undefined}
+      OR (NOT EXISTS (SELECT 1 FROM terminal_lineage)
+        AND v.id IS DISTINCT FROM ${memoryParentVersion(input)}))`;
   const head = new PgDialect().buildUpdateQuery({
     table: storages,
     set: {
       headVersionId: sql`v.id`,
       size: sql`v.size`,
       fileCount: sql`v."fileCount"`,
-      updatedAt: sql.param(changedAt, storages.updatedAt),
+      updatedAt: changedAtValue,
     },
     from: sql`locked_storage AS s CROSS JOIN published_version AS v`,
-    where: sql`${storages.id}=s.id AND ${storages.headVersionId} IS DISTINCT FROM v.id
-      AND ${memoryPublicationAllowed(input)}
-      AND (s.name <> ${MEMORY_ARTIFACT_NAME} OR ${input.sandboxAuth === undefined}
-        OR (NOT EXISTS (SELECT 1 FROM terminal_lineage)
-          AND v.id IS DISTINCT FROM ${memoryParentVersion(input)}))`,
+    where: sql`${storages.id}=s.id AND ${headTransition}
+      AND (NOT (${memberMemoryPreparationRequired()}) OR EXISTS (SELECT 1 FROM memory_prepared_roots))`,
     joins: [],
     returning: [{ path: ["id"], field: storages.id }],
   });
@@ -404,7 +422,21 @@ export function storageCommitPublicationStatement(
       FROM locked_storage)
       UNION ALL
       SELECT *
-      FROM inserted_version), published_head AS (${head}), recorded_lineage AS (${storageCommitLineageInsert(input)}), enqueued_index AS (${storageCommitIndexInsert(changedAt)})
+      FROM inserted_version), memory_head_intent AS MATERIALIZED (
+        SELECT s.*,v.id AS "candidateId",v.size AS "candidateSize",v."fileCount" AS "candidateFileCount",
+          ${headTransition} AS advance
+        FROM locked_storage AS s CROSS JOIN published_version AS v WHERE ${memberMemoryPreparationRequired()}
+      ), ${memberMemoryPreparationCtes(
+        sql`SELECT s.id,s."orgId",s."userId",s."s3Prefix",
+          CASE WHEN s.advance THEN s."candidateId" END AS "headVersionId",
+          CASE WHEN s.advance THEN s."candidateSize" ELSE 0 END AS size,
+          CASE WHEN s.advance THEN s."candidateFileCount" ELSE 0 END AS "fileCount",
+          s."createdAt",CASE WHEN s.advance THEN ${changedAtValue} ELSE s."updatedAt" END AS "updatedAt"
+          FROM memory_head_intent AS s`,
+        sql`SELECT v.* FROM published_version AS v WHERE EXISTS (SELECT 1 FROM memory_head_intent)`,
+      )}, published_head AS (${head}), recorded_lineage AS (${storageCommitLineageInsert(input)}),
+      mirrored_lineage AS (${memberMemoryPreparationLineage(sql`SELECT * FROM recorded_lineage`)}),
+      enqueued_index AS (${storageCommitIndexInsert(changedAt)})
       SELECT (SELECT row_to_json(r)
       FROM commit_run AS r) AS run, (SELECT row_to_json(s)
       FROM initial_storage AS s) AS storage, (SELECT row_to_json(v)
@@ -415,7 +447,11 @@ export function storageCommitPublicationStatement(
       WHERE terminal) AS admitted, EXISTS(SELECT 1
       FROM inserted_version) AS inserted, (SELECT count(*)
       FROM enqueued_index)>=0 AS indexed,
-      EXISTS (SELECT 1 FROM locked_storage AS s WHERE NOT ${memoryPublicationAllowed(input)}) AS "memoryConflict"
+      EXISTS (SELECT 1 FROM locked_storage AS s WHERE NOT ${memoryPublicationAllowed(input)}) AS "memoryConflict",
+      NOT EXISTS (SELECT 1 FROM initial_storage AS s WHERE ${memberMemoryPreparationRequired()})
+      OR EXISTS (SELECT 1 FROM admitted_storage WHERE terminal)
+      OR EXISTS (SELECT 1 FROM memory_prepared_roots) AS "memoryPrepared",
+      (SELECT count(*) FROM mirrored_lineage)>=0 AS "lineagePrepared"
   `;
 }
 
@@ -444,6 +480,9 @@ export function storageCommitPublicationResult(
   }
   if (!row.admitted) {
     throw new Error("Storage disappeared before HEAD publication");
+  }
+  if (!row.memoryPrepared) {
+    throw new Error("Memory preparation metadata is inconsistent");
   }
   if (row.memoryConflict) {
     return conflict(

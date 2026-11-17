@@ -75,6 +75,12 @@ const chatReadBindings: readonly KotlinRouteBinding[] = [
 
 const historyReadBindings: readonly KotlinRouteBinding[] = [
   {
+    name: "historyCatchUp",
+    request: "HistoryCatchUpRequest",
+    response: "HistoryCatchUp",
+    route: chatThreadEventsContract.catchUp,
+  },
+  {
     name: "historySnapshot",
     response: "HistorySnapshot",
     route: chatThreadEventsContract.snapshot,
@@ -176,6 +182,11 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     name: "SessionOutputDelta",
     schema: sessionOutputDeltaSchema,
     direction: "output",
+  },
+  {
+    name: "HistoryCatchUpRequest",
+    schema: chatThreadEventsContract.catchUp.body,
+    direction: "input",
   },
   {
     name: "RealtimeTokenRequest",
