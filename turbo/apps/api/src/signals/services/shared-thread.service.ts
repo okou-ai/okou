@@ -161,7 +161,7 @@ function localIndex(
   return next;
 }
 
-const loadSharedThreadSourceRows$ = command(
+export const loadSelectedChatMessageRows$ = command(
   async (
     { get, set },
     args: {
@@ -693,7 +693,7 @@ export const createSharedThread$ = command(
 
     const selectedEventIds = [...new Set(args.eventIds)];
     const rows = await set(
-      loadSharedThreadSourceRows$,
+      loadSelectedChatMessageRows$,
       {
         threadId: args.threadId,
         selectedEventIds,

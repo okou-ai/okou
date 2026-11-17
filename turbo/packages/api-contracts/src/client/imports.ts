@@ -285,6 +285,11 @@ export const clientContractImportManifest = [
     ],
   },
   {
+    module: "chat-thread-pdf-filename",
+    contracts: ["chatThreadPdfFilenameContract"],
+    bindings: [],
+  },
+  {
     module: "chat-threads",
     contracts: [
       "chatSearchContract",
