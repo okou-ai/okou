@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.31.0](https://github.com/okou-ai/okou/compare/cli-v10.30.8...cli-v10.31.0) (2026-11-17)
+
+
+### Features
+
+* drive phone use through realtime notifications ([#48253](https://github.com/okou-ai/okou/issues/48253)) ([7a71cfe](https://github.com/okou-ai/okou/commit/7a71cfe71674871cae66ddee7d0d12cd0a7f2760))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.83.0
+    * @okouai/core bumped to 8.848.0
+    * @okouai/pi-agent-runtime bumped to 1.51.149
+
 ## [10.30.8](https://github.com/okou-ai/okou/compare/cli-v10.30.7...cli-v10.30.8) (2026-11-17)
 
 

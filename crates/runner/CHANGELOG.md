@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.38](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.37...runner-rs-v0.249.38) (2026-11-17)
+
+
+### Refactoring
+
+* **python:** centralize response auth recovery ([#48339](https://github.com/okou-ai/okou/issues/48339)) ([977d3c5](https://github.com/okou-ai/okou/commit/977d3c553b448c0e4af284bb81910363e7915059))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.37](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.36...runner-rs-v0.249.37) (2026-11-17)
 
 ### Release Dependencies
