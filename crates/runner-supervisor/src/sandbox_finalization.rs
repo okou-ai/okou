@@ -633,6 +633,7 @@ async fn finalize_sandbox_for_completion_inner(
                 &**factory,
                 home_promotion,
                 ActiveCleanupContext {
+                    shutdown: ActiveShutdown::Graceful,
                     run_id,
                     sandbox_id,
                     profile_name: &profile_name,
@@ -738,6 +739,7 @@ async fn finalize_sandbox_for_completion_inner(
                         &**failure_factory,
                         home_promotion,
                         ActiveCleanupContext {
+                            shutdown: ActiveShutdown::Finalized,
                             run_id,
                             sandbox_id,
                             profile_name: &profile_name,
@@ -787,6 +789,7 @@ async fn finalize_sandbox_for_completion_inner(
                         &**failure_factory,
                         home_promotion,
                         ActiveCleanupContext {
+                            shutdown: ActiveShutdown::Graceful,
                             run_id,
                             sandbox_id,
                             profile_name: &profile_name,
@@ -1386,7 +1389,15 @@ fn home_terminal_status(exit_code: i32, cancelled: bool) -> HomeCacheTerminalSta
     }
 }
 
+#[derive(Clone, Copy)]
+enum ActiveShutdown {
+    Graceful,
+    /// Preserve existing parked cleanup semantics for a finalized VM.
+    Finalized,
+}
+
 struct ActiveCleanupContext<'a> {
+    shutdown: ActiveShutdown,
     run_id: RunId,
     sandbox_id: SandboxId,
     profile_name: &'a str,
@@ -1408,7 +1419,15 @@ async fn stop_and_destroy_sandbox(
             .await;
     let mut uncertain = false;
     let session_id = context.cli_agent_session_id;
-    let stopped = match AssertUnwindSafe(sandbox.stop()).catch_unwind().await {
+    let stop = async {
+        match context.shutdown {
+            ActiveShutdown::Graceful => sandbox.stop().await,
+            // Final exec, quiesce and terminal Home preparation already settled.
+            // Do not add a graceful Guest shutdown wait after skipping pause.
+            ActiveShutdown::Finalized => sandbox.kill().await,
+        }
+    };
+    let stopped = match AssertUnwindSafe(stop).catch_unwind().await {
         Ok(Ok(())) => true,
         Ok(Err(e)) => {
             warn!(

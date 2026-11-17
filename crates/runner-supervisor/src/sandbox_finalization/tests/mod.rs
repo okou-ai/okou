@@ -1622,7 +1622,7 @@ async fn finalizer_promotes_failed_first_run_home_without_session() {
 
 #[tokio::test]
 async fn finalizer_local_drain_during_preparation_keeps_active_budget_until_terminal_cleanup() {
-    for readiness in ["ready", "error", "panic"] {
+    for readiness in ["ready", "error", "panic", "kill_error"] {
         let (budget, lease) = test_budget_lease();
         let fixture = FinalizeTestFixture::new().await;
         let network_log_session = fixture.network_log_session().await;
@@ -1636,17 +1636,20 @@ async fn finalizer_local_drain_during_preparation_keeps_active_budget_until_term
         let home_image =
             prepare_test_home_image_lease(&paths, &cache, run_id, sandbox_id, &reuse_key).await;
         let exec_gate = MockLifecycleGate::new();
-        let stop_gate = MockLifecycleGate::new();
+        let kill_gate = MockLifecycleGate::new();
         let overrides = Arc::new(MockSandboxOverrides::new());
         add_healthy_reuse_preparation_matcher(&overrides);
         overrides.set_exec_lifecycle_gate(exec_gate.clone());
-        overrides.set_stop_lifecycle_gate(stop_gate.clone());
+        overrides.set_kill_lifecycle_gate(kill_gate.clone());
         match readiness {
             "error" => overrides.push_unpark_result(Err(sandbox::SandboxError::IdleTransition {
                 transition: sandbox::SandboxIdleTransition::Unpark,
                 message: "terminal readiness failed".into(),
             })),
             "panic" => overrides.push_unpark_panic("terminal readiness panic"),
+            "kill_error" => overrides.push_kill_result(Err(sandbox::SandboxError::Configuration {
+                message: "terminal kill failed".into(),
+            })),
             _ => {}
         }
         let (factory, sandbox) = sandbox_with_overrides(sandbox_id, Arc::clone(&overrides)).await;
@@ -1673,7 +1676,7 @@ async fn finalizer_local_drain_during_preparation_keeps_active_budget_until_term
         assert!(gate.soft_drain());
         // Preparation, cache helper, and freeze each retain their own exec.
         exec_gate.release_many(3);
-        stop_gate
+        kill_gate
             .wait_entered(1, Duration::from_secs(5))
             .await
             .unwrap();
@@ -1683,7 +1686,7 @@ async fn finalizer_local_drain_during_preparation_keeps_active_budget_until_term
         assert_eq!(budget.allocated(), (2, 4096, 1));
         assert!(
             cache.held_home_states().await.is_empty(),
-            "stop has not acknowledged"
+            "VM termination has not acknowledged"
         );
         assert!(
             fixture
@@ -1694,9 +1697,10 @@ async fn finalizer_local_drain_during_preparation_keeps_active_budget_until_term
                 .is_empty()
         );
         assert!(gate.open_after_soft_drain());
-        stop_gate.release_one();
+        kill_gate.release_one();
         let ready = finalization.await.unwrap();
-        assert_eq!(overrides.stop_call_count(), 1);
+        assert_eq!(overrides.stop_call_count(), 0);
+        assert_eq!(overrides.kill_call_count(), 1);
         assert_eq!(overrides.destroy_call_count(), 1);
         assert_eq!(
             overrides.park_call_count(),
@@ -1708,8 +1712,15 @@ async fn finalizer_local_drain_during_preparation_keeps_active_budget_until_term
             usize::from(readiness == "ready")
         );
         let calls = overrides.exec_calls();
-        assert_eq!(calls.len(), if readiness == "ready" { 3 } else { 1 });
-        if readiness == "ready" {
+        assert_eq!(
+            calls.len(),
+            if matches!(readiness, "ready" | "kill_error") {
+                3
+            } else {
+                1
+            }
+        );
+        if matches!(readiness, "ready" | "kill_error") {
             assert!(calls[1].cmd.contains("prepare-for-cache"));
             assert!(calls[2].cmd.contains("\"$home_fsfreeze_path\" --freeze"));
         }
