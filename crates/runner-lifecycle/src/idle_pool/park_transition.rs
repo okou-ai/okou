@@ -208,6 +208,9 @@ pub struct IdleParkNonReusable {
 /// post-park reuse validation rejected the candidate; its parked destroy path
 /// must be used instead. `RunningHandoff` preserves the distinct fenced-running
 /// ownership and must be destroyed without parked home promotion.
+/// `RunningTerminal` retains a never-paused sandbox and its full active lease
+/// after local admission closes; finish Guest readiness before optional Home
+/// preparation and finalized cleanup.
 #[must_use = "idle park failures must be explicitly destroyed or otherwise handled"]
 pub struct IdleParkFailure {
     ownership: IdleParkFailureOwnership,
@@ -415,12 +418,15 @@ impl IdleParkRequest {
     }
 }
 
-/// Transition active execution to physical park or fenced running handoff.
+/// Transition active execution to park, accepted handoff, or running terminal cleanup.
 ///
 /// This function validates promotion identity before invoking the sandbox,
 /// then validates the reuse-preparation report after the sandbox confirms park
-/// or running handoff. Failures retain [`IdleParkFailureParts::Active`],
-/// [`IdleParkFailureParts::Parked`], or [`IdleParkFailureParts::RunningHandoff`]
+/// or running handoff. A local admission closure returns running terminal
+/// ownership without authorizing reuse. Failures retain
+/// [`IdleParkFailureParts::Active`],
+/// [`IdleParkFailureParts::Parked`], [`IdleParkFailureParts::RunningHandoff`], or
+/// [`IdleParkFailureParts::RunningTerminal`]
 /// ownership according to the completed boundary. The handoff argument is
 /// supplied by the finalization caller for a physically reusable
 /// predecessor; this function does not infer native-history authority from the
