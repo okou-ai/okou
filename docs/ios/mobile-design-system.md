@@ -797,7 +797,9 @@ feature; the catalog shows each one.
   hosts, including appearance, scene phase and scoped link/system-entry actions.
   Automatic composer focus waits for the chat host's native appearance, not just
   window attachment. Prepare new-message input expanded before entry; retain its
-  expanded layout through departure. Cancelled interactive return restores the
+  expanded layout through departure. Return actions request navigation while the
+  editor still owns focus; UIKit coordinates keyboard dismissal with the pop.
+  Cancelled interactive return restores the
   same editor and selection through UIKit's transition coordinator. Let UIKit's
   `UIKeyboardLayoutGuide` own keyboard geometry: constrain the hosted
   content above the guide and set `usesBottomSafeArea` to `false`, so SwiftUI can
