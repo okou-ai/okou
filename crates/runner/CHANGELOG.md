@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.249.28](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.27...runner-rs-v0.249.28) (2026-11-17)
+
+
+### Refactoring
+
+* **python:** guard thread-pool bootstrap release before publication ([#47972](https://github.com/okou-ai/okou/issues/47972)) ([2cb765b](https://github.com/okou-ai/okou/commit/2cb765b07a978dfc1c9f6a443414c4bb6028c0d7))
+
 ## [0.249.27](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.26...runner-rs-v0.249.27) (2026-11-16)
 
 ### Release Dependencies
