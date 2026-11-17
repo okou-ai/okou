@@ -67,11 +67,13 @@ struct ChatComposerView: View {
   /// A draft keeps the open layout after the keyboard closes; collapsing it cut the text to
   /// one truncated line under the controls. Voice input opens it too, and the model sheet
   /// keeps it open while the keyboard is down under the sheet.
+  private var showsEditingLayout: Bool {
+    isFocused || draftState?.focusRequest != nil || presentation?.keepsComposerExpanded == true
+  }
   private var expandsInput: Bool {
-    isFocused || hasText || draftState?.document.hasFeedback == true
+    showsEditingLayout || hasText || draftState?.document.hasFeedback == true
       || draftState?.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-      || voiceActive || showsModels || draftState?.focusRequest != nil
-      || presentation?.keepsComposerExpanded == true
+      || voiceActive || showsModels
   }
   private var showsStop: Bool { canStop && !hasContent }
   private var voiceActive: Bool {
@@ -311,9 +313,7 @@ struct ChatComposerView: View {
     .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: voiceActive)
     .padding(.horizontal, OkouControl.pageInset)
     .padding(.top, OkouSpace.sm)
-    .padding(
-      .bottom, isFocused || presentation?.keepsComposerExpanded == true
-        ? OkouSpace.sm : OkouSpace.six)
+    .padding(.bottom, showsEditingLayout ? OkouSpace.sm : OkouSpace.six)
     .fixedSize(horizontal: false, vertical: true)
     .sensoryFeedback(.impact(weight: .light), trigger: sendFeedback)
     .sensoryFeedback(.impact(weight: .medium), trigger: stopFeedback)
