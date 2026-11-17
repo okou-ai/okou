@@ -249,18 +249,16 @@ function ConnectorOverviewRow({
           />
         )}
         <span className="min-w-0 flex-1 truncate text-sm">{entry.label}</span>
-        <span className="shrink-0 text-xs text-muted-foreground">
-          {t(
-            ($) => {
-              return $.connectorChatAccess.enabledAccounts;
-            },
-            {
-              value: entry.access.accounts.filter((account) => {
-                return account.enabled;
-              }).length,
-            },
-          )}
-        </span>
+        {entry.access.accounts.length > 1 && (
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {t(
+              ($) => {
+                return $.connectorChatAccess.totalAccounts;
+              },
+              { value: entry.access.accounts.length },
+            )}
+          </span>
+        )}
         <ChevronRight size={14} className="shrink-0 text-muted-foreground" />
       </PopoverTrigger>
       <PopoverContent

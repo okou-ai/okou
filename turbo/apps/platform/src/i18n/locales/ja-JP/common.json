@@ -3289,12 +3289,12 @@
     "accountAccess": "{{account}} のアクセス",
     "accountsInChat": "このチャットで有効にするアカウントを選択します。",
     "enableByDefault": "{{account}} を既定で有効にする",
-    "enabledAccounts": "{{value}} 件が有効",
     "manageAccounts": "アカウントを管理",
     "noEnabledAccount": "このチャットで有効なアカウントはありません",
     "permissions": "権限",
     "permissionsDescription": "このルールは、すべてのチャットとアカウントでこのコネクタに適用されます。",
-    "settingsDescription": "チャットでOkouが使用できる{{connector}}アカウントを選択します。アクセスはチャットごとに変更できます。"
+    "settingsDescription": "チャットでOkouが使用できる{{connector}}アカウントを選択します。アクセスはチャットごとに変更できます。",
+    "totalAccounts": "{{value}} 個のアカウント"
   },
   "connectors": {
     "access": {

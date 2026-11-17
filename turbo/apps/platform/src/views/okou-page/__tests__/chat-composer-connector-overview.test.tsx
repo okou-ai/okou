@@ -87,6 +87,21 @@ async function openMenu() {
   return await screen.findByRole("dialog", { name: "Connectors" });
 }
 
+async function expectFirstAccountOff(popup: HTMLElement) {
+  const row = await findFastControl("button", "Probe 1", popup);
+  click(row);
+  const control = await screen.findByRole("switch", {
+    name: "Account 1 access",
+  });
+  await waitFor(() => {
+    expect(control).not.toBeChecked();
+  });
+  click(row);
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Probe 1" })).toBeNull();
+  });
+}
+
 test.each([false, true])(
   "Load 20 connectors once and reuse the Chat cache on reopening (draft=%s)",
   async (draft) => {
@@ -201,7 +216,7 @@ test("Patch only the notified target while closed and fully calibrate after lost
   );
   // Exercise Ably channel continuity through the production worker protocol.
   await openAfterSetup(false, "message-port");
-  await findFastControl("button", "Probe 11 enabled");
+  await findFastControl("button", "Probe 1");
   click(await findFastControl("button", "Connectors"));
   await waitFor(() => {
     return expect(
@@ -228,9 +243,7 @@ test("Patch only the notified target while closed and fully calibrate after lost
     return expect(targets).toBe(1);
   });
   const reopened = await openMenu();
-  await waitFor(() => {
-    return expect(reopened).toHaveTextContent("Probe 10 enabled");
-  });
+  await expectFirstAccountOff(reopened);
   expect(full).toBe(1);
   removed = true;
   context.mocks.ably.trigger("connector:changed", {
@@ -253,7 +266,7 @@ test("Patch only the notified target while closed and fully calibrate after lost
   await waitFor(() => {
     return expect(full).toBeGreaterThan(1);
   });
-  await findFastControl("button", "Probe 21 enabled");
+  await findFastControl("button", "Probe 2");
 });
 
 test("Discard an older target response after a Run invalidates the full snapshot", async () => {
@@ -282,7 +295,7 @@ test("Discard an older target response after a Run invalidates the full snapshot
     },
   );
   const popup = await openAfterSetup();
-  await findFastControl("button", "Probe 11 enabled");
+  await findFastControl("button", "Probe 1");
   context.mocks.ably.trigger("connector:changed", {
     connectorSlug: "probe-01",
   });
@@ -301,9 +314,7 @@ test("Discard an older target response after a Run invalidates the full snapshot
     }),
   };
   context.mocks.ably.trigger(`chatThreadDetailChanged:${SCOUT_THREAD_ID}`);
-  await waitFor(() => {
-    return expect(popup).toHaveTextContent("Probe 10 enabled");
-  });
+  await expectFirstAccountOff(popup);
   releaseStale.resolve();
   context.mocks.ably.trigger("connector:changed", {
     connectorSlug: "probe-01",
@@ -316,9 +327,7 @@ test("Discard an older target response after a Run invalidates the full snapshot
     ).toBeNull();
   });
   const reopened = await openMenu();
-  await waitFor(() => {
-    return expect(reopened).toHaveTextContent("Probe 10 enabled");
-  });
+  await expectFirstAccountOff(reopened);
   releaseNext.resolve();
 });
 
@@ -338,7 +347,7 @@ test("Retry a failed initial overview without keeping an unusable cached request
   });
   const popup = await openAfterSetup();
   click(await findFastControl("button", "Try again", popup));
-  await findFastControl("button", "Probe 11 enabled", popup);
+  await findFastControl("button", "Probe 1", popup);
   expect(full).toBe(2);
 });
 
@@ -358,7 +367,7 @@ test("Recover from an initial subscription failure through the overview retry", 
   const retry = await findFastControl("button", "Try again", popup);
   expect(full).toBe(0);
   click(retry);
-  await findFastControl("button", "Probe 11 enabled", popup);
+  await findFastControl("button", "Probe 1", popup);
   expect(full).toBe(1);
 });
 
@@ -390,12 +399,12 @@ test("Expose a failed target refresh and keep notifications working after retry"
     },
   );
   const popup = await openAfterSetup(false, "message-port");
-  await findFastControl("button", "Probe 11 enabled", popup);
+  await findFastControl("button", "Probe 1", popup);
   context.mocks.ably.trigger("connector:changed", {
     connectorSlug: "probe-01",
   });
   await findFastControl("button", "Try again", popup);
-  expect(popup).toHaveTextContent("Probe 11 enabled");
+  expect(popup).toHaveTextContent("Probe 1");
   expect({ full, targets }).toStrictEqual({ full: 1, targets: 1 });
   context.mocks.ably.trigger("connector:changed", {
     connectorSlug: "probe-02",
@@ -403,11 +412,11 @@ test("Expose a failed target refresh and keep notifications working after retry"
   await waitFor(() => {
     return expect(targets).toBe(2);
   });
-  await findFastControl("button", "Probe 21 enabled", popup);
+  await findFastControl("button", "Probe 2", popup);
   const retry = await findFastControl("button", "Try again", popup);
   fail = false;
   click(retry);
-  await findFastControl("button", "Probe 11 enabled", popup);
+  await findFastControl("button", "Probe 1", popup);
   await waitFor(() => {
     return expect(
       queryAllByRoleFast("button", popup).some((button) => {
@@ -432,7 +441,7 @@ test("Expose a failed target refresh and keep notifications working after retry"
   context.mocks.ably.trigger("connector:changed", {
     connectorSlug: "probe-01",
   });
-  await findFastControl("button", "Probe 10 enabled", popup);
+  await expectFirstAccountOff(popup);
   expect({ full, targets }).toStrictEqual({ full: 2, targets: 3 });
 });
 
@@ -483,7 +492,7 @@ test("Load full readiness only for an opened panel's selected off-page account",
     },
   );
   const popup = await openAfterSetup();
-  const row = await findFastControl("button", "GitHub2 enabled", popup);
+  const row = await findFastControl("button", "GitHub2 accounts", popup);
   expect(details).toBe(0);
   click(row);
   const access = await screen.findByRole("switch", {
@@ -510,7 +519,7 @@ test("Release the cached subscription on navigation and reload the returning Cha
     },
   );
   await openAfterSetup();
-  await findFastControl("button", "Probe 11 enabled");
+  await findFastControl("button", "Probe 1");
   click(await findFastControl("button", "Connectors"));
   click(await findFastControl("button", "New chat"));
   await waitFor(() => {
@@ -528,7 +537,7 @@ test("Release the cached subscription on navigation and reload the returning Cha
   });
   await findComposer();
   const reopened = await openMenu();
-  await findFastControl("button", "Probe 11 enabled", reopened);
+  await findFastControl("button", "Probe 1", reopened);
   expect({ full, targets }).toStrictEqual({ full: 2, targets: 0 });
 });
 
@@ -569,7 +578,7 @@ test("Calibrate custom account changes on focus while keeping ordinary reopening
     ]);
   });
   const popup = await openAfterSetup();
-  await findFastControl("button", "CCached custom1 enabled", popup);
+  await findFastControl("button", "CCached custom", popup);
   click(await findFastControl("button", "Connectors"));
   await waitFor(() => {
     return expect(
@@ -587,7 +596,7 @@ test("Calibrate custom account changes on focus while keeping ordinary reopening
   ];
   window.dispatchEvent(new Event("focus"));
   const reopened = await openMenu();
-  await findFastControl("button", "CCached custom2 enabled", reopened);
+  await findFastControl("button", "CCached custom2 accounts", reopened);
   expect(full).toBe(2);
   click(await findFastControl("button", "Connectors"));
   await waitFor(() => {
@@ -596,6 +605,6 @@ test("Calibrate custom account changes on focus while keeping ordinary reopening
     ).toBeNull();
   });
   const cached = await openMenu();
-  await findFastControl("button", "CCached custom2 enabled", cached);
+  await findFastControl("button", "CCached custom2 accounts", cached);
   expect(full).toBe(2);
 });

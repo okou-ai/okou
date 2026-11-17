@@ -343,8 +343,9 @@ test.each([false, true])(
       expect(trigger).toHaveFocus();
     });
     const row = await openMenu();
-    expect(row).toHaveTextContent("0 enabled");
+    expect(row).toHaveTextContent("2 accounts");
     click(row);
+    await screen.findByText("No account is on for this chat");
     click(await findFastControl("button", "Permissions"));
     const saved = await screen.findByRole("dialog", {
       name: "GitHub permissions",
@@ -500,7 +501,11 @@ test.each([false, true])(
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).toBeNull();
     });
-    await expect(openMenu(label)).resolves.toHaveTextContent("1 enabled");
+    const row = await openMenu(label);
+    expect(row).not.toHaveTextContent(/accounts|enabled/u);
+    click(row);
+    const submenu = await screen.findByRole("dialog", { name: label });
+    await expect(within(submenu).findByRole("switch")).resolves.toBeChecked();
     expect(fixture.noAuthConnectionRequests).toStrictEqual(
       custom
         ? []
@@ -537,11 +542,15 @@ test("Finish a saved Chat allowance after closing and reopening its menu", async
     ).toBeNull();
   });
   const reopened = await openMenu();
-  expect(reopened).toHaveTextContent("2 enabled");
+  expect(reopened).toHaveTextContent("2 accounts");
+  click(reopened);
+  const control = await screen.findByRole("switch", { name: "Work access" });
+  expect(control).toBeChecked();
   response.resolve();
   await waitFor(() => {
-    return expect(reopened).toHaveTextContent("1 enabled");
+    expect(control).not.toBeChecked();
   });
+  expect(reopened).toHaveTextContent("2 accounts");
 });
 
 test("Release a pending account save and its cached state when leaving the Chat", async () => {
@@ -566,7 +575,15 @@ test("Release a pending account save and its cached state when leaving the Chat"
   });
   response.resolve();
   await findComposer();
-  await expect(openMenu()).resolves.toHaveTextContent("2 enabled");
+  const row = await openMenu();
+  expect(row).toHaveTextContent("2 accounts");
+  click(row);
+  await expect(
+    screen.findByRole("switch", { name: "Work access" }),
+  ).resolves.toBeChecked();
+  await expect(
+    screen.findByRole("switch", { name: "Personal access" }),
+  ).resolves.toBeChecked();
 });
 
 test("Persist explicit per-account switches across menu reopening", async () => {
@@ -574,7 +591,7 @@ test("Persist explicit per-account switches across menu reopening", async () => 
   installAccess();
   await setup();
   const row = await openMenu();
-  expect(row).toHaveTextContent("2 enabled");
+  expect(row).toHaveTextContent("2 accounts");
   await user.click(row);
   await chooseAccess(user, "Personal", "Off");
   await expect(
@@ -582,7 +599,7 @@ test("Persist explicit per-account switches across menu reopening", async () => 
   ).resolves.not.toBeChecked();
   await user.keyboard("{Escape}{Escape}");
   const reopened = await openMenu();
-  expect(reopened).toHaveTextContent("1 enabled");
+  expect(reopened).toHaveTextContent("2 accounts");
   await user.click(reopened);
   await expect(
     screen.findByRole("switch", { name: "Personal access" }),
@@ -592,7 +609,7 @@ test("Persist explicit per-account switches across menu reopening", async () => 
     screen.findByRole("switch", { name: "Personal access" }),
   ).resolves.toBeChecked();
   await user.keyboard("{Escape}{Escape}");
-  await expect(openMenu()).resolves.toHaveTextContent("2 enabled");
+  await expect(openMenu()).resolves.toHaveTextContent("2 accounts");
 });
 
 test.each([{ label: "GitHub", custom: false }])(
@@ -602,7 +619,7 @@ test.each([{ label: "GitHub", custom: false }])(
     installAccess({ allOff: true, custom });
     await setup();
     const row = await openMenu(label);
-    expect(row).toHaveTextContent("0 enabled");
+    expect(row).toHaveTextContent("2 accounts");
     await user.click(row);
     await screen.findByText("No account is on for this chat");
     await user.click(await findFastControl("button", "Permissions"));
@@ -620,8 +637,9 @@ test.each([{ label: "GitHub", custom: false }])(
       ).toBeNull();
     });
     const reopened = await openMenu(label);
-    expect(reopened).toHaveTextContent("0 enabled");
+    expect(reopened).toHaveTextContent("2 accounts");
     await user.click(reopened);
+    await screen.findByText("No account is on for this chat");
     await user.click(await findFastControl("button", "Permissions"));
     const savedDialog = await screen.findByRole("dialog", {
       name: `${label} permissions`,
@@ -702,7 +720,15 @@ test("Preserve the internally resolved account when enabling several accounts be
   await waitFor(() => {
     expect(window.location.pathname).toMatch(/^\/chats\//u);
   });
-  await expect(openMenu()).resolves.toHaveTextContent("2 enabled");
+  const row = await openMenu();
+  expect(row).toHaveTextContent("2 accounts");
+  click(row);
+  await expect(
+    screen.findByRole("switch", { name: "Work access" }),
+  ).resolves.toBeChecked();
+  await expect(
+    screen.findByRole("switch", { name: "Personal access" }),
+  ).resolves.toBeChecked();
 });
 
 test.each([false, true])(
@@ -749,6 +775,13 @@ test.each([false, true])(
       return expect(window.location.pathname).toMatch(/^\/chats\//u);
     });
     const row = await openMenu();
-    expect(row).toHaveTextContent("1 enabled");
+    expect(row).toHaveTextContent("2 accounts");
+    click(row);
+    await expect(
+      screen.findByRole("switch", { name: "Work access" }),
+    ).resolves.not.toBeChecked();
+    await expect(
+      screen.findByRole("switch", { name: "Personal access" }),
+    ).resolves.toBeChecked();
   },
 );
