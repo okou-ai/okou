@@ -361,6 +361,40 @@ describe("Chat connector execution", () => {
     );
   });
 
+  it("applies a Chat access revocation after startup to the running Run", async () => {
+    const value = await owner();
+    const account = await addAccount(value.actor, "Revocable");
+    const run = await start(value);
+    expect(run.execution.connectorRuntimeTargets).toContainEqual(
+      expect.objectContaining({ sourceId: account.id }),
+    );
+
+    session(value.actor);
+    await accept(
+      access().setThreadOverride({
+        headers: sessionHeaders,
+        params: { threadId: value.threadId, connectionId: account.id },
+        body: { target: builtin, enabled: false },
+      }),
+      [200],
+    );
+    await expect(
+      runs.syncConnectorRuntime(run.runId, {
+        targets: [
+          {
+            kind: "builtin",
+            connectorSlug: "manual-mcp",
+            sourceId: account.id,
+          },
+        ],
+      }),
+    ).resolves.toContainEqual({
+      target: builtin,
+      state: "absent",
+      reason: "connector-unavailable",
+    });
+  });
+
   it("shows denied accounts, rejects self-grants and foreign ownership, and accepts exact owner confirmation only in that Chat", async () => {
     const value = await owner();
     const a = await addAccount(value.actor, "A");

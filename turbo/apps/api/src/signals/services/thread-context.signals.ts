@@ -24,6 +24,7 @@ import { createRunTemplates } from "./run-templates.service";
 import {
   type ConnectedAccounts,
   createConnectedAccountsSignals,
+  createThreadAccountAccessOverrides,
 } from "./thread-connected-accounts.signals";
 import { createThreadAutomationContext } from "./thread-automation-context.service";
 import { createThreadModelSignals } from "./thread-model.signals";
@@ -60,8 +61,11 @@ export interface ThreadAutomationTarget {
 
 type ThreadModels = ReturnType<typeof createThreadModelSignals>;
 
-/** Read-only facts for one picked event, shared by admission and prompting. */
+/** Read-only facts for one claimed Thread and its eventual picked event. */
 export interface ThreadContext extends ThreadWorkflowContext {
+  readonly threadAccessOverrides$: ReturnType<
+    typeof createThreadAccountAccessOverrides
+  >;
   /** Background source acquisition; consumers join the individual nodes below. */
   readonly inputResources$: Computed<Promise<void>>;
   readonly projectContext$: ReturnType<typeof createThreadProjectContext>;
@@ -113,9 +117,17 @@ export interface ThreadContext extends ThreadWorkflowContext {
 export function createThreadContext(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+  chatThreadId: string,
 ): ThreadContext {
   const orgId = bootstrap.orgId;
   const sourceSettings = createThreadSourceSettings(bootstrap);
+  const threadIdentity$ = computed(() => {
+    return Promise.resolve({ chatThreadId });
+  });
+  const threadAccessOverrides$ = createThreadAccountAccessOverrides(
+    threadIdentity$,
+    sourceSettings.featureSwitches$,
+  );
   const thread$ = computed(async (get) => {
     return (await get(pickedEvent$))?.thread ?? null;
   });
@@ -124,18 +136,10 @@ export function createThreadContext(
     orgId,
     sourceSettings.featureSwitches$,
   );
-  const modelInput$ = createThreadModelInput(
-    pickedEvent$,
-    integrations.automationTarget$,
-  );
-  const creditsWaived$ = createOfficialWorkflowCreditWaiver(
-    pickedEvent$,
-    integrations.automationTarget$,
-  );
-  const model = createThreadModelSignals(
+  const model = createThreadModelContext(
     bootstrap,
-    modelInput$,
-    creditsWaived$,
+    pickedEvent$,
+    integrations.automationTarget$,
   );
   const discordContext$ = createDiscordThreadContext(
     pickedEvent$,
@@ -174,6 +178,7 @@ export function createThreadContext(
     pickedEvent$,
     connectorSourceId$,
     model.dispatchTiming$,
+    threadAccessOverrides$,
   );
   const emailMailboxConnections$ = createEmailMailboxConnections(
     pickedEvent$,
@@ -197,6 +202,7 @@ export function createThreadContext(
     inputSources,
   );
   return {
+    threadAccessOverrides$,
     inputResources$: resources.inputResources$,
     projectContext$: resources.projectContext$,
     incompleteContext$: resources.incompleteContext$,
@@ -233,6 +239,19 @@ export function createThreadContext(
     selectedConnectorSources$:
       connectedAccounts.selectedStoredConnectorSources$,
   };
+}
+
+function createThreadModelContext(
+  bootstrap: AgentRunContextSignals,
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+  automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>,
+) {
+  const modelInput$ = createThreadModelInput(pickedEvent$, automationTarget$);
+  const creditsWaived$ = createOfficialWorkflowCreditWaiver(
+    pickedEvent$,
+    automationTarget$,
+  );
+  return createThreadModelSignals(bootstrap, modelInput$, creditsWaived$);
 }
 
 function createThreadInputResources(

@@ -421,11 +421,15 @@ function createPickObjects() {
       }
       const claimed = await get(captured);
       signal.throwIfAborted();
-      const [threadHasActiveRun, hasCapacity, hasInput] = await Promise.all([
+      const availability = Promise.all([
         get(claimed.threadHasActiveRun$),
         get(claimed.orgHasCapacity$),
         get(claimed.hasFirstPickableChatEvent$),
       ]);
+      // Issue critical availability reads first. This bounded Thread source
+      // can overlap them; each later consumer still joins its own node.
+      waitUntil(settle(get(claimed.threadResources$)));
+      const [threadHasActiveRun, hasCapacity, hasInput] = await availability;
       signal.throwIfAborted();
       // Publication can wait for a launch whose active row was not visible in
       // its earlier snapshot. Reobserve before reporting full/deleting empty
