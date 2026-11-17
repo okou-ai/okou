@@ -45,9 +45,12 @@ async fn storage_timing_retains_only_observed_phases_when_input_validation_fails
     });
     let host = host_from_stream(host_stream).await.unwrap();
     let mut timing = StorageManifestRequestTiming {
-        frame_write: Some(Duration::from_secs(9)),
-        response_wait: Some(Duration::from_secs(9)),
-        result_decode: Some(Duration::from_secs(9)),
+        host: sandbox::RequestTiming {
+            frame_write: Some(Duration::from_secs(9)),
+            response_wait: Some(Duration::from_secs(9)),
+            result_decode: Some(Duration::from_secs(9)),
+            ..sandbox::RequestTiming::default()
+        },
         ..StorageManifestRequestTiming::default()
     };
     let error = host
@@ -62,13 +65,13 @@ async fn storage_timing_retains_only_observed_phases_when_input_validation_fails
         .await
         .unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
-    assert!(timing.setup.is_some());
-    assert!(timing.frame_builder_wait.is_some());
-    assert!(timing.frame_encode.is_some());
-    assert!(timing.writer_wait.is_none());
-    assert!(timing.frame_write.is_none());
-    assert!(timing.response_wait.is_none());
-    assert!(timing.result_decode.is_none());
+    assert!(timing.host.setup.is_some());
+    assert!(timing.host.frame_builder_wait.is_some());
+    assert!(timing.host.frame_encode.is_some());
+    assert!(timing.host.writer_wait.is_none());
+    assert!(timing.host.frame_write.is_none());
+    assert!(timing.host.response_wait.is_none());
+    assert!(timing.host.result_decode.is_none());
     assert_eq!(pending_request_count(&host), 0);
     assert_eq!(
         normal_operation_readiness(&host),
@@ -125,9 +128,9 @@ async fn storage_timing_observes_frame_builder_contention_with_the_original_requ
         let result = request.await.unwrap();
         assert_eq!(result.stdout, b"out");
     }
-    assert!(timing.frame_builder_wait.unwrap() >= Duration::from_millis(25));
-    assert!(timing.frame_write.is_some());
-    assert!(timing.result_decode.is_some());
+    assert!(timing.host.frame_builder_wait.unwrap() >= Duration::from_millis(25));
+    assert!(timing.host.frame_write.is_some());
+    assert!(timing.host.result_decode.is_some());
     assert_eq!(
         normal_operation_readiness(&host),
         NormalOperationReadiness::Idle
@@ -181,13 +184,13 @@ async fn guest_storage_manifest_sends_request_and_decodes_result() {
     assert!(!result.stdout_truncated);
     assert!(result.stderr_truncated);
     assert!(result.resources.is_none());
-    assert!(timing.setup.is_some());
-    assert!(timing.frame_builder_wait.is_some());
-    assert!(timing.frame_encode.is_some());
-    assert!(timing.writer_wait.is_some());
-    assert!(timing.frame_write.is_some());
-    assert!(timing.response_wait.is_some());
-    assert!(timing.result_decode.is_some());
+    assert!(timing.host.setup.is_some());
+    assert!(timing.host.frame_builder_wait.is_some());
+    assert!(timing.host.frame_encode.is_some());
+    assert!(timing.host.writer_wait.is_some());
+    assert!(timing.host.frame_write.is_some());
+    assert!(timing.host.response_wait.is_some());
+    assert!(timing.host.result_decode.is_some());
     assert_eq!(
         normal_operation_readiness(&host),
         NormalOperationReadiness::Idle
@@ -482,7 +485,10 @@ async fn guest_storage_manifest_timeout_abandons_connection_and_ignores_late_res
     let request_host = Arc::clone(&host);
     let request = tokio::spawn(async move {
         let mut timing = StorageManifestRequestTiming {
-            result_decode: Some(Duration::from_secs(9)),
+            host: sandbox::RequestTiming {
+                result_decode: Some(Duration::from_secs(9)),
+                ..sandbox::RequestTiming::default()
+            },
             ..StorageManifestRequestTiming::default()
         };
         let result = request_host
@@ -503,9 +509,9 @@ async fn guest_storage_manifest_timeout_abandons_connection_and_ignores_late_res
     let error = result.unwrap_err();
 
     assert_eq!(error.kind(), io::ErrorKind::TimedOut);
-    assert!(timing.frame_write.is_some());
-    assert!(timing.response_wait.is_some());
-    assert!(timing.result_decode.is_none());
+    assert!(timing.host.frame_write.is_some());
+    assert!(timing.host.response_wait.is_some());
+    assert!(timing.host.result_decode.is_none());
     assert_eq!(pending_request_count(&host), 0);
     assert_eq!(
         normal_operation_readiness(&host),

@@ -989,6 +989,20 @@ pub trait Sandbox: Send + Sync + Any {
         Ok(())
     }
 
+    /// Perform the same batch write with optional content-free Host phases.
+    ///
+    /// Backends without observations retain their write behavior and leave the
+    /// fresh record unavailable. Observations do not change write authority,
+    /// deadlines, terminal results or cancellation/cleanup ownership.
+    async fn write_files_with_timing(
+        &self,
+        files: &[WriteFileEntry<'_>],
+        timing: &mut crate::FileWriteTiming,
+    ) -> Result<()> {
+        *timing = crate::FileWriteTiming::default();
+        self.write_files(files).await
+    }
+
     /// Write `content` to a private runtime file inside the guest.
     ///
     /// Implementations should use guest runtime-private semantics: ensure

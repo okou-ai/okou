@@ -961,6 +961,36 @@ impl FirecrackerSandbox {
         .await
     }
 
+    async fn write_files_observed(
+        &self,
+        files: &[WriteFileEntry<'_>],
+        timing: Option<&mut sandbox::FileWriteTiming>,
+    ) -> sandbox::Result<()> {
+        let files = files
+            .iter()
+            .map(|file| guest_control_client::WriteFileEntry {
+                path: file.path,
+                content: file.content,
+            })
+            .collect::<Vec<_>>();
+        let (admission, request) = match timing {
+            Some(timing) => (Some(&mut timing.admission), Some(&mut timing.request)),
+            None => (None, None),
+        };
+        self.run_bounded_guest_operation_with_validation(
+            SandboxOperation::WriteFile,
+            admission,
+            || Ok(()),
+            |guest| async move {
+                match request {
+                    Some(timing) => guest.write_files_with_timing(&files, timing).await,
+                    None => guest.write_files(&files).await,
+                }
+            },
+        )
+        .await
+    }
+
     async fn run_bounded_guest_operation<T, Fut>(
         &self,
         operation: SandboxOperation,
@@ -969,13 +999,14 @@ impl FirecrackerSandbox {
     where
         Fut: Future<Output = io::Result<T>>,
     {
-        self.run_bounded_guest_operation_with_validation(operation, || Ok(()), call)
+        self.run_bounded_guest_operation_with_validation(operation, None, || Ok(()), call)
             .await
     }
 
     async fn run_bounded_guest_operation_with_validation<T, Fut>(
         &self,
         operation: SandboxOperation,
+        admission: Option<&mut Option<Duration>>,
         validate: impl FnOnce() -> sandbox::Result<()>,
         call: impl FnOnce(Arc<GuestControlClient>) -> Fut,
     ) -> sandbox::Result<T>
@@ -987,7 +1018,12 @@ impl FirecrackerSandbox {
             BackendCrashed,
         }
 
-        let vsock = self.begin_guest_operation(operation).await?;
+        let admission_started = admission.as_ref().map(|_| Instant::now());
+        let admitted = self.begin_guest_operation(operation).await;
+        if let (Some(admission), Some(started)) = (admission, admission_started) {
+            *admission = Some(started.elapsed());
+        }
+        let vsock = admitted?;
         validate()?;
 
         let outcome = tokio::select! {
@@ -3066,6 +3102,7 @@ impl Sandbox for FirecrackerSandbox {
 
         self.run_bounded_guest_operation_with_validation(
             operation,
+            None,
             || validate_exec_env_keys(operation, request.env),
             |guest| async move {
                 validate_exec_capture_timeout(timeout_ms)?;
@@ -3214,19 +3251,16 @@ impl Sandbox for FirecrackerSandbox {
     }
 
     async fn write_files(&self, files: &[WriteFileEntry<'_>]) -> sandbox::Result<()> {
-        let operation = SandboxOperation::WriteFile;
-        let files = files
-            .iter()
-            .map(|file| guest_control_client::WriteFileEntry {
-                path: file.path,
-                content: file.content,
-            })
-            .collect::<Vec<_>>();
+        self.write_files_observed(files, None).await
+    }
 
-        self.run_bounded_guest_operation(operation, |guest| async move {
-            guest.write_files(&files).await
-        })
-        .await
+    async fn write_files_with_timing(
+        &self,
+        files: &[WriteFileEntry<'_>],
+        timing: &mut sandbox::FileWriteTiming,
+    ) -> sandbox::Result<()> {
+        *timing = sandbox::FileWriteTiming::default();
+        self.write_files_observed(files, Some(timing)).await
     }
 
     async fn write_private_file(&self, path: &str, content: &[u8]) -> sandbox::Result<()> {
