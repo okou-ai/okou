@@ -57,8 +57,8 @@ pub trait SandboxIdleAdmission: Send + Sync {
 /// or explicitly owned fenced-running terminal cleanup.
 pub enum SandboxFinalExecParkTransitionOutcome {
     /// Local idle admission closed before pause. This is not a reuse candidate.
-    /// The lifecycle owner retains the full active lease and must finish terminal
-    /// readiness with `unpark_for_terminal_operations` before Home cleanup.
+    /// Balloon deflation is complete. The lifecycle owner retains the full
+    /// active lease and must finish Guest readiness with `unpark_for_terminal_operations` before Home cleanup.
     Terminal { exec_result: ExecResult },
     /// No handoff request interrupted provider compaction.
     Parked(SandboxFinalExecParkOutcome),

@@ -71,7 +71,9 @@ impl ParkCoordinator {
         }
 
         match inner.state.clone() {
-            CoordinatorState::Open | CoordinatorState::Parked | CoordinatorState::FencedRunning => {
+            CoordinatorState::Open
+            | CoordinatorState::Parked
+            | CoordinatorState::FencedRunning { .. } => {
                 inner.active_run_id = Some(run_id.to_owned());
                 inner.assignment_cancel = CancellationToken::new();
                 Ok(())
@@ -176,8 +178,9 @@ impl ParkCoordinator {
     pub(crate) fn mark_fenced_running(
         &self,
         attempt: &ParkAttempt,
+        memory_ready: bool,
     ) -> Result<(), PrepareParkError> {
-        self.complete_transfer(attempt, CoordinatorState::FencedRunning)
+        self.complete_transfer(attempt, CoordinatorState::FencedRunning { memory_ready })
     }
 
     fn complete_transfer(
@@ -201,7 +204,7 @@ impl ParkCoordinator {
     pub(crate) fn reopen_after_unpark(&self) -> Result<(), PrepareParkError> {
         let mut inner = self.inner();
         match inner.state.clone() {
-            CoordinatorState::Parked | CoordinatorState::FencedRunning => {
+            CoordinatorState::Parked | CoordinatorState::FencedRunning { .. } => {
                 inner.state = CoordinatorState::Open;
                 Ok(())
             }
@@ -222,7 +225,7 @@ impl ParkCoordinator {
         }
 
         match inner.state {
-            CoordinatorState::Parked | CoordinatorState::FencedRunning => {
+            CoordinatorState::Parked | CoordinatorState::FencedRunning { .. } => {
                 TerminateAdmission::RefusedIdle
             }
             CoordinatorState::Terminating => TerminateAdmission::Accepted,
@@ -255,7 +258,9 @@ pub(crate) enum CoordinatorState {
     Parked,
     /// A running VM remains quiesced and fenced for accepted successor delivery
     /// or lifecycle-owned terminal cleanup.
-    FencedRunning,
+    FencedRunning {
+        memory_ready: bool,
+    },
     Terminating,
     Dirty {
         reason: DirtyReason,

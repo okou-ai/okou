@@ -2349,7 +2349,7 @@ impl FirecrackerSandbox {
                     custody: Some(custody),
                 },
                 observer,
-                PhysicalParkOutcome::is_fenced_running,
+                PhysicalParkOutcome::completion,
                 || async move {
                     let guest =
                         final_exec_guest
@@ -2518,7 +2518,10 @@ impl FirecrackerSandbox {
     }
 
     async fn unpark_ready_for_operations(&mut self) -> sandbox::Result<()> {
-        let fenced_running = self.park_coordinator.state() == CoordinatorState::FencedRunning;
+        let fenced_running = matches!(
+            self.park_coordinator.state(),
+            CoordinatorState::FencedRunning { .. }
+        );
         if fenced_running && (self.is_parked || self.park_outcome.is_some()) {
             let message = "fenced running sandbox has inconsistent physical park state";
             self.park_coordinator.mark_dirty(DirtyReason::new(message));
@@ -2603,9 +2606,18 @@ impl FirecrackerSandbox {
         let park_outcome = self.park_outcome.clone();
         let state_rx = self.state_tx.subscribe();
         let mut is_parked = self.is_parked;
+        let memory_ready = matches!(
+            self.park_coordinator.state(),
+            CoordinatorState::FencedRunning { memory_ready: true },
+        );
         unpark_attempt::Attempt::new(
             attempt,
             async move {
+                // The same lifecycle writer already observed exact-zero pages.
+                // Nothing wrote the balloon target or paused vCPUs afterward.
+                if memory_ready {
+                    return Ok(());
+                }
                 unpark_inner(
                     &mut is_parked,
                     memory_mb,
@@ -2748,7 +2760,10 @@ impl Sandbox for FirecrackerSandbox {
         let valid_boundary = (sandbox_state == SandboxState::Created && !self.is_parked)
             || (sandbox_state == SandboxState::Running
                 && (self.is_parked
-                    || self.park_coordinator.state() == CoordinatorState::FencedRunning));
+                    || matches!(
+                        self.park_coordinator.state(),
+                        CoordinatorState::FencedRunning { .. }
+                    )));
         if !valid_boundary {
             return Err(SandboxError::InvalidState {
                 context: SandboxInvalidStateContext::Sandbox,
@@ -3569,11 +3584,12 @@ impl<Fence> ParkBoundaryGuard<Fence> {
         self.state = ParkBoundaryGuardState::Disarmed;
     }
 
-    fn mark_completed(mut self, fenced_running: bool) -> Result<Fence, PrepareParkError> {
-        let result = if fenced_running {
-            self.coordinator.mark_fenced_running(&self.attempt)
-        } else {
-            self.coordinator.mark_parked(&self.attempt)
+    fn mark_completed(mut self, completion: ParkCompletion) -> Result<Fence, PrepareParkError> {
+        let result = match completion {
+            ParkCompletion::FencedRunning { memory_ready } => self
+                .coordinator
+                .mark_fenced_running(&self.attempt, memory_ready),
+            ParkCompletion::Parked => self.coordinator.mark_parked(&self.attempt),
         };
         match result {
             Ok(()) => {
@@ -3750,7 +3766,7 @@ where
         log_id,
         context,
         None,
-        |_| false,
+        |_| ParkCompletion::Parked,
         fence_and_prepare,
         quiesce_guest,
         |timing, events| async move {
@@ -3776,7 +3792,7 @@ async fn park_with_ready_for_park_and_preparation_with_observer<
     log_id: &str,
     context: ParkContext<'_, Fence>,
     observer: Option<&'observer mut dyn SandboxFinalExecParkObserver>,
-    is_fenced_running: fn(&Outcome) -> bool,
+    park_completion: fn(&Outcome) -> ParkCompletion,
     fence_and_prepare: F,
     quiesce_guest: Q,
     park_firecracker: P,
@@ -4026,8 +4042,9 @@ where
         }
     };
 
-    let fenced_running = is_fenced_running(&outcome);
-    let normal_operations_fence = match guard.mark_completed(fenced_running) {
+    let completion = park_completion(&outcome);
+    let fenced_running = matches!(completion, ParkCompletion::FencedRunning { .. });
+    let normal_operations_fence = match guard.mark_completed(completion) {
         Ok(fence) => fence,
         Err(error) => {
             let reason_kind = prepare_park_error_reason_kind(&error);
@@ -4169,7 +4186,7 @@ where
 
 fn ensure_parked_before_unpark(coordinator: &ParkCoordinator) -> sandbox::Result<()> {
     match coordinator.state() {
-        CoordinatorState::Parked | CoordinatorState::FencedRunning => Ok(()),
+        CoordinatorState::Parked | CoordinatorState::FencedRunning { .. } => Ok(()),
         CoordinatorState::Dirty { reason } => Err(idle_transition_error(
             SandboxIdleTransition::Unpark,
             format!("park policy dirty while unpark is starting: {reason}"),
@@ -4286,6 +4303,12 @@ fn park_admission_action(outcome: &SandboxParkOutcome) -> &'static str {
     }
 }
 
+#[derive(Clone, Copy)]
+enum ParkCompletion {
+    Parked,
+    FencedRunning { memory_ready: bool },
+}
+
 enum PhysicalParkOutcome {
     Terminal,
     Idle(SandboxParkOutcome),
@@ -4293,6 +4316,16 @@ enum PhysicalParkOutcome {
 }
 
 impl PhysicalParkOutcome {
+    fn completion(&self) -> ParkCompletion {
+        match self {
+            Self::Idle(_) => ParkCompletion::Parked,
+            Self::Handoff(_) => ParkCompletion::FencedRunning {
+                memory_ready: false,
+            },
+            Self::Terminal => ParkCompletion::FencedRunning { memory_ready: true },
+        }
+    }
+
     fn is_fenced_running(&self) -> bool {
         matches!(self, Self::Handoff(_) | Self::Terminal)
     }
@@ -4540,11 +4573,14 @@ async fn park_inner_with_guest_and_handoff<'observer>(
                 )),
             );
         }
-        if reusable {
+        // Terminal cleanup still needs the existing exact-zero observation.
+        // Keep its original park deadline and owner; do not repeat target
+        // reversal or shorten this to the foreground activation deadline.
+        if reusable || matches!(outcome, PhysicalParkOutcome::Terminal) {
             let wait =
                 balloon::wait_for_deflation(&client, state_rx, log_id, SandboxIdleTransition::Park);
             tokio::pin!(wait);
-            let result = if let Some(handoff) = handoff {
+            let result = if reusable && let Some(handoff) = handoff {
                 tokio::select! {
                     biased;
                     accepted = handoff.wait_and_accept() => {
@@ -4560,14 +4596,18 @@ async fn park_inner_with_guest_and_handoff<'observer>(
             } else {
                 Some(wait.await)
             };
-            if let Some(Err(error)) = result {
-                events.record(
-                    SandboxFinalExecParkSubstage::BalloonDeflate,
-                    deflate_started.elapsed(),
-                    false,
-                    Some(SandboxFinalExecParkSubstageOutcome::Failed),
-                );
-                return (events, Err(error));
+            match result {
+                Some(Err(error)) => {
+                    events.record(
+                        SandboxFinalExecParkSubstage::BalloonDeflate,
+                        deflate_started.elapsed(),
+                        false,
+                        Some(SandboxFinalExecParkSubstageOutcome::Failed),
+                    );
+                    return (events, Err(error));
+                }
+                Some(Ok(())) => {}
+                None => {}
             }
         }
         events.record(

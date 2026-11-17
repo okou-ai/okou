@@ -1,4 +1,50 @@
 use super::*;
+#[tokio::test]
+async fn running_terminal_reuses_completed_deflation_without_native_round_trips() {
+    let dir = tempfile::tempdir().unwrap();
+    let (guest, mut peer) = connected_mock_guest().await;
+    let host = guest.lock().await.as_ref().unwrap().clone();
+    let mut sandbox = test_sandbox_with_state(SandboxState::Running);
+    sandbox.config.resources.memory_mb = 2048;
+    sandbox.sock_paths = SockPaths::new(dir.path().to_path_buf());
+    std::fs::create_dir(sandbox.sock_paths.vsock_dir()).unwrap();
+    let mut api = MockFirecrackerApi::with_handler(|request| async move {
+        panic!("completed deflation must not be repeated: {request:?}")
+    });
+    std::os::unix::fs::symlink(api.socket_path(), sandbox.sock_paths.api_sock()).unwrap();
+    sandbox.guest = guest;
+    sandbox.park_fence = Some(host.try_fence_normal_operations().unwrap());
+    let coordinator = sandbox.park_coordinator.clone();
+    let attempt = coordinator.begin_prepare_park().unwrap();
+    coordinator
+        .complete_prepare_park(&attempt, PrepareParkEvidence::AgentQuiesced)
+        .unwrap();
+    coordinator.mark_fenced_running(&attempt, true).unwrap();
+
+    let (ready, ()) = tokio::join!(sandbox.unpark_for_terminal_operations(), async {
+        let resume = read_vsock_message(&mut peer).await;
+        assert_eq!(resume.msg_type, guest_control_proto::MSG_RESUME_OPERATIONS);
+        assert!(matches!(
+            host.try_fence_normal_operations(),
+            Err(NormalOperationFenceRejection::AlreadyFenced)
+        ));
+        peer.write_all(
+            &guest_control_proto::encode(
+                guest_control_proto::MSG_OPERATIONS_RESUMED,
+                resume.seq,
+                &[],
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    },);
+    ready.unwrap();
+    assert!(!sandbox.is_parked);
+    assert!(sandbox.park_fence.is_none());
+    assert_eq!(coordinator.state(), CoordinatorState::Open);
+    assert!(api.drain_requests().is_empty());
+}
 
 async fn coordinated_park(
     coordinator: &ParkCoordinator,
@@ -11,7 +57,7 @@ async fn coordinated_park(
         "running-handoff-test",
         coordinator.into(),
         None,
-        |outcome| matches!(outcome, PhysicalParkOutcome::Handoff(_)),
+        PhysicalParkOutcome::completion,
         || async { Ok((TestNormalOperationFence, ())) },
         || async { Ok(()) },
         |timing, events| async move {
@@ -99,7 +145,12 @@ async fn running_handoff_waits_for_in_flight_target_write_before_transfer() {
             park.await.unwrap()
         };
         assert!(matches!(outcome, PhysicalParkOutcome::Handoff(_)));
-        assert_eq!(coordinator.state(), CoordinatorState::FencedRunning);
+        assert_eq!(
+            coordinator.state(),
+            CoordinatorState::FencedRunning {
+                memory_ready: false
+            }
+        );
         assert!(!is_parked);
         let requests = api.drain_requests();
         let writes = patches(&requests);
@@ -140,7 +191,7 @@ async fn public_fenced_running_readiness_keeps_guest_fenced_until_zero_and_resum
         coordinator
             .complete_prepare_park(&attempt, PrepareParkEvidence::AgentQuiesced)
             .unwrap();
-        coordinator.mark_fenced_running(&attempt).unwrap();
+        coordinator.mark_fenced_running(&attempt, false).unwrap();
         if !terminal {
             sandbox.bind_run_control("successor").unwrap();
         }
@@ -154,7 +205,12 @@ async fn public_fenced_running_readiness_keeps_guest_fenced_until_zero_and_resum
         });
         entered.notified().await;
         assert!(!activation.is_finished());
-        assert_eq!(coordinator.state(), CoordinatorState::FencedRunning);
+        assert_eq!(
+            coordinator.state(),
+            CoordinatorState::FencedRunning {
+                memory_ready: false
+            }
+        );
         assert!(coordinator.ensure_operation_start_allowed().is_err());
         assert!(matches!(
             host.try_fence_normal_operations(),

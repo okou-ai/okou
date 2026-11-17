@@ -1203,7 +1203,7 @@ async fn final_exec_park_observer_reports_completed_stages_in_order() {
         "test-sandbox",
         (&coordinator).into(),
         Some(&mut observer),
-        |_| false,
+        |_| ParkCompletion::Parked,
         || async { Ok((TestNormalOperationFence, "prepared")) },
         || async { Ok(()) },
         |_timing, events| async {
@@ -1235,7 +1235,7 @@ async fn final_exec_park_observer_reports_preparation_failure_only() {
         "test-sandbox",
         (&coordinator).into(),
         Some(&mut observer),
-        |_| false,
+        |_| ParkCompletion::Parked,
         || async {
             Err::<(TestNormalOperationFence, ()), _>(ParkNormalOperationFenceError::FinalOperation(
                 io::Error::new(io::ErrorKind::ConnectionReset, "final exec disconnected"),
@@ -1268,7 +1268,7 @@ async fn final_exec_park_observer_reports_physical_park_failure() {
         "test-sandbox",
         (&coordinator).into(),
         Some(&mut observer),
-        |_| false,
+        |_| ParkCompletion::Parked,
         || async { Ok((TestNormalOperationFence, ())) },
         || async { Ok(()) },
         |_timing, events| async {
@@ -1306,7 +1306,7 @@ async fn final_exec_park_observer_keeps_completed_substage_on_cancellation() {
             "test-sandbox",
             (&coordinator).into(),
             Some(&mut observer),
-            |_| false,
+            |_| ParkCompletion::Parked,
             || async { Ok((TestNormalOperationFence, ())) },
             || async { Ok(()) },
             |timing, mut events| async move {
@@ -1420,7 +1420,7 @@ fn ready_for_park_boundary_missing_fence_marks_dirty_after_ready_for_park() {
         ParkBoundaryGuard::new(coordinator.clone(), attempt, None);
 
     guard.complete_prepare().unwrap();
-    let error = guard.mark_completed(false).unwrap_err();
+    let error = guard.mark_completed(ParkCompletion::Parked).unwrap_err();
 
     assert!(matches!(error, PrepareParkError::Dirty { .. }));
     assert!(matches!(

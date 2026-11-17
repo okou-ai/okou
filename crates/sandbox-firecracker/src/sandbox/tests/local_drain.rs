@@ -55,7 +55,7 @@ async fn coordinated_local_park(
         "local-drain-test",
         coordinator.into(),
         None,
-        PhysicalParkOutcome::is_fenced_running,
+        PhysicalParkOutcome::completion,
         || async { Ok((TestNormalOperationFence, ())) },
         || async { Ok(()) },
         |timing, events| async move {
@@ -110,10 +110,15 @@ async fn local_drain_before_balloon_retains_terminal_owner_unless_handoff_is_acc
             assert!(matches!(outcome, PhysicalParkOutcome::Terminal));
         }
         assert!(!is_parked);
-        assert_eq!(coordinator.state(), CoordinatorState::FencedRunning);
+        assert_eq!(
+            coordinator.state(),
+            CoordinatorState::FencedRunning {
+                memory_ready: !successor_requested
+            }
+        );
         assert!(coordinator.ensure_operation_start_allowed().is_err());
         let requests = api.drain_requests();
-        assert_eq!(requests.len(), 1);
+        assert_eq!(requests.len(), if successor_requested { 1 } else { 2 });
         assert_eq!(requests[0].path, "/balloon");
         assert_eq!(mock_request_body_json(&requests[0])["amount_mib"], 0);
     }
@@ -182,7 +187,10 @@ async fn local_drain_joins_in_flight_balloon_writes_before_terminal_transfer() {
         };
         assert!(matches!(outcome, PhysicalParkOutcome::Terminal));
         assert!(!is_parked);
-        assert_eq!(coordinator.state(), CoordinatorState::FencedRunning);
+        assert_eq!(
+            coordinator.state(),
+            CoordinatorState::FencedRunning { memory_ready: true }
+        );
         let requests = api.drain_requests();
         let writes = patches(&requests);
         assert_eq!(writes.len(), 2);
@@ -212,6 +220,9 @@ async fn local_drain_during_settle_or_deflation_avoids_pause_after_owned_read() 
                 MockBalloonStats::new(target, 0)
             },
         });
+        if !during_deflation {
+            replies.push_back(MockBalloonStatsReply::Ok(MockBalloonStats::new(0, 0)));
+        }
         let mut api = MockLifecycleApi::with_stats(Default::default(), replies);
         let gate = LocalAdmission::open();
         let coordinator = ParkCoordinator::new();
@@ -230,17 +241,27 @@ async fn local_drain_during_settle_or_deflation_avoids_pause_after_owned_read() 
                 _ = &mut park => panic!("park completed before statistics reply"),
             }
             gate.close();
+            if during_deflation {
+                tokio::time::pause();
+                tokio::time::advance(Duration::from_secs(6)).await;
+            }
             assert!(
                 std::future::poll_fn(|cx| std::task::Poll::Ready(park.as_mut().poll(cx)))
                     .await
                     .is_pending()
             );
+            if during_deflation {
+                tokio::time::resume();
+            }
             release.notify_one();
             park.await.unwrap()
         };
         assert!(matches!(outcome, PhysicalParkOutcome::Terminal));
         assert!(!is_parked);
-        assert_eq!(coordinator.state(), CoordinatorState::FencedRunning);
+        assert_eq!(
+            coordinator.state(),
+            CoordinatorState::FencedRunning { memory_ready: true }
+        );
         let requests = api.drain_requests();
         assert!(requests.iter().all(|request| request.path != "/vm"));
         assert_eq!(patches(&requests).len(), 2);
@@ -249,7 +270,7 @@ async fn local_drain_during_settle_or_deflation_avoids_pause_after_owned_read() 
                 .iter()
                 .filter(|request| request.method == "GET")
                 .count(),
-            if during_deflation { 2 } else { 1 }
+            2
         );
     }
 }

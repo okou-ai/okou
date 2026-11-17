@@ -72,7 +72,7 @@ async fn local_drain_during_final_exec_retires_guest_rpc_without_pausing() {
     assert!(!sandbox.is_parked);
     assert_eq!(
         sandbox.park_coordinator.state(),
-        CoordinatorState::FencedRunning
+        CoordinatorState::FencedRunning { memory_ready: true }
     );
     assert!(sandbox.park_fence.is_some());
     assert!(!path.exists());
@@ -433,7 +433,9 @@ async fn successful_park_variants_replace_guest_rpc_endpoint_epochs_before_resum
         assert_eq!(
             sandbox.park_coordinator.state(),
             if handoff {
-                CoordinatorState::FencedRunning
+                CoordinatorState::FencedRunning {
+                    memory_ready: false,
+                }
             } else {
                 CoordinatorState::Parked
             }
