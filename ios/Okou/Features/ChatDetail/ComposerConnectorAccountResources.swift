@@ -132,24 +132,24 @@ final class ComposerConnectorAccountResources {
       let signal = options.signal
       let target = connector.target
       let threadID = composer?.threadID
-      let task = Task<Details, Error> {
-        @MainActor [weak self, service, managesDefaults, chatAccountAccess] in
-        do {
-          try Task.checkCancellation()
-          var value = Details()
-          if managesDefaults {
-            value.defaults = try await service.accountDefaults(target: target)
-          } else if !chatAccountAccess, let threadID {
-            value.preferences = try await service.preferences(threadID: threadID)
+      let task: Task<Details, Error> =
+        Task { @MainActor [weak self, service, managesDefaults, chatAccountAccess] in
+          do {
+            try Task.checkCancellation()
+            var value = Details()
+            if managesDefaults {
+              value.defaults = try await service.accountDefaults(target: target)
+            } else if !chatAccountAccess, let threadID {
+              value.preferences = try await service.preferences(threadID: threadID)
+            }
+            try Task.checkCancellation()
+            try signal.checkCancellation()
+            return value
+          } catch {
+            if let self, !isClosed, !Task.isCancelled, !signal.isCancelled { didFail(error) }
+            throw error
           }
-          try Task.checkCancellation()
-          try signal.checkCancellation()
-          return value
-        } catch {
-          if let self, !isClosed, !Task.isCancelled, !signal.isCancelled { didFail(error) }
-          throw error
         }
-      }
       detailsTask = task
       signal.onCancel { task.cancel() }
       return task

@@ -393,8 +393,7 @@ struct ChatSidebarView: View {
   /// the chat, so the shortcuts work whether or not it is open.
   @ViewBuilder private var chatNumberShortcuts: some View {
     if case .hasData(let contents) = presentation {
-      ForEach(Array(contents.chats.rows.prefix(9).enumerated()), id: \.element.id) {
-        index, row in
+      ForEach(Array(contents.chats.rows.prefix(9).enumerated()), id: \.element.id) { index, row in
         Button(row.title) {
           store.selectChat(row.id)
           close()

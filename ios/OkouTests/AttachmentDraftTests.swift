@@ -741,7 +741,7 @@ final class AttachmentFlowFixture: Sendable {
         ?? ChatAttachment(
           id: Self.fileID, filename: "notes.txt", contentType: "text/plain", size: 5,
           url: "artifact://\(Self.fileID)")
-      let metadata = String(decoding: try JSONEncoder().encode(file), as: UTF8.self)
+      let metadata = try JSONEncoder().encodeString(file)
       if path.hasPrefix("/api/agents/") && path.hasSuffix("/draft") {
         if request.httpMethod == "PATCH" {
           let draft = try JSONDecoder().decode(ComposerDraft.self, from: chatRequestBody(request))
@@ -749,8 +749,8 @@ final class AttachmentFlowFixture: Sendable {
           return ChatHTTPResponse(status: 204, body: "")
         }
         let draft = state.value.withLock { $0.agentDrafts[path] ?? ComposerDraft() }
-        return ChatHTTPResponse(
-          body: String(decoding: try JSONEncoder().encode(draft), as: UTF8.self))
+        return try ChatHTTPResponse(
+          json: draft)
       }
       switch path {
       case "/api/voice-io/quota", "/api/voice-io/transcribe/segment",
@@ -776,9 +776,8 @@ final class AttachmentFlowFixture: Sendable {
       case "/api/web/file-url": return ChatHTTPResponse(body: "{}")
       case "/api/chat-threads/\(Self.threadID)/draft":
         await draftRead()
-        return ChatHTTPResponse(
-          body: String(
-            decoding: try JSONEncoder().encode(state.value.withLock { $0.draft }), as: UTF8.self))
+        return try ChatHTTPResponse(
+          json: state.value.withLock { $0.draft })
       case "/api/uploads/prepare":
         state.value.withLock { $0.preparations.append(chatRequestBody(request)) }
         let url = "https://\(request.url!.host!)/storage/object"
@@ -833,8 +832,7 @@ final class AttachmentFlowFixture: Sendable {
                 "{\"rows\":[],\"cursor\":{\"lastEventId\":\"\(message.clientEventId)\",\"lastSeqId\":1},\"hasMore\":false}"
             )
           }
-          let document = String(
-            decoding: try JSONEncoder().encode(message.userMessage), as: UTF8.self)
+          let document = try JSONEncoder().encodeString(message.userMessage)
           return ChatHTTPResponse(
             body:
               "{\"rows\":[{\"id\":\"\(message.clientEventId)\",\"chatThreadId\":\"\(Self.threadID)\",\"seqId\":1,\"eventType\":\"input.prompt\",\"createdAt\":\"2026-10-19T10:00:00Z\",\"payload\":{\"userMessage\":\(document)}}],\"cursor\":{\"lastEventId\":\"\(message.clientEventId)\",\"lastSeqId\":1},\"hasMore\":false}"

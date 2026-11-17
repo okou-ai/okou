@@ -12,10 +12,10 @@ final class ConversationStore {
     let text: String
     let createdAt: Date
     let attachments: [ChatAttachment]
-    var document: ChatDraftDocument? = nil
-    var modelSelection: ChatModelSelection? = nil
-    var reasoningEffort: String? = nil
-    var computerAccess: ChatComputerAccess? = nil
+    var document: ChatDraftDocument?
+    var modelSelection: ChatModelSelection?
+    var reasoningEffort: String?
+    var computerAccess: ChatComputerAccess?
     var needsRetry = false
 
     var message: ChatMessage {

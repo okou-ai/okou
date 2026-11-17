@@ -30,12 +30,12 @@ if [[ ! -f .swiftlint.yml ]]; then
   echo 'Missing ios/.swiftlint.yml.' >&2
   exit 1
 fi
-# The selected rules use SwiftSyntax; no compiler service or App build is needed.
+# The default statement_position rule needs the installed toolchain's SourceKit.
 # Discover the root config here: --config disables directory-specific overrides.
 diagnostics=$(mktemp)
 trap 'rm -f "$diagnostics"' EXIT
 result=0
-"$binary" lint --strict --no-cache --disable-sourcekit --reporter "$reporter" \
+"$binary" lint --strict --no-cache --reporter "$reporter" \
   2> "$diagnostics" || result=$?
 cat "$diagnostics" >&2
 if [[ "$result" -ne 0 ]]; then

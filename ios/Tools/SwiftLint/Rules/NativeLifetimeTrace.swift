@@ -230,8 +230,9 @@ final class NativeLifetimeTrace {
         + results.map { result in
           var result = result
           if result.exit == .breakLoop || result.exit == .continueLoop { result.exit = .normal }
-          result.values = path.values.merging(result.values.filter { $0.key.hasPrefix("self.") }) {
-            _, new in new
+          result.values = path.values.merging(
+            result.values.filter { $0.key.hasPrefix("self.") }
+          ) { _, new in new
           }
           result.locals = path.locals
           result.immutable = path.immutable

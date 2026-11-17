@@ -339,7 +339,7 @@ private struct GeneratedResultFile: Sendable {
   let filename: String
   let type: String
   let bytes: Data
-  var artifactKind: String? = nil
+  var artifactKind: String?
 }
 
 private final class GeneratedResultFixture: Sendable {
@@ -469,7 +469,7 @@ private final class GeneratedResultFixture: Sendable {
 
       Read [the PDF brief](/artifacts/pdf0000001.pdf), or visit [the reference](https://example.com).
       """
-    let payload = String(decoding: try JSONEncoder().encode(["content": message]), as: UTF8.self)
+    let payload = try JSONEncoder().encodeString(["content": message])
     let row = """
       {"id":"\(ConversationHistoryFixture.id(1))","chatThreadId":"\(ConversationHistoryFixture.threadID)","runId":null,"revokesEventId":null,"contextType":null,"contextId":null,"runEventSequenceNumber":null,"runEventId":null,"seqId":1,"createdAt":"2026-10-21T00:00:00Z","eventType":"output.message","payload":\(payload)}
       """
@@ -504,8 +504,8 @@ private final class GeneratedResultFixture: Sendable {
         {
           body["previewImageUrl"] = "/artifacts/poster0001.png"
         }
-        return ChatHTTPResponse(
-          body: String(decoding: try JSONEncoder().encode(body), as: UTF8.self))
+        return try ChatHTTPResponse(
+          json: body)
       })
     return GeneratedResultFixture(
       history: history, state: state, message: message, files: files)

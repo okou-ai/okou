@@ -31,8 +31,8 @@ final class SidebarDraftStore {
     guard !closed, !Task.isCancelled else { return }
     do {
       if subscription == nil {
-        subscription = try resources.store.watch(resources.sidebarDraftThreadIDs) {
-          [weak self] in self?.confirm()
+        subscription = try resources.store.watch(resources.sidebarDraftThreadIDs) { [weak self] in
+          self?.confirm()
         }
         confirm()
       }

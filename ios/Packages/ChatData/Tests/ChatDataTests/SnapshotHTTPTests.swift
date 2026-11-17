@@ -200,8 +200,9 @@ private final class SnapshotLoopbackServer: Sendable {
   }
 
   private func receive(_ connection: NWConnection, buffer: Data) {
-    connection.receive(minimumIncompleteLength: 1, maximumLength: 16_384) {
-      [weak self] data, _, complete, error in
+    connection.receive(
+      minimumIncompleteLength: 1, maximumLength: 16_384
+    ) { [weak self] data, _, complete, error in
       guard let self else {
         connection.cancel()
         return

@@ -209,12 +209,10 @@ struct OkouStatusTitle: View {
   }
 
   private func summary(_ parts: ArraySlice<Text>) -> Text {
-    var result = Text("")
-    for (index, part) in parts.enumerated() {
-      if index > 0 { result = result + Text(" · ").foregroundStyle(OkouColor.quietMark) }
-      result = result + part
+    guard let first = parts.first else { return Text("") }
+    return parts.dropFirst().reduce(first) { combined, part in
+      combined + Text(" · ").foregroundStyle(OkouColor.quietMark) + part
     }
-    return result
   }
 }
 

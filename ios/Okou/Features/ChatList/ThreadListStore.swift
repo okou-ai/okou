@@ -730,8 +730,9 @@ final class ThreadListStore {
   ) async -> Bool {
     guard canMute(id), !Task.isCancelled else { return false }
     readRevision += 1
-    return await updateThread(id, includingIndicators: true, onFailure: onFailure) {
-      [self, commands] in
+    return await updateThread(
+      id, includingIndicators: true, onFailure: onFailure
+    ) { [self, commands] in
       // Replies suppressed while muted must not reappear as unread. Keep the chat
       // muted if marking read fails; retry can safely repeat both operations.
       if !muted && markRead {

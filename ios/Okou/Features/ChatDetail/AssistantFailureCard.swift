@@ -93,7 +93,7 @@ struct AssistantFailureCard: View {
   let state: AssistantFailureState
   @Bindable var conversation: ConversationStore
   /// The provider's own error line from the same run, shown instead of the generic description.
-  var providerMessage: String? = nil
+  var providerMessage: String?
   @State private var showsModels = false
 
   private var copy: (title: String, description: String) {

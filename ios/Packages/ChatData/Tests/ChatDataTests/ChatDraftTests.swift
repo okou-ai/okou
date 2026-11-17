@@ -67,8 +67,8 @@ final class ChatDraftTests: XCTestCase {
         writes.withLock { $0[path] = saved }
         return ChatHTTPResponse(status: 204, body: "")
       }
-      return ChatHTTPResponse(
-        body: String(decoding: try JSONEncoder().encode(draft), as: UTF8.self))
+      return try ChatHTTPResponse(
+        json: draft)
     }
     let repository = ChatDraftRepository(client: fixture.client)
     for target in [ChatDraftTarget.agent("agent"), .thread("thread")] {

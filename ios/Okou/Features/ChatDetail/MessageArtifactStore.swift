@@ -15,7 +15,7 @@ final class MessageArtifactStore {
     let artifact: ChatArtifact
     let thumbnail: Data?
     /// A website's own title, read while drawing its cover.
-    var title: String? = nil
+    var title: String?
   }
 
   private(set) var preview: MessageArtifactPreviewRead?

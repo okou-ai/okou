@@ -45,8 +45,8 @@ final class MessageUnitMeasurements {
 
     func commit() {
       guard generation == cache.generation else { return }
-      for (key, size) in observed {
-        if cache.sizes.updateValue(size, forKey: key) == nil { cache.order.append(key) }
+      for (key, size) in observed where cache.sizes.updateValue(size, forKey: key) == nil {
+        cache.order.append(key)
       }
       while cache.order.count > 128 { cache.sizes.removeValue(forKey: cache.order.removeFirst()) }
     }
@@ -54,5 +54,5 @@ final class MessageUnitMeasurements {
 }
 
 extension EnvironmentValues {
-  @Entry var messageUnitMeasurement: MessageUnitMeasurements.Session? = nil
+  @Entry var messageUnitMeasurement: MessageUnitMeasurements.Session?
 }

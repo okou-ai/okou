@@ -7,7 +7,7 @@ struct UserMessageView: View {
   let webURL: URL
   let viewer: MessageAttachmentStore
   let loadsAttachments: Bool
-  var sendTransition: ConversationSendTransition? = nil
+  var sendTransition: ConversationSendTransition?
 
   private var document: ChatUserMessage {
     message.userMessage ?? ChatUserMessage(parts: [.init(type: "text", text: message.text)])

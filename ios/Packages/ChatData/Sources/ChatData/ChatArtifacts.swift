@@ -9,7 +9,7 @@ public struct ChatArtifactResolution: Sendable {
   public let previewImageURL: URL?
   public let expiresAt: Date?
   /// Canonical identity supplied by the authority, including files reached through a reference.
-  public var fileID: String? = nil
+  public var fileID: String?
 }
 
 /// Read-only artifact access through the existing API and credential-free storage transport.

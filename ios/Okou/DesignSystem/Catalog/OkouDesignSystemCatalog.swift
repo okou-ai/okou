@@ -9,7 +9,7 @@
   /// `DesignSystem/` follow the same groups.
   struct OkouDesignSystemCatalog: View {
     /// Closes whatever pushed the catalog (Settings), from the index and from every page.
-    var close: (() -> Void)? = nil
+    var close: (() -> Void)?
     /// `--composer-preview` opens the Chat page, where the composer is, on launch.
     @State private var opensComposerPreview = ProcessInfo.processInfo.arguments.contains(
       "--composer-preview")

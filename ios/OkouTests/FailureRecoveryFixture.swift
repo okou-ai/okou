@@ -127,9 +127,8 @@ final class FailureRecoveryFixture: Sendable {
         }
         return ChatHTTPResponse(body: #"{"cancellationRecoveryPending":false}"#)
       case threadPath + "/draft":
-        return ChatHTTPResponse(
-          body: String(
-            decoding: try JSONEncoder().encode(state.value.withLock { $0.draft }), as: UTF8.self))
+        return try ChatHTTPResponse(
+          json: state.value.withLock { $0.draft })
       case "/api/web/file-url":
         return ChatHTTPResponse(body: #"{"url":"https://file.example.invalid/draft"}"#)
       case "/api/uploads/prepare":

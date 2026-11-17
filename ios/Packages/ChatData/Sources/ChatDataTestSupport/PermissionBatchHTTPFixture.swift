@@ -112,21 +112,20 @@ public final class PermissionBatchHTTPFixture: Sendable {
             "computerUseHostId": NSNull(), "cloudBrowserEnabled": false,
           ])
         }
-        for slug in ["gmail", "google-drive"] {
-          if path == "/api/connector-catalog/\(slug)/permissions" {
-            if let status = value.metadataStatus[slug], status != 200 {
-              return Self.error(status)
-            }
-            return Self.response([
-              "permissions": [
-                "connectorSlug": slug, "label": slug == "gmail" ? "Gmail" : "Google Drive",
-                "permissions": Self.items.filter { $0["connectorSlug"] == slug }.map {
-                  ["name": $0["permission"]!, "description": "Use \($0["permission"]!)"]
-                },
-                "defaultPolicy": ["permissionDefault": "ask", "unknownPolicy": "ask"],
-              ]
-            ])
+        for slug in ["gmail", "google-drive"]
+        where path == "/api/connector-catalog/\(slug)/permissions" {
+          if let status = value.metadataStatus[slug], status != 200 {
+            return Self.error(status)
           }
+          return Self.response([
+            "permissions": [
+              "connectorSlug": slug, "label": slug == "gmail" ? "Gmail" : "Google Drive",
+              "permissions": Self.items.filter { $0["connectorSlug"] == slug }.map {
+                ["name": $0["permission"]!, "description": "Use \($0["permission"]!)"]
+              },
+              "defaultPolicy": ["permissionDefault": "ask", "unknownPolicy": "ask"],
+            ]
+          ])
         }
         if path == "/api/user-permission-grants" {
           if value.grantReadStatus != 200 { return Self.error(value.grantReadStatus) }

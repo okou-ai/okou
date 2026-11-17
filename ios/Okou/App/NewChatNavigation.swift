@@ -54,7 +54,7 @@ final class NewChatRequests {
 }
 
 extension EnvironmentValues {
-  @Entry var newChatActivation: UUID? = nil
+  @Entry var newChatActivation: UUID?
 }
 
 struct NewChatNavigation: ViewModifier {

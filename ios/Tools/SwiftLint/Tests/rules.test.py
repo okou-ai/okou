@@ -720,6 +720,25 @@ CASES = [
 
 
 class NativeRuleTests(unittest.TestCase):
+    def test_pinned_defaults_are_enabled(self):
+        result = subprocess.run(
+            [BINARY, "rules", "--config", str(IOS / ".swiftlint.yml")],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertNotIn("warning:", result.stderr, result.stderr)
+        defaults = {}
+        for line in result.stdout.splitlines():
+            if not line.startswith("|"):
+                continue
+            columns = [value.strip() for value in line.strip("|").split("|")]
+            identifier, opt_in, _, enabled = columns[:4]
+            if opt_in == "no" and identifier != "custom_rules":
+                defaults[identifier] = enabled
+        self.assertEqual(len(defaults), 101)
+        self.assertTrue(all(value == "yes" for value in defaults.values()), defaults)
+
     def lint(self, root, source, rule, filename="Screen.swift"):
         path = root / filename
         path.parent.mkdir(parents=True, exist_ok=True)

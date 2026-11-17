@@ -169,8 +169,7 @@ final class ChatComposerPasteTests: XCTestCase {
     let provider = NSItemProvider()
     provider.registerFileRepresentation(
       forTypeIdentifier: UTType.png.identifier, fileOptions: [], visibility: .all
-    ) {
-      callback in
+    ) { callback in
       started.fulfill()
       return delivery.hold(onCancel: { cancelled.fulfill() }) {
         callback(file, false, nil)
@@ -210,15 +209,13 @@ final class ChatComposerPasteTests: XCTestCase {
     let provider = NSItemProvider()
     provider.registerFileRepresentation(
       forTypeIdentifier: UTType.png.identifier, fileOptions: [], visibility: .all
-    ) {
-      callback in
+    ) { callback in
       callback(file, false, nil)
       return Progress(totalUnitCount: 1)
     }
     provider.registerDataRepresentation(
       forTypeIdentifier: UTType.utf8PlainText.identifier, visibility: .all
-    ) {
-      callback in
+    ) { callback in
       started.fulfill()
       return delivery.hold {
         callback(Data("late text".utf8), nil)
@@ -261,8 +258,7 @@ final class ChatComposerPasteTests: XCTestCase {
     let provider = NSItemProvider()
     provider.registerFileRepresentation(
       forTypeIdentifier: UTType.png.identifier, fileOptions: [], visibility: .all
-    ) {
-      callback in
+    ) { callback in
       started.fulfill()
       return delivery.hold {
         callback(file, false, nil)
@@ -500,8 +496,9 @@ private final class PasteDiagnosticItemProvider: NSItemProvider, @unchecked Send
     completionHandler: @escaping @Sendable (URL?, Bool, Error?) -> Void
   ) -> Progress {
     record("file request invoked: \(typeIdentifier)")
-    let progress = super.loadInPlaceFileRepresentation(forTypeIdentifier: typeIdentifier) {
-      [weak self] url, inPlace, error in
+    let progress = super.loadInPlaceFileRepresentation(
+      forTypeIdentifier: typeIdentifier
+    ) { [weak self] url, inPlace, error in
       self?.record(
         "file callback entered: url=\(url != nil), inPlace=\(inPlace), error=\(error != nil)")
       defer { self?.record("file callback returned") }

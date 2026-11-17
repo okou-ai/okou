@@ -77,7 +77,7 @@ public final class ConnectorAccessHTTPFixture: Sendable {
       : Target(kind: "builtin", connectorSlug: "slack", customConnectorId: nil)
   }
   private static func json<T: Encodable>(_ value: T) throws -> String {
-    String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
+    try JSONEncoder().encodeString(value)
   }
   private static func account(_ id: String, state: State) -> String {
     F.account(

@@ -73,8 +73,9 @@ public struct ChatBatchPermissions: Sendable {
     }
     let permissions = ChatPermissions(client: client)
     let slugs = Set(action.items.map(\.connectorSlug))
-    let groups = try await withThrowingTaskGroup(of: ChatPermissionBatchSnapshot.Group.self) {
-      tasks in
+    let groups = try await withThrowingTaskGroup(
+      of: ChatPermissionBatchSnapshot.Group.self
+    ) { tasks in
       for slug in slugs {
         tasks.addTask {
           let metadata: ChatPermissionMetadata?

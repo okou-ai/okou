@@ -141,8 +141,9 @@ final class AuthenticationHTTPFixture: Sendable {
   }
 
   private func receive(_ connection: NWConnection, bytes: Data) {
-    connection.receive(minimumIncompleteLength: 1, maximumLength: 16_384) {
-      [weak self] data, _, complete, error in
+    connection.receive(
+      minimumIncompleteLength: 1, maximumLength: 16_384
+    ) { [weak self] data, _, complete, error in
       guard let self else {
         connection.cancel()
         return
@@ -178,8 +179,9 @@ final class AuthenticationHTTPFixture: Sendable {
         let responded = Mutex(false)
         // Observe the client's original HTTP cancellation while its server reply is held.
         // Normal responses mark completion before closing their connection.
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 1) {
-          [weak self] _, _, complete, error in
+        connection.receive(
+          minimumIncompleteLength: 1, maximumLength: 1
+        ) { [weak self] _, _, complete, error in
           if complete || error != nil, !responded.withLock({ $0 }) {
             self?.pendingRequestDisconnected.withLock { $0 }?(received)
           }

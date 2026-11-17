@@ -96,8 +96,9 @@
             dismiss: {}
           ) { _ in
             VStack(alignment: .leading, spacing: 0) {
-              ForEach(["iOS CCState", "storage 退役", "📅 iOS CI", "Axiom review"], id: \.self) {
-                title in
+              ForEach(
+                ["iOS CCState", "storage 退役", "📅 iOS CI", "Axiom review"], id: \.self
+              ) { title in
                 OkouSuggestionRow(title: title)
                   .padding(.horizontal, OkouSpace.lg)
                   .padding(.vertical, OkouSpace.sm)

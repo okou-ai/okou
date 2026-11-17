@@ -54,8 +54,9 @@ enum ComposerAttributedDocument {
 
   static func inlineDocument(_ value: NSAttributedString) -> ChatDraftDocument {
     var parts: [MessageJSON] = []
-    value.enumerateAttribute(.attachment, in: NSRange(location: 0, length: value.length)) {
-      attachment, range, _ in
+    value.enumerateAttribute(
+      .attachment, in: NSRange(location: 0, length: value.length)
+    ) { attachment, range, _ in
       if let attachment = attachment as? ComposerReferenceAttachment {
         parts.append(attachment.part)
       } else {

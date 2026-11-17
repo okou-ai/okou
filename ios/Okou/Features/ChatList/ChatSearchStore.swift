@@ -125,8 +125,7 @@ final class ChatSearchStore {
 
   // Keep Task-producing closures out of lazy initializers so Swift can resolve actor defaults.
   private func makeDebouncedKeyword() -> Computed<Task<String?, Error>> {
-    Computed {
-      [weak self] get, options in
+    Computed { [weak self] get, options in
       guard let self else { throw CancellationError() }
       let request = try get(queryRequest)
       let signal = options.signal
@@ -147,8 +146,7 @@ final class ChatSearchStore {
   @ObservationIgnored lazy var messagesValue = makeMessagesValue()
 
   private func makeMessagesValue() -> Computed<Task<[ChatSearchResult], Error>> {
-    Computed {
-      [weak self] get, options in
+    Computed { [weak self] get, options in
       guard let self else { throw CancellationError() }
       let keyword = try get(debouncedKeyword)
       let task: Task<[ChatSearchResult], Error> = resourceTask(options.signal) { [sync] in
@@ -165,8 +163,7 @@ final class ChatSearchStore {
   @ObservationIgnored lazy var artifactsValue = makeArtifactsValue()
 
   private func makeArtifactsValue() -> Computed<Task<[ChatSearchArtifact], Error>> {
-    Computed {
-      [weak self] get, options in
+    Computed { [weak self] get, options in
       guard let self else { throw CancellationError() }
       let keyword = try get(debouncedKeyword)
       let task: Task<[ChatSearchArtifact], Error> = resourceTask(options.signal) { [sync] in

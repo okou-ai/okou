@@ -55,7 +55,7 @@ final class QuotedFollowupTests: XCTestCase {
 
   func testNativeQuoteActionFocusesANoteWithUndoAndMarkedText() async throws {
     let text = "👋 **First paragraph.**\n\nSelected 🌷 é passage.\n\nLast paragraph."
-    let payload = String(decoding: try JSONEncoder().encode(["content": text]), as: UTF8.self)
+    let payload = try JSONEncoder().encodeString(["content": text])
     let fixture = ConversationHistoryFixture(rows: [
       """
       {"id":"\(ConversationHistoryFixture.id(1))","chatThreadId":"\(ConversationHistoryFixture.threadID)","seqId":1,"eventType":"output.message","createdAt":"2026-10-20T10:00:00Z","payload":\(payload)}
@@ -142,7 +142,7 @@ final class QuotedFollowupTests: XCTestCase {
 
   func testQuoteCommandRejectsForeignStaleAndClosedSourcesBeforeSending() async throws {
     let text = "Café status. Review the final evidence."
-    let payload = String(decoding: try JSONEncoder().encode(["content": text]), as: UTF8.self)
+    let payload = try JSONEncoder().encodeString(["content": text])
     let fixture = ConversationHistoryFixture(rows: [
       """
       {"id":"\(ConversationHistoryFixture.id(1))","chatThreadId":"\(ConversationHistoryFixture.threadID)","seqId":1,"eventType":"output.message","createdAt":"2026-10-20T10:00:00Z","payload":\(payload)}

@@ -34,8 +34,7 @@
           HStack(spacing: OkouSpace.sm) {
             ForEach(
               Array([OkouSwipeTint.readState, OkouSwipeTint.neutral].enumerated()), id: \.offset
-            ) {
-              index, tint in
+            ) { index, tint in
               Label(
                 index == 0 ? "Mark as unread" : "Archive",
                 okouSymbol: index == 0 ? "mail" : "archive"

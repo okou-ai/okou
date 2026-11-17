@@ -74,8 +74,9 @@ actor AttachmentFileImporter {
           }?.resume(throwing: CancellationError())
           return
         }
-        let loading = provider.loadInPlaceFileRepresentation(forTypeIdentifier: identifier) {
-          url, _, error in
+        let loading = provider.loadInPlaceFileRepresentation(
+          forTypeIdentifier: identifier
+        ) { url, _, error in
           // Cancellation can race a successful provider callback. Claim the
           // result before copying so neither files nor continuations are duplicated.
           guard

@@ -471,8 +471,9 @@ final class ChatSearchUnreadTests: XCTestCase {
     }
     await fulfillment(of: [started], timeout: 2)
     let confirmedRead = Task {
-      for await unread in Observations({ store.list.threads.first?.isUnread }) {
-        if unread == false { return }
+      for await unread in Observations({ store.list.threads.first?.isUnread }) where unread == false
+      {
+        return
       }
     }
     addTeardownBlock {

@@ -13,7 +13,7 @@ final class ComposerDraftStore {
     var baseline: ComposerDraft?
     var dirty: Bool
     var cleared: Bool
-    var consumedVoiceID: UUID? = nil
+    var consumedVoiceID: UUID?
   }
 
   var text: String {

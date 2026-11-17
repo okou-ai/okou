@@ -15,6 +15,14 @@ public struct ChatHTTPResponse: Sendable {
     self.body = body
     self.headers = headers
   }
+
+  public init<Value: Encodable>(
+    status: Int = 200, json: Value,
+    headers: [String: String] = ["Content-Type": "application/json"]
+  ) throws {
+    let body = try JSONEncoder().encodeString(json)
+    self.init(status: status, body: body, headers: headers)
+  }
 }
 
 /// HTTP boundary fixture. Production decoding, pagination, and commands remain real.
@@ -86,14 +94,14 @@ private final class ChatFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     super.init(request: request, cachedResponse: cachedResponse, client: client)
   }
 
-  override class func canInit(with request: URLRequest) -> Bool {
+  override static func canInit(with request: URLRequest) -> Bool {
     guard let url = request.url, let scheme = url.scheme, ["http", "https"].contains(scheme) else {
       return false
     }
     return !ChatFileHTTPServer.owns(url)
   }
 
-  override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+  override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
   override func startLoading() {
     // Retain request ownership from protocol creation, before deferred loading

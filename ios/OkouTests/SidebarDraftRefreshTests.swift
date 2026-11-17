@@ -212,8 +212,8 @@ private final class SidebarDraftFixture: Sendable {
           body: "{\"draftThreadIds\":\(present ? "[\"\(threadID)\",\"\(otherID)\"]" : "[]")}")
       case "/api/chat-threads/\(threadID)/draft":
         let draft = state.values.withLock { $0.draft }
-        return ChatHTTPResponse(
-          body: String(decoding: try JSONEncoder().encode(draft), as: UTF8.self))
+        return try ChatHTTPResponse(
+          json: draft)
       case "/api/chat-threads/\(threadID)":
         if request.httpMethod == "PATCH" {
           let draft = try JSONDecoder().decode(ComposerDraft.self, from: chatRequestBody(request))

@@ -179,9 +179,9 @@ public struct AgentRecord: Codable, Equatable, Sendable {
   public let displayName: String?
   public let avatarUrl: String?
   /// The agent's responsibility, as written on its profile.
-  public var description: String? = nil
+  public var description: String?
   /// "public" (shared with the workspace) or "private".
-  public var visibility: String? = nil
+  public var visibility: String?
 }
 
 public struct SidebarFeatureSwitches: Codable, Sendable {

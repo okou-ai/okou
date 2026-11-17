@@ -834,8 +834,8 @@ private final class DraftServer: Sendable {
       }
       let remote = state.value.withLock { $0.remote }
       await onRead()
-      return ChatHTTPResponse(
-        body: String(decoding: try JSONEncoder().encode(remote), as: UTF8.self))
+      return try ChatHTTPResponse(
+        json: remote)
     }
   }
   deinit { try? FileManager.default.removeItem(at: directory) }

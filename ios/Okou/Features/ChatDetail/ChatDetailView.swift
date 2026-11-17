@@ -5,7 +5,7 @@ import Textual
 struct ChatDetailView: View {
   @Bindable var conversation: ConversationStore
   let agents: ThreadListStore?
-  var didSend: (@MainActor () async -> Void)? = nil
+  var didSend: (@MainActor () async -> Void)?
   let topContentInset: CGFloat
   let mentionSource: ComposerMentionSource?
   let onFirstMessagePresented: (@MainActor (String) -> Void)?

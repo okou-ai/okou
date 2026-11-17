@@ -240,7 +240,7 @@ final class ProjectIncrementalSyncTests: XCTestCase {
         if page.status == 426 {
           XCTAssertEqual((error as? APIClientError)?.statusCode, 426)
         } else {
-          guard let contract = error as? ChatError, case .invalidContract(_) = contract else {
+          guard let contract = error as? ChatError, case .invalidContract = contract else {
             return XCTFail("Expected the Project stream contract error, got \(error)")
           }
         }

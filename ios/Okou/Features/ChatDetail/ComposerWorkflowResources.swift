@@ -71,21 +71,21 @@ final class ComposerWorkflowResources {
     }
   }
 
-  lazy var matches: Computed<Task<Matches, Error>> = computedTask {
-    [request, filter, candidates] get, options in
-    let request = try get(request)
-    let filter = try get(filter)
-    let pending = try get(candidates)
-    let signal = options.signal
-    let workflows = try await pending.value
-    try Task.checkCancellation()
-    try signal.checkCancellation()
-    let values =
-      filter.query.map {
-        ComposerWorkflowSearch.matches(workflows, query: $0, recent: filter.recent)
-      } ?? []
-    return Matches(requestID: request?.id, query: filter.query, values: values)
-  }
+  lazy var matches: Computed<Task<Matches, Error>> =
+    computedTask { [request, filter, candidates] get, options in
+      let request = try get(request)
+      let filter = try get(filter)
+      let pending = try get(candidates)
+      let signal = options.signal
+      let workflows = try await pending.value
+      try Task.checkCancellation()
+      try signal.checkCancellation()
+      let values =
+        filter.query.map {
+          ComposerWorkflowSearch.matches(workflows, query: $0, recent: filter.recent)
+        } ?? []
+      return Matches(requestID: request?.id, query: filter.query, values: values)
+    }
 
   func update(query: String, recent: [String]) {
     perform(.filter(Filter(query: query, recent: recent)))

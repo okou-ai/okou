@@ -150,8 +150,9 @@ final class RealtimeHTTPFixture: Sendable {
   }
 
   private func receive(_ connection: NWConnection, buffer: Data, websocket: Bool) {
-    connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) {
-      [weak self] data, _, complete, error in
+    connection.receive(
+      minimumIncompleteLength: 1, maximumLength: 65_536
+    ) { [weak self] data, _, complete, error in
       guard let self, !state.withLock({ $0.closed }) else {
         connection.cancel()
         return

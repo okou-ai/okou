@@ -9,7 +9,7 @@ struct MessageActionBar: View {
   let text: String
   let chatURL: URL
   /// Creates a share link for this answer and the request that led to it.
-  var shareLink: ((ChatShareAudience) async throws -> URL)? = nil
+  var shareLink: ((ChatShareAudience) async throws -> URL)?
   @State private var copied = false
   @State private var copyCount = 0
   @State private var sharing = false

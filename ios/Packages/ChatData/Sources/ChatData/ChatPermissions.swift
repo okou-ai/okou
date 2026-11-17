@@ -75,10 +75,9 @@ public struct ChatPermissionMetadata: Decodable, Sendable {
       return grant.action == .allow ? .allow : .deny
     }
     if permission == "__unknown__" { return defaultPolicy.unknownPolicy }
-    for policy: Policy in [.ask, .deny, .allow] {
-      if defaultPolicy.permissionOverrides?[policy.rawValue]?.contains(permission) == true {
-        return policy
-      }
+    for policy: Policy in [.ask, .deny, .allow]
+    where defaultPolicy.permissionOverrides?[policy.rawValue]?.contains(permission) == true {
+      return policy
     }
     return defaultPolicy.permissionDefault
   }
