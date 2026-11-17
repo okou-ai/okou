@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{fmt, io};
 
 use guest_contracts::file_write::WRITE_FILE_REQUEST_DEADLINE;
@@ -11,12 +11,14 @@ pub use guest_contracts::file_write::{
 use guest_control_proto::{
     ExecTermination, MSG_ERROR, MSG_WRITE_FILE_RESULT, MSG_WRITE_FILES_RESULT,
 };
+use sandbox::FileWriteRequestTiming;
 use shell_quote::quote_shell_arg;
 
 use crate::{
     CompositeNormalOperation, ExecCaptureRequest, ExecOperationResult, ExecOwnedCapturedOutput,
     FrameWriteObserver, GuestControlClient, RequestTimeoutError, RequestTimeoutStage, Shared,
     exec_operation, exec_operation::ExecOperationWaitOutcome,
+    normal_request_on_shared_with_timing_frame_builder,
     normal_request_on_shared_with_write_observer_frame_builder,
     request_on_shared_with_composite_operation_and_observer_frame_builder,
 };
@@ -657,24 +659,57 @@ impl GuestControlClient {
         files: &[WriteFileEntry<'_>],
         write_observer: FrameWriteObserver,
     ) -> io::Result<()> {
+        self.write_files_observed(files, write_observer, None).await
+    }
+
+    /// Write the same ordinary batch with fixed, content-free Host phases.
+    /// The fresh record retains completed phases on returned errors; timing
+    /// does not alter validation, gates, the deadline or cancellation ownership.
+    pub async fn write_files_with_timing(
+        &self,
+        files: &[WriteFileEntry<'_>],
+        timing: &mut FileWriteRequestTiming,
+    ) -> io::Result<()> {
+        *timing = FileWriteRequestTiming::default();
+        self.write_files_observed(files, FrameWriteObserver::default(), Some(timing))
+            .await
+    }
+
+    async fn write_files_observed(
+        &self,
+        files: &[WriteFileEntry<'_>],
+        write_observer: FrameWriteObserver,
+        mut timing: Option<&mut FileWriteRequestTiming>,
+    ) -> io::Result<()> {
         if files.is_empty() {
             return Ok(());
         }
-        let validated = validate_write_files(files, WriteFilesMode::Ordinary)?;
-        if validated.total_content_len > WRITE_FILES_BATCH_CONTENT_LIMIT {
-            return Err(io::Error::new(
+        let validation_started = timing.as_ref().map(|_| Instant::now());
+        let validated = validate_write_files(files, WriteFilesMode::Ordinary).and_then(|validated| {
+            if validated.total_content_len > WRITE_FILES_BATCH_CONTENT_LIMIT {
+                return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 format!(
                     "write_files batch contains {} content bytes, limit is {WRITE_FILES_BATCH_CONTENT_LIMIT}",
                     validated.total_content_len
                 ),
-            ));
+                ));
+            }
+            Ok(validated)
+        });
+        if validated.is_err()
+            && let (Some(timing), Some(started)) = (timing.as_deref_mut(), validation_started)
+        {
+            timing.validation = Some(started.elapsed());
         }
+        let validated = validated?;
         self.write_validated_files_batch(
             files,
             validated.proto_entries,
             WriteFilesMode::Ordinary,
             write_observer,
+            timing,
+            validation_started,
         )
         .await
     }
@@ -734,6 +769,8 @@ impl GuestControlClient {
             validated.proto_entries,
             WriteFilesMode::Private,
             write_observer,
+            None,
+            None,
         )
         .await
     }
@@ -744,19 +781,33 @@ impl GuestControlClient {
         proto_entries: Vec<guest_control_proto::WriteFileBatchEntry<'_>>,
         mode: WriteFilesMode,
         write_observer: FrameWriteObserver,
+        mut timing: Option<&mut FileWriteRequestTiming>,
+        validation_started: Option<Instant>,
     ) -> io::Result<()> {
-        guest_control_proto::validate_write_files(&proto_entries)
-            .map_err(protocol_invalid_input)?;
+        let validation = guest_control_proto::validate_write_files(&proto_entries)
+            .map_err(protocol_invalid_input);
+        if let (Some(timing), Some(started)) = (timing.as_deref_mut(), validation_started) {
+            timing.validation = Some(started.elapsed());
+        }
+        validation?;
 
+        let path_started = timing.as_ref().map(|_| Instant::now());
         let _path_guards = self
             .file_write_path_locks
             .acquire_shared_many(files.iter().map(|file| file.path))
             .await;
+        if let (Some(timing), Some(started)) = (timing.as_deref_mut(), path_started) {
+            timing.path_lock_wait = Some(started.elapsed());
+        }
+        let gate_started = timing.as_ref().map(|_| Instant::now());
         let _file_write_guard = self.shared.file_write_gate.lock().await;
+        if let (Some(timing), Some(started)) = (timing.as_deref_mut(), gate_started) {
+            timing.file_gate_wait = Some(started.elapsed());
+        }
         let timeout = WRITE_FILE_REQUEST_DEADLINE;
         let sequence = AtomicU32::new(0);
         let write_sequence = &sequence;
-        let resp = normal_request_on_shared_with_write_observer_frame_builder(
+        let resp = normal_request_on_shared_with_timing_frame_builder(
             &self.shared,
             WRITE_FILES_TERMINAL_MSG_TYPES,
             timeout,
@@ -766,6 +817,7 @@ impl GuestControlClient {
                 mode.encode_frame(frame, seq, &proto_entries)
                     .map_err(protocol_invalid_input)
             },
+            timing.as_deref_mut().map(|timing| &mut timing.host),
         )
         .await
         .map_err(|error| {
@@ -776,26 +828,33 @@ impl GuestControlClient {
             )
         })?;
 
-        if resp.msg_type == MSG_ERROR {
-            let msg = guest_control_proto::decode_error(&resp.payload)
+        let decode_started = timing.as_ref().map(|_| Instant::now());
+        let result = (|| {
+            if resp.msg_type == MSG_ERROR {
+                let msg = guest_control_proto::decode_error(&resp.payload)
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+                return Err(write_file_guest_error(msg));
+            }
+
+            if resp.msg_type != MSG_WRITE_FILES_RESULT {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("unexpected response type: 0x{:02X}", resp.msg_type),
+                ));
+            }
+
+            let (success, error) = guest_control_proto::decode_write_files_result(&resp.payload)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-            return Err(write_file_guest_error(msg));
-        }
+            if !success {
+                return Err(write_file_guest_error(error));
+            }
 
-        if resp.msg_type != MSG_WRITE_FILES_RESULT {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("unexpected response type: 0x{:02X}", resp.msg_type),
-            ));
+            Ok(())
+        })();
+        if let (Some(timing), Some(started)) = (timing, decode_started) {
+            timing.host.result_decode = Some(started.elapsed());
         }
-
-        let (success, error) = guest_control_proto::decode_write_files_result(&resp.payload)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-        if !success {
-            return Err(write_file_guest_error(error));
-        }
-
-        Ok(())
+        result
     }
 
     /// Send a single write_file message and validate the response.

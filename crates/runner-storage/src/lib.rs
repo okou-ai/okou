@@ -7,6 +7,7 @@ mod error;
 mod object_download_policy;
 pub mod r2_cache;
 pub mod r2_download;
+mod stage_write_observation;
 pub mod storage_cache;
 pub mod storage_fingerprints;
 pub mod storage_plan;
@@ -23,6 +24,7 @@ pub use object_download_policy::{
     ObjectDownloadRetryBudget, object_download_http_retry_after,
     object_download_transient_transport_kind,
 };
+pub use stage_write_observation::StorageStageWrite;
 pub use telemetry::{SandboxOpRecord, SandboxOpReporter, StorageTelemetry};
 
 #[cfg(any(test, feature = "test-support"))]

@@ -369,6 +369,125 @@ describe("shared SDK ingestion", () => {
     });
   });
 
+  it("preserves staging counts, phase availability and redaction through the webhook", async () => {
+    // Logger-suite exception: exercise the authenticated production webhook;
+    // its validated, allowlisted SDK ingest payload is this suite's boundary.
+    const owned = await publicChatActor(context);
+    const { runId } = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: "observe archive staging",
+    });
+    const { execution } = await owned.runExecution(runId);
+    await owned.run(async () => {
+      const operation = {
+        ts: "2026-11-17T00:00:00Z",
+        action_type: "storage_cache_stage_batch_write",
+        duration_ms: 140,
+        success: true,
+      };
+      const full = {
+        file_count: 2,
+        content_bytes: 42,
+        host_timing: "complete",
+        lock_wait_us: 0,
+        admission_us: 0,
+        validation_us: 1,
+        path_lock_wait_us: 2,
+        file_gate_wait_us: 3,
+        request_setup_us: 4,
+        frame_builder_wait_us: 5,
+        frame_encode_us: 6,
+        writer_wait_us: 7,
+        frame_write_us: 8,
+        response_wait_us: 9,
+        result_decode_us: 10,
+      } as const;
+      const partial = {
+        file_count: 1,
+        content_bytes: 0,
+        host_timing: "partial",
+        admission_us: 0,
+      } as const;
+      const unavailable = {
+        file_count: 1,
+        content_bytes: 0,
+        host_timing: "unavailable",
+      } as const;
+      const fullWithPrivateFields = {
+        ...full,
+        path: "/private/archive",
+        content: "private bytes",
+        archive_url: "https://private.example/?secret=private",
+      };
+      const response = await accept(
+        setupApp({ context, routes: webhooksAgentHealthUsageTelemetryRoutes })(
+          webhookTelemetryContract,
+        ).send({
+          headers: { authorization: `Bearer ${execution.sandboxToken}` },
+          body: {
+            runId,
+            sandboxOperations: [
+              {
+                ...operation,
+                storage_stage_write: fullWithPrivateFields,
+              },
+              { ...operation, success: false, storage_stage_write: partial },
+              { ...operation, storage_stage_write: unavailable },
+            ],
+          },
+        }),
+        [200],
+      );
+      expect(response.body).toStrictEqual({ success: true, id: runId });
+      const base = {
+        _time: operation.ts,
+        source: "sandbox",
+        sandbox_type: "runner",
+        op_type: operation.action_type,
+        duration_ms: 140,
+        success: true,
+        run_id: runId,
+      };
+      const measurements = [
+        {
+          storage_stage_file_count: 2,
+          storage_stage_content_bytes: 42,
+          storage_stage_host_timing: "complete",
+          storage_stage_lock_wait_us: 0,
+          storage_stage_admission_us: 0,
+          storage_stage_validation_us: 1,
+          storage_stage_path_lock_wait_us: 2,
+          storage_stage_file_gate_wait_us: 3,
+          storage_stage_request_setup_us: 4,
+          storage_stage_frame_builder_wait_us: 5,
+          storage_stage_frame_encode_us: 6,
+          storage_stage_writer_wait_us: 7,
+          storage_stage_frame_write_us: 8,
+          storage_stage_response_wait_us: 9,
+          storage_stage_result_decode_us: 10,
+        },
+        {
+          storage_stage_file_count: 1,
+          storage_stage_content_bytes: 0,
+          storage_stage_host_timing: "partial",
+          storage_stage_admission_us: 0,
+          success: false,
+        },
+        {
+          storage_stage_file_count: 1,
+          storage_stage_content_bytes: 0,
+          storage_stage_host_timing: "unavailable",
+        },
+      ];
+      for (const measurement of measurements) {
+        expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
+          "vm0-sandbox-op-log-dev",
+          [{ ...base, ...measurement }],
+        );
+      }
+    });
+  });
+
   it("preserves storage batch measurements through the sandbox-operation SDK transport", async () => {
     // Logger-suite exception: the SDK ingestion record is the subject, and no
     // production read endpoint exposes it. Exercise the real webhook so its
