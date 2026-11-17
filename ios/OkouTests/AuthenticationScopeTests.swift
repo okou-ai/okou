@@ -554,7 +554,9 @@ final class AuthenticationScopeTests: XCTestCase {
   }
 
   func testLateMembershipPageFailureKeepsConfirmedChoicesUntilExplicitRetry() async throws {
-    let (provider, authentication) = try await session()
+    let (provider, authentication) = try await Self.authenticationStep("restore paging session") {
+      try await session()
+    }
     await authentication.refresh()
     let expected = ["org_one"] + (1..<120).map { "org_page_\($0)" }
     provider.state.withLock {
@@ -565,11 +567,13 @@ final class AuthenticationScopeTests: XCTestCase {
     await authentication.refreshWorkspaces()
     XCTAssertEqual(authentication.workspaces.map(\.id), ["org_one"])
     XCTAssertNotNil(authentication.errorMessage)
-    do {
-      try await authentication.switchWorkspace("org_page_119")
-      XCTFail("An incomplete, failed membership page cannot authorize a new workspace")
-    } catch let error as AuthenticationService.AuthenticationError {
-      XCTAssertEqual(error, .workspaceUnavailable)
+    try await Self.authenticationStep("reject unconfirmed workspace") {
+      do {
+        try await authentication.switchWorkspace("org_page_119")
+        XCTFail("An incomplete, failed membership page cannot authorize a new workspace")
+      } catch let error as AuthenticationService.AuthenticationError {
+        XCTAssertEqual(error, .workspaceUnavailable)
+      }
     }
     provider.state.withLock { $0.membershipFailureOffset = nil }
     XCTAssertEqual(authentication.workspaces.map(\.id), ["org_one"])
@@ -579,8 +583,12 @@ final class AuthenticationScopeTests: XCTestCase {
 
     XCTAssertEqual(authentication.workspaces.map(\.id), expected)
     XCTAssertNil(authentication.errorMessage)
-    try await authentication.switchWorkspace("org_page_119")
-    try await assertToken(authentication)
+    try await Self.authenticationStep("activate recovered workspace") {
+      try await authentication.switchWorkspace("org_page_119")
+    }
+    try await Self.authenticationStep("read recovered workspace token") {
+      try await assertToken(authentication)
+    }
   }
 
   func testStoppingAuthenticationSubscriptionCancelsPendingMembershipHTTP() async throws {
@@ -674,10 +682,28 @@ final class AuthenticationScopeTests: XCTestCase {
     provider.state.withLock { configure(&$0) }
     let authentication = try await provider.authentication()
     addTeardownBlock { @MainActor in
-      if authentication.clerk?.session != nil { try await authentication.signOut() }
-      try await Clerk.clearAllKeychainItemsAndWait()
+      try await Self.authenticationStep("sign out fixture session") {
+        if authentication.clerk?.session != nil { try await authentication.signOut() }
+      }
+      try await Self.authenticationStep("clear fixture keychain") {
+        try await Clerk.clearAllKeychainItemsAndWait()
+      }
     }
     return (provider, authentication)
+  }
+
+  private static func authenticationStep<Value>(
+    _ name: String, file: StaticString = #filePath, line: UInt = #line,
+    operation: @MainActor () async throws -> Value
+  ) async throws -> Value {
+    do {
+      return try await operation()
+    } catch {
+      XCTFail(
+        "Authentication step '\(name)' threw \(error); caller cancelled: \(Task.isCancelled)",
+        file: file, line: line)
+      throw error
+    }
   }
 
   private func refreshUntilRequest(
