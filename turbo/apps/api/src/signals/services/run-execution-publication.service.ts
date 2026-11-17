@@ -141,7 +141,7 @@ const signExecutionContentBundles$ = command(
           };
         }),
         ...[
-          ...(args.officialWorkflowBundles ?? []),
+          ...args.officialWorkflowBundles,
           // Selected Workflows take precedence over seed skills at the same path.
           ...args.seedSkillBundles.filter((bundle) => {
             return !workflowMountPaths.has(bundle.mountPath);
@@ -161,7 +161,7 @@ const signExecutionContentBundles$ = command(
     );
     signal.throwIfAborted();
     const templates = await Promise.all(
-      (args.templateGuidanceBundles ?? []).map(async (reference) => {
+      args.templateGuidanceBundles.map(async (reference) => {
         const { ownerKind, templateId, beforeMountPaths, ...bundle } =
           reference;
         return {
@@ -226,6 +226,13 @@ function secretValuesForRunner(
   }
   return secretValues;
 }
+
+type RefreshedExecutionPolicies = Pick<
+  PreparedExecutionContext,
+  "networkPolicies"
+> &
+  Pick<ExecutionContext, "networkPolicyRefreshes">;
+
 const prepareExecutionNetworkPolicyRefreshes$ = command(
   async (
     _context,
@@ -233,9 +240,7 @@ const prepareExecutionNetworkPolicyRefreshes$ = command(
       readonly preparedContext: PreparedExecutionContext;
       readonly networkPolicyInputs: ExecutionNetworkPolicyInputs | null;
     },
-  ): Promise<
-    Pick<ExecutionContext, "networkPolicies" | "networkPolicyRefreshes">
-  > => {
+  ): Promise<RefreshedExecutionPolicies> => {
     const builtinConnectorSlugs = [
       ...new Set(
         args.preparedContext.connectorRuntimeTargets.flatMap((target) => {
@@ -276,10 +281,7 @@ export function executionContextBody(args: {
   readonly reuseKey: string;
   readonly preparedContext: PreparedExecutionContext;
   readonly secretValues: ExecutionContext["secretValues"];
-  readonly refreshedPolicies: Pick<
-    ExecutionContext,
-    "networkPolicies" | "networkPolicyRefreshes"
-  >;
+  readonly refreshedPolicies: RefreshedExecutionPolicies;
 }): BaseExecutionContext {
   const {
     secretValueEnvironmentKeys: _secretValueEnvironmentKeys,
@@ -327,10 +329,7 @@ export const prepareExecutionPublication$ = command(
     signal: AbortSignal,
   ): Promise<{
     readonly secretValues: ExecutionContext["secretValues"];
-    readonly refreshedPolicies: Pick<
-      ExecutionContext,
-      "networkPolicies" | "networkPolicyRefreshes"
-    >;
+    readonly refreshedPolicies: RefreshedExecutionPolicies;
   }> => {
     // Fallible preparation must finish before durable direct dispatch ownership.
     const secretValues = secretValuesForRunner(args.preparedContext);
@@ -351,9 +350,9 @@ export function executionBundleHashes(
   context: PreparedExecutionContext,
 ): string[] {
   return [
-    ...(context.officialWorkflowBundles ?? []),
+    ...context.officialWorkflowBundles,
     ...context.seedSkillBundles,
-    ...(context.templateGuidanceBundles ?? []),
+    ...context.templateGuidanceBundles,
   ].map((bundle) => {
     return bundle.sha256;
   });

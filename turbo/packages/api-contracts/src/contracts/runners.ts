@@ -821,19 +821,17 @@ const storedSkillBundleSchema = contentBundleSchema
  */
 const preparedExecutionContextBaseSchema = object({
   // Exact Official content is frozen at admission.
-  officialWorkflowBundles: array(storedSkillBundleSchema).optional(),
+  officialWorkflowBundles: array(storedSkillBundleSchema),
   // Current authorized Seed references selected during execution preparation.
   seedSkillBundles: array(storedSkillBundleSchema),
   // Current explicitly selected template guidance.
-  templateGuidanceBundles: array(storedTemplateGuidanceBundleSchema).optional(),
+  templateGuidanceBundles: array(storedTemplateGuidanceBundleSchema),
   // API-only intent. No custom Workflow body or attachment is frozen here.
   customWorkflowSelection: object({
     agentId: uuid(),
     automationId: uuid().optional(),
     protectedMountPaths: array(string()),
-  })
-    .strict()
-    .optional(),
+  }).strict(),
   storageMounts: array(storedStorageMountEntrySchema).superRefine(
     uniqueStorageMountPaths,
   ),
@@ -846,7 +844,7 @@ const preparedExecutionContextBaseSchema = object({
   secretValueEnvironmentKeys: array(string()).nullable(),
   // Connector-owned runtime vars used by proxy/firewall template resolution.
   // Run vars stay in agent_runs.vars and merge during execution preparation.
-  vars: record(string(), string()).nullable().optional(),
+  vars: record(string(), string()).nullable(),
   nativeContinuation: nativeContinuationSchema,
   // AES-256-GCM encrypted Record<string, string>. Keys are the runtime secret
   // names used by `${{ secrets.NAME }}`; connector/model-provider keys are env
@@ -854,12 +852,10 @@ const preparedExecutionContextBaseSchema = object({
   encryptedSecrets: string().nullable(),
   // Maps firewall auth secret env aliases (the `NAME` in `${{ secrets.NAME }}`) to
   // their connector or provider owner. Keys are env aliases, not storage secret names.
-  secretConnectorMap: record(string(), string()).nullable().optional(),
+  secretConnectorMap: record(string(), string()).nullable(),
   // Same keys as secretConnectorMap; adds source details when the owner alone
   // is not enough to locate access storage (for example, personal model providers).
-  secretConnectorMetadataMap: secretConnectorMetadataMapSchema
-    .nullable()
-    .optional(),
+  secretConnectorMetadataMap: secretConnectorMetadataMapSchema.nullable(),
   // Preview evaluation escape hatch: bypass preview mock CLIs and use the real
   // agent runtime.
   realAgentInPreview: boolean().optional(),
@@ -870,13 +866,13 @@ const preparedExecutionContextBaseSchema = object({
   apiStartTime: apiStartTimeSchema.optional(),
   // Firewall entries for proxy-side token replacement. Built-ins stay compact;
   // org custom connectors use inline firewall bodies.
-  firewalls: executionFirewallsSchema.optional(),
+  firewalls: executionFirewallsSchema,
   // Per-firewall network policies: which permissions are granted + unknownPolicy
-  networkPolicies: networkPoliciesSchema.optional(),
+  networkPolicies: networkPoliciesSchema,
   // Captured decisions: singleAgent and connectorChatAccountAccess.
   // They must match the admitted token, prompt and connector account choices.
-  featureFlags: record(string(), boolean()).optional(),
-  billableFirewalls: array(string()).optional(),
+  featureFlags: record(string(), boolean()),
+  billableFirewalls: array(string()),
   // Provider the proxy reports model token usage under: a Built-in route's
   // `usage_pricing` provider (possibly an alias of the actual model), else the
   // catalog model id. Billing eligibility is decided from API-owned run context.
@@ -911,7 +907,7 @@ const preparedExecutionContextObjectSchema =
     piLaunchConfig: piLaunchConfigSchema.optional(),
     // Current preference and product default.
     userTimezone: string().optional(),
-    disallowedTools: array(string()).optional(),
+    disallowedTools: array(string()),
   });
 
 export const preparedExecutionContextSchema =
