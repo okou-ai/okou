@@ -177,8 +177,8 @@ class TestOpenAIResponsesSseUsage:
         assert flow.response.status_code == 200
         compressed = brotli.compress(plaintext)
         midpoint = len(compressed) // 2
-        assert response_stream(flow)(compressed[:midpoint]) == compressed[:midpoint]
-        assert response_stream(flow)(compressed[midpoint:]) == compressed[midpoint:]
+        for chunk in (compressed[:midpoint], compressed[midpoint:]):
+            assert response_stream(flow)(chunk) == chunk
         assert (stream_capture.captured_response_stream_body(flow) is not None) is capture_body
 
         webhook = run_response(flow, self._usage_webhook_api)

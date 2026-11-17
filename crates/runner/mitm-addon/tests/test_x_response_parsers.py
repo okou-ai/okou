@@ -535,10 +535,9 @@ class TestXJsonFinalize:
         callback = response_stream(flow)
         midpoint = len(body) // 2
 
-        assert callback(body[:midpoint]) == body[:midpoint]
-        await mitm_addon.responseinspection(flow)
-        assert callback(body[midpoint:]) == body[midpoint:]
-        await mitm_addon.responseinspection(flow)
+        for chunk in (body[:midpoint], body[midpoint:]):
+            assert callback(chunk) == chunk
+            await mitm_addon.responseinspection(flow)
         response_streaming.finalize_connector_response_state(flow)
 
         state = dict(flow.metadata[metadata_keys.X_JSON_STATE])
