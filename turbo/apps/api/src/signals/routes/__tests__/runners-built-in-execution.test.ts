@@ -1,17 +1,22 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "@okouai/api-contracts/contracts/model-provider-firewalls";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
+import { decryptSecretForTests } from "./helpers/encrypt-secret";
 
 const context = testContext();
 const api = createRunsApi(context);
+const firewall = createFirewallApi(context);
+const MANAGED_KEY = "okou-fake-managed-model-key-sentinel-3f9c1e7a";
 const { configureSubscriptionPiModel } = createChatEventsFixture(context);
 
 describe("Runner built-in and personal dispatch", () => {
-  it("dispatches Auto with managed Pi routing and persisted attribution", async () => {
+  it("dispatches managed Auto placeholders and resolves only the Run-owned credential", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const run = await api.createThreadRun(owned.actor, {
@@ -33,6 +38,80 @@ describe("Runner built-in and personal dispatch", () => {
           catalogModel: "auto",
         },
       });
+      if (!input.encryptedSecrets) {
+        throw new Error("Expected the remaining global secret envelope");
+      }
+      expect(JSON.stringify(input)).not.toContain(MANAGED_KEY);
+      expect(decryptSecretForTests(input.encryptedSecrets)).not.toContain(
+        MANAGED_KEY,
+      );
+      expect(input.environment?.OPENAI_API_KEY).toBe(
+        MODEL_PROVIDER_ENV_PLACEHOLDERS.OPENAI_API_KEY,
+      );
+      const authHeaders = {
+        Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
+      };
+      const sandboxHeaders = {
+        authorization: `Bearer ${input.sandboxToken}`,
+      };
+      for (const encryptedSecrets of [
+        input.encryptedSecrets,
+        firewall.encryptedSecretsBody({
+          OPENROUTER_API_KEY: "outdated-envelope-key",
+        }),
+      ]) {
+        const resolved = await firewall.requestFirewallAuth(
+          sandboxHeaders,
+          { encryptedSecrets, authHeaders, firewallBillable: true },
+          [200],
+        );
+        expect(resolved.body).toMatchObject({
+          headers: { Authorization: `Bearer ${MANAGED_KEY}` },
+          resolvedSecrets: ["OPENROUTER_API_KEY"],
+          expiresAt: expect.any(Number),
+        });
+      }
+      const mapped = await firewall.requestFirewallAuth(
+        sandboxHeaders,
+        {
+          encryptedSecrets: input.encryptedSecrets,
+          authHeaders,
+          secretConnectorMap: { OPENROUTER_API_KEY: "codex-oauth-token" },
+          secretConnectorMetadataMap: {
+            OPENROUTER_API_KEY: {
+              sourceType: "model-provider",
+              sourceId: run.runId,
+              sourceUserId: owned.actor.userId,
+              metadataKey: "codex-oauth-token",
+            },
+          },
+        },
+        [424],
+      );
+      expect(mapped.body).toMatchObject({
+        error: { code: "CONNECTOR_NOT_CONFIGURED" },
+      });
+      const unpairedMetadata = await firewall.requestFirewallAuth(
+        sandboxHeaders,
+        {
+          encryptedSecrets: firewall.encryptedSecretsBody({
+            OPENROUTER_API_KEY: "unowned-envelope-key",
+          }),
+          authHeaders,
+          secretConnectorMetadataMap: {
+            OPENROUTER_API_KEY: {
+              sourceType: "model-provider",
+              sourceId: run.runId,
+              sourceUserId: owned.actor.userId,
+              metadataKey: "codex-oauth-token",
+            },
+          },
+        },
+        [424],
+      );
+      expect(unpairedMetadata.body).toMatchObject({
+        error: { code: "CONNECTOR_NOT_CONFIGURED" },
+      });
       await expect(api.readRun(owned.actor, run.runId)).resolves.toMatchObject({
         status: "running",
         source: {
@@ -41,6 +120,12 @@ describe("Runner built-in and personal dispatch", () => {
           model: "auto",
         },
       });
+      await api.requestCancelRun(owned.actor, run.runId, [200]);
+      await firewall.requestFirewallAuth(
+        sandboxHeaders,
+        { encryptedSecrets: input.encryptedSecrets, authHeaders },
+        [403],
+      );
     });
   });
 
@@ -80,7 +165,7 @@ describe("Runner built-in and personal dispatch", () => {
   it("dispatches a captured personal Pi subscription without built-in billing", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
-      await configureSubscriptionPiModel(owned.actor);
+      const { oauth } = await configureSubscriptionPiModel(owned.actor);
       const run = await api.createThreadRun(owned.actor, {
         agentId: owned.agentId,
         prompt: "Use my own subscription",
@@ -101,6 +186,48 @@ describe("Runner built-in and personal dispatch", () => {
       await expect(api.readRun(owned.actor, run.runId)).resolves.toMatchObject({
         status: "running",
         source: { providerType: "codex-oauth-token", model: "gpt-6-luna" },
+      });
+      if (
+        !input.encryptedSecrets ||
+        !input.secretConnectorMap ||
+        !input.secretConnectorMetadataMap
+      ) {
+        throw new Error(
+          "Expected the personal model's envelope and account references",
+        );
+      }
+      const personal = await firewall.requestFirewallAuth(
+        { authorization: `Bearer ${input.sandboxToken}` },
+        {
+          encryptedSecrets: input.encryptedSecrets,
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
+          },
+          secretConnectorMap: input.secretConnectorMap,
+          secretConnectorMetadataMap: input.secretConnectorMetadataMap,
+        },
+        [200],
+      );
+      expect(personal.body).toMatchObject({
+        headers: {
+          Authorization: `Bearer ${oauth.oauthTokenResponses[0]?.access_token}`,
+        },
+        resolvedSecrets: ["CHATGPT_ACCESS_TOKEN"],
+      });
+      const unavailable = await firewall.requestFirewallAuth(
+        { authorization: `Bearer ${input.sandboxToken}` },
+        {
+          encryptedSecrets: firewall.encryptedSecretsBody({
+            OPENROUTER_API_KEY: MANAGED_KEY,
+          }),
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
+          },
+        },
+        [424],
+      );
+      expect(unavailable.body).toMatchObject({
+        error: { code: "CONNECTOR_NOT_CONFIGURED" },
       });
     });
   });

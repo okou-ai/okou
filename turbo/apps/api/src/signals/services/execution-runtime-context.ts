@@ -339,7 +339,6 @@ function createExecutionModel(input$: ExecutionInput$) {
         .select({
           id: builtInModelKeys.id,
           vendor: builtInModelKeys.vendor,
-          apiKey: builtInModelKeys.apiKey,
         })
         .from(builtInModelKeys)
         .where(eq(builtInModelKeys.id, run.builtInModelKeyId));

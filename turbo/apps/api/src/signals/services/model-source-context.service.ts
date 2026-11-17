@@ -230,14 +230,13 @@ export function createRunModelSources(
   });
 }
 
-/** Global identity: metadata and managed secret are one authoritative snapshot. */
+/** Global managed source identities; credential values stay at firewall auth. */
 export function createManagedModelKeys() {
   return computed(async (get) => {
     return await get(db$)
       .select({
         id: builtInModelKeys.id,
         vendor: builtInModelKeys.vendor,
-        apiKey: builtInModelKeys.apiKey,
       })
       .from(builtInModelKeys);
   });
@@ -266,9 +265,7 @@ export function managedSourceFromSnapshot(
       providerType: "built-in",
       authMethod: null,
     },
-    credentials: [
-      { kind: "managed-key", name, modelKeyId: key.id, apiKey: key.apiKey },
-    ],
+    credentials: [{ kind: "managed-key", name, modelKeyId: key.id }],
   };
 }
 
