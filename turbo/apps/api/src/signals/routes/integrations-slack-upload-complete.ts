@@ -95,9 +95,6 @@ const completeCanonicalUpload$ = command(
         },
       };
     }
-    if (delivery.status === "pending") {
-      throw new Error("Canonical Slack completion remained pending");
-    }
     return {
       status: 200 as const,
       body: {
