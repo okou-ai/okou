@@ -74,29 +74,12 @@
       },
       "downloadRawData": "Download raw data",
       "errorGuidance": {
-        "computerUseAuthorizationRequired": {
-          "guidance": "Request a delegated Computer Use authorization link, ask the user to select a {{assistantName}} Desktop host for this chat or Slack thread, then start a new run. Existing run tokens cannot be upgraded in place.",
-          "title": "Computer Use authorization required"
-        },
         "concurrentRunLimitReached": {
           "guidance": "Wait for your current run to complete before starting a new one.",
           "title": "Concurrent run limit reached"
         },
-        "creditsDepleted": {
-          "guidance": "Run credit diagnostics first. Buy credits only when the current plan allows it; otherwise return the plan upgrade link.",
-          "title": "Credits depleted"
-        },
-        "noModelProvider": {
-          "guidance": "Connect a personal Claude Code or Codex subscription in Settings.",
-          "title": "No model provider is available for this run"
-        },
         "paidPlanRequired": {
-          "guidance": "Built-in video generation is unavailable on the current plan.",
           "title": "Paid plan required"
-        },
-        "providerIncompatible": {
-          "guidance": "This session was created with a different provider type.",
-          "title": "Provider not compatible"
         },
         "providerTemporarilyUnavailable": {
           "guidance": "The model provider is temporarily unavailable.",

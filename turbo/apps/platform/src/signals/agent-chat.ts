@@ -156,7 +156,7 @@ function threadIdsOf(threads: readonly EventDrivenChatThread[]) {
 }
 
 const projectsListed$ = computed((get): boolean => {
-  return get(featureSwitch$)[FeatureSwitchKey.Projects] === true;
+  return get(featureSwitch$)[FeatureSwitchKey.SingleAgent] === true;
 });
 
 // Projects collect chats across Agents, so every Agent list shows them.

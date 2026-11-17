@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.249.32](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.31...runner-rs-v0.249.32) (2026-11-17)
+
+
+### Documentation
+
+* align runner descriptions with direct execution ([#48085](https://github.com/okou-ai/okou/issues/48085)) ([f3707aa](https://github.com/okou-ai/okou/commit/f3707aa037153905e98bfaa81d62db0b7feaa934))
+
+
+### Refactoring
+
+* **python:** retain canonical captured connector intent ([#48131](https://github.com/okou-ai/okou/issues/48131)) ([31495dd](https://github.com/okou-ai/okou/commit/31495dd2fd8fb265cf53f8e19cf4d9c7a9cad5b6))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.31](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.30...runner-rs-v0.249.31) (2026-11-17)
 
 

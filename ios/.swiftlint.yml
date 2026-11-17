@@ -3,6 +3,7 @@ only_rules:
   - force_cast
   - force_try
   - duplicate_imports
+  - duplicate_conditions
   - unused_closure_parameter
   - invalid_swiftlint_command
   - superfluous_disable_command

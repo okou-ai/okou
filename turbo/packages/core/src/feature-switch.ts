@@ -102,7 +102,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "lancy@okou.ai",
     displayName: "My Okou",
     description:
-      "Use personal Instructions and workspace Workflows with one Okou experience.",
+      "Use personal Instructions, workspace Workflows, and private Projects with one Okou experience.",
     enabled: true,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -343,13 +343,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "yuma@okou.ai",
     description:
       "Show the Feishu direct-message integration and Works page entry point.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.Projects]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Private cross-agent Projects. Enable only after supported readers and API/Runner drain gates.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

@@ -37,7 +37,6 @@ describe("isFeatureEnabled", () => {
   });
 
   it.each([
-    FeatureSwitchKey.Projects,
     FeatureSwitchKey.ConnectorChatAccountAccess,
     FeatureSwitchKey.ArtifactSidebarPreview,
     FeatureSwitchKey.ArtifactPreviewToolbar,

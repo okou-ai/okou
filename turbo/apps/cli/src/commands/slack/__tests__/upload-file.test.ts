@@ -20,8 +20,8 @@ const UPLOAD_INIT_URL =
   "http://localhost:3000/api/integrations/slack/upload-file/init";
 const UPLOAD_COMPLETE_URL =
   "http://localhost:3000/api/integrations/slack/upload-file/complete";
-const UPLOAD_MATERIALIZE_URL =
-  "http://localhost:3000/api/integrations/slack/upload-file/materialize";
+const UPLOAD_DELIVER_URL =
+  "http://localhost:3000/api/integrations/slack/upload-file/deliver";
 const SLACK_PRESIGNED_URL = "https://files.slack.com/upload/v1/test-presigned";
 const CANONICAL_PRESIGNED_URL = "https://r2.example.com/upload/canonical-asset";
 
@@ -70,7 +70,7 @@ describe("okou slack upload-file command", () => {
     uploadFileCommand.outputHelp();
 
     expect(helpOutput).toContain(
-      "Run-scoped calls publish to Okou storage before Slack delivery",
+      "Run-scoped calls upload to Okou storage; the server uploads and shares the Slack file",
     );
   });
 
@@ -264,139 +264,134 @@ describe("okou slack upload-file command", () => {
         url: "https://cdn.vm7.io/artifacts/user/asset/test-report.pdf?download=1",
         expectedUrl:
           "https://cdn.vm7.io/artifacts/user/asset/test-report.pdf?download=1",
+        uploadRequired: true,
       },
-    ])("prints publication URL $url", async ({ url, expectedUrl }) => {
-      vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
-      const assetId = "a0000000-0000-4000-a000-000000000061";
-      const operationId = "a0000000-0000-4000-a000-000000000062";
-      const sequence: string[] = [];
-      let capturedInitBody: Record<string, unknown> | undefined;
-      let capturedCompleteBody: Record<string, unknown> | undefined;
+      {
+        url: "https://app.okou.ai/artifacts/a0000000-0000-4000-a000-000000000061",
+        expectedUrl:
+          "https://app.okou.ai/artifacts/a0000000-0000-4000-a000-000000000061",
+        uploadRequired: false,
+      },
+    ])(
+      "prints publication URL $url",
+      async ({ url, expectedUrl, uploadRequired }) => {
+        vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
+        const assetId = "a0000000-0000-4000-a000-000000000061";
+        const operationId = "a0000000-0000-4000-a000-000000000062";
+        const sequence: string[] = [];
+        let capturedInitBody: Record<string, unknown> | undefined;
+        let capturedDeliveryBody: Record<string, unknown> | undefined;
 
-      server.use(
-        http.post(UPLOAD_INIT_URL, async ({ request }) => {
-          capturedInitBody = (await request.json()) as Record<string, unknown>;
-          return HttpResponse.json(
-            {
-              kind: "canonical",
-              assetId,
-              operationId,
-              channel: "C1234567",
-              uploadUrl: CANONICAL_PRESIGNED_URL,
-              uploadHeaders: {
-                "x-amz-meta-artifact-id": assetId,
+        server.use(
+          http.post(UPLOAD_INIT_URL, async ({ request }) => {
+            capturedInitBody = (await request.json()) as Record<
+              string,
+              unknown
+            >;
+            return HttpResponse.json(
+              {
+                kind: "canonical",
+                assetId,
+                operationId,
+                channel: "C1234567",
+                ...(uploadRequired
+                  ? { uploadUrl: CANONICAL_PRESIGNED_URL }
+                  : {}),
+                uploadHeaders: {
+                  "x-amz-meta-artifact-id": assetId,
+                },
+                url,
               },
-              url,
-            },
-            { status: 200 },
-          );
-        }),
-        http.put(CANONICAL_PRESIGNED_URL, ({ request }) => {
-          expect(request.headers.get("x-amz-meta-artifact-id")).toBe(assetId);
-          sequence.push("canonical-upload");
-          return new HttpResponse(null, { status: 200 });
-        }),
-        http.post(UPLOAD_MATERIALIZE_URL, () => {
-          sequence.push("canonical-materialize");
-          return HttpResponse.json(
-            {
-              assetId,
-              url,
-              delivery: {
-                status: "pending",
-                uploadUrl: SLACK_PRESIGNED_URL,
-                fileId: "F-CANONICAL",
+              { status: 200 },
+            );
+          }),
+          http.put(CANONICAL_PRESIGNED_URL, ({ request }) => {
+            expect(request.headers.get("x-amz-meta-artifact-id")).toBe(assetId);
+            sequence.push("canonical-upload");
+            return new HttpResponse(null, { status: 200 });
+          }),
+          http.post(UPLOAD_DELIVER_URL, async ({ request }) => {
+            capturedDeliveryBody = (await request.json()) as Record<
+              string,
+              unknown
+            >;
+            sequence.push("server-delivery");
+            return HttpResponse.json(
+              {
+                assetId,
+                url,
+                delivery: {
+                  status: "delivered",
+                  fileId: "F-CANONICAL",
+                  permalink: "https://workspace.slack.com/files/F-CANONICAL",
+                },
               },
-            },
-            { status: 200 },
-          );
-        }),
-        http.post(SLACK_PRESIGNED_URL, () => {
-          sequence.push("slack-upload");
-          return new HttpResponse(null, { status: 200 });
-        }),
-        http.post(UPLOAD_COMPLETE_URL, async ({ request }) => {
-          sequence.push("slack-complete");
-          capturedCompleteBody = (await request.json()) as Record<
-            string,
-            unknown
-          >;
-          return HttpResponse.json(
-            {
-              fileId: "F-CANONICAL",
-              permalink: "https://workspace.slack.com/files/F-CANONICAL",
-              channel: "C1234567",
-              assetId,
-              deliveryStatus: "delivered",
-            },
-            { status: 200 },
-          );
-        }),
-      );
+              { status: 200 },
+            );
+          }),
+        );
 
-      await uploadFileCommand.parseAsync([
-        "node",
-        "cli",
-        "--file",
-        testFilePath,
-        "--to",
-        "C1234567",
-        "--operation-id",
-        operationId,
-        "--json",
-      ]);
-
-      expect(sequence).toStrictEqual([
-        "canonical-upload",
-        "canonical-materialize",
-        "slack-upload",
-        "slack-complete",
-      ]);
-      expect(capturedInitBody).toMatchObject({
-        filename: "test-report.pdf",
-        canonical: {
+        await uploadFileCommand.parseAsync([
+          "node",
+          "cli",
+          "--file",
+          testFilePath,
+          "--to",
+          "C1234567",
+          "--operation-id",
           operationId,
-          contentType: "application/pdf",
-          channel: "C1234567",
-        },
-      });
-      if (!capturedInitBody) {
-        throw new Error("Expected the upload init request to be captured");
-      }
-      expect(
-        (capturedInitBody.canonical as { checksumSha256?: string })
-          .checksumSha256,
-      ).toMatch(/^[a-f0-9]{64}$/);
-      expect(capturedCompleteBody).toMatchObject({
-        fileId: "F-CANONICAL",
-        channel: "C1234567",
-        canonicalAssetId: assetId,
-        operationId,
-      });
-      const stdout = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(JSON.parse(stdout)).toStrictEqual({
-        integration: "slack",
-        chatId: "C1234567",
-        messages: [
-          {
-            id: "F-CANONICAL",
-            url: "https://workspace.slack.com/files/F-CANONICAL",
+          "--json",
+        ]);
+
+        expect(sequence).toStrictEqual(
+          uploadRequired
+            ? ["canonical-upload", "server-delivery"]
+            : ["server-delivery"],
+        );
+        expect(capturedInitBody).toMatchObject({
+          filename: "test-report.pdf",
+          canonical: {
+            operationId,
+            contentType: "application/pdf",
+            channel: "C1234567",
           },
-        ],
-        file: {
-          name: "test-report.pdf",
-          contentType: "application/pdf",
-          size: 28,
-          url: expectedUrl,
-        },
-        delivery: { status: "delivered", operationId },
-      });
-    });
+        });
+        if (!capturedInitBody) {
+          throw new Error("Expected the upload init request to be captured");
+        }
+        expect(
+          (capturedInitBody.canonical as { checksumSha256?: string })
+            .checksumSha256,
+        ).toMatch(/^[a-f0-9]{64}$/);
+        expect(capturedDeliveryBody).toStrictEqual({
+          assetId,
+          operationId,
+        });
+        const stdout = mockConsoleLog.mock.calls.flat().join("\n");
+        expect(JSON.parse(stdout)).toStrictEqual({
+          integration: "slack",
+          chatId: "C1234567",
+          messages: [
+            {
+              id: "F-CANONICAL",
+              url: "https://workspace.slack.com/files/F-CANONICAL",
+            },
+          ],
+          file: {
+            name: "test-report.pdf",
+            contentType: "application/pdf",
+            size: 28,
+            url: expectedUrl,
+          },
+          delivery: { status: "delivered", operationId },
+        });
+      },
+    );
 
     it("keeps canonical publication successful when Slack delivery fails", async () => {
       const assetId = "a0000000-0000-4000-a000-000000000063";
       const operationId = "a0000000-0000-4000-a000-000000000064";
-      let capturedCompleteBody: Record<string, unknown> | undefined;
+      let capturedDeliveryBody: Record<string, unknown> | undefined;
       server.use(
         http.post(UPLOAD_INIT_URL, () => {
           return HttpResponse.json({
@@ -411,34 +406,19 @@ describe("okou slack upload-file command", () => {
         http.put(CANONICAL_PRESIGNED_URL, () => {
           return new HttpResponse(null, { status: 200 });
         }),
-        http.post(UPLOAD_MATERIALIZE_URL, () => {
-          return HttpResponse.json({
-            assetId,
-            url: "https://cdn.vm7.io/artifacts/user/asset/test-report.pdf",
-            delivery: {
-              status: "pending",
-              uploadUrl: SLACK_PRESIGNED_URL,
-              fileId: "F-FAILED",
-            },
-          });
-        }),
-        http.post(SLACK_PRESIGNED_URL, () => {
-          return new HttpResponse(null, {
-            status: 500,
-            statusText: "Internal Server Error",
-          });
-        }),
-        http.post(UPLOAD_COMPLETE_URL, async ({ request }) => {
-          capturedCompleteBody = (await request.json()) as Record<
+        http.post(UPLOAD_DELIVER_URL, async ({ request }) => {
+          capturedDeliveryBody = (await request.json()) as Record<
             string,
             unknown
           >;
           return HttpResponse.json({
-            fileId: "F-FAILED",
-            permalink: "",
             assetId,
-            deliveryStatus: "failed",
-            deliveryError: "Slack upload failed",
+            url: "https://cdn.vm7.io/artifacts/user/asset/test-report.pdf",
+            delivery: {
+              status: "failed",
+              message: "Slack upload failed",
+              retryable: true,
+            },
           });
         }),
       );
@@ -454,10 +434,9 @@ describe("okou slack upload-file command", () => {
         operationId,
       ]);
 
-      expect(capturedCompleteBody).toMatchObject({
-        canonicalAssetId: assetId,
+      expect(capturedDeliveryBody).toStrictEqual({
+        assetId,
         operationId,
-        uploadError: expect.stringContaining("Slack upload failed"),
       });
       const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
       expect(logCalls).toContain("File uploaded");
@@ -469,6 +448,61 @@ describe("okou slack upload-file command", () => {
       expect(warnings).toContain("Slack delivery failed: Slack upload failed");
       expect(warnings).toContain(`--operation-id ${operationId}`);
     });
+
+    it.each([404, 503])(
+      "keeps the operation identity without an external fallback after delivery HTTP %i",
+      async (status) => {
+        const assetId = "a0000000-0000-4000-a000-000000000065";
+        const operationId = "a0000000-0000-4000-a000-000000000066";
+        let providerUploads = 0;
+        server.use(
+          http.post(UPLOAD_INIT_URL, () => {
+            return HttpResponse.json({
+              kind: "canonical",
+              assetId,
+              operationId,
+              channel: "C1234567",
+              url: `https://app.okou.ai/artifacts/${assetId}`,
+            });
+          }),
+          http.post(UPLOAD_DELIVER_URL, () => {
+            return HttpResponse.json(
+              {
+                error: {
+                  message: "Server delivery unavailable",
+                  code: "UNAVAILABLE",
+                },
+              },
+              { status },
+            );
+          }),
+          http.post("https://files.slack.com/*", () => {
+            providerUploads++;
+            return new HttpResponse("OK");
+          }),
+        );
+        await expect(
+          uploadFileCommand.parseAsync([
+            "node",
+            "cli",
+            "--file",
+            testFilePath,
+            "--to",
+            "C1234567",
+            "--operation-id",
+            operationId,
+          ]),
+        ).rejects.toThrow("process.exit called");
+        expect(providerUploads).toBe(0);
+        expect(mockConsoleLog).not.toHaveBeenCalled();
+        expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+          "Server delivery unavailable",
+        );
+        expect(mockConsoleWarn.mock.calls.flat().join("\n")).toContain(
+          `--operation-id ${operationId}`,
+        );
+      },
+    );
   });
 
   describe("validation errors", () => {

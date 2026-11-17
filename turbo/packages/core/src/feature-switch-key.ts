@@ -12,7 +12,6 @@ export enum FeatureSwitchKey {
   PastedTextAttachments = "pastedTextAttachments",
   SingleAgent = "singleAgent",
   OkouAnimatedAvatar = "okouAnimatedAvatar",
-  Projects = "projects",
   ConnectorChatAccountAccess = "connectorChatAccountAccess",
   FeatureGuides = "featureGuides",
   BatchConnectorPermissions = "batchConnectorPermissions",

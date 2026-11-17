@@ -1057,7 +1057,6 @@ test("My Okou's header holds the toggle, search, New Project and list menu while
     path: "/",
     featureSwitches: {
       [FeatureSwitchKey.SingleAgent]: true,
-      [FeatureSwitchKey.Projects]: true,
     },
   });
 
@@ -1118,34 +1117,6 @@ test("My Okou's header holds the toggle, search, New Project and list menu while
   click(within(header).getByLabelText("Open chat list menu"));
   click(menuItemByText("Archived"));
   await expect(within(header).findByText("Archived")).resolves.toBeVisible();
-});
-
-test("My Okou without Projects leaves New Project out of the header", async () => {
-  prepareDefaultAgent();
-  mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
-
-  await setupSidebarPage({
-    context,
-    path: "/",
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
-  });
-
-  const list = await screen.findByTestId("chat-list-column");
-  await within(list).findByText("Release plan");
-  expect(newChatRow(list)).toHaveTextContent(/^New chat/);
-  const header = within(list).getByLabelText("Hide chat list").closest("div");
-  if (!header) {
-    throw new Error("Chat list header not found");
-  }
-  expect(
-    queryAllByRoleFast("button", header).map((button) => {
-      return button.getAttribute("aria-label");
-    }),
-  ).toStrictEqual([
-    "Hide chat list",
-    "Search workspace",
-    "Open chat list menu",
-  ]);
 });
 
 test("My Okou's Chat link and new chat shortcut open its chat page at /", async () => {

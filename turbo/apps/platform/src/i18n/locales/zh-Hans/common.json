@@ -74,29 +74,12 @@
       },
       "downloadRawData": "下载原始数据",
       "errorGuidance": {
-        "computerUseAuthorizationRequired": {
-          "guidance": "请申请一个委托的 Computer Use 授权链接，让用户为当前聊天或 Slack 会话选择一台 {{assistantName}} Desktop 主机，然后重新发起运行。已有的运行令牌无法就地升级。",
-          "title": "需要 Computer Use 授权"
-        },
         "concurrentRunLimitReached": {
           "guidance": "请等当前运行结束后再发起新的运行。",
           "title": "已达并发运行上限"
         },
-        "creditsDepleted": {
-          "guidance": "请先做积分诊断。只有当前套餐允许时才购买积分，否则返回套餐升级链接。",
-          "title": "积分已用完"
-        },
-        "noModelProvider": {
-          "guidance": "请在设置中连接个人 Claude Code 或 Codex 订阅。",
-          "title": "此次运行没有可用的模型提供方"
-        },
         "paidPlanRequired": {
-          "guidance": "当前套餐不支持内置视频生成。",
           "title": "需要付费套餐"
-        },
-        "providerIncompatible": {
-          "guidance": "此会话是用另一种提供方类型创建的。",
-          "title": "提供方不兼容"
         },
         "providerTemporarilyUnavailable": {
           "guidance": "模型提供方暂时不可用。",

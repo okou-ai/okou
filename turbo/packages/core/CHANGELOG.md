@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.847.1](https://github.com/okou-ai/okou/compare/core-v8.847.0...core-v8.847.1) (2026-11-17)
+
+
+### Refactoring
+
+* remove for you sources feature switch ([#48074](https://github.com/okou-ai/okou/issues/48074)) ([335f7b5](https://github.com/okou-ai/okou/commit/335f7b5c0410626867316382e92753d219e1e937))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.77.0
+
 ## [8.847.0](https://github.com/okou-ai/okou/compare/core-v8.846.0...core-v8.847.0) (2026-11-17)
 
 
