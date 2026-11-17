@@ -484,7 +484,7 @@ class NativeRealtimeTest {
             assertEquals(1, controlPosts.get())
             terminal.set(true)
             external.invalidate(ChatChanges(threads = setOf(CHAT_PERSONAL)))
-            condition { controls?.uiState?.value?.recovery?.pending == false }
+            condition { controls?.recovery?.value?.pending == false }
             assertTrue(
                 checkNotNull(
                         device.findObject(By.pkg(app.packageName).clazz("android.widget.EditText"))

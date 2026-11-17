@@ -22,6 +22,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 @Composable
 fun RunControlsPanel(model: RunControlsModel, history: ConversationHistoryModel, threadId: String) {
     val state by model.uiState.collectAsStateWithLifecycle()
+    val recovery by model.recovery.collectAsStateWithLifecycle()
     val confirmed by history.uiState.collectAsStateWithLifecycle()
     val output by history.output.state.collectAsStateWithLifecycle()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -116,7 +117,7 @@ fun RunControlsPanel(model: RunControlsModel, history: ConversationHistoryModel,
                     )
                 )
             }
-        state.recovery
+        recovery
             .takeIf { it.threadId == threadId }
             ?.let {
                 if (it.phase == CancellationReadPhase.Failed) {

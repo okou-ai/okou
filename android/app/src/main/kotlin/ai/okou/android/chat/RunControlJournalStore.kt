@@ -38,6 +38,7 @@ class RunControlJournalStore(
     private val io = Mutex()
     private val guard = Any()
     private val latest = mutableMapOf<String, Write>()
+    private val controls = mutableMapOf<String, RunControlsOwner>()
     private val json = Json { encodeDefaults = false }
     private var closed = false
 
@@ -45,6 +46,19 @@ class RunControlJournalStore(
         chatScopeHash(
             listOf(identity.apiOrigin.toHttpUrl().toString(), identity.userId, identity.workspaceId)
         )
+
+    internal fun attach(identity: WorkspaceIdentity, connection: RunControlsOwner.Connection) =
+        controls
+            .getOrPut(key(identity)) { RunControlsOwner(this, identity) }
+            .also { it.attach(connection) }
+
+    internal fun detach(
+        identity: WorkspaceIdentity,
+        connection: RunControlsOwner.Connection,
+        control: RunControlsOwner,
+    ) {
+        if (control.detach(connection)) controls.remove(key(identity), control)
+    }
 
     fun persist(identity: WorkspaceIdentity, journal: RunControlJournal): Deferred<Unit> {
         journal.validate()

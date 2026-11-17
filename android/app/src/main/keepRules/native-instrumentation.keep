@@ -359,12 +359,12 @@
   public java.lang.Object sendControl(ai.okou.android.api.generated.SendRequest, kotlin.coroutines.Continuation);
 }
 -keep,allowobfuscation class ai.okou.android.chat.RunControlsModel {
+  public kotlinx.coroutines.flow.StateFlow getRecovery();
   public kotlinx.coroutines.flow.StateFlow getUiState();
 }
 -keep,allowobfuscation class ai.okou.android.chat.RunControlsState {
   public ai.okou.android.chat.RunControlJournal getJournal();
   public java.util.Map getPhases();
-  public ai.okou.android.chat.CancellationRecovery getRecovery();
 }
 -keep,allowobfuscation class ai.okou.android.chat.RunOutputModel {
   public kotlinx.coroutines.flow.StateFlow getState();

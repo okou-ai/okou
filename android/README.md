@@ -231,11 +231,17 @@ Run controls use the same authenticated event endpoint and generated request uni
 Stop freezes the displayed live-run IDs; skipping targets one canonical queued
 automation. HTTP acceptance is not completion. The workspace control owner checks
 canonical control/target evidence and never retargets an uncertain request.
+All current controllers of the same origin/user/workspace attach to one shared
+command owner, including target deduplication, phases and journal mutations.
+Retiring one controller cancels only its network requests; peers retain unknown
+commands and can explicitly check/retry their original identities.
 Frozen pending controls live separately in private `noBackupFilesDir/chat-controls`
 format-1 journals scoped by API origin, user and workspace. Disk commitment precedes
 POST, and restored intent only reads back until an explicit same-request retry.
 This adds no confirmed-cache or composer-journal migration and stores no stream text.
-Cancellation metadata and control readback fail independently of ordinary history.
+Each controller independently owns its selected-thread cancellation metadata query.
+Control outcome reads never take over that query's loading/completion state.
+Both paths fail independently of ordinary history.
 
 Meaningful drafts and pending text operations live in `noBackupFilesDir/chat-input`,
 scoped by origin/user/workspace, separately from the rebuildable confirmed cache.
