@@ -120,7 +120,6 @@ class TestResponseEncodingInspectionRisk:
         assert flow.response is not None
         assert flow.response.status_code == (502 if rejected else 200)
         assert (stream_capture.captured_response_stream_body(flow) is not None) is buffered_fallback
-        assert (stream_capture.captured_response_stream_body(flow) is not None) is buffered_fallback
 
     def test_unknown_encoding_value_is_not_persisted(self, real_flow, tmp_path, mitm_ctx) -> None:
         flow = self._model_flow(

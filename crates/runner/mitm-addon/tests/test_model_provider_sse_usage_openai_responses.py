@@ -180,7 +180,6 @@ class TestOpenAIResponsesSseUsage:
         assert response_stream(flow)(compressed[:midpoint]) == compressed[:midpoint]
         assert response_stream(flow)(compressed[midpoint:]) == compressed[midpoint:]
         assert (stream_capture.captured_response_stream_body(flow) is not None) is capture_body
-        assert (stream_capture.captured_response_stream_body(flow) is not None) is capture_body
 
         webhook = run_response(flow, self._usage_webhook_api)
 
