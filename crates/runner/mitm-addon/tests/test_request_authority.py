@@ -27,25 +27,12 @@ class TestTrustedAuthorityUrl:
     )
     def test_omits_only_scheme_default_ports(self, real_flow, scheme, port, expected_url):
         flow = real_flow(host="example.com", port=port, scheme=scheme)
+        # Regression #10082: a Host without a port must not hide the destination port.
+        assert flow.request.headers.get("Host") == "example.com"
         trusted = get_trusted_authority(flow)
         assert trusted.host == "example.com"
         assert trusted.port == port
         assert trusted.url == expected_url
-
-    def test_https_non_standard_port(self, real_flow):
-        # Pins two invariants at once for the #10082 regression:
-        # - scheme comes from the TLS handshake, not from the port (so
-        #   :8443 stays ``https://``, not ``http://`` as before the fix);
-        # - the destination port is included even when the Host header
-        #   has no port (the Host-lacks-port precondition is asserted
-        #   below — mitmproxy's ``pretty_url`` would drop the port here,
-        #   which is why we don't use it).
-        flow = real_flow(host="example.com", port=8443)
-        assert flow.request.headers.get("Host") == "example.com"
-        trusted = get_trusted_authority(flow)
-        assert trusted.host == "example.com"
-        assert trusted.port == 8443
-        assert trusted.url == "https://example.com:8443/"
 
     def test_with_path_and_query(self, real_flow):
         flow = real_flow(host="api.example.com", port=443, path="/v1/data?key=val")

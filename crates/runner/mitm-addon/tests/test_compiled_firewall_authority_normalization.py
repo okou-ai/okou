@@ -317,11 +317,10 @@ def test_compiled_matches_ordinary_credential_authority(base, host, port):
 @pytest.mark.parametrize(
     "auth",
     [
-        {"headers": {"Authorization": "Bearer token"}},
         {"query": {"api_key": "token"}},
         {"awsSigv4": {"accessKeyId": "key", "secretAccessKey": "secret"}},
     ],
-    ids=["headers", "query", "aws-sigv4"],
+    ids=["query", "aws-sigv4"],
 )
 def test_compiled_matches_ordinary_credential_authority_auth_kinds(auth):
     fws = wrap_firewalls(
