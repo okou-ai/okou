@@ -1,0 +1,203 @@
+import ChatDomain
+import SwiftUI
+import Textual
+
+struct ConversationMeasurementInput<Content: View> {
+  let controller: UIViewController
+  let source: ConversationCollectionView<Content>
+  let defersHostedMeasurement: Bool
+}
+
+@MainActor
+final class ConversationRowMeasurer<Content: View> {
+  private var markdownLookahead: Task<Void, Never>?
+  private let input: @MainActor () -> ConversationMeasurementInput<Content>?
+
+  init(input: @escaping @MainActor () -> ConversationMeasurementInput<Content>?) {
+    self.input = input
+  }
+
+  static func diskLayout(width: CGFloat, traits: UITraitCollection)
+    -> ConversationHeightDiskCache.Layout
+  {
+    ConversationHeightDiskCache.Layout(
+      width: width, scale: traits.displayScale,
+      category: traits.preferredContentSizeCategory.rawValue,
+      direction: traits.layoutDirection.rawValue,
+      legibility: traits.legibilityWeight.rawValue,
+      style: traits.userInterfaceStyle.rawValue, locale: Locale.current.identifier,
+      renderer: Self.rendererVersion)
+  }
+
+  static func diskKey(
+    for row: ConversationCollectionRow, namespace: [String],
+    layout: ConversationHeightDiskCache.Layout, source: ConversationCollectionView<Content>
+  ) -> ConversationHeightDiskCache.Key? {
+    // A row showing the message actions is taller; only rows without them share cached heights.
+    guard case .message(let message, let avatar, let spacing, nil, false, let work, false) = row,
+      message.attachments.isEmpty, message.modelChange == nil, message.inputError == nil,
+      !message.isError, message.role != .system
+    else { return nil }
+    var text = message.text
+    if message.role == .user, let document = message.userMessage {
+      let parts = document.bodyParts
+      guard document.annotation == nil, parts.count == 1, let part = parts.first,
+        part.type == "text"
+      else { return nil }
+      text = part.displayText
+    } else if message.role == .assistant {
+      guard
+        source.markdown.cachedPlan(for: text, context: source.renderContext(message))?
+          .hasStableHeight == true
+      else { return nil }
+    }
+    return ConversationHeightDiskCache.Key(
+      namespace: namespace, id: row.id, text: text, role: message.role.rawValue,
+      showsAvatar: avatar, spacing: spacing, workHistory: work, layout: layout)
+  }
+
+  func measure(
+    _ rows: [ConversationCollectionRow], width: CGFloat
+  ) async -> (heights: [CGFloat], settled: Bool) {
+    if input()?.defersHostedMeasurement == true, !(await waitForMeasurementFrame()) {
+      return ([], false)
+    }
+    guard let input = input() else { return ([], false) }
+    let parent = input.controller
+    let source = input.source
+    let layout = Self.diskLayout(width: width, traits: parent.traitCollection)
+    var unitSessions: [MessageUnitMeasurements.Session] = []
+    let hosts = rows.map { row in
+      let unitSession: MessageUnitMeasurements.Session?
+      if case .message(let message, _, _, _, _, false, _) = row, message.role == .assistant {
+        let session = MessageUnitMeasurements.Session(
+          cache: source.markdown.unitMeasurements, layout: layout)
+        unitSessions.append(session)
+        unitSession = session
+      } else {
+        unitSession = nil
+      }
+      let host = UIHostingController(
+        rootView: source.content(row, nil)
+          .environment(\.messageUnitMeasurement, unitSession)
+          .fixedSize(horizontal: false, vertical: true))
+      // System bars must not contribute to intrinsic row sizes in the offscreen measurement host.
+      host.safeAreaRegions = []
+      parent.addChild(host)
+      host.view.isUserInteractionEnabled = false
+      host.view.accessibilityElementsHidden = true
+      host.view.frame = CGRect(x: -width * 2, y: 0, width: width, height: 1)
+      parent.view.addSubview(host.view)
+      host.didMove(toParent: parent)
+      return host
+    }
+    defer {
+      for host in hosts {
+        host.willMove(toParent: nil)
+        host.view.removeFromSuperview()
+        host.removeFromParent()
+      }
+    }
+    var previous: [CGFloat] = []
+    var stableFrames = 0
+    // Textual populates its initial state and nested overflow geometry after mounting.
+    // Later asynchronous attachment growth is measured separately by visible cells.
+    for _ in 0..<30 {
+      guard await waitForMeasurementFrame() else { return (previous, false) }
+      let heights = hosts.map { host in
+        let size = host.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude))
+        let height = Self.pixelHeight(size.height, scale: parent.traitCollection.displayScale)
+        host.view.frame.size.height = height
+        host.view.layoutIfNeeded()
+        return height
+      }
+      stableFrames = heights == previous ? stableFrames + 1 : 0
+      previous = heights
+      if stableFrames >= 2 {
+        for session in unitSessions { session.commit() }
+        return (previous, true)
+      }
+    }
+    return (previous, false)
+  }
+
+  func waitForMeasurementFrame() async -> Bool {
+    repeat {
+      await conversationLayoutFrame()
+      guard !Task.isCancelled else { return false }
+    } while input()?.defersHostedMeasurement == true
+    return true
+  }
+
+  func measureImmediately(
+    _ rows: [ConversationCollectionRow], width: CGFloat
+  ) -> [CGFloat] {
+    guard let input = input() else { return [] }
+    let traitCollection = input.controller.traitCollection
+    return rows.map { row in
+      switch row {
+      case .message(let message, _, let topSpacing, let pendingRetry, _, _, _):
+        let font = OkouTypography.font(forTextStyle: .body, compatibleWith: traitCollection)
+        let text = NSAttributedString(string: message.text, attributes: [.font: font])
+        let size = text.boundingRect(
+          with: CGSize(width: (width - 40) * 0.85 - 28, height: .greatestFiniteMagnitude),
+          options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
+        let status =
+          pendingRetry == nil
+          ? 0
+          : 8
+            + OkouTypography.font(
+              forTextStyle: .caption1, compatibleWith: traitCollection
+            ).lineHeight
+        return Self.pixelHeight(
+          size.height + 28 + topSpacing + status, scale: traitCollection.displayScale)
+      case .footer(let state, _):
+        return Self.pixelHeight(45 + (state.isActive ? 48 : 0), scale: traitCollection.displayScale)
+      default:
+        preconditionFailure("Only outgoing plain text and its footer use immediate metrics")
+      }
+    }
+  }
+
+  static func pixelHeight(_ height: CGFloat, scale: CGFloat) -> CGFloat {
+    max(1, ceil(height * scale) / scale)
+  }
+
+  func prepareMarkdown(_ row: ConversationCollectionRow) async {
+    guard let input = input() else { return }
+    let source = input.source
+    guard let message = row.message,
+      message.role == .assistant || (message.role == .user && message.userMessage == nil)
+    else { return }
+    _ = await source.markdown.renderPlan(
+      for: message.text, context: source.renderContext(message))
+  }
+
+  private static var rendererVersion: String {
+    let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+    return build + "/upstream-render-units-1/"
+      + ProcessInfo.processInfo.operatingSystemVersionString
+  }
+
+  func prepareEarlierMarkdown() {
+    guard let input = input() else { return }
+    let source = input.source
+    markdownLookahead?.cancel()
+    markdownLookahead = nil
+    let messages = source.earlierMessages().lazy.filter { $0.role == .assistant }.suffix(10)
+    guard !messages.isEmpty else { return }
+    let requests = Array(messages.reversed()).map { ($0.text, source.renderContext($0)) }
+    let markdown = source.markdown
+    markdownLookahead = Task(priority: .utility) {
+      for (text, context) in requests {
+        guard !Task.isCancelled else { return }
+        _ = await markdown.renderPlan(for: text, context: context)
+      }
+    }
+  }
+
+  func close() {
+    markdownLookahead?.cancel()
+    markdownLookahead = nil
+  }
+}
