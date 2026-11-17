@@ -65,7 +65,7 @@ private struct OkouShimmerBand: View {
         stops: [
           .init(color: .clear, location: 0),
           .init(color: OkouColor.background.opacity(OkouMotion.shimmerStrength), location: 0.5),
-          .init(color: .clear, location: 1),
+          .init(color: .clear, location: 1)
         ],
         startPoint: .leading, endPoint: .trailing
       )

@@ -10,15 +10,18 @@ underlying ownership contracts. Setup commands belong in the
 
 ## Upstream Defaults
 
-All 101 default checks in the pinned SwiftLint revision stay enabled. The root
-configuration uses `opt_in_rules` for the three additional upstream checks and
-the native rules, rather than maintaining a second copy of the default set.
-Test overrides relax only force casts and force tries. Rule fixtures verify the
-complete default set; the wrapper also exercises `statement_position` so a
+The root configuration inherits upstream defaults and explicitly defers the
+eight metric checks and `identifier_name` in `disabled_rules` for separate
+policy decisions. The other 92 defaults remain enabled. It uses `opt_in_rules`
+for the three additional upstream checks and the native rules, rather than
+maintaining a second copy of the default set. Test overrides relax only force
+casts and force tries. Rule fixtures verify the exact deferred set and the
+remaining defaults; the wrapper also exercises `statement_position` so a
 SourceKit-backed check cannot silently disappear from CI.
 
-Keep `swift-format` as the layout owner. SwiftLint's multiline-brace options and
-mandatory collection commas match that layout while retaining the checks.
+Keep `swift-format` as the layout owner. SwiftLint's multiline-brace options
+preserve its layout. `ios/.swift-format` omits collection trailing commas to
+match the default `trailing_comma` rule.
 Do not add a baseline, inline suppression or excluded source path to adopt a
 new check. Resolve findings at their owner and review any changed behavior.
 

@@ -23,7 +23,7 @@ struct AssistantFailureState: Equatable {
       || (recovery.kind == .retryable
         && ![
           "guest_root_filesystem_full", "guest_home_filesystem_full",
-          "codex_access_program_unavailable",
+          "codex_access_program_unavailable"
         ]
         .contains(failure.reason))
   }
@@ -59,7 +59,7 @@ struct AssistantFailureState: Equatable {
       case .unknown:
         windows = [
           (.fiveHour, account.subscriptionUsage?.fiveHour),
-          (.weekly, account.subscriptionUsage?.weekly),
+          (.weekly, account.subscriptionUsage?.weekly)
         ]
         .filter { $0.1?.remainingPercent == 0 || ($0.1?.usedPercent ?? 0) >= 100 }
       default: break

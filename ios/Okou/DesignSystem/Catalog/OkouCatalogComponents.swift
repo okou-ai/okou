@@ -226,24 +226,28 @@
             close: {
               showsSearchPage = false
               query = ""
-            }
-          ) {
-            OkouChipRail(inset: OkouSpace.lg) {
-              ForEach(["All", "Chats", "Messages"], id: \.self) { name in
-                OkouChip(title: Text(name), isSelected: filter == name) {
-                  filter = name
+            },
+            filters: {
+              OkouChipRail(inset: OkouSpace.lg) {
+                ForEach(["All", "Chats", "Messages"], id: \.self) { name in
+                  OkouChip(title: Text(name), isSelected: filter == name) {
+                    filter = name
+                  }
                 }
               }
+            },
+            results: {
+              ForEach(matches, id: \.self) { title in
+                Label(title, okouSymbol: "message-circle")
+              }
+            },
+            empty: {
+              if matches.isEmpty {
+                OkouEmptyState(
+                  "No results", icon: "search", description: Text("Try another search."))
+              }
             }
-          } results: {
-            ForEach(matches, id: \.self) { title in
-              Label(title, okouSymbol: "message-circle")
-            }
-          } empty: {
-            if matches.isEmpty {
-              OkouEmptyState("No results", icon: "search", description: Text("Try another search."))
-            }
-          }
+          )
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
@@ -281,10 +285,11 @@
             Text(verbatim: "Chats are taking longer than usual to update."), icon: "refresh-cw")
           OkouBanner(
             Text(verbatim: "Your draft could not be saved on this device."),
-            icon: "circle-alert", tone: .problem, dismiss: {}
-          ) {
-            Button("Try again") {}
-          }
+            icon: "circle-alert", tone: .problem, dismiss: {},
+            actions: {
+              Button("Try again") {}
+            }
+          )
         }
         OkouCatalogSection("Chat feedback") {
           ChatFeedbackSurface(

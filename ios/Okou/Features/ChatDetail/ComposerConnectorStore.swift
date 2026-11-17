@@ -356,7 +356,7 @@ final class ComposerConnectorStore {
   func setupRemote(_ protocol: ChatRemoteProtocol) {
     var query = [
       URLQueryItem(name: "scope", value: "remote-control"),
-      URLQueryItem(name: "type", value: `protocol`.rawValue),
+      URLQueryItem(name: "type", value: `protocol`.rawValue)
     ]
     if let threadID { query.append(URLQueryItem(name: "returnThread", value: threadID)) }
     openWeb(path: "connectors", query: query)

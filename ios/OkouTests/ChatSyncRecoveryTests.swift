@@ -232,7 +232,7 @@ final class ChatSyncRecoveryTests: XCTestCase {
       (
         "/api/chat-threads/\(SyncRecoveryFixture.threadID)/event-rows",
         .history(threadID: SyncRecoveryFixture.threadID)
-      ),
+      )
     ]
     for (path, invalidation) in paths {
       let fixture = SyncRecoveryFixture()

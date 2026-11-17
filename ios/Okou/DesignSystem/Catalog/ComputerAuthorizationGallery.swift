@@ -54,7 +54,7 @@
       cards = try [
         "/computer-use/authorize/preview_computer",
         "/browser/authorize/preview_browser",
-        "/computer-use/shell/authorize/72000000-0000-4000-8000-000000000003",
+        "/computer-use/shell/authorize/72000000-0000-4000-8000-000000000003"
       ].map { path in
         guard
           let action = ChatComputerAuthorizationAction.parse(

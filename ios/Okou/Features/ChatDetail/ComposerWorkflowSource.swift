@@ -13,8 +13,9 @@ final class ComposerWorkflowSource {
   private(set) var isClosed = false
   private let didFail: @MainActor (Error) -> Void
 
-  init(client: APIClient, storage: ChatDraftStorage?, didFail: @escaping @MainActor (Error) -> Void)
-  {
+  init(
+    client: APIClient, storage: ChatDraftStorage?, didFail: @escaping @MainActor (Error) -> Void
+  ) {
     self.client = client
     self.storage = storage
     self.didFail = didFail

@@ -33,7 +33,7 @@ final class ChatDraftTests: XCTestCase {
       ChatCacheScope(apiBaseURL: origin, userID: "user", workspaceID: "other"),
       ChatCacheScope(
         apiBaseURL: URL(string: "https://other.example.invalid")!, userID: "user",
-        workspaceID: "org"),
+        workspaceID: "org")
     ] {
       XCTAssertNil(
         try ChatDraftStorage(scope: other, directory: directory).load(
@@ -82,7 +82,7 @@ final class ChatDraftTests: XCTestCase {
       [
         "GET /api/agents/agent/draft", "PATCH /api/agents/agent/draft",
         "PATCH /api/agents/agent/draft", "GET /api/chat-threads/thread/draft",
-        "PATCH /api/chat-threads/thread", "PATCH /api/chat-threads/thread",
+        "PATCH /api/chat-threads/thread", "PATCH /api/chat-threads/thread"
       ])
     XCTAssertTrue(writes.withLock { $0.values.allSatisfy { $0 == ComposerDraft() } })
     let encoded =

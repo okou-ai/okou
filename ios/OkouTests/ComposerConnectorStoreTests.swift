@@ -9,7 +9,7 @@ import XCTest
 
 @MainActor
 final class ComposerConnectorStoreTests: XCTestCase {
-  private typealias F = ConnectorHTTPFixtures
+  private typealias FixtureData = ConnectorHTTPFixtures
 
   func testTransportCancellationRecoversConnectorAndRemoteReadsWithoutManualRefresh() async throws {
     let cancelledPaths = Mutex(Set(["/api/connectors/connected", "/api/vnc/connections"]))
@@ -30,17 +30,18 @@ final class ComposerConnectorStoreTests: XCTestCase {
       if request.url!.path == "/api/remotes/overview" {
         return ChatHTTPResponse(
           body: """
-            {"computerUseHosts":[],"cloudBrowserAvailable":true,"cloudBrowserEnabledByDefault":false,"sshHosts":[],"vncHosts":[{"connectionId":"\(F.accountID)","displayName":"Build Mac","defaultEnabled":false}]}
+            {"computerUseHosts":[],"cloudBrowserAvailable":true,"cloudBrowserEnabledByDefault":false,"sshHosts":[],"vncHosts":[{"connectionId":"\(FixtureData.accountID)","displayName":"Build Mac","defaultEnabled":false}]}
             """)
       }
       if request.url!.path == "/api/vnc/connections" {
         return ChatHTTPResponse(
-          body: "{\"connections\":[{\"id\":\"\(F.accountID)\",\"security\":{}}]}")
+          body: "{\"connections\":[{\"id\":\"\(FixtureData.accountID)\",\"security\":{}}]}")
       }
       return try composerResponse(request)
     }
     let thread = ChatThread(
-      id: F.threadID, agentID: F.agentID, title: "Remote work", selectedModel: nil,
+      id: FixtureData.threadID, agentID: FixtureData.agentID, title: "Remote work",
+      selectedModel: nil,
       createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
       pinnedAt: nil, pinOrder: nil, indicator: nil)
     let store = makeStore(fixture, thread: thread)
@@ -52,8 +53,8 @@ final class ComposerConnectorStoreTests: XCTestCase {
     _ = try await remoteValue(store)
     XCTAssertEqual(store.connectors.first?.label, "Slack")
     XCTAssertEqual(store.connectors.first?.authorized, true)
-    XCTAssertEqual(store.hosts(.ssh).first?.connectionId, F.accountID)
-    XCTAssertEqual(store.vncConnections.first?.id, F.accountID)
+    XCTAssertEqual(store.hosts(.ssh).first?.connectionId, FixtureData.accountID)
+    XCTAssertEqual(store.vncConnections.first?.id, FixtureData.accountID)
   }
 
   func testRepeatedTransportCancellationStopsAndAllowsManualRecovery() async throws {
@@ -68,7 +69,7 @@ final class ComposerConnectorStoreTests: XCTestCase {
     }
     let store = makeStore(fixture)
     defer { store.close() }
-    store.configure(agentID: F.agentID)
+    store.configure(agentID: FixtureData.agentID)
 
     await store.refresh()
 
@@ -87,7 +88,7 @@ final class ComposerConnectorStoreTests: XCTestCase {
     unavailable.withLock { $0 = false }
     await store.refresh()
     _ = try await remoteValue(store)
-    XCTAssertEqual(store.hosts(.ssh).first?.connectionId, F.accountID)
+    XCTAssertEqual(store.hosts(.ssh).first?.connectionId, FixtureData.accountID)
   }
 
   func testNewChatOffersOnlineComputersAndRetainsItsSelectionWhenItGoesOffline() async throws {
@@ -96,24 +97,24 @@ final class ComposerConnectorStoreTests: XCTestCase {
       if request.url!.path == "/api/remotes/overview" {
         return ChatHTTPResponse(
           body: """
-            {"computerUseHosts":[{"id":"\(F.accountID)","displayName":"Studio Mac","status":"\(status.withLock { $0 })"},{"id":"\(F.siblingID)","displayName":"Travel Mac","status":"offline"},{"id":"\(F.customID)","displayName":"Travel Mac","status":"offline"}],"cloudBrowserAvailable":true,"cloudBrowserEnabledByDefault":false,"sshHosts":[],"vncHosts":[]}
+            {"computerUseHosts":[{"id":"\(FixtureData.accountID)","displayName":"Studio Mac","status":"\(status.withLock { $0 })"},{"id":"\(FixtureData.siblingID)","displayName":"Travel Mac","status":"offline"},{"id":"\(FixtureData.customID)","displayName":"Travel Mac","status":"offline"}],"cloudBrowserAvailable":true,"cloudBrowserEnabledByDefault":false,"sshHosts":[],"vncHosts":[]}
             """)
       }
       return try composerResponse(request)
     }
     let store = makeStore(fixture)
     defer { store.close() }
-    store.configure(agentID: F.agentID)
+    store.configure(agentID: FixtureData.agentID)
     await store.refresh()
     _ = try await remoteValue(store)
-    XCTAssertEqual(store.visibleComputerUseHosts.map(\.id), [F.accountID])
+    XCTAssertEqual(store.visibleComputerUseHosts.map(\.id), [FixtureData.accountID])
 
-    await store.setComputerAccess(ChatComputerAccess(computerUseHostId: F.accountID))
+    await store.setComputerAccess(ChatComputerAccess(computerUseHostId: FixtureData.accountID))
     status.withLock { $0 = "offline" }
     await store.refresh()
     _ = try await remoteValue(store)
-    XCTAssertEqual(store.visibleComputerUseHosts.map(\.id), [F.accountID])
-    XCTAssertEqual(store.pendingOptions.computerAccess?.computerUseHostId, F.accountID)
+    XCTAssertEqual(store.visibleComputerUseHosts.map(\.id), [FixtureData.accountID])
+    XCTAssertEqual(store.pendingOptions.computerAccess?.computerUseHostId, FixtureData.accountID)
 
     await store.setComputerAccess(ChatComputerAccess())
     XCTAssertTrue(store.visibleComputerUseHosts.isEmpty)
@@ -121,15 +122,15 @@ final class ComposerConnectorStoreTests: XCTestCase {
   }
 
   func testConversationKeepsItsSelectedOfflineComputerAvailableToDisable() async throws {
-    let selection = Mutex<String?>(F.accountID)
+    let selection = Mutex<String?>(FixtureData.accountID)
     let fixture = ChatHTTPFixture { request in
       if request.url!.path == "/api/remotes/overview" {
         return ChatHTTPResponse(
           body: """
-            {"computerUseHosts":[{"id":"\(F.accountID)","displayName":"Studio Mac","status":"offline"},{"id":"\(F.siblingID)","displayName":"Travel Mac","status":"offline"}],"cloudBrowserAvailable":true,"cloudBrowserEnabledByDefault":false,"sshHosts":[],"vncHosts":[]}
+            {"computerUseHosts":[{"id":"\(FixtureData.accountID)","displayName":"Studio Mac","status":"offline"},{"id":"\(FixtureData.siblingID)","displayName":"Travel Mac","status":"offline"}],"cloudBrowserAvailable":true,"cloudBrowserEnabledByDefault":false,"sshHosts":[],"vncHosts":[]}
             """)
       }
-      if request.url!.path == "/api/chat-threads/\(F.threadID)/computer-use-host",
+      if request.url!.path == "/api/chat-threads/\(FixtureData.threadID)/computer-use-host",
         request.httpMethod == "POST"
       {
         let access = try JSONDecoder().decode(
@@ -137,58 +138,59 @@ final class ComposerConnectorStoreTests: XCTestCase {
         selection.withLock { $0 = access.computerUseHostId }
         return ChatHTTPResponse(body: "{}")
       }
-      if request.url!.path == "/api/chat-threads/\(F.threadID)/metadata" {
+      if request.url!.path == "/api/chat-threads/\(FixtureData.threadID)/metadata" {
         let hostID = selection.withLock { $0.map { "\"\($0)\"" } ?? "null" }
         return ChatHTTPResponse(
           body: """
-            {"id":"\(F.threadID)","agentId":"\(F.agentID)","cloudBrowserEnabled":false,"computerUseHostId":\(hostID)}
+            {"id":"\(FixtureData.threadID)","agentId":"\(FixtureData.agentID)","cloudBrowserEnabled":false,"computerUseHostId":\(hostID)}
             """)
       }
       return try composerResponse(request)
     }
     let thread = ChatThread(
-      id: F.threadID, agentID: F.agentID, title: "Remote work", selectedModel: nil,
+      id: FixtureData.threadID, agentID: FixtureData.agentID, title: "Remote work",
+      selectedModel: nil,
       createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
       pinnedAt: nil, pinOrder: nil, indicator: nil)
     let store = makeStore(fixture, thread: thread)
     defer { store.close() }
     await store.refresh()
     _ = try await remoteValue(store)
-    XCTAssertEqual(store.visibleComputerUseHosts.map(\.id), [F.accountID])
-    XCTAssertEqual(store.computerAccess.computerUseHostId, F.accountID)
+    XCTAssertEqual(store.visibleComputerUseHosts.map(\.id), [FixtureData.accountID])
+    XCTAssertEqual(store.computerAccess.computerUseHostId, FixtureData.accountID)
 
     await store.setComputerAccess(ChatComputerAccess())
     XCTAssertTrue(store.canSend)
     XCTAssertNil(store.computerAccess.computerUseHostId)
     XCTAssertTrue(store.visibleComputerUseHosts.isEmpty)
-    let access = try await store.service.computerAccess(threadID: F.threadID)
+    let access = try await store.service.computerAccess(threadID: FixtureData.threadID)
     XCTAssertNil(access.computerUseHostId)
   }
 
   func testPendingChoicesBelongToTheirAgentWithoutCreatingAConversation() async throws {
     let fixture = ChatHTTPFixture { request in
-      if request.url!.path == "/api/agents/\(F.siblingID)" {
-        return ChatHTTPResponse(body: "{\"agentId\":\"\(F.siblingID)\"}")
+      if request.url!.path == "/api/agents/\(FixtureData.siblingID)" {
+        return ChatHTTPResponse(body: "{\"agentId\":\"\(FixtureData.siblingID)\"}")
       }
       return try composerResponse(request)
     }
     let store = makeStore(fixture)
     defer { store.close() }
-    store.configure(agentID: F.agentID)
+    store.configure(agentID: FixtureData.agentID)
     await store.refresh()
     let host = try XCTUnwrap(store.hosts(.ssh).first)
     await store.setRemote(host, protocol: .ssh, enabled: true)
     await store.setComputerAccess(ChatComputerAccess(cloudBrowserEnabled: true))
-    store.configure(agentID: F.siblingID)
+    store.configure(agentID: FixtureData.siblingID)
     XCTAssertTrue(store.pendingOptions.initialRemoteAccessOverrides.isEmpty)
     await store.setRemote(host, protocol: .ssh, enabled: false)
-    store.configure(agentID: F.agentID)
+    store.configure(agentID: FixtureData.agentID)
     XCTAssertEqual(store.pendingOptions.initialRemoteAccessOverrides.first?.enabled, true)
     XCTAssertEqual(store.pendingOptions.computerAccess?.cloudBrowserEnabled, true)
-    store.configure(agentID: F.siblingID)
-    store.consumeNewChatOptions(agentID: F.agentID)
+    store.configure(agentID: FixtureData.siblingID)
+    store.consumeNewChatOptions(agentID: FixtureData.agentID)
     XCTAssertEqual(store.pendingOptions.initialRemoteAccessOverrides.first?.enabled, false)
-    store.configure(agentID: F.agentID)
+    store.configure(agentID: FixtureData.agentID)
     XCTAssertTrue(store.pendingOptions.initialRemoteAccessOverrides.isEmpty)
   }
 
@@ -198,7 +200,7 @@ final class ComposerConnectorStoreTests: XCTestCase {
     let oldReading = expectation(description: "Old read captured before rejection")
     let oldResponse = ConnectorResponseGate()
     let fixture = ChatHTTPFixture { request in
-      if request.url!.path.hasSuffix("/remote-access/ssh/\(F.accountID)"),
+      if request.url!.path.hasSuffix("/remote-access/ssh/\(FixtureData.accountID)"),
         request.httpMethod == "PUT"
       {
         writes.withLock { $0 += 1 }
@@ -220,7 +222,8 @@ final class ComposerConnectorStoreTests: XCTestCase {
       return response
     }
     let thread = ChatThread(
-      id: F.threadID, agentID: F.agentID, title: "Remote work", selectedModel: nil,
+      id: FixtureData.threadID, agentID: FixtureData.agentID, title: "Remote work",
+      selectedModel: nil,
       createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
       pinnedAt: nil, pinOrder: nil, indicator: nil)
     let store = makeStore(fixture, thread: thread)
@@ -289,13 +292,14 @@ final class ComposerConnectorStoreTests: XCTestCase {
         }
         return ChatHTTPResponse(
           body: """
-            {"ssh":[{"connectionId":"\(F.accountID)","displayName":"Build Mac","defaultEnabled":true,"overrideEnabled":\(enabled),"enabled":\(enabled)}],"vnc":[]}
+            {"ssh":[{"connectionId":"\(FixtureData.accountID)","displayName":"Build Mac","defaultEnabled":true,"overrideEnabled":\(enabled),"enabled":\(enabled)}],"vnc":[]}
             """)
       }
       return try composerResponse(request)
     }
     let thread = ChatThread(
-      id: F.threadID, agentID: F.agentID, title: "Remote work", selectedModel: nil,
+      id: FixtureData.threadID, agentID: FixtureData.agentID, title: "Remote work",
+      selectedModel: nil,
       createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
       pinnedAt: nil, pinOrder: nil, indicator: nil)
     let store = makeStore(fixture, thread: thread)
@@ -338,7 +342,7 @@ final class ComposerConnectorStoreTests: XCTestCase {
         reading.fulfill()
         await response.wait()
       }
-      if request.url!.path.hasSuffix("/remote-access/ssh/\(F.accountID)"),
+      if request.url!.path.hasSuffix("/remote-access/ssh/\(FixtureData.accountID)"),
         request.httpMethod == "PUT"
       {
         server.withLock {
@@ -352,13 +356,14 @@ final class ComposerConnectorStoreTests: XCTestCase {
         let enabled = server.withLock { $0.enabled }
         return ChatHTTPResponse(
           body: """
-            {"ssh":[{"connectionId":"\(F.accountID)","displayName":"Build Mac","defaultEnabled":true,"overrideEnabled":\(enabled),"enabled":\(enabled)}],"vnc":[]}
+            {"ssh":[{"connectionId":"\(FixtureData.accountID)","displayName":"Build Mac","defaultEnabled":true,"overrideEnabled":\(enabled),"enabled":\(enabled)}],"vnc":[]}
             """)
       }
       return try composerResponse(request)
     }
     let thread = ChatThread(
-      id: F.threadID, agentID: F.agentID, title: "Remote work", selectedModel: nil,
+      id: FixtureData.threadID, agentID: FixtureData.agentID, title: "Remote work",
+      selectedModel: nil,
       createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
       pinnedAt: nil, pinOrder: nil, indicator: nil)
     let store = makeStore(fixture, thread: thread)
@@ -403,7 +408,8 @@ final class ComposerConnectorStoreTests: XCTestCase {
       return try composerResponse(request)
     }
     let thread = ChatThread(
-      id: F.threadID, agentID: F.agentID, title: "Remote work", selectedModel: nil,
+      id: FixtureData.threadID, agentID: FixtureData.agentID, title: "Remote work",
+      selectedModel: nil,
       createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
       pinnedAt: nil, pinOrder: nil, indicator: nil)
     let store = makeStore(fixture, thread: thread)
@@ -417,7 +423,7 @@ final class ComposerConnectorStoreTests: XCTestCase {
       write.cancel()
     }
     await reading.wait()
-    store.configure(agentID: F.siblingID)
+    store.configure(agentID: FixtureData.siblingID)
     resume.open()
     await write.value
     XCTAssertEqual(writes.withLock { $0 }, 0)
@@ -449,7 +455,7 @@ final class ComposerConnectorStoreTests: XCTestCase {
     }
     let store = makeStore(fixture)
     defer { store.close() }
-    store.configure(agentID: F.agentID)
+    store.configure(agentID: FixtureData.agentID)
     let resources = try XCTUnwrap(store.resources)
     let first = try resources.store.get(resources.connected)
     let second = try resources.store.get(resources.connected)
@@ -468,12 +474,11 @@ final class ComposerConnectorStoreTests: XCTestCase {
     XCTAssertEqual(server.withLock { $0.remoteReads }, 1)
     await store.refresh()
     let remote = try await remoteValue(store)
-    XCTAssertEqual(remote.overview.sshHosts.first?.connectionId, F.accountID)
+    XCTAssertEqual(remote.overview.sshHosts.first?.connectionId, FixtureData.accountID)
     XCTAssertEqual(server.withLock { $0.remoteReads }, 2)
   }
 
-  func testOverviewSectionsStartIndependentlyAndPublishWithoutACombinedSuccessBarrier() async throws
-  {
+  func testOverviewSectionsPublishIndependently() async throws {
     let connectedStarted = expectation(description: "Connected read started")
     let remoteStarted = expectation(description: "Remote read started")
     let connectedResponse = ConnectorResponseGate()
@@ -491,7 +496,7 @@ final class ComposerConnectorStoreTests: XCTestCase {
     }
     let store = makeStore(fixture)
     defer { store.close() }
-    store.configure(agentID: F.agentID)
+    store.configure(agentID: FixtureData.agentID)
     let resources = try XCTUnwrap(store.resources)
     let pending = try resources.requests()
     addTeardownBlock {
@@ -504,8 +509,8 @@ final class ComposerConnectorStoreTests: XCTestCase {
     await fulfillment(of: [connectedStarted, remoteStarted], timeout: 3)
     remoteResponse.open()
     let remote = try await pending.remote.value
-    XCTAssertEqual(remote.overview.sshHosts.first?.connectionId, F.accountID)
-    XCTAssertEqual(store.hosts(.ssh).first?.connectionId, F.accountID)
+    XCTAssertEqual(remote.overview.sshHosts.first?.connectionId, FixtureData.accountID)
+    XCTAssertEqual(store.hosts(.ssh).first?.connectionId, FixtureData.accountID)
     connectedResponse.open()
     let connected = try await pending.connected.value
     XCTAssertTrue(connected.connectors.isEmpty)
@@ -535,10 +540,10 @@ final class ComposerConnectorStoreTests: XCTestCase {
           cancelled.fulfill()
         }
       }
-      if path == "/api/agents/\(F.siblingID)" {
-        return ChatHTTPResponse(body: "{\"agentId\":\"\(F.siblingID)\"}")
+      if path == "/api/agents/\(FixtureData.siblingID)" {
+        return ChatHTTPResponse(body: "{\"agentId\":\"\(FixtureData.siblingID)\"}")
       }
-      if path == "/api/agents/\(F.siblingID)/connector-access" {
+      if path == "/api/agents/\(FixtureData.siblingID)/connector-access" {
         return ChatHTTPResponse(
           body: #"{"enabledConnectorSlugs":["slack"],"customConnectorIds":[]}"#)
       }
@@ -552,7 +557,7 @@ final class ComposerConnectorStoreTests: XCTestCase {
     }
     let store = makeStore(fixture)
     defer { store.close() }
-    store.configure(agentID: F.agentID)
+    store.configure(agentID: FixtureData.agentID)
     let resources = try XCTUnwrap(store.resources)
     let pending = try resources.requests()
     addTeardownBlock {
@@ -564,11 +569,11 @@ final class ComposerConnectorStoreTests: XCTestCase {
     }
     await fulfillment(of: [started], timeout: 3)
     old.withLock { $0 = false }
-    store.configure(agentID: F.siblingID)
+    store.configure(agentID: FixtureData.siblingID)
     await fulfillment(of: [cancelled], timeout: 3)
     await store.refresh()
     XCTAssertEqual(store.connectors.first?.label, "New service")
-    XCTAssertEqual(store.hosts(.ssh).first?.connectionId, F.accountID)
+    XCTAssertEqual(store.hosts(.ssh).first?.connectionId, FixtureData.accountID)
     connectedResponse.open()
     remoteResponse.open()
     if case .success = await pending.connected.result {
@@ -592,7 +597,7 @@ final class ComposerConnectorStoreTests: XCTestCase {
     }
     let store = makeStore(fixture)
     defer { store.close() }
-    store.configure(agentID: F.agentID)
+    store.configure(agentID: FixtureData.agentID)
     let resources = try XCTUnwrap(store.resources)
     let shared = try resources.store.get(resources.remote)
     let waiter = Task { try await shared.value }
@@ -608,8 +613,8 @@ final class ComposerConnectorStoreTests: XCTestCase {
     let surviving = try resources.store.get(resources.remote)
     response.open()
     let remote = try await surviving.value
-    XCTAssertEqual(remote.overview.sshHosts.first?.connectionId, F.accountID)
-    XCTAssertEqual(store.hosts(.ssh).first?.connectionId, F.accountID)
+    XCTAssertEqual(remote.overview.sshHosts.first?.connectionId, FixtureData.accountID)
+    XCTAssertEqual(store.hosts(.ssh).first?.connectionId, FixtureData.accountID)
   }
 
   func testClosingComposerCancelsItsOriginalRemoteReadWithoutRetrying() async throws {
@@ -631,7 +636,7 @@ final class ComposerConnectorStoreTests: XCTestCase {
     }
     let store = makeStore(fixture)
     defer { store.close() }
-    store.configure(agentID: F.agentID)
+    store.configure(agentID: FixtureData.agentID)
     let resources = try XCTUnwrap(store.resources)
     let pending = try resources.store.get(resources.remote)
     addTeardownBlock {
@@ -655,7 +660,7 @@ final class ComposerConnectorStoreTests: XCTestCase {
     }
     let server = Mutex(Server())
     let fixture = ChatHTTPFixture { request in
-      if request.url!.path.hasSuffix("/remote-access/ssh/\(F.accountID)"),
+      if request.url!.path.hasSuffix("/remote-access/ssh/\(FixtureData.accountID)"),
         request.httpMethod == "PUT"
       {
         server.withLock {
@@ -673,13 +678,14 @@ final class ComposerConnectorStoreTests: XCTestCase {
         let enabled = server.withLock { $0.enabled }
         return ChatHTTPResponse(
           body:
-            "{\"ssh\":[{\"connectionId\":\"\(F.accountID)\",\"displayName\":\"Build Mac\",\"defaultEnabled\":true,\"overrideEnabled\":\(enabled),\"enabled\":\(enabled)}],\"vnc\":[]}"
+            "{\"ssh\":[{\"connectionId\":\"\(FixtureData.accountID)\",\"displayName\":\"Build Mac\",\"defaultEnabled\":true,\"overrideEnabled\":\(enabled),\"enabled\":\(enabled)}],\"vnc\":[]}"
         )
       }
       return try composerResponse(request)
     }
     let thread = ChatThread(
-      id: F.threadID, agentID: F.agentID, title: "Remote work", selectedModel: nil,
+      id: FixtureData.threadID, agentID: FixtureData.agentID, title: "Remote work",
+      selectedModel: nil,
       createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
       pinnedAt: nil, pinOrder: nil, indicator: nil)
     let store = makeStore(fixture, thread: thread)
@@ -724,27 +730,27 @@ final class ComposerConnectorStoreTests: XCTestCase {
 }
 
 private func composerResponse(_ request: URLRequest) throws -> ChatHTTPResponse {
-  typealias F = ConnectorHTTPFixtures
+  typealias FixtureData = ConnectorHTTPFixtures
   switch request.url!.path {
   case "/api/feature-switches":
     return ChatHTTPResponse(body: "{\"effectiveSwitches\":{\"connectorChatAccountAccess\":false}}")
-  case "/api/agents/\(F.agentID)":
-    return ChatHTTPResponse(body: "{\"agentId\":\"\(F.agentID)\"}")
+  case "/api/agents/\(FixtureData.agentID)":
+    return ChatHTTPResponse(body: "{\"agentId\":\"\(FixtureData.agentID)\"}")
   case "/api/connectors/connected":
     return ChatHTTPResponse(body: "{\"builtinConnectors\":[],\"customConnectors\":[]}")
-  case "/api/agents/\(F.agentID)/connector-access":
+  case "/api/agents/\(FixtureData.agentID)/connector-access":
     return ChatHTTPResponse(body: "{\"enabledConnectorSlugs\":[],\"customConnectorIds\":[]}")
   case "/api/remotes/overview":
     return ChatHTTPResponse(
       body: """
-        {"computerUseHosts":[],"cloudBrowserAvailable":true,"cloudBrowserEnabledByDefault":false,"sshHosts":[{"connectionId":"\(F.accountID)","displayName":"Build Mac","defaultEnabled":false}],"vncHosts":[]}
+        {"computerUseHosts":[],"cloudBrowserAvailable":true,"cloudBrowserEnabledByDefault":false,"sshHosts":[{"connectionId":"\(FixtureData.accountID)","displayName":"Build Mac","defaultEnabled":false}],"vncHosts":[]}
         """)
-  case "/api/chat-threads/\(F.threadID)/metadata":
-    return ChatHTTPResponse(body: F.metadata)
-  case "/api/chat-threads/\(F.threadID)/remote-access":
+  case "/api/chat-threads/\(FixtureData.threadID)/metadata":
+    return ChatHTTPResponse(body: FixtureData.metadata)
+  case "/api/chat-threads/\(FixtureData.threadID)/remote-access":
     return ChatHTTPResponse(
       body: """
-        {"ssh":[{"connectionId":"\(F.accountID)","displayName":"Build Mac","defaultEnabled":false,"overrideEnabled":null,"enabled":false}],"vnc":[]}
+        {"ssh":[{"connectionId":"\(FixtureData.accountID)","displayName":"Build Mac","defaultEnabled":false,"overrideEnabled":null,"enabled":false}],"vnc":[]}
         """)
   default: throw URLError(.unsupportedURL)
   }

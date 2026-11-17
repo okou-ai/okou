@@ -10,7 +10,7 @@ enum ChatRequestFailure {
     guard let transport = error as? URLError else { return false }
     return [
       URLError.Code.timedOut, .notConnectedToInternet, .networkConnectionLost,
-      .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed,
+      .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed
     ].contains(transport.code)
   }
 

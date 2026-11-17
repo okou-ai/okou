@@ -13,7 +13,7 @@ enum NativeLifetimeKind {
 
 let nativeTaskTeardown: Set<String> = [
   "close", "stop", "cancel", "dismiss", "deactivate", "invalidate", "detach", "suspend",
-  "clear", "finish",
+  "clear", "finish"
 ]
 
 struct NativeLifetimeOwner {

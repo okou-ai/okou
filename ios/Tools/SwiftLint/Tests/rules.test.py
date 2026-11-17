@@ -720,7 +720,7 @@ CASES = [
 
 
 class NativeRuleTests(unittest.TestCase):
-    def test_pinned_defaults_are_enabled(self):
+    def test_pinned_defaults_have_only_the_deferred_policy_exclusions(self):
         result = subprocess.run(
             [BINARY, "rules", "--config", str(IOS / ".swiftlint.yml")],
             capture_output=True,
@@ -737,7 +737,21 @@ class NativeRuleTests(unittest.TestCase):
             if opt_in == "no" and identifier != "custom_rules":
                 defaults[identifier] = enabled
         self.assertEqual(len(defaults), 101)
-        self.assertTrue(all(value == "yes" for value in defaults.values()), defaults)
+        self.assertEqual(
+            {name for name, value in defaults.items() if value == "no"},
+            {
+                "cyclomatic_complexity",
+                "file_length",
+                "function_body_length",
+                "function_parameter_count",
+                "identifier_name",
+                "large_tuple",
+                "line_length",
+                "nesting",
+                "type_body_length",
+            },
+        )
+        self.assertEqual(sum(value == "yes" for value in defaults.values()), 92)
 
     def lint(self, root, source, rule, filename="Screen.swift"):
         path = root / filename

@@ -67,7 +67,7 @@ final class NativeVoiceAudioCapture: VoiceAudioCapture {
             guard self?.sessionOwner == owner else { return }
             self?.stop()
           }
-        },
+        }
       ]
       return stream
     } catch {

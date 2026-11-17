@@ -112,7 +112,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
         view.acceptsImages
         ? [
           ComposerAttributedDocument.pasteboardType, UTType.plainText.identifier,
-          UTType.image.identifier,
+          UTType.image.identifier
         ]
         : [ComposerAttributedDocument.pasteboardType, UTType.plainText.identifier])
     view.placeholder.isHidden = !view.text.isEmpty
@@ -297,7 +297,7 @@ final class ComposerTextView: UITextView {
     placeholder.lineBreakMode = .byTruncatingTail
     addSubview(placeholder)
     registerForTraitChanges([
-      UITraitPreferredContentSizeCategory.self, UITraitUserInterfaceStyle.self,
+      UITraitPreferredContentSizeCategory.self, UITraitUserInterfaceStyle.self
     ]) { (view: ComposerTextView, _: UITraitCollection) in
       view.refreshAppearance()
     }
@@ -477,7 +477,7 @@ final class ComposerTextView: UITextView {
       [
         ComposerAttributedDocument.pasteboardType: data,
         UTType.utf8PlainText.identifier: Data(
-          ComposerAttributedDocument.clipboardText(selection).utf8),
+          ComposerAttributedDocument.clipboardText(selection).utf8)
       ]
     ])
     return true

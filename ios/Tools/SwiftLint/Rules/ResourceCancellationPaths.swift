@@ -118,7 +118,7 @@ struct ResourceCancellationPaths {
   }
 
   private let cancellationTypes: Set<String> = [
-    "CancellationError", "_Concurrency.CancellationError", "Swift.CancellationError",
+    "CancellationError", "_Concurrency.CancellationError", "Swift.CancellationError"
   ]
 
   private func literal(_ parts: [ExprSyntax], depth: Int = 0) -> Bool? {
@@ -156,7 +156,7 @@ struct ResourceCancellationPaths {
   private func cancelledCode(_ text: String) -> Bool {
     [
       ".cancelled", "URLError.cancelled", "URLError.Code.cancelled",
-      "Foundation.URLError.cancelled", "Foundation.URLError.Code.cancelled",
+      "Foundation.URLError.cancelled", "Foundation.URLError.Code.cancelled"
     ].contains(text)
   }
 

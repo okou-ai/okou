@@ -29,7 +29,7 @@ final class ChatFailureTests: XCTestCase {
     let history = try ChatEventProjection.history(
       rows: [
         input("old-input", run: "old-run"), input("new-input", run: "new-run"), newestFailure,
-        lateOutput,
+        lateOutput
       ], recovering: false)
     XCTAssertEqual(history.latestFailureID, newestFailure.id)
     XCTAssertTrue(history.messages.contains { $0.id == lateOutput.id })
@@ -51,7 +51,7 @@ final class ChatFailureTests: XCTestCase {
       ("provider_server_error", .retryable, true), ("response_connection_lost", .retryable, true),
       ("codex_access_program_unavailable", .retryable, true),
       ("safety_policy_refusal", .safety, true),
-      ("unsupported_model", .unavailable, true), ("usage_limit", .usage, true),
+      ("unsupported_model", .unavailable, true), ("usage_limit", .usage, true)
     ]
     for (reason, kind, retry) in cases {
       let recovery = failure(reason, text: "AUTONOMY_BUDGET_EXHAUSTED").recovery(
@@ -134,7 +134,7 @@ final class ChatFailureTests: XCTestCase {
     XCTAssertEqual(history.messages.first?.text, "Saved answer")
     XCTAssertEqual(history.messages.last?.failure?.reason, "execution_timeout")
     for later in [
-      input, partial, ChatEvent(id: "stopped", createdAt: .now, eventType: .runCancelled),
+      input, partial, ChatEvent(id: "stopped", createdAt: .now, eventType: .runCancelled)
     ] {
       XCTAssertNil(
         try ChatEventProjection.history(rows: [failed, later], recovering: false).latestFailureID)

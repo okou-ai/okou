@@ -270,8 +270,9 @@ private struct ComposerConnectorDirectoryContent: View {
 
   /// Sign-in in the app when the connector has an account method; a connector that Okou
   /// manages for the workspace is set up on the web.
-  fileprivate static func connect(_ connector: ChatCatalogConnector, store: ComposerConnectorStore)
-  {
+  fileprivate static func connect(
+    _ connector: ChatCatalogConnector, store: ComposerConnectorStore
+  ) {
     if connector.authMethods.contains(where: { $0.grantKind != "managed" }) {
       store.connect(target: .builtin(connector.slug))
     } else if let agentID = store.agentID {

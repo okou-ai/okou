@@ -18,7 +18,7 @@ final class AuthenticationStartupTests: XCTestCase {
     let info = [
       "CFBundleIdentifier": "ai.okou.tests.startup", "CFBundleShortVersionString": "1.0.0",
       "APIBaseURL": fixture.api.baseURL.absoluteString,
-      "WebBaseURL": fixture.api.baseURL.absoluteString,
+      "WebBaseURL": fixture.api.baseURL.absoluteString
     ]
     try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
       .write(to: bundleURL.appending(path: "Info.plist"))

@@ -107,6 +107,6 @@ enum OkouIconAssets {
     "x",
     "zap",
     "zoom-in",
-    "zoom-out",
+    "zoom-out"
   ]
 }

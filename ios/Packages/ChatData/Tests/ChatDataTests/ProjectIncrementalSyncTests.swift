@@ -224,7 +224,7 @@ final class ProjectIncrementalSyncTests: XCTestCase {
       projectPage([projectEvent(1, name: "Out of order")]),
       projectPage([projectEvent(2, project: 2, name: "Missing baseline")]),
       ChatHTTPResponse(status: 410, body: #"{"error":{"message":"Expired"}}"#),
-      ChatHTTPResponse(status: 426, body: #"{"error":{"message":"Upgrade required"}}"#),
+      ChatHTTPResponse(status: 426, body: #"{"error":{"message":"Upgrade required"}}"#)
     ] {
       let fixture = ChatHTTPFixture { request in
         switch request.url?.path {

@@ -164,7 +164,8 @@ final class ConnectorActionStore {
           try await finish(flow, status: current)
           return
         }
-        if flow.isExternalCode, let receipt = flow.session, let slug = current.target.connectorSlug
+        if flow.isExternalCode,
+          let receipt = flow.session, let slug = current.target.connectorSlug
         {
           guard flow.expiresAt.map({ $0 > Date() }) == true else {
             throw APIClientError.http(
@@ -306,8 +307,9 @@ final class ConnectorActionStore {
     }
     try await finish(flow, status: current)
   }
-  private func finish(_ flow: ConnectorAuthorizationFlow, status: ChatConnectorStatus) async throws
-  {
+  private func finish(
+    _ flow: ConnectorAuthorizationFlow, status: ChatConnectorStatus
+  ) async throws {
     try check(flow)
     guard
       let verified = try await service.status(flow.action.confirming(accountID: flow.operatedID))

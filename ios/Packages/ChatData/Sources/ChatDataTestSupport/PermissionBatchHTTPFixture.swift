@@ -9,7 +9,7 @@ public final class PermissionBatchHTTPFixture: Sendable {
     ["connectorSlug": "gmail", "permission": "mail.read"],
     ["connectorSlug": "gmail", "permission": "mail.send"],
     ["connectorSlug": "google-drive", "permission": "files.read"],
-    ["connectorSlug": "google-drive", "permission": "files.write"],
+    ["connectorSlug": "google-drive", "permission": "files.write"]
   ]
 
   public struct Grant: Codable, Sendable {
@@ -65,8 +65,8 @@ public final class PermissionBatchHTTPFixture: Sendable {
     components.path = "/agents/\(agentID)/permissions/batch"
     let json = try! JSONSerialization.data(withJSONObject: items, options: [.sortedKeys])
     components.queryItems = [
-      URLQueryItem(name: "items", value: String(decoding: json, as: UTF8.self)),
-      URLQueryItem(name: "action", value: "allow"),
+      URLQueryItem(name: "items", value: String(data: json, encoding: .utf8)!),
+      URLQueryItem(name: "action", value: "allow")
     ]
     if let duration {
       components.queryItems!.append(URLQueryItem(name: "expiresIn", value: duration))
@@ -74,7 +74,7 @@ public final class PermissionBatchHTTPFixture: Sendable {
     if callback {
       components.queryItems! += [
         URLQueryItem(name: "threadId", value: threadID),
-        URLQueryItem(name: "callbackPrompt", value: "Continue after permissions"),
+        URLQueryItem(name: "callbackPrompt", value: "Continue after permissions")
       ]
     }
     return components.string!
@@ -99,7 +99,7 @@ public final class PermissionBatchHTTPFixture: Sendable {
           return Self.response([
             "effectiveSwitches": [
               "batchConnectorPermissions": value.enabled,
-              "connectorChatAccountAccess": value.shared,
+              "connectorChatAccountAccess": value.shared
             ]
           ])
         }
@@ -109,7 +109,7 @@ public final class PermissionBatchHTTPFixture: Sendable {
         if path == threadPath + "/metadata" {
           return Self.response([
             "id": Self.threadID, "agentId": value.threadAgentID,
-            "computerUseHostId": NSNull(), "cloudBrowserEnabled": false,
+            "computerUseHostId": NSNull(), "cloudBrowserEnabled": false
           ])
         }
         for slug in ["gmail", "google-drive"]
@@ -123,7 +123,7 @@ public final class PermissionBatchHTTPFixture: Sendable {
               "permissions": Self.items.filter { $0["connectorSlug"] == slug }.map {
                 ["name": $0["permission"]!, "description": "Use \($0["permission"]!)"]
               },
-              "defaultPolicy": ["permissionDefault": "ask", "unknownPolicy": "ask"],
+              "defaultPolicy": ["permissionDefault": "ask", "unknownPolicy": "ask"]
             ]
           ])
         }
@@ -237,12 +237,12 @@ public final class PermissionBatchHTTPFixture: Sendable {
     let json = try! JSONEncoder().encode(grants.filter { $0.connectorSlug == slug })
     return ChatHTTPResponse(
       body: """
-        {"target":{"kind":"builtin","connectorSlug":"\(slug)"},"grants":\(String(decoding: json, as: UTF8.self))}
+        {"target":{"kind":"builtin","connectorSlug":"\(slug)"},"grants":\(String(data: json, encoding: .utf8)!)}
         """)
   }
 
   private static func encoded(_ grants: [Grant]) -> ChatHTTPResponse {
-    ChatHTTPResponse(body: String(decoding: try! JSONEncoder().encode(grants), as: UTF8.self))
+    ChatHTTPResponse(body: try! JSONEncoder().encodeString(grants))
   }
 
   private static func error(_ status: Int) -> ChatHTTPResponse {
@@ -252,14 +252,15 @@ public final class PermissionBatchHTTPFixture: Sendable {
 
   private static func response(_ value: [String: Any]) -> ChatHTTPResponse {
     ChatHTTPResponse(
-      body: String(decoding: try! JSONSerialization.data(withJSONObject: value), as: UTF8.self))
+      body: try! JSONSerialization.string(withJSONObject: value))
   }
 
-  private static func row(id: String, sequence: Int, type: String, payload: [String: Any]) -> String
-  {
+  private static func row(
+    id: String, sequence: Int, type: String, payload: [String: Any]
+  ) -> String {
     let encoded = try! JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
     return """
-      {"id":"\(id)","chatThreadId":"\(threadID)","runId":"61000000-0000-4000-8000-000000000004","seqId":\(sequence),"createdAt":"2026-11-03T00:00:00Z","eventType":"\(type)","payload":\(String(decoding: encoded, as: UTF8.self))}
+      {"id":"\(id)","chatThreadId":"\(threadID)","runId":"61000000-0000-4000-8000-000000000004","seqId":\(sequence),"createdAt":"2026-11-03T00:00:00Z","eventType":"\(type)","payload":\(String(data: encoded, encoding: .utf8)!)}
       """
   }
 }

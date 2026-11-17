@@ -249,7 +249,7 @@ final class ChatModelSelectionStore {
   var modelsWebURL: URL {
     models.webURL.appending(queryItems: [
       URLQueryItem(name: "settings", value: "billing"),
-      URLQueryItem(name: "billingView", value: "plans"),
+      URLQueryItem(name: "billingView", value: "plans")
     ])
   }
   var isMutating: Bool { isSaving || isSending }

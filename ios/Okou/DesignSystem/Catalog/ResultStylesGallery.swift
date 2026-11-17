@@ -202,7 +202,7 @@
       (text as NSString).draw(
         in: rect,
         withAttributes: [
-          .font: UIFont.systemFont(ofSize: size, weight: weight), .foregroundColor: color,
+          .font: UIFont.systemFont(ofSize: size, weight: weight), .foregroundColor: color
         ])
     }
   }

@@ -81,8 +81,9 @@ enum ComposerAttributedDocument {
     let envelopes = original.parts.filter { !isInline($0) }
     var restored: ChatDraftDocument?
     if !envelopes.isEmpty {
-      value.enumerateAttribute(envelopeSnapshotKey, in: NSRange(location: 0, length: value.length))
-      { snapshot, _, stop in
+      value.enumerateAttribute(
+        envelopeSnapshotKey, in: NSRange(location: 0, length: value.length)
+      ) { snapshot, _, stop in
         guard let snapshot = snapshot as? EnvelopeSnapshot,
           snapshot.document.parts.filter({ !isInline($0) }) == envelopes,
           tokens(snapshot.document) == new
@@ -158,7 +159,7 @@ enum ComposerAttributedDocument {
     guard !text.isEmpty else { return }
     if let last = parts.last, last["type"]?.string == "text" {
       parts[parts.count - 1] = .object([
-        "type": .string("text"), "text": .string((last["text"]?.string ?? "") + text),
+        "type": .string("text"), "text": .string((last["text"]?.string ?? "") + text)
       ])
     } else {
       parts.append(.object(["type": .string("text"), "text": .string(text)]))
@@ -246,7 +247,7 @@ final class ComposerReferenceAttachment: NSTextAttachment {
           x: iconSize + 10, y: 2, width: max(0, imageBounds.width - iconSize - 15),
           height: font.lineHeight),
         withAttributes: [
-          .font: font, .foregroundColor: UIColor(OkouColor.foreground), .paragraphStyle: paragraph,
+          .font: font, .foregroundColor: UIColor(OkouColor.foreground), .paragraphStyle: paragraph
         ])
     }
   }

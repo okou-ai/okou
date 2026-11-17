@@ -440,7 +440,7 @@ final class PermissionActionTests: XCTestCase {
     for path in [
       "/api/feature-switches",
       "/api/agents/\(PermissionHTTPFixture.agentID)", "/api/user-permission-grants",
-      "/api/connector-catalog/gmail/permissions",
+      "/api/connector-catalog/gmail/permissions"
     ] {
       XCTAssertEqual(
         requests.filter { $0.url!.path == path }.count, count, path, file: file, line: line)

@@ -117,7 +117,7 @@ enum NewChatTagline {
         String(localized: "Welcome back."), String(localized: "What's the move?"),
         String(localized: "Good to see you."), String(localized: "What's on your mind?"),
         String(localized: "Ready to roll?"), String(localized: "Ready to build something?"),
-        String(localized: "What are we working on?"),
+        String(localized: "What are we working on?")
       ]
       return taglines[abs(index) % taglines.count]
     }
@@ -137,7 +137,7 @@ enum NewChatTagline {
       String(localized: "New ideas today, \(name)?"),
       String(localized: "Right on time, \(name)."),
       String(localized: "What are we working on, \(name)?"),
-      String(localized: "The usual, \(name)?"),
+      String(localized: "The usual, \(name)?")
     ]
     return taglines[abs(index) % taglines.count]
   }

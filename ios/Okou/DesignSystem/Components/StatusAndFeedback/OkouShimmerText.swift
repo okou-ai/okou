@@ -34,7 +34,7 @@ struct OkouShimmerText: ViewModifier {
     .init(color: resting, location: 0), .init(color: resting, location: 0.28),
     .init(color: OkouColor.placeholder, location: 0.4),
     .init(color: OkouColor.placeholder, location: 0.6),
-    .init(color: resting, location: 0.72), .init(color: resting, location: 1),
+    .init(color: resting, location: 0.72), .init(color: resting, location: 1)
   ]
 
   /// The band's centre travels 0 → 2 text widths per cycle; once it has left, the next band

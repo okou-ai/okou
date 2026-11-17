@@ -53,7 +53,7 @@ private struct ChatThreadMoreControl: UIViewRepresentable {
       [
         pinned ? String(localized: "Pinned") : String(localized: "Not pinned"),
         thread.isMuted ? String(localized: "Muted") : nil,
-        thread.isArchived ? String(localized: "Archived") : nil,
+        thread.isArchived ? String(localized: "Archived") : nil
       ].compactMap { $0 }.joined(separator: ", ")
   }
 }

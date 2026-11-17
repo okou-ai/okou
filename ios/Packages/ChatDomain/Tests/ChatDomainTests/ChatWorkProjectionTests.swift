@@ -7,25 +7,25 @@ final class ChatWorkProjectionTests: XCTestCase {
     for terminal in [ChatEventType.runFailed, .runCancelled] {
       let outcome = try project([
         input("ask", at: 0), event("finish", terminal, at: 1),
-        event("usage", .usageRecorded, at: 2),
+        event("usage", .usageRecorded, at: 2)
       ])
       XCTAssertEqual(outcome.runUsageAnchors, ["run": "finish"])
       XCTAssertEqual(outcome.usageEventIDs, ["run": "usage"])
       let retained = try project([
         input("ask", at: 0),
         event("finish", terminal, at: 1, content: "Private outcome", error: "Private diagnostic"),
-        event("usage", .usageRecorded, at: 2),
+        event("usage", .usageRecorded, at: 2)
       ])
       XCTAssertEqual(outcome, retained)
       let steer = try project([
         input("ask", at: 0), output("answer", at: 1), input("steer", at: 2),
-        event("finish", terminal, at: 3), event("usage", .usageRecorded, at: 4),
+        event("finish", terminal, at: 3), event("usage", .usageRecorded, at: 4)
       ])
       XCTAssertEqual(steer.runUsageAnchors, ["run": "finish"])
     }
     let pendingSteer = try project([
       input("ask", at: 0), output("answer", at: 1), input("steer", at: 2),
-      event("usage", .usageRecorded, at: 3),
+      event("usage", .usageRecorded, at: 3)
     ])
     XCTAssertEqual(pendingSteer.runUsageAnchors, ["run": "answer"])
   }
@@ -34,7 +34,7 @@ final class ChatWorkProjectionTests: XCTestCase {
     let history = try project([
       input("ask", at: 0), output("work", at: 10), output("answer", at: 30),
       input("followup", at: 60), output("more-work", at: 70), output("final", at: 90),
-      event("done", .runCompleted, at: 120),
+      event("done", .runCompleted, at: 120)
     ])
     XCTAssertEqual(
       history.messages.map(\.id), ["ask", "work", "answer", "followup", "more-work", "final"])
@@ -65,7 +65,7 @@ final class ChatWorkProjectionTests: XCTestCase {
     let history = try project([
       input("ask", at: 0), output("first", at: 10),
       event("other", .outputMessage, at: 20, runID: "other-run", content: "Other answer"),
-      runless, output("late", at: 30),
+      runless, output("late", at: 30)
     ])
     XCTAssertEqual(history.workSections.map(\.anchorMessageID), ["first", "other", "late"])
     XCTAssertTrue(history.workSections.allSatisfy { $0.hiddenMessageIDs.isEmpty })
@@ -81,7 +81,7 @@ final class ChatWorkProjectionTests: XCTestCase {
         event("error", .outputError, at: 20, error: "Connection lost"),
         event(
           "failed", .runFailed, at: 21, error: diagnostic,
-          failureReason: "provider_stream_timeout"),
+          failureReason: "provider_stream_timeout")
       ]
       let failed = try project(rows)
       XCTAssertEqual(failed.messages.filter { $0.role == .system }.map(\.id), ["error", "failed"])
@@ -101,7 +101,7 @@ final class ChatWorkProjectionTests: XCTestCase {
     let recovered = try project([
       input("ask", at: 0), output("progress", at: 10),
       event("temporary", .outputError, at: 15, error: "Retrying"), output("answer", at: 20),
-      event("cancelled", .runCancelled, at: 30),
+      event("cancelled", .runCancelled, at: 30)
     ])
     XCTAssertEqual(recovered.workSections.first?.hiddenMessageIDs, ["progress", "temporary"])
     XCTAssertEqual(
@@ -115,7 +115,7 @@ final class ChatWorkProjectionTests: XCTestCase {
       event("error", .outputError, at: 20, error: "The provider connection was lost"),
       event(
         "failed", .runFailed, at: 21, error: "Private diagnostic",
-        failureReason: "reconnect_required"),
+        failureReason: "reconnect_required")
     ])
     XCTAssertEqual(history.messages.filter { $0.isError }.map(\.id), ["error", "failed"])
     XCTAssertEqual(
@@ -145,7 +145,7 @@ final class ChatWorkProjectionTests: XCTestCase {
       id: "revoke", runId: "run", revokesEventId: "stale", createdAt: date(50),
       eventType: .controlRevoke)
     let history = try project([
-      queued, claimed, output("stale", at: 40), revoked, output("answer", at: 60),
+      queued, claimed, output("stale", at: 40), revoked, output("answer", at: 60)
     ])
     XCTAssertEqual(history.messages.map(\.id), ["claimed", "answer"])
     XCTAssertEqual(history.workSections.first?.startTime, date(0))
@@ -170,7 +170,7 @@ final class ChatWorkProjectionTests: XCTestCase {
       id: "recall", revokesEventId: "queued", createdAt: date(13), eventType: .controlRevoke)
     let history = try project([
       input("ask", at: 0), output("work", at: 10), queued, recall, output("answer", at: 20),
-      event("done", .runCompleted, at: 30),
+      event("done", .runCompleted, at: 30)
     ])
     XCTAssertEqual(history.messages.map(\.id), ["ask", "work", "answer"])
     XCTAssertEqual(history.workSections.count, 1)

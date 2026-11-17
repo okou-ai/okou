@@ -57,7 +57,7 @@ struct ImportBoundariesRule: NativeRule {
     private static let sdkOwners: [String: Set<String>] = [
       "Ably": [
         "Okou/Services/RealtimeService.swift",
-        "OkouTests/RealtimeResourceRecoveryTests.swift",
+        "OkouTests/RealtimeResourceRecoveryTests.swift"
       ],
       "ClerkKit": [
         "Okou/Services/AuthenticationService.swift",
@@ -69,12 +69,12 @@ struct ImportBoundariesRule: NativeRule {
         "Push/PushConfiguration.swift",
         "OkouTests/AuthenticationHTTPFixture.swift",
         "OkouTests/AuthenticationScopeTests.swift",
-        "OkouTests/NativeAuthFlowTests.swift",
+        "OkouTests/NativeAuthFlowTests.swift"
       ],
       "ClerkKitUI": [
         "Okou/DesignSystem/Foundations/OkouAuthTheme.swift",
-        "Okou/Features/SignIn/NativeAuthView.swift",
-      ],
+        "Okou/Features/SignIn/NativeAuthView.swift"
+      ]
     ]
 
     // Known forbidden module edges; system storage, crypto, synchronization and
@@ -82,7 +82,7 @@ struct ImportBoundariesRule: NativeRule {
     // dependency review; syntax alone cannot classify every future framework.
     private static let dataForbidden: Set<String> = [
       "Okou", "SwiftUI", "UIKit", "AppKit", "WebKit", "AuthenticationServices",
-      "CCState", "CCStateSwiftUI",
+      "CCState", "CCStateSwiftUI"
     ]
   }
 }

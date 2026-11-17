@@ -7,7 +7,7 @@ import XCTest
 
 @testable import Okou
 
-private typealias F = ConnectorHTTPFixtures
+private typealias FixtureData = ConnectorHTTPFixtures
 
 @MainActor
 final class ConnectorActionTests: XCTestCase {
@@ -17,12 +17,13 @@ final class ConnectorActionTests: XCTestCase {
   ) throws -> ChatConnectorAction {
     let path =
       reconnect
-      ? "/connectors/slack/reconnect/\(F.accountID)"
+      ? "/connectors/slack/reconnect/\(FixtureData.accountID)"
       : "/connectors/\(custom ? "_internal" : "slack")/connect"
     return try XCTUnwrap(
       ChatConnectorAction.parse(
-        path + "?agentId=\(F.agentID)&threadId=\(F.threadID)&callbackPrompt=\(callbackQuery)",
-        webURL: fixture.baseURL, agentID: F.agentID, threadID: F.threadID))
+        path
+          + "?agentId=\(FixtureData.agentID)&threadId=\(FixtureData.threadID)&callbackPrompt=\(callbackQuery)",
+        webURL: fixture.baseURL, agentID: FixtureData.agentID, threadID: FixtureData.threadID))
   }
   private func store(
     _ fixture: ChatHTTPFixture,
@@ -33,7 +34,8 @@ final class ConnectorActionTests: XCTestCase {
     let sync = ChatSync(client: fixture.client)
     let commands = ChatCommands(client: fixture.client, sync: sync)
     let thread = ChatThread(
-      id: F.threadID, agentID: F.agentID, title: "Connector test", selectedModel: nil,
+      id: FixtureData.threadID, agentID: FixtureData.agentID, title: "Connector test",
+      selectedModel: nil,
       createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast, pinnedAt: nil,
       pinOrder: nil, modelSettings: [:], serviceTier: nil, indicator: nil)
     return ConnectorActionStore(
@@ -46,7 +48,7 @@ final class ConnectorActionTests: XCTestCase {
     let fixture = ChatHTTPFixture { request in
       if request.url!.path == "/api/connectors/slack/no-auth" {
         linked.withLock { $0 = true }
-        return ChatHTTPResponse(body: "{\"connectionId\":\"\(F.accountID)\"}")
+        return ChatHTTPResponse(body: "{\"connectionId\":\"\(FixtureData.accountID)\"}")
       }
       if request.url!.path == "/api/chat/events" {
         struct Body: Decodable { let prompt: String }
@@ -55,7 +57,8 @@ final class ConnectorActionTests: XCTestCase {
       }
       XCTAssertNotEqual(request.httpMethod, "DELETE")
       return try XCTUnwrap(
-        F.response(request, connected: linked.withLock { $0 }, authorized: linked.withLock { $0 }))
+        FixtureData.response(
+          request, connected: linked.withLock { $0 }, authorized: linked.withLock { $0 }))
     }
     let store = store(fixture)
     defer { store.close() }
@@ -75,10 +78,10 @@ final class ConnectorActionTests: XCTestCase {
       if request.url?.path == "/api/connector-accounts/connections" {
         return ChatHTTPResponse(
           body: """
-            {"connections":[\(F.account(isDefault: false))],"nextCursor":null,"defaultConnection":null}
+            {"connections":[\(FixtureData.account(isDefault: false))],"nextCursor":null,"defaultConnection":null}
             """)
       }
-      return try XCTUnwrap(F.response(request))
+      return try XCTUnwrap(FixtureData.response(request))
     }
     let store = store(fixture)
     defer { store.close() }
@@ -92,10 +95,10 @@ final class ConnectorActionTests: XCTestCase {
     let fixture = ChatHTTPFixture { request in
       if request.url!.path == "/api/connectors/slack/no-auth" {
         starts.withLock { $0 += 1 }
-        return ChatHTTPResponse(body: "{\"connectionId\":\"\(F.siblingID)\"}")
+        return ChatHTTPResponse(body: "{\"connectionId\":\"\(FixtureData.siblingID)\"}")
       }
       XCTAssertNotEqual(request.url!.path, "/api/chat/events")
-      return try XCTUnwrap(F.response(request))
+      return try XCTUnwrap(FixtureData.response(request))
     }
     let store = store(fixture)
     defer { store.close() }
@@ -114,7 +117,7 @@ final class ConnectorActionTests: XCTestCase {
     let fixture = ChatHTTPFixture { request in
       if request.url!.path == "/api/connectors/slack/no-auth" {
         starts.withLock { $0 += 1 }
-        return ChatHTTPResponse(body: "{\"connectionId\":\"\(F.accountID)\"}")
+        return ChatHTTPResponse(body: "{\"connectionId\":\"\(FixtureData.accountID)\"}")
       }
       if request.url!.path == "/api/chat/events" {
         struct Body: Decodable { let clientEventId: String }
@@ -125,7 +128,7 @@ final class ConnectorActionTests: XCTestCase {
         }
         if count == 1 { throw URLError(.networkConnectionLost) }
       }
-      return try XCTUnwrap(F.response(request))
+      return try XCTUnwrap(FixtureData.response(request))
     }
     let store = store(fixture)
     defer { store.close() }
@@ -137,7 +140,8 @@ final class ConnectorActionTests: XCTestCase {
     // Unrelated read demand may evict cached rows, never the uncertain operation's identity.
     for _ in 0..<80 {
       _ = store.resources.read(
-        .configuration(target: .builtin("slack"), agentID: F.agentID, threadID: UUID().uuidString))
+        .configuration(
+          target: .builtin("slack"), agentID: FixtureData.agentID, threadID: UUID().uuidString))
     }
     store.submit()
     try await waitForBusinessResult { store.active == nil }
@@ -153,7 +157,7 @@ final class ConnectorActionTests: XCTestCase {
       if request.url!.path == "/api/connectors/slack/oauth/start" {
         return ChatHTTPResponse(
           body:
-            "{\"authorizationUrl\":\"https://auth.example.invalid/start\",\"oauthAttemptId\":\"\(F.attemptID)\"}"
+            "{\"authorizationUrl\":\"https://auth.example.invalid/start\",\"oauthAttemptId\":\"\(FixtureData.attemptID)\"}"
         )
       }
       if request.url!.path.contains("oauth-completions") {
@@ -162,7 +166,7 @@ final class ConnectorActionTests: XCTestCase {
       }
       XCTAssertNotEqual(request.url!.path, "/api/chat/events")
       return try XCTUnwrap(
-        F.response(request, connected: false, authorized: false, grantKind: "auth-code"))
+        FixtureData.response(request, connected: false, authorized: false, grantKind: "auth-code"))
     }
     let store = store(fixture, pollSleep: clock.sleep)
     defer { store.close() }
@@ -193,7 +197,7 @@ final class ConnectorActionTests: XCTestCase {
           await gate.wait()
           defer { responded.fulfill() }
           linked.withLock { $0 = true }
-          return ChatHTTPResponse(body: "{\"connectionId\":\"\(F.accountID)\"}")
+          return ChatHTTPResponse(body: "{\"connectionId\":\"\(FixtureData.accountID)\"}")
         }
         if request.url!.path == "/api/chat/events" {
           struct Body: Decodable { let prompt: String }
@@ -201,7 +205,8 @@ final class ConnectorActionTests: XCTestCase {
           prompts.withLock { $0.append(body.prompt) }
         }
         return try XCTUnwrap(
-          F.response(request, connected: linked.withLock { $0 }, authorized: linked.withLock { $0 })
+          FixtureData.response(
+            request, connected: linked.withLock { $0 }, authorized: linked.withLock { $0 })
         )
       }
       let store = store(fixture)
@@ -239,7 +244,7 @@ final class ConnectorActionTests: XCTestCase {
       if request.url!.path.hasSuffix("/external-code/sessions") {
         return ChatHTTPResponse(
           body:
-            "{\"sessionId\":\"\(F.attemptID)\",\"sessionToken\":\"synthetic-session\",\"authorizationUrl\":\"https://auth.example.invalid/code\",\"expiresIn\":300}"
+            "{\"sessionId\":\"\(FixtureData.attemptID)\",\"sessionToken\":\"synthetic-session\",\"authorizationUrl\":\"https://auth.example.invalid/code\",\"expiresIn\":300}"
         )
       }
       if request.url!.path.hasSuffix("/complete") {
@@ -252,10 +257,11 @@ final class ConnectorActionTests: XCTestCase {
         }
         linked.withLock { $0 = true }
         return ChatHTTPResponse(
-          body: "{\"status\":\"complete\",\"connectionId\":\"\(F.accountID)\"}")
+          body: "{\"status\":\"complete\",\"connectionId\":\"\(FixtureData.accountID)\"}")
       }
       return try XCTUnwrap(
-        F.response(request, connected: linked.withLock { $0 }, grantKind: "external-code"))
+        FixtureData.response(request, connected: linked.withLock { $0 }, grantKind: "external-code")
+      )
     }
     let store = store(fixture)
     defer { store.close() }
@@ -282,16 +288,16 @@ final class ConnectorActionTests: XCTestCase {
       if request.url!.path == "/api/connectors/slack/oauth/start" {
         return ChatHTTPResponse(
           body:
-            "{\"authorizationUrl\":\"https://auth.example.invalid/start\",\"oauthAttemptId\":\"\(F.attemptID)\"}"
+            "{\"authorizationUrl\":\"https://auth.example.invalid/start\",\"oauthAttemptId\":\"\(FixtureData.attemptID)\"}"
         )
       }
       if request.url!.path.contains("oauth-completions") {
         connected.withLock { $0 = true }
-        return ChatHTTPResponse(body: "{\"connectionId\":\"\(F.accountID)\"}")
+        return ChatHTTPResponse(body: "{\"connectionId\":\"\(FixtureData.accountID)\"}")
       }
       if request.url!.path == "/api/chat/events" { callbacks.withLock { $0 += 1 } }
       return try XCTUnwrap(
-        F.response(request, connected: connected.withLock { $0 }, grantKind: "auth-code"))
+        FixtureData.response(request, connected: connected.withLock { $0 }, grantKind: "auth-code"))
     }
     let store = store(fixture, pollSleep: clock.sleep)
     defer { store.close() }
@@ -325,12 +331,13 @@ final class ConnectorActionTests: XCTestCase {
       if request.url!.path.hasSuffix("/oauth/device/sessions") {
         return ChatHTTPResponse(
           body:
-            "{\"sessionId\":\"\(F.attemptID)\",\"sessionToken\":\"synthetic-session\",\"userCode\":\"EXAMPLE-CODE\",\"verificationUri\":\"https://auth.example.invalid/device\",\"expiresIn\":300,\"interval\":1}"
+            "{\"sessionId\":\"\(FixtureData.attemptID)\",\"sessionToken\":\"synthetic-session\",\"userCode\":\"EXAMPLE-CODE\",\"verificationUri\":\"https://auth.example.invalid/device\",\"expiresIn\":300,\"interval\":1}"
         )
       }
       if request.url!.path.hasSuffix("/poll") {
         XCTAssertTrue(
-          String(decoding: chatRequestBody(request), as: UTF8.self).contains("synthetic-session"))
+          try XCTUnwrap(String(data: chatRequestBody(request), encoding: .utf8)).contains(
+            "synthetic-session"))
         let count = polls.withLock {
           $0 += 1
           return $0
@@ -338,10 +345,11 @@ final class ConnectorActionTests: XCTestCase {
         if count == 1 { return ChatHTTPResponse(body: "{\"status\":\"pending\",\"interval\":1}") }
         connected.withLock { $0 = true }
         return ChatHTTPResponse(
-          body: "{\"status\":\"complete\",\"connectionId\":\"\(F.accountID)\"}")
+          body: "{\"status\":\"complete\",\"connectionId\":\"\(FixtureData.accountID)\"}")
       }
       return try XCTUnwrap(
-        F.response(request, connected: connected.withLock { $0 }, grantKind: "device-auth"))
+        FixtureData.response(
+          request, connected: connected.withLock { $0 }, grantKind: "device-auth"))
     }
     let store = store(fixture, pollSleep: clock.sleep)
     defer { store.close() }
@@ -374,28 +382,28 @@ final class ConnectorActionTests: XCTestCase {
             mode == "oauth"
             ? "[{\"key\":\"access_token\",\"label\":\"Access token\",\"kind\":\"secret\",\"required\":true}]"
             : "[]"
-          let custom = F.custom(mode: mode).replacingOccurrences(
+          let custom = FixtureData.custom(mode: mode).replacingOccurrences(
             of: "\"fields\":[]", with: "\"fields\":\(fields)")
           return ChatHTTPResponse(body: "{\"connectors\":[\(custom)]}")
         }
         if request.url!.path.hasSuffix("/oauth2/start") {
           XCTAssertEqual(request.httpMethod, "POST")
-          let body = String(decoding: chatRequestBody(request), as: UTF8.self)
+          let body = try XCTUnwrap(String(data: chatRequestBody(request), encoding: .utf8))
           XCTAssertFalse(body.contains("access_token"))
           XCTAssertFalse(body.contains("values"))
           if mode == "oauth" {
             return ChatHTTPResponse(
               body:
-                "{\"result\":\"authorization\",\"authorizationUrl\":\"https://auth.example.invalid/start\",\"oauthAttemptId\":\"\(F.attemptID)\"}"
+                "{\"result\":\"authorization\",\"authorizationUrl\":\"https://auth.example.invalid/start\",\"oauthAttemptId\":\"\(FixtureData.attemptID)\"}"
             )
           }
           connected.withLock { $0 = true }
           return ChatHTTPResponse(
-            body: "{\"result\":\"connected\",\"connectionId\":\"\(F.accountID)\"}")
+            body: "{\"result\":\"connected\",\"connectionId\":\"\(FixtureData.accountID)\"}")
         }
         if request.url!.path.contains("oauth-completions") {
           connected.withLock { $0 = true }
-          return ChatHTTPResponse(body: "{\"connectionId\":\"\(F.accountID)\"}")
+          return ChatHTTPResponse(body: "{\"connectionId\":\"\(FixtureData.accountID)\"}")
         }
         XCTAssertFalse(request.url!.path.hasSuffix("/values"))
         if request.url!.path == "/api/chat/events" {
@@ -403,7 +411,7 @@ final class ConnectorActionTests: XCTestCase {
           callbacks.withLock { $0 += 1 }
         }
         return try XCTUnwrap(
-          F.response(request, connected: connected.withLock { $0 }, customMode: mode))
+          FixtureData.response(request, connected: connected.withLock { $0 }, customMode: mode))
       }
       let store = store(fixture, pollSleep: clock.sleep)
       defer { store.close() }
@@ -428,13 +436,14 @@ final class ConnectorActionTests: XCTestCase {
       if request.url!.path.hasSuffix("/connector-selections") {
         if request.httpMethod == "PUT" {
           XCTAssertTrue(
-            String(decoding: chatRequestBody(request), as: UTF8.self).contains(F.accountID))
+            try XCTUnwrap(String(data: chatRequestBody(request), encoding: .utf8)).contains(
+              FixtureData.accountID))
           selected.withLock { $0 = true }
           return ChatHTTPResponse(body: "{}")
         }
         XCTAssertEqual(request.httpMethod, "GET")
         let selection =
-          "{\"connectionId\":\"\(F.accountID)\",\"target\":{\"kind\":\"builtin\",\"connectorSlug\":\"slack\"}}"
+          "{\"connectionId\":\"\(FixtureData.accountID)\",\"target\":{\"kind\":\"builtin\",\"connectorSlug\":\"slack\"}}"
         return ChatHTTPResponse(
           body: "{\"selections\":\(selected.withLock { $0 } ? "[\(selection)]" : "[]")}")
       }
@@ -442,14 +451,14 @@ final class ConnectorActionTests: XCTestCase {
         XCTAssertTrue(selected.withLock { $0 })
         callbacks.withLock { $0 += 1 }
       }
-      return try XCTUnwrap(F.response(request))
+      return try XCTUnwrap(FixtureData.response(request))
     }
     let store = store(fixture)
     defer { store.close() }
     let action = try XCTUnwrap(
       ChatConnectorAction.parse(
-        "/agents/\(F.agentID)/connector-accounts/\(F.accountID)/select?kind=builtin&connectorSlug=slack&threadId=\(F.threadID)&callbackPrompt=Continue",
-        webURL: fixture.baseURL, agentID: F.agentID, threadID: F.threadID))
+        "/agents/\(FixtureData.agentID)/connector-accounts/\(FixtureData.accountID)/select?kind=builtin&connectorSlug=slack&threadId=\(FixtureData.threadID)&callbackPrompt=Continue",
+        webURL: fixture.baseURL, agentID: FixtureData.agentID, threadID: FixtureData.threadID))
     store.activate(action)
     try await waitForBusinessResult { store.active != nil }
     store.submit()
@@ -481,7 +490,7 @@ final class ConnectorActionTests: XCTestCase {
       if request.url!.path.hasSuffix("/oauth/device/sessions") {
         return ChatHTTPResponse(
           body:
-            "{\"sessionId\":\"\(F.attemptID)\",\"sessionToken\":\"synthetic-session\",\"userCode\":\"EXAMPLE-CODE\",\"verificationUri\":\"https://auth.example.invalid/device\",\"expiresIn\":300,\"interval\":1}"
+            "{\"sessionId\":\"\(FixtureData.attemptID)\",\"sessionToken\":\"synthetic-session\",\"userCode\":\"EXAMPLE-CODE\",\"verificationUri\":\"https://auth.example.invalid/device\",\"expiresIn\":300,\"interval\":1}"
         )
       }
       if request.url!.path.hasSuffix("/poll") {
@@ -490,7 +499,8 @@ final class ConnectorActionTests: XCTestCase {
       }
       XCTAssertNotEqual(request.url!.path, "/api/chat/events")
       return try XCTUnwrap(
-        F.response(request, connected: false, authorized: false, grantKind: "device-auth"))
+        FixtureData.response(request, connected: false, authorized: false, grantKind: "device-auth")
+      )
     }
     let store = store(fixture, pollSleep: clock.sleep)
     defer { store.close() }
@@ -532,15 +542,15 @@ final class ConnectorActionTests: XCTestCase {
           XCTAssertFalse(Task.isCancelled)
         }
       }
-      return try XCTUnwrap(F.response(request))
+      return try XCTUnwrap(FixtureData.response(request))
     }
     let store = store(fixture)
     defer { store.close() }
     let first = try descriptor(fixture)
     let equivalent = try XCTUnwrap(
       ChatConnectorAction.parse(
-        "/connectors/SLACK/authorize?callbackPrompt=Another+prompt&threadId=\(F.threadID)&agentId=\(F.agentID)",
-        webURL: fixture.baseURL, agentID: F.agentID, threadID: F.threadID))
+        "/connectors/SLACK/authorize?callbackPrompt=Another+prompt&threadId=\(FixtureData.threadID)&agentId=\(FixtureData.agentID)",
+        webURL: fixture.baseURL, agentID: FixtureData.agentID, threadID: FixtureData.threadID))
     let one = Task.immediate { @MainActor in try await store.resources.read(first).load() }
     let two = Task.immediate { @MainActor in try await store.resources.read(equivalent).load() }
     addTeardownBlock { @MainActor in
@@ -584,7 +594,7 @@ final class ConnectorActionTests: XCTestCase {
           }
         }
       }
-      return try XCTUnwrap(F.response(request))
+      return try XCTUnwrap(FixtureData.response(request))
     }
     let store = store(fixture)
     defer { store.close() }
@@ -631,7 +641,7 @@ final class ConnectorActionTests: XCTestCase {
             status: response.withLock { $0 },
             body: "{\"error\":{\"message\":\"Access unavailable\"}}")
         }
-        return try XCTUnwrap(F.response(request))
+        return try XCTUnwrap(FixtureData.response(request))
       }
       let store = ConnectorActionStore(
         service: ChatConnectorService(client: fixture.client), didContinue: {},
@@ -671,7 +681,7 @@ final class ConnectorActionTests: XCTestCase {
             status: status, body: "{\"error\":{\"message\":\"Access revoked\"}}")
         }
       }
-      return try XCTUnwrap(F.response(request))
+      return try XCTUnwrap(FixtureData.response(request))
     }
     let store = store(fixture)
     defer { store.close() }
@@ -714,7 +724,7 @@ final class ConnectorActionTests: XCTestCase {
             status: status, body: "{\"error\":{\"message\":\"Access revoked\"}}")
         }
       }
-      return try XCTUnwrap(F.response(request))
+      return try XCTUnwrap(FixtureData.response(request))
     }
     let store = store(fixture)
     defer { store.close() }

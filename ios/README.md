@@ -269,9 +269,11 @@ separately from compilation, automated tests, and release publication.
 ## SwiftLint
 
 SwiftLint 0.65.1 includes the repository's [native rules](../docs/ios/ios-lint.md)
-through its SwiftLintExtraRules extension. All 101 upstream default checks are
-enabled, alongside the existing opt-in and native rules. `swift-format` owns
-formatting; SwiftLint's multiline-brace and trailing-comma settings follow it.
+through its SwiftLintExtraRules extension. It enables 92 upstream default checks;
+eight metric checks and `identifier_name` are deferred for a separate policy
+decision. The existing opt-in and native rules remain enabled. `swift-format` owns
+formatting; multiline braces remain compatible with its layout, and
+`ios/.swift-format` aligns collection commas with SwiftLint's default rule.
 Build the pinned source and run the shared entry point from the repository root:
 
 ```sh

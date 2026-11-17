@@ -33,8 +33,9 @@ implementing, or reviewing native UI.
 
 - Run `bash ios/scripts/lint.sh` after Swift changes. Install the pinned version
   with `bash ios/scripts/install-swiftlint.sh`; see [the README](README.md#swiftlint).
-- `swift-format` owns formatting; SwiftLint runs every pinned upstream default
-  plus the opt-in and [native rules](../docs/ios/ios-lint.md) in `.swiftlint.yml`.
+- `swift-format` owns formatting; SwiftLint inherits pinned upstream defaults
+  with the explicit metric/naming deferrals in `.swiftlint.yml`, plus its opt-in
+  and [native rules](../docs/ios/ios-lint.md).
   Use the source/receipt-verified custom binary on macOS and Linux. The default
   `statement_position` check needs SourceKit from the installed Swift toolchain;
   no App build is required. Keep source and toolchain pins aligned.

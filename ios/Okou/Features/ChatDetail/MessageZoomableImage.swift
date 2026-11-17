@@ -33,7 +33,7 @@ final class MessageImageScrollView: UIScrollView, UIScrollViewDelegate {
       UIAccessibilityCustomAction(
         name: String(localized: "Zoom in"), target: self, selector: #selector(zoomIn)),
       UIAccessibilityCustomAction(
-        name: String(localized: "Zoom out"), target: self, selector: #selector(zoomOut)),
+        name: String(localized: "Zoom out"), target: self, selector: #selector(zoomOut))
     ]
     addSubview(imageView)
     let doubleTap = UITapGestureRecognizer(target: self, action: #selector(toggleZoom(_:)))

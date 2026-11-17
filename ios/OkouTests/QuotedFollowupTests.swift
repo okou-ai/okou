@@ -48,7 +48,7 @@ final class QuotedFollowupTests: XCTestCase {
       ChatDraftDocument(parts: [
         .object([
           "type": .string("text"),
-          "text": .string("Keep the ordinary draft. Edited. Continue."),
+          "text": .string("Keep the ordinary draft. Edited. Continue.")
         ])
       ]))
   }

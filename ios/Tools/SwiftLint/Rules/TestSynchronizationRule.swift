@@ -114,7 +114,7 @@ struct TestSynchronizationRule: NativeRule {
       if let call = value.as(FunctionCallExprSyntax.self) {
         let units = ["seconds", "milliseconds", "microseconds", "nanoseconds"]
         let numbers = [
-          "Int", "UInt", "Int32", "UInt32", "Int64", "UInt64", "Double", "TimeInterval",
+          "Int", "UInt", "Int32", "UInt32", "Int64", "UInt64", "Double", "TimeInterval"
         ]
         let name = callName(call.calledExpression)
         let receiver =

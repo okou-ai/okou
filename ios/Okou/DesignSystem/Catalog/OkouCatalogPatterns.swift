@@ -40,7 +40,7 @@
           // sits beside the mic, and send is a solid circle on the glass surface, disabled
           // until there is something to send.
           let samples: [(draft: String, mark: OkouComposerModelMark.Mark)] = [
-            ("", .okou), ("把第二点展开说明", .company("OpenAIMark")),
+            ("", .okou), ("把第二点展开说明", .company("OpenAIMark"))
           ]
           ForEach(samples, id: \.draft) { sample in
             OkouComposerSurface(isExpanded: true) {
@@ -93,33 +93,35 @@
             title: "Chats",
             availableHeight: OkouControl.suggestionListHeight + OkouControl.minimumTarget,
             dismissLabel: "Dismiss chat suggestions", dismissIdentifier: "catalog-dismiss-chats",
-            dismiss: {}
-          ) { _ in
-            VStack(alignment: .leading, spacing: 0) {
-              ForEach(
-                ["iOS CCState", "storage 退役", "📅 iOS CI", "Axiom review"], id: \.self
-              ) { title in
-                OkouSuggestionRow(title: title)
-                  .padding(.horizontal, OkouSpace.lg)
-                  .padding(.vertical, OkouSpace.sm)
+            dismiss: {},
+            content: { _ in
+              VStack(alignment: .leading, spacing: 0) {
+                ForEach(
+                  ["iOS CCState", "storage 退役", "📅 iOS CI", "Axiom review"], id: \.self
+                ) { title in
+                  OkouSuggestionRow(title: title)
+                    .padding(.horizontal, OkouSpace.lg)
+                    .padding(.vertical, OkouSpace.sm)
+                }
               }
+              .padding(.bottom, OkouSpace.sm)
             }
-            .padding(.bottom, OkouSpace.sm)
-          }
+          )
           OkouSuggestionPanel(
             title: "Workflows",
             availableHeight: OkouControl.suggestionListHeight + OkouControl.minimumTarget,
             dismissLabel: "Dismiss Workflow suggestions",
-            dismissIdentifier: "catalog-dismiss-workflows", dismiss: {}
-          ) { _ in
-            OkouSuggestionRow(
-              title: "Daily error review", detail: "Review production errors",
-              command: "/error-review"
-            )
-            .padding(.horizontal, OkouSpace.lg)
-            .padding(.vertical, OkouSpace.sm)
-            .padding(.bottom, OkouSpace.sm)
-          }
+            dismissIdentifier: "catalog-dismiss-workflows", dismiss: {},
+            content: { _ in
+              OkouSuggestionRow(
+                title: "Daily error review", detail: "Review production errors",
+                command: "/error-review"
+              )
+              .padding(.horizontal, OkouSpace.lg)
+              .padding(.vertical, OkouSpace.sm)
+              .padding(.bottom, OkouSpace.sm)
+            }
+          )
         }
         OkouCatalogSection("Dictation") {
           // A frozen sample of the live strip: dots before audio, then speech.
@@ -270,7 +272,7 @@
             ForEach(
               [
                 ("apple", "Apple"), ("google", "Google"), ("microsoft", "Microsoft"),
-                ("slack", "Slack"),
+                ("slack", "Slack")
               ],
               id: \.0
             ) { provider in

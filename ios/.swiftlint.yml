@@ -1,4 +1,15 @@
-# Keep every default rule from the pinned upstream revision enabled.
+# Inherit upstream defaults; adopt metric and naming policy separately.
+disabled_rules:
+  - cyclomatic_complexity
+  - file_length
+  - function_body_length
+  - function_parameter_count
+  - identifier_name
+  - large_tuple
+  - line_length
+  - nesting
+  - type_body_length
+
 opt_in_rules:
   - discarded_notification_center_observer
   - okou_accessor_escape
@@ -21,13 +32,11 @@ opt_in_rules:
   - private_swiftui_state
   - unhandled_throwing_task
 
-# Keep multiline layout and collection punctuation consistent with swift-format.
+# Keep multiline declaration and condition layout consistent with swift-format.
 opening_brace:
   ignore_multiline_type_headers: true
   ignore_multiline_statement_conditions: true
   ignore_multiline_function_signatures: true
-trailing_comma:
-  mandatory_comma: true
 
 included:
   - Okou

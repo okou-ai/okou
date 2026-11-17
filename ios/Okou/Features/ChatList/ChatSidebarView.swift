@@ -446,7 +446,7 @@ struct ChatSidebarView: View {
     .accessibilityValue(
       [
         expanded ? String(localized: "Expanded") : String(localized: "Collapsed"),
-        unread ? String(localized: "Unread") : nil,
+        unread ? String(localized: "Unread") : nil
       ].compactMap { $0 }.joined(separator: ", ")
     )
     .listRowInsets(EdgeInsets(top: 0, leading: rowInset, bottom: 0, trailing: rowInset))

@@ -112,10 +112,10 @@ public struct ChatArtifacts: Sendable {
         try Task.checkCancellation()
         if let key { files.insert(file, for: key) }
         return (resolved.artifact, file)
-      } catch APIClientError.downloadFailed(let status)
-        where attempt == 0 && [401, 403].contains(status)
-        && resolved.artifact.source.requiresAuthorization
-      {
+      } catch let error as APIClientError {
+        guard case .downloadFailed(let status) = error,
+          attempt == 0, [401, 403].contains(status), resolved.artifact.source.requiresAuthorization
+        else { throw error }
         // Renew once through the authority, rather than reusing an expired storage signature.
         resolved = try await resolve(resolved.artifact)
       }
@@ -157,9 +157,12 @@ public struct ChatArtifacts: Sendable {
         try Task.checkCancellation()
         if isOriginal { files.insert(file, for: key) }
         return (resolved.artifact, file)
-      } catch APIClientError.downloadFailed(let status)
-        where attempt == 0 && [401, 403].contains(status) && artifact.source.requiresAuthorization
-      { continue }
+      } catch let error as APIClientError {
+        guard case .downloadFailed(let status) = error,
+          attempt == 0, [401, 403].contains(status), artifact.source.requiresAuthorization
+        else { throw error }
+        continue
+      }
     }
     throw APIClientError.invalidResponse
   }

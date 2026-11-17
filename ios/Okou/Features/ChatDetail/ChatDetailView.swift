@@ -217,11 +217,12 @@ struct ChatDetailView: View {
       refresh: {
         await conversation.refresh()
         await conversation.connectorActions.refreshKnown()
+      },
+      content: { row, anchor in
+        rowContent(row, anchor: anchor).environment(\.openURL, openURL)
+          .environment(\.openChatSource, openChatSource)
       }
-    ) { row, anchor in
-      rowContent(row, anchor: anchor).environment(\.openURL, openURL)
-        .environment(\.openChatSource, openChatSource)
-    }
+    )
     .ignoresSafeArea(.container, edges: .vertical)
     .overlay {
       if conversation.history == nil && conversation.historySyncError != nil {

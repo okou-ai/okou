@@ -257,9 +257,11 @@ final class PersonalSubscriptionAuthorization {
     expiresAt = nil
   }
   private func cancelRemote(type: PersonalSubscriptionType, token: String) async {
-    do { try await service.cancel(type: type, token: token) } catch let error as APIClientError
-      where error.statusCode == 404
-    {} catch {
+    do {
+      try await service.cancel(type: type, token: token)
+    } catch let error as APIClientError where error.statusCode == 404 {
+      // The remote authorization is already absent.
+    } catch {
       if !closed {
         self.authError = ChatRequestFailure.message(for: error)
         didFail(error)

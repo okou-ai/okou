@@ -63,7 +63,7 @@ final class NativeLifetimeTrace {
     teardown = true
     defer { teardown = previous }
     var entries: Set<String> = [
-      "close", "stop", "cancel", "dismiss", "deactivate", "invalidate", "detach",
+      "close", "stop", "cancel", "dismiss", "deactivate", "invalidate", "detach"
     ]
     if kind.isTask { entries = nativeTaskTeardown }
     let initial = NativeLifetimePath(values: ["self." + name: value], acquired: true)

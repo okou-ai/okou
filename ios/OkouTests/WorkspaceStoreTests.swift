@@ -823,7 +823,7 @@ final class WorkspaceStoreTests: XCTestCase {
           rows: [
             historyEvent(
               sequence: 2, type: "output.message", payload: "{\"content\":\"Final answer\"}"),
-            historyEvent(sequence: 3, type: "run.completed"),
+            historyEvent(sequence: 3, type: "run.completed")
           ], lastSequence: 3)
       case "/api/chat-threads/\(storeThreadID)":
         return ChatHTTPResponse(body: "{\"lastReadAt\":null,\"cancellationRecoveryPending\":false}")
@@ -982,7 +982,7 @@ final class WorkspaceStoreTests: XCTestCase {
           ? [
             historyEvent(
               sequence: 1, type: "output.message", payload: "{\"content\":\"Unread answer\"}"),
-            historyEvent(sequence: 2, type: "run.completed"),
+            historyEvent(sequence: 2, type: "run.completed")
           ] : []
         return historyPage(rows: rows, lastSequence: 2)
       case "/api/chat-threads/\(storeThreadID)":
@@ -1054,7 +1054,7 @@ final class WorkspaceStoreTests: XCTestCase {
             historyEvent(
               sequence: 1, type: "output.message", payload: "{\"content\":\"Old workspace answer\"}"
             ),
-            historyEvent(sequence: 2, type: "run.completed"),
+            historyEvent(sequence: 2, type: "run.completed")
           ], lastSequence: 2)
       case "/api/chat-threads/\(storeThreadID)":
         return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
@@ -1095,7 +1095,7 @@ final class WorkspaceStoreTests: XCTestCase {
             historyEvent(
               sequence: 1, type: "output.message",
               payload: "{\"content\":\"Fresh workspace answer\"}"),
-            historyEvent(sequence: 2, type: "run.completed"),
+            historyEvent(sequence: 2, type: "run.completed")
           ], lastSequence: 2)
       case "/api/chat-threads/\(storeThreadID)":
         return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
@@ -1254,14 +1254,14 @@ final class WorkspaceStoreTests: XCTestCase {
               historyEvent(
                 sequence: 1, type: "output.message",
                 payload: "{\"content\":\"Initial \(id)\"}"),
-              historyEvent(sequence: 2, type: "run.completed"),
+              historyEvent(sequence: 2, type: "run.completed")
             ]
           } else if since == "2", hasUpdate {
             rows = [
               historyEvent(
                 sequence: 3, type: "output.message",
                 payload: "{\"content\":\"Latest reply\"}"),
-              historyEvent(sequence: 4, type: "run.completed"),
+              historyEvent(sequence: 4, type: "run.completed")
             ]
           } else {
             rows = []
@@ -1297,7 +1297,7 @@ final class WorkspaceStoreTests: XCTestCase {
     XCTAssertEqual(
       Set(requests.withLock { $0 }),
       [
-        "/api/chat-threads/\(otherID)/event-rows", "/api/chat-threads/\(otherID)",
+        "/api/chat-threads/\(otherID)/event-rows", "/api/chat-threads/\(otherID)"
       ])
 
     requests.withLock { $0.removeAll() }
@@ -1337,7 +1337,7 @@ final class WorkspaceStoreTests: XCTestCase {
             ? [
               historyEvent(
                 sequence: 1, type: "output.message", payload: "{\"content\":\"Saved reply\"}"),
-              historyEvent(sequence: 2, type: "run.completed"),
+              historyEvent(sequence: 2, type: "run.completed")
             ] : []
           var response = historyPage(rows: rows, lastSequence: 2)
           response.body = response.body.replacingOccurrences(of: storeThreadID, with: id)
@@ -1381,7 +1381,7 @@ final class WorkspaceStoreTests: XCTestCase {
 
   func testAuxiliaryUpgradeResponseBlocksAllFurtherWorkspaceReads() async {
     for endpoint in [
-      "/api/agents", "/api/indicators",
+      "/api/agents", "/api/indicators"
     ] {
       let requests = Mutex<[String]>([])
       let fixture = ChatHTTPFixture { request in

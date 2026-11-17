@@ -86,8 +86,9 @@ private final class ChatFixtureURLProtocol: URLProtocol, @unchecked Sendable {
   private let owner: String
   private let route: Route?
 
-  override init(request: URLRequest, cachedResponse: CachedURLResponse?, client: URLProtocolClient?)
-  {
+  override init(
+    request: URLRequest, cachedResponse: CachedURLResponse?, client: URLProtocolClient?
+  ) {
     let owner = request.value(forHTTPHeaderField: Self.ownerHeader) ?? request.url?.host ?? ""
     self.owner = owner
     route = Self.handlers.withLock { $0[owner] }
@@ -134,9 +135,9 @@ private final class ChatFixtureURLProtocol: URLProtocol, @unchecked Sendable {
       var forwarded = request
       forwarded.setValue(nil, forHTTPHeaderField: Self.ownerHeader)
       let result: ChatHTTPResponse
-      do { result = try await route.handler(forwarded) } catch let error as URLError
-        where error.code == .unsupportedURL
-      {
+      do {
+        result = try await route.handler(forwarded)
+      } catch let error as URLError where error.code == .unsupportedURL {
         route.report(description + " [owned handler rejected request for fixture \(owner)]")
         throw error
       }
@@ -187,7 +188,7 @@ public func modelCatalogResponse() -> ChatHTTPResponse {
     ("okou-1.0", "Auto", nil),
     ("gpt-5.6-sol", "GPT-5.6 Sol", nil),
     ("claude-opus-5-5", "Claude Opus 5.5", nil),
-    ("claude-opus-4-8", "Claude Opus 4.8", "claude-opus-5-5"),
+    ("claude-opus-4-8", "Claude Opus 4.8", "claude-opus-5-5")
   ]
   let models = entries.enumerated().map { index, entry -> String in
     let (model, displayName, replacedBy) = entry

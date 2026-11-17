@@ -54,8 +54,9 @@ actor AttachmentFileImporter {
     return try Self.copyFile(source, temporaryDirectory: temporaryDirectory)
   }
 
-  @MainActor static func image(from provider: NSItemProvider) async throws -> ImportedAttachmentFile
-  {
+  @MainActor static func image(
+    from provider: NSItemProvider
+  ) async throws -> ImportedAttachmentFile {
     let identifier =
       provider.registeredTypeIdentifiers.first {
         UTType($0)?.conforms(to: .image) == true
@@ -157,7 +158,7 @@ actor AttachmentFileImporter {
       NSFileCoordinator().coordinate(readingItemAt: source, error: &coordinationError) { url in
         do {
           let values = try url.resourceValues(forKeys: [
-            .isRegularFileKey, .fileSizeKey, .contentTypeKey,
+            .isRegularFileKey, .fileSizeKey, .contentTypeKey
           ])
           guard values.isRegularFile == true else {
             throw ChatError.invalidContract("Choose a file rather than a folder.")
@@ -233,7 +234,7 @@ actor AttachmentFileImporter {
           kCGImageSourceCreateThumbnailFromImageAlways: true,
           kCGImageSourceThumbnailMaxPixelSize: maximumPixelSize,
           kCGImageSourceCreateThumbnailWithTransform: true,
-          kCGImageSourceShouldCacheImmediately: true,
+          kCGImageSourceShouldCacheImmediately: true
         ] as CFDictionary)
     else { return nil }
     let data = NSMutableData()

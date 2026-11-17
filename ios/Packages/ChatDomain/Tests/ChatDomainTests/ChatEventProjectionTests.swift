@@ -5,7 +5,7 @@ import XCTest
 final class ChatEventProjectionTests: XCTestCase {
   func testRunFailureIgnoresRetainedDiagnosticsWhileOutputErrorsKeepTheirMeaning() throws {
     let payloads: [ChatEvent.Payload?] = [
-      nil, .init(content: "private diagnostic", error: "private diagnostic"),
+      nil, .init(content: "private diagnostic", error: "private diagnostic")
     ]
     for payload in payloads {
       let history = try ChatEventProjection.history(
@@ -33,7 +33,7 @@ final class ChatEventProjectionTests: XCTestCase {
       rows: [
         event(1, type: .usageRecorded, at: 1, runID: "old"),
         event(2, type: .usageRecorded, at: 2, runID: "other"),
-        event(3, type: .usageRecorded, at: 3, runID: "old"),
+        event(3, type: .usageRecorded, at: 3, runID: "old")
       ], recovering: false)
     XCTAssertEqual(history.usageEventIDs, ["old": eventID(3), "other": eventID(2)])
     XCTAssertTrue(history.messages.isEmpty)
@@ -58,7 +58,7 @@ final class ChatEventProjectionTests: XCTestCase {
       event(4, type: .inputPrompt, at: 3, text: "Later prompt"),
       event(3, type: .inputPrompt, at: 2, text: "Same time, later ID"),
       event(2, type: .inputPrompt, at: 2, text: "Same time, earlier ID"),
-      event(6, type: .inputAutomation, at: 0),
+      event(6, type: .inputAutomation, at: 0)
     ]
     let history = try ChatEventProjection.history(rows: rows, recovering: false)
 
@@ -80,7 +80,7 @@ final class ChatEventProjectionTests: XCTestCase {
       event(4, type: .controlRevoke, at: 4, revokes: eventID(2)),
       event(5, type: .inputBudget, at: 5, text: "Budget context"),
       event(6, type: .inputRejected, at: 6, text: "Rejected prompt"),
-      event(7, type: .runCompleted, at: 7, runID: runID),
+      event(7, type: .runCompleted, at: 7, runID: runID)
     ]
     let history = try ChatEventProjection.history(rows: rows, recovering: false)
 
@@ -102,7 +102,7 @@ final class ChatEventProjectionTests: XCTestCase {
       event(3, type: .inputBudget, at: 10, runID: older),
       event(4, type: .usageRecorded, at: 11, runID: ignored),
       event(5, type: .inputBudget, at: 12, runID: ignored),
-      event(6, type: .controlRevoke, at: 13, revokes: eventID(5)),
+      event(6, type: .controlRevoke, at: 13, revokes: eventID(5))
     ]
     let history = try ChatEventProjection.history(rows: rows, recovering: false)
     XCTAssertEqual(history.activeRunIDs, [newer, older])
@@ -124,7 +124,7 @@ final class ChatEventProjectionTests: XCTestCase {
         type: "file", fileId: "image-id", contentType: "image/png", filenameSnapshot: "image.png"),
       ChatEvent.UserMessage.Part(
         type: "file", fileId: "pdf-id", contentType: "application/pdf",
-        filenameSnapshot: "report.pdf"),
+        filenameSnapshot: "report.pdf")
     ]
     let rows = [
       ChatEvent(
@@ -134,7 +134,7 @@ final class ChatEventProjectionTests: XCTestCase {
         id: eventID(2), createdAt: .now, eventType: .inputRejected,
         payload: .init(
           error: "Please try again",
-          userMessage: .init(version: 1, parts: [.init(type: "text", text: "Review")] + files))),
+          userMessage: .init(version: 1, parts: [.init(type: "text", text: "Review")] + files)))
     ]
     let history = try ChatEventProjection.history(rows: rows, recovering: false)
     XCTAssertEqual(history.messages.count, 2)

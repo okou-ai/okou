@@ -171,10 +171,12 @@ final class ChatComposerPasteTests: XCTestCase {
       forTypeIdentifier: UTType.png.identifier, fileOptions: [], visibility: .all
     ) { callback in
       started.fulfill()
-      return delivery.hold(onCancel: { cancelled.fulfill() }) {
-        callback(file, false, nil)
-        completed.fulfill()
-      }
+      return delivery.hold(
+        onCancel: { cancelled.fulfill() },
+        {
+          callback(file, false, nil)
+          completed.fulfill()
+        })
     }
     oldWorkspace.newAttachmentDraft.importPastedImages([provider])
     await fulfillment(of: [started], timeout: 3)

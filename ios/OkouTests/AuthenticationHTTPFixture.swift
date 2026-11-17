@@ -295,7 +295,7 @@ final class AuthenticationHTTPFixture: Sendable {
     case let path where path.hasSuffix("/touch"):
       await activation.enter()
       if state.withLock({ $0.failActivation }) { return failure("Activation unavailable") }
-      let body = String(decoding: chatRequestBody(request), as: UTF8.self)
+      let body = try XCTUnwrap(String(data: chatRequestBody(request), encoding: .utf8))
       let workspaceID = URLComponents(string: "?" + body)?.queryItems?
         .first(where: { $0.name == "active_organization_id" })?.value
       state.withLock {
@@ -313,7 +313,7 @@ final class AuthenticationHTTPFixture: Sendable {
       let identity = state.withLock { $0 }
       var claims: [String: Any] = [
         "exp": 4_102_444_800, "iat": 1_792_540_800,
-        "sid": identity.sessionID, "sub": identity.userID,
+        "sid": identity.sessionID, "sub": identity.userID
       ]
       if let workspace = identity.activeWorkspaceID { claims["o"] = ["id": workspace] }
       let payload = try JSONSerialization.data(withJSONObject: claims).base64EncodedString()
@@ -349,9 +349,9 @@ final class AuthenticationHTTPFixture: Sendable {
     encoder.keyEncodingStrategy = .convertToSnakeCase
     encoder.dateEncodingStrategy = .millisecondsSince1970
     return ChatHTTPResponse(
-      body: String(decoding: try encoder.encode(value), as: UTF8.self),
+      body: try encoder.encodeString(value),
       headers: [
-        "Content-Type": "application/json", "Authorization": "synthetic-startup-device",
+        "Content-Type": "application/json", "Authorization": "synthetic-startup-device"
       ])
   }
 
