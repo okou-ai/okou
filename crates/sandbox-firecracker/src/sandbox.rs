@@ -2518,10 +2518,10 @@ impl FirecrackerSandbox {
     }
 
     async fn unpark_ready_for_operations(&mut self) -> sandbox::Result<()> {
-        let fenced_running = matches!(
-            self.park_coordinator.state(),
-            CoordinatorState::FencedRunning { .. }
-        );
+        let (fenced_running, memory_ready) = match self.park_coordinator.state() {
+            CoordinatorState::FencedRunning { memory_ready } => (true, memory_ready),
+            _ => (false, false),
+        };
         if fenced_running && (self.is_parked || self.park_outcome.is_some()) {
             let message = "fenced running sandbox has inconsistent physical park state";
             self.park_coordinator.mark_dirty(DirtyReason::new(message));
@@ -2566,7 +2566,8 @@ impl FirecrackerSandbox {
             )
         })?;
         if self.unpark_attempt.is_none() {
-            self.unpark_attempt = Some(self.make_unpark_attempt(uuid::Uuid::new_v4()));
+            self.unpark_attempt =
+                Some(self.make_unpark_attempt(uuid::Uuid::new_v4(), memory_ready));
         }
 
         let coordinator = self.park_coordinator.clone();
@@ -2598,7 +2599,11 @@ impl FirecrackerSandbox {
         Ok(())
     }
 
-    fn make_unpark_attempt(&self, attempt: uuid::Uuid) -> unpark_attempt::Attempt {
+    fn make_unpark_attempt(
+        &self,
+        attempt: uuid::Uuid,
+        memory_ready: bool,
+    ) -> unpark_attempt::Attempt {
         let guest = Arc::clone(&self.guest);
         let id = self.id.clone();
         let api_sock = self.sock_paths.api_sock();
@@ -2606,14 +2611,10 @@ impl FirecrackerSandbox {
         let park_outcome = self.park_outcome.clone();
         let state_rx = self.state_tx.subscribe();
         let mut is_parked = self.is_parked;
-        let memory_ready = matches!(
-            self.park_coordinator.state(),
-            CoordinatorState::FencedRunning { memory_ready: true },
-        );
         unpark_attempt::Attempt::new(
             attempt,
             async move {
-                // The same lifecycle writer already observed exact-zero pages.
+                // The same lifecycle writer already completed memory readiness.
                 // Nothing wrote the balloon target or paused vCPUs afterward.
                 if memory_ready {
                     return Ok(());
@@ -3099,7 +3100,7 @@ impl Sandbox for FirecrackerSandbox {
                     "cancelled pause lost its original operation fence",
                 )
             })?);
-            self.unpark_attempt = Some(self.make_unpark_attempt(custody.id));
+            self.unpark_attempt = Some(self.make_unpark_attempt(custody.id, false));
             self.park_attempt = None;
             drop(self.guest_rpc_endpoint.take());
         }
