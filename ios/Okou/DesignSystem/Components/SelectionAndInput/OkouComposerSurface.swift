@@ -40,26 +40,43 @@ struct OkouComposerSurface<Content: View, Leading: View, Trailing: View>: View {
   }
 }
 
-/// A quiet model note above the composer: supporting text, an optional Fast mark and a
-/// disclosure chevron. Its 44 pt target stays separate from the glass input surface.
-struct OkouComposerValueLabel: View {
-  let title: String
-  var isFast = false
+/// The open composer's model control, beside the mic as Web's narrow composer draws it: the
+/// model's company mark, or `cpu` for a model the catalog does not know, on the 44 pt toolbar
+/// target. The name, effort and Fast belong to its VoiceOver value and the model sheet.
+struct OkouComposerModelMark: View {
+  enum Mark {
+    /// Okou's own mark, for Auto and built-in models.
+    case okou
+    /// A company's mark asset, drawn edge to edge.
+    case company(String)
+    case icon(String)
+  }
+
+  let mark: Mark
+  @ScaledMetric(relativeTo: .body) private var brandSize = OkouIconSize.toolbarMark
 
   var body: some View {
-    HStack(spacing: OkouSpace.xs) {
-      Text(verbatim: title)
-        .font(.okou(.footnote))
-        .layoutPriority(1)
-      if isFast {
-        OkouIcon("zap", size: OkouIconSize.badge)
+    Group {
+      switch mark {
+      case .okou:
+        brand(OkouBrand.symbol, size: brandSize / OkouBrand.symbolArtworkRatio)
+      case .company(let asset):
+        brand(asset, size: brandSize)
+      case .icon(let name):
+        OkouIcon(name, size: OkouIconSize.toolbar)
       }
-      OkouIcon("chevron-down", size: OkouIconSize.badge)
     }
-    .foregroundStyle(OkouColor.mutedForeground)
-    .lineLimit(1)
-    .padding(.horizontal, OkouSpace.sm)
-    .frame(minHeight: OkouControl.minimumTarget)
-    .contentShape(Rectangle())
+    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+    .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+    .contentShape(Circle())
+  }
+
+  private func brand(_ asset: String, size: CGFloat) -> some View {
+    Image(asset)
+      .resizable()
+      .renderingMode(.template)
+      .scaledToFit()
+      .frame(width: size, height: size)
+      .accessibilityHidden(true)
   }
 }
