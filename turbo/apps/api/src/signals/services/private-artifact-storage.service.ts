@@ -228,6 +228,7 @@ export const allocatePrivateArtifact$ = command(
       readonly size: number;
       readonly id?: string;
       readonly purpose?: "artifact";
+      readonly runId?: string;
       readonly uploadProtocol?: PrivateArtifactUploadProtocol;
     },
     signal: AbortSignal,
@@ -263,6 +264,9 @@ export const allocatePrivateArtifact$ = command(
         materializationStatus: "pending",
         metadata: {
           ...location.storageMetadata,
+          ...(args.purpose === "artifact" && args.runId
+            ? { producingRunId: args.runId }
+            : {}),
           ...(args.uploadProtocol
             ? { uploadProtocol: args.uploadProtocol }
             : {}),

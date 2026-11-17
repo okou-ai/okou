@@ -674,8 +674,8 @@ class TestErrorHandler:
         request_streaming.configure_request_stream(flow)
         stream = flow.request.stream
         assert callable(stream)
-        assert stream(body[:2]) == body[:2]
-        assert stream(body[2:]) == body[2:]
+        for chunk in (body[:2], body[2:]):
+            assert stream(chunk) == chunk
 
         with mitm_ctx():
             mitm_addon.error(flow)

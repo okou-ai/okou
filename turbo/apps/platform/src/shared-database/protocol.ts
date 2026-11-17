@@ -26,6 +26,7 @@ export const sharedDatabaseRealtimeScopeSchema = zEnum([
   "org",
   "user",
   "run-output",
+  "phone-presence",
 ]);
 
 export type SharedDatabaseRealtimeScope = zInfer<
@@ -106,6 +107,14 @@ const realtimeSubscribeRequestSchema = object({
   .strict()
   .refine(
     ({ scope, topic }) => {
+      if (scope === "phone-presence") {
+        const [id, generation, extra] = topic.split(":");
+        return (
+          extra === undefined &&
+          uuid().safeParse(id).success &&
+          /^[1-9]\d*$/u.test(generation ?? "")
+        );
+      }
       return scope !== "run-output" || uuid().safeParse(topic).success;
     },
     { message: "Run-output subscriptions require a run UUID" },

@@ -188,8 +188,8 @@ async def test_vary_releases_capacity_and_follower_before_body(real_flow, *, pre
         assert upstream_response.status_code == 200
         assert upstream_response.headers.fields is fields
         stream = response_stream(owner)
-        assert stream(wire_body[:3]) == wire_body[:3]
-        assert stream(wire_body[3:]) == wire_body[3:]
+        for chunk in (wire_body[:3], wire_body[3:]):
+            assert stream(chunk) == chunk
         assert stream(b"") == b""
         assert upstream_response.raw_content == wire_body
     finally:

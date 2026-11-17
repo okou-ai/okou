@@ -1,4 +1,11 @@
-import { literal, object, uuid, enum as zEnum } from "zod";
+import {
+  discriminatedUnion,
+  literal,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+} from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import {
@@ -6,7 +13,41 @@ import {
   marketingRewardReceiptSchema,
 } from "./marketing-reward-settlement";
 
+export const marketingRewardProgressSourceSchema = discriminatedUnion("kind", [
+  object({ kind: literal("event"), eventId: uuid() }).strict(),
+  object({
+    kind: literal("invitation-claim"),
+    claimId: uuid(),
+    invitationId: string().min(1).max(256),
+  }).strict(),
+]);
+
 export const marketingRewardProjectionContract = initContract().router({
+  notifyProgress: {
+    method: "POST",
+    path: "/api/internal/marketing/get-started/progress-projections",
+    headers: authHeadersSchema,
+    body: object({
+      version: literal(1),
+      environment: zEnum(["production", "preview", "development"]),
+      source: marketingRewardProgressSourceSchema,
+    }).strict(),
+    responses: {
+      200: object({
+        version: literal(1),
+        environment: zEnum(["production", "preview", "development"]),
+        source: marketingRewardProgressSourceSchema,
+        notificationId: uuid(),
+      }).strict(),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+      503: apiErrorSchema,
+    },
+    summary:
+      "Queue a nonfinancial progress refresh for the retained original source owner",
+  },
   notify: {
     method: "POST",
     path: "/api/internal/marketing/get-started/projections",

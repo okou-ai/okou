@@ -7,8 +7,17 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { server } from "../../mocks/server";
 import { phoneUseCommand } from "../phone-use";
+import {
+  ablyRealtimeFake,
+  ablyTokenExchangeHandler,
+} from "../../test-fixtures/ably-realtime";
+vi.mock("ably", async () => {
+  const { FakeRealtime } = await import("../../test-fixtures/ably-realtime");
+  return { Realtime: FakeRealtime };
+});
 let directory = "";
 beforeEach(async () => {
+  ablyRealtimeFake.reset();
   directory = await mkdtemp(join(tmpdir(), "phone-use-"));
   vi.stubEnv("OKOU_TOKEN", "test-token");
   vi.stubEnv("OKOU_API_BACKEND_URL", "https://api.vm0.ai");
@@ -208,3 +217,76 @@ describe("Phone Use CLI", () => {
     );
   });
 });
+
+it.each(["observe", "wait"])(
+  "finishes %s through an operation-scoped notification without printing its token",
+  async (command) => {
+    const id = randomUUID();
+    let status = command === "wait" ? "approval_required" : "running";
+    const operation = () => {
+      return {
+        id,
+        deviceId: randomUUID(),
+        runId: randomUUID(),
+        grantId: randomUUID(),
+        action: { kind: "observe" },
+        status,
+        result: status === "succeeded" ? { snapshotID: "observed" } : null,
+        error: null,
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 300_000).toISOString(),
+      };
+    };
+    const realtime = {
+      channelName: `phone-use-result:org:user:${id}`,
+      eventName: "resultChanged",
+      tokenRequest: {
+        keyName: "test.key",
+        timestamp: 1,
+        nonce: "nonce",
+        mac: "private-signature",
+        capability: JSON.stringify({
+          [`phone-use-result:org:user:${id}`]: ["subscribe"],
+        }),
+      },
+    };
+    server.use(
+      ablyTokenExchangeHandler,
+      http.post("https://api.vm0.ai/api/phone-use/operations", () => {
+        return HttpResponse.json({ ...operation(), realtime });
+      }),
+      http.get(
+        `https://api.vm0.ai/api/phone-use/operations/${id}`,
+        ({ request }) => {
+          return HttpResponse.json({
+            ...operation(),
+            ...(new URL(request.url).searchParams.has("realtime")
+              ? { realtime }
+              : {}),
+          });
+        },
+      ),
+    );
+    const output = vi.spyOn(console, "log").mockImplementation(() => {});
+    const args =
+      command === "wait"
+        ? ["phone-use", "wait", id]
+        : ["phone-use", "observe", "--id", id];
+    const run = new Command()
+      .exitOverride()
+      .addCommand(phoneUseCommand)
+      .parseAsync(args, { from: "user" });
+    const connection = await ablyRealtimeFake.created.promise;
+    await connection.subscribed.promise;
+    status = "succeeded";
+    connection.publish();
+    await run;
+    expect(output).toHaveBeenCalledWith(
+      expect.stringContaining('"snapshotID": "observed"'),
+    );
+    expect(output.mock.calls.flat().join("\n")).not.toContain(
+      "private-signature",
+    );
+    expect(connection.closed).toBe(true);
+  },
+);

@@ -10,6 +10,7 @@ import { createDeferredPromise } from "../../utils";
 import { createBddApi } from "./helpers/api-bdd";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostBddApi } from "./helpers/api-bdd-host";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 
 const context = testContext();
 const referenceSchema = object({
@@ -51,6 +52,7 @@ test("denies late immutable writes after deletion even when R2 loses the respons
   const bdd = createBddApi(context);
   const api = createHostBddApi(context);
   const owner = bdd.user();
+  await createRunsApi(context).grantProEntitlement(owner);
   const capture = api.captureHostedSitesS3();
   const site = `delivery-loss-${randomUUID().slice(0, 8)}`;
   const pending = await api.prepareHostedSite(owner, {

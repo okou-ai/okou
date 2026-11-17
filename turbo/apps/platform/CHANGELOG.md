@@ -13,6 +13,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1142.1](https://github.com/okou-ai/okou/compare/app-v0.1142.0...app-v0.1142.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **app:** show checkout survey after restored billing closes ([#48228](https://github.com/okou-ai/okou/issues/48228)) ([f460a8b](https://github.com/okou-ai/okou/commit/f460a8bfd34c99173d96f31541d84fad34e0226c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.82.0
+    * @okouai/core bumped to 8.847.6
+    * @okouai/ui bumped to 1.21.42
+
 ## [0.1142.0](https://github.com/okou-ai/okou/compare/app-v0.1141.5...app-v0.1142.0) (2026-11-17)
 
 

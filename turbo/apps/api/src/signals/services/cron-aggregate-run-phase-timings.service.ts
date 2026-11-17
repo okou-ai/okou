@@ -22,7 +22,7 @@ import { settle } from "../utils";
 const MAX_RAW_RECORDS = 10_000;
 const METADATA_BATCH_SIZE = 500;
 const MAX_DAILY_BYTES = 8 * 1024 * 1024;
-const OBJECT_PREFIX = "telemetry/run-phase-timings/v1/";
+const OBJECT_PREFIX = "telemetry/run-phase-timings/v2/";
 
 export function runPhaseTimingRollupObjectKey(date: string): string {
   if (!/^\d{4}-\d{2}-\d{2}$/u.test(date)) {
@@ -103,6 +103,7 @@ export const readRunPhaseTimingMetadata$ = command(
           userId: agentRuns.userId,
           orgId: agentRuns.orgId,
           status: agentRuns.status,
+          artifactResult: agentRuns.artifactResult,
           startedAt: agentRuns.startedAt,
           completedAt: agentRuns.completedAt,
         })

@@ -33,6 +33,8 @@ import {
   triggerAblyConnectionClosed,
   triggerAblyConnectionState,
   triggerAblyEvent,
+  triggerPhonePresence,
+  hasPhonePresenceSubscription,
   triggerAblyFailure,
   triggerAblyReauth,
   triggerAblyReconnect,
@@ -761,6 +763,8 @@ export function createTestMocks(getSignal: () => AbortSignal) {
         return deferNextAblySubscribe(getSignal());
       },
       trigger: triggerAblyEvent,
+      triggerPhonePresence,
+      hasPhonePresenceSubscription,
       triggerOnChannel: triggerAblyChannelEvent,
       triggerConnectionState: triggerAblyConnectionState,
       triggerFailure: triggerAblyFailure,

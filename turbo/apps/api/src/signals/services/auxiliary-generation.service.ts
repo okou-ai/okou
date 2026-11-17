@@ -11,6 +11,7 @@ import { onRejection, safeSync, settle } from "../utils";
 
 type AuxiliaryFeature =
   | "chat_title"
+  | "chat_pdf_filename"
   | "shared_thread_title"
   | "chat_activity_summary"
   | "chat_initial_thinking"

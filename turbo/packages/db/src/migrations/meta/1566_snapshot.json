@@ -1,5 +1,5 @@
 {
-  "id": "85ab8059-d2b8-44dd-b5bf-8951b40b3a0f",
+  "id": "ed52dc78-941f-4c8f-8d48-1db603a965ce",
   "prevId": "0df04783-1674-4545-9ca8-8bb154168860",
   "version": "7",
   "dialect": "postgresql",
@@ -509,6 +509,12 @@
           "type": "varchar(20)",
           "primaryKey": false,
           "notNull": true
+        },
+        "artifact_result": {
+          "name": "artifact_result",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false
         },
         "runner_cancellation_mode": {
           "name": "runner_cancellation_mode",
@@ -19931,18 +19937,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
-        },
-        "widget_push_token": {
-          "name": "widget_push_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "widget_pushed_at": {
-          "name": "widget_pushed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         },
         "updated_at": {
           "name": "updated_at",

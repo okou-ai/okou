@@ -397,6 +397,7 @@ test.each(["private", "public"] as const)(
       [200],
     );
     const stranger = bdd.user();
+    await runs.grantProEntitlement(stranger);
     mocks.clerk.session(stranger.userId, stranger.orgId);
     await accept(
       api()(artifactReferencesContract).resolve({

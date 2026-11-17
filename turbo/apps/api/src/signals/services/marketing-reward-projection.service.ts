@@ -1,7 +1,15 @@
 import { marketingRewardReceiptSchema } from "@okouai/api-contracts/contracts/marketing-reward-settlement";
+import { marketingRewardProgressSourceSchema } from "@okouai/api-contracts/contracts/marketing-reward-projection";
 import { command } from "ccstate";
 import type { ClaimedBackgroundJob } from "./background-job.service";
-import { literal, object, uuid, enum as zEnum } from "zod";
+import {
+  discriminatedUnion,
+  literal,
+  object,
+  string,
+  uuid,
+  enum as zEnum,
+} from "zod";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { publishMarketingRewardProjection } from "../external/realtime";
@@ -14,12 +22,27 @@ import {
 export const MARKETING_REWARD_PROJECTION_JOB_KIND =
   "marketing-reward-projection-refresh";
 
-const projectionSchema = object({
+const financialProjectionSchema = object({
   version: literal(1),
   environment: zEnum(["production", "preview", "development"]),
   intentId: uuid(),
   receipt: marketingRewardReceiptSchema,
 }).strict();
+const progressProjectionSchema = object({
+  version: literal(2),
+  environment: zEnum(["production", "preview", "development"]),
+  source: marketingRewardProgressSourceSchema,
+  target: object({
+    actorUserId: string().min(1).max(256),
+    beneficiaryUserId: string().min(1).max(256),
+    orgId: string().min(1).max(256),
+    rewardTarget: literal("user"),
+  }).strict(),
+}).strict();
+const projectionSchema = discriminatedUnion("version", [
+  financialProjectionSchema,
+  progressProjectionSchema,
+]);
 
 const publishProjection$ = command(
   async (
@@ -28,15 +51,17 @@ const publishProjection$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const input = projectionSchema.parse(job.input);
+    const target = input.version === 1 ? input.receipt : input.target;
     if (
+      input.version !== job.handlerVersion ||
       input.environment !== env("ENV") ||
-      input.receipt.orgId !== job.orgId ||
-      input.receipt.actorUserId !== job.userId
+      target.orgId !== job.orgId ||
+      target.actorUserId !== job.userId
     ) {
       throw new Error("Reward projection job ownership mismatch");
     }
     const published = await settle(
-      publishMarketingRewardProjection(input.receipt, signal),
+      publishMarketingRewardProjection(target, signal),
     );
     signal.throwIfAborted();
     if (!published.ok) {
@@ -67,20 +92,22 @@ const publishProjection$ = command(
   },
 );
 
-/** Four independent leases give later notifications progress when one publish fails. */
+/** Four independent leases per version preserve progress when one publish fails. */
 export const deliverMarketingRewardProjections$ = command(
   async ({ set }, signal: AbortSignal): Promise<number> => {
     const jobs: ClaimedBackgroundJob[] = [];
-    for (let index = 0; index < 4; index += 1) {
-      const job = await set(
-        claimBackgroundJob$,
-        { kind: MARKETING_REWARD_PROJECTION_JOB_KIND, handlerVersion: 1 },
-        signal,
-      );
-      if (!job) {
-        break;
+    for (const handlerVersion of [1, 2]) {
+      for (let index = 0; index < 4; index += 1) {
+        const job = await set(
+          claimBackgroundJob$,
+          { kind: MARKETING_REWARD_PROJECTION_JOB_KIND, handlerVersion },
+          signal,
+        );
+        if (!job) {
+          break;
+        }
+        jobs.push(job);
       }
-      jobs.push(job);
     }
     const outcomes = await Promise.allSettled(
       jobs.map((job) => {

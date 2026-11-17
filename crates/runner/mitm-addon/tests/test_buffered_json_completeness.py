@@ -147,10 +147,9 @@ async def test_x_incremental_billing_after_forensic_capture_truncates(
     with usage_webhook_api() as webhook:
         mitm_addon.responseheaders(flow)
         callback = response_stream(flow)
-        assert callback(body[:STREAM_BUFFER_LIMIT]) == body[:STREAM_BUFFER_LIMIT]
-        await mitm_addon.responseinspection(flow)
-        assert callback(body[STREAM_BUFFER_LIMIT:]) == body[STREAM_BUFFER_LIMIT:]
-        await mitm_addon.responseinspection(flow)
+        for chunk in (body[:STREAM_BUFFER_LIMIT], body[STREAM_BUFFER_LIMIT:]):
+            assert callback(chunk) == chunk
+            await mitm_addon.responseinspection(flow)
         assert response_stream_capture(flow).truncated is True
 
         if interrupted:

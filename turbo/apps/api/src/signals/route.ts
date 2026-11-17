@@ -213,6 +213,7 @@ import { runnersRoutes } from "./routes/runners";
 import { runsRoutes } from "./routes/runs";
 import { runsCancelRoutes } from "./routes/runs-cancel";
 import { sharedThreadRoutes } from "./routes/shared-threads";
+import { chatThreadPdfFilenameRoutes } from "./routes/chat-thread-pdf-filename";
 import { skillImportRoutes } from "./routes/skill-import";
 import { slackChannelsRoutes } from "./routes/slack-channels";
 import { slackCommandsRoutes } from "./routes/slack-commands";
@@ -368,6 +369,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...welcomeChatThreadRoutes,
   ...chatEventsRoutes,
   ...sharedThreadRoutes,
+  ...chatThreadPdfFilenameRoutes,
   ...claudeCodeDeviceAuthRoutes,
   ...computerUseAuthorizationRoutes,
   ...desktopShellAuthorizationRoutes,
