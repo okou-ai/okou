@@ -476,55 +476,58 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     };
   }
 
-  function sharedServerFileInfo() {
+  function sharedServerFileInfo(size = 42) {
     context.mocks.slack.files.info.mockResolvedValue({
       ok: true,
       file: {
         id: "F-MATERIALIZED",
-        size: 42,
+        size,
         channels: ["C123"],
         permalink: "https://slack.example/files/F-MATERIALIZED",
       },
     });
   }
 
-  it("delivers canonical bytes on the server and replays one shared receipt", async () => {
-    const fixture = createUploadFixture();
-    const upload = await pendingCanonicalUpload(fixture);
-    const received: string[] = [];
-    server.use(
-      http.post(
-        "https://files.slack.com/upload/v1/materialized",
-        async ({ request }) => {
-          received.push(await request.text());
-          return new HttpResponse("OK");
-        },
-      ),
-    );
-    sharedServerFileInfo();
-    const client = setupApp({
-      context,
-      routes: integrationsSlackUploadMaterializeRoutes,
-    })(integrationsSlackUploadMaterializeContract);
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const result = await fixture.run(() => {
-        return accept(client.deliver(upload.request), [200]);
-      });
-      expect(result.body).toMatchObject({
-        assetId: upload.request.body.assetId,
-        url: upload.url,
-        delivery: {
-          status: "delivered",
-          fileId: "F-MATERIALIZED",
-          permalink: "https://slack.example/files/F-MATERIALIZED",
-        },
-      });
-    }
-    expect(received).toStrictEqual(["a".repeat(42)]);
-    expect(
-      context.mocks.slack.files.completeUploadExternal,
-    ).toHaveBeenCalledTimes(1);
-  });
+  it.each([42, 35])(
+    "delivers canonical bytes and replays a shared receipt with provider size %i",
+    async (providerSize) => {
+      const fixture = createUploadFixture();
+      const upload = await pendingCanonicalUpload(fixture);
+      const received: string[] = [];
+      server.use(
+        http.post(
+          "https://files.slack.com/upload/v1/materialized",
+          async ({ request }) => {
+            received.push(await request.text());
+            return new HttpResponse("OK");
+          },
+        ),
+      );
+      sharedServerFileInfo(providerSize);
+      const client = setupApp({
+        context,
+        routes: integrationsSlackUploadMaterializeRoutes,
+      })(integrationsSlackUploadMaterializeContract);
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const result = await fixture.run(() => {
+          return accept(client.deliver(upload.request), [200]);
+        });
+        expect(result.body).toMatchObject({
+          assetId: upload.request.body.assetId,
+          url: upload.url,
+          delivery: {
+            status: "delivered",
+            fileId: "F-MATERIALIZED",
+            permalink: "https://slack.example/files/F-MATERIALIZED",
+          },
+        });
+      }
+      expect(received).toStrictEqual(["a".repeat(42)]);
+      expect(
+        context.mocks.slack.files.completeUploadExternal,
+      ).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("retries rejected bytes without finalizing the empty reservation", async () => {
     const fixture = createUploadFixture();
@@ -570,50 +573,58 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     ).toHaveBeenCalledTimes(1);
   });
 
-  it("waits for a shared file rather than trusting its reservation permalink", async () => {
-    const fixture = createUploadFixture();
-    const upload = await pendingCanonicalUpload(fixture);
-    const received: string[] = [];
-    server.use(
-      http.post(
-        "https://files.slack.com/upload/v1/materialized",
-        async ({ request }) => {
-          received.push(await request.text());
-          return new HttpResponse("OK");
+  it.each([
+    { name: "unshared", size: 42, channels: [] },
+    { name: "empty", size: 0, channels: ["C123"] },
+    { name: "unprocessed", size: undefined, channels: ["C123"] },
+  ])(
+    "waits for an uploaded shared file when the receipt is $name",
+    async ({ size, channels }) => {
+      const fixture = createUploadFixture();
+      const upload = await pendingCanonicalUpload(fixture);
+      const received: string[] = [];
+      server.use(
+        http.post(
+          "https://files.slack.com/upload/v1/materialized",
+          async ({ request }) => {
+            received.push(await request.text());
+            return new HttpResponse("OK");
+          },
+        ),
+      );
+      context.mocks.slack.files.info.mockResolvedValue({
+        ok: true,
+        file: {
+          id: "F-MATERIALIZED",
+          size,
+          channels,
+          permalink: "https://slack.example/files/F-MATERIALIZED",
         },
-      ),
-    );
-    context.mocks.slack.files.info.mockResolvedValue({
-      ok: true,
-      file: {
-        id: "F-MATERIALIZED",
-        size: 42,
-        permalink: "https://slack.example/files/F-MATERIALIZED",
-      },
-    });
-    const client = setupApp({
-      context,
-      routes: integrationsSlackUploadMaterializeRoutes,
-    })(integrationsSlackUploadMaterializeContract);
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const failed = await fixture.run(() => {
+      });
+      const client = setupApp({
+        context,
+        routes: integrationsSlackUploadMaterializeRoutes,
+      })(integrationsSlackUploadMaterializeContract);
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const failed = await fixture.run(() => {
+          return accept(client.deliver(upload.request), [200]);
+        });
+        expect(failed.body.delivery).toMatchObject({
+          status: "failed",
+          retryable: true,
+        });
+      }
+      sharedServerFileInfo();
+      const delivered = await fixture.run(() => {
         return accept(client.deliver(upload.request), [200]);
       });
-      expect(failed.body.delivery).toMatchObject({
-        status: "failed",
-        retryable: true,
-      });
-    }
-    sharedServerFileInfo();
-    const delivered = await fixture.run(() => {
-      return accept(client.deliver(upload.request), [200]);
-    });
-    expect(delivered.body.delivery.status).toBe("delivered");
-    expect(received).toStrictEqual(["a".repeat(42)]);
-    expect(
-      context.mocks.slack.files.completeUploadExternal,
-    ).toHaveBeenCalledTimes(1);
-  });
+      expect(delivered.body.delivery.status).toBe("delivered");
+      expect(received).toStrictEqual(["a".repeat(42)]);
+      expect(
+        context.mocks.slack.files.completeUploadExternal,
+      ).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("rechecks destination access after server byte transfer and recovers after restoration", async () => {
     const fixture = createUploadFixture();
