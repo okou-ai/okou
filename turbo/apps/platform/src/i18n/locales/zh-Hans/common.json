@@ -1521,6 +1521,7 @@
           "action": "签到",
           "description": "每天签到一次，UTC 00:00 重置。",
           "name": "每日签到",
+          "pendingDescription": "签到已保存，确认后积分会自动更新。",
           "unit": "每天"
         },
         "connector": {

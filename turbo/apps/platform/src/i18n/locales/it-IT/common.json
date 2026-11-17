@@ -1550,6 +1550,7 @@
           "action": "Fai check-in",
           "description": "Fai check-in una volta al giorno. Si reimposta alle 00:00 UTC.",
           "name": "Accedi ogni giorno",
+          "pendingDescription": "Il tuo check-in è stato salvato. I crediti verranno aggiornati dopo la conferma.",
           "unit": "al giorno"
         },
         "connector": {

@@ -1525,6 +1525,7 @@
           "action": "Einchecken",
           "description": "Einmal täglich einchecken. Neuer Tag um 00:00 UTC.",
           "name": "Täglich einchecken",
+          "pendingDescription": "Dein Check-in wurde gespeichert. Die Credits werden nach der Bestätigung aktualisiert.",
           "unit": "pro Tag"
         },
         "connector": {
