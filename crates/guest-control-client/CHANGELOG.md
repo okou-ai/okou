@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.104](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.103...guest-control-client-v0.23.104) (2026-11-17)
+
+
+### Performance Improvements
+
+* **runner:** attribute archive staging writes ([#48338](https://github.com/okou-ai/okou/issues/48338)) ([1aeffbc](https://github.com/okou-ai/okou/commit/1aeffbc8c757415acb407157dba177305ed1b210))
+
 ## [0.23.103](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.102...guest-control-client-v0.23.103) (2026-11-17)
 
 ## [0.23.102](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.101...guest-control-client-v0.23.102) (2026-11-17)

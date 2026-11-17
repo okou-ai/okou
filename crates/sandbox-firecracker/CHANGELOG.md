@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.114](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.113...sandbox-firecracker-v0.53.114) (2026-11-17)
+
+
+### Performance Improvements
+
+* **runner:** attribute archive staging writes ([#48338](https://github.com/okou-ai/okou/issues/48338)) ([1aeffbc](https://github.com/okou-ai/okou/commit/1aeffbc8c757415acb407157dba177305ed1b210))
+
 ## [0.53.113](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.112...sandbox-firecracker-v0.53.113) (2026-11-17)
 
 

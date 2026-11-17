@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.39](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.38...runner-rs-v0.249.39) (2026-11-17)
+
+
+### Refactoring
+
+* **python:** keep diagnostic auth hints in the typed candidate ([#48358](https://github.com/okou-ai/okou/issues/48358)) ([14efdab](https://github.com/okou-ai/okou/commit/14efdab6b01626879c3ae5483f72536f0685a48b))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.38](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.37...runner-rs-v0.249.38) (2026-11-17)
 
 

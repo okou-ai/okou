@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.189](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.188...guest-control-tests-v0.12.189) (2026-11-17)
+
+
+### Refactoring
+
+* use typed fifo creation in native fixtures ([#48355](https://github.com/okou-ai/okou/issues/48355)) ([05bf56d](https://github.com/okou-ai/okou/commit/05bf56dbc4876786786c0379dfce0776e09b4519))
+
 ## [0.12.188](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.187...guest-control-tests-v0.12.188) (2026-11-17)
 
 ## [0.12.187](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.186...guest-control-tests-v0.12.187) (2026-11-17)

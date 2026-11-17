@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.47.4](https://github.com/okou-ai/okou/compare/ios-v0.47.3...ios-v0.47.4) (2026-11-17)
+
+
+### Refactoring
+
+* **ios:** enforce an 800-line file limit ([#48345](https://github.com/okou-ai/okou/issues/48345)) ([8b97e92](https://github.com/okou-ai/okou/commit/8b97e92fb58d517478fd9e5dcccbb43ec3738c37))
+
 ## [0.47.3](https://github.com/okou-ai/okou/compare/ios-v0.47.2...ios-v0.47.3) (2026-11-17)
 
 

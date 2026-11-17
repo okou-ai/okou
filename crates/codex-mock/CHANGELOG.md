@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.77](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.76...codex-mock-v0.12.77) (2026-11-17)
+
+
+### Refactoring
+
+* use typed fifo creation in native fixtures ([#48355](https://github.com/okou-ai/okou/issues/48355)) ([05bf56d](https://github.com/okou-ai/okou/commit/05bf56dbc4876786786c0379dfce0776e09b4519))
+
 ## [0.12.76](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.75...codex-mock-v0.12.76) (2026-11-17)
 
 ## [0.12.75](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.74...codex-mock-v0.12.75) (2026-11-17)
