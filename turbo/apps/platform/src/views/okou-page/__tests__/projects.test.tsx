@@ -2225,10 +2225,7 @@ test("A Project page shares the capability home and its compliance block under t
     context,
     path: `/projects/${id}`,
     ...workspace.pageOptions,
-    featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: true,
-      [FeatureSwitchKey.HomeCapabilities]: true,
-    },
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   await waitFor(() => {
     expect(projectChip("Launch")).toBeInTheDocument();
@@ -2279,7 +2276,6 @@ test("Home, Project, and conversation navigation preserves the correct draft and
     ...workspace.pageOptions,
     featureSwitches: {
       [FeatureSwitchKey.SingleAgent]: true,
-      [FeatureSwitchKey.HomeCapabilities]: true,
     },
   });
   const editor = () => {
@@ -2337,10 +2333,7 @@ test("A mobile Project opens the capability composer instead of the home chat li
     context,
     path: `/projects/${id}`,
     ...workspace.pageOptions,
-    featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: true,
-      [FeatureSwitchKey.HomeCapabilities]: true,
-    },
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   const editor = await screen.findByRole("textbox", { name: "Message" });
   expect(
@@ -2351,82 +2344,76 @@ test("A mobile Project opens the capability composer instead of the home chat li
   expect(button("Send")).toBeEnabled();
 });
 
-test.each([false, true])(
-  "A Project message keeps its membership with Home capabilities %s",
-  async (capabilitiesEnabled) => {
-    const ordinary = continuityThread(116, 1, "Thread B");
-    const workspace = installContinuityWorkspace(context, {
-      caseId: 116,
-      threads: [ordinary],
+test("A Project message keeps its membership in the conversation it opens", async () => {
+  const ordinary = continuityThread(116, 1, "Thread B");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 116,
+    threads: [ordinary],
+  });
+  context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
+  metadata();
+  const created: {
+    threadId?: string;
+    agentId?: string;
+    projectId?: string | null;
+  } = {};
+  context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
+    created.threadId = body.clientThreadId;
+    created.agentId = body.agentId;
+    created.projectId = body.projectId;
+    return respond(201, {
+      id: body.clientThreadId ?? crypto.randomUUID(),
+      title: null,
+      createdAt: at,
+      selectedModel: body.model ?? null,
+      serviceTier: null,
+      projectId: body.projectId ?? null,
     });
-    context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
-    metadata();
-    const created: {
-      threadId?: string;
-      agentId?: string;
-      projectId?: string | null;
-    } = {};
-    context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
-      created.threadId = body.clientThreadId;
-      created.agentId = body.agentId;
-      created.projectId = body.projectId;
-      return respond(201, {
-        id: body.clientThreadId ?? crypto.randomUUID(),
-        title: null,
-        createdAt: at,
-        selectedModel: body.model ?? null,
-        serviceTier: null,
-        projectId: body.projectId ?? null,
-      });
+  });
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    return respond(201, {
+      threadId: body.threadId ?? crypto.randomUUID(),
+      createdAt: at,
     });
-    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-      return respond(201, {
-        threadId: body.threadId ?? crypto.randomUUID(),
-        createdAt: at,
-      });
-    });
-    await setupPage({
-      context,
-      path: `/projects/${id}`,
-      ...workspace.pageOptions,
-      featureSwitches: {
-        [FeatureSwitchKey.SingleAgent]: true,
-        [FeatureSwitchKey.HomeCapabilities]: capabilitiesEnabled,
-      },
-    });
-    await waitFor(() => {
-      expect(projectChip("Launch")).toBeInTheDocument();
-    });
+  });
+  await setupPage({
+    context,
+    path: `/projects/${id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
+  });
+  await waitFor(() => {
+    expect(projectChip("Launch")).toBeInTheDocument();
+  });
 
-    await fill(
-      await screen.findByRole("textbox", { name: "Message" }),
-      "Plan the launch",
-    );
-    await waitFor(() => {
-      expect(button("Send")).toBeEnabled();
-    });
-    click(button("Send"));
+  await fill(
+    await screen.findByRole("textbox", { name: "Message" }),
+    "Plan the launch",
+  );
+  await waitFor(() => {
+    expect(button("Send")).toBeEnabled();
+  });
+  click(button("Send"));
 
-    // The Project page composes with the default Agent inside its Project.
-    await waitFor(() => {
-      expect(created.threadId).toBeDefined();
-    });
-    expect(created).toMatchObject({
-      agentId: ordinary.agentId,
-      projectId: id,
-    });
-    await waitFor(() => {
-      expect(location.pathname).toBe(`/chats/${created.threadId}`);
-    });
-    await waitFor(() => {
-      expect(
-        document.querySelector(
-          `[data-project-row-id="${id}"] [data-sidebar-chat-thread-id="${created.threadId}"]`,
-        ),
-      ).toHaveAttribute("aria-current", "page");
-    });
-  },
-);
+  // The Project page composes with the default Agent inside its Project.
+  await waitFor(() => {
+    expect(created.threadId).toBeDefined();
+  });
+  expect(created).toMatchObject({
+    agentId: ordinary.agentId,
+    projectId: id,
+  });
+  await waitFor(() => {
+    expect(location.pathname).toBe(`/chats/${created.threadId}`);
+  });
+  await waitFor(() => {
+    expect(
+      document.querySelector(
+        `[data-project-row-id="${id}"] [data-sidebar-chat-thread-id="${created.threadId}"]`,
+      ),
+    ).toHaveAttribute("aria-current", "page");
+  });
+});
 
 test("The composer's + menu starts a new chat in a Project and keeps the message", async () => {
   const ordinary = continuityThread(117, 1, "Thread B");
@@ -2442,10 +2429,7 @@ test("The composer's + menu starts a new chat in a Project and keeps the message
     context,
     path: `/agents/${ordinary.agentId}/chat`,
     ...workspace.pageOptions,
-    featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: true,
-      [FeatureSwitchKey.HomeCapabilities]: false,
-    },
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   await fill(
     await screen.findByRole("textbox", { name: "Message" }),
@@ -2459,6 +2443,10 @@ test("The composer's + menu starts a new chat in a Project and keeps the message
     "Attach",
     "Project",
     "Template",
+    "Find people",
+    "Research",
+    "Create",
+    "Workflow",
     "Import skills",
   ]);
   await user.click(await findMenuItem("Project"));
@@ -2698,7 +2686,7 @@ test("A Project named from the composer's + menu opens with the message and acce
   expect(created.projectId).toBe(projectId);
 });
 
-test("Without Projects the new chat's + menu and toolbar stay as they were", async () => {
+test("Without Projects the new chat's add menu keeps capabilities available", async () => {
   const ordinary = continuityThread(120, 1, "Thread B");
   const workspace = installContinuityWorkspace(context, {
     caseId: 120,
@@ -2710,13 +2698,17 @@ test("Without Projects the new chat's + menu and toolbar stay as they were", asy
     context,
     path: `/agents/${ordinary.agentId}/chat`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: false },
   });
   await screen.findByRole("textbox", { name: "Message" });
   const menu = await openComposerProjectMenu();
   expect(menuLabels(menu)).toStrictEqual([
     "Attach",
     "Template",
+    "Find people",
+    "Research",
+    "Create",
+    "Workflow",
     "Import skills",
   ]);
 });

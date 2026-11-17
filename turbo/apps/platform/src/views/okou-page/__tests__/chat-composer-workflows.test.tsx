@@ -11,7 +11,6 @@ import {
   WORKFLOW_TEMPLATE_ITEMS,
 } from "@okouai/core";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
 
@@ -231,7 +230,6 @@ test("Insert an attached workflow with slash suggestions", async () => {
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
   });
 
   const user = userEvent.setup();
@@ -258,7 +256,8 @@ test("Insert an attached workflow with slash suggestions", async () => {
   );
   expect(emphasizedMatch).toHaveTextContent("research");
 
-  await user.keyboard("{ArrowDown}{Enter}");
+  // The matching Deep research capability precedes the workflow rows.
+  await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
 
   await waitFor(() => {
     expect(editor).toHaveTextContent("/sales-research");

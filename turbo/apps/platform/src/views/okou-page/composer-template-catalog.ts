@@ -79,12 +79,8 @@ export function toDocumentGenerationTemplate(
 }
 
 /**
- * The creation types the slash panel's Make group indexes. These are the template
- * picker's own categories, so opening the picker from a row lands on the same
- * tab.
- * Workflow is not one either — the panel lists the agent's own workflows right
- * underneath, so a row that only reopened the workflow catalog named the same
- * thing twice.
+ * The template browser's creation categories match the picker's tabs.
+ * Workflows have their own browser and are not template categories.
  */
 export const SLASH_TEMPLATE_CATEGORIES = [
   "slides",

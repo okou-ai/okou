@@ -329,7 +329,6 @@ import {
   type ChatThreadEmojiItem,
 } from "../../signals/chat-page/chat-thread-emoji.ts";
 import { openRenameChatThreadDialogForThreadId$ } from "../../signals/chat-page/chat-thread-rename.ts";
-import type { ComposerLayout } from "./chat-composer.tsx";
 import { ChatComposer } from "./composer.tsx";
 import {
   ModelProviderPicker,
@@ -3533,16 +3532,11 @@ function ChatThreadContent({ thread }: { thread: ChatPanelSignals }) {
 }
 
 function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
-  const capabilitiesEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.HomeCapabilities];
   const initialEventsReady = useGet(thread.initialEventsReady$);
   const hasEvents = useLastResolved(thread.hasEvents$);
   const sharingPhase = useGet(thread.sharing.phase$);
   const showCapabilities =
-    capabilitiesEnabled &&
-    initialEventsReady &&
-    hasEvents === false &&
-    sharingPhase === "idle";
+    initialEventsReady && hasEvents === false && sharingPhase === "idle";
 
   const header = <ChatThreadHeader thread={thread} />;
   const content = showCapabilities ? (
@@ -3553,27 +3547,14 @@ function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
   const footer = (
     <ChatThreadBottomBar
       thread={thread}
-      layout={capabilitiesEnabled ? "home" : "default"}
       discoveryInContent={showCapabilities}
     />
   );
   return (
     <>
-      {capabilitiesEnabled ? (
-        <ChatPageLayout header={header} footer={footer}>
-          {content}
-        </ChatPageLayout>
-      ) : (
-        <>
-          {header}
-          <div className="relative min-h-0 flex-1">
-            <div className="flex h-full min-w-0 flex-col">
-              {content}
-              {footer}
-            </div>
-          </div>
-        </>
-      )}
+      <ChatPageLayout header={header} footer={footer}>
+        {content}
+      </ChatPageLayout>
       <ChatThreadFeedbackSlot thread={thread} />
     </>
   );
@@ -3623,11 +3604,9 @@ function SharedThreadCreatedLink({
 
 function ChatThreadBottomBar({
   thread,
-  layout,
   discoveryInContent,
 }: {
   readonly thread: ChatPanelSignals;
-  readonly layout: ComposerLayout;
   readonly discoveryInContent: boolean;
 }) {
   const { t } = useTranslation();
@@ -3644,7 +3623,6 @@ function ChatThreadBottomBar({
     return withChatScrollLayout(
       <ChatThreadComposer
         thread={thread}
-        layout={layout}
         discoveryInContent={discoveryInContent}
       />,
     );
@@ -3937,11 +3915,9 @@ function RecommendedFollowupList({
 
 function ChatThreadComposer({
   thread,
-  layout,
   discoveryInContent,
 }: {
   readonly thread: ChatPanelSignals;
-  readonly layout: ComposerLayout;
   readonly discoveryInContent: boolean;
 }) {
   const composerLayoutRef = useSet(thread.composerLayoutOnRef$);
@@ -3953,7 +3929,7 @@ function ChatThreadComposer({
     <ChatComposerFooter ref={composerLayoutRef}>
       <ChatComposer
         signals={thread.composer}
-        layout={layout}
+        layout="home"
         discoveryInContent={discoveryInContent}
       />
     </ChatComposerFooter>
@@ -7228,12 +7204,10 @@ function UserMessageView({
   threadId,
   document,
   elevatedFileIds,
-  showVisualizationPreferences,
 }: {
   threadId: string;
   document: UserMessageRenderDocument;
   elevatedFileIds: ReadonlySet<string>;
-  showVisualizationPreferences: boolean;
 }) {
   const partOccurrences = new Map<string, number>();
   const agentRunSourceTitle = document.parts.find((renderPart) => {
@@ -7247,10 +7221,7 @@ function UserMessageView({
       );
     },
   );
-  if (
-    bodyParts.length === 0 &&
-    !(showVisualizationPreferences && document.visualizationPreferences)
-  ) {
+  if (bodyParts.length === 0 && !document.visualizationPreferences) {
     return null;
   }
   const renderedParts: ReactNode[] = [];
@@ -7299,7 +7270,7 @@ function UserMessageView({
   return (
     <div data-structured-user-message="" className="whitespace-pre-wrap">
       {renderedParts}
-      {showVisualizationPreferences && document.visualizationPreferences ? (
+      {document.visualizationPreferences ? (
         <div className={renderedParts.length > 0 ? "mt-2" : undefined}>
           <VisualizationPreferencesChip
             preferences={document.visualizationPreferences}
@@ -7333,8 +7304,6 @@ function UserMessageContent({
   /** Sits directly left of the bubble, for example the pending spinner. */
   leading?: ReactNode;
 }) {
-  const showVisualizationPreferences =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatMessageVisualizationSummary];
   // Attachments read as their own object, so they all sit above the bubble
   // instead of interrupting the sentence they were dropped into. Attachments
   // without an id cannot be matched to a document part, so they stay inline.
@@ -7347,8 +7316,7 @@ function UserMessageContent({
     }),
   );
   const hasBody =
-    (showVisualizationPreferences &&
-      document.visualizationPreferences !== undefined) ||
+    document.visualizationPreferences !== undefined ||
     document.parts.some((renderPart) => {
       return (
         !isUserMessageHiddenPart(renderPart.part) &&
@@ -7375,7 +7343,6 @@ function UserMessageContent({
                 threadId={threadId}
                 document={document}
                 elevatedFileIds={elevatedFileIds}
-                showVisualizationPreferences={showVisualizationPreferences}
               />
             </div>
           </ChatUserMessageBubble>

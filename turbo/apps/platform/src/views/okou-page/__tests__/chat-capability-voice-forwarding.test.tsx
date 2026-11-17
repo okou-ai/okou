@@ -128,7 +128,7 @@ async function prepareForwardSuggestions() {
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
+    featureSwitches: { [FeatureSwitchKey.SlashActions]: true },
   });
   const originalComposer = await screen.findByRole("textbox", {
     name: "Message",
@@ -139,29 +139,41 @@ async function prepareForwardSuggestions() {
   });
   await fill(editor, "Forward draft /");
   const menu = await screen.findByTestId("slash-workflow-menu");
-  const [first] = queryAllByRoleFast("button", menu);
-  expect(first).toHaveTextContent("Website");
+  const templates = queryAllByRoleFast("button", menu).find((candidate) => {
+    return candidate.textContent
+      ?.replace(/\s+/gu, " ")
+      .trim()
+      .startsWith("Templates ");
+  });
+  if (!templates) {
+    throw new Error("Expected the Templates overview entry");
+  }
   expect(menu).toHaveAttribute("data-side", "top");
-  const presentation = queryButton("Presentation", menu);
   const user = userEvent.setup({ delay: null });
-  expect(presentation).not.toHaveAttribute("data-active");
-  expect(
-    within(menu).queryAllByRole("region", { name: "Presentation" }),
-  ).toHaveLength(0);
-  return { originalComposer, dialog, editor, menu, presentation, user };
+  expect(templates).not.toHaveAttribute("data-active");
+  expect(within(menu).queryByRole("region", { name: "Templates" })).toBeNull();
+  return { originalComposer, dialog, editor, menu, templates, user };
 }
 
 test("Keep forwarding suggestions isolated during preview navigation", async () => {
-  const { originalComposer, dialog, editor, menu, presentation, user } =
+  const { originalComposer, dialog, editor, menu, templates, user } =
     await prepareForwardSuggestions();
   await user.keyboard("{ArrowUp}");
-  expect(presentation).toHaveAttribute("data-active", "true");
-  expect(
-    within(menu).queryAllByRole("region", { name: "Presentation" }),
-  ).toHaveLength(1);
+  expect(templates).toHaveAttribute("data-active", "true");
+  const pane = within(menu).getByRole("region", { name: "Templates" });
   expect(editor).toHaveFocus();
-  await user.keyboard("{ArrowUp}");
-  expect(queryButton("Document", menu)).toHaveAttribute("data-active", "true");
+  const document = queryAllByRoleFast("button", pane).find((candidate) => {
+    return candidate.textContent
+      ?.replace(/\s+/gu, " ")
+      .trim()
+      .startsWith("Document ");
+  });
+  if (!document) {
+    throw new Error("Expected the Document template type");
+  }
+  fireEvent.mouseOver(document);
+  fireEvent.mouseMove(document);
+  expect(document).toHaveAttribute("aria-pressed", "true");
   expect(dialog).toBeInTheDocument();
   expect(editor).toHaveTextContent("Forward draft /");
   expect(editor).toHaveFocus();

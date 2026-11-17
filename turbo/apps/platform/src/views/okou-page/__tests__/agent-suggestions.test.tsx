@@ -1506,10 +1506,7 @@ test("For you moves suggestions out of the homepage into its own chat-list entry
   await setupPage({
     context,
     path: homePath,
-    featureSwitches: {
-      ...features,
-      [FeatureSwitchKey.HomeCapabilities]: true,
-    },
+    featureSwitches: features,
   });
   await screen.findByTestId("chat-tagline");
   const row = link("/for-you");
