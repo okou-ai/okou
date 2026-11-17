@@ -2658,7 +2658,8 @@ const prepareNormalSendContext$ = command(
     ) {
       return badRequestMessage("MCP source annotations are server-managed");
     }
-    const inputId = args.body.clientEventId ?? randomUUID();
+    // Shared input and template reads match PostgreSQL's canonical UUID form.
+    const inputId = args.body.clientEventId?.toLowerCase() ?? randomUUID();
     const templates = projectUserMessage(args.body.userMessage).templates;
     const context = createAgentRunContextSignals(
       args.userId,
