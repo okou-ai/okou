@@ -44,6 +44,7 @@ data class ComposerEntry(
     val pending: PendingText? = null,
     val receipt: TextReceipt? = null,
     val createdThreadId: String? = null,
+    val recovery: ComposerRecovery? = null,
 )
 
 @Serializable

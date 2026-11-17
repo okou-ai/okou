@@ -129,7 +129,13 @@ class ComposerJournalStore(
         return file
             .openRead()
             .use { json.decodeFromStream<ComposerJournal>(it) }
-            .also { if (it.format != 1) throw IOException("Unsupported composer journal format") }
+            .also {
+                if (
+                    it.format !in 1..2 ||
+                        it.format == 1 && it.entries.values.any { entry -> entry.recovery != null }
+                )
+                    throw IOException("Unsupported composer journal format")
+            }
     }
 
     @OptIn(ExperimentalSerializationApi::class)

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="recovery_loading">Memuat opsi pemulihan…</string>
+    <string name="recovery_read_failed">Opsi pemulihan tidak tersedia.</string>
+    <string name="recovery_continue">Lanjutkan</string>
+    <string name="recovery_reset">Reset penggunaan dan lanjutkan (memakai satu kredit)</string>
+    <string name="recovery_reset_unknown">Reset semula belum dikonfirmasi. Tidak ada percobaan ulang otomatis.</string>
+    <string name="recovery_reset_retry">Ulangi reset semula</string>
+    <string name="recovery_needs_changes">Ubah model, pengaturan akun, atau percakapan sebelum melanjutkan.</string>
+    <string name="recovery_billing">Kredit ruang kerja: %1$s. Periksa penagihan.</string>
+    <string name="recovery_no_credit">Kredit reset tidak tersedia.</string>
+    <string name="recovery_submitted">Kelanjutan diterima. Menunggu riwayat percakapan.</string>
+    <string name="recovery_failed">Pemulihan belum selesai. Periksa operasi semula sebelum mengulang.</string>
+    <string name="recovery_credits">Kredit reset: %1$d</string>
+</resources>

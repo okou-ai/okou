@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="recovery_loading">Caricamento delle opzioni di ripristino…</string>
+    <string name="recovery_read_failed">Le opzioni di ripristino non sono disponibili.</string>
+    <string name="recovery_continue">Continua</string>
+    <string name="recovery_reset">Reimposta utilizzo e continua (usa un credito)</string>
+    <string name="recovery_reset_unknown">La reimpostazione originale non è confermata. Nessun tentativo automatico.</string>
+    <string name="recovery_reset_retry">Riprova reimpostazione originale</string>
+    <string name="recovery_needs_changes">Cambia modello, impostazioni account o conversazione prima di continuare.</string>
+    <string name="recovery_billing">Crediti dello spazio: %1$s. Controlla la fatturazione.</string>
+    <string name="recovery_no_credit">Nessun credito di reimpostazione disponibile.</string>
+    <string name="recovery_submitted">Continuazione accettata. In attesa della cronologia.</string>
+    <string name="recovery_failed">Ripristino incompleto. Verifica l’operazione originale prima di riprovare.</string>
+    <string name="recovery_credits">Crediti di reimpostazione: %1$d</string>
+</resources>
