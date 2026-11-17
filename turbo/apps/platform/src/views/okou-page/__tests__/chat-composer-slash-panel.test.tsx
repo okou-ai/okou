@@ -1,5 +1,6 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { workflowsCollectionContract } from "@okouai/api-contracts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
@@ -70,6 +71,7 @@ async function openSlashMenu(
   await setupPage({
     context,
     path,
+    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
   });
   const editor = await findComposerEditor();
   await fill(editor, `Draft /${query}`);
@@ -535,6 +537,7 @@ async function openManyWorkflows(): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
   });
   const editor = await findComposerEditor();
   await fill(editor, "Draft /");

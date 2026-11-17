@@ -134,7 +134,9 @@ function firstLevelNames(): string[] {
 }
 
 test("The bare slash leads with chat actions, then Workflows and Templates with their counts", async () => {
-  await openSlashActions();
+  await openSlashActions({
+    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
+  });
   await waitFor(() => {
     expect(firstLevelNames()).toHaveLength(6);
   });

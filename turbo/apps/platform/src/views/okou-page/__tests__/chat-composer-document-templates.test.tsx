@@ -1,4 +1,5 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -44,6 +45,7 @@ async function setup() {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
   });
   return { user, capture };
 }

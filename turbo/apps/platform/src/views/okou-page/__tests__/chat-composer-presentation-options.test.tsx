@@ -1,5 +1,6 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type {
   ChatRunOptionsRequest,
   UserMessageDocument,
@@ -75,6 +76,7 @@ async function setupComposer(): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
   });
   return await findComposerEditor();
 }
