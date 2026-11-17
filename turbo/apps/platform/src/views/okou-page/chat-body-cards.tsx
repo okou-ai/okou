@@ -74,12 +74,7 @@ import { WalletActionCard } from "./wallet-action-card.tsx";
 import { ConnectorAccountActionCard } from "./connector-account-action-card.tsx";
 import { SubscriptionResetCard } from "./subscription-reset-card.tsx";
 import { MailDraftCard } from "./mail-draft-card.tsx";
-import { ProUpgradeCard } from "./pro-upgrade-card.tsx";
-import {
-  billingStatusAsync$,
-  memberUsagePackOptionsAsync$,
-} from "../../signals/okou-page/billing.ts";
-import { openSettingsBillingPlansDialog$ } from "../../signals/okou-page/settings/settings-dialog.ts";
+import { billingStatusAsync$ } from "../../signals/okou-page/billing.ts";
 
 type ChatImagePreviewLinkProps = {
   alt: string;
@@ -751,34 +746,6 @@ export function PlanUpgradeCard({ signals }: { signals: PlanUpgradeSignals }) {
         })}
       </Button>
     </ChatCard>
-  );
-}
-
-export function FirstTaskUpgradeCard() {
-  const pageSignal = useGet(pageSignal$);
-  const open = useSet(openSettingsBillingPlansDialog$);
-  const catalog = useLastLoadable(memberUsagePackOptionsAsync$);
-  const entryPack =
-    catalog.state === "hasData"
-      ? catalog.data
-          .filter((option) => {
-            return option.usagePackUsd > 0;
-          })
-          .sort((left, right) => {
-            return left.priceUsd - right.priceUsd;
-          })[0]
-      : undefined;
-  const onUpgrade = () => {
-    detach(open(pageSignal), Reason.DomCallback);
-  };
-
-  return (
-    <ProUpgradeCard
-      onUpgrade={onUpgrade}
-      monthlyPriceUsd={entryPack?.priceUsd}
-      includedCredits={entryPack?.purchasedCredits}
-      bonusCredits={entryPack?.bonusCredits}
-    />
   );
 }
 

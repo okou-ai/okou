@@ -73,7 +73,6 @@ export interface EventImageGroupProjection {
  * source consumed by other features such as the composer.
  */
 export interface MessageListSignals {
-  readonly firstTaskUpgradeEligible$: Computed<Promise<boolean>>;
   readonly setup$: Command<Promise<void>, [AbortSignal]>;
   readonly catchUp$: Command<Promise<void>, [AbortSignal]>;
   readonly scroll: ReturnType<typeof createChatThreadScrollSignals>;
@@ -138,7 +137,6 @@ export interface QueueMessageOptions {
 }
 
 export interface ChatPanelSignals {
-  readonly firstTaskUpgradeEligible$: Computed<Promise<boolean>>;
   readonly mail: ThreadMailSignals;
   readonly threadId: string;
   readonly agentId: string;

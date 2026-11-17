@@ -1835,14 +1835,6 @@
       "customAmountError": "Enter between $1 and $10,000",
       "customDollarAmount": "Custom dollar amount",
       "outOfCredits": "You're out of credits",
-      "proCard": {
-        "creditsNow": "credits · Just now",
-        "description": "Advanced features · 3 cloud computers",
-        "priceUnavailable": "See plans for current pricing",
-        "title": "About 5 tasks left",
-        "upgradeFromPrice": "Upgrade from {{price}}/month",
-        "upgradeNow": "Upgrade now"
-      },
       "redirecting": "Redirecting...",
       "upgradeToContinue": "Upgrade to Pro to keep chatting with {{assistantName}}.",
       "upgradeToPro": "Upgrade to Pro",
