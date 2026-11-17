@@ -37,6 +37,7 @@ fn submit_job(group: &Path, run_id: RunId) {
         profile: Some(profile.into()),
         reuse_key: None,
         session_id: None,
+        feature_flags: None,
         active_input: Some(true),
     };
     local_queue::write_private_file(

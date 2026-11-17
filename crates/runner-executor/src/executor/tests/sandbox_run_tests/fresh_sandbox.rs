@@ -1847,6 +1847,7 @@ async fn execute_inner_writes_user_env_file_and_starts_agent_with_bootstrap_env_
         guest_contracts::env::SECRET_VALUES_RUN_PAYLOAD_FIELD,
         guest_contracts::env::DISALLOWED_TOOLS_RUN_PAYLOAD_FIELD,
         guest_contracts::env::ARTIFACTS_RUN_PAYLOAD_FIELD,
+        guest_contracts::env::FEATURE_FLAGS_RUN_PAYLOAD_FIELD,
     ] {
         assert!(
             !start_env.contains_key(key),

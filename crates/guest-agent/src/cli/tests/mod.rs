@@ -46,6 +46,7 @@ fn guest_config_for_agent_context(user_env: HashMap<String, String>) -> env::Gue
         claude_config_dir: "/tmp/claude-config".to_string(),
         codex_home_dir: "/tmp/codex-home".to_string(),
         artifacts: Vec::new(),
+        feature_flags: HashMap::new(),
         codex_runtime_config: String::new(),
         pi_launch_config: String::new(),
         pi_model_config: String::new(),

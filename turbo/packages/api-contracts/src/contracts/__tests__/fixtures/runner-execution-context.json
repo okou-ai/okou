@@ -90,6 +90,9 @@
   },
   "connectorRuntimeTargets": [],
   "disallowedTools": ["FixtureDangerousTool"],
+  "featureFlags": {
+    "fixtureFlag": true
+  },
   "billableFirewalls": ["model-provider:fixture"],
   "modelUsageProvider": "fixture-model",
   "modelUsageLongContextMinTotalInputTokens": 272001,

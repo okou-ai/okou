@@ -22,6 +22,7 @@ async fn rejects_invalid_profile_name() {
         profile: Some("bad-name".into()),
         chat_thread_id: None,
         session_id: None,
+        feature_flags: vec![],
         env: vec![],
         secret_env: vec![],
         timeout: 1,
@@ -45,6 +46,7 @@ async fn accepts_valid_profile_name() {
         profile: Some("vm0/default".into()),
         chat_thread_id: None,
         session_id: None,
+        feature_flags: vec![],
         env: vec![],
         secret_env: vec![],
         timeout: 0,
@@ -60,6 +62,51 @@ async fn accepts_valid_profile_name() {
 }
 
 #[tokio::test]
+async fn rejects_feature_flag_missing_equals() {
+    let args = SubmitArgs {
+        group: "test/group".into(),
+        prompt: "hello".into(),
+        cli_agent_type: "claude-code".into(),
+        profile: None,
+        chat_thread_id: None,
+        session_id: None,
+        feature_flags: vec!["myFlag".into()],
+        env: vec![],
+        secret_env: vec![],
+        timeout: 1,
+        active_inputs: vec![],
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let home = HomePaths::with_root(dir.path().to_path_buf());
+    let err = run_submit_with_home(args, home).await.unwrap_err();
+    assert!(err.to_string().contains("expected key=value"), "got: {err}");
+}
+
+#[tokio::test]
+async fn rejects_feature_flag_non_boolean() {
+    let args = SubmitArgs {
+        group: "test/group".into(),
+        prompt: "hello".into(),
+        cli_agent_type: "claude-code".into(),
+        profile: None,
+        chat_thread_id: None,
+        session_id: None,
+        feature_flags: vec!["myFlag=yes".into()],
+        env: vec![],
+        secret_env: vec![],
+        timeout: 1,
+        active_inputs: vec![],
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let home = HomePaths::with_root(dir.path().to_path_buf());
+    let err = run_submit_with_home(args, home).await.unwrap_err();
+    assert!(
+        err.to_string().contains("expected true/false"),
+        "got: {err}"
+    );
+}
+
+#[tokio::test]
 async fn timeout_message_includes_group_and_profile() {
     let dir = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(dir.path().to_path_buf());
@@ -70,6 +117,7 @@ async fn timeout_message_includes_group_and_profile() {
         profile: Some("vm0/large".into()),
         chat_thread_id: None,
         session_id: None,
+        feature_flags: vec![],
         env: vec![],
         secret_env: vec![],
         timeout: 0,
@@ -187,6 +235,7 @@ async fn timeout_removes_unclaimed_job_from_queue() {
         profile: None,
         chat_thread_id: None,
         session_id: None,
+        feature_flags: vec![],
         env: vec![],
         secret_env: vec![],
         timeout: 0,

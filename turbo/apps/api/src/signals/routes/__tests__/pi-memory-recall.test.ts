@@ -82,6 +82,7 @@ describe("ordinary Pi published personal Memory", () => {
         versionId: published,
         mountPath: "/home/user/.pi/agent/memory",
       });
+      expect(selected.execution.featureFlags?.proactiveLearning).toBeFalsy();
       const queued = await fixture.enqueue(
         agentId,
         "Keep the accepted Memory version while queued",

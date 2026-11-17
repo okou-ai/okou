@@ -153,6 +153,7 @@ fn run_payload_uses_camel_case_wire_keys() {
         secret_values: "secret".to_string(),
         disallowed_tools: "WebFetch".to_string(),
         artifacts: "[]".to_string(),
+        feature_flags: r#"{"flag":true}"#.to_string(),
         codex_runtime_config: r#"{"providerId":"openrouter-codex"}"#.to_string(),
         pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
         pi_model_config: r#"{"provider":"openrouter-codex"}"#.to_string(),
@@ -166,6 +167,7 @@ fn run_payload_uses_camel_case_wire_keys() {
     assert_eq!(json["nativeContinuation"], "{}");
     assert_eq!(json["secretValues"], "secret");
     assert_eq!(json["disallowedTools"], "WebFetch");
+    assert_eq!(json["featureFlags"], r#"{"flag":true}"#);
     assert_eq!(
         json["codexRuntimeConfig"],
         r#"{"providerId":"openrouter-codex"}"#
@@ -184,6 +186,7 @@ fn run_payload_fields_returns_logical_names_and_values() {
         secret_values: "secret".to_string(),
         disallowed_tools: "WebFetch".to_string(),
         artifacts: "[]".to_string(),
+        feature_flags: r#"{"flag":true}"#.to_string(),
         codex_runtime_config: r#"{"providerId":"openrouter-codex"}"#.to_string(),
         pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
         pi_model_config: r#"{"provider":"openrouter-codex"}"#.to_string(),
@@ -218,6 +221,10 @@ fn run_payload_fields_returns_logical_names_and_values() {
             RunPayloadField {
                 name: ARTIFACTS_RUN_PAYLOAD_FIELD,
                 value: "[]"
+            },
+            RunPayloadField {
+                name: FEATURE_FLAGS_RUN_PAYLOAD_FIELD,
+                value: r#"{"flag":true}"#
             },
             RunPayloadField {
                 name: CODEX_RUNTIME_CONFIG_RUN_PAYLOAD_FIELD,
@@ -260,6 +267,7 @@ fn run_payload_first_nul_field_accepts_clean_payload() {
         secret_values: "secret".to_string(),
         disallowed_tools: "WebFetch".to_string(),
         artifacts: "[]".to_string(),
+        feature_flags: r#"{"flag":true}"#.to_string(),
         codex_runtime_config: r#"{"providerId":"openrouter-codex"}"#.to_string(),
         ..RunPayload::default()
     };

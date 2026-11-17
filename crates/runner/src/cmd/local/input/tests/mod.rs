@@ -37,6 +37,7 @@ impl InputFixture {
             profile: Some(profile.into()),
             reuse_key: None,
             session_id: None,
+            feature_flags: None,
             active_input,
         };
         local_queue::write_private_file(

@@ -18,6 +18,7 @@ async fn submit_defaults_profile_and_writes_default_partition() {
             profile: None,
             chat_thread_id: None,
             session_id: None,
+            feature_flags: vec![],
             env: vec![],
             secret_env: vec![],
             timeout: 5,
@@ -52,6 +53,7 @@ async fn submit_writes_non_default_profile_partition() {
             profile: Some(profile.into()),
             chat_thread_id: None,
             session_id: None,
+            feature_flags: vec![],
             env: vec![],
             secret_env: vec![],
             timeout: 5,
@@ -67,7 +69,7 @@ async fn submit_writes_non_default_profile_partition() {
 }
 
 #[tokio::test]
-async fn submit_serializes_identity_fields() {
+async fn submit_serializes_feature_flags_and_identity_fields() {
     let dir = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(dir.path().to_path_buf());
     let group = "test/group";
@@ -80,6 +82,7 @@ async fn submit_serializes_identity_fields() {
             profile: None,
             chat_thread_id: Some("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa".parse().unwrap()),
             session_id: Some("sess-123".into()),
+            feature_flags: vec!["alpha=true".into(), "beta=false".into()],
             env: vec![],
             secret_env: vec![],
             timeout: 5,
@@ -89,6 +92,7 @@ async fn submit_serializes_identity_fields() {
     )
     .await
     .unwrap();
+    let flags = request.feature_flags.as_ref().unwrap();
 
     assert_eq!(code, ExitCode::SUCCESS);
     assert_eq!(request.prompt, "hello");
@@ -98,6 +102,8 @@ async fn submit_serializes_identity_fields() {
         Some("thread:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
     );
     assert_eq!(request.session_id.as_deref(), Some("sess-123"));
+    assert_eq!(flags.get("alpha"), Some(&true));
+    assert_eq!(flags.get("beta"), Some(&false));
 }
 
 #[tokio::test]
@@ -114,6 +120,7 @@ async fn submit_keeps_session_only_job_without_reuse_key() {
             profile: None,
             chat_thread_id: None,
             session_id: Some("sess-123".into()),
+            feature_flags: vec![],
             env: vec![],
             secret_env: vec![],
             timeout: 5,

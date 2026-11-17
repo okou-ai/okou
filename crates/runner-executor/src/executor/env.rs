@@ -868,6 +868,7 @@ pub(super) fn prepare_run_payload_for_run(
         secret_values: String::new(),
         disallowed_tools,
         artifacts: serialize_artifacts_payload(context)?,
+        feature_flags: serialize_feature_flags_payload(context)?,
         codex_runtime_config: serialize_codex_runtime_config_payload(context)?,
         pi_launch_config: serialize_pi_launch_config_payload(context)?,
         pi_model_config: serialize_pi_model_config_payload(context)?,
@@ -948,6 +949,17 @@ fn run_artifact_missing_root_policy(
             guest_contracts::env::RunArtifactMissingRootPolicy::PreserveParentVersion
         }
     }
+}
+
+fn serialize_feature_flags_payload(context: &ExecutionContext) -> RunnerResult<String> {
+    let Some(flags) = &context.feature_flags else {
+        return Ok(String::new());
+    };
+    if flags.is_empty() {
+        return Ok(String::new());
+    }
+    serde_json::to_string(flags)
+        .map_err(|e| RunnerError::Internal(format!("serialize feature flags payload: {e}")))
 }
 
 fn serialize_codex_runtime_config_payload(context: &ExecutionContext) -> RunnerResult<String> {

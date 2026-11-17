@@ -342,6 +342,7 @@ fn guest_config_from_raw_loads_run_payload_and_removes_private_file() {
         artifacts:
             r#"[{"name":"artifact","mountPath":"/mnt/a","storageId":"storage","versionId":"v1"}]"#
                 .to_string(),
+        feature_flags: r#"{"flag":true}"#.to_string(),
         codex_runtime_config: r#"{"providerId":"openrouter-codex"}"#.to_string(),
         pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
         pi_model_config: r#"{"provider":"openrouter"}"#.to_string(),
@@ -363,6 +364,7 @@ fn guest_config_from_raw_loads_run_payload_and_removes_private_file() {
     assert_eq!(config.secret_values, "payload-secret");
     assert_eq!(config.disallowed_tools, "WebFetch");
     assert_eq!(config.artifacts.len(), 1);
+    assert_eq!(config.feature_flags.get("flag"), Some(&true));
     assert_eq!(
         config.codex_runtime_config,
         r#"{"providerId":"openrouter-codex"}"#

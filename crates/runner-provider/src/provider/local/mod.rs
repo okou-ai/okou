@@ -328,6 +328,7 @@ impl super::LocalJobSource for LocalProvider {
             network_policy_refreshes: None,
             connector_runtime_targets: Vec::new(),
             disallowed_tools: None,
+            feature_flags: req.feature_flags,
             billable_firewalls: vec![],
             model_usage_provider: None,
             model_usage_long_context_min_total_input_tokens: None,

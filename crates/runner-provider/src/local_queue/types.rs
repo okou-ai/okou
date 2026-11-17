@@ -24,6 +24,8 @@ pub struct JobRequest {
     /// Provider-native session ID to resume.
     #[serde(default)]
     pub session_id: Option<String>,
+    #[serde(default)]
+    pub feature_flags: Option<HashMap<String, bool>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_input: Option<bool>,
 }
