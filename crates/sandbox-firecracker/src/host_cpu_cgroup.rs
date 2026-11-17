@@ -1,6 +1,6 @@
 //! Weighted host cgroup v2 placement for normal Firecracker processes.
 
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::os::unix::ffi::OsStrExt;
@@ -22,7 +22,7 @@ const CGROUP_CONTROLLERS: &str = "cgroup.controllers";
 const CGROUP_SUBTREE_CONTROL: &str = "cgroup.subtree_control";
 const CGROUP_PROCS: &str = "cgroup.procs";
 const CPU_WEIGHT: &str = "cpu.weight";
-const DELEGATE_XATTR: &[u8] = b"user.delegate\0";
+const DELEGATE_XATTR: &CStr = c"user.delegate";
 
 #[derive(Debug, thiserror::Error)]
 enum InitializationError {
@@ -364,33 +364,24 @@ fn read_delegate_marker(path: &Path) -> Result<Option<()>, InitializationError> 
     let path_c = CString::new(path.as_os_str().as_bytes()).map_err(|_| {
         InitializationError::Invalid(format!("delegated root contains NUL: {}", path.display()))
     })?;
-    // SAFETY: both pointers are valid NUL-terminated strings and the value
-    // buffer is valid for the supplied length.
     let mut value = [0_u8; 8];
-    let size = unsafe {
-        libc::getxattr(
-            path_c.as_ptr(),
-            DELEGATE_XATTR.as_ptr().cast(),
-            value.as_mut_ptr().cast(),
-            value.len(),
-        )
-    };
-    if size < 0 {
-        let error = io::Error::last_os_error();
-        if matches!(
-            error.raw_os_error(),
-            Some(code)
-                if code == libc::ENOENT || code == libc::ENODATA || code == libc::ENOTSUP
-        ) {
-            return Ok(None);
+    let size = match rustix::fs::getxattr(path_c.as_c_str(), DELEGATE_XATTR, &mut value) {
+        Ok(size) => size,
+        Err(error) => {
+            let error = io::Error::from(error);
+            if matches!(
+                error.raw_os_error(),
+                Some(code)
+                    if code == libc::ENOENT || code == libc::ENODATA || code == libc::ENOTSUP
+            ) {
+                return Ok(None);
+            }
+            return Err(InitializationError::Invalid(format!(
+                "read systemd user.delegate marker from {}: {error}",
+                path.display(),
+            )));
         }
-        return Err(InitializationError::Invalid(format!(
-            "read systemd user.delegate marker from {}: {error}",
-            path.display(),
-        )));
-    }
-    let size = usize::try_from(size)
-        .map_err(|_| InitializationError::Invalid("invalid user.delegate marker length".into()))?;
+    };
     if value.get(..size) != Some(b"1") {
         return Err(InitializationError::Invalid(format!(
             "delegated service root {} has invalid user.delegate marker",
