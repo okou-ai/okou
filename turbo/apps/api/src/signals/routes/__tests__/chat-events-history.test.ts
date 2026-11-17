@@ -134,7 +134,7 @@ describe("CHAT-02: incomplete-round context", () => {
       threadId: first.threadId,
       prompt: "retry after two failures",
     });
-    const thirdRun = await api.readRun(actor, third.runId);
+    const thirdRun = await api.executionInput(third.runId);
     const appended = thirdRun.appendSystemPrompt ?? "";
     expect(appended).toContain("# Incomplete Rounds Context");
     expect(appended.split("RUN_STATUS: failed")).toHaveLength(3);
@@ -296,7 +296,7 @@ describe("CHAT-02: prior rounds and thread titles", () => {
       readThreadTitleFromEvents(actor, first.threadId),
     ).resolves.toBe("Migration Plan");
     expect(titleRequests).toBe(1);
-    const secondRun = await api.readRun(actor, second.runId);
+    const secondRun = await api.executionInput(second.runId);
     const appended = secondRun.appendSystemPrompt ?? "";
     expect(secondRun.prompt).toBe("follow-up question");
     expect(appended).toContain(`- CHAT_THREAD_ID: ${first.threadId}`);

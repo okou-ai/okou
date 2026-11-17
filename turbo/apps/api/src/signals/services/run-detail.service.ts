@@ -31,13 +31,11 @@ import {
   timeCursorBoundary,
 } from "./log-pagination";
 import { sanitizeAxiomNetworkEvents } from "./network-log-sanitizer";
-import { normalizeRunContextSnapshot } from "./run-context-snapshot.service";
+import { runContextObservation } from "./run-context-observation.service";
 import {
   publicBuiltInBalanceEvent,
   publicBuiltInBalanceNetworkLog,
 } from "./run-balance-presentation";
-
-const RUN_CONTEXT_QUERY_PADDING_MS = 60 * 60 * 1000;
 
 interface NetworkLogsParams {
   runId: string;
@@ -63,97 +61,50 @@ export function runContext(
   return computed(async (get): Promise<RunContextResult> => {
     const db = get(db$);
 
-    const owned = await (async () => {
-      const [run] = await db
-        .select({ id: agentRuns.id })
-        .from(agentRuns)
-        .where(
-          and(
-            eq(agentRuns.id, runId),
-            eq(agentRuns.userId, userId),
-            eq(agentRuns.orgId, orgId),
-          ),
-        )
-        .limit(1);
-      return run !== undefined;
-    })();
-    if (!owned) {
-      return { kind: "not-found" };
-    }
-
-    // Get run metadata for vars
     const [run] = await db
       .select({
-        prompt: agentRuns.prompt,
-        appendSystemPrompt: agentRuns.appendSystemPrompt,
-        vars: agentRuns.vars,
-        secretNames: agentRuns.secretNames,
         createdAt: agentRuns.createdAt,
         startedAt: agentRuns.startedAt,
       })
       .from(agentRuns)
-      .where(eq(agentRuns.id, runId))
+      .where(
+        and(
+          eq(agentRuns.id, runId),
+          eq(agentRuns.userId, userId),
+          eq(agentRuns.orgId, orgId),
+        ),
+      )
       .limit(1);
 
     if (!run) {
       return { kind: "not-found" };
     }
 
-    const sanitizedRunId = runId.replace(/[^a-zA-Z0-9_-]/g, "");
-    if (sanitizedRunId !== runId) {
-      return { kind: "not-found" };
-    }
-
-    const dataset = getDatasetName("run-context");
-    const apl = `['${dataset}']
-| where runId == "${sanitizedRunId}"
-| sort by _time desc
-| limit 1`;
-
-    // Include the actual Claim after a long queue. The latest observation
-    // describes the configuration that execution received.
-    const createdAtMs = run.createdAt.getTime();
-    const results = (await get(
-      queryAxiom(apl, {
-        // Late-ingested snapshots must not be hidden by a cached empty result.
-        noCache: true,
-        startTime: new Date(
-          createdAtMs - RUN_CONTEXT_QUERY_PADDING_MS,
-        ).toISOString(),
-        endTime: new Date(
-          Math.max(createdAtMs, run.startedAt?.getTime() ?? createdAtMs) +
-            RUN_CONTEXT_QUERY_PADDING_MS,
-        ).toISOString(),
-      }),
-    )) as Record<string, unknown>[];
-    const snapshot = results[0];
-
-    if (!snapshot) {
+    const snapshot = await get(runContextObservation({ runId, ...run }));
+    if (!snapshot || snapshot.prompt === undefined) {
       return { kind: "no-snapshot" };
     }
-    const normalizedSnapshot = normalizeRunContextSnapshot(snapshot);
 
     return {
       kind: "ok",
       context: {
-        prompt: run.prompt,
-        appendSystemPrompt: run.appendSystemPrompt ?? null,
+        prompt: snapshot.prompt,
+        appendSystemPrompt: snapshot.appendSystemPrompt ?? null,
         runId,
-        sessionId: normalizedSnapshot.sessionId,
-        cliAgentType: normalizedSnapshot.cliAgentType ?? undefined,
-        secretNames: (run.secretNames as string[]) ?? [],
-        vars: (run.vars as Record<string, string> | undefined) ?? null,
-        environment: normalizedSnapshot.environment,
-        firewalls: normalizedSnapshot.firewalls,
-        networkPolicies: normalizedSnapshot.networkPolicies,
-        storageMounts: normalizedSnapshot.storageMounts,
-        ...(normalizedSnapshot.templateGuidanceBundles === undefined
+        sessionId: snapshot.sessionId,
+        cliAgentType: snapshot.cliAgentType ?? undefined,
+        secretNames: [...snapshot.secretNames],
+        vars: snapshot.vars,
+        environment: snapshot.environment,
+        firewalls: snapshot.firewalls,
+        networkPolicies: snapshot.networkPolicies,
+        storageMounts: snapshot.storageMounts,
+        ...(snapshot.templateGuidanceBundles === undefined
           ? {}
           : {
-              templateGuidanceBundles:
-                normalizedSnapshot.templateGuidanceBundles,
+              templateGuidanceBundles: snapshot.templateGuidanceBundles,
             }),
-        featureFlags: normalizedSnapshot.featureFlags,
+        featureFlags: snapshot.featureFlags,
       },
     };
   });

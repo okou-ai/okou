@@ -281,7 +281,7 @@ async function feedbackContext(
   if (!runId) {
     throw new Error("Expected the scheduled Suggestions Run");
   }
-  const run = await runs.readRun(fixture.actor, runId);
+  const run = await runs.executionInput(runId);
   const json = run.appendSystemPrompt?.match(/^(\{"asOf":.*\})$/mu)?.[1];
   expect(json).toBeDefined();
   const parsed = feedbackContextSchema.parse(JSON.parse(json ?? ""));
@@ -2124,7 +2124,7 @@ describe("Suggestion feedback context", () => {
       prompt: "Help me with an unrelated task",
     });
     expect(
-      (await runs.readRun(fixture.actor, ordinary.runId)).appendSystemPrompt,
+      (await runs.executionInput(ordinary.runId)).appendSystemPrompt,
     ).not.toContain("# Suggestions feedback context");
     await runs.requestCancelRun(fixture.actor, ordinary.runId, [200]);
     await accept(

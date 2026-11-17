@@ -26,7 +26,8 @@ import {
 
 import { db$ } from "../external/db";
 import { logDetailRunSelection } from "./log-detail-run-selection";
-import { runContextCliAgentType } from "./run-context-framework.service";
+import { runContextObservation } from "./run-context-observation.service";
+import { tapError } from "../utils";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -339,10 +340,17 @@ export function logDetail(
       modelRuntimeProvider,
       modelRuntimeModel,
     } = result;
+    const snapshot = await tapError(
+      get(
+        runContextObservation({
+          runId: params.runId,
+          createdAt: run.createdAt,
+          startedAt: run.startedAt,
+        }),
+      ),
+    );
     const framework =
-      (await get(runContextCliAgentType(params.runId))) ??
-      run.launchSnapshot?.framework ??
-      null;
+      snapshot?.cliAgentType ?? run.launchSnapshot?.framework ?? null;
 
     return {
       id: run.id,
@@ -359,7 +367,7 @@ export function logDetail(
       triggerSource: normalizeTriggerSource(triggerSource),
       status: run.status as LogStatus,
       prompt: run.prompt,
-      appendSystemPrompt: run.appendSystemPrompt ?? null,
+      appendSystemPrompt: snapshot?.appendSystemPrompt ?? null,
       error: run.error
         ? (formatRunBalanceError({
             failureReason: run.failureReason,

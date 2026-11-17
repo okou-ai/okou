@@ -843,7 +843,7 @@ const preparedExecutionContextBaseSchema = object({
   // This field must not be included in the runner-facing ExecutionContext.
   secretValueEnvironmentKeys: array(string()).nullable(),
   // Connector-owned runtime vars used by proxy/firewall template resolution.
-  // Run vars stay in agent_runs.vars and merge during execution preparation.
+  // Original Run vars travel in the admitted launch and merge during execution preparation.
   vars: record(string(), string()).nullable(),
   nativeContinuation: nativeContinuationSchema,
   // AES-256-GCM encrypted Record<string, string>. Keys are the runtime secret

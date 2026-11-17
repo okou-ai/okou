@@ -162,12 +162,16 @@ export const prepareDirectRun$ = command(
         userId: run.userId,
         prompt: run.prompt,
         appendSystemPrompt: run.appendSystemPrompt,
+        vars: run.vars,
         context: {
           ...context,
           networkPolicies: publication.executionContext.networkPolicies,
         },
         secretNames: Object.keys(prepared.secrets ?? {}),
-        secretValues: publication.executionContext.secretValues,
+        secretValues: [
+          ...Object.values(prepared.secrets ?? {}),
+          ...(publication.executionContext.secretValues ?? []),
+        ],
       },
     };
   },

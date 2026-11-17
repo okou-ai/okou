@@ -55,7 +55,7 @@ describe("CHAT-02: run-level model overrides", () => {
       agentId,
       prompt: "inspect raw thread history",
     });
-    const stored = await api.readRun(actor, run.runId);
+    const stored = await api.executionInput(run.runId);
     const appended = stored.appendSystemPrompt ?? "";
     expect(appended).toContain(
       `okou chat messages --thread-id ${run.threadId} --output-dir /tmp/okou-chat-history`,
@@ -121,7 +121,7 @@ describe("CHAT-02: run-level model overrides", () => {
       prompt: "switch to sonnet",
       model: "claude-sonnet-5-5",
     });
-    const secondRun = await api.readRun(actor, second.runId);
+    const secondRun = await api.executionInput(second.runId);
     const appended = secondRun.appendSystemPrompt ?? "";
     expect(appended).not.toContain("Assistant: opus answer");
     expect(appended).toContain("# This Chat Thread");

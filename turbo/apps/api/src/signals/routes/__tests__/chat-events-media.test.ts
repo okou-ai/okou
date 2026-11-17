@@ -27,7 +27,7 @@ async function expectImageGuidance(
   runId: string,
   model: string,
 ): Promise<void> {
-  const run = await api.readRun(actor, runId);
+  const run = await api.executionInput(runId);
   expect(run.appendSystemPrompt).toContain(
     `Built-in image generation uses \`${model}\`, from the user's image model setting in Settings › Built-in tools.`,
   );
@@ -60,7 +60,7 @@ describe("CHAT-02: run image model through public prompts", () => {
       "fal-ai/nano-banana-2",
     );
     await expectImageGuidance(actor, second.runId, "flux-pro-1.1");
-    const prompt = (await api.readRun(actor, second.runId)).appendSystemPrompt;
+    const prompt = (await api.executionInput(second.runId)).appendSystemPrompt;
     expect(prompt).toContain(
       "The model cannot be changed per request. Do not pass `--model` to image generation commands.",
     );
@@ -98,7 +98,7 @@ describe("CHAT-02: run image model through public prompts", () => {
     await flushWaitUntilForTest();
     const picked = await waiting.launchedRun();
     expect(
-      (await api.readRun(actor, picked.runId)).appendSystemPrompt,
+      (await api.executionInput(picked.runId)).appendSystemPrompt,
     ).toContain(
       "Built-in image generation uses `flux-pro-1.1`, from the user's image model setting in Settings › Built-in tools.",
     );

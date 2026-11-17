@@ -1004,7 +1004,7 @@ describe("canonical Discord ingress", () => {
     if (!inputs[0]?.runId) {
       throw new Error("Expected Discord run launch");
     }
-    const run = await runsApi.readRun(actor.actor, inputs[0].runId);
+    const run = await runsApi.executionInput(inputs[0].runId);
     expect(run.prompt).toBe("@Okou preserve this request");
     expect(run.appendSystemPrompt).toContain("MESSAGE_CONTENT is unavailable");
   });
@@ -2258,9 +2258,12 @@ describe("canonical Discord ingress", () => {
     }
     const run = await launchedRun(second, thread.id);
     expect(run.prompt).toBe("hi");
-    expect(run.appendSystemPrompt).not.toContain("42 open deals");
-    expect(run.appendSystemPrompt).not.toContain(firstDm.content);
-    expect(run.appendSystemPrompt).not.toContain("Prior Discord Messages");
+    const execution = await runsApi.executionInput(run.runId);
+    expect(execution.appendSystemPrompt).not.toContain("42 open deals");
+    expect(execution.appendSystemPrompt).not.toContain(firstDm.content);
+    expect(execution.appendSystemPrompt).not.toContain(
+      "Prior Discord Messages",
+    );
   });
 
   it("requires explicit DM org choice and keeps a replay bound to its original org", async () => {
