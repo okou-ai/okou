@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.18.0](https://github.com/okou-ai/okou/compare/android-v0.17.0...android-v0.18.0) (2026-11-17)
+
+
+### Features
+
+* **android:** add target-bound run and queue controls ([#47921](https://github.com/okou-ai/okou/issues/47921)) ([c33e87f](https://github.com/okou-ai/okou/commit/c33e87f4e15b7e4adb5936c9ba2df7b97b87646a))
+
+
+### Performance Improvements
+
+* **ci:** skip android validation for release-please ([#48080](https://github.com/okou-ai/okou/issues/48080)) ([7b303ed](https://github.com/okou-ai/okou/commit/7b303edbf70e271950f1c3140241a6024bb6538c))
+
 ## [0.17.0](https://github.com/okou-ai/okou/compare/android-v0.16.0...android-v0.17.0) (2026-11-17)
 
 
