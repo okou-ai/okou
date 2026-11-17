@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.47.2](https://github.com/okou-ai/okou/compare/ios-v0.47.1...ios-v0.47.2) (2026-11-17)
+
+
+### Performance Improvements
+
+* **ios:** share the startup indicators baseline ([#48218](https://github.com/okou-ai/okou/issues/48218)) ([82937be](https://github.com/okou-ai/okou/commit/82937be28205937e2fced458c1636e493bc5a695))
+
 ## [0.47.1](https://github.com/okou-ai/okou/compare/ios-v0.47.0...ios-v0.47.1) (2026-11-17)
 
 

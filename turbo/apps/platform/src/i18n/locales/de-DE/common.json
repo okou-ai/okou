@@ -1525,6 +1525,7 @@
           "action": "Einchecken",
           "description": "Einmal täglich einchecken. Neuer Tag um 00:00 UTC.",
           "name": "Täglich einchecken",
+          "pendingDescription": "Dein Check-in wurde gespeichert. Die Credits werden nach der Bestätigung aktualisiert.",
           "unit": "pro Tag"
         },
         "connector": {
@@ -2932,13 +2933,13 @@
   },
   "connectorChatAccess": {
     "accountAccess": "Zugriff für {{account}}",
+    "accountsInChat": "Wähle, welche Konten in diesem Chat aktiviert sind.",
     "enableByDefault": "{{account}} standardmäßig aktivieren",
-    "enabledAccounts": "{{value}} aktiviert",
     "manageAccounts": "Konten verwalten",
-    "noEnabledAccount": "Für diesen Chat ist kein Konto aktiviert",
     "permissions": "Berechtigungen",
     "permissionsDescription": "Diese Regeln gelten für diesen Connector in allen deinen Chats und Konten.",
-    "settingsDescription": "Wähle die standardmäßig aktivierten Konten."
+    "settingsDescription": "Wähle, welche {{connector}}-Konten Okou in deinen Chats verwenden darf. Du kannst den Zugriff in jedem Chat ändern.",
+    "totalAccounts": "{{value}} Konten"
   },
   "connectors": {
     "access": {

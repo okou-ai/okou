@@ -1550,6 +1550,7 @@
           "action": "Registrar visita",
           "description": "Registra tu visita una vez al día. Se reinicia a las 00:00 UTC.",
           "name": "Entrar cada día",
+          "pendingDescription": "Tu registro diario se ha guardado. Los créditos se actualizarán tras la confirmación.",
           "unit": "al día"
         },
         "connector": {
@@ -2982,13 +2983,13 @@
   },
   "connectorChatAccess": {
     "accountAccess": "Acceso de {{account}}",
+    "accountsInChat": "Elige qué cuentas están activadas en este chat.",
     "enableByDefault": "Activar {{account}} de forma predeterminada",
-    "enabledAccounts": "{{value}} activas",
     "manageAccounts": "Gestionar cuentas",
-    "noEnabledAccount": "Ninguna cuenta está activa en este chat",
     "permissions": "Permisos",
     "permissionsDescription": "Estas reglas se aplican a este conector en todos tus chats y cuentas.",
-    "settingsDescription": "Elige las cuentas activas por defecto."
+    "settingsDescription": "Elige qué cuentas de {{connector}} puede usar Okou en tus chats. Puedes cambiar el acceso en cada chat.",
+    "totalAccounts": "{{value}} cuentas"
   },
   "connectors": {
     "access": {

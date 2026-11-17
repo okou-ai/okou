@@ -1029,7 +1029,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
       });
 
-      it("prefers the installed CLI while retaining the legacy package URL in new run claims", async () => {
+      it("advertises the installed Okou CLI in execution input", async () => {
         const api = createRunsApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor();
         const run = await api.createThreadRun(actor, {
@@ -1118,16 +1118,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, enabled.runId, [200]);
       });
 
-      it("claims an exact-empty direct dispatch run without connector scope", async () => {
+      it("dispatches execution input without connector scope", async () => {
         const api = createRunsApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor();
-        const prompt = "api dispatch timing should not leak prompt";
-        const apiCommitSha = "a".repeat(40);
-        mockEnv("GIT_COMMIT_SHA", apiCommitSha);
-
         const created = await api.createThreadRun(actor, {
           agentId,
-          prompt,
+          prompt: "run without connectors",
         });
 
         await api.heartbeatRunner(runnerGroup);
@@ -2796,7 +2792,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(queue.body.concurrency.active).toBe(0);
       });
 
-      it("claims managed Auto runs without delivering the managed provider key", async () => {
+      it("dispatches managed Auto runs without delivering the managed provider key", async () => {
         // The fixed test seed holds the same obvious fake managed key as
         // dev-seed. This guards the two copies against drift; execution input's
         // managed route proves that a managed key row is in use.
@@ -2870,7 +2866,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await finishCancelledRun(run.runId, execution.sandboxToken);
       });
 
-      it("claims personal Codex GPT 6 chat runs through Pi without platform model billing", async () => {
+      it("dispatches personal Codex GPT 6 chat runs through Pi without platform model billing", async () => {
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
         const selectedModel = "gpt-6-sol";
@@ -10129,7 +10125,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         }
       });
 
-      it("claims native continuation without reading history object metadata", async () => {
+      it("dispatches native continuation without reading history object metadata", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
         const { actor, agentId } = await entitledRunActor(

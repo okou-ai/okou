@@ -8,6 +8,9 @@ use httpmock::prelude::*;
 use serde_json::json;
 use std::sync::LazyLock;
 
+#[cfg(target_os = "linux")]
+mod disk_failure;
+
 static TEST_STATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[test]

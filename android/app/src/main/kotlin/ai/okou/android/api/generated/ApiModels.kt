@@ -23,6 +23,330 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.encodeToJsonElement
 
 @Serializable
+data class RecoveryCatalogModelsItemRunOptionsFast(val `chatGptUsageMultiplier`: Double)
+
+@Serializable
+data class RecoveryCatalogModelsItemRunOptions(
+    val `fast`: RecoveryCatalogModelsItemRunOptionsFast? = null
+)
+
+@Serializable
+enum class RecoveryCatalogModelsItemPiRouteClass {
+    @SerialName("gpt-codex") GPT_CODEX
+}
+
+@Serializable
+data class RecoveryCatalogModelsItem(
+    val `model`: String,
+    val `displayName`: String,
+    val `sortOrder`: Long,
+    val `runOptions`: RecoveryCatalogModelsItemRunOptions? = null,
+    val `replacedBy`: String?,
+    val `resolvedModel`: String,
+    val `builtInOnRestrictedPlans`: Boolean,
+    val `piRouteClass`: RecoveryCatalogModelsItemPiRouteClass?,
+)
+
+@Serializable
+data class RecoveryCatalogRoutesItem(
+    val `model`: String,
+    val `providerType`: String,
+    val `concreteProviderType`: String,
+    val `subscriptionType`: String?,
+    val `upstreamModel`: String,
+    val `enabled`: Boolean,
+    val `priority`: Long,
+    val `serviceTiers`: List<String>,
+    val `defaultServiceTier`: String?,
+    val `efforts`: List<String>,
+    val `defaultEffort`: String?,
+    val `piRuntimeCapable`: Boolean? = null,
+)
+
+@Serializable
+data class RecoveryCatalog(
+    val `models`: List<RecoveryCatalogModelsItem>,
+    val `routes`: List<RecoveryCatalogRoutesItem>,
+    val `systemDefaultModel`: String,
+)
+
+@Serializable
+enum class RecoveryModelsModelsItemSubscriptionOptionsEffortsItem {
+    @SerialName("low") LOW,
+    @SerialName("medium") MEDIUM,
+    @SerialName("high") HIGH,
+    @SerialName("xhigh") XHIGH,
+    @SerialName("extra") EXTRA,
+    @SerialName("max") MAX,
+    @SerialName("ultra") ULTRA,
+    @SerialName("ultracode") ULTRACODE,
+}
+
+@Serializable
+enum class RecoveryModelsModelsItemSubscriptionOptionsServiceTier {
+    @SerialName("priority") PRIORITY
+}
+
+@Serializable
+data class RecoveryModelsModelsItemSubscriptionOptions(
+    val `efforts`: List<RecoveryModelsModelsItemSubscriptionOptionsEffortsItem>,
+    val `serviceTier`: RecoveryModelsModelsItemSubscriptionOptionsServiceTier?,
+)
+
+@Serializable
+enum class RecoveryModelsModelsItemMemberEffectiveProviderType {
+    @SerialName("claude-code-oauth-token") CLAUDE_CODE_OAUTH_TOKEN,
+    @SerialName("openrouter-codex") OPENROUTER_CODEX,
+    @SerialName("codex-oauth-token") CODEX_OAUTH_TOKEN,
+    @SerialName("built-in") BUILT_IN,
+}
+
+@Serializable
+enum class RecoveryModelsModelsItemMemberEffectiveRuntimeProviderType {
+    @SerialName("claude-code-oauth-token") CLAUDE_CODE_OAUTH_TOKEN,
+    @SerialName("openrouter-codex") OPENROUTER_CODEX,
+    @SerialName("codex-oauth-token") CODEX_OAUTH_TOKEN,
+    @SerialName("built-in") BUILT_IN,
+}
+
+@Serializable
+enum class RecoveryModelsModelsItemMemberEffectiveCredentialScope {
+    @SerialName("org") ORG,
+    @SerialName("member") MEMBER,
+}
+
+@Serializable
+enum class RecoveryModelsModelsItemMemberEffectiveAvailability {
+    @SerialName("available") AVAILABLE,
+    @SerialName("reconnect_required") RECONNECT_REQUIRED,
+    @SerialName("plan_restricted") PLAN_RESTRICTED,
+}
+
+@Serializable
+enum class RecoveryModelsModelsItemMemberEffectiveAccountSelection {
+    @SerialName("capture_required") CAPTURE_REQUIRED,
+    @SerialName("not_applicable") NOT_APPLICABLE,
+}
+
+@Serializable
+data class RecoveryModelsModelsItemMemberEffective(
+    val `providerType`: RecoveryModelsModelsItemMemberEffectiveProviderType,
+    val `runtimeProviderType`: RecoveryModelsModelsItemMemberEffectiveRuntimeProviderType?,
+    val `credentialScope`: RecoveryModelsModelsItemMemberEffectiveCredentialScope,
+    val `availability`: RecoveryModelsModelsItemMemberEffectiveAvailability,
+    val `accountSelection`: RecoveryModelsModelsItemMemberEffectiveAccountSelection,
+)
+
+@Serializable
+data class RecoveryModelsModelsItem(
+    val `model`: String?,
+    val `modelLabel`: String,
+    val `modelProviderId`: String?,
+    val `subscriptionOptions`: RecoveryModelsModelsItemSubscriptionOptions? = null,
+    val `memberEffective`: RecoveryModelsModelsItemMemberEffective,
+)
+
+@Serializable data class RecoveryModels(val `models`: List<RecoveryModelsModelsItem>)
+
+@Serializable
+enum class RecoverySubscriptionsSubscriptionsItemType {
+    @SerialName("claude-code-oauth-token") CLAUDE_CODE_OAUTH_TOKEN,
+    @SerialName("openrouter-codex") OPENROUTER_CODEX,
+    @SerialName("codex-oauth-token") CODEX_OAUTH_TOKEN,
+    @SerialName("built-in") BUILT_IN,
+}
+
+@Serializable
+enum class RecoverySubscriptionsSubscriptionsItemFramework {
+    @SerialName("claude-code") CLAUDE_CODE,
+    @SerialName("codex") CODEX,
+}
+
+@Serializable
+data class RecoverySubscriptionsSubscriptionsItemSubscriptionUsageFiveHour(
+    val `usedPercent`: Double?,
+    val `remainingPercent`: Double?,
+    val `resetAt`: String?,
+    val `windowSeconds`: Double?,
+)
+
+@Serializable
+data class RecoverySubscriptionsSubscriptionsItemSubscriptionUsageWeekly(
+    val `usedPercent`: Double?,
+    val `remainingPercent`: Double?,
+    val `resetAt`: String?,
+    val `windowSeconds`: Double?,
+)
+
+@Serializable
+data class RecoverySubscriptionsSubscriptionsItemSubscriptionUsage(
+    val `fiveHour`: RecoverySubscriptionsSubscriptionsItemSubscriptionUsageFiveHour?,
+    val `weekly`: RecoverySubscriptionsSubscriptionsItemSubscriptionUsageWeekly?,
+)
+
+@Serializable
+data class RecoverySubscriptionsSubscriptionsItemSubscriptionCredits(
+    val `balance`: Double?,
+    val `unlimited`: Boolean,
+)
+
+@Serializable
+data class RecoverySubscriptionsSubscriptionsItem(
+    val `id`: String,
+    val `modelProviderId`: String? = null,
+    val `isActive`: Boolean? = null,
+    val `type`: RecoverySubscriptionsSubscriptionsItemType,
+    val `framework`: RecoverySubscriptionsSubscriptionsItemFramework,
+    val `createdAt`: String,
+    val `updatedAt`: String,
+    val `accountEmail`: String? = null,
+    val `workspaceName`: String? = null,
+    val `planType`: String? = null,
+    val `subscriptionResetPeriod`: String? = null,
+    val `subscriptionNextResetAt`: String? = null,
+    val `subscriptionUsage`: RecoverySubscriptionsSubscriptionsItemSubscriptionUsage? = null,
+    val `subscriptionCredits`: RecoverySubscriptionsSubscriptionsItemSubscriptionCredits? = null,
+    val `subscriptionResetSupported`: Boolean? = null,
+    val `subscriptionResetCredits`: Long? = null,
+    val `subscriptionResetCreditsNextExpiresAt`: String? = null,
+    val `needsReconnect`: Boolean,
+    val `lastRefreshErrorCode`: String?,
+)
+
+@Serializable
+data class RecoverySubscriptions(val `subscriptions`: List<RecoverySubscriptionsSubscriptionsItem>)
+
+@Serializable
+enum class RecoveryBillingStatus {
+    @SerialName("active") ACTIVE,
+    @SerialName("suspended") SUSPENDED,
+}
+
+@Serializable
+enum class RecoveryBillingScheduledChangeType {
+    @SerialName("cancel") CANCEL,
+    @SerialName("downgrade") DOWNGRADE,
+}
+
+@Serializable
+enum class RecoveryBillingScheduledChangeTargetTier {
+    @SerialName("limited-free-1") LIMITED_FREE_1,
+    @SerialName("pro") PRO,
+    @SerialName("team") TEAM,
+}
+
+@Serializable
+data class RecoveryBillingScheduledChange(
+    val `type`: RecoveryBillingScheduledChangeType,
+    val `targetTier`: RecoveryBillingScheduledChangeTargetTier?,
+    val `effectiveDate`: String?,
+)
+
+@Serializable
+enum class RecoveryBillingAutoRechargeDisabledReason {
+    @SerialName("consecutive_failures") CONSECUTIVE_FAILURES
+}
+
+@Serializable
+data class RecoveryBillingAutoRecharge(
+    val `enabled`: Boolean,
+    val `threshold`: Double?,
+    val `amount`: Double?,
+    val `disabledReason`: RecoveryBillingAutoRechargeDisabledReason? = null,
+)
+
+@Serializable
+data class RecoveryBillingCreditExpiry(
+    val `expiringNextCycle`: Double,
+    val `nextExpiryDate`: String?,
+)
+
+@Serializable
+enum class RecoveryBillingCreditBreakdownItemCategory {
+    @SerialName("plan") PLAN,
+    @SerialName("free") FREE,
+    @SerialName("promotional") PROMOTIONAL,
+    @SerialName("payAsYouGo") PAYASYOUGO,
+}
+
+@Serializable
+enum class RecoveryBillingCreditBreakdownItemTier {
+    @SerialName("pro") PRO,
+    @SerialName("team") TEAM,
+}
+
+@Serializable
+data class RecoveryBillingCreditBreakdownItem(
+    val `category`: RecoveryBillingCreditBreakdownItemCategory,
+    val `label`: String,
+    val `credits`: Double,
+    val `tier`: RecoveryBillingCreditBreakdownItemTier? = null,
+)
+
+@Serializable
+data class RecoveryBillingCreditGrantsItem(
+    val `id`: String,
+    val `source`: String,
+    val `label`: String,
+    val `amount`: Double,
+    val `remaining`: Double,
+    val `createdAt`: String,
+    val `expiresAt`: String,
+)
+
+@Serializable
+data class RecoveryBillingConcurrencySubscriptionsItem(
+    val `id`: String,
+    val `quantity`: Long,
+    val `currentPeriodEnd`: String?,
+    val `cancelAtPeriodEnd`: Boolean,
+    val `canReduce`: Boolean? = null,
+    val `canChangeInApp`: Boolean? = null,
+    val `scheduledQuantity`: Long? = null,
+    val `scheduledChangeAt`: String? = null,
+)
+
+@Serializable
+data class RecoveryBilling(
+    val `tier`: String,
+    val `status`: RecoveryBillingStatus,
+    val `canBuyConcurrency`: Boolean,
+    val `concurrencyUnitAmountCents`: Long? = null,
+    val `concurrencyPurchaseReviewAvailable`: Boolean,
+    val `canBuyCredits`: Boolean,
+    val `showUsagePack`: Boolean,
+    val `autoRechargeAllowed`: Boolean,
+    val `restrictedBuiltInModels`: Boolean,
+    val `workflowWebhookAutomationAllowed`: Boolean,
+    val `credits`: Double,
+    val `onboardingPaymentPending`: Boolean,
+    val `subscriptionStatus`: String?,
+    val `currentPeriodEnd`: String?,
+    val `cancelAtPeriodEnd`: Boolean,
+    val `scheduledChange`: RecoveryBillingScheduledChange?,
+    val `canRestorePlan`: Boolean,
+    val `hasSubscription`: Boolean,
+    val `autoRecharge`: RecoveryBillingAutoRecharge,
+    val `creditExpiry`: RecoveryBillingCreditExpiry,
+    val `creditBreakdown`: List<RecoveryBillingCreditBreakdownItem>,
+    val `creditGrants`: List<RecoveryBillingCreditGrantsItem>,
+    val `concurrencyLimit`: Long,
+    val `concurrencySubscriptions`: List<RecoveryBillingConcurrencySubscriptionsItem>,
+)
+
+@Serializable data class ResetSubscriptionRequest(val `idempotencyKey`: String)
+
+@Serializable
+enum class ResetSubscriptionResultOutcome {
+    @SerialName("reset") RESET,
+    @SerialName("nothingToReset") NOTHINGTORESET,
+    @SerialName("noCredit") NOCREDIT,
+    @SerialName("alreadyRedeemed") ALREADYREDEEMED,
+}
+
+@Serializable data class ResetSubscriptionResult(val `outcome`: ResetSubscriptionResultOutcome)
+
+@Serializable
 data class SessionOutputDelta(
     val `threadId`: String,
     val `runId`: String,

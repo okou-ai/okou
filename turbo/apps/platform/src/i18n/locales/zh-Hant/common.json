@@ -1521,6 +1521,7 @@
           "action": "簽到",
           "description": "每天簽到一次，UTC 00:00 重置。",
           "name": "每日簽到",
+          "pendingDescription": "簽到已儲存，確認後積分會自動更新。",
           "unit": "每天"
         },
         "connector": {
@@ -2917,13 +2918,13 @@
   },
   "connectorChatAccess": {
     "accountAccess": "{{account}} 的存取權限",
+    "accountsInChat": "選擇在此對話中開啟哪些帳號。",
     "enableByDefault": "預設啟用 {{account}}",
-    "enabledAccounts": "{{value}} 個已啟用",
     "manageAccounts": "管理帳號",
-    "noEnabledAccount": "目前聊天未啟用任何帳號",
     "permissions": "權限",
     "permissionsDescription": "這些規則適用於你所有聊天和帳號中的此連接器。",
-    "settingsDescription": "選擇預設啟用的帳號。"
+    "settingsDescription": "選擇 Okou 可以在你的對話中使用哪些 {{connector}} 帳號。你可以在每個對話中單獨調整。",
+    "totalAccounts": "{{value}} 個帳號"
   },
   "connectors": {
     "access": {

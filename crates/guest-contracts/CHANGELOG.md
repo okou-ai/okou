@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.17](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.16...guest-contracts-v0.32.17) (2026-11-17)
+
+
+### Bug Fixes
+
+* **guest-agent:** classify disk exhaustion before completion ([#48222](https://github.com/okou-ai/okou/issues/48222)) ([2ba7427](https://github.com/okou-ai/okou/commit/2ba742774dce0ce2d76c4a2064fb78e75af0dcf3))
+
 ## [0.32.16](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.15...guest-contracts-v0.32.16) (2026-11-17)
 
 

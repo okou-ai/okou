@@ -30,6 +30,7 @@ export const getStartedContract: ClientDescriptor<
       200: true,
       401: true,
       403: true,
+      503: true,
     },
   },
   checkin: {
@@ -37,8 +38,11 @@ export const getStartedContract: ClientDescriptor<
     path: "/api/get-started/check-in",
     statuses: {
       200: true,
+      202: true,
       401: true,
       403: true,
+      409: true,
+      503: true,
     },
   },
 };

@@ -1525,6 +1525,7 @@
           "action": "Check in",
           "description": "Check in once a day. Resets at 00:00 UTC.",
           "name": "Check in daily",
+          "pendingDescription": "Your check-in was saved. Credits will update after confirmation.",
           "unit": "a day"
         },
         "connector": {
@@ -2932,13 +2933,13 @@
   },
   "connectorChatAccess": {
     "accountAccess": "{{account}} access",
+    "accountsInChat": "Choose which accounts are on in this chat.",
     "enableByDefault": "Enable {{account}} by default",
-    "enabledAccounts": "{{value}} enabled",
     "manageAccounts": "Manage accounts",
-    "noEnabledAccount": "No account is on for this chat",
     "permissions": "Permissions",
     "permissionsDescription": "These rules apply to this connector across your chats and accounts.",
-    "settingsDescription": "Choose which accounts are on by default."
+    "settingsDescription": "Choose which {{connector}} accounts Okou can use across your chats. You can change access in each chat.",
+    "totalAccounts": "{{value}} accounts"
   },
   "connectors": {
     "access": {

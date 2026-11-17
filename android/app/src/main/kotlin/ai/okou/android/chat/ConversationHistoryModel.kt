@@ -40,7 +40,7 @@ data class HistoryConfirmation(val generation: Long, val revision: Long, val cur
 
 /** Workspace-retained confirmed data. A visible visit owns its separate read session. */
 class ConversationHistoryModel(
-    private val service: ConversationHistoryService,
+    internal val service: ConversationHistoryService,
     private val cache: ChatCacheStore.Lease,
     private val scope: CoroutineScope,
     private val authorized: () -> Boolean,

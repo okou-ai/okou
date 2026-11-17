@@ -1459,6 +1459,41 @@ test("Check-in waits for refreshed rewards before showing the success dialog", a
   expect(within(dialog).getByText("+100 credits")).toBeInTheDocument();
 });
 
+test("A saved check-in waits for a financial confirmation before celebrating", async () => {
+  const data = configureQuestPage(context, "member", { claimedToday: false });
+  context.mocks.api(getStartedContract.checkin, ({ respond }) => {
+    const checkin = data.quests.find((quest) => {
+      return quest.key === "checkin";
+    });
+    if (!checkin) {
+      throw new Error("Expected check-in quest");
+    }
+    checkin.pendingCount = 1;
+    return respond(202, {
+      status: "pending",
+      requestId: "3b37c105-4676-4a59-9c33-705330fe8439",
+    });
+  });
+  await setupPage({ context, path: questChatPath() });
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-checkin"));
+  await expect(
+    screen.findByText(
+      "Your check-in was saved. Credits will update after confirmation.",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByRole("dialog", { name: "Checked in for today" }),
+  ).not.toBeInTheDocument();
+  const panel = await openQuestPanel();
+  expect(
+    within(screen.getByTestId("get-started-quest-checkin")).getByText(
+      "In review",
+    ),
+  ).toBeInTheDocument();
+  expect(within(panel).queryByText("Checked in")).not.toBeInTheDocument();
+});
+
 test("A failed check-in does not show a success dialog", async () => {
   configureQuestPage(context, "member", { claimedToday: false });
   context.mocks.api(getStartedContract.checkin, ({ respond }) => {

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="recovery_loading">Cargando opciones de recuperación…</string>
+    <string name="recovery_read_failed">Las opciones de recuperación no están disponibles.</string>
+    <string name="recovery_continue">Continuar</string>
+    <string name="recovery_reset">Restablecer uso y continuar (consume un crédito)</string>
+    <string name="recovery_reset_unknown">El restablecimiento original no está confirmado. No se reintentará automáticamente.</string>
+    <string name="recovery_reset_retry">Reintentar restablecimiento original</string>
+    <string name="recovery_needs_changes">Cambia el modelo, la configuración de la cuenta o la conversación antes de continuar.</string>
+    <string name="recovery_billing">Créditos del espacio: %1$s. Revisa la facturación.</string>
+    <string name="recovery_no_credit">No había créditos disponibles en el restablecimiento anterior.</string>
+    <string name="recovery_submitted">Continuación aceptada. Esperando el historial.</string>
+    <string name="recovery_failed">La recuperación no terminó. Verifica la operación original antes de reintentar.</string>
+    <string name="recovery_credits">Créditos de restablecimiento: %1$d</string>
+</resources>

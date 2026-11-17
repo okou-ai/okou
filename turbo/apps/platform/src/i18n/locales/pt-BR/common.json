@@ -1550,6 +1550,7 @@
           "action": "Fazer check-in",
           "description": "Faça check-in uma vez por dia. Reinicia às 00:00 UTC.",
           "name": "Entrar todo dia",
+          "pendingDescription": "Seu check-in foi salvo. Os créditos serão atualizados após a confirmação.",
           "unit": "por dia"
         },
         "connector": {
@@ -2982,13 +2983,13 @@
   },
   "connectorChatAccess": {
     "accountAccess": "Acesso de {{account}}",
+    "accountsInChat": "Escolha quais contas ficam ativadas neste chat.",
     "enableByDefault": "Ativar {{account}} por padrão",
-    "enabledAccounts": "{{value}} ativas",
     "manageAccounts": "Gerenciar contas",
-    "noEnabledAccount": "Nenhuma conta está ativa neste chat",
     "permissions": "Permissões",
     "permissionsDescription": "Estas regras se aplicam a este conector em todos os seus chats e contas.",
-    "settingsDescription": "Escolha as contas ativas por padrão."
+    "settingsDescription": "Escolha quais contas do {{connector}} o Okou pode usar nos seus chats. Você pode alterar o acesso em cada chat.",
+    "totalAccounts": "{{value}} contas"
   },
   "connectors": {
     "access": {

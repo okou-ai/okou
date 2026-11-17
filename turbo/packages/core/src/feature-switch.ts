@@ -97,6 +97,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: true,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ProjectTitleReveal]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Project title reveal",
+    description:
+      "Show more of Project names with fading overflow and reveal them on hover or keyboard focus.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.OkouAnimatedAvatar]: {
     maintainer: "tongx@okou.ai",
     displayName: "Animated Okou avatar",

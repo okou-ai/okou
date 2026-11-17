@@ -1550,6 +1550,7 @@
           "action": "Valider ma présence",
           "description": "Validez votre présence une fois par jour. Réinitialisation à 00:00 UTC.",
           "name": "Se connecter chaque jour",
+          "pendingDescription": "Votre pointage quotidien a été enregistré. Les crédits seront mis à jour après confirmation.",
           "unit": "par jour"
         },
         "connector": {
@@ -2982,13 +2983,13 @@
   },
   "connectorChatAccess": {
     "accountAccess": "Accès de {{account}}",
+    "accountsInChat": "Choisissez les comptes activés dans cette conversation.",
     "enableByDefault": "Activer {{account}} par défaut",
-    "enabledAccounts": "{{value}} actifs",
     "manageAccounts": "Gérer les comptes",
-    "noEnabledAccount": "Aucun compte actif pour cette discussion",
     "permissions": "Autorisations",
     "permissionsDescription": "Ces règles s’appliquent à ce connecteur dans toutes vos discussions et tous vos comptes.",
-    "settingsDescription": "Choisissez les comptes actifs par défaut."
+    "settingsDescription": "Choisissez les comptes {{connector}} qu’Okou peut utiliser dans vos conversations. Vous pouvez modifier l’accès dans chaque conversation.",
+    "totalAccounts": "{{value}} comptes"
   },
   "connectors": {
     "access": {

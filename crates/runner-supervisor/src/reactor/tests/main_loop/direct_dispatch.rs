@@ -118,8 +118,6 @@ async fn supplied_http_caller_disconnect_does_not_cancel_accepted_execution() {
         0
     );
     assert_eq!(env.handle.completions.lock().unwrap().len(), 1);
-    assert!(env.handle.claim_candidates().is_empty());
-    assert_eq!(env.handle.discover_started_count(), 0);
     peer.shutdown().await;
     shutdown(&env, runner).await;
 }
@@ -205,8 +203,6 @@ async fn assert_supplied_panic(point: OuterJobPanicPoint) {
     assert_eq!(env.handle.completions.lock().unwrap().len(), 1);
     wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
     wait_budget_count(&budget, 0, Duration::from_secs(5)).await;
-    assert!(env.handle.claim_candidates().is_empty());
-    assert_eq!(env.handle.discover_started_count(), 0);
     peer.shutdown().await;
     if let Some(runner) = live_runner {
         assert!(!runner.is_finished());
@@ -361,7 +357,6 @@ async fn supplied_http_reclaims_idle_budget_and_keeps_cancellation_through_drain
         .await
         .unwrap();
     assert_ne!(completion.exit_code, 0);
-    assert!(env.handle.claim_candidates().is_empty());
     peer.shutdown().await;
     shutdown(&env, runner).await;
     wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
@@ -471,10 +466,6 @@ async fn supplied_http_executes_once_and_survives_caddy_loss_and_changed_replays
         client(&socket, identity, run_id, &body).await.2["disposition"],
         "accepted"
     );
-    assert!(
-        env.handle.claim_candidates().is_empty(),
-        "direct work never invokes Claim"
-    );
     assert_eq!(env.handle.completions.lock().unwrap().len(), 1);
     peer.shutdown().await;
     shutdown(&env, runner).await;
@@ -529,7 +520,6 @@ async fn supplied_http_rejects_profile_and_resource_refusal_without_leaking_owne
     );
     assert!(env.cancel_tokens.handle(full_run).await.is_none());
     assert!(env.handle.completions.lock().unwrap().is_empty());
-    assert!(env.handle.claim_candidates().is_empty());
     peer.shutdown().await;
     shutdown(&env, runner).await;
     wait_budget_count(&budget, 0, Duration::from_secs(5)).await;

@@ -144,7 +144,7 @@ export const phoneUseCommand = new Command("phone-use")
   .description("Internal iPhone automation through Okou iOS Use")
   .addHelpText(
     "after",
-    `\nOpen Okou iOS Use, sign in and go online. Online means connected with control available. Turn on your iPhone in this Web Chat's Connectors menu. Start a new Run after granting access.\nStart a session, open the app requested by the task, then observe it. The Use App's control UI is protected. Observe before every tap, type or swipe. Preserve operation IDs. Never replay unknown effects. Secrets and device unlock require the owner.\nFor send/publish/pay/order/delete and other sensitive commits, use --confirm with the exact consequence. Only the owner can confirm in Use. On approval_required, tell the owner to review in Use, then wait <operationId> without ending the Run or resubmitting. Ordinary navigation and scrolling run automatically.\n`,
+    `\nOpen Okou iOS Use, sign in and go online. Online means connected with control available. Turn on your iPhone in this Web Chat's Connectors menu. Start a new Run after granting access.\nStart a session, observe the foreground UI and open the app requested by the task. The companion can observe its own App, the Home screen and alerts. Observe before every tap, type or swipe. Preserve operation IDs. Never replay unknown effects. Secrets and device unlock require the owner.\nAuthorized input runs directly without local screen, label or gesture classification. Follow the task authorization and the Agent's applicable confirmation rules. Use status or wait <operationId> to read existing receipts. An approval_required receipt comes from an older companion that needs updating.\n`,
   );
 phoneUseCommand
   .command("devices")
@@ -167,7 +167,7 @@ phoneUseCommand
 phoneUseCommand
   .command("wait <operationId>")
   .description(
-    "Wait for an existing operation or owner review; never resubmit input",
+    "Read an existing operation until completion; never resubmit input",
   )
   .option("--timeout <seconds>", "Wait at most 300 seconds", "300")
   .option("--output <dir>", "Save a private screenshot")
@@ -231,17 +231,12 @@ actionCommand("tap", "Tap an element from a current snapshot")
   .requiredOption("--app <bundleId>", "Expected app")
   .requiredOption("--snapshot <uuid>", "Snapshot ID")
   .requiredOption("--element <id>", "Element ID")
-  .option(
-    "--confirm <consequence>",
-    "Require one local owner confirmation for this commit",
-  )
   .action(
     withErrorHandler(
       async (options: {
         app: string;
         snapshot: string;
         element: string;
-        confirm?: string;
         id?: string;
         wait?: string;
         output?: string;
@@ -252,7 +247,6 @@ actionCommand("tap", "Tap an element from a current snapshot")
             app: options.app,
             snapshotId: options.snapshot,
             elementId: options.element,
-            ...(options.confirm ? { confirmation: options.confirm } : {}),
           },
           options,
         );
@@ -289,17 +283,12 @@ actionCommand("swipe", "Scroll the current app")
   .requiredOption("--app <bundleId>", "Expected app")
   .requiredOption("--snapshot <uuid>", "Snapshot ID")
   .requiredOption("--direction <direction>", "up, down, left or right")
-  .option(
-    "--confirm <consequence>",
-    "Require one local owner confirmation for this commit",
-  )
   .action(
     withErrorHandler(
       async (options: {
         app: string;
         snapshot: string;
         direction: PhoneAction["direction"];
-        confirm?: string;
         id?: string;
         wait?: string;
         output?: string;
@@ -310,7 +299,6 @@ actionCommand("swipe", "Scroll the current app")
             app: options.app,
             snapshotId: options.snapshot,
             direction: options.direction,
-            ...(options.confirm ? { confirmation: options.confirm } : {}),
           },
           options,
         );

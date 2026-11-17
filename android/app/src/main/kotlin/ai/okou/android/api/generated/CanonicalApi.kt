@@ -17,6 +17,27 @@ import retrofit2.http.Query
 import retrofit2.http.QueryMap
 
 internal interface CanonicalApi {
+    @GET("/api/model-catalog")
+    suspend fun `recoveryCatalog`(@Header("Authorization") token: String): Response<RecoveryCatalog>
+
+    @GET("/api/run-models")
+    suspend fun `recoveryModels`(@Header("Authorization") token: String): Response<RecoveryModels>
+
+    @GET("/api/me/3rd-party-subscriptions")
+    suspend fun `recoverySubscriptions`(
+        @Header("Authorization") token: String
+    ): Response<RecoverySubscriptions>
+
+    @GET("/api/billing/status")
+    suspend fun `recoveryBilling`(@Header("Authorization") token: String): Response<RecoveryBilling>
+
+    @POST("/api/me/model-provider-accounts/{id}/subscription-reset")
+    suspend fun `resetSubscription`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Body body: ResetSubscriptionRequest,
+    ): Response<ResetSubscriptionResult>
+
     @GET("/api/android/updates") suspend fun `androidUpdates`(): Response<AndroidUpdates>
 
     @POST("/api/chat-threads")

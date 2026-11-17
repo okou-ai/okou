@@ -23,6 +23,7 @@ import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.chat.AblyRealtimeConnection
+import ai.okou.android.chat.AssistantRecoveryService
 import ai.okou.android.chat.ChatComposerService
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.ChatSnapshotUnavailable
@@ -79,7 +80,8 @@ interface WorkspaceSession :
     PersonalInstructionsService,
     ChatComposerService,
     RealtimeService,
-    RunControlService {
+    RunControlService,
+    AssistantRecoveryService {
     suspend fun bootstrap(): WorkspaceBootstrap
 
     suspend fun preferences(): UserPreferences
@@ -161,6 +163,17 @@ class CanonicalWorkspaceSession(
     override suspend fun sendInput(request: SendRequestVariant1) = api.sendInput(request)
 
     override suspend fun sendControl(request: SendRequest) = api.sendInput(request)
+
+    override suspend fun recoveryCatalog() = api.recoveryCatalog()
+
+    override suspend fun recoveryModels() = api.recoveryModels()
+
+    override suspend fun recoverySubscriptions() = api.recoverySubscriptions()
+
+    override suspend fun recoveryBilling() = api.recoveryBilling()
+
+    override suspend fun resetSubscription(accountId: String, idempotencyKey: String) =
+        api.resetSubscription(accountId, idempotencyKey)
 
     override suspend fun observeInput(threadId: String, eventId: String): InputObservation {
         val observed = api.inputStatus(threadId, eventId)

@@ -122,7 +122,7 @@ describe("Phone Use CLI", () => {
     );
     expect((await stat(path)).mode & 0o777).toBe(0o600);
   });
-  it("requests owner confirmation for one specific commit without approving it remotely", async () => {
+  it("submits a snapshot-bound tap and reports its native receipt", async () => {
     const id = randomUUID(),
       snapshot = randomUUID();
     const action = {
@@ -130,7 +130,6 @@ describe("Phone Use CLI", () => {
       app: "com.example.notes",
       snapshotId: snapshot,
       elementId: "3",
-      confirmation: "Publish the reviewed draft",
     };
     const operation = {
       id,
@@ -138,8 +137,8 @@ describe("Phone Use CLI", () => {
       runId: randomUUID(),
       grantId: randomUUID(),
       action,
-      status: "approval_required",
-      result: { target: "Publish" },
+      status: "succeeded",
+      result: { nativeAcknowledged: true, outcomeVerified: false },
       error: null,
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 300_000).toISOString(),
@@ -172,18 +171,16 @@ describe("Phone Use CLI", () => {
           snapshot,
           "--element",
           "3",
-          "--confirm",
-          action.confirmation,
           "--wait",
           "0",
         ],
         { from: "user" },
       );
     expect(output).toHaveBeenCalledWith(
-      expect.stringContaining('"status": "approval_required"'),
+      expect.stringContaining('"status": "succeeded"'),
     );
   });
-  it("waits for the owner's completed operation by reading its receipt", async () => {
+  it("reads a completed receipt from an older caller without resubmitting input", async () => {
     const id = randomUUID();
     const operation = {
       id,

@@ -1525,6 +1525,7 @@
           "action": "चेक इन करें",
           "description": "दिन में एक बार चेक इन करें। 00:00 UTC पर रीसेट होता है।",
           "name": "रोज़ चेक इन करें",
+          "pendingDescription": "आपका चेक-इन सहेज लिया गया है। पुष्टि के बाद क्रेडिट अपडेट होंगे।",
           "unit": "प्रति दिन"
         },
         "connector": {
@@ -2932,13 +2933,13 @@
   },
   "connectorChatAccess": {
     "accountAccess": "{{account}} की पहुँच",
+    "accountsInChat": "चुनें कि इस चैट में कौन-से खाते चालू हैं।",
     "enableByDefault": "{{account}} को डिफ़ॉल्ट रूप से चालू करें",
-    "enabledAccounts": "{{value}} चालू",
     "manageAccounts": "खाते प्रबंधित करें",
-    "noEnabledAccount": "इस चैट के लिए कोई खाता चालू नहीं है",
     "permissions": "अनुमतियाँ",
     "permissionsDescription": "ये नियम आपकी सभी चैट और खातों में इस कनेक्टर पर लागू होते हैं।",
-    "settingsDescription": "डिफ़ॉल्ट रूप से चालू खाते चुनें।"
+    "settingsDescription": "चुनें कि Okou आपकी चैट में कौन-से {{connector}} खाते इस्तेमाल कर सकता है। आप हर चैट में ऐक्सेस बदल सकते हैं।",
+    "totalAccounts": "{{value}} खाते"
   },
   "connectors": {
     "access": {

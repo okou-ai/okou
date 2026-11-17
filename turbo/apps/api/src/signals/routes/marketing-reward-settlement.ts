@@ -58,6 +58,17 @@ function rewardIntentHandler(apply: boolean) {
       { intent, apply },
       signal,
     );
+    if (result.kind === "pending") {
+      return {
+        status: 202 as const,
+        body: {
+          version: 1 as const,
+          environment: env("ENV"),
+          intentId: intent.id,
+          status: "pending" as const,
+        },
+      };
+    }
     if (result.kind !== "receipt") {
       return result.kind === "missing"
         ? createErrorResponse(

@@ -52,6 +52,8 @@ on:
         required: false
       MARKETING_REWARDS_EVENTS_SECRET:
         required: false
+      MARKETING_REWARDS_CAMPAIGN_SECRET:
+        required: false
       NEON_API_KEY:
         required: false
       OFFICIAL_RUNNER_SECRET:

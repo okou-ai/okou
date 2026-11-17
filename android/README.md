@@ -642,6 +642,39 @@ separate evidence; a configured Secret name proves only its presence.
 
 ## Foreground Chat Updates
 
+Assistant failure recovery follows the current canonical failure reason and the
+thread's current model route. The card reads model catalog, personal account,
+usage windows and reset credits independently of conversation history and draft
+editing. Billing and settings failures expose their own guidance. Eligible
+failures submit a new literal `continue` through the existing durable composer,
+preserving the editable draft and selected-model/priority annotation.
+
+Codex framework usage limits can reset the current personal account with a reset
+credit before continuing. The composer saves the exact account, UUID idempotency
+key, source failure/model and new input before either write. An uncertain reset
+requires an explicit retry with that same key; opening a conversation, reconnecting
+or restoring the process never replays a reset or send. Fresh canonical history,
+control state and current account checks reject stale recovery; input retries
+retain the original event identity and first observe an uncertain send.
+
+Before any input is dispatched, an explicit new choice can add a reset to an
+unsent continue or start a new reset after a definitive no-credit result and a
+fresh positive balance. Unknown resets always reuse their original key. A
+confirmed reset on a replaced account cannot continue automatically; a fresh
+displayed account and another explicit action start a separate intent.
+The live transaction restores the preceding recovery intent if a newly prepared
+reset is cancelled before its network call, including controller retirement.
+Failure or cancellation during that call retains the original account and key
+as an unknown operation; restoration never assumes an old intent was unsent.
+
+The composer journal reads existing format 1 drafts and pending requests. Its
+first recovery intent upgrades the whole retained journal to format 2 without
+dropping those entries. Older apps reject format 2 visibly instead of overwriting
+it; downgrade cannot restore that journal. No server schema or confirmed-history
+storage format changes. `AssistantRecoveryModelTest` covers real HTTPS requests,
+uncertain resets, stale account/source checks, draft retention and disk failures;
+the Release native journey exercises the recovery action and preserved draft.
+
 The authorized workspace owns an Ably device connection while the Activity is
 STARTED, including navigation to Settings. STOP and workspace retirement cancel
 token renewal and close subscriptions; foreground restoration connects again and
