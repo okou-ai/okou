@@ -42,7 +42,6 @@ export interface ResolvedModelProviderEnvironment {
   readonly type: ModelProviderType;
   readonly concreteType?: ModelProviderType;
   readonly environment: Record<string, string>;
-  readonly secrets: Record<string, string>;
   readonly selectedModel: string;
   readonly secretConnectorMap?: Record<string, string>;
   readonly secretConnectorMetadataMap?: Record<string, SecretConnectorMetadata>;

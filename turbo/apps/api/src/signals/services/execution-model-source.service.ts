@@ -11,7 +11,6 @@ export interface ManagedModelKeyReference {
   readonly kind: "managed-key";
   readonly name: string;
   readonly modelKeyId: string;
-  readonly apiKey: string;
 }
 export interface ModelSecretReference {
   readonly kind: "secret-reference";

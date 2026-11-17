@@ -28,7 +28,7 @@ export interface CompiledModelRuntime {
   readonly upstreamModel: string;
   readonly providerType: string;
   readonly environment: Readonly<Record<string, string>>;
-  readonly secrets: Readonly<Record<string, string>>;
+  readonly secretNames: readonly string[];
 }
 
 /** Every model provider is firewall-injected: env carries secret references. */
@@ -51,7 +51,7 @@ function compileCodexSubscriptionRuntime(
   if (!required) {
     throw new Error("Multi-auth authentication method is unavailable");
   }
-  const forwardable: Record<string, string> = {};
+  const forwardable: string[] = [];
   for (const [name, rule] of Object.entries(required)) {
     const value = credentials[name];
     if (!value) {
@@ -61,7 +61,7 @@ function compileCodexSubscriptionRuntime(
       continue;
     }
     if (!rule.serverOnly) {
-      forwardable[name] = value;
+      forwardable.push(name);
     }
   }
   const accountId = credentials.CHATGPT_ACCOUNT_ID;
@@ -78,7 +78,7 @@ function compileCodexSubscriptionRuntime(
       OPENAI_MODEL: selection.upstreamModel,
       CODEX_OAUTH_ACCOUNT_ID: accountId,
     },
-    secrets: forwardable,
+    secretNames: forwardable,
   };
 }
 
@@ -103,12 +103,12 @@ function compileClaudeSubscriptionRuntime(
       CLAUDE_CODE_OAUTH_TOKEN: secretReference(secretName),
       ANTHROPIC_MODEL: selection.upstreamModel,
     },
-    secrets: { [secretName]: key },
+    secretNames: [secretName],
   };
 }
 
 function compileManagedRuntime(input: ModelRuntimeInput): CompiledModelRuntime {
-  const { source, selection, credentials } = input;
+  const { source, selection } = input;
   if (
     selection.kind !== "built-in" ||
     source.identity.kind !== "built-in" ||
@@ -136,10 +136,6 @@ function compileManagedRuntime(input: ModelRuntimeInput): CompiledModelRuntime {
       "Managed model credential reference does not match its selected route",
     );
   }
-  const key = credentials[secretName];
-  if (!key?.trim()) {
-    throw new Error("Managed model credential is missing");
-  }
   return {
     selectedModel: selection.selectedModel,
     upstreamModel: selection.upstreamModel,
@@ -150,7 +146,7 @@ function compileManagedRuntime(input: ModelRuntimeInput): CompiledModelRuntime {
         MODEL_PROVIDER_TYPES[AUTO_RUN_PROVIDER].envBindings.OPENAI_BASE_URL,
       OPENAI_MODEL: selection.upstreamModel,
     },
-    secrets: { [secretName]: key },
+    secretNames: [secretName],
   };
 }
 

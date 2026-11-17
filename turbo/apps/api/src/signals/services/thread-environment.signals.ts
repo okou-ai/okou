@@ -13,7 +13,7 @@ import type {
   ResolvedModelProviderEnvironment,
 } from "./agent-run-contracts";
 
-/** The selected model provider's environment, secrets and firewall. */
+/** The selected model provider's placeholders, source metadata and firewall. */
 export function createModelProviderEnvironmentSignals(
   runVariables$: Computed<Promise<Record<string, string> | undefined>>,
   modelRoute$: Computed<Promise<ResolvedModelProviderEnvironment>>,
@@ -30,14 +30,11 @@ export function createModelProviderEnvironmentSignals(
       environment: compactRecord(
         expandVariables(modelProvider.environment, {
           vars,
-          secrets: {
-            ...modelProvider.secrets,
-            ...manifest?.environmentSecretPlaceholders,
-          },
+          secrets: manifest?.environmentSecretPlaceholders,
         }).result,
       ),
       platformEnvironment: undefined,
-      secrets: compactRecord(modelProvider.secrets),
+      secrets: undefined,
       secretConnectorMap: modelProvider.secretConnectorMap,
       secretConnectorMetadataMap: modelProvider.secretConnectorMetadataMap,
       firewalls: manifest?.firewalls ?? [],
@@ -45,7 +42,11 @@ export function createModelProviderEnvironmentSignals(
       environmentSecretPlaceholders: manifest?.environmentSecretPlaceholders,
       billableFirewalls: manifest?.billableFirewalls ?? [],
       runtimeTargets: [],
-      reservedSecretAliases: [],
+      // Managed model names belong to the Run even without a startup value.
+      reservedSecretAliases:
+        modelProvider.credentialOwner === "builtin"
+          ? Object.keys(manifest?.environmentSecretPlaceholders ?? {})
+          : [],
     };
   });
 }

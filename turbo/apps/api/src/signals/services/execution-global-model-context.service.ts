@@ -56,7 +56,6 @@ export function createGlobalModelContext() {
   const keys = {
     id: builtInModelKeys.id,
     vendor: builtInModelKeys.vendor,
-    apiKey: builtInModelKeys.apiKey,
   };
   const pricing = {
     kind: usagePricing.kind,
