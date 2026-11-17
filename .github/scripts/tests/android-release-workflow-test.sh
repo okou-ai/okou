@@ -44,6 +44,80 @@ for output, suffix in [('android_version', 'version'), ('android_tag', 'tag_name
                        ('android_release_created', 'release_created')]:
     assert release['outputs'][output] == "${{ steps.release.outputs['android--" + suffix + "'] }}"
 assert 'publish-android' in jobs['update-rollback-dashboard']['needs']
+
+# Execute Android's release classification and aggregate gate as Actions does.
+android = json.loads(subprocess.check_output(
+    ['yq', '-o=json', '.', str(root / '.github/workflows/android.yml')], text=True))['jobs']
+classify = android['detect-release']['steps'][0]['run']
+gate = android['ci-gate-android']['steps'][0]['run']
+assert android['detect-release']['permissions']['pull-requests'] == 'read'
+assert android['detect']['needs'] == ['detect-release']
+assert 'detect-release' in android['ci-gate-android']['needs']
+assert android['ci-gate-android']['if'] == 'always()'
+for native in ['build-test', 'instrumentation']:
+    assert android[native]['needs'] == 'detect'
+
+with tempfile.TemporaryDirectory() as temp:
+    work = Path(temp)
+    gh = work / 'gh'
+    gh.write_text('''#!/usr/bin/env python3
+import os
+import sys
+assert sys.argv[1:] == ['pr', 'view', '47986', '--repo', 'okou-ai/okou',
+                        '--json', 'headRefName', '--jq', '.headRefName']
+if os.environ.get('FAIL_LOOKUP') == 'true':
+    sys.exit(23)
+print(os.environ['QUEUED_BRANCH'])
+''')
+    gh.chmod(0o755)
+    env = dict(os.environ, PATH=str(work) + os.pathsep + os.environ['PATH'],
+               HEAD_REF='', COMMIT_MSG='', MQ_HEAD_REF='', REPO='okou-ai/okou',
+               QUEUED_BRANCH='feature/android', FAIL_LOOKUP='false',
+               GITHUB_OUTPUT=str(work / 'output'))
+
+    def execute(script, values):
+        return subprocess.run(['bash', '--noprofile', '--norc', '-e', '-o', 'pipefail', '-c', script],
+                              env=env | values, text=True, capture_output=True)
+
+    queued = 'refs/heads/gh-readonly-queue/main/pr-47986-0123456789abcdef'
+    for event, values, expected in [
+        ('pull_request', {'HEAD_REF': 'release-please--branches--main'}, 'true'),
+        ('pull_request', {'HEAD_REF': 'feature/android'}, 'false'),
+        ('pull_request', {'HEAD_REF': 'release-please-imitation'}, 'false'),
+        ('push', {'COMMIT_MSG': 'chore: release main (#47986)'}, 'true'),
+        ('push', {'COMMIT_MSG': 'feat(android): update chat'}, 'false'),
+        ('merge_group', {'MQ_HEAD_REF': queued, 'QUEUED_BRANCH': 'release-please--branches--main'}, 'true'),
+        ('merge_group', {'MQ_HEAD_REF': queued}, 'false'),
+        ('workflow_dispatch', {}, 'false'),
+    ]:
+        Path(env['GITHUB_OUTPUT']).write_text('')
+        result = execute(classify, values | {'EVENT_NAME': event})
+        assert result.returncode == 0, result.stderr
+        decision = Path(env['GITHUB_OUTPUT']).read_text().strip()
+        assert decision == 'skip=' + expected, (event, decision)
+        condition = android['detect']['if'].replace('needs.detect-release.outputs.skip', repr(expected))
+        assert eval(condition, {'__builtins__': {}}, {}) is (expected == 'false')
+    failed = execute(classify, {'EVENT_NAME': 'merge_group', 'MQ_HEAD_REF': queued, 'FAIL_LOOKUP': 'true'})
+    assert failed.returncode == 23, failed.stderr
+
+    gate_env = dict(RELEASE_DETECT='success', IS_RELEASE='false', DETECT='success',
+                    NEEDED='true', BUILD='success', INSTRUMENTATION='success')
+    for values, passed in [
+        ({}, True),
+        ({'IS_RELEASE': 'true', 'DETECT': 'skipped', 'NEEDED': '', 'BUILD': 'skipped', 'INSTRUMENTATION': 'skipped'}, True),
+        ({'NEEDED': 'false', 'BUILD': 'skipped', 'INSTRUMENTATION': 'skipped'}, True),
+        ({'RELEASE_DETECT': 'failure', 'IS_RELEASE': 'true'}, False),
+        ({'RELEASE_DETECT': 'cancelled'}, False),
+        ({'IS_RELEASE': ''}, False),
+        ({'IS_RELEASE': 'unknown'}, False),
+        ({'DETECT': 'failure'}, False),
+        ({'BUILD': 'failure'}, False),
+        ({'INSTRUMENTATION': 'cancelled'}, False),
+        ({'INSTRUMENTATION': 'skipped'}, False),
+    ]:
+        result = execute(gate, gate_env | values)
+        assert (result.returncode == 0) is passed, (values, result.stdout, result.stderr)
+
 publish = next(step for step in job['steps'] if step.get('name') == 'Publish APK on the Android Release')
 verify = next(step for step in job['steps'] if step.get('name') == 'Verify Android release tag')
 assert not publish.get('continue-on-error', False)
