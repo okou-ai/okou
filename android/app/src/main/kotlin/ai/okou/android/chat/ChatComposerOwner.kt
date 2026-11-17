@@ -356,7 +356,7 @@ internal class ChatComposerOwner(
                                 data.classification.limit == RecoveryLimit.Model
                         )
                             throw RecoveryUnavailable()
-                        recovery.requireCurrent(selected, generation)
+                        recovery.requireWritable(selected, generation)
                         val result =
                             recovery.service.resetSubscription(
                                 resetIntent.accountId,
@@ -492,7 +492,7 @@ internal class ChatComposerOwner(
         durable(op, pending)
         recoveryAttempt?.let {
             checkNotNull(op.connection.recovery)
-                .requireCurrent(it.selection, checkNotNull(recoveryGeneration))
+                .requireWritable(it.selection, checkNotNull(recoveryGeneration))
         }
         val result = op.connection.service.sendInput(pending.send)
         requireCurrent(op)

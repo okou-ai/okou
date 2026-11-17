@@ -41,6 +41,7 @@ class AssistantRecoveryModelTest {
         val owners: ViewModelStore,
         val auth: AtomicBoolean,
         val retired: CompletableDeferred<Unit>,
+        val controls: RunControlsModel,
     )
 
     private suspend fun TestScope.withRecovery(
@@ -147,6 +148,7 @@ class AssistantRecoveryModelTest {
                             owners,
                             auth,
                             retired,
+                            controls,
                         )
                     )
                 } finally {
@@ -378,6 +380,53 @@ class AssistantRecoveryModelTest {
                 f.idle()
                 assertTrue(f.remote.resets.isEmpty())
                 assertTrue(f.remote.inputs.isEmpty())
+            }
+        }
+    }
+
+    @Test
+    fun stopStartedDuringHeldRecoveryReadPreventsResetAndContinue() = runTest {
+        val liveRun = "abababab-abab-4bab-8bab-abababababab"
+        withRecovery(
+            before = { _, remote, _ ->
+                remote.set(
+                    RecoveryApiFixture.input(1, run = liveRun),
+                    RecoveryApiFixture.input(2),
+                    RecoveryApiFixture.failure(seq = 3),
+                )
+            }
+        ) { f ->
+            val previous = f.api.commandResponse
+            val hold = AtomicBoolean(true)
+            val entered = CompletableDeferred<Unit>()
+            val release = CountDownLatch(1)
+            f.api.commandResponse = { request ->
+                if (
+                    request.requestUrl?.encodedPath == "/api/me/3rd-party-subscriptions" &&
+                        hold.getAndSet(false)
+                ) {
+                    entered.complete(Unit)
+                    release.await()
+                }
+                previous(request)
+            }
+            try {
+                f.composer.recover(target, RecoveryApiFixture.FAILURE, true)
+                entered.await()
+                f.controls.stop(CHAT_PERSONAL, listOf(liveRun))
+                f.controls.uiState.first {
+                    it.phases.values.singleOrNull() == RunControlPhase.Accepted
+                }
+                release.countDown()
+                f.idle()
+                assertTrue(f.remote.resets.isEmpty())
+                assertEquals(
+                    liveRun,
+                    f.remote.inputs.single().getValue("interruptsRunId").jsonPrimitive.content,
+                )
+                assertNull(f.composer.uiState.value.entry(target).pending)
+            } finally {
+                release.countDown()
             }
         }
     }

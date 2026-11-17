@@ -131,6 +131,12 @@ class AssistantRecoveryModel(
         if (selection() != selected || revision != generation) throw RecoveryUnavailable()
     }
 
+    internal suspend fun requireWritable(selected: RecoverySelection, generation: Long) {
+        requireCurrent(selected, generation)
+        val journal = controls.uiState.value.journal ?: throw RecoveryUnavailable()
+        if (journal.pending.any { it.threadId == selected.threadId }) throw RecoveryUnavailable()
+    }
+
     /** Fresh command prerequisites never acquire/complete the history owner's detail query. */
     internal suspend fun validate(
         selected: RecoverySelection,
@@ -143,13 +149,9 @@ class AssistantRecoveryModel(
         if (failure?.id != selected.failureId) throw RecoveryUnavailable()
         val detail = history.service.threadDetail(selected.threadId)
         requireCurrent(selected, generation)
-        if (
-            detail.cancellationRecoveryPending ||
-                controls.uiState.value.journal == null ||
-                controls.uiState.value.journal!!.pending.any { it.threadId == selected.threadId }
-        )
-            throw RecoveryUnavailable()
-        return resources(selected, checkpoint).also { requireCurrent(selected, generation) }
+        if (detail.cancellationRecoveryPending) throw RecoveryUnavailable()
+        requireWritable(selected, generation)
+        return resources(selected, checkpoint).also { requireWritable(selected, generation) }
     }
 
     private suspend fun resources(
