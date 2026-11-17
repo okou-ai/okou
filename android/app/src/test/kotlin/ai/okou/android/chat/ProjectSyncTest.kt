@@ -8,11 +8,50 @@ import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.ProjectArchive
 import ai.okou.android.jsonResponse
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
 import okhttp3.mockwebserver.MockResponse
 import org.junit.Assert.*
 import org.junit.Test
 
 class ProjectSyncTest {
+    @Test
+    fun ranksReplayWithLegacyCacheAndPreserveNamesAndRenameRanks() = runTest {
+        ChatListApiFixture().use { fixture ->
+            val later = "99999999-9999-4999-8999-999999999999"
+            val created = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+            val cached =
+                Json.decodeFromString<ProjectCheckpoint>(
+                    """{"archive":{"projects":[
+                    {"id":"$later","name":"Later","sortOrder":null,"createdAt":"2026-11-14T00:00:00Z","updatedAt":"$CHAT_DATE"},
+                    {"id":"$CHAT_PROJECT","name":"Old","createdAt":"2026-11-13T00:00:00Z","updatedAt":"$CHAT_DATE"}
+                    ],"latestEventId":"$CHAT_EVENT","latestSeqId":17}}"""
+                )
+            assertEquals(listOf("Old", "Later"), replayProjects(cached).map { it.name })
+            fixture.projectEvents = {
+                jsonResponse(
+                    """{"events":[
+                    {"id":"11111111-1111-4111-8111-111111111111","seqId":18,"projectId":"$later","kind":"sort_updated","name":null,"sortOrder":"Zz","createdAt":"$CHAT_DATE"},
+                    {"id":"22222222-2222-4222-8222-222222222222","seqId":19,"projectId":"$later","kind":"renamed","name":"Moved","createdAt":"$CHAT_DATE"},
+                    {"id":"33333333-3333-4333-8333-333333333333","seqId":20,"projectId":"$created","kind":"created","name":"Tie","sortOrder":"Zz","createdAt":"$CHAT_DATE"}
+                    ],"hasMore":false}"""
+                )
+            }
+            val confirmed = ProjectSync(fixture.service).synchronize(cached).checkpoint
+            val ranked = replayProjects(confirmed)
+            assertEquals(listOf("Moved", "Tie", "Old"), ranked.map { it.name })
+            assertEquals("Zz", ranked.first().sortOrder)
+            assertEquals("2026-11-14T00:00:00Z", ranked.first().createdAt)
+            assertEquals(
+                ranked,
+                replayProjects(
+                    Json.decodeFromString<ProjectCheckpoint>(
+                        Json.encodeToString(ProjectCheckpoint.serializer(), confirmed)
+                    )
+                ),
+            )
+        }
+    }
+
     @Test
     fun signedSnapshotAndTailPreserveCreatedOrderAndApplyRenamesAndDeletes() = runTest {
         ChatListApiFixture().use { fixture ->

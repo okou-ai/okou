@@ -3,8 +3,11 @@ import {
   type ProjectIndicatorState,
 } from "../../signals/projects/project-threads.ts";
 import { useGet, useSet, useLastResolved } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
+  ArrowUp,
+  ArrowDown,
   ChevronDown,
   ChevronRight,
   Ellipsis,
@@ -32,7 +35,14 @@ import {
 import type { Project } from "@okouai/api-contracts/validators/projects";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
-import { projectsEnabled$ } from "../../signals/projects/projects.ts";
+import {
+  projects$,
+  projectsEnabled$,
+} from "../../signals/projects/projects.ts";
+import {
+  projectReorderEnabled$,
+  stepProject$,
+} from "../../signals/projects/project-order.ts";
 import {
   openProjectEditor$,
   setProjectDialog$,
@@ -105,6 +115,55 @@ function ProjectFoldMenuItem({
   );
 }
 
+function ProjectMoveMenuItems({ project }: { project: Project }) {
+  const { t } = useTranslation();
+  const enabled = useGet(projectReorderEnabled$);
+  const projects = useGet(projects$);
+  const [moving, move] = useLoadableSet(stepProject$);
+  const signal = useGet(pageSignal$);
+  if (!enabled) {
+    return null;
+  }
+  const index = projects.findIndex((item) => {
+    return item.id === project.id;
+  });
+  return ([-1, 1] as const).map((direction) => {
+    const shortcut =
+      direction < 0
+        ? GLOBAL_KEYBOARD_SHORTCUTS.moveChatPinUp
+        : GLOBAL_KEYBOARD_SHORTCUTS.moveChatPinDown;
+    const label =
+      direction < 0
+        ? t(($) => {
+            return $.chat.sidebar.movePinUp;
+          })
+        : t(($) => {
+            return $.chat.sidebar.movePinDown;
+          });
+    const Icon = direction < 0 ? ArrowUp : ArrowDown;
+    return (
+      <DropdownMenuItem
+        key={direction}
+        aria-label={label}
+        aria-keyshortcuts={shortcut.ariaKeyShortcuts}
+        aria-busy={moving.state === "loading"}
+        disabled={
+          moving.state === "loading" ||
+          index === -1 ||
+          projects[index + direction] === undefined
+        }
+        onClick={() => {
+          detach(move(project.id, direction, signal), Reason.DomCallback);
+        }}
+      >
+        <Icon size={16} />
+        {label}
+        <ChatThreadMenuShortcut shortcut={shortcut.binding} />
+      </DropdownMenuItem>
+    );
+  });
+}
+
 function ProjectMenu({
   project,
   touch,
@@ -166,6 +225,7 @@ function ProjectMenu({
         finalFocus={dialog ? false : undefined}
         data-project-menu-content-id={project.id}
       >
+        <ProjectMoveMenuItems project={project} />
         <ProjectFoldMenuItem project={project} expanded={expanded} />
         <DropdownMenuItem
           onClick={() => {

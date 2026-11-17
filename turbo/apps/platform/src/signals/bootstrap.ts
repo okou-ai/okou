@@ -131,6 +131,7 @@ import { setupGlobalKeyboardShortcuts$ } from "./okou-page/nav.ts";
 import { setupChatThreadFilterShortcut$ } from "./okou-page/chat-thread-filter-selection.ts";
 import { setupChatThreadPinShortcuts$ } from "./chat-page/chat-thread-pin-shortcuts.ts";
 import { setupProjectFoldShortcuts$ } from "./projects/project-fold-shortcuts.ts";
+import { setupProjectOrderShortcuts$ } from "./projects/project-order-shortcuts.ts";
 import { bootstrapOnboardingGuard$ } from "./okou-page/onboard-guard.ts";
 import {
   applyFeatureSwitches$,
@@ -715,6 +716,7 @@ const completeBootstrap$ = command(
       set(setupChatThreadFilterShortcut$, signal),
       set(setupChatThreadPinShortcuts$, signal),
       set(setupProjectFoldShortcuts$, signal),
+      set(setupProjectOrderShortcuts$, signal),
       set(watchOrgSwitch$, signal),
       set(syncInitialPreferences$, signal),
     ]);
