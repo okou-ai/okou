@@ -16,6 +16,7 @@ final class WorkspaceStore {
   private let resources: WorkspaceResources
   private let modelBootstrap: WorkspaceReadBootstrap?
   private let projectBootstrap: WorkspaceReadBootstrap?
+  private let indicatorsBootstrap: WorkspaceReadBootstrap?
   private let createRealtime: RealtimeService.ClientFactory?
   private let commands: ChatCommands
   private let conversationLimit: Int
@@ -137,7 +138,8 @@ final class WorkspaceStore {
     didFail: { [weak self] in self?.handle($0) },
     didChangeReadState: { [weak self] in self?.notificationReadStateChanged() },
     didLoadAgents: { [weak self] in self?.prepareDefaultDraft(from: $0) },
-    readRetrySleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
+    readRetrySleep: readRetrySleep, indicatorsBootstrap: indicatorsBootstrap,
+    lifecycleTasks: lifecycleTasks)
   @ObservationIgnored lazy var projects = ChatProjectStore(
     client: client, resources: resources, sync: sync, disclosure: projectDisclosure,
     didFail: { [weak self] in self?.handle($0) },
@@ -178,6 +180,7 @@ final class WorkspaceStore {
     },
     modelBootstrap: WorkspaceReadBootstrap? = nil,
     projectBootstrap: WorkspaceReadBootstrap? = nil,
+    indicatorsBootstrap: WorkspaceReadBootstrap? = nil,
     createRealtime: RealtimeService.ClientFactory? = nil,
     didRefreshReadState: @escaping @MainActor () -> Void = {}
   ) {
@@ -193,6 +196,7 @@ final class WorkspaceStore {
     self.sync = sync
     self.modelBootstrap = modelBootstrap
     self.projectBootstrap = projectBootstrap
+    self.indicatorsBootstrap = indicatorsBootstrap
     self.createRealtime = createRealtime
     resources = WorkspaceResources(
       client: client, sync: sync, sleep: readRetrySleep, modelBootstrap: modelBootstrap,
@@ -252,6 +256,7 @@ final class WorkspaceStore {
           self?.connectionStatus = status
           self?.modelBootstrap?.connectionChanged(status)
           self?.projectBootstrap?.connectionChanged(status)
+          self?.indicatorsBootstrap?.connectionChanged(status)
         },
         createRealtime: createRealtime, lifecycleTasks: lifecycleTasks)
       self.realtime = realtime
@@ -374,6 +379,7 @@ final class WorkspaceStore {
     composerWorkflows.close()
     newModelSelection.close()
     list.close()
+    indicatorsBootstrap?.close()
     projects.close()
     resources.close()
     threadFeedback = nil
@@ -574,10 +580,17 @@ final class WorkspaceStore {
   }
 
   private func refreshIndicators(_ batch: Set<ChatInvalidation>) async {
-    if batch.contains(where: \.requiresFullRefresh) || batch.contains(.indicators)
-      || batch.contains(.readCursor)
-    {
-      await list.refreshIndicators()
+    let immediate =
+      batch.contains(.indicators) || batch.contains(.readCursor)
+      || batch.contains {
+        $0.requiresFullRefresh && $0 != .startup && $0 != .initialSubscriptions
+      }
+    var catchUp = false
+    if batch.contains(.initialSubscriptions) {
+      catchUp = indicatorsBootstrap?.subscriptionsReady() ?? true
+    }
+    if immediate || catchUp || batch.contains(.startup) {
+      await list.refreshIndicators(waitForSubscriptions: !immediate && !catchUp)
     }
   }
 
