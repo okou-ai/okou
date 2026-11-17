@@ -66,23 +66,7 @@ test("The gift opens invitations independently of credit quests and copies the i
       earnedCredits: 40_000,
     });
   });
-  await setupPage({
-    context,
-    path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: false,
-    },
-    auth: {
-      user: { id: "test-user-123", fullName: "Referral User" },
-      organization: {
-        activeOrg: {
-          id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
-          name: "Referral Workspace",
-        },
-        memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
-      },
-    },
-  });
+  await setupInvitationPage();
   const user = userEvent.setup({ delay: null });
   const entry = await waitFor(() => {
     return buttonNamed("Invite your friends", document.body);
@@ -123,6 +107,26 @@ test("The gift opens invitations independently of credit quests and copies the i
     expect(dialog).not.toBeInTheDocument();
     expect(entry).toHaveFocus();
   });
+});
+
+test("History navigation closes a reopened invitation dialog without restoring stale open state", async () => {
+  const status = configureQuestPage(context, "admin");
+  status.quests = [];
+  context.mocks.api(friendReferralsContract.link, ({ respond }) => {
+    return respond(200, {
+      code: "a7k2p9",
+      registeredCount: 3,
+      rewardedCount: 2,
+      earnedCredits: 40_000,
+    });
+  });
+  await setupInvitationPage();
+  await waitFor(() => {
+    return buttonNamed("Invite your friends", document.body);
+  });
+  expect(
+    screen.queryByRole("dialog", { name: "Invite friends, get $20 each" }),
+  ).not.toBeInTheDocument();
   click(linkNamed("Workflows", document.body));
   await screen.findByRole("heading", { name: "Workflows" });
   act(() => {
@@ -151,6 +155,26 @@ test("The gift opens invitations independently of credit quests and copies the i
     ).not.toBeInTheDocument();
   });
 });
+
+async function setupInvitationPage() {
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.SingleAgent]: false,
+    },
+    auth: {
+      user: { id: "test-user-123", fullName: "Referral User" },
+      organization: {
+        activeOrg: {
+          id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+          name: "Referral Workspace",
+        },
+        memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
+      },
+    },
+  });
+}
 
 test("Referral link failures can be retried in the same dialog", async () => {
   configureQuestPage(context, "admin");
