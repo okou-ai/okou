@@ -134,9 +134,9 @@ function StartingPromptPanel({
             }}
           />
           <OnboardingOutputFormats
-            output={output?.format ?? null}
-            onSelect={(format, instruction) => {
-              selectOutput(text, promptKey, format, instruction);
+            outputs={output ? [output.format] : []}
+            onSelect={(formats, instruction) => {
+              selectOutput(text, promptKey, formats[0] ?? null, instruction);
             }}
             isTooLong={(instruction) => {
               return (
@@ -267,7 +267,9 @@ export function OnboardingReadyPage() {
           runRequest(
             request,
             null,
-            flow.draft.startingPromptOutput,
+            flow.draft.startingPromptOutput
+              ? [flow.draft.startingPromptOutput]
+              : [],
             pageSignal,
           ),
           Reason.DomCallback,
