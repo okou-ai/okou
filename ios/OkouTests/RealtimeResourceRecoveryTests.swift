@@ -487,7 +487,8 @@ final class WorkspaceIndicatorRecoveryTests: XCTestCase {
   {
     let remote = Mutex("active")
     let releaseToken = ModelResponseGate()
-    let tokenRequested = expectation(description: "Realtime token delivery is held before attachment")
+    let tokenRequested = expectation(
+      description: "Realtime token delivery is held before attachment")
     let registered = expectation(description: "The workspace channel is registered for injection")
     let fixture = try ModelRecoveryFixture(
       bootstrap: WorkspaceReadBootstrap(waitForTimeout: {}),
