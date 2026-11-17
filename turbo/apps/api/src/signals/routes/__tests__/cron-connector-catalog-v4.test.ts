@@ -9,11 +9,19 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { settleIncludingAbort } from "../../utils";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { builtinConnectorsRoutes } from "../connectors";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { customConnectorsRoutes } from "../custom-connectors";
-import { manualHttpCustomConnectorCreateBody } from "./helpers/api-bdd-connectors";
+import {
+  createConnectorBddApi,
+  manualHttpCustomConnectorCreateBody,
+} from "./helpers/api-bdd-connectors";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { publicChatActor } from "./helpers/public-chat-actor";
+import { completePublicClaudeRun } from "./helpers/public-native-run";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -344,6 +352,106 @@ describe("connector catalog v4 preparation", () => {
       failureCode: "source-unavailable",
     });
     expect((await publicCatalog()).body).toStrictEqual(serving);
+  });
+
+  it("dispatches and completes a healthy Run after rejecting malformed catalog auth", async () => {
+    const candidate = release({
+      mutate: (catalog) => {
+        catalog.connectors = [
+          {
+            ...httpConnector("broken-auth", "Broken auth"),
+            firewall: {
+              kind: "generated",
+              billable: false,
+              config: {
+                description: "Malformed provider catalog auth",
+                apis: [
+                  {
+                    base: "https://broken-auth.example.test",
+                    auth: { headers: { Authorization: 42 } },
+                    permissions: [],
+                  },
+                ],
+              },
+              categories: null,
+              defaultAllowed: null,
+              defaultUnknownPolicy: "deny",
+            },
+          },
+        ];
+      },
+    });
+    const connectors = createConnectorBddApi(context);
+    const runs = createRunsApi(context);
+    const owned = await publicChatActor(context, {
+      beforeWorkspaceCleanup: async (actor) => {
+        for (const account of await connectors.listBuiltinConnectorAccounts(
+          actor,
+          "figma",
+        )) {
+          await connectors.deleteBuiltinConnectorAccount(
+            actor,
+            "figma",
+            account.id,
+          );
+        }
+      },
+    });
+    await owned.run(async () => {
+      await connectors.connectManualGrant(owned.actor, "figma", "api-token", {
+        accessToken: "accepted-catalog-figma-token",
+      });
+      await runs.enableAgentConnectors(owned.actor, owned.agentId, ["figma"]);
+      const serving = (await publicCatalog()).body;
+      const storage = context.mocks.s3.send.getMockImplementation();
+      if (!storage) {
+        throw new Error("Expected the public Run object-storage provider");
+      }
+      serveObjects(candidate.objects);
+      const rejection = await settleIncludingAbort(async () => {
+        expect((await sync()).body).toStrictEqual({
+          outcome: "rejected",
+          failureCode: "invalid-artifact",
+        });
+        expect((await publicCatalog()).body).toStrictEqual(serving);
+      });
+      context.mocks.s3.send.mockImplementation(storage);
+      if (!rejection.ok) {
+        throw rejection.error;
+      }
+
+      const run = await owned.sendChatRun(owned.actor, {
+        agentId: owned.agentId,
+        prompt: "Use the accepted connector after a catalog rejection",
+      });
+      const { execution, sandboxHeaders } = await owned.runExecution(run.runId);
+      if (!execution.encryptedSecrets) {
+        throw new Error("Expected credentials from the dispatched Run");
+      }
+      const auth = await createFirewallApi(context).requestFirewallAuth(
+        sandboxHeaders,
+        {
+          encryptedSecrets: execution.encryptedSecrets,
+          secretConnectorMap: execution.secretConnectorMap ?? undefined,
+          secretConnectorMetadataMap:
+            execution.secretConnectorMetadataMap ?? undefined,
+          authHeaders: { "X-Figma-Token": secretTemplate("FIGMA_TOKEN") },
+        },
+        [200],
+      );
+      expect(auth.body).toMatchObject({
+        headers: { "X-Figma-Token": "accepted-catalog-figma-token" },
+      });
+      await completePublicClaudeRun(
+        context,
+        run,
+        sandboxHeaders,
+        "Completed with the accepted catalog",
+      );
+      expect((await runs.readRun(owned.actor, run.runId)).status).toBe(
+        "completed",
+      );
+    });
   });
 
   it("rejects a pointer outside the canonical v4 release namespace", async () => {

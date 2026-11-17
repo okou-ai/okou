@@ -2193,6 +2193,7 @@ const connectors = [
           }),
         ],
         envBindings: {
+          TEST_OAUTH_TOKEN: secret("TEST_OAUTH_API_TOKEN_ACCESS_TOKEN"),
           TEST_OAUTH_API_TOKEN: secret("TEST_OAUTH_API_TOKEN_ACCESS_TOKEN"),
           TEST_OAUTH_TENANT_ID: variable("TEST_OAUTH_API_TENANT_ID"),
         },
