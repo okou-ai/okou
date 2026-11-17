@@ -4,6 +4,7 @@ import ai.okou.android.CHAT_AGENT
 import ai.okou.android.CHAT_IN_PROJECT
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.CHAT_PROJECT
+import ai.okou.android.ChatListApiFixture
 import ai.okou.android.ComposerApiFixture
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.SendRequestVariant1
@@ -23,6 +24,27 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ChatComposerApiTest {
+    @Test
+    fun sharedChatFixtureServesCanonicalDraftsAlongsideConversationHistory() = runTest {
+        ChatListApiFixture().use { fixture ->
+            for (target in
+                listOf(
+                    ServerDraftTarget(CHAT_AGENT, false),
+                    ServerDraftTarget(CHAT_PERSONAL, true),
+                )) {
+                assertEquals("", fixture.service.composerDraft(target).plainText())
+                fixture.service.saveComposerDraft(target, "A healthy realtime composer draft")
+                assertEquals(
+                    "A healthy realtime composer draft",
+                    fixture.service.composerDraft(target).plainText(),
+                )
+            }
+            assertTrue(
+                fixture.service.historyRows(CHAT_PERSONAL, HistoryCursor()).rows.isNotEmpty()
+            )
+        }
+    }
+
     @Test
     fun canonicalDraftsRoundTripBothTargetsAndAcceptActualEmpty204Responses() = runTest {
         ComposerApiFixture().use { fixture ->

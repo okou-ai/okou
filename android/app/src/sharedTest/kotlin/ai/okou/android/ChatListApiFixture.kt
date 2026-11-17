@@ -3,7 +3,9 @@ package ai.okou.android
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.auth.CanonicalWorkspaceSession
 import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.chat.plainDraftDocument
 import java.io.Closeable
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -162,6 +164,7 @@ class ChatListApiFixture : Closeable {
     }
     val identity: WorkspaceIdentity
     val service: CanonicalWorkspaceSession
+    private val composerDrafts = ConcurrentHashMap<String, JsonObject>()
 
     init {
         server.dispatcher =
@@ -172,6 +175,27 @@ class ChatListApiFixture : Closeable {
                         return it
                     }
                     val segments = request.requestUrl?.pathSegments.orEmpty()
+                    if (
+                        segments.size in 3..4 &&
+                            segments[0] == "api" &&
+                            segments[1] in setOf("agents", "chat-threads")
+                    ) {
+                        val draftPath = segments.size == 4 && segments[3] == "draft"
+                        val key = "${segments[1]}:${segments[2]}"
+                        if (request.method == "GET" && draftPath)
+                            return jsonResponse(
+                                (composerDrafts[key] ?: plainDraftDocument("")).toString()
+                            )
+                        if (
+                            request.method == "PATCH" &&
+                                (segments[1] == "agents" && draftPath ||
+                                    segments[1] == "chat-threads" && segments.size == 3)
+                        ) {
+                            composerDrafts[key] =
+                                Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
+                            return MockResponse().setResponseCode(204)
+                        }
+                    }
                     if (
                         segments.size >= 3 &&
                             segments[0] == "api" &&
