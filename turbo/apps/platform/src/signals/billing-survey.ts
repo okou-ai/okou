@@ -19,6 +19,8 @@ import { authenticatedIdentity$ } from "./auth.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
 import { billingCheckoutCanceled$ } from "./billing-checkout-return.ts";
 import { reloadBillingStatus$ } from "./okou-page/billing.ts";
+import { settingsDialogSessionActive$ } from "./okou-page/settings/settings-dialog.ts";
+import { searchParams$ } from "./route.ts";
 
 export type CreditsExhaustedSurveyAnswer =
   (typeof CREDITS_EXHAUSTED_SURVEY_ANSWERS)[number];
@@ -167,6 +169,14 @@ export const submitCreditsExhaustedSurvey$ = command(
 export const abandonedCheckoutSurvey$ = computed(async (get) => {
   const status = await get(billingSurveyStatus$);
   return status?.abandonedCheckout ?? null;
+});
+
+export const checkoutAbandonedSurveyReady$ = computed((get) => {
+  // The return URL can restore Settings after the survey request resolves.
+  // Wait through both route setup and the Settings closing animation.
+  return (
+    !get(searchParams$).get("settings") && !get(settingsDialogSessionActive$)
+  );
 });
 
 /** Persist a per-Checkout dismissal so another browser does not ask it again. */
