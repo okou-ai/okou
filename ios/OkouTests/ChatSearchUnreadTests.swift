@@ -155,6 +155,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     await store.refresh()
     store.setPhase(.active)
     store.selectChat(SearchUnreadFixture.id(1))
+    store.sidebarInteraction.setOpen(false)
     let conversation = try XCTUnwrap(store.selectedConversation)
     let refresh = Task { await conversation.refresh() }
     addTeardownBlock {
@@ -212,6 +213,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     await store.refresh()
     store.setPhase(.active)
     store.selectChat(SearchUnreadFixture.id(1))
+    store.sidebarInteraction.setOpen(false)
     let conversation = try XCTUnwrap(store.selectedConversation)
     await conversation.refresh(waitForCurrent: true)
     let thread = try XCTUnwrap(store.list.threads.first { $0.id == SearchUnreadFixture.id(1) })
@@ -257,6 +259,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     await store.refresh()
     store.setPhase(.active)
     store.selectChat(SearchUnreadFixture.id(1))
+    store.sidebarInteraction.setOpen(false)
     let conversation = try XCTUnwrap(store.selectedConversation)
     await conversation.refresh(waitForCurrent: true)
     let thread = try XCTUnwrap(store.list.threads.first { $0.id == SearchUnreadFixture.id(1) })
@@ -391,6 +394,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     await store.refresh()
     store.setPhase(.active)
     store.selectChat(SearchUnreadFixture.id(1))
+    store.sidebarInteraction.setOpen(false)
     await store.selectedConversation?.refresh()
     let thread = try XCTUnwrap(store.list.threads.first { $0.id == SearchUnreadFixture.id(1) })
     fixture.state.value.withLock { $0.dropUnreadResponse = true }
