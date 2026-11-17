@@ -4,7 +4,6 @@ use crate::readiness::wait_for_file_contains;
 use shell_quote::quote_shell_arg;
 use std::ffi::{CString, OsStr};
 use std::io;
-use std::os::fd::FromRawFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -34,23 +33,19 @@ impl PostOpenMockGate {
 
         // Keep both FIFO ends open so release can happen immediately after
         // readiness even if the wrapper has not entered its read yet.
-        // SAFETY: fifo_c remains valid for the call and ownership of the
-        // returned descriptor transfers to File below.
-        let fd = unsafe {
-            libc::open(
-                fifo_c.as_ptr(),
-                libc::O_RDWR | libc::O_NONBLOCK | libc::O_CLOEXEC,
-            )
-        };
-        if fd < 0 {
-            return Err(format!(
+        let fd = nix::fcntl::open(
+            fifo_c.as_c_str(),
+            nix::fcntl::OFlag::from_bits_retain(libc::O_RDWR | libc::O_NONBLOCK | libc::O_CLOEXEC),
+            nix::sys::stat::Mode::empty(),
+        )
+        .map_err(|error| {
+            format!(
                 "open mock gate {}: {}",
                 fifo.display(),
-                io::Error::last_os_error()
-            ));
-        }
-        // SAFETY: fd is a fresh descriptor owned by this function.
-        let writer = unsafe { std::fs::File::from_raw_fd(fd) };
+                io::Error::from(error)
+            )
+        })?;
+        let writer = std::fs::File::from(fd);
 
         let ready_file = dir.join("agent-log-mock-ready");
         let wrapper = dir.join("gated-agent-log-mock.sh");

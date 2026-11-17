@@ -1,7 +1,7 @@
 use std::ffi::{CString, OsStr, OsString};
 use std::fs::{self, File, OpenOptions};
 use std::io;
-use std::os::fd::{AsRawFd, FromRawFd};
+use std::os::fd::AsRawFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path, PathBuf};
@@ -69,15 +69,13 @@ impl CleanupDirectory {
         let name =
             CString::new(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
         let flags = libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC;
-        // SAFETY: the parent fd is owned by this live `CleanupDirectory`,
-        // `name` is a validated NUL-terminated basename, and these flags do
-        // not require a mode argument.
-        let fd = unsafe { libc::openat(self.0.as_raw_fd(), name.as_ptr(), flags) };
-        if fd < 0 {
-            return Err(io::Error::last_os_error());
-        }
-        // SAFETY: a successful `openat` returns a new owned file descriptor.
-        Ok(Self(unsafe { File::from_raw_fd(fd) }))
+        let fd = nix::fcntl::openat(
+            &self.0,
+            name.as_c_str(),
+            nix::fcntl::OFlag::from_bits_retain(flags),
+            nix::sys::stat::Mode::empty(),
+        )?;
+        Ok(Self(File::from(fd)))
     }
 
     pub(super) fn read_dir(&self) -> io::Result<fs::ReadDir> {

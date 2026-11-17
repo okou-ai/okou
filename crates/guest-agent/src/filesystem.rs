@@ -2,7 +2,7 @@
 use serde::Serialize;
 use std::ffi::CStr;
 use std::fs::{File, OpenOptions};
-use std::os::fd::{AsRawFd, FromRawFd};
+use std::os::fd::AsRawFd;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 
@@ -43,14 +43,16 @@ fn observe_at(root: &Path) -> (Option<FilesystemObservation>, Option<FilesystemO
 }
 
 fn open_child(parent: &File, name: &CStr) -> Option<File> {
-    let fd = unsafe {
-        libc::openat(
-            parent.as_raw_fd(),
-            name.as_ptr(),
+    nix::fcntl::openat(
+        parent,
+        name,
+        nix::fcntl::OFlag::from_bits_retain(
             libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-        )
-    };
-    (fd >= 0).then(|| unsafe { File::from_raw_fd(fd) })
+        ),
+        nix::sys::stat::Mode::empty(),
+    )
+    .ok()
+    .map(File::from)
 }
 
 fn sample(directory: &File) -> Option<FilesystemObservation> {

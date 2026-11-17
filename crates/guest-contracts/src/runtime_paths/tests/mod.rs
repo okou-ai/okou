@@ -1,6 +1,4 @@
 use super::*;
-#[cfg(target_os = "linux")]
-use std::os::fd::FromRawFd;
 #[cfg(unix)]
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 #[cfg(unix)]
@@ -431,16 +429,14 @@ fn chmod_proc_fd_path_updates_o_path_directory() {
     let permissions =
         cli_test_support::directory_permissions::DirectoryPermissions::set(&path, 0o000).unwrap();
     let path_c = CString::new(path.as_os_str().as_bytes()).unwrap();
-    // SAFETY: `path_c` is NUL-terminated and points to the test directory.
-    let raw_fd = unsafe {
-        libc::open(
-            path_c.as_ptr(),
+    let fd = nix::fcntl::open(
+        path_c.as_c_str(),
+        OFlag::from_bits_retain(
             libc::O_PATH | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-        )
-    };
-    assert!(raw_fd >= 0, "open O_PATH: {}", io::Error::last_os_error());
-    // SAFETY: `raw_fd` is a fresh descriptor returned by `open`.
-    let fd = unsafe { OwnedFd::from_raw_fd(raw_fd) };
+        ),
+        Mode::empty(),
+    )
+    .expect("open O_PATH");
 
     chmod_proc_fd_path(&fd, OsStr::new("run"), &path).unwrap();
 

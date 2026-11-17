@@ -7,7 +7,7 @@
 use std::ffi::CString;
 use std::fs::{self, File};
 use std::io::{self, Write};
-use std::os::fd::{AsRawFd, FromRawFd};
+use std::os::fd::{AsFd, AsRawFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::{Component, Path, PathBuf};
@@ -249,34 +249,30 @@ fn open_directory(path: &Path) -> io::Result<File> {
     // Component-wise descriptor traversal prevents a concurrent path exchange
     // from turning a prechecked parent into a followed symlink.
     reject_symlink_components(path)?;
-    let mut directory = open_child_directory_fd(libc::AT_FDCWD, "/")?;
+    let mut directory = open_child_directory_fd(nix::fcntl::AT_FDCWD, "/")?;
     for component in path.components() {
         if let Component::Normal(name) = component {
-            directory = open_child_directory_fd(directory.as_raw_fd(), name.as_bytes())?;
+            directory = open_child_directory_fd(&directory, name.as_bytes())?;
         }
     }
     Ok(directory)
 }
 
 fn open_child_directory(parent: &File, name: &str) -> io::Result<File> {
-    open_child_directory_fd(parent.as_raw_fd(), name)
+    open_child_directory_fd(parent, name)
 }
 
-fn open_child_directory_fd(parent: libc::c_int, name: impl AsRef<[u8]>) -> io::Result<File> {
+fn open_child_directory_fd(parent: impl AsFd, name: impl AsRef<[u8]>) -> io::Result<File> {
     let name = CString::new(name.as_ref()).map_err(|_| invalid("home path contains NUL"))?;
-    // SAFETY: name is NUL-terminated; the returned descriptor has one File owner.
-    let fd = unsafe {
-        libc::openat(
-            parent,
-            name.as_ptr(),
+    let fd = nix::fcntl::openat(
+        parent,
+        name.as_c_str(),
+        nix::fcntl::OFlag::from_bits_retain(
             libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-        )
-    };
-    if fd < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: openat returned a new owned descriptor.
-    Ok(unsafe { File::from_raw_fd(fd) })
+        ),
+        nix::sys::stat::Mode::empty(),
+    )?;
+    Ok(File::from(fd))
 }
 
 fn repair_owner(directory: &File, uid: u32, gid: u32) -> io::Result<()> {
@@ -327,25 +323,25 @@ fn initialize_home(_path: &Path, home: &File, uid: u32, gid: u32) -> io::Result<
     }
     for (name, content) in HOME_DEFAULTS {
         let name = CString::new(name).map_err(|_| invalid("invalid public default name"))?;
-        // SAFETY: the pinned home fd and fixed component cannot traverse a
-        // parent; exclusive/no-follow creation never overwrites a hit's file.
-        let fd = unsafe {
-            libc::openat(
-                home.as_raw_fd(),
-                name.as_ptr(),
+        // Exclusive/no-follow creation never overwrites a hit's file.
+        let fd = match nix::fcntl::openat(
+            home,
+            name.as_c_str(),
+            nix::fcntl::OFlag::from_bits_retain(
                 libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-                0o644,
-            )
-        };
-        if fd < 0 {
-            let error = io::Error::last_os_error();
-            if error.kind() == io::ErrorKind::AlreadyExists {
-                continue;
+            ),
+            nix::sys::stat::Mode::from_bits_retain(0o644),
+        ) {
+            Ok(fd) => fd,
+            Err(error) => {
+                let error = io::Error::from(error);
+                if error.kind() == io::ErrorKind::AlreadyExists {
+                    continue;
+                }
+                return Err(error);
             }
-            return Err(error);
-        }
-        // SAFETY: openat returned a new owned descriptor.
-        let mut file = unsafe { File::from_raw_fd(fd) };
+        };
+        let mut file = File::from(fd);
         repair_owner(&file, uid, gid)?;
         file.write_all(content)?;
     }
