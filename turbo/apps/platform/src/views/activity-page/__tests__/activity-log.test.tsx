@@ -111,9 +111,7 @@ test.each([
   "Failed activities accept old and new responses without displaying diagnostics: $expected",
   async ({ expected, ...fields }) => {
     context.mocks.api(logsByIdContract.getById, ({ respond }) => {
-      const detail = makeLogDetail("failed");
-      delete detail.error;
-      return respond(200, { ...detail, ...fields });
+      return respond(200, { ...makeLogDetail("failed"), ...fields });
     });
     context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
       return respond(200, {
