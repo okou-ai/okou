@@ -21,6 +21,7 @@ import {
   CHECKOUT_ABANDONED_SURVEY_ANSWERS,
   CREDITS_EXHAUSTED_SURVEY_ANSWERS,
   checkoutAbandonedDraft$,
+  checkoutAbandonedSurveyReady$,
   creditsExhaustedDraft$,
   creditsExhaustedSurveyReward$,
   creditsExhaustedThanks$,
@@ -257,6 +258,7 @@ function CreditsExhaustedSurveyContent() {
 export function CheckoutAbandonedSurveyDialog() {
   const { t } = useTranslation();
   const survey = useLastResolved(abandonedCheckoutSurvey$);
+  const ready = useGet(checkoutAbandonedSurveyReady$);
   const draft = useGet(checkoutAbandonedDraft$);
   const updateDraft = useSet(updateCheckoutAbandonedDraft$);
   const [dismissLoadable, dismiss] = useLoadableSet(
@@ -269,7 +271,7 @@ export function CheckoutAbandonedSurveyDialog() {
   const submitting =
     submitLoadable.state === "loading" || dismissLoadable.state === "loading";
 
-  if (!survey) {
+  if (!survey || !ready) {
     return null;
   }
 
