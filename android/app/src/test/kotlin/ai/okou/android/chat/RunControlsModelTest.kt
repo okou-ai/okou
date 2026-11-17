@@ -12,6 +12,7 @@ import ai.okou.android.historyEventWire
 import ai.okou.android.jsonResponse
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.core.app.ApplicationProvider
@@ -23,6 +24,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -195,7 +198,7 @@ class RunControlsModelTest {
                     history.open(thread())
                     history.uiState.first { it.phase == HistoryPhase.Ready }
                     controls.uiState.first { it.persistence == RunControlPersistence.Durable }
-                    controls.recovery.first { it.phase == CancellationReadPhase.Ready }
+                    history.uiState.first { it.detailPhase == ChatReadPhase.Ready }
                     runCurrent()
                     block(
                         Fixture(
@@ -276,7 +279,7 @@ class RunControlsModelTest {
             history.open(thread())
             history.uiState.first { it.phase == HistoryPhase.Ready }
             controls.uiState.first { it.persistence == RunControlPersistence.Durable }
-            controls.recovery.first { it.phase == CancellationReadPhase.Ready }
+            history.uiState.first { it.detailPhase == ChatReadPhase.Ready }
             runCurrent()
             block(Peer(controls, history, owners))
         } finally {
@@ -572,7 +575,7 @@ class RunControlsModelTest {
                         .setResponseCode(503)
                 }
                 f.controls.refreshRecovery(CHAT_PERSONAL)
-                f.controls.recovery.first { it.phase == CancellationReadPhase.Failed }
+                f.history.uiState.first { it.detailPhase == ChatReadPhase.Failed }
                 f.api.historyDetail = {
                     jsonResponse("""{"lastReadAt":null,"cancellationRecoveryPending":true}""")
                 }
@@ -581,16 +584,22 @@ class RunControlsModelTest {
                     it.thread?.id == CHAT_IN_PROJECT && it.phase == HistoryPhase.Ready
                 }
                 val metadata =
-                    peer.controls.recovery.first {
-                        it.threadId == CHAT_IN_PROJECT && it.phase == CancellationReadPhase.Ready
+                    peer.history.uiState.first {
+                        it.thread?.id == CHAT_IN_PROJECT && it.detailPhase == ChatReadPhase.Ready
                     }
-                assertEquals(true, metadata.pending)
+                assertEquals(true, metadata.detail?.cancellationRecoveryPending)
+                val requested = CompletableDeferred<Unit>()
+                f.api.historyDetail = {
+                    requested.complete(Unit)
+                    jsonResponse("""{"lastReadAt":null,"cancellationRecoveryPending":true}""")
+                }
                 peer.controls.check(CHAT_IN_PROJECT)
-                peer.controls.recovery.first { it.phase == CancellationReadPhase.Ready }
+                requested.await()
+                peer.history.uiState.first { it.detailPhase == ChatReadPhase.Ready }
                 f.controls.refreshRecovery(CHAT_IN_PROJECT)
-                assertEquals(CHAT_PERSONAL, f.controls.recovery.value.threadId)
-                assertEquals(CancellationReadPhase.Failed, f.controls.recovery.value.phase)
-                assertEquals(CHAT_IN_PROJECT, peer.controls.recovery.value.threadId)
+                assertEquals(CHAT_PERSONAL, f.history.uiState.value.thread?.id)
+                assertEquals(ChatReadPhase.Failed, f.history.uiState.value.detailPhase)
+                assertEquals(CHAT_IN_PROJECT, peer.history.uiState.value.thread?.id)
                 assertTrue(f.remote.posts.isEmpty())
                 f.api.historyDetail = {
                     jsonResponse("""{"lastReadAt":null,"cancellationRecoveryPending":false}""")
@@ -598,9 +607,84 @@ class RunControlsModelTest {
                 f.controls.refreshRecovery(CHAT_PERSONAL)
                 assertEquals(
                     false,
-                    f.controls.recovery.first { it.phase == CancellationReadPhase.Ready }.pending,
+                    f.history.uiState
+                        .first { it.detailPhase == ChatReadPhase.Ready }
+                        .detail
+                        ?.cancellationRecoveryPending,
                 )
-                assertEquals(true, peer.controls.recovery.value.pending)
+                assertEquals(true, peer.history.uiState.value.detail?.cancellationRecoveryPending)
+            }
+        }
+    }
+
+    @Test
+    fun completedScopeCancellationBeforeOnClearedLeavesPeerCommandsRecoverable() = runTest {
+        val saved =
+            RunControlIntent(
+                eventId("cancelled-before-cleared"),
+                CHAT_PERSONAL,
+                CHAT_AGENT,
+                RunControlKind.Interrupt,
+                HISTORY_RUN,
+            )
+        for (checking in listOf(false, true)) {
+            withControls(
+                initial = listOf(input("first", 1), input("second", 2, secondRun)),
+                saved = if (checking) RunControlJournal(pending = listOf(saved)) else null,
+            ) { f ->
+                withPeer(f) { peer ->
+                    val entered = CompletableDeferred<Unit>()
+                    val release = CountDownLatch(1)
+                    val first = AtomicBoolean(true)
+                    if (checking)
+                        f.api.beforeHistoryResponse = { request ->
+                            if (
+                                request.requestUrl?.pathSegments?.last() == "event-rows" &&
+                                    first.getAndSet(false)
+                            ) {
+                                entered.complete(Unit)
+                                release.await()
+                            }
+                        }
+                    else
+                        f.remote.write = {
+                            entered.complete(Unit)
+                            release.await()
+                            jsonResponse("""{"threadId":"$CHAT_PERSONAL"}""").setResponseCode(201)
+                        }
+                    try {
+                        if (checking) f.controls.check(CHAT_PERSONAL)
+                        else f.controls.stop(CHAT_PERSONAL, listOf(HISTORY_RUN))
+                        entered.await()
+                        val intent = peer.controls.uiState.value.journal!!.pending.single()
+                        checkNotNull(f.controls.viewModelScope.coroutineContext[Job])
+                            .cancelAndJoin()
+                        assertEquals(
+                            RunControlPhase.Unknown,
+                            peer.controls.uiState.value.phases[intent.id],
+                        )
+                        f.controls.stop(CHAT_PERSONAL, listOf(secondRun))
+                        runCurrent()
+                        assertEquals(listOf(intent), peer.controls.uiState.value.journal!!.pending)
+                        f.owners.clear()
+                        release.countDown()
+                        peer.controls.check(CHAT_PERSONAL)
+                        peer.controls.uiState.first {
+                            it.phases[intent.id] == RunControlPhase.Retryable
+                        }
+                        peer.controls.retry(intent.id)
+                        peer.controls.uiState.first {
+                            it.phases[intent.id] == RunControlPhase.Accepted
+                        }
+                        assertEquals(
+                            intent.id,
+                            f.remote.posts.last()["clientEventId"]?.jsonPrimitive?.content,
+                        )
+                        assertEquals(listOf(intent), f.store.load(f.api.identity).journal.pending)
+                    } finally {
+                        release.countDown()
+                    }
+                }
             }
         }
     }
@@ -829,8 +913,9 @@ class RunControlsModelTest {
                 }
                 runCurrent()
                 f.controls.refreshRecovery(CHAT_PERSONAL)
-                f.controls.recovery.first {
-                    it.phase == CancellationReadPhase.Ready && it.pending == true
+                f.history.uiState.first {
+                    it.detailPhase == ChatReadPhase.Ready &&
+                        it.detail?.cancellationRecoveryPending == true
                 }
             }
             val entered = CompletableDeferred<Unit>()
@@ -853,12 +938,11 @@ class RunControlsModelTest {
                         if (retry) it.phases[intent.id] == RunControlPhase.Unknown
                         else it.notice?.kind == RunControlNoticeKind.ReadFailed
                     }
-                assertEquals(CancellationReadPhase.Loading, f.controls.recovery.value.phase)
+                assertEquals(ChatReadPhase.Loading, f.history.uiState.value.detailPhase)
                 assertEquals(RunControlPhase.Unknown, failed.phases[intent.id])
                 release.countDown()
-                val recovered =
-                    f.controls.recovery.first { it.phase == CancellationReadPhase.Ready }
-                assertEquals(true, recovered.pending)
+                val recovered = f.history.uiState.first { it.detailPhase == ChatReadPhase.Ready }
+                assertEquals(true, recovered.detail?.cancellationRecoveryPending)
                 assertEquals(RunControlPhase.Unknown, f.controls.uiState.value.phases[intent.id])
                 assertEquals(listOf(intent), f.controls.uiState.value.journal!!.pending)
                 assertTrue(f.remote.posts.isEmpty())
@@ -903,7 +987,7 @@ class RunControlsModelTest {
                             .setResponseCode(503)
                     }
                     f.controls.refreshRecovery(CHAT_PERSONAL)
-                    f.controls.recovery.first { it.phase == CancellationReadPhase.Failed }
+                    f.history.uiState.first { it.detailPhase == ChatReadPhase.Failed }
                     val failed = f.controls.uiState.value
                     assertEquals(RunControlPhase.Checking, failed.phases[intent.id])
                     assertEquals(listOf(intent), failed.journal!!.pending)
@@ -913,7 +997,7 @@ class RunControlsModelTest {
                     release.countDown()
                     f.controls.uiState.first { it.phases[intent.id] == RunControlPhase.Retryable }
                     f.controls.refreshRecovery(CHAT_PERSONAL)
-                    f.controls.recovery.first { it.phase == CancellationReadPhase.Ready }
+                    f.history.uiState.first { it.detailPhase == ChatReadPhase.Ready }
                     assertTrue(f.remote.posts.isEmpty())
                 } finally {
                     release.countDown()
@@ -951,13 +1035,16 @@ class RunControlsModelTest {
                 f.controls.check(CHAT_PERSONAL)
                 entered.await()
                 f.controls.refreshRecovery(CHAT_PERSONAL)
-                f.controls.recovery.first { it.phase == CancellationReadPhase.Ready }
+                f.history.uiState.first {
+                    it.detailPhase == ChatReadPhase.Ready &&
+                        it.detail?.cancellationRecoveryPending == true
+                }
                 f.remote.failRows.set(true)
                 release.countDown()
                 val failed =
                     f.controls.uiState.first { it.notice?.kind == RunControlNoticeKind.ReadFailed }
-                assertEquals(CancellationReadPhase.Ready, f.controls.recovery.value.phase)
-                assertEquals(true, f.controls.recovery.value.pending)
+                assertEquals(ChatReadPhase.Ready, f.history.uiState.value.detailPhase)
+                assertEquals(true, f.history.uiState.value.detail?.cancellationRecoveryPending)
                 assertEquals(RunControlPhase.Unknown, failed.phases[intent.id])
                 assertEquals(listOf(intent), failed.journal!!.pending)
                 assertTrue(f.remote.posts.isEmpty())

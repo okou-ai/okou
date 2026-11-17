@@ -16,6 +16,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /** Main-thread command transaction owner shared by every controller of one durable identity. */
@@ -34,7 +35,7 @@ internal class RunControlsOwner(
         val sync = ConversationHistorySync(service, dispatcher)
         var retired = false
 
-        fun current() = !retired && authorized()
+        fun current() = !retired && scope.isActive && authorized()
     }
 
     private class Operation(val connection: Connection, val intent: RunControlIntent) {
@@ -74,20 +75,31 @@ internal class RunControlsOwner(
             .toList()
             .forEach { (id, read) ->
                 reads.remove(id)
-                interrupted += read.checkedIds
+                interrupted += read.checkedIds.filterNot { it in writes }
                 read.job?.cancel()
             }
-        val pending = mutable.value.journal?.pending.orEmpty().mapTo(hashSetOf()) { it.id }
-        mutable.value =
-            mutable.value.copy(
-                phases =
-                    mutable.value.phases +
-                        interrupted.intersect(pending).associateWith { RunControlPhase.Unknown }
-            )
+        markInterrupted(interrupted)
         connections -= connection
         if (connections.isNotEmpty()) return false
         localScope.cancel()
         return true
+    }
+
+    private fun markInterrupted(ids: Set<String>) {
+        mutable.value =
+            mutable.value.copy(
+                phases =
+                    mutable.value.phases.mapValues { (id, phase) ->
+                        if (
+                            id in ids &&
+                                (phase == RunControlPhase.Preparing ||
+                                    phase == RunControlPhase.Sending ||
+                                    phase == RunControlPhase.Checking)
+                        )
+                            RunControlPhase.Unknown
+                        else phase
+                    }
+            )
     }
 
     private fun current(connection: Connection) = connection in connections && connection.current()
@@ -300,7 +312,10 @@ internal class RunControlsOwner(
                         if (current(op)) invalidate(intent.threadId)
                     }
                 } finally {
-                    if (writes[intent.id] === op) writes.remove(intent.id)
+                    if (writes[intent.id] === op) {
+                        writes.remove(intent.id)
+                        markInterrupted(setOf(intent.id))
+                    }
                 }
             }
     }
@@ -355,7 +370,10 @@ internal class RunControlsOwner(
                             )
                     }
                 } finally {
-                    if (reads[threadId] === reading) reads.remove(threadId)
+                    if (reads[threadId] === reading) {
+                        reads.remove(threadId)
+                        markInterrupted(checkedIds.filterNot { it in writes }.toSet())
+                    }
                 }
             }
     }
@@ -408,7 +426,12 @@ internal class RunControlsOwner(
     }
 
     private fun invalidate(threadId: String) {
-        connections.filter { current(it) }.forEach { it.history.invalidate(threadId) }
+        connections
+            .filter { current(it) }
+            .forEach {
+                it.history.invalidate(threadId)
+                it.history.invalidateDetail(threadId)
+            }
     }
 
     private fun report(connection: Connection, error: Exception) {

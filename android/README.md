@@ -239,8 +239,9 @@ Frozen pending controls live separately in private `noBackupFilesDir/chat-contro
 format-1 journals scoped by API origin, user and workspace. Disk commitment precedes
 POST, and restored intent only reads back until an explicit same-request retry.
 This adds no confirmed-cache or composer-journal migration and stores no stream text.
-Each controller independently owns its selected-thread cancellation metadata query.
-Control outcome reads never take over that query's loading/completion state.
+Cancellation metadata reuses the conversation history owner's independent detail
+request and typed phase. Control outcome reads never take over that request's
+loading/completion state or create a second metadata producer.
 Both paths fail independently of ordinary history.
 
 Meaningful drafts and pending text operations live in `noBackupFilesDir/chat-input`,

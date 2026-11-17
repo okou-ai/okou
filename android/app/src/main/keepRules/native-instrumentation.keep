@@ -129,6 +129,7 @@
   public <init>(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, long, java.lang.String);
 }
 -keep,allowobfuscation class ai.okou.android.api.generated.ThreadDetail {
+  public boolean getCancellationRecoveryPending();
 }
 -keep,allowobfuscation class ai.okou.android.api.generated.UpdatePreferencesRequest {
   public ai.okou.android.api.generated.UpdatePreferencesRequestColorTheme getColorTheme();
@@ -234,9 +235,6 @@
   public java.lang.Object updatePersonalInstructions(java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object updatePreferences(ai.okou.android.api.generated.UpdatePreferencesRequest, kotlin.coroutines.Continuation);
 }
--keep,allowobfuscation class ai.okou.android.chat.CancellationRecovery {
-  public java.lang.Boolean getPending();
-}
 -keep,allowobfuscation class ai.okou.android.chat.ChatCacheStore {
   public java.lang.Object close(kotlin.coroutines.Continuation);
 }
@@ -302,6 +300,7 @@
   public java.lang.Object threadDetail(java.lang.String, kotlin.coroutines.Continuation);
 }
 -keep,allowobfuscation class ai.okou.android.chat.ConversationUiState {
+  public ai.okou.android.api.generated.ThreadDetail getDetail();
   public ai.okou.android.chat.HistoryTranscript getTranscript();
 }
 -keep,allowobfuscation class ai.okou.android.chat.HistoryBatch {
@@ -359,7 +358,6 @@
   public java.lang.Object sendControl(ai.okou.android.api.generated.SendRequest, kotlin.coroutines.Continuation);
 }
 -keep,allowobfuscation class ai.okou.android.chat.RunControlsModel {
-  public kotlinx.coroutines.flow.StateFlow getRecovery();
   public kotlinx.coroutines.flow.StateFlow getUiState();
 }
 -keep,allowobfuscation class ai.okou.android.chat.RunControlsState {

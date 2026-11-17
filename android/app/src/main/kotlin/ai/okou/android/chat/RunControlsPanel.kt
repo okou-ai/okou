@@ -22,7 +22,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 @Composable
 fun RunControlsPanel(model: RunControlsModel, history: ConversationHistoryModel, threadId: String) {
     val state by model.uiState.collectAsStateWithLifecycle()
-    val recovery by model.recovery.collectAsStateWithLifecycle()
     val confirmed by history.uiState.collectAsStateWithLifecycle()
     val output by history.output.state.collectAsStateWithLifecycle()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -117,15 +116,18 @@ fun RunControlsPanel(model: RunControlsModel, history: ConversationHistoryModel,
                     )
                 )
             }
-        recovery
-            .takeIf { it.threadId == threadId }
+        confirmed
+            .takeIf { it.thread?.id == threadId }
             ?.let {
-                if (it.phase == CancellationReadPhase.Failed) {
+                if (it.detailPhase == ChatReadPhase.Failed) {
                     Text(stringResource(R.string.controls_recovery_failed))
                     TextButton(onClick = { model.refreshRecovery(threadId) }) {
                         Text(stringResource(R.string.retry))
                     }
-                } else if (it.phase == CancellationReadPhase.Ready && it.pending == true) {
+                } else if (
+                    it.detailPhase == ChatReadPhase.Ready &&
+                        it.detail?.cancellationRecoveryPending == true
+                ) {
                     Text(stringResource(R.string.controls_recovering))
                     TextButton(onClick = { model.refreshRecovery(threadId) }) {
                         Text(stringResource(R.string.controls_check))

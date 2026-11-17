@@ -483,8 +483,15 @@ class NativeRealtimeTest {
             reveal("Control recorded in conversation history.")
             assertEquals(1, controlPosts.get())
             terminal.set(true)
-            external.invalidate(ChatChanges(threads = setOf(CHAT_PERSONAL)))
-            condition { controls?.recovery?.value?.pending == false }
+            external.invalidate(
+                ChatChanges(
+                    messageThreads = setOf(CHAT_PERSONAL),
+                    detailThreads = setOf(CHAT_PERSONAL),
+                )
+            )
+            condition {
+                chats?.history?.uiState?.value?.detail?.cancellationRecoveryPending == false
+            }
             assertTrue(
                 checkNotNull(
                         device.findObject(By.pkg(app.packageName).clazz("android.widget.EditText"))
