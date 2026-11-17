@@ -432,6 +432,96 @@ class RunControlsModelTest {
     }
 
     @Test
+    fun outcomeReadFailuresExposeRecoveryRetryWithoutResendingTheOriginalCommand() = runTest {
+        val intent =
+            RunControlIntent(
+                eventId("retry-read-failure"),
+                CHAT_PERSONAL,
+                CHAT_AGENT,
+                RunControlKind.Interrupt,
+                HISTORY_RUN,
+            )
+        for (retry in listOf(false, true)) withControls(
+            saved = RunControlJournal(pending = listOf(intent))
+        ) { f ->
+            f.api.historyDetail = {
+                jsonResponse("""{"lastReadAt":null,"cancellationRecoveryPending":true}""")
+            }
+            if (retry) {
+                val before = f.history.uiState.value.confirmation!!.revision
+                f.controls.check(CHAT_PERSONAL)
+                f.controls.uiState.first { it.phases[intent.id] == RunControlPhase.Retryable }
+                f.history.uiState.first {
+                    it.phase == HistoryPhase.Ready && it.confirmation!!.revision > before
+                }
+                runCurrent()
+                f.controls.refreshRecovery(CHAT_PERSONAL)
+                f.controls.uiState.first {
+                    it.recovery.phase == CancellationReadPhase.Ready && it.recovery.pending == true
+                }
+            }
+            f.remote.failRows.set(true)
+            if (retry) f.controls.retry(intent.id) else f.controls.check(CHAT_PERSONAL)
+            val failed =
+                f.controls.uiState.first { it.phases[intent.id] == RunControlPhase.Unknown }
+            assertEquals(CancellationReadPhase.Failed, failed.recovery.phase)
+            f.controls.refreshRecovery(CHAT_PERSONAL)
+            val recovered =
+                f.controls.uiState.first { it.recovery.phase == CancellationReadPhase.Ready }
+            assertEquals(true, recovered.recovery.pending)
+            assertEquals(RunControlPhase.Unknown, recovered.phases[intent.id])
+            assertEquals(listOf(intent), recovered.journal!!.pending)
+            assertTrue(f.remote.posts.isEmpty())
+        }
+    }
+
+    @Test
+    fun newerRecoveryReadSurvivesAnOlderOutcomeReadFailure() = runTest {
+        val intent =
+            RunControlIntent(
+                eventId("older-recovery-read"),
+                CHAT_PERSONAL,
+                CHAT_AGENT,
+                RunControlKind.Interrupt,
+                HISTORY_RUN,
+            )
+        withControls(saved = RunControlJournal(pending = listOf(intent))) { f ->
+            val entered = CompletableDeferred<Unit>()
+            val release = CountDownLatch(1)
+            val firstRead = AtomicBoolean(true)
+            f.api.historyDetail = {
+                jsonResponse("""{"lastReadAt":null,"cancellationRecoveryPending":true}""")
+            }
+            f.api.beforeHistoryResponse = { request ->
+                if (
+                    request.requestUrl?.pathSegments?.last() == "event-rows" &&
+                        firstRead.getAndSet(false)
+                ) {
+                    entered.complete(Unit)
+                    release.await()
+                }
+            }
+            try {
+                f.controls.check(CHAT_PERSONAL)
+                entered.await()
+                f.controls.refreshRecovery(CHAT_PERSONAL)
+                f.controls.uiState.first { it.recovery.phase == CancellationReadPhase.Ready }
+                f.remote.failRows.set(true)
+                release.countDown()
+                val failed =
+                    f.controls.uiState.first { it.notice?.kind == RunControlNoticeKind.ReadFailed }
+                assertEquals(CancellationReadPhase.Ready, failed.recovery.phase)
+                assertEquals(true, failed.recovery.pending)
+                assertEquals(RunControlPhase.Unknown, failed.phases[intent.id])
+                assertEquals(listOf(intent), failed.journal!!.pending)
+                assertTrue(f.remote.posts.isEmpty())
+            } finally {
+                release.countDown()
+            }
+        }
+    }
+
+    @Test
     fun heldControlReadDoesNotBlockOrdinaryHistoryOrDispatchAnotherWrite() = runTest {
         val intent =
             RunControlIntent(

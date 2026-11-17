@@ -281,16 +281,18 @@ class RunControlsModel(
         val op = Operation(intent)
         writes[intent.id] = op
         viewModelScope.launch {
+            var outcomeTicket: Long? = null
             try {
                 if (retry) {
                     phase(intent, RunControlPhase.Checking)
-                    val ticket = beginOutcomeRead(intent.threadId)
+                    outcomeTicket = beginOutcomeRead(intent.threadId)
                     val read = sync.read(intent.threadId, history.checkpoint(intent.threadId))
                     requireCurrent(op)
                     val evidence = controlEvidence(intent, read.checkpoint)
-                    ticket?.let {
+                    outcomeTicket?.let {
                         publishRecovery(intent.threadId, read.cancellationRecoveryPending, it)
                     }
+                    outcomeTicket = null
                     if (evidence != RunControlEvidence.Eligible) {
                         reconcile(read.checkpoint, setOf(intent.id))
                         return@launch
@@ -323,6 +325,7 @@ class RunControlsModel(
             } catch (error: Exception) {
                 if (current(op)) {
                     report(error)
+                    outcomeTicket?.let { failRecovery(intent.threadId, it) }
                     phase(intent, RunControlPhase.Unknown)
                     history.invalidate(intent.threadId)
                 }
@@ -364,6 +367,7 @@ class RunControlsModel(
                 if (current()) {
                     report(error)
                     if (!current()) return@launch
+                    ticket?.let { failRecovery(threadId, it) }
                     val remaining =
                         mutable.value.journal?.pending.orEmpty().filter { it.id in checkedIds }
                     mutable.value =
@@ -477,6 +481,14 @@ class RunControlsModel(
             mutable.value =
                 mutable.value.copy(
                     recovery = CancellationRecovery(threadId, CancellationReadPhase.Ready, pending)
+                )
+    }
+
+    private fun failRecovery(threadId: String, ticket: Long) {
+        if (current() && ticket == metadataTicket && history.uiState.value.thread?.id == threadId)
+            mutable.value =
+                mutable.value.copy(
+                    recovery = CancellationRecovery(threadId, CancellationReadPhase.Failed)
                 )
     }
 
