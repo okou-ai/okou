@@ -73,27 +73,28 @@ final class ChatWorkProjectionTests: XCTestCase {
     XCTAssertEqual(history.runUsageAnchors, ["run": "late", "other-run": "other"])
   }
 
-  func testFailureOutcomeIsShownOnceAndBecomesReadOnlyAfterTheNextInput() throws {
-    let rows = [
-      input("ask", at: 0), output("progress", at: 10),
-      event(
-        "first-failure", .runFailed, at: 20, error: "First private diagnostic",
-        failureReason: "provider_stream_timeout"),
-      event(
-        "failed", .runFailed, at: 21, error: "Different private diagnostic",
-        failureReason: "provider_stream_timeout"),
-    ]
-    let failed = try project(rows)
-    XCTAssertEqual(failed.messages.filter { $0.role == .system }.map(\.id), ["failed"])
-    XCTAssertEqual(failed.executionState, .failed)
-    let queued = ChatEvent(
-      id: "retry", createdAt: date(30), eventType: .inputPrompt,
-      payload: .init(
-        userMessage: .init(version: 1, parts: [.init(type: "text", text: "Try again")])))
-    let retried = try project(rows + [queued])
-    XCTAssertEqual(retried.messages.filter { $0.role == .system }.map(\.id), ["failed"])
-    XCTAssertNil(retried.latestFailureID)
-    XCTAssertEqual(retried.executionState, .queued)
+  func testOutputErrorsAndRunFailuresStayReadableAfterTheNextInput() throws {
+    let diagnostics: [String?] = [nil, "Connection lost"]
+    for diagnostic in diagnostics {
+      let rows = [
+        input("ask", at: 0), output("progress", at: 10),
+        event("error", .outputError, at: 20, error: "Connection lost"),
+        event(
+          "failed", .runFailed, at: 21, error: diagnostic,
+          failureReason: "provider_stream_timeout"),
+      ]
+      let failed = try project(rows)
+      XCTAssertEqual(failed.messages.filter { $0.role == .system }.map(\.id), ["error", "failed"])
+      XCTAssertEqual(failed.executionState, .failed)
+      let queued = ChatEvent(
+        id: "retry", createdAt: date(30), eventType: .inputPrompt,
+        payload: .init(
+          userMessage: .init(version: 1, parts: [.init(type: "text", text: "Try again")])))
+      let retried = try project(rows + [queued])
+      XCTAssertEqual(retried.messages.filter { $0.role == .system }.map(\.id), ["error", "failed"])
+      XCTAssertNil(retried.latestFailureID)
+      XCTAssertEqual(retried.executionState, .queued)
+    }
   }
 
   func testRecoveredErrorStaysInWorkHistoryAndCancellationHasOneOutcome() throws {
@@ -108,18 +109,17 @@ final class ChatWorkProjectionTests: XCTestCase {
     XCTAssertEqual(recovered.workSections.first?.endTime, date(30))
   }
 
-  func testOutputErrorsAndDistinctFailureCausesArePreserved() throws {
+  func testOutputErrorDetailsAndStructuredRunRecoveryArePreserved() throws {
     let history = try project([
       input("ask", at: 0), output("progress", at: 10),
       event("error", .outputError, at: 20, error: "The provider connection was lost"),
       event(
-        "failed", .runFailed, at: 21, error: "Same private diagnostic",
-        failureReason: "provider_stream_timeout"),
-      event(
-        "reconnect", .runFailed, at: 22, error: "Same private diagnostic",
+        "failed", .runFailed, at: 21, error: "Private diagnostic",
         failureReason: "reconnect_required"),
     ])
-    XCTAssertEqual(history.messages.filter { $0.isError }.map(\.id), ["error", "failed", "reconnect"])
+    XCTAssertEqual(history.messages.filter { $0.isError }.map(\.id), ["error", "failed"])
+    XCTAssertEqual(
+      history.messages.last?.failure?.recovery(personalFramework: nil).kind, .settings)
   }
 
   func testRejectedUserInputNeverBecomesHiddenAssistantWork() throws {

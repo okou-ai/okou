@@ -59,7 +59,8 @@ enum ChatWorkProjection {
         latestStatusIDs = Set(
           trailing.reversed().filter { row in
             guard let message = byID[row.id] else { return false }
-            let outcome = row.eventType == .runFailed ? row.failureReason ?? "unknown" : message.text
+            let outcome =
+              row.eventType == .runFailed ? row.failureReason ?? "unknown" : message.text
             return seen.insert("\(row.eventType.rawValue):\(outcome)").inserted
           }.map(\.id))
         historicalFailureIDs.formUnion(latestStatusIDs.filter { byID[$0]?.failure != nil })
