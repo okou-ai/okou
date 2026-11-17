@@ -644,26 +644,6 @@ export const cronAggregateRunPhaseTimingsContract = c.router({
   },
 });
 
-export const cronMaterializePiResourceIndexesContract = c.router({
-  materialize: {
-    method: "GET",
-    path: "/api/cron/materialize-pi-resource-indexes",
-    headers: authHeadersSchema,
-    responses: {
-      200: object({
-        success: literal(true),
-        claimed: number().int().nonnegative(),
-        ready: number().int().nonnegative(),
-        unindexable: number().int().nonnegative(),
-        retried: number().int().nonnegative(),
-        stale: number().int().nonnegative(),
-      }),
-      401: apiErrorSchema,
-    },
-    summary: "Materialize a bounded batch of immutable Pi resource indexes",
-  },
-});
-
 export type CronProcessUsageEventsContract =
   typeof cronProcessUsageEventsContract;
 export type CronCompactChatThreadSnapshotsContract =

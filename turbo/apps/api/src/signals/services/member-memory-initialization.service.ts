@@ -1,22 +1,17 @@
 import { computeContentHashFromHashes } from "@okouai/api-contracts/contracts/storage-content-hash";
-import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
-import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { command } from "ccstate";
-import { and, eq, isNull, sql } from "drizzle-orm";
-
-import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
-import { piResourceProjectionValues } from "./pi-resource-version-index.service";
-import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
-import { PI_RESOURCE_EXTRACTOR_VERSION } from "../../lib/pi-resource-index";
-import { newStorageS3Location } from "./storage-s3-prefix.utils";
-import type { MemberMemoryOwner } from "./member-memory";
 import {
   memberMemories,
   memoryVersions,
 } from "@okouai/db/schema/member-memory";
+import { command } from "ccstate";
+import { isNull, sql } from "drizzle-orm";
 
-/** Establish the member's memory before any run can require its mount. */
+import { nowDate } from "../../lib/time";
+import { writeDb$ } from "../external/db";
+import type { MemberMemoryOwner } from "./member-memory";
+import { newStorageS3Location } from "./storage-s3-prefix.utils";
+
+/** Establish the member's Memory and empty revision in one statement. */
 export const initializeMemberMemory$ = command(
   async (
     { set },
@@ -30,113 +25,41 @@ export const initializeMemberMemory$ = command(
       location.storageId,
       [],
     );
-    const projection = piResourceProjectionValues(
-      { schemaVersion: 1, files: [] },
-      0,
-      nowDate(),
-    );
     const updatedAt = nowDate();
-    // The conflict branch hashes the incumbent UUID and retains its prefix.
-    // A published HEAD accepts no row, so every dependent write is a no-op.
+    // The conflict branch uses the incumbent UUID and prefix. A published HEAD
+    // accepts no row, so replayed initialization cannot replace its content.
     const initialized = db
-      .insert(storages)
+      .insert(memberMemories)
       .values({
         id: location.storageId,
         orgId: identity.orgId,
         userId: identity.userId,
-        name: MEMORY_ARTIFACT_NAME,
-        s3Prefix: location.s3Prefix,
+        objectPrefix: location.s3Prefix,
         headVersionId: candidateVersionId,
         updatedAt,
       })
       .onConflictDoUpdate({
-        target: [storages.orgId, storages.userId, storages.name],
+        target: [memberMemories.orgId, memberMemories.userId],
         set: {
-          headVersionId: sql`encode(sha256(convert_to('storage:' || ${storages.id}::text || chr(10), 'UTF8')), 'hex')`,
-          size: 0,
+          headVersionId: sql`encode(sha256(convert_to('storage:' || ${memberMemories.id}::text || chr(10), 'UTF8')), 'hex')`,
+          contentSize: 0,
           fileCount: 0,
           updatedAt,
         },
-        setWhere: isNull(storages.headVersionId),
+        setWhere: isNull(memberMemories.headVersionId),
       })
       .returning()
       .getSQL();
-    // Drizzle INSERT SELECT requires every table column; these dependent partial
-    // inserts keep omitted fields on their database defaults. Index rows
-    // depend on accepted initialization even when the immutable version exists.
-    const statement = sql`WITH initialized AS (${initialized}), registered AS (
-      INSERT INTO ${storageVersions}
-        (id, storage_id, s3_key, size, archive_size, file_count, message, created_by)
-      SELECT initialized.head_version_id, initialized.id,
-        initialized.s3_prefix || '/' || initialized.head_version_id,
-        ${sql.param(0, storageVersions.size)},
-        ${sql.param(0, storageVersions.archiveSize)},
-        ${sql.param(0, storageVersions.fileCount)},
-        ${sql.param("Initial empty artifact", storageVersions.message)},
-        ${sql.param(identity.userId, storageVersions.createdBy)} FROM initialized
-      -- Return the incumbent immutable row without changing its provenance.
-      ON CONFLICT (id) DO UPDATE SET id=excluded.id
-      RETURNING *
-    ), initialized_memory AS (
-      INSERT INTO ${memberMemories}
-        (id,org_id,user_id,object_prefix,content_size,file_count,head_version_id,created_at,updated_at)
-      SELECT id,org_id,user_id,s3_prefix,0,0,head_version_id,created_at,updated_at FROM initialized
-      ON CONFLICT (org_id,user_id) DO UPDATE SET
-        head_version_id=encode(sha256(convert_to('storage:' || ${memberMemories.id}::text || chr(10),'UTF8')),'hex'),
-        content_size=0,file_count=0,updated_at=excluded.updated_at
-      WHERE ${memberMemories.headVersionId} IS NULL
-      RETURNING *
-    ), registered_memory AS (
+    const statement = sql`WITH initialized AS (${initialized})
       INSERT INTO ${memoryVersions}
         (id,memory_id,object_prefix,content_size,archive_size,file_count,message,created_by)
-      SELECT m.head_version_id,m.id,m.object_prefix || '/' || m.head_version_id,0,0,0,
-        ${sql.param("Initial empty artifact", memoryVersions.message)},${sql.param(identity.userId, memoryVersions.createdBy)}
-      FROM initialized_memory AS m
-      ON CONFLICT (id) DO UPDATE SET id=excluded.id RETURNING id
-    ) INSERT INTO ${piResourceVersionIndexes}
-        (storage_version_id, extractor_version, status, projection,
-         projection_hash, source_archive_size, lease_id, lease_expires_at, updated_at)
-      SELECT initialized.head_version_id,
-        ${sql.param(PI_RESOURCE_EXTRACTOR_VERSION, piResourceVersionIndexes.extractorVersion)},
-        ${sql.param(projection.status, piResourceVersionIndexes.status)},
-        ${sql.param(projection.projection, piResourceVersionIndexes.projection)},
-        ${sql.param(projection.projectionHash, piResourceVersionIndexes.projectionHash)},
-        ${sql.param(projection.sourceArchiveSize, piResourceVersionIndexes.sourceArchiveSize)},
-        ${sql.param(projection.leaseId, piResourceVersionIndexes.leaseId)},
-        ${sql.param(projection.leaseExpiresAt, piResourceVersionIndexes.leaseExpiresAt)},
-        ${sql.param(projection.updatedAt, piResourceVersionIndexes.updatedAt)} FROM initialized
-      ON CONFLICT (storage_version_id, extractor_version) DO UPDATE SET
-        status = EXCLUDED.status, projection = EXCLUDED.projection,
-        projection_hash = EXCLUDED.projection_hash,
-        source_archive_size = EXCLUDED.source_archive_size,
-        lease_id = EXCLUDED.lease_id, lease_expires_at = EXCLUDED.lease_expires_at,
-        updated_at = EXCLUDED.updated_at
-`;
+      SELECT initialized.head_version_id,initialized.id,
+        initialized.object_prefix || '/' || initialized.head_version_id,0,0,0,
+        ${sql.param("Initial empty artifact", memoryVersions.message)},
+        ${sql.param(identity.userId, memoryVersions.createdBy)} FROM initialized
+      ON CONFLICT (id) DO UPDATE SET id=excluded.id`;
     signal.throwIfAborted();
     await db.execute(statement);
-    signal.throwIfAborted();
-    // A concurrent B initializer can win after this statement's snapshot.
-    // Re-read Memory authority; a missing migrated root must never bootstrap
-    // itself from a published legacy HEAD. B/C identity creation still shares
-    // the incumbent legacy member key; remove that bridge after #47043 Gate 2.
-    const [memory] = await db
-      .select({ headVersionId: memberMemories.headVersionId })
-      .from(memberMemories)
-      .where(
-        and(
-          eq(memberMemories.orgId, identity.orgId),
-          eq(memberMemories.userId, identity.userId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!memory?.headVersionId) {
-      throw new Error(
-        "Member Memory authority is unavailable after initialization",
-      );
-    }
-    // A completed statement can remain committed when cancellation skips the
-    // caller's subsequent work; this is not transport cancellation or rollback.
     signal.throwIfAborted();
   },
 );

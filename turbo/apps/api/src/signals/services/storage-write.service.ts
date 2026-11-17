@@ -77,10 +77,6 @@ interface PrepareStorageInput extends PrepareStorageUploadInput {
   readonly storageId: string;
 }
 
-interface PrepareStorageForStorageInput extends PrepareStorageUploadInput {
-  readonly storageId: string;
-}
-
 interface CommitStorageInput extends CommitStorageUploadInput {
   readonly auth: SandboxAuth;
   readonly storageId: string;
@@ -152,34 +148,15 @@ const readMountedWritebackStorage$ = command(
     args: { readonly auth: SandboxAuth; readonly storageId: string },
     signal: AbortSignal,
   ): Promise<MountedWritebackStorage | StorageErrorResponse> => {
-    // One statement observes run authority and its first matching writeback mount
-    // together with the exact Storage identity. Ordinality preserves Array.find.
+    // Observe Run authority and Memory in one statement. Retained non-Memory
+    // mounts resolve separately, so Memory never queries the legacy registry.
     const [mounted] = await get(db$)
       .select({
         runStatus: agentRuns.status,
         storageMounts: agentRuns.storageMounts,
-        storage: storageRowSelection(),
         memory: memberMemories,
       })
       .from(agentRuns)
-      .leftJoin(
-        storages,
-        and(
-          eq(storages.id, args.storageId),
-          sql`EXISTS (
-      SELECT 1 FROM (
-        SELECT entry.value FROM jsonb_array_elements(${agentRuns.storageMounts}) WITH ORDINALITY AS entry(value, position)
-        WHERE entry.value->>'storageId' = ${args.storageId}
-          AND entry.value->'writeback' = 'true'::jsonb
-        ORDER BY entry.position LIMIT 1
-      ) AS mount
-      WHERE mount.value->>'orgId' = ${storages.orgId}
-        AND mount.value->>'userId' = ${storages.userId}
-        AND mount.value->>'name' = ${storages.name}
-        AND NOT (mount.value->>'name'=${MEMORY_ARTIFACT_NAME} AND mount.value->>'userId'<>'__org__')
-    )`,
-        ),
-      )
       .leftJoin(
         memberMemories,
         and(
@@ -204,21 +181,39 @@ const readMountedWritebackStorage$ = command(
       return notFound("Agent run not found");
     }
     const mount = mounted.storageMounts?.find((entry) => {
-      return entry.storageId === args.storageId && entry.writeback;
+      return entry.storageId === args.storageId && entry.writeback === true;
     });
-    const memoryOwned = mount !== undefined && isMemberMemoryIdentity(mount);
-    if (memoryOwned && !mounted.memory) {
-      throw new Error("Accepted member Memory authority is unavailable");
+    if (!mount) {
+      return notFound("Writeback storage not found");
     }
-    const storage =
-      memoryOwned && mounted.memory
-        ? memberMemoryStorageRecord(mounted.memory)
-        : mounted.storage;
+    if (isMemberMemoryIdentity(mount)) {
+      if (!mounted.memory) {
+        throw new Error("Accepted member Memory authority is unavailable");
+      }
+      return {
+        runStatus: mounted.runStatus,
+        storage: memberMemoryStorageRecord(mounted.memory),
+        capturedVersionId: mount.version,
+      };
+    }
+    const [storage] = await get(db$)
+      .select(storageRowSelection())
+      .from(storages)
+      .where(
+        and(
+          eq(storages.id, args.storageId),
+          eq(storages.orgId, mount.orgId),
+          eq(storages.userId, mount.userId),
+          eq(storages.name, mount.name),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
     return storage
       ? {
           runStatus: mounted.runStatus,
           storage,
-          capturedVersionId: mount?.version,
+          capturedVersionId: mount.version,
         }
       : notFound("Writeback storage not found");
   },
@@ -263,32 +258,38 @@ const findStorageVersion$ = command(
   },
 );
 
-const findStorageById$ = command(
+/** Refresh the already-authorized owner's row without probing another registry. */
+const refreshOwnedStorage$ = command(
   async (
     { get },
-    args: {
-      readonly storageId: string;
-    },
+    owner: StorageRow,
     signal: AbortSignal,
   ): Promise<StorageRow | undefined> => {
-    const [row] = await get(db$)
-      .select({ memory: memberMemories, storage: storageRowSelection() })
-      .from(sql`(SELECT ${args.storageId}::uuid AS id) AS requested_root`)
-      .leftJoin(memberMemories, eq(memberMemories.id, args.storageId))
-      .leftJoin(
-        storages,
+    const db = get(db$);
+    if (isMemberMemoryIdentity(owner)) {
+      const [memory] = await db
+        .select()
+        .from(memberMemories)
+        .where(eq(memberMemories.id, owner.id))
+        .limit(1);
+      signal.throwIfAborted();
+      return memory ? memberMemoryStorageRecord(memory) : undefined;
+    }
+    const [storage] = await db
+      .select(storageRowSelection())
+      .from(storages)
+      .where(
         and(
-          eq(storages.id, args.storageId),
+          eq(storages.id, owner.id),
           or(
             ne(storages.name, MEMORY_ARTIFACT_NAME),
             eq(storages.userId, "__org__"),
           ),
         ),
-      );
+      )
+      .limit(1);
     signal.throwIfAborted();
-    return row?.memory
-      ? memberMemoryStorageRecord(row.memory)
-      : (row?.storage ?? undefined);
+    return storage;
   },
 );
 
@@ -577,7 +578,8 @@ const commitVerifiedStorageVersion$ = command(
 const prepareStorageUploadForStorage$ = command(
   async (
     { set },
-    args: PrepareStorageForStorageInput,
+    args: PrepareStorageUploadInput,
+    owner: StorageRow,
     signal: AbortSignal,
   ): Promise<PrepareStorageResponse> => {
     const declaredSize = totalSize(args.files);
@@ -587,11 +589,7 @@ const prepareStorageUploadForStorage$ = command(
       );
     }
 
-    const storage = await set(
-      findStorageById$,
-      { storageId: args.storageId },
-      signal,
-    );
+    const storage = await set(refreshOwnedStorage$, owner, signal);
     signal.throwIfAborted();
 
     if (!storage) {
@@ -633,13 +631,10 @@ const commitStorageUploadForStorage$ = command(
   async (
     { set },
     args: CommitStorageForStorageInput,
+    owner: StorageRow,
     signal: AbortSignal,
   ): Promise<CommitStorageResponse> => {
-    const storage = await set(
-      findStorageById$,
-      { storageId: args.storageId },
-      signal,
-    );
+    const storage = await set(refreshOwnedStorage$, owner, signal);
     signal.throwIfAborted();
 
     if (!storage) {
@@ -708,7 +703,6 @@ export const prepareMemberMemoryWriteback$ = command(
     const response = await set(
       prepareStorageUploadForStorage$,
       {
-        storageId: args.storageId,
         files: args.files,
         force: args.force,
         runId: args.runId,
@@ -716,6 +710,7 @@ export const prepareMemberMemoryWriteback$ = command(
         baseVersion: args.baseVersion,
         changes: args.changes,
       },
+      mounted.storage,
       signal,
     );
     signal.throwIfAborted();
@@ -852,7 +847,12 @@ export const commitMemberMemoryWriteback$ = command(
         return notFound("Active agent run not found");
       }
     }
-    const response = await set(commitStorageUploadForStorage$, input, signal);
+    const response = await set(
+      commitStorageUploadForStorage$,
+      input,
+      mounted.storage,
+      signal,
+    );
     return terminalRetry && response.status !== 200
       ? notFound("Active agent run not found")
       : response;

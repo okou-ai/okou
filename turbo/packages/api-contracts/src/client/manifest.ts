@@ -253,7 +253,6 @@ export const clientDescriptorManifest = [
       "cronConnectorOauthStateCleanupContract",
       "cronDrainEmailOutboxContract",
       "cronExecuteWorkflowAutomationsContract",
-      "cronMaterializePiResourceIndexesContract",
       "cronMonitorChatEventQueueContract",
       "cronOfficialWorkflowCatalogContract",
       "cronProcessBackgroundJobsContract",

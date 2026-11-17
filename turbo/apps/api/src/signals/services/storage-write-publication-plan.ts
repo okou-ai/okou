@@ -6,7 +6,6 @@ import {
 } from "@okouai/db/schema/member-memory";
 import type { FileEntryWithHash } from "@okouai/api-contracts/contracts/storage-content-hash";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
 import { and, eq, getTableColumns, is, SQL, sql } from "drizzle-orm";
@@ -34,7 +33,6 @@ import {
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { conflict, notFound } from "../../lib/error";
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
-import { PI_RESOURCE_EXTRACTOR_VERSION } from "../../lib/pi-resource-index";
 import {
   sandboxStorageRunCondition,
   storageCommitLineageCondition,
@@ -91,7 +89,6 @@ export const storageCommitPublicationRow = object({
   version: versionRow.nullable(),
   admitted: boolean(),
   inserted: boolean(),
-  indexed: boolean(),
   memoryConflict: boolean(),
 });
 
@@ -415,42 +412,25 @@ function storageCommitLockedSelection(input: CommitStorageForStorageInput) {
 function storageCommitVersionInsert(
   input: CommitStorageForStorageInput,
   verification: VerifiedStorageCommit,
-  mirrorSource?: SQL,
 ) {
   return insertSelectedStorageSql(
     storageVersions,
-    mirrorSource
-      ? {
-          id: sql`v.id`,
-          storageId: sql`v."storageId"`,
-          s3Key: sql`v."s3Key"`,
-          size: sql`v.size`,
-          archiveSize: sql`v."archiveSize"`,
-          fileCount: sql`v."fileCount"`,
-          message: sql`v.message`,
-          createdBy: sql`v."createdBy"`,
-          createdAt: sql`v."createdAt"`,
-        }
-      : {
-          id: input.versionId,
-          storageId: input.storageId,
-          s3Key: verification.s3Key,
-          size: totalSize(input.files),
-          archiveSize: verification.archiveSize,
-          fileCount: input.files.length,
-          message: input.message ?? null,
-          createdBy: input.runId ? "agent" : "user",
-        },
-    mirrorSource ??
-      sql`locked_storage WHERE NOT EXISTS(SELECT 1 FROM existing_version)`,
+    {
+      id: input.versionId,
+      storageId: input.storageId,
+      s3Key: verification.s3Key,
+      size: totalSize(input.files),
+      archiveSize: verification.archiveSize,
+      fileCount: input.files.length,
+      message: input.message ?? null,
+      createdBy: input.runId ? "agent" : "user",
+    },
+    sql`locked_storage WHERE NOT EXISTS(SELECT 1 FROM existing_version)`,
     getTableColumns(storageVersions),
-    mirrorSource ? sql`(id) DO UPDATE SET id=excluded.id` : sql`do nothing`,
+    sql`do nothing`,
   );
 }
-function storageCommitLineageInsert(
-  input: CommitStorageForStorageInput,
-  mirrorSource?: SQL,
-) {
+function storageCommitLineageInsert(input: CommitStorageForStorageInput) {
   const auth = input.sandboxAuth,
     parent = input.parentVersionId;
   if (!auth || !parent) {
@@ -459,59 +439,15 @@ function storageCommitLineageInsert(
   }
   return insertSelectedStorageSql(
     storageVersionLineage,
-    mirrorSource
-      ? {
-          id: sql`l.id`,
-          storageId: sql`l."storageId"`,
-          versionId: sql`l."versionId"`,
-          parentVersionId: sql`l."parentVersionId"`,
-          runId: sql`l."runId"`,
-          createdAt: sql`l."createdAt"`,
-        }
-      : {
-          storageId: input.storageId,
-          versionId: input.versionId,
-          parentVersionId: parent,
-          runId: auth.runId,
-        },
-    mirrorSource ??
-      sql`locked_storage AS s CROSS JOIN published_version CROSS JOIN (SELECT count(*) FROM published_head) AS completed_head WHERE ${memoryPublicationAllowed(input)}`,
+    {
+      storageId: input.storageId,
+      versionId: input.versionId,
+      parentVersionId: parent,
+      runId: auth.runId,
+    },
+    sql`locked_storage AS s CROSS JOIN published_version CROSS JOIN (SELECT count(*) FROM published_head) AS completed_head WHERE ${memoryPublicationAllowed(input)}`,
     getTableColumns(storageVersionLineage),
   );
-}
-function storageCommitIndexInsert(changedAt: Date, mirrorOnly = false) {
-  const columns = getTableColumns(piResourceVersionIndexes);
-  const fields = Object.entries(columns).map(([name, column]) => {
-    if (name === "storageVersionId") {
-      return sql`v.id`;
-    }
-    if (name === "extractorVersion") {
-      return sql.param(PI_RESOURCE_EXTRACTOR_VERSION, column);
-    }
-    if (name === "sourceArchiveSize") {
-      return sql`v."archiveSize"`;
-    }
-    if (is(column.default, SQL)) {
-      return column.default;
-    }
-    return sql.param(column.default ?? null, column);
-  });
-  return new PgDialect().buildInsertQuery({
-    table: piResourceVersionIndexes,
-    select: true,
-    values: sql`SELECT ${sql.join(fields, sql`, `)} FROM published_version AS v CROSS JOIN (SELECT count(*) FROM published_head) AS completed_head CROSS JOIN (SELECT count(*) FROM recorded_lineage) AS completed_lineage WHERE ${mirrorOnly ? sql`EXISTS (SELECT 1 FROM legacy_version)` : sql`true`}`,
-    onConflict: sql`
-    (storage_version_id,extractor_version) DO UPDATE
-      SET status='pending',projection=NULL,projection_hash=NULL,source_archive_size=excluded.source_archive_size,lease_id=NULL,lease_expires_at=NULL,available_at=${sql.param(changedAt, piResourceVersionIndexes.availableAt)},attempt_count=0,updated_at=${sql.param(changedAt, piResourceVersionIndexes.updatedAt)}
-      WHERE ${piResourceVersionIndexes.sourceArchiveSize} IS DISTINCT FROM excluded.source_archive_size
-  `,
-    returning: [
-      {
-        path: ["id"],
-        field: sql`${piResourceVersionIndexes.storageVersionId}`.as("id"),
-      },
-    ],
-  });
 }
 
 function headTransition(input: CommitStorageForStorageInput) {
@@ -523,7 +459,6 @@ function headTransition(input: CommitStorageForStorageInput) {
 function legacyHeadStatement(
   input: CommitStorageForStorageInput,
   changedAt: Date,
-  mirrorOnly = false,
 ) {
   return new PgDialect().buildUpdateQuery({
     table: storages,
@@ -534,14 +469,13 @@ function legacyHeadStatement(
       updatedAt: sql.param(changedAt, storages.updatedAt),
     },
     from: sql`locked_storage AS s CROSS JOIN published_version AS v`,
-    where: sql`${storages.id}=s.id AND ${headTransition(input)}
-      AND ${mirrorOnly ? sql`EXISTS (SELECT 1 FROM published_head) AND EXISTS (SELECT 1 FROM locked_legacy_storage)` : sql`true`}`,
+    where: sql`${storages.id}=s.id AND ${headTransition(input)}`,
     joins: [],
     returning: [{ path: ["id"], field: storages.id }],
   });
 }
 
-/** One statement publishes the version, HEAD, lineage and index work together. */
+/** One statement publishes the version, HEAD and lineage together. */
 function legacyStorageCommitPublicationStatement(
   input: CommitStorageForStorageInput,
   verification: VerifiedStorageCommit,
@@ -558,8 +492,7 @@ function legacyStorageCommitPublicationStatement(
       FROM locked_storage)
       UNION ALL
       SELECT *
-      FROM inserted_version), published_head AS (${head}), recorded_lineage AS (${storageCommitLineageInsert(input)}),
-      enqueued_index AS (${storageCommitIndexInsert(changedAt)})
+      FROM inserted_version), published_head AS (${head}), recorded_lineage AS (${storageCommitLineageInsert(input)})
       SELECT (SELECT row_to_json(r)
       FROM commit_run AS r) AS run, (SELECT row_to_json(s)
       FROM initial_storage AS s) AS storage, (SELECT row_to_json(v)
@@ -568,8 +501,7 @@ function legacyStorageCommitPublicationStatement(
       OR EXISTS(SELECT 1
       FROM admitted_storage
       WHERE terminal) AS admitted, EXISTS(SELECT 1
-      FROM inserted_version) AS inserted, (SELECT count(*)
-      FROM enqueued_index)>=0 AS indexed,
+      FROM inserted_version) AS inserted,
       EXISTS (SELECT 1 FROM locked_storage AS s WHERE NOT ${memoryPublicationAllowed(input)}) AS "memoryConflict"
   `;
 }
@@ -739,9 +671,7 @@ function memoryLineageStatement(input: CommitStorageForStorageInput) {
   );
 }
 
-/** Protocol C: Memory decides; legacy publication is only a B/C compatibility mirror.
- * Remove the legacy boundary after #47043 Gate 2 excludes B readers/writers and rollback.
- */
+/** Protocol D publishes only Memory-owned state under the Run/root boundary. */
 function memberMemoryCommitPublicationStatement(
   input: CommitStorageForStorageInput,
   verification: VerifiedStorageCommit,
@@ -754,23 +684,16 @@ function memberMemoryCommitPublicationStatement(
       and(
         eq(memberMemories.id, input.storageId),
         sql`EXISTS (SELECT 1 FROM admitted_storage AS s WHERE NOT s.terminal AND s.id=${memberMemories.id}
-        AND s."orgId"=${memberMemories.orgId} AND s."userId"=${memberMemories.userId})
-        AND (SELECT count(*) FROM locked_legacy_storage)>=0`,
+        AND s."orgId"=${memberMemories.orgId} AND s."userId"=${memberMemories.userId})`,
       ),
     )
     .limit(1)
     .for("update", { of: memberMemories })
     .getSQL();
-  const consistent = sql`v."storageId"=s.id AND v."s3Key"=s."s3Prefix" || '/' || v.id AND (
-    NOT EXISTS (SELECT 1 FROM locked_legacy_storage) OR EXISTS (
-      SELECT 1 FROM legacy_version AS l CROSS JOIN locked_legacy_storage AS c WHERE
-      (l.id,l."storageId",l."s3Key",l.size,l."archiveSize",l."fileCount",l.message,l."createdBy",l."createdAt")
-        IS NOT DISTINCT FROM (v.id,v."storageId",v."s3Key",v.size,v."archiveSize",v."fileCount",v.message,v."createdBy",v."createdAt")
-      AND (c.id,c."orgId",c."userId",c."s3Prefix",c."createdAt")
-        IS NOT DISTINCT FROM (s.id,s."orgId",s."userId",s."s3Prefix",s."createdAt")))`;
+  const consistent = sql`v."storageId"=s.id AND v."s3Key"=s."s3Prefix" || '/' || v.id`;
   const advance = headTransition(input);
-  // An inconsistent mirror violates the required prefix even on a retained
-  // candidate, rolling back the complete statement instead of partial success.
+  // An invalid candidate locator must fail the complete statement, including
+  // registration and lineage, even when the candidate cannot advance HEAD.
   const head = new PgDialect().buildUpdateQuery({
     table: memberMemories,
     set: {
@@ -780,33 +703,26 @@ function memberMemoryCommitPublicationStatement(
       fileCount: sql`CASE WHEN ${advance} THEN v."fileCount" ELSE s."fileCount" END`,
       updatedAt: sql`CASE WHEN ${advance} THEN ${sql.param(changedAt, memberMemories.updatedAt)} ELSE s."updatedAt" END`,
     },
-    from: sql`locked_storage AS s CROSS JOIN published_version AS v CROSS JOIN (SELECT count(*) FROM legacy_version) AS completed_mirror`,
+    from: sql`locked_storage AS s CROSS JOIN published_version AS v`,
     where: sql`${memberMemories.id}=s.id AND (${advance} OR NOT (${consistent}))`,
     joins: [],
     returning: [{ path: ["id"], field: memberMemories.id }],
   });
   return sql`WITH ${storageCommitAdmission(input, verification, true)},
-    locked_legacy_storage AS MATERIALIZED (${storageCommitLockedSelection(input)}),
     locked_storage AS MATERIALIZED (${locked}),
     inserted_version AS (${memoryCandidateStatement(input, verification)}),
     published_version AS MATERIALIZED (
       SELECT v.*,false AS "newlyInserted" FROM existing_version AS v
       WHERE EXISTS (SELECT 1 FROM admitted_storage WHERE terminal) OR EXISTS (SELECT 1 FROM locked_storage)
       UNION ALL SELECT * FROM inserted_version
-    ), legacy_version AS (${storageCommitVersionInsert(input, verification, sql`published_version AS v WHERE EXISTS (SELECT 1 FROM locked_legacy_storage)`)}),
-    published_head AS (${head}),
-    legacy_published_head AS (${legacyHeadStatement(input, changedAt, true)}),
-    native_lineage AS (${memoryLineageStatement(input)}),
-    recorded_lineage AS (${storageCommitLineageInsert(input, sql`native_lineage AS l WHERE EXISTS (SELECT 1 FROM locked_legacy_storage)`)}),
-    enqueued_index AS (${storageCommitIndexInsert(changedAt, true)})
+    ), published_head AS (${head}),
+    recorded_lineage AS (${memoryLineageStatement(input)})
     SELECT (SELECT row_to_json(r) FROM commit_run AS r) AS run,
       (SELECT row_to_json(s) FROM initial_storage AS s) AS storage,
       (SELECT row_to_json(v) FROM published_version AS v) AS version,
       EXISTS (SELECT 1 FROM locked_storage) OR EXISTS (SELECT 1 FROM admitted_storage WHERE terminal) AS admitted,
       EXISTS (SELECT 1 FROM inserted_version WHERE "newlyInserted") AS inserted,
-      (SELECT count(*) FROM enqueued_index)>=0 AS indexed,
-      EXISTS (SELECT 1 FROM locked_storage AS s WHERE NOT ${memoryPublicationAllowed(input)}) AS "memoryConflict",
-      (SELECT count(*) FROM legacy_published_head)>=0 AS "legacyMirrored"
+      EXISTS (SELECT 1 FROM locked_storage AS s WHERE NOT ${memoryPublicationAllowed(input)}) AS "memoryConflict"
   `;
 }
 

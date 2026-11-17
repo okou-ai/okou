@@ -15,7 +15,6 @@ import {
   cronDrainEmailOutboxContract,
   cronExecuteWorkflowAutomationsContract,
   cronMonitorChatEventQueueContract,
-  cronMaterializePiResourceIndexesContract,
   cronOfficialWorkflowCatalogContract,
   cronProcessBackgroundJobsContract,
   cronProcessUsageEventsContract,
@@ -161,10 +160,6 @@ const expectedVercelCrons = [
   },
   {
     path: cronPruneStoragePresignedUrlsContract.prune.path,
-    schedule: "* * * * *",
-  },
-  {
-    path: cronMaterializePiResourceIndexesContract.materialize.path,
     schedule: "* * * * *",
   },
   {
