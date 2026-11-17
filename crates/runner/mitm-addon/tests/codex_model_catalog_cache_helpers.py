@@ -151,10 +151,9 @@ async def finish_response(flow: http.HTTPFlow) -> dict[str, object]:
     if callable(flow.response.stream):
         stream = response_stream(flow)
         split = len(wire_body) // 2
-        assert stream(wire_body[:split]) == wire_body[:split]
-        await mitm_addon.responseinspection(flow)
-        assert stream(wire_body[split:]) == wire_body[split:]
-        await mitm_addon.responseinspection(flow)
+        for chunk in (wire_body[:split], wire_body[split:]):
+            assert stream(chunk) == chunk
+            await mitm_addon.responseinspection(flow)
     finalization = catalog_cache.finalize_response(flow)
     if finalization is not None:
         await finalization

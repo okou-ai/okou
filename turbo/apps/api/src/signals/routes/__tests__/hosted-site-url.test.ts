@@ -8,6 +8,7 @@ import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createHostBddApi } from "./helpers/api-bdd-host";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createRouteMocks } from "./helpers/route-test";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 
 const context = testContext();
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
@@ -25,6 +26,7 @@ function client(user: ApiTestUser) {
 }
 async function publish() {
   const owner = createBddApi(context).user();
+  await createRunsApi(context).grantProEntitlement(owner);
   const api = createHostBddApi(context);
   api.captureHostedSitesS3();
   const name = `url-${randomUUID().slice(0, 8)}`;
@@ -210,6 +212,7 @@ test("rejects stale edits and reserves previous published names for their owner"
     [409],
   );
   const other = createBddApi(context).user();
+  await createRunsApi(context).grantProEntitlement(other);
   const upload = await api.prepareHostedSite(other, {
     site: name,
     title: name,

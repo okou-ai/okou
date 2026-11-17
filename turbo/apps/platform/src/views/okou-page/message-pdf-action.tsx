@@ -22,9 +22,13 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
 export function MessagePdfAction({
+  threadId,
+  eventIds,
   contents,
   trees,
 }: {
+  readonly threadId: string;
+  readonly eventIds: readonly string[];
   readonly contents: readonly string[];
   readonly trees: readonly Root[];
 }) {
@@ -87,7 +91,7 @@ export function MessagePdfAction({
                       new GenerateMessagePdfEvent((ownerSignal) => {
                         detach(
                           generate(
-                            { contents, trees, trigger },
+                            { threadId, eventIds, contents, trees, trigger },
                             AbortSignal.any([pageSignal, ownerSignal]),
                           ),
                           Reason.DomCallback,

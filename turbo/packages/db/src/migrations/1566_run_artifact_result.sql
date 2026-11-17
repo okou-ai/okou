@@ -1,0 +1,1 @@
+ALTER TABLE "agent_runs" ADD COLUMN "artifact_result" varchar(20);

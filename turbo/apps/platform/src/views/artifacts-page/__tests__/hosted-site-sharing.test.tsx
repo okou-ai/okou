@@ -55,7 +55,6 @@ async function openSite({
   sidebar = false,
   shareRows = false,
   refined = false,
-  paywall = false,
 } = {}) {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
@@ -86,7 +85,6 @@ async function openSite({
       [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
       [FeatureSwitchKey.HostedSiteShareRows]: shareRows,
       [FeatureSwitchKey.ArtifactPreviewToolbar]: refined,
-      [FeatureSwitchKey.FreePlanArtifactPaywall]: paywall,
     },
   });
   click(await findArtifactAction("Weekly report"));
@@ -227,7 +225,7 @@ test("on the free plan, Customize URL and hiding the banner open the plans inste
     updates.push("banner");
     return respond(200, { siteId, showBanner: false, revision: null });
   });
-  await openSite({ shareRows: true, paywall: true });
+  await openSite({ shareRows: true });
   await openShare();
   await waitFor(() => {
     expect(
@@ -254,7 +252,7 @@ test("on the free plan, turning off the banner opens the plans and keeps it show
     updates.push(body.showBanner);
     return respond(200, { siteId, showBanner: false, revision: null });
   });
-  await openSite({ paywall: true });
+  await openSite();
   await openShare();
   const banner = await screen.findByRole("switch", {
     name: "Show Okou banner",
@@ -280,7 +278,7 @@ test("on the free plan, Download opens the plans without fetching the site", asy
     listed.push(params.publicSlug);
     return respond(404, { error: { code: "NOT_FOUND", message: "missing" } });
   });
-  await openSite({ paywall: true });
+  await openSite();
   click(getButtonByName("Download options"));
   const menu = await screen.findByRole("menu");
   const download = queryAllByRoleFast("menuitem", menu).find((item) => {

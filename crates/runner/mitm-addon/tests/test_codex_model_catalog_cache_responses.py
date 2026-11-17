@@ -54,8 +54,8 @@ async def test_catalog_skips_unrelated_header_name_in_hook_and_worker(real_flow,
     mitm_addon.responseheaders(owner)
     hook_calls = name.lower_calls
     stream = response_stream(owner)
-    assert stream(wire_body[:3]) == wire_body[:3]
-    assert stream(wire_body[3:]) == wire_body[3:]
+    for chunk in (wire_body[:3], wire_body[3:]):
+        assert stream(chunk) == chunk
     finalization = catalog_cache.finalize_response(owner)
     assert finalization is not None
     await finalization

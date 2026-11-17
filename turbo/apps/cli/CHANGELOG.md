@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.30.8](https://github.com/okou-ai/okou/compare/cli-v10.30.7...cli-v10.30.8) (2026-11-17)
+
+
+### Bug Fixes
+
+* **phone-use:** remove local action review guidance ([#48248](https://github.com/okou-ai/okou/issues/48248)) ([72ef73a](https://github.com/okou-ai/okou/commit/72ef73aec992722ecd4b4173a02113a3e4f48327))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.82.0
+    * @okouai/core bumped to 8.847.6
+    * @okouai/pi-agent-runtime bumped to 1.51.148
+
 ## [10.30.7](https://github.com/okou-ai/okou/compare/cli-v10.30.6...cli-v10.30.7) (2026-11-17)
 
 

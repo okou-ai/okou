@@ -134,6 +134,10 @@ export const clientDescriptorManifest = [
     contracts: ["chatThreadActivitySummaryContract"],
   },
   {
+    module: "chat-thread-pdf-filename",
+    contracts: ["chatThreadPdfFilenameContract"],
+  },
+  {
     module: "chat-threads",
     contracts: [
       "chatSearchContract",

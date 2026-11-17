@@ -24,7 +24,7 @@ const journal = object({
   ),
 );
 const migration = journal.entries.find((entry) => {
-  return entry.tag === "1566_copy_inactive_single_agent_pilot";
+  return entry.tag === "1567_copy_inactive_single_agent_pilot";
 });
 assert.ok(migration);
 const migrationSql = await readFile(

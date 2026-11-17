@@ -819,7 +819,7 @@ const storedSkillBundleSchema = contentBundleSchema
 /**
  * Complete API-owned runtime preparation, assembled before direct dispatch.
  */
-const preparedExecutionContextBaseSchema = object({
+const preparedExecutionContextObjectSchema = object({
   // Exact Official content is frozen at admission.
   officialWorkflowBundles: array(storedSkillBundleSchema),
   // Current authorized Seed references selected during execution preparation.
@@ -896,19 +896,14 @@ const preparedExecutionContextBaseSchema = object({
   // Pi session identity and pinned route reconstructed from the accepted Run.
   piSessionId: uuid().optional(),
   piModelConfig: piModelConfigSchema.optional(),
+  cliAgentType: string(),
+  // Effective authorized targets reconstructed from admitted bindings.
+  connectorRuntimeTargets: connectorRuntimeTargetsSchema,
+  piLaunchConfig: piLaunchConfigSchema.optional(),
+  // Current preference and product default.
+  userTimezone: string().optional(),
+  disallowedTools: array(string()),
 });
-
-/** Complete execution preparation also supplies diagnostics and the Runner response. */
-const preparedExecutionContextObjectSchema =
-  preparedExecutionContextBaseSchema.extend({
-    cliAgentType: string(),
-    // Effective authorized targets reconstructed from admitted bindings.
-    connectorRuntimeTargets: connectorRuntimeTargetsSchema,
-    piLaunchConfig: piLaunchConfigSchema.optional(),
-    // Current preference and product default.
-    userTimezone: string().optional(),
-    disallowedTools: array(string()),
-  });
 
 export const preparedExecutionContextSchema =
   preparedExecutionContextObjectSchema.superRefine(requireCompletePiFields);

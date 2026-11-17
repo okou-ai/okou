@@ -869,8 +869,8 @@ def test_response_size_tracks_large_stream_without_body_buffer(tmp_path, real_fl
     )
 
     mitm_addon.responseheaders(flow)
-    assert response_stream(flow)(body[:123]) == body[:123]
-    assert response_stream(flow)(body[123:]) == body[123:]
+    for chunk in (body[:123], body[123:]):
+        assert response_stream(flow)(chunk) == chunk
     assert stream_capture.captured_response_stream_body(flow) is None
 
     with mitm_ctx():
@@ -910,8 +910,8 @@ def test_request_size_tracks_streamed_bytes_and_captures_stream_body(tmp_path, r
     request_streaming.configure_request_stream(flow)
     stream = flow.request.stream
     assert callable(stream)
-    assert stream(body[:123]) == body[:123]
-    assert stream(body[123:]) == body[123:]
+    for chunk in (body[:123], body[123:]):
+        assert stream(chunk) == chunk
 
     with mitm_ctx():
         mitm_addon.response(flow)
@@ -955,8 +955,8 @@ async def test_firewalled_streamed_request_logs_size_and_capture_body(
         await await_requestheaders_result(requestheaders_result)
         stream = flow.request.stream
         assert callable(stream)
-        assert stream(body[:123]) == body[:123]
-        assert stream(body[123:]) == body[123:]
+        for chunk in (body[:123], body[123:]):
+            assert stream(chunk) == chunk
         flow.response = tutils.tresp(
             status_code=200,
             headers=header_map({"content-length": "0", "content-type": "application/json"}),
