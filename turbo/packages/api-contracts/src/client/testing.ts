@@ -117,6 +117,8 @@ import { chatRemoteAccessContract as OriginalChatRemoteAccessContract } from "..
 import { chatRemoteAccessContract } from "./chat-remote-access";
 import { chatThreadActivitySummaryContract as OriginalChatThreadActivitySummaryContract } from "../contracts/chat-thread-activity-summary";
 import { chatThreadActivitySummaryContract } from "./chat-thread-activity-summary";
+import { chatThreadPdfFilenameContract as OriginalChatThreadPdfFilenameContract } from "../contracts/chat-thread-pdf-filename";
+import { chatThreadPdfFilenameContract } from "./chat-thread-pdf-filename";
 import {
   chatSearchContract as OriginalChatSearchContract,
   chatThreadArchiveContract as OriginalChatThreadArchiveContract,
@@ -873,6 +875,7 @@ export const clientDescriptorContracts: readonly (readonly [
     chatThreadActivitySummaryContract,
     OriginalChatThreadActivitySummaryContract,
   ],
+  [chatThreadPdfFilenameContract, OriginalChatThreadPdfFilenameContract],
   [chatSearchContract, OriginalChatSearchContract],
   [chatThreadArchiveContract, OriginalChatThreadArchiveContract],
   [chatThreadArtifactsContract, OriginalChatThreadArtifactsContract],
