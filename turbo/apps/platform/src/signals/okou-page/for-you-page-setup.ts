@@ -11,6 +11,7 @@ import { updatePage$ } from "../react-router.ts";
 import { navigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
 import { detach, Reason } from "../utils.ts";
+import { setupForYouPageKeyboardShortcuts$ } from "./agent-chat-keyboard.ts";
 import {
   enterSuggestionSession$,
   suggestionsEnabled$,
@@ -26,6 +27,7 @@ export const setupForYouPage$ = command(
     const agentId = await get(defaultAgentId$);
     signal.throwIfAborted();
     set(setupForYouPagination$, signal);
+    set(setupForYouPageKeyboardShortcuts$, signal);
     set(resetProjectUi$);
     set(setChatAgentId$, agentId);
     const loading = set(enterSuggestionSession$, signal);
