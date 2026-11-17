@@ -36,7 +36,7 @@ export interface ExecutionPublicationRun extends ExecutionContextRun {
   readonly isFirstRun: boolean;
 }
 
-export interface ExecutionPackageSelection {
+interface ExecutionPackageSelection {
   readonly workflows: readonly ExecutionWorkflow[];
   readonly instructionsBundle: ContentBundle | null;
   readonly cachedBundleUrls: readonly {
@@ -46,50 +46,23 @@ export interface ExecutionPackageSelection {
   }[];
 }
 
-type BaseExecutionContext = Omit<
-  ExecutionContext,
-  "contentBundles" | "storageManifest"
-> & {
-  readonly storageManifest: NonNullable<ExecutionContext["storageManifest"]>;
-};
-
-function withContentBundleMounts(
-  executionContext: BaseExecutionContext,
-  contentBundles: ExecutionContext["contentBundles"],
-): ExecutionContext {
-  const bundledMountPaths = new Set([
-    ...contentBundles.skills.map((skill) => {
-      return skill.mountPath;
-    }),
-    ...(contentBundles.templates ?? []).map(templateGuidanceMountPath),
-  ]);
-  return {
-    ...executionContext,
-    contentBundles,
-    storageManifest: {
-      storageMounts: executionContext.storageManifest.storageMounts.filter(
-        (mount) => {
-          return !bundledMountPaths.has(mount.mountPath);
-        },
-      ),
-    },
-  };
-}
-
-interface ExecutionContentBundlesInput {
-  readonly executionContext: BaseExecutionContext;
+interface ExecutionPublicationInput {
+  readonly run: ExecutionPublicationRun;
+  readonly reuseKey: string;
+  readonly preparedContext: PreparedExecutionContext;
+  readonly networkPolicyInputs: ExecutionNetworkPolicyInputs | null;
   readonly packages: ExecutionPackageSelection;
   readonly workflowInput: ExecutionWorkflowInput;
-  readonly officialWorkflowBundles: PreparedExecutionContext["officialWorkflowBundles"];
-  readonly seedSkillBundles: PreparedExecutionContext["seedSkillBundles"];
-  readonly templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"];
   readonly bundleUrlCache: ContentBundleUrlCacheContext;
 }
 
 const signExecutionContentBundles$ = command(
   async (
     { set },
-    args: ExecutionContentBundlesInput,
+    args: Pick<
+      ExecutionPublicationInput,
+      "preparedContext" | "packages" | "workflowInput" | "bundleUrlCache"
+    >,
     signal: AbortSignal,
   ): Promise<{
     readonly contentBundles: ExecutionContext["contentBundles"];
@@ -143,9 +116,9 @@ const signExecutionContentBundles$ = command(
           };
         }),
         ...[
-          ...args.officialWorkflowBundles,
+          ...args.preparedContext.officialWorkflowBundles,
           // Selected Workflows take precedence over seed skills at the same path.
-          ...args.seedSkillBundles.filter((bundle) => {
+          ...args.preparedContext.seedSkillBundles.filter((bundle) => {
             return !workflowMountPaths.has(bundle.mountPath);
           }),
         ].map((bundle) => {
@@ -163,7 +136,7 @@ const signExecutionContentBundles$ = command(
     );
     signal.throwIfAborted();
     const templates = await Promise.all(
-      args.templateGuidanceBundles.map(async (reference) => {
+      args.preparedContext.templateGuidanceBundles.map(async (reference) => {
         const { ownerKind, templateId, beforeMountPaths, ...bundle } =
           reference;
         return {
@@ -189,18 +162,6 @@ const signExecutionContentBundles$ = command(
       },
       cacheWrites,
     };
-  },
-);
-
-export const withExecutionContentBundles$ = command(
-  async ({ set }, args: ExecutionContentBundlesInput, signal: AbortSignal) => {
-    const signed = await set(signExecutionContentBundles$, args, signal);
-    signal.throwIfAborted();
-    const executionContext = withContentBundleMounts(
-      args.executionContext,
-      signed.contentBundles,
-    );
-    return { executionContext, cacheWrites: signed.cacheWrites };
   },
 );
 
@@ -278,13 +239,15 @@ const prepareExecutionNetworkPolicyRefreshes$ = command(
   },
 );
 
-export function executionContextBody(args: {
+function executionContextBody(args: {
   readonly run: ExecutionPublicationRun;
   readonly reuseKey: string;
   readonly preparedContext: PreparedExecutionContext;
   readonly secretValues: ExecutionContext["secretValues"];
   readonly refreshedPolicies: RefreshedExecutionPolicies;
-}): BaseExecutionContext {
+  readonly contentBundles: ExecutionContext["contentBundles"];
+  readonly sandboxToken: string;
+}) {
   const {
     secretValueEnvironmentKeys: _secretValueEnvironmentKeys,
     customWorkflowSelection: _customWorkflowSelection,
@@ -295,8 +258,15 @@ export function executionContextBody(args: {
     featureFlags: _featureFlags,
     ...runnerContext
   } = args.preparedContext;
+  const bundledMountPaths = new Set([
+    ...args.contentBundles.skills.map((skill) => {
+      return skill.mountPath;
+    }),
+    ...(args.contentBundles.templates ?? []).map(templateGuidanceMountPath),
+  ]);
   return {
     ...runnerContext,
+    contentBundles: args.contentBundles,
     isFirstRun: args.run.isFirstRun,
     runId: args.run.id,
     reuseKey: args.reuseKey,
@@ -304,35 +274,26 @@ export function executionContextBody(args: {
     appendSystemPrompt: args.run.appendSystemPrompt,
     vars: { ...args.run.vars, ...args.preparedContext.vars },
     storageManifest: {
-      storageMounts: args.preparedContext.storageMounts.map((storageMount) => {
-        const { orgId: _orgId, userId: _userId, ...mount } = storageMount;
-        return mount;
-      }),
+      storageMounts: args.preparedContext.storageMounts
+        .filter((mount) => {
+          return !bundledMountPaths.has(mount.mountPath);
+        })
+        .map((storageMount) => {
+          const { orgId: _orgId, userId: _userId, ...mount } = storageMount;
+          return mount;
+        }),
     },
-    sandboxToken: generateSandboxToken(
-      args.run.userId,
-      args.run.id,
-      args.run.orgId,
-    ),
+    sandboxToken: args.sandboxToken,
     secretValues: args.secretValues,
     connectorRuntimeTargets: args.preparedContext.connectorRuntimeTargets,
     networkPolicies: args.refreshedPolicies.networkPolicies,
     networkPolicyRefreshes: args.refreshedPolicies.networkPolicyRefreshes,
-  };
+  } satisfies ExecutionContext;
 }
 
+/** Produce one complete Runner request before durable dispatch ownership. */
 export const prepareExecutionPublication$ = command(
-  async (
-    { set },
-    args: {
-      readonly preparedContext: PreparedExecutionContext;
-      readonly networkPolicyInputs: ExecutionNetworkPolicyInputs | null;
-    },
-    signal: AbortSignal,
-  ): Promise<{
-    readonly secretValues: ExecutionContext["secretValues"];
-    readonly refreshedPolicies: RefreshedExecutionPolicies;
-  }> => {
+  async ({ set }, args: ExecutionPublicationInput, signal: AbortSignal) => {
     // Fallible preparation must finish before durable direct dispatch ownership.
     const secretValues = secretValuesForRunner(args.preparedContext);
     signal.throwIfAborted();
@@ -344,7 +305,25 @@ export const prepareExecutionPublication$ = command(
       },
     );
     signal.throwIfAborted();
-    return { secretValues, refreshedPolicies };
+    const sandboxToken = generateSandboxToken(
+      args.run.userId,
+      args.run.id,
+      args.run.orgId,
+    );
+    const signed = await set(signExecutionContentBundles$, args, signal);
+    signal.throwIfAborted();
+    return {
+      executionContext: executionContextBody({
+        run: args.run,
+        reuseKey: args.reuseKey,
+        preparedContext: args.preparedContext,
+        secretValues,
+        refreshedPolicies,
+        contentBundles: signed.contentBundles,
+        sandboxToken,
+      }),
+      cacheWrites: signed.cacheWrites,
+    };
   },
 );
 

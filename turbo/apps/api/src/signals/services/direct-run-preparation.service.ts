@@ -22,9 +22,7 @@ import {
 } from "./content-bundle-presigned-url-cache";
 import { encryptExecutionSecrets$ } from "./execution-secrets.service";
 import {
-  executionContextBody,
   prepareExecutionPublication$,
-  withExecutionContentBundles$,
   executionBundleHashes,
   type ExecutionPublicationRun,
 } from "./run-execution-publication.service";
@@ -129,28 +127,15 @@ export const prepareDirectRun$ = command(
         signal,
       ),
     };
-    const response = await set(
+    const publication = await set(
       prepareExecutionPublication$,
       {
+        run,
+        reuseKey: input.reuseKey,
         preparedContext: context,
         networkPolicyInputs: prepared.networkPolicyInputs,
-      },
-      signal,
-    );
-    const publication = await set(
-      withExecutionContentBundles$,
-      {
-        executionContext: executionContextBody({
-          run,
-          reuseKey: input.reuseKey,
-          preparedContext: context,
-          ...response,
-        }),
         packages: packages.row,
         workflowInput: packages.selection,
-        officialWorkflowBundles: context.officialWorkflowBundles,
-        seedSkillBundles: context.seedSkillBundles,
-        templateGuidanceBundles: context.templateGuidanceBundles,
         bundleUrlCache: packages.cache,
       },
       signal,
@@ -179,10 +164,10 @@ export const prepareDirectRun$ = command(
         appendSystemPrompt: run.appendSystemPrompt,
         context: {
           ...context,
-          networkPolicies: response.refreshedPolicies.networkPolicies,
+          networkPolicies: publication.executionContext.networkPolicies,
         },
         secretNames: Object.keys(prepared.secrets ?? {}),
-        secretValues: response.secretValues,
+        secretValues: publication.executionContext.secretValues,
       },
     };
   },
