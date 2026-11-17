@@ -24,7 +24,7 @@ import addon_process_logging
 
 # --- Sub-module imports ---
 #
-# auth_base_forwarder/body_capture/connector_diagnostics/connector_intent/
+# auth_base_forwarder/connector_diagnostics/connector_intent/
 # matching/model_websocket_usage/
 # response_encoding_negotiation/
 # response_streaming/
@@ -33,7 +33,7 @@ import addon_process_logging
 # websocket_retention are imported
 # by module (not selective `from X import ...`) so that:
 #   1. Cross-module calls read as ``auth_base_forwarder.X(...)`` /
-#      ``body_capture.X(...)`` / ``connector_diagnostics.X(...)`` /
+#      ``connector_diagnostics.X(...)`` /
 #      ``connector_intent.X(...)`` /
 #      ``matching.X(...)`` / ``model_websocket_usage.X(...)`` /
 #      ``response_streaming.X(...)`` / ``runner_flush_lifecycle.X(...)`` /
@@ -48,7 +48,6 @@ import auth_base_forwarder
 import aws_sigv4_body_admission
 import aws_sigv4_flow
 import aws_sigv4_hash_executor
-import body_capture
 import builtin_connector_diagnostics
 import builtin_host_policy
 import codex_model_catalog_cache
@@ -111,7 +110,6 @@ from body_limits import STREAM_BUFFER_LIMIT
 from generated.data_router import DATA_ROUTER_REQUEST_BODY_MAX_BYTES
 from logging_utils import (
     elapsed_ms,
-    log_http_network_entry,
     log_proxy_entry,
     project_connection_error_for_log,
     project_url_for_proxy_log,
@@ -2078,20 +2076,15 @@ def _finish_response_handling(
     proxy_log_path = flow_metadata.proxy_log_path(flow.metadata)
     if network_log_path:
         response_size = http_network_log.response_size(flow)
-        log_entry, raw_url = http_network_log.build_entry(
+        http_network_log.write_entry(
             flow,
+            log_path=network_log_path,
             action=firewall_action,
             status_code=status_code,
             latency_ms=latency_ms,
             request_size=request_size,
             response_size=response_size,
         )
-
-        # Add captured header names, selected safe header values, and bodies when enabled
-        if flow_metadata.should_capture_body(flow.metadata):
-            body_capture.add_capture_fields(flow, log_entry)
-
-        log_http_network_entry(network_log_path, log_entry, raw_url)
 
     response_streaming.finalize_model_sse_usage(flow)
     response_streaming.finalize_model_json_usage(flow, proxy_log_path)
@@ -2196,20 +2189,16 @@ def _finish_error_handling(flow: http.HTTPFlow, *, latency_ms: int) -> None:
 
     if network_log_path:
         # [NETWORK_LOG_FIELDS] — HTTP error fields; api-contracts is the shared schema boundary.
-        log_entry, raw_url = http_network_log.build_entry(
+        http_network_log.write_entry(
             flow,
+            log_path=network_log_path,
             action=firewall_action,
             status_code=0,
             latency_ms=latency_ms,
             request_size=request_size,
             response_size=0,
+            error=error_msg,
         )
-        log_entry["error"] = error_msg
-
-        if flow_metadata.should_capture_body(flow.metadata):
-            body_capture.add_capture_fields(flow, log_entry, response_incomplete=True)
-
-        log_http_network_entry(network_log_path, log_entry, raw_url)
 
     # Report proxy-extracted usage for model provider responses.
     # The SSE parser may have partially populated model_provider_usage before the
