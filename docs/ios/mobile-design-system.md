@@ -803,7 +803,8 @@ feature; the catalog shows each one.
   tile once (28 pt, `OkouAvatarSize.menu`) with the logo's own rounded corners. A thumb-reach bottom bar: the account's own photo
   (`OkouProfileAvatar`, 44 pt) opens Settings on the left, a "New Message" capsule with
   `square-pen` fills the middle, and search is the glass circle on the right. Both actions
-  retain the existing native new-chat navigation and search sheet.
+  retain the existing native new-chat navigation and search sheet. New Message uses the
+  shared new-chat request so the composer focuses and opens the keyboard once attached.
 - **Sidebar order**: the header's one menu holds the chat filter (the web's Inbox — All
   chats without archiving — / Unread / Archived / Muted), then Mark all read and New project,
   so the list starts 12 pt below the header. Projects come first, oldest first, as the web

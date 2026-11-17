@@ -470,9 +470,6 @@ private struct WorkspaceRootView: View {
   }
 
   private func startNewChat() {
-    UIApplication.shared.sendAction(
-      #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-    store.startNewChat()
-    closeSidebar()
+    NewChatRequests.shared.request()
   }
 }
