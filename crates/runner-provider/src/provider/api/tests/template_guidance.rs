@@ -90,7 +90,7 @@ fn publication_preserves_template_order_before_explicit_overlay_mounts() {
         .push(overlay);
     let mut first = template("user-template");
     let mut second = template("presentation-template");
-    // Optional unresolved mounts can be absent from the final legacy manifest.
+    // Optional unresolved mounts can be absent from the final storage manifest.
     first["beforeMountPaths"] = serde_json::json!(["/missing-optional-volume", target]);
     second["beforeMountPaths"] = serde_json::json!([target]);
     body["contentBundles"]["templates"] = serde_json::json!([first, second]);
