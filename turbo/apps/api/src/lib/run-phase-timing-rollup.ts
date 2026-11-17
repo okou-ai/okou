@@ -1,4 +1,5 @@
 import { runGenerationKindSchema } from "@okouai/api-contracts/contracts/run-phase-timing";
+import type { RunArtifactResult } from "@okouai/api-contracts/contracts/runs";
 import {
   array,
   boolean,
@@ -74,7 +75,11 @@ const metricSchema = object({
 });
 
 export const runPhaseTimingRollupSchema = object({
-  schemaVersion: literal(1),
+  schemaVersion: literal(2),
+  metricCohort: object({
+    status: literal("completed"),
+    artifactResult: literal("success"),
+  }),
   date: string().regex(/^\d{4}-\d{2}-\d{2}$/u),
   timezone: literal("Asia/Shanghai"),
   missingDateMeans: literal("gap-not-zero"),
@@ -141,6 +146,7 @@ export interface RunPhaseTimingMetadata {
   readonly userId: string;
   readonly orgId: string;
   readonly status: string;
+  readonly artifactResult: RunArtifactResult | null;
   readonly startedAt: string | null;
   readonly completedAt: string | null;
 }
@@ -347,6 +353,7 @@ interface AttributedRun {
   readonly day: DayAccumulator;
   readonly owned: readonly PhaseMark[];
   readonly status: TerminalStatus;
+  readonly artifactResult: RunArtifactResult | null;
   readonly start: number;
   readonly end: number;
 }
@@ -468,7 +475,7 @@ function attributeRunObservations(
     sourceCounts.outsideCompletedDaysRuns++;
     return null;
   }
-  return { day, owned, status, start, end };
+  return { day, owned, status, artifactResult: run.artifactResult, start, end };
 }
 
 function summarizeGenerationConflicts(
@@ -603,7 +610,7 @@ function accumulateRunPhaseTiming(
   attributed: AttributedRun,
   sourceStartTime: string,
 ): void {
-  const { day, owned, status, start, end } = attributed;
+  const { day, owned, status, artifactResult, start, end } = attributed;
   day.counts.observedRuns++;
   day.counts.observedMarks += owned.length;
   const bounded = owned
@@ -639,6 +646,10 @@ function accumulateRunPhaseTiming(
   if (phases.retentionLimited) {
     day.counts.retentionLimitedRuns++;
   }
+  // Raw counts remain diagnostic; completed metrics require explicit output success.
+  if (status === "completed" && artifactResult !== "success") {
+    return;
+  }
   const group = day.groups.find((entry) => {
     return (
       entry.generationKind === phases.generationKind && entry.status === status
@@ -658,7 +669,8 @@ function serializeDayRollup(
   sourceCounts: SourceCounts,
 ): RunPhaseTimingRollup {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    metricCohort: { status: "completed", artifactResult: "success" },
     date: day.day.date,
     timezone: "Asia/Shanghai",
     missingDateMeans: "gap-not-zero",
