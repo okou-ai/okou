@@ -42,6 +42,8 @@ import {
 } from "../../signals/projects/project-fold.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { ChatThreadMenuShortcut } from "../okou-page/chat-thread-menu-shortcut.tsx";
+import { HoverScrollTitle } from "../okou-page/hover-scroll-title.tsx";
+import { useTitleReveal } from "../okou-page/use-title-reveal.ts";
 import type {
   ChatThreadListRow,
   ProjectChatThreadListRow,
@@ -128,7 +130,7 @@ function ProjectMenu({
             size="icon-sm"
             iconSize="md"
             className={cn(
-              "group/project-menu shrink-0",
+              "group/project-menu pointer-events-auto shrink-0",
               touch && "min-h-11 min-w-11",
             )}
             aria-label={t(
@@ -217,7 +219,7 @@ function ProjectActions({
   return (
     <div
       className={cn(
-        "group/project-actions flex shrink-0 items-center group-hover/project:opacity-100 group-focus-within/project:opacity-100 has-[[data-popup-open]]:opacity-100",
+        "group/project-actions pointer-events-none col-start-1 row-start-1 flex items-center justify-self-end group-hover/project:opacity-100 group-focus-within/project:opacity-100 has-[[data-popup-open]]:opacity-100",
         !resting && "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0",
         layout === "list" ? "gap-1" : "gap-0.5",
       )}
@@ -237,7 +239,7 @@ function ProjectActions({
                     size: "icon-sm",
                     iconSize: "md",
                   }),
-                  "shrink-0",
+                  "pointer-events-auto shrink-0",
                   touch && "min-h-11 min-w-11",
                   resting &&
                     "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/project:opacity-100 group-focus-within/project:opacity-100 group-has-[[data-popup-open]]/project:opacity-100",
@@ -264,12 +266,14 @@ function ProjectActions({
 function ProjectTrigger({
   project,
   layout,
+  touch,
   expanded,
   active,
   indicator,
 }: {
   readonly project: Project;
   readonly layout: ProjectRowLayout;
+  readonly touch: boolean;
   readonly expanded: boolean;
   readonly active: boolean;
   readonly indicator: ProjectIndicatorState | null;
@@ -277,6 +281,7 @@ function ProjectTrigger({
   const { t } = useTranslation();
   const toggle = useSet(toggleProjectWithMotion$);
   const signal = useGet(pageSignal$);
+  const titleReveal = useTitleReveal();
   const Chevron = expanded ? ChevronDown : ChevronRight;
   const stateId = `project-state-${layout}-${project.id}`;
   const shortcut = expanded
@@ -284,6 +289,7 @@ function ProjectTrigger({
     : GLOBAL_KEYBOARD_SHORTCUTS.expandProject;
   return (
     <button
+      {...titleReveal}
       type="button"
       data-project-trigger=""
       aria-expanded={expanded}
@@ -299,8 +305,11 @@ function ProjectTrigger({
         detach(toggle(project.id, signal), Reason.DomCallback);
       }}
       className={cn(
-        "group/project-fold flex min-w-0 flex-1 items-center rounded-lg pr-2 text-left text-sm text-nav-copy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        "group/project-fold col-start-1 row-start-1 flex min-w-0 items-center rounded-lg text-left text-sm text-nav-copy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         layout === "list" ? "h-14 gap-2 text-base leading-5" : "h-8",
+        touch
+          ? "pr-24"
+          : "pr-18 md:[@media(hover:hover)_and_(pointer:fine)]:pr-8 group-hover/project:pr-18 group-focus-within/project:pr-18 group-has-[[data-popup-open]]/project:pr-18",
         active && "font-medium",
       )}
     >
@@ -322,7 +331,7 @@ function ProjectTrigger({
           className="hidden opacity-70 md:group-hover/project:block group-focus-visible/project-fold:block"
         />
       </span>
-      <span className="truncate">{projectNameParts(project.name).text}</span>
+      <HoverScrollTitle title={projectNameParts(project.name).text} />
       {indicator !== null && (
         <span id={stateId}>
           <ChatThreadStateText state={indicator} />
@@ -355,13 +364,14 @@ export function ProjectRow({
   return (
     <div
       className={cn(
-        "group/project flex min-w-0 items-center rounded-lg motion-safe:transition-colors motion-safe:duration-[180ms]",
+        "group/project grid min-w-0 grid-cols-[minmax(0,1fr)] items-center rounded-lg motion-safe:transition-colors motion-safe:duration-[180ms]",
         active ? "bg-state-selected" : "hover:bg-state-hover",
       )}
     >
       <ProjectTrigger
         project={project}
         layout={layout}
+        touch={touch}
         expanded={expanded}
         active={active}
         indicator={indicator}
