@@ -128,6 +128,7 @@ async function prepareForwardSuggestions() {
   await setupPage({
     context,
     path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
   });
   const originalComposer = await screen.findByRole("textbox", {
     name: "Message",
