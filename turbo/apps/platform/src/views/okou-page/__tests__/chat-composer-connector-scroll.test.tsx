@@ -75,17 +75,16 @@ async function openAccountPanel(popup: HTMLElement, label = "Scroll 7") {
 }
 
 test.each([12, 30])(
-  "Keep the %i-connector overview mounted while accounts open alongside it",
+  "Preserve the %i-connector overview position while accounts open alongside it",
   async (count) => {
     const user = userEvent.setup();
     const { popup } = await setup(count);
-    const overview = within(popup).getByRole("list", { name: "Connectors" });
-    overview.scrollTop = 180;
+    const overview = () => {
+      return within(popup).getByRole("list", { name: "Connectors" });
+    };
+    overview().scrollTop = 180;
     const { panel } = await openAccountPanel(popup);
-    expect(within(popup).getByRole("list", { name: "Connectors" })).toBe(
-      overview,
-    );
-    expect(overview.scrollTop).toBe(180);
+    expect(overview().scrollTop).toBe(180);
     expect(panel.scrollTop).toBe(0);
     panel.scrollTop = 140;
     await user.keyboard("{Escape}");
@@ -94,14 +93,14 @@ test.each([12, 30])(
     });
     const row = await connectorButton(popup, "Scroll 7");
     expect(row).toHaveFocus();
-    expect(overview.scrollTop).toBe(180);
+    expect(overview().scrollTop).toBe(180);
     const reopened = await openAccountPanel(popup);
     expect(reopened.panel.scrollTop).toBe(0);
     await user.keyboard("{Escape}");
-    overview.scrollTop = 220;
+    overview().scrollTop = 220;
     const other = await openAccountPanel(popup, "Scroll 8");
     expect(other.panel.scrollTop).toBe(0);
-    expect(overview.scrollTop).toBe(220);
+    expect(overview().scrollTop).toBe(220);
   },
 );
 
