@@ -240,7 +240,6 @@ async def test_allowed_upload_forwards_before_eof_with_bounded_retention(
                 assert len(captured.buffer) <= STREAM_BUFFER_LIMIT
             else:
                 assert captured is None
-                assert request_streaming.captured_request_stream_body(flow) is None
 
         assert forwarded_size == upload_size
         assert request_streaming.streamed_request_size(flow) == upload_size

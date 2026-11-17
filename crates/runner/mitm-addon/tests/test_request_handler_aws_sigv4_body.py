@@ -227,7 +227,6 @@ async def test_payload_independent_sigv4_signs_before_streaming(
             assert len(request_stream_capture(flow).buffer) == STREAM_BUFFER_LIMIT
         else:
             assert request_streaming.captured_request_stream_body(flow) is None
-            assert request_streaming.captured_request_stream_body(flow) is None
 
         assert f"Credential={RESOLVED_AWS_ACCESS_KEY_ID}/" in flow.request.headers["authorization"]
         await mitm_addon.request(flow)
