@@ -2356,10 +2356,10 @@
       "loading": "正在加载手机…",
       "noPhones": "暂无在线手机",
       "openApp": "打开 Okou iOS Use",
-      "openAppDescription": "在 iPhone 上安装开发版，使用相同账号和工作区登录，并开启控制窗口。",
+      "openAppDescription": "在 iPhone 上安装开发版，使用相同账号和工作区登录，然后点击 Go online 上线。",
       "setupDescription": "授权 Okou 在当前对话中使用你的 iPhone。",
       "startTask": "发送下一个任务",
-      "startTaskDescription": "完成授权后，在这里发送一条新消息。请保持手机上的控制窗口有效。",
+      "startTaskDescription": "授权后，在这里发送一条新消息。保持 iPhone 在线且处于解锁状态。",
       "yourPhone": "你的手机"
     },
     "promptDocumentTitle": "提示词",

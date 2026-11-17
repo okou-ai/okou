@@ -2365,10 +2365,10 @@
       "loading": "Smartphones werden geladen…",
       "noPhones": "Keine Smartphones online",
       "openApp": "Okou iOS Use öffnen",
-      "openAppDescription": "Installiere den Entwicklungsbuild auf deinem iPhone, melde dich mit demselben Konto und Workspace an und starte ein Steuerungsfenster.",
+      "openAppDescription": "Installiere den Entwicklungsbuild auf deinem iPhone, melde dich mit demselben Konto und Workspace an und wähle Go online.",
       "setupDescription": "Erlaube Okou, dein iPhone in diesem Chat zu verwenden.",
       "startTask": "Deine nächste Aufgabe senden",
-      "startTaskDescription": "Sende nach der Freigabe hier eine neue Nachricht. Halte das Steuerungsfenster auf deinem Smartphone aktiv.",
+      "startTaskDescription": "Sende nach der Freigabe eine neue Nachricht hier. Halte dein iPhone online und entsperrt.",
       "yourPhone": "Dein Smartphone"
     },
     "promptDocumentTitle": "Prompt",

@@ -2403,10 +2403,10 @@
       "loading": "Carregando telefones…",
       "noPhones": "Nenhum telefone online",
       "openApp": "Abrir Okou iOS Use",
-      "openAppDescription": "Instale a versão de desenvolvimento no iPhone, entre com a mesma conta e espaço de trabalho e inicie uma janela de controle.",
+      "openAppDescription": "Instale a versão de desenvolvimento no iPhone, entre com a mesma conta e espaço de trabalho e selecione Go online.",
       "setupDescription": "Permita que o Okou use seu iPhone nesta conversa.",
       "startTask": "Enviar sua próxima tarefa",
-      "startTaskDescription": "Após autorizar o acesso, envie uma nova mensagem aqui. Mantenha a janela de controle ativa no telefone.",
+      "startTaskDescription": "Depois de permitir o acesso, envie uma nova mensagem aqui. Mantenha seu iPhone online e desbloqueado.",
       "yourPhone": "Seu telefone"
     },
     "promptDocumentTitle": "Prompt",

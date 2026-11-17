@@ -2356,10 +2356,10 @@
       "loading": "Memuat ponsel…",
       "noPhones": "Tidak ada ponsel online",
       "openApp": "Buka Okou iOS Use",
-      "openAppDescription": "Instal build pengembangan di iPhone, masuk dengan akun dan ruang kerja yang sama, lalu mulai jendela kontrol.",
+      "openAppDescription": "Instal build pengembangan di iPhone, masuk dengan akun dan ruang kerja yang sama, lalu pilih Go online.",
       "setupDescription": "Izinkan Okou menggunakan iPhone Anda dari obrolan ini.",
       "startTask": "Kirim tugas berikutnya",
-      "startTaskDescription": "Setelah mengizinkan akses, kirim pesan baru di sini. Biarkan jendela kontrol tetap aktif di ponsel Anda.",
+      "startTaskDescription": "Setelah mengizinkan akses, kirim pesan baru di sini. Pastikan iPhone tetap online dan tidak terkunci.",
       "yourPhone": "Ponsel Anda"
     },
     "promptDocumentTitle": "Prompt",
