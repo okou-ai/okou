@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.2](https://github.com/okou-ai/okou/compare/ios-v0.46.1...ios-v0.46.2) (2026-11-17)
+
+
+### Bug Fixes
+
+* **ios:** restore the cached sidebar before its first render ([#48090](https://github.com/okou-ai/okou/issues/48090)) ([29915ab](https://github.com/okou-ai/okou/commit/29915ab2fc03bfc71e58120bb0e77ab9ed06b8e7))
+
 ## [0.46.1](https://github.com/okou-ai/okou/compare/ios-v0.46.0...ios-v0.46.1) (2026-11-17)
 
 
