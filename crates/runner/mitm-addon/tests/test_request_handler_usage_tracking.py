@@ -3,7 +3,6 @@
 import asyncio
 import json
 import threading
-from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Never
@@ -153,13 +152,8 @@ async def _drain_request_task(
 
 
 @pytest.fixture
-def usage_control_root(tmp_path: Path) -> Iterator[Path]:
-    control_root = tmp_path / "delivery-control"
-    usage.counters.reset_for_tests()
-    try:
-        yield control_root
-    finally:
-        usage.counters.reset_for_tests()
+def usage_control_root(tmp_path: Path) -> Path:
+    return tmp_path / "delivery-control"
 
 
 def _write_billable_x_tracking_registry(

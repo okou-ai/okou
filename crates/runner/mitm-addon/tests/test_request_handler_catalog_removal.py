@@ -383,7 +383,6 @@ async def test_removed_connector_uses_remaining_owner_when_url_is_shared(
         retained_base=retained_base,
     )
     _remove_from_catalog(cache_path, retained_base=retained_base)
-    registry.reset_cache_for_tests()
     removed_intent = (("X-Okou-Connector-Intent", _REMOVED),) if include_intent else ()
     retained_intent = (("X-Okou-Connector-Intent", _RETAINED),) if include_intent else ()
     removed_flow = real_flow(
@@ -463,7 +462,6 @@ async def test_runtime_absence_overrides_stale_catalog_without_auth(
     sandbox["omittedBuiltinFirewalls"] = [_REMOVED]
     del sandbox["networkPolicies"][_REMOVED]
     registry_path.write_text(json.dumps(registry_data))
-    registry.reset_cache_for_tests()
 
     removed_flow = real_flow(
         with_response=False,
