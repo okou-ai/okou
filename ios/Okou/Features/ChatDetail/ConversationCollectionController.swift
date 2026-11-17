@@ -7,8 +7,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   UICollectionViewDelegateFlowLayout, ConversationCollectionScrolling
 {
   private typealias Measurement = ConversationMeasurementCache.Measurement
+  private typealias Measurer = ConversationRowMeasurer<Content>
   private var keyboardTap: KeyboardDismissTap?
-  private lazy var measurer = ConversationRowMeasurer<Content> { [weak self] in
+  private lazy var measurer = Measurer { [weak self] in
     guard let self else { return nil }
     return ConversationMeasurementInput(
       controller: self, source: source,
@@ -273,7 +274,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     guard !stopped, collection.bounds.width > 0 else { return }
     let width = collection.bounds.width
     let category = traitCollection.preferredContentSizeCategory
-    let environment = diskLayout(width: width)
+    let environment = Measurer.diskLayout(width: width, traits: traitCollection)
     guard
       requestedRows != source.rows || requestedWidth != width || requestedCategory != category
         || requestedEnvironment != environment
@@ -341,78 +342,75 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     }
     preparation = Task { [weak self] in
       guard let self else { return }
-      let disk = ConversationHeightDiskCache.shared
-      var keys: [String: ConversationHeightDiskCache.Key] = [:]
-      var warmed = Set<String>()
-      if let namespace = source.measurements.namespace, missing.count <= 64 {
-        let layout = diskLayout(width: width)
+      await prepareMissingRows(
+        missing, rows: rows, width: width, category: category, environment: environment,
+        generation: generation, preparedMeasurements: preparedMeasurements)
+    }
+  }
+
+  private func prepareMissingRows(
+    _ missing: [ConversationCollectionRow], rows: [ConversationCollectionRow],
+    width: CGFloat, category: UIContentSizeCategory,
+    environment: ConversationHeightDiskCache.Layout, generation: UUID,
+    preparedMeasurements initial: [String: Measurement]
+  ) async {
+    var preparedMeasurements = initial
+    let disk = ConversationHeightDiskCache.shared
+    var keys: [String: ConversationHeightDiskCache.Key] = [:]
+    var warmed = Set<String>()
+    if let namespace = source.measurements.namespace, missing.count <= 64 {
+      let layout = Measurer.diskLayout(width: width, traits: traitCollection)
+      for row in missing {
+        guard let message = row.message, message.role == .assistant else { continue }
+        await measurer.prepareMarkdown(row)
+        guard !Task.isCancelled, preparationID == generation else { return }
+        warmed.insert(row.id)
+      }
+      for row in missing {
+        keys[row.id] = Measurer.diskKey(
+          for: row, namespace: namespace, layout: layout, source: source)
+      }
+      if !keys.isEmpty {
+        let heights = await disk.heights(for: keys)
+        guard !Task.isCancelled, preparationID == generation else { return }
         for row in missing {
-          guard let message = row.message, message.role == .assistant else { continue }
-          await measurer.prepareMarkdown(row)
-          guard !Task.isCancelled, preparationID == generation else { return }
-          warmed.insert(row.id)
-        }
-        for row in missing {
-          keys[row.id] = diskKey(for: row, namespace: namespace, layout: layout)
-        }
-        if !keys.isEmpty {
-          let heights = await disk.heights(for: keys)
-          guard !Task.isCancelled, preparationID == generation else { return }
-          for row in missing {
-            if let height = heights[row.id] {
-              preparedMeasurements[row.id] = Measurement(
-                row: row, width: width, category: category, environment: environment,
-                height: height, diskKey: keys[row.id])
-            }
+          if let height = heights[row.id] {
+            preparedMeasurements[row.id] = Measurement(
+              row: row, width: width, category: category, environment: environment,
+              height: height, diskKey: keys[row.id])
           }
         }
       }
-      let unmeasured = missing.filter { preparedMeasurements[$0.id] == nil }
-      var settledHeights: [ConversationHeightDiskCache.Key: Double] = [:]
-      // Four temporary hosts at a time bound retained views even in an expanded history.
-      for start in stride(from: 0, to: unmeasured.count, by: 4) {
-        let batch = Array(unmeasured[start..<min(start + 4, unmeasured.count)])
-        for row in batch where !warmed.contains(row.id) {
-          await measurer.prepareMarkdown(row)
-          guard !Task.isCancelled, preparationID == generation else { return }
-        }
-        let (heights, settled) = await measurer.measure(batch, width: width)
-        guard !Task.isCancelled, preparationID == generation else { return }
-        for (row, height) in zip(batch, heights) {
-          let key = settled ? keys[row.id] : nil
-          if let key { settledHeights[key] = height }
-          preparedMeasurements[row.id] = Measurement(
-            row: row, width: width, category: category, environment: environment,
-            height: height, diskKey: key)
-        }
-      }
-      guard !Task.isCancelled, preparationID == generation, !stopped else { return }
-      preparation = nil
-      preparedRows = PreparedRows(rows: rows, measurements: preparedMeasurements)
-      applyPreparedRows()
-      if !settledHeights.isEmpty { await disk.store(settledHeights) }
     }
+    let unmeasured = missing.filter { preparedMeasurements[$0.id] == nil }
+    var settledHeights: [ConversationHeightDiskCache.Key: Double] = [:]
+    // Four temporary hosts at a time bound retained views even in an expanded history.
+    for start in stride(from: 0, to: unmeasured.count, by: 4) {
+      let batch = Array(unmeasured[start..<min(start + 4, unmeasured.count)])
+      for row in batch where !warmed.contains(row.id) {
+        await measurer.prepareMarkdown(row)
+        guard !Task.isCancelled, preparationID == generation else { return }
+      }
+      let (heights, settled) = await measurer.measure(batch, width: width)
+      guard !Task.isCancelled, preparationID == generation else { return }
+      for (row, height) in zip(batch, heights) {
+        let key = settled ? keys[row.id] : nil
+        if let key { settledHeights[key] = height }
+        preparedMeasurements[row.id] = Measurement(
+          row: row, width: width, category: category, environment: environment,
+          height: height, diskKey: key)
+      }
+    }
+    guard !Task.isCancelled, preparationID == generation, !stopped else { return }
+    preparation = nil
+    preparedRows = PreparedRows(rows: rows, measurements: preparedMeasurements)
+    applyPreparedRows()
+    if !settledHeights.isEmpty { await disk.store(settledHeights) }
   }
 
   private var needsLoadingIndicator: Bool {
     !stopped && !displayedRows.values.contains(where: \.isMessageContent)
       && (source.isLoadingHistory || source.rows.contains(where: \.isMessageContent))
-  }
-
-  private func diskLayout(width: CGFloat) -> ConversationHeightDiskCache.Layout {
-    ConversationRowMeasurer<Content>.diskLayout(width: width, traits: traitCollection)
-  }
-
-  private func diskKey(
-    for row: ConversationCollectionRow, namespace: [String],
-    layout: ConversationHeightDiskCache.Layout
-  ) -> ConversationHeightDiskCache.Key? {
-    ConversationRowMeasurer<Content>.diskKey(
-      for: row, namespace: namespace, layout: layout, source: source)
-  }
-
-  private func pixelHeight(_ height: CGFloat) -> CGFloat {
-    ConversationRowMeasurer<Content>.pixelHeight(height, scale: traitCollection.displayScale)
   }
 
   private var isScrolling: Bool {
@@ -686,7 +684,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       let measurement = measurements[row.id], measurement.row == row, measurement.width == width,
       measurement.category == category, measurement.environment == environment
     else { return }
-    let renderedHeight = pixelHeight(height)
+    let renderedHeight = Measurer.pixelHeight(height, scale: traitCollection.displayScale)
     if abs(measurement.height - renderedHeight) <= 0.5 {
       observedHeights.removeValue(forKey: row.id)
       resizeIDs.removeValue(forKey: row.id)
@@ -740,7 +738,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
         measurements[id]?.height = observed.height
         if let measurement = measurements[id] {
           source.measurements.store(measurement)
-          if let key = measurement.diskKey, key.layout == diskLayout(width: measurement.width) {
+          if let key = measurement.diskKey,
+            key.layout == Measurer.diskLayout(width: measurement.width, traits: traitCollection)
+          {
             corrected[key] = measurement.height
           }
         }

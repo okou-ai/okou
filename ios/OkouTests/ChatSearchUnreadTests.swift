@@ -161,12 +161,9 @@ final class ChatSearchUnreadTests: XCTestCase {
 
   private enum ReadCompletion: Equatable { case immediate, shared, background }
 
-  private func assertNewDeliveryIsRead(
-    indicatorsFirst: Bool, residentRefresh: Bool = false, completion: ReadCompletion = .immediate
-  ) async throws {
-    let fixture = SearchUnreadFixture()
-    let store = fixture.workspace()
-    addTeardownBlock { await store.close().value }
+  private func prepareUnreadDelivery(in store: WorkspaceStore, fixture: SearchUnreadFixture)
+    async throws -> (ConversationStore, ChatThread)
+  {
     await store.refresh()
     store.setPhase(.active)
     store.selectChat(SearchUnreadFixture.id(1))
@@ -177,6 +174,16 @@ final class ChatSearchUnreadTests: XCTestCase {
     await store.setRead(thread, read: false)
     await store.refresh([.readCursor])
     XCTAssertEqual(fixture.state.value.withLock { $0.writes }, ["read", "unread"])
+    return (conversation, thread)
+  }
+
+  private func assertNewDeliveryIsRead(
+    indicatorsFirst: Bool, residentRefresh: Bool = false, completion: ReadCompletion = .immediate
+  ) async throws {
+    let fixture = SearchUnreadFixture()
+    let store = fixture.workspace()
+    addTeardownBlock { await store.close().value }
+    let (conversation, thread) = try await prepareUnreadDelivery(in: store, fixture: fixture)
 
     let indicatorsStarted = expectation(description: "New unread indicators reached HTTP")
     let recoveryStarted =

@@ -145,18 +145,7 @@ private struct ComposerConnectorPermissionsContent: View {
         } header: {
           Text("Unknown operations").okouSectionHeader()
         }
-        Section {
-          Button("Reset to defaults", role: .destructive) { confirmsReset = true }.disabled(
-            busy)
-        } footer: {
-          Group {
-            Text(
-              "Reset removes this connector's explicit grants and restores its default allow, ask, or deny rules."
-            )
-
-          }
-          .okouSectionNote()
-        }
+        resetSection()
       }
     }
     .okouGroupedBackground()
@@ -181,6 +170,21 @@ private struct ComposerConnectorPermissionsContent: View {
         .disabled(busy)
     }
   }
+  private func resetSection() -> some View {
+    Section {
+      Button("Reset to defaults", role: .destructive) { confirmsReset = true }.disabled(
+        busy)
+    } footer: {
+      Group {
+        Text(
+          "Reset removes this connector's explicit grants and restores its default allow, ask, or deny rules."
+        )
+
+      }
+      .okouSectionNote()
+    }
+  }
+
   private var connectorScoped: Bool {
     if case .hasData(let value) = page { return value.state.connectorScoped }
     return false

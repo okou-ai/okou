@@ -332,16 +332,7 @@ final class ChatClientTests: XCTestCase {
             {"url":"https://\(request.url!.host!)/history-snapshot","lastEventId":"\(eventIdentity(sequence))","lastSeqId":\(sequence)}
             """)
       case "/history-snapshot":
-        if current == 1 {
-          return ChatHTTPResponse(
-            body: eventJSON(seq: 1, type: "input.prompt", payload: userPayload("Old question"))
-              + "\n")
-        }
-        return ChatHTTPResponse(
-          body: [
-            eventJSON(seq: 1, type: "input.prompt", payload: userPayload("New question")),
-            eventJSON(seq: 3, type: "output.message", payload: "{\"content\":\"New answer\"}")
-          ].joined(separator: "\n") + "\n")
+        return Self.rebaseHistorySnapshot(generation: current)
       case "/api/chat-threads/\(fixtureThread)/event-rows":
         if current == 2 && since == "1" {
           return ChatHTTPResponse(status: 410, body: "{\"error\":{\"message\":\"Expired\"}}")
@@ -395,6 +386,19 @@ final class ChatClientTests: XCTestCase {
     XCTAssertTrue(paths.contains("/api/chat-threads/events?20"))
     XCTAssertTrue(paths.contains("/api/chat-threads/\(fixtureThread)/event-rows?1"))
     XCTAssertTrue(paths.contains("/api/chat-threads/\(fixtureThread)/event-rows?3"))
+  }
+
+  private static func rebaseHistorySnapshot(generation current: Int) -> ChatHTTPResponse {
+    if current == 1 {
+      return ChatHTTPResponse(
+        body: eventJSON(seq: 1, type: "input.prompt", payload: userPayload("Old question"))
+          + "\n")
+    }
+    return ChatHTTPResponse(
+      body: [
+        eventJSON(seq: 1, type: "input.prompt", payload: userPayload("New question")),
+        eventJSON(seq: 3, type: "output.message", payload: "{\"content\":\"New answer\"}")
+      ].joined(separator: "\n") + "\n")
   }
 
   func testExpiredSecondListPageRebasesWithoutSavingAbandonedTail() async throws {

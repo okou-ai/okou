@@ -331,12 +331,7 @@ final class ChatSyncTests: XCTestCase {
 
     XCTAssertEqual(first.messages.map(\.text), ["Initial answer"])
     XCTAssertEqual(second.messages.map(\.text), ["Initial answer", "Latest answer"])
-    let observed = requests.withLock { $0 }
-    XCTAssertEqual(
-      observed.filter { $0.url?.path == syncPath + "/event-snapshot" }.count, 1)
-    XCTAssertEqual(
-      observed.filter { $0.url?.path == syncPath + "/event-rows" }.compactMap(syncSequence),
-      [0, 2, 2])
+    assertOverlappingHistoryRequests(requests.withLock { $0 })
     let cache = directory.cache(scope: scope)
     let durable = try await cache.loadHistory(threadID: syncThreadID)
     XCTAssertEqual(durable?.cursor, ChatCacheCursor(eventID: syncEventID(4), seqID: 4))
@@ -345,6 +340,15 @@ final class ChatSyncTests: XCTestCase {
     let restored = await restarted.cachedHistory(threadID: syncThreadID)
     XCTAssertEqual(restored?.messages.map(\.text), ["Initial answer", "Latest answer"])
   }
+
+  private func assertOverlappingHistoryRequests(_ observed: [URLRequest]) {
+    XCTAssertEqual(
+      observed.filter { $0.url?.path == syncPath + "/event-snapshot" }.count, 1)
+    XCTAssertEqual(
+      observed.filter { $0.url?.path == syncPath + "/event-rows" }.compactMap(syncSequence),
+      [0, 2, 2])
+  }
+
   func testWarmingPersistsUnopenedHistoryAndContinuesItsCursor() async throws {
     let directory = CacheTestDirectory(owner: self)
     let cursors = Mutex<[Int]>([])

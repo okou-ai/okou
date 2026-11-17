@@ -741,7 +741,6 @@ class NativeRuleTests(unittest.TestCase):
             {name for name, value in defaults.items() if value == "no"},
             {
                 "cyclomatic_complexity",
-                "function_body_length",
                 "function_parameter_count",
                 "identifier_name",
                 "large_tuple",
@@ -750,7 +749,7 @@ class NativeRuleTests(unittest.TestCase):
                 "type_body_length",
             },
         )
-        self.assertEqual(sum(value == "yes" for value in defaults.values()), 93)
+        self.assertEqual(sum(value == "yes" for value in defaults.values()), 94)
 
     def lint(self, root, source, rule, filename="Screen.swift"):
         path = root / filename
