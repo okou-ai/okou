@@ -297,6 +297,9 @@
 /* Palette previews keep the fixed 135deg/52% sRGB blend in Light and Dark.
    Inline references resolve on each themed element, not the document root. */
 @theme inline {
+  --animate-completion-dot: completion-dot 520ms ease-out
+    var(--completion-dot-delay);
+
   /* On the session's first home, the capability rows and the compliance block
      under them settle in after the greeting: an 8px rise and a fade on the
      greeting's own curve, one 70ms step apart through
@@ -772,6 +775,23 @@ body {
     transform: translate(80%, -110px) rotate(16deg);
     opacity: 0;
     visibility: hidden;
+  }
+}
+
+@keyframes completion-dot {
+  0% {
+    opacity: 0;
+    transform: translate(
+      calc(var(--completion-dot-x) * 0.62),
+      calc(var(--completion-dot-y) * 0.62)
+    );
+  }
+  28% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--completion-dot-x), var(--completion-dot-y));
   }
 }
 
