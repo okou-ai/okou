@@ -17,6 +17,7 @@ import { command, computed } from "ccstate";
 import { createAppWithRoutes } from "../../app-factory-core";
 import {
   MCP_DEFAULT_SCOPES,
+  MCP_SUPPORTED_SCOPES,
   MCP_REQUIRED_SCOPES,
   mcpServerConfig,
 } from "../../lib/mcp-server-config";
@@ -132,7 +133,7 @@ const metadata$ = computed(() => {
     {
       resource: config.resource,
       authorization_servers: [config.issuer],
-      scopes_supported: [...MCP_DEFAULT_SCOPES],
+      scopes_supported: [...MCP_SUPPORTED_SCOPES],
       bearer_methods_supported: ["header"],
       resource_name: "Okou MCP",
     },

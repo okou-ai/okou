@@ -173,6 +173,26 @@ async function createPlatformUserRealtimeToken(
   return tokenRequest;
 }
 
+/** OAuth chat readers cannot subscribe to global user, organization or remote-control signals. */
+export async function createOAuthChatRealtimeToken(
+  userId: string,
+  orgId: string,
+  ttl: number,
+  signal: AbortSignal,
+): Promise<Ably.TokenRequest> {
+  signal.throwIfAborted();
+  const token = await ablyClient().auth.createTokenRequest({
+    capability: {
+      [getUserOrgChannelName(userId, orgId)]: ["subscribe"],
+      [sessionOutputChannelName(userId, orgId, "*")]: ["subscribe"],
+    },
+    ttl: Math.min(60 * 60 * 1000, ttl),
+    clientId: userId,
+  });
+  signal.throwIfAborted();
+  return token;
+}
+
 export async function createPlatformRealtimeToken(
   userId: string,
   orgId: string | undefined,

@@ -157,7 +157,9 @@ export const platformRealtimeTokenContract = c.router({
       // The client SDK exchanges this signed, single-use request with Ably.
       200: ablyTokenRequestSchema,
       401: apiErrorSchema,
+      403: apiErrorSchema,
       500: apiErrorSchema,
+      503: apiErrorSchema,
     },
     summary: "Get Ably token for platform push notifications",
   },

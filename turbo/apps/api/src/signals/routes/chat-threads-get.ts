@@ -1,8 +1,9 @@
 import { command } from "ccstate";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { modelSettingsSchema } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { agents } from "@okouai/db/schema/agent";
 
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -39,6 +40,15 @@ const getInner$ = command(async ({ get }, signal: AbortSignal) => {
         eq(chatThreads.id, params.id),
         eq(chatThreads.userId, auth.userId),
         isNotNull(chatThreads.agentId),
+        auth.tokenType === "oauth"
+          ? inArray(
+              chatThreads.agentId,
+              db
+                .select({ id: agents.id })
+                .from(agents)
+                .where(eq(agents.orgId, auth.orgId)),
+            )
+          : undefined,
       ),
     )
     .limit(1);
@@ -70,6 +80,9 @@ const getInner$ = command(async ({ get }, signal: AbortSignal) => {
 export const chatThreadGetRoutes: readonly RouteEntry[] = [
   {
     route: chatThreadMetadataContract.get,
-    handler: authRoute({ requiredCapability: "chat-thread:read" }, getInner$),
+    handler: authRoute(
+      { requiredCapability: "chat-thread:read", oauthScope: "okou:chat:read" },
+      getInner$,
+    ),
   },
 ];

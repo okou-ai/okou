@@ -51,7 +51,8 @@ export const voiceIoPolishRoutes: readonly RouteEntry[] = [
     route: voiceIoPolishSegmentsContract.post,
     handler: authRoute(
       {
-        accept: ["session"],
+        accept: ["session", "oauth"],
+        oauthScope: "okou:voice:transcribe",
         requireOrganization: true,
         missingOrganizationStatus: 401,
       },
