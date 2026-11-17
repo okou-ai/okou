@@ -35,6 +35,10 @@ class MemberPreferencesModelTest {
         ai.okou.android.chat.RealtimeService by ai.okou.android.TestRealtimeService(),
         ChatListService by TestChatService(),
         ai.okou.android.chat.ChatComposerService by ai.okou.android.TestChatComposerService() {
+        override suspend fun sendControl(
+            request: ai.okou.android.api.generated.SendRequest
+        ): ai.okou.android.api.generated.AcceptedInput = error("No control backend in this fixture")
+
         override suspend fun personalInstructionsEnabled() = false
 
         override suspend fun personalInstructions():

@@ -46,6 +46,7 @@ class MainActivity : AppCompatActivity() {
                     app.chatCache,
                     app.instructionsDrafts,
                     app.composerJournal,
+                    app.runControlJournal,
                     updatesRequired = app.updates.required,
                 )
             }

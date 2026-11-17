@@ -114,12 +114,10 @@ class RunOutputModel(
     private fun activeRun(current: ConversationUiState): String? {
         val transcript = current.transcript ?: return null
         // Web derives demand from persisted events followed by retained optimistic blocks.
-        return (transcript.liveRunIds +
-                buffers.values
-                    .filter { it.threadId == current.thread?.id }
-                    .map { it.runId }
-                    .filterNot { it in transcript.terminatedRunIds })
-            .distinct()
+        return transcript
+            .liveRunsIncluding(
+                buffers.values.filter { it.threadId == current.thread?.id }.map { it.runId }
+            )
             .lastOrNull()
     }
 
@@ -147,6 +145,10 @@ class RunOutputModel(
         mutable.value = RunOutputState()
     }
 }
+
+/** Same persisted-then-optimistic run order for streaming demand and run controls. */
+fun HistoryTranscript.liveRunsIncluding(retained: Iterable<String>): List<String> =
+    (liveRunIds + retained.filterNot { it in terminatedRunIds }).distinct()
 
 /** Persisted IDs win even when Compose observes the two StateFlows in different frames. */
 fun HistoryTranscript.withOutput(output: RunOutputState, threadId: String): List<HistoryMessage> {
