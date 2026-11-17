@@ -6246,7 +6246,6 @@
         "default": "Par défaut",
         "description": "Ajoutez une carte ou changez la carte par défaut dans votre portefeuille Link.",
         "empty": "Aucune carte dans votre portefeuille Link pour le moment",
-        "expires": "Expire en {{date}}",
         "loadError": "Impossible de charger vos cartes.",
         "loading": "Chargement des cartes",
         "manage": "Gérer les cartes",

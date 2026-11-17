@@ -6180,7 +6180,6 @@
         "default": "Standard",
         "description": "Füge in deinem Link-Wallet eine Karte hinzu oder ändere deine Standardkarte.",
         "empty": "Noch keine Karten in deinem Link-Wallet",
-        "expires": "Gültig bis {{date}}",
         "loadError": "Deine Karten konnten nicht geladen werden.",
         "loading": "Karten werden geladen",
         "manage": "Karten verwalten",
