@@ -2096,7 +2096,6 @@
       "slashPanel": {
         "browseAll": "Sfoglia tutti i modelli",
         "hint": "Cerca flussi di lavoro o scegli un modello…",
-        "make": "Crea",
         "useTemplate": "Usa il modello {{title}}"
       },
       "temporarilySwitchTo": "Passa temporaneamente a",
@@ -2648,206 +2647,6 @@
       "unsupported": "Il ripristino manuale non è supportato; l’utilizzo si ripristina automaticamente."
     },
     "taskChips": {
-      "chooseTask": "Scegli un’attività",
-      "ideas": {
-        "document": {
-          "contract": {
-            "label": "Redigere un contratto per un nuovo cliente",
-            "prompt": "Redigere un contratto per un nuovo cliente"
-          },
-          "creativeBrief": {
-            "label": "Scrivere un brief creativo per un lancio",
-            "prompt": "Scrivere un brief creativo per un lancio"
-          },
-          "invoice": {
-            "label": "Creare una fattura dettagliata",
-            "prompt": "Creare una fattura dettagliata"
-          },
-          "serviceAgreement": {
-            "label": "Delineare un accordo di servizi",
-            "prompt": "Delineare un accordo di servizi"
-          }
-        },
-        "image": {
-          "birthdayInvitation": {
-            "label": "Progettare un invito di compleanno",
-            "prompt": "Progettare un invito di compleanno"
-          },
-          "brandCharacter": {
-            "label": "Creare un personaggio per il mio brand",
-            "prompt": "Creare un personaggio per il mio brand"
-          },
-          "businessLogo": {
-            "label": "Creare un logo per la mia attività",
-            "prompt": "Creare un logo per la mia attività"
-          },
-          "cafeMenu": {
-            "label": "Progettare un menu per il mio bar",
-            "prompt": "Progettare un menu per il mio bar"
-          },
-          "eventPoster": {
-            "label": "Progettare un poster per il mio evento",
-            "prompt": "Progettare un poster per il mio evento"
-          },
-          "finishedSketch": {
-            "label": "Trasformare il mio schizzo in un’immagine finita",
-            "prompt": "Trasformare il mio schizzo in un’immagine finita"
-          },
-          "greetingCard": {
-            "label": "Creare un biglietto personale",
-            "prompt": "Creare un biglietto personale"
-          },
-          "headshot": {
-            "label": "Creare una foto professionale per il lavoro",
-            "prompt": "Creare una foto professionale per il lavoro"
-          },
-          "infographic": {
-            "label": "Trasformare un’idea in un’infografica",
-            "prompt": "Trasformare un’idea in un’infografica"
-          },
-          "newsletterCover": {
-            "label": "Creare una copertina per la mia newsletter",
-            "prompt": "Creare una copertina per la mia newsletter"
-          },
-          "packaging": {
-            "label": "Esplorare confezioni per il mio prodotto",
-            "prompt": "Esplorare confezioni per il mio prodotto"
-          },
-          "photoLighting": {
-            "label": "Migliorare l’illuminazione della mia foto",
-            "prompt": "Migliorare l’illuminazione della mia foto"
-          },
-          "presentationVisual": {
-            "label": "Creare un’immagine per la mia presentazione",
-            "prompt": "Creare un’immagine per la mia presentazione"
-          },
-          "productScene": {
-            "label": "Inserire il mio prodotto in una nuova scena",
-            "prompt": "Inserire il mio prodotto in una nuova scena"
-          },
-          "profileBanner": {
-            "label": "Rinnovare il banner del mio profilo",
-            "prompt": "Rinnovare il banner del mio profilo"
-          },
-          "roomDesign": {
-            "label": "Provare un nuovo stile per la mia stanza",
-            "prompt": "Provare un nuovo stile per la mia stanza"
-          },
-          "storePhoto": {
-            "label": "Preparare una foto per il mio negozio",
-            "prompt": "Preparare una foto per il mio negozio"
-          },
-          "websiteImage": {
-            "label": "Creare un’immagine per il mio sito",
-            "prompt": "Creare un’immagine per il mio sito"
-          }
-        },
-        "presentation": {
-          "clientProposal": {
-            "label": "Scrivere una proposta per un cliente",
-            "prompt": "Crea una presentazione di proposta per un cliente. Chiedimi il cliente, il lavoro proposto, i tempi e il prezzo."
-          },
-          "companyOverview": {
-            "label": "Spiegare di cosa si occupa la mia azienda",
-            "prompt": "Crea una presentazione aziendale. Chiedimi cosa facciamo, chi serviamo e cosa il pubblico dovrebbe ricordare."
-          },
-          "eventTalk": {
-            "label": "Preparare un intervento per un evento",
-            "prompt": "Crea una presentazione per un intervento. Chiedimi l'evento, il pubblico e l'unica idea che voglio far arrivare."
-          },
-          "pitchDeck": {
-            "label": "Presentare la mia attività agli investitori",
-            "prompt": "Crea un pitch deck per investitori sulla mia attività. Chiedimi il problema, il prodotto, i risultati finora e quanto voglio raccogliere."
-          },
-          "productIntro": {
-            "label": "Presentare un nuovo prodotto",
-            "prompt": "Crea una presentazione che introduce un nuovo prodotto. Chiedimi cosa fa, a chi si rivolge e cosa lo rende diverso."
-          },
-          "resultsReadout": {
-            "label": "Presentare i miei risultati",
-            "prompt": "Trasforma i miei risultati in una presentazione di report. Chiedimi i numeri, il periodo coperto e la decisione che sostengono."
-          },
-          "teamUpdate": {
-            "label": "Preparare un aggiornamento per il team",
-            "prompt": "Crea una presentazione per l'aggiornamento del mio team. Chiedimi cosa è successo nel periodo, cosa viene dopo e chi sarà presente."
-          },
-          "training": {
-            "label": "Insegnare qualcosa al mio team",
-            "prompt": "Crea una presentazione di formazione su un tema che scelgo io. Chiedimi chi viene formato e cosa dovrà saper fare dopo."
-          }
-        },
-        "website": {
-          "bookingPage": {
-            "label": "Creare una pagina per prenotare i miei servizi",
-            "prompt": "Crea una pagina che spieghi i miei servizi e come prenotarli. Usa il mio link di prenotazione esistente e chiedi i dettagli dei servizi."
-          },
-          "businessSite": {
-            "label": "Creare un sito per la mia attività",
-            "prompt": "Crea un sito che presenti attività, servizi e contatti. Inizia dai dettagli della mia attività e dal pubblico."
-          },
-          "cafeMenu": {
-            "label": "Pubblicare online il menu del mio bar",
-            "prompt": "Crea un sito per il mio bar con menu, prezzi, orari e posizione. Usa i dettagli e le foto che fornisco."
-          },
-          "coursePage": {
-            "label": "Creare una pagina per il mio corso",
-            "prompt": "Crea una pagina che presenti corso, destinatari, risultati di apprendimento e iscrizione tramite il link che fornisco."
-          },
-          "eventPage": {
-            "label": "Creare una pagina per il mio evento",
-            "prompt": "Crea una pagina evento con data, luogo, programma e link di iscrizione che fornisco. Chiedi i dettagli mancanti."
-          },
-          "linkPage": {
-            "label": "Riunire i miei link in una pagina",
-            "prompt": "Crea una semplice pagina di link con presentazione, lavori e profili social. Chiedi quali link includere."
-          },
-          "portfolio": {
-            "label": "Mostrare i miei lavori in un portfolio",
-            "prompt": "Crea un sito portfolio per i miei lavori. Aiutami a organizzare progetti, presentazione personale e contatti."
-          },
-          "productLaunch": {
-            "label": "Lanciare una pagina per il mio prodotto",
-            "prompt": "Crea una pagina prodotto con vantaggi, immagini e un passo successivo chiaro. Chiedi cosa lancio e a chi è rivolto."
-          }
-        },
-        "workflow": {
-          "emailBrief": {
-            "label": "Ricevere il riepilogo mattutino delle email",
-            "prompt": "Ogni mattina riassumi le email importanti, le risposte da preparare e le azioni necessarie. Conferma la casella da usare e l'orario."
-          },
-          "fileOrganization": {
-            "label": "Organizzare i file in arrivo",
-            "prompt": "Organizza i nuovi file secondo regole concordate di denominazione e archiviazione. Conferma origine, cartella di destinazione e categorie."
-          },
-          "meetingActions": {
-            "label": "Trasformare gli appunti di riunione in attività",
-            "prompt": "Quando arrivano nuovi appunti, estrai attività, responsabili e scadenze. Segnala i dettagli mancanti e conferma dove trovare gli appunti."
-          },
-          "meetingPrep": {
-            "label": "Preparare le mie riunioni",
-            "prompt": "Prima delle riunioni, prepara informazioni sui partecipanti, contesto e punti da discutere. Conferma calendario, materiali e anticipo del promemoria."
-          },
-          "numbersBrief": {
-            "label": "Ricevere il riepilogo giornaliero dei numeri",
-            "prompt": "Riassumi ogni giorno i numeri che seguo e le variazioni dall'ultimo aggiornamento. Conferma la fonte, gli indicatori e l'orario."
-          },
-          "progressRecap": {
-            "label": "Riepilogare progressi e prossimi passi",
-            "prompt": "Riepiloga regolarmente il lavoro completato, le attività aperte e le priorità. Conferma la fonte dei resoconti e la frequenza giornaliera o settimanale."
-          },
-          "replyWatch": {
-            "label": "Avvisarmi quando arriva una risposta email",
-            "prompt": "Segui una specifica email in attesa di risposta, poi avvisami e riassumi il contenuto. Conferma prima quale email seguire."
-          },
-          "topicUpdates": {
-            "label": "Seguire le novità su un argomento",
-            "prompt": "Segui un argomento che mi interessa e riassumi le nuove informazioni importanti con le fonti. Chiedi l'argomento e la frequenza desiderata."
-          }
-        }
-      },
-      "ideasLabel": "Idee per iniziare",
-      "label": "Attività per iniziare",
-      "more": "Altro",
       "presentationFormat": "Formato della presentazione",
       "presentationFormats": {
         "html": "HTML",
@@ -2860,8 +2659,7 @@
         "image": "Stili immagine",
         "nextPage": "Pagina successiva",
         "previousPage": "Pagina precedente",
-        "website": "Modelli sito web",
-        "workflows": "Flussi di lavoro"
+        "website": "Modelli sito web"
       },
       "tasks": {
         "document": "Documento",
@@ -2995,215 +2793,53 @@
       },
       "workflows": {
         "browse": "Esplora i workflow",
-        "close": "Chiudi",
-        "contextPrefix": "Per me è importante: {{preference}}",
         "items": {
           "competitors": {
-            "cadence": "Ogni giorno o ogni settimana",
             "description": "Monitora prezzi e funzionalità dei concorrenti, salva quanto trovi su Notion e avvisa Slack.",
-            "name": "Monitoraggio della concorrenza",
             "prompt": "Aiutami a configurare questo workflow: Monitoraggio della concorrenza. Controllare regolarmente le pagine dei concorrenti scelte. Individuare modifiche rilevanti a prezzi, offerte o messaggi. Salvare risultati e fonti in Notion e avvisare Slack se desiderato. Prepara prima una bozza. Conferma fonti, ambito, orario e destinazione prima di attivare il workflow.",
-            "steps": {
-              "one": "Controllare regolarmente le pagine dei concorrenti scelte",
-              "three": "Salvare risultati e fonti in Notion e avvisare Slack se desiderato",
-              "two": "Individuare modifiche rilevanti a prezzi, offerte o messaggi"
-            },
             "title": "Scopri i cambiamenti dei concorrenti"
           },
           "inbox": {
-            "cadence": "Quando arriva una nuova email",
             "description": "Ordina la tua casella di posta e crea bozze di risposta alle email che ne hanno bisogno.",
-            "name": "Ordina Gmail e bozza delle risposte",
             "prompt": "Aiutami a configurare questo workflow: Ordina Gmail e bozza delle risposte. Leggere i messaggi nell’ambito scelto. Ordinarli per urgenza e secondo le regole concordate. Salvare risposte suggerite come bozze Gmail. Prepara prima una bozza. Conferma fonti, ambito, orario e destinazione prima di attivare il workflow. Le risposte email devono restare bozze che rivedrò e invierò personalmente.",
-            "steps": {
-              "one": "Leggere i messaggi nell’ambito scelto",
-              "three": "Salvare risposte suggerite come bozze Gmail",
-              "two": "Ordinarli per urgenza e secondo le regole concordate"
-            },
             "title": "Porta avanti le email importanti"
           },
           "invoices": {
-            "cadence": "Quando etichetti una fattura",
             "description": "Archivia le email di fatturazione su Drive e registra ciascuna di esse in un foglio.",
-            "name": "Archivia le fatture Gmail su Google Drive",
             "prompt": "Aiutami a configurare questo workflow: Archivia le fatture Gmail su Google Drive. Identificare la fattura tramite l’etichetta Gmail scelta. Archiviare l’allegato nella cartella Drive concordata. Registrare i dettagli in Google Sheets se desiderato. Prepara prima una bozza. Conferma fonti, ambito, orario e destinazione prima di attivare il workflow.",
-            "steps": {
-              "one": "Identificare la fattura tramite l’etichetta Gmail scelta",
-              "three": "Registrare i dettagli in Google Sheets se desiderato",
-              "two": "Archiviare l’allegato nella cartella Drive concordata"
-            },
             "title": "Tieni in ordine le fatture"
           },
           "meetings": {
-            "cadence": "Quando viene aggiunta una riunione",
             "description": "Ricerca le persone che incontrerai prima di ogni evento del calendario.",
-            "name": "Ricerca le riunioni del tuo calendario",
             "prompt": "Aiutami a configurare questo workflow: Ricerca le riunioni del tuo calendario. Leggere partecipanti e dettagli di un nuovo evento. Ricercare il contesto professionale e aziendale. Preparare una scheda con fonti e spunti di discussione. Prepara prima una bozza. Conferma fonti, ambito, orario e destinazione prima di attivare il workflow.",
-            "steps": {
-              "one": "Leggere partecipanti e dettagli di un nuovo evento",
-              "three": "Preparare una scheda con fonti e spunti di discussione",
-              "two": "Ricercare il contesto professionale e aziendale"
-            },
             "title": "Arriva preparato alle riunioni"
           },
           "metrics": {
-            "cadence": "Ogni mattina",
             "description": "Pubblica visitatori giornalieri, iscrizioni e numeri di attivazione su Slack.",
-            "name": "Pubblica metriche giornaliere su Slack",
             "prompt": "Aiutami a configurare questo workflow: Pubblica metriche giornaliere su Slack. Leggere le metriche del sito e delle iscrizioni concordate. Creare un riepilogo giornaliero con il periodo ben indicato. Condividerlo nella destinazione Slack scelta. Prepara prima una bozza. Conferma fonti, ambito, orario e destinazione prima di attivare il workflow.",
-            "steps": {
-              "one": "Leggere le metriche del sito e delle iscrizioni concordate",
-              "three": "Condividerlo nella destinazione Slack scelta",
-              "two": "Creare un riepilogo giornaliero con il periodo ben indicato"
-            },
             "title": "Segui l’andamento della tua attività"
           },
           "morning": {
-            "cadence": "Ogni mattina",
             "description": "Trasforma gli aggiornamenti di Gmail, Calendar e Notion in un breve piano quotidiano su Slack.",
-            "name": "Brief del mattino",
             "prompt": "Aiutami a configurare questo workflow: Brief del mattino. Leggere le email importanti e le riunioni di oggi. Dare priorità a decisioni, follow-up e tempo di concentrazione. Inviare un breve piano mattutino su Slack. Prepara prima una bozza. Conferma fonti, ambito, orario e destinazione prima di attivare il workflow.",
-            "steps": {
-              "one": "Leggere le email importanti e le riunioni di oggi",
-              "three": "Inviare un breve piano mattutino su Slack",
-              "two": "Dare priorità a decisioni, follow-up e tempo di concentrazione"
-            },
             "title": "Inizia la giornata con un piano chiaro"
           },
           "recap": {
-            "cadence": "Controllo periodico delle nuove note",
             "description": "Condividi un riepilogo con decisioni e azioni dopo ogni riunione.",
-            "name": "Ricevi i riepiloghi delle riunioni in Slack",
             "prompt": "Aiutami a configurare questo workflow: Ricevi i riepiloghi delle riunioni in Slack. Leggere una nuova trascrizione di riunione. Estrarre decisioni, azioni, responsabili e date dichiarati. Inviare un breve riepilogo alla destinazione scelta. Prepara prima una bozza. Conferma fonti, ambito, orario e destinazione prima di attivare il workflow.",
-            "steps": {
-              "one": "Leggere una nuova trascrizione di riunione",
-              "three": "Inviare un breve riepilogo alla destinazione scelta",
-              "two": "Estrarre decisioni, azioni, responsabili e date dichiarati"
-            },
             "title": "Trasforma le riunioni in azioni"
           },
           "reply": {
-            "cadence": "Quando arriva una risposta corrispondente",
             "description": "Segui una conversazione e ricevi i punti chiave delle nuove risposte e i prossimi passi.",
-            "name": "Monitoraggio delle risposte email",
             "prompt": "Aiutami a configurare questo workflow: Monitoraggio delle risposte email. Seguire una conversazione email e i mittenti concordati. Rilevare una nuova risposta e riassumerne i punti chiave. Avvisare una sola volta e preparare una bozza se necessario. Prepara prima una bozza. Conferma fonti, ambito, orario e destinazione prima di attivare il workflow. Le risposte email devono restare bozze che rivedrò e invierò personalmente.",
-            "steps": {
-              "one": "Seguire una conversazione email e i mittenti concordati",
-              "three": "Avvisare una sola volta e preparare una bozza se necessario",
-              "two": "Rilevare una nuova risposta e riassumerne i punti chiave"
-            },
             "title": "Non perdere la risposta che aspetti"
           },
           "weekly": {
-            "cadence": "Ogni settimana",
             "description": "Riassumi l'attività di GitHub, Gmail e Calendar in un aggiornamento settimanale su Slack.",
-            "name": "Riepilogo settimanale personale",
             "prompt": "Aiutami a configurare questo workflow: Riepilogo settimanale personale. Raccogliere le attività dalle fonti scelte. Raggruppare risultati, decisioni aperte e follow-up. Condividere il riepilogo settimanale nella destinazione Slack scelta. Prepara prima una bozza. Conferma fonti, ambito, orario e destinazione prima di attivare il workflow.",
-            "steps": {
-              "one": "Raccogliere le attività dalle fonti scelte",
-              "three": "Condividere il riepilogo settimanale nella destinazione Slack scelta",
-              "two": "Raggruppare risultati, decisioni aperte e follow-up"
-            },
             "title": "Chiudi la settimana con chiarezza"
           }
-        },
-        "preview": {
-          "competitors": {
-            "changed": "Changed",
-            "footer": "Source page and change history included",
-            "heading": "One change worth a closer look.",
-            "label": "Monitoraggio della concorrenza",
-            "now": "Now",
-            "plan": "Example company’s team plan",
-            "previous": "Previous",
-            "unit": "/ mo"
-          },
-          "inbox": {
-            "draft": "Reply draft",
-            "label": "Ordina Gmail e bozza delle risposte",
-            "later": "Your weekly digest",
-            "needsReply": "Needs reply",
-            "readLater": "Read later",
-            "review": "Review before sending",
-            "subject": "Re: Next steps",
-            "text": "Thanks for the details. I’ve reviewed the proposal and…"
-          },
-          "invoices": {
-            "amount": "Amount",
-            "example": "Example studio",
-            "file": "Invoice — September",
-            "filed": "Filed",
-            "footer": "An optional Sheet keeps the record together",
-            "label": "Archivia le fatture Gmail su Google Drive",
-            "path": "Finance / Invoices / Sep",
-            "second": "Sample supply co.",
-            "status": "Status",
-            "vendor": "Vendor"
-          },
-          "meetings": {
-            "heading": "Your next conversation.",
-            "initials": "JL",
-            "label": "Ricerca le riunioni del tuo calendario",
-            "note": "A useful place to begin",
-            "person": "Jordan Lee",
-            "question": "Ask how the team handles customer handoffs.",
-            "role": "Operations lead · Example company",
-            "tagOne": "Company context",
-            "tagTwo": "Discussion points"
-          },
-          "metrics": {
-            "activated": "Activated",
-            "footer": "A clear period. Only the metrics you choose.",
-            "label": "Pubblica metriche giornaliere su Slack",
-            "period": "Yesterday vs. prior day",
-            "signups": "Signups",
-            "visitors": "Visitors"
-          },
-          "morning": {
-            "footer": "2 emails need your attention",
-            "heading": "A little clarity for your day.",
-            "label": "Brief del mattino",
-            "meetingOne": "Team check-in",
-            "meetingTwo": "Client discovery",
-            "priority": "First things first",
-            "task": "Review the proposal before your client call"
-          },
-          "recap": {
-            "assign": "To assign",
-            "decision": "Decision: move ahead with a pilot",
-            "due": "Due",
-            "friday": "Fri",
-            "label": "Ricevi i riepiloghi delle riunioni in Slack",
-            "monday": "Mon",
-            "one": "Send the revised brief",
-            "owner": "Owner",
-            "task": "Next step",
-            "team": "Team",
-            "three": "Book the next check-in",
-            "two": "Confirm the pilot scope",
-            "you": "You"
-          },
-          "reply": {
-            "heading": "The reply you were waiting for.",
-            "label": "Monitoraggio delle risposte email",
-            "next": "Next step",
-            "quote": "“Thursday works for us. Could you share a short agenda?”",
-            "subject": "Re: Our next conversation",
-            "task": "Confirm the time and prepare an agenda"
-          },
-          "weekly": {
-            "heading": "A week worth looking back on.",
-            "label": "Riepilogo settimanale personale",
-            "next": "Carry into next week",
-            "one": "Shared the revised proposal",
-            "task": "Confirm the launch date with the team",
-            "two": "Wrapped up the onboarding guide"
-          }
-        },
-        "sample": "Esempio",
-        "tailor": "Cosa vorresti personalizzare?",
-        "use": "Usa questo workflow",
-        "whatHappens": "Cosa accade a ogni esecuzione"
+        }
       }
     },
     "templates": {

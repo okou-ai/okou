@@ -1,5 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { CapabilityHomePage } from "./capability-home-page.tsx";
 import { defaultAgentId$ } from "../../signals/agent.ts";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
@@ -25,11 +23,6 @@ import {
 } from "../../signals/okou-page/pinned-agents.ts";
 
 import { detach, Reason } from "../../signals/utils.ts";
-import { ChatComposer } from "./composer.tsx";
-import { ComposerTaskChips } from "./composer-task-chips.tsx";
-import { ChatHomeCompliance } from "./chat-home-compliance.tsx";
-import { SCROLL_FADE_Y_END_SM } from "./scroll-fade.ts";
-import { GrowthEntryHeader } from "./growth-entry.tsx";
 import {
   chatGreetingShouldAnimate$,
   chatPageTaglineIndex$,
@@ -452,8 +445,6 @@ export function AgentComposerPage() {
   const finishGreetingEntrance = useSet(finishChatGreetingEntrance$);
   const greetingIdentity = `${currentChatAgentId ?? "none"}:${tagline}`;
 
-  const switches = useGet(featureSwitch$);
-  const capabilityHome = switches[FeatureSwitchKey.HomeCapabilities];
   const taglineHeading = (
     <h2
       aria-label={tagline}
@@ -473,10 +464,7 @@ export function AgentComposerPage() {
         key={greetingIdentity}
         data-slot="chat-greeting"
         data-testid="chat-greeting"
-        className={cn(
-          "flex max-w-full items-center gap-4",
-          capabilityHome && "min-w-0 flex-1",
-        )}
+        className="flex min-w-0 max-w-full flex-1 items-center gap-4"
       >
         {/* The avatar is the greeting's first word. Only the first
             greeting in this App lifetime takes the entrance; changing
@@ -493,127 +481,12 @@ export function AgentComposerPage() {
         {taglineHeading}
       </div>
     );
-  if (capabilityHome) {
-    return (
-      <CapabilityHomePage
-        signals={composerSignals}
-        heading={heading}
-        entrance={animateGreeting}
-      />
-    );
-  }
-
   return (
-    <div className="relative flex flex-1 flex-col min-h-0">
-      <GrowthEntryHeader />
-
-      <main
-        className={cn(
-          "isolate flex flex-1 min-h-0 flex-col overflow-y-auto px-4 sm:px-6",
-          // Everything that scrolls paints under the corner controls. The
-          // composer card carries `z-10` of its own (the queued-messages
-          // strip tucks behind it), which tied with the corner's `z-10`
-          // and, being later in the DOM, drew the card over the credits pill
-          // once the page scrolled. Isolating the scroller keeps every
-          // z-index inside it beneath the corner; menus are portaled, so none
-          // of them needs to escape.
-          // From `md` the corner controls sit over the scroller's top 56px
-          // (16px gutter, 32px control, 8px below). The distance is padding
-          // inside the scroller rather than a band above it, so at rest the
-          // content starts where it always has, and once the page scrolls the
-          // content passes under the transparent corner to the top edge
-          // instead of being sliced flat 56px down on an edge that reads as
-          // an opaque bar.
-          "md:pt-14",
-          // On a short window the column scrolls above the compliance row;
-          // fade it rather than slicing it flat on the row's edge. Desktop
-          // only, because the row is: below `sm` the composer owns that edge.
-          SCROLL_FADE_Y_END_SM,
-        )}
-      >
-        {/* Below `sm` the composer is the page's footer. Every text tool a
-            phone user already has puts the field within thumb reach at the
-            bottom of the screen, and this page was the one surface that asked
-            them to reach back up to the top of the viewport for it.
-
-            The reordering is CSS, not DOM: the composer keeps its authored
-            position so a screen reader still meets the field right after the
-            tagline that invites it, and `order` only decides where the box
-            paints. `flex-1` gives the column the scrollport's height so the
-            greeting's auto margins below have free space to take; the column
-            still grows past it when the content is taller, and auto margins
-            collapse to nothing there, so the composer scrolls with the page
-            instead of holding the floor.
-
-            From `sm` up the column fills the scrollport too, and the block
-            from the greeting down to the type row sits in the middle of the
-            page: the two flexible boxes either side of it split the free
-            space evenly.
-
-            The column is narrower than the thread's 900px transcript. A first
-            message is a line or two, and a field as wide as a transcript reads
-            as a form to fill in. */}
-        <div
-          data-testid="agent-chat-scroll-content"
-          className="mx-auto w-full max-w-3xl flex flex-1 flex-col items-stretch gap-6 pt-8 pb-0 sm:gap-0 sm:pt-0"
-        >
-          <div aria-hidden className="hidden sm:block sm:min-h-8 sm:flex-1" />
-
-          {/* The greeting keeps the space the composer left behind rather than
-              staying pinned under the header with a screen-deep hole under it.
-              Both margins are auto, so the free space is split above and below
-              it and the line lands in the middle of what is left. The row is at
-              its final width on the first frame, so it is centered once and
-              never moves again. */}
-          <div className="flex min-h-14 w-full justify-center my-auto sm:mt-0 sm:mb-10">
-            {/* The async agent identity and user profile leave the first
-                renders incomplete. Reserve the finished row's height, but do
-                not let the avatar run a throwaway entrance before the real
-                greeting can mount under its final identity. */}
-            {heading}
-          </div>
-
-          {/* The same two the thread page's footer carries.
-              `data-chat-composer` names the box the soft keyboard has to
-              reveal, and `pb-safe-or-2` takes the larger of the gutter and the
-              home indicator's reserve — the reserve being keyboard-aware, so
-              the card clears the gesture bar without floating above the
-              keyboard. */}
-          <div
-            data-chat-composer
-            className="order-3 pb-safe-or-2 sm:order-none sm:pb-0"
-          >
-            <ChatComposer signals={composerSignals} />
-          </div>
-
-          {/* The lower of the two flexible boxes. Below `sm` it is not a box at
-              all, so its children keep their `order` in the column.
-
-              The type row hangs off the composer, so it takes the 20px step
-              rather than the 40px one between the greeting and the composer.
-
-              The box starts at that step plus the row's 36px, so the row
-              counts as part of the centred block rather than overhanging it.
-              From `md` it also carries the scroller's 56px top padding, kept
-              clear for the corner controls: at rest that distance is empty and
-              reads as the page's top margin, so the margin under the row has
-              to match it.
-
-              Keep the content-based minimum height: taller panels, such as
-              Document's portrait covers, use the free space above the greeting
-              before the page needs to scroll. Allowing this box to shrink
-              below its contents creates overflow even when the whole panel
-              could fit in the viewport. */}
-          <div className="contents sm:flex sm:grow sm:basis-14 sm:flex-col sm:gap-10 sm:pt-5 md:basis-28">
-            {/* Keep the final row clear of the scrollport's bottom edge. */}
-            <div className="order-2 sm:order-none sm:pb-10">
-              <ComposerTaskChips signals={composerSignals} />
-            </div>
-          </div>
-        </div>
-      </main>
-      <ChatHomeCompliance />
-    </div>
+    <CapabilityHomePage
+      signals={composerSignals}
+      heading={heading}
+      entrance={animateGreeting}
+    />
   );
 }
 

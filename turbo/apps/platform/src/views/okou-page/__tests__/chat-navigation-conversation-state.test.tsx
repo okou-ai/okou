@@ -5,7 +5,6 @@ import {
   type MailDraft,
 } from "@okouai/api-contracts/contracts/mail";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test, vi } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -153,33 +152,6 @@ function mailDraft(
     attachments: [],
   };
 }
-
-test("Keep an empty conversation ready for its first message with home capabilities off", async () => {
-  const thread = continuityThread(31, 1, "Empty conversation");
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 31,
-    threads: [thread],
-    chatEventRows: [],
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${thread.id}`,
-    ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
-  });
-
-  const invitation = await screen.findByText(
-    "Send a message to start the conversation",
-  );
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  expect(invitation).toBeVisible();
-  expect(composer).toBeVisible();
-
-  const scroller = scrollContainer(thread.id);
-  expect(scroller.scrollTop).toBe(0);
-  expect(scroller.querySelector("[data-scroll-to-bottom]")).toBeNull();
-});
 
 test("Explain unavailable email cards in a conversation", async () => {
   const thread = continuityThread(32, 1, "Unavailable email cards");

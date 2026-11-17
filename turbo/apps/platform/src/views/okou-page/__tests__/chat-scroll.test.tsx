@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
@@ -363,15 +362,11 @@ function mockMutableConversation(
 async function openConversation(
   threadId: string,
   loadedText: string,
-  capabilitiesEnabled = false,
 ): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/chats/${threadId}`,
     host: "app.okou.ai",
-    featureSwitches: {
-      [FeatureSwitchKey.HomeCapabilities]: capabilitiesEnabled,
-    },
   });
   const loadedMessage = await screen.findByText(loadedText);
   expect(loadedMessage).toBeVisible();
@@ -742,9 +737,13 @@ test("Hand the retained primary transcript restore to the new Router page when t
     expect(new URLSearchParams(window.location.search).get("sidebar")).toBe(
       secondaryId,
     );
+    // The empty side conversation renders discovery rather than a transcript.
     expect(document.querySelectorAll("[data-scroll-container]")).toHaveLength(
-      2,
+      1,
     );
+    expect(
+      screen.getByRole("group", { name: "Explore Okou capabilities" }),
+    ).toBeVisible();
     expect(document.querySelector("[data-chat-skeleton]")).toBeNull();
     expect(container.clientHeight).toBe(INITIAL_VIEWPORT_HEIGHT_PX);
     expect(container.scrollTop).toBe(0);
@@ -1231,11 +1230,7 @@ test.each([
       },
     );
     mockMutableConversation(threadId, events);
-    const container = await openConversation(
-      threadId,
-      "History answer 8",
-      true,
-    );
+    const container = await openConversation(threadId, "History answer 8");
     // happy-dom has no layout engine. The tray takes space only once the
     // user's menu selection has actually rendered it beside the transcript.
     const geometry = installChatScrollGeometry(container, () => {
@@ -1299,34 +1294,30 @@ test.each([
   },
 );
 
-test.each([false, true])(
-  "Preserve the visible message as content grows with Home capabilities %s",
-  async (capabilitiesEnabled) => {
-    mockMutableConversation(THREAD_IDS.growingHistory, historyWithLateImage(8));
-    const container = await openConversation(
-      THREAD_IDS.growingHistory,
-      "History answer 8",
-      capabilitiesEnabled,
-    );
-    const geometry = installChatScrollGeometry(container);
-    scrollFromUser(container, 240);
-    await expectHistoryPositionHeld();
-    const readingAnchor = geometry.firstVisibleAnchor();
-    const readingAnchorId = anchorId(readingAnchor);
-    const readingTop = readingAnchor.getBoundingClientRect().top;
+test("Preserve the visible message as content grows", async () => {
+  mockMutableConversation(THREAD_IDS.growingHistory, historyWithLateImage(8));
+  const container = await openConversation(
+    THREAD_IDS.growingHistory,
+    "History answer 8",
+  );
+  const geometry = installChatScrollGeometry(container);
+  scrollFromUser(container, 240);
+  await expectHistoryPositionHeld();
+  const readingAnchor = geometry.firstVisibleAnchor();
+  const readingAnchorId = anchorId(readingAnchor);
+  const readingTop = readingAnchor.getBoundingClientRect().top;
 
-    geometry.growBeforeMessages(75);
-    act(() => {
-      fireEvent.load(screen.getByAltText("Late history image"));
-    });
+  geometry.growBeforeMessages(75);
+  act(() => {
+    fireEvent.load(screen.getByAltText("Late history image"));
+  });
 
-    await waitFor(() => {
-      expect(
-        anchorById(container, readingAnchorId).getBoundingClientRect().top,
-      ).toBe(readingTop);
-    });
-  },
-);
+  await waitFor(() => {
+    expect(
+      anchorById(container, readingAnchorId).getBoundingClientRect().top,
+    ).toBe(readingTop);
+  });
+});
 
 async function completeRunWhileReadingExpandedWork() {
   // A live run demands activity summaries, whose contract requires a UUID run ID.

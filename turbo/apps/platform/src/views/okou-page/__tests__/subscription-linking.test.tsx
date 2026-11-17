@@ -109,7 +109,6 @@ function connectedCodex(needsReconnect = false): ModelProviderResponse {
 async function setupLinking(options?: {
   readonly accounts?: readonly ModelProviderResponse[];
   readonly enabled?: boolean;
-  readonly featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>;
   readonly path?: string;
   readonly mobile?: boolean;
 }) {
@@ -128,7 +127,6 @@ async function setupLinking(options?: {
     context,
     path: options?.path ?? `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
-      ...options?.featureSwitches,
       [FeatureSwitchKey.SubscriptionLinkingEntry]: options?.enabled ?? true,
     },
   });
@@ -306,12 +304,9 @@ test.each([false, true])(
   },
 );
 
-test("The feature switch removes every entry and preserves task chips", async () => {
-  await setupLinking({
-    enabled: false,
-    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
-  });
-  await screen.findByRole("region", { name: "Tasks to get started" });
+test("The subscription linking switch keeps capability discovery available", async () => {
+  await setupLinking({ enabled: false });
+  await screen.findByRole("group", { name: "Explore Okou capabilities" });
   const menu = await openAccountMenu();
   expect(menu).not.toHaveTextContent("Use more models");
   expect(findAction("Use more models")).toBeUndefined();

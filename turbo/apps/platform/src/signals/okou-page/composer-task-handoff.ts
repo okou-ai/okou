@@ -62,9 +62,8 @@ export const adoptComposerTaskHandoff$ = command(
     if (task === null) {
       return;
     }
-    // The task chips own the three general tasks and gate them on their own
-    // switch; a create mode is also what a slash command leaves behind when
-    // the chips are off.
+    // General task intents use task selection; dedicated creation types use
+    // the create mode.
     if (task === "workflow" || task === "website" || task === "visualization") {
       set(composer.taskChips.selectTask$, task);
     } else {

@@ -182,14 +182,12 @@ export function createComposerHomeSignals(
   openTask$: Command<void, [ComposerTask]>,
   selectTask$: Command<void, [ComposerTask | null]>,
   actions: WorkflowRecommendationActions,
-  closeWorkflow$: Command<void, []>,
 ) {
   const home = createHomeDiscoverySignals(
     selectedTask$,
     openTask$,
     selectTask$,
     actions,
-    closeWorkflow$,
   );
   return { ...home, swap$: createHomeSwapCommand(home, openTask$) };
 }
@@ -214,7 +212,6 @@ function createHomeDiscoverySignals(
   openTask$: Command<void, [ComposerTask]>,
   selectTask$: Command<void, [ComposerTask | null]>,
   actions: WorkflowRecommendationActions,
-  closeWorkflow$: Command<void, []>,
 ) {
   const internalVisible$ = state(true);
   const internalMenuOpen$ = state(false);
@@ -254,7 +251,6 @@ function createHomeDiscoverySignals(
     signal.throwIfAborted();
     set(internalVisible$, false);
     set(internalMenuOpen$, false);
-    set(closeWorkflow$);
     const cleared = set(actions.clearPrompt$);
     // The initiating capability control has unmounted; the composer remains.
     set(actions.focusEditor$);

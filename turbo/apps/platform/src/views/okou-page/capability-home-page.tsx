@@ -468,7 +468,7 @@ export function CapabilityHomePage({
   return (
     <ChatPageLayout
       header={
-        <GrowthEntryHeader inFlow>
+        <GrowthEntryHeader>
           <ExploreLink />
         </GrowthEntryHeader>
       }

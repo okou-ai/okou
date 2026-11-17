@@ -2064,7 +2064,6 @@
       "slashPanel": {
         "browseAll": "모든 템플릿 보기",
         "hint": "워크플로를 검색하거나 템플릿 선택…",
-        "make": "만들기",
         "useTemplate": "템플릿 {{title}} 사용"
       },
       "temporarilySwitchTo": "임시로 전환할 모델",
@@ -2591,206 +2590,6 @@
       "unsupported": "수동 초기화는 지원되지 않으며 사용량은 자동으로 복구됩니다."
     },
     "taskChips": {
-      "chooseTask": "작업 선택",
-      "ideas": {
-        "document": {
-          "contract": {
-            "label": "새 고객을 위한 계약서 초안 작성",
-            "prompt": "새 고객을 위한 계약서 초안 작성"
-          },
-          "creativeBrief": {
-            "label": "출시를 위한 크리에이티브 브리프 작성",
-            "prompt": "출시를 위한 크리에이티브 브리프 작성"
-          },
-          "invoice": {
-            "label": "항목별 청구서 작성",
-            "prompt": "항목별 청구서 작성"
-          },
-          "serviceAgreement": {
-            "label": "서비스 계약 개요 작성",
-            "prompt": "서비스 계약 개요 작성"
-          }
-        },
-        "image": {
-          "birthdayInvitation": {
-            "label": "생일 초대장 디자인하기",
-            "prompt": "생일 초대장 디자인하기"
-          },
-          "brandCharacter": {
-            "label": "브랜드 캐릭터 만들기",
-            "prompt": "브랜드 캐릭터 만들기"
-          },
-          "businessLogo": {
-            "label": "내 비즈니스 로고 만들기",
-            "prompt": "내 비즈니스 로고 만들기"
-          },
-          "cafeMenu": {
-            "label": "내 카페 메뉴 디자인하기",
-            "prompt": "내 카페 메뉴 디자인하기"
-          },
-          "eventPoster": {
-            "label": "내 행사 포스터 디자인하기",
-            "prompt": "내 행사 포스터 디자인하기"
-          },
-          "finishedSketch": {
-            "label": "스케치를 완성된 이미지로 만들기",
-            "prompt": "스케치를 완성된 이미지로 만들기"
-          },
-          "greetingCard": {
-            "label": "마음을 담은 카드 만들기",
-            "prompt": "마음을 담은 카드 만들기"
-          },
-          "headshot": {
-            "label": "업무용 프로필 사진 만들기",
-            "prompt": "업무용 프로필 사진 만들기"
-          },
-          "infographic": {
-            "label": "아이디어를 인포그래픽으로 만들기",
-            "prompt": "아이디어를 인포그래픽으로 만들기"
-          },
-          "newsletterCover": {
-            "label": "뉴스레터 표지 만들기",
-            "prompt": "뉴스레터 표지 만들기"
-          },
-          "packaging": {
-            "label": "제품 패키지 아이디어 살펴보기",
-            "prompt": "제품 패키지 아이디어 살펴보기"
-          },
-          "photoLighting": {
-            "label": "사진의 조명 개선하기",
-            "prompt": "사진의 조명 개선하기"
-          },
-          "presentationVisual": {
-            "label": "프레젠테이션용 시각 자료 만들기",
-            "prompt": "프레젠테이션용 시각 자료 만들기"
-          },
-          "productScene": {
-            "label": "내 제품을 새로운 장면에 배치하기",
-            "prompt": "내 제품을 새로운 장면에 배치하기"
-          },
-          "profileBanner": {
-            "label": "프로필 배너 새로 만들기",
-            "prompt": "프로필 배너 새로 만들기"
-          },
-          "roomDesign": {
-            "label": "내 방의 새로운 스타일 살펴보기",
-            "prompt": "내 방의 새로운 스타일 살펴보기"
-          },
-          "storePhoto": {
-            "label": "쇼핑몰용 상품 사진 다듬기",
-            "prompt": "쇼핑몰용 상품 사진 다듬기"
-          },
-          "websiteImage": {
-            "label": "웹사이트 이미지 만들기",
-            "prompt": "웹사이트 이미지 만들기"
-          }
-        },
-        "presentation": {
-          "clientProposal": {
-            "label": "고객사 제안서 작성하기",
-            "prompt": "고객 제안 덱을 만들어 주세요. 고객, 제안하는 업무, 일정, 가격을 물어봐 주세요."
-          },
-          "companyOverview": {
-            "label": "회사가 하는 일 설명하기",
-            "prompt": "회사 소개 덱을 만들어 주세요. 하는 일, 대상 고객, 청중이 기억했으면 하는 점을 물어봐 주세요."
-          },
-          "eventTalk": {
-            "label": "행사 발표 준비하기",
-            "prompt": "발표용 덱을 만들어 주세요. 행사, 청중, 전하고 싶은 핵심 메시지를 물어봐 주세요."
-          },
-          "pitchDeck": {
-            "label": "투자자에게 사업을 소개하기",
-            "prompt": "사업의 투자 유치용 피치덱을 만들어 주세요. 문제, 제품, 지금까지의 성과, 조달 규모를 물어봐 주세요."
-          },
-          "productIntro": {
-            "label": "새 제품 소개하기",
-            "prompt": "새 제품을 소개하는 덱을 만들어 주세요. 무엇을 하는지, 누구를 위한 것인지, 무엇이 다른지 물어봐 주세요."
-          },
-          "resultsReadout": {
-            "label": "성과 발표하기",
-            "prompt": "성과를 보고용 덱으로 만들어 주세요. 수치, 해당 기간, 뒷받침하는 의사결정을 물어봐 주세요."
-          },
-          "teamUpdate": {
-            "label": "팀 업데이트 자료 만들기",
-            "prompt": "팀 업데이트용 덱을 만들어 주세요. 이번 기간에 있었던 일, 다음 계획, 청중이 누구인지 물어봐 주세요."
-          },
-          "training": {
-            "label": "팀에게 무언가 가르치기",
-            "prompt": "제가 정한 주제로 교육용 덱을 만들어 주세요. 교육 대상과 교육 후 할 수 있어야 하는 일을 물어봐 주세요."
-          }
-        },
-        "website": {
-          "bookingPage": {
-            "label": "서비스 예약 페이지 만들기",
-            "prompt": "서비스와 예약 방법을 소개하는 페이지를 만들어 주세요. 기존 예약 링크를 사용하고 서비스 정보를 확인해 주세요."
-          },
-          "businessSite": {
-            "label": "내 사업 웹사이트 만들기",
-            "prompt": "사업, 서비스, 연락 방법을 소개하는 웹사이트를 만들어 주세요. 사업 정보와 대상 고객을 먼저 확인해 주세요."
-          },
-          "cafeMenu": {
-            "label": "카페 메뉴를 온라인에 올리기",
-            "prompt": "제공한 정보와 사진으로 메뉴, 가격, 영업시간, 위치가 있는 카페 웹사이트를 만들어 주세요."
-          },
-          "coursePage": {
-            "label": "내 강의 소개 페이지 만들기",
-            "prompt": "강의 내용, 수강 대상, 배울 내용을 소개하는 페이지를 만들어 주세요. 신청에는 제가 제공한 등록 링크를 사용해 주세요."
-          },
-          "eventPage": {
-            "label": "내 행사 페이지 만들기",
-            "prompt": "제공한 날짜, 장소, 일정, 등록 링크로 행사 페이지를 만들어 주세요. 빠진 정보는 물어봐 주세요."
-          },
-          "linkPage": {
-            "label": "내 링크를 한 페이지에 모으기",
-            "prompt": "소개, 작업, 소셜 링크를 모은 간단한 프로필 링크 페이지를 만들어 주세요. 포함할 링크를 확인해 주세요."
-          },
-          "portfolio": {
-            "label": "포트폴리오로 내 작업 소개하기",
-            "prompt": "제 작업을 소개하는 포트폴리오 사이트를 만들어 주세요. 프로젝트, 자기소개, 연락처를 정리해 주세요."
-          },
-          "productLaunch": {
-            "label": "내 제품 소개 페이지 만들기",
-            "prompt": "제품의 장점, 이미지, 다음 행동이 명확한 랜딩 페이지를 만들어 주세요. 출시할 제품과 대상을 확인해 주세요."
-          }
-        },
-        "workflow": {
-          "emailBrief": {
-            "label": "매일 아침 중요한 이메일 정리하기",
-            "prompt": "매일 아침 중요한 이메일과 답장하거나 처리할 일을 요약해 주세요. 사용할 받은편지함과 받을 시간을 먼저 확인해 주세요."
-          },
-          "fileOrganization": {
-            "label": "새로 도착한 파일 정리하기",
-            "prompt": "새 파일을 정해진 이름과 분류 규칙에 따라 정리해 주세요. 파일 출처, 저장 폴더, 분류 기준을 확인해 주세요."
-          },
-          "meetingActions": {
-            "label": "회의록에서 할 일 정리하기",
-            "prompt": "새 회의록에서 할 일, 담당자, 마감일을 추출하고 빠진 정보를 표시해 주세요. 회의록 위치를 먼저 확인해 주세요."
-          },
-          "meetingPrep": {
-            "label": "회의 준비 도움받기",
-            "prompt": "회의 전에 참석자, 배경 정보, 논의할 사항을 정리해 주세요. 캘린더, 자료 출처, 사전 알림 시점을 확인해 주세요."
-          },
-          "numbersBrief": {
-            "label": "매일 관심 지표 요약 받기",
-            "prompt": "관심 있는 수치와 지난번 대비 변화를 매일 요약해 주세요. 데이터 출처, 지표, 받을 시간을 확인해 주세요."
-          },
-          "progressRecap": {
-            "label": "진행 상황과 다음 할 일 정리하기",
-            "prompt": "완료한 일, 미완료 항목, 다음 우선순위를 정기적으로 정리해 주세요. 기록 위치와 일간 또는 주간 주기를 확인해 주세요."
-          },
-          "replyWatch": {
-            "label": "이메일 답장이 오면 알림 받기",
-            "prompt": "지정한 이메일에 답장이 오면 알리고 내용을 요약해 주세요. 어떤 이메일을 확인할지 먼저 물어봐 주세요."
-          },
-          "topicUpdates": {
-            "label": "관심 있는 주제의 새 소식 받기",
-            "prompt": "관심 있는 주제를 지속적으로 살펴보고 중요한 새 정보를 출처와 함께 요약해 주세요. 주제와 업데이트 주기를 확인해 주세요."
-          }
-        }
-      },
-      "ideasLabel": "시작 아이디어",
-      "label": "시작할 작업",
-      "more": "더 보기",
       "presentationFormat": "프레젠테이션 형식",
       "presentationFormats": {
         "html": "HTML",
@@ -2803,8 +2602,7 @@
         "image": "이미지 스타일",
         "nextPage": "다음 페이지",
         "previousPage": "이전 페이지",
-        "website": "웹사이트 템플릿",
-        "workflows": "워크플로"
+        "website": "웹사이트 템플릿"
       },
       "tasks": {
         "document": "문서",
@@ -2938,215 +2736,53 @@
       },
       "workflows": {
         "browse": "워크플로 둘러보기",
-        "close": "닫기",
-        "contextPrefix": "중요한 사항: {{preference}}",
         "items": {
           "competitors": {
-            "cadence": "매일 또는 매주",
             "description": "경쟁사 사이트의 가격과 기능 변화를 모니터링해 Notion에 기록하고 Slack에 알립니다.",
-            "name": "경쟁사 동향 모니터",
             "prompt": "다음 워크플로 설정을 도와주세요: 경쟁사 동향 모니터. 선택한 경쟁사 페이지를 정기적으로 확인. 가격, 상품 구성, 메시지의 중요한 변경 확인. 출처와 함께 Notion에 저장하고 선택적으로 Slack 알림. 활성화 전에 자료, 범위, 실행 시점, 전달 위치를 확인해 주세요. 먼저 초안을 만들어 주세요.",
-            "steps": {
-              "one": "선택한 경쟁사 페이지를 정기적으로 확인",
-              "three": "출처와 함께 Notion에 저장하고 선택적으로 Slack 알림",
-              "two": "가격, 상품 구성, 메시지의 중요한 변경 확인"
-            },
             "title": "경쟁사의 변화 파악하기"
           },
           "inbox": {
-            "cadence": "새 이메일이 도착할 때",
             "description": "받은편지함을 정리하고 답장이 필요한 이메일에 답장 초안을 작성합니다.",
-            "name": "Gmail 정리 및 답장 초안 작성",
             "prompt": "다음 워크플로 설정을 도와주세요: Gmail 정리 및 답장 초안 작성. 선택한 받은편지함 범위의 이메일 읽기. 합의한 규칙과 긴급도에 따라 분류. 답장 제안을 Gmail 초안으로 저장. 활성화 전에 자료, 범위, 실행 시점, 전달 위치를 확인해 주세요. 먼저 초안을 만들어 주세요. 이메일 답장은 초안으로만 만들고 제가 검토한 뒤 전송합니다.",
-            "steps": {
-              "one": "선택한 받은편지함 범위의 이메일 읽기",
-              "three": "답장 제안을 Gmail 초안으로 저장",
-              "two": "합의한 규칙과 긴급도에 따라 분류"
-            },
             "title": "중요한 이메일에 계속 대응하기"
           },
           "invoices": {
-            "cadence": "청구서에 라벨을 지정할 때",
             "description": "인보이스 이메일을 Drive에 저장하고 각 항목을 시트에 기록합니다.",
-            "name": "Gmail 인보이스를 Google Drive에 저장",
             "prompt": "다음 워크플로 설정을 도와주세요: Gmail 인보이스를 Google Drive에 저장. 선택한 Gmail 라벨로 청구서 식별. 첨부 청구서를 지정한 Drive 폴더에 저장. 필요하면 Google Sheets에 세부 정보 기록. 활성화 전에 자료, 범위, 실행 시점, 전달 위치를 확인해 주세요. 먼저 초안을 만들어 주세요.",
-            "steps": {
-              "one": "선택한 Gmail 라벨로 청구서 식별",
-              "three": "필요하면 Google Sheets에 세부 정보 기록",
-              "two": "첨부 청구서를 지정한 Drive 폴더에 저장"
-            },
             "title": "청구서 정리하기"
           },
           "meetings": {
-            "cadence": "회의가 추가될 때",
             "description": "각 캘린더 이벤트 전에 만나는 사람을 조사합니다.",
-            "name": "캘린더 회의 조사",
             "prompt": "다음 워크플로 설정을 도와주세요: 캘린더 회의 조사. 새 일정의 참석자와 세부 정보 읽기. 관련 업무 및 회사 배경 조사. 출처와 논의 사항을 담은 브리핑 준비. 활성화 전에 자료, 범위, 실행 시점, 전달 위치를 확인해 주세요. 먼저 초안을 만들어 주세요.",
-            "steps": {
-              "one": "새 일정의 참석자와 세부 정보 읽기",
-              "three": "출처와 논의 사항을 담은 브리핑 준비",
-              "two": "관련 업무 및 회사 배경 조사"
-            },
             "title": "준비된 상태로 회의에 참석하기"
           },
           "metrics": {
-            "cadence": "매일 아침",
             "description": "일일 방문자, 가입자 및 활성화 수치를 Slack에 게시합니다.",
-            "name": "일일 지표를 Slack에 게시하기",
             "prompt": "다음 워크플로 설정을 도와주세요: 일일 지표를 Slack에 게시하기. 합의한 웹사이트 및 가입 지표 확인. 집계 기간을 명시한 일일 현황 작성. 선택한 Slack 위치에 현황 공유. 활성화 전에 자료, 범위, 실행 시점, 전달 위치를 확인해 주세요. 먼저 초안을 만들어 주세요.",
-            "steps": {
-              "one": "합의한 웹사이트 및 가입 지표 확인",
-              "three": "선택한 Slack 위치에 현황 공유",
-              "two": "집계 기간을 명시한 일일 현황 작성"
-            },
             "title": "매일 사업 현황 확인하기"
           },
           "morning": {
-            "cadence": "매일 아침",
             "description": "Gmail, 캘린더, Notion 업데이트를 짧은 하루 계획으로 만들어 Slack에 보냅니다.",
-            "name": "모닝 브리핑",
             "prompt": "다음 워크플로 설정을 도와주세요: 모닝 브리핑. 중요한 이메일과 오늘의 일정을 읽기. 결정 사항, 후속 작업, 집중 시간의 우선순위 정리. 간단한 아침 계획을 Slack에 전달. 활성화 전에 자료, 범위, 실행 시점, 전달 위치를 확인해 주세요. 먼저 초안을 만들어 주세요.",
-            "steps": {
-              "one": "중요한 이메일과 오늘의 일정을 읽기",
-              "three": "간단한 아침 계획을 Slack에 전달",
-              "two": "결정 사항, 후속 작업, 집중 시간의 우선순위 정리"
-            },
             "title": "명확한 계획으로 하루 시작하기"
           },
           "recap": {
-            "cadence": "새 회의 메모를 주기적으로 확인",
             "description": "각 회의 후 결정 사항과 액션 아이템이 포함된 요약을 공유합니다.",
-            "name": "Slack에서 회의 요약 받기",
             "prompt": "다음 워크플로 설정을 도와주세요: Slack에서 회의 요약 받기. 새 회의 대화록 읽기. 명시된 결정, 작업, 담당자, 기한 추출. 선택한 위치에 간단한 회의 요약 전달. 활성화 전에 자료, 범위, 실행 시점, 전달 위치를 확인해 주세요. 먼저 초안을 만들어 주세요.",
-            "steps": {
-              "one": "새 회의 대화록 읽기",
-              "three": "선택한 위치에 간단한 회의 요약 전달",
-              "two": "명시된 결정, 작업, 담당자, 기한 추출"
-            },
             "title": "회의를 다음 행동으로 연결하기"
           },
           "reply": {
-            "cadence": "조건에 맞는 답장이 도착할 때",
             "description": "한 대화를 추적하여 새 답장의 핵심 내용과 다음 할 일을 알려줍니다.",
-            "name": "이메일 답장 확인",
             "prompt": "다음 워크플로 설정을 도와주세요: 이메일 답장 확인. 한 이메일 대화와 선택한 발신자 추적. 새 답장을 확인하고 핵심 내용 요약. 새 답장마다 한 번 알리고 필요하면 답장 초안 준비. 활성화 전에 자료, 범위, 실행 시점, 전달 위치를 확인해 주세요. 먼저 초안을 만들어 주세요. 이메일 답장은 초안으로만 만들고 제가 검토한 뒤 전송합니다.",
-            "steps": {
-              "one": "한 이메일 대화와 선택한 발신자 추적",
-              "three": "새 답장마다 한 번 알리고 필요하면 답장 초안 준비",
-              "two": "새 답장을 확인하고 핵심 내용 요약"
-            },
             "title": "기다리던 답장 놓치지 않기"
           },
           "weekly": {
-            "cadence": "매주",
             "description": "GitHub, Gmail, 캘린더 활동을 한 주 단위로 정리해 Slack에 보냅니다.",
-            "name": "개인 주간 다이제스트",
             "prompt": "다음 워크플로 설정을 도와주세요: 개인 주간 다이제스트. 선택한 자료에서 활동 수집. 성과, 미결정 사항, 후속 작업 정리. 선택한 Slack 위치에 주간 요약 공유. 활성화 전에 자료, 범위, 실행 시점, 전달 위치를 확인해 주세요. 먼저 초안을 만들어 주세요.",
-            "steps": {
-              "one": "선택한 자료에서 활동 수집",
-              "three": "선택한 Slack 위치에 주간 요약 공유",
-              "two": "성과, 미결정 사항, 후속 작업 정리"
-            },
             "title": "한 주의 업무를 깔끔하게 정리하기"
           }
-        },
-        "preview": {
-          "competitors": {
-            "changed": "Changed",
-            "footer": "Source page and change history included",
-            "heading": "One change worth a closer look.",
-            "label": "경쟁사 동향 모니터",
-            "now": "Now",
-            "plan": "Example company’s team plan",
-            "previous": "Previous",
-            "unit": "/ mo"
-          },
-          "inbox": {
-            "draft": "Reply draft",
-            "label": "Gmail 정리 및 답장 초안 작성",
-            "later": "Your weekly digest",
-            "needsReply": "Needs reply",
-            "readLater": "Read later",
-            "review": "Review before sending",
-            "subject": "Re: Next steps",
-            "text": "Thanks for the details. I’ve reviewed the proposal and…"
-          },
-          "invoices": {
-            "amount": "Amount",
-            "example": "Example studio",
-            "file": "Invoice — September",
-            "filed": "Filed",
-            "footer": "An optional Sheet keeps the record together",
-            "label": "Gmail 인보이스를 Google Drive에 저장",
-            "path": "Finance / Invoices / Sep",
-            "second": "Sample supply co.",
-            "status": "Status",
-            "vendor": "Vendor"
-          },
-          "meetings": {
-            "heading": "Your next conversation.",
-            "initials": "JL",
-            "label": "캘린더 회의 조사",
-            "note": "A useful place to begin",
-            "person": "Jordan Lee",
-            "question": "Ask how the team handles customer handoffs.",
-            "role": "Operations lead · Example company",
-            "tagOne": "Company context",
-            "tagTwo": "Discussion points"
-          },
-          "metrics": {
-            "activated": "Activated",
-            "footer": "A clear period. Only the metrics you choose.",
-            "label": "일일 지표를 Slack에 게시하기",
-            "period": "Yesterday vs. prior day",
-            "signups": "Signups",
-            "visitors": "Visitors"
-          },
-          "morning": {
-            "footer": "2 emails need your attention",
-            "heading": "A little clarity for your day.",
-            "label": "모닝 브리핑",
-            "meetingOne": "Team check-in",
-            "meetingTwo": "Client discovery",
-            "priority": "First things first",
-            "task": "Review the proposal before your client call"
-          },
-          "recap": {
-            "assign": "To assign",
-            "decision": "Decision: move ahead with a pilot",
-            "due": "Due",
-            "friday": "Fri",
-            "label": "Slack에서 회의 요약 받기",
-            "monday": "Mon",
-            "one": "Send the revised brief",
-            "owner": "Owner",
-            "task": "Next step",
-            "team": "Team",
-            "three": "Book the next check-in",
-            "two": "Confirm the pilot scope",
-            "you": "You"
-          },
-          "reply": {
-            "heading": "The reply you were waiting for.",
-            "label": "이메일 답장 확인",
-            "next": "Next step",
-            "quote": "“Thursday works for us. Could you share a short agenda?”",
-            "subject": "Re: Our next conversation",
-            "task": "Confirm the time and prepare an agenda"
-          },
-          "weekly": {
-            "heading": "A week worth looking back on.",
-            "label": "개인 주간 다이제스트",
-            "next": "Carry into next week",
-            "one": "Shared the revised proposal",
-            "task": "Confirm the launch date with the team",
-            "two": "Wrapped up the onboarding guide"
-          }
-        },
-        "sample": "예시",
-        "tailor": "조정하고 싶은 점이 있나요?",
-        "use": "이 워크플로 사용",
-        "whatHappens": "매번 진행되는 작업"
+        }
       }
     },
     "templates": {
