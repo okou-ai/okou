@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { fromJSONSchema, type core } from "zod";
+import { projectsContract } from "../../contracts/projects";
+import { iosResponseTransforms } from "../ios";
+import { selectClientResponseTransforms } from "../select";
 import {
   iosProjectSortOrderTransform,
   androidProjectSortOrderTransform,
@@ -35,6 +38,27 @@ const renamed = {
   name: "Renamed Campaign",
   sortOrder: "Zz",
 };
+
+describe("iOS Project sorting transform selection", () => {
+  it.each([
+    { version: "0.47.4", expected: [iosProjectSortOrderTransform] },
+    { version: "0.47.5", expected: [] },
+  ])(
+    "selects the published-version boundary for $version",
+    ({ version, expected }) => {
+      expect(
+        selectClientResponseTransforms({
+          transforms: iosResponseTransforms,
+          client: "iOS",
+          version,
+          method: projectsContract.events.method,
+          path: projectsContract.events.path,
+          status: 200,
+        }),
+      ).toStrictEqual(expected);
+    },
+  );
+});
 
 describe.each([iosProjectSortOrderTransform, androidProjectSortOrderTransform])(
   "$client Project sorting compatibility",

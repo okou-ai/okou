@@ -32,7 +32,7 @@ export const iosProjectSortOrderTransform: ClientResponseTransform = {
   method: projectsContract.events.method,
   path: projectsContract.events.path,
   status: 200,
-  maxVersion: "0.47.3",
+  maxVersion: "0.47.4",
   since: "#48352",
   transform: legacyProjectEvents,
 };

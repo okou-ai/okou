@@ -141,7 +141,8 @@ async function listedIds(actor: ApiTestUser) {
 
 describe("private Project order", () => {
   it.each([
-    { clientType: "iOS", legacyVersion: "0.47.3", currentVersion: "0.47.4" },
+    { clientType: "iOS", legacyVersion: "0.47.3", currentVersion: "0.47.5" },
+    { clientType: "iOS", legacyVersion: "0.47.4", currentVersion: "0.47.5" },
     {
       clientType: "Android",
       legacyVersion: "0.19.1",
