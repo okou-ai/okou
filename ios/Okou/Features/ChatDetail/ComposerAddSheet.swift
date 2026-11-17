@@ -164,6 +164,7 @@ private struct RecentPhotoTile: View {
 /// Without that the strip keeps Camera and All photos, which needs no access.
 @MainActor @Observable
 final class RecentPhotoLibrary {
+  private typealias Snapshot = (assets: [PHAsset], images: PhotoLibraryImageManager?)
   private(set) var recent: [PHAsset] = []
   @ObservationIgnored private var images: PhotoLibraryImageManager?
 
@@ -177,9 +178,7 @@ final class RecentPhotoLibrary {
   /// PhotoKit's synchronous setup and fetch must not hold up the sheet's first frames.
   /// A sending result transfers the immutable assets to this presentation's main-actor owner.
   @concurrent
-  private nonisolated static func readRecentPhotos() async -> sending (
-    assets: [PHAsset], images: PhotoLibraryImageManager?
-  ) {
+  private nonisolated static func readRecentPhotos() async -> sending Snapshot {
     guard !Task.isCancelled else { return ([], nil) }
     var status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     if status == .notDetermined {
