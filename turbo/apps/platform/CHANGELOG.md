@@ -13,6 +13,29 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1141.3](https://github.com/okou-ai/okou/compare/app-v0.1141.2...app-v0.1141.3) (2026-11-17)
+
+
+### Bug Fixes
+
+* **app:** keep the capability greeting stable when opening cards ([#48138](https://github.com/okou-ai/okou/issues/48138)) ([3224f05](https://github.com/okou-ai/okou/commit/3224f0541759ef408cd7c0313fd2981002a05223))
+* **app:** stabilize lark and feishu setup guide layout ([#48076](https://github.com/okou-ai/okou/issues/48076)) ([ce218a7](https://github.com/okou-ai/okou/commit/ce218a75fb5d45c1f0549a1874c2c4449cdb8c82))
+* make projects follow the single agent switch ([#48142](https://github.com/okou-ai/okou/issues/48142)) ([c8c181a](https://github.com/okou-ai/okou/commit/c8c181a5d258306463622a74129e8f770ba00fd7))
+
+
+### Refactoring
+
+* prepare structured run failure clients ([#48006](https://github.com/okou-ai/okou/issues/48006)) ([4839506](https://github.com/okou-ai/okou/commit/483950651b69db523f06a72f7cf2490c913ff8ab))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.78.0
+    * @okouai/core bumped to 8.847.2
+    * @okouai/ui bumped to 1.21.38
+
 ## [0.1141.2](https://github.com/okou-ai/okou/compare/app-v0.1141.1...app-v0.1141.2) (2026-11-17)
 
 

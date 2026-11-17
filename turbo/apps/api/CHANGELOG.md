@@ -10,6 +10,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.81.0](https://github.com/okou-ai/okou/compare/api-v2.80.0...api-v2.81.0) (2026-11-17)
+
+
+### Features
+
+* **api:** durably refresh confirmed marketing rewards ([#48139](https://github.com/okou-ai/okou/issues/48139)) ([6d68129](https://github.com/okou-ai/okou/commit/6d68129031a759c9a2cc232d4c365021e6b820be))
+
+
+### Bug Fixes
+
+* make projects follow the single agent switch ([#48142](https://github.com/okou-ai/okou/issues/48142)) ([c8c181a](https://github.com/okou-ai/okou/commit/c8c181a5d258306463622a74129e8f770ba00fd7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.78.0
+    * @okouai/core bumped to 8.847.2
+    * @okouai/db bumped to 2.42.0
+    * @okouai/pi-agent-runtime bumped to 1.51.144
+
 ## [2.80.0](https://github.com/okou-ai/okou/compare/api-v2.79.2...api-v2.80.0) (2026-11-17)
 
 
