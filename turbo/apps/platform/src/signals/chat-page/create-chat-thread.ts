@@ -2051,10 +2051,12 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
 }
 
 function createPagedEventResources({
+  artifacts$,
   chatActionContext,
   connector,
   onBrowserPageInput$,
 }: {
+  readonly artifacts$: Computed<Promise<ChatThreadArtifactRun[]>>;
   readonly chatActionContext: ChatActionContext;
   readonly connector: ComposerConnectorSignals;
   readonly onBrowserPageInput$: Command<void, []>;
@@ -2068,7 +2070,7 @@ function createPagedEventResources({
     }),
     onBrowserPageInput$,
   );
-  const artifactCardSignals = createArtifactCardSignalsRegistry();
+  const artifactCardSignals = createArtifactCardSignalsRegistry(artifacts$);
   const agentReferenceSignals = createAgentReferenceSignalsRegistry();
   const subscriptionResetCardSignals =
     createSubscriptionResetCardSignalsRegistry();
@@ -2473,6 +2475,7 @@ function createLoadEarlierGroupsAfterScroll(
 }
 
 interface ChatThreadMessagePipelineOptions {
+  artifacts$: Computed<Promise<ChatThreadArtifactRun[]>>;
   onBrowserPageInput$: Command<void, []>;
   chatActionContext: ChatActionContext;
   chatEvents: ChatEventSignals;
@@ -2481,6 +2484,7 @@ interface ChatThreadMessagePipelineOptions {
 }
 
 function createChatThreadMessagePipeline({
+  artifacts$,
   chatActionContext,
   chatEvents,
   connector,
@@ -2491,6 +2495,7 @@ function createChatThreadMessagePipeline({
   // Position is created before scroll writers are wired to the render window.
   const position = createThreadScrollPositionSignals(threadId);
   const resources = createPagedEventResources({
+    artifacts$,
     chatActionContext,
     connector,
     onBrowserPageInput$,
@@ -4017,6 +4022,7 @@ export function createChatPanelSignals(
     set(browserPresence.pageInput$);
   });
   const messagePipeline = createChatThreadMessagePipeline({
+    artifacts$: artifact.artifacts$,
     chatActionContext: { threadId, agentId },
     chatEvents,
     connector: composer.connector,

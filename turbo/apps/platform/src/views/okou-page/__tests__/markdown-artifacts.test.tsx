@@ -1,3 +1,4 @@
+import type { ChatThreadArtifactFile } from "@okouai/api-contracts/contracts/chat-threads";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -5,6 +6,7 @@ import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   ATTACHMENT_THREAD_ID,
+  artifactFile,
   findNamedLink,
   getNamedButton,
   getNamedLink,
@@ -14,8 +16,12 @@ import {
 
 const context = testContext();
 
-function installMessage(content: string) {
+function installMessage(
+  content: string,
+  artifacts?: readonly ChatThreadArtifactFile[],
+) {
   mockAttachmentChat(context, {
+    artifacts,
     chatEvents: [
       {
         id: "markdown-artifact-message",
@@ -174,6 +180,51 @@ test("Artifact link icons follow the file rather than its label or URL parameter
   expect(
     within(dashboardLink).getByTestId("markdown-artifact-link-icon-website"),
   ).toBeInTheDocument();
+});
+
+test("HTML presentations use artifact metadata for hosted and private links", async () => {
+  const hostedDeckUrl = "https://quarterly-deck.sites.vm7.io/";
+  const privateDeckUrl = "/artifacts/a1b2c3d4e5.html";
+  const websiteUrl = "https://ordinary-site.sites.vm7.io/";
+  const unmarkedHtmlUrl = publicArtifactUrl("slides.html");
+  const links = [
+    ["Quarterly overview", `${hostedDeckUrl}#/2`, "presentation"],
+    ["Private overview", `${privateDeckUrl}#slide-3`, "presentation"],
+    ["Company website", websiteUrl, "website"],
+    ["Unmarked HTML", unmarkedHtmlUrl, "website"],
+  ] as const;
+  installMessage(
+    links
+      .map(([label, url]) => {
+        return `[${label}](${url})`;
+      })
+      .join("\n\n"),
+    [
+      artifactFile("index.html", {
+        id: "html-presentation",
+        url: hostedDeckUrl,
+        aliasUrl: privateDeckUrl,
+        artifactKind: "presentation-html",
+        contentType: "text/html",
+      }),
+      artifactFile("index.html", {
+        id: "html-website",
+        url: websiteUrl,
+        artifactKind: "hosted-site",
+        contentType: "text/html",
+      }),
+    ],
+  );
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+
+  for (const [label, url, iconKind] of links) {
+    const link = await findNamedLink(label);
+    await expect(
+      within(link).findByTestId(`markdown-artifact-link-icon-${iconKind}`),
+    ).resolves.toBeInTheDocument();
+    expect(link).toHaveAttribute("href", url);
+  }
 });
 
 test("Bare platform URLs stay links and fenced URLs stay code", async () => {

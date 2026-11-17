@@ -38,10 +38,7 @@ import { openImageLightbox$ } from "../../signals/okou-page/attachment-chips.ts"
 import { openMarkdownArtifact$ } from "../../signals/okou-page/markdown-artifact-preview.ts";
 import { openThreadMailDraft$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import type {
-  ArtifactDescriptor,
-  ArtifactSignals,
-} from "../../signals/chat-page/artifact-card-signals.ts";
+import type { ArtifactSignals } from "../../signals/chat-page/artifact-card-signals.ts";
 import type { HostedSiteCard } from "../../signals/hosted-site-card.ts";
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
@@ -262,11 +259,13 @@ const CODE_CONTENT_TYPE_RE =
 function ArtifactLinkIcon({
   artifact,
 }: {
-  readonly artifact: ArtifactDescriptor;
+  readonly artifact: ArtifactSignals;
 }) {
+  const artifactKind = useLastResolved(artifact.artifactKind$);
   const fileType = artifactDownloadType({
     filename: artifact.filename,
     contentType: artifact.contentType,
+    artifactKind,
     previewKind: artifact.kind,
   });
   const isCode =
