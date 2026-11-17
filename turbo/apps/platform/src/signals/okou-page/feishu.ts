@@ -76,7 +76,7 @@ const resetFeishuSetupPresentation$ = command(({ set }) => {
   set(internalGuideImageIndex$, 0);
   set(internalRevealedCredentials$, []);
 });
-const FEISHU_SETUP_STEP_ORDER = [
+export const FEISHU_SETUP_STEPS = [
   "create",
   "credentials",
   "tokens",
@@ -261,18 +261,25 @@ export const closeFeishuSetup$ = command(({ get, set }) => {
 export const advanceFeishuSetupStep$ = command(({ set }) => {
   set(resetFeishuSetupPresentation$);
   set(internalSetupStep$, (step) => {
-    const index = FEISHU_SETUP_STEP_ORDER.indexOf(step);
-    return FEISHU_SETUP_STEP_ORDER[index + 1] ?? step;
+    const index = FEISHU_SETUP_STEPS.indexOf(step);
+    return FEISHU_SETUP_STEPS[index + 1] ?? step;
   });
 });
 
 export const goBackFeishuSetupStep$ = command(({ set }) => {
   set(resetFeishuSetupPresentation$);
   set(internalSetupStep$, (step) => {
-    const index = FEISHU_SETUP_STEP_ORDER.indexOf(step);
-    return index > 0 ? (FEISHU_SETUP_STEP_ORDER[index - 1] ?? step) : step;
+    const index = FEISHU_SETUP_STEPS.indexOf(step);
+    return index > 0 ? (FEISHU_SETUP_STEPS[index - 1] ?? step) : step;
   });
 });
+
+export const selectFeishuReviewStep$ = command(
+  ({ set }, step: FeishuSetupStep) => {
+    set(resetFeishuSetupPresentation$);
+    set(internalSetupStep$, step);
+  },
+);
 
 export const updateFeishuSetupForm$ = command(
   ({ set }, update: Partial<FeishuSetupInput>) => {

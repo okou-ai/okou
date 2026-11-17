@@ -15,7 +15,6 @@ import {
   Loader2,
   Plus,
   Settings,
-  Check,
   Eye,
   EyeOff,
 } from "lucide-react";
@@ -59,6 +58,7 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES, type RoutePath } from "../../signals/route-paths.ts";
 import { writeToClipboard } from "../../signals/okou-page/clipboard.ts";
 import {
+  FEISHU_SETUP_STEPS,
   feishuPlatform$,
   feishuRevealedCredentials$,
   toggleFeishuCredentialVisibility$,
@@ -87,6 +87,7 @@ import {
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
 import { FeishuSetupGuide } from "./feishu-setup-guide.tsx";
+import { FeishuSetupProgress } from "./feishu-setup-progress.tsx";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 
 const feishuIconImg = settingsIconAssetUrl("lark");
@@ -166,78 +167,6 @@ function FeishuGuideImage({
 }
 
 type FeishuCredentialField = keyof FeishuSetupInput;
-
-const FEISHU_SETUP_STEPS = [
-  "create",
-  "credentials",
-  "tokens",
-  "redirect",
-  "permissions",
-  "events",
-  "publish",
-] as const satisfies readonly FeishuSetupStep[];
-
-function FeishuSetupProgress({ step }: { step: FeishuSetupStep }) {
-  const { t } = useTranslation();
-  const platform = useGet(feishuPlatform$);
-  const currentIndex = FEISHU_SETUP_STEPS.indexOf(step);
-  return (
-    <ol
-      aria-label={t(
-        ($) => {
-          return $.onboarding.common.stepProgress;
-        },
-        {
-          current: currentIndex + 1,
-          total: FEISHU_SETUP_STEPS.length,
-        },
-      )}
-      className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-4 @4xl/feishu-setup:justify-center @4xl/feishu-setup:gap-5 @4xl/feishu-setup:px-6 @3xl/feishu-setup:py-5"
-    >
-      {FEISHU_SETUP_STEPS.map((item, index) => {
-        return (
-          <li
-            key={item}
-            aria-current={index === currentIndex ? "step" : undefined}
-            className="flex min-w-0 items-center gap-2 text-xs @4xl/feishu-setup:text-sm"
-          >
-            <span
-              className={cn(
-                "flex size-6 shrink-0 items-center justify-center rounded-full border border-surface-border text-xs text-muted-foreground",
-                index === currentIndex &&
-                  "border-primary bg-primary text-primary-foreground",
-                index < currentIndex && "bg-gray-50",
-              )}
-            >
-              {index < currentIndex ? (
-                <Check size={13} aria-hidden />
-              ) : (
-                index + 1
-              )}
-            </span>
-            <span
-              className={cn(
-                index === currentIndex
-                  ? "font-medium text-foreground"
-                  : "hidden text-muted-foreground @4xl/feishu-setup:inline",
-              )}
-            >
-              {t(($) => {
-                return $.connectors.providerSettings[platform].steps[item];
-              })}
-            </span>
-            {index < FEISHU_SETUP_STEPS.length - 1 ? (
-              <span
-                aria-hidden
-                className="ml-2 hidden h-px w-4 bg-divider @5xl/feishu-setup:block"
-              />
-            ) : null}
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
 
 function FeishuCredentialInput({
   field,
@@ -439,9 +368,9 @@ function FeishuCreateStep() {
           )}
         </p>
       </div>
-      <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-4">
-        <div>
-          <div className="text-sm font-medium text-foreground">
+      <div className="flex items-start gap-3 border-t border-border pt-5">
+        <div className="min-w-0 flex-1">
+          <div className="text-xs font-medium text-foreground">
             {t(
               ($) => {
                 return $.connectors.providerSettings[platform].create.iconTitle;
@@ -449,7 +378,7 @@ function FeishuCreateStep() {
               { brandName },
             )}
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
             <a
               href={platformFeishuAppIconImg}
               download={iconFilename}
@@ -499,7 +428,7 @@ function FeishuCreateStep() {
             },
             { brandName },
           )}
-          className="h-14 w-14 shrink-0 rounded-xl"
+          className="order-first size-10 shrink-0 rounded-xl"
         />
       </div>
     </div>
@@ -1036,7 +965,7 @@ function FeishuSetupWizardFooter({
     readOnly,
   });
   return (
-    <footer className="sticky bottom-0 order-3 flex shrink-0 items-center justify-between gap-3 border-t border-border bg-background px-5 py-5 @3xl/feishu-setup:static @3xl/feishu-setup:px-6 @5xl/feishu-setup:px-8">
+    <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-border pb-safe-or-4 pt-4">
       <Button
         type="button"
         variant="neutral"
@@ -1056,8 +985,8 @@ function FeishuSetupWizardFooter({
       </Button>
       <Button
         type="submit"
-        variant="default"
-        className="min-w-28"
+        variant="neutral"
+        className="min-w-28 border-foreground bg-foreground text-background hover:bg-foreground/90"
         disabled={!canContinue}
       >
         {saving ? <Loader2 size={16} className="animate-spin" /> : null}
@@ -1130,62 +1059,60 @@ function FeishuSetupWizard({
 
   return (
     <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
-      <FeishuSetupProgress step={step} />
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto @3xl/feishu-setup:grid @3xl/feishu-setup:grid-cols-[minmax(0,1.18fr)_minmax(0,1fr)] @3xl/feishu-setup:overflow-hidden">
+      <FeishuSetupProgress step={step} readOnly={readOnly} />
+      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto py-5 @3xl/feishu-setup:grid @3xl/feishu-setup:grid-cols-[minmax(0,1fr)_20rem] @3xl/feishu-setup:grid-rows-[minmax(0,1fr)] @3xl/feishu-setup:gap-7 @3xl/feishu-setup:overflow-hidden @5xl/feishu-setup:grid-cols-[minmax(0,1fr)_22rem]">
         <FeishuSetupGuide step={step} />
-        <div className="contents @3xl/feishu-setup:order-2 @3xl/feishu-setup:flex @3xl/feishu-setup:min-h-0 @3xl/feishu-setup:flex-col @3xl/feishu-setup:border-l @3xl/feishu-setup:border-border">
-          <div
-            id="feishu-setup-fields"
-            className="order-1 px-5 py-7 @3xl/feishu-setup:min-h-0 @3xl/feishu-setup:flex-1 @3xl/feishu-setup:overflow-y-auto @3xl/feishu-setup:px-8 @3xl/feishu-setup:py-9 @5xl/feishu-setup:px-12"
+        <div
+          id="feishu-setup-fields"
+          className="order-1 min-w-0 @3xl/feishu-setup:order-2 @3xl/feishu-setup:min-h-0 @3xl/feishu-setup:overflow-y-auto @3xl/feishu-setup:py-1"
+        >
+          <p className="mb-3 hidden text-xs text-muted-foreground @3xl/feishu-setup:block">
+            {t(
+              ($) => {
+                return $.onboarding.common.stepProgress;
+              },
+              {
+                current: FEISHU_SETUP_STEPS.indexOf(step) + 1,
+                total: FEISHU_SETUP_STEPS.length,
+              },
+            )}
+          </p>
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            className="mb-5 px-0 text-xs font-normal text-muted-foreground underline underline-offset-4 hover:text-foreground @3xl/feishu-setup:hidden"
+            onClick={() => {
+              // Fragment navigation reruns route setup and discards this draft.
+              document
+                .getElementById("feishu-setup-reference")
+                ?.scrollIntoView({ block: "start" });
+            }}
           >
-            <p className="mb-3 hidden text-xs text-muted-foreground @3xl/feishu-setup:block">
-              {t(
-                ($) => {
-                  return $.onboarding.common.stepProgress;
-                },
-                {
-                  current: FEISHU_SETUP_STEPS.indexOf(step) + 1,
-                  total: FEISHU_SETUP_STEPS.length,
-                },
-              )}
-            </p>
-            <Button
-              type="button"
-              variant="link"
-              size="sm"
-              className="mb-5 px-0 text-xs font-normal text-muted-foreground underline underline-offset-4 hover:text-foreground @3xl/feishu-setup:hidden"
-              onClick={() => {
-                // Fragment navigation reruns route setup and discards this draft.
-                document
-                  .getElementById("feishu-setup-reference")
-                  ?.scrollIntoView({ block: "start" });
-              }}
-            >
-              {t(($) => {
-                return $.connectors.setupGuide.viewReference;
-              })}
-            </Button>
-            <FeishuSetupStepContent
-              step={step}
-              data={data}
-              form={form}
-              saving={saving}
-              readOnly={readOnly}
-            />
-            <FeishuSetupHelp step={step} />
-          </div>
-          <FeishuSetupWizardFooter
+            {t(($) => {
+              return $.connectors.setupGuide.viewReference;
+            })}
+          </Button>
+          <FeishuSetupStepContent
             step={step}
             data={data}
+            form={form}
             saving={saving}
-            checkingAppId={appIdCheckLoadable.state === "loading"}
-            canContinue={canContinue}
             readOnly={readOnly}
-            onClose={onClose}
-            onBack={goBack}
           />
+          <FeishuSetupHelp step={step} />
         </div>
       </div>
+      <FeishuSetupWizardFooter
+        step={step}
+        data={data}
+        saving={saving}
+        checkingAppId={appIdCheckLoadable.state === "loading"}
+        canContinue={canContinue}
+        readOnly={readOnly}
+        onClose={onClose}
+        onBack={goBack}
+      />
     </form>
   );
 }
@@ -1674,17 +1601,24 @@ function FeishuPageHeader({
   backPath,
   backLabel,
   titleId,
+  guide = false,
 }: {
   readonly title: string;
   readonly description: string;
   readonly backPath: RoutePath;
   readonly backLabel: string;
   readonly titleId?: string;
+  readonly guide?: boolean;
 }) {
   return (
-    <header className="shrink-0 bg-transparent px-4 pb-3 pt-10 sm:px-6">
-      <div className="mx-auto max-w-[900px]">
-        <div className="mb-4">
+    <header
+      className={cn(
+        "shrink-0 bg-transparent",
+        guide ? "pb-5 pt-4 @3xl/feishu-setup:pt-5" : "px-4 pb-3 pt-10 sm:px-6",
+      )}
+    >
+      <div className={guide ? "min-w-0" : "mx-auto max-w-[900px]"}>
+        <div className={guide ? "mb-3" : "mb-4"}>
           <Link
             pathname={backPath}
             className={cn(
@@ -1697,7 +1631,12 @@ function FeishuPageHeader({
           </Link>
         </div>
         <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-muted/40">
+          <span
+            className={cn(
+              "flex shrink-0 items-center justify-center overflow-hidden rounded-[10px]",
+              guide ? "size-8" : "size-10 bg-muted/40",
+            )}
+          >
             <img src={feishuIconImg} alt="" className="h-7 w-7" />
           </span>
           <div className="min-w-0">
@@ -1707,7 +1646,12 @@ function FeishuPageHeader({
             >
               {title}
             </h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
+            <p
+              className={cn(
+                "mt-0.5 text-muted-foreground",
+                guide ? "text-xs" : "text-sm",
+              )}
+            >
               {description}
             </p>
           </div>
@@ -1747,10 +1691,11 @@ export function FeishuSetupPage() {
 
   return (
     <main
-      className="@container/feishu-setup flex min-h-0 flex-1 flex-col overflow-hidden"
+      className="@container/feishu-setup mx-auto flex min-h-0 w-full max-w-[1440px] flex-1 flex-col overflow-hidden px-4 sm:px-6"
       aria-labelledby="feishu-setup-title"
     >
       <FeishuPageHeader
+        guide
         titleId="feishu-setup-title"
         title={title}
         description={t(($) => {
