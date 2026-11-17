@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.41](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.40...runner-rs-v0.249.41) (2026-11-17)
+
+
+### Refactoring
+
+* **python:** centralize logged string metadata reads ([#48432](https://github.com/okou-ai/okou/issues/48432)) ([640143e](https://github.com/okou-ai/okou/commit/640143ed18ba665013b5f283308229d45ccbc953))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.40](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.39...runner-rs-v0.249.40) (2026-11-17)
 
 

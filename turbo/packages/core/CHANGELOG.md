@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.850.0](https://github.com/okou-ai/okou/compare/core-v8.849.0...core-v8.850.0) (2026-11-17)
+
+
+### Features
+
+* **app:** preselect multiple output formats from onboarding links ([#48433](https://github.com/okou-ai/okou/issues/48433)) ([293ff03](https://github.com/okou-ai/okou/commit/293ff03824b50f184a72b666db25a44725229eca))
+
 ## [8.849.0](https://github.com/okou-ai/okou/compare/core-v8.848.1...core-v8.849.0) (2026-11-17)
 
 

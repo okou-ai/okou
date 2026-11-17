@@ -13,6 +13,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1145.0](https://github.com/okou-ai/okou/compare/app-v0.1144.0...app-v0.1145.0) (2026-11-17)
+
+
+### Features
+
+* **app:** preselect multiple output formats from onboarding links ([#48433](https://github.com/okou-ai/okou/issues/48433)) ([293ff03](https://github.com/okou-ai/okou/commit/293ff03824b50f184a72b666db25a44725229eca))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.850.0
+    * @okouai/ui bumped to 1.21.46
+
 ## [0.1144.0](https://github.com/okou-ai/okou/compare/app-v0.1143.1...app-v0.1144.0) (2026-11-17)
 
 
