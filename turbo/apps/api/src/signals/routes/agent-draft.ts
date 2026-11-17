@@ -87,58 +87,65 @@ function createAgentDraftReader(
 
   return getAgentDraftInner$;
 }
+function createAgentDraftReplacer(
+  contract: AgentDraftContract,
+  projectEndpoint: boolean,
+) {
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    const enabled = await get(conditionalComposerDraftsEnabled$);
+    signal.throwIfAborted();
+    if (!enabled) {
+      return notFound("Conditional composer drafts unavailable");
+    }
+    if (projectEndpoint) {
+      const projects = await get(projectAccess$);
+      signal.throwIfAborted();
+      if (!projects) {
+        return notFound("Projects unavailable");
+      }
+    }
+    const auth = get(organizationAuthContext$);
+    const params = get(pathParamsOf(contract.replace));
+    const body = await get(bodyResultOf(contract.replace));
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return body.response;
+    }
+    const references = await get(
+      projectReferenceWritesEnabled(auth, body.data.draft.draftUserMessage),
+    );
+    signal.throwIfAborted();
+    if (!references) {
+      return notFound("Projects unavailable");
+    }
+    const scope = {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      agentId: params.id,
+    };
+    const [visibleAgent] = await get(db$)
+      .select({ id: agents.id })
+      .from(agents)
+      .where(visibleAgentIdentityCondition(scope))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!visibleAgent) {
+      return agentNotFound(params.id);
+    }
+    if (!(await set(replaceAgentDraft$, scope, body.data, signal))) {
+      return conflict("Composer draft changed; reload before replacing it");
+    }
+    return { status: 204 as const, body: undefined };
+  });
+}
 function createAgentDraftRoutes(
   contract: AgentDraftContract,
   projectEndpoint: boolean,
 ): readonly RouteEntry[] {
   const getAgentDraftInner$ = createAgentDraftReader(contract, projectEndpoint);
-  const replaceAgentDraftInner$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const enabled = await get(conditionalComposerDraftsEnabled$);
-      signal.throwIfAborted();
-      if (!enabled) {
-        return notFound("Conditional composer drafts unavailable");
-      }
-      if (projectEndpoint) {
-        const projects = await get(projectAccess$);
-        signal.throwIfAborted();
-        if (!projects) {
-          return notFound("Projects unavailable");
-        }
-      }
-      const auth = get(organizationAuthContext$);
-      const params = get(pathParamsOf(contract.replace));
-      const body = await get(bodyResultOf(contract.replace));
-      signal.throwIfAborted();
-      if (!body.ok) {
-        return body.response;
-      }
-      const references = await get(
-        projectReferenceWritesEnabled(auth, body.data.draft.draftUserMessage),
-      );
-      signal.throwIfAborted();
-      if (!references) {
-        return notFound("Projects unavailable");
-      }
-      const scope = {
-        orgId: auth.orgId,
-        userId: auth.userId,
-        agentId: params.id,
-      };
-      const [visibleAgent] = await get(db$)
-        .select({ id: agents.id })
-        .from(agents)
-        .where(visibleAgentIdentityCondition(scope))
-        .limit(1);
-      signal.throwIfAborted();
-      if (!visibleAgent) {
-        return agentNotFound(params.id);
-      }
-      if (!(await set(replaceAgentDraft$, scope, body.data, signal))) {
-        return conflict("Composer draft changed; reload before replacing it");
-      }
-      return { status: 204 as const, body: undefined };
-    },
+  const replaceAgentDraftInner$ = createAgentDraftReplacer(
+    contract,
+    projectEndpoint,
   );
   const patchAgentDraftInner$ = command(
     async ({ get, set }, signal: AbortSignal) => {

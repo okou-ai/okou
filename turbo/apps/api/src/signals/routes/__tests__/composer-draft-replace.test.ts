@@ -51,7 +51,9 @@ async function fixture(actor = bdd.user()): Promise<Fixture> {
 }
 
 async function enableConditionalDrafts(actor: ApiTestUser, enabled = true) {
-  if (!actor.orgId) throw new Error("Expected an organization");
+  if (!actor.orgId) {
+    throw new Error("Expected an organization");
+  }
   await updateFeatureSwitchesForUser(
     context,
     { ...actor, orgId: actor.orgId },
@@ -413,7 +415,9 @@ describe("conditional draft authorization and aliases", () => {
     "shares the %s resource with Project aliases and retains their feature gate",
     async (kind) => {
       const value = await fixture();
-      if (!value.actor.orgId) throw new Error("Expected an organization");
+      if (!value.actor.orgId) {
+        throw new Error("Expected an organization");
+      }
       const actor = { ...value.actor, orgId: value.actor.orgId };
       await updateFeatureSwitchesForUser(context, actor, {
         [FeatureSwitchKey.SingleAgent]: true,
@@ -475,7 +479,9 @@ describe("conditional draft authorization and aliases", () => {
     await patch("thread", value, saved);
     const foreign = bdd.user({ orgId: value.actor.orgId });
     await enableConditionalDrafts(foreign);
-    if (!foreign.orgId) throw new Error("Expected an organization");
+    if (!foreign.orgId) {
+      throw new Error("Expected an organization");
+    }
     await updateFeatureSwitchesForUser(
       context,
       { ...foreign, orgId: foreign.orgId },
