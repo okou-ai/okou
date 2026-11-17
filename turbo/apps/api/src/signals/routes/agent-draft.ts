@@ -17,7 +17,7 @@ import { projectReferenceWritesEnabled } from "../services/project-reference.ser
 import { replaceAgentDraft$ } from "../services/composer-draft-write.service";
 import {
   conditionalComposerDraftsEnabled$,
-  conditionalDraftReferencesAllowed$,
+  createConditionalDraftInput,
 } from "../services/composer-draft-access";
 import type { RouteEntry } from "../route-entry";
 
@@ -94,6 +94,7 @@ function createAgentDraftReplacer(
   contract: AgentDraftContract,
   projectEndpoint: boolean,
 ) {
+  const input$ = createConditionalDraftInput(bodyResultOf(contract.replace));
   return command(async ({ get, set }, signal: AbortSignal) => {
     const enabled = await get(conditionalComposerDraftsEnabled$);
     signal.throwIfAborted();
@@ -109,17 +110,12 @@ function createAgentDraftReplacer(
     }
     const auth = get(organizationAuthContext$);
     const params = get(pathParamsOf(contract.replace));
-    const body = await get(bodyResultOf(contract.replace));
+    const body = await get(input$);
     signal.throwIfAborted();
     if (!body.ok) {
       return body.response;
     }
-    const references = await set(
-      conditionalDraftReferencesAllowed$,
-      body.data.draft.draftUserMessage,
-      signal,
-    );
-    if (!references) {
+    if (!body.referencesAllowed) {
       return notFound("Projects unavailable");
     }
     const scope = {

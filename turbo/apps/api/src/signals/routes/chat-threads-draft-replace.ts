@@ -8,10 +8,13 @@ import { bodyResultOf, pathParamsOf } from "../context/request";
 import { replaceThreadDraft$ } from "../services/composer-draft-write.service";
 import {
   conditionalComposerDraftsEnabled$,
-  conditionalDraftReferencesAllowed$,
+  createConditionalDraftInput,
 } from "../services/composer-draft-access";
 import type { RouteEntry } from "../route-entry";
 
+const input$ = createConditionalDraftInput(
+  bodyResultOf(chatThreadDraftContract.replace),
+);
 const replace$ = command(async ({ get, set }, signal: AbortSignal) => {
   const enabled = await get(conditionalComposerDraftsEnabled$);
   signal.throwIfAborted();
@@ -20,17 +23,12 @@ const replace$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const auth = get(authContext$);
   const { id } = get(pathParamsOf(chatThreadDraftContract.replace));
-  const body = await get(bodyResultOf(chatThreadDraftContract.replace));
+  const body = await get(input$);
   signal.throwIfAborted();
   if (!body.ok) {
     return body.response;
   }
-  const references = await set(
-    conditionalDraftReferencesAllowed$,
-    body.data.draft.draftUserMessage,
-    signal,
-  );
-  if (!references) {
+  if (!body.referencesAllowed) {
     return badRequestMessage("Projects unavailable");
   }
   if (
