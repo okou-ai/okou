@@ -4,12 +4,13 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
-data class AssistantFailure(
-    val id: String,
-    val error: String,
-    val reason: String?,
-    val runFailure: Boolean,
-)
+sealed interface AssistantFailure {
+    val id: String
+
+    data class Run(override val id: String, val reason: String?) : AssistantFailure
+
+    data class Output(override val id: String, val error: String) : AssistantFailure
+}
 
 enum class FailureKind {
     Unknown,
@@ -80,55 +81,69 @@ fun latestAssistantFailure(
                         "run.cancelled",
                         "control.interrupt" -> true
                         "output.message",
-                        "run.completed" -> row.payload?.text("content")?.isNotEmpty() == true
+                        "run.completed" -> row.content?.isNotEmpty() == true
                         else -> false
                     }
             }
         } ?: return null
     val row = byId.getValue(last.id)
-    if (row.type !in setOf("output.error", "run.failed")) return null
-    val error = row.payload?.text("error").orEmpty()
-    if (row.type == "output.error" && error.isEmpty()) return null
-    return AssistantFailure(row.id, error, row.wire.text("failureReason"), row.type == "run.failed")
+    return when (row.type) {
+        "run.failed" -> AssistantFailure.Run(row.id, row.failureReason)
+        "output.error" ->
+            row.outputError?.takeIf { it.isNotEmpty() }?.let { AssistantFailure.Output(row.id, it) }
+        else -> null
+    }
 }
 
 fun classifyFailure(
     failure: AssistantFailure,
     personal: RecoveryFramework?,
+): FailureClassification =
+    when (failure) {
+        is AssistantFailure.Run -> classifyRunFailure(failure.reason, personal)
+        is AssistantFailure.Output -> classifyOutputFailure(failure.error, personal)
+    }
+
+private fun classifyRunFailure(
+    reason: String?,
+    personal: RecoveryFramework?,
+): FailureClassification =
+    when (reason) {
+        "session_history_limit",
+        "context_window_exceeded" -> FailureClassification(FailureKind.NewChat)
+        "guest_root_filesystem_full",
+        "guest_home_filesystem_full",
+        "provider_rate_limited",
+        "provider_stream_timeout",
+        "provider_queue_timeout",
+        "provider_server_error",
+        "response_connection_lost",
+        "codex_access_program_unavailable",
+        "provider_bad_request" -> FailureClassification(FailureKind.Retryable)
+        "execution_timeout" -> FailureClassification(FailureKind.Timeout)
+        "insufficient_credits" -> FailureClassification(FailureKind.Billing)
+        "provider_insufficient_credits",
+        "invalid_api_key",
+        "invalid_credentials",
+        "reconnect_required" -> FailureClassification(FailureKind.Settings)
+        "terms_acceptance_required" -> FailureClassification(FailureKind.Terms)
+        "input_too_large",
+        "provider_image_too_large" -> FailureClassification(FailureKind.InputTooLarge)
+        "output_token_limit" -> FailureClassification(FailureKind.OutputLimit)
+        "provider_overloaded" -> FailureClassification(FailureKind.Capacity)
+        "safety_policy_refusal" -> FailureClassification(FailureKind.Safety)
+        "unsupported_model",
+        "provider_model_restricted" -> FailureClassification(FailureKind.Unavailable)
+        "usage_limit" -> FailureClassification(FailureKind.Usage, personal, RecoveryLimit.Unknown)
+        else -> FailureClassification(FailureKind.Unknown)
+    }
+
+private fun classifyOutputFailure(
+    error: String,
+    personal: RecoveryFramework?,
 ): FailureClassification {
-    if (failure.runFailure)
-        return when (failure.reason) {
-            "session_history_limit",
-            "context_window_exceeded" -> FailureClassification(FailureKind.NewChat)
-            "guest_root_filesystem_full",
-            "guest_home_filesystem_full",
-            "provider_rate_limited",
-            "provider_stream_timeout",
-            "provider_queue_timeout",
-            "provider_server_error",
-            "response_connection_lost",
-            "codex_access_program_unavailable",
-            "provider_bad_request" -> FailureClassification(FailureKind.Retryable)
-            "execution_timeout" -> FailureClassification(FailureKind.Timeout)
-            "insufficient_credits" -> FailureClassification(FailureKind.Billing)
-            "provider_insufficient_credits",
-            "invalid_api_key",
-            "invalid_credentials",
-            "reconnect_required" -> FailureClassification(FailureKind.Settings)
-            "terms_acceptance_required" -> FailureClassification(FailureKind.Terms)
-            "input_too_large",
-            "provider_image_too_large" -> FailureClassification(FailureKind.InputTooLarge)
-            "output_token_limit" -> FailureClassification(FailureKind.OutputLimit)
-            "provider_overloaded" -> FailureClassification(FailureKind.Capacity)
-            "safety_policy_refusal" -> FailureClassification(FailureKind.Safety)
-            "unsupported_model",
-            "provider_model_restricted" -> FailureClassification(FailureKind.Unavailable)
-            "usage_limit" ->
-                FailureClassification(FailureKind.Usage, personal, RecoveryLimit.Unknown)
-            else -> FailureClassification(FailureKind.Unknown)
-        }
     // Match ECMAScript whitespace used by Web, including Unicode separators and BOM.
-    val text = failure.error.replace(Regex("[\\s\\p{Z}\\uFEFF]+"), " ").trim(' ')
+    val text = error.replace(Regex("[\\s\\p{Z}\\uFEFF]+"), " ").trim(' ')
     fun matches(pattern: String) = Regex(pattern, RegexOption.IGNORE_CASE).containsMatchIn(text)
     return when {
         text.lowercase() in setOf("insufficient_credits", "pro_required") ->
@@ -138,7 +153,7 @@ fun classifyFailure(
             FailureClassification(FailureKind.Timeout)
         text.uppercase() == "AUTONOMY_BUDGET_EXHAUSTED" ->
             FailureClassification(FailureKind.Autonomy)
-        unsupportedCodexModel(failure.error) ->
+        unsupportedCodexModel(error) ->
             FailureClassification(FailureKind.Unavailable, RecoveryFramework.Codex)
         matches("selected model is at capacity\\.? please try a different model") ->
             FailureClassification(FailureKind.Capacity, RecoveryFramework.Codex)

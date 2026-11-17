@@ -3,29 +3,21 @@ import Foundation
 import XCTest
 
 final class ChatEventProjectionTests: XCTestCase {
-  func testRunFailureIgnoresRetainedDiagnosticsWhileOutputErrorsKeepTheirMeaning() throws {
-    let payloads: [ChatEvent.Payload?] = [
-      nil, .init(content: "private diagnostic", error: "private diagnostic")
-    ]
-    for payload in payloads {
-      let history = try ChatEventProjection.history(
-        rows: [
-          ChatEvent(
-            id: eventID(1), createdAt: .now, eventType: .runFailed,
-            failureReason: "usage_limit", payload: payload)
-        ], recovering: false)
-      let failure = try XCTUnwrap(history.messages.first?.failure)
-      XCTAssertEqual(failure.error, "")
-      XCTAssertEqual(failure.recovery(personalFramework: nil).kind, .usage)
-      XCTAssertFalse(history.messages[0].text.contains("private diagnostic"))
-    }
+  func testStructuredRunFailureAndOrdinaryOutputErrorKeepTheirMeaning() throws {
+    let history = try ChatEventProjection.history(
+      rows: [
+        ChatEvent(
+          id: eventID(1), createdAt: .now, eventType: .runFailed, failureReason: "usage_limit")
+      ], recovering: false)
+    let failure = try XCTUnwrap(history.messages.first?.failure)
+    XCTAssertEqual(failure.recovery(personalFramework: nil).kind, .usage)
     let output = try ChatEventProjection.history(
       rows: [
         ChatEvent(
           id: eventID(2), createdAt: .now, eventType: .outputError,
-          payload: .init(error: "Ordinary output error"))
+          outputError: "Ordinary output error")
       ], recovering: false)
-    XCTAssertEqual(output.messages.first?.failure?.error, "Ordinary output error")
+    XCTAssertEqual(output.messages.first?.failure?.outputError, "Ordinary output error")
   }
 
   func testUsageHintsRetainLatestEventIdentityWithoutInventingMessagesOrActiveRuns() throws {
@@ -133,8 +125,8 @@ final class ChatEventProjectionTests: XCTestCase {
       ChatEvent(
         id: eventID(2), createdAt: .now, eventType: .inputRejected,
         payload: .init(
-          error: "Please try again",
-          userMessage: .init(version: 1, parts: [.init(type: "text", text: "Review")] + files)))
+          userMessage: .init(version: 1, parts: [.init(type: "text", text: "Review")] + files)),
+        inputError: "Please try again")
     ]
     let history = try ChatEventProjection.history(rows: rows, recovering: false)
     XCTAssertEqual(history.messages.count, 2)
@@ -171,12 +163,12 @@ final class ChatEventProjectionTests: XCTestCase {
   ) -> ChatEvent {
     let payload = text.map {
       ChatEvent.Payload(
-        error: type == .inputRejected ? "Rejected" : nil,
         userMessage: ChatEvent.UserMessage(
           version: 1, parts: [.init(type: "text", text: $0)]))
     }
     return ChatEvent(
       id: eventID(id), runId: runID, revokesEventId: revokes,
-      createdAt: Date(timeIntervalSince1970: seconds), eventType: type, payload: payload)
+      createdAt: Date(timeIntervalSince1970: seconds), eventType: type, payload: payload,
+      inputError: type == .inputRejected ? "Rejected" : nil)
   }
 }

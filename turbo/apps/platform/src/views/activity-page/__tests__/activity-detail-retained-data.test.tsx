@@ -1,6 +1,9 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
+import {
+  logsByIdContract,
+  type LogDetail,
+} from "@okouai/api-contracts/contracts/logs";
 import type { NetworkLogEntry } from "@okouai/api-contracts/contracts/runs";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -12,10 +15,7 @@ import {
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import type {
-  AgentEvent,
-  LogDetail,
-} from "../../../signals/okou-page/log-types.ts";
+import type { AgentEvent } from "../../../signals/okou-page/log-types.ts";
 
 const context = testContext();
 

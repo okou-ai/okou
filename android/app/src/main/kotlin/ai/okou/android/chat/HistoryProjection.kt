@@ -123,43 +123,36 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
             visible.filter { it.id in queued }
     val messages =
         ordered.mapNotNull { row ->
-            val payload = row.payload
             val blocks = mutableListOf<HistoryBlock>()
             val role =
                 when (row.type) {
                     "input.prompt",
                     "input.rejected",
                     "input.automation" -> {
-                        val document = payload?.get("userMessage")
+                        val document = row.userMessage
                         if (
                             row.type == "input.automation" &&
                                 (document == null || document === JsonNull)
                         )
                             return@mapNotNull null
                         blocks.addAll(userBlocks(document))
-                        payload?.text("error")?.let {
-                            blocks.add(HistoryBlock(HistoryBlockKind.Error, it))
-                        }
+                        row.inputError?.let { blocks.add(HistoryBlock(HistoryBlockKind.Error, it)) }
                         HistoryRole.User
                     }
                     "output.message" -> {
-                        payload?.text("content")?.let {
-                            blocks.add(HistoryBlock(HistoryBlockKind.Text, it))
-                        }
+                        row.content?.let { blocks.add(HistoryBlock(HistoryBlockKind.Text, it)) }
                             ?: blocks.add(
-                                HistoryBlock(HistoryBlockKind.Unsupported, row.wire.toString())
+                                HistoryBlock(HistoryBlockKind.Unsupported, row.archiveJson())
                             )
                         HistoryRole.Assistant
                     }
                     "run.failed" -> HistoryRole.System
                     "output.error" -> {
-                        payload?.text("content")?.let {
-                            blocks.add(HistoryBlock(HistoryBlockKind.Text, it))
-                        }
-                        payload?.text("error")?.let {
+                        row.content?.let { blocks.add(HistoryBlock(HistoryBlockKind.Text, it)) }
+                        row.outputError?.let {
                             blocks.add(HistoryBlock(HistoryBlockKind.Error, it))
                         }
-                        row.wire.text("failureReason")?.let {
+                        row.failureReason?.let {
                             blocks.add(HistoryBlock(HistoryBlockKind.Reference, it))
                         }
                         HistoryRole.System
@@ -171,20 +164,18 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
                         HistoryRole.Assistant
                     }
                     "run.completed" -> {
-                        payload?.text("content")?.let {
-                            blocks.add(HistoryBlock(HistoryBlockKind.Text, it))
-                        }
+                        row.content?.let { blocks.add(HistoryBlock(HistoryBlockKind.Text, it)) }
                         HistoryRole.Assistant
                     }
                     "usage.recorded" -> {
-                        payload?.get("usage")?.let {
+                        row.usage?.let {
                             blocks.add(HistoryBlock(HistoryBlockKind.Reference, it.toString()))
                         }
                         if (blocks.isEmpty()) return@mapNotNull null
                         HistoryRole.System
                     }
                     "output.followups" -> {
-                        payload?.text("content")?.let {
+                        row.content?.let {
                             blocks.add(HistoryBlock(HistoryBlockKind.Reference, it))
                         }
                         if (blocks.isEmpty()) return@mapNotNull null

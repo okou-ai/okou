@@ -441,7 +441,7 @@ class NativeRealtimeTest {
                         .map { ai.okou.android.chat.HistoryEvent.decode(it) }
                 val last = rows.last()
                 jsonResponse(
-                    """{"rows":[${rows.filter { it.seqId > since }.joinToString(",") { it.wire.toString() }}],"cursor":{"lastEventId":"${last.id}","lastSeqId":${last.seqId}},"hasMore":false}"""
+                    """{"rows":[${rows.filter { it.seqId > since }.joinToString(",") { it.archiveJson() }}],"cursor":{"lastEventId":"${last.id}","lastSeqId":${last.seqId}},"hasMore":false}"""
                 )
             }
             val followupEditor =

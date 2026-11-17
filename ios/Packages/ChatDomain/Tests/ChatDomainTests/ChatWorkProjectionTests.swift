@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 
 final class ChatWorkProjectionTests: XCTestCase {
-  func testUsageFollowsVisibleOutcomesIndependentlyOfRetainedDiagnostics() throws {
+  func testUsageFollowsVisibleOutcomesAndAnEmptySteerKeepsItsPrecedingAnchor() throws {
     for terminal in [ChatEventType.runFailed, .runCancelled] {
       let outcome = try project([
         input("ask", at: 0), event("finish", terminal, at: 1),
@@ -11,12 +11,6 @@ final class ChatWorkProjectionTests: XCTestCase {
       ])
       XCTAssertEqual(outcome.runUsageAnchors, ["run": "finish"])
       XCTAssertEqual(outcome.usageEventIDs, ["run": "usage"])
-      let retained = try project([
-        input("ask", at: 0),
-        event("finish", terminal, at: 1, content: "Private outcome", error: "Private diagnostic"),
-        event("usage", .usageRecorded, at: 2)
-      ])
-      XCTAssertEqual(outcome, retained)
       let steer = try project([
         input("ask", at: 0), output("answer", at: 1), input("steer", at: 2),
         event("finish", terminal, at: 3), event("usage", .usageRecorded, at: 4)
@@ -74,27 +68,22 @@ final class ChatWorkProjectionTests: XCTestCase {
   }
 
   func testOutputErrorsAndRunFailuresStayReadableAfterTheNextInput() throws {
-    let diagnostics: [String?] = [nil, "Connection lost"]
-    for diagnostic in diagnostics {
-      let rows = [
-        input("ask", at: 0), output("progress", at: 10),
-        event("error", .outputError, at: 20, error: "Connection lost"),
-        event(
-          "failed", .runFailed, at: 21, error: diagnostic,
-          failureReason: "provider_stream_timeout")
-      ]
-      let failed = try project(rows)
-      XCTAssertEqual(failed.messages.filter { $0.role == .system }.map(\.id), ["error", "failed"])
-      XCTAssertEqual(failed.executionState, .failed)
-      let queued = ChatEvent(
-        id: "retry", createdAt: date(30), eventType: .inputPrompt,
-        payload: .init(
-          userMessage: .init(version: 1, parts: [.init(type: "text", text: "Try again")])))
-      let retried = try project(rows + [queued])
-      XCTAssertEqual(retried.messages.filter { $0.role == .system }.map(\.id), ["error", "failed"])
-      XCTAssertNil(retried.latestFailureID)
-      XCTAssertEqual(retried.executionState, .queued)
-    }
+    let rows = [
+      input("ask", at: 0), output("progress", at: 10),
+      event("error", .outputError, at: 20, error: "Connection lost"),
+      event("failed", .runFailed, at: 21, failureReason: "provider_stream_timeout")
+    ]
+    let failed = try project(rows)
+    XCTAssertEqual(failed.messages.filter { $0.role == .system }.map(\.id), ["error", "failed"])
+    XCTAssertEqual(failed.executionState, .failed)
+    let queued = ChatEvent(
+      id: "retry", createdAt: date(30), eventType: .inputPrompt,
+      payload: .init(
+        userMessage: .init(version: 1, parts: [.init(type: "text", text: "Try again")])))
+    let retried = try project(rows + [queued])
+    XCTAssertEqual(retried.messages.filter { $0.role == .system }.map(\.id), ["error", "failed"])
+    XCTAssertNil(retried.latestFailureID)
+    XCTAssertEqual(retried.executionState, .queued)
   }
 
   func testRecoveredErrorStaysInWorkHistoryAndCancellationHasOneOutcome() throws {
@@ -114,7 +103,7 @@ final class ChatWorkProjectionTests: XCTestCase {
       input("ask", at: 0), output("progress", at: 10),
       event("error", .outputError, at: 20, error: "The provider connection was lost"),
       event(
-        "failed", .runFailed, at: 21, error: "Private diagnostic",
+        "failed", .runFailed, at: 21,
         failureReason: "reconnect_required")
     ])
     XCTAssertEqual(history.messages.filter { $0.isError }.map(\.id), ["error", "failed"])
@@ -126,8 +115,8 @@ final class ChatWorkProjectionTests: XCTestCase {
     let rejected = ChatEvent(
       id: "rejected", runId: "run", createdAt: date(0), eventType: .inputRejected,
       payload: .init(
-        error: "Not accepted",
-        userMessage: .init(version: 1, parts: [.init(type: "text", text: "Question")])))
+        userMessage: .init(version: 1, parts: [.init(type: "text", text: "Question")])),
+      inputError: "Not accepted")
     let history = try project([rejected, output("progress", at: 10), output("answer", at: 20)])
     XCTAssertTrue(history.messages.contains { $0.id == "rejected" })
     XCTAssertEqual(history.workSections.first?.hiddenMessageIDs, ["progress"])
@@ -201,6 +190,8 @@ final class ChatWorkProjectionTests: XCTestCase {
     ChatEvent(
       id: id, runId: runID, createdAt: date(seconds), eventType: type,
       failureReason: failureReason,
-      payload: .init(content: content, error: error))
+      payload: .init(content: content),
+      inputError: type == .inputRejected ? error : nil,
+      outputError: type == .outputError ? error : nil)
   }
 }

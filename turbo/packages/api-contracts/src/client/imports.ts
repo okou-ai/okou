@@ -1183,6 +1183,11 @@ export const clientContractImportManifest = [
     contracts: ["logsByIdContract", "logsListContract"],
     bindings: [
       {
+        name: "logStatusSchema",
+        source: "validators/logs",
+        imported: "logStatusSchema",
+      },
+      {
         name: "triggerSourceSchema",
         source: "validators/logs",
         imported: "triggerSourceSchema",
