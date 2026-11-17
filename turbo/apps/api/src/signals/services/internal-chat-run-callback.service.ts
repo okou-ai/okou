@@ -1,4 +1,8 @@
 import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
+import {
   emailDeliveryTargetSchema,
   type EmailDeliveryTarget,
 } from "./email-chat-callback-payload";
@@ -48,7 +52,6 @@ import { db$, writeDb$ } from "../external/db";
 import {
   publishChatIndicatorsChangedSafely,
   publishChatThreadDetailChangedSafely,
-  publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
 } from "../external/realtime";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
@@ -800,55 +803,80 @@ function agentPhoneChatDeliveryFields(
   };
 }
 
-async function publishAssistantErrorEventSignals(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly threadId: string;
-  readonly lifecycleEvent: "failed" | "cancelled";
-  readonly hasCancellationRecoveryState: boolean;
-}): Promise<void> {
-  await publishChatThreadMessageCreatedSafely({
-    userId: args.userId,
-    orgId: args.orgId,
-    threadId: args.threadId,
-  });
-  await publishThreadListChangedSafely({
-    userId: args.userId,
-    orgId: args.orgId,
-  });
-  // The Run's terminal status committed before its callback wrote this marker.
-  await publishChatIndicatorsChangedSafely({
-    userId: args.userId,
-    orgId: args.orgId,
-  });
-  if (
-    args.lifecycleEvent === "cancelled" &&
-    args.hasCancellationRecoveryState
-  ) {
-    await publishChatThreadDetailChangedSafely(args.userId, args.threadId);
-  }
-}
+const publishAssistantErrorEventSignals$ = command(
+  async (
+    { set },
+    args: {
+      readonly userId: string;
+      readonly orgId: string;
+      readonly threadId: string;
+      readonly lifecycleEvent: "failed" | "cancelled";
+      readonly hasCancellationRecoveryState: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    await set(
+      publishChatThreadMessageCreated$,
+      {
+        userId: args.userId,
+        orgId: args.orgId,
+        threadId: args.threadId,
+      },
+      signal,
+    );
+    await publishThreadListChangedSafely({
+      userId: args.userId,
+      orgId: args.orgId,
+    });
+    signal.throwIfAborted();
+    // The Run's terminal status committed before its callback wrote this marker.
+    await publishChatIndicatorsChangedSafely({
+      userId: args.userId,
+      orgId: args.orgId,
+    });
+    signal.throwIfAborted();
+    if (
+      args.lifecycleEvent === "cancelled" &&
+      args.hasCancellationRecoveryState
+    ) {
+      await publishChatThreadDetailChangedSafely(args.userId, args.threadId);
+      signal.throwIfAborted();
+    }
+  },
+);
 
-async function publishRunLifecycleMarkerSignals(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly threadId: string;
-}): Promise<void> {
-  await publishChatThreadMessageCreatedSafely({
-    userId: args.userId,
-    orgId: args.orgId,
-    threadId: args.threadId,
-  });
-  await publishThreadListChangedSafely({
-    userId: args.userId,
-    orgId: args.orgId,
-  });
-  // The Run's terminal status committed before its callback wrote this marker.
-  await publishChatIndicatorsChangedSafely({
-    userId: args.userId,
-    orgId: args.orgId,
-  });
-}
+const publishRunLifecycleMarkerSignals$ = command(
+  async (
+    { set },
+    args: {
+      readonly userId: string;
+      readonly orgId: string;
+      readonly threadId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    await set(
+      publishChatThreadMessageCreated$,
+      {
+        userId: args.userId,
+        orgId: args.orgId,
+        threadId: args.threadId,
+      },
+      signal,
+    );
+    await publishThreadListChangedSafely({
+      userId: args.userId,
+      orgId: args.orgId,
+    });
+    signal.throwIfAborted();
+    // The Run's terminal status committed before its callback wrote this marker.
+    await publishChatIndicatorsChangedSafely({
+      userId: args.userId,
+      orgId: args.orgId,
+    });
+    signal.throwIfAborted();
+  },
+);
 
 interface AssistantErrorEventArgs {
   readonly runId: string;
@@ -1072,7 +1100,7 @@ const insertAssistantErrorEvent$ = command(
       assistantErrorEventTouchOptions(args),
       signal,
     );
-    await publishAssistantErrorEventSignals(args);
+    await set(publishAssistantErrorEventSignals$, args, signal);
     signal.throwIfAborted();
     return assistantErrorEventResult(displayErrorMessage, inserted);
   },
@@ -1410,7 +1438,7 @@ const insertRunLifecycleMarker$ = command(
       runLifecycleMarkerTouchOptions(args, markerCreatedAt),
       signal,
     );
-    await publishRunLifecycleMarkerSignals(args);
+    await set(publishRunLifecycleMarkerSignals$, args, signal);
     signal.throwIfAborted();
     return runLifecycleMarkerResult(inserted);
   },
@@ -1440,11 +1468,21 @@ const loadRecommendedFollowupContextForCompletedRun$ = command(
     { set },
     args: {
       readonly threadId: string;
+      readonly timing: ChatCallbackPreCreateTimingCollector;
     },
     signal: AbortSignal,
   ): Promise<readonly ChatCompletionContextMessage[]> => {
-    return (
-      (await tapError(
+    const startedAt = now();
+    const recordTiming = () => {
+      args.timing.recordElapsed({
+        actionType:
+          "api_dispatch_pre_create_agent_chat_callback_load_followup_context",
+        spanKind: "nested",
+        startedAt,
+      });
+    };
+    const result = await onRejection(
+      tapError(
         set(loadChatThreadRecommendedFollowupContext$, args, signal),
         (err) => {
           log.warn("Recommended follow-up context load failed", {
@@ -1452,8 +1490,12 @@ const loadRecommendedFollowupContextForCompletedRun$ = command(
             err,
           });
         },
-      )) ?? []
+      ),
+      recordTiming,
     );
+    signal.throwIfAborted();
+    recordTiming();
+    return result ?? [];
   },
 );
 
@@ -1477,7 +1519,7 @@ const materializeCompletedChatResult$ = command(
       await (async () => {
         await onRejection(
           (async () => {
-            return await set(
+            const inserted = await set(
               insertAssistantEvents$,
               assistantEventInsertInput({
                 runId: args.runId,
@@ -1488,6 +1530,20 @@ const materializeCompletedChatResult$ = command(
               }),
               signal,
             );
+            if (inserted > 0) {
+              waitUntil(
+                set(
+                  projectCommittedChatThreadSearch$,
+                  {
+                    userId: args.chatThread.userId,
+                    orgId: args.chatThread.orgId,
+                    threadId: args.chatThread.chatThreadId,
+                  },
+                  signal,
+                ),
+              );
+            }
+            return inserted;
           })(),
           () => {
             timing.recordElapsed({
@@ -1523,7 +1579,7 @@ const materializeCompletedChatResult$ = command(
       await (async () => {
         await onRejection(
           (async () => {
-            return await set(
+            const inserted = await set(
               insertAssistantEvents$,
               assistantEventInsertInput({
                 runId: args.runId,
@@ -1534,6 +1590,20 @@ const materializeCompletedChatResult$ = command(
               }),
               signal,
             );
+            if (inserted > 0) {
+              waitUntil(
+                set(
+                  projectCommittedChatThreadSearch$,
+                  {
+                    userId: args.chatThread.userId,
+                    orgId: args.chatThread.orgId,
+                    threadId: args.chatThread.chatThreadId,
+                  },
+                  signal,
+                ),
+              );
+            }
+            return inserted;
           })(),
           () => {
             timing.recordElapsed({
@@ -1683,40 +1753,26 @@ const handleCompletedChatCallback$ = command(
       spanKind: "nested",
       startedAt: lifecycleStartedAt,
     });
+    waitUntil(
+      set(
+        projectCommittedChatThreadSearch$,
+        {
+          userId: args.chatThread.userId,
+          orgId: args.chatThread.orgId,
+          threadId: args.chatThread.chatThreadId,
+        },
+        signal,
+      ),
+    );
     if (inserted.outcome === "duplicate") {
       return inserted;
     }
 
-    const timing = args.timing;
-    const startedAt = now();
-    const followupContext = await (async () => {
-      const result = await onRejection(
-        (async () => {
-          return await set(
-            loadRecommendedFollowupContextForCompletedRun$,
-            {
-              threadId: args.chatThread.chatThreadId,
-            },
-            signal,
-          );
-        })(),
-        () => {
-          timing.recordElapsed({
-            actionType:
-              "api_dispatch_pre_create_agent_chat_callback_load_followup_context",
-            spanKind: "nested",
-            startedAt,
-          });
-        },
-      );
-      timing.recordElapsed({
-        actionType:
-          "api_dispatch_pre_create_agent_chat_callback_load_followup_context",
-        spanKind: "nested",
-        startedAt,
-      });
-      return result;
-    })();
+    const followupContext = await set(
+      loadRecommendedFollowupContextForCompletedRun$,
+      { threadId: args.chatThread.chatThreadId, timing: args.timing },
+      signal,
+    );
     signal.throwIfAborted();
 
     return {
@@ -1788,7 +1844,7 @@ const runCompletedChatCallbackSideEffects$ = command(
         signal,
       );
       if (followups) {
-        await set(
+        const inserted = await set(
           insertRecommendedFollowupsEvent$,
           {
             runId: args.runId,
@@ -1800,6 +1856,19 @@ const runCompletedChatCallbackSideEffects$ = command(
           },
           signal,
         );
+        if (inserted) {
+          waitUntil(
+            set(
+              projectCommittedChatThreadSearch$,
+              {
+                userId: args.chatThread.userId,
+                orgId: args.chatThread.orgId,
+                threadId: args.chatThread.chatThreadId,
+              },
+              signal,
+            ),
+          );
+        }
       }
     })();
 
@@ -1908,7 +1977,7 @@ const handleFailedChatCallback$ = command(
       signal,
     );
     signal.throwIfAborted();
-    return await set(
+    const result = await set(
       insertAssistantErrorEvent$,
       {
         runId: args.runId,
@@ -1931,6 +2000,18 @@ const handleFailedChatCallback$ = command(
       },
       signal,
     );
+    waitUntil(
+      set(
+        projectCommittedChatThreadSearch$,
+        {
+          userId: args.chatThread.userId,
+          orgId: args.chatThread.orgId,
+          threadId: args.chatThread.chatThreadId,
+        },
+        signal,
+      ),
+    );
+    return result;
   },
 );
 

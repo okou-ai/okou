@@ -1,4 +1,4 @@
-import { command, type Write } from "ccstate";
+import { command } from "ccstate";
 import { int, object } from "zod";
 import {
   and,
@@ -37,7 +37,7 @@ import {
   canonicalChatEventContent,
   canonicalChatEventUserMessage,
 } from "./canonical-chat-event-read.service";
-import { visibleChatEventCondition } from "./chat-event-shared.service";
+import { visibleChatEventCondition } from "./chat-event-visibility.service";
 
 interface ChatEventSearchProjectionStats {
   readonly threads: number;
@@ -337,98 +337,139 @@ function threadProjectionStats(
   };
 }
 
-async function projectThread(
-  {
-    set,
-  }: Parameters<Write<Promise<ThreadProjectionStats>, [CandidateThread]>>[0],
-  thread: CandidateThread,
-): Promise<ThreadProjectionStats> {
-  const db = set(writeDb$);
-  const chatThreadId = thread.chatThreadId;
-  const projectionThread = await (async (): Promise<{
-    readonly lastChatEventSeqId: number;
-  } | null> => {
-    const [thread] = await db
-      .select(projectionThreadSelection())
-      .from(chatThreads)
-      .leftJoin(
-        chatEventSequences,
-        eq(chatEventSequences.chatThreadId, chatThreads.id),
-      )
-      .where(eq(chatThreads.id, chatThreadId))
-      .limit(1);
-    return thread ?? null;
-  })();
-  if (!projectionThread) {
-    return emptyThreadProjectionStats();
-  }
-  const lastChatEventSeqId = projectionThread.lastChatEventSeqId;
-  const progress = await (async (): Promise<ThreadProjectionProgress> => {
-    const [progress] = await db
-      .select({ indexedSeqId: chatEventSearchMessageWatermarks.indexedSeqId })
-      .from(chatEventSearchMessageWatermarks)
-      .where(eq(chatEventSearchMessageWatermarks.chatThreadId, chatThreadId))
-      .limit(1);
-    const indexedSeqId = progress?.indexedSeqId ?? 0;
-    const lagging = lastChatEventSeqId > indexedSeqId;
-    const rows = lagging
-      ? await (async () => {
-          return await db
-            .select(projectionRowSelection())
-            .from(chatEvents)
-            .where(projectionRowRangeCondition(chatThreadId, indexedSeqId))
-            .orderBy(asc(chatEvents.seqId))
-            .limit(THREAD_EVENT_LIMIT);
-        })()
-      : [];
-    return { lagging, rows };
-  })();
+const projectThread$ = command(
+  async (
+    { set },
+    thread: CandidateThread,
+    signal: AbortSignal,
+  ): Promise<ThreadProjectionStats> => {
+    signal.throwIfAborted();
+    const db = set(writeDb$);
+    const chatThreadId = thread.chatThreadId;
+    const projectionThread = await (async (): Promise<{
+      readonly lastChatEventSeqId: number;
+    } | null> => {
+      const [thread] = await db
+        .select(projectionThreadSelection())
+        .from(chatThreads)
+        .leftJoin(
+          chatEventSequences,
+          eq(chatEventSequences.chatThreadId, chatThreads.id),
+        )
+        .where(eq(chatThreads.id, chatThreadId))
+        .limit(1);
+      return thread ?? null;
+    })();
+    signal.throwIfAborted();
+    if (!projectionThread) {
+      return emptyThreadProjectionStats();
+    }
+    const lastChatEventSeqId = projectionThread.lastChatEventSeqId;
+    const progress = await (async (): Promise<ThreadProjectionProgress> => {
+      const [progress] = await db
+        .select({ indexedSeqId: chatEventSearchMessageWatermarks.indexedSeqId })
+        .from(chatEventSearchMessageWatermarks)
+        .where(eq(chatEventSearchMessageWatermarks.chatThreadId, chatThreadId))
+        .limit(1);
+      signal.throwIfAborted();
+      const indexedSeqId = progress?.indexedSeqId ?? 0;
+      const lagging = lastChatEventSeqId > indexedSeqId;
+      const rows = lagging
+        ? await (async () => {
+            return await db
+              .select(projectionRowSelection())
+              .from(chatEvents)
+              .where(projectionRowRangeCondition(chatThreadId, indexedSeqId))
+              .orderBy(asc(chatEvents.seqId))
+              .limit(THREAD_EVENT_LIMIT);
+          })()
+        : [];
+      return { lagging, rows };
+    })();
+    signal.throwIfAborted();
 
-  const batch = await (async (): Promise<SearchProjectionBatch> => {
-    // Any event type can revoke an earlier one. Resolve every target before
-    // chat_events retention can remove its stable thread/sequence coordinate.
-    const { projectionByEventId, revokedEventIds } =
-      collectSearchMessageProjections(progress.rows);
-    const eventIds = [...projectionByEventId.keys()];
-    const visibleEventIds = await (async (): Promise<ReadonlySet<string>> => {
-      if (eventIds.length === 0) {
-        return new Set();
-      }
-      const rows = await db
-        .select({ id: chatEvents.id })
-        .from(chatEvents)
-        .where(searchEventVisibilityCondition(eventIds));
-      return new Set(
-        rows.map((row) => {
-          return row.id;
-        }),
+    const batch = await (async (): Promise<SearchProjectionBatch> => {
+      // Any event type can revoke an earlier one. Resolve every target before
+      // chat_events retention can remove its stable thread/sequence coordinate.
+      const { projectionByEventId, revokedEventIds } =
+        collectSearchMessageProjections(progress.rows);
+      const eventIds = [...projectionByEventId.keys()];
+      const visibleEventIds = await (async (): Promise<ReadonlySet<string>> => {
+        if (eventIds.length === 0) {
+          return new Set();
+        }
+        const rows = await db
+          .select({ id: chatEvents.id })
+          .from(chatEvents)
+          .where(searchEventVisibilityCondition(eventIds));
+        return new Set(
+          rows.map((row) => {
+            return row.id;
+          }),
+        );
+      })();
+      return searchProjectionBatch(
+        progress.rows,
+        thread,
+        projectionByEventId,
+        visibleEventIds,
+        revokedEventIds,
       );
     })();
-    return searchProjectionBatch(
-      progress.rows,
-      thread,
-      projectionByEventId,
-      visibleEventIds,
-      revokedEventIds,
+    signal.throwIfAborted();
+    const query = searchProjectionCommitSql(
+      batch,
+      progress.lagging
+        ? searchProjectionWatermark(chatThreadId, lastChatEventSeqId, progress)
+        : null,
     );
-  })();
-  const query = searchProjectionCommitSql(
-    batch,
-    progress.lagging
-      ? searchProjectionWatermark(chatThreadId, lastChatEventSeqId, progress)
-      : null,
-  );
-  const [writes] = parseRawRows(
-    searchProjectionWriteSchema,
-    await db.execute(query),
-  );
-  if (!writes) {
-    throw new Error("Chat search projection returned no write result");
-  }
-  return threadProjectionStats(progress, writes);
-}
+    const [writes] = parseRawRows(
+      searchProjectionWriteSchema,
+      await db.execute(query),
+    );
+    signal.throwIfAborted();
+    if (!writes) {
+      throw new Error("Chat search projection returned no write result");
+    }
+    return threadProjectionStats(progress, writes);
+  },
+);
 
-const projectThread$ = command(projectThread);
+/** Publish one bounded batch for the owner whose canonical event just committed. */
+export const projectChatThreadSearch$ = command(
+  async (
+    { set },
+    owner: {
+      readonly userId: string;
+      readonly orgId: string;
+      readonly threadId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    const [thread] = await set(writeDb$)
+      .select({
+        chatThreadId: chatThreads.id,
+        userId: chatThreads.userId,
+        orgId: agents.orgId,
+        agentId: agents.id,
+      })
+      .from(chatThreads)
+      .innerJoin(agents, eq(chatThreads.agentId, agents.id))
+      .where(
+        and(
+          eq(chatThreads.id, owner.threadId),
+          eq(chatThreads.userId, owner.userId),
+          eq(agents.orgId, owner.orgId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (thread) {
+      await set(projectThread$, thread, signal);
+    }
+  },
+);
 
 /**
  * Removes a bounded set of derived rows whose canonical thread is gone.
@@ -622,7 +663,7 @@ export const projectChatEventSearch$ = command(
     let deletedDocs = 0;
     for (const thread of candidateThreads) {
       signal.throwIfAborted();
-      const stats = await set(projectThread$, thread);
+      const stats = await set(projectThread$, thread, signal);
       signal.throwIfAborted();
       threads += stats.thread;
       indexedEvents += stats.indexedEvents;

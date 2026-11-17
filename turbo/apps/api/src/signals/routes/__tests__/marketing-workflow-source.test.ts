@@ -43,7 +43,7 @@ function client() {
 }
 
 async function invokedWorkflow() {
-  const consumer = marketingRewardConsumer(context);
+  const consumer = marketingRewardConsumer();
   const { actor } = await workflows.setupWorkflowOrg({ tier: "team" });
   const { agentId } = await workflows.createAgent(actor, {
     visibility: "public",
@@ -82,7 +82,7 @@ async function invokedWorkflow() {
   if (!input?.runId) {
     throw new Error("Expected public Workflow Run");
   }
-  await consumer.deliver();
+  await flushWaitUntilForTest();
   const source = consumer.received.find((event) => {
     return event.type === "workflow.run-created" && event.runId === input.runId;
   });
@@ -99,7 +99,6 @@ async function invokedWorkflow() {
     throw new Error("Expected captured queued Workflow source");
   }
   return {
-    consumer,
     actor,
     executor,
     group,
@@ -111,11 +110,6 @@ async function invokedWorkflow() {
 }
 
 test("requires the dedicated read-only capability before resolving a retained source", async () => {
-  await setupApp({
-    context,
-    routes: marketingWorkflowSourceRoutes,
-    isolatePg: true,
-  });
   const api = client();
   const params = { eventId: randomUUID() };
   for (const credential of [
@@ -138,11 +132,6 @@ test("requires the dedicated read-only capability before resolving a retained so
 });
 
 test("reports actual failed Run facts after Workflow deletion while preserving the original creator and financial state", async () => {
-  await setupApp({
-    context,
-    routes: marketingWorkflowSourceRoutes,
-    isolatePg: true,
-  });
   mockNow(new Date("2026-11-17T06:00:00.000Z"));
   const fixture = await invokedWorkflow();
   await createPublicAutomationRunApi(context).complete(
@@ -208,7 +197,7 @@ test("reports actual failed Run facts after Workflow deletion while preserving t
     }),
     [200],
   );
-  await fixture.consumer.deliver();
+  await flushWaitUntilForTest();
   expect(publications).toStrictEqual([
     {
       channel: `user:${fixture.actor.userId}`,
@@ -218,11 +207,6 @@ test("reports actual failed Run facts after Workflow deletion while preserving t
 });
 
 test("observes user cancellation through the same captured Run without creating an award", async () => {
-  await setupApp({
-    context,
-    routes: marketingWorkflowSourceRoutes,
-    isolatePg: true,
-  });
   const fixture = await invokedWorkflow();
   const params = { eventId: fixture.queued.id };
   const before = (await accept(client().observe({ params, headers }), [200]))

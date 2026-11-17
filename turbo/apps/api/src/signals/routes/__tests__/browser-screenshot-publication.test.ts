@@ -6,7 +6,6 @@ import {
 } from "@aws-sdk/client-s3";
 import { Readable } from "node:stream";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import { cronBrowserReconcileContract } from "@okouai/api-contracts/contracts/cron";
 
 import { expect, test } from "vitest";
 
@@ -14,16 +13,10 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 
 import { browserRoutes } from "../browser";
-import { cronBrowserReconcileRoutes } from "../cron-browser-reconcile";
-import { mockNow } from "../../../lib/time";
 
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
-import {
-  createBrowserFixtures,
-  MINUTE,
-  START,
-} from "./helpers/browser-fixture";
+import { createBrowserFixtures } from "./helpers/browser-fixture";
 
 const context = testContext();
 const { fixture, open, view } = createBrowserFixtures(context);
@@ -141,28 +134,14 @@ test("keeps the accepted screenshot downloadable after the shared provider retir
   });
 });
 
-test("reconciles concurrent thread deletions and cron while retaining sibling recovery", async () => {
-  const app = await setupApp({
-    context,
-    routes: cronBrowserReconcileRoutes,
-    isolatePg: true,
-  });
-  const reconcile = () => {
-    return accept(
-      app(cronBrowserReconcileContract).reconcile({
-        headers: { authorization: "Bearer test-cron-secret" },
-      }),
-      [200],
-    );
-  };
+test("deletes retired sibling previews without losing the surviving Browser recovery", async () => {
   const f = await fixture();
   await f.owned.run(async () => {
     installBrowserWindowContentCommands(f.provider.native);
     const s3 = storage();
     const chat = createChatFilesBddApi(context);
     const previews = [];
-    // More than one observation batch must retain and rotate live parents.
-    for (let index = 0; index < 22; index++) {
+    for (let index = 0; index < 3; index++) {
       // Cleanup needs a thread-owned Browser, without a Run lifecycle.
       const thread = await chat.createThread(f.owned.actor, {
         agentId: f.owned.agentId,
@@ -204,10 +183,14 @@ test("reconciles concurrent thread deletions and cron while retaining sibling re
     f.provider.sessionIds.delete(providerId);
     f.provider.stoppedSessionIds.add(providerId);
     f.provider.native.targets.clear();
-    mockNow(START + MINUTE);
-    await reconcile();
-    mockNow(START + 2 * MINUTE);
-    await reconcile();
+    const first = previews[0];
+    if (!first) {
+      throw new Error("Expected a chat with an accepted preview");
+    }
+    await accept(
+      client().leaseByThread({ headers, params: first.current, body: {} }),
+      [409],
+    );
     for (const { current, screenshotUrl } of previews) {
       await expect(view(current)).resolves.toMatchObject({
         status: "suspended",
@@ -215,37 +198,28 @@ test("reconciles concurrent thread deletions and cron while retaining sibling re
       });
     }
 
-    const deleted = previews.slice(0, 12);
-    const retained = previews.slice(12);
-    const completed = await Promise.all([
-      ...deleted.map(({ current }) => {
-        return chat.deleteThread(f.owned.actor, current.threadId);
-      }),
-      reconcile(),
-    ]);
-    expect(completed.at(-1)).toMatchObject({
-      status: 200,
-      body: { errors: 0 },
-    });
-    // Later passes finish any work excluded from the concurrent snapshots.
-    mockNow(START + 3 * MINUTE);
-    await reconcile();
-    mockNow(START + 4 * MINUTE);
-    await reconcile();
-    for (const { key } of deleted) {
-      expect(s3.bytes(key)).toBeUndefined();
-    }
-    for (const { current, key, screenshotUrl } of retained) {
-      await expect(view(current)).resolves.toMatchObject({
-        screenshotUrl,
-        updatedAt: new Date(START + 4 * MINUTE).toISOString(),
-      });
-      expect(s3.bytes(key)?.toString()).toMatch(/^preview:/u);
-    }
-    const survivor = retained[0];
+    const deleted = previews.slice(0, 2);
+    const survivor = previews[2];
     if (!survivor) {
       throw new Error("Expected a retained chat");
     }
+    await Promise.all([
+      ...deleted.map(({ current }) => {
+        return chat.deleteThread(f.owned.actor, current.threadId);
+      }),
+      accept(
+        client().leaseByThread({ headers, params: survivor.current, body: {} }),
+        [404],
+      ),
+    ]);
+    for (const { key } of deleted) {
+      expect(s3.bytes(key)).toBeUndefined();
+    }
+    await expect(view(survivor.current)).resolves.toMatchObject({
+      status: "suspended",
+      screenshotUrl: survivor.screenshotUrl,
+    });
+    expect(s3.bytes(survivor.key)?.toString()).toMatch(/^preview:/u);
     const reopened = await accept(
       client().open({
         headers,

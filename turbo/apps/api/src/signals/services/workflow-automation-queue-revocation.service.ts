@@ -1,3 +1,7 @@
+import {
+  publishChatThreadMessageCreated$,
+  type ChatEventPublicationScope,
+} from "./chat-event-publication.service";
 import { agents } from "@okouai/db/schema/agent";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import {
@@ -11,7 +15,7 @@ import { and, asc, eq, notExists } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { writeDb$ } from "../external/db";
-import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
+
 import { canonicalChatInputModelSelection } from "./canonical-chat-event-read.service";
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
 import { chatEventReplacementInsertSql } from "./chat-event.service";
@@ -22,7 +26,7 @@ export const revokeDeletedWorkflowAutomationInputs$ = command(
     { set },
     args: { readonly orgId: string; readonly automationId: string },
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<readonly ChatEventPublicationScope[]> => {
     const database = set(writeDb$);
     const revoker = alias(chatEvents, "deleted_automation_input_revoker");
     const sources = await database
@@ -87,13 +91,21 @@ export const revokeDeletedWorkflowAutomationInputs$ = command(
         changedThreads.set(source.chatThreadId, source.userId);
       }
     }
+    const publications = [...changedThreads].map(([threadId, userId]) => {
+      return { orgId: args.orgId, userId, threadId };
+    });
     for (const [threadId, userId] of changedThreads) {
-      await publishChatThreadMessageCreatedSafely({
-        orgId: args.orgId,
-        userId,
-        threadId,
-      });
+      await set(
+        publishChatThreadMessageCreated$,
+        {
+          orgId: args.orgId,
+          userId,
+          threadId,
+        },
+        signal,
+      );
       signal.throwIfAborted();
     }
+    return publications;
   },
 );

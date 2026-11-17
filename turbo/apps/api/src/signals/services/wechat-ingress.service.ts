@@ -1,3 +1,7 @@
+import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
 import { wechatAttachments } from "../external/wechat-media";
 import { MAX_WECHAT_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/integrations-wechat-files";
 import {
@@ -7,10 +11,7 @@ import {
 } from "./integration-input-assets.service";
 import { isWechatOwnerMessage, wechatEventId } from "./wechat-message-identity";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
-import {
-  publishChatThreadMessageCreatedSafely,
-  publishThreadListChangedSafely,
-} from "../external/realtime";
+import { publishThreadListChangedSafely } from "../external/realtime";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
@@ -428,6 +429,7 @@ export const receiveWechatMessage$ = command(
     );
     signal.throwIfAborted();
     if (inserted.length > 0) {
+      const owner = { orgId: connection.orgId, userId: connection.userId };
       recordWechatMessageReceived(id, threadId, receivedAt, receivedStartedAt);
       waitUntil(
         set(
@@ -451,23 +453,20 @@ export const receiveWechatMessage$ = command(
           chatThreadId: threadId,
           createdAt: currentTime,
           eventId: id,
-          authorizedScope: {
-            orgId: connection.orgId,
-            userId: connection.userId,
-          },
+          authorizedScope: owner,
         },
         signal,
       );
-      await publishThreadListChangedSafely({
-        orgId: connection.orgId,
-        userId: connection.userId,
-      });
+      await publishThreadListChangedSafely(owner);
       signal.throwIfAborted();
-      await publishChatThreadMessageCreatedSafely({
-        orgId: connection.orgId,
-        userId: connection.userId,
-        threadId,
-      });
+      waitUntil(
+        set(projectCommittedChatThreadSearch$, { ...owner, threadId }, signal),
+      );
+      await set(
+        publishChatThreadMessageCreated$,
+        { ...owner, threadId },
+        signal,
+      );
       signal.throwIfAborted();
     }
 

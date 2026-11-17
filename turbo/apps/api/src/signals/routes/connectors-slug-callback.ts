@@ -1,3 +1,5 @@
+import { waitUntil } from "../context/wait-until";
+import { deliverMarketingRewardEvents$ } from "../services/marketing-reward-event-delivery.service";
 import { command } from "ccstate";
 import {
   connectorCatalog,
@@ -639,6 +641,15 @@ const completeOAuthCallback$ = command(
       );
     }
 
+    if (result.marketingRewardEventId) {
+      waitUntil(
+        set(
+          deliverMarketingRewardEvents$,
+          { jobId: result.marketingRewardEventId, handlerVersion: 1 },
+          signal,
+        ),
+      );
+    }
     if (args.authorizeAgent) {
       args.diagnostics.stage = "authorize_agent";
       const authorization = await set(
@@ -748,6 +759,15 @@ const completeOpenIdCallback$ = command(
       );
     }
 
+    if (result.marketingRewardEventId) {
+      waitUntil(
+        set(
+          deliverMarketingRewardEvents$,
+          { jobId: result.marketingRewardEventId, handlerVersion: 1 },
+          signal,
+        ),
+      );
+    }
     if (args.authorizeAgent) {
       const authorization = await set(
         authorizeConnectedConnector$,

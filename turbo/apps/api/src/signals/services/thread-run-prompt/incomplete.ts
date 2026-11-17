@@ -23,7 +23,7 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { pgBooleanDecoder } from "../../../lib/db-structured-result";
 import { db$ } from "../../external/db";
 import { canonicalChatEventContent } from "../canonical-chat-event-read.service";
-import { visibleChatEventCondition } from "../chat-event-shared.service";
+import { visibleChatEventCondition } from "../chat-event-visibility.service";
 import {
   chatEventTextCondition,
   chatEventTypeIn,

@@ -1,3 +1,5 @@
+import { waitUntil } from "../context/wait-until";
+import { projectCommittedChatThreadSearch$ } from "./chat-event-publication.service";
 import { captureRunActivity$ } from "./run-activity.service";
 import { command, type Command } from "ccstate";
 
@@ -15,7 +17,7 @@ import { refreshAgentPhoneTypingEvents$ } from "./agent-event-consumer-agentphon
 import { ingestAxiomEvents$ } from "./agent-event-consumer-axiom.service";
 import {
   materializeRunOutputEvents$,
-  publishMaterializedChatProjection,
+  publishMaterializedChatProjection$,
   type MaterializedChatProjection,
 } from "./agent-event-consumer-run-output.service";
 import {
@@ -144,9 +146,23 @@ export const dispatchOptionalAgentEventConsumers$ = command(
 
     const otherConsumers = (async () => {
       if (accepted.chatProjection) {
+        const projection = accepted.chatProjection;
+        if (projection.insertedRowCount > 0 && !projection.eventPublished) {
+          waitUntil(
+            set(
+              projectCommittedChatThreadSearch$,
+              {
+                userId: projection.thread.userId,
+                orgId: projection.thread.orgId,
+                threadId: projection.thread.chatThreadId,
+              },
+              signal,
+            ),
+          );
+        }
         await tapError(
-          publishMaterializedChatProjection(
-            payload,
+          set(
+            publishMaterializedChatProjection$,
             accepted.chatProjection,
             signal,
           ),

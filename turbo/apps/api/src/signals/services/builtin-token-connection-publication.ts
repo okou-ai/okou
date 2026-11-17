@@ -1,5 +1,4 @@
 import { tokenConnectionWalletClauses } from "./connector-publication-wallet";
-import { randomUUID } from "node:crypto";
 import { isOneClickConnectorGrantKind } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorAuthMethodRuntimeConfig } from "@okouai/connectors/connector-config";
 import { env } from "../../lib/env";
@@ -35,6 +34,7 @@ import {
 } from "./builtin-token-connection-projection";
 
 interface TokenConnectionPublication extends TokenConnectionMetadataPublication {
+  readonly marketingRewardEventId: string;
   readonly orgId: string;
   readonly grantKind: ConnectorAuthMethodRuntimeConfig["grant"]["kind"];
   readonly credentials: Parameters<typeof builtinTokenCredentialWrites>[1];
@@ -204,7 +204,7 @@ export function builtinTokenConnectionPublicationClauses(
     clauses.push(
       sql`reward_source_event AS (${marketingRewardOAuthEventInsert(
         {
-          id: randomUUID(),
+          id: args.marketingRewardEventId,
           environment: env("ENV"),
           occurredAt: nowDate().toISOString(),
           orgId: args.orgId,

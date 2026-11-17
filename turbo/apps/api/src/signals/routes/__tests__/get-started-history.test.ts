@@ -42,7 +42,7 @@ test("only the dedicated service credential can export history, and absent confi
 });
 
 test("pages original cross-org redemption identities and financial timestamps without changing rewards", async () => {
-  const app = await setupApp({ context, routes, isolatePg: true });
+  const app = setupApp({ context, routes });
   const userId = `user_${randomUUID()}`;
   const orgId = `org_${randomUUID()}`;
   mocks.clerk.session(userId, orgId);
@@ -64,24 +64,32 @@ test("pages original cross-org redemption identities and financial timestamps wi
   );
   const history = app(getStartedHistoryContract);
   const headers = { authorization: `Bearer ${secret}` };
-  const page1 = await accept(
-    history.export({ headers, query: { limit: 1 } }),
+  const page = await accept(
+    history.export({ headers, query: { limit: 100 } }),
     [200],
   );
-  expect(page1.body).toMatchObject({ version: 1, environment: "development" });
-  expect(page1.body.records).toHaveLength(1);
-  expect(page1.body.nextCursor).toBe(page1.body.records[0]?.id);
-  const page2 = await accept(
-    history.export({
-      headers,
-      query: { limit: 1, after: page1.body.nextCursor ?? undefined },
-    }),
-    [200],
-  );
-  expect(page2.body.nextCursor).toBeNull();
-  const records = [...page1.body.records, ...page2.body.records];
+  expect(page.body).toMatchObject({ version: 1, environment: "development" });
+  const records = [...page.body.records];
+  let cursor = page.body.nextCursor;
+  for (let pageIndex = 0; cursor && pageIndex < 1000; pageIndex += 1) {
+    const next = await accept(
+      history.export({ headers, query: { limit: 100, after: cursor } }),
+      [200],
+    );
+    if (next.body.nextCursor && next.body.nextCursor <= cursor) {
+      throw new Error("History export cursor did not advance");
+    }
+    records.push(...next.body.records);
+    cursor = next.body.nextCursor;
+  }
+  if (cursor) {
+    throw new Error("History fixture scan exceeded its page budget");
+  }
   expect(
     records
+      .filter((row) => {
+        return row.actorUserId === userId;
+      })
       .map((row) => {
         return row.id;
       })

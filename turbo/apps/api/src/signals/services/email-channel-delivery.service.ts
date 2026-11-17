@@ -2,8 +2,8 @@ import { command } from "ccstate";
 import { emailOutbox } from "@okouai/db/runtime/email-outbox";
 import { writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
-import { now, nowDate } from "../../lib/time";
-import { drainEmailOutboxBatch$ } from "./email-common.service";
+import { nowDate } from "../../lib/time";
+import { sendEmailOutboxItem$ } from "./email-common.service";
 const EMAIL_CHANNEL_ADDRESS = "okou@okou.io";
 export const EMAIL_SIGNUP_REQUEST_HEADER = "X-Okou-Signup-Request";
 export interface EmailChannelMessage {
@@ -59,6 +59,6 @@ export const enqueueEmailText$ = command(
       .values({ ...emailChannelOutboxValues(args), createdAt: nowDate() })
       .onConflictDoNothing({ target: emailOutbox.id });
     signal.throwIfAborted();
-    waitUntil(set(drainEmailOutboxBatch$, { currentTimeMs: now() }, signal));
+    waitUntil(set(sendEmailOutboxItem$, args.id, signal));
   },
 );

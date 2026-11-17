@@ -97,6 +97,31 @@ const scanPage$ = command(
   },
 );
 
+const readInputRevocations$ = command(
+  async (
+    { get },
+    eventIds: readonly string[],
+  ): Promise<ReadonlyMap<string, number>> => {
+    if (eventIds.length === 0) {
+      return new Map();
+    }
+    const rows = await get(db$)
+      .select({
+        revokesEventId: chatEvents.revokesEventId,
+        seqId: chatEvents.seqId,
+      })
+      .from(chatEvents)
+      .where(inArray(chatEvents.revokesEventId, eventIds));
+    return new Map(
+      rows.flatMap((row) => {
+        return row.revokesEventId === null
+          ? []
+          : [[row.revokesEventId, row.seqId] as const];
+      }),
+    );
+  },
+);
+
 /**
  * Classify with bounded single-table reads and no locks. Every hold resolves
  * monotonically (archives and watermarks advance, runs terminate), so a
@@ -104,7 +129,7 @@ const scanPage$ = command(
  */
 const classify$ = command(
   async (
-    { get },
+    { get, set },
     events: readonly ScannedEvent[],
   ): Promise<ReadonlyMap<string, SkipReason | null>> => {
     const chatThreadIds = [
@@ -171,22 +196,7 @@ const classify$ = command(
         }),
       );
     })();
-    const revoked = await (async (): Promise<ReadonlySet<string>> => {
-      const eventIds = runlessInputIds;
-
-      if (eventIds.length === 0) {
-        return new Set();
-      }
-      const rows = await db
-        .select({ revokesEventId: chatEvents.revokesEventId })
-        .from(chatEvents)
-        .where(inArray(chatEvents.revokesEventId, eventIds));
-      return new Set(
-        rows.flatMap((row) => {
-          return row.revokesEventId === null ? [] : [row.revokesEventId];
-        }),
-      );
-    })();
+    const revocations = await set(readInputRevocations$, runlessInputIds);
     const nonterminal = await (async (): Promise<ReadonlySet<string>> => {
       if (runIds.length === 0) {
         return new Set();
@@ -210,15 +220,25 @@ const classify$ = command(
       events.map((event) => {
         const archivedSeqId = archived.get(event.chatThreadId);
         const indexedSeqId = indexed.get(event.chatThreadId);
+        // Search resolves a recall/replacement's target UUID to this row's
+        // durable sequence. Retain the target until that revoker is projected;
+        // indexing the original input alone does not make its deletion safe.
+        const requiredSearchSeqId = Math.max(
+          event.seqId,
+          revocations.get(event.id) ?? 0,
+        );
         let reason: SkipReason | null = null;
         if (archivedSeqId === undefined || archivedSeqId < event.seqId) {
           reason = "snapshot";
-        } else if (indexedSeqId === undefined || indexedSeqId < event.seqId) {
+        } else if (
+          indexedSeqId === undefined ||
+          indexedSeqId < requiredSearchSeqId
+        ) {
           reason = "search_watermark";
         } else if (
           event.runId === null &&
           isPendingInputEventType(event.eventType) &&
-          !revoked.has(event.id)
+          !revocations.has(event.id)
         ) {
           reason = "pending_runless";
         } else if (event.runId !== null && nonterminal.has(event.runId)) {

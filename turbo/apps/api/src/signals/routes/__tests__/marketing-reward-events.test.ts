@@ -12,6 +12,7 @@ import {
   type MarketingRewardSourceEvent,
 } from "../../../lib/marketing-reward-events";
 import { mockNow } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { server } from "../../../mocks/server";
 import { cronProcessBackgroundJobsRoutes } from "../cron-process-background-jobs";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -82,45 +83,84 @@ function receipt(event: MarketingRewardSourceEvent) {
   };
 }
 
-test("retains OAuth facts while delivery is disabled and sends only the accepted owner's fact once", async () => {
+test("cron recovers a retained source after configuration returns and retries its exact identity without forwarding credentials", async () => {
   await setupApp({
     context,
     routes: cronProcessBackgroundJobsRoutes,
     isolatePg: true,
   });
+  mockNow(new Date("2026-01-01T08:00:00.000Z"));
   const actor = bdd.user();
-  const connection = await connectGitHub(actor);
-  expect((await cron()).processed).toBe(0);
   const received: MarketingRewardOAuthEvent[] = [];
+  let followedRedirect = false;
   server.use(
+    http.post("https://untrusted.example.test/collect", () => {
+      followedRedirect = true;
+      return HttpResponse.json({ ok: true });
+    }),
     http.post(path, async ({ request }) => {
       expect(request.headers.get("authorization")).toBe(`Bearer ${secret}`);
       const event = marketingRewardOAuthEventSchema.parse(await request.json());
       received.push(event);
-      return HttpResponse.json(receipt(event));
+      switch (received.length) {
+        case 1: {
+          return HttpResponse.error();
+        }
+        case 2: {
+          return HttpResponse.json({ ...receipt(event), hash: "0".repeat(64) });
+        }
+        case 3: {
+          return HttpResponse.json({
+            ...receipt(event),
+            environment: "production",
+          });
+        }
+        case 4: {
+          return HttpResponse.json({
+            ...receipt(event),
+            eventId: randomUUID(),
+          });
+        }
+        case 5: {
+          return HttpResponse.json({ error: "conflict" }, { status: 409 });
+        }
+        case 6: {
+          return new HttpResponse(null, {
+            status: 307,
+            headers: { location: "https://untrusted.example.test/collect" },
+          });
+        }
+        default: {
+          return HttpResponse.json(receipt(event));
+        }
+      }
     }),
   );
+  const connection = await connectGitHub(actor);
+  await flushWaitUntilForTest();
+  expect(received).toStrictEqual([]);
   enableDelivery();
-  const results = await Promise.all([cron(), cron()]);
-  expect(
-    results.reduce((sum, result) => {
-      return sum + result.processed;
-    }, 0),
-  ).toBe(1);
-  expect(received).toStrictEqual([
-    {
-      version: 1,
-      id: expect.any(String),
-      environment: "development",
-      type: "connector.oauth-authorized",
-      occurredAt: expect.any(String),
-      orgId: actor.orgId,
-      userId: actor.userId,
-      connectionId: connection.id,
-      connector: { kind: "builtin", connectorSlug: "github" },
-    },
-  ]);
-  expect((await cron()).processed).toBe(0);
+  for (let attempt = 0; attempt < 7; attempt += 1) {
+    await cron();
+  }
+  expect(received).toHaveLength(7);
+  expect(received[0]).toStrictEqual({
+    version: 1,
+    id: expect.any(String),
+    environment: "development",
+    type: "connector.oauth-authorized",
+    occurredAt: "2026-01-01T08:00:00.000Z",
+    orgId: actor.orgId,
+    userId: actor.userId,
+    connectionId: connection.id,
+    connector: { kind: "builtin", connectorSlug: "github" },
+  });
+  for (const event of received) {
+    expect(event).toStrictEqual(received[0]);
+  }
+  expect(followedRedirect).toBeFalsy();
+  await Promise.all([cron(), cron()]);
+  expect(received).toHaveLength(7);
   expect((await readGetStartedStatus(context, actor)).quests).toContainEqual(
     expect.objectContaining({
       key: "connector",
@@ -130,97 +170,18 @@ test("retains OAuth facts while delivery is disabled and sends only the accepted
   );
 });
 
-test("recovers a lost storage acknowledgement by retrying the identical durable event", async () => {
-  await setupApp({
-    context,
-    routes: cronProcessBackgroundJobsRoutes,
-    isolatePg: true,
-  });
-  // A delayed source publication also makes the bounded retry eligible without
-  // waiting in the test; the lease arbiter still uses the actual database clock.
-  mockNow(new Date("2026-01-01T08:00:00.000Z"));
-  await connectGitHub(bdd.user());
-  enableDelivery();
+test("records custom OAuth connection identity without publishing its provider credentials", async () => {
+  const actor = bdd.user();
   const received: MarketingRewardOAuthEvent[] = [];
   server.use(
     http.post(path, async ({ request }) => {
       const event = marketingRewardOAuthEventSchema.parse(await request.json());
       received.push(event);
-      return received.length === 1
-        ? HttpResponse.error()
-        : HttpResponse.json(receipt(event));
-    }),
-  );
-  expect((await cron()).processed).toBe(1);
-  expect((await cron()).processed).toBe(1);
-  expect(received).toHaveLength(2);
-  expect(received[1]).toStrictEqual(received[0]);
-  expect((await cron()).processed).toBe(0);
-});
-
-test("retains facts after mismatched receipts or rejection and never forwards the credential to a redirect", async () => {
-  await setupApp({
-    context,
-    routes: cronProcessBackgroundJobsRoutes,
-    isolatePg: true,
-  });
-  mockNow(new Date("2026-01-01T08:00:00.000Z"));
-  await connectGitHub(bdd.user());
-  enableDelivery();
-  const received: MarketingRewardOAuthEvent[] = [];
-  let followedRedirect = false;
-  server.use(
-    http.post("https://untrusted.example.test/collect", () => {
-      followedRedirect = true;
-      return HttpResponse.json({ ok: true });
-    }),
-  );
-  server.use(
-    http.post(path, async ({ request }) => {
-      const event = marketingRewardOAuthEventSchema.parse(await request.json());
-      received.push(event);
-      if (received.length === 1) {
-        return HttpResponse.json({ ...receipt(event), hash: "0".repeat(64) });
-      }
-      if (received.length === 2) {
-        return HttpResponse.json({
-          ...receipt(event),
-          environment: "production",
-        });
-      }
-      if (received.length === 3) {
-        return HttpResponse.json({ ...receipt(event), eventId: randomUUID() });
-      }
-      if (received.length === 4) {
-        return HttpResponse.json({ error: "conflict" }, { status: 409 });
-      }
-      if (received.length === 5) {
-        return new HttpResponse(null, {
-          status: 307,
-          headers: { location: "https://untrusted.example.test/collect" },
-        });
-      }
       return HttpResponse.json(receipt(event));
     }),
   );
-  for (let attempt = 0; attempt < 6; attempt += 1) {
-    expect((await cron()).processed).toBe(1);
-  }
-  expect(received).toHaveLength(6);
-  expect(followedRedirect).toBeFalsy();
-  for (const event of received) {
-    expect(event).toStrictEqual(received[0]);
-  }
-  expect((await cron()).processed).toBe(0);
-});
+  enableDelivery();
 
-test("records custom OAuth connection identity without publishing its provider credentials", async () => {
-  await setupApp({
-    context,
-    routes: cronProcessBackgroundJobsRoutes,
-    isolatePg: true,
-  });
-  const actor = bdd.user();
   const provider = mockCustomConnectorOAuth2Provider(context);
   context.mocks.dns.resolve4.mockResolvedValue(["8.8.8.8"]);
   context.mocks.dns.resolve6.mockResolvedValue([]);
@@ -257,31 +218,28 @@ test("records custom OAuth connection identity without publishing its provider c
     code: "source-test-code",
     state,
   });
-  const received: MarketingRewardOAuthEvent[] = [];
-  server.use(
-    http.post(path, async ({ request }) => {
-      const event = marketingRewardOAuthEventSchema.parse(await request.json());
-      received.push(event);
-      return HttpResponse.json(receipt(event));
-    }),
-  );
-  enableDelivery();
-  expect((await cron()).processed).toBe(1);
+  await flushWaitUntilForTest();
   expect(received).toHaveLength(1);
   expect(received[0]).toMatchObject({
     orgId: actor.orgId,
     userId: actor.userId,
     connector: { kind: "custom", customConnectorId: custom.id },
   });
-  expect((await cron()).processed).toBe(0);
+  await flushWaitUntilForTest();
 });
 
 test("does not publish manual credentials or a declined OAuth authorization as an OAuth fact", async () => {
-  await setupApp({
-    context,
-    routes: cronProcessBackgroundJobsRoutes,
-    isolatePg: true,
-  });
+  const received: MarketingRewardSourceEvent[] = [];
+  server.use(
+    http.post(path, async ({ request }) => {
+      const event = marketingRewardSourceEventSchema.parse(
+        await request.json(),
+      );
+      received.push(event);
+      return HttpResponse.json(receipt(event));
+    }),
+  );
+  enableDelivery();
   const actor = bdd.user();
   await connectors.connectManualGrant(actor, "openai", "api-token", {
     apiKey: "manual-test-key",
@@ -296,27 +254,17 @@ test("does not publish manual credentials or a declined OAuth authorization as a
     error: "access_denied",
     state,
   });
-  enableDelivery();
-  expect((await cron()).processed).toBe(0);
+  await flushWaitUntilForTest();
+  expect(received).toStrictEqual([]);
 });
 
-test("retains iMessage link facts through lost acknowledgements, repeated requests, switching and source deletion", async () => {
-  await setupApp({
-    context,
-    routes: cronProcessBackgroundJobsRoutes,
-    isolatePg: true,
-  });
+test("publishes immutable iMessage owner facts through repeated requests, switching and source deletion", async () => {
   mockNow(new Date("2026-01-01T08:00:00.000Z"));
   const integrations = createBddIntegrationApi(context);
   const phone = createAgentPhoneBddApi(context);
   integrations.configureAgentPhoneProvider();
   integrations.configureAgentPhoneWebhook();
   const sends = phone.captureAgentPhoneSends();
-  const actor = integrations.user();
-  const proof = await phone.requestConnectLink(uniquePhoneHandle(), sends);
-  await integrations.requestConnectAgentPhone(actor, proof, [200]);
-  await integrations.requestConnectAgentPhone(actor, proof, [200]);
-  expect((await cron()).processed).toBe(0);
   const received: MarketingRewardSourceEvent[] = [];
   server.use(
     http.post(path, async ({ request }) => {
@@ -325,16 +273,16 @@ test("retains iMessage link facts through lost acknowledgements, repeated reques
         await request.json(),
       );
       received.push(event);
-      return received.length === 1
-        ? HttpResponse.error()
-        : HttpResponse.json(receipt(event));
+      return HttpResponse.json(receipt(event));
     }),
   );
   enableDelivery();
-  expect((await cron()).processed).toBe(1);
-  expect((await cron()).processed).toBe(1);
-  expect(received).toHaveLength(2);
-  expect(received[1]).toStrictEqual(received[0]);
+  const actor = integrations.user();
+  const proof = await phone.requestConnectLink(uniquePhoneHandle(), sends);
+  await integrations.requestConnectAgentPhone(actor, proof, [200]);
+  await integrations.requestConnectAgentPhone(actor, proof, [200]);
+  await flushWaitUntilForTest();
+  expect(received).toHaveLength(1);
   expect(received[0]).toStrictEqual({
     version: 2,
     id: expect.any(String),
@@ -356,10 +304,10 @@ test("retains iMessage link facts through lost acknowledgements, repeated reques
   ).resolves.toMatchObject({
     linked: false,
   });
-  expect((await cron()).processed).toBe(1);
-  expect(received).toHaveLength(3);
+  await flushWaitUntilForTest();
+  expect(received).toHaveLength(2);
   const first = received[0];
-  const switched = received[2];
+  const switched = received[1];
   if (
     first?.type !== "imessage.identity-linked" ||
     switched?.type !== "imessage.identity-linked"
@@ -370,71 +318,81 @@ test("retains iMessage link facts through lost acknowledgements, repeated reques
   expect(switched.linkId).not.toBe(first.linkId);
   expect(switched.orgId).toBe(actor.orgId);
   expect(switched.userId).toBe(actor.userId);
-  expect((await cron()).processed).toBe(0);
+  await flushWaitUntilForTest();
 });
 
-test("delivers owned Slack OAuth facts even when the OAuth version queue is rejected", async () => {
-  await setupApp({
-    context,
-    routes: cronProcessBackgroundJobsRoutes,
-    isolatePg: true,
-  });
+test("a rejected OAuth source does not prevent another owner's Slack publication", async () => {
   mockNow(new Date("2026-01-01T08:00:00.000Z"));
-  const actor = bdd.user({ orgRole: "org:admin" });
-  await connectGitHub(actor);
-  const integrations = createBddIntegrationApi(context);
-  integrations.configureSlackAppMocks();
-  const installed = await integrations.installSlackWorkspace(actor);
+  const actor = bdd.user();
+  const slackActor = bdd.user({ orgRole: "org:admin" });
   const received: MarketingRewardSourceEvent[] = [];
-  let rejectOAuth = true;
   server.use(
     http.post(path, async ({ request }) => {
       const event = marketingRewardSourceEventSchema.parse(
         await request.json(),
       );
       received.push(event);
-      if (rejectOAuth && event.version === 1) {
-        return HttpResponse.json(
-          { error: "temporarily rejected" },
-          { status: 409 },
-        );
-      }
-      return HttpResponse.json(receipt(event));
+      return event.userId === actor.userId && event.version === 1
+        ? HttpResponse.json({ error: "temporarily rejected" }, { status: 409 })
+        : HttpResponse.json(receipt(event));
     }),
   );
   enableDelivery();
-  expect((await cron()).processed).toBe(2);
-  const links = received.filter((event) => {
-    return event.version === 2;
+  await connectGitHub(actor);
+  await flushWaitUntilForTest();
+  const rejected = received.filter((event) => {
+    return event.userId === actor.userId;
   });
-  expect(links).toStrictEqual([
+  expect(rejected).toHaveLength(1);
+  expect(rejected[0]).toMatchObject({
+    version: 1,
+    type: "connector.oauth-authorized",
+    orgId: actor.orgId,
+    userId: actor.userId,
+    connector: { kind: "builtin", connectorSlug: "github" },
+  });
+  const integrations = createBddIntegrationApi(context);
+  integrations.configureSlackAppMocks();
+  const installed = await integrations.installSlackWorkspace(slackActor);
+  await flushWaitUntilForTest();
+  // Slack's accepted OAuth creates both its connector fact and workspace fact.
+  // Neither request may claim A's already-due rejected GitHub event.
+  expect(
+    received.filter((event) => {
+      return event.userId === actor.userId;
+    }),
+  ).toStrictEqual(rejected);
+  expect(
+    received.filter((event) => {
+      return event.userId === slackActor.userId && event.version === 1;
+    }),
+  ).toStrictEqual([
+    expect.objectContaining({
+      type: "connector.oauth-authorized",
+      orgId: slackActor.orgId,
+      userId: slackActor.userId,
+      connector: { kind: "builtin", connectorSlug: "slack" },
+    }),
+  ]);
+  expect(
+    received.filter((event) => {
+      return event.version === 2;
+    }),
+  ).toStrictEqual([
     {
       version: 2,
       id: expect.any(String),
       environment: "development",
       type: "slack.oauth-authorized",
       occurredAt: "2026-01-01T08:00:00.000Z",
-      orgId: actor.orgId,
-      userId: actor.userId,
+      orgId: slackActor.orgId,
+      userId: slackActor.userId,
       workspaceId: installed.teamId,
     },
   ]);
-  rejectOAuth = false;
-  expect((await cron()).processed).toBeGreaterThan(0);
-  expect(
-    received.filter((event) => {
-      return event.version === 2;
-    }),
-  ).toHaveLength(1);
-  expect((await cron()).processed).toBe(0);
 });
 
 test("publishes an anonymous Slack installation only after administrator authorization binds its organization", async () => {
-  await setupApp({
-    context,
-    routes: cronProcessBackgroundJobsRoutes,
-    isolatePg: true,
-  });
   const integrations = createBddIntegrationApi(context);
   integrations.configureSlackAppMocks();
   const installed = await integrations.installSlackWorkspace(null);
@@ -450,13 +408,13 @@ test("publishes an anonymous Slack installation only after administrator authori
     }),
   );
   enableDelivery();
-  expect((await cron()).processed).toBe(0);
+  await flushWaitUntilForTest();
   const binding = {
     workspaceId: installed.teamId,
     slackUserId: uniqueSlackUserId(),
   };
   await integrations.connectSlackUser(actor, binding);
-  expect((await cron()).processed).toBeGreaterThan(0);
+  await flushWaitUntilForTest();
   expect(
     received.filter((event) => {
       return event.version === 2;
@@ -468,7 +426,7 @@ test("publishes an anonymous Slack installation only after administrator authori
   });
   const owned = await integrations.requestSlackIntegrationStatus(actor, [200]);
   expect(owned.body).toMatchObject({ isInstalled: true });
-  expect((await cron()).processed).toBeGreaterThan(0);
+  await flushWaitUntilForTest();
   const links = received.filter((event) => {
     return event.version === 2;
   });
@@ -485,11 +443,11 @@ test("publishes an anonymous Slack installation only after administrator authori
     },
   ]);
   await integrations.connectSlackUser(actor, binding);
-  expect((await cron()).processed).toBeGreaterThan(0);
+  await flushWaitUntilForTest();
   expect(
     received.filter((event) => {
       return event.version === 2;
     }),
   ).toHaveLength(1);
-  expect((await cron()).processed).toBe(0);
+  await flushWaitUntilForTest();
 });

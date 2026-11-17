@@ -7,15 +7,22 @@ import { and, eq } from "drizzle-orm";
 import { timingSafeEqual } from "node:crypto";
 import { v5 as uuidv5 } from "uuid";
 import { env } from "../../lib/env";
+import { logger } from "../../lib/log";
 import { marketingRewardSourceEventSchema } from "../../lib/marketing-reward-events";
 import { authorization$, setResHeader$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
+import { waitUntil } from "../context/wait-until";
 import { db$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { enqueueBackgroundJob$ } from "../services/background-job-command.service";
 import { MARKETING_REWARD_EVENT_JOB_KIND } from "../services/marketing-reward-event-publication";
-import { MARKETING_REWARD_PROJECTION_JOB_KIND } from "../services/marketing-reward-projection.service";
+import {
+  deliverMarketingRewardProjection$,
+  MARKETING_REWARD_PROJECTION_JOB_KIND,
+} from "../services/marketing-reward-projection.service";
+import { tapError } from "../utils";
 
+const log = logger("MarketingRewardProgress");
 const namespace = "942d923e-95b3-45ab-b833-ac4cedb8779c";
 const body$ = bodyResultOf(marketingRewardProjectionContract.notifyProgress);
 const target$ = computed(async (get) => {
@@ -192,6 +199,21 @@ const queueProgress$ = command(async ({ get, set }, signal: AbortSignal) => {
       },
     },
     signal,
+  );
+  waitUntil(
+    tapError(
+      set(
+        deliverMarketingRewardProjection$,
+        { jobId: notificationId, handlerVersion: 2 },
+        signal,
+      ),
+      (error) => {
+        log.warn("Reward progress delivery will recover in background", {
+          notificationId,
+          error,
+        });
+      },
+    ),
   );
   return {
     status: 200 as const,

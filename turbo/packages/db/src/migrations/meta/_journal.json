@@ -3424,6 +3424,13 @@
       "when": 1794918056450,
       "tag": "1567_copy_inactive_single_agent_pilot",
       "breakpoints": true
+    },
+    {
+      "idx": 1568,
+      "version": "7",
+      "when": 1794920638828,
+      "tag": "1568_monotonic_chat_search_publication",
+      "breakpoints": true
     }
   ]
 }

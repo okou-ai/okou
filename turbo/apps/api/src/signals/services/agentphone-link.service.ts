@@ -39,7 +39,11 @@ type LinkResult =
       readonly kind: "conflict";
       readonly reason: "phone-handle-linked" | "org-linked" | "conflict";
     }
-  | { readonly kind: "linked"; readonly userLink: AgentPhoneUserLink };
+  | {
+      readonly kind: "linked";
+      readonly userLink: AgentPhoneUserLink;
+      readonly marketingRewardEventId?: string;
+    };
 type LinkSource =
   | { readonly kind: "direct"; readonly orgId: string; readonly userId: string }
   | { readonly kind: "code"; readonly codeHash: string };
@@ -86,12 +90,13 @@ export const switchAgentPhoneIdentity$ = command(
         ${previous.userId}, ${previous.orgId} FROM ${previous}
       RETURNING *
     `);
+    const marketingRewardEventId = randomUUID();
     const sourceEvent =
       args.channel === undefined || args.channel === "imessage"
         ? db.$with("replacement_phone_source_event", {}).as(
             marketingRewardLinkEventInsert(
               {
-                id: randomUUID(),
+                id: marketingRewardEventId,
                 environment: env("ENV"),
                 type: "imessage.identity-linked",
                 occurredAt: nowDate().toISOString(),
@@ -124,7 +129,11 @@ export const switchAgentPhoneIdentity$ = command(
     }
     const [userLink] = result.value;
     if (userLink) {
-      return { kind: "linked", userLink };
+      return {
+        kind: "linked",
+        userLink,
+        ...(sourceEvent ? { marketingRewardEventId } : {}),
+      };
     }
 
     // A repeated request after an uncertain response may already have succeeded.
@@ -276,10 +285,11 @@ function phoneLinkPublicationPlan(
   );
   const claim = builder.$with("claim", {}).as(publication.claim);
   const reward = builder.$with("phone_link_reward", {}).as(publication.grant);
+  const marketingRewardEventId = randomUUID();
   const sourceEvent = builder.$with("phone_link_source_event", {}).as(
     marketingRewardLinkEventInsert(
       {
-        id: randomUUID(),
+        id: marketingRewardEventId,
         environment: env("ENV"),
         type: "imessage.identity-linked",
         occurredAt: at.toISOString(),
@@ -290,6 +300,7 @@ function phoneLinkPublicationPlan(
     ),
   );
   return {
+    marketingRewardEventId,
     ctes: [
       ...(consumed ? [consumed] : []),
       admitted,
@@ -423,6 +434,12 @@ export const linkAgentPhoneIdentity$ = command(
       .leftJoin(plan.existing, sql`true`)
       .leftJoin(plan.inserted, sql`true`);
     signal.throwIfAborted();
-    return phoneLinkResult(rows, identity, phoneHandle);
+    const result = phoneLinkResult(rows, identity, phoneHandle);
+    return result.kind === "linked" &&
+      rows.some((row) => {
+        return row.inserted !== null;
+      })
+      ? { ...result, marketingRewardEventId: plan.marketingRewardEventId }
+      : result;
   },
 );

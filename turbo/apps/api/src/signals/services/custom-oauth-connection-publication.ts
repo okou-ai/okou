@@ -25,11 +25,11 @@ import {
 } from "./builtin-token-connection-metadata";
 import { tokenConnectionWalletClauses } from "./connector-publication-wallet";
 import { completedGetStartedQuestPublication } from "./get-started-member-reward";
-import { randomUUID } from "node:crypto";
 import { env } from "../../lib/env";
 import { marketingRewardOAuthEventInsert } from "./marketing-reward-event-publication";
 
 interface CustomOAuthPublication {
+  readonly marketingRewardEventId: string;
   readonly definitionUpdatedAt: Date;
   readonly networkSnapshot?: CustomConnectorNetworkSnapshot;
   readonly orgId: string;
@@ -203,7 +203,7 @@ export function customOAuthConnectionPublicationSql(
     ...customOAuthBindingClauses(args),
     sql`reward_source_event AS (${marketingRewardOAuthEventInsert(
       {
-        id: randomUUID(),
+        id: args.marketingRewardEventId,
         environment: env("ENV"),
         occurredAt: nowDate().toISOString(),
         orgId: args.orgId,

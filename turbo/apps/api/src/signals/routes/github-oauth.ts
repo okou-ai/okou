@@ -1,3 +1,5 @@
+import { waitUntil } from "../context/wait-until";
+import { deliverMarketingRewardEvents$ } from "../services/marketing-reward-event-delivery.service";
 import { accept } from "@okouai/connectors/accept";
 import { command } from "ccstate";
 import { agents } from "@okouai/db/schema/agent";
@@ -190,7 +192,7 @@ const writeGithubConnectorConnection$ = command(
       readonly account: { readonly intent: "add" };
     },
     signal: AbortSignal,
-  ): Promise<boolean> => {
+  ) => {
     const result = await set(
       upsertBuiltinConnectorTokenConnection$,
       {
@@ -209,7 +211,9 @@ const writeGithubConnectorConnection$ = command(
       signal,
     );
     signal.throwIfAborted();
-    return result.status === "connected";
+    return result.status === "connected"
+      ? { marketingRewardEventId: result.marketingRewardEventId }
+      : null;
   },
 );
 
@@ -276,6 +280,7 @@ type GithubSetupUserConnectionResolution =
   | {
       readonly ok: true;
       readonly connected: boolean;
+      readonly marketingRewardEventId: string | null;
     }
   | {
       readonly ok: false;
@@ -646,7 +651,11 @@ const connectGithubUserAfterSetup$ = command(
     }
     await publishUserSignal([userId], "github:changed");
     signal.throwIfAborted();
-    return { ok: true, connected: true };
+    return {
+      ok: true,
+      connected: true,
+      marketingRewardEventId: connected.marketingRewardEventId,
+    };
   },
 );
 
@@ -693,6 +702,15 @@ const connectExistingGithubInstallation$ = command(
       },
       signal,
     );
+    if (connection.ok && connection.marketingRewardEventId) {
+      waitUntil(
+        set(
+          deliverMarketingRewardEvents$,
+          { jobId: connection.marketingRewardEventId, handlerVersion: 1 },
+          signal,
+        ),
+      );
+    }
     return connection.ok
       ? githubSetupCompleteRedirect(connection.connected)
       : connection.response;
@@ -960,6 +978,30 @@ const requestGithubInstallationUserAuthorization$ = command(
   },
 );
 
+const encryptGithubInstallationAccessToken$ = command(
+  async (
+    { set },
+    args: {
+      readonly appId: string;
+      readonly privateKey: string;
+      readonly installationId: string;
+      readonly composeId: string;
+      readonly userId: ParsedGithubOauthState["userId"];
+    },
+    signal: AbortSignal,
+  ) => {
+    const { token } = await getGithubInstallationAccessToken(args, signal);
+    const context = await set(
+      loadComposeFeatureSwitchContext$,
+      { composeId: args.composeId, userId: args.userId },
+      signal,
+    );
+    const encryptedToken = await encryptPersistentSecretValue(token, context);
+    signal.throwIfAborted();
+    return encryptedToken;
+  },
+);
+
 const completeGithubAppInstallationCallback$ = command(
   async (
     { set },
@@ -1044,26 +1086,26 @@ const completeGithubAppInstallationCallback$ = command(
     }
 
     const installInfo = prepared.identity.installInfo;
-    const { token } = await getGithubInstallationAccessToken(
-      { appId: args.appId, privateKey: args.privateKey, installationId },
-      signal,
-    );
+
     const adminGithubUserId =
       installInfo.targetType === "User" ? installInfo.targetId : null;
-    const featureSwitchContext = await set(
-      loadComposeFeatureSwitchContext$,
-      { composeId: args.composeId, userId: args.state.userId },
-      signal,
-    );
+
     const installRecordId = await set(
       createOrActivateGithubInstallation$,
       {
         orgId,
         installationId,
         installInfo,
-        encryptedAccessToken: await encryptPersistentSecretValue(
-          token,
-          featureSwitchContext,
+        encryptedAccessToken: await set(
+          encryptGithubInstallationAccessToken$,
+          {
+            appId: args.appId,
+            privateKey: args.privateKey,
+            installationId,
+            composeId: args.composeId,
+            userId: args.state.userId,
+          },
+          signal,
         ),
         adminGithubUserId,
         composeId: args.composeId,
@@ -1085,6 +1127,15 @@ const completeGithubAppInstallationCallback$ = command(
       },
       signal,
     );
+    if (connection.ok && connection.marketingRewardEventId) {
+      waitUntil(
+        set(
+          deliverMarketingRewardEvents$,
+          { jobId: connection.marketingRewardEventId, handlerVersion: 1 },
+          signal,
+        ),
+      );
+    }
     return connection.ok
       ? githubSetupCompleteRedirect(connection.connected)
       : connection.response;

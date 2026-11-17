@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
+import AdmZip from "adm-zip";
 import { expect, onTestFinished, test } from "vitest";
 import { iso, literal, object, string, uuid } from "zod";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
@@ -52,7 +52,7 @@ async function startAttempt(user: DiscordActor, guildId: string) {
   );
 }
 
-test("stages only the requesting owner's OAuth export content without capabilities through the normal export request", async () => {
+test("downloads only the requesting owner's OAuth export content without capabilities through the normal export request", async () => {
   configureDiscordApp();
   const owner = actor();
   const peer = {
@@ -85,20 +85,7 @@ test("stages only the requesting owner's OAuth export content without capabiliti
   });
   const ownAttempt = await startAttempt(owner, binding.guildId);
   const peerAttempt = await startAttempt(peer, binding.guildId);
-  // Observe only real payload bytes sent to the external S3 provider. Do not
-  // inspect job/checkpoint rows, invoke a worker, or call the operator cron.
-  const emitted: string[] = [];
-  installDurableUserExportStorage(context, {
-    afterWrite: (request) => {
-      if (
-        request instanceof PutObjectCommand &&
-        request.input.Body instanceof Uint8Array
-      ) {
-        emitted.push(Buffer.from(request.input.Body).toString("utf8"));
-      }
-      return Promise.resolve();
-    },
-  });
+  const storage = installDurableUserExportStorage(context);
   context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
     data: [{ role: owner.orgRole, organization: { id: owner.orgId } }],
     totalCount: 1,
@@ -117,19 +104,24 @@ test("stages only the requesting owner's OAuth export content without capabiliti
   );
   expect(status.body.job).toMatchObject({
     id: started.body.jobId,
-    status: "running",
+    status: "completed",
+    error: null,
   });
-  // These are exported content documents, not policy/control records. Validate
-  // the new source projection independently of the unchanged ZIP assembly.
-  const documents = emitted.flatMap((bytes) => {
-    const parsed: unknown = JSON.parse(bytes.startsWith("{") ? bytes : "null");
-    return parsed !== null &&
-      typeof parsed === "object" &&
-      "flow" in parsed &&
-      "phase" in parsed
-      ? [parsed]
-      : [];
-  });
+  const downloadUrl = status.body.job?.downloadUrl;
+  if (!downloadUrl) {
+    throw new Error("Completed export must expose its download URL");
+  }
+  const zip = new AdmZip(storage.download(downloadUrl));
+  expect(zip.test()).toBeTruthy();
+  const entries = zip.getEntries();
+  const documents = entries
+    .filter((entry) => {
+      return entry.entryName.startsWith("integrations/discord/oauth-attempts/");
+    })
+    .map((entry) => {
+      const document: unknown = JSON.parse(zip.readAsText(entry));
+      return document;
+    });
   expect(documents).toHaveLength(1);
   const attempt = object({
     id: uuid(),
@@ -148,15 +140,16 @@ test("stages only the requesting owner's OAuth export content without capabiliti
     orgId: owner.orgId,
     guildId: binding.guildId,
   });
-  const consents = emitted.flatMap((bytes) => {
-    const parsed: unknown = JSON.parse(bytes.startsWith("{") ? bytes : "null");
-    return parsed !== null &&
-      typeof parsed === "object" &&
-      "flow" in parsed &&
-      !("phase" in parsed)
-      ? [parsed]
-      : [];
-  });
+  const consents = entries
+    .filter((entry) => {
+      return entry.entryName.startsWith(
+        "integrations/discord/personal-consents/",
+      );
+    })
+    .map((entry) => {
+      const document: unknown = JSON.parse(zip.readAsText(entry));
+      return document;
+    });
   expect(consents).toHaveLength(1);
   const consent = object({
     id: uuid(),
@@ -176,16 +169,17 @@ test("stages only the requesting owner's OAuth export content without capabiliti
     guildId: binding.guildId,
     discordUserId: binding.discordUserId,
   });
-  const installationConsents = emitted.flatMap((bytes) => {
-    const parsed: unknown = JSON.parse(bytes.startsWith("{") ? bytes : "null");
-    return parsed !== null &&
-      typeof parsed === "object" &&
-      "initiatedByUserId" in parsed
-      ? [parsed]
-      : [];
+  const installationConsents = entries.filter((entry) => {
+    return entry.entryName.startsWith(
+      "integrations/discord/installation-consents/",
+    );
   });
   expect(installationConsents).toHaveLength(0);
-  const contents = emitted.join("\n");
+  const contents = entries
+    .map((entry) => {
+      return `${entry.entryName}\n${zip.readAsText(entry)}`;
+    })
+    .join("\n");
   const ownState = new URL(ownAttempt.body.authorizationUrl).searchParams.get(
     "state",
   );
