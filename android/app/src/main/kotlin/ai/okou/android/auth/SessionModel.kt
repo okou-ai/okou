@@ -3,6 +3,7 @@ package ai.okou.android.auth
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.Organization
+import ai.okou.android.chat.AssistantRecoveryModel
 import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListModel
@@ -51,6 +52,7 @@ data class ReadyWorkspace(
     val instructions: PersonalInstructionsModel,
     val composer: ChatComposerModel,
     val controls: RunControlsModel,
+    val recovery: AssistantRecoveryModel,
 )
 
 data class SessionUiState(
@@ -214,6 +216,39 @@ class SessionModel(
                                 }
                             },
                         )[ChatListModel::class.java]
+                    val controls =
+                        ViewModelProvider(
+                            store,
+                            viewModelFactory {
+                                initializer {
+                                    RunControlsModel(
+                                        owner,
+                                        runControlJournal,
+                                        identity,
+                                        chats.history,
+                                        { current(ticket, snapshot) },
+                                        { workspaceFailure(ticket, snapshot, it) },
+                                        dispatcher,
+                                    )
+                                }
+                            },
+                        )[RunControlsModel::class.java]
+                    val recovery =
+                        ViewModelProvider(
+                            store,
+                            viewModelFactory {
+                                initializer {
+                                    AssistantRecoveryModel(
+                                        owner,
+                                        chats.history,
+                                        controls,
+                                        { current(ticket, snapshot) },
+                                        { workspaceFailure(ticket, snapshot, it) },
+                                        dispatcher,
+                                    )
+                                }
+                            },
+                        )[AssistantRecoveryModel::class.java]
                     mutable.value =
                         SessionUiState(
                             generation,
@@ -253,28 +288,13 @@ class SessionModel(
                                                     workspaceFailure(ticket, snapshot, error)
                                                 },
                                                 chats::refreshAfterSend,
+                                                recovery,
                                             )
                                         }
                                     },
                                 )[ChatComposerModel::class.java],
-                                ViewModelProvider(
-                                    store,
-                                    viewModelFactory {
-                                        initializer {
-                                            RunControlsModel(
-                                                owner,
-                                                runControlJournal,
-                                                identity,
-                                                chats.history,
-                                                { current(ticket, snapshot) },
-                                                { error ->
-                                                    workspaceFailure(ticket, snapshot, error)
-                                                },
-                                                dispatcher = dispatcher,
-                                            )
-                                        }
-                                    },
-                                )[RunControlsModel::class.java],
+                                controls,
+                                recovery,
                             ),
                         )
                     chats.refresh()

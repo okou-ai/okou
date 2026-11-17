@@ -13,6 +13,29 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1142.0](https://github.com/okou-ai/okou/compare/app-v0.1141.5...app-v0.1142.0) (2026-11-17)
+
+
+### Features
+
+* **api:** prepare controlled marketing reward routing ([#48235](https://github.com/okou-ai/okou/issues/48235)) ([850096b](https://github.com/okou-ai/okou/commit/850096b648aa3d77b198e18cfb69baa6cdf3dff9))
+
+
+### Bug Fixes
+
+* **app:** distinguish artifact link icons by content type ([#48216](https://github.com/okou-ai/okou/issues/48216)) ([dd08f1c](https://github.com/okou-ai/okou/commit/dd08f1c6fe291959f56255c3980ad7cfb99abc3e))
+* **app:** match project titles to thread overflow behavior ([#48220](https://github.com/okou-ai/okou/issues/48220)) ([96b2fc7](https://github.com/okou-ai/okou/commit/96b2fc71b22699ef6cd56c3229a762aa2887e19b))
+* **app:** simplify per-chat connector account controls ([#48208](https://github.com/okou-ai/okou/issues/48208)) ([acc7927](https://github.com/okou-ai/okou/commit/acc79270e25d7d1d93487bba6e56a905a9ad5ad6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.81.0
+    * @okouai/core bumped to 8.847.5
+    * @okouai/ui bumped to 1.21.41
+
 ## [0.1141.5](https://github.com/okou-ai/okou/compare/app-v0.1141.4...app-v0.1141.5) (2026-11-17)
 
 

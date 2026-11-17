@@ -84,11 +84,11 @@ final class PersonalSubscriptionStore {
     set { authorization.authorizationCode = newValue }
   }
 
-  @ObservationIgnored private lazy var action: Command<Task<Bool, Error>, Action> = asyncCommand {
-    [weak self] _, action in
-    guard let self, !closed else { throw CancellationError() }
-    return await perform(action)
-  }
+  @ObservationIgnored private lazy var action: Command<Task<Bool, Error>, Action> =
+    asyncCommand { [weak self] _, action in
+      guard let self, !closed else { throw CancellationError() }
+      return await perform(action)
+    }
 
   @discardableResult
   func refresh(force: Bool = false) async -> Bool {

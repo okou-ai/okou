@@ -7,7 +7,7 @@ struct UserMessageView: View {
   let webURL: URL
   let viewer: MessageAttachmentStore
   let loadsAttachments: Bool
-  var sendTransition: ConversationSendTransition? = nil
+  var sendTransition: ConversationSendTransition?
 
   private var document: ChatUserMessage {
     message.userMessage ?? ChatUserMessage(parts: [.init(type: "text", text: message.text)])
@@ -267,7 +267,7 @@ private struct UserMessageAnnotation: View {
   private func label(_ title: String) -> some View {
     HStack(spacing: OkouSpace.six) {
       if [
-        "slack", "discord", "wechat", "feishu", "lark", "teams", "telegram", "github", "agentphone",
+        "slack", "discord", "wechat", "feishu", "lark", "teams", "telegram", "github", "agentphone"
       ].contains(kind) {
         Image("MessageSource-\(kind)")
           .renderingMode(kind == "github" || kind == "slack" ? .template : .original)

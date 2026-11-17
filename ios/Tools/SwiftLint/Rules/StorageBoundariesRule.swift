@@ -33,11 +33,11 @@ struct StorageBoundariesRule: NativeRule {
       // A new definition site needs a responsibility review, not a directory exemption.
       ownsDefaults = [
         "/Okou/Services/NotificationService.swift",
-        "/Packages/ChatData/Sources/ChatData/ProjectDisclosureMigration.swift",
+        "/Packages/ChatData/Sources/ChatData/ProjectDisclosureMigration.swift"
       ].contains { path.hasSuffix($0) }
       isTest = [
         "/OkouTests/", "/Packages/ChatDomain/Tests/", "/Packages/ChatData/Tests/",
-        "/Packages/ChatData/Sources/ChatDataTestSupport/",
+        "/Packages/ChatData/Sources/ChatDataTestSupport/"
       ].contains { path.contains($0) }
       super.init(viewMode: .sourceAccurate)
     }

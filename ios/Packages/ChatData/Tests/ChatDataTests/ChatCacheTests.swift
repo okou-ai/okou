@@ -170,7 +170,7 @@ final class ChatCacheTests: XCTestCase {
 
     do {
       try await cache.appendThreadEvents([
-        event(12), ChatCacheEvent(id: event(11).id, seqID: 13, data: Data("conflict".utf8)),
+        event(12), ChatCacheEvent(id: event(11).id, seqID: 13, data: Data("conflict".utf8))
       ])
       XCTFail("An event ID cannot be reused at a different sequence")
     } catch {

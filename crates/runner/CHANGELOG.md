@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.36](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.35...runner-rs-v0.249.36) (2026-11-17)
+
+
+### Refactoring
+
+* **python:** centralize request-time response encoding policy ([#48233](https://github.com/okou-ai/okou/issues/48233)) ([b28c01f](https://github.com/okou-ai/okou/commit/b28c01f1b3b09086f5c27cd5bba90d817c1a69a9))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.35](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.34...runner-rs-v0.249.35) (2026-11-17)
 
 

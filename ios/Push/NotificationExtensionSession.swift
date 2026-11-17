@@ -89,8 +89,9 @@ final class NotificationExtensionSession {
     }
   }
 
-  private func token(userID: String, workspaceID: String, sessionID: String) async throws -> String
-  {
+  private func token(
+    userID: String, workspaceID: String, sessionID: String
+  ) async throws -> String {
     guard let identity = clerk.session, identity.id == sessionID,
       clerk.user?.id == userID,
       identity.lastActiveOrganizationId == workspaceID,

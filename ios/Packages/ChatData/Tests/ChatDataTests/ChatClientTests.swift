@@ -29,11 +29,11 @@ final class ChatClientTests: XCTestCase {
         $0.append(
           URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? [])
       }
-      requests.withLock {
+      try requests.withLock {
         $0.append(
           (
             request.httpMethod ?? "", request.url?.path ?? "",
-            String(decoding: chatRequestBody(request), as: UTF8.self)
+            try XCTUnwrap(String(data: chatRequestBody(request), encoding: .utf8))
           ))
       }
       return ChatHTTPResponse(status: 204, body: "")
@@ -58,7 +58,7 @@ final class ChatClientTests: XCTestCase {
         "/api/chat-threads/\(fixtureThread)/unarchive",
         "/api/chat-threads/\(fixtureThread)/mute",
         "/api/chat-threads/\(fixtureThread)/unmute",
-        "/api/chat-threads/\(fixtureThread)/rename",
+        "/api/chat-threads/\(fixtureThread)/rename"
       ])
     let renameBody = try XCTUnwrap(requests.withLock { $0.last?.2 })
     XCTAssertEqual(
@@ -68,7 +68,7 @@ final class ChatClientTests: XCTestCase {
       queries.withLock { $0[0] },
       [
         URLQueryItem(name: "eventId", value: pinEventID),
-        URLQueryItem(name: "pinOrder", value: "a0"),
+        URLQueryItem(name: "pinOrder", value: "a0")
       ])
     XCTAssertEqual(queries.withLock { $0[1] }, [URLQueryItem(name: "eventId", value: unpinEventID)])
     XCTAssertEqual(
@@ -264,7 +264,7 @@ final class ChatClientTests: XCTestCase {
         ("reconnect_required", "priority", "priority", "priority"),
         ("plan_restricted", "priority", "priority", "priority"),
         ("available", nil, "priority", nil),
-        ("available", "priority", "unsupported", nil),
+        ("available", "priority", "unsupported", nil)
       ]
     for selection in cases {
       let createdRequests = Mutex<[CreatedRequest]>([])
@@ -395,7 +395,7 @@ final class ChatClientTests: XCTestCase {
       case "/api/chat-threads/events":
         return ChatHTTPResponse(
           body: """
-            {"events":[\(threadEventJSON(seq:11, kind:"renamed", thread:fixtureThread, title:"Latest title")),\(threadEventJSON(seq:12, kind:"deleted", thread:deletedThread)),\(threadEventJSON(seq:13, kind:"created", thread:newThread))],"hasMore":false}
+            {"events":[\(threadEventJSON(seq: 11, kind: "renamed", thread: fixtureThread, title: "Latest title")),\(threadEventJSON(seq: 12, kind: "deleted", thread: deletedThread)),\(threadEventJSON(seq: 13, kind: "created", thread: newThread))],"hasMore":false}
             """)
       case "/api/indicators":
         return ChatHTTPResponse(
@@ -420,7 +420,7 @@ final class ChatClientTests: XCTestCase {
       ("2026-09-17T10:00:00.123456", 1_789_639_200.123456),
       ("2026-09-17T10:00:01", 1_789_639_201),
       ("2026-09-17T18:00:00.123+08:00", 1_789_639_200.123),
-      ("2026-09-17T05:00:02-05:00", 1_789_639_202),
+      ("2026-09-17T05:00:02-05:00", 1_789_639_202)
     ]
     let snapshot = dates.enumerated().map { index, date in
       threadJSON(id: eventIdentity(index + 1), date: date.value)
@@ -677,7 +677,7 @@ final class ChatClientTests: XCTestCase {
         return ChatHTTPResponse(
           body: [
             eventJSON(seq: 1, type: "input.prompt", payload: userPayload("New question")),
-            eventJSON(seq: 3, type: "output.message", payload: "{\"content\":\"New answer\"}"),
+            eventJSON(seq: 3, type: "output.message", payload: "{\"content\":\"New answer\"}")
           ].joined(separator: "\n") + "\n")
       case "/api/chat-threads/\(fixtureThread)/event-rows":
         if current == 2 && since == "1" {
@@ -838,12 +838,12 @@ final class ChatClientTests: XCTestCase {
           count == 1
           ? [
             eventJSON(seq: 1, type: "input.prompt", payload: userPayload("Hello")),
-            eventJSON(seq: 2, type: "output.message", payload: "{\"content\":\"First answer\"}"),
+            eventJSON(seq: 2, type: "output.message", payload: "{\"content\":\"First answer\"}")
           ]
           : [
             eventJSON(seq: 1, type: "input.prompt", payload: userPayload("Hello")),
             eventJSON(seq: 2, type: "output.message", payload: "{\"content\":\"First answer\"}"),
-            eventJSON(seq: 4, type: "run.completed"),
+            eventJSON(seq: 4, type: "run.completed")
           ]
         return ChatHTTPResponse(body: rows.joined(separator: "\n") + "\n")
       case "/api/chat-threads/\(fixtureThread)/event-rows":
@@ -899,7 +899,7 @@ final class ChatClientTests: XCTestCase {
         let rows = [
           eventJSON(seq: 1, type: "input.prompt", payload: mixedMessage),
           eventJSON(seq: 2, type: "input.prompt", payload: mentionOnlyMessage),
-          eventJSON(seq: 3, type: "run.completed"),
+          eventJSON(seq: 3, type: "run.completed")
         ]
         return ChatHTTPResponse(body: rows.joined(separator: "\n") + "\n")
       case "/api/chat-threads/\(fixtureThread)/event-rows":
@@ -919,7 +919,7 @@ final class ChatClientTests: XCTestCase {
       history.messages.map(\.text),
       [
         "AskRelease ScoutRelease chat",
-        "Planner",
+        "Planner"
       ])
     XCTAssertEqual(history.messages.map(\.role), [.user, .user])
     XCTAssertEqual(history.messages.first?.userMessage?.annotation?.kind, "agent")
@@ -1051,7 +1051,7 @@ final class ChatClientTests: XCTestCase {
         if chatQueryValue("sinceSeqId", in: request) == "0" {
           return ChatHTTPResponse(
             body:
-              "{\"rows\":[\(eventJSON(seq:1,type:"input.prompt",payload:userPayload("First"))),\(eventJSON(seq:2,type:"input.prompt",run:nil,payload:userPayload("Follow-up"))),\(eventJSON(seq:3,type:"input.automation",run:nil))],\"cursor\":{\"lastEventId\":\"\(eventIdentity(3))\",\"lastSeqId\":3},\"hasMore\":false}"
+              "{\"rows\":[\(eventJSON(seq: 1, type: "input.prompt", payload: userPayload("First"))),\(eventJSON(seq: 2, type: "input.prompt", run: nil, payload: userPayload("Follow-up"))),\(eventJSON(seq: 3, type: "input.automation", run: nil))],\"cursor\":{\"lastEventId\":\"\(eventIdentity(3))\",\"lastSeqId\":3},\"hasMore\":false}"
           )
         }
         return ChatHTTPResponse(

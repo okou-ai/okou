@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="recovery_loading">復旧オプションを読み込み中…</string>
+    <string name="recovery_read_failed">復旧オプションを取得できません。</string>
+    <string name="recovery_continue">続行</string>
+    <string name="recovery_reset">使用量をリセットして続行（リセットクレジットを1つ使用）</string>
+    <string name="recovery_reset_unknown">元のリセット結果は未確認です。自動再試行はしません。</string>
+    <string name="recovery_reset_retry">元のリセットを再試行</string>
+    <string name="recovery_needs_changes">続行する前にモデル、アカウント設定、または会話を変更してください。</string>
+    <string name="recovery_billing">ワークスペースのクレジット：%1$s。請求情報を確認してください。</string>
+    <string name="recovery_no_credit">前回のリセット時に利用可能なクレジットはありませんでした。</string>
+    <string name="recovery_submitted">続行を受け付けました。会話履歴の確認を待っています。</string>
+    <string name="recovery_failed">復旧が完了しませんでした。再試行の前に元の操作を確認してください。</string>
+    <string name="recovery_credits">リセットクレジット：%1$d</string>
+</resources>

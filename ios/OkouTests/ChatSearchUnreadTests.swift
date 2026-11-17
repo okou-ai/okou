@@ -471,8 +471,9 @@ final class ChatSearchUnreadTests: XCTestCase {
     }
     await fulfillment(of: [started], timeout: 2)
     let confirmedRead = Task {
-      for await unread in Observations({ store.list.threads.first?.isUnread }) {
-        if unread == false { return }
+      for await unread in Observations({ store.list.threads.first?.isUnread })
+      where unread == false {
+        return
       }
     }
     addTeardownBlock {
@@ -931,7 +932,7 @@ private func searchResponse(content: String) -> ChatHTTPResponse {
   let range = (content as NSString).range(of: "needle")
   let start = range.location == NSNotFound ? 0 : range.location
   let end = range.location == NSNotFound ? min(3, content.utf16.count) : NSMaxRange(range)
-  let text = String(decoding: try! JSONEncoder().encode(content), as: UTF8.self)
+  let text = try! JSONEncoder().encodeString(content)
   return ChatHTTPResponse(
     body: """
       {"results":[{"chatThreadId":"\(SearchUnreadFixture.id(2))","agentName":"Research","matchedMessage":{"chatThreadId":"\(SearchUnreadFixture.id(2))","role":"assistant","content":\(text),"createdAt":"2026-10-19T12:00:00Z","seqId":5,"runId":null},"matchedRanges":[{"start":\(start),"end":\(end)}]}]}

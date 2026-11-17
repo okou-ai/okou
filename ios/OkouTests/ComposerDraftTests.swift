@@ -150,8 +150,8 @@ final class ComposerDraftTests: XCTestCase {
       .object(["type": .string("text"), "text": .string(" More context")]),
       .object([
         "type": .string("chat_thread"), "threadId": .string(MentionNavigationFixture.thread(30)),
-        "titleSnapshot": .string("Project 30"),
-      ]),
+        "titleSnapshot": .string("Project 30")
+      ])
     ])
     composer.editBlock(note.id, document: content)
     await composer.synchronize()
@@ -190,7 +190,7 @@ final class ComposerDraftTests: XCTestCase {
     content.parts.append(
       .object([
         "type": .string("chat_thread"), "threadId": .string(MentionNavigationFixture.thread(30)),
-        "titleSnapshot": .string("Project 30"),
+        "titleSnapshot": .string("Project 30")
       ]))
     composer.editBlock(note.id, document: content)
     await composer.synchronize()
@@ -819,7 +819,7 @@ private final class DraftServer: Sendable {
       }
       let draftPaths = [
         "/api/agents/\(draftAgentID)/draft", "/api/chat-threads/\(draftThreadID)/draft",
-        "/api/chat-threads/\(draftThreadID)",
+        "/api/chat-threads/\(draftThreadID)"
       ]
       guard draftPaths.contains(path) else { throw URLError(.unsupportedURL) }
       if request.httpMethod == "PATCH" {
@@ -834,8 +834,8 @@ private final class DraftServer: Sendable {
       }
       let remote = state.value.withLock { $0.remote }
       await onRead()
-      return ChatHTTPResponse(
-        body: String(decoding: try JSONEncoder().encode(remote), as: UTF8.self))
+      return try ChatHTTPResponse(
+        json: remote)
     }
   }
   deinit { try? FileManager.default.removeItem(at: directory) }

@@ -4,9 +4,9 @@ import SwiftUI
 /// the group it belongs to shimmers as one (`okouShimmer()`), so a light passes over every
 /// block of a skeleton together.
 struct OkouSkeletonBlock: View {
-  var width: CGFloat? = nil
+  var width: CGFloat?
   /// Without a size the block fills the frame it is offered (a picture's place).
-  var height: CGFloat? = nil
+  var height: CGFloat?
   var radius: CGFloat = OkouRadius.small
 
   var body: some View {
@@ -65,7 +65,7 @@ private struct OkouShimmerBand: View {
         stops: [
           .init(color: .clear, location: 0),
           .init(color: OkouColor.background.opacity(OkouMotion.shimmerStrength), location: 0.5),
-          .init(color: .clear, location: 1),
+          .init(color: .clear, location: 1)
         ],
         startPoint: .leading, endPoint: .trailing
       )

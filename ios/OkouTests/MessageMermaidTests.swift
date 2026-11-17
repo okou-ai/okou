@@ -9,7 +9,7 @@ final class MessageMermaidTests: XCTestCase {
     let renderer = MessageMermaidRenderer()
     for source in [
       "flowchart TD\n A[用户操作卡片] --> B[保存反馈]\n B --> C[更新首页卡片]",
-      "sequenceDiagram\n participant User\n participant Okou\n User->>Okou: Save feedback\n Okou-->>User: Saved",
+      "sequenceDiagram\n participant User\n participant Okou\n User->>Okou: Save feedback\n Okou-->>User: Saved"
     ] {
       let data = try await renderer.image(for: source, dark: false)
       XCTAssertNotNil(UIImage(data: try XCTUnwrap(data)))

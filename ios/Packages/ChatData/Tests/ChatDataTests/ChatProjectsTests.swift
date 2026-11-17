@@ -50,7 +50,7 @@ final class ChatProjectsTests: XCTestCase {
       [
         "/api/projects", "/api/projects/\(Self.project)",
         "/api/chat-threads/\(Self.thread)/project", "/api/chat-threads/\(Self.thread)/project",
-        "/api/projects/\(Self.project)",
+        "/api/projects/\(Self.project)"
       ])
     let bodies = try observed.map {
       try XCTUnwrap(JSONSerialization.jsonObject(with: $0.body) as? [String: Any])

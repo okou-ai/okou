@@ -28,7 +28,7 @@ final class OkouWidgetPublishingTests: XCTestCase {
       thread(4, title: "Finished", minutesAgo: 5, indicator: .unread),
       thread(5, title: "Muted finished", minutesAgo: 2, indicator: .unread, muted: true),
       thread(6, title: "Archived", minutesAgo: 0, indicator: .unread, archived: true),
-      thread(7, title: "Has a draft", minutesAgo: 40),
+      thread(7, title: "Has a draft", minutesAgo: 40)
     ]
     let snapshot = OkouWidgetPublishing.snapshot(
       userID: "user", workspaceID: "workspace", threads: threads, name: "Tong",

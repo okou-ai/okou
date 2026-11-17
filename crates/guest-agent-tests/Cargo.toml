@@ -1,6 +1,6 @@
 [package]
 name = "guest-agent-tests"
-version = "0.1.206"
+version = "0.1.207"
 edition.workspace = true
 description = "Isolated guest-agent integration tests with compiled shared fixtures"
 publish = false
@@ -33,6 +33,9 @@ serde = { workspace = true, features = ["derive", "std"] }
 shell-quote.workspace = true
 tempfile = { workspace = true, features = ["getrandom"] }
 uuid = { workspace = true, features = ["std", "v4", "v5"] }
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["resource"] }
 
 [lints]
 workspace = true

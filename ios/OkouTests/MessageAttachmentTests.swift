@@ -13,7 +13,7 @@ final class MessageAttachmentTests: XCTestCase {
 
   func testHistoryAndSQLiteReopenKeepFileOnlyAndMixedAttachments() async throws {
     let fixture = ConversationHistoryFixture(rows: [
-      try attachmentRow(1, text: ""), try attachmentRow(2, text: "Review these files"),
+      try attachmentRow(1, text: ""), try attachmentRow(2, text: "Review these files")
     ])
     let cacheDirectory = CacheTestDirectory(owner: self)
     let scope = ChatCacheScope(
@@ -288,29 +288,29 @@ private func attachmentRow(_ sequence: Int, text: String) throws -> String {
   let files: [[String: String]] = [
     [
       "type": "file", "fileId": "image", "filenameSnapshot": "Coast.png",
-      "contentType": "image/png",
+      "contentType": "image/png"
     ],
     [
       "type": "file", "fileId": "movie", "filenameSnapshot": "Walkthrough.mov",
-      "contentType": "video/quicktime",
+      "contentType": "video/quicktime"
     ],
     [
       "type": "file", "fileId": "pdf", "filenameSnapshot": "Project brief.pdf",
-      "contentType": "application/pdf",
+      "contentType": "application/pdf"
     ],
     [
       "type": "file", "fileId": "other", "filenameSnapshot": "Archive.custom",
-      "contentType": "application/octet-stream",
-    ],
+      "contentType": "application/octet-stream"
+    ]
   ]
   let parts = text.isEmpty ? files : [["type": "text", "text": text]] + files
   let row: [String: Any] = [
     "id": ConversationHistoryFixture.id(sequence), "seqId": sequence,
     "chatThreadId": ConversationHistoryFixture.threadID,
     "createdAt": "2026-10-20T00:00:00Z", "eventType": "input.prompt", "runId": NSNull(),
-    "revokesEventId": NSNull(), "payload": ["userMessage": ["version": 1, "parts": parts]],
+    "revokesEventId": NSNull(), "payload": ["userMessage": ["version": 1, "parts": parts]]
   ]
-  return String(decoding: try JSONSerialization.data(withJSONObject: row), as: UTF8.self)
+  return try JSONSerialization.string(withJSONObject: row)
 }
 
 @MainActor

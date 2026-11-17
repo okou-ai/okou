@@ -56,7 +56,7 @@ final class StructuredMessageTests: XCTestCase {
       #"[{"type":"source","kind":"mcp","clientId":"research-client","clientName":"Research client"},{"type":"text","text":"Research this."}]"#,
       #"[{"type":"feedback","quote":"Keep this quoted passage.","note":[{"type":"text","text":"Please revise it."}],"source":{"type":"mail","id":"private-mail-id","status":"draft"}}]"#,
       #"[{"type":"template","titleSnapshot":"Saved style","template":{"type":"illustration","selection":{"illustrationStyleId":"saved-style"}}}]"#,
-      #"[{"type":"file","fileId":"original-image","filenameSnapshot":"marked.jpg","contentType":"image/jpeg","annotatedFileId":"marked-image"}]"#,
+      #"[{"type":"file","fileId":"original-image","filenameSnapshot":"marked.jpg","contentType":"image/jpeg","annotatedFileId":"marked-image"}]"#
     ]
     let rows = documents.enumerated().map { index, parts in
       let id = String(format: "50000000-0000-4000-8000-%012d", index + 1)

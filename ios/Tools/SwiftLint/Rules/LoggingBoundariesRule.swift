@@ -17,7 +17,7 @@ struct LoggingBoundariesRule: NativeRule {
     guard
       [
         "Okou/", "Push/", "Widgets/", "Packages/ChatDomain/Sources/ChatDomain/",
-        "Packages/ChatData/Sources/ChatData/",
+        "Packages/ChatData/Sources/ChatData/"
       ].contains(where: { source.hasPrefix($0) })
     else { return [] }
     let visitor = Visitor(viewMode: .sourceAccurate)

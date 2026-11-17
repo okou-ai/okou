@@ -112,7 +112,7 @@ private final class NativeAuthIdentityFixture: Sendable {
   func response(_ request: URLRequest) throws -> ChatHTTPResponse? {
     let path = request.url!.path
     guard path.contains("/sign_ins") || path.contains("/sign_ups") else { return nil }
-    let parameters = parameters(request)
+    let parameters = try parameters(request)
     requests.withLock { $0.append(parameters) }
     if path == "/v1/client/sign_ins", parameters["identifier"]?.hasPrefix("new-member") == true {
       return ChatHTTPResponse(
@@ -165,7 +165,7 @@ private final class NativeAuthIdentityFixture: Sendable {
     return try json(Envelope(response: signIn, client: client))
   }
 
-  private func parameters(_ request: URLRequest) -> [String: String] {
+  private func parameters(_ request: URLRequest) throws -> [String: String] {
     let body = chatRequestBody(request)
     if let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
       return json.mapValues { value in
@@ -174,7 +174,8 @@ private final class NativeAuthIdentityFixture: Sendable {
       }
     }
     return Dictionary(
-      uniqueKeysWithValues: (URLComponents(string: "?" + String(decoding: body, as: UTF8.self))?
+      uniqueKeysWithValues: (URLComponents(
+        string: "?" + (try XCTUnwrap(String(data: body, encoding: .utf8))))?
         .queryItems ?? []).map { ($0.name, $0.value ?? "") })
   }
 
@@ -183,9 +184,9 @@ private final class NativeAuthIdentityFixture: Sendable {
     encoder.keyEncodingStrategy = .convertToSnakeCase
     encoder.dateEncodingStrategy = .millisecondsSince1970
     return ChatHTTPResponse(
-      body: String(decoding: try encoder.encode(value), as: UTF8.self),
+      body: try encoder.encodeString(value),
       headers: [
-        "Content-Type": "application/json", "Authorization": "synthetic-native-auth-device",
+        "Content-Type": "application/json", "Authorization": "synthetic-native-auth-device"
       ])
   }
 

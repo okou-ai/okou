@@ -93,7 +93,7 @@ struct AssistantFailureCard: View {
   let state: AssistantFailureState
   @Bindable var conversation: ConversationStore
   /// The provider's own error line from the same run, shown instead of the generic description.
-  var providerMessage: String? = nil
+  var providerMessage: String?
   @State private var showsModels = false
 
   private var copy: (title: String, description: String) {
@@ -174,7 +174,7 @@ struct AssistantFailureCard: View {
             billing.canBuyCredits ? "Add credits" : "Upgrade to Pro",
             destination: conversation.webURL.appending(queryItems: [
               URLQueryItem(name: "settings", value: "billing"),
-              URLQueryItem(name: "billingView", value: billing.canBuyCredits ? "credits" : "plans"),
+              URLQueryItem(name: "billingView", value: billing.canBuyCredits ? "credits" : "plans")
             ])
           )
           .buttonStyle(ChatCardButtonStyle())
@@ -408,6 +408,6 @@ enum AssistantFailureCopy {
     "usage_limit": (
       "Model provider limit reached",
       "You can continue when your usage limit resets, or switch models now."
-    ),
+    )
   ]
 }

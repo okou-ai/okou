@@ -185,8 +185,9 @@ private struct ArtifactPreviewContent: View {
             url: url,
             didFail: { message, status in
               guard viewer.preview?.id == preview.id else { return }
-              if !viewer.renewHTMLSignature(status: status, content: content, previewID: preview.id)
-              {
+              if !viewer.renewHTMLSignature(
+                status: status, content: content, previewID: preview.id
+              ) {
                 webError = message
               }
             },

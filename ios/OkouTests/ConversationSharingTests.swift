@@ -85,7 +85,7 @@ final class ConversationSharingTests: XCTestCase {
           payload: .init(userMessage: .init(parts: [.init(type: "text", text: "Private context")]))),
         ChatEvent(
           id: answerID, runId: "run", createdAt: .now, eventType: .outputMessage,
-          payload: .init(content: "Answer")),
+          payload: .init(content: "Answer"))
       ], recovering: false)
     let sharing = ConversationSharing(
       client: fixture.client, threadID: threadID, webURL: fixture.baseURL,
@@ -233,7 +233,7 @@ final class ConversationSharingTests: XCTestCase {
           payload: .init(content: "Working")),
         ChatEvent(
           id: "answer", runId: "run", createdAt: .now, eventType: .outputMessage,
-          payload: .init(content: "Answer")),
+          payload: .init(content: "Answer"))
       ], recovering: false)
     let sharing = ConversationSharing(
       client: fixture.client, threadID: "thread", webURL: fixture.baseURL,

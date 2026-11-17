@@ -14,8 +14,7 @@ final class OkouWidgetRefreshTests: XCTestCase {
   nonisolated private static let thread = ConversationHistoryFixture.threadID
   nonisolated private static let started = "60000000-0000-4000-8000-000000000041"
 
-  func testRefreshAppliesTheAccountsChatStatesAndKeepsTheLastSnapshotWhenTheAPIFails() async throws
-  {
+  func testRefreshAppliesAccountChatStatesAndKeepsLastSnapshotOnAPIFailure() async throws {
     let failing = Mutex(false)
     let fixture = ConversationHistoryFixture(
       count: 2,
@@ -100,7 +99,7 @@ final class OkouWidgetRefreshTests: XCTestCase {
     let (session, user) = try await session(fixture)
     let store = temporaryStore()
     for (target, expected) in [
-      ("user_foreign", OkouWidgetSnapshot.Chat.State.working), (user, .finished),
+      ("user_foreign", OkouWidgetSnapshot.Chat.State.working), (user, .finished)
     ] {
       try store.write(snapshot(user: user, state: .working))
       let service = NotificationServiceExtension(session: session, widgets: store)
@@ -170,7 +169,7 @@ final class OkouWidgetRefreshTests: XCTestCase {
       "okou": [
         "version": 1, "userId": user, "workspaceId": "org_one", "threadId": Self.thread,
         "runId": "60000000-0000-4000-8000-000000000003",
-        "notificationId": "60000000-0000-4000-8000-000000000003:completed",
+        "notificationId": "60000000-0000-4000-8000-000000000003:completed"
       ]
     ]
     return UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)

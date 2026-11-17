@@ -40,7 +40,7 @@ final class OkouWidgetSnapshotTests: XCTestCase {
   func testAFinishedAlertMarksOnlyAListedChatAndMovesItAhead() throws {
     let current = snapshot([
       chat(running, "Running", .working, minutesAgo: 1),
-      chat(known, "Known", .idle, minutesAgo: 30),
+      chat(known, "Known", .idle, minutesAgo: 30)
     ])
     let marked = try XCTUnwrap(current.markingFinished(threadID: known, at: base))
     XCTAssertEqual(marked.chats.map(\.id), [known, running])
@@ -82,7 +82,7 @@ final class OkouWidgetSnapshotTests: XCTestCase {
     let current = snapshot([
       chat(running, "Running", .working, minutesAgo: 1),
       chat(known, "Known", .idle, minutesAgo: 30, pinned: true),
-      chat(drafted, "Drafted", .draft, minutesAgo: 40),
+      chat(drafted, "Drafted", .draft, minutesAgo: 40)
     ])
     let now = base.addingTimeInterval(60)
     let feed = try await OkouWidgetFeed.read(for: current, client: fixture.client, now: now)
@@ -116,7 +116,7 @@ final class OkouWidgetSnapshotTests: XCTestCase {
     // Another process rewrote the file after this one read it.
     let newer = snapshot([
       chat(running, "Running", .working, minutesAgo: 1),
-      chat(known, "Known", .idle, minutesAgo: 5),
+      chat(known, "Known", .idle, minutesAgo: 5)
     ])
     try store.write(newer)
     let marked = try store.update { $0.markingFinished(threadID: known, at: self.base) }

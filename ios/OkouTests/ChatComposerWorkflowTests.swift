@@ -135,8 +135,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     XCTAssertEqual(conversation.draft, "/r14\n")
   }
 
-  func testMarkedTextConfirmationCannotInsertWorkflowAndKeyboardSelectionDoesNotSend() async throws
-  {
+  func testIMEConfirmationCannotInsertWorkflowOrSend() async throws {
     let fixture = workflowFixture()
     let source = ComposerWorkflowSource(
       client: fixture.http.client, storage: nil, didFail: { _ in })
@@ -339,8 +338,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
       (feedback["note"] as? [[String: Any]])?.first?["text"] as? String, "Please /release ")
   }
 
-  func testNewChatWorkflowDraftSurvivesReopenAndFirstSendUsesTheExistingTextProtocol() async throws
-  {
+  func testNewChatWorkflowSurvivesReopenAndUsesTextProtocol() async throws {
     let fixture = workflowFixture()
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }

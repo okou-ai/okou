@@ -3,7 +3,7 @@ import Synchronization
 
 /// Stateful external contracts shared by native account, command and permission tests.
 public final class ConnectorAccessHTTPFixture: Sendable {
-  private typealias F = ConnectorHTTPFixtures
+  private typealias FixtureData = ConnectorHTTPFixtures
   public struct ThreadSettings: Sendable {
     public var currentID: String?
     public var overrides: [String: Bool] = [:]
@@ -29,9 +29,9 @@ public final class ConnectorAccessHTTPFixture: Sendable {
   public struct State: Sendable {
     public var custom = false
     public var hasPermissions = true
-    public var accountIDs = [F.accountID, F.siblingID]
-    public var enabled = [F.accountID: true, F.siblingID: false]
-    public var defaultID: String? = F.accountID
+    public var accountIDs = [FixtureData.accountID, FixtureData.siblingID]
+    public var enabled = [FixtureData.accountID: true, FixtureData.siblingID: false]
+    public var defaultID: String? = FixtureData.accountID
     public var threads: [String: ThreadSettings] = [:]
     public var grants: [Grant] = []
     public var rejectCurrentOnce = false
@@ -73,23 +73,23 @@ public final class ConnectorAccessHTTPFixture: Sendable {
   }
   private static func target(_ state: State) -> Target {
     state.custom
-      ? Target(kind: "custom", connectorSlug: nil, customConnectorId: F.customID)
+      ? Target(kind: "custom", connectorSlug: nil, customConnectorId: FixtureData.customID)
       : Target(kind: "builtin", connectorSlug: "slack", customConnectorId: nil)
   }
   private static func json<T: Encodable>(_ value: T) throws -> String {
-    String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
+    try JSONEncoder().encodeString(value)
   }
   private static func account(_ id: String, state: State) -> String {
-    F.account(
+    FixtureData.account(
       id: id, custom: state.custom, isDefault: state.defaultID == id,
-      label: id == F.accountID ? "Work account" : "Personal account")
+      label: id == FixtureData.accountID ? "Work account" : "Personal account")
   }
   private static func defaults(_ state: State) -> String {
     "[" + state.accountIDs.map { defaultAccount($0, state: state) }.joined(separator: ",") + "]"
   }
   private static func defaultAccount(_ id: String, state: State) -> String {
     """
-    {"connectionId":"\(id)","displayName":"\(id == F.accountID ? "Work account" : "Personal account")","defaultEnabled":\(state.enabled[id] == true),"isDefault":\(state.defaultID == id)}
+    {"connectionId":"\(id)","displayName":"\(id == FixtureData.accountID ? "Work account" : "Personal account")","defaultEnabled":\(state.enabled[id] == true),"isDefault":\(state.defaultID == id)}
     """
   }
   private static func repairDefault(_ state: inout State) {
@@ -119,8 +119,9 @@ public final class ConnectorAccessHTTPFixture: Sendable {
       "{\"target\":\(try json(target(state))),\"accounts\":[\(rows)],\"currentConnectionId\":\(current),\"available\":\(!enabled.isEmpty)}"
   }
 
-  private static func respond(_ request: URLRequest, state: inout State) throws -> ChatHTTPResponse
-  {
+  private static func respond(
+    _ request: URLRequest, state: inout State
+  ) throws -> ChatHTTPResponse {
     let path = request.url!.path
     let method = request.httpMethod ?? "GET"
     let parts = path.split(separator: "/").map(String.init)
@@ -137,7 +138,8 @@ public final class ConnectorAccessHTTPFixture: Sendable {
         body: "{\"effectiveSwitches\":{\"connectorChatAccountAccess\":true}}")
     }
     if path == "/api/agents" {
-      return ChatHTTPResponse(body: "[{\"agentId\":\"\(F.agentID)\",\"isDefaultAgent\":true}]")
+      return ChatHTTPResponse(
+        body: "[{\"agentId\":\"\(FixtureData.agentID)\",\"isDefaultAgent\":true}]")
     }
     if parts.count == 3, parts[1] == "agents" {
       return ChatHTTPResponse(body: "{\"agentId\":\"\(parts[2])\",\"displayName\":\"Assistant\"}")
@@ -146,7 +148,7 @@ public final class ConnectorAccessHTTPFixture: Sendable {
       let builtin =
         "[{\"slug\":\"slack\",\"label\":\"Slack\",\"hasPermissions\":\(state.hasPermissions)}]"
       let custom =
-        "[{\"id\":\"\(F.customID)\",\"displayName\":\"Internal\",\"permissionBundleRef\":null,\"integrationManaged\":false}]"
+        "[{\"id\":\"\(FixtureData.customID)\",\"displayName\":\"Internal\",\"permissionBundleRef\":null,\"integrationManaged\":false}]"
       return ChatHTTPResponse(
         body:
           "{\"builtinConnectors\":\(state.custom ? "[]" : builtin),\"customConnectors\":\(state.custom ? custom : "[]")}"
@@ -158,8 +160,12 @@ public final class ConnectorAccessHTTPFixture: Sendable {
           "{\"computerUseHosts\":[],\"cloudBrowserAvailable\":true,\"cloudBrowserEnabledByDefault\":false,\"sshHosts\":[],\"vncHosts\":[]}"
       )
     }
-    if path == "/api/connector-catalog/slack" { return ChatHTTPResponse(body: F.catalog()) }
-    if path == "/api/custom-connectors/\(F.customID)" { return ChatHTTPResponse(body: F.custom()) }
+    if path == "/api/connector-catalog/slack" {
+      return ChatHTTPResponse(body: FixtureData.catalog())
+    }
+    if path == "/api/custom-connectors/\(FixtureData.customID)" {
+      return ChatHTTPResponse(body: FixtureData.custom())
+    }
     if path == "/api/connector-catalog/slack/permissions" {
       return ChatHTTPResponse(
         body:
@@ -204,12 +210,12 @@ public final class ConnectorAccessHTTPFixture: Sendable {
       return ChatHTTPResponse(body: account(parts[2], state: state))
     }
     if path == "/api/connectors/slack/no-auth"
-      || path == "/api/custom-connectors/\(F.customID)/values"
+      || path == "/api/custom-connectors/\(FixtureData.customID)/values"
     {
-      state.accountIDs.append(F.accountID)
-      state.enabled[F.accountID] = true
+      state.accountIDs.append(FixtureData.accountID)
+      state.enabled[FixtureData.accountID] = true
       repairDefault(&state)
-      return ChatHTTPResponse(body: "{\"connectionId\":\"\(F.accountID)\"}")
+      return ChatHTTPResponse(body: "{\"connectionId\":\"\(FixtureData.accountID)\"}")
     }
     if path == "/api/connector-permissions" {
       if method == "GET", queriedTarget != target(state) { return error(403, "Wrong connector") }
@@ -251,7 +257,8 @@ public final class ConnectorAccessHTTPFixture: Sendable {
     if parts.count >= 4, parts[1] == "chat-threads" {
       let id = parts[2]
       if parts[3] == "metadata" {
-        return ChatHTTPResponse(body: F.metadata.replacingOccurrences(of: F.threadID, with: id))
+        return ChatHTTPResponse(
+          body: FixtureData.metadata.replacingOccurrences(of: FixtureData.threadID, with: id))
       }
       if parts[3] == "remote-access" { return ChatHTTPResponse(body: "{\"ssh\":[],\"vnc\":[]}") }
       if parts[3] == "connector-access" {

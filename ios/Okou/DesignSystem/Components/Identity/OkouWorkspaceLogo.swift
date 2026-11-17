@@ -4,10 +4,10 @@ import UIKit
 struct OkouWorkspaceLogo: View {
   let workspaceID: String
   let name: String
-  var imageURL: URL? = nil
+  var imageURL: URL?
   var hasImage = false
   var size: CGFloat = OkouAvatarSize.workspace
-  var cachedImage: UIImage? = nil
+  var cachedImage: UIImage?
   var usesSharedImage = false
   var metadataKnown = true
 
@@ -55,9 +55,9 @@ struct OkouWorkspaceLogo: View {
 struct OkouWorkspaceGlassLogo: View {
   let workspaceID: String
   let name: String
-  var imageURL: URL? = nil
+  var imageURL: URL?
   var hasImage = false
-  var cachedImage: UIImage? = nil
+  var cachedImage: UIImage?
   var usesSharedImage = false
   var metadataKnown = true
 

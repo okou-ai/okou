@@ -51,7 +51,7 @@ final class SnapshotHTTPTests: XCTestCase {
       server.requests.map(\.path),
       [
         "/api/chat-threads/snapshot", "/thread-snapshot.json.gz",
-        "/api/chat-threads/events", "/api/indicators",
+        "/api/chat-threads/events", "/api/indicators"
       ])
     let archiveRequest = try XCTUnwrap(
       server.requests.first { $0.path == "/thread-snapshot.json.gz" })
@@ -200,8 +200,9 @@ private final class SnapshotLoopbackServer: Sendable {
   }
 
   private func receive(_ connection: NWConnection, buffer: Data) {
-    connection.receive(minimumIncompleteLength: 1, maximumLength: 16_384) {
-      [weak self] data, _, complete, error in
+    connection.receive(
+      minimumIncompleteLength: 1, maximumLength: 16_384
+    ) { [weak self] data, _, complete, error in
       guard let self else {
         connection.cancel()
         return

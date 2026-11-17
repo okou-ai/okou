@@ -242,7 +242,7 @@ final class AppLifecycleTests: XCTestCase {
         "okou": [
           "version": 1, "userId": try XCTUnwrap(authentication.userID),
           "workspaceId": "org_one", "threadId": ConversationHistoryFixture.threadID,
-          "runId": "60000000-0000-4000-8000-000000000003", "notificationId": "lifecycle-complete",
+          "runId": "60000000-0000-4000-8000-000000000003", "notificationId": "lifecycle-complete"
         ]
       ]))
     lifecycle.notifications.receiveTap(destination)
@@ -265,7 +265,7 @@ final class AppLifecycleTests: XCTestCase {
     let info = [
       "CFBundleIdentifier": "ai.okou.tests.lifecycle", "CFBundleShortVersionString": "1.0.0",
       "APIBaseURL": fixture.history.http.baseURL.absoluteString,
-      "WebBaseURL": fixture.history.http.baseURL.absoluteString,
+      "WebBaseURL": fixture.history.http.baseURL.absoluteString
     ]
     try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
       .write(to: bundleURL.appending(path: "Info.plist"))
@@ -324,9 +324,11 @@ final class AppLifecycleTests: XCTestCase {
         paths += cacheRoots.map { $0.appending(path: "ChatCache/" + name + suffix) }
       }
       for path in paths {
-        do { try FileManager.default.removeItem(at: path) } catch let error as CocoaError
-          where error.code == .fileNoSuchFile
-        {}
+        do {
+          try FileManager.default.removeItem(at: path)
+        } catch let error as CocoaError where error.code == .fileNoSuchFile {
+          // The test directory is already absent.
+        }
       }
     }
   }
@@ -363,8 +365,8 @@ private final class LifecycleHTTPFixture: Sendable {
       beforeEventRows: beforeEventRows,
       updateDetail: { request in
         let key = try Self.workspace(request) + request.url!.path + "/draft"
-        state.drafts.withLock {
-          $0[key] = String(decoding: chatRequestBody(request), as: UTF8.self)
+        try state.drafts.withLock {
+          $0[key] = try XCTUnwrap(String(data: chatRequestBody(request), encoding: .utf8))
         }
         return ChatHTTPResponse(body: #"{"cancellationRecoveryPending":false}"#)
       },
@@ -391,8 +393,8 @@ private final class LifecycleHTTPFixture: Sendable {
           "/api/chat-threads/\(ConversationHistoryFixture.threadID)/draft":
           let key = try Self.workspace(request) + request.url!.path
           if request.httpMethod == "PATCH" {
-            state.drafts.withLock {
-              $0[key] = String(decoding: chatRequestBody(request), as: UTF8.self)
+            try state.drafts.withLock {
+              $0[key] = try XCTUnwrap(String(data: chatRequestBody(request), encoding: .utf8))
             }
           }
           return ChatHTTPResponse(

@@ -40,6 +40,7 @@
   int palette_default;
   int realtime_connecting;
   int realtime_unavailable;
+  int recovery_continue;
   int settings;
   int updates_available;
   int updates_check;
@@ -120,6 +121,16 @@
   ai.okou.android.api.generated.ProjectSnapshot$Companion Companion;
 }
 -keep,allowobfuscation class ai.okou.android.api.generated.ReadState {
+}
+-keep,allowobfuscation class ai.okou.android.api.generated.RecoveryBilling {
+}
+-keep,allowobfuscation class ai.okou.android.api.generated.RecoveryCatalog {
+}
+-keep,allowobfuscation class ai.okou.android.api.generated.RecoveryModels {
+}
+-keep,allowobfuscation class ai.okou.android.api.generated.RecoverySubscriptions {
+}
+-keep,allowobfuscation class ai.okou.android.api.generated.ResetSubscriptionResult {
 }
 -keep,allowobfuscation interface ai.okou.android.api.generated.SendRequest {
 }
@@ -229,11 +240,23 @@
   public java.lang.Object projectArchive(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object projectEvents(long, kotlin.coroutines.Continuation);
   public java.lang.Object projectSnapshot(kotlin.coroutines.Continuation);
+  public java.lang.Object recoveryBilling(kotlin.coroutines.Continuation);
+  public java.lang.Object recoveryCatalog(kotlin.coroutines.Continuation);
+  public java.lang.Object recoveryModels(kotlin.coroutines.Continuation);
+  public java.lang.Object recoverySubscriptions(kotlin.coroutines.Continuation);
+  public java.lang.Object resetSubscription(java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object sendControl(ai.okou.android.api.generated.SendRequest, kotlin.coroutines.Continuation);
   public java.lang.Object sendInput(ai.okou.android.api.generated.SendRequestVariant1, kotlin.coroutines.Continuation);
   public java.lang.Object threadDetail(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object updatePersonalInstructions(java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object updatePreferences(ai.okou.android.api.generated.UpdatePreferencesRequest, kotlin.coroutines.Continuation);
+}
+-keep,allowobfuscation interface ai.okou.android.chat.AssistantRecoveryService {
+  public java.lang.Object recoveryBilling(kotlin.coroutines.Continuation);
+  public java.lang.Object recoveryCatalog(kotlin.coroutines.Continuation);
+  public java.lang.Object recoveryModels(kotlin.coroutines.Continuation);
+  public java.lang.Object recoverySubscriptions(kotlin.coroutines.Continuation);
+  public java.lang.Object resetSubscription(java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
 }
 -keep,allowobfuscation class ai.okou.android.chat.ChatCacheStore {
   public java.lang.Object close(kotlin.coroutines.Continuation);
@@ -317,6 +340,7 @@
 -keep,allowobfuscation class ai.okou.android.chat.HistoryEvent {
   public java.lang.String getId();
   public long getSeqId();
+  public java.lang.String getThreadId();
   public kotlinx.serialization.json.JsonObject getWire();
   ai.okou.android.chat.HistoryEvent$Companion Companion;
 }
@@ -637,6 +661,7 @@
   public static java.lang.String joinToString$default(java.lang.Iterable, java.lang.CharSequence, java.lang.CharSequence, java.lang.CharSequence, int, java.lang.CharSequence, kotlin.jvm.functions.Function1, int, java.lang.Object);
   public static java.lang.Object last(java.util.List);
   public static java.lang.Object lastOrNull(java.util.List);
+  public static java.util.List plus(java.util.Collection, java.lang.Object);
   public static java.lang.Object single(java.lang.Iterable);
   public static java.lang.Object single(java.util.List);
   public static java.lang.Object singleOrNull(java.lang.Iterable);
@@ -653,6 +678,7 @@
   public static java.util.Map emptyMap();
   public static java.lang.Object getValue(java.util.Map, java.lang.Object);
   public static java.util.Map mapOf(kotlin.Pair[]);
+  public static java.util.Map plus(java.util.Map, kotlin.Pair);
   public static java.util.Map toMap(java.util.Map);
 }
 -keep,allowobfuscation class kotlin.collections.SetsKt {

@@ -14,7 +14,7 @@ final class NotificationStateTests: XCTestCase {
     system.delivered = [
       try receipt("read", user: "current"),
       try receipt("unread", user: "current", run: 2),
-      try receipt("previous-account", user: "previous"),
+      try receipt("previous-account", user: "previous")
     ]
     let fixture = ChatHTTPFixture { request in
       guard request.url?.path == "/api/ios-notifications/reconcile", request.httpMethod == "POST"
@@ -427,7 +427,7 @@ final class NotificationStateTests: XCTestCase {
         "okou": [
           "version": 1, "userId": user, "workspaceId": "org_test",
           "threadId": ChatLinkFixture.sourceID, "runId": ChatLinkFixture.runID(run),
-          "notificationId": id,
+          "notificationId": id
         ]
       ]))
     return DeliveredChatNotification(identifier: id, destination: destination)

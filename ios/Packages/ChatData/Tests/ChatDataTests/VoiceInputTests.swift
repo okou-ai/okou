@@ -72,7 +72,7 @@ final class VoiceInputTests: XCTestCase {
           VoiceEditorContext.self, from: voicePart("editorContext", request: request))
         XCTAssertEqual(context.before, "Existing notes ")
         let wav = try voicePart("file", request: request)
-        XCTAssertEqual(String(decoding: wav.prefix(4), as: UTF8.self), "RIFF")
+        XCTAssertEqual(String(data: wav.prefix(4), encoding: .utf8), "RIFF")
         XCTAssertEqual(wav[22], 1)
         XCTAssertEqual(Array(wav[24..<28]), [0x80, 0x3e, 0, 0])
         XCTAssertEqual(wav[34], 16)
@@ -177,7 +177,7 @@ final class VoiceInputTests: XCTestCase {
       storage(user: "two").voiceDraft(for: .agent("one")),
       storage(org: "two").voiceDraft(for: .agent("one")),
       storage().voiceDraft(for: .agent("two")),
-      storage().voiceDraft(for: .thread("one")),
+      storage().voiceDraft(for: .thread("one"))
     ]
     for other in others {
       let independent = try VoiceDraftSession(

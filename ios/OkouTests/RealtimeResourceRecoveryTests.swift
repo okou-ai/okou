@@ -217,7 +217,7 @@ private final class RealtimeResourceHarness {
       return try JSONSerialization.data(withJSONObject: [
         "keyName": "fixture.key", "timestamp": timestamp, "ttl": 3_600_000,
         "nonce": "fixture-nonce", "mac": "ZmFrZQ==", "clientId": userID,
-        "capability": "{\"*\":[\"subscribe\"]}",
+        "capability": "{\"*\":[\"subscribe\"]}"
       ])
     },
     onChange: { [weak self] change in
@@ -334,7 +334,7 @@ private final class RealtimeResourceHarness {
   func expectedRequests(rounds: Int) -> [String: Int] {
     [
       "/api/user-model-preference": rounds, "/api/run-models": rounds,
-      "/api/model-catalog": rounds, "/api/feature-switches": rounds,
+      "/api/model-catalog": rounds, "/api/feature-switches": rounds
     ]
   }
 }
@@ -714,11 +714,11 @@ private final class ModelRecoveryFixture {
     let token = try JSONSerialization.data(withJSONObject: [
       "keyName": "fixture.key", "timestamp": Int64(Date().timeIntervalSince1970 * 1000),
       "ttl": 3_600_000, "nonce": "fixture-nonce", "mac": "ZmFrZQ==",
-      "clientId": userID, "capability": "{\"*\":[\"subscribe\"]}",
+      "clientId": userID, "capability": "{\"*\":[\"subscribe\"]}"
     ])
     http = WorkspaceStartupFixture(
       beforeRealtimeToken: beforeRealtimeToken,
-      realtimeToken: String(decoding: token, as: UTF8.self), indicators: indicators)
+      realtimeToken: String(data: token, encoding: .utf8)!, indicators: indicators)
   }
 
   func start(loadModels: Bool = true) async throws {

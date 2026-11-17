@@ -8,7 +8,7 @@ final class ChatSearchTests: XCTestCase, @unchecked Sendable {
     let content =
       String(repeating: "before ", count: 30) + "🪷needle" + String(repeating: " after", count: 30)
     let start = (content as NSString).range(of: "needle").location
-    let encoded = String(decoding: try JSONEncoder().encode(content), as: UTF8.self)
+    let encoded = try JSONEncoder().encodeString(content)
     let fixture = ChatHTTPFixture { request in
       XCTAssertEqual(request.url?.path, "/api/chat/search")
       XCTAssertEqual(request.httpMethod, "GET")

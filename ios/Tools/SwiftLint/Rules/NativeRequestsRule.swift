@@ -16,7 +16,7 @@ struct NativeRequestsRule: NativeRule {
     let owners = [
       "/Packages/ChatData/Sources/ChatData/APIClient.swift",
       "/Packages/ChatData/Sources/ChatData/IdentityPresentationCache.swift",
-      "/Okou/Features/ChatDetail/ConnectorIconLoader.swift",
+      "/Okou/Features/ChatDetail/ConnectorIconLoader.swift"
     ]
     if let path = file.path?.path, owners.contains(where: { path.hasSuffix($0) }) { return [] }
     let names = NameCollector(viewMode: .sourceAccurate)

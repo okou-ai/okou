@@ -73,8 +73,9 @@ struct OkouNameDialog: UIViewControllerRepresentable {
         title: request.title, message: request.error, preferredStyle: .alert)
       alert.overrideUserInterfaceStyle = overrideUserInterfaceStyle
       alert.view.tintColor = OkouNameDialog.actionTint
-      let save = UIAlertAction(title: String(localized: "Save"), style: .default) {
-        [weak self, weak alert] _ in
+      let save = UIAlertAction(
+        title: String(localized: "Save"), style: .default
+      ) { [weak self, weak alert] _ in
         let name = alert?.textFields?.first?.text ?? request.name
         self?.alert = nil
         self?.displayedID = nil

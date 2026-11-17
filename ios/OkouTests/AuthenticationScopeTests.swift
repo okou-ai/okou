@@ -7,8 +7,7 @@ import XCTest
 
 @MainActor
 final class AuthenticationScopeTests: XCTestCase {
-  func testWorkspaceLogoMetadataKeepsUploadedImagesDistinctFromGeneratedPlaceholders() async throws
-  {
+  func testWorkspaceLogosDistinguishUploadsFromPlaceholders() async throws {
     let (_, authentication) = try await session {
       $0.workspaceIDs = ["org_one", "org_two"]
       $0.workspaceImages = ["org_one": "https://example.invalid/uploaded-logo.png"]

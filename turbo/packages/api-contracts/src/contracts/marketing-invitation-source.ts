@@ -33,7 +33,40 @@ export const marketingInvitationSourceObservationSchema = object({
   ]),
 }).strict();
 
+/** Original retained claim identity, including invitations predating source events. */
+export const marketingInvitationClaimObservationSchema =
+  marketingInvitationSourceObservationSchema
+    .omit({ source: true })
+    .extend({
+      source: object({
+        kind: literal("legacy-invitation"),
+        claimId: uuid(),
+        createdAt: iso.datetime(),
+        orgId: string().min(1).max(256),
+        actorUserId: string().min(1).max(256),
+        inviterUserId: string().min(1).max(256),
+        sourceKey: string().min(1).max(256),
+        invitationId: string().min(1).max(256),
+      }).strict(),
+    })
+    .strict();
+
 export const marketingInvitationSourceContract = initContract().router({
+  observeClaim: {
+    method: "GET",
+    path: "/api/internal/marketing/get-started/invitation-claims/:claimId",
+    headers: authHeadersSchema,
+    pathParams: object({ claimId: uuid() }),
+    responses: {
+      200: marketingInvitationClaimObservationSchema,
+      401: apiErrorSchema,
+      404: apiErrorSchema,
+      500: apiErrorSchema,
+      503: apiErrorSchema,
+    },
+    summary:
+      "Read the original invitation claim and provider authority without requiring a captured source event",
+  },
   observe: {
     method: "GET",
     path: "/api/internal/marketing/get-started/invitation-sources/:eventId",

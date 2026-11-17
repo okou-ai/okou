@@ -31,7 +31,10 @@ const { installRunChat } = createChatRunFixtures(context);
 
 function buttonIn(container: HTMLElement, name: string): HTMLElement {
   const match = queryAllByRoleFast("button", container).find((button) => {
-    return button.textContent?.replace(/\s+/gu, " ").trim() === name;
+    return (
+      button.textContent?.replace(/\s+/gu, " ").trim() === name ||
+      button.getAttribute("aria-label") === name
+    );
   });
   if (!match) {
     throw new Error(`${name} button was not visible`);
@@ -255,6 +258,52 @@ test("Ask why a purchase was not completed when Stripe sends the member back", a
     },
   ]);
   expect(window.location.search).not.toContain("billing=");
+});
+
+test("Wait for the restored plans dialog to close before asking about canceled checkout", async () => {
+  const submitted = installSurveyApi([], {
+    checkoutKind: "plan",
+    returnedOnly: true,
+  });
+  installRunChat({ chatEvents: outOfCreditsChat() });
+
+  await setupPage({
+    context,
+    path: `${RUN_PATH}?billing=canceled&settings=billing&billingView=plans`,
+    featureSwitches: SURVEY_SWITCHES,
+  });
+
+  const plans = await screen.findByRole("dialog", { name: "Choose a plan" });
+  // The feedback action confirms the shared survey response has resolved.
+  await screen.findByLabelText("What's stopping you from upgrading today?");
+  expect(
+    screen.queryByText("What stopped you from completing your purchase?"),
+  ).not.toBeInTheDocument();
+
+  click(buttonIn(plans, "Close"));
+
+  const survey = await screen.findByRole("dialog", {
+    name: "What stopped you from completing your purchase?",
+  });
+  expect(plans).not.toBeInTheDocument();
+  click(within(survey).getByText("The price was higher than I expected"));
+  click(buttonIn(survey, "Submit"));
+
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", {
+        name: "What stopped you from completing your purchase?",
+      }),
+    ).not.toBeInTheDocument();
+  });
+  expect(submitted).toStrictEqual([
+    {
+      survey: "checkout_abandoned",
+      answer: "price_higher_than_expected",
+      checkoutKind: "plan",
+      checkoutSessionId: "cs_survey_test",
+    },
+  ]);
 });
 
 test("Ask on a new device using the unpaid Checkout returned by the server", async () => {

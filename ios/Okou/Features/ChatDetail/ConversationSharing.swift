@@ -186,13 +186,14 @@ final class ConversationSharing {
   }
 
   private func existingShare(_ id: String) async throws -> ChatShareVisibility? {
-    do { return try await client.chatShareVisibility(id: id) } catch let error as APIClientError
-      where error.statusCode == 404
-    { return nil }
+    do {
+      return try await client.chatShareVisibility(id: id)
+    } catch let error as APIClientError where error.statusCode == 404 { return nil }
   }
 
-  private func run(_ operation: @escaping @MainActor () async throws -> Void) -> Task<Void, Never>?
-  {
+  private func run(
+    _ operation: @escaping @MainActor () async throws -> Void
+  ) -> Task<Void, Never>? {
     guard !closed else { return nil }
     task?.cancel()
     let generation = UUID()

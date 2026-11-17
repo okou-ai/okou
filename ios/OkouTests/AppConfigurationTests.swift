@@ -16,7 +16,7 @@ final class AppConfigurationTests: XCTestCase {
 
     // CFBundleVersion is always 1 and must never stand in for the marketing version.
     let invalidVersions: [String?] = [
-      nil, "", "1", "1.2", "1.2.3-beta.1", "v1.2.3", "$(MARKETING_VERSION)",
+      nil, "", "1", "1.2", "1.2.3-beta.1", "v1.2.3", "$(MARKETING_VERSION)"
     ]
     for marketingVersion in invalidVersions {
       let bundle = try configurationBundle(in: directory, marketingVersion: marketingVersion)
@@ -36,7 +36,7 @@ final class AppConfigurationTests: XCTestCase {
       "CFBundleIdentifier": "ai.okou.tests.configuration",
       "CFBundleVersion": "1",
       "APIBaseURL": "https://api.example.invalid",
-      "WebBaseURL": "https://app.example.invalid",
+      "WebBaseURL": "https://app.example.invalid"
     ]
     info["CFBundleShortVersionString"] = marketingVersion
     try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)

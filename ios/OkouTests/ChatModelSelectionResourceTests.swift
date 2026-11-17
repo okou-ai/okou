@@ -151,8 +151,7 @@ final class ChatModelSelectionResourceTests: XCTestCase {
     XCTAssertEqual(reads.withLock { $0 }, 2)
   }
 
-  func testMetadataFailureRemainsOnTheSharedReadUntilAnExplicitRetryConfirmsSettings() async throws
-  {
+  func testMetadataFailureStaysSharedUntilExplicitRetry() async throws {
     let reads = Mutex(0)
     let fixture = ChatHTTPFixture { request in
       let response = try modelReadResponse(request)

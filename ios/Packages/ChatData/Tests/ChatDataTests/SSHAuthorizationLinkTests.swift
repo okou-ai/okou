@@ -21,7 +21,7 @@ final class SSHAuthorizationLinkTests: XCTestCase {
     for value in [
       "https://foreign.invalid" + path, "http://app.example.invalid" + path,
       "https://app.example.invalid:444" + path, "https://user@app.example.invalid" + path,
-      path + "?callbackPrompt=anything", path + "#fragment", path + "/extra",
+      path + "?callbackPrompt=anything", path + "#fragment", path + "/extra"
     ] {
       XCTAssertNil(ChatSSHAuthorizationAction.parse(value, webURL: origin, threadID: thread))
     }

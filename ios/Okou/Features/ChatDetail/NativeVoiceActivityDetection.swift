@@ -20,7 +20,7 @@ actor NativeVoiceActivityDetection: VoiceActivityDetection {
     if samples < VoiceDraftSession.sampleRate { return true }
     let request = try SNClassifySoundRequest(classifierIdentifier: .version1)
     let voiceLabels = [
-      "speech", "whispering", "shout", "yell", "singing", "rapping", "chatter", "babble",
+      "speech", "whispering", "shout", "yell", "singing", "rapping", "chatter", "babble"
     ]
     guard Set(voiceLabels).isSubset(of: Set(request.knownClassifications)) else {
       return true

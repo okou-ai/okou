@@ -135,7 +135,7 @@ struct DiscardedThrowingTaskRule: NativeRule {
           return false
         }
         return [
-          "Error", "Swift.Error", "anyError", "anySwift.Error", "NSError", "Foundation.NSError",
+          "Error", "Swift.Error", "anyError", "anySwift.Error", "NSError", "Foundation.NSError"
         ]
         .contains(tokens.dropFirst(cast + 1).joined())
       }

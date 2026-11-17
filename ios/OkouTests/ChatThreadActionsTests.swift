@@ -16,7 +16,7 @@ final class ChatThreadActionsTests: XCTestCase {
     store.selectChat(ThreadActionsFixture.thread)
     let original = try XCTUnwrap(store.list.threads.first)
     let destinations: [String?] = [
-      ThreadActionsFixture.project, ThreadActionsFixture.otherProject, nil,
+      ThreadActionsFixture.project, ThreadActionsFixture.otherProject, nil
     ]
     for projectID in destinations {
       let gate = ThreadActionGate()
@@ -724,8 +724,8 @@ private final class ThreadActionsFixture: Sendable {
           case "rename":
             kind = "renamed"
             state.title = title ?? ""
-            let encoded = try? JSONEncoder().encode(state.title)
-            extra = ",\"title\":\(encoded.map { String(decoding: $0, as: UTF8.self) } ?? "null")"
+            let encoded = try? JSONEncoder().encodeString(state.title)
+            extra = ",\"title\":\(encoded ?? "null")"
           default:
             XCTFail("Unexpected mutation: \(path)")
             return
@@ -773,7 +773,7 @@ private final class ThreadActionsFixture: Sendable {
               2, type: "output.message",
               payload:
                 "{\"content\":\"Start with the two things that matter most.\\n\\n- Reserve a quiet morning for the main project.\\n- Keep a short list of follow-ups for tomorrow.\\n\\nYou can keep this conversation close by or mute it while you focus.\"}"
-            ),
+            )
           ].joined(separator: ",") : ""
         return ChatHTTPResponse(
           body:

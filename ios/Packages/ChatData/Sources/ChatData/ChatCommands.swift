@@ -153,7 +153,7 @@ public actor ChatCommands {
             + attachments.map {
               .object([
                 "type": .string("file"), "fileId": .string($0.id),
-                "filenameSnapshot": .string($0.filename), "contentType": .string($0.contentType),
+                "filenameSnapshot": .string($0.filename), "contentType": .string($0.contentType)
               ])
             }),
       hasTextContent: !prompt.isEmpty || document?.hasTextContent == true,

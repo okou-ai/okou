@@ -24,14 +24,14 @@ final class MentionNavigationFixture: Sendable {
       .object(["type": .string("text"), "text": .string("Before ")]),
       .object([
         "type": .string("chat_thread"), "threadId": .string(thread(31)),
-        "titleSnapshot": .string("Cross Agent archived plan"),
+        "titleSnapshot": .string("Cross Agent archived plan")
       ]),
       .object(["type": .string("text"), "text": .string(" and ")]),
       .object([
         "type": .string("chat_thread"), "threadId": .string(thread(30)),
-        "titleSnapshot": .string("Project 30"),
+        "titleSnapshot": .string("Project 30")
       ]),
-      .object(["type": .string("text"), "text": .string(" after 🌷")]),
+      .object(["type": .string("text"), "text": .string(" after 🌷")])
     ])
   }
 
@@ -48,7 +48,7 @@ final class MentionNavigationFixture: Sendable {
       case "/api/agents":
         let names = [
           "Planner", "Research Agent", "Notes", "Release",
-          "研究 Agent — Long workspace name with 中文 and 🌷 to check native truncation and accessibility",
+          "研究 Agent — Long workspace name with 中文 and 🌷 to check native truncation and accessibility"
         ]
         let others = names.enumerated().map { index, name in
           ["agentId": Self.agent(index + 1), "displayName": name, "isDefaultAgent": false]
@@ -58,11 +58,11 @@ final class MentionNavigationFixture: Sendable {
           [
             [
               "agentId": AttachmentFlowFixture.agentID, "displayName": "Okou",
-              "isDefaultAgent": true,
+              "isDefaultAgent": true
             ] as [String: Any]
           ] + others
         return ChatHTTPResponse(
-          body: String(decoding: try JSONSerialization.data(withJSONObject: values), as: UTF8.self))
+          body: try JSONSerialization.string(withJSONObject: values))
 
       case "/api/feature-switches":
         return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
@@ -93,10 +93,9 @@ final class MentionNavigationFixture: Sendable {
             id: Self.thread(35), title: "Pinned recent", day: 2, agent: Self.agent(1),
             pinOrder: "a1"))
         return ChatHTTPResponse(
-          body: String(
-            decoding: try JSONSerialization.data(withJSONObject: [
-              "chatThreads": threads, "latestEventId": NSNull(), "latestSeqId": 0,
-            ]), as: UTF8.self))
+          body: try JSONSerialization.string(withJSONObject: [
+            "chatThreads": threads, "latestEventId": NSNull(), "latestSeqId": 0
+          ]))
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
@@ -115,7 +114,7 @@ final class MentionNavigationFixture: Sendable {
       "id": id, "agentId": agent, "title": title, "createdAt": date, "updatedAt": date,
       "sortAt": date,
       "archived": archived, "hidden": hidden, "pinnedAt": pinOrder == nil ? NSNull() : date as Any,
-      "pinOrder": pinOrder as Any? ?? NSNull(),
+      "pinOrder": pinOrder as Any? ?? NSNull()
     ]
   }
 

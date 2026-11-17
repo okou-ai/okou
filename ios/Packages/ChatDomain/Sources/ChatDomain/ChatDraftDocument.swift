@@ -74,7 +74,7 @@ public struct ChatDraftDocument: Codable, Equatable, Sendable {
         }
         return [
           "text", "file", "chat_thread", "agent", "template", "source", "additional_info",
-          "automation", "feedback",
+          "automation", "feedback"
         ].contains(type)
       }
   }

@@ -189,14 +189,14 @@ private final class ProjectSyncFixture {
     let token = try JSONSerialization.data(withJSONObject: [
       "keyName": "fixture.key", "timestamp": Int64(Date().timeIntervalSince1970 * 1000),
       "ttl": 3_600_000, "nonce": "fixture-nonce", "mac": "ZmFrZQ==",
-      "clientId": userID, "capability": "{\"*\":[\"subscribe\"]}",
+      "clientId": userID, "capability": "{\"*\":[\"subscribe\"]}"
     ])
     http = ChatHTTPFixture(
       onUnhandledRequest: { XCTFail($0) },
       handler: { request in
         switch (request.httpMethod, request.url?.path) {
         case ("POST", "/api/realtime/token"):
-          return ChatHTTPResponse(body: String(decoding: token, as: UTF8.self))
+          return ChatHTTPResponse(body: String(data: token, encoding: .utf8)!)
         case ("GET", "/api/agents"): return ChatHTTPResponse(body: "[]")
         case ("GET", "/api/chat-threads/snapshot"):
           return ChatHTTPResponse(

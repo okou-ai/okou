@@ -86,19 +86,19 @@ final class ComposerConnectorPermissionResources {
       guard let self, try get(lifetime), !closed else { throw CancellationError() }
       _ = try get(revision)
       let signal = options.signal
-      let task = Task<ChatConnectorPermissionState, Error> {
-        @MainActor [weak self, service, agentID, slug] in
-        do {
-          try Task.checkCancellation()
-          let result = try await service.permissions(slug: slug, agentID: agentID)
-          try Task.checkCancellation()
-          try signal.checkCancellation()
-          return result
-        } catch {
-          if let self, !closed, !Task.isCancelled, !signal.isCancelled { didFail(error) }
-          throw error
+      let task: Task<ChatConnectorPermissionState, Error> =
+        Task { @MainActor [weak self, service, agentID, slug] in
+          do {
+            try Task.checkCancellation()
+            let result = try await service.permissions(slug: slug, agentID: agentID)
+            try Task.checkCancellation()
+            try signal.checkCancellation()
+            return result
+          } catch {
+            if let self, !closed, !Task.isCancelled, !signal.isCancelled { didFail(error) }
+            throw error
+          }
         }
-      }
       current = task
       signal.onCancel { task.cancel() }
       return task

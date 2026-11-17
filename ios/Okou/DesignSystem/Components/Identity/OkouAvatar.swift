@@ -36,8 +36,9 @@ struct OkouAvatar: View {
     ZStack {
       Image(Self.texture).resizable()
       if animated {
-        TimelineView(.animation(minimumInterval: OkouMotion.avatarFrame, paused: resumed == nil)) {
-          timeline in
+        TimelineView(
+          .animation(minimumInterval: OkouMotion.avatarFrame, paused: resumed == nil)
+        ) { timeline in
           OkouAvatarCanvas(
             mood: mood,
             time: mood.hero + played + (resumed.map { timeline.date.timeIntervalSince($0) } ?? 0))

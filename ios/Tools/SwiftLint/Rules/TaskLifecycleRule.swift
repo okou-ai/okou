@@ -125,7 +125,8 @@ struct TaskLifecycleRule: NativeRule {
         {
           return taskStorage(value)
         }
-        if let named = type.as(MemberTypeSyntax.self), named.baseType.trimmedDescription == "Swift"
+        if let named = type.as(MemberTypeSyntax.self),
+          named.baseType.trimmedDescription == "Swift"
         {
           if named.name.text == "Optional",
             let wrapped = named.genericArgumentClause?.arguments.first?.argument.as(TypeSyntax.self)

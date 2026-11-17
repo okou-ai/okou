@@ -78,7 +78,7 @@ final class NativeAuthFlow {
 
   /// Clerk's answers for an email with no account yet, which Continue turns into a sign-up.
   private static let newAccountCodes: Set<String> = [
-    "form_identifier_not_found", "invitation_account_not_exists",
+    "form_identifier_not_found", "invitation_account_not_exists"
   ]
 
   /// The SDK owns transport, verification, and sessions; this owner only composes the native steps.
@@ -190,7 +190,7 @@ final class NativeAuthFlow {
       try await finish(sessionID: attempt.createdSessionId)
     } else if !attempt.missingFields.isEmpty {
       let supported: Set<SignUp.Field> = [
-        .firstName, .lastName, .username, .password, .legalAccepted,
+        .firstName, .lastName, .username, .password, .legalAccepted
       ]
       requiredFields = attempt.missingFields
       step =
@@ -276,9 +276,15 @@ final class NativeAuthFlow {
           self.operation = nil
         }
       }
-      do { try await action() } catch is CancellationError {} catch let error
-        as ASWebAuthenticationSessionError where error.code == .canceledLogin
-      {} catch let error as ASAuthorizationError where error.code == .canceled {} catch {
+      do {
+        try await action()
+      } catch is CancellationError {
+        // Closing the current operation does not present an authentication error.
+      } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
+        // The member cancelled browser authentication.
+      } catch let error as ASAuthorizationError where error.code == .canceled {
+        // The member cancelled Apple authentication.
+      } catch {
         guard generation == self.generation, !Task.isCancelled else { return }
         self.error = error.localizedDescription
       }

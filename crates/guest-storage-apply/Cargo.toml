@@ -1,6 +1,6 @@
 [package]
 name = "guest-storage-apply"
-version = "0.32.16"
+version = "0.32.17"
 edition.workspace = true
 
 [dependencies]
@@ -24,6 +24,7 @@ guest-telemetry.workspace = true
 nix = { workspace = true, features = ["fs", "time"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+nix = { workspace = true, features = ["resource"] }
 rustix = { workspace = true, features = ["event", "fs", "std"] }
 
 [dev-dependencies]

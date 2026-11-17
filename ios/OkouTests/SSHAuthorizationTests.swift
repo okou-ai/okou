@@ -215,7 +215,7 @@ private final class SSHAuthorizationFixture: Sendable {
       try Task.checkCancellation()
       return state.withLock { value in
         if request.httpMethod == "POST" {
-          XCTAssertEqual(String(decoding: chatRequestBody(request), as: UTF8.self), "{}")
+          XCTAssertEqual(String(data: chatRequestBody(request), encoding: .utf8), "{}")
           if path.hasSuffix("/revoke") {
             value.status = "revoked"
           } else {

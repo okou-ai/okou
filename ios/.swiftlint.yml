@@ -1,32 +1,42 @@
-# swift-format owns formatting. Native rules are compiled into pinned SwiftLint.
-only_rules:
-  - force_cast
-  - force_try
-  - duplicate_imports
-  - duplicate_conditions
-  - unused_closure_parameter
-  - invalid_swiftlint_command
-  - superfluous_disable_command
-  - unhandled_throwing_task
+# Inherit upstream defaults; adopt metric and naming policy separately.
+disabled_rules:
+  - cyclomatic_complexity
+  - file_length
+  - function_body_length
+  - function_parameter_count
+  - identifier_name
+  - large_tuple
+  - line_length
+  - nesting
+  - type_body_length
+
+opt_in_rules:
   - discarded_notification_center_observer
-  - private_swiftui_state
-  - okou_render_effects
-  - okou_stable_graph
-  - okou_private_atoms
   - okou_accessor_escape
-  - okou_native_requests
-  - okou_resource_failures
-  - okou_useless_catch
-  - okou_test_synchronization
   - okou_check_after_await
-  - okou_resource_cancellation
-  - okou_subscription_teardown
-  - okou_import_boundaries
-  - okou_global_mutable_state
-  - okou_storage_boundaries
-  - okou_task_lifecycle
   - okou_discarded_throwing_task
+  - okou_global_mutable_state
+  - okou_import_boundaries
   - okou_logging_boundaries
+  - okou_native_requests
+  - okou_private_atoms
+  - okou_render_effects
+  - okou_resource_cancellation
+  - okou_resource_failures
+  - okou_stable_graph
+  - okou_storage_boundaries
+  - okou_subscription_teardown
+  - okou_task_lifecycle
+  - okou_test_synchronization
+  - okou_useless_catch
+  - private_swiftui_state
+  - unhandled_throwing_task
+
+# Keep multiline declaration and condition layout consistent with swift-format.
+opening_brace:
+  ignore_multiline_type_headers: true
+  ignore_multiline_statement_conditions: true
+  ignore_multiline_function_signatures: true
 
 included:
   - Okou

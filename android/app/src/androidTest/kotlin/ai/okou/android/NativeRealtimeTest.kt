@@ -60,6 +60,7 @@ class NativeRealtimeTest {
         val oldControlJournal = app.controlJournalStore
         val oldControlService = app.controlService
         val oldComposerService = app.composerService
+        val oldRecoveryService = app.recoveryService
         val oldPreferences = app.snapshotApiPreferences()
         val cache = ChatCacheSnapshot(app.noBackupFilesDir.resolve("chat-list"), app.chatCache)
         val directory =
@@ -75,6 +76,7 @@ class NativeRealtimeTest {
         app.controlJournalStore = controlsJournal
         app.controlService = fixture.service
         app.composerService = fixture.service
+        app.recoveryService = fixture.service
         authentication.state.value = testAuthenticationState()
         val device = UiDevice.getInstance(instrumentation)
         var scenario: ActivityScenario<MainActivity>? = null
@@ -492,6 +494,46 @@ class NativeRealtimeTest {
             condition {
                 chats?.history?.uiState?.value?.detail?.cancellationRecoveryPending == false
             }
+            // A later failed run uses the installed recovery card and a new literal continue.
+            val recovery = RecoveryApiFixture(fixture)
+            recovery.model = null
+            recovery.provider = "built-in"
+            val recoveryRun = "abababab-abab-4bab-8bab-abababababab"
+            recovery.set(
+                RecoveryApiFixture.input(58, followup.get(), recoveryRun),
+                RecoveryApiFixture.failure("provider_server_error", 59, run = recoveryRun),
+            )
+            recovery.send = { wire ->
+                recovery.rows.set(
+                    recovery.rows.get() +
+                        ai.okou.android.chat.HistoryEvent.decode(
+                            historyEventWire(
+                                wire.getValue("clientEventId").jsonPrimitive.content,
+                                60,
+                                type = "input.prompt",
+                                payload = "{\"userMessage\":${wire.getValue("userMessage")}}",
+                                run = null,
+                            )
+                        )
+                )
+                jsonResponse("""{"threadId":"$CHAT_PERSONAL","createdAt":"$CHAT_DATE"}""")
+                    .setResponseCode(201)
+            }
+            external.invalidate(ChatChanges(messageThreads = setOf(CHAT_PERSONAL)))
+            reveal(app.getString(R.string.recovery_continue))
+            text(app.getString(R.string.recovery_continue)).click()
+            condition { recovery.inputs.size == 1 }
+            assertEquals(
+                "continue",
+                recovery.inputs.single().getValue("prompt").jsonPrimitive.content,
+            )
+            external.invalidate(ChatChanges(messageThreads = setOf(CHAT_PERSONAL)))
+            condition {
+                chats?.history?.uiState?.value?.transcript?.messages?.any {
+                    it.id ==
+                        recovery.inputs.single().getValue("clientEventId").jsonPrimitive.content
+                } == true
+            }
             assertTrue(
                 checkNotNull(
                         device.findObject(By.pkg(app.packageName).clazz("android.widget.EditText"))
@@ -530,6 +572,7 @@ class NativeRealtimeTest {
                         app.controlJournalStore = oldControlJournal
                         app.controlService = oldControlService
                         app.composerService = oldComposerService
+                        app.recoveryService = oldRecoveryService
                     },
                     { authentication.state.value = oldAuth },
                     { check(directory.deleteRecursively()) },

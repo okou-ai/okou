@@ -243,8 +243,9 @@ public struct ChatModelService: Sendable {
       model: metadata.selectedModel, serviceTier: metadata.serviceTier,
       modelSettings: metadata.modelSettings ?? [:])
   }
-  public func save(_ selection: ChatModelSelection, effort: String?, threadID: String) async throws
-  {
+  public func save(
+    _ selection: ChatModelSelection, effort: String?, threadID: String
+  ) async throws {
     let body = SelectionBody(
       model: selection.model, reasoningEffort: effort,
       codexServiceTier: selection.serviceTier == "priority" ? "fast" : nil)
