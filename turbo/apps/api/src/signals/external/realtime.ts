@@ -1,3 +1,4 @@
+import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { HTTPException } from "hono/http-exception";
 import Ably, { type CapabilityOp } from "ably";
 import type { RunnerSshInvalidate } from "@okouai/api-contracts/contracts/runner-ssh";
@@ -676,6 +677,51 @@ export async function publishBuiltInGenerationChanged(
     getBuiltInGenerationEventName(generationId),
     payload,
   );
+}
+
+/** Bound the provider operation itself; the durable job owns retries and cancellation. */
+const rewardProjectionClient = singleton(() => {
+  return new Ably.Rest({
+    key: env("ABLY_API_KEY"),
+    queryTime: false,
+    httpRequestTimeout: 5000,
+    httpMaxRetryCount: 0,
+  });
+});
+
+/** Await provider acceptance so the durable projection job owns retry, not waitUntil. */
+export async function publishMarketingRewardProjection(
+  target: {
+    readonly actorUserId: string;
+    readonly beneficiaryUserId: string | null;
+    readonly orgId: string;
+    readonly rewardTarget: "user" | "org";
+  },
+  signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted();
+  const client = rewardProjectionClient();
+  if (target.rewardTarget === "user") {
+    if (!target.beneficiaryUserId) {
+      throw new Error("Personal reward refresh has no beneficiary");
+    }
+    await client.channels
+      .get(getUserChannelName(target.beneficiaryUserId))
+      .publish(GET_STARTED_REWARDS_CHANGED_EVENT, null);
+  } else {
+    const published = await Promise.allSettled([
+      client.channels
+        .get(getUserChannelName(target.actorUserId))
+        .publish(GET_STARTED_REWARDS_CHANGED_EVENT, null),
+      client.channels
+        .get(getOrgChannelName(target.orgId))
+        .publish("slack:changed", null),
+    ]);
+    for (const result of published) {
+      if (result.status === "rejected") throw result.reason;
+    }
+  }
+  signal.throwIfAborted();
 }
 
 /** Publish an org-scoped signal for events shared by organization members. */
