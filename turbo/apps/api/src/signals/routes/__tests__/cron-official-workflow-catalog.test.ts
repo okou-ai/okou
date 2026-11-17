@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { array, boolean, object, string } from "zod";
 import { feedContract } from "@okouai/api-contracts/contracts/feed";
 import { feedRoutes } from "../feed";
 import {
   cronExecuteWorkflowAutomationsContract,
   cronOfficialWorkflowCatalogContract,
 } from "@okouai/api-contracts/contracts/cron";
-import { withMockNowForTest } from "../../../lib/time";
+import { now, withMockNowForTest } from "../../../lib/time";
 import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
 import { expect, test } from "vitest";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
@@ -50,6 +51,7 @@ async function saveOwnedFeedback(
   owned: Awaited<ReturnType<typeof publicChatActor>>,
   title: string,
   reason: string,
+  kind: "less_like_this" | "option_selected" | "dismissed" = "less_like_this",
 ) {
   const fixture = createChatEventsFixture(context);
   const orgId = owned.actor.orgId;
@@ -90,8 +92,8 @@ async function saveOwnedFeedback(
   const feedbackId = randomUUID();
   const rationale = "Review the owner's pending decision";
   const headers = { authorization: "Bearer clerk-session" };
-  await owned.run(async () => {
-    await accept(
+  return owned.run(async () => {
+    const created = await accept(
       api.create({
         headers: {
           authorization: `Bearer ${okouTokenFromExecution(execution)}`,
@@ -139,36 +141,71 @@ async function saveOwnedFeedback(
       orgId,
       owned.actor.orgRole,
     );
-    await accept(
-      api.feedback({
-        headers,
-        params: { id },
-        body: {
-          id: feedbackId,
-          kind: "less_like_this",
-          targetId: null,
-          note: "Initial preference",
-        },
-      }),
-      [200],
-    );
-    await accept(
-      api.feedback({
-        headers,
-        params: { id },
-        body: {
-          id: randomUUID(),
-          kind: "reason",
-          targetId: feedbackId,
-          note: reason,
-        },
-      }),
-      [200],
-    );
+    if (kind === "option_selected") {
+      await accept(
+        api.consume({ headers, params: { id }, body: { optionId: "review" } }),
+        [200],
+      );
+    } else {
+      await accept(
+        api.feedback({
+          headers,
+          params: { id },
+          body: {
+            id: feedbackId,
+            kind,
+            targetId: null,
+            note: "Initial preference",
+          },
+        }),
+        [200],
+      );
+      if (kind === "less_like_this") {
+        await accept(
+          api.feedback({
+            headers,
+            params: { id },
+            body: {
+              id: randomUUID(),
+              kind: "reason",
+              targetId: feedbackId,
+              note: reason,
+            },
+          }),
+          [200],
+        );
+      }
+    }
     await fixture.failChatRun(ordinary.runId, sandboxHeaders, "Feedback saved");
     await flushWaitUntilForTest();
+    return {
+      expected: {
+        kind,
+        title,
+        rationale,
+        ...(kind === "less_like_this" ? { reason } : {}),
+        ...(kind === "option_selected" ? { choice: "Review" } : {}),
+      },
+      undo: () => {
+        return owned.run(async () => {
+          await accept(
+            api.feedback({
+              headers,
+              params: { id },
+              body: {
+                id: randomUUID(),
+                kind: "undo",
+                targetId: feedbackId,
+                note: "",
+                snapshot: created.body,
+              },
+            }),
+            [200],
+          );
+        });
+      },
+    };
   });
-  return { kind: "less_like_this", title, rationale, reason };
 }
 
 async function prepareForeignFeedback(
@@ -196,7 +233,9 @@ async function prepareForeignFeedback(
 function expectFeedbackContext(
   prompt: string | null | undefined,
   curatesSuggestions: boolean,
-  expectedFeedback: readonly Awaited<ReturnType<typeof saveOwnedFeedback>>[],
+  expectedFeedback: readonly Awaited<
+    ReturnType<typeof saveOwnedFeedback>
+  >["expected"][],
 ) {
   if (curatesSuggestions) {
     expect(prompt).toContain("# Suggestions feedback context");
@@ -210,6 +249,157 @@ function expectFeedbackContext(
   } else {
     expect(prompt).not.toContain("# Suggestions feedback context");
   }
+}
+
+async function expectSuggestionFeedbackLifecycle(
+  owned: Awaited<ReturnType<typeof publicChatActor>>,
+  workflowId: string,
+  existing: Awaited<ReturnType<typeof saveOwnedFeedback>>["expected"],
+) {
+  const fixture = createChatEventsFixture(context);
+  const app = setupApp({
+    context,
+    routes: [
+      ...proactiveSuggestionsRoutes,
+      ...workflowAutomationsRoutes,
+      ...cronExecuteWorkflowAutomationsRoutes,
+    ],
+  });
+  const headers = { authorization: "Bearer clerk-session" };
+  const day = 86_400_000;
+  const startedAt = now();
+  const feedbackSchema = object({
+    complete: boolean(),
+    feedback: array(
+      object({
+        kind: string(),
+        title: string(),
+        rationale: string(),
+        reason: string().optional(),
+        choice: string().optional(),
+      }),
+    ),
+  });
+  async function readFeedback(at: number) {
+    return withMockNowForTest(at, async () => {
+      await owned.run(() => {
+        return accept(
+          app(proactiveSuggestionsContract).update({
+            headers,
+            body: { enabled: true },
+          }),
+          [200],
+        );
+      });
+      const schedules = await owned.run(() => {
+        return accept(
+          app(workflowAutomationsContract).list({
+            headers,
+            params: { workflowId },
+          }),
+          [200],
+        );
+      });
+      const schedule = schedules.body[0];
+      if (!schedule?.nextRunAt)
+        throw new Error("Expected the Suggestions schedule");
+      return withMockNowForTest(
+        Math.max(at, Date.parse(schedule.nextRunAt)),
+        async () => {
+          await owned.run(() => {
+            return createRunsApi(context).registerDirectRunner(
+              owned.runnerGroup,
+            );
+          });
+          await owned.run(() => {
+            return accept(
+              app(cronExecuteWorkflowAutomationsContract).execute({
+                headers: {
+                  authorization: "Bearer official-workflow-catalog-cron-secret",
+                },
+              }),
+              [200],
+            );
+          });
+          await owned.run(flushWaitUntilForTest);
+          const current = await owned.run(() => {
+            return accept(
+              app(workflowAutomationsContract).get({
+                headers,
+                params: { id: schedule.id },
+              }),
+              [200],
+            );
+          });
+          if (!current.body.chatThreadId)
+            throw new Error("Expected the Suggestions execution thread");
+          const events = await owned.run(() => {
+            return createChatFilesBddApi(context).listThreadEventRows(
+              owned.actor,
+              current.body.chatThreadId ?? "",
+            );
+          });
+          const runId = [...events].reverse().find((event) => {
+            return event.eventType === "input.prompt" && event.runId;
+          })?.runId;
+          if (!runId) throw new Error("Expected a scheduled Suggestions Run");
+          const { execution, sandboxHeaders } = await owned.runExecution(runId);
+          expect(execution.appendSystemPrompt).toContain(
+            "# Suggestions feedback context",
+          );
+          const json =
+            execution.appendSystemPrompt?.match(/^(\{"asOf":.*\})$/mu)?.[1];
+          const feedback = feedbackSchema.parse(JSON.parse(json ?? "null"));
+          await owned.run(() => {
+            return fixture.failChatRun(
+              runId,
+              sandboxHeaders,
+              "Feedback lifecycle inspected",
+            );
+          });
+          await owned.run(flushWaitUntilForTest);
+          await owned.run(() => {
+            return accept(
+              app(proactiveSuggestionsContract).update({
+                headers,
+                body: { enabled: false },
+              }),
+              [200],
+            );
+          });
+          expect(feedback.complete).toBe(true);
+          return feedback.feedback;
+        },
+      );
+    });
+  }
+  await withMockNowForTest(startedAt, async () => {
+    const undone = await saveOwnedFeedback(
+      owned,
+      "Undo this preference",
+      "Temporary preference",
+    );
+    const selected = await saveOwnedFeedback(
+      owned,
+      "Selected direction",
+      "",
+      "option_selected",
+    );
+    await saveOwnedFeedback(owned, "Dismissed suggestion", "", "dismissed");
+    const initial = await readFeedback(startedAt);
+    expect(initial).toHaveLength(3);
+    expect(initial).toEqual(
+      expect.arrayContaining([existing, undone.expected, selected.expected]),
+    );
+    await undone.undo();
+    const afterUndo = await readFeedback(startedAt);
+    expect(afterUndo).toHaveLength(2);
+    expect(afterUndo).toEqual(
+      expect.arrayContaining([existing, selected.expected]),
+    );
+    expect(await readFeedback(startedAt + 7 * day)).toEqual([existing]);
+    expect(await readFeedback(startedAt + 30 * day)).toEqual([]);
+  });
 }
 
 async function expectPublishedMorningBriefRecovery(
@@ -551,15 +741,18 @@ test.each(scenarios)(
       return accept<Awaited<typeof request>, 200>(request, [200]);
     });
     expect(enabled.body).toMatchObject({ enabled: true, status: "enabled" });
-    const expectedFeedback: Awaited<ReturnType<typeof saveOwnedFeedback>>[] =
-      [];
+    const expectedFeedback: Awaited<
+      ReturnType<typeof saveOwnedFeedback>
+    >["expected"][] = [];
     if (definitionName === "agent-suggestions") {
       expectedFeedback.push(
-        await saveOwnedFeedback(
-          owned,
-          "Review the launch decision",
-          "A teammate owns these reviews",
-        ),
+        (
+          await saveOwnedFeedback(
+            owned,
+            "Review the launch decision",
+            "A teammate owns these reviews",
+          )
+        ).expected,
       );
     }
     createRouteMocks(context).clerk.session(actor.userId, orgId, actor.orgRole);
@@ -679,6 +872,11 @@ test.each(scenarios)(
       });
       await owned.run(flushWaitUntilForTest);
     });
+    if (definitionName === "agent-suggestions") {
+      const existing = expectedFeedback[0];
+      if (!existing) throw new Error("Expected the owner's saved feedback");
+      await expectSuggestionFeedbackLifecycle(owned, workflow.id, existing);
+    }
     if (definitionName === "morning-brief") {
       await expectPublishedMorningBriefRecovery(
         owned,
