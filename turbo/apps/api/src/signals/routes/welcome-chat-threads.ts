@@ -1,4 +1,8 @@
-import { publishChatThreadMessageCreated$ } from "../services/chat-event-publication.service";
+import { waitUntil } from "../context/wait-until";
+import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "../services/chat-event-publication.service";
 import { command } from "ccstate";
 import { welcomeChatThreadsContract } from "@okouai/api-contracts/contracts/welcome-chat-threads";
 
@@ -29,6 +33,16 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
     // client's ordinary thread-list and history synchronization.
     await publishThreadListChanged(auth);
     signal.throwIfAborted();
+    waitUntil(
+      set(
+        projectCommittedChatThreadSearch$,
+        {
+          ...auth,
+          threadId: result.body.id,
+        },
+        signal,
+      ),
+    );
     await set(
       publishChatThreadMessageCreated$,
       {

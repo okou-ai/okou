@@ -1,3 +1,5 @@
+import { waitUntil } from "../context/wait-until";
+import { deliverMarketingRewardEvents$ } from "./marketing-reward-event-delivery.service";
 import {
   prepareGetStartedInvitation$,
   linkGetStartedInvitation$,
@@ -195,7 +197,7 @@ type CreateUsagePackInvitationPreviewResult =
   | UsagePackInvitationPurchaseConflictResult;
 
 type ConfirmUsagePackInvitationPurchaseResult =
-  | { readonly status: "confirmed" }
+  | { readonly status: "confirmed"; readonly marketingRewardEventId?: string }
   | { readonly status: "pending_payment"; readonly hostedInvoiceUrl: string }
   | { readonly status: "not_found" }
   | { readonly status: "expired" }
@@ -232,8 +234,8 @@ type PrepareUsagePackInvitationPurchaseResult =
 
 type RevokeUsagePackInvitationResult =
   | { readonly status: "not_found" }
-  | { readonly status: "accepted" }
-  | { readonly status: "revoked" };
+  | { readonly status: "accepted"; readonly marketingRewardEventId?: string }
+  | { readonly status: "revoked"; readonly marketingRewardEventId?: string };
 
 interface ClerkMembershipIdentity {
   readonly email: string;
@@ -1329,7 +1331,7 @@ const ensurePaidInvitationCreated$ = command(
     purchaseId: string,
     allowRecovery: boolean,
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<string | undefined> => {
     const db = set(writeDb$);
     const clerk = get(clerk$);
     signal.throwIfAborted();
@@ -1357,7 +1359,7 @@ const ensurePaidInvitationCreated$ = command(
     );
     signal.throwIfAborted();
     if (membership) {
-      await set(
+      const accepted = await set(
         handleUsagePackInvitationAccepted$,
         {
           orgId: purchase.orgId,
@@ -1371,7 +1373,7 @@ const ensurePaidInvitationCreated$ = command(
         },
         signal,
       );
-      return;
+      return accepted.marketingRewardEventId;
     }
     const pending = await onRejection(
       loadBillingOrganizationPendingInvitations(
@@ -1437,7 +1439,7 @@ const ensurePaidInvitationCreated$ = command(
         paidInvitationCreationParams(purchase, rewardClaim.id),
       ));
     if (await set(persistInvitation$, purchase, invitation.id, signal)) {
-      await set(
+      return await set(
         linkGetStartedInvitation$,
         rewardClaim.id,
         invitation.id,
@@ -1698,12 +1700,12 @@ const handleRecordedPayment$ = command(
     { set },
     purchase: UsagePackInvitationPurchaseRow,
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<string | undefined> => {
     if (purchase.status === "refund_pending") {
       await set(refundPurchase$, purchase.id, false, signal);
       return;
     }
-    await set(ensurePaidInvitationCreated$, purchase.id, false, signal);
+    return await set(ensurePaidInvitationCreated$, purchase.id, false, signal);
   },
 );
 
@@ -1713,7 +1715,11 @@ export const handleUsagePackInvitationCheckoutPaid$ = command(
     session: UsagePackInvitationCheckoutSessionInput,
     paidAt: Date,
     signal: AbortSignal,
-  ): Promise<{ readonly handled: boolean; readonly orgId: string | null }> => {
+  ): Promise<{
+    readonly handled: boolean;
+    readonly orgId: string | null;
+    readonly marketingRewardEventId?: string;
+  }> => {
     const purchaseId = purchaseIdFromMetadata(session.metadata);
     if (!purchaseId) {
       return { handled: false, orgId: null };
@@ -1747,8 +1753,12 @@ export const handleUsagePackInvitationCheckoutPaid$ = command(
       },
       signal,
     );
-    await set(handleRecordedPayment$, purchase, signal);
-    return { handled: true, orgId: purchase.orgId };
+    const marketingRewardEventId = await set(
+      handleRecordedPayment$,
+      purchase,
+      signal,
+    );
+    return { handled: true, orgId: purchase.orgId, marketingRewardEventId };
   },
 );
 
@@ -1758,7 +1768,11 @@ export const handleUsagePackInvitationPaymentIntentSucceeded$ = command(
     paymentIntent: StripePaymentIntent,
     paidAt: Date,
     signal: AbortSignal,
-  ): Promise<{ readonly handled: boolean; readonly orgId: string | null }> => {
+  ): Promise<{
+    readonly handled: boolean;
+    readonly orgId: string | null;
+    readonly marketingRewardEventId?: string;
+  }> => {
     const purchaseId = purchaseIdFromMetadata(paymentIntent.metadata);
     if (!purchaseId) {
       return { handled: false, orgId: null };
@@ -1782,8 +1796,12 @@ export const handleUsagePackInvitationPaymentIntentSucceeded$ = command(
       },
       signal,
     );
-    await set(handleRecordedPayment$, purchase, signal);
-    return { handled: true, orgId: purchase.orgId };
+    const marketingRewardEventId = await set(
+      handleRecordedPayment$,
+      purchase,
+      signal,
+    );
+    return { handled: true, orgId: purchase.orgId, marketingRewardEventId };
   },
 );
 
@@ -1815,7 +1833,11 @@ export const handleUsagePackInvitationInvoicePaid$ = command(
     { set },
     invoiceInput: Pick<StripeInvoice, "id" | "metadata">,
     signal: AbortSignal,
-  ): Promise<{ readonly handled: boolean; readonly orgId: string | null }> => {
+  ): Promise<{
+    readonly handled: boolean;
+    readonly orgId: string | null;
+    readonly marketingRewardEventId?: string;
+  }> => {
     const purchaseId = purchaseIdFromMetadata(invoiceInput.metadata);
     if (!purchaseId) {
       return { handled: false, orgId: null };
@@ -1852,8 +1874,12 @@ export const handleUsagePackInvitationInvoicePaid$ = command(
       },
       signal,
     );
-    await set(handleRecordedPayment$, purchase, signal);
-    return { handled: true, orgId: purchase.orgId };
+    const marketingRewardEventId = await set(
+      handleRecordedPayment$,
+      purchase,
+      signal,
+    );
+    return { handled: true, orgId: purchase.orgId, marketingRewardEventId };
   },
 );
 
@@ -2248,7 +2274,10 @@ const billUsagePackInvitationPurchase$ = command(
         diagnostics: {},
       };
     }
-    return { status: "confirmed" };
+    return {
+      status: "confirmed",
+      marketingRewardEventId: handled.marketingRewardEventId,
+    };
   },
 );
 
@@ -2271,14 +2300,14 @@ export const confirmUsagePackInvitationPurchase$ = command(
       return purchaseState.result;
     }
     if (purchaseState.status === "resume_invitation") {
-      await set(
+      const marketingRewardEventId = await set(
         ensurePaidInvitationCreated$,
         purchaseState.purchase.id,
         false,
         signal,
       );
       signal.throwIfAborted();
-      return { status: "confirmed" };
+      return { status: "confirmed", marketingRewardEventId };
     }
     const { purchase } = purchaseState;
     if (await set(expireInvitationPurchasePreviewIfNeeded$, purchase, signal)) {
@@ -2837,16 +2866,19 @@ export const handleUsagePackInvitationAccepted$ = command(
     { set },
     args: UsagePackInvitationAcceptanceArgs,
     signal: AbortSignal,
-  ): Promise<boolean> => {
+  ): Promise<{
+    readonly handled: boolean;
+    readonly marketingRewardEventId?: string;
+  }> => {
     if (!args.purchaseId && !args.invitationId) {
-      return false;
+      return { handled: false };
     }
     const candidate = await set(loadAcceptanceCandidate$, args, signal);
     if (!candidate) {
-      return false;
+      return { handled: false };
     }
     // Exact membership recovery has the same invitation evidence as the webhook.
-    await set(
+    const marketingRewardEventId = await set(
       acceptGetStartedInvitation$,
       {
         ...args,
@@ -2855,7 +2887,7 @@ export const handleUsagePackInvitationAccepted$ = command(
       signal,
     );
     if (IGNORED_ACCEPTANCE_STATUSES.has(candidate.status)) {
-      return true;
+      return { handled: true, marketingRewardEventId };
     }
     if (args.acceptedAt >= candidate.currentPeriodEnd) {
       const markedForRefund = await set(
@@ -2867,11 +2899,11 @@ export const handleUsagePackInvitationAccepted$ = command(
       if (markedForRefund) {
         await set(refundPurchase$, candidate.id, false, signal);
       }
-      return true;
+      return { handled: true, marketingRewardEventId };
     }
     await set(recordInvitationAcceptance$, candidate, args, signal);
     await set(activateAcceptedPurchase$, candidate.id, false, signal);
-    return true;
+    return { handled: true, marketingRewardEventId };
   },
 );
 
@@ -2899,7 +2931,10 @@ const revokeAndRefundPurchase$ = command(
     { get, set },
     purchase: UsagePackInvitationPurchaseRow,
     signal: AbortSignal,
-  ): Promise<"accepted" | "revoked"> => {
+  ): Promise<{
+    readonly status: "accepted" | "revoked";
+    readonly marketingRewardEventId?: string;
+  }> => {
     const db = set(writeDb$);
     const clerk = get(clerk$);
     const readContext = createClerkReadContext();
@@ -2911,7 +2946,7 @@ const revokeAndRefundPurchase$ = command(
     );
     signal.throwIfAborted();
     if (membership) {
-      await set(
+      const accepted = await set(
         handleUsagePackInvitationAccepted$,
         {
           orgId: purchase.orgId,
@@ -2926,9 +2961,13 @@ const revokeAndRefundPurchase$ = command(
         signal,
       );
       const current = await set(loadPurchase$, purchase.id, signal);
-      return current && REFUND_STATUSES.has(current.status)
-        ? "revoked"
-        : "accepted";
+      return {
+        status:
+          current && REFUND_STATUSES.has(current.status)
+            ? "revoked"
+            : "accepted",
+        marketingRewardEventId: accepted.marketingRewardEventId,
+      };
     }
     if (purchase.clerkInvitationId) {
       const pending = await loadBillingOrganizationPendingInvitations(
@@ -2968,11 +3007,11 @@ const revokeAndRefundPurchase$ = command(
     if (!markedForRefund) {
       const current = await set(loadPurchase$, purchase.id, signal);
       if (current && ACCEPTED_PURCHASE_STATUSES.has(current.status)) {
-        return "accepted";
+        return { status: "accepted" };
       }
     }
     await set(refundPurchase$, purchase.id, true, signal);
-    return "revoked";
+    return { status: "revoked" };
   },
 );
 
@@ -3008,7 +3047,7 @@ export const revokeUsagePackInvitationPurchase$ = command(
       return { status: "revoked" };
     }
     const result = await set(revokeAndRefundPurchase$, purchase, signal);
-    return { status: result };
+    return result;
   },
 );
 
@@ -3018,18 +3057,29 @@ const reconcileUsagePackInvitationPurchaseCandidate$ = command(
     purchase: UsagePackInvitationPurchaseRow,
     at: Date,
     signal: AbortSignal,
-  ): Promise<boolean> => {
+  ): Promise<{
+    readonly reconciled: boolean;
+    readonly marketingRewardEventId?: string;
+  }> => {
     const clerk = get(clerk$);
     switch (purchase.status) {
       case "payment_succeeded":
       case "creating_invitation": {
-        await set(ensurePaidInvitationCreated$, purchase.id, true, signal);
-        return true;
+        const marketingRewardEventId = await set(
+          ensurePaidInvitationCreated$,
+          purchase.id,
+          true,
+          signal,
+        );
+        return { reconciled: true, marketingRewardEventId };
       }
       case "invitation_pending": {
         if (purchase.currentPeriodEnd <= at) {
-          await set(revokeAndRefundPurchase$, purchase, signal);
-          return true;
+          const revoked = await set(revokeAndRefundPurchase$, purchase, signal);
+          return {
+            reconciled: true,
+            marketingRewardEventId: revoked.marketingRewardEventId,
+          };
         }
         const membership = await membershipForPurchase(
           clerk,
@@ -3039,9 +3089,9 @@ const reconcileUsagePackInvitationPurchaseCandidate$ = command(
         );
         signal.throwIfAborted();
         if (!membership || !purchase.clerkInvitationId) {
-          return false;
+          return { reconciled: false };
         }
-        await set(
+        const accepted = await set(
           handleUsagePackInvitationAccepted$,
           {
             orgId: purchase.orgId,
@@ -3052,23 +3102,26 @@ const reconcileUsagePackInvitationPurchaseCandidate$ = command(
           },
           signal,
         );
-        return true;
+        return {
+          reconciled: true,
+          marketingRewardEventId: accepted.marketingRewardEventId,
+        };
       }
       case "accepted_pending_activation":
       case "activating": {
         await set(activateAcceptedPurchase$, purchase.id, true, signal);
-        return true;
+        return { reconciled: true };
       }
       case "refund_pending":
       case "refunding": {
         await set(refundPurchase$, purchase.id, true, signal);
-        return true;
+        return { reconciled: true };
       }
       case "checkout_pending":
       case "accepted":
       case "refunded":
       case "failed": {
-        return false;
+        return { reconciled: false };
       }
     }
   },
@@ -3160,8 +3213,17 @@ export const reconcileUsagePackInvitationPurchases$ = command(
           });
           continue;
         }
-        if (result.value) {
+        if (result.value.reconciled) {
           reconciled += 1;
+        }
+        if (result.value.marketingRewardEventId) {
+          waitUntil(
+            set(
+              deliverMarketingRewardEvents$,
+              { jobId: result.value.marketingRewardEventId, handlerVersion: 3 },
+              signal,
+            ),
+          );
         }
       }
       cursor = candidates.at(-1)?.id;

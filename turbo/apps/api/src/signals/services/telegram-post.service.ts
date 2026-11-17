@@ -1,4 +1,7 @@
-import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
+import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
 import {
   OFFICIAL_TELEGRAM_BOT_ID,
   integrationsTelegramContract,
@@ -1325,6 +1328,17 @@ const runAgentForTelegram$ = command(
           userId: args.source.userLink.userId,
           orgId: args.source.orgId,
         });
+        waitUntil(
+          set(
+            projectCommittedChatThreadSearch$,
+            {
+              userId: args.source.userLink.userId,
+              orgId: args.source.orgId,
+              threadId: persisted.chatThreadId,
+            },
+            signal,
+          ),
+        );
         await set(
           publishChatThreadMessageCreated$,
           {

@@ -1,4 +1,3 @@
-import { startMarketingRewardEventDelivery$ } from "./marketing-reward-event-delivery.service";
 import { Buffer } from "node:buffer";
 import { createHash, randomBytes } from "node:crypto";
 
@@ -155,6 +154,7 @@ type PendingSuccess = {
 type PollSuccess = {
   readonly status: 200;
   readonly body: BuiltinConnectorOauthDeviceAuthSessionPollResponse;
+  readonly marketingRewardEventId?: string | null;
 };
 
 function deviceAuthStartResponse(args: {
@@ -836,17 +836,14 @@ const completeClaimedSession$ = command(
     if (signal.aborted) {
       return { result, postCommitAbort: signal.reason };
     }
-    if (publication.kind === "ready" && result.status === "connected") {
-      set(
-        startMarketingRewardEventDelivery$,
-        {
-          jobId: publication.publication.marketingRewardEventId,
-          handlerVersion: 1,
-        },
-        signal,
-      );
-    }
-    return { result, postCommitAbort: null };
+    return {
+      result,
+      postCommitAbort: null,
+      marketingRewardEventId:
+        publication.kind === "ready" && result.status === "connected"
+          ? publication.publication.marketingRewardEventId
+          : null,
+    };
   },
 );
 
@@ -994,11 +991,15 @@ const runClaimedSession$ = command(
       { ...completion, prepared },
       signal,
     );
-    return await set(
+    const response = await set(
       finalizeDeviceAuthConnection$,
       { prepared, ...committed },
       signal,
     );
+    return {
+      ...response,
+      marketingRewardEventId: committed.marketingRewardEventId,
+    };
   },
 );
 
@@ -1255,6 +1256,48 @@ export const startBuiltinConnectorOauthDeviceAuthSession$ = command(
   },
 );
 
+const claimDeviceAuthPoll$ = command(
+  async (
+    { set },
+    args: { readonly sessionId: string; readonly claimStartedAt: Date },
+    signal: AbortSignal,
+  ) => {
+    const writeDb = set(writeDb$);
+    const { claimStartedAt } = args;
+    const staleBefore = new Date(claimStartedAt.getTime() - POLLING_STALE_MS);
+    const [claimedSession] = await writeDb
+      .update(builtinConnectorOauthDeviceAuthorizationSessions)
+      .set({ status: "polling", updatedAt: claimStartedAt })
+      .where(
+        and(
+          eq(
+            builtinConnectorOauthDeviceAuthorizationSessions.id,
+            args.sessionId,
+          ),
+          or(
+            eq(
+              builtinConnectorOauthDeviceAuthorizationSessions.status,
+              "awaiting_user_authorization",
+            ),
+            and(
+              eq(
+                builtinConnectorOauthDeviceAuthorizationSessions.status,
+                "polling",
+              ),
+              lt(
+                builtinConnectorOauthDeviceAuthorizationSessions.updatedAt,
+                staleBefore,
+              ),
+            ),
+          ),
+        ),
+      )
+      .returning(deviceAuthSessionSelection);
+    signal.throwIfAborted();
+    return claimedSession;
+  },
+);
+
 export const pollBuiltinConnectorOauthDeviceAuthSession$ = command(
   async (
     { get, set },
@@ -1267,7 +1310,6 @@ export const pollBuiltinConnectorOauthDeviceAuthSession$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const writeDb = set(writeDb$);
     const { orgId, userId, connectorSlug, sessionId, sessionToken } = args;
     const [session] = await get(db$)
       .select(deviceAuthSessionSelection)
@@ -1340,33 +1382,11 @@ export const pollBuiltinConnectorOauthDeviceAuthSession$ = command(
     }
 
     const claimStartedAt = nowDate();
-    const staleBefore = new Date(claimStartedAt.getTime() - POLLING_STALE_MS);
-    const [claimedSession] = await writeDb
-      .update(builtinConnectorOauthDeviceAuthorizationSessions)
-      .set({ status: "polling", updatedAt: claimStartedAt })
-      .where(
-        and(
-          eq(builtinConnectorOauthDeviceAuthorizationSessions.id, session.id),
-          or(
-            eq(
-              builtinConnectorOauthDeviceAuthorizationSessions.status,
-              "awaiting_user_authorization",
-            ),
-            and(
-              eq(
-                builtinConnectorOauthDeviceAuthorizationSessions.status,
-                "polling",
-              ),
-              lt(
-                builtinConnectorOauthDeviceAuthorizationSessions.updatedAt,
-                staleBefore,
-              ),
-            ),
-          ),
-        ),
-      )
-      .returning(deviceAuthSessionSelection);
-    signal.throwIfAborted();
+    const claimedSession = await set(
+      claimDeviceAuthPoll$,
+      { sessionId: session.id, claimStartedAt },
+      signal,
+    );
     if (!claimedSession) {
       return await set(claimNoLongerCurrentResponse$, session, signal);
     }
@@ -1390,6 +1410,9 @@ export const pollBuiltinConnectorOauthDeviceAuthSession$ = command(
       { ...args, session, connectorSlug: resolvedMethod.connectorSlug },
       signal,
     );
-    return authorizationError ?? response;
+    return {
+      ...(authorizationError ?? response),
+      marketingRewardEventId: response.marketingRewardEventId,
+    };
   },
 );

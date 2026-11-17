@@ -1,3 +1,4 @@
+import { deliverMarketingRewardEvents$ } from "./marketing-reward-event-delivery.service";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { connectSlackWorkspace$ } from "./slack-workspace-write.service";
 import { randomBytes } from "node:crypto";
@@ -218,7 +219,7 @@ const storeInstallation$ = command(
       featureContext,
     );
     signal.throwIfAborted();
-    await set(
+    const installed = await set(
       persistSlackInstallation$,
       {
         mode: "connect",
@@ -235,6 +236,7 @@ const storeInstallation$ = command(
       signal,
     );
     signal.throwIfAborted();
+    return installed.marketingRewardEventId;
   },
 );
 
@@ -597,6 +599,54 @@ const notifySlackInstallationConnect$ = command(
   },
 );
 
+const connectSlackOAuthWorkspace$ = command(
+  async (
+    { set },
+    args: {
+      readonly context: SlackConnectorOAuthContext;
+      readonly oauth: Awaited<
+        ReturnType<typeof exchangeSlackOAuthCodeForConnector>
+      >;
+      readonly orgRole: "admin" | "member";
+    },
+    signal: AbortSignal,
+  ) => {
+    const { context, oauth } = args;
+    const connection = await set(
+      connectSlackWorkspace$,
+      {
+        orgId: context.orgId,
+        userId: context.userId,
+        orgRole: args.orgRole,
+        workspaceId: oauth.teamId,
+        slackUserId: oauth.userId,
+        channelId: context.channelId,
+        threadTs: context.threadTs,
+        pendingPrompt: context.prompt,
+        connectionIntent: context.flow === "switch" ? "switch" : "connect",
+      },
+      signal,
+    );
+    if (connection.kind !== "ok") {
+      return failed(connection.message, context);
+    }
+    const accountError = await set(
+      promoteSlackAccountConnection$,
+      { context, oauth },
+      signal,
+    );
+    if (accountError) {
+      return accountError;
+    }
+    await set(
+      publishSlackAdminSignal$,
+      { orgId: context.orgId, topic: "slack:changed" },
+      signal,
+    );
+    return connection;
+  },
+);
+
 const finishSlackConnectorOAuth$ = command(
   async (
     { set },
@@ -636,7 +686,20 @@ const finishSlackConnectorOAuth$ = command(
     );
     signal.throwIfAborted();
     if (context.flow === "install") {
-      await set(storeInstallation$, { context, oauth }, signal);
+      const marketingRewardEventId = await set(
+        storeInstallation$,
+        { context, oauth },
+        signal,
+      );
+      if (marketingRewardEventId) {
+        waitUntil(
+          set(
+            deliverMarketingRewardEvents$,
+            { jobId: marketingRewardEventId, handlerVersion: 2 },
+            signal,
+          ),
+        );
+      }
     }
     const connector = await set(
       upsertBuiltinConnectorTokenConnection$,
@@ -661,6 +724,15 @@ const finishSlackConnectorOAuth$ = command(
         context,
       );
     }
+    if (connector.marketingRewardEventId) {
+      waitUntil(
+        set(
+          deliverMarketingRewardEvents$,
+          { jobId: connector.marketingRewardEventId, handlerVersion: 1 },
+          signal,
+        ),
+      );
+    }
     if (context.accountConnection) {
       return await set(
         finishSlackAccountConnection$,
@@ -669,36 +741,13 @@ const finishSlackConnectorOAuth$ = command(
       );
     }
     const connection = await set(
-      connectSlackWorkspace$,
-      {
-        orgId: context.orgId,
-        userId: context.userId,
-        orgRole: member.role,
-        workspaceId: oauth.teamId,
-        slackUserId: oauth.userId,
-        channelId: context.channelId,
-        threadTs: context.threadTs,
-        pendingPrompt: context.prompt,
-        connectionIntent: context.flow === "switch" ? "switch" : "connect",
-      },
+      connectSlackOAuthWorkspace$,
+      { context, oauth, orgRole: member.role },
       signal,
     );
-    if (connection.kind !== "ok") {
-      return failed(connection.message, context);
+    if (connection instanceof Response) {
+      return connection;
     }
-    const accountError = await set(
-      promoteSlackAccountConnection$,
-      { context, oauth },
-      signal,
-    );
-    if (accountError) {
-      return accountError;
-    }
-    await set(
-      publishSlackAdminSignal$,
-      { orgId: context.orgId, topic: "slack:changed" },
-      signal,
-    );
     waitUntil(
       tapError(
         set(

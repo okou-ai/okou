@@ -1,4 +1,3 @@
-import { startMarketingRewardEventDelivery$ } from "./marketing-reward-event-delivery.service";
 import { randomUUID } from "node:crypto";
 import { GET_STARTED_REWARDS } from "@okouai/api-contracts/contracts/get-started";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
@@ -65,7 +64,7 @@ export const linkGetStartedInvitation$ = command(
     claimId: string,
     invitationId: string,
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<string | undefined> => {
     signal.throwIfAborted();
     const db = set(writeDb$);
     const at = nowDate();
@@ -80,7 +79,7 @@ export const linkGetStartedInvitation$ = command(
         ),
       )
       .returning();
-    await db.execute(
+    const { rowCount } = await db.execute(
       sql`WITH linked_invitation AS (${linked.getSQL()}) ${marketingRewardInvitationEventInsert(
         {
           id: marketingRewardEventId,
@@ -92,11 +91,7 @@ export const linkGetStartedInvitation$ = command(
       )}`,
     );
     signal.throwIfAborted();
-    set(
-      startMarketingRewardEventDelivery$,
-      { jobId: marketingRewardEventId, handlerVersion: 3 },
-      signal,
-    );
+    return rowCount === 1 ? marketingRewardEventId : undefined;
   },
 );
 
@@ -129,7 +124,7 @@ export const revokeGetStartedInvitation$ = command(
     { set },
     args: { readonly orgId: string; readonly invitationId: string },
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<string | undefined> => {
     signal.throwIfAborted();
     const db = set(writeDb$);
     const at = nowDate();
@@ -150,7 +145,7 @@ export const revokeGetStartedInvitation$ = command(
         ),
       )
       .returning();
-    await db.execute(
+    const { rowCount } = await db.execute(
       sql`WITH revoked_invitation AS (${revoked.getSQL()}) ${marketingRewardInvitationEventInsert(
         {
           id: marketingRewardEventId,
@@ -162,10 +157,6 @@ export const revokeGetStartedInvitation$ = command(
       )}`,
     );
     signal.throwIfAborted();
-    set(
-      startMarketingRewardEventDelivery$,
-      { jobId: marketingRewardEventId, handlerVersion: 3 },
-      signal,
-    );
+    return rowCount === 1 ? marketingRewardEventId : undefined;
   },
 );

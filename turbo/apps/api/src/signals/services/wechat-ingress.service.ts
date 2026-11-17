@@ -1,4 +1,7 @@
-import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
+import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
 import { wechatAttachments } from "../external/wechat-media";
 import { MAX_WECHAT_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/integrations-wechat-files";
 import {
@@ -456,6 +459,9 @@ export const receiveWechatMessage$ = command(
       );
       await publishThreadListChangedSafely(owner);
       signal.throwIfAborted();
+      waitUntil(
+        set(projectCommittedChatThreadSearch$, { ...owner, threadId }, signal),
+      );
       await set(
         publishChatThreadMessageCreated$,
         { ...owner, threadId },

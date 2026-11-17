@@ -1,4 +1,7 @@
-import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
+import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
 import { boolean, object } from "zod";
 import { discordIngressFailureSql } from "./discord-chat-ingress.service";
 import { parseRawRows } from "../../lib/db-raw-rows";
@@ -70,7 +73,6 @@ import {
   pickEnqueuedChatThread$,
   enqueuedChatQueueWaitReason$,
   notifyRunningChatRunOfPendingInput$,
-  type ChatQueuePick,
 } from "./chat-thread-queue-drain.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 import {
@@ -1244,6 +1246,9 @@ const finishRecordedIngressFailure$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     if (recorded?.notification) {
+      waitUntil(
+        set(projectCommittedChatThreadSearch$, recorded.notification, signal),
+      );
       await set(
         publishChatThreadMessageCreated$,
         recorded.notification,
@@ -1264,10 +1269,18 @@ const finishRecordedIngressFailure$ = command(
 const sendIngressQueueWaitNotice$ = command(
   async (
     { set },
-    target: Omit<DiscordIngressNotice, "content">,
-    pick: ChatQueuePick,
+    args: Omit<DiscordIngressNotice, "content"> & {
+      readonly orgId: string;
+      readonly chatThreadId: string;
+    },
     signal: AbortSignal,
   ): Promise<void> => {
+    const { orgId, chatThreadId, ...target } = args;
+    const pick = await set(
+      enqueuedChatQueueWaitReason$,
+      { orgId, chatThreadId, eventId: target.ingressId },
+      signal,
+    );
     const content = chatQueueWaitNotice(pick.reason);
     if (content) {
       await set(sendDiscordIngressNotice$, { ...target, content }, signal);
@@ -1362,6 +1375,17 @@ export const processCanonicalDiscordIngress$ = command(
           userId: ingress.userId,
           orgId: ingress.orgId,
         });
+        waitUntil(
+          set(
+            projectCommittedChatThreadSearch$,
+            {
+              userId: ingress.userId,
+              orgId: ingress.orgId,
+              threadId: ingress.chatThreadId,
+            },
+            signal,
+          ),
+        );
         await set(
           publishChatThreadMessageCreated$,
           {
@@ -1372,27 +1396,17 @@ export const processCanonicalDiscordIngress$ = command(
           signal,
         );
         const noticed = await settle(
-          (async () => {
-            const pick = await set(
-              enqueuedChatQueueWaitReason$,
-              {
-                orgId: ingress.orgId,
-                chatThreadId: ingress.chatThreadId,
-                eventId: args.ingressId,
-              },
-              signal,
-            );
-            await set(
-              sendIngressQueueWaitNotice$,
-              {
-                ingressId: args.ingressId,
-                connectionId: ingress.connectionId,
-                channelId: ingress.destinationChannelId,
-              },
-              pick,
-              signal,
-            );
-          })(),
+          set(
+            sendIngressQueueWaitNotice$,
+            {
+              ingressId: args.ingressId,
+              connectionId: ingress.connectionId,
+              channelId: ingress.destinationChannelId,
+              orgId: ingress.orgId,
+              chatThreadId: ingress.chatThreadId,
+            },
+            signal,
+          ),
         );
         if (!picked.ok && !noticed.ok) {
           throw new AggregateError(

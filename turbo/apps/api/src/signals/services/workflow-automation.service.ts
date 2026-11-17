@@ -1,3 +1,5 @@
+import { waitUntil } from "../context/wait-until";
+import { projectCommittedChatThreadSearch$ } from "./chat-event-publication.service";
 import {
   workflowAutomationSnapshot,
   workflowAutomationSnapshotColumns,
@@ -5817,11 +5819,14 @@ export const deleteWorkflowAutomation$ = command(
       .delete(workflowAutomations)
       .where(eq(workflowAutomations.id, owned.automation.id));
     signal.throwIfAborted();
-    await set(
+    const revokedPublications = await set(
       revokeDeletedWorkflowAutomationInputs$,
       { orgId: args.orgId, automationId: owned.automation.id },
       signal,
     );
+    for (const publication of revokedPublications) {
+      waitUntil(set(projectCommittedChatThreadSearch$, publication, signal));
+    }
     signal.throwIfAborted();
     await set(
       reconcileAutomationEventWatches$,

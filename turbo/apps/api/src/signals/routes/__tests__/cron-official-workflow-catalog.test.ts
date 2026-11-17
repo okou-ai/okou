@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { array, boolean, object, string } from "zod";
-import { feedContract } from "@okouai/api-contracts/contracts/feed";
+import {
+  feedContract,
+  type SuggestionContent,
+} from "@okouai/api-contracts/contracts/feed";
 import { feedRoutes } from "../feed";
 import {
   cronExecuteWorkflowAutomationsContract,
@@ -28,6 +31,7 @@ import {
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { joinAll } from "../../utils";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import {
@@ -47,11 +51,52 @@ import { cronOfficialWorkflowCatalogRoutes } from "../cron-official-workflow-cat
 
 const context = testContext();
 
+async function saveCompletedActionFeedback(
+  content: SuggestionContent,
+  agentToken: string,
+  titles: readonly string[],
+) {
+  const api = setupApp({ context, routes: feedRoutes })(feedContract);
+  async function save(title: string) {
+    const created = await accept(
+      api.create({
+        headers: { authorization: `Bearer ${agentToken}` },
+        body: {
+          id: randomUUID(),
+          type: "suggestion",
+          priority: 0,
+          content: { ...content, title },
+        },
+      }),
+      [200],
+    );
+    await accept(
+      api.feedback({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { id: created.body.id },
+        body: {
+          id: randomUUID(),
+          kind: "already_done",
+          targetId: null,
+          note: "Completed through another channel",
+        },
+      }),
+      [200],
+    );
+  }
+  // Independent owner cards need creation before their feedback, but not before
+  // another card. Bound concurrency and settle every request before teardown.
+  for (let offset = 0; offset < titles.length; offset += 4) {
+    await joinAll(titles.slice(offset, offset + 4).map(save));
+  }
+}
+
 async function saveOwnedFeedback(
   owned: Awaited<ReturnType<typeof publicChatActor>>,
   title: string,
   reason: string,
   kind: "less_like_this" | "option_selected" | "dismissed" = "less_like_this",
+  completedActionTitles: readonly string[] = [],
 ) {
   const fixture = createChatEventsFixture(context);
   const orgId = owned.actor.orgId;
@@ -176,6 +221,11 @@ async function saveOwnedFeedback(
         );
       }
     }
+    await saveCompletedActionFeedback(
+      created.body.content,
+      okouTokenFromExecution(execution),
+      completedActionTitles,
+    );
     await fixture.failChatRun(ordinary.runId, sandboxHeaders, "Feedback saved");
     await flushWaitUntilForTest();
     return {
@@ -290,7 +340,7 @@ async function expectSuggestionFeedbackLifecycle(
       }),
     ),
   });
-  function readFeedback(at: number) {
+  function readFeedback(at: number, expectedComplete = true) {
     return withMockNowForTest(at, async () => {
       await owned.run(() => {
         return accept(
@@ -381,7 +431,7 @@ async function expectSuggestionFeedbackLifecycle(
               [200],
             );
           });
-          expect(feedback.complete).toBeTruthy();
+          expect(feedback.complete).toBe(expectedComplete);
           return feedback.feedback;
         },
       );
@@ -415,6 +465,33 @@ async function expectSuggestionFeedbackLifecycle(
       existing,
     ]);
     await expect(readFeedback(startedAt + 30 * day)).resolves.toStrictEqual([]);
+    await withMockNowForTest(startedAt + 30 * day, async () => {
+      const completedTitles = Array.from({ length: 101 }, (_, index) => {
+        return `Completed owner task ${index + 1}`;
+      });
+      await saveOwnedFeedback(
+        owned,
+        "Retained owner preference",
+        "Consider the owner's completed work",
+        "less_like_this",
+        completedTitles,
+      );
+      // The real scheduled Run must disclose omitted action facts so its
+      // instructions skip maintenance instead of repeating completed work.
+      const bounded = await readFeedback(now(), false);
+      const completed = bounded.filter((feedback) => {
+        return feedback.kind === "already_done";
+      });
+      expect(completed.length).toBeGreaterThan(0);
+      expect(completed.length).toBeLessThan(completedTitles.length);
+      for (const feedback of completed) {
+        expect(completedTitles).toContain(feedback.title);
+        expect(feedback).toMatchObject({
+          rationale: "Review the owner's pending decision",
+          reason: "Completed through another channel",
+        });
+      }
+    });
   });
 }
 
@@ -634,6 +711,9 @@ const scenarios = [
 
 test.each(scenarios)(
   "publishes the $kind catalog idempotently (upload failure: $failUpload, suggestions: $suggestionsEnabled)",
+  // The Suggestions case creates 101 distinct action receipts through the real
+  // API and inspects an additional scheduled Run to verify truncated context.
+  { timeout: 15_000 },
   async ({
     failUpload,
     learning,

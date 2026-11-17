@@ -1,4 +1,3 @@
-import { startMarketingRewardEventDelivery$ } from "./marketing-reward-event-delivery.service";
 import { agentphoneConnectionCodes } from "@okouai/db/schema/agentphone-connection-code";
 import { randomUUID } from "node:crypto";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
@@ -40,7 +39,11 @@ type LinkResult =
       readonly kind: "conflict";
       readonly reason: "phone-handle-linked" | "org-linked" | "conflict";
     }
-  | { readonly kind: "linked"; readonly userLink: AgentPhoneUserLink };
+  | {
+      readonly kind: "linked";
+      readonly userLink: AgentPhoneUserLink;
+      readonly marketingRewardEventId?: string;
+    };
 type LinkSource =
   | { readonly kind: "direct"; readonly orgId: string; readonly userId: string }
   | { readonly kind: "code"; readonly codeHash: string };
@@ -126,14 +129,11 @@ export const switchAgentPhoneIdentity$ = command(
     }
     const [userLink] = result.value;
     if (userLink) {
-      if (sourceEvent) {
-        set(
-          startMarketingRewardEventDelivery$,
-          { jobId: marketingRewardEventId, handlerVersion: 2 },
-          signal,
-        );
-      }
-      return { kind: "linked", userLink };
+      return {
+        kind: "linked",
+        userLink,
+        ...(sourceEvent ? { marketingRewardEventId } : {}),
+      };
     }
 
     // A repeated request after an uncertain response may already have succeeded.
@@ -434,17 +434,12 @@ export const linkAgentPhoneIdentity$ = command(
       .leftJoin(plan.existing, sql`true`)
       .leftJoin(plan.inserted, sql`true`);
     signal.throwIfAborted();
-    if (
+    const result = phoneLinkResult(rows, identity, phoneHandle);
+    return result.kind === "linked" &&
       rows.some((row) => {
         return row.inserted !== null;
       })
-    ) {
-      set(
-        startMarketingRewardEventDelivery$,
-        { jobId: plan.marketingRewardEventId, handlerVersion: 2 },
-        signal,
-      );
-    }
-    return phoneLinkResult(rows, identity, phoneHandle);
+      ? { ...result, marketingRewardEventId: plan.marketingRewardEventId }
+      : result;
   },
 );

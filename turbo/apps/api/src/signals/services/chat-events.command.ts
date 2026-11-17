@@ -1,5 +1,8 @@
-import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
-import { startMarketingRewardEventDelivery$ } from "./marketing-reward-event-delivery.service";
+import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
+import { deliverMarketingRewardEvents$ } from "./marketing-reward-event-delivery.service";
 import {
   AUTO_SELECTED_MODEL,
   isAutoSelectedModel,
@@ -2273,16 +2276,6 @@ const appendNormalSendInput$ = command(
     if (row.createdAt === null || row.seqId === null) {
       throw new Error("Normal chat input publication is incomplete");
     }
-    if (args.getStartedWorkflowId) {
-      set(
-        startMarketingRewardEventDelivery$,
-        {
-          jobId: workflowRewardSourceEventId("queued", row.id),
-          handlerVersion: 4,
-        },
-        signal,
-      );
-    }
     const enqueueCommit = { eventId: row.id, committedAt: now() };
     let publishedLease: PublishedChatThreadLease | undefined;
     if (row.claimId === claimId) {
@@ -2302,6 +2295,9 @@ const appendNormalSendInput$ = command(
       inserted: { id: row.id, createdAt: row.createdAt, seqId: row.seqId },
       enqueueCommit,
       publishedLease,
+      marketingRewardEventId: args.getStartedWorkflowId
+        ? workflowRewardSourceEventId("queued", row.id)
+        : null,
     };
   },
 );
@@ -2473,6 +2469,17 @@ const publishEnqueuedNormalSend$ = command(
     }
     await set(normalSendThreadTouch$, args, thread, touchedAt, signal);
     signal.throwIfAborted();
+    waitUntil(
+      set(
+        projectCommittedChatThreadSearch$,
+        {
+          userId: args.userId,
+          orgId: args.orgId,
+          threadId: thread.threadId,
+        },
+        signal,
+      ),
+    );
     await set(
       publishChatThreadMessageCreated$,
       {
@@ -2763,7 +2770,31 @@ const publishPreparedNormalSend$ = command(
         signal,
       ),
     );
-    return createdAt;
+    return {
+      createdAt,
+      marketingRewardEventId: committed.marketingRewardEventId,
+    };
+  },
+);
+
+const resolveFailedNormalSend$ = command(
+  async (
+    { set },
+    args: NormalSendArgs,
+    thread: SendThread,
+    error: unknown,
+    signal: AbortSignal,
+  ) => {
+    if (thread.kind === "new" && error instanceof NewThreadSendCollision) {
+      return await set(
+        resolveNewThreadSendCollision$,
+        args,
+        thread,
+        error.collision,
+        signal,
+      );
+    }
+    throw error;
   },
 );
 
@@ -2872,22 +2903,27 @@ export const sendNormalEvent$ = command(
       signal,
     );
     if (!enqueued.ok) {
-      if (
-        thread.kind === "new" &&
-        enqueued.error instanceof NewThreadSendCollision
-      ) {
-        return await set(
-          resolveNewThreadSendCollision$,
-          args,
-          thread,
-          enqueued.error.collision,
-          signal,
-        );
-      }
-      throw enqueued.error;
+      return await set(
+        resolveFailedNormalSend$,
+        args,
+        thread,
+        enqueued.error,
+        signal,
+      );
     }
-    const acceptedAt = enqueued.value;
-    return settledNormalSendResponse(args.body, thread.threadId, acceptedAt);
+    const accepted = enqueued.value;
+    if (accepted?.marketingRewardEventId) {
+      const delivery = {
+        jobId: accepted.marketingRewardEventId,
+        handlerVersion: 4 as const,
+      };
+      waitUntil(set(deliverMarketingRewardEvents$, delivery, signal));
+    }
+    return settledNormalSendResponse(
+      args.body,
+      thread.threadId,
+      accepted?.createdAt ?? null,
+    );
   },
 );
 function recallChatEventValues(params: {
@@ -3306,6 +3342,17 @@ const handleRecallSend$ = command(
     if (!result.ok) {
       return badRequestMessage(result.message);
     }
+    waitUntil(
+      set(
+        projectCommittedChatThreadSearch$,
+        {
+          userId: args.userId,
+          orgId: args.orgId,
+          threadId: args.body.threadId,
+        },
+        signal,
+      ),
+    );
     await set(
       publishChatThreadMessageCreated$,
       {
@@ -3359,6 +3406,17 @@ const handleInterruptSend$ = command(
     if (!result.ok) {
       return badRequestMessage(result.message);
     }
+    waitUntil(
+      set(
+        projectCommittedChatThreadSearch$,
+        {
+          userId: args.userId,
+          orgId: args.orgId,
+          threadId: args.body.threadId,
+        },
+        signal,
+      ),
+    );
     await set(
       publishChatThreadMessageCreated$,
       {

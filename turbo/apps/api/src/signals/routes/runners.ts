@@ -1,4 +1,7 @@
-import { publishChatThreadMessageCreated$ } from "../services/chat-event-publication.service";
+import {
+  projectCommittedChatThreadSearch$,
+  publishChatThreadMessageCreated$,
+} from "../services/chat-event-publication.service";
 import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import {
   CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
@@ -28,6 +31,7 @@ import { badRequestMessage, notFound } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
+import { waitUntil } from "../context/wait-until";
 import { runnerAuth$, type RunnerAuthContext } from "../auth/runner-auth";
 import { authorization$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
@@ -491,6 +495,17 @@ const declareSteeredInputInner$ = command(
       }
     }
     if (result.replacementsAppended) {
+      waitUntil(
+        set(
+          projectCommittedChatThreadSearch$,
+          {
+            userId: auth.userId,
+            orgId: auth.orgId,
+            threadId: result.chatThreadId,
+          },
+          signal,
+        ),
+      );
       await set(
         publishChatThreadMessageCreated$,
         {

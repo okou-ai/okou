@@ -1,5 +1,4 @@
 import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
-import { startMarketingRewardEventDelivery$ } from "./marketing-reward-event-delivery.service";
 import { loadEmailSourceMessageContext$ } from "./email-source-message.service";
 import { STAFF_SINGLE_AGENT_ORG_ID } from "@okouai/core/staff-single-agent-migration";
 import { buildEmailPrompt } from "./email-prompt";
@@ -1115,6 +1114,7 @@ function claimLaunchRecord(record: ClaimLaunchRecord): ClaimLaunchRecord {
 
 type PendingClaimRun = {
   readonly kind: "pending";
+  readonly marketingRewardEventId: string | null;
   readonly runId: string;
   readonly apiStartTime: number;
   readonly context: ThreadRunContext;
@@ -3635,6 +3635,7 @@ export function createThreadClaimRunObjects(
       });
       return {
         kind: "pending",
+        marketingRewardEventId: committed.result.marketingRewardEventId,
         runId: committed.result.run.id,
         apiStartTime: input.args.apiStartTime,
         context,
@@ -3958,6 +3959,7 @@ interface LaunchRunIdentity {
 
 interface PersistedAtomicLaunchRows {
   readonly kind: "pending";
+  readonly marketingRewardEventId: string | null;
   readonly run: RunRecord;
 }
 
@@ -3989,6 +3991,7 @@ interface ValidatedThreadSessionSnapshot {
 type AtomicLaunchCommitResult =
   | {
       readonly kind: "pending";
+      readonly marketingRewardEventId: string | null;
       readonly run: RunRecord;
       readonly admittedLaunch: AdmittedRunLaunch;
       readonly publicationReturnedAt: number;
@@ -4943,6 +4946,7 @@ function pendingAtomicLaunchResult(
   }
   return {
     kind: "pending",
+    marketingRewardEventId: row.marketingRewardEventId,
     run: {
       id: context.rowsArgs.identity.runId,
       createdAt: row.createdAt,
@@ -5243,14 +5247,6 @@ const commitThreadLaunch$ = command(
           prepared.context,
           outcome.value[0],
         );
-        const committed = outcome.value[0];
-        if (committed?.kind === "pending" && committed.marketingRewardEventId) {
-          set(
-            startMarketingRewardEventDelivery$,
-            { jobId: committed.marketingRewardEventId, handlerVersion: 4 },
-            signal,
-          );
-        }
         timing.recordDuration(
           "api_dispatch_persist_atomic_launch_materialize",
           "nested",

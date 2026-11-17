@@ -6,10 +6,8 @@ import {
   marketingRewardSourceEventSchema,
   type MarketingRewardSourceEvent,
 } from "../../lib/marketing-reward-events";
-import { logger } from "../../lib/log";
-import { waitUntil } from "../context/wait-until";
 import { nowDate } from "../../lib/time";
-import { settle, tapError } from "../utils";
+import { settle } from "../utils";
 import {
   claimBackgroundJob$,
   transitionBackgroundJob$,
@@ -200,29 +198,5 @@ export const deliverMarketingRewardEvents$ = command(
         return sum + result.processed;
       }, 0),
     };
-  },
-);
-
-/** Attempt the committed source only; the durable queue remains the recovery authority. */
-export const startMarketingRewardEventDelivery$ = command(
-  (
-    { set },
-    args: {
-      readonly jobId: string;
-      readonly handlerVersion: 1 | 2 | 3 | 4 | 5;
-    },
-    signal: AbortSignal,
-  ): void => {
-    waitUntil(
-      tapError(set(deliverMarketingRewardEvents$, args, signal), (error) => {
-        logger("MarketingRewardEventDelivery").warn(
-          "Committed source delivery will recover in background",
-          {
-            jobId: args.jobId,
-            error,
-          },
-        );
-      }),
-    );
   },
 );

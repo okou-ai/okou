@@ -1,4 +1,7 @@
-import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
+import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import {
@@ -417,6 +420,17 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
         );
         signal.throwIfAborted();
         if (inserted) {
+          waitUntil(
+            set(
+              projectCommittedChatThreadSearch$,
+              {
+                userId: row.automation.ownerUserId,
+                orgId: row.automation.orgId,
+                threadId: chatThreadId,
+              },
+              signal,
+            ),
+          );
           await set(
             publishChatThreadMessageCreated$,
             {

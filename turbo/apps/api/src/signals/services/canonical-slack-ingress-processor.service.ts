@@ -1,4 +1,7 @@
-import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
+import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
 import type { ChatSlackMessageAssets } from "@okouai/db/jsonb-contracts/chat-slack-context";
 import { slackChatIngress } from "@okouai/db/schema/slack-chat-ingress";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
@@ -857,6 +860,17 @@ const finishCanonicalSlackEnqueue$ = command(
         eventId: ingressId,
       },
       signal,
+    );
+    waitUntil(
+      set(
+        projectCommittedChatThreadSearch$,
+        {
+          userId: ingress.userId,
+          orgId: ingress.orgId,
+          threadId: ingress.chatThreadId,
+        },
+        signal,
+      ),
     );
     await set(
       publishChatThreadMessageCreated$,

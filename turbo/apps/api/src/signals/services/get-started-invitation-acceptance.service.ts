@@ -1,4 +1,3 @@
-import { startMarketingRewardEventDelivery$ } from "./marketing-reward-event-delivery.service";
 import { randomUUID } from "node:crypto";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { command } from "ccstate";
@@ -68,12 +67,11 @@ const publishAcceptedReward$ = command(
       }),
     );
     signal.throwIfAborted();
-    set(
-      startMarketingRewardEventDelivery$,
-      { jobId: marketingRewardEventId, handlerVersion: 3 },
-      signal,
-    );
-    return rowCount;
+
+    if (rowCount !== 0 && rowCount !== 1) {
+      throw new Error("Invitation reward grant was not committed");
+    }
+    return rowCount === 1 ? marketingRewardEventId : undefined;
   },
 );
 
@@ -100,7 +98,7 @@ const publishUnfundedAcceptance$ = command(
       })
       .where(unresolvedClaimWhere(args.claim))
       .returning();
-    await db.execute(
+    const { rowCount } = await db.execute(
       sql`WITH accepted_invitation AS (${accepted.getSQL()}) ${marketingRewardInvitationEventInsert(
         {
           id: marketingRewardEventId,
@@ -112,11 +110,7 @@ const publishUnfundedAcceptance$ = command(
       )}`,
     );
     signal.throwIfAborted();
-    set(
-      startMarketingRewardEventDelivery$,
-      { jobId: marketingRewardEventId, handlerVersion: 3 },
-      signal,
-    );
+    return rowCount === 1 ? marketingRewardEventId : undefined;
   },
 );
 
@@ -126,7 +120,7 @@ export const acceptGetStartedInvitation$ = command(
     { set },
     args: AcceptedGetStartedInvitation,
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<string | undefined> => {
     if (!args.invitationId && !args.getStartedClaimId && !args.purchaseId) {
       return;
     }
@@ -170,22 +164,22 @@ export const acceptGetStartedInvitation$ = command(
     if (
       getStartedRewardWriter("user", claim.beneficiaryUserId) === "marketing"
     ) {
-      await set(
+      const marketingRewardEventId = await set(
         publishUnfundedAcceptance$,
         { claim, acceptance, reason: null, at },
         signal,
       );
       signal.throwIfAborted();
-      return;
+      return marketingRewardEventId;
     }
     if (claim.beneficiaryUserId === args.userId) {
-      await set(
+      const marketingRewardEventId = await set(
         publishUnfundedAcceptance$,
         { claim, acceptance, reason: "self_invitation", at },
         signal,
       );
       signal.throwIfAborted();
-      return;
+      return marketingRewardEventId;
     }
     const rewardKey = `invite:${args.userId}`;
     const awards = await db
@@ -198,13 +192,13 @@ export const acceptGetStartedInvitation$ = command(
       awards,
     );
     if (availability.kind === "ineligible") {
-      await set(
+      const marketingRewardEventId = await set(
         publishUnfundedAcceptance$,
         { claim, acceptance, reason: availability.reason, at },
         signal,
       );
       signal.throwIfAborted();
-      return;
+      return marketingRewardEventId;
     }
     const slot = availability.slots[0];
     if (slot === undefined) {
@@ -228,10 +222,7 @@ export const acceptGetStartedInvitation$ = command(
     );
     signal.throwIfAborted();
     if (result.ok) {
-      if (result.value !== 0 && result.value !== 1) {
-        throw new Error("Invitation reward grant was not committed");
-      }
-      return;
+      return result.value;
     }
     if (
       isUniqueViolation(result.error, "uq_get_started_reward_key") ||

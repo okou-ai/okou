@@ -1,6 +1,9 @@
+import { waitUntil } from "../context/wait-until";
 import { notifyPhoneUseOwner$ } from "./phone-use-notifications.service";
-import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
-import { startMarketingRewardEventDelivery$ } from "./marketing-reward-event-delivery.service";
+import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
 import { env } from "../../lib/env";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import {
@@ -100,6 +103,7 @@ interface CompletionSuccessResponse {
    * `scheduleReleasedSlotPicks$` for them before any side effect. */
   readonly releasedSlots: readonly ReleasedRunSlot[];
   readonly sideEffects?: CompleteSideEffectsInput;
+  readonly marketingRewardEventId?: string | null;
 }
 
 type CompletionResponse =
@@ -143,6 +147,7 @@ interface CompletionCommit {
 
 type ReleasedCompletionCommit = CompletionCommit & {
   readonly releasedSlots: readonly ReleasedRunSlot[];
+  readonly marketingRewardEventId?: string | null;
 };
 
 const L = logger("webhook:complete");
@@ -352,6 +357,7 @@ function completionResponse(
     status: 200,
     body: { success: true, status: commit.responseStatus },
     releasedSlots: commit.releasedSlots,
+    marketingRewardEventId: commit.marketingRewardEventId,
     ...(sideEffects ? { sideEffects } : {}),
   };
 }
@@ -376,6 +382,17 @@ const dispatchTerminalCompleteSideEffects$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     if (input.deliveryNotification?.chatEventsAppended) {
+      waitUntil(
+        set(
+          projectCommittedChatThreadSearch$,
+          {
+            userId: input.deliveryNotification.userId,
+            orgId: input.orgId,
+            threadId: input.deliveryNotification.chatThreadId,
+          },
+          signal,
+        ),
+      );
       await set(
         publishChatThreadMessageCreated$,
         {
@@ -425,7 +442,7 @@ const dispatchTerminalCompleteSideEffects$ = command(
     await set(processOrgUsageEvents$, input.orgId, signal);
     signal.throwIfAborted();
 
-    await tapError(
+    const usagePublication = await tapError(
       set(maybeEmitRunUsageEvent$, input.runId, signal),
       (error) => {
         L.error("Failed to emit chat usage message after run completion", {
@@ -436,6 +453,11 @@ const dispatchTerminalCompleteSideEffects$ = command(
       },
     );
     signal.throwIfAborted();
+    if (usagePublication) {
+      waitUntil(
+        set(projectCommittedChatThreadSearch$, usagePublication, signal),
+      );
+    }
   },
 );
 
@@ -470,6 +492,17 @@ export const dispatchCompleteSideEffectsCore$ = command(
         );
         signal.throwIfAborted();
         if (input.chatEventsAppended) {
+          waitUntil(
+            set(
+              projectCommittedChatThreadSearch$,
+              {
+                userId: input.userId,
+                orgId: input.orgId,
+                threadId: input.chatThreadId,
+              },
+              signal,
+            ),
+          );
           await set(
             publishChatThreadMessageCreated$,
             {
@@ -486,6 +519,17 @@ export const dispatchCompleteSideEffectsCore$ = command(
     }
     if (input.kind === "delivery-finalization") {
       if (input.chatEventsAppended) {
+        waitUntil(
+          set(
+            projectCommittedChatThreadSearch$,
+            {
+              userId: input.userId,
+              orgId: input.orgId,
+              threadId: input.chatThreadId,
+            },
+            signal,
+          ),
+        );
         await set(
           publishChatThreadMessageCreated$,
           {
@@ -662,13 +706,6 @@ export function createAgentRunCompletion(runId: string, userId: string) {
               response: completionPublicationRejection(row.decision),
             } as const;
           }
-          if (row.marketingRewardEventId) {
-            set(
-              startMarketingRewardEventDelivery$,
-              { jobId: row.marketingRewardEventId, handlerVersion: 4 },
-              signal,
-            );
-          }
           const releasedSlots =
             row.releasedRunId === null || row.releasedOrgId === null
               ? []
@@ -696,7 +733,13 @@ export function createAgentRunCompletion(runId: string, userId: string) {
               await db.execute(statement);
             }
           }
-          return { kind: "committed", commit: committed } as const;
+          return {
+            kind: "committed",
+            commit: {
+              ...committed,
+              marketingRewardEventId: row.marketingRewardEventId,
+            },
+          } as const;
         })();
         signal.throwIfAborted();
         if (result.kind === "retry") {

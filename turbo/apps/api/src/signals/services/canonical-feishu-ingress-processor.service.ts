@@ -1,4 +1,7 @@
-import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
+import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
 import { addFeishuThinkingReaction$ } from "./feishu-thinking-indicator.service";
 import { connectors } from "@okouai/db/schema/connector";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
@@ -42,7 +45,6 @@ import { waitUntil } from "../context/wait-until";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
-import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import {
   pickEnqueuedChatThread$,
   enqueuedChatQueueWaitReason$,
@@ -540,11 +542,21 @@ const notifyFeishuChatQueueWait$ = command(
     args: {
       readonly ingressId: string;
       readonly message: CanonicalFeishuInboundMessage;
-      readonly reason: ChatQueueWaitReason;
+      readonly orgId: string;
+      readonly chatThreadId: string;
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const notice = chatQueueWaitNotice(args.reason);
+    const pick = await set(
+      enqueuedChatQueueWaitReason$,
+      {
+        orgId: args.orgId,
+        chatThreadId: args.chatThreadId,
+        eventId: args.ingressId,
+      },
+      signal,
+    );
+    const notice = chatQueueWaitNotice(pick.reason);
     if (!notice) {
       return;
     }
@@ -1067,6 +1079,17 @@ export const processCanonicalFeishuIngress$ = command(
           userId: persisted.userId,
           orgId: persisted.orgId,
         });
+        waitUntil(
+          set(
+            projectCommittedChatThreadSearch$,
+            {
+              userId: persisted.userId,
+              orgId: persisted.orgId,
+              threadId: persisted.chatThreadId,
+            },
+            signal,
+          ),
+        );
         await set(
           publishChatThreadMessageCreated$,
           {
@@ -1077,26 +1100,16 @@ export const processCanonicalFeishuIngress$ = command(
           signal,
         );
         const noticed = await settle(
-          (async () => {
-            const pick = await set(
-              enqueuedChatQueueWaitReason$,
-              {
-                orgId: persisted.orgId,
-                chatThreadId: persisted.chatThreadId,
-                eventId: args.ingressId,
-              },
-              signal,
-            );
-            await set(
-              notifyFeishuChatQueueWait$,
-              {
-                ingressId: args.ingressId,
-                message: persisted.message,
-                reason: pick.reason,
-              },
-              signal,
-            );
-          })(),
+          set(
+            notifyFeishuChatQueueWait$,
+            {
+              ingressId: args.ingressId,
+              message: persisted.message,
+              orgId: persisted.orgId,
+              chatThreadId: persisted.chatThreadId,
+            },
+            signal,
+          ),
         );
         if (!picked.ok && !noticed.ok) {
           throw new AggregateError(

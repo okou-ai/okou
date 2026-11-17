@@ -1,4 +1,7 @@
-import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
+import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
 import {
   emailDeliveryTargetSchema,
   type EmailDeliveryTarget,
@@ -1465,11 +1468,21 @@ const loadRecommendedFollowupContextForCompletedRun$ = command(
     { set },
     args: {
       readonly threadId: string;
+      readonly timing: ChatCallbackPreCreateTimingCollector;
     },
     signal: AbortSignal,
   ): Promise<readonly ChatCompletionContextMessage[]> => {
-    return (
-      (await tapError(
+    const startedAt = now();
+    const recordTiming = () => {
+      args.timing.recordElapsed({
+        actionType:
+          "api_dispatch_pre_create_agent_chat_callback_load_followup_context",
+        spanKind: "nested",
+        startedAt,
+      });
+    };
+    const result = await onRejection(
+      tapError(
         set(loadChatThreadRecommendedFollowupContext$, args, signal),
         (err) => {
           log.warn("Recommended follow-up context load failed", {
@@ -1477,8 +1490,12 @@ const loadRecommendedFollowupContextForCompletedRun$ = command(
             err,
           });
         },
-      )) ?? []
+      ),
+      recordTiming,
     );
+    signal.throwIfAborted();
+    recordTiming();
+    return result ?? [];
   },
 );
 
@@ -1502,7 +1519,7 @@ const materializeCompletedChatResult$ = command(
       await (async () => {
         await onRejection(
           (async () => {
-            return await set(
+            const inserted = await set(
               insertAssistantEvents$,
               assistantEventInsertInput({
                 runId: args.runId,
@@ -1513,6 +1530,20 @@ const materializeCompletedChatResult$ = command(
               }),
               signal,
             );
+            if (inserted > 0) {
+              waitUntil(
+                set(
+                  projectCommittedChatThreadSearch$,
+                  {
+                    userId: args.chatThread.userId,
+                    orgId: args.chatThread.orgId,
+                    threadId: args.chatThread.chatThreadId,
+                  },
+                  signal,
+                ),
+              );
+            }
+            return inserted;
           })(),
           () => {
             timing.recordElapsed({
@@ -1548,7 +1579,7 @@ const materializeCompletedChatResult$ = command(
       await (async () => {
         await onRejection(
           (async () => {
-            return await set(
+            const inserted = await set(
               insertAssistantEvents$,
               assistantEventInsertInput({
                 runId: args.runId,
@@ -1559,6 +1590,20 @@ const materializeCompletedChatResult$ = command(
               }),
               signal,
             );
+            if (inserted > 0) {
+              waitUntil(
+                set(
+                  projectCommittedChatThreadSearch$,
+                  {
+                    userId: args.chatThread.userId,
+                    orgId: args.chatThread.orgId,
+                    threadId: args.chatThread.chatThreadId,
+                  },
+                  signal,
+                ),
+              );
+            }
+            return inserted;
           })(),
           () => {
             timing.recordElapsed({
@@ -1708,40 +1753,26 @@ const handleCompletedChatCallback$ = command(
       spanKind: "nested",
       startedAt: lifecycleStartedAt,
     });
+    waitUntil(
+      set(
+        projectCommittedChatThreadSearch$,
+        {
+          userId: args.chatThread.userId,
+          orgId: args.chatThread.orgId,
+          threadId: args.chatThread.chatThreadId,
+        },
+        signal,
+      ),
+    );
     if (inserted.outcome === "duplicate") {
       return inserted;
     }
 
-    const timing = args.timing;
-    const startedAt = now();
-    const followupContext = await (async () => {
-      const result = await onRejection(
-        (async () => {
-          return await set(
-            loadRecommendedFollowupContextForCompletedRun$,
-            {
-              threadId: args.chatThread.chatThreadId,
-            },
-            signal,
-          );
-        })(),
-        () => {
-          timing.recordElapsed({
-            actionType:
-              "api_dispatch_pre_create_agent_chat_callback_load_followup_context",
-            spanKind: "nested",
-            startedAt,
-          });
-        },
-      );
-      timing.recordElapsed({
-        actionType:
-          "api_dispatch_pre_create_agent_chat_callback_load_followup_context",
-        spanKind: "nested",
-        startedAt,
-      });
-      return result;
-    })();
+    const followupContext = await set(
+      loadRecommendedFollowupContextForCompletedRun$,
+      { threadId: args.chatThread.chatThreadId, timing: args.timing },
+      signal,
+    );
     signal.throwIfAborted();
 
     return {
@@ -1813,7 +1844,7 @@ const runCompletedChatCallbackSideEffects$ = command(
         signal,
       );
       if (followups) {
-        await set(
+        const inserted = await set(
           insertRecommendedFollowupsEvent$,
           {
             runId: args.runId,
@@ -1825,6 +1856,19 @@ const runCompletedChatCallbackSideEffects$ = command(
           },
           signal,
         );
+        if (inserted) {
+          waitUntil(
+            set(
+              projectCommittedChatThreadSearch$,
+              {
+                userId: args.chatThread.userId,
+                orgId: args.chatThread.orgId,
+                threadId: args.chatThread.chatThreadId,
+              },
+              signal,
+            ),
+          );
+        }
       }
     })();
 
@@ -1933,7 +1977,7 @@ const handleFailedChatCallback$ = command(
       signal,
     );
     signal.throwIfAborted();
-    return await set(
+    const result = await set(
       insertAssistantErrorEvent$,
       {
         runId: args.runId,
@@ -1956,6 +2000,18 @@ const handleFailedChatCallback$ = command(
       },
       signal,
     );
+    waitUntil(
+      set(
+        projectCommittedChatThreadSearch$,
+        {
+          userId: args.chatThread.userId,
+          orgId: args.chatThread.orgId,
+          threadId: args.chatThread.chatThreadId,
+        },
+        signal,
+      ),
+    );
+    return result;
   },
 );
 

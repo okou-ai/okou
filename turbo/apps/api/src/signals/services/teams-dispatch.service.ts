@@ -1,4 +1,7 @@
-import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
+import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
 import { sendTeamsRunStartIndicator } from "./teams-thinking-indicator.service";
 import type {
   TeamsInboundActivity,
@@ -1496,6 +1499,17 @@ const runAgentForTeams$ = command(
           userId: args.connection.userId,
           orgId: args.installation.executionOrgId,
         });
+        waitUntil(
+          set(
+            projectCommittedChatThreadSearch$,
+            {
+              userId: args.connection.userId,
+              orgId: args.installation.executionOrgId,
+              threadId: persisted.chatThreadId,
+            },
+            signal,
+          ),
+        );
         await set(
           publishChatThreadMessageCreated$,
           {

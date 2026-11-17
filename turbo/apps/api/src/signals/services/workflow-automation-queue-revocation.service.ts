@@ -1,4 +1,7 @@
-import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
+import {
+  publishChatThreadMessageCreated$,
+  type ChatEventPublicationScope,
+} from "./chat-event-publication.service";
 import { agents } from "@okouai/db/schema/agent";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import {
@@ -23,7 +26,7 @@ export const revokeDeletedWorkflowAutomationInputs$ = command(
     { set },
     args: { readonly orgId: string; readonly automationId: string },
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<readonly ChatEventPublicationScope[]> => {
     const database = set(writeDb$);
     const revoker = alias(chatEvents, "deleted_automation_input_revoker");
     const sources = await database
@@ -88,6 +91,9 @@ export const revokeDeletedWorkflowAutomationInputs$ = command(
         changedThreads.set(source.chatThreadId, source.userId);
       }
     }
+    const publications = [...changedThreads].map(([threadId, userId]) => {
+      return { orgId: args.orgId, userId, threadId };
+    });
     for (const [threadId, userId] of changedThreads) {
       await set(
         publishChatThreadMessageCreated$,
@@ -100,5 +106,6 @@ export const revokeDeletedWorkflowAutomationInputs$ = command(
       );
       signal.throwIfAborted();
     }
+    return publications;
   },
 );

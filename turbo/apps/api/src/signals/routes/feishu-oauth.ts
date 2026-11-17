@@ -1,5 +1,5 @@
+import { deliverMarketingRewardEvents$ } from "../services/marketing-reward-event-delivery.service";
 import { randomUUID } from "node:crypto";
-import { startMarketingRewardEventDelivery$ } from "../services/marketing-reward-event-delivery.service";
 import {
   feishuOAuthPublicationRow,
   feishuOAuthPublicationSql,
@@ -357,6 +357,7 @@ type PersistFeishuOAuthConnectionResult =
       readonly connected: true;
       readonly connectionId: string;
       readonly shouldNotify: boolean;
+      readonly marketingRewardEventId: string;
     };
 
 type PreparedFeishuTokens = Awaited<ReturnType<typeof prepareFeishuTokens>>;
@@ -405,15 +406,8 @@ const persistFeishuOAuthConnection$ = command(
         "Failed to authorize Feishu custom connector: customConnectorsNotFound",
       );
     }
-    if (result.member) {
-      set(
-        startMarketingRewardEventDelivery$,
-        { jobId: marketingRewardEventId, handlerVersion: 1 },
-        signal,
-      );
-    }
     return result.member
-      ? { connected: true, ...result.member }
+      ? { connected: true, ...result.member, marketingRewardEventId }
       : { connected: false };
   },
 );
@@ -434,17 +428,20 @@ const finishFeishuOAuthConnection$ = command(
       readonly featureContext: FeatureSwitchContext;
     },
     signal: AbortSignal,
-  ): Promise<FeishuConnectionCompletionResult> => {
+  ): Promise<{
+    readonly result: FeishuConnectionCompletionResult;
+    readonly marketingRewardEventId: string | null;
+  }> => {
     const db = set(writeDb$);
     if (args.expectedOpenId && args.expectedOpenId !== args.userInfo.openId) {
-      return "identity_mismatch";
+      return { result: "identity_mismatch", marketingRewardEventId: null };
     }
     if (
       args.installation.tenantKey &&
       args.userInfo.tenantKey &&
       args.installation.tenantKey !== args.userInfo.tenantKey
     ) {
-      return "tenant_mismatch";
+      return { result: "tenant_mismatch", marketingRewardEventId: null };
     }
     const prepared = await prepareFeishuTokens(args);
     signal.throwIfAborted();
@@ -475,7 +472,7 @@ const finishFeishuOAuthConnection$ = command(
       }
     }
     if (!connection.connected) {
-      return "account_in_use";
+      return { result: "account_in_use", marketingRewardEventId: null };
     }
 
     signal.throwIfAborted();
@@ -526,7 +523,10 @@ const finishFeishuOAuthConnection$ = command(
         ),
       );
     }
-    return "connected";
+    return {
+      result: "connected",
+      marketingRewardEventId: connection.marketingRewardEventId,
+    };
   },
 );
 
@@ -730,6 +730,29 @@ function legacyConnectionState(
   return { ...state, accountMutation };
 }
 
+const readFeishuOAuthInstallationEnabled$ = command(
+  async (
+    { get },
+    installation: {
+      readonly platform: FeishuPlatform;
+      readonly orgId: string;
+      readonly ownerUserId: string | null;
+    },
+    signal: AbortSignal,
+  ) => {
+    const plan = feishuInstallationAvailabilityReadPlan(installation);
+    if (plan.kind === "resolved") {
+      return plan.enabled;
+    }
+    const rows = await get(db$)
+      .select(plan.columns)
+      .from(userFeatureSwitches)
+      .where(plan.condition);
+    signal.throwIfAborted();
+    return feishuInstallationEnabledFromRows(plan.scope, rows);
+  },
+);
+
 const completeLegacyFeishuOAuth$ = command(
   async (
     { get, set },
@@ -755,18 +778,7 @@ const completeLegacyFeishuOAuth$ = command(
         .limit(1);
       if (
         !installation ||
-        !(await (async () => {
-          const availability =
-            feishuInstallationAvailabilityReadPlan(installation);
-          if (availability.kind === "resolved") {
-            return availability.enabled;
-          }
-          const rows = await db
-            .select(availability.columns)
-            .from(userFeatureSwitches)
-            .where(availability.condition);
-          return feishuInstallationEnabledFromRows(availability.scope, rows);
-        })())
+        !(await set(readFeishuOAuthInstallationEnabled$, installation, signal))
       ) {
         return null;
       }
@@ -848,8 +860,17 @@ const completeLegacyFeishuOAuth$ = command(
       },
       signal,
     );
+    if (completed.marketingRewardEventId) {
+      waitUntil(
+        set(
+          deliverMarketingRewardEvents$,
+          { jobId: completed.marketingRewardEventId, handlerVersion: 1 },
+          signal,
+        ),
+      );
+    }
     return feishuConnectionCompletionResponse(
-      completed,
+      completed.result,
       platform,
       installation,
       query.responseMode,
@@ -870,7 +891,6 @@ const completeClaimedCustomFeishuOAuth$ = command(
     signal: AbortSignal,
   ) => {
     const { context, query, state } = args;
-    const db = get(db$);
     const platform = callbackPlatform(state.redirectUri);
     if (query.error) {
       return completionErrorResponse(
@@ -916,20 +936,11 @@ const completeClaimedCustomFeishuOAuth$ = command(
       );
     }
     if (
-      !(await (async () => {
-        const plan = feishuInstallationAvailabilityReadPlan({
-          ...installation,
-          orgId: state.orgId,
-        });
-        if (plan.kind === "resolved") {
-          return plan.enabled;
-        }
-        const rows = await db
-          .select(plan.columns)
-          .from(userFeatureSwitches)
-          .where(plan.condition);
-        return feishuInstallationEnabledFromRows(plan.scope, rows);
-      })())
+      !(await set(
+        readFeishuOAuthInstallationEnabled$,
+        { ...installation, orgId: state.orgId },
+        signal,
+      ))
     ) {
       return jsonErrorResponse("Lark integration is not enabled");
     }
@@ -985,8 +996,17 @@ const completeClaimedCustomFeishuOAuth$ = command(
       },
       signal,
     );
+    if (completed.marketingRewardEventId) {
+      waitUntil(
+        set(
+          deliverMarketingRewardEvents$,
+          { jobId: completed.marketingRewardEventId, handlerVersion: 1 },
+          signal,
+        ),
+      );
+    }
     return feishuConnectionCompletionResponse(
-      completed,
+      completed.result,
       platform,
       installation,
       query.responseMode,

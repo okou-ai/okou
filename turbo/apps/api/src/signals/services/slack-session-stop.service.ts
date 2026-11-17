@@ -1,4 +1,8 @@
-import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
+import { waitUntil } from "../context/wait-until";
+import {
+  projectCommittedChatThreadSearch$,
+  publishChatThreadMessageCreated$,
+} from "./chat-event-publication.service";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
@@ -294,17 +298,15 @@ const postSlackSessionStopNotice$ = command(
   },
 );
 
-/** The signed Slack actor can stop only their own inputs in this physical thread. */
-export const stopSlackSession$ = command(
+const readSlackSessionStopRoutes$ = command(
   async (
     { set },
     args: {
       readonly workspaceId: string;
       readonly event: SlackSessionStoppedEvent;
-      readonly isRetry: boolean;
     },
     signal: AbortSignal,
-  ): Promise<void> => {
+  ) => {
     const db = set(writeDb$);
     const { event } = args;
     const routes = await db
@@ -358,6 +360,23 @@ export const stopSlackSession$ = command(
         ),
       );
     signal.throwIfAborted();
+    return routes;
+  },
+);
+
+/** The signed Slack actor can stop only their own inputs in this physical thread. */
+export const stopSlackSession$ = command(
+  async (
+    { set },
+    args: {
+      readonly workspaceId: string;
+      readonly event: SlackSessionStoppedEvent;
+      readonly isRetry: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const { event } = args;
+    const routes = await set(readSlackSessionStopRoutes$, args, signal);
     const binding = routes[0];
     if (!binding?.orgId) {
       return;
@@ -382,6 +401,19 @@ export const stopSlackSession$ = command(
       signal.throwIfAborted();
       stopped = inputsStopped || runsCancelled;
       if (stopped) {
+        for (const route of scope.routes) {
+          waitUntil(
+            set(
+              projectCommittedChatThreadSearch$,
+              {
+                userId: scope.userId,
+                orgId: scope.orgId,
+                threadId: route.chatThreadId,
+              },
+              signal,
+            ),
+          );
+        }
         await set(publishStoppedSlackSession$, scope, signal);
         signal.throwIfAborted();
       }

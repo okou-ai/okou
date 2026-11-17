@@ -1,5 +1,8 @@
-import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
-import { startMarketingRewardEventDelivery$ } from "./marketing-reward-event-delivery.service";
+import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
+import { deliverMarketingRewardEvents$ } from "./marketing-reward-event-delivery.service";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { synchronizeOfficialWorkflowThread$ } from "./official-workflow-thread.service";
 import {
@@ -491,12 +494,16 @@ function recordWorkflowInputCommitTiming({
   });
 }
 
+interface WorkflowInputCommit extends ChatInputEnqueueCommit {
+  readonly marketingRewardEventId?: string | null;
+}
+
 const commitWorkflowInput$ = command(
   async (
     { set },
     input: PreparedWorkflowInputCommit,
     signal: AbortSignal,
-  ): Promise<ChatInputEnqueueCommit | null> => {
+  ): Promise<WorkflowInputCommit | null> => {
     if (usesProactiveWorkflowInput(input.args)) {
       return await set(commitProactiveWorkflowInput$, input, signal);
     }
@@ -559,14 +566,10 @@ const commitWorkflowInput$ = command(
           throw new Error("Workflow queue commit returned no accepted input");
         }
         tickCount = row.tickCount;
-        if (row.marketingRewardEventId) {
-          set(
-            startMarketingRewardEventDelivery$,
-            { jobId: row.marketingRewardEventId, handlerVersion: 4 },
-            signal,
-          );
-        }
-        return row.eventId;
+        return {
+          eventId: row.eventId,
+          marketingRewardEventId: row.marketingRewardEventId,
+        };
       })().finally(() => {
         recordWorkflowInputCommitTiming({
           timing,
@@ -607,7 +610,7 @@ const commitWorkflowInput$ = command(
       }
       throw result.error;
     }
-    return { eventId: result.value, committedAt: now() };
+    return { ...result.value, committedAt: now() };
   },
 );
 
@@ -680,18 +683,14 @@ function workflowQueueArgs(
   };
 }
 
-export const runWorkflowAutomationNow$ = command(
+const prepareWorkflowAdmission$ = command(
   async (
     { set },
     args: RunWorkflowAutomationNowArgs,
+    timing: ApiDispatchTimingCollector,
     signal: AbortSignal,
-  ): Promise<RunWorkflowAutomationResult> => {
+  ) => {
     const { automation, chatThreadId } = args.due;
-    const timing = workflowAutomationAdmissionTiming(args);
-
-    const { scheduleClaim } = args;
-    const replacePendingTicks = pendingTickReplacement(args);
-
     const model = await set(workflowAutomationInputModel$, args.due, signal);
     const displayName = await set(
       workflowQueueDisplayName$,
@@ -704,13 +703,38 @@ export const runWorkflowAutomationNow$ = command(
       workflowQueueArgs(args, model, displayName, automation, chatThreadId),
     );
     signal.throwIfAborted();
+    return {
+      model,
+      source,
+      plan,
+      replacePendingTicks: pendingTickReplacement(args),
+    };
+  },
+);
+
+export const runWorkflowAutomationNow$ = command(
+  async (
+    { set },
+    args: RunWorkflowAutomationNowArgs,
+    signal: AbortSignal,
+  ): Promise<RunWorkflowAutomationResult> => {
+    const { automation, chatThreadId } = args.due;
+    const timing = workflowAutomationAdmissionTiming(args);
+
+    const { scheduleClaim } = args;
+    const { model, source, plan, replacePendingTicks } = await set(
+      prepareWorkflowAdmission$,
+      args,
+      timing,
+      signal,
+    );
 
     const schedulePath = workflowAdmissionSchedulePath(
       automation.kind,
       scheduleClaim !== undefined,
     );
     let admissionOutcome: WorkflowAdmissionOutcome = "failed";
-    let enqueueCommit: ChatInputEnqueueCommit | undefined;
+    let enqueueCommit: WorkflowInputCommit | undefined;
     const enqueued = await flushWorkflowAdmission(
       censusWorkflowAdmission(
         schedulePath,
@@ -785,6 +809,20 @@ export const runWorkflowAutomationNow$ = command(
     signal.throwIfAborted();
 
     if (enqueued) {
+      const searchScope = {
+        orgId: automation.orgId,
+        userId: automation.ownerUserId,
+        threadId: chatThreadId,
+      };
+      waitUntil(set(projectCommittedChatThreadSearch$, searchScope, signal));
+
+      if (enqueueCommit?.marketingRewardEventId) {
+        const delivery = {
+          jobId: enqueueCommit.marketingRewardEventId,
+          handlerVersion: 4 as const,
+        };
+        waitUntil(set(deliverMarketingRewardEvents$, delivery, signal));
+      }
       waitUntil(
         set(
           publishEnqueuedWorkflowInput$,

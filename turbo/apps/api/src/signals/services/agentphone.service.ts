@@ -1,4 +1,7 @@
-import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
+import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
@@ -1547,6 +1550,17 @@ const runAgentForAgentPhone$ = command(
           userId: args.userLink.userId,
           orgId: args.userLink.orgId,
         });
+        waitUntil(
+          set(
+            projectCommittedChatThreadSearch$,
+            {
+              userId: args.userLink.userId,
+              orgId: args.userLink.orgId,
+              threadId: persisted.chatThreadId,
+            },
+            signal,
+          ),
+        );
         await set(
           publishChatThreadMessageCreated$,
           {

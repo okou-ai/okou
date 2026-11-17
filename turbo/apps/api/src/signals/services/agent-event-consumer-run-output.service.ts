@@ -1,4 +1,8 @@
-import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
+import { waitUntil } from "../context/wait-until";
+import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
 import { command } from "ccstate";
 import { logger } from "../../lib/log";
 import { safeSqlStateCode } from "../../lib/pg-errors";
@@ -414,6 +418,17 @@ const materializePreparedRunOutputEvents$ = command(
     // Retried receipts dedupe the row and therefore cannot own this wakeup.
     const eventPublished = Boolean(thread && insertion?.insertedRowCount);
     if (eventPublished && thread) {
+      waitUntil(
+        set(
+          projectCommittedChatThreadSearch$,
+          {
+            userId: thread.userId,
+            orgId: thread.orgId,
+            threadId: thread.chatThreadId,
+          },
+          signal,
+        ),
+      );
       await set(
         publishChatThreadMessageCreated$,
         {

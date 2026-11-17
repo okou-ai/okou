@@ -1,4 +1,3 @@
-import { startMarketingRewardEventDelivery$ } from "./marketing-reward-event-delivery.service";
 import { connectEmailFromMailAccount$ } from "./email-connection.service";
 import {
   builtinDeletionSqlResultSchema,
@@ -2676,25 +2675,19 @@ export const upsertBuiltinConnectorTokenConnection$ = command(
       throwCapturedAbort(postCommitAbort);
       return connectionResult;
     }
-    if (
-      !signal.aborted &&
-      publication.kind === "ready" &&
-      isOneClickConnectorGrantKind(publication.publication.grantKind)
-    ) {
-      set(
-        startMarketingRewardEventDelivery$,
-        {
-          jobId: publication.publication.marketingRewardEventId,
-          handlerVersion: 1,
-        },
-        signal,
-      );
-    }
-    return await set(
+    const result = await set(
       finalizeBuiltinConnectorTokenConnection$,
       { prepared, connectionResult, postCommitAbort },
       signal,
     );
+    return {
+      ...result,
+      marketingRewardEventId:
+        publication.kind === "ready" &&
+        isOneClickConnectorGrantKind(publication.publication.grantKind)
+          ? publication.publication.marketingRewardEventId
+          : null,
+    };
   },
 );
 

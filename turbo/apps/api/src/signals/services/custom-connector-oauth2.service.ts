@@ -1,4 +1,3 @@
-import { startMarketingRewardEventDelivery$ } from "./marketing-reward-event-delivery.service";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { customOAuthConnectionPublicationSql } from "./custom-oauth-connection-publication";
@@ -1974,7 +1973,11 @@ function customOAuthTokenRows(
 }
 
 type StoreCustomConnectorOAuth2ConnectionResult =
-  | { readonly kind: "stored"; readonly connectionId: string }
+  | {
+      readonly kind: "stored";
+      readonly connectionId: string;
+      readonly marketingRewardEventId: string;
+    }
   | { readonly kind: "missing" | "ambiguous" | "sibling-disabled" };
 
 const customOAuthPublicationRow = object({
@@ -2101,12 +2104,11 @@ export const storeCustomConnectorOAuth2Connection$ = command(
       if (published.connection_id === null) {
         throw new Error("Custom OAuth publication did not return its account");
       }
-      set(
-        startMarketingRewardEventDelivery$,
-        { jobId: marketingRewardEventId, handlerVersion: 1 },
-        signal,
-      );
-      return { kind: "stored", connectionId: published.connection_id };
+      return {
+        kind: "stored",
+        connectionId: published.connection_id,
+        marketingRewardEventId,
+      };
     })();
   },
 );

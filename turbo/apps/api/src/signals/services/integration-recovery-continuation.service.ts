@@ -1,4 +1,8 @@
-import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
+import { waitUntil } from "../context/wait-until";
+import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
@@ -179,6 +183,17 @@ export const continueIntegrationRecovery$ = command(
       touchNativeChatThread$,
       { ...input, authorizedScope: input },
       signal,
+    );
+    waitUntil(
+      set(
+        projectCommittedChatThreadSearch$,
+        {
+          userId: input.userId,
+          orgId: input.orgId,
+          threadId: input.chatThreadId,
+        },
+        signal,
+      ),
     );
     await set(
       publishChatThreadMessageCreated$,

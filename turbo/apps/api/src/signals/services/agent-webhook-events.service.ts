@@ -1,3 +1,5 @@
+import { waitUntil } from "../context/wait-until";
+import { projectCommittedChatThreadSearch$ } from "./chat-event-publication.service";
 import { captureRunActivity$ } from "./run-activity.service";
 import { command, type Command } from "ccstate";
 
@@ -144,6 +146,20 @@ export const dispatchOptionalAgentEventConsumers$ = command(
 
     const otherConsumers = (async () => {
       if (accepted.chatProjection) {
+        const projection = accepted.chatProjection;
+        if (projection.insertedRowCount > 0 && !projection.eventPublished) {
+          waitUntil(
+            set(
+              projectCommittedChatThreadSearch$,
+              {
+                userId: projection.thread.userId,
+                orgId: projection.thread.orgId,
+                threadId: projection.thread.chatThreadId,
+              },
+              signal,
+            ),
+          );
+        }
         await tapError(
           set(
             publishMaterializedChatProjection$,
