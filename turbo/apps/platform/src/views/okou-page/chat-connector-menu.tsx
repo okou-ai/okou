@@ -343,7 +343,7 @@ function AccountPanelFooter({
         })}
         className={cn(
           buttonVariants({ variant: "quiet" }),
-          "w-full justify-start px-2 text-foreground",
+          "w-full justify-start px-2 font-normal text-foreground",
         )}
       >
         <Users size={16} aria-hidden="true" className="text-muted-foreground" />
