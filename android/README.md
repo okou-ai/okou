@@ -428,7 +428,11 @@ vectors use Lucide geometry; its shared license is also packaged under
 ## CI and Distribution
 
 `.github/workflows/android.yml` checks PRs, merge groups, main pushes and manual
-runs. Selection includes Android sources/docs, CI inputs, Web semantic colors,
+runs. Like Turbo and Crates, release-please PRs, queued release PRs and release
+commits skip Android validation after release-context detection succeeds. The
+production release job independently builds, signs and verifies its exact-target
+APK; it does not consume validation artifacts. Ordinary change selection includes
+Android sources/docs, CI inputs, Web semantic colors,
 and shared font/color-evaluator assets. One native job runs all local tests,
 lints, assembles, and uploads the debug APK plus the optimized unsigned Release
 APK and compressed R8 map for seven days. CI uses the production unsigned-build
