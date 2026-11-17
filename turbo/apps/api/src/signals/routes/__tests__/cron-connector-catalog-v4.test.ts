@@ -9,7 +9,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { settleIncludingAbort } from "../../utils";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { builtinConnectorsRoutes } from "../connectors";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
@@ -240,8 +239,8 @@ function requestedKey(command: unknown): string | undefined {
   return command.input.Key;
 }
 
-function serveObjects(objects: ReadonlyMap<string, Buffer>): void {
-  context.mocks.s3.send.mockImplementation((command: unknown) => {
+function serveObjects(objects: ReadonlyMap<string, Buffer>) {
+  const serve = (command: unknown) => {
     const key = requestedKey(command);
     if (key === undefined) {
       return Promise.reject(new Error("Unexpected object request"));
@@ -260,7 +259,9 @@ function serveObjects(objects: ReadonlyMap<string, Buffer>): void {
         },
       },
     });
-  });
+  };
+  context.mocks.s3.send.mockImplementation(serve);
+  return serve;
 }
 
 function cronClient() {
@@ -407,18 +408,20 @@ describe("connector catalog v4 preparation", () => {
       if (!storage) {
         throw new Error("Expected the public Run object-storage provider");
       }
-      serveObjects(candidate.objects);
-      const rejection = await settleIncludingAbort(async () => {
-        expect((await sync()).body).toStrictEqual({
-          outcome: "rejected",
-          failureCode: "invalid-artifact",
-        });
-        expect((await publicCatalog()).body).toStrictEqual(serving);
+      const catalogObjects = serveObjects(candidate.objects);
+      context.mocks.s3.send.mockImplementation(
+        (command: unknown, ...args: unknown[]) => {
+          const key = requestedKey(command);
+          return key !== undefined && candidate.objects.has(key)
+            ? catalogObjects(command)
+            : storage(command, ...args);
+        },
+      );
+      expect((await sync()).body).toStrictEqual({
+        outcome: "rejected",
+        failureCode: "invalid-artifact",
       });
-      context.mocks.s3.send.mockImplementation(storage);
-      if (!rejection.ok) {
-        throw rejection.error;
-      }
+      expect((await publicCatalog()).body).toStrictEqual(serving);
 
       const run = await owned.sendChatRun(owned.actor, {
         agentId: owned.agentId,
@@ -451,6 +454,11 @@ describe("connector catalog v4 preparation", () => {
       expect((await runs.readRun(owned.actor, run.runId)).status).toBe(
         "completed",
       );
+      expect((await sync()).body).toStrictEqual({
+        outcome: "rejected",
+        failureCode: "invalid-artifact",
+      });
+      expect((await publicCatalog()).body).toStrictEqual(serving);
     });
   });
 
