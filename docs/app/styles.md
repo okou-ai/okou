@@ -1850,7 +1850,6 @@ return {
     elevation: "raised",
     logoLinkUrl: authBrand.homeUrl,
     socialButtonsPlacement: "top",
-    socialButtonsVariant: "blockButton",
   },
   elements: {
     rootBox: "...",
