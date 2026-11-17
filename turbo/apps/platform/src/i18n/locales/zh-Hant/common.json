@@ -1181,26 +1181,25 @@
         "name": "免費版"
       },
       "highlights": {
-        "addOnConcurrency": "隨工作量成長增加任務容量",
-        "appPermissions": "依具體操作和有效期限控制應用程式存取權限",
-        "browserAndComputer": "讓 Okou 操作瀏覽器或已連接的電腦",
+        "addOnConcurrency": "隨時擴充任務容量",
+        "appPermissions": "依操作和期限授權",
+        "browserAndComputer": "瀏覽器與電腦操作",
         "concurrentAgents": "同時執行 {{slots}} 項工作",
-        "connectedAutomations": "跨已連接的應用程式自動處理工作",
-        "create": "製作簡報、文件、圖片、網站和圖表",
+        "connectedAutomations": "跨應用程式與排程自動化",
+        "create": "簡報、文件、圖片、網站和圖表",
         "everythingInBuiltForTeams": "包含 {{plan}} 的全部功能，支援團隊協作",
-        "exports": "匯出為 PDF、Excel、Google Docs 和 Sheets",
+        "exports": "PDF、Excel、Google Docs 和 Sheets",
         "included": "已包含",
-        "memberManagement": "管理成員角色和個人用量方案",
-        "peopleSearch": "尋找專業人士、公司和創作者",
-        "proDetails": "排程與事件觸發自動化 · 語音輸入：每天 {{requests}} 次、{{minutes}} 分鐘 · 電子郵件支援",
-        "projectContext": "在相關對話間延續專案脈絡",
-        "research": "進行網頁、社群媒體和市場研究",
-        "sharedWorkflows": "在團隊內共用可重複使用的工作流程",
+        "memberManagement": "成員角色與用量方案",
+        "proDetails": "語音：每天 {{requests}} 次、{{minutes}} 分鐘 · 電子郵件支援",
+        "projectContext": "跨對話共用專案脈絡",
+        "research": "找人和研究",
+        "sharedWorkflows": "團隊共用工作流程",
         "supportPriority": "優先支援",
         "teamCompliance": "SOC 2 Type II 進行中 · 符合 GDPR 和 CCPA/CPRA 要求",
-        "templates": "使用現成範本或自備範本",
-        "voiceInput": "語音輸入：每天 {{requests}} 次、{{minutes}} 分鐘",
-        "webhookAutomations": "透過 Webhook 從外部工具觸發工作流程"
+        "templates": "現成與自訂範本",
+        "voiceInput": "語音：每天 {{requests}} 次、{{minutes}} 分鐘",
+        "webhookAutomations": "Webhook 觸發工作流程"
       },
       "legacy": "舊版",
       "loadError": "無法載入帳單狀態。",
@@ -1210,7 +1209,7 @@
       "perMonth": "/月",
       "pricePerMonth": "{{price}}/月",
       "pro": {
-        "description": "從研究到成果交付，接手你的日常工作。",
+        "description": "接手你的日常工作。",
         "name": "Pro"
       },
       "renews": "{{date}}續訂",
@@ -1218,7 +1217,7 @@
       "sectionTitle": "套餐",
       "selectedPlan": "所選套餐",
       "team": {
-        "description": "為團隊工作提供更高容量與更多控制。",
+        "description": "更多容量與團隊管理功能。",
         "name": "Team"
       },
       "upgrade": "升級",

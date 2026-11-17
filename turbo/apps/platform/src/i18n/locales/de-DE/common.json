@@ -1185,26 +1185,25 @@
         "name": "Frei"
       },
       "highlights": {
-        "addOnConcurrency": "Erweitern Sie die Kapazität bei wachsendem Arbeitsaufkommen",
-        "appPermissions": "Steuern Sie App-Zugriffe mit gezielten, zeitlich begrenzten Berechtigungen",
-        "browserAndComputer": "Lassen Sie Okou einen Browser oder Ihren verbundenen Computer bedienen",
+        "addOnConcurrency": "Mehr Kapazität hinzufügen",
+        "appPermissions": "Gezielte, zeitlich begrenzte App-Zugriffe",
+        "browserAndComputer": "Browser- und Computernutzung",
         "concurrentAgents": "{{slots}} Aufgaben gleichzeitig",
-        "connectedAutomations": "Automatisieren Sie Arbeit über Ihre verbundenen Apps hinweg",
-        "create": "Erstellen Sie Präsentationen, Dokumente, Bilder, Websites und Diagramme",
+        "connectedAutomations": "App- und geplante Automatisierungen",
+        "create": "Folien, Dokumente, Bilder, Websites & Diagramme",
         "everythingInBuiltForTeams": "Alles aus {{plan}}, für die Zusammenarbeit im Team",
-        "exports": "Exportieren Sie in PDF, Excel, Google Docs und Sheets",
+        "exports": "PDF, Excel, Google Docs & Sheets",
         "included": "Enthalten",
-        "memberManagement": "Verwalten Sie Mitgliederrollen und individuelle Nutzungspakete",
-        "peopleSearch": "Finden Sie Fachleute, Unternehmen und Creator",
-        "proDetails": "Zeit- und ereignisgesteuerte Automatisierungen · Spracheingabe: {{requests}} Anfragen und {{minutes}} Minuten/Tag · E-Mail-Support",
-        "projectContext": "Behalten Sie den Projektkontext über zugehörige Chats hinweg",
-        "research": "Recherchieren Sie im Web, in sozialen Medien und zu Märkten",
-        "sharedWorkflows": "Teilen Sie wiederverwendbare Workflows mit Ihrem Team",
+        "memberManagement": "Mitgliederrollen & Nutzungspakete",
+        "proDetails": "Sprache: {{requests}} Anfragen, {{minutes}} Min./Tag · E-Mail-Support",
+        "projectContext": "Projektkontext über Chats hinweg",
+        "research": "Personensuche & Recherche",
+        "sharedWorkflows": "Wiederverwendbare Team-Workflows",
         "supportPriority": "Priorisierter Support",
         "teamCompliance": "SOC 2 Type II in Bearbeitung · GDPR- und CCPA/CPRA-konform",
-        "templates": "Nutzen Sie fertige oder eigene Vorlagen",
-        "voiceInput": "Spracheingabe: {{requests}} Anfragen und {{minutes}} Minuten/Tag",
-        "webhookAutomations": "Starten Sie Workflows aus externen Tools über Webhooks"
+        "templates": "Fertige & eigene Vorlagen",
+        "voiceInput": "Sprache: {{requests}} Anfragen, {{minutes}} Min./Tag",
+        "webhookAutomations": "Workflows per Webhook starten"
       },
       "legacy": "Legacy",
       "loadError": "Der Abrechnungsstatus konnte nicht geladen werden.",
@@ -1214,7 +1213,7 @@
       "perMonth": "/Monat",
       "pricePerMonth": "{{price}}/Monat",
       "pro": {
-        "description": "Ihre tägliche Arbeit, von der Recherche bis zum fertigen Ergebnis.",
+        "description": "Ihre tägliche Arbeit, erledigt.",
         "name": "Pro"
       },
       "renews": "Erneuert {{date}}",
@@ -1222,7 +1221,7 @@
       "sectionTitle": "Planen",
       "selectedPlan": "den ausgewählten Plan",
       "team": {
-        "description": "Mehr Kapazität und Kontrolle für die Arbeit Ihres Teams.",
+        "description": "Mehr Kapazität und Teamkontrolle.",
         "name": "Team"
       },
       "upgrade": "Upgrade",

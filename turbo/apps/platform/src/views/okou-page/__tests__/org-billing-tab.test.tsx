@@ -435,9 +435,7 @@ test("Compare both usage-pack prices before choosing a plan", async () => {
   expect(
     within(proPlan).getByText("3 tasks running at once"),
   ).toBeInTheDocument();
-  expect(proPlan).toHaveTextContent(
-    "Scheduled and event-triggered automations",
-  );
+  expect(proPlan).toHaveTextContent("Scheduled & app automations");
   // The plan steps are a dialog over the billing tab, not a page that
   // replaces it, so the plan the workspace is deciding against stays visible.
   expect(screen.getByText("No active plan")).toBeInTheDocument();

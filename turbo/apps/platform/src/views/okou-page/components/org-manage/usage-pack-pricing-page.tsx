@@ -910,9 +910,6 @@ function planHighlights(tier: UsagePackPlanTier): readonly string[] {
       return $.billing.plans.highlights.templates;
     }),
     i18n.t(($) => {
-      return $.billing.plans.highlights.peopleSearch;
-    }),
-    i18n.t(($) => {
       return $.billing.plans.highlights.research;
     }),
     i18n.t(($) => {
@@ -968,7 +965,7 @@ function PlanHighlights({ tier }: { readonly tier: UsagePackPlanTier }) {
           return (
             <li
               key={item}
-              className="flex items-start gap-2.5 text-sm leading-snug text-foreground"
+              className="flex items-start gap-2.5 text-sm leading-snug text-muted-foreground"
             >
               <Check
                 size={15}

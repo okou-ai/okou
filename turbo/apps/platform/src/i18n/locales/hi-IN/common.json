@@ -1185,26 +1185,25 @@
         "name": "फ्री"
       },
       "highlights": {
-        "addOnConcurrency": "काम बढ़ने पर और क्षमता जोड़ें",
-        "appPermissions": "विशिष्ट, समय-सीमित अनुमतियों से ऐप एक्सेस नियंत्रित करें",
-        "browserAndComputer": "Okou को ब्राउज़र या अपना कनेक्टेड कंप्यूटर इस्तेमाल करने दें",
+        "addOnConcurrency": "अधिक क्षमता जोड़ें",
+        "appPermissions": "सीमित दायरे और अवधि वाली ऐप पहुँच",
+        "browserAndComputer": "ब्राउज़र और कंप्यूटर का उपयोग",
         "concurrentAgents": "एक साथ {{slots}} काम",
-        "connectedAutomations": "अपने कनेक्टेड ऐप्स में काम ऑटोमेट करें",
-        "create": "प्रेज़ेंटेशन, दस्तावेज़, इमेज, वेबसाइट और चार्ट बनाएं",
+        "connectedAutomations": "ऐप और शेड्यूल की गई ऑटोमेशन",
+        "create": "प्रस्तुतियाँ, दस्तावेज़, चित्र, वेबसाइट और चार्ट",
         "everythingInBuiltForTeams": "{{plan}} की सभी सुविधाएं, टीमवर्क के लिए",
-        "exports": "PDF, Excel, Google Docs और Sheets में एक्सपोर्ट करें",
+        "exports": "PDF, Excel, Google Docs और Sheets",
         "included": "शामिल",
-        "memberManagement": "सदस्यों की भूमिकाएं और व्यक्तिगत उपयोग पैकेज प्रबंधित करें",
-        "peopleSearch": "पेशेवरों, कंपनियों और क्रिएटर्स को खोजें",
-        "proDetails": "शेड्यूल और इवेंट से चलने वाले ऑटोमेशन · वॉइस इनपुट: रोज़ {{requests}} अनुरोध और {{minutes}} मिनट · ईमेल सहायता",
-        "projectContext": "संबंधित चैट में प्रोजेक्ट का संदर्भ बनाए रखें",
-        "research": "वेब, सोशल मीडिया और बाज़ारों पर रिसर्च करें",
-        "sharedWorkflows": "दोबारा इस्तेमाल होने वाले वर्कफ़्लो पूरी टीम के साथ साझा करें",
+        "memberManagement": "सदस्यों की भूमिकाएँ और उपयोग पैकेज",
+        "proDetails": "वॉइस: {{requests}} अनुरोध, {{minutes}} मिनट/दिन · ईमेल सहायता",
+        "projectContext": "चैट में साझा प्रोजेक्ट संदर्भ",
+        "research": "लोगों की खोज और रिसर्च",
+        "sharedWorkflows": "टीम के लिए दोबारा उपयोग योग्य वर्कफ़्लो",
         "supportPriority": "प्राथमिकता सहायता",
         "teamCompliance": "SOC 2 Type II प्रगति में · GDPR और CCPA/CPRA का अनुपालन",
-        "templates": "तैयार टेम्पलेट इस्तेमाल करें या अपने टेम्पलेट लाएं",
-        "voiceInput": "वॉइस इनपुट: रोज़ {{requests}} अनुरोध और {{minutes}} मिनट",
-        "webhookAutomations": "वेबहुक के ज़रिए बाहरी टूल से वर्कफ़्लो शुरू करें"
+        "templates": "तैयार और अपने टेम्पलेट",
+        "voiceInput": "वॉइस: {{requests}} अनुरोध, {{minutes}} मिनट/दिन",
+        "webhookAutomations": "Webhook से वर्कफ़्लो शुरू करें"
       },
       "legacy": "पुराना",
       "loadError": "बिलिंग स्थिति लोड नहीं हो सकी.",
@@ -1214,7 +1213,7 @@
       "perMonth": "/महीना",
       "pricePerMonth": "{{price}}/माह",
       "pro": {
-        "description": "रिसर्च से तैयार नतीजों तक, आपका रोज़मर्रा का काम।",
+        "description": "आपका रोज़ का काम, संभाल लिया।",
         "name": "प्रो"
       },
       "renews": "{{date}} को नवीनीकृत होगा",
@@ -1222,7 +1221,7 @@
       "sectionTitle": "योजना",
       "selectedPlan": "चयनित योजना",
       "team": {
-        "description": "आपकी टीम के काम के लिए ज़्यादा क्षमता और नियंत्रण।",
+        "description": "टीम के लिए अधिक क्षमता और नियंत्रण।",
         "name": "टीम"
       },
       "upgrade": "अपग्रेड",

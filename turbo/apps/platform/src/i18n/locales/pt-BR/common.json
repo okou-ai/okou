@@ -1209,26 +1209,25 @@
         "name": "Grátis"
       },
       "highlights": {
-        "addOnConcurrency": "Adicione capacidade conforme o volume de trabalho aumenta",
-        "appPermissions": "Controle o acesso aos apps com permissões específicas e prazo definido",
-        "browserAndComputer": "Deixe o Okou usar um navegador ou seu computador conectado",
+        "addOnConcurrency": "Adicione capacidade",
+        "appPermissions": "Acesso a apps específico e temporário",
+        "browserAndComputer": "Uso do navegador e computador",
         "concurrentAgents": "{{slots}} tarefas ao mesmo tempo",
-        "connectedAutomations": "Automatize o trabalho entre seus apps conectados",
-        "create": "Crie apresentações, documentos, imagens, sites e gráficos",
+        "connectedAutomations": "Automações de apps e agendadas",
+        "create": "Apresentações, documentos, imagens, sites e gráficos",
         "everythingInBuiltForTeams": "Tudo do {{plan}}, pensado para o trabalho em equipe",
-        "exports": "Exporte para PDF, Excel, Google Docs e Sheets",
+        "exports": "PDF, Excel, Google Docs e Sheets",
         "included": "Incluído",
-        "memberManagement": "Gerencie funções dos membros e pacotes de uso individuais",
-        "peopleSearch": "Encontre profissionais, empresas e criadores",
-        "proDetails": "Automações agendadas e por eventos · Entrada de voz: {{requests}} solicitações e {{minutes}} minutos/dia · Suporte por e-mail",
-        "projectContext": "Mantenha o contexto do projeto entre conversas relacionadas",
-        "research": "Pesquise na web, nas redes sociais e nos mercados",
-        "sharedWorkflows": "Compartilhe workflows reutilizáveis com sua equipe",
+        "memberManagement": "Funções e pacotes de uso",
+        "proDetails": "Voz: {{requests}} solicitações, {{minutes}} min/dia · Suporte por e-mail",
+        "projectContext": "Contexto do projeto entre chats",
+        "research": "Busca de pessoas e pesquisa",
+        "sharedWorkflows": "Workflows de equipe reutilizáveis",
         "supportPriority": "Suporte prioritário",
         "teamCompliance": "SOC 2 Type II em andamento · Em conformidade com GDPR e CCPA/CPRA",
-        "templates": "Use modelos prontos ou traga os seus",
-        "voiceInput": "Entrada de voz: {{requests}} solicitações e {{minutes}} minutos/dia",
-        "webhookAutomations": "Acione workflows de ferramentas externas via webhooks"
+        "templates": "Modelos prontos ou próprios",
+        "voiceInput": "Voz: {{requests}} solicitações, {{minutes}} min/dia",
+        "webhookAutomations": "Acione workflows por webhooks"
       },
       "legacy": "Legado",
       "loadError": "Não foi possível carregar o status de cobrança.",
@@ -1238,7 +1237,7 @@
       "perMonth": "/mês",
       "pricePerMonth": "{{price}}/mês",
       "pro": {
-        "description": "Seu trabalho diário, da pesquisa à entrega final.",
+        "description": "Seu trabalho diário, resolvido.",
         "name": "Pro"
       },
       "renews": "Renova em {{date}}",
@@ -1246,7 +1245,7 @@
       "sectionTitle": "Plano",
       "selectedPlan": "o plano selecionado",
       "team": {
-        "description": "Mais capacidade e controle para o trabalho da sua equipe.",
+        "description": "Mais capacidade e controle para a equipe.",
         "name": "Team"
       },
       "upgrade": "Fazer upgrade",

@@ -1181,26 +1181,25 @@
         "name": "Gratis"
       },
       "highlights": {
-        "addOnConcurrency": "Tambah kapasitas seiring bertambahnya beban kerja",
-        "appPermissions": "Kontrol akses aplikasi dengan izin spesifik dan berbatas waktu",
-        "browserAndComputer": "Biarkan Okou menggunakan browser atau komputer Anda yang terhubung",
+        "addOnConcurrency": "Tambah kapasitas",
+        "appPermissions": "Akses aplikasi spesifik dan berbatas waktu",
+        "browserAndComputer": "Penggunaan browser dan komputer",
         "concurrentAgents": "{{slots}} tugas berjalan sekaligus",
-        "connectedAutomations": "Otomatiskan pekerjaan di seluruh aplikasi yang terhubung",
-        "create": "Buat presentasi, dokumen, gambar, situs web, dan grafik",
+        "connectedAutomations": "Otomatisasi aplikasi dan terjadwal",
+        "create": "Presentasi, dokumen, gambar, situs dan grafik",
         "everythingInBuiltForTeams": "Semua fitur {{plan}}, dirancang untuk kerja tim",
-        "exports": "Ekspor ke PDF, Excel, Google Docs, dan Sheets",
+        "exports": "PDF, Excel, Google Docs dan Sheets",
         "included": "Termasuk",
-        "memberManagement": "Kelola peran anggota dan paket penggunaan per orang",
-        "peopleSearch": "Temukan profesional, perusahaan, dan kreator",
-        "proDetails": "Otomatisasi terjadwal dan berbasis peristiwa · Input suara: {{requests}} permintaan dan {{minutes}} menit/hari · Dukungan email",
-        "projectContext": "Pertahankan konteks proyek di seluruh chat terkait",
-        "research": "Lakukan riset web, media sosial, dan pasar",
-        "sharedWorkflows": "Bagikan workflow yang dapat digunakan kembali ke seluruh tim",
+        "memberManagement": "Peran anggota dan paket penggunaan",
+        "proDetails": "Suara: {{requests}} permintaan, {{minutes}} menit/hari · Dukungan email",
+        "projectContext": "Konteks proyek lintas chat",
+        "research": "Pencarian orang dan riset",
+        "sharedWorkflows": "Workflow tim yang dapat digunakan ulang",
         "supportPriority": "Dukungan prioritas",
         "teamCompliance": "SOC 2 Type II sedang berlangsung · Mematuhi GDPR dan CCPA/CPRA",
-        "templates": "Gunakan template siap pakai atau template Anda sendiri",
-        "voiceInput": "Input suara: {{requests}} permintaan dan {{minutes}} menit/hari",
-        "webhookAutomations": "Picu workflow dari alat eksternal melalui webhook"
+        "templates": "Template siap pakai dan milik sendiri",
+        "voiceInput": "Suara: {{requests}} permintaan, {{minutes}} menit/hari",
+        "webhookAutomations": "Picu workflow lewat webhook"
       },
       "legacy": "Lama",
       "loadError": "Tidak dapat memuat status penagihan.",
@@ -1210,7 +1209,7 @@
       "perMonth": "/bulan",
       "pricePerMonth": "{{price}}/bulan",
       "pro": {
-        "description": "Pekerjaan harian Anda, dari riset hingga hasil akhir.",
+        "description": "Pekerjaan harian Anda, tertangani.",
         "name": "Pro"
       },
       "renews": "Memperbarui {{date}}",
@@ -1218,7 +1217,7 @@
       "sectionTitle": "Paket",
       "selectedPlan": "paket yang dipilih",
       "team": {
-        "description": "Kapasitas dan kendali lebih besar untuk pekerjaan tim Anda.",
+        "description": "Kapasitas dan kontrol tim lebih besar.",
         "name": "Tim"
       },
       "upgrade": "Tingkatkan",

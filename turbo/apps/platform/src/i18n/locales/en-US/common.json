@@ -1185,26 +1185,25 @@
         "name": "Free"
       },
       "highlights": {
-        "addOnConcurrency": "Add capacity as your workload grows",
-        "appPermissions": "Control app access with specific, time-limited permissions",
-        "browserAndComputer": "Let Okou use a browser or your connected computer",
+        "addOnConcurrency": "Add more capacity",
+        "appPermissions": "Scoped, time-limited app access",
+        "browserAndComputer": "Browser & computer use",
         "concurrentAgents": "{{slots}} tasks running at once",
-        "connectedAutomations": "Automate work across your connected apps",
-        "create": "Create presentations, documents, images, websites, and charts",
+        "connectedAutomations": "Scheduled & app automations",
+        "create": "Slides, docs, images, sites & charts",
         "everythingInBuiltForTeams": "Everything in {{plan}}, built for teamwork",
-        "exports": "Export to PDF, Excel, Google Docs, and Sheets",
+        "exports": "PDF, Excel, Google Docs & Sheets",
         "included": "Included",
-        "memberManagement": "Manage member roles and individual usage packages",
-        "peopleSearch": "Find people, companies, and creators",
-        "proDetails": "Scheduled and event-triggered automations · Voice input: {{requests}} requests and {{minutes}} minutes/day · Email support",
-        "projectContext": "Keep project context across related chats",
-        "research": "Research the web, social media, and markets",
-        "sharedWorkflows": "Share reusable workflows across your team",
+        "memberManagement": "Member roles & usage packages",
+        "proDetails": "Voice: {{requests}} requests, {{minutes}} min/day · Email support",
+        "projectContext": "Project context across chats",
+        "research": "People search & research",
+        "sharedWorkflows": "Reusable team workflows",
         "supportPriority": "Priority support",
         "teamCompliance": "SOC 2 Type II in progress · GDPR & CCPA/CPRA compliant",
-        "templates": "Use ready-made templates or bring your own",
-        "voiceInput": "Voice input: {{requests}} requests and {{minutes}} minutes/day",
-        "webhookAutomations": "Trigger workflows from external tools via webhooks"
+        "templates": "Ready-made & custom templates",
+        "voiceInput": "Voice: {{requests}} requests, {{minutes}} min/day",
+        "webhookAutomations": "Workflow triggers via webhooks"
       },
       "legacy": "Legacy",
       "loadError": "Could not load billing status.",
@@ -1214,7 +1213,7 @@
       "perMonth": "/month",
       "pricePerMonth": "{{price}}/month",
       "pro": {
-        "description": "Your everyday work, from research to finished results.",
+        "description": "Your everyday work, handled.",
         "name": "Pro"
       },
       "renews": "Renews {{date}}",
@@ -1222,7 +1221,7 @@
       "sectionTitle": "Plan",
       "selectedPlan": "the selected plan",
       "team": {
-        "description": "More capacity and control for your team’s work.",
+        "description": "More capacity and team controls.",
         "name": "Team"
       },
       "upgrade": "Upgrade",

@@ -1181,26 +1181,25 @@
         "name": "免费版"
       },
       "highlights": {
-        "addOnConcurrency": "随工作量增长增加任务容量",
-        "appPermissions": "按具体操作和有效期控制应用访问权限",
-        "browserAndComputer": "让 Okou 操作浏览器或已连接的电脑",
+        "addOnConcurrency": "随时扩充任务容量",
+        "appPermissions": "按操作和时限授权",
+        "browserAndComputer": "浏览器与电脑操作",
         "concurrentAgents": "同时运行 {{slots}} 项工作",
-        "connectedAutomations": "跨已连接的应用自动处理工作",
-        "create": "制作演示文稿、文档、图片、网站和图表",
+        "connectedAutomations": "跨应用与定时自动化",
+        "create": "演示、文档、图片、网站和图表",
         "everythingInBuiltForTeams": "包含 {{plan}} 的全部功能，支持团队协作",
-        "exports": "导出为 PDF、Excel、Google Docs 和 Sheets",
+        "exports": "PDF、Excel、Google Docs 和 Sheets",
         "included": "已包含",
-        "memberManagement": "管理成员角色和个人用量包",
-        "peopleSearch": "寻找专业人士、公司和创作者",
-        "proDetails": "定时与事件触发自动化 · 语音输入：每天 {{requests}} 次、{{minutes}} 分钟 · 邮件支持",
-        "projectContext": "在相关对话间延续项目上下文",
-        "research": "开展网页、社交媒体和市场调研",
-        "sharedWorkflows": "在团队内共享可复用的工作流",
+        "memberManagement": "成员角色与用量包",
+        "proDetails": "语音：每天 {{requests}} 次、{{minutes}} 分钟 · 邮件支持",
+        "projectContext": "跨对话共享项目上下文",
+        "research": "找人和调研",
+        "sharedWorkflows": "团队共享工作流",
         "supportPriority": "优先支持",
         "teamCompliance": "SOC 2 Type II 进行中 · 符合 GDPR 和 CCPA/CPRA 要求",
-        "templates": "使用现成模板或自带模板",
-        "voiceInput": "语音输入：每天 {{requests}} 次、{{minutes}} 分钟",
-        "webhookAutomations": "通过 Webhook 从外部工具触发工作流"
+        "templates": "现成与自定义模板",
+        "voiceInput": "语音：每天 {{requests}} 次、{{minutes}} 分钟",
+        "webhookAutomations": "Webhook 触发工作流"
       },
       "legacy": "旧版",
       "loadError": "无法加载账单状态。",
@@ -1210,7 +1209,7 @@
       "perMonth": "/月",
       "pricePerMonth": "{{price}}/月",
       "pro": {
-        "description": "从调研到成果交付，接手你的日常工作。",
+        "description": "接手你的日常工作。",
         "name": "Pro"
       },
       "renews": "{{date}}续订",
@@ -1218,7 +1217,7 @@
       "sectionTitle": "套餐",
       "selectedPlan": "所选套餐",
       "team": {
-        "description": "为团队工作提供更高容量与更多控制。",
+        "description": "更多容量与团队管理功能。",
         "name": "Team"
       },
       "upgrade": "升级",

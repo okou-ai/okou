@@ -1181,26 +1181,25 @@
         "name": "無料"
       },
       "highlights": {
-        "addOnConcurrency": "仕事量に合わせて同時実行数を追加",
-        "appPermissions": "操作と有効期間を指定してアプリへのアクセスを管理",
-        "browserAndComputer": "Okou がブラウザーや接続済みのパソコンを操作",
+        "addOnConcurrency": "処理容量を追加",
+        "appPermissions": "操作と期限を指定したアプリ権限",
+        "browserAndComputer": "ブラウザとパソコンの操作",
         "concurrentAgents": "{{slots}} 件のタスクを同時実行",
-        "connectedAutomations": "接続したアプリをまたいで仕事を自動化",
-        "create": "プレゼン資料、文書、画像、ウェブサイト、グラフを作成",
+        "connectedAutomations": "アプリ連携と定期実行の自動化",
+        "create": "スライド、文書、画像、サイト、グラフ",
         "everythingInBuiltForTeams": "{{plan}} の全機能に、チームでの活用を",
-        "exports": "PDF、Excel、Google ドキュメント、スプレッドシートに書き出し",
+        "exports": "PDF、Excel、Google Docs、Sheets",
         "included": "含まれるもの",
-        "memberManagement": "メンバーの役割と個別の利用パッケージを管理",
-        "peopleSearch": "人材、企業、クリエイターを検索",
-        "proDetails": "スケジュール・イベントによる自動化 · 音声入力：1 日 {{requests}} 回、{{minutes}} 分 · メールサポート",
-        "projectContext": "関連するチャット間でプロジェクトの文脈を引き継ぐ",
-        "research": "ウェブ、ソーシャルメディア、市場を調査",
-        "sharedWorkflows": "再利用できるワークフローをチームで共有",
+        "memberManagement": "メンバー権限と利用パッケージ",
+        "proDetails": "音声：1日 {{requests}} 回、{{minutes}} 分 · メールサポート",
+        "projectContext": "チャット間でプロジェクトの文脈を共有",
+        "research": "人物検索とリサーチ",
+        "sharedWorkflows": "チームで使える再利用可能なワークフロー",
         "supportPriority": "優先サポート",
         "teamCompliance": "SOC 2 Type II 対応中 · GDPR・CCPA/CPRA 準拠",
-        "templates": "既存のテンプレートや独自のテンプレートを使用",
-        "voiceInput": "音声入力：1 日 {{requests}} 回、{{minutes}} 分",
-        "webhookAutomations": "Webhook を使って外部ツールからワークフローを起動"
+        "templates": "既存・カスタムテンプレート",
+        "voiceInput": "音声：1日 {{requests}} 回、{{minutes}} 分",
+        "webhookAutomations": "Webhook でワークフローを起動"
       },
       "legacy": "旧プラン",
       "loadError": "請求ステータスを読み込めませんでした。",
@@ -1210,7 +1209,7 @@
       "perMonth": "/月",
       "pricePerMonth": "{{price}}/月",
       "pro": {
-        "description": "調査から成果物の完成まで、毎日の仕事に。",
+        "description": "日々の仕事をお任せ。",
         "name": "プロ"
       },
       "renews": "{{date}} を更新します",
@@ -1218,7 +1217,7 @@
       "sectionTitle": "計画",
       "selectedPlan": "選択したプラン",
       "team": {
-        "description": "チームの仕事に、より多くの処理能力と管理機能を。",
+        "description": "チームにさらなる容量と管理機能を。",
         "name": "チーム"
       },
       "upgrade": "アップグレード",

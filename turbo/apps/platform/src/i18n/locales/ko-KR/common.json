@@ -1181,26 +1181,25 @@
         "name": "무료"
       },
       "highlights": {
-        "addOnConcurrency": "업무량에 맞춰 동시 실행 용량 추가",
-        "appPermissions": "작업별 권한과 유효 기간으로 앱 접근 제어",
-        "browserAndComputer": "Okou가 브라우저나 연결된 컴퓨터를 조작",
+        "addOnConcurrency": "처리 용량 추가",
+        "appPermissions": "범위와 기한을 지정한 앱 접근",
+        "browserAndComputer": "브라우저 및 컴퓨터 사용",
         "concurrentAgents": "{{slots}}개 작업 동시 실행",
-        "connectedAutomations": "연결된 앱 전반의 업무 자동화",
-        "create": "프레젠테이션, 문서, 이미지, 웹사이트, 차트 제작",
+        "connectedAutomations": "앱 연동 및 예약 자동화",
+        "create": "발표 자료, 문서, 이미지, 웹사이트, 차트",
         "everythingInBuiltForTeams": "{{plan}}의 모든 기능으로 팀과 함께 작업",
-        "exports": "PDF, Excel, Google Docs 및 Sheets로 내보내기",
+        "exports": "PDF, Excel, Google Docs, Sheets",
         "included": "포함 사항",
-        "memberManagement": "멤버 역할과 개인별 사용량 패키지 관리",
-        "peopleSearch": "전문가, 기업, 크리에이터 찾기",
-        "proDetails": "예약 및 이벤트 기반 자동화 · 음성 입력: 하루 {{requests}}회, {{minutes}}분 · 이메일 지원",
-        "projectContext": "관련 채팅 간 프로젝트 맥락 유지",
-        "research": "웹, 소셜 미디어, 시장 조사",
-        "sharedWorkflows": "재사용 가능한 워크플로를 팀 전체에 공유",
+        "memberManagement": "멤버 역할 및 사용량 패키지",
+        "proDetails": "음성: 하루 {{requests}}회, {{minutes}}분 · 이메일 지원",
+        "projectContext": "채팅 간 프로젝트 맥락 공유",
+        "research": "인물 검색 및 리서치",
+        "sharedWorkflows": "재사용 가능한 팀 워크플로",
         "supportPriority": "우선 지원",
         "teamCompliance": "SOC 2 Type II 진행 중 · GDPR 및 CCPA/CPRA 준수",
-        "templates": "기본 템플릿 또는 직접 준비한 템플릿 사용",
-        "voiceInput": "음성 입력: 하루 {{requests}}회, {{minutes}}분",
-        "webhookAutomations": "웹훅으로 외부 도구에서 워크플로 실행"
+        "templates": "기본 및 맞춤 템플릿",
+        "voiceInput": "음성: 하루 {{requests}}회, {{minutes}}분",
+        "webhookAutomations": "Webhook으로 워크플로 실행"
       },
       "legacy": "기존",
       "loadError": "청구 상태를 불러올 수 없습니다.",
@@ -1210,7 +1209,7 @@
       "perMonth": "/월",
       "pricePerMonth": "{{price}}/월",
       "pro": {
-        "description": "조사부터 결과물 완성까지, 일상 업무를 함께하세요.",
+        "description": "일상 업무를 맡겨보세요.",
         "name": "Pro"
       },
       "renews": "{{date}}에 갱신됨",
@@ -1218,7 +1217,7 @@
       "sectionTitle": "플랜",
       "selectedPlan": "선택한 플랜",
       "team": {
-        "description": "팀 업무에 더 많은 처리 용량과 제어 기능을 제공합니다.",
+        "description": "팀을 위한 더 많은 용량과 관리 기능.",
         "name": "팀"
       },
       "upgrade": "업그레이드",

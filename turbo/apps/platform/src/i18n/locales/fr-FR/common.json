@@ -1209,26 +1209,25 @@
         "name": "Gratuit"
       },
       "highlights": {
-        "addOnConcurrency": "Ajoutez de la capacité à mesure que votre charge de travail augmente",
-        "appPermissions": "Contrôlez l’accès aux apps avec des autorisations précises et temporaires",
-        "browserAndComputer": "Laissez Okou utiliser un navigateur ou votre ordinateur connecté",
+        "addOnConcurrency": "Ajoutez de la capacité",
+        "appPermissions": "Accès aux apps ciblé et temporaire",
+        "browserAndComputer": "Utilisation du navigateur et de l’ordinateur",
         "concurrentAgents": "{{slots}} tâches en parallèle",
-        "connectedAutomations": "Automatisez le travail entre vos apps connectées",
-        "create": "Créez des présentations, documents, images, sites web et graphiques",
+        "connectedAutomations": "Automatisations d’apps et planifiées",
+        "create": "Présentations, documents, images, sites et graphiques",
         "everythingInBuiltForTeams": "Tout {{plan}}, pensé pour le travail en équipe",
-        "exports": "Exportez vers PDF, Excel, Google Docs et Sheets",
+        "exports": "PDF, Excel, Google Docs et Sheets",
         "included": "Inclus",
-        "memberManagement": "Gérez les rôles des membres et leurs forfaits d’utilisation individuels",
-        "peopleSearch": "Trouvez des professionnels, des entreprises et des créateurs",
-        "proDetails": "Automatisations planifiées et déclenchées par événement · Saisie vocale : {{requests}} requêtes et {{minutes}} minutes/jour · Assistance par e-mail",
-        "projectContext": "Conservez le contexte du projet entre les conversations liées",
-        "research": "Explorez le web, les réseaux sociaux et les marchés",
-        "sharedWorkflows": "Partagez des workflows réutilisables avec votre équipe",
+        "memberManagement": "Rôles et forfaits d’utilisation",
+        "proDetails": "Voix : {{requests}} requêtes, {{minutes}} min/jour · Assistance par e-mail",
+        "projectContext": "Contexte du projet entre les chats",
+        "research": "Recherche de personnes et d’informations",
+        "sharedWorkflows": "Workflows d’équipe réutilisables",
         "supportPriority": "Assistance prioritaire",
         "teamCompliance": "SOC 2 Type II en cours · Conforme au GDPR et au CCPA/CPRA",
-        "templates": "Utilisez des modèles prêts à l’emploi ou les vôtres",
-        "voiceInput": "Saisie vocale : {{requests}} requêtes et {{minutes}} minutes/jour",
-        "webhookAutomations": "Déclenchez des workflows depuis des outils externes via des webhooks"
+        "templates": "Modèles prêts à l’emploi ou personnels",
+        "voiceInput": "Voix : {{requests}} requêtes, {{minutes}} min/jour",
+        "webhookAutomations": "Déclenchez des workflows par webhook"
       },
       "legacy": "Historique",
       "loadError": "Impossible de charger le statut de facturation.",
@@ -1238,7 +1237,7 @@
       "perMonth": "/mois",
       "pricePerMonth": "{{price}}/mois",
       "pro": {
-        "description": "Votre travail quotidien, de la recherche au résultat final.",
+        "description": "Votre travail quotidien, pris en charge.",
         "name": "Pro"
       },
       "renews": "Renouvelle le {{date}}",
@@ -1246,7 +1245,7 @@
       "sectionTitle": "Forfait",
       "selectedPlan": "le forfait sélectionné",
       "team": {
-        "description": "Plus de capacité et de contrôle pour le travail de votre équipe.",
+        "description": "Plus de capacité et de contrôle d’équipe.",
         "name": "Team"
       },
       "upgrade": "Mettre à niveau",

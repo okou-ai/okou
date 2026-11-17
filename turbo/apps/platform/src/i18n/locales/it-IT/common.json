@@ -1209,26 +1209,25 @@
         "name": "Gratuito"
       },
       "highlights": {
-        "addOnConcurrency": "Aggiungi capacità quando aumenta il carico di lavoro",
-        "appPermissions": "Controlla l’accesso alle app con autorizzazioni specifiche e a tempo",
-        "browserAndComputer": "Lascia che Okou usi un browser o il tuo computer connesso",
+        "addOnConcurrency": "Aggiungi capacità",
+        "appPermissions": "Accessi alle app mirati e temporanei",
+        "browserAndComputer": "Uso del browser e del computer",
         "concurrentAgents": "{{slots}} attività contemporaneamente",
-        "connectedAutomations": "Automatizza il lavoro tra le tue app connesse",
-        "create": "Crea presentazioni, documenti, immagini, siti web e grafici",
+        "connectedAutomations": "Automazioni delle app e programmate",
+        "create": "Presentazioni, documenti, immagini, siti e grafici",
         "everythingInBuiltForTeams": "Tutto ciò che include {{plan}}, pensato per il lavoro di squadra",
-        "exports": "Esporta in PDF, Excel, Google Docs e Sheets",
+        "exports": "PDF, Excel, Google Docs e Sheets",
         "included": "Incluso",
-        "memberManagement": "Gestisci i ruoli dei membri e i pacchetti di utilizzo individuali",
-        "peopleSearch": "Trova professionisti, aziende e creator",
-        "proDetails": "Automazioni pianificate e attivate da eventi · Input vocale: {{requests}} richieste e {{minutes}} minuti/giorno · Assistenza via e-mail",
-        "projectContext": "Mantieni il contesto del progetto tra le chat correlate",
-        "research": "Fai ricerche sul web, sui social media e sui mercati",
-        "sharedWorkflows": "Condividi workflow riutilizzabili con il tuo team",
+        "memberManagement": "Ruoli e pacchetti di utilizzo",
+        "proDetails": "Voce: {{requests}} richieste, {{minutes}} min/giorno · Supporto email",
+        "projectContext": "Contesto del progetto tra le chat",
+        "research": "Ricerca di persone e informazioni",
+        "sharedWorkflows": "Workflow di team riutilizzabili",
         "supportPriority": "Assistenza prioritaria",
         "teamCompliance": "SOC 2 Type II in corso · Conforme a GDPR e CCPA/CPRA",
-        "templates": "Usa modelli pronti o porta i tuoi",
-        "voiceInput": "Input vocale: {{requests}} richieste e {{minutes}} minuti/giorno",
-        "webhookAutomations": "Attiva workflow da strumenti esterni tramite webhook"
+        "templates": "Modelli pronti o personalizzati",
+        "voiceInput": "Voce: {{requests}} richieste, {{minutes}} min/giorno",
+        "webhookAutomations": "Avvia workflow tramite webhook"
       },
       "legacy": "Precedente",
       "loadError": "Impossibile caricare lo stato di fatturazione.",
@@ -1238,7 +1237,7 @@
       "perMonth": "/mese",
       "pricePerMonth": "{{price}}/mese",
       "pro": {
-        "description": "Il tuo lavoro quotidiano, dalla ricerca al risultato finale.",
+        "description": "Il tuo lavoro quotidiano, gestito.",
         "name": "Pro"
       },
       "renews": "Rinnova {{date}}",
@@ -1246,7 +1245,7 @@
       "sectionTitle": "Piano",
       "selectedPlan": "il piano selezionato",
       "team": {
-        "description": "Più capacità e controllo per il lavoro del tuo team.",
+        "description": "Più capacità e controllo per il team.",
         "name": "Team"
       },
       "upgrade": "Aggiorna",
