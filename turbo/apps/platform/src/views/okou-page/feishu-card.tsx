@@ -1433,12 +1433,21 @@ function FeishuBotList({
 function FeishuBotsCard({
   bots,
   isAdmin,
+  loading,
+  hasError,
 }: {
   bots: FeishuBotInstallation[];
   isAdmin: boolean;
+  loading: boolean;
+  hasError: boolean;
 }) {
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
+  const customEnabled = useGet(feishuCustomEnabled$);
+  const officialEnabled = useGet(feishuOfficialEnabled$);
+  const showCustomBots =
+    customEnabled &&
+    (!officialEnabled || loading || hasError || bots.length > 0);
   return (
     <section className={surfaceVariants({ className: "overflow-hidden" })}>
       <div className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3">
@@ -1447,7 +1456,7 @@ function FeishuBotsCard({
             return $.connectors.providerSettings[platform].bots;
           })}
         </h2>
-        {isAdmin && bots.length === 0 ? (
+        {customEnabled && isAdmin && bots.length === 0 ? (
           <Link
             pathname={
               platform === "lark"
@@ -1463,12 +1472,31 @@ function FeishuBotsCard({
           </Link>
         ) : null}
       </div>
-      <FeishuBotList bots={bots} isAdmin={isAdmin} />
+      {officialEnabled ? <FeishuOfficialRow /> : null}
+      {officialEnabled && showCustomBots ? (
+        <div className="mx-5 border-b border-border/50" />
+      ) : null}
+      {showCustomBots ? (
+        hasError ? (
+          <p
+            role="alert"
+            className="px-6 py-10 text-center text-sm text-destructive"
+          >
+            {t(($) => {
+              return $.connectors.providerSettings[platform].loadError;
+            })}
+          </p>
+        ) : loading ? (
+          <FeishuBotListSkeleton />
+        ) : (
+          <FeishuBotList bots={bots} isAdmin={isAdmin} />
+        )
+      ) : null}
     </section>
   );
 }
 
-function FeishuOfficialCard() {
+function FeishuOfficialRow() {
   const { t } = useTranslation();
   const enabled = useGet(feishuOfficialEnabled$);
   const data = useLastLoadable(feishuOfficialData$);
@@ -1483,7 +1511,7 @@ function FeishuOfficialCard() {
   }
   if (data.state === "hasError") {
     return (
-      <p role="alert" className="text-sm text-destructive">
+      <p role="alert" className="px-4 py-4 text-sm text-destructive sm:px-5">
         {t(($) => {
           return $.connectors.providerSettings.feishu.loadError;
         })}
@@ -1492,9 +1520,9 @@ function FeishuOfficialCard() {
   }
   if (data.state !== "hasData") {
     return (
-      <section className={surfaceVariants({ className: "px-5 py-4" })}>
+      <div className="px-4 py-4 sm:px-5">
         <Skeleton className="h-10 w-full" />
-      </section>
+      </div>
     );
   }
   const status = data.data;
@@ -1508,7 +1536,6 @@ function FeishuOfficialCard() {
       aria-label={t(($) => {
         return $.connectors.providerSettings.feishu.official.name;
       })}
-      className={surfaceVariants({ className: "overflow-hidden" })}
     >
       <div className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:px-5">
         <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -1521,11 +1548,11 @@ function FeishuOfficialCard() {
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-sm font-medium text-foreground">
+              <h3 className="text-sm font-medium text-foreground">
                 {t(($) => {
                   return $.connectors.providerSettings.feishu.official.name;
                 })}
-              </h2>
+              </h3>
               {status.isConnected ? (
                 <span className="inline-flex min-w-0 items-center gap-1.5 rounded-lg border border-border bg-background px-2 py-1 text-xs font-medium text-secondary-foreground">
                   <CircleCheck className="h-3.5 w-3.5 text-green-600" />
@@ -1549,6 +1576,7 @@ function FeishuOfficialCard() {
           type="button"
           variant="neutral"
           size="sm"
+          className="h-9 justify-center"
           disabled={pending || (!status.isConnected && !status.isConfigured)}
           onClick={() => {
             detach(
@@ -1674,16 +1702,9 @@ function FeishuSetupFaq() {
   );
 }
 
-function FeishuSettingsSkeleton() {
+function FeishuBotListSkeleton() {
   return (
-    <section
-      className={surfaceVariants({ className: "overflow-hidden" })}
-      data-testid="feishu-settings-loading"
-    >
-      <div className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3">
-        <Skeleton className="h-4 w-24" />
-        <Skeleton className="h-8 w-[88px] rounded-md" />
-      </div>
+    <div data-testid="feishu-settings-loading">
       {[0, 1, 2].map((index) => {
         return (
           <div key={index}>
@@ -1706,7 +1727,7 @@ function FeishuSettingsSkeleton() {
           </div>
         );
       })}
-    </section>
+    </div>
   );
 }
 
@@ -2028,25 +2049,13 @@ export function FeishuSettingsPage() {
       />
       <main className="flex-1 overflow-auto px-4 pb-safe-or-8 pt-3 sm:px-6">
         <div className="mx-auto flex max-w-[900px] flex-col gap-4">
-          <FeishuOfficialCard />
-          {!customEnabled ? null : hasError ? (
-            <div
-              className={surfaceVariants({
-                className: "px-6 py-10 text-center text-sm text-destructive",
-              })}
-            >
-              {t(($) => {
-                return $.connectors.providerSettings[platform].loadError;
-              })}
-            </div>
-          ) : loading ? (
-            <FeishuSettingsSkeleton />
-          ) : (
-            <>
-              <FeishuBotsCard bots={bots} isAdmin={isAdmin} />
-              <FeishuUninstallDialog bots={bots} />
-            </>
-          )}
+          <FeishuBotsCard
+            bots={bots}
+            isAdmin={isAdmin}
+            loading={loading}
+            hasError={hasError}
+          />
+          {customEnabled ? <FeishuUninstallDialog bots={bots} /> : null}
           {customEnabled ? <FeishuSetupFaq /> : null}
         </div>
       </main>
