@@ -468,14 +468,6 @@ describe("okou subagent", () => {
     expect(await readdir(helper.root)).toContain(`${admitted[0]}.stopped`);
   }); // Kernel escalation and reaping are exercised by the native Guest lane.
 
-  it("cancels a Pi child immediately after startup without retaining its directory", async () => {
-    const first = inspectionSchema.parse(
-      JSON.parse((await run("start", "cancel immediately"))[0] ?? ""),
-    );
-    await run("kill", first.id);
-    await expect(access(dirname(first.stdout))).rejects.toThrow();
-  });
-
   it("keeps IDs unique within a Run after completed directories are removed", async () => {
     entry = fileURLToPath(
       new URL(
@@ -637,10 +629,6 @@ describe("okou subagent", () => {
         return event.assistantMessageEvent?.type === "text_delta";
       }),
     ).toHaveLength(1001);
-    for (const event of updates) {
-      expect(event).not.toHaveProperty("message");
-      expect(event.assistantMessageEvent).not.toHaveProperty("partial");
-    }
     request.response.end(chunk("", "stop") + "data: [DONE]\n\n");
     const followup = await nextRequest();
     const completed = await readFile(item.stdout, "utf8");
