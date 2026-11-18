@@ -24,8 +24,27 @@ class ConnectedStream(NamedTuple):
 class HttpConnection:
     stream: ConnectedStream
     protocol: h11.Connection
+    _read_ahead: asyncio.Task[bytes] | None = field(default=None, repr=False)
+
+    def start_read_ahead(self) -> asyncio.Task[bytes]:
+        probe = asyncio.create_task(self.stream.reader.read(1), eager_start=True)
+        self._read_ahead = probe
+        return probe
+
+    async def read(self, size: int) -> bytes:
+        probe = self._read_ahead
+        if probe is None:
+            return await self.stream.reader.read(size)
+        self._read_ahead = None
+        return await probe
 
     def close(self, loop: asyncio.AbstractEventLoop) -> None:
+        probe, self._read_ahead = self._read_ahead, None
+        if probe is not None:
+            if not loop.is_closed():
+                probe.cancel()
+            if probe.done() and not probe.cancelled():
+                probe.exception()
         try:
             if not loop.is_closed():
                 self.stream.writer.transport.abort()
@@ -74,8 +93,6 @@ class PoolGeneration:
         self._idle.remove(idle)
         if idle.expiry is not None:
             idle.expiry.cancel()
-        if not self.loop.is_closed():
-            idle.probe.cancel()
         idle.connection.close(self.loop)
 
     def _probe_finished(self, idle: _IdleConnection) -> None:
@@ -115,7 +132,17 @@ class PoolGeneration:
                 and not connection.stream.reader.at_eof()
                 and not connection.stream.writer.is_closing()
             ):
-                return connection
+                # Cancellation can leave newly arrived bytes in StreamReader.
+                # Inspect them eagerly, then transfer a pending read to the
+                # request without another cancellation/yield before dispatch.
+                probe = connection.start_read_ahead()
+                if not probe.done():
+                    return connection
+                error = None if probe.cancelled() else probe.exception()
+                if is_connection_reset(error):
+                    connection.close(self.loop)
+                    self.retire()
+                    return None
             connection.close(self.loop)
         return None
 
@@ -125,7 +152,7 @@ class PoolGeneration:
         connection.protocol.start_next_cycle()
         if len(self._idle) >= MAX_IDLE_CONNECTIONS:
             self._discard(self._idle[0])
-        probe = asyncio.create_task(connection.stream.reader.read(1), eager_start=True)
+        probe = connection.start_read_ahead()
         idle = _IdleConnection(key, connection, probe)
         self._idle.append(idle)
         probe.add_done_callback(lambda _task: self._probe_finished(idle))

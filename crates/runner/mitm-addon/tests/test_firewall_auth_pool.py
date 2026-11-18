@@ -245,6 +245,8 @@ async def test_active_exchange_lifecycle_closes_only_its_owned_connection(stop, 
     peer = _Peer(reply)
     async with _run_test_server(peer.serve) as port:
         origin = f"http://127.0.0.1:{port}"
+        await _send(origin, "/prime")
+        prime_identity, _ = await peer.arrived.get()
         async with asyncio.TaskGroup() as tasks:
 
             async def held_call():
@@ -258,6 +260,7 @@ async def test_active_exchange_lifecycle_closes_only_its_owned_connection(stop, 
                 monkeypatch.setattr(auth_client, "FIREWALL_AUTH_FETCH_DEADLINE_SECONDS", 0.05)
             held = tasks.create_task(held_call())
             identity, _ = await asyncio.wait_for(peer.arrived.get(), 2)
+            assert identity == prime_identity
             if stop == "shutdown":
                 await _send(origin, "/idle")
                 idle_identity, _ = await peer.arrived.get()
@@ -393,3 +396,35 @@ async def test_idle_peer_fault_is_observed_before_next_dispatch(fault):
             [0, 1] if fault == "reset" else [0, 0]
         )
         assert len(faulty.requests) == 1
+
+
+@pytest.mark.parametrize("tls", [False, True], ids=["http", "https"])
+async def test_idle_bytes_arriving_during_borrow_cannot_be_the_next_response(
+    tmp_path, monkeypatch, tls: bool
+):
+    writers: list[asyncio.StreamWriter] = []
+
+    async def reply(identity, request, writer):
+        writers.append(writer)
+        return await _reply_success(identity, request, writer)
+
+    peer = _Peer(reply)
+    context = None
+    if tls:
+        context, ca = _create_tls_server(tmp_path)
+        monkeypatch.setenv("SSL_CERT_FILE", str(ca))
+        monkeypatch.setenv("SSL_CERT_DIR", "")
+    async with _run_test_server(peer.serve, ssl_context=context) as port:
+        origin = f"{'https://localhost' if tls else 'http://127.0.0.1'}:{port}"
+        await _send(origin, "/first")
+        # Queue peer bytes, then borrow without yielding to the idle reader.
+        # Cancelling that reader can leave these bytes buffered during checkout.
+        writers[0].write(b"HTTP/1.1 418 Unsolicited\r\nContent-Length: 0\r\n\r\n")
+        await _send(origin, "/second")
+        await _send(origin, "/third")
+        assert [identity for identity, _ in peer.requests] == [0, 1, 1]
+        assert [request.target for _, request in peer.requests] == [
+            "/first",
+            "/second",
+            "/third",
+        ]

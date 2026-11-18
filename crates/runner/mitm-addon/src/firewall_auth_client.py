@@ -716,17 +716,17 @@ def _response_headers(event: h11.Response | h11.InformationalResponse) -> Messag
 
 
 async def _read_http_response(
-    reader: asyncio.StreamReader,
-    connection: h11.Connection,
+    transport: platform_http_pool.HttpConnection,
     progress: _FirewallAuthFetchProgress,
 ) -> _HttpResponse:
+    connection = transport.protocol
     response_event: h11.Response | h11.InformationalResponse | None = None
     body = bytearray()
     progress.phase = FirewallAuthFetchPhase.RESPONSE_HEADERS
     while True:
         event = connection.next_event()
         if event is h11.NEED_DATA:
-            connection.receive_data(await reader.read(64 * 1024))
+            connection.receive_data(await transport.read(64 * 1024))
             continue
         if event is h11.PAUSED:
             raise h11.RemoteProtocolError("Unexpected HTTP protocol switch")
@@ -806,7 +806,7 @@ async def _perform_http_request(
         stream.writer.write(connection.send(h11.Data(data=body)))
         stream.writer.write(connection.send(h11.EndOfMessage()))
         await stream.writer.drain()
-        response = await _read_http_response(stream.reader, connection, progress)
+        response = await _read_http_response(pooled, progress)
         if not generation.release(key, pooled):
             stream.writer.close()
             with suppress(OSError):

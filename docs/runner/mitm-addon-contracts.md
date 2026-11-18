@@ -46,8 +46,11 @@ Firewall-auth resolution and Data Router response registration share bounded
 HTTP/1 connection reuse. Origin, selected proxy route and proxy credentials,
 and TLS trust context define connection identity; request paths, bodies and
 application credentials remain request-local. Only fully consumed persistent
-responses with valid framing return to idle. Idle retention is bounded to four
-connections for at most 60 seconds; the existing request admissions and network
+responses with valid framing return to idle. Checkout must reject bytes received
+while idle, including bytes buffered during cancellation of the idle reader.
+A pending read transfers to the active request and remains owned until consumed
+or cancelled. Idle retention is bounded to four connections for at most
+60 seconds; the existing request admissions and network
 deadlines still govern active work.
 
 A connection reset retires its current pool generation for future dispatch.
