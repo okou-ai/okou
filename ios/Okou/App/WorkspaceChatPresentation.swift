@@ -65,18 +65,12 @@ extension EnvironmentValues {
   @Entry var workspaceChatPresentation: WorkspaceChatPresentation?
 }
 
-final class WorkspaceChatHostingController: UIViewController {
+final class WorkspaceChatHostingController: UIHostingController<AnyView> {
   let presentation: WorkspaceChatPresentation
-  private let host = UIHostingController(rootView: AnyView(EmptyView()))
-
-  var rootView: AnyView {
-    get { host.rootView }
-    set { host.rootView = newValue }
-  }
 
   init(presentation: WorkspaceChatPresentation) {
     self.presentation = presentation
-    super.init(nibName: nil, bundle: nil)
+    super.init(rootView: AnyView(EmptyView()))
   }
 
   @available(*, unavailable)
@@ -85,17 +79,6 @@ final class WorkspaceChatHostingController: UIViewController {
   override func viewDidLoad() {
     super.viewDidLoad()
     view.backgroundColor = UIColor(OkouColor.background)
-    addChild(host)
-    view.addSubview(host.view)
-    host.view.translatesAutoresizingMaskIntoConstraints = false
-    NSLayoutConstraint.activate([
-      host.view.topAnchor.constraint(equalTo: view.topAnchor),
-      host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-      host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-      // A full-height host lets SwiftUI animate its keyboard safe area and bottom inset together.
-      host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-    ])
-    host.didMove(toParent: self)
   }
 
   override func viewIsAppearing(_ animated: Bool) {

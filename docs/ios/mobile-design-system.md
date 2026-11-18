@@ -806,7 +806,7 @@ feature; the catalog shows each one.
   expanded layout through departure. Return actions request navigation while the
   editor still owns focus; UIKit coordinates keyboard dismissal with the pop.
   Cancelled interactive return restores the same editor and selection through UIKit's
-  transition coordinator. The chat's child `UIHostingController` fills its parent so
+  transition coordinator. The chat's `UIHostingController` fills the navigation page so
   SwiftUI can animate the keyboard safe area with the composer's bottom inset. The live
   content and editor remain mounted through native transitions; ordinary focus changes
   use a value-scoped SwiftUI animation.
