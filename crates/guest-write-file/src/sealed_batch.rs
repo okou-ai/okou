@@ -2,6 +2,8 @@ use std::io::{self, Write};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::ptr::NonNull;
 
+use rustix::fs::{SealFlags, fcntl_get_seals};
+
 use super::{MAX_BATCH_PAYLOAD_BYTES, write_batch};
 
 struct Mapping {
@@ -17,11 +19,8 @@ impl Drop for Mapping {
 }
 
 fn write_sealed_batch(input: BorrowedFd<'_>) -> io::Result<()> {
-    let fd = input.as_raw_fd();
-    let required = libc::F_SEAL_WRITE | libc::F_SEAL_SHRINK | libc::F_SEAL_GROW;
-    // SAFETY: input keeps fd live and F_GET_SEALS takes no extra argument.
-    let seals = unsafe { libc::fcntl(fd, libc::F_GET_SEALS) };
-    if seals < 0 || seals & required != required {
+    let required = SealFlags::WRITE | SealFlags::SHRINK | SealFlags::GROW;
+    if !fcntl_get_seals(input).is_ok_and(|seals| seals.contains(required)) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "expected immutable batch input",
@@ -39,7 +38,7 @@ fn write_sealed_batch(input: BorrowedFd<'_>) -> io::Result<()> {
             length,
             libc::PROT_READ,
             libc::MAP_PRIVATE,
-            fd,
+            input.as_raw_fd(),
             0,
         )
     };

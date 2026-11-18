@@ -2293,6 +2293,7 @@ dependencies = [
  "guest-control-proto",
  "libc",
  "nix 0.32.0",
+ "rustix",
  "tempfile",
 ]
 
