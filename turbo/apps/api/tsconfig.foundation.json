@@ -379,7 +379,9 @@
     "src/lib/chat-search-bigram.ts",
     "src/signals/services/chat-user-message.service.ts",
     "src/lib/generation-template-prompt.ts",
-    "src/signals/services/user-template-data.service.ts"
+    "src/signals/services/user-template-data.service.ts",
+    "src/signals/external/feishu-official.ts",
+    "src/lib/feishu-official-app.ts"
   ],
   "exclude": ["node_modules", "dist"],
   "references": [

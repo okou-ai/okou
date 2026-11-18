@@ -1,3 +1,4 @@
+import { env } from "../../lib/env";
 import { feishuRequestPlatform$ as feishuPlatform$ } from "../context/feishu-platform";
 import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
 import { command, computed } from "ccstate";
@@ -103,7 +104,7 @@ const checkAppId$ = computed(async (get) => {
     .from(feishuOrgInstallations)
     .where(eq(feishuOrgInstallations.appId, query.appId))
     .limit(1);
-  return installation
+  return installation || query.appId === env("FEISHU_OFFICIAL_APP_ID")
     ? appIdInUse(get(feishuPlatformName$))
     : { status: 200 as const, body: { available: true as const } };
 });

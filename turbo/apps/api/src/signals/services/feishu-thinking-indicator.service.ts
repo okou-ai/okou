@@ -10,7 +10,7 @@ import {
   feishuTokenUpdateValues,
   parseFeishuReactionCreationResponse,
   readFeishuResponseJson,
-  resolveFeishuRequestCredentials,
+  resolveFeishuRequestCredentials$,
 } from "../external/feishu-client";
 import { tapError } from "../utils";
 import {
@@ -68,7 +68,8 @@ export const addFeishuThinkingReaction$ = command(
           ) {
             throw new FeishuApiError("Lark integration is not enabled", 403);
           }
-          const credentials = await resolveFeishuRequestCredentials(
+          const credentials = await set(
+            resolveFeishuRequestCredentials$,
             installation,
             addReactionContextSignal,
           );

@@ -3584,6 +3584,12 @@
         "manage": "관리",
         "manageDialogTitle": "Feishu 봇 관리",
         "moreOptions": "{{bot}}에 대한 추가 옵션",
+        "official": {
+          "description": "Feishu 계정을 Okou 공식 봇에 연결하세요.",
+          "name": "Okou Official",
+          "popupBlocked": "Feishu 계정을 연결하려면 팝업을 허용하세요.",
+          "unavailable": "공식 봇을 아직 사용할 수 없습니다."
+        },
         "pageDescription": "이 워크스페이스의 봇 라우팅 관리",
         "permissions": {
           "description": "Feishu 개발자 콘솔에서 Permissions & Scopes를 열고 Batch Import/Export > Import를 선택한 다음 아래 JSON을 붙여 넣으세요. 봇의 앱 ID 권한과 연결된 계정의 사용자 ID 권한이 포함되어 있습니다.",

@@ -3584,6 +3584,12 @@
         "manage": "管理",
         "manageDialogTitle": "Feishu ボットを管理する",
         "moreOptions": "{{bot}} のその他のオプション",
+        "official": {
+          "description": "飛書アカウントを Okou 公式ボットに接続します。",
+          "name": "Okou Official",
+          "popupBlocked": "飛書アカウントを接続するには、ポップアップを許可してください。",
+          "unavailable": "公式ボットはまだ利用できません。"
+        },
         "pageDescription": "このワークスペースのボット ルーティングを管理する",
         "permissions": {
           "description": "Feishu 開発者コンソールで Permissions & Scopes を開き、Batch Import/Export > Import を選択して、以下の JSON を貼り付けます。ボット用のアプリ ID 権限と、接続済みアカウント用のユーザー ID 権限が含まれています。",

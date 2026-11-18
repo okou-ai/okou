@@ -954,7 +954,9 @@ export function WorksPage() {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
   const features = useGet(featureSwitch$);
-  const feishuEnabled = features[FeatureSwitchKey.FeishuIntegration] ?? false;
+  const feishuEnabled =
+    (features[FeatureSwitchKey.FeishuIntegration] ?? false) ||
+    (features[FeatureSwitchKey.FeishuOfficialBot] ?? false);
   const displayNameLoadable = useLoadable(currentChatAgentDisplayName$);
   const displayName =
     displayNameLoadable.state === "hasData"

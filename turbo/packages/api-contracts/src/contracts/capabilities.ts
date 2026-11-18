@@ -25,6 +25,7 @@ export const CAPABILITIES = [
   "whatsapp:file:write",
   "discord:read",
   "discord:write",
+  "feishu:read",
   "feishu:write",
   "lark:write",
   "teams:write",

@@ -96,6 +96,7 @@ const startFeishuAccountOAuth$ = command(
       .select({
         orgId: feishuOrgInstallations.orgId,
         platform: feishuOrgInstallations.platform,
+        installationType: feishuOrgInstallations.installationType,
         ownerUserId: feishuOrgInstallations.ownerUserId,
         botName: feishuOrgInstallations.botName,
         setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
@@ -315,6 +316,8 @@ function browserInstallationReadPlan(installationId: string) {
     columns: {
       orgId: feishuOrgInstallations.orgId,
       platform: feishuOrgInstallations.platform,
+      installationType: feishuOrgInstallations.installationType,
+      setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
       ownerUserId: feishuOrgInstallations.ownerUserId,
       appId: feishuOrgInstallations.appId,
       botName: feishuOrgInstallations.botName,

@@ -3452,6 +3452,13 @@
       "when": 1794983991800,
       "tag": "1571_inactive_workflow_attachment_deletion",
       "breakpoints": true
+    },
+    {
+      "idx": 1572,
+      "version": "7",
+      "when": 1794987606202,
+      "tag": "1572_feishu_official_bot",
+      "breakpoints": true
     }
   ]
 }

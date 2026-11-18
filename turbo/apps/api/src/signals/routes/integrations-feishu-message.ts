@@ -1,3 +1,4 @@
+import { defaultFeishuInstallationFilter } from "../services/feishu-installation-selection";
 import { feishuRequestPlatform$ } from "../context/feishu-platform";
 import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
 import { command, computed } from "ccstate";
@@ -56,7 +57,12 @@ const messageInstallations$ = computed(async (get) => {
         isNotNull(feishuOrgInstallations.setupCompletedAt),
         ...(body.installationId
           ? [eq(feishuOrgInstallations.id, body.installationId)]
-          : []),
+          : [
+              defaultFeishuInstallationFilter(
+                auth.orgId,
+                get(feishuRequestPlatform$),
+              ),
+            ]),
       ),
     )
     .limit(2);

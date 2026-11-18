@@ -3584,6 +3584,12 @@
         "manage": "管理",
         "manageDialogTitle": "管理飞书机器人",
         "moreOptions": "{{bot}}的更多选项",
+        "official": {
+          "description": "连接你的飞书账号，使用 Okou 官方机器人。",
+          "name": "Okou Official",
+          "popupBlocked": "请允许弹出窗口以连接飞书账号。",
+          "unavailable": "官方机器人暂未开放。"
+        },
         "pageDescription": "管理此工作区的机器人路由",
         "permissions": {
           "description": "在飞书开发者后台打开「权限管理」，选择「批量导入/导出 > 导入」，粘贴下方的 JSON。其中包含机器人的应用身份权限，以及你所连接账号的用户身份权限。",

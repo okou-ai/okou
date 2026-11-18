@@ -3,12 +3,16 @@ import {
   type FeishuPlatform,
 } from "@okouai/core/feishu-platform";
 import { Command } from "commander";
-
 import { createFeishuSendCommand } from "./send";
+import { historyCommand } from "./history";
 
 export function createFeishuMessageCommand(platform: FeishuPlatform) {
-  return new Command()
+  const command = new Command()
     .name("message")
     .description(`Send ${FEISHU_PLATFORMS[platform].name} messages`)
     .addCommand(createFeishuSendCommand(platform));
+  if (platform === "feishu") {
+    command.addCommand(historyCommand);
+  }
+  return command;
 }

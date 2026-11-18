@@ -964,6 +964,16 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "feishu-official",
+    contracts: ["feishuOfficialContract", "feishuOfficialEventsContract"],
+    bindings: [],
+  },
+  {
+    module: "feishu-official-read",
+    contracts: ["feishuOfficialReadContract"],
+    bindings: [],
+  },
+  {
     module: "friend-referrals",
     contracts: ["friendReferralsContract"],
     bindings: [

@@ -19,6 +19,7 @@ import {
   eq,
   exists,
   getTableColumns,
+  isNotNull,
   not,
   or,
   sql,
@@ -83,6 +84,27 @@ export const feishuOAuthPublicationRow = object({
 
 function feishuOAuthAdmission(args: TimedFeishuOAuthPublicationInput) {
   const query = new QueryBuilder();
+  const installation = query.$with("oauth_installation").as(
+    query
+      .select({ id: feishuOrgInstallations.id })
+      .from(feishuOrgInstallations)
+      .where(
+        and(
+          eq(feishuOrgInstallations.id, args.state.installationId),
+          eq(feishuOrgInstallations.orgId, args.state.orgId),
+          isNotNull(feishuOrgInstallations.setupCompletedAt),
+          or(
+            eq(feishuOrgInstallations.installationType, "custom"),
+            eq(
+              feishuOrgInstallations.feishuTenantKey,
+              args.userInfo.tenantKey ?? "",
+            ),
+          ),
+        ),
+      )
+      .for("update")
+      .limit(1),
+  );
   const agent = query.$with("oauth_agent").as(
     query
       .select({ id: agents.id })
@@ -155,8 +177,15 @@ function feishuOAuthAdmission(args: TimedFeishuOAuthPublicationInput) {
   const eligible = query
     .select({ id: definition.id })
     .from(definition)
-    .where(and(exists(contract), eq(definition.enabled, true), not(foreign)));
-  return { agent, definition, contract, foreign, eligible };
+    .where(
+      and(
+        exists(contract),
+        exists(query.select().from(installation)),
+        eq(definition.enabled, true),
+        not(foreign),
+      ),
+    );
+  return { installation, agent, definition, contract, foreign, eligible };
 }
 
 function feishuOAuthMember(
@@ -476,6 +505,7 @@ export function feishuOAuthPublicationSql(
   );
   return query
     .with(
+      admission.installation,
       admission.agent,
       admission.definition,
       member.removed,

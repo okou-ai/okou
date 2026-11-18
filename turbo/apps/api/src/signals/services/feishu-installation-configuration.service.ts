@@ -4,6 +4,7 @@ import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installatio
 import { command } from "ccstate";
 import { and, asc, eq } from "drizzle-orm";
 
+import { env } from "../../lib/env";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
@@ -182,9 +183,16 @@ const resolveFeishuInstallationTarget$ = command(
         id: feishuOrgInstallations.id,
         orgId: feishuOrgInstallations.orgId,
         platform: feishuOrgInstallations.platform,
+        installationType: feishuOrgInstallations.installationType,
+        setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
       })
       .from(feishuOrgInstallations)
-      .where(eq(feishuOrgInstallations.appId, args.appId))
+      .where(
+        and(
+          eq(feishuOrgInstallations.appId, args.appId),
+          eq(feishuOrgInstallations.installationType, "custom"),
+        ),
+      )
       .limit(1);
     signal.throwIfAborted();
     if (
@@ -211,6 +219,7 @@ const resolveFeishuInstallationTarget$ = command(
           and(
             eq(feishuOrgInstallations.orgId, args.orgId),
             eq(feishuOrgInstallations.platform, args.platform ?? "feishu"),
+            eq(feishuOrgInstallations.installationType, "custom"),
           ),
         )
         .orderBy(asc(feishuOrgInstallations.createdAt))
@@ -233,6 +242,7 @@ const resolveFeishuInstallationTarget$ = command(
             eq(feishuOrgInstallations.id, targetInstallationId),
             eq(feishuOrgInstallations.orgId, args.orgId),
             eq(feishuOrgInstallations.platform, args.platform ?? "feishu"),
+            eq(feishuOrgInstallations.installationType, "custom"),
           ),
         )
         .limit(1);
@@ -357,6 +367,7 @@ const persistFeishuInstallation$ = command(
           eq(feishuOrgInstallations.id, targetInstallationId),
           eq(feishuOrgInstallations.orgId, args.input.orgId),
           eq(feishuOrgInstallations.platform, args.input.platform ?? "feishu"),
+          eq(feishuOrgInstallations.installationType, "custom"),
           eq(feishuOrgInstallations.appId, args.input.appId),
         ),
       )
@@ -378,6 +389,9 @@ export const configureFeishuInstallation$ = command(
     args: ConfigureFeishuArgs,
     signal: AbortSignal,
   ): Promise<ConfigureFeishuResult> => {
+    if (args.appId === env("FEISHU_OFFICIAL_APP_ID")) {
+      return { kind: "app_in_use" };
+    }
     const preflight = await set(resolveFeishuInstallationTarget$, args, signal);
     if (preflight.kind !== "target") {
       return preflight;

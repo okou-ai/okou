@@ -58,6 +58,11 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES, type RoutePath } from "../../signals/route-paths.ts";
 import { writeToClipboard } from "../../signals/okou-page/clipboard.ts";
 import {
+  feishuCustomEnabled$,
+  feishuOfficialEnabled$,
+  feishuOfficialData$,
+  connectFeishuOfficial$,
+  disconnectFeishuOfficial$,
   FEISHU_SETUP_STEPS,
   feishuPlatform$,
   feishuRevealedCredentials$,
@@ -1462,6 +1467,107 @@ function FeishuBotsCard({
   );
 }
 
+function FeishuOfficialCard() {
+  const { t } = useTranslation();
+  const enabled = useGet(feishuOfficialEnabled$);
+  const data = useLastLoadable(feishuOfficialData$);
+  const signal = useGet(pageSignal$);
+  const [connecting, connect] = useLoadableSet(connectFeishuOfficial$);
+  const [disconnecting, disconnect] = useLoadableSet(disconnectFeishuOfficial$);
+  if (!enabled) {
+    return null;
+  }
+  if (data.state === "hasData" && !data.data) {
+    return null;
+  }
+  if (data.state === "hasError") {
+    return (
+      <p role="alert" className="text-sm text-destructive">
+        {t(($) => {
+          return $.connectors.providerSettings.feishu.loadError;
+        })}
+      </p>
+    );
+  }
+  if (data.state !== "hasData") {
+    return (
+      <section className={surfaceVariants({ className: "px-5 py-4" })}>
+        <Skeleton className="h-10 w-full" />
+      </section>
+    );
+  }
+  const status = data.data;
+  if (!status) {
+    return null;
+  }
+  const pending =
+    connecting.state === "loading" || disconnecting.state === "loading";
+  return (
+    <section
+      aria-label={t(($) => {
+        return $.connectors.providerSettings.feishu.official.name;
+      })}
+      className={surfaceVariants({ className: "overflow-hidden" })}
+    >
+      <div className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:px-5">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[10px]">
+            <img
+              src={platformFeishuAppIconImg}
+              alt=""
+              className="h-10 w-10 rounded-[10px] object-cover"
+            />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-sm font-medium text-foreground">
+                {t(($) => {
+                  return $.connectors.providerSettings.feishu.official.name;
+                })}
+              </h2>
+              {status.isConnected ? (
+                <span className="inline-flex min-w-0 items-center gap-1.5 rounded-lg border border-border bg-background px-2 py-1 text-xs font-medium text-secondary-foreground">
+                  <CircleCheck className="h-3.5 w-3.5 text-green-600" />
+                  {status.connectedUserName ??
+                    t(($) => {
+                      return $.connectors.providerSettings.works.connected;
+                    })}
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t(($) => {
+                return status.isConfigured
+                  ? $.connectors.providerSettings.feishu.official.description
+                  : $.connectors.providerSettings.feishu.official.unavailable;
+              })}
+            </p>
+          </div>
+        </div>
+        <Button
+          type="button"
+          variant="neutral"
+          size="sm"
+          disabled={pending || (!status.isConnected && !status.isConfigured)}
+          onClick={() => {
+            detach(
+              status.isConnected ? disconnect(signal) : connect(signal),
+              Reason.DomCallback,
+            );
+          }}
+        >
+          {pending ? <Loader2 size={14} className="animate-spin" /> : null}
+          {t(($) => {
+            return status.isConnected
+              ? $.connectors.actions.disconnect
+              : $.connectors.actions.connect;
+          })}
+        </Button>
+      </div>
+    </section>
+  );
+}
+
 function FeishuSetupFaq() {
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
@@ -1881,6 +1987,7 @@ function feishuSettingsHasError(...states: readonly string[]): boolean {
 export function FeishuSettingsPage() {
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
+  const customEnabled = useGet(feishuCustomEnabled$);
   const dataLoadable = useLastLoadable(feishuOrgData$);
   const botsLoadable = useLastLoadable(feishuInstallations$);
   const data = loadableData(dataLoadable) ?? null;
@@ -1912,7 +2019,8 @@ export function FeishuSettingsPage() {
       />
       <main className="flex-1 overflow-auto px-4 pb-safe-or-8 pt-3 sm:px-6">
         <div className="mx-auto flex max-w-[900px] flex-col gap-4">
-          {hasError ? (
+          <FeishuOfficialCard />
+          {!customEnabled ? null : hasError ? (
             <div
               className={surfaceVariants({
                 className: "px-6 py-10 text-center text-sm text-destructive",
@@ -1930,7 +2038,7 @@ export function FeishuSettingsPage() {
               <FeishuUninstallDialog bots={bots} />
             </>
           )}
-          <FeishuSetupFaq />
+          {customEnabled ? <FeishuSetupFaq /> : null}
         </div>
       </main>
     </div>

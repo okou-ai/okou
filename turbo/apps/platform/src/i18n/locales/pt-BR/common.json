@@ -3655,6 +3655,12 @@
         "manage": "Gerenciar",
         "manageDialogTitle": "Gerenciar bot do Feishu",
         "moreOptions": "Mais opções para {{bot}}",
+        "official": {
+          "description": "Conecte sua conta Feishu ao bot oficial da Okou.",
+          "name": "Okou Official",
+          "popupBlocked": "Permita pop-ups para conectar sua conta Feishu.",
+          "unavailable": "O bot oficial ainda não está disponível."
+        },
         "pageDescription": "Gerencie o encaminhamento dos bots neste workspace",
         "permissions": {
           "description": "No console de desenvolvedor do Feishu, abra Permissions & Scopes, escolha Batch Import/Export > Import e cole o JSON abaixo. Ele inclui permissões de identidade do app para o bot e de identidade do usuário para sua conta conectada.",

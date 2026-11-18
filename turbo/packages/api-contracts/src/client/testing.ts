@@ -354,6 +354,16 @@ import { feishuEventsContract as OriginalFeishuEventsContract } from "../contrac
 import { feishuEventsContract } from "./feishu-events";
 import { feishuOauthContract as OriginalFeishuOauthContract } from "../contracts/feishu-oauth";
 import { feishuOauthContract } from "./feishu-oauth";
+import { feishuOfficialReadContract as OriginalFeishuOfficialReadContract } from "../contracts/feishu-official-read";
+import { feishuOfficialReadContract } from "./feishu-official-read";
+import {
+  feishuOfficialContract as OriginalFeishuOfficialContract,
+  feishuOfficialEventsContract as OriginalFeishuOfficialEventsContract,
+} from "../contracts/feishu-official";
+import {
+  feishuOfficialContract,
+  feishuOfficialEventsContract,
+} from "./feishu-official";
 import { friendReferralsContract as OriginalFriendReferralsContract } from "../contracts/friend-referrals";
 import { friendReferralsContract } from "./friend-referrals";
 import { getStartedHistoryContract as OriginalGetStartedHistoryContract } from "../contracts/get-started-history";
@@ -1062,6 +1072,9 @@ export const clientDescriptorContracts: readonly (readonly [
   [larkConnectContract, OriginalLarkConnectContract],
   [feishuEventsContract, OriginalFeishuEventsContract],
   [feishuOauthContract, OriginalFeishuOauthContract],
+  [feishuOfficialReadContract, OriginalFeishuOfficialReadContract],
+  [feishuOfficialContract, OriginalFeishuOfficialContract],
+  [feishuOfficialEventsContract, OriginalFeishuOfficialEventsContract],
   [friendReferralsContract, OriginalFriendReferralsContract],
   [getStartedHistoryContract, OriginalGetStartedHistoryContract],
   [getStartedReceiptContract, OriginalGetStartedReceiptContract],

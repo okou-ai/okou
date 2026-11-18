@@ -19,7 +19,7 @@ import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installatio
 import { db$, writeDb$ } from "../external/db";
 import {
   FeishuApiError,
-  resolveFeishuRequestCredentials,
+  resolveFeishuRequestCredentials$,
   feishuTokenUpdateValues,
 } from "../external/feishu-client";
 import { settle } from "../utils";
@@ -35,8 +35,10 @@ function parseAccessData<T>(schema: ZodType<T>, data: unknown): T {
   return parsed.data;
 }
 
+export class FeishuConversationAccessDeniedError extends FeishuApiError {}
+
 function denied(): never {
-  throw new FeishuApiError(
+  throw new FeishuConversationAccessDeniedError(
     "This conversation is unavailable to your connected account and Okou.",
     403,
   );
@@ -288,7 +290,8 @@ export const requireFeishuConversationAccess$ = command(
     if (!installation) {
       return denied();
     }
-    const credentials = await resolveFeishuRequestCredentials(
+    const credentials = await set(
+      resolveFeishuRequestCredentials$,
       installation,
       signal,
     );

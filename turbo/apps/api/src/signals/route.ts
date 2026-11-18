@@ -1,3 +1,6 @@
+import { feishuOfficialReadRoutes } from "./routes/feishu-official-read";
+import { feishuOfficialEventsRoutes } from "./routes/feishu-official-events";
+import { feishuOfficialRoutes } from "./routes/feishu-official";
 import { phoneUseRoutes } from "./routes/phone-use";
 import { integrationsEmailRoutes } from "./routes/integrations-email";
 import { integrationsEmailUploadCompleteRoutes } from "./routes/integrations-email-upload-complete";
@@ -478,7 +481,10 @@ export const ROUTES: readonly RouteEntry[] = [
   ...discordGatewayRoutes,
   ...slackInteractiveRoutes,
   ...feishuBrowserConnectRoutes,
+  ...feishuOfficialReadRoutes,
+  ...feishuOfficialRoutes,
   ...feishuConnectRoutes,
+  ...feishuOfficialEventsRoutes,
   ...feishuEventsRoutes,
   ...feishuOauthRoutes,
   ...teamsBrowserConnectRoutes,

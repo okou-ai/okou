@@ -356,6 +356,14 @@ export const clientDescriptorManifest = [
     contracts: ["feishuOauthContract"],
   },
   {
+    module: "feishu-official-read",
+    contracts: ["feishuOfficialReadContract"],
+  },
+  {
+    module: "feishu-official",
+    contracts: ["feishuOfficialContract", "feishuOfficialEventsContract"],
+  },
+  {
     module: "friend-referrals",
     contracts: ["friendReferralsContract"],
   },

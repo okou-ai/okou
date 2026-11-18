@@ -702,7 +702,10 @@
     "src/signals/services/chat-event-visibility.service.ts",
     "src/signals/services/cron-project-chat-event-search.service.ts",
     "src/signals/services/marketing-reward-event-delivery.service.ts",
-    "src/lib/chat-search-bigram.ts"
+    "src/lib/chat-search-bigram.ts",
+    "src/signals/external/feishu-official.ts",
+    "src/lib/feishu-official-app.ts",
+    "src/signals/services/feishu-official-skill.ts"
   ],
   "references": [
     {

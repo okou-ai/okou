@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 import { createElement } from "react";
 import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
@@ -34,7 +35,10 @@ export const setupFeishuSettingsPage$ = command(
     const isAccountConnect = get(hasFeishuConnectParams$);
     if (!isAccountConnect) {
       const features = get(featureSwitch$);
-      if (!features[FEISHU_PLATFORMS[platform].featureSwitch]) {
+      if (
+        !features[FEISHU_PLATFORMS[platform].featureSwitch] &&
+        !(platform === "feishu" && features[FeatureSwitchKey.FeishuOfficialBot])
+      ) {
         set(detachedNavigateTo$, ROUTES.home, { replace: true });
         return;
       }

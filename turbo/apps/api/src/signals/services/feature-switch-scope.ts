@@ -12,6 +12,7 @@ export const ORG_SENTINEL_USER_ID = "__org__";
 export const ORG_SCOPED_FEATURE_SWITCH_KEYS: readonly string[] = [
   // Bot setup and native command availability must agree for all members.
   FeatureSwitchKey.LarkIntegration,
+  FeatureSwitchKey.FeishuOfficialBot,
 ];
 
 function isOrgScopedFeatureSwitchKey(key: string): boolean {

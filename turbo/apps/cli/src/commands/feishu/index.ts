@@ -1,3 +1,4 @@
+import { chatCommand } from "./chat";
 import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
@@ -9,7 +10,7 @@ import { createFeishuMessageCommand } from "./message";
 import { createFeishuUploadCommand } from "./upload-file";
 
 export function createFeishuCommand(platform: FeishuPlatform) {
-  return new Command()
+  const command = new Command()
     .name(platform)
     .description(
       `Send messages and transfer files through ${FEISHU_PLATFORMS[platform].name}`,
@@ -27,6 +28,10 @@ Examples:
   Upload a file:        okou ${platform} upload-file -f /tmp/report.pdf --to <chat-id>
   Download a file:      okou ${platform} download-file <message-id> <file-key> --type file`,
     );
+  if (platform === "feishu") {
+    command.addCommand(chatCommand);
+  }
+  return command;
 }
 
 export const feishuCommand = createFeishuCommand("feishu");

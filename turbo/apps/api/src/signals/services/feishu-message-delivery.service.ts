@@ -10,7 +10,7 @@ import {
   feishuTokenUpdateValues,
   parseFeishuSentMessage,
   readFeishuResponseJson,
-  resolveFeishuRequestCredentials,
+  resolveFeishuRequestCredentials$,
   type FeishuOutboundMessage,
   type FeishuSentMessage,
 } from "../external/feishu-client";
@@ -70,7 +70,8 @@ export const deliverFeishuMessage$ = command(
         ) {
           throw new FeishuApiError("Lark integration is not enabled", 403);
         }
-        const credentials = await resolveFeishuRequestCredentials(
+        const credentials = await set(
+          resolveFeishuRequestCredentials$,
           installation,
           contextSignal,
         );

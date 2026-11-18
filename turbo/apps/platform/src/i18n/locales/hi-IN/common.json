@@ -3600,6 +3600,12 @@
         "manage": "प्रबंधित करना",
         "manageDialogTitle": "Feishu बॉट प्रबंधित करें",
         "moreOptions": "{{bot}} के लिए अधिक विकल्प",
+        "official": {
+          "description": "अपने Feishu खाते को आधिकारिक Okou बॉट से कनेक्ट करें।",
+          "name": "Okou Official",
+          "popupBlocked": "अपना Feishu खाता कनेक्ट करने के लिए पॉप-अप की अनुमति दें।",
+          "unavailable": "आधिकारिक बॉट अभी उपलब्ध नहीं है।"
+        },
         "pageDescription": "इस वर्कस्पेस के लिए बॉट रूटिंग प्रबंधित करें",
         "permissions": {
           "description": "Feishu डेवलपर कंसोल में Permissions & Scopes खोलें, Batch Import/Export > Import चुनें और नीचे दिया गया JSON पेस्ट करें। इसमें बॉट के लिए ऐप पहचान की अनुमतियां और आपके कनेक्ट किए गए खाते के लिए यूज़र पहचान की अनुमतियां शामिल हैं।",
