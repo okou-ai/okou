@@ -296,12 +296,11 @@ async fn upload_with_counted_batches(
         let server = async {
             loop {
                 let (mut stream, _) = listener.accept().await.unwrap();
-                let request = read_http_request(&mut stream).await;
-                let mut request_line = request.headers.lines().next().unwrap().split_whitespace();
+                let headers = read_counted_http_headers(&mut stream).await;
+                let mut request_line = headers.lines().next().unwrap().split_whitespace();
                 assert_eq!(request_line.next(), Some("POST"));
                 assert_eq!(request_line.next(), Some("/api/webhooks/agent/telemetry"));
                 batches += 1;
-                drop(request);
                 stream
                     .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
                     .await
@@ -550,7 +549,9 @@ impl TestHttpRequest {
     }
 }
 
-async fn read_http_request(stream: &mut (impl tokio::io::AsyncRead + Unpin)) -> TestHttpRequest {
+async fn read_http_request_prefix(
+    stream: &mut (impl tokio::io::AsyncRead + Unpin),
+) -> (TestHttpRequest, usize) {
     let mut request = Vec::new();
     let mut chunk = [0_u8; 8192];
     let header_end = loop {
@@ -581,26 +582,49 @@ async fn read_http_request(stream: &mut (impl tokio::io::AsyncRead + Unpin)) -> 
         .expect("request body length overflow");
     request.truncate(body_end);
     request.drain(..body_start);
-    if request.len() < content_length {
+    (
+        TestHttpRequest {
+            headers,
+            body: request,
+        },
+        content_length,
+    )
+}
+
+async fn read_counted_http_headers(stream: &mut (impl tokio::io::AsyncRead + Unpin)) -> String {
+    let (request, content_length) = read_http_request_prefix(stream).await;
+    let remaining = (content_length - request.body.len()) as u64;
+    let drained = tokio::io::copy(&mut stream.take(remaining), &mut tokio::io::sink())
+        .await
+        .unwrap();
+    assert_eq!(
+        drained, remaining,
+        "connection closed before request completed"
+    );
+    request.headers
+}
+
+async fn read_http_request(stream: &mut (impl tokio::io::AsyncRead + Unpin)) -> TestHttpRequest {
+    let (mut request, content_length) = read_http_request_prefix(stream).await;
+    if request.body.len() < content_length {
         // Reserve only bounded fixture bodies; oversized declarations keep incremental reads.
         if content_length <= NETWORK_LOG_UPLOAD_MAX_BATCH_BYTES {
-            request.reserve_exact(content_length - request.len());
+            request
+                .body
+                .reserve_exact(content_length - request.body.len());
         }
         stream
-            .take((content_length - request.len()) as u64)
-            .read_to_end(&mut request)
+            .take((content_length - request.body.len()) as u64)
+            .read_to_end(&mut request.body)
             .await
             .unwrap();
         assert_eq!(
-            request.len(),
+            request.body.len(),
             content_length,
             "connection closed before request completed"
         );
     }
-    TestHttpRequest {
-        headers,
-        body: request,
-    }
+    request
 }
 
 async fn read_http_request_body(stream: &mut tokio::net::TcpStream) -> Vec<u8> {
@@ -669,6 +693,13 @@ async fn http_fixture_rejects_early_body_close_without_declared_allocation() {
     })
     .await
     .unwrap();
+}
+
+#[tokio::test]
+#[should_panic(expected = "connection closed before request completed")]
+async fn counted_http_fixture_rejects_early_body_close() {
+    let mut request = &b"POST /partial HTTP/1.1\r\nContent-Length: 5\r\n\r\nab"[..];
+    read_counted_http_headers(&mut request).await;
 }
 
 #[test]
