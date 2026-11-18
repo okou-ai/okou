@@ -3336,6 +3336,7 @@ export function createThreadClaimRunObjects(
         return rejection;
       }
       const context = await get(contentContext$);
+      signal.throwIfAborted();
       if (isRouteError(context)) {
         return context;
       }

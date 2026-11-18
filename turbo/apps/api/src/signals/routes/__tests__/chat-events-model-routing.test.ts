@@ -721,7 +721,9 @@ describe("CHAT-02: model-first routing", () => {
     );
     const findSol = async () => {
       const { models } = await misc.listRunModels(actor);
-      return models.find((entry) => entry.model === "gpt-6.1-sol");
+      return models.find((entry) => {
+        return entry.model === "gpt-6.1-sol";
+      });
     };
     expect((await findSol())?.subscriptionOptions).not.toHaveProperty(
       "ultrafastAvailable",

@@ -39,7 +39,9 @@ export function listAvailableRunModels(
           : null;
       signal.throwIfAborted();
       const ultrafastEnabled =
-        subscriptions.some((entry) => entry.ultrafastAvailable) &&
+        subscriptions.some((entry) => {
+          return entry.ultrafastAvailable;
+        }) &&
         isFeatureEnabled(
           FeatureSwitchKey.CodexSubscriptionUltrafast,
           await get(switchContext$),
