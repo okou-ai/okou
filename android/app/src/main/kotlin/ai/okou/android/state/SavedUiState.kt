@@ -16,13 +16,46 @@ import androidx.compose.ui.text.input.TextFieldValue
 /**
  * Saved values are restoration metadata. Documents and pending writes belong to their data owner.
  */
-@Composable
-internal fun rememberUiTargetId(): MutableState<String?> = rememberSaveable {
-    mutableStateOf<String?>(null)
+internal sealed interface WorkspaceTarget {
+    data object List : WorkspaceTarget
+
+    data class Chat(val id: String) : WorkspaceTarget
+
+    data class NewChat(val projectId: String?) : WorkspaceTarget
 }
 
+internal data class WorkspaceNavigation(
+    val target: WorkspaceTarget = WorkspaceTarget.List,
+    val settingsOpen: Boolean = false,
+)
+
 @Composable
-internal fun rememberUiFlag(): MutableState<Boolean> = rememberSaveable { mutableStateOf(false) }
+internal fun rememberWorkspaceNavigation(): MutableState<WorkspaceNavigation> =
+    rememberSaveable(
+        stateSaver =
+            listSaver(
+                save = { navigation: WorkspaceNavigation ->
+                    val (kind, id) =
+                        when (val target = navigation.target) {
+                            WorkspaceTarget.List -> "list" to ""
+                            is WorkspaceTarget.Chat -> "chat" to target.id
+                            is WorkspaceTarget.NewChat -> "new" to target.projectId.orEmpty()
+                        }
+                    listOf(kind, id, navigation.settingsOpen)
+                },
+                restore = { (kind, id, settingsOpen) ->
+                    val target =
+                        when (kind) {
+                            "chat" -> WorkspaceTarget.Chat(id as String)
+                            "new" -> WorkspaceTarget.NewChat((id as String).ifEmpty { null })
+                            else -> WorkspaceTarget.List
+                        }
+                    WorkspaceNavigation(target, settingsOpen as Boolean)
+                },
+            )
+    ) {
+        mutableStateOf(WorkspaceNavigation())
+    }
 
 internal class SavedUiIds(private val state: MutableState<List<String>>, private val limit: Int) {
     val values: List<String>

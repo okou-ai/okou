@@ -2,11 +2,6 @@ package ai.okou.android.chat
 
 import ai.okou.android.R
 import ai.okou.android.api.generated.IndicatorsThreadsValue
-import ai.okou.android.state.rememberCollapsedProjects
-import ai.okou.android.state.rememberConversationUiState
-import ai.okou.android.state.rememberUiFlag
-import ai.okou.android.state.rememberUiTargetId
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,190 +14,27 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.launch
 
 @Composable
-fun ChatListRoute(
-    model: ChatListModel,
-    composer: ChatComposerModel,
-    controls: RunControlsModel,
-    recovery: AssistantRecoveryModel? = null,
-) {
-    val state by model.uiState.collectAsStateWithLifecycle()
-    val inputState by composer.uiState.collectAsStateWithLifecycle()
-    var selected by rememberUiTargetId()
-    var composing by rememberUiFlag()
-    var newProject by rememberUiTargetId()
-    val collapsed = rememberCollapsedProjects()
-    val listPosition = rememberLazyListState()
-    val drawerPosition = rememberLazyListState()
-    val conversations = rememberConversationUiState()
-    val drawer = rememberDrawerState(DrawerValue.Closed)
-    val drawerVisible = selected != null && (drawer.isOpen || drawer.isAnimationRunning)
-    val scope = rememberCoroutineScope()
-    LaunchedEffect(selected, state.threads, state.listPhase) {
-        state.threads.firstOrNull { it.id == selected }?.let(model.history::open)
-        if (
-            selected != null &&
-                state.listPhase == ChatReadPhase.Ready &&
-                state.threads.none { it.id == selected }
-        )
-            selected = null
-    }
-    val open: (ConfirmedChat) -> Unit = { thread ->
-        conversations.open(thread.id)
-        composing = false
-        selected = thread.id
-        composer.acknowledge(thread.id)
-        model.history.open(thread)
-        scope.launch { drawer.close() }
-    }
-    val toggle: (String) -> Unit = collapsed::toggle
-    val newChat: (String?) -> Unit = { projectId ->
-        composer.beginNew(projectId)
-        selected = null
-        newProject = projectId
-        composing = true
-        scope.launch { drawer.close() }
-    }
-    val createdThread = inputState.entry(ComposerTarget(projectId = newProject)).createdThreadId
-    LaunchedEffect(composing, newProject, createdThread, state.threads) {
-        if (composing && createdThread != null)
-            state.threads.firstOrNull { it.id == createdThread }?.let(open)
-    }
-    BackHandler(selected != null || composing) {
-        if (drawer.isOpen || drawer.isAnimationRunning) scope.launch { drawer.close() }
-        else {
-            selected = null
-            composing = false
-        }
-    }
-    ModalNavigationDrawer(
-        drawerState = drawer,
-        gesturesEnabled = selected != null,
-        drawerContent = {
-            ModalDrawerSheet(
-                Modifier.widthIn(max = 360.dp)
-                    .fillMaxWidth()
-                    .then(if (drawerVisible) Modifier else Modifier.clearAndSetSemantics {})
-            ) {
-                ChatListScreen(
-                    state,
-                    model::refresh,
-                    model::refreshList,
-                    model::refreshMetadata,
-                    model::refreshIndicators,
-                    model::selectFilter,
-                    open,
-                    collapsed.values,
-                    toggle,
-                    drawerPosition,
-                    newChat,
-                )
-            }
-        },
-    ) {
-        if (composing)
-            Column(Modifier.fillMaxSize()) {
-                ChatAction(R.string.back, { composing = false })
-                Text(
-                    state.projects.firstOrNull { it.id == newProject }?.name
-                        ?: stringResource(R.string.composer_new),
-                    Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.headlineSmall,
-                )
-                Box(Modifier.weight(1f))
-                if (createdThread != null) {
-                    Text(stringResource(R.string.composer_accepted), Modifier.padding(16.dp))
-                    ChatAction(R.string.chat_refresh, model::refreshList)
-                } else ChatComposerField(composer, ComposerTarget(projectId = newProject))
-            }
-        else if (selected == null)
-            ChatListScreen(
-                state,
-                model::refresh,
-                model::refreshList,
-                model::refreshMetadata,
-                model::refreshIndicators,
-                model::selectFilter,
-                open,
-                collapsed.values,
-                toggle,
-                listPosition,
-                newChat,
-            )
-        else
-            Column(
-                Modifier.fillMaxSize()
-                    .then(if (drawerVisible) Modifier.clearAndSetSemantics {} else Modifier)
-            ) {
-                FlowRow {
-                    ChatAction(R.string.back, { selected = null })
-                    ChatAction(R.string.history_sidebar, { scope.launch { drawer.open() } })
-                }
-                conversations.Content(checkNotNull(selected)) {
-                    ConversationRoute(
-                        model.history,
-                        checkNotNull(selected),
-                        state,
-                        Modifier.weight(1f),
-                        visible = !drawer.isOpen && !drawer.isAnimationRunning,
-                    )
-                }
-                state.threads
-                    .firstOrNull { it.id == selected }
-                    ?.let { thread ->
-                        RunControlsPanel(controls, model.history, thread.id)
-                        recovery?.let {
-                            AssistantRecoveryPanel(
-                                it,
-                                composer,
-                                ComposerTarget(thread.id, thread.agentId, thread.projectId),
-                            )
-                        }
-                        ChatComposerField(
-                            composer,
-                            ComposerTarget(thread.id, thread.agentId, thread.projectId),
-                            Modifier.then(
-                                if (drawerVisible) Modifier.clearAndSetSemantics {} else Modifier
-                            ),
-                        )
-                    }
-            }
-    }
-}
-
-@Composable
-private fun ChatListScreen(
+internal fun ChatListScreen(
     state: ChatListUiState,
     refresh: () -> Unit,
     retryList: () -> Unit,

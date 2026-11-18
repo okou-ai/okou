@@ -27,8 +27,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -87,11 +85,6 @@ fun ConversationRoute(
         ) {
             val thread = state.thread?.takeIf { it.id == threadId }
             item {
-                Text(
-                    thread?.title ?: stringResource(R.string.chat_untitled),
-                    style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier.semantics { heading() },
-                )
                 if (thread != null) {
                     Text(
                         list.agents.firstOrNull { it.agentId == thread.agentId }?.displayName

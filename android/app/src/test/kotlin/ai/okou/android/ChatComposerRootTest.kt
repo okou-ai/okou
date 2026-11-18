@@ -13,6 +13,7 @@ import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -139,7 +140,7 @@ class ChatComposerRootTest {
             compose.runOnIdle { chats.warming.state.value.phase == ChatReadPhase.Ready }
         }
         assertEquals(0, app.fixture.chats.readRequests.get())
-        compose.onNodeWithText("Back").performClick()
+        compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("Personal chat").performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText("No messages yet.").fetchSemanticsNodes().isNotEmpty()
@@ -147,7 +148,7 @@ class ChatComposerRootTest {
         compose.onNodeWithText("No messages yet.").assertExists()
         compose.onNodeWithTag("message_input").assertIsNotEnabled()
         compose.onNodeWithText("Send").assertIsNotEnabled()
-        compose.onNodeWithText("Back").performClick()
+        compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("Chats").assertExists()
         assertEquals("{}", file.readText())
         assertEquals(0, app.fixture.requests.count { it.method == "POST" })
@@ -166,9 +167,13 @@ class ChatComposerRootTest {
         )
         // Native focus loss collapses an active selection; preserve the cursor on recreation.
         input.performTextInputSelection(TextRange(13))
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithText("Appearance").assertExists()
         captureOwners()
         // Recreation runs the same complete Activity budget check as every Debug save.
         compose.activityRule.scenario.recreate()
+        compose.onNodeWithText("Appearance").assertExists()
+        compose.onNodeWithContentDescription("Back").performClick()
         assertEquals(
             large,
             input.fetchSemanticsNode().config[SemanticsProperties.EditableText].text,
@@ -190,7 +195,7 @@ class ChatComposerRootTest {
             .performTextInput("Original **message** 👋")
         compose.onNodeWithText("Send").assertIsNotEnabled()
         captureOwners()
-        compose.onNodeWithText("Back").performClick()
+        compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("Chats").assertExists()
         compose.onNodeWithText("New chat").performClick()
         compose.onNodeWithTag("message_input").assertTextContains("Original **message** 👋")
