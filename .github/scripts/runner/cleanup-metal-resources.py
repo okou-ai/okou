@@ -51,6 +51,22 @@ DATA_ROOTS = (
 STOP_TIMEOUT = 330
 
 
+@contextlib.contextmanager
+def lifecycle_descriptor(path):
+    fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK, 0o644)
+    try:
+        info = os.fstat(fd)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_uid != os.geteuid()
+            or info.st_nlink != 1
+        ):
+            raise RuntimeError("invalid lifecycle lock")
+        yield fd
+    finally:
+        os.close(fd)
+
+
 def command(*args, allow_failure=False):
     result = subprocess.run(
         args, capture_output=True, text=True, timeout=35, check=False
@@ -423,33 +439,17 @@ class Host:
         watchdog.start()
         try:
             with contextlib.ExitStack() as locks:
-                handles = {}
+                descriptors = {}
                 directory = self.path("/var/lock")
                 directory.mkdir(parents=True, exist_ok=True)
                 deadline = time.monotonic() + 60
                 for number in numbers:
                     path = directory / f"vm0-runner-lifecycle-pr-{number}.lock"
-                    handle = locks.enter_context(
-                        os.fdopen(
-                            os.open(
-                                path,
-                                os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK,
-                                0o644,
-                            ),
-                            "r+b",
-                        )
-                    )
-                    info = os.fstat(handle.fileno())
-                    if (
-                        not stat.S_ISREG(info.st_mode)
-                        or info.st_uid != os.geteuid()
-                        or info.st_nlink != 1
-                    ):
-                        raise RuntimeError("invalid lifecycle lock")
-                    handles[str(number)] = handle
+                    fd = locks.enter_context(lifecycle_descriptor(path))
+                    descriptors[str(number)] = fd
                     while True:
                         try:
-                            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                             break
                         except BlockingIOError:
                             if time.monotonic() >= deadline:
@@ -469,7 +469,7 @@ class Host:
                     if (
                         not isinstance(closed, dict)
                         or not closed
-                        or not closed.keys() <= handles.keys()
+                        or not closed.keys() <= descriptors.keys()
                     ):
                         raise RuntimeError(
                             "cleanup selection is outside the locked namespaces"
@@ -482,13 +482,11 @@ class Host:
                         )
                     # Keep the lock inode stable and record closure before deletion.
                     for number, record in records.items():
-                        handle = handles[number]
-                        handle.seek(0)
-                        if handle.read(22) < record:
-                            handle.seek(0)
-                            handle.write(record)
-                            handle.truncate()
-                            handle.flush()
+                        fd = descriptors[number]
+                        if os.pread(fd, 22, 0) < record:
+                            if os.pwrite(fd, record, 0) != len(record):
+                                raise RuntimeError("incomplete PR closure record")
+                            os.ftruncate(fd, len(record))
                     # Covers the shared stop budget plus inventory and teardown.
                     # The controller's response/batch deadlines must outlive it.
                     signal.alarm(480)
