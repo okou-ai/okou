@@ -51,6 +51,9 @@ class ImageOperationTest(unittest.TestCase):
         self.result = self.root / "result.json"
 
     def retire_fixture(self):
+        for pid in self.records("detached-servers"):
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(pid, signal.SIGKILL)
         for path in (self.root / "units").glob("*.json"):
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(json.loads(path.read_text())["pid"], signal.SIGKILL)
@@ -66,7 +69,9 @@ class ImageOperationTest(unittest.TestCase):
             check=False,
         )
         if check:
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                result.returncode, 0, result.stdout + result.stderr + str(self.records("errors"))
+            )
         return result
 
     def records(self, name):
@@ -139,6 +144,39 @@ class ImageOperationTest(unittest.TestCase):
         self.assertEqual(process.returncode, 0, output + error)
         self.assert_one_build()
         self.assertEqual(json.loads(self.result.read_text())["status"], 0)
+
+    def test_lost_reply_while_original_launch_is_still_submitting(self):
+        self.environment["IMAGE_FAULT"] = "pending-launch"
+        self.invoke("claim")
+        (self.root / "block").touch()
+        with (self.root / "client.log").open("w") as output:
+            process = subprocess.Popen(
+                ["python3", str(COMMAND), "run", "dev-11", "build", str(self.result)],
+                env=self.environment,
+                stdout=output,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        self.addCleanup(lambda: process.poll() is None and process.kill())
+        try:
+            self.wait_for(lambda: (self.root / "observed-pending-launch").exists())
+            (self.root / "release-launch").touch()
+            self.wait_for(
+                lambda: "image-progress" in (self.root / "client.log").read_text()
+                or process.poll() is not None
+            )
+            self.assertIn(
+                "image-progress",
+                (self.root / "client.log").read_text(),
+                "a missing unit while the original launch owns the gate is still pending",
+            )
+        finally:
+            (self.root / "release-launch").touch()
+            (self.root / "release").touch()
+            _output, error = process.communicate(timeout=20)
+        self.assertEqual(process.returncode, 0, error)
+        self.assert_one_build()
+        self.assertEqual(sum(r["action"] == "run" for r in self.records("requests")), 2)
 
     def test_failure_after_hash_output_stays_failure(self):
         self.environment["IMAGE_BUILD_STATUS"] = "23"
@@ -319,6 +357,16 @@ class ImageOperationTest(unittest.TestCase):
             self.invoke("run", "build", str(self.result), check=False).returncode, 0
         )
         self.assertFalse(self.records("executions"))
+
+    def test_unavailable_state_root_does_not_fall_back_to_disk(self):
+        fallback = self.root / "fallback"
+        fallback.mkdir()
+        self.environment.update(IMAGE_FAULT="missing-state-root", TEMP=str(fallback))
+        outcome = self.invoke("claim", check=False)
+        self.assertNotEqual(outcome.returncode, 0)
+        self.assertFalse(
+            list(fallback.iterdir()), "unavailable tmpfs must not create disk-backed state"
+        )
 
     def test_inactive_unit_with_populated_cgroup_is_not_retired(self):
         events = Path("/sys/fs/cgroup/cgroup.events")

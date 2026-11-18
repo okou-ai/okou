@@ -23,7 +23,8 @@ def record(kind, value):
 def alive(pid):
     try:
         return Path(f"/proc/{pid}/stat").read_text().split(")", 1)[1].split()[0] != "Z"
-    except FileNotFoundError:
+    except (FileNotFoundError, ProcessLookupError):
+        # procfs can return ESRCH if the task exits between opening and reading.
         return False
 
 
@@ -53,17 +54,24 @@ def ssh(arguments):
     if MODE == "ssh-error":
         return 7
     # Map the remote tmpfs into this endpoint's isolated filesystem.
-    arguments = ["TMPDIR=" + str(ROOT) if a == "TMPDIR=/dev/shm" else a for a in arguments]
+    state_root = ROOT / "missing" if MODE == "missing-state-root" else ROOT
+    arguments = ["TMPDIR=" + str(state_root) if a == "TMPDIR=/dev/shm" else a for a in arguments]
     process = subprocess.Popen(
         ["bash", "-c", " ".join(arguments[1:])],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         start_new_session=True,
     )
+    detached = False
     try:
         process.stdin.write(json.dumps(request).encode())
         process.stdin.close()
         fault = request["action"] == "run" and request["phase"] == "build"
+        if fault and MODE == "pending-launch" and once():
+            wait_for(lambda: (ROOT / "launch-pending").exists())
+            record("detached-servers", process.pid)
+            detached = True
+            return 255
         if fault and MODE == "lost-launch" and once():
             wait_for(lambda: any((ROOT / "units").glob("*.json")))
             os.killpg(process.pid, signal.SIGKILL)
@@ -100,14 +108,18 @@ def ssh(arguments):
             sys.stdout.buffer.flush()
         return process.wait()
     finally:
-        if process.poll() is None:
+        if not detached and process.poll() is None:
             os.killpg(process.pid, signal.SIGKILL)
-        process.wait()
+        if not detached:
+            process.wait()
 
 
 def systemd_run(arguments):
     record("systemd", arguments)
     if any(argument.startswith("--on-active=") for argument in arguments):
+        if MODE == "pending-launch":
+            (ROOT / "launch-pending").touch()
+            wait_for(lambda: (ROOT / "release-launch").exists())
         return 0  # Record the real retention contract without waiting one hour.
     unit = next(
         argument.split("=", 1)[1] for argument in arguments if argument.startswith("--unit=")
@@ -131,6 +143,8 @@ def systemctl(arguments):
         unit = arguments[1]
         path = ROOT / "units" / (unit + ".json")
         if not path.exists():
+            if MODE == "pending-launch" and (ROOT / "launch-pending").exists():
+                (ROOT / "observed-pending-launch").touch()
             print("LoadState=not-found")
             return 0
         info = json.loads(path.read_text())
@@ -196,4 +210,13 @@ def main():
 
 
 if __name__ == "__main__":
+
+    def report_error(kind, value, traceback):
+        record(
+            "errors",
+            {"executable": Path(sys.argv[0]).name, "type": kind.__name__, "message": str(value)},
+        )
+        sys.__excepthook__(kind, value, traceback)
+
+    sys.excepthook = report_error
     sys.exit(main())

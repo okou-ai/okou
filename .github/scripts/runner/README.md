@@ -95,7 +95,9 @@ validation/rename boundary.
 Warm/build run once in transient services. Identity covers the exact source,
 binary inputs/bytes, target, profile, host, adapter source and workflow run/attempt.
 Launch intent precedes submission; intent without a result or live unit fails
-unknown. Only 124/141/255 can reconnect, at most three requests inside the same
+unknown only after the launch gate is free and that absence is rechecked. A
+reconnection waits for an in-flight submission without blocking on the worker's
+mutation gate or submitting the command again. Only 124/141/255 can reconnect, at most three requests inside the same
 600-second call budget. Reconnection observes the original operation and never
 restarts it. Service work is limited to 570 seconds with a ten-second control
 group stop grace, leaving room for reconciliation inside the unchanged job budget.
@@ -111,7 +113,8 @@ Credentials travel only in stdin, are privately staged, and are unlinked before
 Runner execution. Unit arguments, unit environment properties and result identity
 contain no values. Retained logs are redacted and capped at 1 MiB while the worker
 continues draining output and collecting hashes. Private operation state lives
-on remote `/dev/shm`; one-shot systemd timers retire and verify each operation
+on remote `/dev/shm`; an unavailable state root fails without falling back to
+disk. One-shot systemd timers retire and verify each operation
 before removing files after one hour. Unconfirmed retirement retains evidence;
 reboot removes tmpfs state even if a transient timer was lost. The
 small namespace ownership ledger and stable gate remain until reboot or explicit

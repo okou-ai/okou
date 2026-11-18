@@ -13,7 +13,6 @@ import signal
 import stat
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from pathlib import Path
@@ -201,6 +200,24 @@ def expire(operation):
             shutil.rmtree(operation)
 
 
+def stopped_without_result(operation, inputs):
+    # An intent is visible before systemd accepts the launch. A missing unit
+    # is not terminal while that submission (or its worker) still owns the gate.
+    # A successor may own the same gate, but must not delay the old observer.
+    owner = {"identity": digest(inputs), "generation": [inputs["runId"], inputs["runAttempt"]]}
+    if not owner_admitted(json.loads((operation.parent / "owner.json").read_text()), owner):
+        raise RuntimeError("image owner superseded or cancelled")
+    fd = os.open(operation.parent / "gate", os.O_RDWR | os.O_NOFOLLOW)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return False
+        return not (operation / "result.json").exists() and stopped(unit_state(unit_for(operation)))
+    finally:
+        os.close(fd)
+
+
 def validate_inputs(inputs):
     if not re.fullmatch(r"(?:pr-[1-9][0-9]*|staging-[a-f0-9]{12})", inputs["jobRef"]):
         raise ValueError("invalid image job reference")
@@ -228,7 +245,12 @@ def remote(request):
     validate_inputs(inputs)
     if hashlib.sha256(request["source"].encode()).hexdigest() != inputs["workerSha256"]:
         raise ValueError("image worker source mismatch")
-    root = Path(tempfile.gettempdir()) / ("vm0-runner-image-" + str(os.getuid()))
+    # The caller explicitly selects remote tmpfs. tempfile.gettempdir() would
+    # silently use disk if that mount is absent or unavailable.
+    state_root = Path(os.environ["TMPDIR"])
+    if not state_root.is_absolute():
+        raise ValueError("image state root must be absolute")
+    root = state_root / ("vm0-runner-image-" + str(os.getuid()))
     private_dir(root)
     namespace = root / inputs["jobRef"]
     private_dir(namespace)
@@ -396,10 +418,9 @@ def observe(request, operation):
         if result_path.exists():
             emit({"result": json.loads(result_path.read_text())})
             return
-        if stopped(unit_state(unit_for(operation))):
-            # Publication can race the first read while systemd is collecting.
-            if result_path.exists():
-                continue
+        if stopped(unit_state(unit_for(operation))) and stopped_without_result(
+            operation, intent["inputs"]
+        ):
             raise RuntimeError("image unit stopped without a result; execution outcome unknown")
         time.sleep(0.5)
     raise RuntimeError("image result deadline exceeded")
