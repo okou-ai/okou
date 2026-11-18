@@ -55,8 +55,7 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use std::os::fd::{AsRawFd, RawFd};
-use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt, fchown};
 
 use shell_quote::quote_shell_arg;
 
@@ -68,7 +67,6 @@ const ENV_SCRIPT_PREFIX: &str = "vm0-env-";
 const ENV_SCRIPT_RANDOM_BYTES: usize = 16;
 const ENV_SCRIPT_SUFFIX: &str = ".sh";
 const ENV_SCRIPT_STALE_AFTER: Duration = Duration::from_secs(60 * 60);
-const CHOWN_UNCHANGED_UID: libc::uid_t = !0;
 
 fn shell_command_user_home() -> io::Result<Option<PathBuf>> {
     #[cfg(any(debug_assertions, feature = "test-support"))]
@@ -415,16 +413,6 @@ fn ensure_env_script_dir(dir: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn fchown_group(fd: RawFd, gid: libc::gid_t) -> io::Result<()> {
-    // SAFETY: `fd` comes from an open file/directory descriptor and `-1`
-    // as uid asks fchown to leave the owner unchanged.
-    let ret = unsafe { libc::fchown(fd, CHOWN_UNCHANGED_UID, gid) };
-    if ret != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(())
-}
-
 fn cleanup_stale_env_scripts_in(
     dir: &Path,
     now: SystemTime,
@@ -522,9 +510,9 @@ fn create_env_script_in_dir(
                 // before bash opens it.
                 let sandbox_gid = crate::user::sandbox_user_gid()?;
                 let script_dir_file = File::open(&script_dir)?;
-                fchown_group(file.as_raw_fd(), sandbox_gid)?;
+                fchown(&file, None, Some(sandbox_gid))?;
                 file.set_permissions(fs::Permissions::from_mode(0o440))?;
-                fchown_group(script_dir_file.as_raw_fd(), sandbox_gid)?;
+                fchown(&script_dir_file, None, Some(sandbox_gid))?;
                 fs::set_permissions(&script_dir, fs::Permissions::from_mode(0o710))?;
             } else {
                 file.set_permissions(fs::Permissions::from_mode(0o400))?;
