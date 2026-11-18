@@ -25,6 +25,7 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { createPublicRunnerMemory } from "./helpers/public-runner-memory";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -329,7 +330,11 @@ describe.each([false, true])(
       },
     );
 
-    it.each(["active", "expired-before-preparation"] as const)(
+    it.each([
+      "active",
+      "expired-before-preparation",
+      "expired-during-preparation",
+    ] as const)(
       "evaluates the captured permission source and temporary deadline: %s",
       async (expiry) => {
         const expired = expiry !== "active";
@@ -378,19 +383,63 @@ describe.each([false, true])(
         await connectors.updateFeatureSwitches(actor, {
           connectorChatAccountAccess: chatAccounts,
         });
-        await executeAndCancel(actor, agentId);
-        const queued = await queueChatRun(actor, {
-          agentId,
-          prompt: "use the current Slack write grant and its original expiry",
-        });
         const expiresAt = startedAt + 60 * 60 * 1000;
-        mockNow(
-          expiry === "expired-before-preparation"
-            ? expiresAt
-            : startedAt + 30 * 60 * 1000,
-        );
-        await runs.registerDirectRunner(runnerGroup);
-        const run = await queued.launch();
+        const prompt =
+          "use the current Slack write grant and its original expiry";
+        let run: Awaited<ReturnType<typeof sendChatRun>>;
+        if (expiry === "expired-during-preparation") {
+          const memory = createPublicRunnerMemory(context, actor);
+          run = await memory.run(async () => {
+            memory.installObjects();
+            const writer = await memory.startExecution(
+              agentId,
+              "Publish Memory for the next Run",
+            );
+            expect(writer.execution.networkPolicies?.slack?.allow).toContain(
+              "chat:write",
+            );
+            const versionId = await memory.publish(writer, [
+              { path: "MEMORY.md", content: "A fact the next Run can recall" },
+            ]);
+            mockNow(expiresAt - 1);
+            await runs.registerDirectRunner(runnerGroup);
+            const presigner = context.mocks.s3.getSignedUrl;
+            const sign = presigner.getMockImplementation();
+            if (!sign) {
+              throw new Error("Expected the Memory presigner fixture");
+            }
+            presigner.mockImplementation((...args) => {
+              const command = args[1];
+              if (
+                command instanceof GetObjectCommand &&
+                command.input.Key?.endsWith(`/${versionId}/archive.tar.gz`)
+              ) {
+                // The grant is active at admission and expires while the
+                // accepted Memory mount is being prepared.
+                mockNow(expiresAt);
+                presigner.mockImplementation(sign);
+              }
+              return sign(...args);
+            });
+            const hydrated = await memory.startExecution(agentId, prompt);
+            expect(hydrated.memory).toMatchObject({
+              versionId,
+              archiveUrl: expect.any(String),
+            });
+            expect(now()).toBe(expiresAt);
+            return hydrated.run;
+          });
+        } else {
+          await executeAndCancel(actor, agentId);
+          const queued = await queueChatRun(actor, { agentId, prompt });
+          mockNow(
+            expiry === "expired-before-preparation"
+              ? expiresAt
+              : startedAt + 30 * 60 * 1000,
+          );
+          await runs.registerDirectRunner(runnerGroup);
+          run = await queued.launch();
+        }
         // Delivered input keeps its permission source after a mode change.
         await connectors.updateFeatureSwitches(actor, {
           connectorChatAccountAccess: !chatAccounts,
