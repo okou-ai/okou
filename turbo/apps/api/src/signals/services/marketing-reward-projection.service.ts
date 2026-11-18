@@ -1,5 +1,5 @@
 import { marketingRewardReceiptSchema } from "@okouai/api-contracts/contracts/marketing-reward-settlement";
-import { marketingRewardProgressSourceSchema } from "@okouai/api-contracts/contracts/marketing-reward-projection";
+import { marketingRewardProgressSourceSchema } from "@okouai/api-contracts/contracts/marketing-reward-notification";
 import { command } from "ccstate";
 import type { ClaimedBackgroundJob } from "./background-job.service";
 import {

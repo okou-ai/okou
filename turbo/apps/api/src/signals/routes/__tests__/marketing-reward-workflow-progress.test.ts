@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { marketingRewardProjectionContract } from "@okouai/api-contracts/contracts/marketing-reward-projection";
+import { marketingRewardNotificationContract } from "@okouai/api-contracts/contracts/marketing-reward-notification";
 import { workflowsDetailContract } from "@okouai/api-contracts/contracts/workflows";
 import { expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -7,7 +7,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { mockNow } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { marketingRewardProjectionRoutes } from "../marketing-reward-projection";
+import { marketingRewardNotificationRoutes } from "../marketing-reward-notification";
 import { workflowsRoutes } from "../workflows";
 import { createBddApi } from "./helpers/api-bdd";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
@@ -109,11 +109,12 @@ test("refreshes the original Workflow creator from retained proof after failure 
     "workflow-progress-projection-1234567890123456789012345";
   mockEnv("MARKETING_REWARDS_PROJECTION_SECRET", progressSecret);
   await accept(
-    setupApp({ context, routes: marketingRewardProjectionRoutes })(
-      marketingRewardProjectionContract,
-    ).notifyProgress({
+    setupApp({ context, routes: marketingRewardNotificationRoutes })(
+      marketingRewardNotificationContract,
+    ).notify({
       headers: { authorization: `Bearer ${progressSecret}` },
       body: {
+        kind: "progress",
         version: 1,
         environment: "development",
         source: { kind: "event", eventId: fixture.source.id },

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "vitest";
 import { getStartedContract } from "@okouai/api-contracts/contracts/get-started";
 import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contracts/cron";
-import { marketingRewardProjectionContract } from "@okouai/api-contracts/contracts/marketing-reward-projection";
+import { marketingRewardNotificationContract } from "@okouai/api-contracts/contracts/marketing-reward-notification";
 import { orgInviteContract } from "@okouai/api-contracts/contracts/org-member-routes";
 import { marketingRewardSettlementContract } from "@okouai/api-contracts/contracts/marketing-reward-settlement";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -12,7 +12,7 @@ import { mockNow } from "../../../lib/time";
 import { getStartedRoutes } from "../get-started";
 import { cronProcessBackgroundJobsRoutes } from "../cron-process-background-jobs";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { marketingRewardProjectionRoutes } from "../marketing-reward-projection";
+import { marketingRewardNotificationRoutes } from "../marketing-reward-notification";
 import { marketingRewardSettlementRoutes } from "../marketing-reward-settlement";
 import { orgInviteRoutes } from "../org-invite";
 import { createRouteMocks } from "./helpers/route-test";
@@ -34,8 +34,8 @@ const headers = Object.freeze({ authorization: `Bearer ${projectionSecret}` });
 
 function projectionClient() {
   mockEnv("MARKETING_REWARDS_PROJECTION_SECRET", projectionSecret);
-  return setupApp({ context, routes: marketingRewardProjectionRoutes })(
-    marketingRewardProjectionContract,
+  return setupApp({ context, routes: marketingRewardNotificationRoutes })(
+    marketingRewardNotificationContract,
   );
 }
 
@@ -67,6 +67,7 @@ async function invitationFixture() {
 test("authenticates nonfinancial refreshes before resolving source proofs and rejects another environment", async () => {
   const api = projectionClient();
   const body = {
+    kind: "progress" as const,
     version: 1 as const,
     environment: "development" as const,
     source: { kind: "event" as const, eventId: randomUUID() },
@@ -76,24 +77,24 @@ test("authenticates nonfinancial refreshes before resolving source proofs and re
     settlementSecret,
     "source-read-secret",
   ]) {
-    const response = await api.notifyProgress({
+    const response = await api.notify({
       body,
       headers: { authorization: `Bearer ${credential}` },
     });
     expect(response.status).toBe(401);
     expect(response.headers.get("cache-control")).toBe("no-store");
   }
-  expect((await api.notifyProgress({ body, headers })).status).toBe(404);
+  expect((await api.notify({ body, headers })).status).toBe(404);
   expect(
     (
-      await api.notifyProgress({
+      await api.notify({
         body: { ...body, environment: "production" },
         headers,
       })
     ).status,
   ).toBe(409);
   mockEnv("MARKETING_REWARDS_PROJECTION_SECRET", undefined);
-  expect((await api.notifyProgress({ body, headers })).status).toBe(503);
+  expect((await api.notify({ body, headers })).status).toBe(503);
 });
 
 test("deduplicates source refreshes durably without changing pending invitations or choosing the recipient from the request", async () => {
@@ -101,17 +102,16 @@ test("deduplicates source refreshes durably without changing pending invitations
   const api = projectionClient();
   const publications = captureRewardProjectionPublications(context);
   const body = {
+    kind: "progress" as const,
     version: 1 as const,
     environment: "development" as const,
     source: { kind: "event" as const, eventId: fixture.source.id },
   };
   const forged = { ...body, beneficiaryUserId: "caller-chosen-user" };
-  expect((await api.notifyProgress({ body: forged, headers })).status).toBe(
-    400,
-  );
+  expect((await api.notify({ body: forged, headers })).status).toBe(400);
   const acknowledgements = await Promise.all(
     Array.from({ length: 4 }, () => {
-      return accept(api.notifyProgress({ body, headers }), [200]);
+      return accept(api.notify({ body, headers }), [200]);
     }),
   );
   const first = acknowledgements[0];
@@ -122,7 +122,9 @@ test("deduplicates source refreshes durably without changing pending invitations
     expect(result.body).toStrictEqual(first.body);
   }
   expect(first.body).toMatchObject({
-    ...body,
+    version: body.version,
+    environment: body.environment,
+    source: body.source,
     notificationId: expect.any(String),
   });
   await flushWaitUntilForTest();
@@ -133,7 +135,7 @@ test("deduplicates source refreshes durably without changing pending invitations
     },
   ]);
   expect(
-    (await accept(api.notifyProgress({ body, headers }), [200])).body,
+    (await accept(api.notify({ body, headers }), [200])).body,
   ).toStrictEqual(first.body);
   await flushWaitUntilForTest();
   expect(publications).toHaveLength(1);
@@ -152,6 +154,7 @@ test("validates the original invitation claim reference and recovers failed nonf
   const api = projectionClient();
   const publications = captureRewardProjectionPublications(context, true);
   const body = {
+    kind: "progress" as const,
     version: 1 as const,
     environment: "development" as const,
     source: {
@@ -162,7 +165,7 @@ test("validates the original invitation claim reference and recovers failed nonf
   };
   expect(
     (
-      await api.notifyProgress({
+      await api.notify({
         body: { ...body, source: { ...body.source, claimId: randomUUID() } },
         headers,
       })
@@ -170,7 +173,7 @@ test("validates the original invitation claim reference and recovers failed nonf
   ).toBe(404);
   expect(
     (
-      await api.notifyProgress({
+      await api.notify({
         body: {
           ...body,
           source: { ...body.source, invitationId: "another-invitation" },
@@ -181,13 +184,18 @@ test("validates the original invitation claim reference and recovers failed nonf
   ).toBe(409);
   // Make A's failed attempt due before B submits its own refresh.
   mockNow(new Date("2026-01-01T00:00:00.000Z"));
-  const ack = await accept(api.notifyProgress({ body, headers }), [200]);
-  expect(ack.body).toMatchObject(body);
+  const ack = await accept(api.notify({ body, headers }), [200]);
+  expect(ack.body).toMatchObject({
+    version: body.version,
+    environment: body.environment,
+    source: body.source,
+  });
   await flushWaitUntilForTest();
   expect(publications).toStrictEqual([]);
   await accept(
-    api.notifyProgress({
+    api.notify({
       body: {
+        kind: "progress",
         version: 1,
         environment: "development",
         source: { kind: "event", eventId: otherOwner.source.id },
@@ -203,7 +211,7 @@ test("validates the original invitation claim reference and recovers failed nonf
   };
   expect(publications).toStrictEqual([otherPublication]);
   expect(
-    (await accept(api.notifyProgress({ body, headers }), [200])).body,
+    (await accept(api.notify({ body, headers }), [200])).body,
   ).toStrictEqual(ack.body);
   await flushWaitUntilForTest();
   expect(publications).toStrictEqual([
@@ -243,9 +251,10 @@ test("refreshes a signed revocation using its retained original inviter", async 
   }
   const publications = captureRewardProjectionPublications(context);
   await accept(
-    projectionClient().notifyProgress({
+    projectionClient().notify({
       headers,
       body: {
+        kind: "progress",
         version: 1,
         environment: "development",
         source: { kind: "event", eventId: source.id },
@@ -322,7 +331,12 @@ async function receiptFixture(slack = false) {
   );
   return {
     actor,
-    body: { version: 1 as const, intent, receipt: result.body.receipt },
+    body: {
+      kind: "settlement" as const,
+      version: 1 as const,
+      intent,
+      receipt: result.body.receipt,
+    },
   };
 }
 
@@ -362,7 +376,7 @@ test("requires a dedicated projection credential and the exact committed financi
 test("cron recovers an acknowledged refresh without caller activity or renewing the financial receipt", async () => {
   await setupApp({
     context,
-    routes: marketingRewardProjectionRoutes,
+    routes: marketingRewardNotificationRoutes,
     isolatePg: true,
   });
   mockEnv("CRON_SECRET", "projection-recovery-cron");
