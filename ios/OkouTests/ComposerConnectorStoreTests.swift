@@ -417,7 +417,7 @@ final class ComposerConnectorStoreTests: XCTestCase {
 }
 
 @MainActor
-final class ComposerConnectorPermissionTests: XCTestCase {
+final class ComposerConnectorWritebackTests: XCTestCase {
 
   func testRejectedRemoteWriteKeepsItsBusinessReasonUntilExplicitReadback() async throws {
     let writes = Mutex(0)
