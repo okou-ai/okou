@@ -9,11 +9,13 @@
     <string name="chat_cache_unavailable">Le stockage hors ligne est indisponible. Ces discussions pourraient être indisponibles après un redémarrage.</string>
     <string name="chat_metadata_loading">Chargement des noms Okou et des projets…</string>
     <string name="chat_metadata_unavailable">Certaines informations Okou ou de projet sont indisponibles.</string>
-    <string name="chat_status_observed">Les états actif et non lu datent de la dernière actualisation.</string>
     <string name="chat_status_unavailable">Actualisation des états impossible. Les anciens indicateurs peuvent être obsolètes.</string>
     <string name="chat_status_loading">Vérification des états actif et non lu…</string>
     <string name="chat_refresh_status">Actualiser les états</string>
-    <string name="chat_recent">Récentes</string>
+    <string name="chat_all">Toutes</string>
+    <string name="chat_filter">Filtrer</string>
+    <string name="chat_clear_filter">Effacer le filtre</string>
+    <string name="chat_more_actions">Plus d’actions</string>
     <string name="chat_unread">Non lues</string>
     <string name="chat_archived">Archivées</string>
     <string name="chat_muted">En sourdine</string>

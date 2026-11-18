@@ -9,11 +9,13 @@
     <string name="chat_cache_unavailable">El almacenamiento sin conexión no está disponible. Estos chats podrían no estar disponibles después de reiniciar.</string>
     <string name="chat_metadata_loading">Cargando nombres de Okou y proyectos…</string>
     <string name="chat_metadata_unavailable">Parte de la información de Okou o de los proyectos no está disponible.</string>
-    <string name="chat_status_observed">Los estados de actividad y no leído corresponden a la última actualización.</string>
     <string name="chat_status_unavailable">No se pudo actualizar el estado. Los indicadores anteriores pueden estar desactualizados.</string>
     <string name="chat_status_loading">Comprobando actividad y estado de lectura…</string>
     <string name="chat_refresh_status">Actualizar estado</string>
-    <string name="chat_recent">Recientes</string>
+    <string name="chat_all">Todos</string>
+    <string name="chat_filter">Filtrar</string>
+    <string name="chat_clear_filter">Quitar filtro</string>
+    <string name="chat_more_actions">Más acciones</string>
     <string name="chat_unread">No leídos</string>
     <string name="chat_archived">Archivados</string>
     <string name="chat_muted">Silenciados</string>

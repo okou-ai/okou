@@ -9,11 +9,13 @@
     <string name="chat_cache_unavailable">Lo spazio offline non è disponibile. Queste chat potrebbero non essere disponibili dopo un riavvio.</string>
     <string name="chat_metadata_loading">Caricamento dei nomi Okou e dei progetti…</string>
     <string name="chat_metadata_unavailable">Alcune informazioni su Okou o sui progetti non sono disponibili.</string>
-    <string name="chat_status_observed">Gli stati attivo e non letto risalgono all’ultimo aggiornamento.</string>
     <string name="chat_status_unavailable">Impossibile aggiornare lo stato. Gli indicatori precedenti potrebbero essere obsoleti.</string>
     <string name="chat_status_loading">Verifica degli stati attivo e non letto…</string>
     <string name="chat_refresh_status">Aggiorna stato</string>
-    <string name="chat_recent">Recenti</string>
+    <string name="chat_all">Tutte</string>
+    <string name="chat_filter">Filtra</string>
+    <string name="chat_clear_filter">Rimuovi filtro</string>
+    <string name="chat_more_actions">Altre azioni</string>
     <string name="chat_unread">Non lette</string>
     <string name="chat_archived">Archiviate</string>
     <string name="chat_muted">Silenziate</string>

@@ -9,11 +9,13 @@
     <string name="chat_cache_unavailable">オフライン保存を利用できません。再起動後にこれらのチャットを表示できない場合があります。</string>
     <string name="chat_metadata_loading">Okou とプロジェクトの名前を読み込み中…</string>
     <string name="chat_metadata_unavailable">一部の Okou またはプロジェクトの情報を利用できません。</string>
-    <string name="chat_status_observed">アクティブ・未読状態は最後の更新時点のものです。</string>
     <string name="chat_status_unavailable">状態を更新できませんでした。以前の表示は古い可能性があります。</string>
     <string name="chat_status_loading">アクティブ・未読状態を確認中…</string>
     <string name="chat_refresh_status">状態を更新</string>
-    <string name="chat_recent">最近</string>
+    <string name="chat_all">すべて</string>
+    <string name="chat_filter">フィルター</string>
+    <string name="chat_clear_filter">フィルターを解除</string>
+    <string name="chat_more_actions">その他の操作</string>
     <string name="chat_unread">未読</string>
     <string name="chat_archived">アーカイブ済み</string>
     <string name="chat_muted">ミュート中</string>
