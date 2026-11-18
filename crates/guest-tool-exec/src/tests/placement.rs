@@ -1,8 +1,7 @@
 use super::*;
 use cli_test_support::child::KillAndWaitChild as TestChild;
-use rustix::net::{AddressFamily, SocketFlags, SocketType, socket_with};
-use std::mem::{MaybeUninit, size_of};
-use std::os::fd::{AsFd, AsRawFd};
+use rustix::net::{AddressFamily, SocketFlags, SocketType, connect, getsockname, socket_with};
+use std::os::fd::AsFd;
 use std::os::unix::net::UnixListener;
 use std::thread;
 use std::time::Instant;
@@ -12,17 +11,7 @@ const QUEUE_TEST_CHILD_ENV: &str = "VM0_TEST_PLACEMENT_CONNECT_CHILD";
 fn fill_accept_queue(listener: &UnixListener) -> Vec<OwnedFd> {
     // Read the bound address so fixture clients independently exercise the
     // kernel's nonblocking queue-full result, without using the timed API.
-    let mut address = MaybeUninit::<libc::sockaddr_un>::uninit();
-    let mut address_len = size_of::<libc::sockaddr_un>() as libc::socklen_t;
-    // SAFETY: address and address_len point to writable, correctly sized storage.
-    let result = unsafe {
-        libc::getsockname(
-            listener.as_raw_fd(),
-            address.as_mut_ptr().cast(),
-            &mut address_len,
-        )
-    };
-    assert_eq!(result, 0);
+    let address = getsockname(listener).expect("read bound queue address");
     let mut queued = Vec::new();
     for _ in 0..1024 {
         let socket = socket_with(
@@ -32,17 +21,12 @@ fn fill_accept_queue(listener: &UnixListener) -> Vec<OwnedFd> {
             None,
         )
         .expect("create nonblocking queue socket");
-        // SAFETY: getsockname initialized address_len bytes of the address and
-        // socket owns a valid AF_UNIX descriptor for the entire call.
-        let result =
-            unsafe { libc::connect(socket.as_raw_fd(), address.as_ptr().cast(), address_len) };
-        if result == 0 {
-            queued.push(socket);
-        } else {
-            assert_eq!(io::Error::last_os_error().kind(), io::ErrorKind::WouldBlock);
+        if let Err(error) = connect(&socket, &address) {
+            assert_eq!(io::Error::from(error).kind(), io::ErrorKind::WouldBlock);
             assert!(!queued.is_empty());
             return queued;
         }
+        queued.push(socket);
     }
     panic!("fixture could not fill the listener's accept queue");
 }
