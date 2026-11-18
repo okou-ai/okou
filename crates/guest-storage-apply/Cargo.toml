@@ -4,7 +4,7 @@ version = "0.32.23"
 edition.workspace = true
 
 [dependencies]
-flate2 = { workspace = true, features = ["runtime_detection", "rust_backend"] }
+flate2 = { workspace = true, features = ["runtime_detection", "zlib-rs"] }
 guest-contracts.workspace = true
 libc = { workspace = true, features = ["std"] }
 linux-mountinfo.workspace = true
@@ -24,7 +24,6 @@ guest-telemetry.workspace = true
 nix = { workspace = true, features = ["fs", "time"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-flate2 = { workspace = true, features = ["zlib-rs"] }
 nix = { workspace = true, features = ["resource"] }
 rustix = { workspace = true, features = ["event", "fs", "std"] }
 
