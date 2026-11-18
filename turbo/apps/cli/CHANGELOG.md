@@ -1,5 +1,20 @@
 # Changelog
 
+## [10.32.0](https://github.com/okou-ai/okou/compare/cli-v10.31.4...cli-v10.32.0) (2026-11-18)
+
+
+### Features
+
+* **cli:** save data responses and reuse identical calls ([#48466](https://github.com/okou-ai/okou/issues/48466)) ([cfd8171](https://github.com/okou-ai/okou/commit/cfd8171f6c0268b617f212d32802cb4ca20cfb74))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.850.2
+    * @okouai/pi-agent-runtime bumped to 1.51.154
+
 ## [10.31.4](https://github.com/okou-ai/okou/compare/cli-v10.31.3...cli-v10.31.4) (2026-11-18)
 
 

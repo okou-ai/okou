@@ -13,6 +13,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1145.2](https://github.com/okou-ai/okou/compare/app-v0.1145.1...app-v0.1145.2) (2026-11-18)
+
+
+### Refactoring
+
+* **app:** frame the chat list and workspace as one sheet ([#48445](https://github.com/okou-ai/okou/issues/48445)) ([49fa2ae](https://github.com/okou-ai/okou/commit/49fa2ae03ef16d6413ecf7609ae87be3d5c52825))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.850.2
+    * @okouai/ui bumped to 1.21.48
+
 ## [0.1145.1](https://github.com/okou-ai/okou/compare/app-v0.1145.0...app-v0.1145.1) (2026-11-18)
 
 
