@@ -7,20 +7,21 @@ runs simulator tests to recover a missing archive.
 ## CI and test evidence
 
 `.github/workflows/ios.yml` runs simulator checks on ordinary PRs and dispatches.
-The shared `.github/actions/detect-release` action uses the same release branch,
-main-push commit message, and merge-queue PR lookup as Android, Desktop, Turbo,
-Crates, and Security. An unavailable MQ lookup selects ordinary CI. Release-please
-events skip repeated script checks, lint, package tests, simulator validation, and preview
-builds. A release merge group with changed iOS inputs still builds and publishes
-the exact version's unsigned archive; its required gate waits for both jobs.
-
-Bot-authored release PR updates are checked on Ubuntu first because their token
-does not trigger PR workflows. The validator uses the exact PR head and complete
-Git diff, including renamed-away inputs. Recognized release metadata receives an
-explicit exemption without historical test discovery or a claim that tests ran.
-Other changes dispatch full native validation. An existing dispatch for the same
-head is retained instead of repeated; the two release-refresh callers serialize
-scheduling. Failed or cancelled validation remains a visible failure.
+Bot-authored release PR updates are checked on Ubuntu first. The validator uses
+the exact PR head and complete Git diff, including renamed-away inputs. Only
+recognized release metadata can reuse successful App and package test steps from
+an ancestor of the PR's protected `main` base with identical normalized native
+source inputs. The gate links that exact run and attempt; it does not claim to
+have tested a new SDK. The merge group independently verifies its actual
+toolchain before reusing simulator evidence. Missing proof or non-metadata
+changes select full native validation. An existing dispatch for the same head
+is retained instead of repeated; the two release-refresh callers serialize
+validation scheduling. Failed or cancelled validation remains a
+visible failure rather than being automatically retried. Discovery uses GitHub's
+history at the pinned main ancestor: up to 32 iOS-changing commits and the latest
+change to each other native input path. Partial Git fetches avoid downloading
+unrelated historical blobs. No matching executed tests retains the full native
+path.
 A main merge group with changed iOS inputs also builds an **unsigned device
 Release archive**, with locked Swift packages and no production credentials.
 Standalone Swift package tests, simulator validation, and device compilation run
@@ -32,9 +33,9 @@ simulator checkout retains bounded queue ancestry (32 commits; the current squas
 merges at most five entries); the
 archive builder needs only its own commit. Only release-only groups install an
 R2 client on macOS to resolve potential prior evidence.
-For ordinary changes, cheap change detection selects the native jobs while script
-regressions run independently on Linux. Archive publication and the required
-gate require those checks to succeed. Detection and gate checkouts
+Cheap change detection selects the native jobs while the existing script
+regressions run independently on Linux. Both archive publication and the required
+gate still require those script checks to succeed. Detection and gate checkouts
 contain only their executed scripts; detection retains the bounded Git ancestry.
 The simulator job captures its actual toolchain once and checks historical
 evidence before downloading build caches or source artifacts. A verified hit
@@ -44,25 +45,17 @@ archive builds retain their independent parallel paths. Native execution resolve
 locked dependencies and compiles before booting the explicit simulator, waits
 for `simctl bootstatus`, and then runs the built tests.
 
-For ordinary changes, all three native jobs must succeed before the Ubuntu
-publisher writes canonical objects. It compares their independently captured **complete input
+All three native jobs must succeed before the Ubuntu publisher writes canonical
+objects. The publisher compares their independently captured **complete input
 fingerprints and toolchains**, rejecting a missing or mismatched package/simulator
 record. It verifies the tar checksum produced on macOS before transfer and
 checks archive provenance against `build-archive` and test provenance against
 `build-test` and `test-packages`, using each producer's exact run attempt. The
 required `ci-gate-ios` includes all three native jobs and publication.
 
-A release-please archive instead carries version-2 evidence with
-`kind: release-please`. Both publisher and production consumer verify the exact
-main merge-group run/attempt and its successful conditional
-`Record release-please validation exemption` step in `build-archive`. This record
-is stored only in the archive manifest, never in the executed-test cache. It does
-not claim App or package tests ran. Archive source, toolchain, version, checksums,
-immutable readiness, signing, and export verification remain required.
-
-Outside that release-please path, a metadata-only merge group can reuse App tests
-when an existing version-1 test record matches its complete input fingerprint.
-Standalone package tests still run. This narrower reuse classifier examines the
+A release-only merge group can omit simulator tests only when an existing test
+record matches its complete test input fingerprint. Standalone package tests
+still run on every selected merge group. The classifier examines the
 **whole group's diff**, not its branch name or last commit. Its conservative
 allowlist accepts release manifest versions, configured package changelogs,
 simple version files, package.json top-level versions, configured JSON extra-files
@@ -73,8 +66,7 @@ iOS, run tests normally. Unrecognized metadata changes also run tests.
 
 The fingerprint covers Git blob contents **and modes** for all tracked iOS files
 (except `ios/CHANGELOG.md`), the iOS/proof/release workflows, the CI base resolver,
-the shared release detection action, and release-please configuration. It also
-includes actual Xcode build version,
+and release-please configuration. It also includes actual Xcode build version,
 device and simulator SDK build versions, architecture, and simulator destination.
 Only the values in `ios/version.txt` and the marked `MARKETING_VERSION` line are
 normalized for test reuse. The archive fingerprint keeps those values intact.
@@ -157,8 +149,7 @@ verifies the existing complete archive. Test evidence and readiness are separate
 a successful upload does not prove tests passed.
 
 The manifest binds the archive SHA-256, full inputs/toolchain, app version,
-builder identity, and exact prior/current test evidence or explicit release
-exemption. Readiness binds its
+builder identity, and exact prior/current test evidence. Readiness binds its
 canonical manifest key and manifest SHA-256. Publication can fail if the installed
 AWS CLI or R2 does not support conditional writes; there is no unconditional-write
 fallback. Repository Actions read permission is required to verify provenance.

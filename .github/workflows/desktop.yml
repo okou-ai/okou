@@ -7,7 +7,6 @@ on:
   pull_request:
     paths:
       - ".github/workflows/desktop.yml"
-      - ".github/actions/detect-release/**"
       - ".github/scripts/artifacts/build-okou-desktop-artifact.sh"
       - ".github/scripts/artifacts/fetch-okou-desktop-artifact.sh"
       - ".github/scripts/artifacts/r2-copy.sh"
@@ -24,7 +23,6 @@ on:
       - main
     paths:
       - ".github/workflows/desktop.yml"
-      - ".github/actions/detect-release/**"
       - ".github/scripts/artifacts/build-okou-desktop-artifact.sh"
       - ".github/scripts/artifacts/fetch-okou-desktop-artifact.sh"
       - ".github/scripts/artifacts/r2-copy.sh"
@@ -52,23 +50,6 @@ defaults:
     shell: bash
 
 jobs:
-  # Detect release-please context across all event types (PR, push, merge queue).
-  detect-release:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      pull-requests: read
-    outputs:
-      skip: ${{ steps.check.outputs.skip }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: .github/actions/detect-release
-          persist-credentials: false
-      - uses: ./.github/actions/detect-release
-        id: check
-
   detect-desktop-version:
     if: github.event_name == 'merge_group'
     runs-on: ubuntu-latest
@@ -108,12 +89,12 @@ jobs:
 
   test-native:
     name: test-native-macos-arm64
-    needs: [detect-desktop-version, detect-release]
+    needs: detect-desktop-version
     # Release PRs only update versions/changelogs; merge groups still build artifacts.
     if: >-
       ${{
         !cancelled() &&
-        needs.detect-release.result == 'success' && needs.detect-release.outputs.skip == 'false' &&
+        !(github.event_name == 'pull_request' && startsWith(github.head_ref, 'release-please--branches--')) &&
         (github.event_name != 'merge_group' ||
           (needs.detect-desktop-version.result == 'success' && needs.detect-desktop-version.outputs.changed != 'true'))
       }}
@@ -133,11 +114,11 @@ jobs:
 
   package-macos:
     name: package-macos-arm64
-    needs: [detect-desktop-version, detect-release]
+    needs: detect-desktop-version
     if: >-
       ${{
         !cancelled() &&
-        needs.detect-release.result == 'success' && needs.detect-release.outputs.skip == 'false' &&
+        !(github.event_name == 'pull_request' && startsWith(github.head_ref, 'release-please--branches--')) &&
         (github.event_name != 'merge_group' ||
           (needs.detect-desktop-version.result == 'success' && needs.detect-desktop-version.outputs.changed != 'true'))
       }}
@@ -203,12 +184,12 @@ jobs:
 
   build-macos:
     name: build-macos-arm64
-    needs: [detect-desktop-version, detect-release, test-native, package-macos]
+    needs: [detect-desktop-version, test-native, package-macos]
     # Report selected failures before publishing any validated packages.
     if: >-
       ${{
         !cancelled() &&
-        needs.detect-release.result == 'success' && needs.detect-release.outputs.skip == 'false' &&
+        !(github.event_name == 'pull_request' && startsWith(github.head_ref, 'release-please--branches--')) &&
         (github.event_name != 'merge_group' ||
           needs.detect-desktop-version.result != 'success' || needs.detect-desktop-version.outputs.changed != 'true')
       }}
@@ -246,10 +227,9 @@ jobs:
 
   deploy-desktop:
     name: deploy-desktop-macos-arm64
-    needs: [detect-desktop-version, detect-release]
+    needs: detect-desktop-version
     if: >-
       ${{
-        needs.detect-release.result == 'success' &&
         needs.detect-desktop-version.outputs.changed == 'true' &&
         github.event_name == 'merge_group'
       }}
@@ -333,7 +313,7 @@ jobs:
           fi
 
       - name: Verify native runtime and helper
-        if: steps.existing.outputs.exists != 'true' && needs.detect-release.outputs.skip != 'true'
+        if: steps.existing.outputs.exists != 'true'
         run: |
           swift test --package-path desktop -j 4 --parallel --num-workers 2
           swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolution

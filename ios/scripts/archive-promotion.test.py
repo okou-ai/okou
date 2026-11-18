@@ -41,10 +41,23 @@ print('{}')
 """
 
 GH = """#!/usr/bin/env python3
-import json, os, sys
+import json, os, subprocess, sys, urllib.parse
 assert sys.argv[1] == 'api'
 route = sys.argv[2]
 records = json.load(open(os.environ['GITHUB_RECORDS']))
+if '/commits?' in route:
+    query = urllib.parse.parse_qs(urllib.parse.urlsplit(route).query)
+    shas = subprocess.check_output(['git', 'rev-list', '--max-count=' + query['per_page'][0],
+        query['sha'][0], '--', query['path'][0]], text=True,
+        cwd=os.environ.get('GITHUB_HISTORY_REPO')).splitlines()
+    print(json.dumps([{'sha': sha} for sha in shas]))
+    sys.exit(0)
+if '/actions/workflows/ios.yml/runs?' in route:
+    query = urllib.parse.parse_qs(urllib.parse.urlsplit(route).query)
+    print(json.dumps({'workflow_runs': [r['run'] for r in records.values()
+        if r['run']['head_sha'] == query['head_sha'][0]
+        and r['run'].get('conclusion') == 'success']}))
+    sys.exit(0)
 run_id = route.split('/runs/')[1].split('/')[0]
 record = records[run_id]
 if 'attempts' in record:
@@ -88,7 +101,6 @@ class PromotionTest(unittest.TestCase):
             "AWS_ACCESS_KEY_ID": "test-key",
             "AWS_SECRET_ACCESS_KEY": "test-secret",
             "STORE": str(self.root / "store"),
-            "IS_RELEASE": "false",
             "IOS_RAN_TESTS": "true",
             "IOS_VERSION": "1.0.0",
         }
@@ -292,52 +304,6 @@ class PromotionTest(unittest.TestCase):
         self.commit()
         self.env["IOS_VERSION"] = "1.0.1"
 
-    def release_exemption(self):
-        self.release()
-        self.env["IS_RELEASE"] = "true"
-        self.record()
-        self.records["123"]["jobs"][0]["conclusion"] = "skipped"
-        self.records["123"]["jobs"][2]["conclusion"] = "skipped"
-        self.records["123"]["jobs"][1]["steps"].append(
-            {"name": "Record release-please validation exemption", "conclusion": "success"}
-        )
-        self.save_records()
-        self.capture()
-        self.archive()
-        (self.work / "test-inputs.json").unlink()
-        (self.work / "package-inputs.json").unlink()
-
-    def test_release_archive_publishes_and_promotes_without_test_artifacts(self):
-        self.release_exemption()
-        self.cli("publish", self.work)
-        target = self.consume_work()
-        self.cli("consume", target, "--wait-seconds", 0)
-        mapping = json.loads((target / "release-mapping.json").read_bytes())
-        self.assertEqual(mapping["iosVersion"], "1.0.1")
-        self.assertEqual(mapping["testEvidence"]["kind"], "release-please")
-        self.assertEqual(mapping["testEvidence"]["version"], 2)
-        self.assertFalse((Path(self.env["STORE"]) / "okou-ios/tests").exists())
-        self.assertEqual(
-            (target / "Original.xcarchive/Products/Applications/Okou.app/Okou").read_bytes(),
-            b"compiled-device-code",
-        )
-
-    def test_release_exemption_requires_successful_archive_step_provenance(self):
-        self.release_exemption()
-        for result in ["skipped", "failure", "cancelled"]:
-            with self.subTest(result=result):
-                self.records["123"]["jobs"][1]["steps"][-1]["conclusion"] = result
-                self.save_records()
-                self.cli("publish", self.work, error="did not pass")
-                self.assertFalse(self.ready().exists())
-
-    def test_release_exemption_is_checked_again_at_consumption(self):
-        self.release_exemption()
-        self.cli("publish", self.work)
-        self.records["123"]["jobs"][1]["steps"][-1]["conclusion"] = "skipped"
-        self.save_records()
-        self.cli("consume", self.consume_work(), "--wait-seconds", 0, error="did not pass")
-
     def test_maps_different_main_and_builder_shas_without_rebuild(self):
         builder = self.git("rev-parse", "HEAD")
         self.cli("publish", self.work)
@@ -451,6 +417,92 @@ class PromotionTest(unittest.TestCase):
         self.cli("resolve-tests", self.work)
         self.assertIn("run_tests=true", Path(self.env["GITHUB_OUTPUT"]).read_text())
 
+    def test_release_pr_reuses_actual_main_tests_without_a_toolchain_process(self):
+        self.release()
+        decision = json.loads(self.cli("release-pr-tests", "--base", self.base))
+        self.assertTrue(decision["reuse"])
+        self.assertEqual(decision["commitSha"], self.base)
+        self.assertEqual(
+            decision["runUrl"], self.records["123"]["run"]["html_url"] + "/attempts/1"
+        )
+
+    def test_release_pr_requires_actual_app_and_package_success(self):
+        self.release()
+        self.records["123"]["jobs"][1]["conclusion"] = "failure"
+        self.records["123"]["jobs"][2]["conclusion"] = "cancelled"
+        self.save_records()
+        self.cli("release-pr-tests", "--base", self.base, error="Builder did not pass")
+
+    def test_release_pr_does_not_treat_skipped_tests_as_execution(self):
+        self.release()
+        self.records["123"]["jobs"][0]["steps"][0]["conclusion"] = "skipped"
+        self.save_records()
+        self.assertFalse(
+            json.loads(self.cli("release-pr-tests", "--base", self.base))["reuse"]
+        )
+
+    def test_release_pr_missing_main_tests_keeps_native_validation(self):
+        self.release()
+        self.records.clear()
+        self.save_records()
+        self.assertFalse(
+            json.loads(self.cli("release-pr-tests", "--base", self.base))["reuse"]
+        )
+
+    def test_release_pr_skipped_native_job_is_not_test_evidence(self):
+        self.release()
+        self.records["123"]["jobs"][0] = {"name": "build-test", "conclusion": "skipped"}
+        self.save_records()
+        self.assertFalse(
+            json.loads(self.cli("release-pr-tests", "--base", self.base))["reuse"]
+        )
+
+    def test_release_pr_does_not_reuse_an_unmerged_queue_commit(self):
+        self.file("unrelated.txt", "a different queue entry\n")
+        self.commit()
+        self.env["GITHUB_RUN_ID"] = "124"
+        self.record()
+        del self.records["123"]
+        self.save_records()
+        self.git("checkout", "-q", "--detach", self.base)
+        self.release()
+        self.assertFalse(
+            json.loads(self.cli("release-pr-tests", "--base", self.base))["reuse"]
+        )
+
+    def test_shallow_release_pr_finds_tests_before_unrelated_main_commits(self):
+        for index in range(65):
+            self.git("commit", "--allow-empty", "-qm", f"unrelated main {index}")
+        base = self.git("rev-parse", "HEAD")
+        self.release()
+        source = self.repo
+        clone = self.root / "shallow-release"
+        subprocess.run(
+            ["git", "clone", "-q", "--depth=8", source.as_uri(), str(clone)], check=True
+        )
+        self.env["GITHUB_HISTORY_REPO"] = str(source)
+        self.repo = clone
+        self.assertEqual(self.git("rev-parse", "--is-shallow-repository"), "true")
+        decision = json.loads(self.cli("release-pr-tests", "--base", base))
+        self.assertTrue(decision["reuse"])
+        self.assertEqual(decision["commitSha"], self.base)
+
+    def test_release_pr_mixed_changes_cannot_reuse_even_unchanged_native_sources(self):
+        self.release()
+        self.file("turbo/source.ts", "export const value = 2;\n")
+        self.commit()
+        self.assertFalse(
+            json.loads(self.cli("release-pr-tests", "--base", self.base))["reuse"]
+        )
+
+    def test_release_pr_source_changes_cannot_use_passing_main_tests(self):
+        self.release()
+        self.file("ios/App.swift", "let application = 2\n")
+        self.commit()
+        self.assertFalse(
+            json.loads(self.cli("release-pr-tests", "--base", self.base))["reuse"]
+        )
+
     def test_configured_json_allows_only_its_version_to_change(self):
         config = json.loads((self.repo / "release-please-config.json").read_text())
         config["packages"]["turbo/apps/cli"]["extra-files"] = [
@@ -474,6 +526,9 @@ class PromotionTest(unittest.TestCase):
         )
         self.commit()
         self.assertEqual(self.cli("release-only", "--base", base), "true")
+        self.assertTrue(
+            json.loads(self.cli("release-pr-tests", "--base", base))["reuse"]
+        )
         self.capture()
         self.cli("resolve-tests", self.work)
         self.assertIn("run_tests=false", Path(self.env["GITHUB_OUTPUT"]).read_text())
@@ -507,7 +562,6 @@ class PromotionTest(unittest.TestCase):
             ("ios/Package.resolved", '{"pins": ["new dependency"]}\n'),
             (".github/workflows/ios.yml", "changed native workflow\n"),
             (".github/workflows/ios-build-cache.yml", "changed cache workflow\n"),
-            (".github/actions/detect-release/action.yml", "changed release selection\n"),
             (
                 ".github/actions/setup-ios-build-cache/action.yml",
                 "changed cache setup\n",

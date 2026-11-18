@@ -1,27 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ "${RELEASE_DETECT_RESULT:?RELEASE_DETECT_RESULT is required}" != success ]; then
-  echo '::error::iOS release classification must succeed'
-  exit 1
-fi
-case "${IS_RELEASE:-}" in
-  true)
-    if [ "${DETECT_RESULT:-}" != success ]; then
-      echo '::error::Release archive selection must succeed'
-      exit 1
-    fi
-    case "${EVENT_NAME:?}:${IOS_NEEDED:-}:${ARCHIVE_RESULT:-}:${PUBLISH_RESULT:-}" in
-      merge_group:true:success:success | merge_group:false:skipped:skipped | pull_request:false:skipped:skipped | push:true:skipped:skipped | push:false:skipped:skipped) ;;
-      *) echo '::error::Release-please requires an explicit archive selection and publication'; exit 1 ;;
-    esac
-    echo 'Release-please: native validation skipped; required release artifacts are ready.'
-    exit 0
-    ;;
-  false) ;;
-  *) echo '::error::Missing or invalid iOS release selection'; exit 1 ;;
-esac
-
 if [ "${DETECT_RESULT:?DETECT_RESULT is required}" != success ]; then
   echo "::error::iOS change detection must succeed; got $DETECT_RESULT"
   exit 1

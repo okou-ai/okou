@@ -3,8 +3,6 @@ set -euo pipefail
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source_root=$(git -C "$script_dir" rev-parse --show-toplevel)
-export RELEASE_DETECT_RESULT=success
-export IS_RELEASE=false
 test_root=$(mktemp -d)
 trap 'rm -rf "$test_root"' EXIT
 repo="$test_root/repo"
@@ -120,7 +118,7 @@ before_helper=$(git rev-parse HEAD)
 echo '# Shared base detection changed.' >> .github/scripts/checks/changed-base-ref.sh
 commit shared-helper
 expect true EVENT_NAME=push PUSH_BEFORE_SHA="$before_helper"
-for path in .github/workflows/ios-build-cache.yml .github/actions/setup-ios-build-cache/action.yml .github/actions/detect-release/action.yml; do
+for path in .github/workflows/ios-build-cache.yml .github/actions/setup-ios-build-cache/action.yml; do
   before_cache=$(git rev-parse HEAD)
   mkdir -p "$(dirname "$path")"
   echo cache > "$path"
@@ -207,24 +205,6 @@ for result in failure cancelled skipped; do
   fi
   if EVENT_NAME=merge_group DETECT_RESULT=success SCRIPT_CHECKS_RESULT=success IOS_NEEDED=true PACKAGES_RESULT=$result BUILD_RESULT=success ARCHIVE_RESULT=success PUBLISH_RESULT=success bash "$script_dir/ci-gate.sh" > "$test_root/rejected.log" 2>&1; then
     echo "Gate accepted failed/missing package tests $result" >&2
-    exit 1
-  fi
-done
-release_gate() {
-  EVENT_NAME=$1 IOS_NEEDED=$2 ARCHIVE_RESULT=$3 PUBLISH_RESULT=$4 \
-    RELEASE_DETECT_RESULT=${5-success} DETECT_RESULT=success IS_RELEASE=true \
-    SCRIPT_CHECKS_RESULT=skipped LINT_RESULT=skipped PACKAGES_RESULT=skipped \
-    BUILD_RESULT=skipped PREVIEW_RESULT=skipped bash "$script_dir/ci-gate.sh"
-}
-release_gate pull_request false skipped skipped
-release_gate push true skipped skipped
-release_gate merge_group false skipped skipped
-release_gate merge_group true success success
-for result in failure cancelled skipped; do
-  if release_gate merge_group true "$result" success > "$test_root/rejected.log" 2>&1 \
-    || release_gate merge_group true success "$result" > "$test_root/rejected.log" 2>&1 \
-    || release_gate merge_group true success success "$result" > "$test_root/rejected.log" 2>&1; then
-    echo "Release gate accepted failed/missing classification or artifact $result" >&2
     exit 1
   fi
 done
