@@ -1891,6 +1891,7 @@ async fn fresh_delivery_cancellation_drains_started_publication() {
     let mut delivery = FreshArchiveDelivery {
         cancel: publication_cancel,
         phase_records: FreshArchivePhaseRecords::default(),
+        slow_headers: 0,
         classification: JoinSet::new(),
         groups: None,
         owned_keys: HashSet::new(),
@@ -3301,7 +3302,7 @@ async fn background_fill_concurrent_runs_share_class_and_total_bounds() {
     let home = home_at(&temp);
     let bytes = tarball_bytes();
     let cache = decoded::DecodedCache::new(home.clone());
-    let mut server = gated_archive_server(bytes.clone(), 36).await;
+    let mut server = gated_archive_server(bytes.clone(), 68).await;
     let coordinator = StorageCacheBackgroundFillCoordinator::new().unwrap();
     let reporter = new_telemetry().reporter();
     for index in 0..4 {
@@ -3339,7 +3340,7 @@ async fn background_fill_concurrent_runs_share_class_and_total_bounds() {
         submitters.push(std::thread::spawn(move || {
             barrier.wait();
             let mut accepted = Vec::new();
-            for index in 0..40 {
+            for index in 0..68 {
                 let name = format!("concurrent-{missing}-{index}");
                 let action = if missing {
                     BackgroundFillAction::Fill(None)
@@ -3363,7 +3364,7 @@ async fn background_fill_concurrent_runs_share_class_and_total_bounds() {
         .into_iter()
         .map(|thread| thread.join().unwrap())
         .collect::<Vec<_>>();
-    server.release.add_permits(36);
+    server.release.add_permits(68);
     tokio::time::timeout(Duration::from_secs(5), coordinator.wait_idle_for_test())
         .await
         .expect("accepted background operations should finish after release");
@@ -3371,9 +3372,9 @@ async fn background_fill_concurrent_runs_share_class_and_total_bounds() {
     join_raw_http_task(server.task, "released background archive requests")
         .await
         .unwrap();
-    assert_eq!(accepted.iter().map(Vec::len).sum::<usize>(), 32);
-    for class in accepted {
-        assert!((4..=28).contains(&class.len()));
+    assert_eq!(accepted.iter().map(Vec::len).sum::<usize>(), 64);
+    for (class, limit) in accepted.into_iter().zip([28, 60]) {
+        assert!((4..=limit).contains(&class.len()));
         for name in class {
             assert_eq!(
                 std::fs::read(home.storage_cache_dir(&name, "v1").join("archive.tar.gz")).unwrap(),
@@ -3934,6 +3935,7 @@ async fn background_fill_coordinator_saturates_queue_without_starting_excess_wor
         .collect(),
         home: home.clone(),
         selected_at: Instant::now(),
+        expand_queue: false,
     }
     .start(&coordinator, &mut telemetry);
 
@@ -3963,6 +3965,56 @@ async fn background_fill_coordinator_saturates_queue_without_starting_excess_wor
     let _ = server.task.await;
     assert!(!home.storage_cache_dir("queue-rejected", "v1").exists());
     coordinator.shutdown().await;
+}
+
+#[tokio::test]
+async fn background_fill_only_expands_the_waiting_limit_with_slow_delivery() {
+    for (expand_queue, accepted) in [(false, 28), (true, 60)] {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let body = tarball_bytes();
+        let server = gated_archive_server(body.clone(), accepted).await;
+        let coordinator = StorageCacheBackgroundFillCoordinator::new().unwrap();
+        let mut telemetry = new_telemetry();
+        let groups = (0..64)
+            .map(|index| {
+                let group = background_fill_group(
+                    server.url.clone(),
+                    &format!("archive-{index}"),
+                    "v1",
+                    Some(body.len() as u64),
+                );
+                (group, BackgroundFillAction::Fill(None))
+            })
+            .collect();
+        DeferredBackgroundFill {
+            groups,
+            home: home.clone(),
+            selected_at: Instant::now(),
+            expand_queue,
+        }
+        .start(&coordinator, &mut telemetry);
+
+        server.release.add_permits(accepted);
+        tokio::time::timeout(Duration::from_secs(5), coordinator.wait_idle_for_test())
+            .await
+            .expect("accepted archives should be published");
+        coordinator.shutdown().await;
+        join_raw_http_task(server.task, "released background archive requests")
+            .await
+            .unwrap();
+        assert!(server.max_active.load(Ordering::SeqCst) <= 4);
+        for index in 0..64 {
+            let archive = home
+                .storage_cache_dir(&format!("archive-{index}"), "v1")
+                .join("archive.tar.gz");
+            if index < accepted {
+                assert_eq!(std::fs::read(archive).unwrap(), body);
+            } else {
+                assert!(!archive.exists());
+            }
+        }
+    }
 }
 
 #[tokio::test]
