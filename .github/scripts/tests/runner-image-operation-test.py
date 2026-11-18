@@ -293,6 +293,25 @@ class ImageOperationTest(unittest.TestCase):
         self.invoke("run", "build", str(self.result))
         self.assert_one_build()
 
+    def test_cancellation_fences_late_systemd_acceptance(self):
+        self.invoke("claim")
+        self.environment["IMAGE_FAULT"] = "absent-launch"
+        self.assertNotEqual(
+            self.invoke("run", "build", str(self.result), check=False).returncode, 0
+        )
+        operation = next(self.root.glob("vm0-runner-image-*/*/*/intent.json")).parent
+        late = subprocess.run(
+            ["python3", str(operation / "worker.py"), "worker", str(operation)],
+            env=self.environment,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        self.assertNotEqual(late.returncode, 0)
+        self.assertIn("cancelled", late.stderr)
+        self.assertFalse(self.records("executions"))
+        self.assertNotEqual(self.invoke("claim", check=False).returncode, 0)
+
     def test_runner_bytes_are_rechecked_before_execution(self):
         self.environment["RUNNER_IMAGE_RUNNER_SHA256"] = "0" * 64
         self.invoke("claim")

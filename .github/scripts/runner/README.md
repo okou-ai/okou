@@ -120,7 +120,9 @@ workflow reclaiming ownership or an expired result permitting execution again.
 
 Cancellation stops and verifies owned services; failed or unreachable retirement
 is reported as unconfirmed and retains files. Remote hard deadlines remain in
-force. Successful results retain their expiration timer without another SSH call.
+force. Cancellation also fences admission, so a delayed systemd acceptance cannot
+start work after stopped-state verification. Only a new workflow generation can
+claim a cancelled namespace. Successful results retain their expiration timer without another SSH call.
 This protocol recovers image outcomes, not the initiating transport reset or
 preview/production deployment ownership.
 

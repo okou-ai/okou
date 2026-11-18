@@ -172,6 +172,10 @@ def owner_matches(actual, expected):
     )
 
 
+def owner_admitted(actual, expected):
+    return owner_matches(actual, expected) and actual["cancelled"] is False
+
+
 def retire(operation):
     unit = unit_for(operation)
     if not stopped(unit_state(unit)):
@@ -232,14 +236,16 @@ def remote(request):
     owner_path = namespace / "owner.json"
     entry_owner = json.loads(owner_path.read_text()) if owner_path.exists() else None
     if request["action"] == "claim":
+        if owner_matches(entry_owner, owner) and not owner_admitted(entry_owner, owner):
+            raise RuntimeError("image workflow owner cancelled; a new attempt is required")
         if (
             entry_owner
             and not owner_matches(entry_owner, owner)
             and entry_owner["generation"] >= owner["generation"]
         ):
             raise RuntimeError("image owner superseded or input identity conflicts")
-    elif request["action"] in ("run", "guard") and not owner_matches(entry_owner, owner):
-        raise RuntimeError("image owner superseded or not claimed")
+    elif request["action"] in ("run", "guard") and not owner_admitted(entry_owner, owner):
+        raise RuntimeError("image owner superseded, cancelled or not claimed")
     if request["action"] in ("run", "guard"):
         if request["phase"] not in ("warm", "build", "guard"):
             raise ValueError("invalid image phase")
@@ -248,8 +254,8 @@ def remote(request):
         # Reattachment is read-only and must not wait on the worker's mutation
         # gate. In particular, stream loss cannot block observation for 570s.
         if (operation / "intent.json").exists():
-            if not owner_matches(json.loads(owner_path.read_text()), owner):
-                raise RuntimeError("image owner superseded")
+            if not owner_admitted(json.loads(owner_path.read_text()), owner):
+                raise RuntimeError("image owner superseded or cancelled")
             observe(request, operation)
             return
 
@@ -279,7 +285,9 @@ def remote(request):
                 for operation in operation_paths(namespace):
                     retire(operation)
                     shutil.rmtree(operation)
-                atomic_json(owner_path, dict(owner, operations=[]))
+                atomic_json(owner_path, dict(owner, operations=[], cancelled=False))
+            elif not owner_admitted(previous, owner):
+                raise RuntimeError("image workflow owner cancelled; a new attempt is required")
             emit({"claimed": owner["identity"]})
             return
         if not owner_matches(previous, owner):
@@ -288,10 +296,16 @@ def remote(request):
                 return
             raise RuntimeError("image owner superseded or not claimed")
         if request["action"] == "cancel":
+            # Fence admission even if a previously submitted systemd request
+            # becomes visible only after our final stopped-state observation.
+            previous["cancelled"] = True
+            atomic_json(owner_path, previous)
             for operation in operation_paths(namespace):
                 retire(operation)
             emit({"cancelled": owner["identity"]})
             return
+        if not owner_admitted(previous, owner):
+            raise RuntimeError("image workflow owner cancelled")
         phase = request["phase"]
         intent = operation / "intent.json"
         if not intent.exists():
@@ -400,8 +414,8 @@ def worker(operation):
         raise RuntimeError("invalid image execution identity")
     with gate(operation.parent):
         owner = json.loads((operation.parent / "owner.json").read_text())
-        if owner["identity"] != digest(inputs):
-            raise RuntimeError("image operation owner superseded")
+        if owner["identity"] != digest(inputs) or owner["cancelled"] is not False:
+            raise RuntimeError("image operation owner superseded or cancelled")
         if intent["phase"] == "guard":
             execute(operation, intent, intent["command"], intent["stdin"].encode(), {})
             return
