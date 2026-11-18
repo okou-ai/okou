@@ -109,7 +109,7 @@ import type { SandboxAuth } from "../../types/auth";
 import type { CustomConnectorNetworkIntent } from "@okouai/api-contracts/validators/custom-connector-network";
 import { db$, writeDb$ } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
-import { safeSync, settle, settleIncludingAbort, tapError } from "../utils";
+import { safeSync, settle, settleIncludingAbort } from "../utils";
 import { resolveBuiltinConnectorAutomaticMcpCredential } from "./builtin-connector-automatic-oauth.service";
 import {
   builtinConnectorCredentialSecretReadCondition,
@@ -139,7 +139,6 @@ import {
   connectorOwnedVariableWrite,
 } from "./connector-credential-storage-write.service";
 import {
-  decryptPersistentSecretsMap,
   decryptStoredSecretValue,
   encryptStoredSecretValue,
 } from "./crypto.utils";
@@ -168,7 +167,6 @@ const ACTIVE_FIREWALL_AUTH_RUN_STATUSES = ["pending", "running"] as const;
 
 interface FirewallAuthBody {
   readonly networkIntent?: CustomConnectorNetworkIntent;
-  readonly encryptedSecrets?: string;
   readonly authHeaders: Record<string, string>;
   readonly authBase?: string;
   readonly authQuery?: Record<string, string>;
@@ -4478,31 +4476,9 @@ const prepareNonCustomFirewallSecrets$ = command(
       auth.userId,
       featureSwitchContextRows0,
     );
-    // Legacy writers and active Runs still send an envelope. Omission only
-    // removes that namespace; server-owned sources keep their own authority.
-    // Retire the envelope reader after the deployment/Run drain in #48077.
-    const secrets =
-      body.encryptedSecrets === undefined
-        ? {}
-        : await tapError(
-            decryptPersistentSecretsMap(
-              body.encryptedSecrets,
-              featureSwitchContext,
-            ),
-          );
-    if (!secrets) {
-      return {
-        ok: false,
-        response: badRequestMessage("Failed to decrypt secrets"),
-      };
-    }
+    const secrets: Record<string, string> = {};
     const managedSecretName =
       MODEL_PROVIDER_TYPES[AUTO_RUN_PROVIDER].secretName;
-    if (referenced.secrets.has(managedSecretName)) {
-      // Neither a model nor a same-name connector may use an envelope snapshot.
-      // Its current Run/account authority must supply the requested material.
-      delete secrets[managedSecretName];
-    }
     if (
       referenced.secrets.has(managedSecretName) &&
       body.matchedFirewall === undefined &&
@@ -4534,20 +4510,18 @@ const prepareNonCustomFirewallSecrets$ = command(
       }
       secrets[managedSecretName] = key.apiKey;
     }
-    if (referenced.secrets.has("OKOU_DATA_TOKEN")) {
-      delete secrets.OKOU_DATA_TOKEN;
-      if (
-        body.matchedFirewall === undefined &&
-        !Object.hasOwn(body.secretConnectorMap ?? {}, "OKOU_DATA_TOKEN") &&
-        !Object.hasOwn(body.secretConnectorMetadataMap ?? {}, "OKOU_DATA_TOKEN")
-      ) {
-        const url = env("OKOU_DATA_ROUTER_URL");
-        const token = env("OKOU_DATA_TOKEN");
-        if (!url || !token) {
-          return { ok: false, response: connectorNotConfigured() };
-        }
-        secrets.OKOU_DATA_TOKEN = token;
+    if (
+      referenced.secrets.has("OKOU_DATA_TOKEN") &&
+      body.matchedFirewall === undefined &&
+      !Object.hasOwn(body.secretConnectorMap ?? {}, "OKOU_DATA_TOKEN") &&
+      !Object.hasOwn(body.secretConnectorMetadataMap ?? {}, "OKOU_DATA_TOKEN")
+    ) {
+      const url = env("OKOU_DATA_ROUTER_URL");
+      const token = env("OKOU_DATA_TOKEN");
+      if (!url || !token) {
+        return { ok: false, response: connectorNotConfigured() };
       }
+      secrets.OKOU_DATA_TOKEN = token;
     }
     return {
       ok: true,

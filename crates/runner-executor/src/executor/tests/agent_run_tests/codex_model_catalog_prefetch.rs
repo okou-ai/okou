@@ -28,7 +28,7 @@ const PREFETCH_ACTION: &str = "runner_codex_model_catalog_prefetch";
 fn codex_oauth_context() -> ExecutionContext {
     let mut context = minimal_context();
     context.cli_agent_type = "codex".into();
-    context.encrypted_secrets = Some("encrypted".into());
+    context.firewall_token = Some("host-firewall-token".into());
     context.firewalls = Some(vec![FirewallEntry::Builtin {
         name: "model-provider:codex-oauth-token".into(),
         base_url_vars: None,
@@ -652,11 +652,8 @@ async fn codex_catalog_prefetch_skips_ineligible_runs() {
     let mut unrelated_framework = codex_oauth_context();
     unrelated_framework.cli_agent_type = "claude-code".into();
 
-    let mut missing_secrets = codex_oauth_context();
-    missing_secrets.encrypted_secrets = None;
-
-    let mut empty_secrets = codex_oauth_context();
-    empty_secrets.encrypted_secrets = Some(String::new());
+    let mut guest_only = codex_oauth_context();
+    guest_only.firewall_token = None;
 
     let mut missing_firewall = codex_oauth_context();
     missing_firewall.firewalls = None;
@@ -700,14 +697,9 @@ async fn codex_catalog_prefetch_skips_ineligible_runs() {
             "unrelated framework",
         ),
         (
-            missing_secrets,
+            guest_only,
             SandboxReuseResult::PoolMiss,
-            "missing encrypted secrets",
-        ),
-        (
-            empty_secrets,
-            SandboxReuseResult::PoolMiss,
-            "empty encrypted secrets",
+            "guest-only authority",
         ),
         (
             missing_firewall,

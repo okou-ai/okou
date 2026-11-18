@@ -39,10 +39,12 @@ revokes them immediately when a Run ends. Preserve the authorization and
 lifecycle checks owned by each endpoint. Guest possession of either identity
 must not, by itself, authorize raw upstream-secret resolution.
 
-Use a separate host-only identity for the resolver when it returns reusable
-upstream credentials. Keep it out of Guest environment/configuration, masking
-values and user-visible diagnostic responses. Signed scopes and verified
-claims determine authority; changing a token prefix must not upgrade it.
+Both application credential resolution and network-only admission require the
+host-only firewall token. Every API-authored execution publication carries it.
+Standalone Runner jobs can use routes that need no API resolver. Keep the host
+token out of Guest environment/configuration, masking values and user-visible
+diagnostic responses. Signed scopes and verified claims determine authority.
+Changing a token prefix must not upgrade it.
 
 ## Credentials Outside the Sandbox
 

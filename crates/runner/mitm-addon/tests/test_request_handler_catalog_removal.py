@@ -56,7 +56,7 @@ def _active_sandbox(tmp_path: Path) -> dict[str, object]:
         "sandboxToken": "sandbox-token",
         "networkLogPath": str(tmp_path / "network.jsonl"),
         "proxyLogPath": str(tmp_path / "proxy.jsonl"),
-        "encryptedSecrets": "iv:tag:data",
+        "firewallToken": "host-firewall-token",
         "firewalls": [
             {"kind": "builtin", "name": _REMOVED},
             {"kind": "builtin", "name": _RETAINED},
@@ -247,7 +247,7 @@ async def test_no_auth_mcp_skips_account_validation(
         sandbox["connectorRoutingVariables"] = {f"custom:{custom_id}": {}}
         intent = custom_id
     if not has_auth_context:
-        sandbox.pop("encryptedSecrets")
+        sandbox.pop("firewallToken")
         sandbox.pop("connectorRoutingVariables")
     registry_path.write_text(json.dumps(registry_data))
     endpoint = FakeAuthEndpoint()
@@ -527,7 +527,7 @@ async def test_custom_connector_id_selects_sole_remaining_owner_after_removal(
                 "sandboxToken": "sandbox-token",
                 "networkLogPath": str(tmp_path / "network.jsonl"),
                 "proxyLogPath": str(tmp_path / "proxy.jsonl"),
-                "encryptedSecrets": "iv:tag:data",
+                "firewallToken": "host-firewall-token",
                 "firewalls": [
                     {
                         "kind": "inline",
@@ -594,7 +594,7 @@ async def test_custom_connector_id_selects_sole_remaining_owner_after_removal(
                     "sandboxToken": "sandbox-token",
                     "networkLogPath": str(tmp_path / "network.jsonl"),
                     "proxyLogPath": str(tmp_path / "proxy.jsonl"),
-                    "encryptedSecrets": "iv:tag:data",
+                    "firewallToken": "host-firewall-token",
                     "connectorRoutingVariables": {f"custom:{custom_connector_id}": {}},
                     "firewalls": [
                         {

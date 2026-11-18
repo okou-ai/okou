@@ -296,7 +296,6 @@ function createExecutionPreparedContext(
           ? null
           : untrustedEnvironment,
       platformEnvironment: environment.platformEnvironment ?? {},
-      encryptedSecrets: null,
       vars: environment.vars ?? null,
       firewalls: [...environment.firewalls],
       networkPolicies: environment.networkPolicies,

@@ -167,14 +167,24 @@ class _FirewallAuthIdentityCache:
 
 
 @dataclass(frozen=True)
+class _FirewallAuthResolver:
+    request: FirewallAuthRequest = field(repr=False)
+    cache_key: FirewallAuthCacheKey
+
+
+@dataclass(frozen=True)
 class _FirewallAuthContext:
     """Request-local firewall auth inputs for the hook orchestration path."""
 
     allow: matching.FirewallAllow
     firewall_base: str
     proxy_log_path: str
-    auth_request: FirewallAuthRequest
-    auth_cache_key: FirewallAuthCacheKey
+    resolver: _FirewallAuthResolver | None
+
+    def require_resolver(self) -> _FirewallAuthResolver:
+        if self.resolver is None:
+            raise ConnectorNotConfiguredError("Firewall resolver authority is unavailable")
+        return self.resolver
 
 
 @dataclass(frozen=True)
@@ -256,6 +266,7 @@ async def _resolve_network_admission(
     intent = context.allow.api_entry.get("networkIntent")
     if intent is None:
         return {}
+    resolver = context.require_resolver()
     # UTF-8/surrogateescape decoding consumes at most three raw bytes per
     # UTF-16 unit (astral code points use two units). Bound additional admission
     # decoding/allocation first, then measure the full URL exactly. General
@@ -275,8 +286,7 @@ async def _resolve_network_admission(
         result = retained.result
     else:
         request = replace(
-            context.auth_request,
-            encrypted_secrets="",
+            resolver.request,
             auth_headers={},
             auth_base=None,
             auth_query=None,
@@ -291,12 +301,12 @@ async def _resolve_network_admission(
             network_request={"method": identity[0], "url": identity[1], "intent": intent},
         )
         network_identity = json.dumps(
-            {"applicationIdentity": context.auth_cache_key.auth_identity, "networkIntent": intent},
+            {"applicationIdentity": resolver.cache_key.auth_identity, "networkIntent": intent},
             sort_keys=True,
             separators=(",", ":"),
         ).encode("utf-8")
         cache_key = replace(
-            context.auth_cache_key,
+            resolver.cache_key,
             purpose="network",
             auth_identity=hashlib.sha256(network_identity).hexdigest(),
         )
@@ -368,8 +378,13 @@ def _build_firewall_auth_context(
 ) -> _FirewallAuthContext:
     """Capture request-local auth inputs after matched-firewall metadata exists."""
     api_entry = allow.api_entry
-    auth_config = api_entry.get("auth", {})
     firewall_base = flow.metadata[metadata_keys.FIREWALL_BASE]
+    proxy_log_path = flow_metadata.proxy_log_path(flow.metadata)
+    firewall_token = sandbox_info.get("firewallToken")
+    if not isinstance(firewall_token, str) or not firewall_token:
+        return _FirewallAuthContext(allow, firewall_base, proxy_log_path, resolver=None)
+
+    auth_config = api_entry.get("auth", {})
     api_id = flow.metadata[metadata_keys.FIREWALL_API_ID]
     run_id = flow_metadata.run_id(flow.metadata)
     custom_connector_id = api_entry.get("customConnectorId")
@@ -401,10 +416,7 @@ def _build_firewall_auth_context(
                 **({"sourceId": source_id} if isinstance(source_id, str) else {}),
             }
     auth_request = FirewallAuthRequest(
-        # Keep reporting/callback identity in sandboxToken. Only resolver
-        # traffic uses host-only authority; absence is the rollout legacy path.
-        sandbox_token=sandbox_info.get("firewallToken", sandbox_info.get("sandboxToken", "")),
-        encrypted_secrets=sandbox_info.get("encryptedSecrets") or "",
+        firewall_token=firewall_token,
         auth_headers=auth_config.get("headers", {}),
         auth_base=auth_config.get("base"),
         auth_query=auth_config.get("query"),
@@ -433,9 +445,8 @@ def _build_firewall_auth_context(
     return _FirewallAuthContext(
         allow=allow,
         firewall_base=firewall_base,
-        proxy_log_path=flow_metadata.proxy_log_path(flow.metadata),
-        auth_request=resolved_identity.auth_request,
-        auth_cache_key=auth_cache_key,
+        proxy_log_path=proxy_log_path,
+        resolver=_FirewallAuthResolver(resolved_identity.auth_request, auth_cache_key),
     )
 
 
@@ -459,12 +470,12 @@ def _build_firewall_auth_identity(
         if auth_request.network_intent is not None
         else normal_body
     )
-    sandbox_token_sha256 = hashlib.sha256(auth_request.sandbox_token.encode("utf-8")).hexdigest()
+    firewall_token_sha256 = hashlib.sha256(auth_request.firewall_token.encode("utf-8")).hexdigest()
     material = {
         "firewallName": firewall_name,
         "firewallBase": firewall_base,
         "authBodySha256": hashlib.sha256(identity_body).hexdigest(),
-        "sandboxTokenSha256": sandbox_token_sha256,
+        "firewallTokenSha256": firewall_token_sha256,
     }
     canonical_json = json.dumps(material, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return _ResolvedFirewallAuthIdentity(
@@ -666,10 +677,8 @@ async def _resolve_firewall_auth(
 ) -> dict:
     if not plan.needs_resolution:
         return _empty_firewall_auth_metadata()
-    return await get_firewall_headers(
-        context.auth_cache_key,
-        context.auth_request,
-    )
+    resolver = context.require_resolver()
+    return await get_firewall_headers(resolver.cache_key, resolver.request)
 
 
 def _validate_resolved_firewall_auth(
@@ -1738,7 +1747,7 @@ async def handle_firewall_request(
         )
 
         if (
-            plan.injects_credentials or context.auth_request.network_intent is not None
+            plan.injects_credentials or allow.api_entry.get("networkIntent") is not None
         ) and not revalidate_current_firewall_authorization():
             return _finish_firewall_auth_result(
                 flow,
@@ -1822,7 +1831,7 @@ async def try_apply_stream_safe_firewall_auth_for_requestheaders(
         return FirewallHeaderPhaseAuthResult.FALLBACK
 
     if (
-        plan.injects_credentials or context.auth_request.network_intent is not None
+        plan.injects_credentials or allow.api_entry.get("networkIntent") is not None
     ) and not revalidate_current_firewall_authorization():
         restore_probe_state()
         return FirewallHeaderPhaseAuthResult.FALLBACK

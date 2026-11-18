@@ -8,7 +8,7 @@ fn body(identity: RunnerProcessIdentity, run_id: RunId, not_after: u64) -> Strin
     json!({
         "runnerId": identity.runner_id(), "heartbeatGeneration": identity.heartbeat_generation(),
         "profile": "vm0/default", "notAfter": not_after,
-        "executionContext": {"runId":run_id,"prompt":"hello","sandboxToken":"run-token","cliAgentType":"","platformEnvironment":{},"connectorRuntimeTargets":[],"contentBundles":{"format":"tar-gzip-v1","skills":[]}}
+        "executionContext": {"runId":run_id,"prompt":"hello","sandboxToken":"run-token","firewallToken":"firewall-token","cliAgentType":"","platformEnvironment":{},"connectorRuntimeTargets":[],"contentBundles":{"format":"tar-gzip-v1","skills":[]}}
     }).to_string()
 }
 

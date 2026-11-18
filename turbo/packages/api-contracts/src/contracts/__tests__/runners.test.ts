@@ -139,7 +139,6 @@ function preparedExecutionContextFixture() {
       generationRunId: null,
       recoveryPrompt: null,
     },
-    encryptedSecrets: null,
     secretConnectorMap: null,
     secretConnectorMetadataMap: null,
     firewalls: [],

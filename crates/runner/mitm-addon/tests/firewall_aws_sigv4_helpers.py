@@ -83,7 +83,7 @@ class AwsApiEntry(AwsApiEntryBase, total=False):
 class AwsSandboxInfoBase(TypedDict):
     runId: str
     sandboxToken: str
-    encryptedSecrets: str
+    firewallToken: str
     networkLogPath: str
     billableFirewalls: list[str]
     vars: dict[str, str]
@@ -155,7 +155,6 @@ def aws_sandbox_info(
     *,
     run_id: str = "run-1",
     sandbox_token: str | None = None,
-    encrypted_secrets: str = "iv:tag:data",
     region: str = DEFAULT_AWS_REGION,
     billable_firewalls: Sequence[str] | None = None,
     secret_connector_map: Mapping[str, str] | None = None,
@@ -164,7 +163,7 @@ def aws_sandbox_info(
     sandbox_info: AwsSandboxInfo = {
         "runId": run_id,
         "sandboxToken": DEFAULT_SANDBOX_AUTH_KEY if sandbox_token is None else sandbox_token,
-        "encryptedSecrets": encrypted_secrets,
+        "firewallToken": "host-firewall-token",
         "networkLogPath": str(tmp_path / "network.jsonl"),
         "billableFirewalls": [] if billable_firewalls is None else list(billable_firewalls),
         "vars": {"AWS_REGION": region},
@@ -340,9 +339,8 @@ def _aws_auth_cache_key(
     resolved_sandbox_info = aws_sandbox_info(tmp_path) if sandbox_info is None else sandbox_info
     auth_config = resolved_api_entry["auth"]
     auth_request = auth_client.FirewallAuthRequest(
-        encrypted_secrets=resolved_sandbox_info["encryptedSecrets"],
         auth_headers=auth_config["headers"],
-        sandbox_token=resolved_sandbox_info["sandboxToken"],
+        firewall_token=resolved_sandbox_info["firewallToken"],
         auth_base=auth_config.get("base"),
         auth_query=auth_config.get("query"),
         auth_aws_sigv4=auth_config["awsSigv4"],

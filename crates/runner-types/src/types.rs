@@ -25,6 +25,16 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
+fn deserialize_firewall_token<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    let token = String::deserialize(deserializer)?;
+    if token.is_empty() {
+        return Err(serde::de::Error::custom("firewall authority is empty"));
+    }
+    Ok(Some(token))
+}
+
 // ---------------------------------------------------------------------------
 // Execution reuse identity
 // ---------------------------------------------------------------------------
@@ -66,8 +76,8 @@ pub struct ExecutionContext {
     pub vars: Option<HashMap<String, String>>,
     pub sandbox_token: String,
     /// Host-only firewall resolver authority; never forward into Guest input.
-    /// Absent on launches from an older API during the rollout in #48077.
-    #[serde(default)]
+    /// API publications require it. Standalone jobs are constructed with None.
+    #[serde(deserialize_with = "deserialize_firewall_token")]
     pub firewall_token: Option<String>,
     #[serde(default)]
     pub storage_manifest: Option<StorageManifest>,
@@ -88,11 +98,6 @@ pub struct ExecutionContext {
     // runner testing. This marker is internal and must not be accepted from API JSON.
     #[serde(default, skip)]
     pub local_secret_env_keys: Option<HashSet<String>>,
-    // Encrypted runtime secret namespace forwarded to mitm-addon for auth
-    // resolution. Decrypted keys match `${{ secrets.NAME }}` names; connector
-    // and model-provider keys are env aliases, not storage secret names.
-    #[serde(default)]
-    pub encrypted_secrets: Option<String>,
     // Maps firewall auth secret env aliases (the `NAME` in `${{ secrets.NAME }}`)
     // to their connector or provider owner. Keys are env aliases, not storage secret names.
     #[serde(default)]

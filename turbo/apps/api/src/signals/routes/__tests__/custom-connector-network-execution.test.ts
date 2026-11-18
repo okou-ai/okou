@@ -117,6 +117,14 @@ async function expectInitialConnector(
       networkAdmission: true as const,
       networkRequest: { method: "GET", url, intent },
     };
+    const guestDenied = await firewall.requestFirewallAuth(
+      { authorization: `Bearer ${execution.sandboxToken}` },
+      networkBody,
+      [401],
+    );
+    expect(guestDenied.body).toMatchObject({
+      error: { code: "UNAUTHORIZED" },
+    });
     const admitted = await firewall.requestFirewallAuth(
       firewallHeaders,
       networkBody,

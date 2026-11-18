@@ -292,7 +292,6 @@ async fn real_python_registry_owner_accepts_rust_writer_source_bound_inline_buil
         firewalls: Some(&firewalls),
         network_policies: None,
         connector_runtime_targets: Some(&targets),
-        encrypted_secrets: None,
         secret_connector_map: None,
         secret_connector_metadata_map: None,
         vars: None,

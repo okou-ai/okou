@@ -123,7 +123,12 @@ fn raw_publication_preserves_missing_null_and_nested_strictness() {
 fn raw_publication_keeps_context_first_redacted_errors_and_trailing_rejection() {
     let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
     body["contentBundles"] = Value::Null;
-    for key in ["sandboxToken", "platformEnvironment", "apiStartTime"] {
+    for key in [
+        "sandboxToken",
+        "firewallToken",
+        "platformEnvironment",
+        "apiStartTime",
+    ] {
         let mut invalid = body.clone();
         invalid[key] = serde_json::json!({"private-secret": true});
         reject(
@@ -149,6 +154,17 @@ fn raw_publication_keeps_context_first_redacted_errors_and_trailing_rejection() 
     reject(broken, "Invalid execution context");
     reject("null", "Invalid execution context");
     reject("[]", "Invalid execution context");
+}
+
+#[test]
+fn publication_requires_host_firewall_authority() {
+    let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
+    body.as_object_mut().unwrap().remove("firewallToken");
+    reject(&body.to_string(), "Invalid execution context");
+    for value in [Value::Null, Value::String(String::new())] {
+        body["firewallToken"] = value;
+        reject(&body.to_string(), "Invalid execution context");
+    }
 }
 
 #[test]

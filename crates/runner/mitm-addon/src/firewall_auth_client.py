@@ -208,9 +208,8 @@ class _HttpResponse:
 class FirewallAuthRequest:
     """Inputs sent to the runner firewall auth webhook."""
 
-    encrypted_secrets: str = field(repr=False)
     auth_headers: dict
-    sandbox_token: str = field(repr=False)
+    firewall_token: str = field(repr=False)
     auth_base: str | None = None
     auth_query: dict | None = None
     auth_aws_sigv4: dict | None = None
@@ -227,7 +226,6 @@ class FirewallAuthRequest:
     def to_body(self, *, force_refresh: bool = False) -> dict:
         """Build the webhook JSON body while preserving omission semantics."""
         body: dict = {
-            "encryptedSecrets": self.encrypted_secrets,
             "authHeaders": self.auth_headers,
         }
         if self.auth_base:
@@ -252,8 +250,6 @@ class FirewallAuthRequest:
             body["networkRequest"] = self.network_request
         if self.network_intent is not None:
             body["networkIntent"] = self.network_intent
-        if not self.encrypted_secrets:
-            body.pop("encryptedSecrets", None)
         if force_refresh:
             body["forceRefresh"] = True
         return body
@@ -1099,11 +1095,7 @@ async def fetch_firewall_headers(
     *,
     force_refresh: bool = False,
 ) -> FirewallAuthSuccess:
-    """Resolve auth headers via server-side decryption.
-
-    request.encrypted_secrets is the encrypted runtime secret namespace. After API-side
-    decryption, keys are the `NAME` in `${{ secrets.NAME }}` and values are the
-    real secret values.
+    """Resolve application or network credentials with host-only authority.
 
     request.secret_connector_map maps firewall auth secret env aliases (the
     `NAME` in `${{ secrets.NAME }}`) to the connector or provider owner that
@@ -1129,7 +1121,7 @@ async def fetch_firewall_headers(
         if not force_refresh and request.prepared_normal_body is not None
         else request.to_bytes(force_refresh=force_refresh)
     )
-    req = platform_api.make_api_request(url, body, request.sandbox_token)
+    req = platform_api.make_api_request(url, body, request.firewall_token)
     plan = _build_connection_plan(req)
     progress = _FirewallAuthFetchProgress()
     timeout = asyncio.timeout(FIREWALL_AUTH_FETCH_DEADLINE_SECONDS)

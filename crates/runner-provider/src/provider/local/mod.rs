@@ -315,7 +315,6 @@ impl super::LocalJobSource for LocalProvider {
             local_resume_session_id: req.session_id,
             secret_values: environment_merge.secret_values,
             local_secret_env_keys: environment_merge.local_secret_env_keys,
-            encrypted_secrets: None,
             secret_connector_map: None,
             secret_connector_metadata_map: None,
             cli_agent_type: req.cli_agent_type,

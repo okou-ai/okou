@@ -1,19 +1,11 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import {
-  literal,
-  object,
-  record,
-  string,
-  union,
-  type infer as zInfer,
-} from "zod";
+import { literal, object, string, union, type infer as zInfer } from "zod";
 
 import { env } from "../../lib/env";
 import { getSecretKmsClient } from "../../lib/secret-kms-client";
 
-const secretsMapSchema = record(string(), string());
 const STORED_SECRET_ENVELOPE_PREFIX = "vm0secret:v1:";
 
 const directKmsCiphertextSchema = object({
@@ -207,21 +199,6 @@ export async function decryptPersistentSecretValue(
   ctx: FeatureSwitchContext,
 ): Promise<string> {
   return await decryptStoredSecretValue(encrypted, ctx);
-}
-
-export async function decryptPersistentSecretsMap(
-  encryptedData: string | null,
-  ctx: FeatureSwitchContext,
-): Promise<Record<string, string> | null> {
-  if (!encryptedData) {
-    return null;
-  }
-
-  return secretsMapSchema.parse(
-    JSON.parse(
-      await decryptPersistentSecretValue(encryptedData, ctx),
-    ) as unknown,
-  );
 }
 
 /**

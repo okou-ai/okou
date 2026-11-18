@@ -332,7 +332,7 @@ def _builtin_shared_registry(tmp_path, *, capture_network_bodies: bool = False):
             "billableFirewalls": [],
             "cliAgentType": "claude-code",
             "sandboxToken": "sandbox-shared",
-            "encryptedSecrets": "iv:tag:data",
+            "firewallToken": "host-firewall-token",
             "networkLogPath": str(tmp_path / "net.jsonl"),
             "proxyLogPath": str(tmp_path / "proxy.jsonl"),
             "captureNetworkBodies": capture_network_bodies,

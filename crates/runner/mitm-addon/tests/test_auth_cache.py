@@ -666,7 +666,6 @@ class TestGetFirewallHeaders:
     async def test_cache_miss_fetches_and_caches(self):
         mock_headers = {"Authorization": "Bearer fresh-token"}
         mock_result = firewall_auth_success(headers=mock_headers)
-        encrypted = "iv:tag:data"
         auth_templates = {"Authorization": "Bearer ${{ secrets.TOKEN }}"}
         cache_key = auth_cache_key(api_id="https://api.github.com")
 
@@ -675,7 +674,6 @@ class TestGetFirewallHeaders:
             headers = await auth_cache.get_firewall_headers(
                 cache_key,
                 firewall_auth_request(
-                    encrypted_secrets=encrypted,
                     auth_headers=auth_templates,
                 ),
             )
@@ -687,7 +685,6 @@ class TestGetFirewallHeaders:
         mock_fetch.assert_called_once()
         assert mock_fetch.call_args.args == (
             firewall_auth_request(
-                encrypted_secrets=encrypted,
                 auth_headers=auth_templates,
             ),
         )

@@ -388,7 +388,7 @@ def test_packaged_blocked_delivery_independent_progress_and_failure_outcome(tmp_
                             "cliAgentType": "codex",
                             "captureNetworkBodies": True,
                             "sandboxToken": "synthetic-run-token",
-                            "encryptedSecrets": "synthetic-ciphertext",
+                            "firewallToken": "host-firewall-token",
                             "modelUsageProvider": "gpt-5.5",
                             "usageGeneration": "generation-1",
                             "billableFirewalls": ["model-provider:usage-test"],
@@ -590,7 +590,6 @@ def test_packaged_custom_network_denial_precedes_upload_and_upstream(tmp_path, u
             run_id=str(uuid4()),
             firewall_name="custom_network",
             custom_connector_id=custom_id,
-            include_encrypted_secrets=False,
             api_entry={
                 "id": "custom_network:0",
                 "base": "https://example.com/api/",
@@ -633,5 +632,5 @@ def test_packaged_custom_network_denial_precedes_upload_and_upstream(tmp_path, u
             "url": "https://example.com/api/items",
             "intent": {"kind": "cloudflare_access", "configId": config_id, "generation": 1},
         }
-        assert "encryptedSecrets" not in sent
+        assert api.requests[0].headers["authorization"] == "Bearer host-firewall-token"
         assert sent["authHeaders"] == {}
