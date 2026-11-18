@@ -1,8 +1,14 @@
 use std::io::{self, Read, Write};
-use std::mem::{MaybeUninit, size_of};
+use std::mem::MaybeUninit;
 use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::time::{Duration, Instant};
+
+use rustix::io::Errno;
+use rustix::net::{
+    AddressFamily, SocketAddrUnix, SocketFlags, SocketType, accept_with, bind, connect, listen,
+    socket_with,
+};
 
 const ENDPOINT_PREFIX: &str = "vm0-process-control-";
 const MAX_U32_DECIMAL_DIGITS: usize = 10;
@@ -13,7 +19,7 @@ const TOOL_PLACEMENT_MARKER: u8 = 0x54;
 const TOOL_PLACEMENT_CONFIRM_MARKER: u8 = 0x43;
 const TOOL_PLACEMENT_ACK_MARKER: u8 = 0x41;
 const ANCILLARY_BUFFER_WORDS: usize = 8;
-const LISTENER_BACKLOG: libc::c_int = 128;
+const LISTENER_BACKLOG: i32 = 128;
 
 /// Build the abstract socket name for an operation-control endpoint.
 ///
@@ -71,24 +77,9 @@ fn lower_hex_digit(nibble: u8) -> char {
 /// failures are returned as operating-system `io::Error` values.
 pub fn bind_abstract_listener(name: &str) -> io::Result<UnixListener> {
     let fd = create_unix_socket()?;
-    let addr = abstract_sockaddr(name)?;
-    let len = sockaddr_len(name);
-    // SAFETY: fd is a valid AF_UNIX socket, addr/len describe a sockaddr_un.
-    let ret = unsafe {
-        libc::bind(
-            fd.as_raw_fd(),
-            &addr as *const _ as *const libc::sockaddr,
-            len,
-        )
-    };
-    if ret != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: fd is a valid bound AF_UNIX socket.
-    let ret = unsafe { libc::listen(fd.as_raw_fd(), LISTENER_BACKLOG) };
-    if ret != 0 {
-        return Err(io::Error::last_os_error());
-    }
+    let addr = abstract_address(name)?;
+    bind(&fd, &addr)?;
+    listen(&fd, LISTENER_BACKLOG)?;
     Ok(UnixListener::from(fd))
 }
 
@@ -125,8 +116,7 @@ pub fn connect_abstract_with_timeout(name: &str, timeout: Duration) -> io::Resul
 }
 
 fn connect_abstract_before(name: &str, deadline: Option<Instant>) -> io::Result<UnixStream> {
-    let addr = abstract_sockaddr(name)?;
-    let len = sockaddr_len(name);
+    let addr = abstract_address(name)?;
     let stream = UnixStream::from(create_unix_socket()?);
     if let Some(deadline) = deadline {
         let remaining = deadline
@@ -137,23 +127,11 @@ fn connect_abstract_before(name: &str, deadline: Option<Instant>) -> io::Result<
         // accept-queue backpressure. A zero socket timeout would disable it.
         stream.set_write_timeout(Some(remaining))?;
     }
-    // SAFETY: stream is a valid AF_UNIX socket, addr/len describe a sockaddr_un.
-    let ret = unsafe {
-        libc::connect(
-            stream.as_raw_fd(),
-            &addr as *const _ as *const libc::sockaddr,
-            len,
-        )
-    };
-    if ret != 0 {
-        let error = io::Error::last_os_error();
-        if deadline.is_some()
-            && (error.kind() == io::ErrorKind::WouldBlock
-                || error.raw_os_error() == Some(libc::EINPROGRESS))
-        {
+    if let Err(error) = connect(&stream, &addr) {
+        if deadline.is_some() && matches!(error, Errno::WOULDBLOCK | Errno::INPROGRESS) {
             return Err(connect_timed_out());
         }
-        return Err(error);
+        return Err(error.into());
     }
     if deadline.is_some() {
         stream.set_write_timeout(None)?;
@@ -497,26 +475,11 @@ pub fn accept_with_timeout(listener: &UnixListener, timeout: Duration) -> io::Re
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "accept timeout overflowed"))?;
     loop {
         match poll_fd(listener.as_raw_fd(), libc::POLLIN, deadline)? {
-            true => {
-                // SAFETY: listener fd is valid and accept4 initializes addr/len.
-                let fd = unsafe {
-                    libc::accept4(
-                        listener.as_raw_fd(),
-                        std::ptr::null_mut(),
-                        std::ptr::null_mut(),
-                        libc::SOCK_CLOEXEC,
-                    )
-                };
-                if fd >= 0 {
-                    // SAFETY: fd is a connected stream returned by accept4.
-                    return Ok(unsafe { UnixStream::from_raw_fd(fd) });
-                }
-                let err = io::Error::last_os_error();
-                if err.kind() == io::ErrorKind::Interrupted {
-                    continue;
-                }
-                return Err(err);
-            }
+            true => match accept_with(listener, SocketFlags::CLOEXEC) {
+                Ok(fd) => return Ok(UnixStream::from(fd)),
+                Err(Errno::INTR) => continue,
+                Err(error) => return Err(error.into()),
+            },
             false => {
                 return Err(io::Error::new(
                     io::ErrorKind::TimedOut,
@@ -528,8 +491,6 @@ pub fn accept_with_timeout(listener: &UnixListener, timeout: Duration) -> io::Re
 }
 
 fn create_unix_socket() -> io::Result<OwnedFd> {
-    use rustix::net::{AddressFamily, SocketFlags, SocketType, socket_with};
-
     socket_with(
         AddressFamily::UNIX,
         SocketType::STREAM,
@@ -539,39 +500,14 @@ fn create_unix_socket() -> io::Result<OwnedFd> {
     .map_err(io::Error::from)
 }
 
-fn abstract_sockaddr(name: &str) -> io::Result<libc::sockaddr_un> {
+fn abstract_address(name: &str) -> io::Result<SocketAddrUnix> {
+    let invalid_name =
+        || io::Error::new(io::ErrorKind::InvalidInput, "invalid abstract socket name");
     let bytes = name.as_bytes();
-    if bytes.is_empty() || bytes.contains(&0) || bytes.len() + 1 > sockaddr_un_path_len() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "invalid abstract socket name",
-        ));
+    if bytes.is_empty() || bytes.contains(&0) {
+        return Err(invalid_name());
     }
-
-    // SAFETY: zeroed sockaddr_un is a valid starting point before fields are set.
-    let mut addr = unsafe { MaybeUninit::<libc::sockaddr_un>::zeroed().assume_init() };
-    addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
-    addr.sun_path[0] = 0;
-    for (index, byte) in bytes.iter().enumerate() {
-        let Some(slot) = addr.sun_path.get_mut(index + 1) else {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "invalid abstract socket name",
-            ));
-        };
-        *slot = *byte as libc::c_char;
-    }
-    Ok(addr)
-}
-
-fn sockaddr_un_path_len() -> usize {
-    // SAFETY: zeroed sockaddr_un is only used to inspect array length.
-    let addr = unsafe { MaybeUninit::<libc::sockaddr_un>::zeroed().assume_init() };
-    addr.sun_path.len()
-}
-
-fn sockaddr_len(name: &str) -> libc::socklen_t {
-    (size_of::<libc::sa_family_t>() + 1 + name.len()) as libc::socklen_t
+    SocketAddrUnix::new_abstract_name(bytes).map_err(|_| invalid_name())
 }
 
 fn poll_fd(fd: libc::c_int, events: libc::c_short, deadline: Instant) -> io::Result<bool> {

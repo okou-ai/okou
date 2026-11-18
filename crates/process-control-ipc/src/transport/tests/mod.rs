@@ -1,6 +1,8 @@
 use super::*;
 use std::os::fd::AsFd;
+use std::os::linux::net::SocketAddrExt;
 use std::os::unix::fs::MetadataExt;
+use std::os::unix::net::SocketAddr;
 
 fn bind_test_listener(case: &str) -> (String, UnixListener) {
     let name = format!("vm0-test-{case}-{}", std::process::id());
@@ -54,26 +56,39 @@ fn endpoint_name_zero_pads_lowercase_nonce_hex() {
 
 #[test]
 fn abstract_socket_rejects_invalid_names() {
-    for name in ["", "bad\0name"] {
-        let err = bind_abstract_listener(name).unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    let too_long = "x".repeat(108);
+    for name in ["", "bad\0name", &too_long] {
+        for error in [
+            bind_abstract_listener(name).unwrap_err(),
+            connect_abstract(name).unwrap_err(),
+            connect_abstract_with_timeout(name, Duration::from_secs(1)).unwrap_err(),
+        ] {
+            assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+            assert_eq!(error.to_string(), "invalid abstract socket name");
+        }
+    }
+}
 
-        let err = connect_abstract(name).unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+#[test]
+fn abstract_socket_interoperates_at_maximum_name_length() {
+    let mut name = format!("vm0-test-max-name-{}-", std::process::id());
+    name.extend(std::iter::repeat_n('x', 107 - name.len() - 'é'.len_utf8()));
+    name.push('é');
+    let address = SocketAddr::from_abstract_name(name.as_bytes()).unwrap();
 
-        let err = connect_abstract_with_timeout(name, Duration::from_secs(1)).unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    {
+        let listener = bind_abstract_listener(&name).unwrap();
+        assert_eq!(
+            listener.local_addr().unwrap().as_abstract_name(),
+            Some(name.as_bytes())
+        );
+        let _client = UnixStream::connect_addr(&address).unwrap();
+        let _server = accept_with_timeout(&listener, Duration::from_secs(1)).unwrap();
     }
 
-    let too_long = "x".repeat(sockaddr_un_path_len());
-    let err = bind_abstract_listener(&too_long).unwrap_err();
-    assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
-
-    let err = connect_abstract(&too_long).unwrap_err();
-    assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
-
-    let err = connect_abstract_with_timeout(&too_long, Duration::from_secs(1)).unwrap_err();
-    assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    let listener = UnixListener::bind_addr(&address).unwrap();
+    let _client = connect_abstract_with_timeout(&name, Duration::from_secs(1)).unwrap();
+    let _server = accept_with_timeout(&listener, Duration::from_secs(1)).unwrap();
 }
 
 #[test]
@@ -96,13 +111,15 @@ fn timed_connect_returns_blocking_close_on_exec_stream_without_io_timeouts() {
 
     assert_eq!(client.read_timeout().unwrap(), None);
     assert_eq!(client.write_timeout().unwrap(), None);
-    // SAFETY: both getters only inspect the live client descriptor.
-    let descriptor_flags = unsafe { libc::fcntl(client.as_raw_fd(), libc::F_GETFD) };
-    let status_flags = unsafe { libc::fcntl(client.as_raw_fd(), libc::F_GETFL) };
-    assert!(descriptor_flags >= 0);
-    assert_ne!(descriptor_flags & libc::FD_CLOEXEC, 0);
-    assert!(status_flags >= 0);
-    assert_eq!(status_flags & libc::O_NONBLOCK, 0);
+    for stream in [&client, &server] {
+        // SAFETY: both getters only inspect the live stream descriptor.
+        let descriptor_flags = unsafe { libc::fcntl(stream.as_raw_fd(), libc::F_GETFD) };
+        let status_flags = unsafe { libc::fcntl(stream.as_raw_fd(), libc::F_GETFL) };
+        assert!(descriptor_flags >= 0);
+        assert_ne!(descriptor_flags & libc::FD_CLOEXEC, 0);
+        assert!(status_flags >= 0);
+        assert_eq!(status_flags & libc::O_NONBLOCK, 0);
+    }
 
     server
         .set_read_timeout(Some(Duration::from_secs(1)))
