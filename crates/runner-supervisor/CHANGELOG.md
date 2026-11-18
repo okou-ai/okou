@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.29...runner-supervisor-v0.26.0) (2026-11-18)
+
+
+### Features
+
+* **runner:** attribute home lifecycle and entry-lock latency ([#48623](https://github.com/okou-ai/okou/issues/48623)) ([4ddc9c7](https://github.com/okou-ai/okou/commit/4ddc9c76a7d6d9e4d0b0055d5c84cfe6c562f593))
+
 ## [0.25.29](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.28...runner-supervisor-v0.25.29) (2026-11-18)
 
 ## [0.25.28](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.27...runner-supervisor-v0.25.28) (2026-11-18)
