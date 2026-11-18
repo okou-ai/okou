@@ -103,6 +103,19 @@ function installAccess(
       ],
     ]),
   });
+  if (options.custom) {
+    context.mocks.api(customConnectorByIdContract.get, ({ respond }) => {
+      return respond(200, {
+        ...httpConnector({
+          id: ACME_CONNECTOR_ID,
+          slug: "acme",
+          displayName: "Acme",
+          hasAccount: true,
+        }),
+        permissionBundleRef: "builtin:github@1",
+      });
+    });
+  }
   context.mocks.api(customConnectorByIdContract.permissions, ({ respond }) => {
     return respond(200, {
       ref: "builtin:github@1",
@@ -672,11 +685,14 @@ test.each([
   { label: "GitHub", custom: false },
   { label: "Acme", custom: true },
 ])(
-  "Hide unsupported $label permissions while keeping account controls",
+  "Manage $label accounts directly from Chat without losing the draft",
   async ({ label, custom }) => {
     const user = userEvent.setup({ delay: null });
     installAccess({ custom, noPermissions: true });
     await setup();
+    const path = window.location.pathname;
+    const composer = await findComposer();
+    await fill(composer, "Use my personal GitHub account");
     await user.click(await openMenu(label));
     await screen.findByRole("switch", { name: "Work access" });
     expect(
@@ -684,16 +700,31 @@ test.each([
         return button.textContent?.trim() === "Permissions";
       }),
     ).toHaveLength(0);
-    await user.click(await findFastControl("link", "Manage accounts"));
-    await waitFor(() => {
-      expect(window.location.pathname).toBe("/connectors");
+    await user.click(await findFastControl("button", "Manage accounts"));
+    const dialog = await screen.findByRole("dialog", {
+      name: `Manage ${label} accounts`,
     });
-    await findFastControl("button", `Manage ${label} accounts`);
-    expect(
-      queryAllByRoleFast("button").filter((button) => {
-        return button.textContent?.trim() === "Permissions";
-      }),
-    ).toHaveLength(0);
+    await expect(
+      within(dialog).findByText("Work"),
+    ).resolves.toBeInTheDocument();
+    expectRetainedDraft(path, composer);
+    await expect(
+      findFastControl("button", "Add account", dialog),
+    ).resolves.toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: `Manage ${label} accounts` }),
+      ).toBeNull();
+    });
+    await expect(
+      findFastControl("button", "Connectors"),
+    ).resolves.toHaveFocus();
+    expectRetainedDraft(path, composer);
+    await user.click(await openMenu(label));
+    await expect(
+      screen.findByRole("switch", { name: "Work access" }),
+    ).resolves.toBeChecked();
   },
 );
 

@@ -9,8 +9,6 @@ import { useTranslation } from "react-i18next";
 import { ChevronRight, SlidersHorizontal, Users } from "lucide-react";
 import {
   Button,
-  buttonVariants,
-  cn,
   Input,
   Popover,
   PopoverClose,
@@ -29,7 +27,6 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { CustomConnectorIcon } from "./components/settings/custom-connector-icon.tsx";
-import { Link } from "../router/link.tsx";
 import { ComposerConnectorMenuShell } from "./composer-connector-menu-shell.tsx";
 
 function ChatAccountChoiceRow({
@@ -203,6 +200,9 @@ function ConnectorOverviewRow({
     signals.connector.chatAccess.navigation.restoreFocus$,
   );
   const permissions = useGet(signals.connector.chatAccess.permissions$);
+  const accountManagerOpen = useGet(
+    signals.connector.chatAccess.accountManager.managerOpen$,
+  );
   const signal = useGet(pageSignal$);
   const open =
     target !== null &&
@@ -251,7 +251,9 @@ function ConnectorOverviewRow({
         sideOffset={8}
         collisionAvoidance={{ fallbackAxisSide: "end" }}
         finalFocus={() => {
-          return permissions !== null ? false : restoreFocus(entry.target);
+          return permissions !== null || accountManagerOpen
+            ? false
+            : restoreFocus(entry.target);
         }}
         aria-label={entry.label}
         className="flex max-h-[min(25rem,var(--available-height))] w-88 max-w-[var(--available-width)] flex-col overflow-hidden p-0"
@@ -293,6 +295,10 @@ function AccountPanelFooter({
 }) {
   const { t } = useTranslation();
   const permissions = useSet(signals.connector.chatAccess.setPermissions$);
+  const [openingAccountManager, openAccountManager] = useLoadableSet(
+    signals.connector.openAccountManager$,
+  );
+  const signal = useGet(pageSignal$);
   const setPopoverOpen = useSet(signals.connector.setPopoverOpen$);
   const permissionTarget =
     target.target.kind === "builtin" && target.hasPermissions
@@ -324,24 +330,19 @@ function AccountPanelFooter({
           }
         />
       )}
-      <Link
-        pathname="/connectors"
-        options={{
-          searchParams: new URLSearchParams({ keywords: target.label }),
+      <Button
+        variant="quiet"
+        className="w-full justify-start px-2 font-normal text-foreground"
+        pending={openingAccountManager.state === "loading"}
+        onClick={() => {
+          detach(openAccountManager(target.target, signal), Reason.DomCallback);
         }}
-        aria-label={t(($) => {
-          return $.connectorChatAccess.manageAccounts;
-        })}
-        className={cn(
-          buttonVariants({ variant: "quiet" }),
-          "w-full justify-start px-2 font-normal text-foreground",
-        )}
       >
         <Users size={16} aria-hidden="true" className="text-muted-foreground" />
         {t(($) => {
           return $.connectorChatAccess.manageAccounts;
         })}
-      </Link>
+      </Button>
     </div>
   );
 }
