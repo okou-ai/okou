@@ -28,6 +28,7 @@ import {
   type infer as zInfer,
 } from "zod";
 
+import { env } from "../../lib/env";
 import {
   piModelConfigObservation,
   type PiModelConfigObservation,
@@ -143,6 +144,16 @@ export function recordRunContextSnapshot(args: {
   safeSync(() => {
     const context = args.context;
     const secrets = new Set(args.secretValues);
+    const secretNames = new Set(args.secretNames);
+    // API-only credentials still mask diagnostic collisions without entering
+    // the Runner's startup secret-value index.
+    const dataRouterToken = env("OKOU_DATA_ROUTER_URL")
+      ? env("OKOU_DATA_TOKEN")
+      : undefined;
+    if (dataRouterToken) {
+      secrets.add(dataRouterToken);
+      secretNames.add("OKOU_DATA_TOKEN");
+    }
     const snapshot: RunContextAxiomSnapshot = {
       _time: args.recordedAt.toISOString(),
       runId: args.runId,
@@ -152,7 +163,7 @@ export function recordRunContextSnapshot(args: {
       sessionId: context.piSessionId ?? context.nativeContinuation.sessionId,
       cliAgentType: context.cliAgentType,
       ...piModelConfigObservation(context.cliAgentType, context.piModelConfig),
-      secretNames: [...args.secretNames],
+      secretNames: [...secretNames],
       environmentEntries: redactedValueEntries(
         { ...context.environment, ...context.platformEnvironment },
         secrets,

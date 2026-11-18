@@ -39,7 +39,7 @@ export interface Environment {
   readonly billableFirewalls: readonly string[];
   /** Connector and account behind each connector firewall. */
   readonly runtimeTargets: readonly ConnectorRuntimeTargetRegistration[];
-  /** Aliases owned by custom connectors; no other source may claim them. */
+  /** Aliases reserved by platform sources or custom connectors. */
   readonly reservedSecretAliases: readonly string[];
 }
 
