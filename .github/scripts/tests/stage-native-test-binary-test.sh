@@ -39,12 +39,12 @@ case "$SCENARIO" in
     read -r _ < "$CASE_DIR/hold"
     ;;
   corrupt)
-    head -c 3 | bash -c "$2"
+    head -c 3 | sh -c "$2"
     exit $?
     ;;
   partial | timeout | pipe)
     if [ "$count" -eq 1 ]; then
-      head -c 3 | bash -c "$2" || true
+      head -c 3 | sh -c "$2" || true
       case "$SCENARIO" in
         timeout) exit 124 ;;
         pipe) exit 141 ;;
@@ -62,19 +62,19 @@ case "$SCENARIO" in
           head -c 3 "$CASE_DIR/input"
           read -r _ < "$CASE_DIR/release"
           printf "stale truncated data"
-        } | bash -c "$1" || true
+        } | sh -c "$1" || true
         echo done > "$CASE_DIR/done"
       ' late-writer "$2" > "$CASE_DIR/late.log" 2>&1 &
       echo "$!" > "$CASE_DIR/writer.pid"
       exit 255
     fi
-    bash -c "$2"
+    sh -c "$2"
     echo release > "$CASE_DIR/release"
     read -r _ < "$CASE_DIR/done"
     exit 0
     ;;
 esac
-bash -c "$2"
+sh -c "$2"
 if [ "$SCENARIO" = lost-ack ] && [ "$count" -eq 1 ]; then exit 255; fi
 SSH
 chmod +x "$test_root/bin/ssh"

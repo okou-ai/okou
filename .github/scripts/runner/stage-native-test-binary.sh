@@ -32,7 +32,8 @@ destination=$1
 expected_sha=$2
 umask 077
 candidate=$(mktemp "${destination}.upload.XXXXXX")
-trap 'rm -f -- "$candidate"' EXIT
+cleanup_candidate() { rm -f -- "$candidate"; }
+trap cleanup_candidate EXIT
 cat > "$candidate"
 actual_sha=$(sha256sum -- "$candidate")
 actual_sha=${actual_sha%% *}
@@ -44,7 +45,9 @@ chmod 755 "$candidate"
 mv -fT -- "$candidate" "$destination"
 REMOTE_SCRIPT
 )
-printf -v remote_command 'bash -c %q native-test-stage %q %q' \
+# SSH first passes this through the account's login shell. The static program
+# contains no single quotes; validated path/hash operands cannot contain them.
+printf -v remote_command "bash -c '%s' native-test-stage '%s' '%s'" \
   "$remote_script" "$destination" "$expected_sha"
 
 child=""
