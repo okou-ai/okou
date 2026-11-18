@@ -154,7 +154,18 @@ export async function readSavedCalls(): Promise<SavedCall[]> {
         throw error;
       },
     );
-    if (!handle) return [];
+    if (!handle) {
+      const names = await readdir(directory);
+      if (
+        names.some((name) => {
+          return SEQ_PATTERN.test(name);
+        })
+      )
+        throw new Error(
+          `Missing ${file} while saved response files still exist`,
+        );
+      return [];
+    }
     let text: string;
     try {
       text = await handle.readFile("utf8");

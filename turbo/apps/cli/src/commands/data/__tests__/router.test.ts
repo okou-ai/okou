@@ -598,6 +598,17 @@ describe("Data Router discovery and JSON calls", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("does not repeat a paid request when its history index is missing", async () => {
+    await run(["call", "future_research", "--input", "{}"]);
+    const { file } = callSummary();
+    await rm(join(dirname(file), "index.jsonl"));
+    const error = await failedRun(["call", "future_research", "--input", "{}"]);
+    expect(error).toMatch(/do not repeat/i);
+    expect(error).toContain("--refresh");
+    expect(calls).toHaveLength(1);
+    expect(JSON.parse(await readFile(file, "utf8"))).toEqual(returnedBody);
+  });
+
   it("surfaces corrupt history rather than silently sending a paid request", async () => {
     await run(["call", "future_research", "--input", "{}"]);
     const directory = dirname(callSummary().file);
