@@ -229,6 +229,7 @@ final class WorkspaceChatActions {
         self.threadFeedback = pending
       })
     guard !closed, !needsUpgrade else { return false }
+    if succeeded { workspace.notificationReadStateChanged() }
     // A late acknowledgement must not replace feedback from a newer action or dismissal.
     guard let pendingFeedbackID, threadFeedback?.id == pendingFeedbackID else { return succeeded }
     if succeeded {

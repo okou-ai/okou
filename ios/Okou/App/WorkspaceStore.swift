@@ -508,7 +508,7 @@ final class WorkspaceStore {
     }
   }
 
-  private func notificationReadStateChanged() {
+  func notificationReadStateChanged() {
     notificationReadRevision += 1
     didRefreshReadState()
   }

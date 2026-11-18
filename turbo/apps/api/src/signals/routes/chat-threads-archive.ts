@@ -1,11 +1,16 @@
 import { command } from "ccstate";
 import { chatThreadArchiveContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { synchronizeUserPushBadge$ } from "../services/push-notifications.service";
+import { waitUntil } from "../context/wait-until";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf, queryOf } from "../context/request";
 
-import { publishThreadListChanged } from "../external/realtime";
+import {
+  publishChatIndicatorsChangedSafely,
+  publishThreadListChanged,
+} from "../external/realtime";
 import { notFound } from "../../lib/error";
 import { updateOwnedChatThreadWithEvent$ } from "../services/chat-thread-owned-update.service";
 import type { RouteEntry } from "../route-entry";
@@ -62,7 +67,15 @@ const archiveInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return notFound("Chat thread not found");
   }
 
+  waitUntil(
+    set(synchronizeUserPushBadge$, auth.userId, new AbortController().signal),
+  );
   await publishThreadListChanged({ userId: auth.userId, orgId: auth.orgId });
+  signal.throwIfAborted();
+  await publishChatIndicatorsChangedSafely({
+    userId: auth.userId,
+    orgId: auth.orgId,
+  });
   signal.throwIfAborted();
   return { status: 204 as const, body: undefined };
 });
@@ -89,7 +102,15 @@ const unarchiveInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return notFound("Chat thread not found");
   }
 
+  waitUntil(
+    set(synchronizeUserPushBadge$, auth.userId, new AbortController().signal),
+  );
   await publishThreadListChanged({ userId: auth.userId, orgId: auth.orgId });
+  signal.throwIfAborted();
+  await publishChatIndicatorsChangedSafely({
+    userId: auth.userId,
+    orgId: auth.orgId,
+  });
   signal.throwIfAborted();
   return { status: 204 as const, body: undefined };
 });

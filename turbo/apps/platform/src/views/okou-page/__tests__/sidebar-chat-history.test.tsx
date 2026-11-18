@@ -12,6 +12,7 @@ import {
   mockSidebarViewport,
   openChatListMenu,
   openThreadMenu,
+  pinnedAgentLink,
   queryMenuItemByText,
   RESEARCH_AGENT_ID,
   RESEARCH_THREAD_ID,
@@ -543,6 +544,69 @@ function mockUnreadThreads(threadIds: readonly string[]): void {
     });
   });
 }
+
+test("Archive an unread chat without retaining its agent reminder or changing reading state", async () => {
+  prepareAgents();
+  context.mocks.data.userPreferences({ pinnedAgentIds: [AGENT_ID] });
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "Release plan"),
+    createThread(INCIDENT_THREAD_ID, "Review later"),
+  ]);
+  // Keep the old indicator response to cover the optimistic metadata projection.
+  mockUnreadThreads([INCIDENT_THREAD_ID]);
+  await setupSidebarPage({ context, path: `/chats/${EXISTING_THREAD_ID}` });
+  const list = await screen.findByTestId("chat-list-column");
+  await waitFor(() => {
+    expect(threadLinkByTitle("Review later", list)).toHaveAccessibleName(
+      "Review later Unread",
+    );
+  });
+  const agentLink = () => {
+    return pinnedAgentLink(screen.getByTestId("pinned-agents-grid"), "Nova");
+  };
+  await waitFor(() => {
+    expect(within(agentLink()).getByLabelText("Unread")).toBeInTheDocument();
+  });
+  openChatListMenu();
+  expect(menuItemByText("Mark all read")).not.toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  openChatListMenu();
+
+  openThreadMenu("Review later");
+  click(menuItemByText("Archive chat"));
+  await expect(
+    screen.findByText("Chat archived."),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      within(agentLink()).queryByLabelText("Unread"),
+    ).not.toBeInTheDocument();
+  });
+  openChatListMenu();
+  await waitFor(() => {
+    expect(menuItemByText("Mark all read")).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+  openChatListMenu();
+  click(buttonByText("Undo"));
+  await waitFor(() => {
+    expect(threadLinkByTitle("Review later", list)).toHaveAccessibleName(
+      "Review later Unread",
+    );
+    expect(within(agentLink()).getByLabelText("Unread")).toBeInTheDocument();
+  });
+  openChatListMenu();
+  await waitFor(() => {
+    expect(menuItemByText("Mark all read")).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+});
 
 test("Mute an unread chat with feedback and undo it from the toast", async () => {
   prepareDefaultAgent();

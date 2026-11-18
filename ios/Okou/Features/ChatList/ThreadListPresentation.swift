@@ -9,7 +9,7 @@ extension ThreadListStore {
   }
 
   var hasUnreadThreads: Bool {
-    threads.contains { !$0.isMuted && $0.indicator == .unread }
+    threads.contains { !$0.isMuted && !$0.isArchived && $0.indicator == .unread }
   }
 
   var error: String? { actionError ?? syncError }
