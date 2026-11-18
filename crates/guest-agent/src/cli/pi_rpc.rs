@@ -56,9 +56,8 @@
 //! the matching successful response is required before
 //! `mark_backend_accepted_without_replay` records acceptance and queues the
 //! steered declaration. A failed or interrupted command marks the input failed.
-//! If stdout reported settlement before explicitly rejecting a steer, the writer
-//! closes stdin normally and leaves that source input pending for a later run.
-//! Earlier rejections still enter the error path.
+//! A matching steer rejection leaves the source input pending for a later run.
+//! The writer holds stdin open for the terminal result if it is still pending.
 //!
 //! The stdout projection records successful steer ACK observation for the
 //! matching writer-owned frame before processing a following `agent_settled`.
@@ -232,7 +231,6 @@ const MAX_STREAM_CONTENT_INDEX: usize = 1024;
 
 pub(super) struct PiRpcResponse {
     value: Value,
-    after_settlement: bool,
     _retained_bytes: OwnedSemaphorePermit,
 }
 
@@ -253,12 +251,7 @@ pub(super) fn response_channel() -> (PiRpcResponseSender, mpsc::Receiver<PiRpcRe
 }
 
 impl PiRpcResponseSender {
-    fn try_send(
-        &self,
-        value: Value,
-        record_bytes: usize,
-        after_settlement: bool,
-    ) -> Result<(), AgentError> {
+    fn try_send(&self, value: Value, record_bytes: usize) -> Result<(), AgentError> {
         let available_bytes = self.retained_bytes.available_permits();
         let retained_bytes = Arc::clone(&self.retained_bytes)
             .try_acquire_many_owned(record_bytes as u32)
@@ -269,7 +262,6 @@ impl PiRpcResponseSender {
             })?;
         let response = PiRpcResponse {
             value,
-            after_settlement,
             _retained_bytes: retained_bytes,
         };
         match self.tx.try_send(response) {
@@ -520,7 +512,6 @@ pub(super) struct PiRpcProjection<'a> {
     assistant_stream: Option<PiAssistantStream<'a>>,
     pending_retry: Option<PiRetryAttempt>,
     terminal_error: bool,
-    settled: bool,
     active_input: Option<ActiveInputController>,
 }
 
@@ -536,7 +527,6 @@ impl<'a> PiRpcProjection<'a> {
             assistant_stream: None,
             pending_retry: None,
             terminal_error: false,
-            settled: false,
             active_input: None,
         }
     }
@@ -656,7 +646,7 @@ impl<'a> PiRpcProjection<'a> {
         .then(|| response.get("id").and_then(Value::as_str))
         .flatten()
         .map(str::to_owned);
-        responses.try_send(response, record_bytes, self.settled)?;
+        responses.try_send(response, record_bytes)?;
         if let Some(controller) = &self.active_input
             && let Some(id) = steer_ack
         {
@@ -845,7 +835,6 @@ impl<'a> PiRpcProjection<'a> {
     }
 
     fn project_agent_settled(&mut self) -> Value {
-        self.settled = true;
         let assistant = self.assistant_terminal.take().unwrap_or_default();
         self.pending_retry = None;
         let mut result = serde_json::Map::from_iter([
@@ -1035,7 +1024,7 @@ async fn write_command_with_cancellation(
 enum MessageOutcome {
     Accepted,
     Cancelled,
-    RejectedAfterSettlement,
+    Rejected,
 }
 
 async fn wait_for_response(
@@ -1045,7 +1034,6 @@ async fn wait_for_response(
     allow_unmatched: bool,
 ) -> Result<MessageOutcome, AgentError> {
     while let Some(response) = responses.recv().await {
-        let after_settlement = response.after_settlement;
         let response = &response.value;
         let response_id = response.get("id").and_then(Value::as_str);
         if response_id != Some(expected_id) {
@@ -1062,10 +1050,8 @@ async fn wait_for_response(
             )));
         }
         let success = response.get("success").and_then(Value::as_bool);
-        if expected_command == "steer" && after_settlement && success == Some(false) {
-            // The terminal event preceded this rejection on stdout. Leave the
-            // source queued for another run without failing the completed one.
-            return Ok(MessageOutcome::RejectedAfterSettlement);
+        if expected_command == "steer" && success == Some(false) {
+            return Ok(MessageOutcome::Rejected);
         }
         if success != Some(true) {
             let message = response
@@ -1146,9 +1132,13 @@ async fn deliver_active_input(
             active_input.mark_backend_accepted_without_replay(frame)?;
             Ok(MessageOutcome::Accepted)
         }
-        Ok(outcome) => {
+        Ok(MessageOutcome::Rejected) => {
+            active_input.mark_steer_rejected(frame);
+            Ok(MessageOutcome::Rejected)
+        }
+        Ok(MessageOutcome::Cancelled) => {
             active_input.mark_backend_failed(frame);
-            Ok(outcome)
+            Ok(MessageOutcome::Cancelled)
         }
         Err(error) => {
             active_input.mark_backend_failed(frame);
@@ -1231,13 +1221,9 @@ pub(super) async fn write_commands(
                     &frame,
                     &cancellation,
                 ).await? {
-                    MessageOutcome::Accepted => {}
+                    MessageOutcome::Accepted | MessageOutcome::Rejected => {}
                     MessageOutcome::Cancelled => {
                         abort(&mut stdin, &mut responses, run_id).await?;
-                        return Ok(());
-                    }
-                    MessageOutcome::RejectedAfterSettlement => {
-                        active_input.close_terminal();
                         return Ok(());
                     }
                 }

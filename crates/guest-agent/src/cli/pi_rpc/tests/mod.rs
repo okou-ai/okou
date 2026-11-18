@@ -1063,7 +1063,6 @@ async fn writer_requires_startup_boundary_before_prompt() {
                     "success": true,
                 }),
                 1,
-                false,
             )
             .expect("state response should route");
         drop(startup_tx);
@@ -1098,7 +1097,7 @@ async fn writer_declares_active_input_only_after_successful_steer_ack() {
 }
 
 #[tokio::test]
-async fn writer_rejects_active_input_after_failed_steer_ack() {
+async fn writer_keeps_stdin_open_when_steer_is_rejected_before_settlement() {
     tokio::time::timeout(
         Duration::from_secs(5),
         assert_steer_ack_outcome(SteerAckCase::Rejected),
@@ -1115,6 +1114,16 @@ async fn writer_leaves_input_unconsumed_when_steer_is_rejected_after_settlement(
     )
     .await
     .expect("late rejected steer should close stdin normally");
+}
+
+#[tokio::test]
+async fn writer_closes_when_settlement_arrives_before_it_consumes_a_rejection() {
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        assert_steer_ack_outcome(SteerAckCase::SettlementBeforeRejectionConsumption),
+    )
+    .await
+    .expect("settlement and rejection should close stdin without a second result");
 }
 
 #[tokio::test]
@@ -1162,6 +1171,7 @@ enum SteerAckCase {
     Accepted,
     Rejected,
     RejectedAfterSettlement,
+    SettlementBeforeRejectionConsumption,
     SettledBeforeWriter,
     SettledAfterWriter,
     QueuedFollowUp,
@@ -1180,7 +1190,9 @@ fn project_settlement(projection: &mut PiRpcProjection<'_>, responses: &PiRpcRes
 async fn assert_steer_ack_outcome(case: SteerAckCase) {
     let success = !matches!(
         case,
-        SteerAckCase::Rejected | SteerAckCase::RejectedAfterSettlement
+        SteerAckCase::Rejected
+            | SteerAckCase::RejectedAfterSettlement
+            | SteerAckCase::SettlementBeforeRejectionConsumption
     );
     let has_follow_up = matches!(
         case,
@@ -1254,7 +1266,7 @@ async fn assert_steer_ack_outcome(case: SteerAckCase) {
                     "sessionId": "session",
                     "sessionFile": "/home/user/.pi/agent/sessions/--home-user-workspace--/session.jsonl",
                 },
-            }), 1, false)
+            }), 1)
             .expect("state response should route");
     assert!(
         futures_util::poll!(&mut writer).is_pending(),
@@ -1277,7 +1289,6 @@ async fn assert_steer_ack_outcome(case: SteerAckCase) {
                 "success": true,
             }),
             1,
-            false,
         )
         .expect("initial prompt response should route");
 
@@ -1333,10 +1344,21 @@ async fn assert_steer_ack_outcome(case: SteerAckCase) {
         .expect("steer response should route");
 
     if matches!(case, SteerAckCase::Rejected) {
+        assert!(
+            futures_util::poll!(&mut writer).is_pending(),
+            "steer rejection must leave stdin open until the run settles"
+        );
+        project_settlement(&mut projection, &response_tx);
+        assert!(
+            controller.close_for_result_if_idle(),
+            "a rejected input must release its pending frame"
+        );
+    }
+    if matches!(case, SteerAckCase::SettlementBeforeRejectionConsumption) {
         project_settlement(&mut projection, &response_tx);
         assert!(
             !controller.close_for_result_if_idle(),
-            "a failed ACK must not authorize post-result cleanup"
+            "the writer still owns the rejected frame"
         );
     }
     if matches!(case, SteerAckCase::SettledAfterWriter) {
@@ -1375,7 +1397,10 @@ async fn assert_steer_ack_outcome(case: SteerAckCase) {
     }
     if !matches!(
         case,
-        SteerAckCase::Accepted | SteerAckCase::Rejected | SteerAckCase::RejectedAfterSettlement
+        SteerAckCase::Accepted
+            | SteerAckCase::Rejected
+            | SteerAckCase::RejectedAfterSettlement
+            | SteerAckCase::SettlementBeforeRejectionConsumption
     ) {
         project_settlement(&mut projection, &response_tx);
         assert!(
@@ -1384,16 +1409,9 @@ async fn assert_steer_ack_outcome(case: SteerAckCase) {
         );
     }
 
-    let result = writer.await;
-    if success || matches!(case, SteerAckCase::RejectedAfterSettlement) {
-        result.expect("writer should close normally after the matching steer ACK");
-    } else {
-        let error = result.expect_err("a rejected steer must fail the writer");
-        assert_eq!(
-            error.to_string(),
-            format!("execution: Pi RPC steer failed: {rejection}")
-        );
-    }
+    writer
+        .await
+        .expect("writer should close normally after the run settles");
     controller
         .finalize_steered_declarations()
         .await
