@@ -31,6 +31,7 @@ import {
   kotlinHistoryFixtureTypes,
 } from "./history-fixtures";
 import { kotlinTokens } from "./source-tokens";
+import { renderKotlinRunFailureReasons } from "./run-failure-reasons";
 import { kotlinHistorySemanticsFixtureJson } from "./history-semantics-fixtures";
 import {
   kotlinCommandFixtureJson,
@@ -268,6 +269,10 @@ function outputFiles(testFixtures: boolean): ReadonlyMap<string, string> {
     ...[...renderKotlinFiles()].map(([file, source]) => {
       return [join(generatedKotlinRelativeDirectory, file), source] as const;
     }),
+    [
+      join(generatedKotlinRelativeDirectory, "KnownRunFailureReason.kt"),
+      renderKotlinRunFailureReasons(),
+    ],
     ...(testFixtures ? renderKotlinTestFiles() : []),
   ]);
 }

@@ -40,6 +40,7 @@ final class ChatFailureTests: XCTestCase {
       ("session_history_limit", .newChat, false), ("context_window_exceeded", .newChat, false),
       ("guest_root_filesystem_full", .retryable, true),
       ("guest_home_filesystem_full", .retryable, true),
+      ("guest_memory_oom_killed", .retryable, true),
       ("execution_timeout", .timeout, true), ("insufficient_credits", .billing, false),
       ("provider_insufficient_credits", .settings, false), ("invalid_api_key", .settings, false),
       ("invalid_credentials", .settings, false), ("reconnect_required", .settings, false),
@@ -48,9 +49,12 @@ final class ChatFailureTests: XCTestCase {
       ("output_token_limit", .outputLimit, true),
       ("provider_rate_limited", .retryable, true), ("provider_overloaded", .capacity, true),
       ("provider_stream_timeout", .retryable, true), ("provider_queue_timeout", .retryable, true),
+      ("provider_request_timeout", .retryable, true), ("provider_bad_request", .retryable, true),
       ("provider_server_error", .retryable, true), ("response_connection_lost", .retryable, true),
       ("codex_access_program_unavailable", .retryable, true),
       ("safety_policy_refusal", .safety, true),
+      ("account_verification_required", .unknown, false), ("firewall_auth_failed", .unknown, false),
+      ("provider_model_restricted", .unavailable, true),
       ("unsupported_model", .unavailable, true), ("usage_limit", .usage, true)
     ]
     for (reason, kind, retry) in cases {

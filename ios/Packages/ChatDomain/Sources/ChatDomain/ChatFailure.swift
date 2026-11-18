@@ -119,25 +119,26 @@ public struct ChatFailure: Equatable, Sendable {
 
   private func runRecovery(personalFramework: Framework?) -> Recovery {
     let kind: Kind
-    switch reason {
-    case "session_history_limit", "context_window_exceeded": kind = .newChat
-    case "guest_root_filesystem_full", "guest_home_filesystem_full", "provider_rate_limited",
-      "provider_stream_timeout", "provider_queue_timeout", "provider_server_error",
-      "response_connection_lost", "codex_access_program_unavailable", "provider_bad_request":
+    let knownReason = reason.flatMap(KnownRunFailureReason.init(rawValue:)) ?? .unknown
+    switch knownReason {
+    case .sessionHistoryLimit, .contextWindowExceeded: kind = .newChat
+    case .guestRootFilesystemFull, .guestHomeFilesystemFull, .guestMemoryOomKilled,
+      .providerRateLimited, .providerStreamTimeout, .providerRequestTimeout, .providerQueueTimeout,
+      .providerServerError, .responseConnectionLost, .codexAccessProgramUnavailable,
+      .providerBadRequest:
       kind = .retryable
-    case "execution_timeout": kind = .timeout
-    case "insufficient_credits": kind = .billing
-    case "provider_insufficient_credits", "invalid_api_key", "invalid_credentials",
-      "reconnect_required":
+    case .executionTimeout: kind = .timeout
+    case .insufficientCredits: kind = .billing
+    case .providerInsufficientCredits, .invalidApiKey, .invalidCredentials, .reconnectRequired:
       kind = .settings
-    case "terms_acceptance_required": kind = .terms
-    case "input_too_large", "provider_image_too_large": kind = .inputTooLarge
-    case "output_token_limit": kind = .outputLimit
-    case "provider_overloaded": kind = .capacity
-    case "safety_policy_refusal": kind = .safety
-    case "unsupported_model", "provider_model_restricted": kind = .unavailable
-    case "usage_limit": kind = .usage
-    default: kind = .unknown
+    case .termsAcceptanceRequired: kind = .terms
+    case .inputTooLarge, .providerImageTooLarge: kind = .inputTooLarge
+    case .outputTokenLimit: kind = .outputLimit
+    case .providerOverloaded: kind = .capacity
+    case .safetyPolicyRefusal: kind = .safety
+    case .unsupportedModel, .providerModelRestricted: kind = .unavailable
+    case .usageLimit: kind = .usage
+    case .unknown, .accountVerificationRequired, .firewallAuthFailed: kind = .unknown
     }
     // This framework describes the next retry's current route, not the failed account.
     return Recovery(

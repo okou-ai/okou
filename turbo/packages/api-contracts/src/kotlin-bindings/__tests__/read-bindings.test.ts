@@ -22,6 +22,7 @@ import {
   renderKotlinTestFiles,
   renderKotlinTypes,
 } from "../generate";
+import { renderKotlinRunFailureReasons } from "../run-failure-reasons";
 
 describe("selected Kotlin chat readers", () => {
   it("keeps the committed, compiled readers synchronized with generation", async () => {
@@ -217,6 +218,10 @@ describe("selected Kotlin chat readers", () => {
             source,
           ] as const;
         }),
+        [
+          join(generatedKotlinRelativeDirectory, "KnownRunFailureReason.kt"),
+          renderKotlinRunFailureReasons(),
+        ],
         ...renderKotlinTestFiles(),
       ]);
       for (const [file, source] of files) {

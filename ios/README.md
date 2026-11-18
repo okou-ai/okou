@@ -247,6 +247,14 @@ not establish the system pasteboard's image delivery. Keep data representations
 in this CI case so that a file-only fixture cannot hide an importer compatibility
 failure.
 
+Run-failure copy and recovery use exhaustive switches over `KnownRunFailureReason`,
+generated into ChatDomain from the public schema with
+`cd turbo && pnpm -F @okouai/api-contracts generate:swift`. Update the native
+title, description and recovery mappings when adding a known case. Shared generator
+tests reject stale cases; Swift compilation rejects missing switch branches.
+Transport/cache values remain raw strings so future server reasons still display
+generic guidance without breaking historical decoding or inventing retry actions.
+
 The transcript uses a native `UICollectionView` cell for each message, with
 SwiftUI message content and measured row heights. A bounded batch of temporary
 hosts settles Markdown layout before a snapshot is applied. Cell reuse keeps

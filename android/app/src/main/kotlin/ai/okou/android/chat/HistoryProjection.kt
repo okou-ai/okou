@@ -40,6 +40,7 @@ data class HistoryMessage(
     val queued: Boolean = false,
     val rejected: Boolean = false,
     val status: String? = null,
+    val failureReason: String? = null,
 )
 
 data class HistoryTranscript(
@@ -192,6 +193,7 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
                 row.type == "input.rejected",
                 if (row.type == "control.interrupt") "run.cancelled"
                 else row.type.takeIf { row.terminal || it == "output.error" },
+                if (row.type == "run.failed") row.failureReason else null,
             )
         }
     val endedRuns = terminals + interrupted
