@@ -128,22 +128,6 @@ class _FinallyTransfer:
     continues: frozenset[str] | None
 
 
-def _metadata_match_pattern_alias_names(pattern: ast.pattern) -> set[str]:
-    if isinstance(pattern, ast.MatchAs):
-        names = set() if pattern.name is None else {pattern.name}
-        if pattern.pattern is not None:
-            names.update(_metadata_match_pattern_alias_names(pattern.pattern))
-        return names
-    if isinstance(pattern, ast.MatchMapping):
-        return set() if pattern.rest is None else {pattern.rest}
-    if isinstance(pattern, ast.MatchOr):
-        names: set[str] = set()
-        for child_pattern in pattern.patterns:
-            names.update(_metadata_match_pattern_alias_names(child_pattern))
-        return names
-    return set()
-
-
 def _direct_unbound_metadata_key_arguments(node: ast.Call) -> tuple[ast.AST, ast.AST] | None:
     if not isinstance(node.func, ast.Attribute) or not isinstance(node.func.value, ast.Name):
         return None
@@ -1396,14 +1380,15 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         case_falls_through = False
         has_unmatched_path = True
         for case in node.cases:
-            if subject_is_metadata:
-                self._record_metadata_match_pattern_key_violations(case.pattern)
+            metadata_aliases = (
+                self._visit_metadata_match_pattern(case.pattern) if subject_is_metadata else None
+            )
             names = _pattern_names(case.pattern)
             pattern_is_exhaustive = _pattern_is_exhaustive(case.pattern)
             aliases = set(continuing_aliases)
             aliases.difference_update(names)
-            if subject_is_metadata:
-                aliases.update(_metadata_match_pattern_alias_names(case.pattern))
+            if metadata_aliases is not None:
+                aliases.update(metadata_aliases)
             self._metadata_alias_scopes.append(aliases)
             guard_truth: bool | None = True
             if case.guard is not None:
@@ -1431,17 +1416,23 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         self._replace_current_aliases(exit_aliases)
         return has_unmatched_path or case_falls_through
 
-    def _record_metadata_match_pattern_key_violations(self, pattern: ast.pattern) -> None:
+    def _visit_metadata_match_pattern(self, pattern: ast.pattern) -> set[str]:
+        """Check mapping keys and collect aliases of the subject or its mapping remainder."""
+        if isinstance(pattern, ast.MatchAs):
+            names = set() if pattern.name is None else {pattern.name}
+            if pattern.pattern is not None:
+                names.update(self._visit_metadata_match_pattern(pattern.pattern))
+            return names
         if isinstance(pattern, ast.MatchMapping):
             for key in pattern.keys:
                 self._add_violations(_metadata_key_expression_violations(self.path, key))
-            return
-        if isinstance(pattern, ast.MatchAs) and pattern.pattern is not None:
-            self._record_metadata_match_pattern_key_violations(pattern.pattern)
-            return
+            return set() if pattern.rest is None else {pattern.rest}
         if isinstance(pattern, ast.MatchOr):
+            names: set[str] = set()
             for child_pattern in pattern.patterns:
-                self._record_metadata_match_pattern_key_violations(child_pattern)
+                names.update(self._visit_metadata_match_pattern(child_pattern))
+            return names
+        return set()
 
     def visit_ListComp(self, node: ast.ListComp) -> None:
         self._visit_comprehension(node.generators, [node.elt], deferred=False)
