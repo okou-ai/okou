@@ -34,12 +34,16 @@ const log = logger("MarketingRewardNotification");
 const body$ = bodyResultOf(marketingRewardNotificationContract.notify);
 
 const progressNamespace = "942d923e-95b3-45ab-b833-ac4cedb8779c";
-const target$ = computed(async (get) => {
+const progressBody$ = computed(async (get) => {
   const body = await get(body$);
   if (!body.ok || body.data.kind !== "progress") {
     throw new Error("Expected a progress notification request");
   }
-  if (body.data.environment !== env("ENV")) {
+  return body.data;
+});
+const progressTarget$ = computed(async (get) => {
+  const body = await get(progressBody$);
+  if (body.environment !== env("ENV")) {
     return {
       kind: "error" as const,
       response: createErrorResponse(
@@ -48,7 +52,7 @@ const target$ = computed(async (get) => {
       ),
     };
   }
-  const source = body.data.source;
+  const source = body.source;
   if (source.kind === "event") {
     const [job] = await get(db$)
       .select()
@@ -162,7 +166,7 @@ const target$ = computed(async (get) => {
 
 const queueMarketingRewardProgress$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const result = await get(target$);
+    const result = await get(progressTarget$);
     signal.throwIfAborted();
     if (result.kind === "error") {
       return result.response;
