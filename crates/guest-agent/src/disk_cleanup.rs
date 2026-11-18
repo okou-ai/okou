@@ -86,7 +86,7 @@ pub fn recover(filesystem: DiskCleanupFilesystem) -> io::Result<DiskCleanupRepor
             }
             if until_probe == 0 {
                 let (bytes, inodes) = root.available_capacity()?;
-                if has_recovery_reserve(bytes, inodes) {
+                if has_recovery_reserve(bytes, inodes) || Instant::now() >= deadline {
                     return Ok(false);
                 }
                 until_probe = CAPACITY_PROBE_INTERVAL;
