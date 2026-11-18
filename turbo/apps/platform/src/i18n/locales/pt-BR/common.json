@@ -1208,21 +1208,25 @@
         "name": "Grátis"
       },
       "highlights": {
-        "addOnConcurrency": "Adicione concorrência quando quiser",
-        "agentFanOut": "O Okou delega trabalho a uma equipe de assistentes de IA",
-        "automations": "Automações agendadas e por eventos",
-        "builtInResearchData": "Dados de SEO, leads, web e mercado integrados",
-        "chatIntegrations": "Integração com Slack e Telegram",
-        "computerUse": "O Okou controla aplicativos reais no seu computador",
+        "addOnConcurrency": "Adicione capacidade",
+        "advancedTools": "Dezenas de ferramentas avançadas integradas",
+        "appPermissions": "Acesso a apps específico e temporário",
+        "browserAndComputer": "Uso do navegador e computador",
         "concurrentAgents": "{{slots}} tarefas ao mesmo tempo",
-        "everythingInBuiltForTeams": "Tudo do {{plan}}, feito para equipes",
-        "included": "Incluído",
-        "liveBrowser": "Acompanhe o navegador do Okou ao vivo e assuma o controle",
-        "moreConnectorsChannels": "Mais conectores personalizados e integrações de canal",
-        "supportEmail": "Suporte por e-mail",
+        "connectedAutomations": "Automações de apps e agendadas",
+        "create": "Apresentações, documentos, imagens, sites e gráficos",
+        "everythingInBuiltForTeams": "Tudo do {{plan}}, pensado para o trabalho em equipe",
+        "exports": "PDF, Excel, Google Docs e Sheets",
+        "memberManagement": "Funções e pacotes de uso",
+        "proDetails": "Voz: {{requests}} solicitações, {{minutes}} min/dia · Suporte por e-mail",
+        "projectContext": "Contexto do projeto entre chats",
+        "research": "Busca de pessoas e pesquisa",
+        "sharedWorkflows": "Workflows de equipe reutilizáveis",
         "supportPriority": "Suporte prioritário",
-        "voiceInput": "Entrada de voz: {{requests}} solicitações e {{minutes}} minutos por dia",
-        "webhookAutomations": "Inicie uma execução de qualquer sistema com um webhook"
+        "teamCompliance": "SOC 2 Type II em andamento · Em conformidade com GDPR e CCPA/CPRA",
+        "templates": "Modelos prontos ou próprios",
+        "voiceInput": "Voz: {{requests}} solicitações, {{minutes}} min/dia",
+        "webhookAutomations": "Acione workflows por webhooks"
       },
       "legacy": "Legado",
       "loadError": "Não foi possível carregar o status de cobrança.",
@@ -1232,7 +1236,7 @@
       "perMonth": "/mês",
       "pricePerMonth": "{{price}}/mês",
       "pro": {
-        "description": "Trabalho diário, com preço por membro.",
+        "description": "Seu trabalho diário, resolvido.",
         "name": "Pro"
       },
       "renews": "Renova em {{date}}",
@@ -1240,7 +1244,7 @@
       "sectionTitle": "Plano",
       "selectedPlan": "o plano selecionado",
       "team": {
-        "description": "Para equipes que trabalham com o Okou o dia todo.",
+        "description": "Mais capacidade e controle para a equipe.",
         "name": "Team"
       },
       "upgrade": "Fazer upgrade",

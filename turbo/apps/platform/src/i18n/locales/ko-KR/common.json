@@ -1180,21 +1180,25 @@
         "name": "무료"
       },
       "highlights": {
-        "addOnConcurrency": "동시 실행은 언제든 추가",
-        "agentFanOut": "Okou가 여러 AI 도우미에게 작업을 나눕니다",
-        "automations": "일정 및 이벤트 자동화",
-        "builtInResearchData": "기본 제공 SEO·리드·웹·시장 데이터",
-        "chatIntegrations": "Slack·Telegram 연동",
-        "computerUse": "Okou가 데스크톱의 실제 앱을 조작합니다",
+        "addOnConcurrency": "처리 용량 추가",
+        "advancedTools": "수십 가지 고급 도구 내장",
+        "appPermissions": "범위와 기한을 지정한 앱 접근",
+        "browserAndComputer": "브라우저 및 컴퓨터 사용",
         "concurrentAgents": "{{slots}}개 작업 동시 실행",
-        "everythingInBuiltForTeams": "{{plan}}의 모든 기능을 팀 규모로",
-        "included": "포함 사항",
-        "liveBrowser": "Okou의 실시간 브라우저를 보고 직접 제어하세요",
-        "moreConnectorsChannels": "더 많은 커스텀 커넥터와 채널 연동",
-        "supportEmail": "이메일 지원",
+        "connectedAutomations": "앱 연동 및 예약 자동화",
+        "create": "발표 자료, 문서, 이미지, 웹사이트, 차트",
+        "everythingInBuiltForTeams": "{{plan}}의 모든 기능으로 팀과 함께 작업",
+        "exports": "PDF, Excel, Google Docs, Sheets",
+        "memberManagement": "멤버 역할 및 사용량 패키지",
+        "proDetails": "음성: 하루 {{requests}}회, {{minutes}}분 · 이메일 지원",
+        "projectContext": "채팅 간 프로젝트 맥락 공유",
+        "research": "인물 검색 및 리서치",
+        "sharedWorkflows": "재사용 가능한 팀 워크플로",
         "supportPriority": "우선 지원",
-        "voiceInput": "음성 입력, 하루 {{requests}}회 · {{minutes}}분",
-        "webhookAutomations": "웹훅 하나로 어떤 시스템에서든 실행 시작"
+        "teamCompliance": "SOC 2 Type II 진행 중 · GDPR 및 CCPA/CPRA 준수",
+        "templates": "기본 및 맞춤 템플릿",
+        "voiceInput": "음성: 하루 {{requests}}회, {{minutes}}분",
+        "webhookAutomations": "Webhook으로 워크플로 실행"
       },
       "legacy": "기존",
       "loadError": "청구 상태를 불러올 수 없습니다.",
@@ -1204,7 +1208,7 @@
       "perMonth": "/월",
       "pricePerMonth": "{{price}}/월",
       "pro": {
-        "description": "일상 업무를 위한 멤버별 요금.",
+        "description": "일상 업무를 맡겨보세요.",
         "name": "Pro"
       },
       "renews": "{{date}}에 갱신됨",
@@ -1212,7 +1216,7 @@
       "sectionTitle": "플랜",
       "selectedPlan": "선택한 플랜",
       "team": {
-        "description": "하루 종일 Okou와 일하는 팀을 위해.",
+        "description": "팀을 위한 더 많은 용량과 관리 기능.",
         "name": "팀"
       },
       "upgrade": "업그레이드",

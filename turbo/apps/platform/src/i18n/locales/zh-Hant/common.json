@@ -1180,21 +1180,25 @@
         "name": "免費版"
       },
       "highlights": {
-        "addOnConcurrency": "隨時加購併發",
-        "agentFanOut": "Okou 將工作分配給多個 AI 助手協作完成",
-        "automations": "定時和事件觸發的自動化",
-        "builtInResearchData": "內建 SEO、線索、網頁和市場資料",
-        "chatIntegrations": "Slack 和 Telegram 整合",
-        "computerUse": "Okou 操作桌面上的真實應用程式",
+        "addOnConcurrency": "隨時擴充任務容量",
+        "advancedTools": "內建數十種進階工具",
+        "appPermissions": "依操作和期限授權",
+        "browserAndComputer": "瀏覽器與電腦操作",
         "concurrentAgents": "同時執行 {{slots}} 項工作",
-        "everythingInBuiltForTeams": "包含{{plan}}的全部功能，併為團隊打造",
-        "included": "已包含",
-        "liveBrowser": "查看 Okou 的即時瀏覽器並隨時接管",
-        "moreConnectorsChannels": "更多自定義連接器和渠道整合",
-        "supportEmail": "郵件支援",
+        "connectedAutomations": "跨應用程式與排程自動化",
+        "create": "簡報、文件、圖片、網站和圖表",
+        "everythingInBuiltForTeams": "包含 {{plan}} 的全部功能，支援團隊協作",
+        "exports": "PDF、Excel、Google Docs 和 Sheets",
+        "memberManagement": "成員角色與用量方案",
+        "proDetails": "語音：每天 {{requests}} 次、{{minutes}} 分鐘 · 電子郵件支援",
+        "projectContext": "跨對話共用專案脈絡",
+        "research": "找人和研究",
+        "sharedWorkflows": "團隊共用工作流程",
         "supportPriority": "優先支援",
-        "voiceInput": "語音輸入，每天 {{requests}} 次請求、{{minutes}} 分鐘",
-        "webhookAutomations": "一個 webhook 就能從任何系統發起執行"
+        "teamCompliance": "SOC 2 Type II 進行中 · 符合 GDPR 和 CCPA/CPRA 要求",
+        "templates": "現成與自訂範本",
+        "voiceInput": "語音：每天 {{requests}} 次、{{minutes}} 分鐘",
+        "webhookAutomations": "Webhook 觸發工作流程"
       },
       "legacy": "舊版",
       "loadError": "無法載入帳單狀態。",
@@ -1204,7 +1208,7 @@
       "perMonth": "/月",
       "pricePerMonth": "{{price}}/月",
       "pro": {
-        "description": "日常工作，按成員計費。",
+        "description": "接手你的日常工作。",
         "name": "Pro"
       },
       "renews": "{{date}}續訂",
@@ -1212,7 +1216,7 @@
       "sectionTitle": "套餐",
       "selectedPlan": "所選套餐",
       "team": {
-        "description": "適合全天使用 Okou 工作的團隊。",
+        "description": "更多容量與團隊管理功能。",
         "name": "Team"
       },
       "upgrade": "升級",

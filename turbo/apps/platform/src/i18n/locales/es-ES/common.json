@@ -1208,21 +1208,25 @@
         "name": "Gratis"
       },
       "highlights": {
-        "addOnConcurrency": "Añade concurrencia cuando quieras",
-        "agentFanOut": "Okou delega el trabajo a un equipo de asistentes de IA",
-        "automations": "Automatizaciones programadas y por eventos",
-        "builtInResearchData": "Datos SEO, de leads, web y de mercado integrados",
-        "chatIntegrations": "Integración con Slack y Telegram",
-        "computerUse": "Okou controla aplicaciones reales en tu escritorio",
+        "addOnConcurrency": "Añade más capacidad",
+        "advancedTools": "Decenas de herramientas avanzadas integradas",
+        "appPermissions": "Acceso específico y temporal a apps",
+        "browserAndComputer": "Uso del navegador y ordenador",
         "concurrentAgents": "{{slots}} tareas a la vez",
-        "everythingInBuiltForTeams": "Todo lo de {{plan}}, creado para equipos",
-        "included": "Incluido",
-        "liveBrowser": "Observa el navegador de Okou en directo y toma el control",
-        "moreConnectorsChannels": "Más conectores personalizados e integraciones de canal",
-        "supportEmail": "Soporte por correo",
+        "connectedAutomations": "Automatizaciones de apps y programadas",
+        "create": "Presentaciones, documentos, imágenes, sitios y gráficos",
+        "everythingInBuiltForTeams": "Todo lo de {{plan}}, pensado para trabajar en equipo",
+        "exports": "PDF, Excel, Google Docs y Sheets",
+        "memberManagement": "Roles y paquetes de uso",
+        "proDetails": "Voz: {{requests}} solicitudes, {{minutes}} min/día · Soporte por correo",
+        "projectContext": "Contexto del proyecto entre chats",
+        "research": "Búsqueda de personas e investigación",
+        "sharedWorkflows": "Workflows de equipo reutilizables",
         "supportPriority": "Soporte prioritario",
-        "voiceInput": "Entrada de voz: {{requests}} solicitudes y {{minutes}} minutos al día",
-        "webhookAutomations": "Lanza una ejecución desde cualquier sistema con un webhook"
+        "teamCompliance": "SOC 2 Type II en curso · Conforme con GDPR y CCPA/CPRA",
+        "templates": "Plantillas listas o propias",
+        "voiceInput": "Voz: {{requests}} solicitudes, {{minutes}} min/día",
+        "webhookAutomations": "Activa workflows con webhooks"
       },
       "legacy": "Heredado",
       "loadError": "No se pudo cargar el estado de facturación.",
@@ -1232,7 +1236,7 @@
       "perMonth": "/mes",
       "pricePerMonth": "{{price}}/mes",
       "pro": {
-        "description": "Trabajo diario, con precio por miembro.",
+        "description": "Tu trabajo diario, resuelto.",
         "name": "Pro"
       },
       "renews": "Renueva {{date}}",
@@ -1240,7 +1244,7 @@
       "sectionTitle": "Plan",
       "selectedPlan": "El plan seleccionado",
       "team": {
-        "description": "Para equipos que trabajan con Okou todo el día.",
+        "description": "Más capacidad y control de equipo.",
         "name": "Equipo"
       },
       "upgrade": "Actualización",
