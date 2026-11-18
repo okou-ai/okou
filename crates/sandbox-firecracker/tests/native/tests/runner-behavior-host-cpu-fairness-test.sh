@@ -24,26 +24,6 @@ rootfs_hash=0000000000000000000000000000000000000000000000000000000000000000
 online_cpus=$'# CPU,ONLINE\n0,Y\n1,Y\n2,Y'
 mkdir -p "$fake_bin"
 
-cat >"${fake_bin}/scp" <<'FAKE_SCP'
-#!/usr/bin/env bash
-set -euo pipefail
-
-[ "$#" -eq 2 ] || {
-  echo "unexpected scp invocation: $*" >&2
-  exit 1
-}
-destination=${2#*:}
-case "$destination" in
-  /tmp/runner-host-cpu-fairness-*) ;;
-  *)
-    echo "unexpected remote binary path: $destination" >&2
-    exit 1
-    ;;
-esac
-mkdir -p "${MOCK_CASE_DIR}/upload"
-cp -- "$1" "${MOCK_CASE_DIR}/upload/${destination##*/}"
-FAKE_SCP
-
 cat >"${fake_bin}/ssh" <<'FAKE_SSH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -65,6 +45,7 @@ shift
 phase=cleanup
 if [ "$#" -eq 1 ]; then
   case "$1" in
+    *native-test-stage*) phase=upload ;;
     *worker.XXXXXX*) phase=stage ;;
     "cat -- "*) phase=fetch ;;
   esac
@@ -84,6 +65,9 @@ fi
 
 if [ "$#" -eq 1 ]; then
   command_source=$(map_paths "$1")
+  if [ "$phase" = upload ]; then
+    mkdir -p "${MOCK_CASE_DIR}/upload"
+  fi
   if [ "$phase" = stage ]; then
     worker_source=$(cat)
     worker_source=$(map_paths "$worker_source")
@@ -108,7 +92,7 @@ fi
 
 if [ "${MOCK_SSH_FAILURES:-0}" = 1 ] && [ "$count" -eq 1 ]; then
   case "$phase" in
-    launch|fetch) exit 255 ;;
+    upload|launch|fetch) exit 255 ;;
   esac
 fi
 FAKE_SSH
