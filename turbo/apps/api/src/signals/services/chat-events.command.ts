@@ -1398,7 +1398,7 @@ function userModelPreferencePlan(
   // The captured selection: a replaced model is stored as its successor.
   const selectedModel = runSettings.selectedModel;
   // Ultrafast is scoped to this conversation.
-  const serviceTier =
+  const serviceTier: "priority" | null =
     runSettings.codexServiceTier === "fast" ? "priority" : null;
   const patch = runSettings.modelSettingsPatch;
   const nowValue = nowDate();
