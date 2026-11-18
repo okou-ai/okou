@@ -512,7 +512,8 @@ private final class PasteDiagnosticItemProvider: NSItemProvider, @unchecked Send
 
   func timeline(since started: ContinuousClock.Instant) -> String {
     let snapshot = events.withLock { $0 }
-    return snapshot.map { "\(started.duration(to: $0.instant)): \($0.label)" }.joined(separator: "; ")
+    let entries = snapshot.map { "\(started.duration(to: $0.instant)): \($0.label)" }
+    return entries.joined(separator: "; ")
   }
 
   override func loadInPlaceFileRepresentation(
