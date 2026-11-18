@@ -179,9 +179,13 @@
 //! preserving the directory itself. Persistent state outside the selected paths
 //! remains untouched. The helper reuses the sole-supervised-workload proof and
 //! fd-relative mount/symlink protections.
-//! Deletion may be partial on error. Runner retires prefetch before cleanup and
+//! Candidates share a two-second cooperative deletion budget. Capacity is checked
+//! in bounded batches; sufficient space or budget exhaustion stops deletion
+//! normally, and optional candidate errors are skipped. A blocked kernel call
+//! still needs the existing outer operation timeout. Deletion may be partial.
+//! Runner retires prefetch before cleanup and
 //! retries only acknowledged ENOSPC failures from deterministic bootstrap-file
-//! replacement, once, after measured improvement leaves the retry reserve. It
+//! replacement, once, when current measured capacity meets the retry reserve. It
 //! never replays process start or user execution. This is guest filesystem
 //! recovery; host/cache-image GC has separate ownership.
 //! Idle and terminal reuse preparation also invoke the same home-cache deletion
