@@ -626,7 +626,6 @@ async fn deliver_pi_rpc_with_skips(
         http: guest_agent::http::HttpClient::with_api_config(
             &server.base_url,
             "test-token",
-            "",
             run_id,
             Duration::ZERO,
         )?,

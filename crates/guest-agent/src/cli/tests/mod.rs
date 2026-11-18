@@ -29,7 +29,6 @@ fn guest_config_for_agent_context(user_env: HashMap<String, String>) -> env::Gue
         prompt: "prompt".to_string(),
         append_system_prompt: String::new(),
         native_continuation: None,
-        vercel_bypass: String::new(),
         resume_session_id: String::new(),
         api_start_time: String::new(),
         agent_execution_timeout: None,

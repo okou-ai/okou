@@ -55,7 +55,7 @@ async fn memory_delete_publishes_empty_content_and_supported_download_failures_p
             then.json_body(json!({"success": true, "versionId": empty, "storageName": "memory", "size": 0, "fileCount": 0}));
         });
         let http =
-            HttpClient::with_api_config(origin, "token", "", "delete-run", Duration::ZERO).unwrap();
+            HttpClient::with_api_config(origin, "token", "delete-run", Duration::ZERO).unwrap();
         let result = create_memory_snapshot(
             &http,
             CreateSnapshotRequest {

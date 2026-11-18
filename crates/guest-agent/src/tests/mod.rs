@@ -58,7 +58,6 @@ fn test_http_client(server: &MockServer) -> HttpClient {
     HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "test-run-001",
         Duration::ZERO,
     )
@@ -483,7 +482,6 @@ async fn stopping_heartbeat_monitor_closes_inflight_request() {
     let http = HttpClient::with_api_config(
         format!("http://{}", listener.local_addr().unwrap()),
         "test-token",
-        "",
         "heartbeat-monitor-cancel",
         Duration::ZERO,
     )

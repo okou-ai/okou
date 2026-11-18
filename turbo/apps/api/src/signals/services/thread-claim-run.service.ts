@@ -29,7 +29,6 @@ import { createConnectorAdmissionSignals } from "./thread-connector-environment.
 import { modelProviderPermissionManifest } from "./permission-manifest.service";
 import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-types";
 import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
-import { previewAutomationBypass$ } from "../context/hono";
 import { createOfficialWorkflowSignals } from "./thread-official-workflow.signals";
 import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
 import { OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE } from "./official-workflow-constants";
@@ -3253,7 +3252,6 @@ export function createThreadClaimRunObjects(
         executionPackages,
         okouToken,
         disabledPaidTools,
-        previewBypassAuthorized: !!get(previewAutomationBypass$),
       });
     },
   );
@@ -4642,14 +4640,12 @@ function prepareRunnerLaunch(input: {
   readonly executionPackages: AdmittedExecutionFacts["executionPackages"];
   readonly okouToken: string;
   readonly disabledPaidTools: readonly PaidToolId[];
-  readonly previewBypassAuthorized: boolean;
 }): Omit<PreparedRunnerLaunch, "runStorageMounts"> {
   const { args } = input;
   const facts = {
     ...args.facts,
     executionPackages: input.executionPackages,
     nativeContinuation: args.nativeContinuation,
-    previewBypassAuthorized: input.previewBypassAuthorized,
     customWorkflowSelection: input.customWorkflowSelection,
     okouToken: input.okouToken,
     disabledPaidTools: input.disabledPaidTools,

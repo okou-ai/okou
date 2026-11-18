@@ -1678,7 +1678,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
         ).toBeNull();
       },
     });
-    if (!automaticConnectionId || !receivedExecution.encryptedSecrets) {
+    if (!automaticConnectionId) {
       throw new Error(
         "Expected the connected account and actual dispatched Runner credentials",
       );
@@ -1788,9 +1788,8 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     expect(preservedConnector.oauthScopes).toStrictEqual(["provider-added"]);
 
     const unknownGrantRefresh = await fw.requestFirewallAuth(
-      headers,
+      { authorization: `Bearer ${receivedExecution.firewallToken}` },
       {
-        encryptedSecrets: receivedExecution.encryptedSecrets,
         authHeaders: catalog.firewallAuthHeaders,
         matchedFirewall: {
           name: catalog.slug,

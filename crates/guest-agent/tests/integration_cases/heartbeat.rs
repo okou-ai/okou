@@ -198,7 +198,6 @@ async fn heartbeat_does_not_replay_overdue_ticks_after_slow_request() {
     let http = guest_agent::http::HttpClient::with_api_config(
         server.base_url.clone(),
         "test-token-abc123",
-        "test-bypass-value",
         TEST_RUN_ID,
         Duration::ZERO,
     )

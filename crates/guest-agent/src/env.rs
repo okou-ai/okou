@@ -216,7 +216,6 @@ pub struct GuestConfigRaw {
     pub api_token: String,
     pub sandbox_id: String,
     pub sandbox_startup_path: String,
-    pub vercel_bypass: String,
     pub resume_session_id: String,
     pub api_start_time: String,
     pub agent_execution_timeout_secs: String,
@@ -290,7 +289,6 @@ impl GuestConfigRaw {
             sandbox_startup_path: env_or_empty(
                 guest_contracts::env::CANONICAL_SANDBOX_STARTUP_PATH_ENV,
             ),
-            vercel_bypass: env_or_empty(guest_contracts::env::VERCEL_PROTECTION_BYPASS_ENV),
             resume_session_id: env_or_empty(guest_contracts::env::CANONICAL_RESUME_SESSION_ID_ENV),
             api_start_time: env_or_empty(guest_contracts::env::CANONICAL_API_START_TIME_ENV),
             agent_execution_timeout_secs: env_or_empty(
@@ -369,10 +367,6 @@ pub struct GuestConfig {
     pub append_system_prompt: String,
     /// Native-only continuation intent from the current API claim.
     pub native_continuation: Option<guest_contracts::env::NativeContinuation>,
-    /// Optional Vercel protection-bypass secret from
-    /// [`guest_contracts::env::VERCEL_PROTECTION_BYPASS_ENV`]. A non-empty
-    /// value is attached to guest-agent API requests as the bypass header.
-    pub vercel_bypass: String,
     /// Optional CLI session or thread identifier from
     /// [`guest_contracts::env::CANONICAL_RESUME_SESSION_ID_ENV`]. An empty
     /// string means that the selected CLI starts without resuming a session.
@@ -575,7 +569,6 @@ impl GuestConfig {
                         .map_err(|error| format!("invalid native continuation: {error}"))?,
                 )
             },
-            vercel_bypass: raw.vercel_bypass,
             resume_session_id: raw.resume_session_id,
             api_start_time: raw.api_start_time,
             agent_execution_timeout: optional_positive_duration_secs(

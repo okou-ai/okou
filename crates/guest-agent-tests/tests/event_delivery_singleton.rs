@@ -73,7 +73,6 @@ async fn claude_code_sends_a_no_backlog_event_without_collection_delay()
     runtime.http = guest_agent::http::HttpClient::with_api_config(
         &server.base_url,
         "test-token",
-        "",
         &run_id,
         Duration::ZERO,
     )?;

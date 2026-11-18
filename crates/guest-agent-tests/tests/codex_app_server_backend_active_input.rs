@@ -51,7 +51,7 @@ async fn codex_app_server_backend_steers_active_input_into_active_turn()
     let active_input = ActiveInputRuntime::new_enabled(
         &runtime.config.run_id,
         &runtime.config.prompt,
-        HttpClient::with_api_config(server.base_url(), "test-token", "", RUN_ID, Duration::ZERO)?,
+        HttpClient::with_api_config(server.base_url(), "test-token", RUN_ID, Duration::ZERO)?,
     );
     let controller = active_input.controller();
     let payload = guest_contracts::active_input::encode_active_input(EVENT_ID, "follow-up prompt")?;

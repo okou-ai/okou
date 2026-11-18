@@ -45,7 +45,6 @@ export interface AdmittedExecutionFacts {
   >;
   readonly okouToken: string;
   readonly disabledPaidTools: readonly PaidToolId[];
-  readonly previewBypassAuthorized: boolean;
   readonly realAgentInPreview: boolean | undefined;
   readonly apiStartTime: number | undefined;
   readonly connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[];

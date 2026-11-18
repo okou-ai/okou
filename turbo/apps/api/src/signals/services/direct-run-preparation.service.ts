@@ -19,7 +19,6 @@ import {
   contentBundleUrlCacheContext$,
   contentBundleUrlCacheSnapshotSql,
 } from "./content-bundle-presigned-url-cache";
-import { encryptExecutionSecrets$ } from "./execution-secrets.service";
 import {
   prepareExecutionPublication$,
   executionBundleHashes,
@@ -165,14 +164,7 @@ export const prepareDirectRun$ = command(
       ...input.run,
       isFirstRun: packages.row.isFirstRun,
     };
-    const context = {
-      ...prepared.context,
-      encryptedSecrets: await set(
-        encryptExecutionSecrets$,
-        prepared.secrets,
-        signal,
-      ),
-    };
+    const context = prepared.context;
     const publication = await set(
       prepareExecutionPublication$,
       {
@@ -200,11 +192,8 @@ export const prepareDirectRun$ = command(
           ...context,
           networkPolicies: publication.executionContext.networkPolicies,
         },
-        secretNames: Object.keys(prepared.secrets ?? {}),
-        secretValues: [
-          ...Object.values(prepared.secrets ?? {}),
-          ...(publication.executionContext.secretValues ?? []),
-        ],
+        secretNames: ["OKOU_TOKEN"],
+        secretValues: publication.executionContext.secretValues,
       },
     };
   },

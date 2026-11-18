@@ -131,7 +131,6 @@ fn finalization_http_client(
     guest_agent::http::HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "test-run-001",
         Duration::ZERO,
     )

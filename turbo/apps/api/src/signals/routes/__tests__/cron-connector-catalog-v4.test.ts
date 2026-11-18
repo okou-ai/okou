@@ -360,9 +360,8 @@ describe("connector catalog v4 preparation", () => {
         },
       );
       const model = await firewall.requestFirewallAuth(
-        sandboxHeaders,
+        { authorization: `Bearer ${execution.firewallToken}` },
         {
-          encryptedSecrets: execution.encryptedSecrets ?? undefined,
           secretConnectorMap: execution.secretConnectorMap ?? undefined,
           secretConnectorMetadataMap:
             execution.secretConnectorMetadataMap ?? undefined,
@@ -525,13 +524,9 @@ describe("connector catalog v4 preparation", () => {
         prompt: "Use the accepted connector after a catalog rejection",
       });
       const { execution, sandboxHeaders } = await owned.runExecution(run.runId);
-      if (!execution.encryptedSecrets) {
-        throw new Error("Expected credentials from the dispatched Run");
-      }
       const auth = await createFirewallApi(context).requestFirewallAuth(
-        sandboxHeaders,
+        { authorization: `Bearer ${execution.firewallToken}` },
         {
-          encryptedSecrets: execution.encryptedSecrets,
           secretConnectorMap: execution.secretConnectorMap ?? undefined,
           secretConnectorMetadataMap:
             execution.secretConnectorMetadataMap ?? undefined,

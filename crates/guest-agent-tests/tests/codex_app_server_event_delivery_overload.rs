@@ -37,7 +37,6 @@ async fn codex_app_server_event_delivery_count_overload_keeps_recent_events()
     runtime.http = guest_agent::http::HttpClient::with_api_config(
         &server.base_url,
         "test-token",
-        "",
         RUN_ID,
         Duration::ZERO,
     )?;

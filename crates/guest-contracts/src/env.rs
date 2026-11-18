@@ -38,14 +38,6 @@ pub const PROMPT_RUN_PAYLOAD_FIELD: &str = "OKOU_PROMPT";
 /// Unset or empty means there is no extra system prompt.
 pub const APPEND_SYSTEM_PROMPT_RUN_PAYLOAD_FIELD: &str = "OKOU_APPEND_SYSTEM_PROMPT";
 
-/// Sensitive Vercel protection bypass secret for guest API calls.
-///
-/// This runner-owned bootstrap key intentionally does not use the `OKOU_`
-/// prefix because the guest-agent HTTP client uses this established name to
-/// attach the Vercel bypass header. The runner omits this key when no bypass
-/// secret is configured.
-pub const VERCEL_PROTECTION_BYPASS_ENV: &str = "VERCEL_PROTECTION_BYPASS";
-
 /// Optional CLI session or thread identifier used when resuming a prior agent
 /// session.
 ///
@@ -536,7 +528,6 @@ const EXPLICIT_RUNNER_OWNED_ENV_KEYS: &[&str] = &[
     CLI_AGENT_TYPE_ENV,
     USE_MOCK_CLAUDE_ENV,
     USE_MOCK_CODEX_ENV,
-    VERCEL_PROTECTION_BYPASS_ENV,
 ];
 
 const ENV_KEY_DIAGNOSTIC_MAX_CHARS: usize = 128;

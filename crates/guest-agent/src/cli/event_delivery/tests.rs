@@ -24,14 +24,9 @@ fn send(runtime: &EventDeliveryRuntime, sequence: u32) {
 }
 
 fn start(server: &MockServer) -> EventDeliveryRuntime {
-    let http = HttpClient::with_api_config(
-        server.base_url(),
-        "test-token",
-        "",
-        "test-session",
-        RETRY_DELAY,
-    )
-    .unwrap();
+    let http =
+        HttpClient::with_api_config(server.base_url(), "test-token", "test-session", RETRY_DELAY)
+            .unwrap();
     EventDeliveryRuntime::start(http, "retry-close").unwrap()
 }
 

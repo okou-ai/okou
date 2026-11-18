@@ -181,7 +181,6 @@ fn guest_config_from_raw_builds_owned_config_without_process_env_mutation() {
         api_token: String::new(),
         sandbox_id: "sandbox-1".to_string(),
         sandbox_startup_path: "sandbox".to_string(),
-        vercel_bypass: "bypass".to_string(),
         resume_session_id: "session-1".to_string(),
         api_start_time: "123".to_string(),
         agent_execution_timeout_secs: "11".to_string(),
@@ -207,7 +206,6 @@ fn guest_config_from_raw_builds_owned_config_without_process_env_mutation() {
     );
     assert_eq!(config.prompt, "hello");
     assert_eq!(config.append_system_prompt, "extra system");
-    assert_eq!(config.vercel_bypass, "bypass");
     assert_eq!(config.resume_session_id, "session-1");
     assert_eq!(config.api_start_time, "123");
     assert_eq!(

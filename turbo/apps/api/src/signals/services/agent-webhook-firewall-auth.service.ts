@@ -229,6 +229,28 @@ interface FirewallAuthResolutionContext {
 type PersonalSubscriptionCredentialReadArgs =
   PersonalSubscriptionCredentialScope;
 
+class SubscriptionCredentialDecryptionError extends Error {
+  constructor(
+    readonly providerType: PersonalSubscriptionCredentialReadArgs["type"],
+    cause: unknown,
+  ) {
+    super("Failed to decrypt personal subscription credentials", { cause });
+  }
+}
+
+async function decryptSubscriptionCredentialValues(
+  secrets: Parameters<typeof personalSubscriptionCredentialValues>[0],
+  args: PersonalSubscriptionCredentialReadArgs,
+) {
+  const values = await settle(
+    personalSubscriptionCredentialValues(secrets, args.featureSwitchContext),
+  );
+  if (!values.ok) {
+    throw new SubscriptionCredentialDecryptionError(args.type, values.error);
+  }
+  return values.value;
+}
+
 /** Request-scoped subscription credential reads. One firewall request decrypts
  * a bundle once; a refresh in the same request clears it so the rotated bundle
  * is read once more. */
@@ -267,9 +289,9 @@ const readSubscriptionBundle$ = command(function readSubscriptionBundle(
       return credentialCiphertexts
         ? {
             account: credentialCiphertexts.account,
-            values: await personalSubscriptionCredentialValues(
+            values: await decryptSubscriptionCredentialValues(
               credentialCiphertexts.secrets,
-              uncachedCredentialReadArgs.featureSwitchContext,
+              uncachedCredentialReadArgs,
             ),
           }
         : null;
@@ -303,9 +325,9 @@ const readSubscriptionBundle$ = command(function readSubscriptionBundle(
     return credentialCiphertexts
       ? {
           account: credentialCiphertexts.account,
-          values: await personalSubscriptionCredentialValues(
+          values: await decryptSubscriptionCredentialValues(
             credentialCiphertexts.secrets,
-            cachedCredentialReadArgs.featureSwitchContext,
+            cachedCredentialReadArgs,
           ),
         }
       : null;
@@ -3220,9 +3242,9 @@ const getModelProviderRuntimeSecretValue$ = command(
       return credentialCiphertexts
         ? {
             account: credentialCiphertexts.account,
-            values: await personalSubscriptionCredentialValues(
+            values: await decryptSubscriptionCredentialValues(
               credentialCiphertexts.secrets,
-              runtimeCredentialReadArgs.featureSwitchContext,
+              runtimeCredentialReadArgs,
             ),
           }
         : null;
@@ -6161,13 +6183,23 @@ export const prepareFirewallAuthResponse$ = command(
     signal: AbortSignal,
   ): Promise<ResolveFirewallAuthResult> => {
     const timingRecords: FirewallAuthTimingRecord[] = [];
-    return await set(
-      resolveFirewallAuthWithTimings$,
-      { auth, body, billableCacheExpiry, timingRecords },
-      signal,
-    ).finally(() => {
-      recordFirewallAuthTimings(auth.runId, timingRecords);
-    });
+    const resolved = await settle(
+      set(
+        resolveFirewallAuthWithTimings$,
+        { auth, body, billableCacheExpiry, timingRecords },
+        signal,
+      ).finally(() => {
+        recordFirewallAuthTimings(auth.runId, timingRecords);
+      }),
+    );
+    signal.throwIfAborted();
+    if (resolved.ok) {
+      return resolved.value;
+    }
+    if (resolved.error instanceof SubscriptionCredentialDecryptionError) {
+      return tokenAccessResolutionFailed([resolved.error.providerType]);
+    }
+    throw resolved.error;
   },
 );
 
@@ -6332,9 +6364,9 @@ export const resolveCurrentPersonalSubscriptionBundleForApi$ = command(
       return credentialCiphertexts
         ? {
             account: credentialCiphertexts.account,
-            values: await personalSubscriptionCredentialValues(
+            values: await decryptSubscriptionCredentialValues(
               credentialCiphertexts.secrets,
-              initialCredentialReadArgs.featureSwitchContext,
+              initialCredentialReadArgs,
             ),
           }
         : null;
@@ -6381,9 +6413,9 @@ export const resolveCurrentPersonalSubscriptionBundleForApi$ = command(
       return credentialCiphertexts
         ? {
             account: credentialCiphertexts.account,
-            values: await personalSubscriptionCredentialValues(
+            values: await decryptSubscriptionCredentialValues(
               credentialCiphertexts.secrets,
-              refreshedCredentialReadArgs.featureSwitchContext,
+              refreshedCredentialReadArgs,
             ),
           }
         : null;

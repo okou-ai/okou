@@ -144,7 +144,6 @@ fi
         http: guest_agent::http::HttpClient::with_api_config(
             &server.base_url,
             "test-token",
-            "",
             case.run_id,
             Duration::ZERO,
         )?,

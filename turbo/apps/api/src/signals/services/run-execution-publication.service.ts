@@ -162,27 +162,12 @@ const signExecutionContentBundles$ = command(
 
 function secretValuesForRunner(
   preparedContext: PreparedExecutionContext,
-): string[] | null {
-  const keys = preparedContext.secretValueEnvironmentKeys;
-  if (keys === null) {
-    return null;
+): string[] {
+  const token = preparedContext.platformEnvironment.OKOU_TOKEN;
+  if (!token) {
+    throw new Error("API execution requires its Guest OKOU_TOKEN");
   }
-
-  const environment = {
-    ...preparedContext.environment,
-    ...preparedContext.platformEnvironment,
-  };
-  const secretValues: string[] = [];
-  for (const key of keys) {
-    const value = environment[key];
-    if (!Object.hasOwn(environment, key) || typeof value !== "string") {
-      throw new Error(
-        "Execution secret index references an absent environment key",
-      );
-    }
-    secretValues.push(value);
-  }
-  return secretValues;
+  return [token];
 }
 
 type RefreshedExecutionPolicies = Pick<
@@ -238,14 +223,13 @@ function executionContextBody(args: {
   readonly run: ExecutionPublicationRun;
   readonly reuseKey: string;
   readonly preparedContext: PreparedExecutionContext;
-  readonly secretValues: ExecutionContext["secretValues"];
+  readonly secretValues: string[];
   readonly refreshedPolicies: RefreshedExecutionPolicies;
   readonly contentBundles: ExecutionContext["contentBundles"];
   readonly sandboxToken: string;
   readonly firewallToken: string;
 }) {
   const {
-    secretValueEnvironmentKeys: _secretValueEnvironmentKeys,
     customWorkflowSelection: _customWorkflowSelection,
     officialWorkflowBundles: _officialWorkflowBundles,
     seedSkillBundles: _seedSkillBundles,

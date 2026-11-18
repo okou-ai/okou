@@ -1228,9 +1228,8 @@ async fn assert_steer_ack_outcome(case: SteerAckCase) {
     let stdin = child.stdin.take().expect("cat stdin should exist");
     let stdout = child.stdout.take().expect("cat stdout should exist");
     let mut stdout = BufReader::new(stdout);
-    let http =
-        HttpClient::with_api_config(server.base_url(), "test-token", "", "run", Duration::ZERO)
-            .expect("declaration HTTP client should build");
+    let http = HttpClient::with_api_config(server.base_url(), "test-token", "run", Duration::ZERO)
+        .expect("declaration HTTP client should build");
     let active_input = ActiveInputRuntime::new_enabled("run", "initial prompt", http);
     let controller = active_input.controller();
     let mut projection =

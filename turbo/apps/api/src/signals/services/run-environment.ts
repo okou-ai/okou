@@ -24,8 +24,6 @@ export interface Environment {
   readonly environment: Record<string, string> | undefined;
   /** Trusted platform entries layered over the sandbox environment. */
   readonly platformEnvironment: Record<string, string> | undefined;
-  /** Runtime `secrets.NAME` namespace, keyed by env alias. */
-  readonly secrets: Record<string, string> | undefined;
   /** Owner of each refreshable secret alias, used by firewall auth refresh. */
   readonly secretConnectorMap: Record<string, string> | undefined;
   /** Storage source of each refreshable secret alias. */
@@ -48,7 +46,6 @@ export function emptyEnvironment(): Environment {
     vars: undefined,
     environment: undefined,
     platformEnvironment: undefined,
-    secrets: undefined,
     secretConnectorMap: undefined,
     secretConnectorMetadataMap: undefined,
     firewalls: [],
@@ -76,8 +73,8 @@ export function environmentPermissionManifest(
 }
 
 /**
- * Merge sources in ascending precedence: a later source's secrets override
- * earlier ones and drop the earlier owner of that alias. Firewalls keep the
+ * Merge sources in ascending precedence: later owners override earlier
+ * aliases, and reserved platform aliases have no connector owner. Firewalls keep the
  * model provider ahead of connectors, matching the Runner's matching order.
  */
 export function mergeEnvironments(
@@ -95,10 +92,7 @@ export function mergeEnvironments(
   for (const [index, source] of sources.entries()) {
     const overridden = new Set(
       sources.slice(index + 1).flatMap((later) => {
-        return [
-          ...Object.keys(later.secrets ?? {}),
-          ...Object.keys(later.secretConnectorMap ?? {}),
-        ];
+        return Object.keys(later.secretConnectorMap ?? {});
       }),
     );
     for (const [key, owner] of Object.entries(
@@ -140,11 +134,6 @@ export function mergeEnvironments(
     platformEnvironment: mergeRecords(
       ...sources.map((source) => {
         return source.platformEnvironment;
-      }),
-    ),
-    secrets: mergeRecords(
-      ...sources.map((source) => {
-        return source.secrets;
       }),
     ),
     secretConnectorMap: compactRecord(secretConnectorMap),

@@ -14,7 +14,7 @@ const EVENT_ID: &str = "60fca608-d174-4c1a-a1b2-57607b3adf46";
 const PROMPT: &str = "continue with the follow-up input";
 
 fn steer_http(base_url: &str) -> Result<HttpClient, guest_agent::error::AgentError> {
-    HttpClient::with_api_config(base_url, "test-token", "", RUN_ID, Duration::ZERO)
+    HttpClient::with_api_config(base_url, "test-token", RUN_ID, Duration::ZERO)
 }
 
 fn payload(text: &str) -> Result<Vec<u8>, serde_json::Error> {

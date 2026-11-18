@@ -133,7 +133,6 @@ function preparedExecutionContextFixture() {
     connectorRuntimeTargets: [],
     environment: null,
     platformEnvironment: {},
-    secretValueEnvironmentKeys: null,
     vars: null,
     nativeContinuation: {
       sessionId: null,

@@ -60,7 +60,7 @@ fn execution_timeout_terminates_a_stuck_active_input_steer()
         .enable_all()
         .build()?;
     let steer_http =
-        HttpClient::with_api_config(server.base_url(), "test-token", "", RUN_ID, Duration::ZERO)?;
+        HttpClient::with_api_config(server.base_url(), "test-token", RUN_ID, Duration::ZERO)?;
     let active_input = receipt_runtime.block_on(async {
         ActiveInputRuntime::new_enabled(RUN_ID, &runtime.config.prompt, steer_http)
     });

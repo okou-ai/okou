@@ -186,7 +186,6 @@ struct ApiHttpConfig {
     base_url: String,
     urls: ApiUrls,
     token: String,
-    vercel_bypass: String,
     client_session_id: String,
 }
 
@@ -233,14 +232,12 @@ impl HttpClient {
     pub fn with_api_config(
         base_url: impl Into<String>,
         token: impl Into<String>,
-        vercel_bypass: impl Into<String>,
         client_session_id: impl Into<String>,
         retry_delay: Duration,
     ) -> Result<Self, AgentError> {
         Self::with_api_config_and_connect_timeout(
             base_url,
             token,
-            vercel_bypass,
             client_session_id,
             retry_delay,
             Duration::from_secs(constants::HTTP_CONNECT_TIMEOUT_SECS),
@@ -255,7 +252,6 @@ impl HttpClient {
     pub fn with_api_config_and_connect_timeout(
         base_url: impl Into<String>,
         token: impl Into<String>,
-        vercel_bypass: impl Into<String>,
         client_session_id: impl Into<String>,
         retry_delay: Duration,
         connect_timeout: Duration,
@@ -264,7 +260,6 @@ impl HttpClient {
             Some(ApiHttpConfig::new(
                 base_url.into(),
                 token.into(),
-                vercel_bypass.into(),
                 client_session_id.into(),
             )?),
             retry_delay,
@@ -294,12 +289,8 @@ impl HttpClient {
 
     /// Build the HTTP client from an owned guest-agent config.
     pub fn for_config(config: &env::GuestConfig) -> Result<Self, AgentError> {
-        let Some(api) = Self::api_config_from_values(
-            &config.api_url,
-            &config.api_token,
-            &config.vercel_bypass,
-            &config.run_id,
-        )?
+        let Some(api) =
+            Self::api_config_from_values(&config.api_url, &config.api_token, &config.run_id)?
         else {
             return Ok(Self {
                 inner: None,
@@ -366,7 +357,6 @@ impl HttpClient {
     fn api_config_from_values(
         base_url: &str,
         token: &str,
-        vercel_bypass: &str,
         client_session_id: &str,
     ) -> Result<Option<ApiHttpConfig>, AgentError> {
         if token.is_empty() {
@@ -376,7 +366,6 @@ impl HttpClient {
         Ok(Some(ApiHttpConfig::new(
             base_url.to_string(),
             token.to_string(),
-            vercel_bypass.to_string(),
             client_session_id.to_string(),
         )?))
     }
@@ -419,12 +408,7 @@ impl HttpClient {
 }
 
 impl ApiHttpConfig {
-    fn new(
-        base_url: String,
-        token: String,
-        vercel_bypass: String,
-        client_session_id: String,
-    ) -> Result<Self, AgentError> {
+    fn new(base_url: String, token: String, client_session_id: String) -> Result<Self, AgentError> {
         if base_url.is_empty() {
             return Err(AgentError::Http(
                 "OKOU_API_BACKEND_URL is required when OKOU_API_TOKEN is set".into(),
@@ -441,7 +425,6 @@ impl ApiHttpConfig {
             base_url: base_url.clone(),
             urls: ApiUrls::new(&base_url),
             token,
-            vercel_bypass,
             client_session_id,
         })
     }
@@ -632,7 +615,7 @@ async fn collect_api_success_json(response: Response) -> Result<Option<Value>, A
 }
 
 impl HttpClient {
-    /// POST JSON to a webhook endpoint with Bearer auth, Vercel bypass, and retry.
+    /// POST JSON to a webhook endpoint with Bearer auth and retry.
     ///
     /// `max_attempts` is the total request budget, including the initial request.
     /// Returns the parsed JSON response on success, or `None` if the response body
@@ -779,10 +762,6 @@ impl HttpClient {
 
                 if let Some(request_timeout) = request_timeout {
                     req = req.timeout(request_timeout);
-                }
-
-                if !api.vercel_bypass.is_empty() {
-                    req = req.header("x-vercel-protection-bypass", &api.vercel_bypass);
                 }
 
                 req = req

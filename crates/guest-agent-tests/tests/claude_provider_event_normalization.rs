@@ -100,7 +100,6 @@ async fn claude_content_blocks_are_masked_and_sequenced_in_source_order()
     runtime.http = guest_agent::http::HttpClient::with_api_config(
         &server.base_url,
         "test-token",
-        "",
         &run_id,
         Duration::ZERO,
     )?;

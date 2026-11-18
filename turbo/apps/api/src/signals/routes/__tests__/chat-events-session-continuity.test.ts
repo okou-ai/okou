@@ -125,13 +125,9 @@ describe("CHAT-02: run-level model overrides", () => {
       actor,
       accountBId,
     );
-    if (!firstExecution.execution.encryptedSecrets) {
-      throw new Error("Expected account A run to carry encrypted secrets");
-    }
     const firstResolved = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${firstExecution.execution.sandboxToken}` },
+      { authorization: `Bearer ${firstExecution.execution.firewallToken}` },
       {
-        encryptedSecrets: firstExecution.execution.encryptedSecrets,
         authHeaders: {
           Authorization: `Bearer \${{ secrets.CHATGPT_ACCESS_TOKEN }}`,
           "ChatGPT-Account-ID": `\${{ secrets.CHATGPT_ACCOUNT_ID }}`,
@@ -168,13 +164,9 @@ describe("CHAT-02: run-level model overrides", () => {
       secondExecution.execution.secretConnectorMetadataMap
         ?.CHATGPT_ACCESS_TOKEN,
     ).toMatchObject({ sourceId: accountBId });
-    if (!secondExecution.execution.encryptedSecrets) {
-      throw new Error("Expected account B run to carry encrypted secrets");
-    }
     const secondResolved = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${secondExecution.execution.sandboxToken}` },
+      { authorization: `Bearer ${secondExecution.execution.firewallToken}` },
       {
-        encryptedSecrets: secondExecution.execution.encryptedSecrets,
         authHeaders: {
           Authorization: `Bearer \${{ secrets.CHATGPT_ACCESS_TOKEN }}`,
           "ChatGPT-Account-ID": `\${{ secrets.CHATGPT_ACCOUNT_ID }}`,

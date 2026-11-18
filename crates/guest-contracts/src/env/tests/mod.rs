@@ -336,7 +336,6 @@ fn runner_owned_key_detection_covers_terminal_contract() {
         CLI_AGENT_TYPE_ENV,
         USE_MOCK_CLAUDE_ENV,
         USE_MOCK_CODEX_ENV,
-        VERCEL_PROTECTION_BYPASS_ENV,
     ] {
         assert!(is_runner_owned_env_key(key), "{key} should be runner-owned");
     }
@@ -424,8 +423,8 @@ fn every_declared_env_key_is_classified_for_user_env_protection() {
     }
 
     assert!(
-        total >= 29,
-        "expected at least 29 declared *_ENV keys across the contract sources, found {total}; \
+        total >= 28,
+        "expected at least 28 declared *_ENV keys across the contract sources, found {total}; \
              lower this bound only when a key is deliberately removed"
     );
     assert!(

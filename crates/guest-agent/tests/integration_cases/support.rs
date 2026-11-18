@@ -128,7 +128,6 @@ pub(crate) fn test_http_client(retry_delay: Duration) -> guest_agent::http::Http
     guest_agent::http::HttpClient::with_api_config(
         server.base_url(),
         "test-token-abc123",
-        "test-bypass-value",
         TEST_RUN_ID,
         retry_delay,
     )
@@ -153,7 +152,6 @@ pub(crate) fn shared_guest_config() -> Result<guest_agent::env::GuestConfig, Str
         api_url: server.base_url(),
         api_token: "test-token-abc123".to_string(),
         sandbox_id: "00000000-0000-4000-8000-000000000abc".to_string(),
-        vercel_bypass: "test-bypass-value".to_string(),
         cli_agent_type: "claude-code".to_string(),
         home: Some(shared_guest_home_dir().to_string_lossy().into_owned()),
         run_payload_file: run_payload_file.to_string_lossy().into_owned(),
@@ -217,7 +215,6 @@ pub(crate) fn upload_request_matches(
 ) -> bool {
     request_header_eq(req, "content-length", expected_content_length)
         && request_header_absent(req, "authorization")
-        && request_header_absent(req, "x-vercel-protection-bypass")
         && req.body_ref() == expected_body
 }
 

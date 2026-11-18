@@ -80,11 +80,7 @@ describe("connector failure isolation in dispatched Runs", () => {
         const { execution, sandboxHeaders } = await owned.runExecution(
           run.runId,
         );
-        if (!execution.encryptedSecrets) {
-          throw new Error("Expected the dispatched Run credential envelope");
-        }
         const credentialSources = {
-          encryptedSecrets: execution.encryptedSecrets,
           secretConnectorMap: execution.secretConnectorMap ?? undefined,
           secretConnectorMetadataMap:
             execution.secretConnectorMetadataMap ?? undefined,
@@ -108,13 +104,13 @@ describe("connector failure isolation in dispatched Runs", () => {
           );
         }
         const denied = await firewall.requestFirewallAuth(
-          sandboxHeaders,
+          { authorization: `Bearer ${execution.firewallToken}` },
           larkRequest,
           [status],
         );
         expect(denied.body).toMatchObject({ error });
         const healthy = await firewall.requestFirewallAuth(
-          sandboxHeaders,
+          { authorization: `Bearer ${execution.firewallToken}` },
           {
             ...credentialSources,
             authHeaders: {
@@ -129,7 +125,7 @@ describe("connector failure isolation in dispatched Runs", () => {
           },
         });
         const model = await firewall.requestFirewallAuth(
-          sandboxHeaders,
+          { authorization: `Bearer ${execution.firewallToken}` },
           {
             ...credentialSources,
             authHeaders: {
