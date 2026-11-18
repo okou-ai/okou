@@ -245,7 +245,9 @@ final class ThreadListMutations {
     }
     projectThreads(threads)
     didBegin()
-    return await updateThread(thread.id, onFailure: onFailure) { [commands] in
+    return await updateThread(
+      thread.id, includingIndicators: true, onFailure: onFailure
+    ) { [commands] in
       try await commands.setArchived(threadID: thread.id, archived: archived, eventID: eventID)
     }
   }

@@ -112,6 +112,82 @@ final class NotificationRefreshTests: XCTestCase {
     XCTAssertTrue(system.delivered.isEmpty)
   }
 
+  func testArchiveMetadataDismissesNotificationsWhilePreservingUnreadChats() async throws {
+    let archived = Mutex(false)
+    let threadID = "74000000-0000-4000-8000-000000000001"
+    let agentID = "74000000-0000-4000-8000-000000000002"
+    let fixture = ChatHTTPFixture { request in
+      switch (request.httpMethod, request.url?.path) {
+      case ("GET", "/api/chat-threads/snapshot"):
+        return ChatHTTPResponse(
+          body: """
+            {"chatThreads":[{"id":"\(threadID)","agentId":"\(agentID)",\
+            "title":"Unread result","archived":\(archived.withLock { $0 }),\
+            "createdAt":"2026-10-20T00:00:00Z","updatedAt":"2026-10-20T00:00:00Z",\
+            "sortAt":"2026-10-20T00:00:00Z"}],"latestEventId":null,"latestSeqId":null}
+            """)
+      case ("GET", "/api/chat-threads/events"):
+        return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+      case ("GET", "/api/indicators"):
+        let agents = archived.withLock { $0 } ? "{}" : "{\"\(agentID)\":\"unread\"}"
+        return ChatHTTPResponse(
+          body: """
+            {"agents":\(agents),"threads":{"\(threadID)":"unread"},\
+            "unreadAt":{"\(threadID)":"2026-10-20T00:00:00Z"}}
+            """)
+      case ("GET", "/api/agents"): return ChatHTTPResponse(body: "[]")
+      case ("POST", "/api/ios-notifications/reconcile"):
+        let isArchived = archived.withLock { $0 }
+        let removed = isArchived ? #""archived""# : ""
+        let count = isArchived ? 0 : 1
+        return ChatHTTPResponse(
+          body:
+            "{\"unreadCount\":\(count),\"badgeCount\":\(count),\"removeIdentifiers\":[\(removed)]}"
+        )
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let system = NotificationSystemFixture()
+    system.delivered = [
+      DeliveredChatNotification(
+        identifier: "archived", destination: try notificationDestination(threadID: threadID))
+    ]
+    let suite = "notification-archive-" + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+    let notifications = NotificationService(system: system, defaults: defaults)
+    addTeardownBlock { @MainActor in
+      await notifications.update(workspace: nil)
+      await notifications.refreshNotificationState(userID: nil)
+    }
+    let sync = ChatSync(client: fixture.client)
+    await notifications.update(
+      workspace: NotificationWorkspace(
+        scopeID: "current", userID: "current", workspaceID: "org_test",
+        client: fixture.client, sync: sync))
+    let store = WorkspaceStore(
+      client: fixture.client, webURL: fixture.baseURL, sharedSync: sync,
+      didRefreshReadState: { notifications.requestNotificationStateRefresh() })
+    addTeardownBlock { @MainActor in await store.close().value }
+    await store.list.refresh()
+    await notifications.refreshNotificationState(userID: "current")
+    let unreadAt = try XCTUnwrap(store.list.threads.first).unreadAt
+    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isUnread)
+    XCTAssertEqual(system.badgeCount, 1)
+
+    archived.withLock { $0 = true }
+    await store.list.refresh()
+    await notifications.refreshNotificationState(userID: "current")
+
+    let thread = try XCTUnwrap(store.list.threads.first)
+    XCTAssertTrue(thread.isArchived)
+    XCTAssertTrue(thread.isUnread)
+    XCTAssertEqual(thread.unreadAt, unreadAt)
+    XCTAssertFalse(store.list.hasUnreadThreads)
+    XCTAssertEqual(system.badgeCount, 0)
+    XCTAssertTrue(system.delivered.isEmpty)
+  }
+
   private func notificationDestination(threadID: String) throws -> NotificationDestination {
     try XCTUnwrap(
       NotificationDestination(userInfo: [

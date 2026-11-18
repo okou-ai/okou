@@ -330,6 +330,7 @@ type IndicatorThreadRow = {
 };
 type UnreadIndicatorRow = IndicatorThreadRow & {
   readonly unreadAt: Date;
+  readonly archived: boolean;
 };
 
 function indicatorAgentIds(args: IndicatorOwner) {
@@ -405,6 +406,7 @@ function createIndicatorRows(args: IndicatorOwner) {
           threadId: chatThreads.id,
           agentId: chatThreads.agentId,
           lastReadAt: chatThreads.lastReadAt,
+          archived: chatThreads.archived,
         })
         .from(chatThreads)
         .where(
@@ -485,6 +487,7 @@ function createIndicatorRows(args: IndicatorOwner) {
           threadId: candidate.threadId,
           agentId: candidate.agentId,
           unreadAt,
+          archived: candidate.archived,
         });
       }
       return newestUnreadIndicators(unreadRows);
@@ -505,9 +508,9 @@ function createIndicatorRows(args: IndicatorOwner) {
  * join against or correlate to the agents table.
  * Each indicator source returns at most 50 rows. Only Run terminal markers
  * contribute unread indicators; they are resolved for at most 128 candidate
- * threads with uncorrelated reads. Active wins for a thread; unread wins for an
- * agent, which can still have other active threads. See indicatorsSchema for
- * the public bounds and outcome-observation contract.
+ * threads with uncorrelated reads. Active wins for a thread; unarchived unread
+ * wins for an agent, which can still have other active threads. See
+ * indicatorsSchema for the public bounds and outcome-observation contract.
  */
 export function chatIndicators(args: {
   readonly userId: string;
@@ -538,7 +541,8 @@ export function chatIndicators(args: {
       }
       threads[row.threadId] = "unread";
       unreadAt[row.threadId] = row.unreadAt.toISOString();
-      if (row.agentId !== null) {
+      // Archived chats retain their reading state without requesting attention.
+      if (row.agentId !== null && !row.archived) {
         agentIndicators[row.agentId] = "unread";
       }
     }

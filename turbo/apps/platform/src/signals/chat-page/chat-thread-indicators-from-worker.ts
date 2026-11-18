@@ -22,24 +22,28 @@ export const unreadAgentIds$ = computed(
     const hasUnknownThread = unreadIds.some((id) => {
       return !metadata.has(id);
     });
-    const mutedAgents = new Set(
+    const suppressedAgents = new Set(
       unreadIds.flatMap((id) => {
         const thread = metadata.get(id);
-        return thread?.muted ? [thread.agentId] : [];
+        return thread && (thread.muted || thread.archived)
+          ? [thread.agentId]
+          : [];
       }),
     );
-    const unmutedAgents = new Set(
+    const attentionAgents = new Set(
       unreadIds.flatMap((id) => {
         const thread = metadata.get(id);
-        return thread && !thread.muted ? [thread.agentId] : [];
+        return thread && !thread.muted && !thread.archived
+          ? [thread.agentId]
+          : [];
       }),
     );
     return new Set(
       Object.entries(indicators.agents).flatMap(([agentId, indicator]) => {
         const suppressed =
           !hasUnknownThread &&
-          mutedAgents.has(agentId) &&
-          !unmutedAgents.has(agentId);
+          suppressedAgents.has(agentId) &&
+          !attentionAgents.has(agentId);
         return indicator === "unread" && !suppressed ? [agentId] : [];
       }),
     );
@@ -48,13 +52,23 @@ export const unreadAgentIds$ = computed(
 
 export const currentChatAgentHasUnread$ = computed(
   async (get): Promise<boolean> => {
-    // Read both sources together so a rejected indicator load always has a
-    // consumer, even when the agent lookup settles first.
-    const [agentId, unreadAgentIds] = await Promise.all([
+    const [agentId, indicators, unreadAgentIds] = await Promise.all([
       get(currentChatAgentId$),
+      get(chatThreadIndicatorsFromWorker$),
       get(unreadAgentIds$),
     ]);
-    return agentId !== null && unreadAgentIds.has(agentId);
+    // Explicit read actions still apply to archived unread chats.
+    return (
+      agentId !== null &&
+      (unreadAgentIds.has(agentId) ||
+        get(eventDrivenChatThreads$).some((thread) => {
+          return (
+            thread.agentId === agentId &&
+            !thread.muted &&
+            indicators.threads[thread.id] === "unread"
+          );
+        }))
+    );
   },
 );
 

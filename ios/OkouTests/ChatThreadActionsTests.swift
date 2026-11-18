@@ -326,6 +326,36 @@ final class ChatThreadActionsTests: XCTestCase {
 @MainActor
 final class ChatThreadArchiveTests: XCTestCase {
 
+  func testArchiveDismissesAttentionWhilePreservingUnreadStateAndUndo() async throws {
+    let fixture = ThreadActionsFixture()
+    let store = fixture.workspace()
+    defer { store.close() }
+    await store.refreshNavigation()
+    await store.refresh()
+    let before = try XCTUnwrap(store.list.threads.first)
+    XCTAssertTrue(before.isUnread)
+    XCTAssertTrue(store.list.hasUnreadThreads)
+
+    let archived = await store.setArchived(ThreadActionsFixture.thread, archived: true)
+
+    XCTAssertTrue(archived)
+    let archivedThread = try XCTUnwrap(store.list.threads.first)
+    XCTAssertTrue(archivedThread.isArchived)
+    XCTAssertTrue(archivedThread.isUnread)
+    XCTAssertEqual(archivedThread.unreadAt, before.unreadAt)
+    XCTAssertFalse(store.list.hasUnreadThreads)
+    XCTAssertFalse(store.list.unreadAgentIDs.contains(ThreadActionsFixture.agent))
+    XCTAssertEqual(fixture.writes.map(\.action), ["archive"])
+
+    await (try XCTUnwrap(store.threadFeedback)).action()
+
+    XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isArchived)
+    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isUnread)
+    XCTAssertTrue(store.list.hasUnreadThreads)
+    XCTAssertTrue(store.list.unreadAgentIDs.contains(ThreadActionsFixture.agent))
+    XCTAssertEqual(fixture.writes.map(\.action), ["archive", "unarchive"])
+  }
+
   func testAcceptedArchiveKeepsUndoWhenTheFollowingListRefreshFails() async throws {
     let fixture = ThreadActionsFixture()
     let store = fixture.workspace()

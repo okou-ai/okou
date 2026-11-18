@@ -167,6 +167,7 @@ struct WorkspaceNotificationReadState: Equatable {
   let agentID: String
   let hidden: Bool
   let muted: Bool
+  let archived: Bool
   let unreadAt: Date?
 
   static func snapshot(_ threads: [ChatThread]) -> [String: WorkspaceNotificationReadState] {
@@ -175,7 +176,8 @@ struct WorkspaceNotificationReadState: Equatable {
         (
           $0.id,
           WorkspaceNotificationReadState(
-            agentID: $0.agentID, hidden: $0.isHidden, muted: $0.isMuted, unreadAt: $0.unreadAt)
+            agentID: $0.agentID, hidden: $0.isHidden, muted: $0.isMuted,
+            archived: $0.isArchived, unreadAt: $0.unreadAt)
         )
       })
   }
