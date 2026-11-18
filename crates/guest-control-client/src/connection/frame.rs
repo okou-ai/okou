@@ -3,8 +3,8 @@
 //! Admission runs under the writer lock before any bytes can be emitted. An
 //! error or `Skip` leaves the stream untouched. Once writing starts, a guard
 //! poisons the connection on error or cancellation because a partial frame
-//! cannot safely be followed by another frame. Only a successful `write_all`
-//! disarms the guard. The guard drops before the writer lock is released.
+//! cannot safely be followed by another frame. The guard disarms only when all
+//! parts of the frame have been sent. It drops before the writer lock is released.
 //!
 //! Callers retain ownership of encoding, admission, request/operation cleanup,
 //! deadlines, and diagnostics. In particular, frame-builder callers must keep
@@ -69,6 +69,18 @@ impl Shared {
         pre_write: impl FnOnce() -> io::Result<FrameWriteDecision>,
         write_finished: impl FnOnce(FrameWriteTiming, &io::Result<()>),
     ) -> io::Result<FrameWriteDecision> {
+        self.write_frame_parts(data, &[], pre_write, write_finished)
+            .await
+    }
+
+    /// Write both parts as a single frame under one admission and writer guard.
+    pub(crate) async fn write_frame_parts(
+        &self,
+        prefix: &[u8],
+        suffix: &[u8],
+        pre_write: impl FnOnce() -> io::Result<FrameWriteDecision>,
+        write_finished: impl FnOnce(FrameWriteTiming, &io::Result<()>),
+    ) -> io::Result<FrameWriteDecision> {
         let wait_started_at = Instant::now();
         let mut writer = self.writer.lock().await;
         let wait = wait_started_at.elapsed();
@@ -86,7 +98,14 @@ impl Shared {
             owner: OperationCancellationContext::current(),
         };
         let write_started_at = Instant::now();
-        let result = writer.write_all(data).await;
+        let result = async {
+            writer.write_all(prefix).await?;
+            if !suffix.is_empty() {
+                writer.write_all(suffix).await?;
+            }
+            Ok::<(), io::Error>(())
+        }
+        .await;
         let write = write_started_at.elapsed();
         guard.progress = match &result {
             Ok(()) => FrameWriteProgress::Complete,

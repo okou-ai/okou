@@ -815,6 +815,7 @@ impl GuestControlClient {
             move |seq, frame| {
                 write_sequence.store(seq, Ordering::Relaxed);
                 mode.encode_frame(frame, seq, &proto_entries)
+                    .map(|()| &[][..])
                     .map_err(protocol_invalid_input)
             },
             timing.as_deref_mut().map(|timing| &mut timing.host),

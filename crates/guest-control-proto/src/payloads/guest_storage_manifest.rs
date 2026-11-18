@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::ProtocolError;
-use crate::frame::encode_into;
+use crate::frame::{encode_into, encode_prefix_into};
 use crate::payloads::exec_operation::encode_exec_result_frame_into_with_prefix;
 use crate::read::{
     checked_payload_len_add, ensure_payload_fits_message, ensure_u16_len, ensure_u32_len,
@@ -121,6 +121,33 @@ pub fn encode_guest_storage_manifest_request_frame_into(
                 lengths,
             )
         },
+    )
+}
+
+/// Encode the frame prefix and return the validated payload as a borrowed suffix.
+///
+/// Send `prefix` and the returned suffix in order under the same frame write.
+/// The encoded body length covers both parts.
+///
+/// # Errors
+///
+/// Uses the same validation as [`encode_guest_storage_manifest_request_frame_into`].
+pub fn encode_guest_storage_manifest_request_frame_prefix_into<'a>(
+    prefix: &mut Vec<u8>,
+    seq: u32,
+    timeout_ms: u32,
+    run_id: &str,
+    runtime_dir: &str,
+    manifest_json: &'a [u8],
+) -> Result<&'a [u8], ProtocolError> {
+    let lengths = validate_request(timeout_ms, run_id, runtime_dir, manifest_json)?;
+    encode_prefix_into(
+        prefix,
+        MSG_GUEST_STORAGE_MANIFEST,
+        seq,
+        request_context_len(run_id, runtime_dir)?,
+        manifest_json,
+        |prefix| append_request_context(prefix, timeout_ms, run_id, runtime_dir, lengths),
     )
 }
 
@@ -336,10 +363,16 @@ fn request_payload_len(
     runtime_dir: &str,
     manifest_json: &[u8],
 ) -> Result<usize, ProtocolError> {
-    let mut len = 4usize;
-    len = checked_payload_len_add(len, 2 + run_id.len())?;
-    len = checked_payload_len_add(len, 2 + runtime_dir.len())?;
-    checked_payload_len_add(len, 4 + manifest_json.len())
+    checked_payload_len_add(
+        request_context_len(run_id, runtime_dir)?,
+        manifest_json.len(),
+    )
+}
+
+fn request_context_len(run_id: &str, runtime_dir: &str) -> Result<usize, ProtocolError> {
+    let len = checked_payload_len_add(4, 2 + run_id.len())?;
+    let len = checked_payload_len_add(len, 2 + runtime_dir.len())?;
+    checked_payload_len_add(len, 4)
 }
 
 fn append_request_payload(
@@ -350,13 +383,23 @@ fn append_request_payload(
     manifest_json: &[u8],
     lengths: RequestLengths,
 ) {
+    append_request_context(payload, timeout_ms, run_id, runtime_dir, lengths);
+    payload.extend_from_slice(manifest_json);
+}
+
+fn append_request_context(
+    payload: &mut Vec<u8>,
+    timeout_ms: u32,
+    run_id: &str,
+    runtime_dir: &str,
+    lengths: RequestLengths,
+) {
     payload.extend_from_slice(&timeout_ms.to_be_bytes());
     payload.extend_from_slice(&lengths.run_id.to_be_bytes());
     payload.extend_from_slice(run_id.as_bytes());
     payload.extend_from_slice(&lengths.runtime_dir.to_be_bytes());
     payload.extend_from_slice(runtime_dir.as_bytes());
     payload.extend_from_slice(&lengths.manifest.to_be_bytes());
-    payload.extend_from_slice(manifest_json);
 }
 
 fn validate_result_output(

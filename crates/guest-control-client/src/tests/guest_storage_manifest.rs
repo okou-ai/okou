@@ -2,17 +2,48 @@ use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 
+use guest_contracts::storage_files::{self, StorageFile};
 use guest_control_proto::{
-    ExecCapturedOutput, ExecTermination, MSG_GUEST_STORAGE_MANIFEST,
-    MSG_GUEST_STORAGE_MANIFEST_RESULT,
+    ExecCapturedOutput, ExecTermination, FileWriteStage, FileWriteStatus, MSG_FILE_WRITE_STATUS,
+    MSG_FILE_WRITE_STATUS_RESULT, MSG_GUEST_STORAGE_MANIFEST, MSG_GUEST_STORAGE_MANIFEST_RESULT,
 };
+use nix::sys::socket::{setsockopt, sockopt};
 use sandbox::StorageManifestRequestTiming;
+use tokio::io::AsyncReadExt;
 use tokio::sync::oneshot;
 
+use crate::GuestControlClient;
 use crate::operation_tracker::NormalOperationReadiness;
 use crate::tests::support::{
     MockGuest, host_from_stream, make_pair, normal_operation_readiness, pending_request_count,
 };
+
+const LARGE_STORAGE_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+
+fn large_storage_input() -> Vec<u8> {
+    let files: Vec<_> = (0..16)
+        .map(|index| StorageFile {
+            path: format!("file-{index}"),
+            content: vec![index; storage_files::MAX_FILE_BYTES],
+            mode: 0o644,
+            mtime: 1,
+        })
+        .collect();
+    storage_files::encode_input(
+        br#"{"storageMounts":[{"mountPath":"/home/user/data","archiveUrl":null}]}"#,
+        &[("/home/user/data", &files)],
+    )
+    .unwrap()
+}
+
+async fn setup_storage_pair_with_backpressure() -> (GuestControlClient, MockGuest) {
+    let (host, guest) = make_pair();
+    setsockopt(&host, sockopt::SndBuf, &4096usize).unwrap();
+    let host = tokio::spawn(host_from_stream(host));
+    let mut guest = MockGuest::new(guest);
+    guest.complete_handshake().await;
+    (host.await.unwrap().unwrap(), guest)
+}
 
 fn success_payload() -> Vec<u8> {
     guest_control_proto::encode_guest_storage_manifest_result(
@@ -197,6 +228,103 @@ async fn guest_storage_manifest_sends_request_and_decodes_result() {
     );
     release_tx.send(()).unwrap();
     guest.await.unwrap();
+}
+
+#[tokio::test]
+async fn large_storage_payload_finishes_before_a_queued_control_frame() {
+    let (host, mut guest) = setup_storage_pair_with_backpressure().await;
+    let input = large_storage_input();
+    let status = FileWriteStatus {
+        sequence: 0,
+        stage: FileWriteStage::Idle,
+    };
+    let peer = async {
+        let message = guest.expect_message(MSG_GUEST_STORAGE_MANIFEST).await;
+        let request =
+            guest_control_proto::decode_guest_storage_manifest_request(&message.payload).unwrap();
+        assert_eq!(request.run_id, "run");
+        assert_eq!(request.runtime_dir, "/run");
+        assert_eq!(request.timeout_ms, 100);
+        assert!(
+            request.manifest_json == input,
+            "changed large storage input"
+        );
+        guest
+            .send_response(
+                MSG_GUEST_STORAGE_MANIFEST_RESULT,
+                message.seq,
+                &success_payload(),
+            )
+            .await;
+        let control = guest.expect_message(MSG_FILE_WRITE_STATUS).await;
+        guest
+            .send_response(
+                MSG_FILE_WRITE_STATUS_RESULT,
+                control.seq,
+                &status.encode_payload(),
+            )
+            .await;
+    };
+
+    // The storage write fills the socket before the control request and the
+    // peer runs. The peer checks that it receives two complete ordered frames.
+    let (storage, control, ()) = tokio::join!(biased;
+        host.guest_storage_manifest(&input, "run", "/run", 100, LARGE_STORAGE_REQUEST_TIMEOUT),
+        host.file_write_status(LARGE_STORAGE_REQUEST_TIMEOUT),
+        peer,
+    );
+    assert_eq!(
+        storage.unwrap().termination,
+        ExecTermination::Exited { exit_code: 0 }
+    );
+    assert_eq!(control.unwrap(), status);
+}
+
+#[tokio::test]
+async fn cancelling_during_a_large_storage_payload_closes_the_connection() {
+    let (host, mut guest) = setup_storage_pair_with_backpressure().await;
+    let input = large_storage_input();
+    let mut prefix = Vec::new();
+    guest_control_proto::encode_guest_storage_manifest_request_frame_prefix_into(
+        &mut prefix,
+        1,
+        100,
+        "run",
+        "/run",
+        &input,
+    )
+    .unwrap();
+    let mut received = vec![0; prefix.len() + storage_files::INPUT_MAGIC.len()];
+    let mut request = Box::pin(host.guest_storage_manifest(
+        &input,
+        "run",
+        "/run",
+        100,
+        LARGE_STORAGE_REQUEST_TIMEOUT,
+    ));
+    tokio::select! {
+        result = request.as_mut() => panic!("request completed before the peer could drain it: {result:?}"),
+        result = tokio::time::timeout(LARGE_STORAGE_REQUEST_TIMEOUT, guest.stream_mut().read_exact(&mut received)) => {
+            result.expect("peer did not observe the start of the payload").unwrap();
+        }
+    }
+    assert_eq!(&received[prefix.len()..], storage_files::INPUT_MAGIC);
+    drop(request);
+
+    tokio::time::timeout(
+        LARGE_STORAGE_REQUEST_TIMEOUT,
+        guest.stream_mut().read_to_end(&mut received),
+    )
+    .await
+    .expect("peer did not observe connection closure")
+    .unwrap();
+    assert!(received.len() < prefix.len() + input.len());
+    assert!(input.starts_with(&received[prefix.len()..]));
+    let error = host
+        .file_write_status(LARGE_STORAGE_REQUEST_TIMEOUT)
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::ConnectionReset);
 }
 
 #[tokio::test]

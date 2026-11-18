@@ -266,7 +266,8 @@ pub use payloads::guest_storage_manifest::{
     GUEST_STORAGE_MANIFEST_OUTPUT_LIMIT_BYTES, GUEST_STORAGE_RESOURCE_SUMMARY_LIMIT_BYTES,
     decode_guest_storage_manifest_request, decode_guest_storage_manifest_result,
     encode_guest_storage_manifest_request, encode_guest_storage_manifest_request_frame_into,
-    encode_guest_storage_manifest_result, encode_guest_storage_manifest_result_frame_into,
+    encode_guest_storage_manifest_request_frame_prefix_into, encode_guest_storage_manifest_result,
+    encode_guest_storage_manifest_result_frame_into,
 };
 pub use payloads::home_drive_mount::{
     HOME_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES, HomeDriveOperation, decode_home_drive_mount_request,
