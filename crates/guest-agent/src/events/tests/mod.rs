@@ -232,43 +232,54 @@ fn codex_terminal_events_preserve_provider_codes_before_text_projection() {
 
 #[test]
 fn codex_terminal_bad_request_classifies_the_owned_body_without_inventing_status() {
-    use guest_contracts::codex_failure::CodexNativeFailureKind;
-    let message = r#"{"detail":"Bad Request"}"#;
-    let error = serde_json::json!({"message":message,"codex_error_info":"other"});
-    for event in [
-        serde_json::json!({"type":"error","message":message,"error":error}),
-        serde_json::json!({"type":"turn.completed","turn":{"status":"failed","error":error}}),
+    use guest_contracts::codex_failure::{CodexFailureStage, CodexNativeFailureKind};
+    for (message, stage) in [
+        (r#"{"detail":"Bad Request"}"#, None),
+        (
+            r#"Error running remote compact task: {"detail":"Bad Request"}"#,
+            Some(CodexFailureStage::RemoteCompaction),
+        ),
     ] {
-        let diagnostic =
-            masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw("")).unwrap();
+        let error = serde_json::json!({"message":message,"codex_error_info":"other"});
+        for event in [
+            serde_json::json!({"type":"error","message":message,"error":error}),
+            serde_json::json!({"type":"turn.completed","turn":{"status":"failed","error":error}}),
+        ] {
+            let diagnostic =
+                masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw("")).unwrap();
+            assert_eq!(
+                diagnostic.failure_reason,
+                Some(FailureReason::ProviderBadRequest),
+                "message: {message}",
+            );
+            assert_eq!(diagnostic.message, message);
+            let evidence = diagnostic.evidence.unwrap();
+            assert_eq!(evidence.native_kind, Some(CodexNativeFailureKind::Other));
+            assert_eq!(evidence.http_status, None);
+            assert_eq!(evidence.reported_stage, stage);
+        }
+        let stronger = serde_json::json!({"type":"turn.completed","turn":{"status":"failed","error":{
+            "message":message,"codex_error_info":"unauthorized"
+        }}});
         assert_eq!(
-            diagnostic.failure_reason,
-            Some(FailureReason::ProviderBadRequest)
+            masked_codex_failure_diagnostic(&stronger, &SecretMasker::from_raw(""))
+                .unwrap()
+                .failure_reason,
+            Some(FailureReason::InvalidCredentials)
         );
-        assert_eq!(diagnostic.message, message);
-        let evidence = diagnostic.evidence.unwrap();
-        assert_eq!(evidence.native_kind, Some(CodexNativeFailureKind::Other));
-        assert_eq!(evidence.http_status, None);
+        for event in [
+            serde_json::json!({"type":"error","will_retry":true,"message":message,"error":error}),
+            serde_json::json!({"type":"turn.completed","turn":{"status":"completed","error":error}}),
+            serde_json::json!({"type":"item.completed","item":{"type":"command_execution","aggregated_output":message}}),
+            serde_json::json!({"type":"item.completed","item":{"type":"agent_message","text":message}}),
+        ] {
+            assert!(masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw("")).is_none());
+        }
     }
-    let stronger = serde_json::json!({"type":"turn.completed","turn":{"status":"failed","error":{
-        "message":message,"codex_error_info":"unauthorized"
-    }}});
-    assert_eq!(
-        masked_codex_failure_diagnostic(&stronger, &SecretMasker::from_raw(""))
-            .unwrap()
-            .failure_reason,
-        Some(FailureReason::InvalidCredentials)
-    );
-    for event in [
-        serde_json::json!({"type":"error","will_retry":true,"message":message,"error":error}),
-        serde_json::json!({"type":"turn.completed","turn":{"status":"completed","error":error}}),
-        serde_json::json!({"type":"item.completed","item":{"type":"command_execution","aggregated_output":message}}),
-        serde_json::json!({"type":"item.completed","item":{"type":"agent_message","text":message}}),
-    ] {
-        assert!(masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw("")).is_none());
-    }
+    let message = r#"{"detail":"Bad Request"}"#;
     for error in [
         serde_json::json!({"message":"Bad Request","codex_error_info":"other"}),
+        serde_json::json!({"message":format!("Tool output: {message}"),"codex_error_info":"other"}),
         serde_json::json!({"message":"unknown","additional_details":message,"codex_error_info":"other"}),
         serde_json::json!({"message":message,"codex_error_info":"futureStructuredError"}),
     ] {

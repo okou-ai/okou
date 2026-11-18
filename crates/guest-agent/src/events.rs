@@ -349,6 +349,10 @@ fn is_codex_bad_request(error: &Value) -> bool {
     let Some(message) = error.get("message").and_then(Value::as_str) else {
         return false;
     };
+    // Codex prefixes the same error body when remote compaction fails.
+    let message = message
+        .strip_prefix("Error running remote compact task: ")
+        .unwrap_or(message);
     let Ok(Value::Object(body)) = serde_json::from_str::<Value>(message) else {
         return false;
     };

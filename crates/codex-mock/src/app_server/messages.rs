@@ -699,6 +699,9 @@ fn turn_failure_message(failure: TurnFailure) -> &'static str {
         }
         TurnFailure::OutputTokenLimit => "Incomplete response returned, reason: max_output_tokens",
         TurnFailure::BadRequest => r#"{"detail":"Bad Request"}"#,
+        TurnFailure::RemoteCompactionBadRequest => {
+            r#"Error running remote compact task: {"detail":"Bad Request"}"#
+        }
         TurnFailure::AccessProgram => {
             include_str!("fixtures/access-program-http-body.json").trim_end()
         }
@@ -727,6 +730,7 @@ fn turn_failure_error_info(failure: TurnFailure) -> Option<Value> {
         | TurnFailure::OutputTokenLimit
         | TurnFailure::AccessProgram
         | TurnFailure::BadRequest
+        | TurnFailure::RemoteCompactionBadRequest
         | TurnFailure::ProviderStreamServerError
         | TurnFailure::RemoteCompactionServerError
         | TurnFailure::RequestSend

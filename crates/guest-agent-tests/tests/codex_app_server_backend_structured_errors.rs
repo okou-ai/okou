@@ -34,6 +34,10 @@ async fn codex_app_server_classifies_supported_structured_errors()
             expected_reason: Some(FailureReason::ProviderBadRequest),
         },
         StructuredErrorCase {
+            scenario: "runtime-turn-failed-remote-compaction-bad-request",
+            expected_reason: Some(FailureReason::ProviderBadRequest),
+        },
+        StructuredErrorCase {
             scenario: "runtime-turn-failed-output-token-limit",
             expected_reason: Some(FailureReason::OutputTokenLimit),
         },

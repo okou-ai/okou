@@ -50,6 +50,7 @@ pub(super) enum Scenario {
     RuntimeTurnFailedUnauthorized,
     RuntimeTurnFailedUnknown,
     RuntimeTurnFailedBadRequest,
+    RuntimeTurnFailedRemoteCompactionBadRequest,
     RuntimeTurnFailedRequestSend,
     RuntimeRequestSendError,
     RuntimeTurnFailedUnsupportedModel,
@@ -232,6 +233,9 @@ impl Scenario {
                 "runtime-turn-failed-unauthorized" => Ok(Self::RuntimeTurnFailedUnauthorized),
                 "runtime-turn-failed-unknown" => Ok(Self::RuntimeTurnFailedUnknown),
                 "runtime-turn-failed-bad-request" => Ok(Self::RuntimeTurnFailedBadRequest),
+                "runtime-turn-failed-remote-compaction-bad-request" => {
+                    Ok(Self::RuntimeTurnFailedRemoteCompactionBadRequest)
+                }
                 "runtime-turn-failed-request-send" => Ok(Self::RuntimeTurnFailedRequestSend),
                 "runtime-turn-failed-unsupported-model" => {
                     Ok(Self::RuntimeTurnFailedUnsupportedModel)
@@ -376,6 +380,9 @@ impl Scenario {
             Self::RuntimeTurnFailedUnauthorized => Some(TurnFailure::Unauthorized),
             Self::RuntimeTurnFailedUnknown => Some(TurnFailure::Unknown),
             Self::RuntimeTurnFailedBadRequest => Some(TurnFailure::BadRequest),
+            Self::RuntimeTurnFailedRemoteCompactionBadRequest => {
+                Some(TurnFailure::RemoteCompactionBadRequest)
+            }
             Self::RuntimeTurnFailedRequestSend | Self::RuntimeRequestSendError => {
                 Some(TurnFailure::RequestSend)
             }
@@ -424,6 +431,7 @@ pub(super) enum TurnStartRpcError {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum TurnFailure {
     BadRequest,
+    RemoteCompactionBadRequest,
     Generic,
     OutputTokenLimit,
     AccessProgram,
