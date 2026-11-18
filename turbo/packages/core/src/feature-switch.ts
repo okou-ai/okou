@@ -57,7 +57,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Artifact generation phase timing",
     description:
       "Record research and generation boundaries for the current Run.",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.PhoneUse]: {
     maintainer: "lancy@okou.ai",
