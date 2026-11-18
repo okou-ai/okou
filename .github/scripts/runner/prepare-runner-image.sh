@@ -70,14 +70,17 @@ if [[ "$FRESH_METADATA_PATH" != /* ]]; then
   FRESH_METADATA_PATH="${REPO_ROOT}/${FRESH_METADATA_PATH}"
 fi
 FRESH_METADATA_PATH="$FRESH_METADATA_PATH" \
-RUNNER_PATH="$RUNNER_PATH" \
-EXPECTED_TARGET="$TARGET_TRIPLE" \
-EXPECTED_BINARY_INPUT_DIGEST="$EXPECTED_BINARY_INPUT_DIGEST" \
-  "${SCRIPT_DIR}/runner-binary-cache.sh" fresh-validate >/dev/null
+  RUNNER_PATH="$RUNNER_PATH" \
+  EXPECTED_TARGET="$TARGET_TRIPLE" \
+  EXPECTED_BINARY_INPUT_DIGEST="$EXPECTED_BINARY_INPUT_DIGEST" \
+  "${SCRIPT_DIR}/runner-binary-cache.sh" fresh-validate > /dev/null
 
 runner_sha=$(jq -r '.runnerSha256' "$FRESH_METADATA_PATH")
 runner_size=$(jq -r '.runnerSizeBytes' "$FRESH_METADATA_PATH")
 guest_sha_json=$(jq -c '.guestSha256' "$FRESH_METADATA_PATH")
+export JOB_REF HEAD_SHA TARGET_TRIPLE PROFILE
+export RUNNER_IMAGE_RUNNER_SHA256="$runner_sha"
+IMAGE_OPERATION="${SCRIPT_DIR}/runner-image-operation.py"
 
 # The CLI is already embedded in the validated runner binary. The private
 # compile input is on this CI worker for the binary-input digest, so use its
@@ -85,7 +88,7 @@ guest_sha_json=$(jq -c '.guestSha256' "$FRESH_METADATA_PATH")
 okou_cli_json='null'
 cli_manifest="${GUEST_CLI_MANIFEST_PATH:-}"
 if { [ -n "${GUEST_CLI_PATH:-}" ] && [ -z "$cli_manifest" ]; } ||
-   { [ -z "${GUEST_CLI_PATH:-}" ] && [ -n "$cli_manifest" ]; }; then
+  { [ -z "${GUEST_CLI_PATH:-}" ] && [ -n "$cli_manifest" ]; }; then
   echo "GUEST_CLI_PATH and GUEST_CLI_MANIFEST_PATH must be provided together" >&2
   exit 2
 fi
@@ -96,10 +99,10 @@ if [ -n "${GUEST_CLI_PATH:-}" ]; then
   if [[ "$cli_manifest" != /* ]]; then
     cli_manifest="${REPO_ROOT}/${cli_manifest}"
   fi
-  [ -f "$GUEST_CLI_PATH" ] && [ -f "$cli_manifest" ] || {
+  if [ ! -f "$GUEST_CLI_PATH" ] || [ ! -f "$cli_manifest" ]; then
     echo "embedded CLI compile input is missing" >&2
     exit 2
-  }
+  fi
   cli_sha=$(sha256sum "$GUEST_CLI_PATH" | awk '{print $1}')
   cli_size=$(stat -c '%s' "$GUEST_CLI_PATH")
   jq -e --arg sha "$cli_sha" --argjson size "$cli_size" '
@@ -109,7 +112,7 @@ if [ -n "${GUEST_CLI_PATH:-}" ]; then
     (.versions.cli | type == "string" and length > 0) and
     (.versions.piAgentRuntime | type == "string" and length > 0) and
     (.versions.piSdk | type == "string" and length > 0)
-  ' "$cli_manifest" >/dev/null || {
+  ' "$cli_manifest" > /dev/null || {
     echo "embedded CLI compile input does not match its manifest" >&2
     exit 2
   }
@@ -120,6 +123,9 @@ if [ -n "${GUEST_CLI_PATH:-}" ]; then
     packageSha256: .package.sha256
   }' "$cli_manifest")
 fi
+
+# Validate the complete execution identity before even a read-only SSH probe.
+python3 "$IMAGE_OPERATION" validate "${HOSTS[0]}"
 
 prepare_host() {
   local host=$1
@@ -137,7 +143,11 @@ prepare_host() {
     return 1
   fi
 
-  if ! ssh "$remote" bash -s -- "${BIN_DIR}" "${RUNNER_DIR}" "${job_ref}" <<'REMOTE_SCRIPT'
+  # Retire the previous image owner's complete cgroup before reusing paths.
+  # A lost claim response reconciles this identity; it never replays preparation.
+  python3 "$IMAGE_OPERATION" claim "$host" || return $?
+
+  if ! python3 "$IMAGE_OPERATION" guard "$host" bash -s -- "${BIN_DIR}" "${RUNNER_DIR}" "${job_ref}" << 'REMOTE_SCRIPT'; then
 set -euo pipefail
 BIN_DIR=$1
 RUNNER_DIR=$2
@@ -216,7 +226,6 @@ case "$BIN_DIR" in
     ;;
 esac
 REMOTE_SCRIPT
-  then
     return 1
   fi
 
@@ -226,7 +235,8 @@ REMOTE_SCRIPT
     # A failed SSH client can leave a remote writer alive. Never let a retry
     # share its candidate with that writer; existing job-directory cleanup owns
     # abandoned candidates, which are never eligible for publication.
-    if tmp_runner=$(ssh "$remote" bash -s -- "$tmp_template" <<'REMOTE_SCRIPT'
+    if tmp_runner=$(
+      ssh "$remote" bash -s -- "$tmp_template" << 'REMOTE_SCRIPT'
 set -euo pipefail
 sudo mktemp "$1"
 REMOTE_SCRIPT
@@ -254,7 +264,7 @@ REMOTE_SCRIPT
     upload_elapsed=$((SECONDS - upload_started))
     echo "runner upload failed: host=${host} attempt=${upload_attempt}/3 status=${upload_status} elapsed_seconds=${upload_elapsed} expected_bytes=${runner_size} candidate=${tmp_runner}" >&2
     case "$upload_status" in
-      124|141|255) ;; # Operation timeout, broken pipe, or SSH transport failure.
+      124 | 141 | 255) ;; # Operation timeout, broken pipe, or SSH transport failure.
       *) return "$upload_status" ;;
     esac
     if [ "$upload_attempt" -eq 3 ]; then
@@ -264,7 +274,7 @@ REMOTE_SCRIPT
     sleep 5
   done
 
-  if ! ssh "$remote" bash -s -- "${tmp_runner}" "${BIN_DIR}/runner" "${runner_sha}" <<'REMOTE_SCRIPT'
+  if ! python3 "$IMAGE_OPERATION" guard "$host" bash -s -- "${tmp_runner}" "${BIN_DIR}/runner" "${runner_sha}" << 'REMOTE_SCRIPT'; then
 set -euo pipefail
 TMP_RUNNER=$1
 FINAL_RUNNER=$2
@@ -285,86 +295,81 @@ sudo "${TMP_RUNNER}" --version >/dev/null
 sudo mv -f "${TMP_RUNNER}" "${FINAL_RUNNER}"
 trap - EXIT
 REMOTE_SCRIPT
-  then
     return 1
   fi
 
-  local gc_attempt gc_status
-  gc_status=0
-  for gc_attempt in 1 2; do
-    if ssh "$remote" sudo "${BIN_DIR}/runner" gc --keep-latest 6; then
-      gc_status=0
-      break
-    else
-      gc_status=$?
-    fi
+  local gc_status
+  if python3 "$IMAGE_OPERATION" guard "$host" sudo "${BIN_DIR}/runner" gc --keep-latest 6 < /dev/null; then
+    :
+  else
+    gc_status=$?
+    echo "runner GC failed on ${host} with status ${gc_status}" >&2
+    return "$gc_status"
+  fi
 
-    if [ "$gc_status" -ne 255 ] || [ "$gc_attempt" -eq 2 ]; then
-      echo "runner GC failed on ${host} with status ${gc_status}" >&2
-      return "$gc_status"
-    fi
-    echo "runner GC SSH transport failed on ${host} with status 255; retrying once" >&2
-  done
-
-  if ! ssh "$remote" sudo "${BIN_DIR}/runner" setup; then
+  if ! python3 "$IMAGE_OPERATION" guard "$host" sudo "${BIN_DIR}/runner" setup < /dev/null; then
     return 1
   fi
   echo "=== Done preparing ${host} ==="
 }
 
-report_build_command_failure() {
-  local host=$1 phase=$2 status=$3 started=$4
-  echo "runner ${phase} SSH failed: host=${host} status=${status} elapsed_seconds=$((SECONDS - started))" >&2
-  if [ "$status" -eq 124 ]; then
-    echo "runner ${phase} SSH timed out: host=${host} operation_timeout_seconds=${OKOU_CLOUDFLARE_SSH_OPERATION_TIMEOUT_SECONDS:-600}" >&2
-  fi
-}
-
 warm_rootfs_cache() {
   local host=$1
-  local remote="${METAL_USER}@${host}"
   echo "=== Warming shared template cache on ${host} ==="
-  local started=$SECONDS status
-  if ssh "$remote" sudo \
-    R2_ACCOUNT_ID="${R2_ACCOUNT_ID:-}" \
-    R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-}" \
-    R2_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}" \
-    R2_USER_STORAGES_BUCKET_NAME="${R2_USER_STORAGES_BUCKET_NAME:-}" \
-    "${BIN_DIR}/runner" build --profile "$PROFILE" --warm-rootfs-cache; then
-    :
-  else
-    status=$?
-    report_build_command_failure "$host" template-warm "$status" "$started"
-    return "$status"
-  fi
-  echo "=== Done warming shared template cache on ${host} ==="
+  exec python3 "$IMAGE_OPERATION" run "$host" warm "${LOG_DIR}/warm-result.json"
 }
 
 build_snapshot_on_host() {
   local host=$1
-  local remote="${METAL_USER}@${host}"
   echo "=== Building rootfs/snapshot on ${host} ==="
-  local started=$SECONDS status
-  if ssh "$remote" sudo \
-    R2_ACCOUNT_ID="${R2_ACCOUNT_ID:-}" \
-    R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-}" \
-    R2_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}" \
-    R2_USER_STORAGES_BUCKET_NAME="${R2_USER_STORAGES_BUCKET_NAME:-}" \
-    "${BIN_DIR}/runner" build --profile "$PROFILE"; then
-    :
-  else
-    status=$?
-    report_build_command_failure "$host" image-build "$status" "$started"
-    return "$status"
-  fi
-  echo "=== Done building rootfs/snapshot on ${host} ==="
+  exec python3 "$IMAGE_OPERATION" run "$host" build "${LOG_DIR}/${host}.result.json"
 }
 
 LOG_DIR=$(mktemp -d)
+PIDS=()
+IMAGE_COMPLETE=0
+# Each background owner gets its own process group, including preparation's
+# local adapters. Cancellation can then retire descendants as well as the shell.
+set -m
 cleanup() {
+  local pid host deadline active
+  trap - EXIT INT TERM HUP
+  for pid in "${PIDS[@]}"; do
+    [ -z "$pid" ] || kill -TERM -- "-${pid}" 2> /dev/null || true
+  done
+  deadline=$((SECONDS + 35))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    active=0
+    for pid in "${PIDS[@]}"; do
+      [ -n "$pid" ] || continue
+      if ps -eo pgid=,stat= | awk -v group="$pid" '$1 == group && $2 !~ /^Z/ { alive = 1 } END { exit !alive }'; then
+        active=1
+      fi
+    done
+    [ "$active" -eq 1 ] || break
+    sleep 0.1
+  done
+  for pid in "${PIDS[@]}"; do
+    [ -z "$pid" ] || kill -KILL -- "-${pid}" 2> /dev/null || true
+    [ -z "$pid" ] || wait "$pid" 2> /dev/null || true
+  done
+  # Reconciliation is idempotent and fenced to this workflow owner. An
+  # unreachable host stays explicitly unconfirmed, with a hard remote deadline.
+  PIDS=()
+  if [ "$IMAGE_COMPLETE" -eq 0 ]; then
+    for host in "${HOSTS[@]}"; do
+      python3 "$IMAGE_OPERATION" cancel "$host" &
+      PIDS+=($!)
+    done
+    for pid in "${PIDS[@]}"; do
+      wait "$pid" || echo "::warning::Image retirement unconfirmed; bounded service deadline remains active" >&2
+    done
+  fi
   rm -rf "$LOG_DIR"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
 
 PIDS=()
 for i in "${!HOSTS[@]}"; do
@@ -380,24 +385,24 @@ for i in "${!PIDS[@]}"; do
     FAILED=1
     echo "::error::Runner preparation failed on ${HOSTS[$i]}"
   fi
+  PIDS[i]=''
   echo "=== ${HOSTS[$i]} prepare ==="
   cat "${LOG_DIR}/${HOSTS[$i]}.prepare.log"
 done
 [ "$FAILED" -eq 0 ] || exit 1
 
 WARM_HOST="${HOSTS[0]}"
-if ! warm_rootfs_cache "$WARM_HOST" 2>&1 | tee "${LOG_DIR}/warm-rootfs-cache.log"; then
+warm_rootfs_cache "$WARM_HOST" &
+PIDS=($!)
+if ! wait "${PIDS[0]}"; then
+  PIDS=()
   echo "::error::Shared template cache warm failed on ${WARM_HOST}"
   exit 1
 fi
 
 PIDS=()
 for host in "${HOSTS[@]}"; do
-  # Keep raw machine-readable hashes in the log while streaming host-prefixed
-  # progress immediately. pipefail retains the original SSH failure status.
-  build_snapshot_on_host "$host" 2>&1 |
-    tee "${LOG_DIR}/${host}.build.log" |
-    sed -u "s/^/[${host}] /" &
+  build_snapshot_on_host "$host" &
   PIDS+=($!)
 done
 
@@ -410,6 +415,7 @@ for i in "${!PIDS[@]}"; do
     FAILED=1
     echo "::error::Runner image build failed on ${HOSTS[$i]} (status ${build_status})"
   fi
+  PIDS[i]=''
 done
 [ "$FAILED" -eq 0 ] || exit 1
 
@@ -417,8 +423,8 @@ hosts_json=$(jq -n '{}')
 rootfs_map=$(jq -n '{}')
 snapshot_map=$(jq -n '{}')
 for host in "${HOSTS[@]}"; do
-  rootfs_hash=$(grep '^rootfs_hash=' "${LOG_DIR}/${host}.build.log" | tail -n1 | cut -d= -f2 || true)
-  snapshot_hash=$(grep '^snapshot_hash=' "${LOG_DIR}/${host}.build.log" | tail -n1 | cut -d= -f2 || true)
+  rootfs_hash=$(jq -er '.rootfsHash' "${LOG_DIR}/${host}.result.json")
+  snapshot_hash=$(jq -er '.snapshotHash' "${LOG_DIR}/${host}.result.json")
   if [ -z "$rootfs_hash" ] || [ -z "$snapshot_hash" ]; then
     echo "::error::Failed to extract rootfs/snapshot hash from ${host} log"
     exit 1
@@ -430,9 +436,9 @@ for host in "${HOSTS[@]}"; do
     --arg snapshot "$snapshot_hash" \
     --arg completed "$completed_at" \
     '. + {($h): {rootfsHash: $rootfs, snapshotHash: $snapshot, completedAt: $completed}}' \
-    <<<"$hosts_json")
-  rootfs_map=$(jq -c --arg h "$host" --arg v "$rootfs_hash" '. + {($h): $v}' <<<"$rootfs_map")
-  snapshot_map=$(jq -c --arg h "$host" --arg v "$snapshot_hash" '. + {($h): $v}' <<<"$snapshot_map")
+    <<< "$hosts_json")
+  rootfs_map=$(jq -c --arg h "$host" --arg v "$rootfs_hash" '. + {($h): $v}' <<< "$rootfs_map")
+  snapshot_map=$(jq -c --arg h "$host" --arg v "$snapshot_hash" '. + {($h): $v}' <<< "$snapshot_map")
 done
 
 tmp_manifest="${MANIFEST_PATH}.tmp"
@@ -476,3 +482,4 @@ if [ -n "${GITHUB_OUTPUT:-}" ]; then
     echo "snapshot-hash-map=${snapshot_map}"
   } >> "$GITHUB_OUTPUT"
 fi
+IMAGE_COMPLETE=1

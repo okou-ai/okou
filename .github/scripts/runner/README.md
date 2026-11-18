@@ -13,6 +13,7 @@ Native behavior scenarios and their fixtures belong to the
 | Binary reuse, GitHub lookup, bounded downloads and R2 transport  | `runner-binary-cache-plan.sh`, `runner-binary-cache.sh`, `runner-binary-github.sh`, `runner-binary-r2.sh`, `runner-binary-download.sh`, `runner-binary-transport.sh`    |
 | Guest inventory and architecture selection                       | `runner-guest-binaries.sh`, `runner-image-target.sh`, `runner-host-architecture-groups.sh`                                                                              |
 | Image planning, preparation, manifests and readiness             | `runner-image-context.sh`, `runner-image-architecture.sh`, `prepare-runner-image.sh`, `runner-image-manifest.sh`, `wait-runner-image.sh`, `wait-runner-image-groups.sh` |
+| Image execution identity, result recovery and retirement         | `runner-image-operation.py`                                                                                                                                             |
 | Group reconciliation and startup                                 | `reconcile-runner-binary-groups.sh`, `reconcile-and-start-runner-groups.sh`                                                                                             |
 | Lifecycle ownership and cleanup                                  | `with-runner-lifecycle-lock.sh`, `cleanup-metal-runners.py`, `cleanup-metal-resources.py`, `start-stripe-listener.sh`, `prune-runner-idle.sh`                           |
 | Native test binary build and artifact transport                  | `runner-native-test-artifact.sh`                                                                                                                                        |
@@ -70,6 +71,58 @@ A lost acknowledgement can publish the same verified bytes again; a late partial
 writer cannot become the executable. Remote EXIT cleans its own temporary file;
 an interrupted transport can delay that cleanup. Actual native execution remains
 outside this retry boundary. NBD-COW retains its own isolated-candidate protocol.
+
+## Image operation recovery
+
+`python3 runner-image-operation.py claim|cancel HOST`,
+`run HOST warm|build RESULT_PATH`, and `guard HOST COMMAND ...` are internal
+adapters used by `prepare-runner-image.sh`. They require `JOB_REF`, `HEAD_SHA`,
+`TARGET_TRIPLE`, `PROFILE`, `METAL_USER`, `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`,
+`EXPECTED_BINARY_INPUT_DIGEST`, and `RUNNER_IMAGE_RUNNER_SHA256`. Warm/build also
+consume the workflow's four `R2_*` values. Dependencies are Python 3, SSH and
+remote sudo/systemd with the existing Runner permissions.
+The `validate HOST` preflight checks the complete identity without SSH.
+
+Claim fences a workflow generation and retires superseded image control groups
+before preparation reuses paths. Preparation cleanup, binary publication, GC
+and setup run in bounded transient services holding that same private gate and
+recheck ownership. Their command digest and per-call nonce survive reconnection;
+the same command is never submitted twice. GC's former retry-on-255 loop is
+replaced by original-result retrieval, so a known remote failure remains failed.
+Isolated binary upload candidates do not publish outside the guarded
+validation/rename boundary.
+
+Warm/build run once in transient services. Identity covers the exact source,
+binary inputs/bytes, target, profile, host, adapter source and workflow run/attempt.
+Launch intent precedes submission; intent without a result or live unit fails
+unknown. Only 124/141/255 can reconnect, at most three requests inside the same
+600-second call budget. Reconnection observes the original operation and never
+restarts it. Service work is limited to 570 seconds with a ten-second control
+group stop grace, leaving room for reconciliation inside the unchanged job budget.
+
+The launch SSH call streams bounded, redacted progress and the original result;
+the healthy path needs no additional network polling. Success requires numeric
+exit status zero and both 64-digit image hashes. Hashes emitted before a failed
+build cannot establish success. The adapter atomically writes the validated
+result JSON at `RESULT_PATH`, and returns the original build status. The existing
+manifest remains schema 1 and keeps its source/architecture gates.
+
+Credentials travel only in stdin, are privately staged, and are unlinked before
+Runner execution. Unit arguments, unit environment properties and result identity
+contain no values. Retained logs are redacted and capped at 1 MiB while the worker
+continues draining output and collecting hashes. Private operation state lives
+on remote `/dev/shm`; one-shot systemd timers retire and verify each operation
+before removing files after one hour. Unconfirmed retirement retains evidence;
+reboot removes tmpfs state even if a transient timer was lost. The
+small namespace ownership ledger and stable gate remain until reboot or explicit
+namespace retirement. At most 32 operation tombstones per owner prevent an older
+workflow reclaiming ownership or an expired result permitting execution again.
+
+Cancellation stops and verifies owned services; failed or unreachable retirement
+is reported as unconfirmed and retains files. Remote hard deadlines remain in
+force. Successful results retain their expiration timer without another SSH call.
+This protocol recovers image outcomes, not the initiating transport reset or
+preview/production deployment ownership.
 
 ## Closed PR resource reconciliation
 
