@@ -42,8 +42,6 @@ _MODEL_JSON_USAGE_FINISH = "model_json_usage_finish"
 _MODEL_SSE_USAGE_FINISH = "model_sse_usage_finish"
 _CONNECTOR_RESPONSE_FINISH = "connector_response_finish"
 _CONNECTOR_RESPONSE_REPORT_ON_INTERRUPTION = "connector_response_report_on_interruption"
-_BUFFERED_CONNECTOR_INSPECTION_START = "_buffered_connector_inspection_start"
-_BUFFERED_MODEL_INSPECTION_START = "_buffered_model_inspection_start"
 _RESPONSE_STREAM_CALLBACK = "_response_stream_callback"
 _RESPONSE_INSPECTION = "_response_inspection"
 
@@ -220,15 +218,10 @@ def _configure_buffered_connector_inspection(flow: http.HTTPFlow) -> None:
             return
         yield from feed_steps(body)
 
-    inspection = response_inspection.CooperativeResponseInspection(
-        inspect_body, finalizer.interrupt
+    inspection = response_inspection.BufferedResponseInspection(
+        inspect_body, finalizer.interrupt, allow_interrupted_start=False
     )
-
-    def start_inspection() -> None:
-        inspection.feed(b"")
-
     flow.metadata[_RESPONSE_INSPECTION] = inspection
-    flow.metadata[_BUFFERED_CONNECTOR_INSPECTION_START] = start_inspection
     flow.metadata[_CONNECTOR_RESPONSE_FINISH] = finalizer.finish
 
 
@@ -442,14 +435,9 @@ def _configure_model_json_inspection(
                 else:
                     finished = True
 
-        json_inspection = response_inspection.CooperativeResponseInspection(
-            inspect_buffered_body, fail_json_inspection
+        json_inspection = response_inspection.BufferedResponseInspection(
+            inspect_buffered_body, fail_json_inspection, allow_interrupted_start=True
         )
-
-        def start_inspection() -> None:
-            json_inspection.feed(b"")
-
-        flow.metadata[_BUFFERED_MODEL_INSPECTION_START] = start_inspection
 
     flow.metadata[_RESPONSE_INSPECTION] = json_inspection
 
@@ -664,11 +652,9 @@ def configure_response_stream(
 
 def start_buffered_response_inspection(flow: http.HTTPFlow, *, interrupted: bool = False) -> None:
     """Start once; only model observation can inspect a newly interrupted capture."""
-    start = flow.metadata.pop(_BUFFERED_MODEL_INSPECTION_START, None)
-    if start is None and not interrupted:
-        start = flow.metadata.pop(_BUFFERED_CONNECTOR_INSPECTION_START, None)
-    if start is not None:
-        start()
+    inspection = flow.metadata.get(_RESPONSE_INSPECTION)
+    if isinstance(inspection, response_inspection.BufferedResponseInspection):
+        inspection.start(interrupted=interrupted)
 
 
 def has_pending_response_inspection(flow: http.HTTPFlow) -> bool:
@@ -811,7 +797,5 @@ def release_response_stream_state(flow: http.HTTPFlow) -> None:
     flow.metadata.pop(_MODEL_SSE_USAGE_FINISH, None)
     flow.metadata.pop(_CONNECTOR_RESPONSE_FINISH, None)
     flow.metadata.pop(_CONNECTOR_RESPONSE_REPORT_ON_INTERRUPTION, None)
-    flow.metadata.pop(_BUFFERED_CONNECTOR_INSPECTION_START, None)
-    flow.metadata.pop(_BUFFERED_MODEL_INSPECTION_START, None)
     if stream_callback is not None and flow.response and flow.response.stream is stream_callback:
         flow.response.stream = False

@@ -94,6 +94,28 @@ class CooperativeResponseInspection:
             self._fail(INSPECTION_INTERRUPTED)
 
 
+class BufferedResponseInspection(CooperativeResponseInspection):
+    """Start inspection of a retained HTTP response capture at most once."""
+
+    def __init__(
+        self,
+        steps: Callable[[bytes], Generator[None]],
+        fail: Callable[[str], None],
+        *,
+        allow_interrupted_start: bool,
+    ) -> None:
+        super().__init__(steps, fail)
+        self._allow_interrupted_start = allow_interrupted_start
+        self._started = False
+
+    def start(self, *, interrupted: bool) -> None:
+        if self._started or (interrupted and not self._allow_interrupted_start):
+            return
+        self._started = True
+        # The empty delivery triggers inspection of the already-retained capture.
+        self.feed(b"")
+
+
 def json_steps(inspector: _JsonFeed, chunk: bytes) -> Generator[None]:
     """Feed bounded HTTP JSON slices without replacing the inspector's state."""
     for offset in range(0, len(chunk), _JSON_STEP_BYTES):
