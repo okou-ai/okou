@@ -25,10 +25,8 @@ import {
 } from "./member-memory-records";
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
 import { command } from "ccstate";
-import { and, eq, ne, or, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";
@@ -44,7 +42,6 @@ import {
   s3ObjectHead,
   type S3ObjectHead,
 } from "../external/s3";
-import { storageCommitLineageCondition } from "./storage-write-conditions";
 import {
   memberMemoryMergeVersions,
   memberMemorySnapshotSource,
@@ -86,21 +83,6 @@ interface MountedWritebackStorage {
   readonly runStatus: typeof agentRuns.$inferSelect.status;
   readonly storage: StorageRow;
   readonly capturedVersionId: string | undefined;
-}
-
-function storageRowSelection() {
-  return {
-    id: storages.id,
-    userId: storages.userId,
-    name: storages.name,
-    orgId: storages.orgId,
-    s3Prefix: storages.s3Prefix,
-    size: storages.size,
-    fileCount: storages.fileCount,
-    headVersionId: storages.headVersionId,
-    createdAt: storages.createdAt,
-    updatedAt: storages.updatedAt,
-  };
 }
 
 type PrepareStorageResponse =
@@ -148,8 +130,7 @@ const readMountedWritebackStorage$ = command(
     args: { readonly auth: SandboxAuth; readonly storageId: string },
     signal: AbortSignal,
   ): Promise<MountedWritebackStorage | StorageErrorResponse> => {
-    // Observe Run authority and Memory in one statement. Retained non-Memory
-    // mounts resolve separately, so Memory never queries the legacy registry.
+    // Observe Run authority and the mounted Memory in one statement.
     const [mounted] = await get(db$)
       .select({
         runStatus: agentRuns.status,
@@ -183,39 +164,17 @@ const readMountedWritebackStorage$ = command(
     const mount = mounted.storageMounts?.find((entry) => {
       return entry.storageId === args.storageId && entry.writeback === true;
     });
-    if (!mount) {
+    if (!mount || !isMemberMemoryIdentity(mount)) {
       return notFound("Writeback storage not found");
     }
-    if (isMemberMemoryIdentity(mount)) {
-      if (!mounted.memory) {
-        throw new Error("Accepted member Memory authority is unavailable");
-      }
-      return {
-        runStatus: mounted.runStatus,
-        storage: memberMemoryStorageRecord(mounted.memory),
-        capturedVersionId: mount.version,
-      };
+    if (!mounted.memory) {
+      throw new Error("Accepted member Memory authority is unavailable");
     }
-    const [storage] = await get(db$)
-      .select(storageRowSelection())
-      .from(storages)
-      .where(
-        and(
-          eq(storages.id, args.storageId),
-          eq(storages.orgId, mount.orgId),
-          eq(storages.userId, mount.userId),
-          eq(storages.name, mount.name),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    return storage
-      ? {
-          runStatus: mounted.runStatus,
-          storage,
-          capturedVersionId: mount.version,
-        }
-      : notFound("Writeback storage not found");
+    return {
+      runStatus: mounted.runStatus,
+      storage: memberMemoryStorageRecord(mounted.memory),
+      capturedVersionId: mount.version,
+    };
   },
 );
 
@@ -228,33 +187,18 @@ const findStorageVersion$ = command(
     },
     signal: AbortSignal,
   ): Promise<StorageVersionRow | undefined> => {
-    if (isMemberMemoryIdentity(args.storage)) {
-      const [memory] = await get(db$)
-        .select()
-        .from(memoryVersions)
-        .where(
-          and(
-            eq(memoryVersions.memoryId, args.storage.id),
-            eq(memoryVersions.id, args.versionId),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      return memory ? memberMemoryVersionRecord(memory) : undefined;
-    }
-    const [version] = await get(db$)
+    const [memory] = await get(db$)
       .select()
-      .from(storageVersions)
+      .from(memoryVersions)
       .where(
         and(
-          eq(storageVersions.storageId, args.storage.id),
-          eq(storageVersions.id, args.versionId),
+          eq(memoryVersions.memoryId, args.storage.id),
+          eq(memoryVersions.id, args.versionId),
         ),
       )
       .limit(1);
-
     signal.throwIfAborted();
-    return version;
+    return memory ? memberMemoryVersionRecord(memory) : undefined;
   },
 );
 
@@ -266,30 +210,13 @@ const refreshOwnedStorage$ = command(
     signal: AbortSignal,
   ): Promise<StorageRow | undefined> => {
     const db = get(db$);
-    if (isMemberMemoryIdentity(owner)) {
-      const [memory] = await db
-        .select()
-        .from(memberMemories)
-        .where(eq(memberMemories.id, owner.id))
-        .limit(1);
-      signal.throwIfAborted();
-      return memory ? memberMemoryStorageRecord(memory) : undefined;
-    }
-    const [storage] = await db
-      .select(storageRowSelection())
-      .from(storages)
-      .where(
-        and(
-          eq(storages.id, owner.id),
-          or(
-            ne(storages.name, MEMORY_ARTIFACT_NAME),
-            eq(storages.userId, "__org__"),
-          ),
-        ),
-      )
+    const [memory] = await db
+      .select()
+      .from(memberMemories)
+      .where(eq(memberMemories.id, owner.id))
       .limit(1);
     signal.throwIfAborted();
-    return storage;
+    return memory ? memberMemoryStorageRecord(memory) : undefined;
   },
 );
 
@@ -552,7 +479,6 @@ const commitVerifiedStorageVersion$ = command(
     args: {
       readonly input: CommitStorageForStorageInput;
       readonly verification: VerifiedStorageCommit;
-      readonly storage: StorageRow;
     },
     signal: AbortSignal,
   ): Promise<CommitStorageResponse> => {
@@ -561,7 +487,6 @@ const commitVerifiedStorageVersion$ = command(
       args.input,
       args.verification,
       nowDate(),
-      args.storage,
     );
     signal.throwIfAborted();
     const [row] = parseRawRows(
@@ -673,13 +598,13 @@ const commitStorageUploadForStorage$ = command(
 
     return await set(
       commitVerifiedStorageVersion$,
-      { input: args, verification, storage },
+      { input: args, verification },
       signal,
     );
   },
 );
 
-/** The legacy wire also retains authorization for accepted historical mounts. */
+/** Prepare a writeback for the member Memory captured by this Run. */
 export const prepareMemberMemoryWriteback$ = command(
   async (
     { set },
@@ -719,10 +644,7 @@ export const prepareMemberMemoryWriteback$ = command(
     }
 
     let memoryMerge: MemoryMergeContext | undefined;
-    if (
-      args.includeMemoryMerge &&
-      mounted.storage.name === MEMORY_ARTIFACT_NAME
-    ) {
+    if (args.includeMemoryMerge) {
       if (!mounted.capturedVersionId) {
         throw new Error("Memory mount has no captured base version");
       }
@@ -764,31 +686,15 @@ const readSandboxLineage$ = command(
     },
     signal: AbortSignal,
   ) => {
-    if (isMemberMemoryIdentity(input.storage)) {
-      const [lineage] = await get(db$)
-        .select()
-        .from(memoryVersionLineage)
-        .where(
-          and(
-            eq(memoryVersionLineage.memoryId, input.storage.id),
-            eq(memoryVersionLineage.versionId, input.versionId),
-            eq(memoryVersionLineage.parentVersionId, input.parentVersionId),
-            eq(memoryVersionLineage.runId, input.runId),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      return lineage;
-    }
     const [lineage] = await get(db$)
       .select()
-      .from(storageVersionLineage)
+      .from(memoryVersionLineage)
       .where(
-        storageCommitLineageCondition(
-          input.storage.id,
-          input.versionId,
-          input.parentVersionId,
-          input.runId,
+        and(
+          eq(memoryVersionLineage.memoryId, input.storage.id),
+          eq(memoryVersionLineage.versionId, input.versionId),
+          eq(memoryVersionLineage.parentVersionId, input.parentVersionId),
+          eq(memoryVersionLineage.runId, input.runId),
         ),
       )
       .limit(1);

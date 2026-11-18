@@ -21,11 +21,6 @@
       "uses": 4
     },
     {
-      "file": "turbo/apps/api/src/signals/routes/webhooks-agent-storage.ts",
-      "uses": 3,
-      "dependency": "module:turbo/apps/api/src/signals/services/storage-write.service"
-    },
-    {
       "file": "turbo/apps/api/src/signals/services/cron-sync-skills.service.ts",
       "uses": 17,
       "dependency": "module:turbo/packages/db/src/schema/skill"
@@ -34,51 +29,6 @@
       "file": "turbo/apps/api/src/signals/services/execution-global-model-context.service.ts",
       "uses": 5,
       "dependency": "module:turbo/packages/db/src/schema/skill"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/storage-write-conditions.ts",
-      "uses": 3,
-      "dependency": "module:turbo/packages/db/src/schema/storage"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/storage-write-conditions.ts",
-      "uses": 5,
-      "dependency": "module:turbo/packages/db/src/schema/storage-version-lineage"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/storage-write-publication-plan.ts",
-      "uses": 4,
-      "dependency": "module:turbo/apps/api/src/signals/services/storage-write-conditions"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/storage-write-publication-plan.ts",
-      "uses": 52,
-      "dependency": "module:turbo/packages/db/src/schema/storage"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/storage-write-publication-plan.ts",
-      "uses": 5,
-      "dependency": "module:turbo/packages/db/src/schema/storage-version-lineage"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/storage-write.service.ts",
-      "uses": 2,
-      "dependency": "module:turbo/apps/api/src/signals/services/storage-write-conditions"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/storage-write.service.ts",
-      "uses": 9,
-      "dependency": "module:turbo/apps/api/src/signals/services/storage-write-publication-plan"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/storage-write.service.ts",
-      "uses": 23,
-      "dependency": "module:turbo/packages/db/src/schema/storage"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/storage-write.service.ts",
-      "uses": 2,
-      "dependency": "module:turbo/packages/db/src/schema/storage-version-lineage"
     },
     {
       "file": "turbo/apps/api/src/signals/services/user-export-authorization.service.ts",
