@@ -128,7 +128,6 @@ import { getStartedHistoryRoutes } from "./routes/get-started-history";
 import { getStartedReceiptRoutes } from "./routes/get-started-receipt";
 import { marketingRewardSettlementRoutes } from "./routes/marketing-reward-settlement";
 import { marketingRewardProjectionRoutes } from "./routes/marketing-reward-projection";
-import { marketingWorkflowSourceRoutes } from "./routes/marketing-workflow-source";
 import { marketingInvitationSourceRoutes } from "./routes/marketing-invitation-source";
 import { friendReferralRoutes } from "./routes/friend-referrals";
 import { githubOauthRoutes } from "./routes/github-oauth";
@@ -274,7 +273,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...getStartedReceiptRoutes,
   ...marketingRewardSettlementRoutes,
   ...marketingRewardProjectionRoutes,
-  ...marketingWorkflowSourceRoutes,
   ...marketingInvitationSourceRoutes,
   ...friendReferralRoutes,
   ...healthRoutes,
