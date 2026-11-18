@@ -1,5 +1,6 @@
 import { performance } from "node:perf_hooks";
 import { computed, type Computed } from "ccstate";
+import { getFrameworkForType } from "@okouai/api-contracts/contracts/model-providers";
 import { isValidVersionPrefix } from "@okouai/core/version-id";
 import { memoryVersions } from "@okouai/db/schema/member-memory";
 import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
@@ -30,12 +31,7 @@ import {
   storageRequestKey,
 } from "./storage-index.service";
 import type { ThreadContext } from "./thread-context.signals";
-import type { ThreadModelError } from "./thread-model.signals";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
-
-function isThreadModelError(value: unknown): value is ThreadModelError {
-  return typeof value === "object" && value !== null && "status" in value;
-}
 
 /**
  * The Run's memory storage from its current Agent and model: resolved
@@ -62,20 +58,19 @@ function createStorageInputSignal(
   threadContext: ThreadContext,
 ) {
   return computed(async (get): Promise<AgentRunStorageInput> => {
-    const [event, agent, framework, modelProvider] = await Promise.all([
+    const [event, agent, modelProvider] = await Promise.all([
       get(pickedEvent$),
       get(bootstrap.agent$),
-      get(threadContext.providerFramework$),
       get(threadContext.modelRoute$),
     ]);
     if (!event || !agent) {
       throw new Error("Run storage requires its picked event and Agent");
     }
-    if (isThreadModelError(framework) || isThreadModelError(modelProvider)) {
+    if ("status" in modelProvider) {
       throw new Error("Run storage requires an admitted model selection");
     }
     const artifacts = memoryArtifactsForRun({
-      framework,
+      framework: getFrameworkForType(modelProvider.type),
       piSandbox: modelProvider.piModelConfig,
     });
     get(db$);

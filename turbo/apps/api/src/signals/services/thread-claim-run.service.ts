@@ -149,7 +149,6 @@ import {
   recordQueuedPromptRunLaunch$,
   rejectedQueuedRunAdmissionFailure,
 } from "./internal-chat-run-callback.service";
-import type { ModelCatalog } from "./model-catalog.service";
 import { morningBriefScheduleClaimBound$ } from "./morning-brief-schedule-claim.service";
 import {
   OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
@@ -2444,11 +2443,10 @@ export function createThreadClaimRunObjects(
     },
   );
   const preparedRunInput$ = computed(async (get) => {
-    const [input, resolution, fullCommand, catalog] = await Promise.all([
+    const [input, resolution, fullCommand] = await Promise.all([
       get(runPreparation$),
       get(threadContinuation$),
       get(assembledRun$),
-      get(claimCatalog$),
     ]);
     if (!fullCommand) {
       return null;
@@ -2463,7 +2461,6 @@ export function createThreadClaimRunObjects(
     }
     return {
       ...input,
-      catalog,
       command: fullCommand,
       threadContinuation: resolution,
     };
@@ -4754,8 +4751,6 @@ interface ThreadRunPreparation {
 }
 
 interface ThreadRunArgsInput {
-  /** One catalog snapshot per run, loaded by the entry point. */
-  readonly catalog: ModelCatalog;
   readonly command: ThreadRunCommand;
   readonly modelSelection: ModelFirstPin;
   readonly threadContinuation: ChatThreadContinuation;
@@ -4770,7 +4765,6 @@ interface ThreadRunContent {
 
 /** The facts Thread uses to prepare and commit one claimed input. */
 interface ThreadRunArgs {
-  readonly catalog: ModelCatalog;
   readonly orgId: string;
   readonly userId: string;
   readonly codexServiceTier?: "fast" | "ultrafast";
@@ -4798,7 +4792,6 @@ function buildThreadRunArgs(
     userId: command.owner.userId,
     codexServiceTier: command.codexServiceTier,
     queueFirstAssociation: command.queueFirstAssociation,
-    catalog: args.catalog,
     prompt: prompt.userPrompt,
     realAgentInPreview: command.realAgentInPreview,
     captureNetworkBodies: command.captureNetworkBodies,
