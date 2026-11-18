@@ -168,7 +168,7 @@ const ACTIVE_FIREWALL_AUTH_RUN_STATUSES = ["pending", "running"] as const;
 
 interface FirewallAuthBody {
   readonly networkIntent?: CustomConnectorNetworkIntent;
-  readonly encryptedSecrets: string;
+  readonly encryptedSecrets?: string;
   readonly authHeaders: Record<string, string>;
   readonly authBase?: string;
   readonly authQuery?: Record<string, string>;
@@ -4456,9 +4456,18 @@ const prepareNonCustomFirewallSecrets$ = command(
       auth.userId,
       featureSwitchContextRows0,
     );
-    const secrets = await tapError(
-      decryptPersistentSecretsMap(body.encryptedSecrets, featureSwitchContext),
-    );
+    // Legacy writers and active Runs still send an envelope. Omission only
+    // removes that namespace; server-owned sources keep their own authority.
+    // Retire the envelope reader after the deployment/Run drain in #48077.
+    const secrets =
+      body.encryptedSecrets === undefined
+        ? {}
+        : await tapError(
+            decryptPersistentSecretsMap(
+              body.encryptedSecrets,
+              featureSwitchContext,
+            ),
+          );
     if (!secrets) {
       return {
         ok: false,

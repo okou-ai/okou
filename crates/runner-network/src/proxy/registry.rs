@@ -39,6 +39,8 @@ struct SandboxEntry<P = NetworkPolicy> {
     run_id: String,
     cli_agent_type: String,
     sandbox_token: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    firewall_token: Option<String>,
     registered_at: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     usage_generation: Option<String>,
@@ -76,6 +78,8 @@ pub struct SandboxRegistration<'a> {
     pub run_id: &'a str,
     pub cli_agent_type: &'a str,
     pub sandbox_token: &'a str,
+    /// Host-only firewall resolver authority; callback/billing keeps sandbox_token.
+    pub firewall_token: Option<&'a str>,
     pub network_log_path: &'a std::path::Path,
     pub proxy_log_path: &'a std::path::Path,
     pub firewalls: Option<&'a [FirewallEntry]>,
@@ -882,6 +886,7 @@ impl ProxyRegistryHandle {
                 run_id: registration.run_id.to_string(),
                 cli_agent_type: registration.cli_agent_type.to_string(),
                 sandbox_token: registration.sandbox_token.to_string(),
+                firewall_token: registration.firewall_token.map(String::from),
                 registered_at: now,
                 usage_generation,
                 network_log_path: registration.network_log_path.to_string_lossy().into_owned(),

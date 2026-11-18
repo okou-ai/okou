@@ -307,6 +307,7 @@ impl super::LocalJobSource for LocalProvider {
             instruction_file: None,
             vars: req.vars,
             sandbox_token: String::new(),
+            firewall_token: None,
             storage_manifest: None,
             environment: environment_merge.environment,
             platform_environment: HashMap::new(),

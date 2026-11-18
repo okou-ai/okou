@@ -19,6 +19,7 @@ import request_streaming
 import terminal_usage
 import usage
 from tests.auth_base_forwarder_helpers import fake_forwarder_upstream
+from tests.auth_endpoint_helpers import FakeAuthEndpoint
 from tests.firewall_auth_helpers import firewall_auth_response
 from tests.flow_helpers import response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
@@ -559,13 +560,19 @@ async def test_local_firewall_error_leaves_usage_flows_drained(
         include_encrypted_secrets=False,
     )
     flow = _x_tracking_flow(real_flow)
+    endpoint = FakeAuthEndpoint()
+    endpoint.queue_json_response(
+        {"error": {"code": "INSUFFICIENT_CREDITS", "message": "Insufficient credits"}},
+        status=402,
+    )
 
-    with mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"):
+    with endpoint.run(), mitm_ctx(registry_path=str(reg_path), api_url=endpoint.api_url):
         await mitm_addon.request(flow)
 
+    assert endpoint.request_count == 1
     assert flow.response is not None
-    assert flow.response.status_code == 502
-    assert flow.metadata[metadata_keys.FIREWALL_ERROR] == "auth_unavailable"
+    assert flow.response.status_code == 402
+    assert flow.metadata[metadata_keys.FIREWALL_ERROR] == "insufficient_credits"
     assert_pending(
         usage_control_root,
         flows=0,

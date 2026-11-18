@@ -2,10 +2,11 @@ import { command } from "ccstate";
 import { webhookFirewallAuthContract } from "@okouai/api-contracts/contracts/webhooks";
 
 import { badRequestMessage } from "../../lib/error";
+import type { SandboxAuth } from "../../types/auth";
 import { authorization$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
-import { isSandboxToken, verifySandboxToken } from "../auth/tokens";
+import { verifyFirewallToken, verifySandboxToken } from "../auth/tokens";
 import { admitCustomConnectorNetworkRequest$ } from "../services/custom-connector-network-auth.service";
 import {
   resolveBillableFirewallCacheExpiry$,
@@ -35,9 +36,19 @@ const invalidTokenResponse = Object.freeze({
   }),
 });
 
-const invalidBodyResponse = badRequestMessage(
-  "encryptedSecrets and authHeaders are required",
-);
+const invalidBodyResponse = badRequestMessage("Invalid firewall auth body");
+
+function verifyFirewallRequestIdentity(token: string): {
+  readonly auth: SandboxAuth;
+  readonly kind: "host" | "legacy";
+} | null {
+  const host = verifyFirewallToken(token);
+  if (host) {
+    return { auth: host, kind: "host" };
+  }
+  const legacy = verifySandboxToken(token);
+  return legacy ? { auth: legacy, kind: "legacy" } : null;
+}
 
 const firewallAuthRoute$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -48,14 +59,11 @@ const firewallAuthRoute$ = command(
     if (!token) {
       return missingAuthorizationResponse;
     }
-    if (!isSandboxToken(token)) {
+    const identity = verifyFirewallRequestIdentity(token);
+    if (!identity) {
       return invalidTokenResponse;
     }
-
-    const auth = verifySandboxToken(token);
-    if (!auth) {
-      return invalidTokenResponse;
-    }
+    const { auth } = identity;
 
     const bodyResult = await get(firewallAuthBody$);
     signal.throwIfAborted();
@@ -102,8 +110,11 @@ const firewallAuthRoute$ = command(
         signal,
       );
     }
-    if (!bodyResult.data.encryptedSecrets) {
-      return invalidBodyResponse;
+    // Old hosts still use the Guest callback identity plus a private envelope.
+    // Only the separate host scope may omit it. Retire legacy auth after the
+    // deployed-owner and Run drain tracked in #48077.
+    if (identity.kind === "legacy" && !bodyResult.data.encryptedSecrets) {
+      return badRequestMessage("Legacy sandbox auth requires encryptedSecrets");
     }
     const billableCacheExpiry = await set(
       resolveBillableFirewallCacheExpiry$,
@@ -113,10 +124,7 @@ const firewallAuthRoute$ = command(
     const prepared = await set(
       prepareFirewallAuthResponse$,
       auth,
-      {
-        ...bodyResult.data,
-        encryptedSecrets: bodyResult.data.encryptedSecrets,
-      },
+      bodyResult.data,
       billableCacheExpiry,
       signal,
     );
