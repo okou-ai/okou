@@ -1,14 +1,4 @@
-import {
-  and,
-  count,
-  eq,
-  inArray,
-  isNull,
-  notInArray,
-  sql,
-  type SQL,
-} from "drizzle-orm";
-import { QueryBuilder } from "drizzle-orm/pg-core";
+import { and, eq, isNull, notInArray, sql, type SQL } from "drizzle-orm";
 import {
   object as zObject,
   uuid as zUuid,
@@ -55,19 +45,12 @@ export interface ExecutionWorkflowInput {
   readonly skillRoot: string;
 }
 
-type WorkflowSelectionContext = Pick<
-  PreparedExecutionContext,
-  | "cliAgentType"
-  | "customWorkflowSelection"
-  | "officialWorkflowBundles"
-  | "storageMounts"
->;
-
-function officialWorkflowSelection(
-  context: WorkflowSelectionContext,
+export function assertOfficialWorkflowMounts(
+  officialBundles: readonly { readonly mountPath: string }[],
+  storageMounts: readonly { readonly mountPath: string }[],
   skillRoot: string,
-): ExecutionWorkflowInput["selection"] {
-  const officialPaths = context.officialWorkflowBundles.map((bundle) => {
+): void {
+  const officialPaths = officialBundles.map((bundle) => {
     return bundle.mountPath;
   });
   if (
@@ -75,7 +58,7 @@ function officialWorkflowSelection(
     officialPaths.some((path) => {
       return (
         !path.startsWith(`${skillRoot}/`) ||
-        context.storageMounts.some((mount) => {
+        storageMounts.some((mount) => {
           return mount.mountPath === path;
         })
       );
@@ -83,31 +66,16 @@ function officialWorkflowSelection(
   ) {
     throw new Error("Official Workflow bundle destinations are inconsistent");
   }
-  return officialPaths.length > 0
-    ? {
-        ...context.customWorkflowSelection,
-        protectedMountPaths: [
-          ...context.customWorkflowSelection.protectedMountPaths,
-          ...officialPaths,
-        ],
-      }
-    : context.customWorkflowSelection;
 }
 
-export function executionWorkflowInput(
-  context: WorkflowSelectionContext,
-): ExecutionWorkflowInput {
-  const skillRoot =
-    context.cliAgentType === "pi"
-      ? "/home/user/.pi/agent/skills"
-      : context.cliAgentType === "codex"
-        ? "/home/user/.codex/skills"
-        : "/home/user/.claude/skills";
-  const selection = officialWorkflowSelection(context, skillRoot);
-  return {
-    selection,
-    skillRoot,
-  };
+export function executionSkillRoot(
+  framework: PreparedExecutionContext["cliAgentType"],
+): string {
+  return framework === "pi"
+    ? "/home/user/.pi/agent/skills"
+    : framework === "codex"
+      ? "/home/user/.codex/skills"
+      : "/home/user/.claude/skills";
 }
 
 function workflowEligibilitySql(input: ExecutionWorkflowInput): SQL {
@@ -122,33 +90,11 @@ function workflowEligibilitySql(input: ExecutionWorkflowInput): SQL {
     AND NOT (${JSON.stringify(protectedPaths)}::jsonb ? (${input.skillRoot} || '/' || ${workflows.name}))`;
 }
 
-/** Recheck the captured sources, without choosing a new slug winner or payload. */
-export function workflowReferencesAuthorizedCondition(
-  input: ExecutionWorkflowInput,
-  workflowIds: readonly string[],
-): SQL {
-  return eq(
-    new QueryBuilder()
-      .select({ count: count() })
-      .from(workflows)
-      .innerJoin(agents, eq(agents.id, workflows.agentId))
-      .crossJoin(sql`admitted_run`)
-      .where(
-        and(inArray(workflows.id, workflowIds), workflowEligibilitySql(input)),
-      ),
-    workflowIds.length,
-  );
-}
-
-/**
- * Select authorized Workflow packages for execution preparation and recheck
- * their source authority when assigning the Run to a serving process.
- */
+/** Select authorized Workflow packages from the Run's initial source unit. */
 export function executionWorkflowSelectionSql(
   input: ExecutionWorkflowInput,
 ): SQL {
   const selection = input.selection;
-  const automationId = selection.automationId ?? null;
   const eligible = workflowEligibilitySql(input);
   return sql`selected_workflows AS MATERIALIZED (
       SELECT DISTINCT ON (${workflows.name}) ${workflows.id} AS id, ${workflows.name} AS name,
@@ -164,9 +110,9 @@ export function executionWorkflowSelectionSql(
       SELECT * FROM workflow_selection, admitted_run
       WHERE admitted_run."agentId" = ${selection.agentId}::uuid
         AND EXISTS (SELECT 1 FROM selected_agent)
-        AND (COALESCE(${automationId}::uuid, admitted_run."workflowAutomationId") IS NULL OR EXISTS (
+        AND (admitted_run."workflowAutomationId" IS NULL OR EXISTS (
           SELECT 1 FROM ${workflowAutomations} INNER JOIN ${workflows} ON ${eq(workflows.id, workflowAutomations.workflowId)}
-          WHERE ${and(eq(workflowAutomations.id, sql`COALESCE(${automationId}::uuid, admitted_run."workflowAutomationId")`), eq(workflowAutomations.orgId, sql`admitted_run."orgId"`), eq(workflowAutomations.ownerUserId, sql`admitted_run."userId"`), eq(workflows.orgId, sql`admitted_run."orgId"`))}
+          WHERE ${and(eq(workflowAutomations.id, sql`admitted_run."workflowAutomationId"`), eq(workflowAutomations.orgId, sql`admitted_run."orgId"`), eq(workflowAutomations.ownerUserId, sql`admitted_run."userId"`), eq(workflows.orgId, sql`admitted_run."orgId"`))}
             AND ((${workflows.agentId} = admitted_run."agentId" AND ((${workflows.officialDefinitionName} IS NOT NULL AND ${workflows.officialInstallationState} = 'installed') OR EXISTS (SELECT 1 FROM selected_workflows WHERE id = ${workflows.id})))
               OR ${retainedStaffWorkflowAdmission()})
         ))

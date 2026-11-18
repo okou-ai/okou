@@ -12,6 +12,7 @@ import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { NATIVE_CONTEXT_RECOVERY_PROMPT } from "./chat-session-continuity.service";
 import { dataRouterEnvironment } from "./data-router-environment";
 import { createAcceptedExecutionStorageObjects } from "./execution-storage.service";
+import { executionSkillRoot } from "./execution-workflow-selection";
 import type { ModelFirstPin } from "./model-selection.service";
 import {
   emptyEnvironment,
@@ -167,12 +168,7 @@ function createExecutionPackages(
   return computed(async (get) => {
     const { run, facts } = await get(input$);
     const framework = run.framework;
-    const skillRoot =
-      framework === "pi"
-        ? "/home/user/.pi/agent/skills"
-        : framework === "codex"
-          ? "/home/user/.codex/skills"
-          : "/home/user/.claude/skills";
+    const skillRoot = executionSkillRoot(framework);
     const storage = await get(storage$);
     const volumes = resolveRunSkillVolumes(
       mergeRunSkillVolumes([
@@ -205,7 +201,6 @@ function createExecutionPackages(
     });
     return {
       cliAgentType: framework,
-      customWorkflowSelection: facts.customWorkflowSelection,
       storageMounts: storage.storageMounts,
       officialWorkflowBundles: executionOfficialBundles(run, skillRoot),
       seedSkillBundles,
