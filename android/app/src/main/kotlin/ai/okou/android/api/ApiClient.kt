@@ -9,6 +9,7 @@ import ai.okou.android.api.generated.CanonicalApi
 import ai.okou.android.api.generated.CanonicalZero
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ChatSnapshot
+import ai.okou.android.api.generated.ComposerDraft
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.FeatureSwitches
 import ai.okou.android.api.generated.HistoryCatchUpRequestItem
@@ -21,12 +22,16 @@ import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.ProjectEvents
 import ai.okou.android.api.generated.ProjectSnapshot
 import ai.okou.android.api.generated.RealtimeTokenRequest
+import ai.okou.android.api.generated.SaveAgentDraft
+import ai.okou.android.api.generated.SaveThreadDraft
 import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.api.generated.historyRows
 import ai.okou.android.chat.HistoryCursor
+import ai.okou.android.chat.ServerDraftTarget
+import ai.okou.android.chat.plainDraftDocument
 import ai.okou.android.updates.isAndroidVersion
 import java.io.Closeable
 import java.io.IOException
@@ -45,6 +50,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromJsonElement
 import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import retrofit2.Response
@@ -181,6 +187,23 @@ class ApiClient(
 
     suspend fun onboardingStatus() = execute { reads.onboardingStatus(it) }
 
+    suspend fun composerDraft(target: ServerDraftTarget): ComposerDraft = execute {
+        if (target.thread) reads.threadDraft(it, target.id) else reads.agentDraft(it, target.id)
+    }
+
+    suspend fun saveComposerDraft(target: ServerDraftTarget, text: String) {
+        val body = plainDraftDocument(text)
+        executeResponse(204) {
+            if (target.thread)
+                api.saveThreadDraft(
+                    it,
+                    target.id,
+                    json.decodeFromJsonElement<SaveThreadDraft>(body),
+                )
+            else api.saveAgentDraft(it, target.id, json.decodeFromJsonElement<SaveAgentDraft>(body))
+        }
+    }
+
     suspend fun recoveryCatalog() = execute { reads.recoveryCatalog(it) }
 
     suspend fun recoveryModels() = execute { reads.recoveryModels(it) }
@@ -248,7 +271,12 @@ class ApiClient(
     private suspend fun <T> execute(
         success: Int = 200,
         request: suspend (String) -> Response<T>,
-    ): T =
+    ): T = executeResponse(success, request).body() ?: throw ApiFailure.IncompatibleResponse()
+
+    private suspend fun <T> executeResponse(
+        success: Int,
+        request: suspend (String) -> Response<T>,
+    ): Response<T> =
         withContext(dispatcher) {
             checkAccess()
             val token =
@@ -260,7 +288,7 @@ class ApiClient(
                 currentCoroutineContext().ensureActive()
                 checkAccess()
                 if (response.code() != success) throw ApiFailure.IncompatibleResponse()
-                response.body() ?: throw ApiFailure.IncompatibleResponse()
+                response
             } catch (_: SerializationException) {
                 // Serializer diagnostics can contain response values or input snippets.
                 throw ApiFailure.IncompatibleResponse()

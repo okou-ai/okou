@@ -111,6 +111,67 @@ class ComposerJournalRecoveryTest {
     }
 
     @Test
+    fun richWebDocumentStaysCompleteWhileNativeCandidateIsDurable() = check { fixture ->
+        val path = "/api/chat-threads/$CHAT_PERSONAL/draft"
+        val rich =
+            Json.parseToJsonElement(
+                    """{"draftUserMessage":{"version":1,"parts":[{"type":"text","text":"Web draft "},{"type":"chat_thread","threadId":"$CHAT_PERSONAL","titleSnapshot":"Saved conversation"}]},"draftAttachments":null}"""
+                )
+                .jsonObject
+        fixture.api.drafts[path] = rich
+        val model = fixture.model()
+        model.open(target)
+        model.uiState.first { it.sync(target) == ComposerSync.Unsupported }
+        model.edit(target, "A separate native candidate")
+        model.uiState.first {
+            it.sync(target) == ComposerSync.Unsupported &&
+                it.persistence == ComposerPersistence.Durable
+        }
+        assertEquals(
+            rich,
+            fixture.api.service.composerDraft(ServerDraftTarget(CHAT_PERSONAL, true)),
+        )
+        assertEquals(
+            "A separate native candidate",
+            fixture.store.load(fixture.api.identity).journal.drafts[target.key]!!.text,
+        )
+        assertEquals(0, fixture.posts())
+    }
+
+    @Test
+    fun offlineEditableDraftReopensAndSynchronizesWithoutReplayingAnySend() = check { fixture ->
+        fixture.api.draftReadStatus = 503
+        val first = fixture.model()
+        first.open(target)
+        first.uiState.first { it.journal != null }
+        first.edit(target, "Offline input retained across process owners 👋")
+        first.uiState.first {
+            it.persistence == ComposerPersistence.Durable && it.sync(target) == ComposerSync.Failed
+        }
+        val original = first.uiState.value.journal!!.drafts[target.key]
+        fixture.reopen()
+        val restored = fixture.model()
+        restored.open(target)
+        restored.uiState.first { it.journal != null && it.sync(target) == ComposerSync.Failed }
+        assertEquals(original, restored.uiState.value.journal!!.drafts[target.key])
+        assertEquals(
+            "Offline input retained across process owners 👋",
+            restored.uiState.value.entry(target).text,
+        )
+        assertEquals(0, fixture.posts())
+        fixture.api.draftReadStatus = 200
+        restored.retrySync(target)
+        restored.uiState.first {
+            it.sync(target) == ComposerSync.Saved && it.persistence == ComposerPersistence.Durable
+        }
+        assertEquals(
+            "Offline input retained across process owners 👋",
+            fixture.api.service.composerDraft(ServerDraftTarget(CHAT_PERSONAL, true)).plainText(),
+        )
+        assertEquals(0, fixture.posts())
+    }
+
+    @Test
     fun unversionedFilesStayUnavailableAndUntouchedInsteadOfRestoringEmptyIntent() =
         check { fixture ->
             val original = pending(fixture).uiState.value.entry(target)
@@ -199,7 +260,7 @@ class ComposerJournalRecoveryTest {
         model.uiState.first { it.persistence == ComposerPersistence.Durable }
         val empty = fixture.file().readText()
         assertEquals(
-            "1",
+            "3",
             Json.parseToJsonElement(empty).jsonObject.getValue("format").jsonPrimitive.content,
         )
         fixture.reopen()

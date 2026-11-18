@@ -8,7 +8,7 @@ import { chatEventRowSchema } from "../contracts/chat-event-rows";
 import type { KotlinRouteBinding, KotlinTypeBinding } from "./bindings";
 
 /** Test-only protocol bindings; installed reader routes are registered separately. */
-export const kotlinHistoryFixtureRoutes: readonly KotlinRouteBinding[] = [
+export const kotlinHistoryFixtureRoutes = [
   {
     name: "snapshot",
     response: "HistorySnapshot",
@@ -29,7 +29,7 @@ export const kotlinHistoryFixtureRoutes: readonly KotlinRouteBinding[] = [
     response: "ReadState",
     route: chatThreadMarkReadContract.markRead,
   },
-];
+] satisfies readonly KotlinRouteBinding[];
 
 export const kotlinHistoryFixtureTypes: readonly KotlinTypeBinding[] = [
   ...kotlinHistoryFixtureRoutes.map(({ response, route }) => {

@@ -11,7 +11,9 @@ import {
   chatThreadEventsContract,
   chatThreadByIdContract,
   chatThreadMarkReadContract,
+  chatThreadDraftContract,
 } from "../contracts/chat-threads";
+import { agentDraftContract } from "../contracts/agent-draft";
 import { chatEventRowSchema } from "../contracts/chat-event-rows";
 import { agentsMainContract } from "../contracts/agents";
 import { projectsContract } from "../contracts/projects";
@@ -40,11 +42,11 @@ export interface KotlinRouteBinding {
     readonly body?: ZodType | NoBodyMarker;
     readonly query?: ZodType;
     readonly pathParams?: ZodType;
-    readonly responses: Readonly<Record<number, ZodType>>;
+    readonly responses: Readonly<Record<number, ZodType | NoBodyMarker>>;
   };
 }
 
-const chatReadBindings: readonly KotlinRouteBinding[] = [
+const chatReadBindings = [
   {
     name: "chatSnapshot",
     response: "ChatSnapshot",
@@ -76,9 +78,9 @@ const chatReadBindings: readonly KotlinRouteBinding[] = [
     response: "FeatureSwitches",
     route: featureSwitchesContract.get,
   },
-];
+] satisfies readonly KotlinRouteBinding[];
 
-const historyReadBindings: readonly KotlinRouteBinding[] = [
+const historyReadBindings = [
   {
     name: "historyCatchUp",
     request: "HistoryCatchUpRequest",
@@ -105,10 +107,32 @@ const historyReadBindings: readonly KotlinRouteBinding[] = [
     response: "ReadState",
     route: chatThreadMarkReadContract.markRead,
   },
-];
+] satisfies readonly KotlinRouteBinding[];
 
 /** Only routes used by the installed native client, not every Web contract. */
 export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
+  {
+    name: "agentDraft",
+    response: "ComposerDraft",
+    route: agentDraftContract.get,
+  },
+  {
+    name: "threadDraft",
+    response: "ComposerDraft",
+    route: chatThreadDraftContract.get,
+  },
+  {
+    name: "saveAgentDraft",
+    request: "SaveAgentDraft",
+    response: "Unit",
+    route: agentDraftContract.patch,
+  },
+  {
+    name: "saveThreadDraft",
+    request: "SaveThreadDraft",
+    response: "Unit",
+    route: chatThreadByIdContract.patch,
+  },
   {
     name: "recoveryCatalog",
     response: "RecoveryCatalog",
@@ -211,6 +235,22 @@ export interface KotlinTypeBinding {
 }
 
 export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
+  {
+    name: "ComposerDraft",
+    schema: agentDraftContract.get.responses[200],
+    direction: "output",
+    representation: "raw-object",
+  },
+  {
+    name: "SaveAgentDraft",
+    schema: agentDraftContract.patch.body,
+    direction: "input",
+  },
+  {
+    name: "SaveThreadDraft",
+    schema: chatThreadByIdContract.patch.body,
+    direction: "input",
+  },
   {
     name: "RecoveryCatalog",
     schema: modelCatalogContract.get.responses[200],

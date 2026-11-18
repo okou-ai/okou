@@ -53,6 +53,11 @@ class ChatComposerModel(
 
     fun retryLocal() = owner.retryLocal(connection)
 
+    fun retrySync(target: ComposerTarget) = owner.retrySync(connection, target)
+
+    fun restoreDraft(target: ComposerTarget, key: String) =
+        owner.restoreDraft(connection, target, key)
+
     fun beginNew(projectId: String?) = owner.beginNew(connection, projectId)
 
     fun acknowledge(threadId: String) = owner.acknowledge(connection, threadId)

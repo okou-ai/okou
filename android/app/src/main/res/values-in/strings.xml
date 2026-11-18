@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="composer_sync_loading">Memuat draf tersimpan…</string>
+    <string name="composer_sync_saving">Menyinkronkan draf…</string>
+    <string name="composer_sync_failed">Sinkronisasi draf gagal. Teks Anda tetap tersimpan di perangkat ini.</string>
+    <string name="composer_sync_unsupported">Draf ini berisi konten yang dapat diedit di Web. Teks Anda tetap di perangkat ini; sinkronisasi otomatis dijeda.</string>
+    <string name="composer_sync_retry">Coba sinkronkan lagi</string>
+    <string name="composer_restore_draft">Pulihkan draf tersimpan</string>
     <string name="controls_storage_failed">Permintaan kontrol tertunda tidak dapat disimpan.</string>
     <string name="controls_stop">Hentikan pekerjaan berjalan</string>
     <string name="controls_queued_automation">Otomasi dalam antrean</string>

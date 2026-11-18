@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="composer_sync_loading">Carregando rascunho salvo…</string>
+    <string name="composer_sync_saving">Sincronizando rascunho…</string>
+    <string name="composer_sync_failed">Falha ao sincronizar o rascunho. Seu texto permanece neste dispositivo.</string>
+    <string name="composer_sync_unsupported">Este rascunho contém conteúdo que pode ser editado na Web. Seu texto permanece neste dispositivo; a sincronização automática está pausada.</string>
+    <string name="composer_sync_retry">Tentar sincronizar novamente</string>
+    <string name="composer_restore_draft">Restaurar rascunho preservado</string>
     <string name="controls_storage_failed">Não foi possível salvar os controles pendentes.</string>
     <string name="controls_stop">Parar o trabalho em andamento</string>
     <string name="controls_queued_automation">Automação na fila</string>

@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="composer_sync_loading">Loading saved draft…</string>
+    <string name="composer_sync_saving">Syncing draft…</string>
+    <string name="composer_sync_failed">Draft sync failed. Your input stays on this device.</string>
+    <string name="composer_sync_unsupported">This draft has content you can continue editing on Web. Your input stays on this device; automatic sync is paused.</string>
+    <string name="composer_sync_retry">Retry draft sync</string>
+    <string name="composer_restore_draft">Restore retained draft</string>
     <string name="controls_storage_failed">Pending control storage is unavailable.</string>
     <string name="controls_stop">Stop running work</string>
     <string name="controls_queued_automation">Queued automation</string>

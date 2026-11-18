@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="composer_sync_loading">Chargement du brouillon enregistré…</string>
+    <string name="composer_sync_saving">Synchronisation du brouillon…</string>
+    <string name="composer_sync_failed">La synchronisation a échoué. Votre texte reste sur cet appareil.</string>
+    <string name="composer_sync_unsupported">Ce brouillon contient du contenu modifiable sur le Web. Votre texte reste sur cet appareil ; la synchronisation automatique est suspendue.</string>
+    <string name="composer_sync_retry">Réessayer la synchronisation</string>
+    <string name="composer_restore_draft">Restaurer le brouillon conservé</string>
     <string name="controls_storage_failed">Impossible de conserver les commandes en attente.</string>
     <string name="controls_stop">Arrêter le travail en cours</string>
     <string name="controls_queued_automation">Automatisation en attente</string>

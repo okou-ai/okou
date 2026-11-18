@@ -37,6 +37,7 @@ import ai.okou.android.chat.RealtimeSnapshot
 import ai.okou.android.chat.RunControlService
 import ai.okou.android.chat.RunOutputSignal
 import ai.okou.android.chat.RunOutputTarget
+import ai.okou.android.chat.ServerDraftTarget
 import ai.okou.android.chat.TextDisposition
 import ai.okou.android.chat.historyJson
 import ai.okou.android.chat.readHistoryNdjson
@@ -159,6 +160,11 @@ class CanonicalWorkspaceSession(
     }
 
     override suspend fun createThread(request: CreateThreadRequest) = api.createThread(request)
+
+    override suspend fun composerDraft(target: ServerDraftTarget) = api.composerDraft(target)
+
+    override suspend fun saveComposerDraft(target: ServerDraftTarget, text: String) =
+        api.saveComposerDraft(target, text)
 
     override suspend fun sendInput(request: SendRequestVariant1) = api.sendInput(request)
 

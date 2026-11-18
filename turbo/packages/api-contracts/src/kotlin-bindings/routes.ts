@@ -6,9 +6,12 @@ import {
   schemaObject,
 } from "./syntax";
 import { isNever, scalarPredicate } from "./schema-shapes";
+import type { NoBodyMarker } from "../contracts/trpc-contract";
 
-/** Current bindings represent one body-bearing success, never an arbitrary status default. */
-export function successResponse(route: KotlinRouteBinding["route"]): ZodType {
+/** Each binding represents exactly one canonical success, including explicit no-body responses. */
+export function successResponse(
+  route: KotlinRouteBinding["route"],
+): ZodType | NoBodyMarker {
   const successes = Object.entries(route.responses).filter(([status]) => {
     const code = Number(status);
     return Number.isInteger(code) && code >= 200 && code < 300;

@@ -405,7 +405,7 @@ The wrapper streams emulator logcat to `build/reports/instrumentation/logcat/`
 while Gradle owns the device. It gives the native command a 15-minute deadline
 within a 20-minute test step and 25-minute job budget so timeout diagnostics can finish before job
 termination. Nonzero exits, timeout and cancellation remain failures. CI also
-requires all nine distinct native cases with no failures, errors or skips.
+requires all ten distinct native cases with no failures, errors or skips.
 CI retains these outputs and the Gradle execution log for seven days in
 `android-instrumentation-api35-<revision>` artifacts.
 
@@ -640,6 +640,34 @@ The first durable release bootstraps that identity. Report fixture tests, real
 production signing, device upgrade/data retention and Release publication as
 separate evidence; a configured Secret name proves only its presence.
 
+## Composer Draft Continuity
+
+The native text composer reads and saves the same server draft as Web. Existing
+conversations use their thread ID; My Okou and Project new-chat editors share the
+default agent draft. Project selection only changes the new conversation context.
+Draft GET does not delay the initial screen. Edits persist locally before PATCH,
+with Web's 500ms debounce and immediate explicit clears. Requests are serialized
+per target, and delayed hydration/save completions cannot replace newer local
+input. Independent clients retain Web's existing unconditional last-writer
+behavior; no server compare-and-swap or revision protocol is added.
+
+Format 3 separates canonical editable drafts/dirty intent from frozen sends and
+recovery records. Existing formats 1/2 migrate without changing request UUIDs.
+Divergent legacy Project drafts remain available for explicit restoration into
+an empty editor. Failed reads are never interpreted as empty. Rich documents,
+attachments or unknown content pause automatic synchronization rather than
+publishing a plain-text subset; the full server draft remains available on Web
+and local text stays on this device. Retry rechecks the server before saving.
+Foreground/manual opening refreshes a clean editor; automatic live draft events
+remain later work. Sending and clearing a saved draft are separate operations;
+uncertain submissions retain their original identities and never replay on open.
+
+Focused JVM/controlled HTTPS tests cover Web codec/204 responses, held hydration,
+serialized edits/clears, offline store reopening and send/recovery preservation.
+The API35 Release journey covers held draft loading, native editing, foreground
+Web changes, recreation and clearing. These are controlled service fixtures,
+not provider-live, production synchronization or distribution evidence.
+
 ## Foreground Chat Updates
 
 Assistant failure recovery follows the current canonical failure reason and the
@@ -667,11 +695,11 @@ reset is cancelled before its network call, including controller retirement.
 Failure or cancellation during that call retains the original account and key
 as an unknown operation; restoration never assumes an old intent was unsent.
 
-The composer journal reads existing format 1 drafts and pending requests. Its
-first recovery intent upgrades the whole retained journal to format 2 without
-dropping those entries. Older apps reject format 2 visibly instead of overwriting
-it; downgrade cannot restore that journal. No server schema or confirmed-history
-storage format changes. `AssistantRecoveryModelTest` covers real HTTPS requests,
+The composer journal reads existing formats 1/2 and upgrades to format 3 for
+server-backed editable drafts without dropping pending/recovery requests or IDs.
+Older apps reject newer formats visibly instead of overwriting them; downgrade
+cannot restore that journal. No server schema or confirmed-history storage format
+changes. `AssistantRecoveryModelTest` covers real HTTPS requests,
 uncertain resets, stale account/source checks, draft retention and disk failures;
 the Release native journey exercises the recovery action and preserved draft.
 
