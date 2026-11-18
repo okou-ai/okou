@@ -400,6 +400,7 @@ jobs:
       - name: Validate manifest
         env:
           MANIFEST_PATH: runner-image-manifest/manifest.json
+          PRODUCER_RUN_ID: ${{ github.run_id }}
           HEAD_SHA: ${{ inputs.head-sha }}
           JOB_REF: ${{ inputs.job-ref }}
           TARGET: ${{ env.TARGET_TRIPLE }}

@@ -96,7 +96,8 @@ PR builds publish the binary at `bin/pr-N-image-RUN_ID/runner` under the
 Runner data root. A rerun of an architecture within that workflow run can
 reuse the same bytes, so the architecture manifests still share a directory.
 Publication rejects a differing binary for an existing generation. The
-manifest carries the exact binary path. Recovery can repair that path while
+manifest carries the exact binary path, and validation binds it to the
+GitHub artifact's producer run. Recovery can repair that path while
 the directory exists. Closed-PR cleanup owns directory retirement and removes
 all generations after its active-owner and service checks. Superseded
 generations occupy disk until the PR is cleaned up. Preview service replacement

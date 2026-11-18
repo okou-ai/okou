@@ -384,6 +384,7 @@ if [ ! -f "$MANIFEST_PATH" ]; then
 fi
 
 MANIFEST_PATH="$MANIFEST_PATH" \
+PRODUCER_RUN_ID="$selected_run_id" \
 HEAD_SHA="$HEAD_SHA" \
 JOB_REF="$JOB_REF" \
 TARGET="$TARGET" \
