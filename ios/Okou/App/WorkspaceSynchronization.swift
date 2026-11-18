@@ -6,7 +6,7 @@ import SwiftUI
 
 /// Owns startup, foreground suspension and coalesced realtime invalidation reads.
 @MainActor @Observable
-final class WorkspaceLifecycle {
+final class WorkspaceSynchronization {
   private weak var workspace: WorkspaceStore?
   private let client: APIClient
   private let resources: WorkspaceResources

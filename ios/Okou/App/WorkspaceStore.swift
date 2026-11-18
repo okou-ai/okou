@@ -12,7 +12,7 @@ final class WorkspaceStore {
   var navigationActions: WorkspaceChatActions { navigation }
   var residentConversations: WorkspaceConversations { conversations }
 
-  @ObservationIgnored private lazy var lifecycle = WorkspaceLifecycle(
+  @ObservationIgnored private lazy var synchronization = WorkspaceSynchronization(
     workspace: self, client: client, resources: resources,
     list: list, projects: projects, modelStore: modelStore, conversations: conversations,
     modelBootstrap: modelBootstrap, projectBootstrap: projectBootstrap,
@@ -99,7 +99,7 @@ final class WorkspaceStore {
   @ObservationIgnored private lazy var sidebarDrafts = SidebarDraftStore(
     resources: resources, lifecycleTasks: lifecycleTasks,
     didFail: { [weak self] in self?.handle($0) })
-  var connectionStatus: RealtimeConnectionStatus { lifecycle.connectionStatus }
+  var connectionStatus: RealtimeConnectionStatus { synchronization.connectionStatus }
 
   var synchronizationState: ChatSynchronizationState? {
     guard !closed else { return nil }
@@ -157,16 +157,16 @@ final class WorkspaceStore {
   @ObservationIgnored lazy var sidebar = ChatSidebarStore(
     store: resources.store, threads: list.threadsValue, agents: list.agentsValue,
     projects: projects.confirmedValue, selectedThread: selectedThread)
-  private var realtime: RealtimeService? { lifecycle.realtime }
+  private var realtime: RealtimeService? { synchronization.realtime }
 
-  private var refreshGeneration: UUID { lifecycle.refreshGeneration }
+  private var refreshGeneration: UUID { synchronization.refreshGeneration }
 
-  private var refreshSuspended: Bool { lifecycle.refreshSuspended }
+  private var refreshSuspended: Bool { synchronization.refreshSuspended }
 
   private var creationTask: Task<ChatThread?, Never>?
   private var closed = false
   var isClosed: Bool { closed }
-  private var isForeground: Bool { lifecycle.isForeground }
+  private var isForeground: Bool { synchronization.isForeground }
 
   init(
     client: APIClient, webURL: URL, cache: ChatCache? = nil, conversationLimit: Int = 8,
@@ -224,7 +224,7 @@ final class WorkspaceStore {
   }
 
   func start(userID: String, workspaceID: String) async {
-    await lifecycle.start(userID: userID, workspaceID: workspaceID)
+    await synchronization.start(userID: userID, workspaceID: workspaceID)
   }
 
   private func prepareDefaultDraft(from agents: [AgentRecord]) {
@@ -283,7 +283,7 @@ final class WorkspaceStore {
     sidebarDrafts.close()
     closed = true
     sidebar.close()
-    lifecycle.cancelRefresh()
+    synchronization.cancelRefresh()
     creationTask?.cancel()
     newChatSubmission?.close()
     newChatSubmission = nil
@@ -297,7 +297,7 @@ final class WorkspaceStore {
     resources.close()
     search.close()
     searchArtifacts.close()
-    lifecycle.stopRealtime()
+    synchronization.stopRealtime()
     messageMarkdown.clear()
     agentDraftTask?.cancel()
     newComposer.close()
@@ -311,7 +311,7 @@ final class WorkspaceStore {
   }
 
   func setPhase(_ phase: ScenePhase) {
-    lifecycle.setPhase(phase)
+    synchronization.setPhase(phase)
   }
 
   private func activateDefaultDraft(agentID: String) {
@@ -336,17 +336,17 @@ final class WorkspaceStore {
   }
 
   func requestRefresh(_ invalidation: ChatInvalidation = .reconnected) {
-    lifecycle.requestRefresh(invalidation)
+    synchronization.requestRefresh(invalidation)
   }
 
   @discardableResult
   func resumePendingRefresh() -> Task<Void, Never>? {
-    return lifecycle.resumePendingRefresh()
+    return synchronization.resumePendingRefresh()
   }
 
   /// Awaitable refresh boundary used by manual refresh and deterministic HTTP tests.
   func refresh(_ batch: Set<ChatInvalidation> = [.reconnected]) async {
-    await lifecycle.refresh(batch)
+    await synchronization.refresh(batch)
   }
 
   private func presentChat(_ thread: ChatThread) {
