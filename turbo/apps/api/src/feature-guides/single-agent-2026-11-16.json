@@ -1,108 +1,78 @@
 {
   "id": "single-agent-2026-11-16",
-  "revisionId": "fc2c1731-2135-42c2-8075-309731e5377c",
+  "revisionId": "d6c0c665-16da-42e1-b85d-21fcc845f13b",
   "content": {
     "schemaVersion": 1,
-    "title": "Meet My Okou",
+    "title": "My Okou",
     "description": "One Okou, personal Instructions, reusable Workflows.",
     "items": [
       {
         "featureId": "my-okou",
-        "title": "One Okou. All your work.",
-        "description": "Start any task in New chat. Keep one personal Okou, with your Instructions and reusable Workflows.",
+        "title": "One Okou. Your subagents, now projects",
+        "description": "Start any task with your own Okou. Your former subagents are now projects, organized in the chat sidebar.",
         "media": {
-          "type": "comparison",
-          "label": "From separate Agents to one personal Okou",
-          "before": {
-            "label": "Before",
-            "title": "Separate Agents, separate setups",
-            "items": [
-              {
-                "title": "Writing agent",
-                "description": "Its own Instructions and Workflows"
-              },
-              {
-                "title": "Research agent",
-                "description": "Its own Instructions and Workflows"
-              },
-              {
-                "title": "Reports agent",
-                "description": "Its own Instructions and Workflows"
-              }
-            ]
-          },
-          "after": {
-            "label": "Now",
-            "title": "Your personal Okou",
-            "items": [
-              {
-                "title": "Personal Instructions",
-                "description": "Your preferences, in Settings → Personal → My Okou"
-              },
-              {
-                "title": "Reusable Workflows",
-                "description": "Writing · Research · Reports — private or shared in your workspace"
-              }
-            ]
-          },
-          "note": "Your preferences and task instructions now have separate homes. Swipe to see what changes.",
-          "caption": "Illustrated example",
-          "layout": "overview"
-        }
+          "type": "illustration",
+          "alt": "Illustrated example: Okou beside Writing and Research project cards in Chat → Projects, with Market overview and Customer insights conversations.",
+          "characterUrl": "https://static.okou.io/platform/feature-guides/my-okou/okou-multitask-356bc36cc3.webp",
+          "scene": {
+            "type": "projects",
+            "location": ["Chat", "Projects"],
+            "title": "Research",
+            "subtitle": "Project",
+            "backTitle": "Writing",
+            "conversations": ["Market overview", "Customer insights"]
+          }
+        },
+        "featureSwitch": "singleAgent"
       },
       {
         "featureId": "personal-instructions",
-        "title": "Your preferences, in My Okou",
-        "description": "Set personal preferences in Settings → Personal → My Okou. Save task steps as Workflows.",
+        "title": "Your instructions are now in Settings",
+        "description": "Find and edit your Okou's instructions in Settings → Personal → My Okou.",
         "media": {
-          "type": "screenshots",
-          "label": "Agent Instructions before, personal Instructions now",
-          "before": {
-            "label": "Before",
-            "title": "Reports agent → Instructions",
-            "url": "https://single-agent-product-media-47733.okou.app/assets/instructions-before-7a2568954489.png",
-            "width": 854,
-            "height": 266,
-            "alt": "The Reports Agent Instructions tab, showing personal preferences and weekly report steps together."
-          },
-          "after": {
-            "label": "Now",
-            "title": "Settings → Personal → My Okou",
-            "url": "https://single-agent-product-media-47733.okou.app/assets/instructions-after-88c5d12d649c.png",
-            "width": 952,
-            "height": 408,
-            "alt": "Settings → Personal → My Okou, showing personal Instructions and when they apply."
-          },
-          "note": "Your new tasks in this workspace use these preferences. Teammates keep their own Instructions.",
-          "caption": "Product screenshots with sample data"
-        }
+          "type": "illustration",
+          "alt": "Illustrated example: Okou beside the personal instructions editor in Settings → Personal → My Okou, with a selected line and formatting toolbar.",
+          "characterUrl": "https://static.okou.io/platform/feature-guides/my-okou/okou-instructions-3c85f9896b.webp",
+          "scene": {
+            "type": "instructions",
+            "location": ["Settings", "Personal", "My Okou"],
+            "title": "My Okou",
+            "subtitle": "Personal instructions",
+            "lines": [
+              "Keep answers concise.",
+              "Use clear headings.",
+              "End with next steps."
+            ]
+          }
+        },
+        "featureSwitch": "singleAgent"
       },
       {
         "featureId": "workspace-workflows",
-        "title": "Workflows, ready to reuse",
-        "description": "Reuse task instructions with your personal Okou. Keep Workflows private or share them in your workspace.",
+        "title": "Your workflows, in one place",
+        "description": "Keep repeatable task steps in Workflows. Use them yourself or share them with your workspace.",
         "media": {
-          "type": "screenshots",
-          "label": "Agent-scoped setup before, workspace Workflows now",
-          "before": {
-            "label": "Before",
-            "title": "Workflows → Reports agent",
-            "url": "https://single-agent-product-media-47733.okou.app/assets/workflows-before-e1fe64482284.png",
-            "width": 854,
-            "height": 180,
-            "alt": "Workflows filtered to the Reports Agent, with a Weekly report Workflow and the Agent selector visible."
-          },
-          "after": {
-            "label": "Now",
-            "title": "Workspace Workflows",
-            "url": "https://single-agent-product-media-47733.okou.app/assets/workflows-after-1f7ce5d78b93.png",
-            "width": 854,
-            "height": 240,
-            "alt": "The unified Workflows list, with a shared Research brief and private Weekly report, without an Agent selector."
-          },
-          "note": "Each person runs shared Workflows with their own connected accounts and permissions. Sharing the process does not share account access.",
-          "caption": "Product screenshots with sample data"
-        }
+          "type": "illustration",
+          "alt": "Illustrated example: Okou carrying a folder beside a shared Research brief and a private Weekly report workflow with reusable steps.",
+          "characterUrl": "https://static.okou.io/platform/feature-guides/my-okou/okou-workflows-5842643b2b.webp",
+          "scene": {
+            "type": "workflows",
+            "location": ["Workflows"],
+            "title": "Weekly report",
+            "subtitle": "Reusable instructions",
+            "steps": [
+              "Review the week",
+              "Summarize progress",
+              "Outline next steps"
+            ],
+            "command": "/weekly-report",
+            "privateLabel": "Private",
+            "backTitle": "Research brief",
+            "backCommand": "/research-brief",
+            "sharedLabel": "Shared"
+          }
+        },
+        "featureSwitch": "singleAgent"
       }
     ]
   }

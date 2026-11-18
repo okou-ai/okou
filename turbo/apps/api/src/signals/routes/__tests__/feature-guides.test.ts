@@ -709,7 +709,7 @@ test("rejects guide replay in production deployments", async () => {
   expect(rejected.status).toBe(403);
 });
 
-test("previews the My Okou comparison without publishing or acknowledging an edition", async () => {
+test("previews the illustrated My Okou guide without publishing or acknowledging an edition", async () => {
   mockOptionalEnv("ENV", "preview");
   await identity();
   const query = { preview: "1", edition: "single-agent-2026-11-16" } as const;
@@ -731,37 +731,26 @@ test("previews the My Okou comparison without publishing or acknowledging an edi
       content: {
         items: [
           {
-            title: "One Okou. All your work.",
+            title: "One Okou. Your subagents, now projects",
             media: {
-              type: "comparison",
-              layout: "overview",
-              before: { label: "Before" },
-              after: { label: "Now" },
+              type: "illustration",
+              characterUrl: expect.stringMatching(/^https:\/\//u),
+              scene: { type: "projects" },
             },
           },
           {
-            title: "Your preferences, in My Okou",
+            title: "Your instructions are now in Settings",
             media: {
-              type: "screenshots",
-              before: {
-                title: "Reports agent → Instructions",
-                url: expect.stringMatching(/^https:\/\//u),
-                width: 854,
+              type: "illustration",
+              scene: {
+                type: "instructions",
+                location: ["Settings", "Personal", "My Okou"],
               },
-              after: { title: "Settings → Personal → My Okou" },
             },
           },
           {
-            title: "Workflows, ready to reuse",
-            media: {
-              type: "screenshots",
-              before: { title: "Workflows → Reports agent" },
-              after: {
-                title: "Workspace Workflows",
-                url: expect.stringMatching(/^https:\/\//u),
-                width: 854,
-              },
-            },
+            title: "Your workflows, in one place",
+            media: { type: "illustration", scene: { type: "workflows" } },
           },
         ],
       },

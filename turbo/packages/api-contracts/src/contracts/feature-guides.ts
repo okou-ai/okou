@@ -6,7 +6,6 @@ import {
   discriminatedUnion,
   iso,
   literal,
-  number,
   object,
   string,
   url,
@@ -51,45 +50,43 @@ export type FeatureGuideConversation = zInfer<
   typeof featureGuideConversationSchema
 >;
 
-const comparisonPanelSchema = object({
-  label: string().min(1).max(40),
-  title: string().min(1).max(100),
-  items: array(
-    object({
-      title: string().min(1).max(80),
-      description: string().min(1).max(200),
-    }).strict(),
-  )
-    .min(1)
-    .max(3),
-}).strict();
-
-const screenshotPanelSchema = object({
-  label: string().min(1).max(40),
-  title: string().min(1).max(100),
-  url: mediaUrlSchema,
-  alt: string().min(1).max(500),
-  width: number().int().positive().max(8192),
-  height: number().int().positive().max(8192),
-}).strict();
+const illustrationTextSchema = string().min(1).max(80);
+const illustrationSceneSchema = discriminatedUnion("type", [
+  object({
+    type: literal("projects"),
+    location: array(illustrationTextSchema).length(2),
+    title: illustrationTextSchema,
+    subtitle: illustrationTextSchema,
+    backTitle: illustrationTextSchema,
+    conversations: array(illustrationTextSchema).length(2),
+  }).strict(),
+  object({
+    type: literal("instructions"),
+    location: array(illustrationTextSchema).length(3),
+    title: illustrationTextSchema,
+    subtitle: illustrationTextSchema,
+    lines: array(illustrationTextSchema).length(3),
+  }).strict(),
+  object({
+    type: literal("workflows"),
+    location: array(illustrationTextSchema).length(1),
+    title: illustrationTextSchema,
+    subtitle: illustrationTextSchema,
+    steps: array(illustrationTextSchema).length(3),
+    command: illustrationTextSchema,
+    privateLabel: illustrationTextSchema,
+    backTitle: illustrationTextSchema,
+    backCommand: illustrationTextSchema,
+    sharedLabel: illustrationTextSchema,
+  }).strict(),
+]);
 
 export const featureGuideMediaSchema = discriminatedUnion("type", [
   object({
-    type: literal("comparison"),
-    layout: literal("overview"),
-    label: string().min(1).max(120),
-    before: comparisonPanelSchema,
-    after: comparisonPanelSchema,
-    note: string().min(1).max(400),
-    caption: string().min(1).max(80),
-  }).strict(),
-  object({
-    type: literal("screenshots"),
-    label: string().min(1).max(120),
-    before: screenshotPanelSchema,
-    after: screenshotPanelSchema,
-    note: string().min(1).max(400),
-    caption: string().min(1).max(80),
+    type: literal("illustration"),
+    alt: string().min(1).max(500),
+    characterUrl: mediaUrlSchema,
+    scene: illustrationSceneSchema,
   }).strict(),
   object({
     type: literal("image"),
