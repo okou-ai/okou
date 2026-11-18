@@ -586,6 +586,7 @@ export function RemoteNetworkCredentialHelp({
       >
         <DialogContent
           maxWidth="lg"
+          position="top"
           contentClassName="flex flex-col gap-0 p-0"
           showCloseButton={false}
         >
