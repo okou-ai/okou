@@ -4264,6 +4264,7 @@ dependencies = [
  "runner-host",
  "runner-storage",
  "runner-types",
+ "rustix",
  "sandbox",
  "sandbox-mock",
  "serde",

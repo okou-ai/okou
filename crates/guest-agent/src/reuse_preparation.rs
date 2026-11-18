@@ -846,15 +846,7 @@ fn invalid_path(message: &'static str) -> ReusePreparationError {
 }
 
 fn rootfs_capacity() -> io::Result<FilesystemCapacity> {
-    let mut stats = std::mem::MaybeUninit::<libc::statvfs>::uninit();
-    // SAFETY: the path is a static NUL-terminated string and `stats` points to
-    // writable memory for the duration of the call.
-    let result = unsafe { libc::statvfs(c"/".as_ptr(), stats.as_mut_ptr()) };
-    if result != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: successful `statvfs` initialized the full structure.
-    let stats = unsafe { stats.assume_init() };
+    let stats = rustix::fs::statvfs(c"/")?;
     Ok(FilesystemCapacity {
         available_bytes: stats.f_bavail.saturating_mul(stats.f_frsize),
         available_inodes: stats.f_favail,

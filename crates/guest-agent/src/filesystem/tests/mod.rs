@@ -2,16 +2,20 @@
 use super::*;
 use std::os::unix::fs::symlink;
 
-fn counters() -> libc::statvfs {
-    let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
-    stat.f_frsize = 1024;
-    stat.f_blocks = 100;
-    stat.f_bfree = 40;
-    stat.f_bavail = 30;
-    stat.f_files = 80;
-    stat.f_ffree = 20;
-    stat.f_favail = 10;
-    stat
+fn counters() -> rustix::fs::StatVfs {
+    rustix::fs::StatVfs {
+        f_bsize: 0,
+        f_frsize: 1024,
+        f_blocks: 100,
+        f_bfree: 40,
+        f_bavail: 30,
+        f_files: 80,
+        f_ffree: 20,
+        f_favail: 10,
+        f_fsid: 0,
+        f_flag: rustix::fs::StatVfsMountFlags::empty(),
+        f_namemax: 0,
+    }
 }
 
 #[test]
