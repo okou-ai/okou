@@ -123,13 +123,13 @@ Launch intent precedes submission; intent without a result or live unit fails
 unknown only after the launch gate is free and that absence is rechecked. A
 reconnection waits for an in-flight submission without blocking on the worker's
 mutation gate or submitting the command again, including when intent appears
-after the reconnection has started waiting for that gate. Every observation
-rechecks owner admission. Only 124/141/255 can reconnect, at most three requests inside the same
-600-second call budget. Reconnection observes the original operation and never
-restarts it. The execution deadline bounds waiting for unfinished work; a
-published result remains retrievable until its retirement timer fires.
-Retrieval also requires the same admitted namespace owner; cancellation rejects
-reattachment, and a successor claim removes older operation records.
+after the reconnection has started waiting for that gate. Only 124/141/255 can
+reconnect, at most three requests inside the same 600-second call budget.
+The execution deadline bounds waiting for unfinished work. A published result
+remains retrievable until its retirement timer fires.
+Reattachment and final result delivery both verify the current owner and the
+managed admission marker. Cancellation or namespace cleanup invalidates result
+delivery, and a successor claim removes older operation records.
 Service work is limited to 570 seconds with a ten-second control
 group stop grace, leaving room for reconciliation inside the unchanged job budget.
 
@@ -145,9 +145,10 @@ Runner execution. Unit arguments, unit environment properties and result identit
 contain no values. Retained logs are redacted and capped at 1 MiB while the worker
 continues draining output and collecting hashes. Private operation state lives
 on remote `/dev/shm`; an unavailable state root fails without falling back to
-disk. One-shot systemd timers retire and verify each operation
-before removing files after one hour. Unconfirmed retirement retains evidence;
-reboot removes tmpfs state even if a transient timer was lost. The
+disk. One-shot systemd timers schedule expiration services under the operation's
+SSH user and group. After one hour the service verifies retirement before
+removing files. Unconfirmed retirement retains evidence, and reboot removes
+tmpfs state even if a transient timer was lost. The
 small namespace ownership ledger and stable gate remain until reboot or explicit
 namespace retirement. At most 32 operation tombstones per owner prevent an older
 workflow reclaiming ownership or an expired result permitting execution again.

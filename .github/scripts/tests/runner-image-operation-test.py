@@ -149,6 +149,10 @@ class ImageOperationTest(unittest.TestCase):
             self.assertEqual(self.cleanup_reply(cleanup), {"ready": [123]})
             self.assertEqual(self.clean_namespace(cleanup)["outcome"], "cleaned")
         self.assertFalse((self.root / "var/lib/vm0-runner/bin/pr-123").exists())
+        self.result.unlink()
+        retired = self.invoke("run", "build", str(self.result), check=False)
+        self.assertNotEqual(retired.returncode, 0, retired.stdout + retired.stderr)
+        self.assertFalse(self.result.exists())
         self.assert_one_build()
 
     def test_cleanup_retires_image_queued_behind_its_lifecycle_lock(self):
@@ -472,6 +476,21 @@ class ImageOperationTest(unittest.TestCase):
         self.assertEqual(successor.returncode, 0, output + error)
         self.assertEqual(json.loads(successor_result.read_text())["status"], 0)
 
+    def test_cancelled_owner_cannot_deliver_an_inflight_result(self):
+        process = self.start_blocked("pause-active-observation")
+        try:
+            self.wait_for(lambda: (self.root / "active-observation-paused").exists())
+            (self.root / "release").touch()
+            self.wait_for(lambda: any(self.root.glob("vm0-runner-image-*/*/*/result.json")))
+            self.environment.pop("IMAGE_FAULT")
+            self.invoke("cancel")
+        finally:
+            (self.root / "resume-active-observation").touch()
+        output, error = process.communicate(timeout=15)
+        self.assertNotEqual(process.returncode, 0, output + error)
+        self.assertFalse(self.result.exists())
+        self.assert_one_build()
+
     def test_failed_retirement_retains_old_work_and_blocks_namespace_reuse(self):
         process = self.start_blocked()
         self.environment.update(GITHUB_RUN_ID="1235", IMAGE_FAULT="failed-stop")
@@ -524,12 +543,16 @@ class ImageOperationTest(unittest.TestCase):
         self.invoke("claim")
         self.invoke("run", "build", str(self.result))
         operation = next(self.root.glob("vm0-runner-image-*/*/*/intent.json")).parent
+        timer = next(args for args in self.records("systemd") if "--on-active=1h" in args)
+        self.assertIn(f"--uid={os.getuid()}", timer)
+        self.assertIn(f"--gid={os.getgid()}", timer)
         expiration = subprocess.run(
-            ["python3", str(COMMAND), "expire", str(operation)],
+            timer[timer.index("/bin/sh") :],
             env=self.environment,
             capture_output=True,
             text=True,
             timeout=20,
+            check=False,
         )
         self.assertEqual(expiration.returncode, 0, expiration.stderr)
         self.assertFalse(operation.exists())

@@ -245,6 +245,13 @@ def owner_admitted(actual, expected):
     return owner_matches(actual, expected) and actual["state"] == "ready"
 
 
+def require_observation_owner(namespace, expected):
+    owner = json.loads((namespace / "owner.json").read_text())
+    if not owner_admitted(owner, expected):
+        raise RuntimeError("image owner superseded or cancelled")
+    require_resource(owner)
+
+
 def retire(operation):
     # Earlier PR revisions used these two exact names. Check both even if
     # intent is missing so a successor cannot reuse paths before retirement.
@@ -277,13 +284,11 @@ def expire(operation):
             shutil.rmtree(operation)
 
 
-def stopped_without_result(operation, inputs):
+def stopped_without_result(operation, owner):
     # An intent is visible before systemd accepts the launch. A missing unit
     # is not terminal while that submission (or its worker) still owns the gate.
     # A successor may own the same gate, but must not delay the old observer.
-    owner = owner_for(inputs)
-    if not owner_admitted(json.loads((operation.parent / "owner.json").read_text()), owner):
-        raise RuntimeError("image owner superseded or cancelled")
+    require_observation_owner(operation.parent, owner)
     fd = os.open(operation.parent / "gate", os.O_RDWR | os.O_NOFOLLOW)
     try:
         try:
@@ -450,12 +455,14 @@ def remote(request):
             atomic_json(intent, intent_value)
             (operation / "worker.py").write_text(request["source"])
             unit = unit_for(operation)
+            service_owner = (f"--uid={os.getuid()}", f"--gid={os.getgid()}")
             # Establish expiration before materializing credentials or starting work.
             system(
                 "systemd-run",
                 "--quiet",
                 "--collect",
                 "--unit=vm0-ci-image-" + identity + "-expire",
+                *service_owner,
                 "--on-active=1h",
                 "--timer-property=AccuracySec=1s",
                 "--property=RuntimeMaxSec=60",
@@ -475,8 +482,7 @@ def remote(request):
                 "--service-type=exec",
                 "--unit=" + unit,
                 "--description=Runner image " + inputs["jobRef"] + " " + identity,
-                "--uid=" + str(os.getuid()),
-                "--gid=" + str(os.getgid()),
+                *service_owner,
                 "--property=RuntimeMaxSec=" + str(WORK_SECONDS),
                 "--property=TimeoutStopSec=10",
                 "--property=KillMode=control-group",
@@ -496,10 +502,8 @@ def observe(request, operation):
         or operation_identity(intent) != intent["identity"]
     ):
         raise RuntimeError("image launch identity mismatch")
-    if not owner_admitted(
-        json.loads((operation.parent / "owner.json").read_text()), owner_for(intent["inputs"])
-    ):
-        raise RuntimeError("image owner superseded or cancelled")
+    owner = owner_for(intent["inputs"])
+    require_observation_owner(operation.parent, owner)
     result_path = operation / "result.json"
     offset = request.get("offset", 0)
     deadline = intent["deadline"]
@@ -514,11 +518,12 @@ def observe(request, operation):
                 emit({"log": chunk.decode("utf-8", errors="replace"), "offset": offset})
                 continue
         if result_path.exists():
-            emit({"result": json.loads(result_path.read_text())})
+            result = json.loads(result_path.read_text())
+            # Cancellation or cleanup can revoke admission while we stream.
+            require_observation_owner(operation.parent, owner)
+            emit({"result": result})
             return
-        if stopped(unit_state(unit_for(operation))) and stopped_without_result(
-            operation, intent["inputs"]
-        ):
+        if stopped(unit_state(unit_for(operation))) and stopped_without_result(operation, owner):
             raise RuntimeError("image unit stopped without a result; execution outcome unknown")
         time.sleep(0.5)
     raise RuntimeError("image result deadline exceeded")

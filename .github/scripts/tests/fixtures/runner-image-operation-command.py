@@ -186,6 +186,12 @@ def systemctl(arguments):
             path = ROOT / "units" / (unit + ".json")
             info = json.loads(path.read_text()) if path.exists() else {}
             running = bool(info) and alive(info["pid"])
+            paused = ROOT / "active-observation-paused"
+            if MODE == "pause-active-observation" and running and not paused.exists():
+                # Hold an already captured active snapshot while the real
+                # worker finishes and a separate request cancels its owner.
+                paused.touch()
+                wait_for(lambda: (ROOT / "resume-active-observation").exists())
             if not info and MODE == "pending-launch" and (ROOT / "launch-pending").exists():
                 (ROOT / "observed-pending-launch").touch()
             fields = {
