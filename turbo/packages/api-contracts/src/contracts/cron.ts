@@ -1,6 +1,7 @@
 import {
   array,
   boolean,
+  coerce,
   iso,
   literal,
   number,
@@ -714,9 +715,19 @@ export const cronProcessBackgroundJobsContract = c.router({
     method: "GET",
     path: "/api/cron/process-background-jobs",
     headers: authHeadersSchema,
+    query: object({
+      marketingRewardsOnly: zEnum(["true", "false"]).optional(),
+      maxRewardEvents: coerce.number().int().min(1).max(100).optional(),
+    }),
     responses: {
-      200: object({ processed: number(), cleaned: number() }),
+      200: object({
+        processed: number(),
+        cleaned: number(),
+        sourcePending: number().int().nonnegative().optional(),
+        unobservedInvitations: number().int().nonnegative().optional(),
+      }),
       401: apiErrorSchema,
+      503: apiErrorSchema,
     },
     summary:
       "Resume compatible background jobs and reclaim terminal export resources",
