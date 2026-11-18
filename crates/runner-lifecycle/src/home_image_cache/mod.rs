@@ -40,6 +40,7 @@ pub use reclamation::IdleHomeReclamationPermit;
 pub mod snapshot;
 #[cfg(test)]
 mod tests;
+pub(crate) mod timing;
 mod types;
 mod watcher;
 use background::BackgroundGcActivity;
