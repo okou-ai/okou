@@ -53,10 +53,6 @@ struct ChatSidebarView: View {
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-  private var workspaceName: String {
-    authentication.workspacePresentation(workspaceID)?.name ?? "Workspace"
-  }
-
   /// One leading edge for the header, every heading, row content and the footer buttons.
   private let rowInset = OkouControl.pageInset
   /// The chat rows' status column, which a project's folder shares so the names line up.
@@ -208,72 +204,11 @@ struct ChatSidebarView: View {
       .okouSheetBackground(OkouColor.background)
     }
   }
-
-  /// As Slack's: the workspace's logo as a glass button that opens the switcher, its name
-  /// beside it with no arrow, and on the right the chat filter and the way back to the chat in
-  /// one glass group. The name leaves once rows scroll under the bar; the glass buttons stay.
   private var header: some View {
-    HStack(spacing: OkouSpace.md) {
-      workspaceSwitcher
-      Text(workspaceName)
-        .redacted(
-          reason: authentication.workspacePresentation(workspaceID) == nil ? .placeholder : []
-        )
-        .font(.okou(.headline))
-        .lineLimit(1)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .opacity(isScrolled ? 0 : 1)
-        .animation(OkouMotion.transition, value: isScrolled)
-        // The switcher's label already names the workspace.
-        .accessibilityHidden(true)
-      headerActions
-    }
-    .frame(minHeight: headerHeight)
-  }
-
-  private var workspaceSwitcher: some View {
-    Menu {
-      // A picker draws the system's check beside the current workspace, and every row
-      // carries its logo, as the web's switcher does.
-      Picker("Workspace", selection: workspaceSelection) {
-        ForEach(authentication.workspaces) { workspace in
-          Label {
-            Text(workspace.name)
-          } icon: {
-            OkouWorkspaceMenuLogos.image(
-              workspaceID: workspace.id, hasImage: workspace.hasImage,
-              cachedImage: authentication.presentation?.image("workspace:" + workspace.id))
-          }
-          .tag(workspace.id)
-        }
-      }
-      .pickerStyle(.inline)
-      .labelsHidden()
-    } label: {
-      let workspace = authentication.workspacePresentation(workspaceID)
-      OkouWorkspaceGlassLogo(
-        workspaceID: workspaceID, name: workspaceName,
-        imageURL: workspace?.imageURL, hasImage: workspace?.hasImage ?? false,
-        cachedImage: authentication.presentation?.image("workspace:" + workspaceID),
-        usesSharedImage: true, metadataKnown: workspace != nil
-      )
-      .accessibilityHidden(true)
-    }
-    .buttonStyle(.plain)
-    .disabled(authentication.isSwitchingWorkspace || authentication.workspaces.isEmpty)
-    .accessibilityLabel("Workspace: \(workspaceName)")
-  }
-
-  private var workspaceSelection: Binding<String> {
-    Binding {
-      workspaceID
-    } set: { id in
-      Task {
-        do { try await authentication.switchWorkspace(id) } catch {
-          accountError = error.localizedDescription
-        }
-      }
-    }
+    ChatSidebarHeader(
+      store: store, authentication: authentication, workspaceID: workspaceID,
+      headerHeight: headerHeight, isScrolled: isScrolled, accountError: $accountError,
+      threadFilter: threadFilter, close: close, newProject: { showEditor(creationEditor) })
   }
 
   /// Projects first, oldest first, then the chats outside them. Each list leads with its pins
@@ -606,30 +541,6 @@ struct ChatSidebarView: View {
     }
   }
 
-  /// Top right, one glass capsule as iOS groups related bar buttons: the chat list menu on the
-  /// left (the filters, Mark all as read and New project) and the way back to the chat on the
-  /// right, toward the page it returns to. On the default Chats the menu is an icon; any other
-  /// filter names itself, so a filtered list never reads as missing chats.
-  private var headerActions: some View {
-    HStack(spacing: 0) {
-      ChatListFilterMenu(
-        store: store, selection: threadFilter,
-        newProject: { showEditor(creationEditor) }
-      )
-      .frame(height: OkouControl.minimumTarget)
-      .fixedSize(horizontal: true, vertical: false)
-      Button(action: close) {
-        OkouToolbarIcon("arrow-right")
-          .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
-          .contentShape(Rectangle())
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel("Close sidebar")
-      .accessibilityIdentifier("close-sidebar")
-    }
-    .modifier(OkouGlassControl(shape: .capsule))
-  }
-
   private func readAction(_ thread: ChatThread, read: Bool) -> some View {
     Button(
       read ? "Mark as read" : "Mark as unread",
@@ -637,61 +548,13 @@ struct ChatSidebarView: View {
     ) { Task { await store.setRead(thread, read: read) } }
     .disabled(store.list.updatingThreads.contains(thread.id) || store.list.markingAgentRead)
   }
-
-  /// Thumb-reach bar: settings on the left, a new-message capsule, and search on the right.
   private var footer: some View {
-    HStack(spacing: OkouSpace.md) {
-      Button {
-        store.prepareSettings()
-        showsSettings = true
-      } label: {
-        let profile = authentication.profile
-        OkouProfileAvatar(
-          imageURL: profile?.imageURL, hasImage: profile?.hasImage ?? false,
-          size: OkouControl.minimumTarget, name: profile?.name ?? profile?.email,
-          cachedImage: authentication.presentation?.image("profile"), usesSharedImage: true)
-      }
-      .accessibilityLabel("Settings")
-      .accessibilityIdentifier("settings")
-      .sheet(isPresented: $showsSettings) {
-        ChatSettingsView(
-          store: store, authentication: authentication, notifications: notifications,
-          accountError: $accountError
-        )
-        .okouSheetBackground()
-        // The appearance is picked in this sheet while it is open. A sheet keeps the scheme
-        // it opened with, and `preferredColorScheme(nil)` for System does not clear it, so
-        // the sheet takes the scheme the page behind it resolved and switches with it.
-        .preferredColorScheme(colorScheme)
-      }
-      Button {
-        newChat()
-      } label: {
-        Label("New Message", okouSymbol: "square-pen")
-          .font(.okou(.body))
-          .foregroundStyle(OkouColor.placeholder)
-          .lineLimit(1)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(.horizontal, OkouSpace.lg)
-          .modifier(OkouGlassControl(shape: .capsule))
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel("New Message")
-      .accessibilityIdentifier("new-chat")
-      Button {
-        store.search.present()
-      } label: {
-        OkouToolbarIcon("search")
-          .modifier(OkouGlassControl(shape: .circle))
-      }
-      .accessibilityLabel("Search chats")
-      .accessibilityIdentifier("search-chats")
-    }
-    .buttonStyle(.plain)
-    .frame(height: OkouControl.minimumTarget + OkouSpace.md)
-    .padding(.horizontal, rowInset)
-    .padding(.top, OkouSpace.sm)
+    ChatSidebarFooter(
+      store: store, authentication: authentication, notifications: notifications,
+      accountError: $accountError, showsSettings: $showsSettings, colorScheme: colorScheme,
+      newChat: newChat, rowInset: rowInset)
   }
+
 }
 
 /// Draft observation belongs to this row, not the workspace's list projection.

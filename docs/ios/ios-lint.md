@@ -11,13 +11,18 @@ underlying ownership contracts. Setup commands belong in the
 ## Upstream Defaults
 
 The root configuration inherits upstream defaults and explicitly defers the
-six metric checks and `identifier_name` in `disabled_rules`.
-The other 94 defaults remain enabled, including `file_length` configured with
+five metric checks and `identifier_name` in `disabled_rules`.
+The other 95 defaults remain enabled, including `file_length` configured with
 800 warning / 1,000 error lines. The shared `--strict` entry point enforces an
 800-line limit in production and tests, including comments and blank lines.
 `function_body_length` has a 100-line warning and error threshold for functions,
 initializers, deinitializers and subscript bodies. Its upstream counter excludes
 blank and comment-only lines. The same limit applies to production and tests.
+`type_body_length` has a 500-line warning and error threshold for class, struct,
+enum and actor bodies in production and tests. Its upstream counter also excludes
+blank and comment-only lines; extensions and protocols are outside the rule.
+Extract cohesive responsibilities instead of moving code into extensions to
+evade the limit. Test splits must retain every original method and assertion.
 It uses `opt_in_rules`
 for the three additional upstream checks and the native rules, rather than
 maintaining a second copy of the default set. Test overrides relax only force

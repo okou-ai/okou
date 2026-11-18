@@ -24,126 +24,6 @@ final class ModelResponseGate: Sendable {
 
 @MainActor
 final class ChatModelCommandTests: XCTestCase {
-  func testOnlyChangedNewChatSettingsCanBecomeTheDefault() async throws {
-    let writes = Mutex(0)
-    let fixture = ChatHTTPFixture { request in
-      if request.httpMethod == "PUT" {
-        writes.withLock { $0 += 1 }
-      }
-      return try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
-    }
-    let resource = ChatModelStore(
-      client: fixture.client, webURL: fixture.baseURL, didFail: { _ in })
-    let selection = ChatModelSelectionStore(models: resource)
-    let existing = ChatModelSelectionStore(models: resource, thread: thread())
-    defer {
-      selection.close()
-      existing.close()
-      resource.close()
-    }
-    XCTAssertFalse(selection.canSaveForFutureChats)
-    await selection.open()
-    await selection.saveForFutureChats()
-    XCTAssertFalse(selection.canSaveForFutureChats)
-
-    await existing.open()
-    XCTAssertEqual(existing.effectiveEffort, "max")
-    XCTAssertFalse(existing.canSaveForFutureChats)
-    await existing.saveForFutureChats()
-
-    await selection.choose(model: "claude-model")
-    XCTAssertTrue(selection.canSaveForFutureChats)
-    await selection.choose(effort: "high")
-    await selection.choose(model: "codex-model")
-    XCTAssertFalse(selection.canSaveForFutureChats)
-
-    await selection.setFast(true)
-    XCTAssertTrue(selection.canSaveForFutureChats)
-    await selection.setFast(false)
-    XCTAssertFalse(selection.canSaveForFutureChats)
-
-    // Pi displays medium for the saved ultra preference; choosing medium explicitly
-    // must still allow saving that distinct preference for future chats.
-    await selection.choose(effort: "medium")
-    XCTAssertTrue(selection.canSaveForFutureChats)
-    selection.resetNewChat()
-    XCTAssertFalse(selection.canSaveForFutureChats)
-    XCTAssertEqual(writes.withLock { $0 }, 0)
-  }
-
-  func testTheSheetSavesItsDraftedModelEffortAndSpeedAsOneWrite() async throws {
-    let writes = Mutex<[[String: String]]>([])
-    let fixture = ChatHTTPFixture { request in
-      if request.url!.path.hasSuffix("model-selection") {
-        let body = try XCTUnwrap(
-          JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any])
-        writes.withLock { $0.append(body.compactMapValues { $0 as? String }) }
-        return ChatHTTPResponse(status: 204, body: "")
-      }
-      return try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
-    }
-    let resource = ChatModelStore(
-      client: fixture.client, webURL: fixture.baseURL, didFail: { _ in })
-    let selection = ChatModelSelectionStore(models: resource, thread: thread())
-    defer {
-      selection.close()
-      resource.close()
-    }
-    await selection.open()
-    let configuration = try XCTUnwrap(resource.configuration)
-    let unchanged = await selection.apply(selection.selection)
-    XCTAssertTrue(unchanged)
-    XCTAssertTrue(writes.withLock { $0.isEmpty })
-
-    let faster = selection.selection.choosing(effort: "high", in: configuration)
-      .choosing(fast: true, in: configuration)
-    XCTAssertTrue(writes.withLock { $0.isEmpty })
-    let savedFaster = await selection.apply(faster)
-    XCTAssertTrue(savedFaster)
-    let switched = selection.selection.choosing(model: "claude-model")
-      .choosing(effort: "high", in: configuration)
-    let savedSwitch = await selection.apply(switched)
-    XCTAssertTrue(savedSwitch)
-    XCTAssertEqual(
-      writes.withLock { $0 },
-      [
-        ["model": "codex-model", "reasoningEffort": "high", "codexServiceTier": "fast"],
-        ["model": "claude-model", "reasoningEffort": "high"]
-      ])
-    // A level the model does not offer, and Fast on a model without it, leave the draft as it was.
-    XCTAssertEqual(switched.choosing(effort: "ultra", in: configuration), switched)
-    XCTAssertNil(
-      selection.selection.choosing(model: nil).choosing(fast: true, in: configuration).serviceTier)
-  }
-
-  func testDefaultSaveAvailabilityFollowsCrossDevicePreferenceChanges() async throws {
-    let changed = Mutex(false)
-    let fixture = ChatHTTPFixture { request in
-      var response = try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
-      if request.url?.path == "/api/user-model-preference", changed.withLock({ $0 }) {
-        response.body = response.body.replacingOccurrences(
-          of: "\"selectedModel\":\"codex-model\"", with: "\"selectedModel\":\"claude-model\"")
-      }
-      return response
-    }
-    let resource = ChatModelStore(
-      client: fixture.client, webURL: fixture.baseURL, didFail: { _ in })
-    let selection = ChatModelSelectionStore(models: resource)
-    defer {
-      selection.close()
-      resource.close()
-    }
-    await selection.open()
-    await selection.choose(model: "claude-model")
-    XCTAssertTrue(selection.canSaveForFutureChats)
-    changed.withLock { $0 = true }
-    await resource.refresh([.modelPreference])
-    XCTAssertEqual(selection.selection.model, "claude-model")
-    XCTAssertFalse(selection.canSaveForFutureChats)
-    changed.withLock { $0 = false }
-    await resource.refresh([.modelPreference])
-    XCTAssertTrue(selection.canSaveForFutureChats)
-  }
 
   func testClosedWorkspaceCannotPublishLateModelOrSubscriptionReads() async throws {
     let gate = ModelResponseGate()
@@ -206,32 +86,6 @@ final class ChatModelCommandTests: XCTestCase {
     workspace.newModelSelection.resetNewChat()
     XCTAssertEqual(workspace.newModelSelection.selection.model, "claude-model")
     XCTAssertEqual(quotaReads.withLock { $0 }, 0)
-  }
-
-  func testFailedDefaultSaveKeepsCurrentChoiceAndPersonalDefaultSeparate() async throws {
-    let fixture = ChatHTTPFixture { request in
-      if request.httpMethod == "PUT" {
-        return ChatHTTPResponse(
-          status: 503, body: "{\"error\":{\"message\":\"Preference save unavailable\"}}")
-      }
-      return try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
-    }
-    let resource = ChatModelStore(
-      client: fixture.client, webURL: fixture.baseURL, didFail: { _ in })
-    let selection = ChatModelSelectionStore(models: resource)
-    defer {
-      resource.close()
-      selection.close()
-    }
-    await selection.open()
-    await selection.choose(model: "claude-model")
-    await selection.saveForFutureChats()
-    XCTAssertNotNil(selection.error)
-    XCTAssertTrue(selection.canSaveForFutureChats)
-    XCTAssertEqual(selection.selection.model, "claude-model")
-    XCTAssertEqual(resource.configuration?.defaultSelection.model, "codex-model")
-    selection.resetNewChat()
-    XCTAssertEqual(selection.selection.model, "codex-model")
   }
 
   func testFirstMessageKeepsItsChoiceWhenDefaultsChangeDuringCreation() async throws {
@@ -393,90 +247,6 @@ final class ChatModelCommandTests: XCTestCase {
     XCTAssertNotNil(selection.error, "The readback confirms the requested change was not saved")
   }
 
-  func testNewChatKeepsEachModelsEffortAndSavesDefaultOnlyOnExplicitAction() async throws {
-    let writes = Mutex<[URLRequest]>([])
-    let reads = Mutex<[String: Int]>([:])
-    let savedPreference = Mutex<String?>(nil)
-    let fixture = ChatHTTPFixture { request in
-      if request.httpMethod == "PUT" {
-        writes.withLock { $0.append(request) }
-        let body = try XCTUnwrap(
-          JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any])
-        XCTAssertEqual(body["selectedModel"] as? String, "codex-model")
-        XCTAssertEqual(body["serviceTier"] as? String, "priority")
-        XCTAssertEqual((body["modelSettingsPatch"] as? [String: String])?["effort"], "max")
-        let preference = ModelHTTPFixtures.preference.replacingOccurrences(
-          of: "\"ultra\"", with: "\"max\""
-        ).replacingOccurrences(of: "\"serviceTier\":null", with: "\"serviceTier\":\"priority\"")
-        savedPreference.withLock { $0 = preference }
-        return ChatHTTPResponse(body: preference)
-      }
-      reads.withLock { $0[request.url!.path, default: 0] += 1 }
-      if request.url?.path == "/api/user-model-preference",
-        let saved = savedPreference.withLock({ $0 })
-      {
-        return ChatHTTPResponse(body: saved)
-      }
-      return try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
-    }
-    let resource = ChatModelStore(
-      client: fixture.client, webURL: fixture.baseURL, didFail: { _ in })
-    let selection = ChatModelSelectionStore(models: resource)
-    defer {
-      resource.close()
-      selection.close()
-    }
-    await selection.open()
-    XCTAssertEqual(selection.effectiveEffort, "medium")
-    await selection.choose(effort: "max")
-    await selection.setFast(true)
-    await selection.choose(model: "claude-model")
-    XCTAssertEqual(selection.effectiveEffort, "extra")
-    await selection.choose(effort: "high")
-    await selection.choose(model: "codex-model")
-    XCTAssertEqual(selection.effectiveEffort, "max")
-    await selection.setFast(true)
-    XCTAssertEqual(selection.selection.modelSettings["claude-model"]?.effort, "high")
-    XCTAssertTrue(writes.withLock { $0.isEmpty })
-    await selection.open()
-    XCTAssertTrue(writes.withLock { $0.isEmpty })
-    var expectedReads = reads.withLock { $0 }
-    expectedReads["/api/user-model-preference", default: 0] += 1
-    await selection.saveForFutureChats()
-    XCTAssertEqual(writes.withLock { $0.count }, 1)
-    XCTAssertFalse(selection.canSaveForFutureChats)
-    selection.resetNewChat()
-    XCTAssertEqual(selection.selection.serviceTier, "priority")
-    XCTAssertEqual(selection.effectiveEffort, "max")
-    XCTAssertEqual(reads.withLock { $0 }, expectedReads)
-  }
-
-  func testPlanRestrictionsAndMissingRoutesStayVisibleButCannotSend() async throws {
-    let fixture = ChatHTTPFixture { request in
-      var response = try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
-      if request.url?.path == "/api/run-models" {
-        response.body = response.body.replacingOccurrences(
-          of: "\"availability\":\"available\",\"providerType\":\"codex-oauth-token\"",
-          with: "\"availability\":\"plan_restricted\",\"providerType\":\"codex-oauth-token\"")
-      }
-      return response
-    }
-    let resource = ChatModelStore(
-      client: fixture.client, webURL: fixture.baseURL, didFail: { _ in })
-    let selection = ChatModelSelectionStore(models: resource)
-    defer {
-      resource.close()
-      selection.close()
-    }
-    await selection.open()
-    XCTAssertEqual(selection.selection.model, "codex-model")
-    XCTAssertFalse(selection.canSend)
-    XCTAssertTrue(resource.configuration?.efforts(for: selection.selection).isEmpty == true)
-    await selection.choose(model: nil)
-    XCTAssertNil(selection.selection.model)
-    XCTAssertTrue(selection.canSend)
-  }
-
   func testRemoteInvalidationDuringSaveReadsAgainAfterItsStaleConfirmation() async throws {
     let gate = ModelResponseGate()
     let confirmationStarted = expectation(description: "Confirmation captured before remote update")
@@ -612,8 +382,246 @@ final class ChatModelCommandTests: XCTestCase {
       XCTAssertEqual(options["codexServiceTier"], "fast")
     }
   }
+}
 
-  private func thread() -> ChatThread {
+@MainActor
+final class ChatModelPreferenceTests: XCTestCase {
+  func testOnlyChangedNewChatSettingsCanBecomeTheDefault() async throws {
+    let writes = Mutex(0)
+    let fixture = ChatHTTPFixture { request in
+      if request.httpMethod == "PUT" {
+        writes.withLock { $0 += 1 }
+      }
+      return try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
+    }
+    let resource = ChatModelStore(
+      client: fixture.client, webURL: fixture.baseURL, didFail: { _ in })
+    let selection = ChatModelSelectionStore(models: resource)
+    let existing = ChatModelSelectionStore(models: resource, thread: thread())
+    defer {
+      selection.close()
+      existing.close()
+      resource.close()
+    }
+    XCTAssertFalse(selection.canSaveForFutureChats)
+    await selection.open()
+    await selection.saveForFutureChats()
+    XCTAssertFalse(selection.canSaveForFutureChats)
+
+    await existing.open()
+    XCTAssertEqual(existing.effectiveEffort, "max")
+    XCTAssertFalse(existing.canSaveForFutureChats)
+    await existing.saveForFutureChats()
+
+    await selection.choose(model: "claude-model")
+    XCTAssertTrue(selection.canSaveForFutureChats)
+    await selection.choose(effort: "high")
+    await selection.choose(model: "codex-model")
+    XCTAssertFalse(selection.canSaveForFutureChats)
+
+    await selection.setFast(true)
+    XCTAssertTrue(selection.canSaveForFutureChats)
+    await selection.setFast(false)
+    XCTAssertFalse(selection.canSaveForFutureChats)
+
+    // Pi displays medium for the saved ultra preference; choosing medium explicitly
+    // must still allow saving that distinct preference for future chats.
+    await selection.choose(effort: "medium")
+    XCTAssertTrue(selection.canSaveForFutureChats)
+    selection.resetNewChat()
+    XCTAssertFalse(selection.canSaveForFutureChats)
+    XCTAssertEqual(writes.withLock { $0 }, 0)
+  }
+
+  func testTheSheetSavesItsDraftedModelEffortAndSpeedAsOneWrite() async throws {
+    let writes = Mutex<[[String: String]]>([])
+    let fixture = ChatHTTPFixture { request in
+      if request.url!.path.hasSuffix("model-selection") {
+        let body = try XCTUnwrap(
+          JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any])
+        writes.withLock { $0.append(body.compactMapValues { $0 as? String }) }
+        return ChatHTTPResponse(status: 204, body: "")
+      }
+      return try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
+    }
+    let resource = ChatModelStore(
+      client: fixture.client, webURL: fixture.baseURL, didFail: { _ in })
+    let selection = ChatModelSelectionStore(models: resource, thread: thread())
+    defer {
+      selection.close()
+      resource.close()
+    }
+    await selection.open()
+    let configuration = try XCTUnwrap(resource.configuration)
+    let unchanged = await selection.apply(selection.selection)
+    XCTAssertTrue(unchanged)
+    XCTAssertTrue(writes.withLock { $0.isEmpty })
+
+    let faster = selection.selection.choosing(effort: "high", in: configuration)
+      .choosing(fast: true, in: configuration)
+    XCTAssertTrue(writes.withLock { $0.isEmpty })
+    let savedFaster = await selection.apply(faster)
+    XCTAssertTrue(savedFaster)
+    let switched = selection.selection.choosing(model: "claude-model")
+      .choosing(effort: "high", in: configuration)
+    let savedSwitch = await selection.apply(switched)
+    XCTAssertTrue(savedSwitch)
+    XCTAssertEqual(
+      writes.withLock { $0 },
+      [
+        ["model": "codex-model", "reasoningEffort": "high", "codexServiceTier": "fast"],
+        ["model": "claude-model", "reasoningEffort": "high"]
+      ])
+    // A level the model does not offer, and Fast on a model without it, leave the draft as it was.
+    XCTAssertEqual(switched.choosing(effort: "ultra", in: configuration), switched)
+    XCTAssertNil(
+      selection.selection.choosing(model: nil).choosing(fast: true, in: configuration).serviceTier)
+  }
+
+  func testDefaultSaveAvailabilityFollowsCrossDevicePreferenceChanges() async throws {
+    let changed = Mutex(false)
+    let fixture = ChatHTTPFixture { request in
+      var response = try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
+      if request.url?.path == "/api/user-model-preference", changed.withLock({ $0 }) {
+        response.body = response.body.replacingOccurrences(
+          of: "\"selectedModel\":\"codex-model\"", with: "\"selectedModel\":\"claude-model\"")
+      }
+      return response
+    }
+    let resource = ChatModelStore(
+      client: fixture.client, webURL: fixture.baseURL, didFail: { _ in })
+    let selection = ChatModelSelectionStore(models: resource)
+    defer {
+      selection.close()
+      resource.close()
+    }
+    await selection.open()
+    await selection.choose(model: "claude-model")
+    XCTAssertTrue(selection.canSaveForFutureChats)
+    changed.withLock { $0 = true }
+    await resource.refresh([.modelPreference])
+    XCTAssertEqual(selection.selection.model, "claude-model")
+    XCTAssertFalse(selection.canSaveForFutureChats)
+    changed.withLock { $0 = false }
+    await resource.refresh([.modelPreference])
+    XCTAssertTrue(selection.canSaveForFutureChats)
+  }
+
+  func testFailedDefaultSaveKeepsCurrentChoiceAndPersonalDefaultSeparate() async throws {
+    let fixture = ChatHTTPFixture { request in
+      if request.httpMethod == "PUT" {
+        return ChatHTTPResponse(
+          status: 503, body: "{\"error\":{\"message\":\"Preference save unavailable\"}}")
+      }
+      return try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
+    }
+    let resource = ChatModelStore(
+      client: fixture.client, webURL: fixture.baseURL, didFail: { _ in })
+    let selection = ChatModelSelectionStore(models: resource)
+    defer {
+      resource.close()
+      selection.close()
+    }
+    await selection.open()
+    await selection.choose(model: "claude-model")
+    await selection.saveForFutureChats()
+    XCTAssertNotNil(selection.error)
+    XCTAssertTrue(selection.canSaveForFutureChats)
+    XCTAssertEqual(selection.selection.model, "claude-model")
+    XCTAssertEqual(resource.configuration?.defaultSelection.model, "codex-model")
+    selection.resetNewChat()
+    XCTAssertEqual(selection.selection.model, "codex-model")
+  }
+
+  func testNewChatKeepsEachModelsEffortAndSavesDefaultOnlyOnExplicitAction() async throws {
+    let writes = Mutex<[URLRequest]>([])
+    let reads = Mutex<[String: Int]>([:])
+    let savedPreference = Mutex<String?>(nil)
+    let fixture = ChatHTTPFixture { request in
+      if request.httpMethod == "PUT" {
+        writes.withLock { $0.append(request) }
+        let body = try XCTUnwrap(
+          JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any])
+        XCTAssertEqual(body["selectedModel"] as? String, "codex-model")
+        XCTAssertEqual(body["serviceTier"] as? String, "priority")
+        XCTAssertEqual((body["modelSettingsPatch"] as? [String: String])?["effort"], "max")
+        let preference = ModelHTTPFixtures.preference.replacingOccurrences(
+          of: "\"ultra\"", with: "\"max\""
+        ).replacingOccurrences(of: "\"serviceTier\":null", with: "\"serviceTier\":\"priority\"")
+        savedPreference.withLock { $0 = preference }
+        return ChatHTTPResponse(body: preference)
+      }
+      reads.withLock { $0[request.url!.path, default: 0] += 1 }
+      if request.url?.path == "/api/user-model-preference",
+        let saved = savedPreference.withLock({ $0 })
+      {
+        return ChatHTTPResponse(body: saved)
+      }
+      return try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
+    }
+    let resource = ChatModelStore(
+      client: fixture.client, webURL: fixture.baseURL, didFail: { _ in })
+    let selection = ChatModelSelectionStore(models: resource)
+    defer {
+      resource.close()
+      selection.close()
+    }
+    await selection.open()
+    XCTAssertEqual(selection.effectiveEffort, "medium")
+    await selection.choose(effort: "max")
+    await selection.setFast(true)
+    await selection.choose(model: "claude-model")
+    XCTAssertEqual(selection.effectiveEffort, "extra")
+    await selection.choose(effort: "high")
+    await selection.choose(model: "codex-model")
+    XCTAssertEqual(selection.effectiveEffort, "max")
+    await selection.setFast(true)
+    XCTAssertEqual(selection.selection.modelSettings["claude-model"]?.effort, "high")
+    XCTAssertTrue(writes.withLock { $0.isEmpty })
+    await selection.open()
+    XCTAssertTrue(writes.withLock { $0.isEmpty })
+    var expectedReads = reads.withLock { $0 }
+    expectedReads["/api/user-model-preference", default: 0] += 1
+    await selection.saveForFutureChats()
+    XCTAssertEqual(writes.withLock { $0.count }, 1)
+    XCTAssertFalse(selection.canSaveForFutureChats)
+    selection.resetNewChat()
+    XCTAssertEqual(selection.selection.serviceTier, "priority")
+    XCTAssertEqual(selection.effectiveEffort, "max")
+    XCTAssertEqual(reads.withLock { $0 }, expectedReads)
+  }
+
+  func testPlanRestrictionsAndMissingRoutesStayVisibleButCannotSend() async throws {
+    let fixture = ChatHTTPFixture { request in
+      var response = try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
+      if request.url?.path == "/api/run-models" {
+        response.body = response.body.replacingOccurrences(
+          of: "\"availability\":\"available\",\"providerType\":\"codex-oauth-token\"",
+          with: "\"availability\":\"plan_restricted\",\"providerType\":\"codex-oauth-token\"")
+      }
+      return response
+    }
+    let resource = ChatModelStore(
+      client: fixture.client, webURL: fixture.baseURL, didFail: { _ in })
+    let selection = ChatModelSelectionStore(models: resource)
+    defer {
+      resource.close()
+      selection.close()
+    }
+    await selection.open()
+    XCTAssertEqual(selection.selection.model, "codex-model")
+    XCTAssertFalse(selection.canSend)
+    XCTAssertTrue(resource.configuration?.efforts(for: selection.selection).isEmpty == true)
+    await selection.choose(model: nil)
+    XCTAssertNil(selection.selection.model)
+    XCTAssertTrue(selection.canSend)
+  }
+}
+
+@MainActor
+extension XCTestCase {
+
+  fileprivate func thread() -> ChatThread {
     ChatThread(
       id: ModelHTTPFixtures.threadID, agentID: ModelHTTPFixtures.agentID,
       title: "Example", selectedModel: "codex-model", createdAt: Date(), updatedAt: Date(),

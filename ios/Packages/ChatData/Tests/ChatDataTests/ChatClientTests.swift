@@ -23,30 +23,6 @@ final class ChatClientTests: XCTestCase {
     }
   }
 
-  func testMissingThreadSnapshotDoesNotBecomeEmptyHistory() async throws {
-    let tailReads = Mutex(0)
-    let fixture = ChatHTTPFixture { request in
-      switch request.url?.path {
-      case "/api/chat-threads/\(fixtureThread)/event-snapshot":
-        return ChatHTTPResponse(
-          status: 404,
-          body: "{\"error\":{\"code\":\"CHAT_THREAD_NOT_FOUND\",\"message\":\"Chat not found\"}}")
-      case "/api/chat-threads/\(fixtureThread)/event-rows":
-        tailReads.withLock { $0 += 1 }
-        throw URLError(.unsupportedURL)
-      default: throw URLError(.unsupportedURL)
-      }
-    }
-
-    do {
-      _ = try await ChatSync(client: fixture.client).history(threadID: fixtureThread)
-      XCTFail("A missing thread must not render as empty history")
-    } catch let error as APIClientError {
-      XCTAssertEqual(error.statusCode, 404)
-    }
-    XCTAssertEqual(tailReads.withLock { $0 }, 0)
-  }
-
   func testListReplaysRenameDeletionAndNewThreadAfterSnapshot() async throws {
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
@@ -290,6 +266,94 @@ final class ChatClientTests: XCTestCase {
     XCTAssertEqual(result.eventIDs, Set((1...101).map(eventIdentity)))
   }
 
+  func testOldHistoryPreservesStructuredAgentMentionsAndSourceContext() async throws {
+    let mixedMessage = """
+      {"userMessage":{"version":1,"parts":[
+        {"type":"text","text":"Ask"},
+        {"type":"agent","agentId":"\(fixtureAgent)","nameSnapshot":"Release Scout"},
+        {"type":"chat_thread","threadId":"\(fixtureThread)","titleSnapshot":"Release chat"},
+        {"type":"source","kind":"agent","runId":"\(fixtureRun)","threadId":"\(fixtureThread)","agentId":"\(fixtureAgent)","titleSnapshot":"Earlier run","href":"https://app.okou.ai/chats/\(fixtureThread)"},
+        {"type":"file","fileId":"historical-file","filenameSnapshot":"plan.md","contentType":"text/markdown"}
+      ]}}
+      """.replacingOccurrences(of: "\n", with: "")
+    let mentionOnlyMessage = """
+      {"userMessage":{"version":1,"parts":[{"type":"agent","agentId":"\(fixtureAgent)","nameSnapshot":"Planner"}]}}
+      """
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/chat-threads/\(fixtureThread)/event-snapshot":
+        return ChatHTTPResponse(
+          body: """
+            {"url":"https://\(request.url!.host!)/snapshot","expiresInSeconds":60,"lastEventId":"\(eventIdentity(3))","lastSeqId":3}
+            """)
+      case "/snapshot":
+        let rows = [
+          eventJSON(seq: 1, type: "input.prompt", payload: mixedMessage),
+          eventJSON(seq: 2, type: "input.prompt", payload: mentionOnlyMessage),
+          eventJSON(seq: 3, type: "run.completed")
+        ]
+        return ChatHTTPResponse(body: rows.joined(separator: "\n") + "\n")
+      case "/api/chat-threads/\(fixtureThread)/event-rows":
+        return ChatHTTPResponse(
+          body: """
+            {"rows":[],"cursor":{"lastEventId":"\(eventIdentity(3))","lastSeqId":3},"hasMore":false}
+            """)
+      case "/api/chat-threads/\(fixtureThread)":
+        return ChatHTTPResponse(body: "{\"lastReadAt\":null,\"cancellationRecoveryPending\":false}")
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+
+    let history = try await ChatSync(client: fixture.client).history(threadID: fixtureThread)
+
+    XCTAssertEqual(
+      history.messages.map(\.text),
+      [
+        "AskRelease ScoutRelease chat",
+        "Planner"
+      ])
+    XCTAssertEqual(history.messages.map(\.role), [.user, .user])
+    XCTAssertEqual(history.messages.first?.userMessage?.annotation?.kind, "agent")
+    XCTAssertEqual(history.messages.first?.userMessage?.annotation?.titleSnapshot, "Earlier run")
+    XCTAssertEqual(history.messages.first?.userMessage?.annotation?.runId, fixtureRun)
+    XCTAssertEqual(history.messages.first?.userMessage?.bodyParts[1].agentId, fixtureAgent)
+    XCTAssertEqual(
+      history.messages.first?.attachments,
+      [
+        ChatMessageAttachment(
+          id: "historical-file", filename: "plan.md", contentType: "text/markdown")
+      ])
+  }
+
+}
+
+@MainActor
+final class ChatCursorRecoveryTests: XCTestCase {
+
+  func testMissingThreadSnapshotDoesNotBecomeEmptyHistory() async throws {
+    let tailReads = Mutex(0)
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/chat-threads/\(fixtureThread)/event-snapshot":
+        return ChatHTTPResponse(
+          status: 404,
+          body: "{\"error\":{\"code\":\"CHAT_THREAD_NOT_FOUND\",\"message\":\"Chat not found\"}}")
+      case "/api/chat-threads/\(fixtureThread)/event-rows":
+        tailReads.withLock { $0 += 1 }
+        throw URLError(.unsupportedURL)
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+
+    do {
+      _ = try await ChatSync(client: fixture.client).history(threadID: fixtureThread)
+      XCTFail("A missing thread must not render as empty history")
+    } catch let error as APIClientError {
+      XCTAssertEqual(error.statusCode, 404)
+    }
+    XCTAssertEqual(tailReads.withLock { $0 }, 0)
+  }
+
   func testExpiredListAndHistoryCursorsReplacePersistedCacheAfterRestart() async throws {
     let directory = try temporaryChatCacheDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -386,19 +450,6 @@ final class ChatClientTests: XCTestCase {
     XCTAssertTrue(paths.contains("/api/chat-threads/events?20"))
     XCTAssertTrue(paths.contains("/api/chat-threads/\(fixtureThread)/event-rows?1"))
     XCTAssertTrue(paths.contains("/api/chat-threads/\(fixtureThread)/event-rows?3"))
-  }
-
-  nonisolated private static func historySnapshot(generation current: Int) -> ChatHTTPResponse {
-    if current == 1 {
-      return ChatHTTPResponse(
-        body: eventJSON(seq: 1, type: "input.prompt", payload: userPayload("Old question"))
-          + "\n")
-    }
-    return ChatHTTPResponse(
-      body: [
-        eventJSON(seq: 1, type: "input.prompt", payload: userPayload("New question")),
-        eventJSON(seq: 3, type: "output.message", payload: "{\"content\":\"New answer\"}")
-      ].joined(separator: "\n") + "\n")
   }
 
   func testExpiredSecondListPageRebasesWithoutSavingAbandonedTail() async throws {
@@ -542,63 +593,21 @@ final class ChatClientTests: XCTestCase {
     XCTAssertNil(state.withLock { $0.snapshotAuthorization })
   }
 
-  func testOldHistoryPreservesStructuredAgentMentionsAndSourceContext() async throws {
-    let mixedMessage = """
-      {"userMessage":{"version":1,"parts":[
-        {"type":"text","text":"Ask"},
-        {"type":"agent","agentId":"\(fixtureAgent)","nameSnapshot":"Release Scout"},
-        {"type":"chat_thread","threadId":"\(fixtureThread)","titleSnapshot":"Release chat"},
-        {"type":"source","kind":"agent","runId":"\(fixtureRun)","threadId":"\(fixtureThread)","agentId":"\(fixtureAgent)","titleSnapshot":"Earlier run","href":"https://app.okou.ai/chats/\(fixtureThread)"},
-        {"type":"file","fileId":"historical-file","filenameSnapshot":"plan.md","contentType":"text/markdown"}
-      ]}}
-      """.replacingOccurrences(of: "\n", with: "")
-    let mentionOnlyMessage = """
-      {"userMessage":{"version":1,"parts":[{"type":"agent","agentId":"\(fixtureAgent)","nameSnapshot":"Planner"}]}}
-      """
-    let fixture = ChatHTTPFixture { request in
-      switch request.url?.path {
-      case "/api/chat-threads/\(fixtureThread)/event-snapshot":
-        return ChatHTTPResponse(
-          body: """
-            {"url":"https://\(request.url!.host!)/snapshot","expiresInSeconds":60,"lastEventId":"\(eventIdentity(3))","lastSeqId":3}
-            """)
-      case "/snapshot":
-        let rows = [
-          eventJSON(seq: 1, type: "input.prompt", payload: mixedMessage),
-          eventJSON(seq: 2, type: "input.prompt", payload: mentionOnlyMessage),
-          eventJSON(seq: 3, type: "run.completed")
-        ]
-        return ChatHTTPResponse(body: rows.joined(separator: "\n") + "\n")
-      case "/api/chat-threads/\(fixtureThread)/event-rows":
-        return ChatHTTPResponse(
-          body: """
-            {"rows":[],"cursor":{"lastEventId":"\(eventIdentity(3))","lastSeqId":3},"hasMore":false}
-            """)
-      case "/api/chat-threads/\(fixtureThread)":
-        return ChatHTTPResponse(body: "{\"lastReadAt\":null,\"cancellationRecoveryPending\":false}")
-      default: throw URLError(.unsupportedURL)
-      }
+}
+
+@MainActor
+extension XCTestCase {
+
+  nonisolated private static func historySnapshot(generation current: Int) -> ChatHTTPResponse {
+    if current == 1 {
+      return ChatHTTPResponse(
+        body: eventJSON(seq: 1, type: "input.prompt", payload: userPayload("Old question"))
+          + "\n")
     }
-
-    let history = try await ChatSync(client: fixture.client).history(threadID: fixtureThread)
-
-    XCTAssertEqual(
-      history.messages.map(\.text),
-      [
-        "AskRelease ScoutRelease chat",
-        "Planner"
-      ])
-    XCTAssertEqual(history.messages.map(\.role), [.user, .user])
-    XCTAssertEqual(history.messages.first?.userMessage?.annotation?.kind, "agent")
-    XCTAssertEqual(history.messages.first?.userMessage?.annotation?.titleSnapshot, "Earlier run")
-    XCTAssertEqual(history.messages.first?.userMessage?.annotation?.runId, fixtureRun)
-    XCTAssertEqual(history.messages.first?.userMessage?.bodyParts[1].agentId, fixtureAgent)
-    XCTAssertEqual(
-      history.messages.first?.attachments,
-      [
-        ChatMessageAttachment(
-          id: "historical-file", filename: "plan.md", contentType: "text/markdown")
-      ])
+    return ChatHTTPResponse(
+      body: [
+        eventJSON(seq: 1, type: "input.prompt", payload: userPayload("New question")),
+        eventJSON(seq: 3, type: "output.message", payload: "{\"content\":\"New answer\"}")
+      ].joined(separator: "\n") + "\n")
   }
-
 }

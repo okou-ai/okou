@@ -186,6 +186,52 @@ for path in "${file_length_paths[@]}"; do
   rm "$fixture/$path/FunctionLengthBoundary.swift"
 done
 
+# Type bodies share the same hard limit in every production and test target.
+# Exercise every declaration kind checked by the upstream rule.
+for path in "${file_length_paths[@]}"; do
+  python3 - "$fixture/$path" <<'PY'
+import sys
+from pathlib import Path
+
+for kind in ("class", "struct", "enum", "actor"):
+    name = "TypeLengthBoundary" + kind.title()
+    header = ("final " if kind == "class" else "") + kind + " " + name
+    members = [
+        (f"  case value{index}" if kind == "enum" else f"  let value{index} = 0")
+        for index in range(500)
+    ]
+    Path(sys.argv[1], name + ".swift").write_text(
+        header + " {\n\n  // Ignored by the body length rule.\n"
+        + "\n".join(members) + "\n}\n"
+    )
+PY
+done
+if ! run_lint; then
+  cat "$test_root/lint.log" >&2
+  exit 1
+fi
+for path in "${file_length_paths[@]}"; do
+  python3 - "$fixture/$path" <<'PY'
+import sys
+from pathlib import Path
+
+for kind in ("class", "struct", "enum", "actor"):
+    source = Path(sys.argv[1], "TypeLengthBoundary" + kind.title() + ".swift")
+    member = "  case value500" if kind == "enum" else "  let value500 = 0"
+    source.write_text(source.read_text().removesuffix("}\n") + member + "\n}\n")
+PY
+done
+if run_lint; then
+  echo 'A type above 500 body lines passed strict lint.' >&2
+  exit 1
+fi
+for path in "${file_length_paths[@]}"; do
+  for kind in Class Struct Enum Actor; do
+    grep -F "$path/TypeLengthBoundary$kind.swift" "$test_root/lint.log" | grep -F '(type_body_length)' >/dev/null
+    rm "$fixture/$path/TypeLengthBoundary$kind.swift"
+  done
+done
+
 # The production-only state rule must be enabled by the real root config.
 for path in "${production_paths[@]}"; do
   printf 'var sharedState = 0\n' > "$fixture/$path/GlobalState.swift"

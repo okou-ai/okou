@@ -9,6 +9,20 @@ import Observation
 @MainActor @Observable
 final class ThreadListStore {
   private let lifecycleTasks: LifecycleTasks
+  @ObservationIgnored private lazy var actions = ThreadListMutations(
+    owner: self, client: client, commands: commands, lifecycleTasks: lifecycleTasks,
+    readThreads: { [weak self] in self?.threads ?? [] },
+    isClosed: { [weak self] in self?.closed != false },
+    isBlocked: { [weak self] in self?.blocked != false },
+    setBlocked: { [weak self] in self?.blocked = $0 },
+    isMarkingRead: { [weak self] in self?.markingAgentRead != false },
+    canMute: { [weak self] in self?.canMute($0) == true },
+    didProject: { [weak self] in self?.publishThreads($0) },
+    refreshList: { [weak self] wait, indicators in
+      _ = await self?.refresh(waitForCurrent: wait, includingIndicators: indicators)
+    },
+    didMarkRead: { [weak self] in self?.markRead($0, through: $1) },
+    advanceReadRevision: { [weak self] in self?.readRevision += 1 }, didFail: didFail)
   @ObservationIgnored private lazy var navigation = ThreadListNavigation(
     resources: resources, sync: sync, lifecycleTasks: lifecycleTasks,
     didLoadAgents: didLoadAgents, didFail: didFail,
@@ -36,12 +50,14 @@ final class ThreadListStore {
   private(set) var unreadAgentIDs: Set<String> = []
   private(set) var markingAgentRead = false
   private var readRevision = 0
-  private(set) var actionError: String?
+  var actionError: String? { actions.actionError }
+
   private var indicatorsError: String?
   // Standalone indicator failures retain their own policy; list errors live on listValue.
   var syncError: String? { indicatorsError }
   private(set) var hasLoadedThreads = false
-  private(set) var updatingThreads: Set<String> = []
+  var updatingThreads: Set<String> { actions.updatingThreads }
+
   private let client: APIClient
   private let sync: ChatSync
   private let resources: WorkspaceResources
@@ -70,9 +86,6 @@ final class ThreadListStore {
   private var listReadID: UUID?
   private var indicatorsTask: Task<Void, Never>?
   private var updateTasks: [String: Task<Void, Never>] = [:]
-  private var pinTasks: [String: Task<Void, Never>] = [:]
-  private var lastPinIDs: [String: String] = [:]
-  private var optimisticChanges: [(id: String, change: ChatThreadChange)] = []
   private(set) var renameRequest: RenameRequest?
   private(set) var isSavingRename = false
   var renameTitle = ""
@@ -126,13 +139,7 @@ final class ThreadListStore {
       revision == creationRevision,
       !hasLoadedThreads || cached.cursor.seqID > appliedThreadSequence
     {
-      let previous = Dictionary(uniqueKeysWithValues: threads.map { ($0.id, $0) })
-      let restored = cached.threads.map { thread in
-        var updated = thread
-        updated.indicator = previous[thread.id]?.indicator
-        updated.unreadAt = previous[thread.id]?.unreadAt
-        return updated
-      }
+      let restored = ThreadListReadProjection.restoring(cached.threads, preserving: threads)
       appliedThreadSequence = cached.cursor.seqID
       projectThreads(restored)
       restoredThreads = true
@@ -145,16 +152,7 @@ final class ThreadListStore {
     else { return }
     appliedIndicatorsRevision = cached.revision
     unreadAgentIDs = cached.unreadAgentIDs
-    threads = threads.map { thread in
-      var updated = thread
-      updated.unreadAt = thread.isMuted ? nil : cached.unreadAt[thread.id]
-      if updated.unreadAt != nil {
-        updated.indicator = .unread
-      } else if updated.indicator == .unread {
-        updated.indicator = nil
-      }
-      return updated
-    }
+    threads = ThreadListReadProjection.readState(threads, unreadAt: cached.unreadAt)
     if hasLoadedThreads { didRefresh(threads) }
   }
 
@@ -194,7 +192,7 @@ final class ThreadListStore {
             try Task.checkCancellation()
             try signal.checkCancellation()
             guard !closed else { throw CancellationError() }
-            settleOptimisticChanges(eventIDs: response.eventIDs)
+            actions.settleOptimisticChanges(eventIDs: response.eventIDs)
             // A read started before creation cannot remove its acknowledged thread.
             guard creation == creationRevision else {
               refreshAgain = true
@@ -314,9 +312,9 @@ final class ThreadListStore {
     else {
       return false
     }
-    updatingThreads.insert(thread.id)
+    actions.beginUpdating(thread.id)
     readRevision += 1
-    defer { updatingThreads.remove(thread.id) }
+    defer { actions.finishUpdating(thread.id) }
     var succeeded = false
     let task = Task { [weak self] in
       guard let self else { return }
@@ -333,7 +331,7 @@ final class ThreadListStore {
         }
         try Task.checkCancellation()
         readRevision += 1
-        actionError = nil
+        actions.dismissError()
         succeeded = true
         await refreshIndicators()
       } catch is CancellationError {
@@ -352,7 +350,7 @@ final class ThreadListStore {
     markingAgentRead = true
     readRevision += 1
     defer { markingAgentRead = false }
-    await updateThread("agent-read", includingIndicators: true) { [self, commands] in
+    await actions.updateThread("agent-read", includingIndicators: true) { [self, commands] in
       try await commands.markAgentRead(agentID: agentID)
       try Task.checkCancellation()
       didChangeReadState()
@@ -431,60 +429,11 @@ final class ThreadListStore {
   }
 
   func canPin(_ id: String) -> Bool {
-    !closed && !blocked && (!updatingThreads.contains(id) || lastPinIDs[id] != nil)
+    actions.canPin(id)
   }
 
   func setPinned(_ thread: ChatThread, pinned: Bool) async {
-    guard canPin(thread.id), !Task.isCancelled,
-      let current = threads.first(where: { $0.id == thread.id }),
-      (current.pinnedAt != nil) != pinned
-    else { return }
-    // Match PostgreSQL's canonical UUID text in the persistent event stream.
-    let eventID = UUID().uuidString.lowercased()
-    let pinOrder: String?
-    do {
-      pinOrder =
-        pinned
-        ? try ChatThreadReplay.firstPinOrder(
-          threads.filter { $0.agentID == current.agentID && $0.id != current.id }) : nil
-    } catch {
-      show(error)
-      return
-    }
-    optimisticChanges.append(
-      (
-        eventID,
-        ChatThreadChange(
-          kind: pinned ? .pinned : .unpinned, chatThreadId: current.id,
-          agentId: current.agentID, pinOrder: pinOrder, createdAt: .now)
-      ))
-    projectThreads(threads)
-    let previous = lastPinIDs[current.id].flatMap { pinTasks[$0] }
-    let task = Task { [weak self] in
-      guard let self else { return }
-      defer {
-        pinTasks[eventID] = nil
-        if lastPinIDs[current.id] == eventID {
-          lastPinIDs[current.id] = nil
-          updatingThreads.remove(current.id)
-        }
-      }
-      await previous?.value
-      guard !closed, !blocked, !Task.isCancelled else { return }
-      do {
-        try await commands.setPinned(
-          threadID: current.id, pinned: pinned, eventID: eventID, pinOrder: pinOrder)
-        try Task.checkCancellation()
-        guard !closed else { return }
-        await refresh(includingIndicators: false)
-      } catch is CancellationError {
-      } catch { show(error) }
-    }
-    lifecycleTasks.track(task)
-    pinTasks[eventID] = task
-    lastPinIDs[current.id] = eventID
-    updatingThreads.insert(current.id)
-    await task.value
+    await actions.setPinned(thread, pinned: pinned)
   }
 
   /// Places a pinned chat beside another pin listed with it, as the PWA's Move up / Move down.
@@ -494,65 +443,17 @@ final class ThreadListStore {
     _ id: String, beside targetID: String, placement: ChatThreadReplay.PinPlacement,
     projectID: String? = nil
   ) async {
-    guard canUpdate(id), !Task.isCancelled,
-      let current = threads.first(where: { $0.id == id }), current.pinnedAt != nil
-    else { return }
-    let ranked = threads.filter { thread in
-      if let projectID { return thread.projectId == projectID }
-      return thread.agentID == current.agentID
-    }
-    let updates: [ChatThreadReplay.PinOrderUpdate]
-    do {
-      updates = try ChatThreadReplay.movePinOrder(
-        ranked, threadID: id, targetID: targetID, placement: placement)
-    } catch {
-      show(error)
-      return
-    }
-    guard !updates.isEmpty else { return }
-    let agents = Dictionary(uniqueKeysWithValues: ranked.map { ($0.id, $0.agentID) })
-    // Match PostgreSQL's canonical UUID text in the persistent event stream.
-    let writes = updates.map { (eventID: UUID().uuidString.lowercased(), update: $0) }
-    for write in writes {
-      optimisticChanges.append(
-        (
-          write.eventID,
-          // A re-ranked tie keeps its own Agent.
-          ChatThreadChange(
-            kind: .sortTouched, chatThreadId: write.update.threadID,
-            agentId: agents[write.update.threadID] ?? current.agentID,
-            pinOrder: write.update.pinOrder, createdAt: .now)
-        ))
-    }
-    projectThreads(threads)
-    await updateThread(id) { [commands] in
-      for write in writes {
-        try await commands.setPinOrder(
-          threadID: write.update.threadID, pinOrder: write.update.pinOrder,
-          eventID: write.eventID)
-      }
-    }
+    await actions.movePinned(id, beside: targetID, placement: placement, projectID: projectID)
   }
 
   private func projectThreads(_ snapshot: [ChatThread]) {
-    let result = ChatThreadReplay.sidebarOrder(
-      ChatThreadReplay.replay(snapshot: snapshot, events: optimisticChanges.map(\.change)))
+    publishThreads(actions.projected(snapshot))
+  }
+
+  private func publishThreads(_ result: [ChatThread]) {
     hasLoadedThreads = true
     if threads != result { threads = result }
     didRefresh(result)
-  }
-
-  private func settleOptimisticChanges(eventIDs: Set<String>) {
-    var confirmedMemberships: [String: Int] = [:]
-    for (index, event) in optimisticChanges.enumerated()
-    where event.change.kind == .projectUpdated && eventIDs.contains(event.id) {
-      confirmedMemberships[event.change.chatThreadId] = index
-    }
-    optimisticChanges = optimisticChanges.enumerated().filter { index, event in
-      !eventIDs.contains(event.id)
-        && (event.change.kind != .projectUpdated
-          || index > (confirmedMemberships[event.change.chatThreadId] ?? -1))
-    }.map(\.element)
   }
 
   @discardableResult
@@ -560,41 +461,16 @@ final class ThreadListStore {
     _ id: String, projectID: String?, onFailure: (@MainActor (String) -> Void)? = nil,
     didBegin: @MainActor () -> Void = {}
   ) async -> Bool {
-    guard canUpdate(id), !Task.isCancelled,
-      let current = threads.first(where: { $0.id == id })
-    else { return false }
-    let pending = optimisticChanges.last {
-      $0.change.kind == .projectUpdated && $0.change.chatThreadId == id
-    }
-    let retry = pending.map { $0.change.projectId == projectID } ?? false
-    guard current.projectId != projectID || retry else { return false }
-    let eventID: String
-    if let pending, pending.change.projectId == projectID {
-      eventID = pending.id
-    } else {
-      eventID = ChatProjects.operationID()
-      optimisticChanges.append(
-        (
-          eventID,
-          ChatThreadChange(
-            kind: .projectUpdated, chatThreadId: id, agentId: current.agentID,
-            projectId: projectID, createdAt: current.updatedAt)
-        ))
-    }
-    projectThreads(threads)
-    return await updateThread(id, onFailure: onFailure, didBegin: didBegin) { [client] in
-      try await ChatProjects(client: client).move(
-        threadID: id, projectID: projectID, eventID: eventID)
-    }
+    return await actions.setProject(
+      id, projectID: projectID, onFailure: onFailure, didBegin: didBegin)
   }
 
   func dismissError() {
-    actionError = nil
+    actions.dismissError()
   }
 
   func canUpdate(_ id: String) -> Bool {
-    !closed && !blocked && !updatingThreads.contains(id) && !markingAgentRead
-      && threads.contains(where: { $0.id == id })
+    actions.canUpdate(id)
   }
 
   @discardableResult
@@ -603,21 +479,8 @@ final class ThreadListStore {
     onFailure: (@MainActor (String) -> Void)? = nil,
     didBegin: @MainActor () -> Void = {}
   ) async -> Bool {
-    guard canUpdate(thread.id), !Task.isCancelled else { return false }
-    if !optimisticChanges.contains(where: { $0.id == eventID }) {
-      optimisticChanges.append(
-        (
-          eventID,
-          ChatThreadChange(
-            kind: archived ? .archived : .unarchived, chatThreadId: thread.id,
-            agentId: thread.agentID, createdAt: .now)
-        ))
-    }
-    projectThreads(threads)
-    didBegin()
-    return await updateThread(thread.id, onFailure: onFailure) { [commands] in
-      try await commands.setArchived(threadID: thread.id, archived: archived, eventID: eventID)
-    }
+    return await actions.setArchived(
+      thread, archived: archived, eventID: eventID, onFailure: onFailure, didBegin: didBegin)
   }
 
   @discardableResult
@@ -625,55 +488,12 @@ final class ThreadListStore {
     _ id: String, muted: Bool, markRead: Bool = true,
     onFailure: (@MainActor (String) -> Void)? = nil
   ) async -> Bool {
-    guard canMute(id), !Task.isCancelled else { return false }
-    readRevision += 1
-    return await updateThread(
-      id, includingIndicators: true, onFailure: onFailure
-    ) { [self, commands] in
-      // Replies suppressed while muted must not reappear as unread. Keep the chat
-      // muted if marking read fails; retry can safely repeat both operations.
-      if !muted && markRead {
-        let watermark = try await commands.markRead(threadID: id)
-        try Task.checkCancellation()
-        self.markRead(id, through: watermark)
-      }
-      try await commands.setMuted(
-        threadID: id, muted: muted, eventID: UUID().uuidString.lowercased())
-      readRevision += 1
-    }
+    return await actions.setMuted(id, muted: muted, markRead: markRead, onFailure: onFailure)
   }
 
   @discardableResult
   func rename(_ thread: ChatThread, title: String) async -> Bool {
-    guard canUpdate(thread.id), !Task.isCancelled,
-      let current = threads.first(where: { $0.id == thread.id })
-    else { return false }
-    let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-    let pending = optimisticChanges.last {
-      $0.change.kind == .renamed && $0.change.chatThreadId == thread.id
-    }
-    // A title already shown optimistically still needs an explicit retry until confirmed.
-    guard !trimmed.isEmpty,
-      trimmed != current.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        || pending?.change.title == trimmed
-    else { return true }
-    let eventID: String
-    if let pending, pending.change.title == trimmed {
-      eventID = pending.id
-    } else {
-      eventID = UUID().uuidString.lowercased()
-      optimisticChanges.append(
-        (
-          eventID,
-          ChatThreadChange(
-            kind: .renamed, chatThreadId: current.id, agentId: current.agentID,
-            title: trimmed, createdAt: .now)
-        ))
-    }
-    projectThreads(threads)
-    return await updateThread(thread.id) { [commands] in
-      try await commands.rename(threadID: thread.id, title: trimmed, eventID: eventID)
-    }
+    return await actions.rename(thread, title: title)
   }
 
   func beginRename(_ id: String) {
@@ -707,51 +527,7 @@ final class ThreadListStore {
     renameRequest = RenameRequest(
       id: renameSessionID, threadID: request.threadID,
       error: error ?? "The title was not saved. Try again.")
-    actionError = nil
-  }
-
-  @discardableResult
-  private func updateThread(
-    _ id: String, includingIndicators: Bool = false,
-    onFailure: (@MainActor (String) -> Void)? = nil,
-    didBegin: @MainActor () -> Void = {},
-    command: @escaping @MainActor () async throws -> Void
-  ) async -> Bool {
-    guard updateTasks[id] == nil, !updatingThreads.contains(id), !closed, !blocked,
-      !Task.isCancelled
-    else { return false }
-    updatingThreads.insert(id)
-    var succeeded = false
-    let task = Task { [weak self] in
-      guard let self else { return }
-      defer {
-        updatingThreads.remove(id)
-        updateTasks[id] = nil
-      }
-      do {
-        try await command()
-        try Task.checkCancellation()
-        guard !closed else { return }
-        actionError = nil
-        succeeded = true
-        await refresh(waitForCurrent: true, includingIndicators: includingIndicators)
-      } catch is CancellationError {
-      } catch {
-        guard !closed, !Task.isCancelled else { return }
-        if let onFailure {
-          blocked = (error as? APIClientError)?.statusCode == 426
-          didFail(error)
-          onFailure(error.localizedDescription)
-        } else {
-          show(error)
-        }
-      }
-    }
-    lifecycleTasks.track(task)
-    updateTasks[id] = task
-    didBegin()
-    await task.value
-    return succeeded && !closed && !blocked
+    actions.dismissError()
   }
 
   func close() {
@@ -761,7 +537,7 @@ final class ThreadListStore {
     do { try stateStore.set(listLifetime, false) } catch { didFail(error) }
     navigation.close()
     for task in updateTasks.values { task.cancel() }
-    for task in pinTasks.values { task.cancel() }
+    actions.close()
     cancelRename()
   }
 
@@ -769,10 +545,7 @@ final class ThreadListStore {
   func cancelNavigationPublication() { navigation.cancelNavigationPublication() }
 
   private func show(_ failure: Error) {
-    guard !closed, !Task.isCancelled else { return }
-    actionError = failure.localizedDescription
-    blocked = (failure as? APIClientError)?.statusCode == 426
-    didFail(failure)
+    actions.show(failure)
   }
 
   /// Return unfinished list demand so a suspended workspace can resume it explicitly.
