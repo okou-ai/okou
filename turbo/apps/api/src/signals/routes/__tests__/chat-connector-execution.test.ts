@@ -187,9 +187,8 @@ describe("Chat connector execution", () => {
       }),
     );
     const resolved = await createFirewallApi(context).requestFirewallAuth(
-      { authorization: `Bearer ${run.execution.sandboxToken}` },
+      { authorization: `Bearer ${run.execution.firewallToken}` },
       {
-        encryptedSecrets: run.execution.encryptedSecrets ?? undefined,
         secretConnectorMap: run.execution.secretConnectorMap ?? undefined,
         secretConnectorMetadataMap:
           run.execution.secretConnectorMetadataMap ?? undefined,

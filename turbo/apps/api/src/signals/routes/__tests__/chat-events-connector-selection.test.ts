@@ -149,9 +149,8 @@ describe("thread connector selection", () => {
     });
     const selectedAuth = await own(() => {
       return createFirewallApi(context).requestFirewallAuth(
-        execution.sandboxHeaders,
+        { authorization: `Bearer ${execution.execution.firewallToken}` },
         {
-          encryptedSecrets: execution.execution.encryptedSecrets ?? undefined,
           secretConnectorMap:
             execution.execution.secretConnectorMap ?? undefined,
           secretConnectorMetadataMap:
@@ -241,9 +240,8 @@ describe("thread connector selection", () => {
     });
     const promotedAuth = await own(() => {
       return createFirewallApi(context).requestFirewallAuth(
-        next.sandboxHeaders,
+        { authorization: `Bearer ${next.execution.firewallToken}` },
         {
-          encryptedSecrets: next.execution.encryptedSecrets ?? undefined,
           secretConnectorMap: next.execution.secretConnectorMap ?? undefined,
           secretConnectorMetadataMap:
             next.execution.secretConnectorMetadataMap ?? undefined,
