@@ -64,6 +64,7 @@ async def test_reference_auth_without_envelope_reaches_resolver_and_reuses_cache
                 "unknownPolicy": "deny",
             },
             include_encrypted_secrets=False,
+            sandbox_fields={"firewallToken": "host-only-firewall"},
         ),
     )
     endpoint = FakeAuthEndpoint()
@@ -93,7 +94,7 @@ async def test_reference_auth_without_envelope_reaches_resolver_and_reuses_cache
     assert endpoint.request_count == 1
     request = endpoint.requests[0]
     assert request.method == "POST"
-    assert request.headers["authorization"] == "Bearer tok-conn"
+    assert request.headers["authorization"] == "Bearer host-only-firewall"
     assert request.json_body()["authHeaders"] == {
         "Authorization": "Bearer ${{ secrets.GITHUB_TOKEN }}"
     }

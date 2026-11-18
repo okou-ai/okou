@@ -168,7 +168,7 @@ describe("builtin Automatic firewall credential destinations", () => {
       throw new Error("Expected the builtin Automatic firewall");
     }
     const refreshed = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${execution.sandboxToken}` },
+      { authorization: `Bearer ${execution.firewallToken!}` },
       {
         authHeaders: catalog.firewallAuthHeaders,
         forceRefresh: true,

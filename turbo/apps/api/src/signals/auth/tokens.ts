@@ -38,6 +38,7 @@ import {
 import { singleton } from "../../lib/singleton";
 
 const SANDBOX_TOKEN_PREFIX = "vm0_sandbox_";
+const FIREWALL_TOKEN_PREFIX = "vm0_firewall_";
 const PAT_TOKEN_PREFIX = "vm0_pat_";
 // Skill import sessions carry their own prefix so the upload handler is the
 // only code that can accept them. They are never registered as a general auth
@@ -45,7 +46,7 @@ const PAT_TOKEN_PREFIX = "vm0_pat_";
 const SKILL_IMPORT_TOKEN_PREFIX = "vm0_skillimport_v2_";
 // Covers the runner's two-hour execution budget plus claim, startup,
 // finalization, and terminal report time.
-const SANDBOX_TOKEN_TTL_SECONDS = 3 * 60 * 60;
+const RUN_CONTROL_TOKEN_TTL_SECONDS = 3 * 60 * 60;
 
 const CONDITIONAL_CAPABILITIES = [
   ["run-timing:write", FeatureSwitchKey.ArtifactGenerationTiming],
@@ -93,6 +94,12 @@ const sandboxTokenPayloadSchema = jwtBaseSchema.extend({
   scope: literal("sandbox"),
   runId: string().min(1),
   orgId: string().min(1),
+});
+
+// Only the host firewall resolver accepts this scope. Guest identities must
+// never authorize retrieval of reusable upstream credentials on their own.
+const firewallTokenPayloadSchema = sandboxTokenPayloadSchema.extend({
+  scope: literal("firewall"),
 });
 
 function isAgentCapability(value: string): value is Capability {
@@ -151,6 +158,7 @@ export type SkillImportTokenPayload = zInfer<
 
 type JwtPayloadInput =
   | input<typeof sandboxTokenPayloadSchema>
+  | input<typeof firewallTokenPayloadSchema>
   | input<typeof okouTokenPayloadSchema>
   | input<typeof cliTokenPayloadSchema>
   | input<typeof composeJobTokenPayloadSchema>
@@ -318,6 +326,20 @@ export function verifySandboxToken(token: string): SandboxAuth | null {
   };
 }
 
+export function verifyFirewallToken(token: string): SandboxAuth | null {
+  const parsed = firewallTokenPayloadSchema.safeParse(
+    verifyPrefixedToken(token, FIREWALL_TOKEN_PREFIX),
+  );
+  if (!parsed.success) {
+    return null;
+  }
+  return {
+    userId: parsed.data.userId,
+    runId: parsed.data.runId,
+    orgId: parsed.data.orgId,
+  };
+}
+
 export function verifyOkouToken(token: string): AgentAuth | null {
   const parsed = okouTokenPayloadSchema.safeParse(
     verifyPrefixedToken(token, SANDBOX_TOKEN_PREFIX),
@@ -397,10 +419,29 @@ export function generateSandboxToken(
     runId,
     orgId,
     iat: nowSeconds,
-    exp: nowSeconds + SANDBOX_TOKEN_TTL_SECONDS,
+    exp: nowSeconds + RUN_CONTROL_TOKEN_TTL_SECONDS,
   };
 
   return SANDBOX_TOKEN_PREFIX + signJwt(payload);
+}
+
+export function generateFirewallToken(
+  userId: string,
+  runId: string,
+  orgId: string,
+): string {
+  const nowSeconds = Math.floor(now() / 1000);
+  return (
+    FIREWALL_TOKEN_PREFIX +
+    signJwt({
+      scope: "firewall",
+      userId,
+      runId,
+      orgId,
+      iat: nowSeconds,
+      exp: nowSeconds + RUN_CONTROL_TOKEN_TTL_SECONDS,
+    })
+  );
 }
 
 export function generateOkouToken(

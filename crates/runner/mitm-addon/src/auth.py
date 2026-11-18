@@ -401,7 +401,9 @@ def _build_firewall_auth_context(
                 **({"sourceId": source_id} if isinstance(source_id, str) else {}),
             }
     auth_request = FirewallAuthRequest(
-        sandbox_token=sandbox_info.get("sandboxToken", ""),
+        # Keep reporting/callback identity in sandboxToken. Only resolver
+        # traffic uses host-only authority; absence is the rollout legacy path.
+        sandbox_token=sandbox_info.get("firewallToken", sandbox_info.get("sandboxToken", "")),
         encrypted_secrets=sandbox_info.get("encryptedSecrets") or "",
         auth_headers=auth_config.get("headers", {}),
         auth_base=auth_config.get("base"),

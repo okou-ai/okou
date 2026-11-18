@@ -924,6 +924,7 @@ fn build_env_json_with_api_start_time() {
 fn build_env_json_empty_secrets_still_has_sandbox_token() {
     let mut ctx = minimal_context();
     ctx.secret_values = Some(vec![]);
+    ctx.firewall_token = Some("host-only-firewall-authority".into());
 
     // The private run payload always includes the sandbox token for masking.
     let payload = build_run_payload_for_run(&ctx).unwrap();
@@ -933,6 +934,16 @@ fn build_env_json_empty_secrets_still_has_sandbox_token() {
         .decode(val)
         .unwrap();
     assert_eq!(decoded, b"tok");
+    let env = build_env_for_test(&ctx, "http://localhost");
+    assert_eq!(
+        env.get(guest_contracts::env::CANONICAL_API_TOKEN_ENV)
+            .unwrap(),
+        "tok"
+    );
+    assert!(
+        env.values()
+            .all(|value| !value.contains("host-only-firewall-authority"))
+    );
 }
 
 #[test]

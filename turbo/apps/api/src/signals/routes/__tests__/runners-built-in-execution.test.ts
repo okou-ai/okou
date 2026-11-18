@@ -8,10 +8,12 @@ import { publicChatActor } from "./helpers/public-chat-actor";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { decryptSecretForTests } from "./helpers/encrypt-secret";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
 const context = testContext();
 const api = createRunsApi(context);
 const firewall = createFirewallApi(context);
+const webhooks = createWebhookCallbackApi(context);
 const MANAGED_KEY = "okou-fake-managed-model-key-sentinel-3f9c1e7a";
 const { configureSubscriptionPiModel } = createChatEventsFixture(context);
 
@@ -51,12 +53,40 @@ describe("Runner built-in and personal dispatch", () => {
       const authHeaders = {
         Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
       };
-      const sandboxHeaders = {
-        authorization: `Bearer ${input.sandboxToken}`,
+      if (!input.firewallToken) {
+        throw new Error("Expected the host firewall authority");
+      }
+      expect(input.secretValues).not.toContain(input.firewallToken);
+      const firewallHeaders = {
+        authorization: `Bearer ${input.firewallToken!}`,
       };
+      await webhooks.requestAgentHeartbeat(
+        { runId: run.runId },
+        firewallHeaders,
+        [401],
+      );
+      await firewall.requestFirewallAuth(
+        { authorization: `Bearer ${input.platformEnvironment.OKOU_TOKEN!}` },
+        { authHeaders },
+        [401],
+      );
+      await firewall.requestFirewallAuth(
+        { authorization: `Bearer ${input.sandboxToken}` },
+        { authHeaders },
+        [400],
+      );
+      await firewall.requestFirewallAuth(
+        {
+          authorization: `Bearer ${input.sandboxToken.replace("vm0_sandbox_", "vm0_firewall_")}`,
+        },
+        { authHeaders },
+        [401],
+      );
       for (const encryptedSecrets of [undefined, input.encryptedSecrets]) {
         const resolved = await firewall.requestFirewallAuth(
-          sandboxHeaders,
+          encryptedSecrets
+            ? { authorization: `Bearer ${input.sandboxToken}` }
+            : firewallHeaders,
           { encryptedSecrets, authHeaders, firewallBillable: true },
           [200],
         );
@@ -67,7 +97,7 @@ describe("Runner built-in and personal dispatch", () => {
         });
       }
       const mapped = await firewall.requestFirewallAuth(
-        sandboxHeaders,
+        firewallHeaders,
         {
           authHeaders,
           secretConnectorMap: { OPENROUTER_API_KEY: "codex-oauth-token" },
@@ -86,7 +116,7 @@ describe("Runner built-in and personal dispatch", () => {
         error: { code: "CONNECTOR_NOT_CONFIGURED" },
       });
       const unpairedMetadata = await firewall.requestFirewallAuth(
-        sandboxHeaders,
+        firewallHeaders,
         {
           authHeaders,
           secretConnectorMetadataMap: {
@@ -103,7 +133,9 @@ describe("Runner built-in and personal dispatch", () => {
       expect(unpairedMetadata.body).toMatchObject({
         error: { code: "CONNECTOR_NOT_CONFIGURED" },
       });
-      await expect(api.readRun(owned.actor, run.runId)).resolves.toMatchObject({
+      const inspected = await api.readRun(owned.actor, run.runId);
+      expect(JSON.stringify(inspected)).not.toContain(input.firewallToken);
+      expect(inspected).toMatchObject({
         status: "running",
         source: {
           providerType: "built-in",
@@ -113,7 +145,7 @@ describe("Runner built-in and personal dispatch", () => {
       });
       await api.requestCancelRun(owned.actor, run.runId, [200]);
       await firewall.requestFirewallAuth(
-        sandboxHeaders,
+        firewallHeaders,
         { authHeaders },
         [403],
       );
@@ -182,7 +214,7 @@ describe("Runner built-in and personal dispatch", () => {
         throw new Error("Expected the personal model's account references");
       }
       const personal = await firewall.requestFirewallAuth(
-        { authorization: `Bearer ${input.sandboxToken}` },
+        { authorization: `Bearer ${input.firewallToken!}` },
         {
           authHeaders: {
             Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
@@ -199,7 +231,7 @@ describe("Runner built-in and personal dispatch", () => {
         resolvedSecrets: ["CHATGPT_ACCESS_TOKEN"],
       });
       const unavailable = await firewall.requestFirewallAuth(
-        { authorization: `Bearer ${input.sandboxToken}` },
+        { authorization: `Bearer ${input.firewallToken!}` },
         {
           authHeaders: {
             Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
