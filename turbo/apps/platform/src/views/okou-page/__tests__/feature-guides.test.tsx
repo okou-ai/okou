@@ -51,6 +51,86 @@ const edition = Object.freeze<FeatureGuideEdition>({
   },
 });
 
+const illustrationEdition = Object.freeze<FeatureGuideEdition>({
+  id: "single-agent-2026-11-16",
+  revisionId: "d6c0c665-16da-42e1-b85d-21fcc845f13b",
+  content: {
+    schemaVersion: 1,
+    title: "My Okou",
+    description: "One Okou, personal Instructions, reusable Workflows.",
+    items: [
+      {
+        featureId: "my-okou",
+        title: "One Okou. Your subagents, now projects",
+        description:
+          "Start any task with your own Okou. Your former subagents are now projects, organized in the chat sidebar.",
+        media: {
+          type: "illustration",
+          alt: "Illustrated example: Okou beside Writing and Research project cards in Chat → Projects, with Market overview and Customer insights conversations.",
+          characterUrl: "https://example.com/projects.webp",
+          scene: {
+            type: "projects",
+            location: ["Chat", "Projects"],
+            title: "Research",
+            subtitle: "Project",
+            backTitle: "Writing",
+            conversations: ["Market overview", "Customer insights"],
+          },
+        },
+      },
+      {
+        featureId: "personal-instructions",
+        title: "Your instructions are now in Settings",
+        description:
+          "Find and edit your Okou's instructions in Settings → Personal → My Okou.",
+        media: {
+          type: "illustration",
+          alt: "Illustrated example: Okou beside the personal instructions editor in Settings → Personal → My Okou, with a selected line and formatting toolbar.",
+          characterUrl: "https://example.com/instructions.webp",
+          scene: {
+            type: "instructions",
+            location: ["Settings", "Personal", "My Okou"],
+            title: "My Okou",
+            subtitle: "Personal instructions",
+            lines: [
+              "Keep answers concise.",
+              "Use clear headings.",
+              "End with next steps.",
+            ],
+          },
+        },
+      },
+      {
+        featureId: "workspace-workflows",
+        title: "Your workflows, in one place",
+        description:
+          "Keep repeatable task steps in Workflows. Use them yourself or share them with your workspace.",
+        media: {
+          type: "illustration",
+          alt: "Illustrated example: Okou carrying a folder beside a shared Research brief and a private Weekly report workflow with reusable steps.",
+          characterUrl: "https://example.com/workflows.webp",
+          scene: {
+            type: "workflows",
+            location: ["Workflows"],
+            title: "Weekly report",
+            subtitle: "Reusable instructions",
+            steps: [
+              "Review the week",
+              "Summarize progress",
+              "Outline next steps",
+            ],
+            command: "/weekly-report",
+            privateLabel: "Private",
+            backTitle: "Research brief",
+            backCommand: "/research-brief",
+            sharedLabel: "Shared",
+          },
+        },
+      },
+    ],
+  },
+});
+
 function button(name: string, container: ParentNode = document.body) {
   const found = queryAllByRoleFast("button", container).find((b) => {
     return (
@@ -521,6 +601,110 @@ test("replays a preview from the home link without acknowledging a real impressi
   await waitFor(() => {
     return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+  expect(seen).toBeFalsy();
+});
+
+test("renders an illustrated selected preview without recording a view", async () => {
+  let seen = false;
+  const singleEdition = {
+    ...illustrationEdition,
+    content: {
+      ...illustrationEdition.content,
+      items: illustrationEdition.content.items.slice(0, 1),
+    },
+  };
+  context.mocks.api(featureGuidesContract.current, ({ query, respond }) => {
+    expect(query).toStrictEqual({ preview: "1", edition: singleEdition.id });
+    return respond(200, { edition: singleEdition, preview: true });
+  });
+  context.mocks.api(featureGuidesContract.seen, ({ respond }) => {
+    seen = true;
+    return respond(200, { seen: true });
+  });
+  await setupPage({
+    context,
+    path: `/?featureGuidePreview=1&featureGuideEdition=${singleEdition.id}`,
+    featureSwitches: {
+      [FeatureSwitchKey.FeatureGuides]: true,
+      [FeatureSwitchKey.SingleAgent]: true,
+    },
+  });
+  const dialog = await screen.findByRole("dialog", {
+    name: "One Okou. Your subagents, now projects",
+  });
+  const illustration = within(dialog).getByRole("img", {
+    name: /Illustrated example: Okou beside Writing/u,
+  });
+  expect(within(illustration).getByText("Research")).toBeInTheDocument();
+  expect(within(illustration).getByText("Market overview")).toBeInTheDocument();
+  expect(
+    within(dialog).queryByRole("group", { name: "Features in this update" }),
+  ).not.toBeInTheDocument();
+  expect(queryAllByRoleFast("link", dialog)).toHaveLength(0);
+  click(button("Close feature guide", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(seen).toBeFalsy();
+});
+
+test("cycles the illustrated project, instructions and workflow preview with buttons and swipes", async () => {
+  let seen = false;
+  context.mocks.api(featureGuidesContract.current, ({ respond }) => {
+    return respond(200, { edition: illustrationEdition, preview: true });
+  });
+  context.mocks.api(featureGuidesContract.seen, ({ respond }) => {
+    seen = true;
+    return respond(200, { seen: true });
+  });
+  await setupPage({
+    context,
+    path: `/?featureGuidePreview=1&featureGuideEdition=${illustrationEdition.id}`,
+    featureSwitches: {
+      [FeatureSwitchKey.FeatureGuides]: true,
+      [FeatureSwitchKey.SingleAgent]: true,
+    },
+  });
+  const dialog = await screen.findByRole("dialog", {
+    name: "One Okou. Your subagents, now projects",
+  });
+  const navigation = within(dialog).getByRole("group", {
+    name: "Features in this update",
+  });
+  click(button("Next feature", navigation));
+  const instructions = await within(dialog).findByRole("img", {
+    name: /Illustrated example: Okou beside the personal instructions editor/u,
+  });
+  expect(within(instructions).getByText("Settings")).toBeInTheDocument();
+  expect(within(instructions).getByText("Personal")).toBeInTheDocument();
+  expect(
+    within(instructions).getByText("Use clear headings."),
+  ).toBeInTheDocument();
+  expect(queryAllByRoleFast("button", instructions)).toHaveLength(0);
+  expect(within(instructions).queryAllByRole("textbox")).toHaveLength(0);
+  click(button("Your workflows, in one place", navigation));
+  const workflows = await within(dialog).findByRole("img", {
+    name: /Illustrated example: Okou carrying a folder/u,
+  });
+  expect(within(workflows).getByText("Weekly report")).toBeInTheDocument();
+  expect(within(workflows).getByText("Private")).toBeInTheDocument();
+  expect(within(workflows).getByText("Shared")).toBeInTheDocument();
+  swipe(workflows, { x: 240, y: 150 }, { x: 100, y: 155 });
+  await expect(
+    within(dialog).findByRole("heading", {
+      name: "One Okou. Your subagents, now projects",
+    }),
+  ).resolves.toBeInTheDocument();
+  click(button("Previous feature", navigation));
+  await expect(
+    within(dialog).findByRole("heading", {
+      name: "Your workflows, in one place",
+    }),
+  ).resolves.toBeInTheDocument();
+  expect(button("Your workflows, in one place", navigation)).toHaveAttribute(
+    "aria-current",
+    "step",
+  );
   expect(seen).toBeFalsy();
 });
 
