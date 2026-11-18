@@ -617,13 +617,16 @@ def main():
         file=sys.stderr,
     )
     incomplete = any(value is None for value in inventory.values())
+    # A close event names the PR before its first claim may have created any
+    # resources. Reconcile explicit selections even when inventory is empty.
     numbers = sorted(
-        {
+        selection
+        if selection is not None
+        else {
             number
             for resources in inventory.values()
             if resources is not None
             for number in resources
-            if selection is None or number in selection
         }
     )
     pulls = github.pulls(numbers)

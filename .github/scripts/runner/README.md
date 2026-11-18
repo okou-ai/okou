@@ -165,7 +165,8 @@ preview/production deployment ownership.
 `python3 .github/scripts/runner/cleanup-metal-runners.py` is shared by scheduled
 and PR-close cleanup. It requires `GH_TOKEN`, `GITHUB_REPOSITORY`, `GITHUB_RUN_ID`,
 `METAL_HOSTS` and `METAL_USER`, plus the established SSH tunnel configuration.
-`RUNNER_PR_NUMBERS=42,43` restricts selection; `DRY_RUN=true` observes and selects
+`RUNNER_PR_NUMBERS=42,43` selects those PRs even if inventory is empty, so a
+close event can fence the first image claim. `DRY_RUN=true` observes and selects
 without acquiring lifecycle locks or mutating resources. An incomplete host
 inventory fails even in dry-run mode.
 

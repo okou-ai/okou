@@ -875,6 +875,11 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(selected.exists())
         self.assertTrue(other.exists())
+        # A close event must fence a first claim even with no resources yet.
+        for host in ("metal-a", "metal-b"):
+            cutoff = self.root / host / "var/lock/vm0-runner-lifecycle-pr-9999.lock"
+            self.assertTrue(cutoff.is_file(), result.stdout)
+            self.assertEqual(cutoff.read_text(), "2026-10-02T00:00:00Z\n")
 
     def test_release_failure_does_not_claim_workflow_success(self):
         config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
