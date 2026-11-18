@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.46](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.45...runner-rs-v0.249.46) (2026-11-18)
+
+
+### Bug Fixes
+
+* **subagent:** flatten run ownership and compact streaming logs ([#48558](https://github.com/okou-ai/okou/issues/48558)) ([66b812c](https://github.com/okou-ai/okou/commit/66b812c94ae58b4d8a75aa26a5c4f3f90a1ebd40))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.45](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.44...runner-rs-v0.249.45) (2026-11-18)
 
 

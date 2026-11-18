@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.33.1](https://github.com/okou-ai/okou/compare/cli-v10.33.0...cli-v10.33.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* **subagent:** flatten run ownership and compact streaming logs ([#48558](https://github.com/okou-ai/okou/issues/48558)) ([66b812c](https://github.com/okou-ai/okou/commit/66b812c94ae58b4d8a75aa26a5c4f3f90a1ebd40))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.85.2
+    * @okouai/core bumped to 8.851.1
+    * @okouai/pi-agent-runtime bumped to 1.51.156
+
 ## [10.33.0](https://github.com/okou-ai/okou/compare/cli-v10.32.0...cli-v10.33.0) (2026-11-18)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.48.3](https://github.com/okou-ai/okou/compare/ios-v0.48.2...ios-v0.48.3) (2026-11-18)
+
+
+### Performance Improvements
+
+* **ios:** streamline permission approval submission ([#48542](https://github.com/okou-ai/okou/issues/48542)) ([f0110f5](https://github.com/okou-ai/okou/commit/f0110f51b1411e20c8dc77366430b3c77a0f9ea7))
+
 ## [0.48.2](https://github.com/okou-ai/okou/compare/ios-v0.48.1...ios-v0.48.2) (2026-11-18)
 
 

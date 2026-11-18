@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.109.105](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.104...guest-agent-v0.109.105) (2026-11-18)
+
+
+### Bug Fixes
+
+* classify codex terminal failures and agent oom ([#48521](https://github.com/okou-ai/okou/issues/48521)) ([00075f2](https://github.com/okou-ai/okou/commit/00075f2f8a0d64e6aa8c3cecc8dc7bdc6cccde5f))
+* **runner:** bound guest disk recovery by time and capacity ([#48523](https://github.com/okou-ai/okou/issues/48523)) ([6107729](https://github.com/okou-ai/okou/commit/61077298e7c6594e68b818d99c5ec5eeab68ae6b))
+
 ## [0.109.104](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.103...guest-agent-v0.109.104) (2026-11-18)
 
 

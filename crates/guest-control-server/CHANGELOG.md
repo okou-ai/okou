@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.121](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.120...guest-control-server-v0.24.121) (2026-11-18)
+
+
+### Bug Fixes
+
+* **subagent:** flatten run ownership and compact streaming logs ([#48558](https://github.com/okou-ai/okou/issues/48558)) ([66b812c](https://github.com/okou-ai/okou/commit/66b812c94ae58b4d8a75aa26a5c4f3f90a1ebd40))
+
 ## [0.24.120](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.119...guest-control-server-v0.24.120) (2026-11-18)
 
 ## [0.24.119](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.118...guest-control-server-v0.24.119) (2026-11-18)

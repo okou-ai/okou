@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.89.1](https://github.com/okou-ai/okou/compare/api-v2.89.0...api-v2.89.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* classify codex terminal failures and agent oom ([#48521](https://github.com/okou-ai/okou/issues/48521)) ([00075f2](https://github.com/okou-ai/okou/commit/00075f2f8a0d64e6aa8c3cecc8dc7bdc6cccde5f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.85.2
+    * @okouai/core bumped to 8.851.1
+    * @okouai/db bumped to 2.44.5
+    * @okouai/pi-agent-runtime bumped to 1.51.156
+
 ## [2.89.0](https://github.com/okou-ai/okou/compare/api-v2.88.0...api-v2.89.0) (2026-11-18)
 
 
