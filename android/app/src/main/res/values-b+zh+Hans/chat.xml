@@ -17,7 +17,6 @@
     <string name="chat_unread">未读</string>
     <string name="chat_archived">已归档</string>
     <string name="chat_muted">已静音</string>
-    <string name="chat_outside_projects">项目外的聊天</string>
     <string name="chat_project_empty">此项目暂无聊天。</string>
     <string name="chat_empty">此视图暂无聊天。</string>
     <string name="chat_untitled">未命名聊天</string>

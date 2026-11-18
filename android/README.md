@@ -6,8 +6,10 @@ database, API service, account credentials, or local Web server is needed.
 
 Signed-out launches open the native Clerk login page. After authoritative
 membership and workspace bootstrap, the application provides a native conversation
-list and history reader. Projects expand in the workspace chat list. Selecting a
-chat opens its conversation, and Back restores the same list position, filter
+list and history reader. The workspace chat list uses single-line rows, indented
+Project chats, and separators within groups that have pins and ordinary chats.
+Collapsed Projects summarize unread or running chats. Selecting a chat opens
+its conversation, and Back restores the same list position, filter
 and expanded Projects. Settings opens from the current app bar and returns to
 the same list, chat or new-chat draft. Windows at least 840dp wide and 480dp
 tall show the same list alongside the current chat or new-chat entry. Resizing
