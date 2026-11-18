@@ -252,6 +252,8 @@ class ApiClient(
 
     suspend fun markRead(threadId: String) = execute { api.markRead(it, threadId) }
 
+    suspend fun markUnread(threadId: String) = execute { api.markUnread(it, threadId) }
+
     suspend fun preferences(): UserPreferences = execute { reads.preferences(it) }
 
     suspend fun initializePreferences(body: InitializePreferencesRequest): UserPreferences =

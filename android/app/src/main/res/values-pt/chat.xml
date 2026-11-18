@@ -26,4 +26,9 @@
     <string name="chat_pinned">Fixada</string>
     <string name="chat_active">Ativa</string>
     <string name="chat_metadata_cached">Exibindo os nomes salvos do Okou e dos projetos.</string>
+    <string name="chat_actions">Ações da conversa</string>
+    <string name="chat_mark_read">Marcar como lida</string>
+    <string name="chat_mark_unread">Marcar como não lida</string>
+    <string name="chat_read_action_pending">Atualizando o status de leitura…</string>
+    <string name="chat_read_action_failed">Não foi possível atualizar o status de leitura.</string>
 </resources>

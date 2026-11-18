@@ -26,4 +26,9 @@
     <string name="chat_pinned">已置頂</string>
     <string name="chat_active">活躍</string>
     <string name="chat_metadata_cached">正在顯示已儲存的 Okou 和專案名稱。</string>
+    <string name="chat_actions">聊天操作</string>
+    <string name="chat_mark_read">標為已讀</string>
+    <string name="chat_mark_unread">標為未讀</string>
+    <string name="chat_read_action_pending">正在更新已讀狀態…</string>
+    <string name="chat_read_action_failed">無法更新已讀狀態。</string>
 </resources>

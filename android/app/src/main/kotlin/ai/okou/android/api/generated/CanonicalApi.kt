@@ -183,6 +183,12 @@ internal interface CanonicalApi {
         @Header("Authorization") token: String,
         @Path("id") `pathId`: String,
     ): Response<ReadState>
+
+    @POST("/api/chat-threads/{id}/mark-unread")
+    suspend fun `markUnread`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+    ): Response<ReadState>
 }
 
 internal suspend fun CanonicalApi.`historyRows`(

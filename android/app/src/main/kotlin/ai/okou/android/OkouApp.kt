@@ -97,6 +97,7 @@ internal fun OkouApp(
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val missingChat = stringResource(R.string.history_missing)
+    val readActionFailureMessage = stringResource(R.string.chat_read_action_failed)
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val settingsFocus = remember { FocusRequester() }
@@ -105,6 +106,13 @@ internal fun OkouApp(
         (target as? WorkspaceTarget.Chat)?.let { chat ->
             list.threads.firstOrNull { it.id == chat.id && it.hidden != true }
         }
+
+    LaunchedEffect(list.readActionFailed) {
+        if (list.readActionFailed) {
+            snackbar.showSnackbar(readActionFailureMessage)
+            chats.dismissReadActionFailure()
+        }
+    }
 
     fun openChat(chat: ConfirmedChat) {
         conversations.open(chat.id)
@@ -261,6 +269,7 @@ internal fun OkouApp(
                                 chats::refreshMetadata,
                                 chats::refreshIndicators,
                                 ::openChat,
+                                chats::changeReadState,
                                 collapsed.values,
                                 collapsed::toggle,
                                 listPosition,

@@ -47,6 +47,7 @@ class ConversationHistoryModel(
     private val onFailure: (Exception) -> Unit,
     private val onRead: () -> Unit,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val precedingReadWrite: (String) -> Job? = { null },
 ) {
     private val mutable = MutableStateFlow(ConversationUiState())
     val uiState = mutable.asStateFlow()
@@ -120,6 +121,7 @@ class ConversationHistoryModel(
                 { mutable.value.confirmation },
                 ::reportAuthorization,
                 onRead,
+                { precedingReadWrite(threadId) },
             )
             .also {
                 visit = it
@@ -135,6 +137,9 @@ class ConversationHistoryModel(
             output.visible(false)
         }
     }
+
+    internal fun stopAutomaticRead(threadId: String): Job? =
+        if (mutable.value.thread?.id == threadId) visit?.stopAutomaticRead() else null
 
     fun refresh() {
         refreshHistory()
