@@ -7,7 +7,6 @@ import {
   fauxAssistantMessage,
   fauxToolCall,
   type Message,
-  Type,
 } from "@earendil-works/pi-ai";
 import {
   createAgentSession,
@@ -15,6 +14,7 @@ import {
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { Type } from "typebox";
 import { MemoryPiSession } from "./session-memory";
 
 const SESSION_ID = "00000000-0000-4000-8000-000000000123";

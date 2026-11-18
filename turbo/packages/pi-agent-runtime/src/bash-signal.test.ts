@@ -17,6 +17,24 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, onTestFinished } from "vitest";
 
+it("reports the shell's exit when background output reaches the Bash timeout", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-bash-background-timeout-"));
+  onTestFinished(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+  const tool = createBashTool(root, { shellPath: "/bin/bash" });
+
+  await expect(
+    tool.execute("background-timeout", {
+      command:
+        "node -e 'setInterval(() => process.stdout.write(\"background-output\\n\"), 10)' & exit 7",
+      timeout: 0.5,
+    }),
+  ).rejects.toThrow(
+    /The shell exited with code 7 after [\d.]+ seconds, but background processes it started kept writing output until the timeout/u,
+  );
+});
+
 describe.each(["prompt", "pending-tools"] as const)(
   "Pi Bash signal recovery through %s",
   (entry) => {

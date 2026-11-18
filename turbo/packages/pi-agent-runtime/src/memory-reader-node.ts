@@ -7,7 +7,7 @@ import {
   type FileHandle,
 } from "node:fs/promises";
 import { resolve } from "node:path";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import {
   PI_MEMORY_ROOT,
