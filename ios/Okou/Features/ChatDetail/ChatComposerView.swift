@@ -92,9 +92,6 @@ struct ChatComposerView: View {
     !hasContent && !canStop && draftState?.voice != nil && (!expandsInput || voiceActive)
   }
   private var showsModelPicker: Bool { expandsInput && !voiceActive }
-  private var showsVoiceInput: Bool {
-    replacesSendWithMic || (expandsInput && !voiceActive)
-  }
   private var resolvedPlaceholder: String { placeholder ?? String(localized: "Message Okou") }
 
   var body: some View {
@@ -232,57 +229,7 @@ struct ChatComposerView: View {
             .disabled(isBusy || needsUpgrade)
           }
         } trailing: {
-          HStack(spacing: OkouSpace.xs) {
-            // The model, mic and send are already side by side when the text editor opens,
-            // so none of them moves or falls in on its own as the keyboard raises the surface.
-            if let modelSelection {
-              ChatModelPickerButton(selection: modelSelection, action: { showsModels = true })
-                .disabled(needsUpgrade)
-                .opacity(showsModelPicker ? 1 : 0)
-                .allowsHitTesting(showsModelPicker)
-                .accessibilityHidden(!showsModelPicker)
-            }
-            if let voice = draftState?.voice {
-              ComposerVoiceInputButton(voice: voice)
-                .disabled(isBusy || needsUpgrade || voiceActive || draftState?.canEditVoice != true)
-                .opacity(showsVoiceInput ? 1 : 0)
-                .allowsHitTesting(showsVoiceInput)
-                .accessibilityHidden(!showsVoiceInput)
-            }
-            if !replacesSendWithMic {
-              Button(action: performPrimaryAction) {
-                Group {
-                  if showsProgress {
-                    ProgressView()
-                      .controlSize(.small)
-                      .tint(showsStop ? OkouColor.interruptForeground : OkouColor.primaryForeground)
-                  } else {
-                    if showsStop {
-                      OkouIcon("square", size: OkouIconSize.inline)
-                    } else {
-                      OkouToolbarIcon("arrow-up")
-                    }
-                  }
-                }
-                .font(.okou(size: 16, weight: .semibold))
-                .foregroundStyle(
-                  showsStop
-                    ? OkouColor.interruptForeground
-                    : hasContent ? OkouColor.primaryForeground : OkouColor.mutedForeground)
-              }
-              // A solid fill: the composer under it is already glass.
-              .buttonStyle(.borderedProminent)
-              .buttonBorderShape(.circle)
-              // An empty draft always disables send, so it takes the system's disabled fill.
-              .tint(showsStop ? OkouColor.interrupt : OkouColor.primary)
-              .disabled(!canPerformPrimaryAction)
-              .accessibilityLabel(showsStop ? "Stop" : "Send message")
-              .accessibilityIdentifier(showsStop ? "stop-message" : "send-message")
-              .frame(width: actionSize, height: actionSize)
-              .contentShape(Circle())
-              .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: hasContent)
-            }
-          }
+          trailingActions
         }
         .chatFeedbackContentAnchor()
         .anchorPreference(key: ComposerSuggestionPresentation.self, value: .bounds) { bounds in
@@ -396,6 +343,71 @@ struct ChatComposerView: View {
       case .failure(let error): attachments.report(error)
       }
     }
+  }
+
+  private var trailingActions: some View {
+    HStack(spacing: OkouSpace.xs) {
+      if let modelSelection {
+        ChatModelPickerButton(selection: modelSelection, action: { showsModels = true })
+          .disabled(needsUpgrade)
+          .opacity(showsModelPicker ? 1 : 0)
+          .allowsHitTesting(showsModelPicker)
+          .accessibilityHidden(!showsModelPicker)
+      }
+      if let voice = draftState?.voice {
+        voiceInput(voice, isVisible: expandsInput && !voiceActive)
+      }
+      // Keep the row width stable while the compact mic fades into the primary action.
+      ZStack {
+        primaryAction
+          .opacity(replacesSendWithMic ? 0 : 1)
+          .allowsHitTesting(!replacesSendWithMic)
+          .accessibilityHidden(replacesSendWithMic)
+        if let voice = draftState?.voice {
+          voiceInput(voice, isVisible: replacesSendWithMic)
+        }
+      }
+    }
+  }
+
+  private func voiceInput(_ voice: ComposerVoiceInputStore, isVisible: Bool) -> some View {
+    ComposerVoiceInputButton(voice: voice)
+      .disabled(isBusy || needsUpgrade || voiceActive || draftState?.canEditVoice != true)
+      .opacity(isVisible ? 1 : 0)
+      .allowsHitTesting(isVisible)
+      .accessibilityHidden(!isVisible)
+  }
+
+  private var primaryAction: some View {
+    Button(action: performPrimaryAction) {
+      Group {
+        if showsProgress {
+          ProgressView()
+            .controlSize(.small)
+            .tint(showsStop ? OkouColor.interruptForeground : OkouColor.primaryForeground)
+        } else if showsStop {
+          OkouIcon("square", size: OkouIconSize.inline)
+        } else {
+          OkouToolbarIcon("arrow-up")
+        }
+      }
+      .font(.okou(size: 16, weight: .semibold))
+      .foregroundStyle(
+        showsStop
+          ? OkouColor.interruptForeground
+          : hasContent ? OkouColor.primaryForeground : OkouColor.mutedForeground)
+    }
+    // A solid fill: the composer under it is already glass.
+    .buttonStyle(.borderedProminent)
+    .buttonBorderShape(.circle)
+    // An empty draft always disables send, so it takes the system's disabled fill.
+    .tint(showsStop ? OkouColor.interrupt : OkouColor.primary)
+    .disabled(!canPerformPrimaryAction)
+    .accessibilityLabel(showsStop ? "Stop" : "Send message")
+    .accessibilityIdentifier(showsStop ? "stop-message" : "send-message")
+    .frame(width: actionSize, height: actionSize)
+    .contentShape(Circle())
+    .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: hasContent)
   }
 
   private func sendFromKeyboard() {

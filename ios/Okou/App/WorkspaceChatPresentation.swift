@@ -77,8 +77,6 @@ final class WorkspaceChatHostingController: UIViewController {
   init(presentation: WorkspaceChatPresentation) {
     self.presentation = presentation
     super.init(nibName: nil, bundle: nil)
-    // UIKit's layout guide owns keyboard geometry; SwiftUI still owns container safe areas.
-    host.safeAreaRegions = .container
   }
 
   @available(*, unavailable)
@@ -87,7 +85,6 @@ final class WorkspaceChatHostingController: UIViewController {
   override func viewDidLoad() {
     super.viewDidLoad()
     view.backgroundColor = UIColor(OkouColor.background)
-    view.keyboardLayoutGuide.usesBottomSafeArea = false
     addChild(host)
     view.addSubview(host.view)
     host.view.translatesAutoresizingMaskIntoConstraints = false
@@ -95,7 +92,8 @@ final class WorkspaceChatHostingController: UIViewController {
       host.view.topAnchor.constraint(equalTo: view.topAnchor),
       host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
       host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-      host.view.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor)
+      // A full-height host lets SwiftUI animate its keyboard safe area and bottom inset together.
+      host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
     ])
     host.didMove(toParent: self)
   }
