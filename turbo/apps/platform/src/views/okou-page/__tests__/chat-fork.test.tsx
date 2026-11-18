@@ -113,6 +113,9 @@ test.each([
   const originalComposer = await screen.findByRole("textbox", {
     name: "Message",
   });
+  const notifications = screen.getByRole("region", {
+    name: /^Notifications\b/,
+  });
   await fill(originalComposer, "Keep my unfinished notes");
   if (fork && sourceProjectId) {
     const toggle = await findEnabledButton("Show or hide chats in Launch");
@@ -140,7 +143,9 @@ test.each([
   );
   click(await findEnabledButton("Send", dialog));
 
-  await screen.findByText(fork ? "New chat created" : "Forwarded successfully");
+  await within(notifications).findByText(
+    fork ? "New chat created" : "Forwarded successfully",
+  );
   const newThread = await waitFor(() => {
     const link = document.querySelector<HTMLElement>(
       `[data-sidebar-chat-thread-id]:not([data-sidebar-chat-thread-id="${RUN_THREAD_ID}"])`,
@@ -224,6 +229,9 @@ test("Fork sends the selected passage and its source to a new personal chat", as
   const originalComposer = await screen.findByRole("textbox", {
     name: "Message",
   });
+  const notifications = screen.getByRole("region", {
+    name: /^Notifications\b/,
+  });
   await fill(originalComposer, "Keep my unfinished notes");
   await selectPassage(PASSAGE);
   click(await findEnabledButton("Fork"));
@@ -236,7 +244,7 @@ test("Fork sends the selected passage and its source to a new personal chat", as
 
   click(await findEnabledButton("Send", dialog));
 
-  await screen.findByText("New chat created");
+  await within(notifications).findByText("New chat created");
   const send = await waitForSend(sends, 1);
   expect(send.threadId).toStrictEqual(expect.any(String));
   expect(send.threadId).not.toBe(RUN_THREAD_ID);
