@@ -9,7 +9,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::Poll;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use guest_agent::cli::CliExecutionResult;
 use guest_agent::env::{GuestConfig, GuestConfigRaw};
@@ -314,10 +314,7 @@ async fn child_exit_bounds_discarding_when_a_descendant_holds_stdout() -> Result
         .ok_or_else(|| std::io::Error::other("holder PID was not captured"))?;
 
     let child_path = fixture.child_process_path()?;
-    let drain_budget = Duration::from_secs(8);
-    let wall_deadline = Instant::now() + drain_budget;
-    tokio::time::timeout(
-        drain_budget,
+    let result = tokio::time::timeout(Duration::from_secs(8), async {
         poll_fn(|cx| {
             if let Poll::Ready(result) = execution.as_mut().poll(cx) {
                 return Poll::Ready(Err(std::io::Error::other(format!(
@@ -328,17 +325,13 @@ async fn child_exit_bounds_discarding_when_a_descendant_holds_stdout() -> Result
                 return Poll::Pending;
             }
             Poll::Ready(Ok(()))
-        }),
-    )
-    .await
-    .map_err(|_| std::io::Error::other("CLI leader was not reaped within the test budget"))??;
-    // Reaping in the execution poll arms the stdout drain before returning
-    // Pending. The descendant keeps the pipe open throughout the timer phase.
-    advance_timer_phase(Duration::from_secs(5)).await;
-    let result = tokio::time::timeout(
-        wall_deadline.saturating_duration_since(Instant::now()),
-        execution,
-    )
+        })
+        .await?;
+        // Reaping arms the stdout drain in the same execution poll. The outer
+        // timeout stays armed while the descendant keeps the pipe open.
+        advance_timer_phase(Duration::from_secs(5)).await;
+        execution.await.map_err(TestError::from)
+    })
     .await
     .map_err(|_| std::io::Error::other("child exit did not bound the discarded-record drain"))??;
     assert_eq!(result.exit_code, 0);
