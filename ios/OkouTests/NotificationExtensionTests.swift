@@ -16,7 +16,10 @@ final class NotificationExtensionTests: XCTestCase {
       beforeRequest: {
         if offline.withLock({ $0 }) { throw URLError(.notConnectedToInternet) }
       })
-    let (session, user, directory, _) = try await session(fixture)
+    let context = try await makeSession(fixture)
+    let session = context.session
+    let user = context.user
+    let directory = context.directory
     let service = NotificationServiceExtension(session: session)
     let delivered = expectation(description: "Original alert delivered after prefetch")
     service.didReceive(request(user: user)) { content in
@@ -57,7 +60,10 @@ final class NotificationExtensionTests: XCTestCase {
 
   func testExpiryDeliversTheOriginalAlertWhileTheNetworkIsStillHeld() async throws {
     let fixture = ConversationHistoryFixture(count: 2)
-    let (session, user, _, provider) = try await session(fixture)
+    let context = try await makeSession(fixture)
+    let session = context.session
+    let user = context.user
+    let provider = context.provider
     await provider.clientReads.hold()
     let arrivals = await provider.clientReads.observeRequests()
     let started = expectation(description: "The identity refresh is held before opening storage")
@@ -99,7 +105,10 @@ final class NotificationExtensionTests: XCTestCase {
         started.fulfill()
         await gate.enter()
       })
-    let (session, user, directory, _) = try await session(fixture)
+    let context = try await makeSession(fixture)
+    let session = context.session
+    let user = context.user
+    let directory = context.directory
     let destination = try XCTUnwrap(
       NotificationDestination(userInfo: request(user: user).content.userInfo))
     let prefetch = Task { try await session.synchronize(destination) }
@@ -128,7 +137,10 @@ final class NotificationExtensionTests: XCTestCase {
 
   func testUnavailableMembershipDeliversAlertWithoutForeignHistory() async throws {
     let fixture = ConversationHistoryFixture(count: 2)
-    let (session, user, directory, _) = try await session(fixture)
+    let context = try await makeSession(fixture)
+    let session = context.session
+    let user = context.user
+    let directory = context.directory
     for (targetUser, targetWorkspace) in [("user_foreign", "org_one"), (user, "org_elsewhere")] {
       let service = NotificationServiceExtension(session: session)
       let delivered = expectation(description: "Unavailable scope still displays its alert")
@@ -147,20 +159,24 @@ final class NotificationExtensionTests: XCTestCase {
     }
   }
 
-  private func session(_ fixture: ConversationHistoryFixture) async throws -> (
-    NotificationExtensionSession, String, CacheTestDirectory, AuthenticationHTTPFixture
-  ) {
+  private struct SessionFixture {
+    let session: NotificationExtensionSession
+    let user: String
+    let directory: CacheTestDirectory
+    let provider: AuthenticationHTTPFixture
+  }
+
+  private func makeSession(_ fixture: ConversationHistoryFixture) async throws -> SessionFixture {
     let provider = try AuthenticationHTTPFixture()
     addTeardownBlock { await provider.close() }
     let auth = try await provider.authentication(
       restoredAccessGroup: PushConfiguration.keychain().accessGroup)
     let directory = CacheTestDirectory(owner: self)
-    return (
-      NotificationExtensionSession(
+    return SessionFixture(
+      session: NotificationExtensionSession(
         clerk: try XCTUnwrap(auth.clerk), apiURL: fixture.http.baseURL,
         version: "1.0.0", directory: directory.url, session: fixture.http.session),
-      provider.state.withLock { $0.userID }, directory, provider
-    )
+      user: provider.state.withLock { $0.userID }, directory: directory, provider: provider)
   }
 
   private func request(user: String, workspace: String = "org_one") -> UNNotificationRequest {

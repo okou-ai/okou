@@ -1,7 +1,6 @@
 # Inherit upstream defaults; adopt metric and naming policy separately.
 disabled_rules:
   - identifier_name
-  - large_tuple
   - line_length
   - nesting
 

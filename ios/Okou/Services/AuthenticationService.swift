@@ -13,10 +13,9 @@ final class AuthenticationService {
   private let presentationDirectory: URL?
   private var isRestoringSession = true
   private var clientRefreshGeneration = 0
-  private var clientRefreshTask:
-    (id: UUID, identity: Task<Result<Void, Error>, Never>, task: Task<Void, Never>)?
+  private var clientRefreshTask: ClientRefresh?
   private var resolvedWorkspaceIdentity: WorkspaceIdentity?
-  private var workspaceSwitch: (id: UUID, sessionID: String, userID: String)?
+  private var workspaceSwitch: WorkspaceSwitch?
   private(set) var membershipResources: AccountMembershipResources?
   private var membershipRefresh: (id: UUID, task: Task<Void, Never>)?
   // Confirmed membership input for SDK activation and presentation persistence.
@@ -27,6 +26,18 @@ final class AuthenticationService {
   private var refreshGeneration = 0
   private var workspacesSessionID: String?
   private var workspacesUserID: String?
+
+  private struct ClientRefresh {
+    let id: UUID
+    let identity: Task<Result<Void, Error>, Never>
+    let task: Task<Void, Never>
+  }
+
+  private struct WorkspaceSwitch {
+    let id: UUID
+    let sessionID: String
+    let userID: String
+  }
 
   private struct WorkspaceIdentity: Equatable {
     let sessionID: String
@@ -252,7 +263,7 @@ final class AuthenticationService {
       guard case .success = await identity.value, !Task.isCancelled else { return }
       await refreshWorkspaces()
     }
-    clientRefreshTask = (id, identity, task)
+    clientRefreshTask = ClientRefresh(id: id, identity: identity, task: task)
     return identity
   }
 
@@ -440,7 +451,7 @@ final class AuthenticationService {
     }
     if activeWorkspaceID == workspaceID { return }
     let switchID = UUID()
-    workspaceSwitch = (switchID, session.id, userID)
+    workspaceSwitch = WorkspaceSwitch(id: switchID, sessionID: session.id, userID: userID)
     defer {
       if workspaceSwitch?.id == switchID { workspaceSwitch = nil }
     }
