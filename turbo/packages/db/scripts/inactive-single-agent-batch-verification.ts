@@ -17,6 +17,21 @@ const unchanged = [
   ["queued_chat_threads", "chat_thread_id"],
 ] as const;
 
+async function workspaceBatches(sql: postgres.Sql) {
+  const rows = await sql<
+    { org_id: string }[]
+  >`SELECT org_id FROM batch_scope ORDER BY org_id`;
+  const batches: string[][] = [];
+  for (let index = 0; index < rows.length; index += 50) {
+    batches.push(
+      rows.slice(index, index + 50).map((row) => {
+        return row.org_id;
+      }),
+    );
+  }
+  return batches;
+}
+
 export async function captureInactiveBatch(
   sql: postgres.Sql,
   migrationSql: string,
@@ -55,8 +70,16 @@ export async function captureInactiveBatch(
       CREATE TEMP TABLE batch_chat_sequences AS SELECT * FROM chat_thread_event_sequences;
     `);
   await sql`INSERT INTO batch_metadata VALUES(${pendingMigrations.includes("1570_backfill_project_sort_order")})`;
-  await sql.unsafe(`CREATE TEMP TABLE batch_runs AS
-      SELECT r.id,r.xmin::text || ':' || r.ctid::text AS fingerprint FROM agent_runs r JOIN batch_scope s USING(org_id)`);
+  await sql.unsafe(
+    "CREATE TEMP TABLE batch_runs (id uuid PRIMARY KEY,org_id text NOT NULL,fingerprint text NOT NULL)",
+  );
+  // Bound each complete org set instead of a full-table join on cold storage.
+  // Every candidate org is covered, including those skipped by activation.
+  for (const orgs of await workspaceBatches(sql)) {
+    await sql`INSERT INTO batch_runs SELECT r.id,r.org_id,r.xmin::text || ':' || r.ctid::text
+      FROM agent_runs r WHERE r.org_id=ANY(${orgs}::text[])`;
+  }
+  await sql.unsafe("CREATE INDEX ON batch_runs(org_id)");
   await sql.unsafe(`CREATE TEMP TABLE batch_chats AS
       SELECT c.id,c.agent_id,c.project_id,c.user_id,c.pin_order,c.last_message_at,
         c.xmin::text || ':' || c.ctid::text AS full_fingerprint,
@@ -120,12 +143,15 @@ export async function verifyInactiveBatch(sql: postgres.Sql) {
       WHERE a.fingerprint IS DISTINCT FROM b.fingerprint`,
     );
   }
-  await check(
-    "retained_runs",
-    `SELECT count(*)::int AS n FROM batch_runs b FULL JOIN
-    (SELECT r.id,r.xmin::text || ':' || r.ctid::text AS fingerprint FROM agent_runs r JOIN batch_scope s USING(org_id)) a USING(id)
-    WHERE b.fingerprint IS DISTINCT FROM a.fingerprint`,
-  );
+  checks.retained_runs = 0;
+  for (const orgs of await workspaceBatches(sql)) {
+    const [row] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM
+      (SELECT id,fingerprint FROM batch_runs WHERE org_id=ANY(${orgs}::text[])) b FULL JOIN
+      (SELECT r.id,r.xmin::text || ':' || r.ctid::text AS fingerprint FROM agent_runs r WHERE r.org_id=ANY(${orgs}::text[])) a USING(id)
+      WHERE b.fingerprint IS DISTINCT FROM a.fingerprint`;
+    assert.ok(row);
+    checks.retained_runs += row.n;
+  }
   await check(
     "retained_personal",
     `SELECT count(*)::int AS n FROM batch_personal b LEFT JOIN instructions i USING(org_id,user_id) WHERE b.fingerprint IS DISTINCT FROM i.xmin::text || ':' || i.ctid::text`,
