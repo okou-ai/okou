@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.249.54](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.53...runner-rs-v0.249.54) (2026-11-18)
+
+
+### Refactoring
+
+* **firewall:** retire legacy resolver and envelope compatibility ([#48739](https://github.com/okou-ai/okou/issues/48739)) ([7dcd7ca](https://github.com/okou-ai/okou/commit/7dcd7cac45f2b26e253703533fc7f1097609c0f6))
+* **runner:** centralize native pressure policy shape validation ([#48742](https://github.com/okou-ai/okou/issues/48742)) ([6de7061](https://github.com/okou-ai/okou/commit/6de7061ded8a72209a0edb56a324f4d4f5cd9423))
+* **runner:** share original evidence stream ownership ([#48727](https://github.com/okou-ai/okou/issues/48727)) ([280030d](https://github.com/okou-ai/okou/commit/280030d05d8ea88752d6eefac4bc41664c1284e5))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.53](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.52...runner-rs-v0.249.53) (2026-11-18)
 
 ### Release Dependencies

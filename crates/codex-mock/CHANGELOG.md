@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.83](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.82...codex-mock-v0.12.83) (2026-11-18)
+
+
+### Refactoring
+
+* **rust:** use typed directory entry operations ([#48730](https://github.com/okou-ai/okou/issues/48730)) ([5856c31](https://github.com/okou-ai/okou/commit/5856c31954cc37ce63770f5747a02b3da7c8676d))
+
 ## [0.12.82](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.81...codex-mock-v0.12.82) (2026-11-18)
 
 ## [0.12.81](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.80...codex-mock-v0.12.81) (2026-11-18)

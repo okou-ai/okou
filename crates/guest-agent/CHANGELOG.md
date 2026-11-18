@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.110.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.110...guest-agent-v0.110.0) (2026-11-18)
+
+
+### Features
+
+* add ultrafast for codex subscriptions ([#48736](https://github.com/okou-ai/okou/issues/48736)) ([c352dad](https://github.com/okou-ai/okou/commit/c352dadadbbec10cea8cf77adccfac8462ecdb94))
+
+
+### Refactoring
+
+* **rust:** use typed directory entry operations ([#48730](https://github.com/okou-ai/okou/issues/48730)) ([5856c31](https://github.com/okou-ai/okou/commit/5856c31954cc37ce63770f5747a02b3da7c8676d))
+
 ## [0.109.110](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.109...guest-agent-v0.109.110) (2026-11-18)
 
 
