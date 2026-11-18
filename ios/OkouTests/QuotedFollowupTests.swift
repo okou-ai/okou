@@ -83,7 +83,9 @@ final class QuotedFollowupTests: XCTestCase {
     let control = UIControl()
     control.addAction(quote, for: .primaryActionTriggered)
     control.sendActions(for: .primaryActionTriggered)
-    try await eventually {
+    try await eventually(
+      message: quoteFocusStatus(in: window, selection: selection, composer: conversation.composer)
+    ) {
       self.textViews(in: window).contains {
         $0.accessibilityLabel == "Ask or comment on this quote" && $0.isFirstResponder
       }
@@ -205,6 +207,34 @@ final class QuotedFollowupTests: XCTestCase {
       return input.text(in: range)?.contains("Selected 🌷 é passage.") == true
     }
   }
+
+  private func quoteFocusStatus(
+    in window: UIWindow, selection: UIView & UITextInput, composer: ComposerDraftStore
+  ) -> String {
+    let feedbackIDs = composer.editorBlocks.filter(\.isFeedback).map(\.id)
+    let inputs = textViews(in: window).map { input in
+      let current = (input as? ComposerTextView)?.isCurrent()
+      return [
+        "id=\(input.accessibilityIdentifier ?? "none")",
+        "label=\(input.accessibilityLabel ?? "none")",
+        "attached=\(input.window === window)",
+        "firstResponder=\(input.isFirstResponder)",
+        "editable=\(input.isEditable)",
+        "current=\(current?.description ?? "n/a")"
+      ].joined(separator: ", ")
+    }
+    return """
+      After the native quote focus wait:
+      Window is key: \(window.isKeyWindow)
+      Transcript is attached: \(selection.window === window)
+      Transcript is first responder: \(selection.isFirstResponder)
+      Transcript has selection: \(selection.selectedTextRange?.isEmpty == false)
+      Feedback block IDs: \(feedbackIDs)
+      Pending focus block: \(composer.focusRequest?.blockID.uuidString ?? "none")
+      Native text views: \(inputs)
+      """
+  }
+
   private func textViews(in view: UIView) -> [UITextView] {
     if let input = view as? UITextView { return [input] }
     return view.subviews.flatMap { textViews(in: $0) }
