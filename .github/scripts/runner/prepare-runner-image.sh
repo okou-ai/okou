@@ -215,8 +215,11 @@ if [ "${#STOPPED_UNITS[@]}" -gt 0 ]; then
   sudo systemctl reset-failed "${STOPPED_UNITS[@]}" 2>/dev/null || true
 fi
 
-sudo rm -rf "${BIN_DIR}" "${RUNNER_DIR}"
-sudo mkdir -p "${BIN_DIR}"
+# The current admission marker must survive preparation. Closed-PR cleanup
+# removes the whole namespace under the same lifecycle lock, fencing late work.
+sudo find "${BIN_DIR}" -mindepth 1 -maxdepth 1 \
+  ! -name "${RUNNER_IMAGE_OWNER_MARKER:?}" -exec rm -rf {} +
+sudo rm -rf "${RUNNER_DIR}"
 case "$BIN_DIR" in
   /var/lib/vm0-runner/bin/staging-*)
     sudo find /var/lib/vm0-runner/bin \

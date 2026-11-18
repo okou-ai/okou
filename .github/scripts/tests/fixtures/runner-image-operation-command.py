@@ -2,9 +2,11 @@
 """External SSH/systemd/privileged-runner fixture; internal image code stays real."""
 
 import contextlib
+import fnmatch
 import hashlib
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -66,6 +68,12 @@ def ssh(arguments):
     try:
         process.stdin.write(json.dumps(request).encode())
         process.stdin.close()
+        if MODE == "claim-commit-loss" and request["action"] == "claim" and once():
+            wait_for(lambda: (ROOT / "claim-resource-created").exists())
+            (ROOT / "claim-cut").touch()
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+            return 255
         fault = request["action"] == "run" and request["phase"] == "build"
         if fault and MODE == "contended-launch":
             gate = (
@@ -149,40 +157,60 @@ def systemd_run(arguments):
         return 1
     with open(os.devnull, "wb") as sink:
         process = subprocess.Popen(
-            command, stdin=subprocess.DEVNULL, stdout=sink, stderr=sink, start_new_session=True
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=sink,
+            stderr=sink,
+            start_new_session=True,
         )
     path = ROOT / "units" / (unit + ".json")
     temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps({"pid": process.pid}))
+    description = next(
+        (a.split("=", 1)[1] for a in arguments if a.startswith("--description=")), ""
+    )
+    temporary.write_text(json.dumps({"pid": process.pid, "description": description}))
     temporary.replace(path)
     return 0
 
 
 def systemctl(arguments):
+    if arguments[0] == "list-units":
+        patterns = [a for a in arguments[1:] if not a.startswith("-")]
+        for path in sorted((ROOT / "units").glob("*.json")):
+            name = path.name.removesuffix(".json")
+            if any(fnmatch.fnmatch(name, pattern) for pattern in patterns):
+                print(name + " loaded active running Image fixture")
+        return 0
     if arguments[0] == "show":
-        unit = arguments[1]
-        path = ROOT / "units" / (unit + ".json")
-        if not path.exists():
-            if MODE == "pending-launch" and (ROOT / "launch-pending").exists():
+        for unit in (a for a in arguments[1:] if a.endswith(".service")):
+            path = ROOT / "units" / (unit + ".json")
+            info = json.loads(path.read_text()) if path.exists() else {}
+            running = bool(info) and alive(info["pid"])
+            if not info and MODE == "pending-launch" and (ROOT / "launch-pending").exists():
                 (ROOT / "observed-pending-launch").touch()
-            print("LoadState=not-found")
-            return 0
-        info = json.loads(path.read_text())
-        running = alive(info["pid"])
-        print("LoadState=loaded")
-        print("ActiveState=" + ("active" if running else "inactive"))
-        print("MainPID=" + (str(info["pid"]) if running else "0"))
-        print("Job=")
-        print("ControlGroup=" + ("/" if MODE == "populated-cgroup" else ""))
+            fields = {
+                "Id": unit,
+                "LoadState": "loaded" if info else "not-found",
+                "ActiveState": "active" if running else "inactive",
+                "MainPID": str(info["pid"]) if running else "0",
+                "Job": "",
+                "ControlGroup": "/" if MODE == "populated-cgroup" else "",
+                "FragmentPath": "",
+                "Description": info.get("description", ""),
+            }
+            print("\n".join(key + "=" + value for key, value in fields.items()) + "\n")
         return 0
     if arguments[0] == "stop":
-        path = ROOT / "units" / (arguments[-1] + ".json")
-        info = json.loads(path.read_text())
         if MODE == "failed-stop":
             return 1
-        with contextlib.suppress(ProcessLookupError):
-            os.killpg(info["pid"], signal.SIGKILL)
-        record("stops", arguments[-1])
+        for unit in (a for a in arguments[1:] if a.endswith(".service")):
+            path = ROOT / "units" / (unit + ".json")
+            if path.exists():
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(json.loads(path.read_text())["pid"], signal.SIGKILL)
+            record("stops", unit)
+        return 0
+    if arguments[0] in ("disable", "reset-failed", "daemon-reload"):
         return 0
     raise RuntimeError("unsupported fixture systemctl operation")
 
@@ -214,9 +242,48 @@ def main():
     arguments = sys.argv[1:]
     if name == "ssh":
         return ssh(arguments)
+    if name == "systemctl":
+        return systemctl(arguments)
     if name != "sudo":
         raise RuntimeError("unexpected fixture executable")
     record("privileged", arguments)
+    if arguments[:2] == ["python3", "-c"] and arguments[3:4] == ["image-lifecycle-lock"]:
+        if len(arguments) != 5 or not re.fullmatch(
+            r"/var/lock/vm0-runner-lifecycle-(pr-[1-9][0-9]*|staging-[a-f0-9]{12})\.lock",
+            arguments[4],
+        ):
+            raise RuntimeError("invalid fixture lifecycle lock")
+        path = ROOT / arguments[4].lstrip("/")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+        path.chmod(0o644)
+        print(path)
+        return 0
+    if arguments[:2] in (
+        ["mkdir", "-p"],
+        ["realpath", "-e"],
+        ["touch", "--no-dereference"],
+    ):
+        if len(arguments) != 3:
+            raise RuntimeError("invalid fixture filesystem command")
+        path = Path(arguments[2])
+        if path.is_relative_to("/var/lib/vm0-runner/bin"):
+            path = ROOT / str(path).lstrip("/")
+        if not path.is_relative_to(ROOT / "var/lib/vm0-runner/bin"):
+            raise RuntimeError("fixture filesystem command outside image namespace")
+        if arguments[0] == "mkdir":
+            path.mkdir(parents=True, exist_ok=True)
+        elif arguments[0] == "touch":
+            if path.exists() or path.is_symlink():
+                os.utime(path, follow_symlinks=False)
+            else:
+                path.touch()
+            if MODE == "claim-commit-loss" and not (ROOT / "claim-cut").exists():
+                (ROOT / "claim-resource-created").touch()
+                wait_for(lambda: (ROOT / "release-claim-resource").exists())
+        else:
+            print(path.resolve(strict=True))
+        return 0
     if arguments[0].startswith("--preserve-env="):
         return runner(arguments[1:])
     if arguments[0] == "sha256sum":
@@ -234,7 +301,11 @@ if __name__ == "__main__":
     def report_error(kind, value, traceback):
         record(
             "errors",
-            {"executable": Path(sys.argv[0]).name, "type": kind.__name__, "message": str(value)},
+            {
+                "executable": Path(sys.argv[0]).name,
+                "type": kind.__name__,
+                "message": str(value),
+            },
         )
         sys.__excepthook__(kind, value, traceback)
 

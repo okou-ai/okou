@@ -29,6 +29,14 @@ BOOTSTRAP = (
     "import json,sys; r=json.load(sys.stdin); n={'__name__':'remote'}; "
     "exec(compile(r['source'],'<runner-image-operation>','exec'),n); n['remote'](r)"
 )
+LOCK_BOOTSTRAP = (
+    "import os,stat,sys\np=sys.argv[2]\n"
+    "fd=os.open(p,os.O_CREAT|os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK,0o644)\n"
+    "s=os.fstat(fd)\n"
+    "if not stat.S_ISREG(s.st_mode) or s.st_uid!=0 or s.st_nlink!=1:\n"
+    " raise RuntimeError('invalid lifecycle lock')\n"
+    "os.fchmod(fd,0o644)\nprint(os.path.realpath(p))\n"
+)
 
 
 def digest(value):
@@ -86,6 +94,51 @@ def system(*arguments):
     return result.stdout
 
 
+@contextlib.contextmanager
+def lifecycle(owner):
+    # Linux flock permits LOCK_EX on a read-only FD. The existing root-owned
+    # lock stays on the same inode; workers do not need to run Python as root.
+    fd = os.open(owner["lifecycleLock"], os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        deadline = time.monotonic() + 15
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("image lifecycle lock deadline exceeded") from None
+                time.sleep(0.1)
+        yield
+    finally:
+        os.close(fd)
+
+
+def marker_for(owner):
+    return Path(owner["resourceRoot"]) / (".image-owner-" + owner["identity"])
+
+
+def require_resource(owner):
+    marker = marker_for(owner)
+    if marker.is_symlink() or not marker.is_file():
+        raise RuntimeError("image namespace retired; a new workflow attempt is required")
+
+
+def claim_resource(namespace, owner):
+    lock = "/var/lock/vm0-runner-lifecycle-" + namespace.name + ".lock"
+    owner["lifecycleLock"] = system(
+        "python3", "-c", LOCK_BOOTSTRAP, "image-lifecycle-lock", lock
+    ).strip()
+    with lifecycle(owner):
+        directory = "/var/lib/vm0-runner/bin/" + namespace.name
+        system("mkdir", "-p", directory)
+        owner["resourceRoot"] = system("realpath", "-e", directory).strip()
+        system("touch", "--no-dereference", str(marker_for(owner)))
+        require_resource(owner)
+        owner["state"] = "ready"
+        atomic_json(namespace / "owner.json", owner)
+
+
 def unit_state(unit):
     result = subprocess.run(
         [
@@ -136,7 +189,7 @@ def stopped(values):
 
 
 def unit_for(operation):
-    return "vm0-ci-image-" + operation.name + ".service"
+    return "vm0-runner-" + operation.parent.name + "-image-" + operation.name + ".service"
 
 
 def operation_paths(namespace):
@@ -181,15 +234,19 @@ def owner_matches(actual, expected):
 
 
 def owner_admitted(actual, expected):
-    return owner_matches(actual, expected) and actual["cancelled"] is False
+    return owner_matches(actual, expected) and actual["state"] == "ready"
 
 
 def retire(operation):
-    unit = unit_for(operation)
-    if not stopped(unit_state(unit)):
-        system("systemctl", "stop", "--no-block", unit)
+    # Retained operations from earlier CI revisions used the second name.
+    # Check both exact identities even if intent is missing; never guess that
+    # an absent record proves either control group has retired.
+    units = (unit_for(operation), "vm0-ci-image-" + operation.name + ".service")
+    for unit in units:
+        if not stopped(unit_state(unit)):
+            system("systemctl", "stop", "--no-block", unit)
     deadline = time.monotonic() + 15
-    while not stopped(unit_state(unit)):
+    while any(not stopped(unit_state(unit)) for unit in units):
         if time.monotonic() >= deadline:
             raise RuntimeError("image worker retirement unconfirmed; retaining files")
         time.sleep(0.1)
@@ -267,7 +324,7 @@ def remote(request):
     owner_path = namespace / "owner.json"
     entry_owner = json.loads(owner_path.read_text()) if owner_path.exists() else None
     if request["action"] == "claim":
-        if owner_matches(entry_owner, owner) and not owner_admitted(entry_owner, owner):
+        if owner_matches(entry_owner, owner) and entry_owner["state"] == "cancelled":
             raise RuntimeError("image workflow owner cancelled; a new attempt is required")
         if (
             entry_owner
@@ -321,9 +378,18 @@ def remote(request):
                 for operation in operation_paths(namespace):
                     retire(operation)
                     shutil.rmtree(operation)
-                atomic_json(owner_path, dict(owner, operations=[], cancelled=False))
+                # Record admission intent before creating managed resources.
+                # A lost, uncommitted claim cannot recreate a cleaned namespace.
+                claimed = dict(owner, operations=[], state="claiming")
+                atomic_json(owner_path, claimed)
+                claim_resource(namespace, claimed)
             elif not owner_admitted(previous, owner):
-                raise RuntimeError("image workflow owner cancelled; a new attempt is required")
+                raise RuntimeError(
+                    "image workflow claim incomplete or cancelled; a new attempt is required"
+                )
+            else:
+                with lifecycle(previous):
+                    require_resource(previous)
             emit({"claimed": owner["identity"]})
             return
         if not owner_matches(previous, owner):
@@ -334,7 +400,7 @@ def remote(request):
         if request["action"] == "cancel":
             # Fence admission even if a previously submitted systemd request
             # becomes visible only after our final stopped-state observation.
-            previous["cancelled"] = True
+            previous["state"] = "cancelled"
             atomic_json(owner_path, previous)
             for operation in operation_paths(namespace):
                 retire(operation)
@@ -376,7 +442,7 @@ def remote(request):
                 "systemd-run",
                 "--quiet",
                 "--collect",
-                "--unit=" + unit.removesuffix(".service") + "-expire",
+                "--unit=vm0-ci-image-" + identity + "-expire",
                 "--on-active=1h",
                 "--timer-property=AccuracySec=1s",
                 "--property=RuntimeMaxSec=60",
@@ -395,6 +461,7 @@ def remote(request):
                 "--collect",
                 "--service-type=exec",
                 "--unit=" + unit,
+                "--description=Runner image " + inputs["jobRef"] + " " + identity,
                 "--uid=" + str(os.getuid()),
                 "--gid=" + str(os.getgid()),
                 "--property=RuntimeMaxSec=" + str(WORK_SECONDS),
@@ -453,34 +520,39 @@ def worker(operation):
         raise RuntimeError("invalid image execution identity")
     with gate(operation.parent):
         owner = json.loads((operation.parent / "owner.json").read_text())
-        if owner["identity"] != digest(inputs) or owner["cancelled"] is not False:
+        if not owner_admitted(owner, owner_for(inputs)):
             raise RuntimeError("image operation owner superseded or cancelled")
-        if intent["phase"] == "guard":
-            execute(operation, intent, intent["command"], intent["stdin"].encode(), {})
-            return
-        credentials_path = operation / "credentials.json"
-        credentials = json.loads(credentials_path.read_text())
-        credentials_path.unlink()
-        runner = "/var/lib/vm0-runner/bin/" + inputs["jobRef"] + "/runner"
-        checked = system("sha256sum", runner).split()[0]
-        if checked != inputs["runnerSha256"]:
-            raise RuntimeError("runner bytes changed before image execution")
-        command = [
-            "sudo",
-            "--preserve-env=" + ",".join(R2_NAMES),
-            runner,
-            "build",
-            "--profile",
-            inputs["profile"],
-        ]
-        if intent["phase"] == "warm":
-            command.append("--warm-rootfs-cache")
-        execute(operation, intent, command, None, credentials)
+        with lifecycle(owner):
+            # Cleanup may have run while this service was queued. Admission
+            # belongs to the managed namespace, not merely to a live unit.
+            require_resource(owner)
+            if intent["phase"] == "guard":
+                execute(operation, intent, intent["command"], intent["stdin"].encode(), {})
+                return
+            credentials_path = operation / "credentials.json"
+            credentials = json.loads(credentials_path.read_text())
+            credentials_path.unlink()
+            runner = "/var/lib/vm0-runner/bin/" + inputs["jobRef"] + "/runner"
+            checked = system("sha256sum", runner).split()[0]
+            if checked != inputs["runnerSha256"]:
+                raise RuntimeError("runner bytes changed before image execution")
+            command = [
+                "sudo",
+                "--preserve-env=" + ",".join(R2_NAMES),
+                runner,
+                "build",
+                "--profile",
+                inputs["profile"],
+            ]
+            if intent["phase"] == "warm":
+                command.append("--warm-rootfs-cache")
+            execute(operation, intent, command, None, credentials)
 
 
 def execute(operation, intent, command, stdin, credentials):
     environment = dict(os.environ)
     environment.update({key: credentials.get(key, "") for key in R2_NAMES})
+    environment["RUNNER_IMAGE_OWNER_MARKER"] = ".image-owner-" + digest(intent["inputs"])
     hashes = {}
     retained = 0
     truncated = False

@@ -338,6 +338,37 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(payload["42"]["units"][0]["state"]["busy"])
 
+    def test_image_unit_associates_exact_namespace_and_retires_execution(self):
+        for number, digit in ((42, "a"), (420, "b")):
+            identity = digit * 64
+            name = f"vm0-runner-pr-{number}-image-{identity}.service"
+            self.resource("run/systemd/transient/" + name)
+            self.resource(f"var/lib/vm0-runner/bin/pr-{number}/runner")
+            self.state(
+                name,
+                ActiveState="active",
+                MainPID="123",
+                Job="91",
+            )
+        result, payload = self.worker("cleanup", 42)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload["42"]["outcome"], "cleaned")
+        self.assertEqual(payload["42"]["units"], 1)
+        result, payload = self.worker("inventory")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(set(payload), {"420"})
+        self.assertTrue(payload["420"]["units"][0]["state"]["busy"])
+
+    def test_unattributed_running_image_preserves_namespaces(self):
+        self.state(
+            "vm0-ci-image-" + "a" * 64 + ".service", ActiveState="active", MainPID="123"
+        )
+        resource = self.resource("var/lib/vm0-runner/bin/pr-42/runner")
+        result = self.controller(RUNNER_PR_NUMBERS="42")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("image unit ownership unavailable", result.stderr)
+        self.assertTrue(resource.exists())
+
     def test_unknown_stop_state_preserves_files_and_fails(self):
         unit = self.resource("etc/systemd/system/vm0-runner-pr-42-api.service")
         config = self.resource("var/lib/vm0-runner/runners/pr-42-api/config")

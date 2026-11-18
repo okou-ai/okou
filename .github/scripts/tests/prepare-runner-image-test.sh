@@ -222,14 +222,19 @@ if [ "${1:-}" = python3 ]; then
   # identity validation, original failures and structured manifest publication.
   MOCK_SSH_SELF="$0" MOCK_SSH_REMOTE="$remote" python3 -c '
 import hashlib, json, os, subprocess, sys
+from pathlib import Path
 r = json.load(sys.stdin)
+owner_marker = ".image-owner-" + hashlib.sha256(json.dumps(r["inputs"], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 if r["action"] == "guard":
+    os.environ["RUNNER_IMAGE_OWNER_MARKER"] = owner_marker
     p = subprocess.run([os.environ["MOCK_SSH_SELF"], os.environ["MOCK_SSH_REMOTE"], *r["command"]], input=r["stdin"], capture_output=True, text=True)
     sys.stderr.write(p.stderr)
     identity = hashlib.sha256(json.dumps({"inputs": r["inputs"], "phase": "guard", "nonce": r["nonce"], "commandDigest": hashlib.sha256(json.dumps({"command": r["command"], "stdin": r["stdin"]}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     print(json.dumps({"log": p.stdout, "offset": len(p.stdout)}))
     print(json.dumps({"result": {"schemaVersion": 1, "identity": identity, "status": p.returncode, "logTruncated": False}}))
 elif r["action"] != "run":
+    if r["action"] == "claim":
+        (Path(os.environ["SSH_UPLOAD_DIR"]) / owner_marker).touch()
     print(json.dumps({r["action"]: "ok"}))
 else:
     identity = hashlib.sha256(json.dumps({"inputs": r["inputs"], "phase": r["phase"]}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
@@ -380,6 +385,10 @@ case "$command" in
       printf ' %s' "$@"
       printf '\n'
     } >> "$SYSTEMCTL_LOG"
+    if [ "$command" = find ] && [ "$1" = /var/lib/vm0-runner/bin/pr-123 ]; then
+      shift
+      exec find "$SSH_UPLOAD_DIR" "$@"
+    fi
     ;;
   *)
     echo "unexpected sudo command: ${command}" >&2
@@ -741,7 +750,8 @@ for status in 255 124 141; do
     failed_candidate=$(< "${upload_retry_case}/uploads/failed-candidate")
     grep -Fxq 'late stale bytes' "$failed_candidate" || fail "expected a late write to the failed candidate"
     grep -Fqx -- "$setup_command" "${upload_retry_case}/ssh.log" || fail "recovered upload must continue to setup"
-    [ "$(grep -c '^mutate mkdir ' "${upload_retry_case}/systemctl.log")" -eq 1 ] || fail "upload retry must not repeat destructive preparation"
+    [ "$(grep -c '^mutate rm -rf /var/lib/vm0-runner/runners/pr-123$' "${upload_retry_case}/systemctl.log")" -eq 1 ] || fail "upload retry must not repeat destructive preparation"
+    [ "$(find "${upload_retry_case}/uploads" -name '.image-owner-*' | wc -l)" -eq 1 ] || fail "preparation must preserve current owner admission"
     [ "$(< "${upload_retry_case}/gc-count")" -eq 1 ] || fail "upload retry must not repeat GC"
     grep -Fq "runner upload failed: host=dev-arm-1 attempt=1/3 status=${status} elapsed_seconds=" "${upload_retry_case}/out" || fail "expected original upload status and timing"
     grep -Fq "runner upload completed: host=dev-arm-1 attempt=${expected_attempts}/3 elapsed_seconds=" "${upload_retry_case}/out" || fail "expected recovered upload timing"

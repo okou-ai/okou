@@ -9,6 +9,7 @@ import os
 import select
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -16,6 +17,7 @@ from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent.parent
 COMMAND = SCRIPTS / "runner/runner-image-operation.py"
+CLEANUP = SCRIPTS / "runner/cleanup-metal-resources.py"
 FIXTURE = SCRIPTS / "tests/fixtures/runner-image-operation-command.py"
 
 
@@ -27,7 +29,7 @@ class ImageOperationTest(unittest.TestCase):
         (self.root / "bin").mkdir()
         (self.root / "units").mkdir()
         (self.root / "runner").write_bytes(b"validated runner fixture")
-        for name in ("ssh", "sudo"):
+        for name in ("ssh", "sudo", "systemctl"):
             (self.root / "bin" / name).symlink_to(FIXTURE)
         self.environment = dict(
             os.environ,
@@ -71,7 +73,9 @@ class ImageOperationTest(unittest.TestCase):
         )
         if check:
             self.assertEqual(
-                result.returncode, 0, result.stdout + result.stderr + str(self.records("errors"))
+                result.returncode,
+                0,
+                result.stdout + result.stderr + str(self.records("errors")),
             )
         return result
 
@@ -85,6 +89,131 @@ class ImageOperationTest(unittest.TestCase):
             if time.monotonic() >= deadline:
                 self.fail("process synchronization deadline exceeded")
             time.sleep(0.01)
+
+    @contextlib.contextmanager
+    def cleanup_session(self):
+        with subprocess.Popen(
+            [
+                sys.executable,
+                str(CLEANUP),
+                "session",
+                "123",
+                "--root",
+                str(self.root),
+            ],
+            env=self.environment,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        ) as cleanup:
+            try:
+                yield cleanup
+                cleanup.stdin.write('{"operation":"release"}\n')
+                cleanup.stdin.flush()
+                self.assertEqual(self.cleanup_reply(cleanup), {"released": True})
+                cleanup.stdin.close()
+                self.assertEqual(cleanup.wait(timeout=5), 0, cleanup.stderr.read())
+            finally:
+                if cleanup.poll() is None:
+                    cleanup.kill()
+                    cleanup.wait(timeout=5)
+
+    def cleanup_reply(self, cleanup):
+        self.assertTrue(select.select([cleanup.stdout], [], [], 15)[0])
+        line = cleanup.stdout.readline()
+        if not line:
+            self.fail(cleanup.stderr.read())
+        return json.loads(line)
+
+    def clean_namespace(self, cleanup):
+        cleanup.stdin.write('{"operation":"cleanup","numbers":[123]}\n')
+        cleanup.stdin.flush()
+        return self.cleanup_reply(cleanup)["results"]["123"]
+
+    def test_running_image_excludes_cleanup_until_completion(self):
+        process = self.start_blocked()
+        lock = self.root / "var/lock/vm0-runner-lifecycle-pr-123.lock"
+        with self.cleanup_session() as cleanup:
+            # Synchronize on the actual lock contender opening the same file.
+            def contender_opened():
+                descriptors = Path(f"/proc/{cleanup.pid}/fd")
+                return any(p.resolve() == lock for p in descriptors.iterdir() if p.exists())
+
+            self.wait_for(contender_opened)
+            self.assertFalse(select.select([cleanup.stdout], [], [], 0)[0])
+            (self.root / "release").touch()
+            output, error = process.communicate(timeout=15)
+            self.assertEqual(process.returncode, 0, output + error)
+            self.assertEqual(self.cleanup_reply(cleanup), {"ready": [123]})
+            self.assertEqual(self.clean_namespace(cleanup)["outcome"], "cleaned")
+        self.assertFalse((self.root / "var/lib/vm0-runner/bin/pr-123").exists())
+        self.assert_one_build()
+
+    def test_cleanup_retires_image_queued_behind_its_lifecycle_lock(self):
+        self.invoke("claim")
+        with self.cleanup_session() as cleanup:
+            self.assertEqual(self.cleanup_reply(cleanup), {"ready": [123]})
+            process = subprocess.Popen(
+                ["python3", str(COMMAND), "run", "dev-11", "build", str(self.result)],
+                env=self.environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            self.addCleanup(lambda: process.poll() is None and process.kill())
+            self.wait_for(lambda: bool(list((self.root / "units").glob("*.json"))))
+            outcome = self.clean_namespace(cleanup)
+            self.assertEqual(outcome["outcome"], "cleaned", outcome)
+            self.assertEqual(outcome["units"], 1)
+        output, error = process.communicate(timeout=15)
+        self.assertNotEqual(process.returncode, 0, output + error)
+        self.assertEqual(self.records("executions"), [])
+        self.assertFalse((self.root / "var/lib/vm0-runner/bin/pr-123").exists())
+
+    def test_cleanup_fences_a_late_service_and_same_owner_reclaim(self):
+        self.invoke("claim")
+        self.environment["IMAGE_FAULT"] = "pending-launch"
+        directory = self.root / "var/lib/vm0-runner/bin/pr-123"
+        command = f"from pathlib import Path; p=Path({str(directory)!r}); p.mkdir(parents=True); (p/'late').touch()"
+        process = subprocess.Popen(
+            ["python3", str(COMMAND), "guard", "dev-11", "python3", "-c", command],
+            env=self.environment,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.addCleanup(lambda: process.poll() is None and process.kill())
+        try:
+            self.wait_for(lambda: (self.root / "launch-pending").exists())
+            with self.cleanup_session() as cleanup:
+                self.assertEqual(self.cleanup_reply(cleanup), {"ready": [123]})
+                self.assertEqual(self.clean_namespace(cleanup)["outcome"], "cleaned")
+        finally:
+            (self.root / "release-launch").touch()
+        output, error = process.communicate(timeout=15)
+        self.assertNotEqual(process.returncode, 0, output + error)
+        self.assertFalse(directory.exists(), "late admission must not recreate the namespace")
+        self.environment.pop("IMAGE_FAULT")
+        self.assertNotEqual(self.invoke("claim", check=False).returncode, 0)
+        self.environment["GITHUB_RUN_ATTEMPT"] = "2"
+        self.invoke("claim")
+        self.invoke("guard", "touch", str(directory / "successor"), input_text="")
+        self.assertTrue((directory / "successor").exists())
+
+    def test_uncommitted_claim_cannot_recreate_a_cleaned_namespace(self):
+        self.environment["IMAGE_FAULT"] = "claim-commit-loss"
+        self.assertNotEqual(self.invoke("claim", check=False).returncode, 0)
+        with self.cleanup_session() as cleanup:
+            self.assertEqual(self.cleanup_reply(cleanup), {"ready": [123]})
+            self.assertEqual(self.clean_namespace(cleanup)["outcome"], "cleaned")
+        self.assertNotEqual(self.invoke("claim", check=False).returncode, 0)
+        self.assertFalse((self.root / "var/lib/vm0-runner/bin/pr-123").exists())
+        self.environment["GITHUB_RUN_ATTEMPT"] = "2"
+        self.invoke("claim")
+        self.invoke("run", "build", str(self.result))
+        self.assert_one_build()
 
     def start_blocked(self, fault=""):
         self.environment["IMAGE_FAULT"] = fault
@@ -134,7 +263,9 @@ class ImageOperationTest(unittest.TestCase):
         for path in self.root.glob("vm0-runner-image-*/*/*/*"):
             if path.is_file():
                 self.assertNotIn(
-                    self.environment["R2_SECRET_ACCESS_KEY"].encode(), path.read_bytes(), str(path)
+                    self.environment["R2_SECRET_ACCESS_KEY"].encode(),
+                    path.read_bytes(),
+                    str(path),
                 )
 
     def test_lost_launch_reply_reattaches_without_replay(self):
@@ -163,8 +294,10 @@ class ImageOperationTest(unittest.TestCase):
             self.wait_for(lambda: (self.root / "observed-pending-launch").exists())
             (self.root / "release-launch").touch()
             self.wait_for(
-                lambda: "image-progress" in (self.root / "client.log").read_text()
-                or process.poll() is not None
+                lambda: (
+                    "image-progress" in (self.root / "client.log").read_text()
+                    or process.poll() is not None
+                )
             )
             self.assertIn(
                 "image-progress",
@@ -209,8 +342,10 @@ class ImageOperationTest(unittest.TestCase):
                 self.wait_for(lambda: bool(self.records("executions")))
                 (self.root / "resume-observer").touch()
                 self.wait_for(
-                    lambda: "image-progress" in (self.root / "client.log").read_text()
-                    or process.poll() is not None
+                    lambda: (
+                        "image-progress" in (self.root / "client.log").read_text()
+                        or process.poll() is not None
+                    )
                 )
                 self.assertIn(
                     "image-progress",
@@ -243,7 +378,8 @@ class ImageOperationTest(unittest.TestCase):
     def test_cancellation_retires_worker_and_preserves_lease_successor(self):
         process = self.start_blocked()
         self.assertTrue(
-            select.select([process.stdout], [], [], 10)[0], "expected progress before completion"
+            select.select([process.stdout], [], [], 10)[0],
+            "expected progress before completion",
         )
         self.assertIn("image-progress", process.stdout.readline())
         process.terminate()
@@ -255,9 +391,14 @@ class ImageOperationTest(unittest.TestCase):
             # Reaping between the existence check and read also proves exit.
             with contextlib.suppress(FileNotFoundError, ProcessLookupError):
                 self.wait_for(
-                    lambda: not Path(f"/proc/{record['pid']}").exists()
-                    or Path(f"/proc/{record['pid']}/stat").read_text().split(")", 1)[1].split()[0]
-                    == "Z"
+                    lambda: (
+                        not Path(f"/proc/{record['pid']}").exists()
+                        or Path(f"/proc/{record['pid']}/stat")
+                        .read_text()
+                        .split(")", 1)[1]
+                        .split()[0]
+                        == "Z"
+                    )
                 )
 
     def test_new_owner_stops_old_work_and_old_owner_cannot_launch(self):
@@ -406,7 +547,8 @@ class ImageOperationTest(unittest.TestCase):
         outcome = self.invoke("claim", check=False)
         self.assertNotEqual(outcome.returncode, 0)
         self.assertFalse(
-            list(fallback.iterdir()), "unavailable tmpfs must not create disk-backed state"
+            list(fallback.iterdir()),
+            "unavailable tmpfs must not create disk-backed state",
         )
 
     def test_inactive_unit_with_populated_cgroup_is_not_retired(self):
@@ -449,7 +591,11 @@ class ImageOperationTest(unittest.TestCase):
         self.environment["IMAGE_FAULT"] = "lost-guard"
         marker = self.root / "mutations"
         output = self.invoke(
-            "guard", "bash", "-s", check=False, input_text="echo prepared >> '" + str(marker) + "'"
+            "guard",
+            "bash",
+            "-s",
+            check=False,
+            input_text="echo prepared >> '" + str(marker) + "'",
         )
         self.assertEqual(output.returncode, 0, output.stderr)
         self.assertEqual(marker.read_text().splitlines(), ["prepared"])

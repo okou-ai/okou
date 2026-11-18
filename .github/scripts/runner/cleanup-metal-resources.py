@@ -25,6 +25,7 @@ from pathlib import Path, PurePosixPath
 UNIT = re.compile(
     r"^(?:vm0-runner-pr-([1-9][0-9]*)(?:-[a-z0-9][a-z0-9.-]*)?|vm0-stripe-listener-pr-([1-9][0-9]*))\.service$"
 )
+IMAGE_UNIT = re.compile(r"^vm0-ci-image-([a-f0-9]{64})\.service$")
 NAMESPACE = re.compile(r"(?:^|-)pr-([1-9][0-9]*)(?:-|$)")
 PROPERTIES = (
     "Id",
@@ -146,12 +147,16 @@ class Host:
     def inventory(self, selected=None):
         selected = None if selected is None else set(selected)
         units = {}
+        legacy_images = set()
         directories = {}
 
         def wanted(pr):
             return selected is None or pr in selected
 
         def add_unit(name, file=None):
+            if IMAGE_UNIT.fullmatch(name):
+                legacy_images.add(name)
+                return
             match = UNIT.fullmatch(name)
             if not match:
                 return
@@ -174,6 +179,7 @@ class Host:
                 )
             ]
         )
+        patterns.append("vm0-ci-image-*.service")
         loaded = command(
             "systemctl",
             "list-units",
@@ -200,6 +206,10 @@ class Host:
                         )
                     for link in entry.iterdir():
                         add_unit(link.name, link)
+
+        for name, state in self.states(legacy_images).items():
+            if state["busy"]:
+                raise RuntimeError(f"image unit ownership unavailable: {name}")
 
         for root in DATA_ROOTS:
             for entry in self.entries(root):

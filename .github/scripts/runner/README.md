@@ -92,6 +92,24 @@ replaced by original-result retrieval, so a known remote failure remains failed.
 Isolated binary upload candidates do not publish outside the guarded
 validation/rename boundary.
 
+Image writers also hold the existing host-local lifecycle lock used by Runner
+deployment and closed-PR cleanup. Its root-owned file keeps the same inode and
+is readable by workers so Linux can lock a read-only descriptor without running
+the worker as root. The private image gate is acquired first; cleanup never
+acquires that gate, and cancellation retires image units before waiting for it.
+A claim places an exact-owner admission marker in the managed binary directory;
+preparation preserves only its current marker. After taking the lifecycle lock,
+every worker checks that marker again. Removing the namespace therefore fences
+queued or delayed services, even when launch is not yet visible to cleanup.
+A same-owner claim cannot recreate a retired marker; a new workflow
+generation is required. The namespace owner records the host-resolved lifecycle
+lock and resource directory paths. No application/database schema changes.
+Owner state transitions from `claiming` to `ready` only after the marker and
+admission record are committed under the lifecycle lock; cancellation sets
+`cancelled`. A claim interrupted before that commit remains incomplete and
+cannot replay namespace initialization. Losing a committed claim reply still
+reattaches idempotently.
+
 Warm/build run once in transient services. Identity covers the exact source,
 binary inputs/bytes, target, profile, host, adapter source and workflow run/attempt.
 Launch intent precedes submission; intent without a result or live unit fails
@@ -103,6 +121,8 @@ rechecks owner admission. Only 124/141/255 can reconnect, at most three requests
 600-second call budget. Reconnection observes the original operation and never
 restarts it. The execution deadline bounds waiting for unfinished work; a
 published result remains retrievable until its retirement timer fires.
+Retrieval also requires the same admitted namespace owner; cancellation rejects
+reattachment, and a successor claim removes older operation records.
 Service work is limited to 570 seconds with a ten-second control
 group stop grace, leaving room for reconciliation inside the unchanged job budget.
 
@@ -182,6 +202,16 @@ deadlines cover a complete JSON frame, including replies stalled mid-line. EOF o
 heartbeat lease expiry stops the remote mutation before its own lock descriptors
 close. The worker source is paired with the controller and requires no persistent
 host installation.
+
+Image worker names use `vm0-runner-JOB_REF-image-DIGEST.service`, so existing
+cleanup revisions also include their jobs/control groups in retirement. This
+matters if a killed worker releases its lock before all descendants exit.
+Cancellation/expiry check both current and original `vm0-ci-image-DIGEST`
+unit identities, including when intent is unavailable. The second identity
+remains needed until retained operations from earlier CI revisions retire.
+A running legacy unit without PR attribution makes current
+cleanup inventory unverified and preserves resources. Expiry timers keep their
+separate `vm0-ci-image-DIGEST-expire` names and remain image-owned.
 
 Stripe replacement uses the same lifecycle exclusion. Its Ansible playbooks
 remain deployment adapters; closed-PR teardown does not start Ansible per PR.
