@@ -30,7 +30,7 @@ final class PermissionActionRegistry {
   }
 
   var isBusy: Bool {
-    cards.values.contains { $0.isSaving } || batches.values.contains { $0.isSaving }
+    cards.values.contains { $0.isBusy } || batches.values.contains { $0.isSaving }
   }
 
   func card(_ action: ChatPermissionBatchAction) -> PermissionBatchStore {
@@ -92,6 +92,7 @@ final class PermissionActionStore {
   private(set) var snapshot: ChatPermissionSnapshot?
   private(set) var isActive = false
   private(set) var isSaving = false
+  private(set) var isContinuing = false
   // Only mutation/continuation failures live here; read failures stay in their Task.
   private(set) var error: String?
   private(set) var needsContinuation = false
@@ -102,6 +103,7 @@ final class PermissionActionStore {
   private let clientEventID = UUID().uuidString.lowercased()
   private let sortEventID = UUID().uuidString.lowercased()
   private var operation: Task<Void, Never>?
+  private var continuationUncertain = false
   private let resources: PermissionCardResources
   private var generation = UUID()
   private var closed = false
@@ -130,10 +132,11 @@ final class PermissionActionStore {
   var applied: Bool { review.applied }
   var grant: ChatPermissionRule? { review.grant }
   var canConfirm: Bool { canConfirm(reviewing: snapshot) }
+  var isBusy: Bool { operation != nil }
 
   func canConfirm(reviewing snapshot: ChatPermissionSnapshot?) -> Bool {
     let review = PermissionActionReview(action: action, snapshot: snapshot)
-    return !closed && isActive && !isSaving && review.hasPermission
+    return !closed && isActive && !isBusy && review.hasPermission
       && (!review.applied || needsContinuation)
   }
 
@@ -167,7 +170,9 @@ final class PermissionActionStore {
     guard canConfirm(reviewing: reviewed), operation == nil, !Task.isCancelled else { return }
     let continuing =
       needsContinuation && PermissionActionReview(action: action, snapshot: reviewed).applied
+    let retrying = error != nil || needsContinuation
     isSaving = true
+    isContinuing = continuing
     error = nil
     generation = UUID()
     let generation = generation
@@ -177,6 +182,7 @@ final class PermissionActionStore {
       defer {
         if self.generation == generation {
           isSaving = false
+          isContinuing = false
           operation = nil
           read.invalidate()
         }
@@ -189,9 +195,14 @@ final class PermissionActionStore {
         guard PermissionActionReview(action: action, snapshot: cached).hasPermission else {
           throw ChatError.invalidContract("This permission is no longer available.")
         }
-        // Refresh before every explicit retry, including an ambiguous write response.
-        try await commands.permissions.validateContext(action)
-        let current = try await commands.permissions.load(action)
+        // Reuse the displayed review on first confirmation, as Web does. Explicit retries
+        // read fresh state before deciding whether a write or continuation is still allowed.
+        let current: ChatPermissionSnapshot
+        if retrying {
+          current = try await commands.permissions.load(action)
+        } else {
+          current = cached
+        }
         try Task.checkCancellation()
         guard !closed, self.generation == generation else { return }
         snapshot = current
@@ -203,28 +214,38 @@ final class PermissionActionStore {
         }
         if !applied {
           needsContinuation = action.callbackPrompt != nil
-          _ = try await commands.permissions.apply(action, duration: duration)
+          snapshot = try await commands.permissions.apply(
+            action, duration: duration, reviewing: current)
+          try Task.checkCancellation()
+          guard !closed, self.generation == generation else { return }
         }
         // An already-applied request never resumes automatically after opening or refreshing.
         if needsContinuation, let prompt = action.callbackPrompt {
-          try await commands.permissions.validateContext(action)
-          let history = try await sync.history(threadID: action.threadID)
-          if !history.persistedEventIDs.contains(clientEventID) {
+          isContinuing = true
+          var delivered = false
+          if continuationUncertain {
+            try await commands.permissions.validateContext(action)
+            let history = try await sync.eventHistory(threadID: action.threadID)
+            delivered = history.persistedEventIDs.contains(clientEventID)
+          }
+          if !delivered {
             let thread = ChatThread(
               id: action.threadID, agentID: action.agentID, title: "", createdAt: .now,
               updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
+            continuationUncertain = true
             _ = try await commands.send(
               thread: thread, text: prompt, clientEventID: clientEventID,
               chatThreadSortEventID: sortEventID, expectedAgentID: action.agentID)
           }
           try Task.checkCancellation()
+          guard !closed, self.generation == generation else { return }
+          continuationUncertain = false
           needsContinuation = false
+          // API acceptance completes the action. Conversation synchronization is separate.
+          isSaving = false
+          isContinuing = false
           await didContinue()
         }
-        let updated = try await commands.permissions.load(action)
-        try Task.checkCancellation()
-        guard !closed, self.generation == generation else { return }
-        snapshot = updated
       } catch is CancellationError {
       } catch {
         guard !closed, self.generation == generation else { return }
@@ -248,6 +269,7 @@ final class PermissionActionStore {
     operation?.cancel()
     operation = nil
     isSaving = false
+    isContinuing = false
   }
 
   func close() {
