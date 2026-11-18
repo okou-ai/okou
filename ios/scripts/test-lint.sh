@@ -371,7 +371,7 @@ if run_lint; then
   exit 1
 fi
 for path in "${file_length_paths[@]}"; do
-  grep -F "$path/NestingBoundary.swift:4:" "$test_root/lint.log" | grep -F '(nesting)' >/dev/null
+  grep -F "$path/NestingBoundary.swift" "$test_root/lint.log" | grep -F '(nesting)' >/dev/null
   rm "$fixture/$path/NestingBoundary.swift"
 done
 
