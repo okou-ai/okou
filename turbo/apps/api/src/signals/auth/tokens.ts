@@ -1,4 +1,8 @@
 import { singleAgentRuntimeContextSchema } from "@okouai/api-contracts/contracts/single-agent";
+import {
+  okouTokenClaimsSchema,
+  type OkouTokenClaims,
+} from "@okouai/api-contracts/contracts/run-execution-authorization";
 import { createHmac, hkdfSync } from "node:crypto";
 
 import {
@@ -12,18 +16,14 @@ import {
   type WorkflowImportSource,
 } from "@okouai/api-contracts/contracts/workflow-import-source";
 import {
-  array,
   literal,
   number,
   object,
-  record,
   string,
   uuid,
   type input,
   type infer as zInfer,
 } from "zod";
-
-import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 
 import { env } from "../../lib/env";
 import { now } from "../../lib/time";
@@ -95,36 +95,9 @@ const sandboxTokenPayloadSchema = jwtBaseSchema.extend({
   orgId: string().min(1),
 });
 
-function isAgentCapability(value: string): value is Capability {
-  return CAPABILITIES.some((capability) => {
-    return capability === value;
-  });
-}
-
-// Capability names are open-ended at the token boundary so tokens issued by a
-// newer API remain valid on an older API. The validated output remains closed
-// to known capabilities so unknown names cannot grant permissions.
-const agentCapabilitiesSchema = array(string().min(1))
-  .transform((capabilities) => {
-    return capabilities.filter(isAgentCapability);
-  })
-  .readonly();
-
-const okouTokenPayloadSchema = jwtBaseSchema.extend({
-  ...singleAgentRuntimeContextSchema.shape,
+const okouTokenPayloadSchema = okouTokenClaimsSchema.extend({
   scope: literal("okou"),
-  runId: string().min(1),
-  orgId: string().min(1),
-  capabilities: agentCapabilitiesSchema,
-  phoneUseDeviceId: uuid().optional(),
-  phoneUseGrantId: uuid().optional(),
-  computerUseHostId: uuid().optional(),
-  cloudBrowserEnabled: literal(true).optional(),
-  customConnectorSourceIds: record(uuid(), uuid()).optional(),
-  builtinConnectorSourceIds: record(connectorSlugSchema, uuid()).optional(),
 });
-
-type OkouTokenClaims = Omit<zInfer<typeof okouTokenPayloadSchema>, "scope">;
 
 const cliTokenPayloadSchema = jwtBaseSchema.extend({
   scope: literal("cli"),
@@ -410,9 +383,25 @@ export function generateOkouToken(
   featureEnabled: FeatureEnabled,
   options?: OkouTokenOptions,
 ): string {
-  return signOkouToken(
-    buildOkouTokenClaims(userId, runId, orgId, featureEnabled, options),
+  return prepareOkouToken(userId, runId, orgId, featureEnabled, options).token;
+}
+
+/** Capture the same immutable claims that are signed for this admission. */
+export function prepareOkouToken(
+  userId: string,
+  runId: string,
+  orgId: string,
+  featureEnabled: FeatureEnabled,
+  options?: OkouTokenOptions,
+): { readonly token: string; readonly claims: OkouTokenClaims } {
+  const claims = buildOkouTokenClaims(
+    userId,
+    runId,
+    orgId,
+    featureEnabled,
+    options,
   );
+  return { token: signOkouToken(claims), claims };
 }
 
 function buildOkouTokenClaims(
@@ -461,7 +450,7 @@ function buildOkouTokenClaims(
   };
 }
 
-function signOkouToken(claims: OkouTokenClaims): string {
+export function signOkouToken(claims: OkouTokenClaims): string {
   const payload: zInfer<typeof okouTokenPayloadSchema> = {
     scope: "okou",
     ...claims,

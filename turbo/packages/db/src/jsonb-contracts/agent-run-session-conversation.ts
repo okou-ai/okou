@@ -1,6 +1,7 @@
 import type { ContentBundle } from "./content-bundle";
 import type { PersistedStorageMount } from "../types";
 import type { JsonValue } from "./shared";
+import type { RunExecutionAuthorization } from "@okouai/api-contracts/contracts/run-execution-authorization";
 
 export type AgentRunVars = JsonValue;
 export type AgentRunSecretNames = string[];
@@ -30,6 +31,8 @@ export interface AgentRunLaunchSnapshotV5 {
   schemaVersion: 5;
   framework: "claude-code" | "codex" | "pi";
   runnerProfile: string;
+  /** Absent only on Runs admitted before authorization capture was deployed. */
+  executionAuthorization?: RunExecutionAuthorization;
 }
 export type AgentRunLaunchSnapshot = AgentRunFullLaunchSnapshot;
 export interface AgentRunOfficialWorkflowStorageDefinitionProvenance {

@@ -38,6 +38,8 @@ import {
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { SecretConnectorMetadata } from "@okouai/api-contracts/contracts/runners";
+import { runExecutionAuthorizationSchema } from "@okouai/api-contracts/contracts/run-execution-authorization";
+import { signOkouToken } from "../auth/tokens";
 import {
   refreshConnectorAuthProviderAccessTokenWithMethod,
   type ProviderEnv,
@@ -162,6 +164,7 @@ type SecretType = StorageSecretSource;
 const NORMAL_BILLABLE_FIREWALL_LEASE_SECONDS = 30;
 const LOW_BILLABLE_FIREWALL_LEASE_SECONDS = 5;
 const BUILTIN_MCP_AUTH_LEASE_SECONDS = 30;
+const RUN_CAPABILITY_AUTH_LEASE_SECONDS = 30;
 const LOW_BILLABLE_FIREWALL_CREDIT_THRESHOLD = 1000;
 const REFRESH_TIMEOUT_ERROR_CODE = "oauth_refresh_timeout";
 const ACTIVE_FIREWALL_AUTH_RUN_STATUSES = ["pending", "running"] as const;
@@ -325,7 +328,7 @@ interface PreparedCustomFirewallAuth {
 
 interface PreparedNonCustomFirewallAuth {
   readonly kind: "non-custom";
-  readonly builtinMcpExpiresAt: number | null;
+  readonly expiresAt: number | null;
   readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly secrets: Record<string, string>;
@@ -4438,6 +4441,7 @@ const prepareNonCustomFirewallSecrets$ = command(
         readonly prepared: {
           readonly featureSwitchContext: FeatureSwitchContext;
           readonly secrets: Record<string, string>;
+          readonly expiresAt: number | null;
         };
       }
     | { readonly ok: false; readonly response: ResolveFirewallAuthResult }
@@ -4464,6 +4468,70 @@ const prepareNonCustomFirewallSecrets$ = command(
         ok: false,
         response: badRequestMessage("Failed to decrypt secrets"),
       };
+    }
+    let expiresAt: number | null = null;
+    if (referenced.secrets.has("OKOU_TOKEN")) {
+      const [run] = await db
+        .select({ launchSnapshot: agentRuns.launchSnapshot })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.id, auth.runId),
+            eq(agentRuns.orgId, auth.orgId),
+            eq(agentRuns.userId, auth.userId),
+          ),
+        )
+        .limit(1);
+      if (!run) {
+        return { ok: false, response: forbiddenTerminalRun() };
+      }
+      const captured =
+        run.launchSnapshot?.schemaVersion === 5
+          ? run.launchSnapshot.executionAuthorization
+          : undefined;
+      // Receipt-less Runs still use the existing envelope protocol while old
+      // API writers/active Runs can exist. Remove with #48077 legacy cleanup
+      // after the writer cutover and legacy Run/Runner finalization drain.
+      if (captured !== undefined) {
+        delete secrets.OKOU_TOKEN;
+        if (
+          body.matchedFirewall === undefined &&
+          !Object.hasOwn(body.secretConnectorMap ?? {}, "OKOU_TOKEN") &&
+          !Object.hasOwn(body.secretConnectorMetadataMap ?? {}, "OKOU_TOKEN")
+        ) {
+          const { okouTokenClaims: claims } =
+            runExecutionAuthorizationSchema.parse(captured);
+          if (
+            claims.runId !== auth.runId ||
+            claims.userId !== auth.userId ||
+            claims.orgId !== auth.orgId
+          ) {
+            throw new Error(
+              "Run authorization identity does not match its owner",
+            );
+          }
+          const nowSeconds = Math.floor(nowDate().getTime() / 1000);
+          if (claims.exp <= nowSeconds) {
+            return {
+              ok: false,
+              response: {
+                status: 403,
+                body: {
+                  error: {
+                    code: "FORBIDDEN",
+                    message: "Run authorization has expired",
+                  },
+                },
+              },
+            };
+          }
+          secrets.OKOU_TOKEN = signOkouToken(claims);
+          expiresAt = Math.min(
+            claims.exp,
+            nowSeconds + RUN_CAPABILITY_AUTH_LEASE_SECONDS,
+          );
+        }
+      }
     }
     const managedSecretName =
       MODEL_PROVIDER_TYPES[AUTO_RUN_PROVIDER].secretName;
@@ -4520,7 +4588,7 @@ const prepareNonCustomFirewallSecrets$ = command(
     }
     return {
       ok: true,
-      prepared: { featureSwitchContext, secrets },
+      prepared: { featureSwitchContext, secrets, expiresAt },
     };
   },
 );
@@ -5573,12 +5641,14 @@ const prepareNonCustomFirewallAuth$ = command(
       ok: true,
       prepared: {
         kind: "non-custom",
-        builtinMcpExpiresAt:
+        expiresAt: mergeExpiresAt(
           connectorSlug !== undefined &&
-          prepared.context.connectorAccessBySlug.get(connectorSlug)
-            ?.runtimeMethod.method.grant.kind !== "none"
+            prepared.context.connectorAccessBySlug.get(connectorSlug)
+              ?.runtimeMethod.method.grant.kind !== "none"
             ? builtinMcpExpiresAt
             : null,
+          decrypted.expiresAt ?? undefined,
+        ),
         connectorCatalogSnapshot,
         featureSwitchContext: decrypted.featureSwitchContext,
         secrets: decrypted.secrets,
@@ -5701,7 +5771,7 @@ const resolveNonCustomFirewallAuthMaterial$ = command(
     },
   ): Promise<FirewallAuthMaterialResolution> {
     const { connectorAccessBySlug, referenced } = args.prepared.context;
-    let expiresAt = args.prepared.builtinMcpExpiresAt;
+    let expiresAt = args.prepared.expiresAt;
     let refreshedConnectors: readonly string[] = [];
     let refreshedSecrets: readonly string[] = [];
     let failedConnectors: readonly string[] = [];

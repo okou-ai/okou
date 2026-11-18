@@ -3,7 +3,7 @@ import {
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { command, computed, type Computed } from "ccstate";
-import { generateOkouToken } from "../auth/tokens";
+import { prepareOkouToken } from "../auth/tokens";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import type { ThreadContext } from "./thread-context.signals";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
@@ -14,7 +14,7 @@ interface OkouTokenInput {
   readonly orgId: string;
   readonly email: FeatureSwitchContext["email"];
   readonly featureOverrides: FeatureSwitchContext["overrides"];
-  readonly options: Parameters<typeof generateOkouToken>[4];
+  readonly options: Parameters<typeof prepareOkouToken>[4];
 }
 
 /** Capture token facts from the owning picked-event graph before signing. */
@@ -83,7 +83,7 @@ export function createOkouTokenInputSignals(
 
 /** Sign the authorization receipt from the selected admission facts. */
 export const prepareOkouToken$ = command(
-  (_store, input: OkouTokenInput, signal: AbortSignal): string => {
+  (_store, input: OkouTokenInput, signal: AbortSignal) => {
     signal.throwIfAborted();
     const features = {
       userId: input.userId,
@@ -91,7 +91,7 @@ export const prepareOkouToken$ = command(
       email: input.email,
       overrides: input.featureOverrides,
     };
-    return generateOkouToken(
+    return prepareOkouToken(
       input.userId,
       input.runId,
       input.orgId,

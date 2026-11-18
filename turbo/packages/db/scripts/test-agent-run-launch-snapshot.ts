@@ -211,6 +211,53 @@ async function validateConstraintValues(
     }
   }
 
+  const authorization = {
+    schemaVersion: 1,
+    okouTokenClaims: {
+      userId: "launch-snapshot-user",
+      orgId: "launch-snapshot-org",
+      runId,
+      capabilities: ["agent:read"],
+      iat: 1_000,
+      exp: 8_200,
+    },
+    previewBypassAuthorized: false,
+  };
+  const nativeSnapshot = {
+    schemaVersion: 5,
+    framework: "codex",
+    runnerProfile: "vm0/default",
+  };
+  for (const snapshot of [
+    nativeSnapshot,
+    { ...nativeSnapshot, executionAuthorization: authorization },
+  ]) {
+    await client.query(
+      'UPDATE "agent_runs" SET "launch_snapshot" = $1::jsonb WHERE "id" = $2',
+      [JSON.stringify(snapshot), runId],
+    );
+  }
+  await expectConstraintViolation(client, runId, {
+    ...nativeSnapshot,
+    schemaVersion: 3,
+    executionAuthorization: authorization,
+  });
+  for (const executionAuthorization of [
+    null,
+    { ...authorization, schemaVersion: 2 },
+    { ...authorization, okouTokenClaims: "not an authority object" },
+    { ...authorization, previewBypassAuthorized: "true" },
+    {
+      ...authorization,
+      token: "credential storage is not part of the receipt",
+    },
+  ]) {
+    await expectConstraintViolation(client, runId, {
+      ...nativeSnapshot,
+      executionAuthorization,
+    });
+  }
+
   await client.query(
     `
       UPDATE "agent_runs"
@@ -364,7 +411,7 @@ export async function validateAgentRunLaunchSnapshotSchema(
     await seedCanonicalAgentRun(client, fixture);
     await validateConstraintValues(client, fixture.runId, true, true);
     console.log(
-      "   ✅ fresh schema matches the nullable strict v1/v2/v3/v4 contract\n",
+      "   ✅ fresh schema matches the nullable strict v1-v5 and authorization contract\n",
     );
   } finally {
     await client.end();
