@@ -1,11 +1,37 @@
-# Pi 1.1.0 pending-tool integration
+# Pi 1.5.2 owned settlement and pending-tool integration
 
 `AgentSession.continuePendingTools()` is a local additive API, paired with
 `Agent.continuePendingTools()` and their declarations. Upstream `continue()`
 and both low-level continuation APIs reject a trailing assistant; consuming
 queued input is not an equivalent handoff. Keep the version pinned at exactly
-1.1.0; the three patches are based on the official npm distribution for that
+1.5.2; the three patches are based on the official npm distribution for that
 version.
+
+## Ordinary RPC prompt settlement
+
+Guest now starts an ordinary RPC `prompt`, rather than transferring an
+API-owned pending assistant. Both `AgentSession._startRun` and
+`continuePendingTools` use the same native settlement owner. The optional third
+`Agent.prompt` argument supplies the session's post-run, preparation and commit
+callbacks; bare Agent calls retain their existing two-argument behavior.
+
+The owner and its abort signal remain active through tools, provider requests,
+retry/compaction and awaited settlement extensions. Ordinary prompts also retain
+upstream's `agent_before_settle` boundary continuations. Extension `agent_settled`
+handlers prepare once while `isStreaming` remains true; they may queue input or
+call the non-waiting `ctx.abort()`. They must not await their own idle state.
+After preparation, the owner drains accepted input or persists it once on
+cancellation, closes admission, and emits the sole public `agent_settled`
+synchronously before releasing ownership. RPC abort acknowledgements wait for
+this boundary, including duplicate aborts. This replaces upstream's early idle
+transition and deferred post-settlement prompts for this pinned integration.
+
+`rpc-cancellation.test.ts` exercises the current ordinary prompt path with real
+RPC children, provider-boundary MSW and IPC barriers. Its transcript includes
+the initial tool-call assistant; the shared Guest JSON fixtures cover the
+terminal suffix only. The explicit Pi RPC step in `test-other` gates this file
+without adding the entire runtime suite. The subprocess kill deadline and
+Guest's ten-second abort deadline remain unchanged.
 
 ## 1.1.0 rebase
 

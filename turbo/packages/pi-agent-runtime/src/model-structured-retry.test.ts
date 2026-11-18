@@ -298,7 +298,14 @@ describe("Codex model-access verification recovery", () => {
     await prompt;
     expect(requests).toBe(1);
     expect(retries).toStrictEqual([{ attempt: 1, maxAttempts: 2 }]);
-    expect(answers.at(-1)).toMatchObject(modelAccessVerification);
+    expect(answers).toMatchObject([
+      modelAccessVerification,
+      {
+        role: "assistant",
+        stopReason: "aborted",
+        errorMessage: "This operation was aborted",
+      },
+    ]);
   });
 
   it.each(["error", "response.failed"] as const)(

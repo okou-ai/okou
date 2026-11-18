@@ -1,21 +1,80 @@
 diff --git a/dist/core/agent-session.d.ts b/dist/core/agent-session.d.ts
-index 8b6a58430eea2cbb463e2b51773a8bc6e4914505..1880829b93dbacea72e90b092dbb9dc2d0a46e51 100644
+index 8b6a58430eea2cbb463e2b51773a8bc6e4914505..7d54d109ad06c8a54a1316cf5bcd588d90288860 100644
 --- a/dist/core/agent-session.d.ts
 +++ b/dist/core/agent-session.d.ts
-@@ -505,6 +505,8 @@ export declare class AgentSession {
+@@ -262,8 +262,6 @@ export declare class AgentSession {
+     private _lastActivityOutcome;
+     private _isBeforeSettle;
+     private _abortDuringBeforeSettle;
+-    private _isEmittingAgentSettled;
+-    private readonly _deferredSettledActions;
+     private _resourceLoader;
+     private _customTools;
+     private _baseToolDefinitions;
+@@ -374,7 +372,6 @@ export declare class AgentSession {
+     private _emitSessionCompactFailed;
+     private _getIdleWaitPromise;
+     private _resolveIdleWaitIfIdle;
+-    private _emitAgentSettled;
+     /** Internal handler for agent events - shared by subscribe and reconnect */
+     private _handleAgentEvent;
+     private _willRetryAfterAgentEnd;
+@@ -505,6 +502,9 @@ export declare class AgentSession {
      private _normalizePromptSnippet;
      private _normalizePromptGuidelines;
      private _rebuildSystemPrompt;
 +    /** Resume unresolved tools; settlement extensions prepare once before native cancellation/input reconciliation and public settlement. */
 +    continuePendingTools(options?: Pick<PromptOptions, "preflightResult">): Promise<void>;
++    private _createAgentSettlement;
      /**
       * Apply a prompt and tool loadout for the next request. Sets the executable tools and
       * returns a system message patching the prompt sections the model currently has (replayed
 diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
-index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..923b5e832c63b6bd79e87e49a6acf69aaca2406c 100644
+index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..fa9bf847e10372f3960d8f0ef3614996737c0d1c 100644
 --- a/dist/core/agent-session.js
 +++ b/dist/core/agent-session.js
-@@ -1478,6 +1478,47 @@ export class AgentSession {
+@@ -152,8 +152,6 @@ export class AgentSession {
+     _lastActivityOutcome = "completed";
+     _isBeforeSettle = false;
+     _abortDuringBeforeSettle = false;
+-    _isEmittingAgentSettled = false;
+-    _deferredSettledActions = [];
+     _resourceLoader;
+     _customTools;
+     _baseToolDefinitions = new Map();
+@@ -735,31 +733,6 @@ export class AgentSession {
+         this._resolveIdleWait = undefined;
+         resolve();
+     }
+-    async _emitAgentSettled() {
+-        this._cacheWarmer?.onAgentSettled();
+-        this._isAgentRunActive = false;
+-        this._isEmittingAgentSettled = true;
+-        try {
+-            const aborted = this._agentRunAbortRequested;
+-            await this._extensionRunner.emit({ type: "agent_settled", aborted });
+-            this._emit({ type: "agent_settled", aborted });
+-        }
+-        finally {
+-            this._isEmittingAgentSettled = false;
+-        }
+-        const deferred = this._deferredSettledActions.splice(0);
+-        if (deferred.length > 0) {
+-            try {
+-                for (const action of deferred)
+-                    await action();
+-            }
+-            finally {
+-                this._resolveIdleWaitIfIdle();
+-            }
+-            return;
+-        }
+-        this._resolveIdleWaitIfIdle();
+-    }
+     /** Internal handler for agent events - shared by subscribe and reconnect */
+     _handleAgentEvent = async (event) => {
+         // An abort requested while the run was starting, e.g. during before_agent_start, stops it
+@@ -1478,6 +1451,54 @@ export class AgentSession {
      // =========================================================================
      // Prompting
      // =========================================================================
@@ -32,7 +91,13 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..923b5e832c63b6bd79e87e49a6acf69a
 +                this._isAgentRunActive = true;
 +                options?.preflightResult?.(true);
 +            },
-+            afterRun: () => this._handlePostAgentRun(),
++            ...this._createAgentSettlement(() => this._handlePostAgentRun()),
++        });
++    }
++    /** Both entry points prepare once, then commit only after native input/cancellation reconciliation. */
++    _createAgentSettlement(afterRun) {
++        return {
++            afterRun,
 +            beforeSettled: async () => {
 +                this._flushPendingBashMessages();
 +                this._flushPendingCustomMessages();
@@ -46,6 +111,7 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..923b5e832c63b6bd79e87e49a6acf69a
 +                    this._finishCancelledRetry();
 +                }
 +                this._lastAssistantMessage = undefined;
++                this._failedResponse = undefined;
 +                this._runSystemPromptOptions = undefined;
 +                this._cacheWarmer?.onAgentSettled();
 +                this._flushPendingBashMessages();
@@ -58,12 +124,60 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..923b5e832c63b6bd79e87e49a6acf69a
 +                    this._resolveIdleWaitIfIdle();
 +                }
 +            },
-+        });
++        };
 +    }
      /**
       * Start a run from a user or custom message. The session counts as busy from here on, so
       * messages sent while before_agent_start handlers run are queued into this run instead of
-@@ -1877,8 +1918,6 @@ export class AgentSession {
+@@ -1509,31 +1530,12 @@ export class AgentSession {
+         // The run records the loadout in the transcript; restored tools that did not register by now
+         // are dropped, so a tool that never registers does not stay pending.
+         this._pendingToolNames.clear();
+-        try {
+-            await this.agent.prompt(messages);
+-            while (!this._agentRunAbortRequested) {
+-                if (await this._handlePostAgentRun()) {
+-                    if (this._agentRunAbortRequested)
+-                        break;
+-                    await this.agent.continue();
+-                    continue;
+-                }
+-                if (this._agentRunAbortRequested || !(await this._runBeforeSettleBoundary()))
+-                    break;
+-                if (this._agentRunAbortRequested)
+-                    break;
+-                await this.agent.continue();
++        await this.agent.prompt(messages, undefined, this._createAgentSettlement(async () => {
++            if (await this._handlePostAgentRun()) {
++                return !this._agentRunAbortRequested;
+             }
+-        }
+-        finally {
+-            if (this._agentRunAbortRequested)
+-                this._finishCancelledRetry();
+-            this._failedResponse = undefined;
+-            this._runSystemPromptOptions = undefined;
+-            this._flushPendingBashMessages();
+-            this._flushPendingCustomMessages();
+-            await this._emitAgentSettled();
+-        }
++            return !this._agentRunAbortRequested && await this._runBeforeSettleBoundary();
++        }));
+     }
+     /**
+      * Prepare a run and return its starting messages: compact first when needed, emit
+@@ -1693,10 +1695,6 @@ export class AgentSession {
+      * @throws Error if no model selected or no API key available (when not streaming)
+      */
+     async prompt(text, options) {
+-        if (this._isEmittingAgentSettled) {
+-            this._deferredSettledActions.push(async () => await this.prompt(text, options));
+-            return;
+-        }
+         const expandPromptTemplates = options?.expandPromptTemplates ?? true;
+         const preflightResult = options?.preflightResult;
+         // Handle extension commands first (execute immediately, even during streaming)
+@@ -1877,8 +1875,6 @@ export class AgentSession {
       * Internal: Queue a steering message (already expanded, no extension command check).
       */
      async _queueSteer(text, images) {
@@ -72,7 +186,7 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..923b5e832c63b6bd79e87e49a6acf69a
          const content = [{ type: "text", text }];
          if (images) {
              content.push(...images);
-@@ -1887,13 +1926,13 @@ export class AgentSession {
+@@ -1887,13 +1883,13 @@ export class AgentSession {
          if (images?.length)
              this._queuedMessagesWithImages.add(message);
          this.agent.steer(message);
@@ -88,7 +202,7 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..923b5e832c63b6bd79e87e49a6acf69a
          const content = [{ type: "text", text }];
          if (images) {
              content.push(...images);
-@@ -1902,6 +1941,8 @@ export class AgentSession {
+@@ -1902,6 +1898,8 @@ export class AgentSession {
          if (images?.length)
              this._queuedMessagesWithImages.add(message);
          this.agent.followUp(message);
@@ -97,7 +211,18 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..923b5e832c63b6bd79e87e49a6acf69a
      }
      /** Replace a queued user message's images in place with normalized ones, appending hints to its text. */
      async _normalizeQueuedMessageImages(message) {
-@@ -2083,10 +2124,10 @@ export class AgentSession {
+@@ -1965,10 +1963,6 @@ export class AgentSession {
+             }
+         }
+         else if (options?.triggerTurn) {
+-            if (this._isEmittingAgentSettled) {
+-                this._deferredSettledActions.push(async () => await this.sendCustomMessage(message, options));
+-                return;
+-            }
+             await this._startRun({ messageType: "custom", message: appMessage });
+         }
+         else if (this.isStreaming) {
+@@ -2083,10 +2077,10 @@ export class AgentSession {
          await this.waitForIdle();
      }
      async waitForIdle() {
@@ -111,7 +236,7 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..923b5e832c63b6bd79e87e49a6acf69a
      }
      // =========================================================================
      // Model Management
-@@ -2488,6 +2529,11 @@ export class AgentSession {
+@@ -2488,6 +2482,11 @@ export class AgentSession {
          const settings = this.settingsManager.getCompactionSettings(this.model);
          if (!settings.enabled)
              return false;

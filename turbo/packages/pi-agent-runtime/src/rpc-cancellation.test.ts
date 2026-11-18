@@ -19,6 +19,30 @@ const FIXTURE = fileURLToPath(
 // the fixture tool's cooperative boundary; official commands still use stdin.
 const EXTENSION = `import { writeFile } from "node:fs/promises";
 export default function (pi) {
+  let starting = true;
+  if (process.argv[3] === "wire-starting") pi.on("before_agent_start", async () => {
+    if (!starting) return;
+    starting = false;
+    await new Promise((resolve) => {
+      const release = (message) => {
+        if (message === "release-start") {
+          process.off("message", release);
+          resolve();
+        }
+      };
+      process.on("message", release);
+      process.send({ type: "starting" });
+    });
+  });
+  let continuing = true;
+  if (process.argv[3] === "wire-before-settle") pi.on("agent_before_settle", () => {
+    if (!continuing) return;
+    continuing = false;
+    return {
+      entries: [{ type: "custom_message", customType: "boundary-input", content: "finish the boundary", display: false }],
+      continue: true
+    };
+  });
   if (process.argv[3]?.startsWith("wire-tool-")) pi.on("turn_end", (event) => {
     if (event.toolResults.length > 0) process.send({
       type: "native-tool-details",
@@ -454,6 +478,106 @@ function assertSettlement(
 }
 
 describe("official sandbox RPC cancellation", () => {
+  it("retains before-settle boundary continuation within the prompt owner", async () => {
+    const rpc = await rpcFixture("wire-before-settle");
+    rpc.send({ id: "startup", type: "prompt", message: "run the tool" });
+    expect(await rpc.response("startup")).toMatchObject({ success: true });
+    await rpc.notification("tool-start");
+    rpc.child.send("release-tool");
+    await rpc.settled();
+    rpc.send({ id: "idle", type: "get_state" });
+    expect(await rpc.response("idle")).toMatchObject({
+      data: { isStreaming: false, pendingMessageCount: 0 },
+    });
+    expect(assistantEnds(rpc.records)).toMatchObject([
+      { message: { stopReason: "toolUse" } },
+      { message: { stopReason: "stop" } },
+      { message: { stopReason: "stop" } },
+    ]);
+    const memory = await rpc.reopen();
+    expect(memory.buildSessionContext().messages).toContainEqual(
+      expect.objectContaining({
+        role: "custom",
+        customType: "boundary-input",
+        content: "finish the boundary",
+      }),
+    );
+    expect(memory.buildSessionContext().messages.at(-1)).toMatchObject({
+      role: "assistant",
+      content: [{ type: "text", text: "complete" }],
+      stopReason: "stop",
+    });
+    expect(
+      rpc.records.filter((record) => {
+        return record.type === "agent_settled";
+      }),
+    ).toEqual([{ type: "agent_settled", aborted: false }]);
+  }, 30_000);
+
+  it("retains cancellation during prompt preparation and resets it for the next prompt", async () => {
+    const rpc = await rpcFixture("wire-starting");
+    rpc.send({
+      id: "startup",
+      type: "prompt",
+      message: "cancel before starting",
+    });
+    await rpc.notification("starting");
+    rpc.send({
+      id: "input",
+      type: "steer",
+      message: "accepted before startup",
+    });
+    expect(await rpc.response("input")).toMatchObject({ success: true });
+    rpc.send({ id: "abort", type: "abort" });
+    rpc.send({ id: "duplicate-abort", type: "abort" });
+    rpc.send({ id: "busy", type: "get_state" });
+    expect(await rpc.response("busy")).toMatchObject({
+      data: { isStreaming: true, pendingMessageCount: 1 },
+    });
+    rpc.child.send("release-start");
+    expect(await rpc.response("startup")).toMatchObject({ success: true });
+    expect(await rpc.response("abort")).toMatchObject({ success: true });
+    expect(await rpc.response("duplicate-abort")).toMatchObject({
+      success: true,
+    });
+    expect(assistantEnds(rpc.records)).toMatchObject([
+      { message: { stopReason: "aborted" } },
+    ]);
+
+    rpc.send({
+      id: "next",
+      type: "prompt",
+      message: "complete the next prompt",
+    });
+    expect(await rpc.response("next")).toMatchObject({ success: true });
+    await rpc.notification("tool-start");
+    rpc.child.send("release-tool");
+    await rpc.settled();
+    const memory = await rpc.reopen();
+    const messages = memory.buildSessionContext().messages;
+    expect(
+      messages.filter((message) => {
+        return (
+          message.role === "user" &&
+          JSON.stringify(message.content).includes("accepted before startup")
+        );
+      }),
+    ).toHaveLength(1);
+    expect(messages.at(-1)).toMatchObject({
+      role: "assistant",
+      content: [{ type: "text", text: "complete" }],
+      stopReason: "stop",
+    });
+    expect(
+      rpc.records.filter((record) => {
+        return record.type === "agent_settled";
+      }),
+    ).toEqual([
+      { type: "agent_settled", aborted: true },
+      { type: "agent_settled", aborted: false },
+    ]);
+  }, 30_000);
+
   it("reconciles the first abort and duplicate abort inside successful settlement", async () => {
     const rpc = await heldSettlement();
     rpc.send({ id: "abort", type: "abort" });
@@ -473,13 +597,14 @@ describe("official sandbox RPC cancellation", () => {
       success: true,
     });
     const assistants = assistantEnds(rpc.records);
-    expect(assistants).toHaveLength(2);
-    expect(assistants[0]).toMatchObject({ message: { stopReason: "stop" } });
-    expect(assistants[1]).toMatchObject({ message: { stopReason: "aborted" } });
+    expect(assistants).toHaveLength(3);
+    expect(assistants[0]).toMatchObject({ message: { stopReason: "toolUse" } });
+    expect(assistants[1]).toMatchObject({ message: { stopReason: "stop" } });
+    expect(assistants[2]).toMatchObject({ message: { stopReason: "aborted" } });
     const settledIndex = rpc.records.findIndex((record) => {
       return record.type === "agent_settled";
     });
-    expect(rpc.records.indexOf(assistants[1]!)).toBeLessThan(settledIndex);
+    expect(rpc.records.indexOf(assistants[2]!)).toBeLessThan(settledIndex);
     expect(settledIndex).toBeLessThan(
       rpc.records.findIndex((record) => {
         return record.id === "abort";
@@ -495,11 +620,20 @@ describe("official sandbox RPC cancellation", () => {
       ),
     );
     expect([
-      ...assistants.map((record) => {
+      // The ordinary prompt emits its tool-call assistant before continuation.
+      // Guest's shared fixture describes only the terminal settlement suffix.
+      ...assistants.slice(1).map((record) => {
         const message = record.message;
         if (typeof message !== "object" || message === null)
           throw new Error("Expected assistant");
-        return { type: "message_end", message: { ...message, timestamp: 0 } };
+        return {
+          type: "message_end",
+          message: {
+            ...message,
+            timestamp: 0,
+            ...("durationMs" in message ? { durationMs: 0 } : {}),
+          },
+        };
       }),
       rpc.records[settledIndex],
     ]).toEqual(expected);
@@ -550,7 +684,7 @@ describe("official sandbox RPC cancellation", () => {
         role: "assistant",
         stopReason: "stop",
       });
-      expect(assistantEnds(rpc.records)).toHaveLength(2);
+      expect(assistantEnds(rpc.records)).toHaveLength(3);
     },
     30_000,
   );
@@ -657,7 +791,7 @@ describe("official sandbox RPC cancellation", () => {
         return message.content;
       }),
     ).toEqual([
-      "execute the controlled tool",
+      [{ type: "text", text: "execute the controlled tool" }],
       [{ type: "text", text: "steering one" }],
       [{ type: "text", text: "steering two" }],
       [{ type: "text", text: "follow-up one" }],
@@ -775,12 +909,15 @@ describe("official sandbox RPC cancellation", () => {
           message.role === "assistant"
         );
       });
-      expect(assistants).toHaveLength(1);
+      expect(assistants).toHaveLength(2);
       expect(assistants[0]).toMatchObject({
+        message: { stopReason: "toolUse" },
+      });
+      expect(assistants[1]).toMatchObject({
         message: { stopReason: "aborted" },
       });
       if (boundary === "tool") {
-        const terminal = assistants[0]?.message;
+        const terminal = assistants[1]?.message;
         if (typeof terminal !== "object" || terminal === null)
           throw new Error("Expected native aborted assistant");
         const expected: unknown = JSON.parse(
