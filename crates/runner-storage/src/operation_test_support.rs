@@ -1,12 +1,12 @@
 //! Test recorder at the existing sandbox-operation reporting boundary.
 
 use crate::{SandboxOpRecord, SandboxOpReporter};
-use runner_host::home_observation::HomeObservation;
+use runner_host::home_observation::{HomeObservation, HomeObservationKind};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Default)]
 pub struct RecordedHomeObservations {
-    events: Arc<Mutex<Vec<HomeObservation>>>,
+    records: Arc<Mutex<Vec<SandboxOpRecord>>>,
 }
 
 impl RecordedHomeObservations {
@@ -25,18 +25,39 @@ impl RecordedHomeObservations {
     }
 
     fn record(&self, record: SandboxOpRecord) {
-        if let Some(home) = record.home {
-            self.events
+        if record.home.is_some() {
+            self.records
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .push(home);
+                .push(record);
         }
     }
 
+    /// Resource-state facts, excluding passive phase diagnostics.
     pub fn events(&self) -> Vec<HomeObservation> {
-        self.events
+        self.records
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
+            .iter()
+            .filter_map(|record| record.home.as_ref())
+            .filter(|home| home.kind != HomeObservationKind::LifecycleTiming)
+            .cloned()
+            .collect()
+    }
+
+    /// Passive diagnostics retain their actual measured durations and success flags.
+    pub fn timings(&self) -> Vec<SandboxOpRecord> {
+        self.records
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .filter(|record| {
+                record
+                    .home
+                    .as_ref()
+                    .is_some_and(|home| home.kind == HomeObservationKind::LifecycleTiming)
+            })
+            .cloned()
+            .collect()
     }
 }

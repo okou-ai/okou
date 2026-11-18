@@ -8,8 +8,10 @@ use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, Mutex};
 
 use futures_util::FutureExt;
+use runner_host::home_observation::HomeObservationOutcome;
 use sandbox::{BackingProcessIdentity, Sandbox, SandboxBackingProcess, SandboxFactory, SandboxId};
 
+use crate::home_image_cache::timing::HomePhase;
 use crate::home_image_cache::{HomeImagePromotionContext, IdleHomeReclamationPermit};
 use crate::home_mount::{ensure_home_drive_mounted, freeze_home_drive};
 use crate::home_promotion::{PreparedHomeImagePromotion, prepare_terminal_cache_runtime};
@@ -638,16 +640,23 @@ async fn cleanup_phases(
             .as_mut()
             .ok_or("required cleanup resource consumed")?;
         owner.state = IdleActivationState::Uncertain;
+        let timing = owner
+            .promotion
+            .as_ref()
+            .ok_or("required home promotion consumed")?
+            .start_timing(HomePhase::TerminalUnpark);
         sandbox
             .unpark_for_terminal_operations()
             .await
             .map_err(|e| e.to_string())?;
+        timing.finish(HomeObservationOutcome::Completed);
         owner.state = IdleActivationState::TerminalReady;
         revalidate!();
         let promotion = owner
             .promotion
             .as_ref()
             .ok_or("required home promotion consumed")?;
+        let timing = promotion.start_timing(HomePhase::TerminalMount);
         ensure_home_drive_mounted(
             owner
                 .sandbox
@@ -657,6 +666,7 @@ async fn cleanup_phases(
         )
         .await
         .map_err(|e| e.error.to_string())?;
+        timing.finish(HomeObservationOutcome::Completed);
         revalidate!();
         let home_ready = prepare_terminal_cache_runtime(
             owner
@@ -675,6 +685,11 @@ async fn cleanup_phases(
         }
         revalidate!();
         owner.state = IdleActivationState::Uncertain;
+        let timing = owner
+            .promotion
+            .as_ref()
+            .ok_or("required home promotion consumed")?
+            .start_timing(HomePhase::TerminalFreeze);
         freeze_home_drive(
             owner
                 .sandbox
@@ -688,6 +703,7 @@ async fn cleanup_phases(
         )
         .await
         .map_err(|e| e.to_string())?;
+        timing.finish(HomeObservationOutcome::Completed);
         owner.state = IdleActivationState::Frozen;
         owner.prepared = Some(PreparedHomeImagePromotion::required(
             owner
@@ -708,14 +724,24 @@ async fn cleanup_phases(
             .sandbox
             .as_mut()
             .ok_or("required cleanup resource consumed")?;
+        let timing = owner
+            .prepared
+            .as_ref()
+            .map(PreparedHomeImagePromotion::start_termination_timing);
         let termination = async {
+            let timing = timing;
             sandbox.kill().await.map_err(|e| e.to_string())?;
             validate_backing(Some(sandbox.as_ref()), backing, identity)
                 .map_err(|e| e.to_string())?;
             if !backing.exit_confirmed().await {
                 return Err("required caller cleanup backing exit is unconfirmed".to_owned());
             }
-            validate_backing(Some(sandbox.as_ref()), backing, identity).map_err(|e| e.to_string())
+            let result = validate_backing(Some(sandbox.as_ref()), backing, identity)
+                .map_err(|e| e.to_string());
+            if let Some(timing) = timing {
+                timing.finish(result.is_ok());
+            }
+            result
         };
         let completion = super::retirement::settle(live, context);
         tokio::pin!(termination, completion);

@@ -1267,7 +1267,10 @@ fn sandbox_op_from_record(record: SandboxOpRecord, run_id: Option<RunId>) -> San
     );
     if let Some(mut home) = record.home {
         operation.action_type = home.kind.to_string();
-        operation.success = home.outcome != HomeObservationOutcome::Failed;
+        operation.success = !matches!(
+            home.outcome,
+            HomeObservationOutcome::Failed | HomeObservationOutcome::Incomplete
+        );
         operation.outcome = Some(home.outcome.to_string());
         operation.reason = home.reason.take();
         operation.reuse_key = home.reuse_key.take();

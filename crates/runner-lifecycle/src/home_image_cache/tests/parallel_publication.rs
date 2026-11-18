@@ -1,6 +1,7 @@
 use super::super::*;
 use super::support::*;
 use crate::storage_fingerprints::StorageFingerprints;
+use runner_host::home_observation::HomeObservationOutcome;
 use std::future::{Future as _, poll_fn};
 use std::os::unix::fs::MetadataExt;
 use std::sync::Arc;
@@ -72,6 +73,8 @@ async fn blocked_physical_sync_allows_an_independent_key_to_commit() {
 #[tokio::test]
 async fn observer_loss_keeps_physical_locks_and_shutdown_joins_publication() {
     let mut f = Fixture::new().await;
+    let recorded = runner_storage::operation_test_support::RecordedHomeObservations::default();
+    f.cache = f.cache.with_telemetry(recorded.handle());
     let gate = HomeImageHandoffTestGate::default();
     let _release = gate.release_on_drop();
     f.cache.publication_sync_test_gate = Some(gate.clone());
@@ -83,6 +86,15 @@ async fn observer_loss_keeps_physical_locks_and_shutdown_joins_publication() {
     gate.wait_entered(Duration::from_secs(5)).await;
     observer.abort();
     assert!(observer.await.unwrap_err().is_cancelled());
+    assert!(
+        recorded.timings().iter().all(|record| {
+            !matches!(
+                record.home.as_ref().unwrap().reason.as_deref(),
+                Some("publication" | "durable_commit" | "entry_lock_lifetime")
+            )
+        }),
+        "caller cancellation must not finish the retained physical phases"
+    );
     assert!(matches!(
         runner_host::lock::try_acquire_or_busy(
             f.cache.entry_lock_path(&f.key("cancelled-observer"))
@@ -106,6 +118,19 @@ async fn observer_loss_keeps_physical_locks_and_shutdown_joins_publication() {
         .await
         .unwrap();
     f.cache.publication_sync_test_gate = None;
+    let timings = recorded.timings();
+    for phase in ["publication", "durable_commit", "entry_lock_lifetime"] {
+        let phase_records: Vec<_> = timings
+            .iter()
+            .filter(|record| record.home.as_ref().unwrap().reason.as_deref() == Some(phase))
+            .collect();
+        assert_eq!(
+            phase_records.len(),
+            1,
+            "one retained completion for {phase}"
+        );
+        assert!(phase_records[0].success);
+    }
     published_bytes(&f, "cancelled-observer", &bytes).await;
 }
 
@@ -191,9 +216,11 @@ async fn required_retry_resumes_moved_candidate_and_uncertain_metadata_phases() 
         PublicationFault::BeforeMetadataRename,
         PublicationFault::AfterMetadataRename,
     ] {
-        let f = Fixture::new().await;
+        let mut f = Fixture::new().await;
         let old = f.commit("retry", b"old", "2026-10-16T10:00:00Z").await;
         let old_bytes = tokio::fs::read(f.image("retry", &old)).await.unwrap();
+        let recorded = runner_storage::operation_test_support::RecordedHomeObservations::default();
+        f.cache = f.cache.with_telemetry(recorded.handle());
         let owned = context(&f, "retry").await;
         let active = f.paths.active_home_image(&owned.sandbox_id());
         let expected = tokio::fs::read(&active).await.unwrap();
@@ -213,6 +240,24 @@ async fn required_retry_resumes_moved_candidate_and_uncertain_metadata_phases() 
         assert_eq!(
             owned.promote().await.unwrap(),
             HomeImagePromotionOutcome::Promoted
+        );
+        let commits: Vec<_> = recorded
+            .timings()
+            .into_iter()
+            .filter_map(|record| {
+                let home = record.home?;
+                (home.reason.as_deref() == Some("durable_commit"))
+                    .then_some((home.outcome, record.success))
+            })
+            .collect();
+        assert_eq!(
+            commits,
+            [
+                (HomeObservationOutcome::Incomplete, false),
+                (HomeObservationOutcome::Completed, true),
+            ],
+            "both the failed commit and its successful retry must be observed: fault {}",
+            fault as usize
         );
         drop(owned);
         published_bytes(&f, "retry", &expected).await;
