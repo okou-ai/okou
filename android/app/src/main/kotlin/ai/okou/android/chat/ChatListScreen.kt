@@ -34,7 +34,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
@@ -265,9 +264,11 @@ private fun ProjectRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            painterResource(R.drawable.ic_chat_chevron),
+            painterResource(
+                if (collapsed) R.drawable.ic_chat_chevron_end else R.drawable.ic_chat_chevron_down
+            ),
             contentDescription = null,
-            modifier = Modifier.size(16.dp).rotate(if (collapsed) 0f else 90f),
+            modifier = Modifier.size(16.dp),
         )
         Spacer(Modifier.width(8.dp))
         Text(
