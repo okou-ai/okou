@@ -101,7 +101,9 @@ mutation gate or submitting the command again, including when intent appears
 after the reconnection has started waiting for that gate. Every observation
 rechecks owner admission. Only 124/141/255 can reconnect, at most three requests inside the same
 600-second call budget. Reconnection observes the original operation and never
-restarts it. Service work is limited to 570 seconds with a ten-second control
+restarts it. The execution deadline bounds waiting for unfinished work; a
+published result remains retrievable until its retirement timer fires.
+Service work is limited to 570 seconds with a ten-second control
 group stop grace, leaving room for reconciliation inside the unchanged job budget.
 
 The launch SSH call streams bounded, redacted progress and the original result;

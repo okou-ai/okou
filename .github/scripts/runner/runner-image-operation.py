@@ -423,7 +423,7 @@ def observe(request, operation):
     result_path = operation / "result.json"
     offset = request.get("offset", 0)
     deadline = intent["deadline"]
-    while time.monotonic() < deadline:
+    while time.monotonic() < deadline or result_path.exists():
         log = operation / "output.log"
         if log.exists():
             with log.open("rb") as stream:
