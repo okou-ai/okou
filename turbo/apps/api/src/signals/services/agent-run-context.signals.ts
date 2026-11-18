@@ -50,7 +50,6 @@ import {
   createManagedModelKeys,
   createModelPricing,
 } from "./model-source-context.service";
-import { createOfficialWorkflowCatalog } from "./official-workflow-context.signals";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import {
   storageBaseIndexFromRows,
@@ -171,8 +170,6 @@ export interface AgentRunContextSignals {
   readonly permissionGrants$: Computed<
     Promise<readonly ConnectorPermissionGrant[]>
   >;
-  /** The accepted global Official Workflow catalog, shared across contexts. */
-  readonly officialCatalog$: ReturnType<typeof createOfficialWorkflowCatalog>;
   /** Seed Skill rows read with the model catalog; shared across contexts. */
   readonly seedSkills$: ReturnType<
     typeof createGlobalModelContext
@@ -313,10 +310,6 @@ export function matchAgentRunContextSignals(
     return supplied;
   }
   return createIdentityContext(userId, orgId, agentId, supplied);
-}
-
-function reusedOfficialCatalog(supplied: AgentRunContextSignals | undefined) {
-  return supplied?.officialCatalog$ ?? createOfficialWorkflowCatalog();
 }
 
 function contextAgentSelection() {
@@ -646,7 +639,6 @@ function createIdentityContext(
       sharedMember?.selectedImageModel$ ??
       createSelectedImageModel(memberMetadata$),
     ...connectorContext.signals,
-    officialCatalog$: reusedOfficialCatalog(supplied),
     seedSkills$: globalReferences.seedSkills$,
     memory$,
     featureSwitches$: featureSwitchContext$,

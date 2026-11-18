@@ -1,93 +1,70 @@
-import { computed, type Computed } from "ccstate";
-import type { OfficialWorkflowAcceptedRevision } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import {
-  officialWorkflowCatalogState,
   officialWorkflowCatalogReleases,
   officialWorkflowDefinitionRevisions,
 } from "@okouai/db/schema/official-workflow-catalog";
-import { db$ } from "../external/db";
+import { workflows } from "@okouai/db/schema/workflow";
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import {
-  acceptedRevisionFromRow,
+  acceptedCatalogDefinitionRevision,
   acceptedOfficialWorkflowCatalogReadPlan,
-  acceptedCatalogFromRow,
-  type AcceptedOfficialWorkflowCatalog,
 } from "./official-workflow-catalog-read.service";
-import {
-  acceptedDefinitionForName,
-  OfficialWorkflowRunAdmissionError,
-  type OfficialWorkflowCandidate,
-} from "./official-workflow-run.service";
+import { PROACTIVE_WORKFLOW_DEFINITIONS } from "./proactive-workflow-definitions";
+import { proactiveWorkflowOwnerEnabledSql } from "./proactive-workflow-owner";
 
-export function createOfficialWorkflowCatalog() {
-  return computed(async (get) => {
-    const plan = acceptedOfficialWorkflowCatalogReadPlan();
-    const [row] = await get(db$)
-      .select(plan.columns)
-      .from(officialWorkflowCatalogState)
-      .innerJoin(officialWorkflowCatalogReleases, plan.join)
-      .where(plan.condition)
-      .limit(1);
-    return acceptedCatalogFromRow(row);
-  });
-}
-
-/** Catalog and exact published revisions are independent of model routing/mount paths. */
-export function createOfficialWorkflowFacts(
-  officialTarget$: Computed<Promise<OfficialWorkflowCandidate | undefined>>,
-  catalog$: ReturnType<typeof createOfficialWorkflowCatalog>,
+/** Read the release, its exact bundle revision, and installation authority with the Automation. */
+export function officialWorkflowSourcePlan(
+  scope: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly agentId: string;
+  },
+  requirePreference: boolean,
 ) {
-  return computed(async (get) => {
-    const target = await get(officialTarget$);
-    if (!target) {
-      return null;
-    }
-    const catalog = await get(catalog$);
-    if (!catalog) {
-      throw new OfficialWorkflowRunAdmissionError();
-    }
-    const definition = acceptedDefinitionForName(
-      catalog.payload.definitions,
-      target.definitionName,
-    );
-    if (!definition) {
-      throw new OfficialWorkflowRunAdmissionError();
-    }
-    const rows = await get(db$)
-      .select({
+  const catalog = acceptedOfficialWorkflowCatalogReadPlan();
+  const { suggestions, learning } = PROACTIVE_WORKFLOW_DEFINITIONS;
+  return {
+    catalogCondition: and(
+      catalog.condition,
+      eq(workflowAutomations.orgId, scope.orgId),
+      eq(workflowAutomations.ownerUserId, scope.userId),
+      eq(workflows.orgId, scope.orgId),
+      eq(workflows.agentId, scope.agentId),
+      eq(workflows.ownerUserId, scope.userId),
+      eq(workflows.visibility, "private"),
+      eq(workflows.officialInstallationState, "installed"),
+      isNotNull(workflows.officialDefinitionName),
+      isNotNull(workflowAutomations.officialBlueprintKey),
+    ),
+    releaseJoin: catalog.join,
+    revisionJoin: and(
+      eq(
+        officialWorkflowDefinitionRevisions.definitionName,
+        workflows.officialDefinitionName,
+      ),
+      eq(
+        officialWorkflowDefinitionRevisions.revision,
+        acceptedCatalogDefinitionRevision(workflows.officialDefinitionName),
+      ),
+    ),
+    columns: {
+      officialCatalog: {
+        releaseId: officialWorkflowCatalogReleases.id,
+        payload: officialWorkflowCatalogReleases.payload,
+        hiddenThreadDefinitionNames:
+          officialWorkflowCatalogReleases.hiddenThreadDefinitionNames,
+      },
+      officialRevision: {
         definitionName: officialWorkflowDefinitionRevisions.definitionName,
         revision: officialWorkflowDefinitionRevisions.revision,
         payload: officialWorkflowDefinitionRevisions.payload,
         contentBundle: officialWorkflowDefinitionRevisions.contentBundle,
-      })
-      .from(officialWorkflowDefinitionRevisions)
-      .where(
-        and(
-          eq(
-            officialWorkflowDefinitionRevisions.definitionName,
-            definition.name,
-          ),
-          eq(officialWorkflowDefinitionRevisions.revision, definition.revision),
-        ),
-      );
-    return {
-      catalog,
-      revisions: new Map(
-        rows.map((revision) => {
-          return [
-            JSON.stringify([revision.definitionName, revision.revision]),
-            acceptedRevisionFromRow(revision),
-          ];
-        }),
-      ),
-    };
-  });
+      },
+      proactiveOwnerEnabled: sql`CASE ${workflows.officialDefinitionName}
+        WHEN ${suggestions.name} THEN ${proactiveWorkflowOwnerEnabledSql(scope, scope.agentId, "suggestions", requirePreference)}
+        WHEN ${learning.name} THEN ${proactiveWorkflowOwnerEnabledSql(scope, scope.agentId, "learning", requirePreference)}
+        ELSE true END`.mapWith(pgBooleanDecoder),
+    },
+  };
 }
-
-export type OfficialWorkflowContextFacts = {
-  readonly catalog: AcceptedOfficialWorkflowCatalog;
-  readonly revisions: ReadonlyMap<
-    string,
-    OfficialWorkflowAcceptedRevision | null
-  >;
-} | null;

@@ -41,7 +41,7 @@ function createRequiredOfficialWorkflowIds(
 }
 
 /** Admits the picked event's required Official Workflows for its execution. */
-export function createOfficialWorkflowSignals(
+export function createOfficialWorkflowSignal(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   threadContext: ThreadContext,
 ) {
@@ -88,8 +88,5 @@ export function createOfficialWorkflowSignals(
       return modelError ?? observation;
     },
   );
-  const officialWorkflowFacts$ = computed(async (get) => {
-    return await get(threadContext.officialWorkflows$);
-  });
-  return { officialWorkflow$, officialWorkflowFacts$ };
+  return officialWorkflow$;
 }

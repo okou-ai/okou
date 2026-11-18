@@ -1,88 +1,26 @@
-import { and, eq } from "drizzle-orm";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { db$ } from "../external/db";
+import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import { computed, type Computed } from "ccstate";
+import type { AgentRunContextSignals } from "./agent-run-context.signals";
+import {
+  acceptedCatalogFromRow,
+  acceptedRevisionFromRow,
+} from "./official-workflow-catalog-read.service";
+import { OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE } from "./official-workflow-constants";
+import {
+  acceptedDefinitionForName,
+  assembleWorkflowObservation,
+  OfficialWorkflowRunAdmissionError,
+  type OfficialWorkflowObservation,
+} from "./official-workflow-run.service";
 import {
   isRetiredProactiveWorkflow,
   proactiveWorkflowKind,
 } from "./proactive-workflow-definitions";
-import { proactiveWorkflowOwnerEnabledSql } from "./proactive-workflow-owner";
-import { computed, type Computed } from "ccstate";
-import type { AgentRunContextSignals } from "./agent-run-context.signals";
-import { OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE } from "./official-workflow-constants";
-import { createOfficialWorkflowFacts } from "./official-workflow-context.signals";
-import { createOfficialWorkflowObservation } from "./official-workflow-observation.service";
-import {
-  OfficialWorkflowRunAdmissionError,
-  type OfficialWorkflowCandidate,
-} from "./official-workflow-run.service";
 import type { createThreadAutomationContext } from "./thread-automation-context.service";
 import type { ThreadAutomationTarget } from "./thread-context.signals";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
-
-function createProactiveTargetEligibility(
-  bootstrap: AgentRunContextSignals,
-  automationContext$: ReturnType<typeof createThreadAutomationContext>,
-  automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>,
-) {
-  return computed(async (get) => {
-    const [context, target] = await Promise.all([
-      get(automationContext$),
-      get(automationTarget$),
-    ]);
-    if (!context || !target) {
-      return;
-    }
-    const { automation, workflow } = target;
-    const scope = bootstrap;
-    if (isRetiredProactiveWorkflow(workflow.officialDefinitionName)) {
-      throw new OfficialWorkflowRunAdmissionError({
-        message: "This proactive workflow has been retired.",
-      });
-    }
-    const proactiveKind = proactiveWorkflowKind(
-      workflow.officialDefinitionName,
-    );
-    if (proactiveKind !== null) {
-      if (
-        !isFeatureEnabled(
-          proactiveKind === "suggestions"
-            ? FeatureSwitchKey.AgentSuggestion
-            : FeatureSwitchKey.ProactiveLearning,
-          await get(bootstrap.featureSwitches$),
-        )
-      ) {
-        throw new OfficialWorkflowRunAdmissionError({
-          message: "Proactive workflow is not enabled.",
-        });
-      }
-      const [eligible] = await get(db$)
-        .select({ id: orgMetadata.orgId })
-        .from(orgMetadata)
-        .where(
-          and(
-            eq(orgMetadata.orgId, scope.orgId),
-            proactiveWorkflowOwnerEnabledSql(
-              { orgId: scope.orgId, userId: scope.userId },
-              scope.agentId,
-              proactiveKind,
-              context.eventType !== "manual",
-            ),
-          ),
-        )
-        .limit(1);
-      if (
-        !eligible ||
-        (context.eventType !== "manual" && !automation.enabled)
-      ) {
-        throw new OfficialWorkflowRunAdmissionError({
-          message: "Proactive workflow was paused before launch.",
-        });
-      }
-    }
-  });
-}
 
 function assertOfficialManualEvent(
   eventType: string | null,
@@ -96,94 +34,127 @@ function assertOfficialManualEvent(
   }
 }
 
-function createOfficialWorkflowTarget(
-  bootstrap: AgentRunContextSignals,
-  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  automationContext$: ReturnType<typeof createThreadAutomationContext>,
-  automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>,
-): Computed<Promise<OfficialWorkflowCandidate | undefined>> {
-  const proactiveEligibility$ = createProactiveTargetEligibility(
-    bootstrap,
-    automationContext$,
-    automationTarget$,
+function officialObservationFromTarget(
+  target: ThreadAutomationTarget,
+  name: string,
+  scope: AgentRunContextSignals,
+  eventType: string,
+  automationContext: {
+    readonly eventType: string | null;
+    readonly workflowName: string | null;
+  },
+): OfficialWorkflowObservation {
+  const { automation, workflow } = target;
+  if (
+    eventType !== "input.automation" ||
+    automationContext.eventType === null ||
+    automation.officialBlueprintKey === null ||
+    automation.orgId !== scope.orgId ||
+    automation.ownerUserId !== scope.userId ||
+    workflow.orgId !== scope.orgId ||
+    workflow.ownerUserId !== scope.userId ||
+    workflow.agentId !== scope.agentId ||
+    workflow.visibility !== "private" ||
+    workflow.officialInstallationState !== "installed" ||
+    automationContext.workflowName !== workflow.name
+  ) {
+    throw new OfficialWorkflowRunAdmissionError();
+  }
+  if (SEED_SKILLS.includes(workflow.name)) {
+    throw new OfficialWorkflowRunAdmissionError();
+  }
+  const catalog = acceptedCatalogFromRow(target.officialCatalog ?? undefined);
+  const definition =
+    catalog && acceptedDefinitionForName(catalog.payload.definitions, name);
+  if (
+    !definition ||
+    !target.officialRevision ||
+    automation.officialReconciliationStatus !== "current" ||
+    !definition.blueprints.some((blueprint) => {
+      return (
+        blueprint.key === automation.officialBlueprintKey &&
+        blueprint.fingerprint === automation.officialAppliedFingerprint
+      );
+    })
+  ) {
+    throw new OfficialWorkflowRunAdmissionError();
+  }
+  return assembleWorkflowObservation(
+    { workflowId: workflow.id, workflowName: workflow.name },
+    definition,
+    acceptedRevisionFromRow(target.officialRevision),
   );
-  return computed(async (get) => {
-    const event = await get(pickedEvent$);
-    if (event?.contextType !== "automation") {
-      return undefined;
-    }
-    const [context, target] = await Promise.all([
-      get(automationContext$),
-      get(automationTarget$),
-    ]);
-    if (!context || !target) {
-      return undefined;
-    }
-    const { automation, workflow } = target;
-    if (workflow.officialDefinitionName === null) {
-      if (automation.officialBlueprintKey !== null) {
-        throw new OfficialWorkflowRunAdmissionError();
-      }
-      return undefined;
-    }
-    assertOfficialManualEvent(
-      context.eventType,
-      workflow.officialDefinitionName,
-    );
-    const scope = bootstrap;
-    await get(proactiveEligibility$);
-    if (
-      event.eventType !== "input.automation" ||
-      context.eventType === null ||
-      automation.officialBlueprintKey === null ||
-      automation.orgId !== scope.orgId ||
-      automation.ownerUserId !== scope.userId ||
-      workflow.orgId !== scope.orgId ||
-      workflow.ownerUserId !== scope.userId ||
-      workflow.agentId !== scope.agentId ||
-      workflow.visibility !== "private" ||
-      workflow.officialInstallationState !== "installed" ||
-      context.workflowName !== workflow.name
-    ) {
-      throw new OfficialWorkflowRunAdmissionError();
-    }
-    return {
-      workflowId: workflow.id,
-      workflowName: workflow.name,
-      definitionName: workflow.officialDefinitionName,
-    };
-  });
 }
 
-/** Official eligibility belongs to the picked event, never the shared identity. */
 export function createThreadWorkflowContext(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   automationContext$: ReturnType<typeof createThreadAutomationContext>,
   automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>,
 ) {
-  const officialTarget$ = createOfficialWorkflowTarget(
-    bootstrap,
-    pickedEvent$,
-    automationContext$,
-    automationTarget$,
+  const officialWorkflowObservation$ = computed(
+    async (get): Promise<OfficialWorkflowObservation | undefined> => {
+      const event = await get(pickedEvent$);
+      if (event?.contextType !== "automation") {
+        return undefined;
+      }
+      const [context, target] = await Promise.all([
+        get(automationContext$),
+        get(automationTarget$),
+      ]);
+      if (!context || !target) {
+        return undefined;
+      }
+      const { automation, workflow } = target;
+      if (workflow.officialDefinitionName === null) {
+        if (automation.officialBlueprintKey !== null) {
+          throw new OfficialWorkflowRunAdmissionError();
+        }
+        return undefined;
+      }
+      assertOfficialManualEvent(
+        context.eventType,
+        workflow.officialDefinitionName,
+      );
+      const name = workflow.officialDefinitionName;
+      if (isRetiredProactiveWorkflow(name)) {
+        throw new OfficialWorkflowRunAdmissionError({
+          message: "This proactive workflow has been retired.",
+        });
+      }
+      const kind = proactiveWorkflowKind(name);
+      if (kind !== null) {
+        if (
+          !isFeatureEnabled(
+            kind === "suggestions"
+              ? FeatureSwitchKey.AgentSuggestion
+              : FeatureSwitchKey.ProactiveLearning,
+            await get(bootstrap.featureSwitches$),
+          )
+        ) {
+          throw new OfficialWorkflowRunAdmissionError({
+            message: "Proactive workflow is not enabled.",
+          });
+        }
+        if (
+          !target.proactiveOwnerEnabled ||
+          (context.eventType !== "manual" && !automation.enabled)
+        ) {
+          throw new OfficialWorkflowRunAdmissionError({
+            message: "Proactive workflow was paused before launch.",
+          });
+        }
+      }
+      return officialObservationFromTarget(
+        target,
+        name,
+        bootstrap,
+        event.eventType,
+        context,
+      );
+    },
   );
-  // The global catalog is shared by every context of this bootstrap.
-  const officialCatalog$ = computed((get) => {
-    return get(bootstrap.officialCatalog$);
-  });
-  const officialWorkflows$ = createOfficialWorkflowFacts(
-    officialTarget$,
-    officialCatalog$,
-  );
-  const officialWorkflowObservation$ = createOfficialWorkflowObservation(
-    officialTarget$,
-    officialWorkflows$,
-  );
-  return {
-    officialWorkflows$,
-    officialWorkflowObservation$,
-  };
+  return { officialWorkflowObservation$ };
 }
 
 export type ThreadWorkflowContext = ReturnType<
