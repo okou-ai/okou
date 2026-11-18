@@ -1,8 +1,16 @@
 diff --git a/dist/core/agent-session.d.ts b/dist/core/agent-session.d.ts
-index 8b6a58430eea2cbb463e2b51773a8bc6e4914505..1880829b93dbacea72e90b092dbb9dc2d0a46e51 100644
+index 8b6a58430eea2cbb463e2b51773a8bc6e4914505..b11e0afd91c798dfbc2b32573da5f9a667c65078 100644
 --- a/dist/core/agent-session.d.ts
 +++ b/dist/core/agent-session.d.ts
-@@ -505,6 +505,8 @@ export declare class AgentSession {
+@@ -227,6 +227,7 @@ export declare class AgentSession {
+     private _unsubscribeAgent?;
+     private _eventListeners;
+     private _isAgentRunActive;
++    private _inputContext;
+     private _promptPreflightCount;
+     private _agentRunAbortRequested;
+     private _idleWaitPromise;
+@@ -505,6 +506,8 @@ export declare class AgentSession {
      private _normalizePromptSnippet;
      private _normalizePromptGuidelines;
      private _rebuildSystemPrompt;
@@ -11,11 +19,46 @@ index 8b6a58430eea2cbb463e2b51773a8bc6e4914505..1880829b93dbacea72e90b092dbb9dc2
      /**
       * Apply a prompt and tool loadout for the next request. Sets the executable tools and
       * returns a system message patching the prompt sections the model currently has (replayed
+@@ -584,6 +587,8 @@ export declare class AgentSession {
+      */
+     private _expandSkillCommand;
+     private _queueUserInput;
++    private _captureInputContext;
++    private _assertInputContext;
+     /**
+      * Queue a steering message while the agent is running.
+      * Delivered after the current assistant turn finishes executing its tool calls,
 diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
-index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..10f83064a0c37cbf0bbc3809585538e2651f0384 100644
+index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..c30af9f572cb8318a5658f53412acbdde1e5e67a 100644
 --- a/dist/core/agent-session.js
 +++ b/dist/core/agent-session.js
-@@ -1478,6 +1478,48 @@ export class AgentSession {
+@@ -112,6 +112,8 @@ export class AgentSession {
+     _unsubscribeAgent;
+     _eventListeners = [];
+     _isAgentRunActive = false;
++    // Input transformations belong to this session phase and its native owner.
++    _inputContext = { signal: undefined };
+     _promptPreflightCount = 0;
+     _agentRunAbortRequested = false;
+     _idleWaitPromise;
+@@ -746,6 +748,8 @@ export class AgentSession {
+         }
+         finally {
+             this._isEmittingAgentSettled = false;
++            if (this._inputContext)
++                this._inputContext = { signal: undefined };
+         }
+         const deferred = this._deferredSettledActions.splice(0);
+         if (deferred.length > 0) {
+@@ -1068,6 +1072,7 @@ export class AgentSession {
+      * Call this when completely done with the session.
+      */
+     dispose() {
++        this._inputContext = undefined;
+         try {
+             this.abortRetry();
+             this.abortCompaction();
+@@ -1478,6 +1483,51 @@ export class AgentSession {
      // =========================================================================
      // Prompting
      // =========================================================================
@@ -30,6 +73,7 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..10f83064a0c37cbf0bbc3809585538e2
 +                // so this owner must reset it before claiming the native lifecycle.
 +                this._agentRunAbortRequested = false;
 +                this._isAgentRunActive = true;
++                this._inputContext = { signal: this.agent.abortSignal };
 +                options?.preflightResult?.(true);
 +            },
 +            afterRun: () => this._handlePostAgentRun(),
@@ -56,6 +100,8 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..10f83064a0c37cbf0bbc3809585538e2
 +                }
 +                finally {
 +                    this._isAgentRunActive = false;
++                    if (this._inputContext)
++                        this._inputContext = { signal: undefined };
 +                    this._resolveIdleWaitIfIdle();
 +                }
 +            },
@@ -64,7 +110,24 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..10f83064a0c37cbf0bbc3809585538e2
      /**
       * Start a run from a user or custom message. The session counts as busy from here on, so
       * messages sent while before_agent_start handlers run are queued into this run instead of
-@@ -1510,20 +1552,16 @@ export class AgentSession {
+@@ -1485,6 +1535,7 @@ export class AgentSession {
+      * @param onStarted Called once the run's messages are prepared, before the first request.
+      */
+     async _startRun(trigger, onStarted) {
++        const inputContext = this._inputContext = { signal: undefined };
+         this._isAgentRunActive = true;
+         this._agentRunAbortRequested = false;
+         let messages;
+@@ -1493,6 +1544,8 @@ export class AgentSession {
+         }
+         catch (error) {
+             this._isAgentRunActive = false;
++            if (this._inputContext)
++                this._inputContext = { signal: undefined };
+             this._flushPendingBashMessages();
+             this._flushPendingCustomMessages();
+             this._resolveIdleWaitIfIdle();
+@@ -1510,20 +1563,17 @@ export class AgentSession {
          // are dropped, so a tool that never registers does not stay pending.
          this._pendingToolNames.clear();
          try {
@@ -85,6 +148,7 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..10f83064a0c37cbf0bbc3809585538e2
 +            // Keep native cancellation/input ownership through actionable work.
 +            // Final notifications retain upstream's idle/deferred-action semantics.
 +            await this.agent.prompt(messages, undefined, {
++                onStart: () => { inputContext.signal = this.agent.abortSignal; },
 +                afterRun: async () => {
 +                    if (await this._handlePostAgentRun()) {
 +                        return !this._agentRunAbortRequested;
@@ -95,27 +159,75 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..10f83064a0c37cbf0bbc3809585538e2
          }
          finally {
              if (this._agentRunAbortRequested)
-@@ -1834,12 +1872,19 @@ export class AgentSession {
+@@ -1697,6 +1747,7 @@ export class AgentSession {
+             this._deferredSettledActions.push(async () => await this.prompt(text, options));
+             return;
+         }
++        const inputContext = this._captureInputContext();
+         const expandPromptTemplates = options?.expandPromptTemplates ?? true;
+         const preflightResult = options?.preflightResult;
+         // Handle extension commands first (execute immediately, even during streaming)
+@@ -1717,19 +1768,21 @@ export class AgentSession {
+         this._promptPreflightCount++;
+         let trigger;
+         try {
+-            trigger = await this._preparePrompt(text, options);
++            trigger = await this._preparePrompt(text, options, inputContext);
+         }
+         finally {
+             this._promptPreflightCount--;
+         }
+-        if (trigger)
++        if (trigger) {
++            this._assertInputContext(inputContext);
+             await this._startRun(trigger, () => preflightResult?.("started"));
++        }
+     }
+     /**
+      * Run input hooks, expand templates, queue while streaming, and validate model and auth.
+      * Returns the run trigger, or undefined when the prompt was handled or queued.
+      */
+-    async _preparePrompt(text, options) {
++    async _preparePrompt(text, options, inputContext) {
+         const expandPromptTemplates = options?.expandPromptTemplates ?? true;
+         const preflightResult = options?.preflightResult;
+         // Emit input event for extension interception (before skill/template expansion)
+@@ -1738,6 +1791,7 @@ export class AgentSession {
+             preflightResult?.("handled");
+             return undefined;
+         }
++        this._assertInputContext(inputContext);
+         const { text: currentText, images: currentImages } = processedInput;
+         // Expand skill commands (/skill:name args) and prompt templates (/template args)
+         let expandedText = currentText;
+@@ -1833,13 +1887,26 @@ export class AgentSession {
+             return text; // Return original on error
          }
      }
-     async _queueUserInput(text, images, behavior, source) {
-+        if (this._isEmittingAgentSettled) {
-+            throw new Error("Agent is settling; send a new prompt after notification dispatch.");
++    _captureInputContext() {
++        const context = this._inputContext;
++        this._assertInputContext(context);
++        return context;
++    }
++    _assertInputContext(context) {
++        if (!context || context !== this._inputContext ||
++            context.signal !== this.agent.abortSignal || this._isEmittingAgentSettled) {
++            throw new Error("Agent is settling or the input's run has ended; submit a new prompt.");
 +        }
++    }
+     async _queueUserInput(text, images, behavior, source) {
++        const inputContext = this._captureInputContext();
          if (text.startsWith("/")) {
              this._throwIfExtensionCommand(text);
          }
          const processedInput = await this._runInputHandlers(text, images, source, this.isStreaming ? behavior : undefined);
          if (!processedInput)
              return "handled";
-+        // An input extension can yield across the native completion boundary.
-+        if (this._isEmittingAgentSettled) {
-+            throw new Error("Agent is settling; send a new prompt after notification dispatch.");
-+        }
++        this._assertInputContext(inputContext);
          let expandedText = this._expandSkillCommand(processedInput.text);
          expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
          if (behavior === "steer") {
-@@ -1877,8 +1922,6 @@ export class AgentSession {
+@@ -1877,8 +1944,6 @@ export class AgentSession {
       * Internal: Queue a steering message (already expanded, no extension command check).
       */
      async _queueSteer(text, images) {
@@ -124,7 +236,7 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..10f83064a0c37cbf0bbc3809585538e2
          const content = [{ type: "text", text }];
          if (images) {
              content.push(...images);
-@@ -1887,13 +1930,13 @@ export class AgentSession {
+@@ -1887,13 +1952,13 @@ export class AgentSession {
          if (images?.length)
              this._queuedMessagesWithImages.add(message);
          this.agent.steer(message);
@@ -140,7 +252,7 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..10f83064a0c37cbf0bbc3809585538e2
          const content = [{ type: "text", text }];
          if (images) {
              content.push(...images);
-@@ -1902,6 +1945,8 @@ export class AgentSession {
+@@ -1902,6 +1967,8 @@ export class AgentSession {
          if (images?.length)
              this._queuedMessagesWithImages.add(message);
          this.agent.followUp(message);
@@ -149,7 +261,7 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..10f83064a0c37cbf0bbc3809585538e2
      }
      /** Replace a queued user message's images in place with normalized ones, appending hints to its text. */
      async _normalizeQueuedMessageImages(message) {
-@@ -2083,10 +2128,10 @@ export class AgentSession {
+@@ -2083,10 +2150,10 @@ export class AgentSession {
          await this.waitForIdle();
      }
      async waitForIdle() {
@@ -163,7 +275,7 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..10f83064a0c37cbf0bbc3809585538e2
      }
      // =========================================================================
      // Model Management
-@@ -2488,6 +2533,11 @@ export class AgentSession {
+@@ -2488,6 +2555,11 @@ export class AgentSession {
          const settings = this.settingsManager.getCompactionSettings(this.model);
          if (!settings.enabled)
              return false;
