@@ -11,8 +11,8 @@ underlying ownership contracts. Setup commands belong in the
 ## Upstream Defaults
 
 The root configuration inherits upstream defaults and explicitly defers the
-three metric checks and `identifier_name` in `disabled_rules`.
-The other 97 defaults remain enabled, including `file_length` configured with
+`line_length` and `identifier_name` in `disabled_rules`.
+The other 99 defaults remain enabled, including `file_length` configured with
 800 warning / 1,000 error lines. The shared `--strict` entry point enforces an
 800-line limit in production and tests, including comments and blank lines.
 `function_body_length` has a 100-line warning and error threshold for functions,
@@ -31,6 +31,11 @@ error, identity, cancellation or test-coverage boundaries.
 threshold of 8. Strict lint allows up to 5 parameters without default values.
 Initializers and overrides are outside the rule. Group related inputs into
 values that represent a single concept.
+`large_tuple` uses the upstream warning threshold of 2 and error threshold of
+3. Strict lint permits up to two members in an explicit tuple type. Use named
+types for larger groups of related values.
+`nesting` permits two nested type levels below the top-level declaration and
+keeps the upstream function nesting limit of two.
 It uses `opt_in_rules`
 for the three additional upstream checks and the native rules, rather than
 maintaining a second copy of the default set. Test overrides relax only force

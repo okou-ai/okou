@@ -164,16 +164,16 @@ test("the share menu describes each audience beneath its name by default", async
 });
 
 test("owners can change three access levels separately from copying the stable app link", async () => {
-  let status = sharingStatus();
+  let statusReads = 0;
   const changes: string[] = [];
   const clipboard = context.mocks.browser.clipboardWriteText();
   context.mocks.api(artifactSharesContract.status, ({ respond }) => {
-    return respond(200, status);
+    statusReads += 1;
+    return respond(200, sharingStatus());
   });
   context.mocks.api(artifactSharesContract.update, ({ body, respond }) => {
     changes.push(body.audience);
-    status = sharingStatus(body.audience);
-    return respond(200, status);
+    return respond(200, sharingStatus(body.audience));
   });
   await openArtifact();
   await openShareMenu();
@@ -214,6 +214,7 @@ test("owners can change three access levels separately from copying the stable a
     }),
   );
   expect(changes).toStrictEqual(["organization", "public", "private"]);
+  expect(statusReads).toBe(1);
 });
 
 test("a recipient's share button copies directly without a permissions menu or mutation", async () => {

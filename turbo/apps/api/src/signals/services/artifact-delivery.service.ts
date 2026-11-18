@@ -108,11 +108,12 @@ export const readArtifactDeliveryRecord$ = command(
 /** Immutable alias ownership survives revocation; only the share policy changes. */
 export const registerArtifactDelivery$ = command(
   async (
-    { get },
+    { get, set },
     args: {
       readonly alias: string;
       readonly targetKind: "file" | "html";
       readonly record: ArtifactDeliveryRecord;
+      readonly reuseExisting?: boolean;
     },
     signal: AbortSignal,
   ) => {
@@ -156,26 +157,40 @@ export const registerArtifactDelivery$ = command(
       }
     }
     const body = JSON.stringify(record);
-    const written = await settle(
-      get(writeArtifactSharePolicyObject(bucket, key, body, null, signal)),
-      signal,
-    );
-    if (written.ok) {
-      return;
-    }
-    if (
-      !(written.error instanceof Error) ||
-      written.error.name !== "PreconditionFailed"
-    ) {
-      throw written.error;
-    }
-    const existing = await get(
-      readArtifactSharePolicyObject(bucket, key, signal),
-    );
+    let previous = args.reuseExisting
+      ? await set(
+          readArtifactDeliveryRecord$,
+          {
+            layout: linkLayoutFromSegment(record.publicBrand),
+            kind: args.targetKind,
+            alias: args.alias,
+          },
+          signal,
+        )
+      : null;
     signal.throwIfAborted();
-    const previous = artifactDeliveryRecordSchema.parse(
-      JSON.parse(existing.buffer.toString("utf8")),
-    );
+    if (!previous) {
+      const written = await settle(
+        get(writeArtifactSharePolicyObject(bucket, key, body, null, signal)),
+        signal,
+      );
+      if (written.ok) {
+        return;
+      }
+      if (
+        !(written.error instanceof Error) ||
+        written.error.name !== "PreconditionFailed"
+      ) {
+        throw written.error;
+      }
+      const existing = await get(
+        readArtifactSharePolicyObject(bucket, key, signal),
+      );
+      signal.throwIfAborted();
+      previous = artifactDeliveryRecordSchema.parse(
+        JSON.parse(existing.buffer.toString("utf8")),
+      );
+    }
     if (JSON.stringify(previous) !== body) {
       throw new ArtifactDeliveryAliasConflict(
         "Artifact delivery alias is already allocated",

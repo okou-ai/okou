@@ -20,6 +20,8 @@ pub enum HomeObservationKind {
     Inventory,
     #[serde(rename = "runner_home_admission")]
     Admission,
+    #[serde(rename = "runner_home_lifecycle_timing")]
+    LifecycleTiming,
 }
 
 impl fmt::Display for HomeObservationKind {
@@ -31,6 +33,7 @@ impl fmt::Display for HomeObservationKind {
             Self::Removal => "runner_home_image_removal",
             Self::Inventory => "runner_home_inventory",
             Self::Admission => "runner_home_admission",
+            Self::LifecycleTiming => "runner_home_lifecycle_timing",
         })
     }
 }
@@ -50,6 +53,9 @@ pub enum HomeObservationOutcome {
     Assembled,
     Loading,
     Deferred,
+    Completed,
+    Released,
+    Incomplete,
 }
 
 impl fmt::Display for HomeObservationOutcome {
@@ -67,6 +73,9 @@ impl fmt::Display for HomeObservationOutcome {
             Self::Assembled => "assembled",
             Self::Loading => "loading",
             Self::Deferred => "deferred",
+            Self::Completed => "completed",
+            Self::Released => "released",
+            Self::Incomplete => "incomplete",
         })
     }
 }

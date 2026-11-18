@@ -313,6 +313,68 @@ for path in "${file_length_paths[@]}"; do
   rm "$fixture/$path/ParameterCountBoundary.swift"
 done
 
+# Strict lint accepts a two-member tuple type and rejects a third member.
+for path in "${file_length_paths[@]}"; do
+  cat > "$fixture/$path/TupleBoundary.swift" <<'SWIFT'
+func tupleBoundary() -> (label: String, count: Int) {
+  ("sample", 1)
+}
+SWIFT
+done
+if ! run_lint; then
+  cat "$test_root/lint.log" >&2
+  exit 1
+fi
+for path in "${file_length_paths[@]}"; do
+  cat > "$fixture/$path/TupleBoundary.swift" <<'SWIFT'
+func tupleBoundary() -> (label: String, count: Int, enabled: Bool) {
+  ("sample", 1, true)
+}
+SWIFT
+done
+if run_lint; then
+  echo 'A three-member tuple type passed strict lint.' >&2
+  exit 1
+fi
+for path in "${file_length_paths[@]}"; do
+  grep -F "$path/TupleBoundary.swift" "$test_root/lint.log" | grep -F '(large_tuple)' >/dev/null
+  rm "$fixture/$path/TupleBoundary.swift"
+done
+
+# Strict lint accepts two nested type levels and rejects a third.
+for path in "${file_length_paths[@]}"; do
+  cat > "$fixture/$path/NestingBoundary.swift" <<'SWIFT'
+struct NestingBoundary {
+  struct Middle {
+    struct Inner {}
+  }
+}
+SWIFT
+done
+if ! run_lint; then
+  cat "$test_root/lint.log" >&2
+  exit 1
+fi
+for path in "${file_length_paths[@]}"; do
+  cat > "$fixture/$path/NestingBoundary.swift" <<'SWIFT'
+struct NestingBoundary {
+  struct Middle {
+    struct Inner {
+      struct Excess {}
+    }
+  }
+}
+SWIFT
+done
+if run_lint; then
+  echo 'A type nested three levels deep passed strict lint.' >&2
+  exit 1
+fi
+for path in "${file_length_paths[@]}"; do
+  grep -F "$path/NestingBoundary.swift" "$test_root/lint.log" | grep -F '(nesting)' >/dev/null
+  rm "$fixture/$path/NestingBoundary.swift"
+done
+
 # The production-only state rule must be enabled by the real root config.
 for path in "${production_paths[@]}"; do
   printf 'var sharedState = 0\n' > "$fixture/$path/GlobalState.swift"

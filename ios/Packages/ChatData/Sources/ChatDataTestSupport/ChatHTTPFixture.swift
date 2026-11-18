@@ -184,18 +184,22 @@ public func chatRequestBody(_ request: URLRequest) -> Data {
 
 /// `/api/model-catalog` fixture with one retired model.
 public func modelCatalogResponse() -> ChatHTTPResponse {
-  let entries: [(model: String, displayName: String, replacedBy: String?)] = [
-    ("okou-1.0", "Auto", nil),
-    ("gpt-5.6-sol", "GPT-5.6 Sol", nil),
-    ("claude-opus-5-5", "Claude Opus 5.5", nil),
-    ("claude-opus-4-8", "Claude Opus 4.8", "claude-opus-5-5")
+  struct Entry {
+    let model: String
+    let displayName: String
+    let replacedBy: String?
+  }
+  let entries = [
+    Entry(model: "okou-1.0", displayName: "Auto", replacedBy: nil),
+    Entry(model: "gpt-5.6-sol", displayName: "GPT-5.6 Sol", replacedBy: nil),
+    Entry(model: "claude-opus-5-5", displayName: "Claude Opus 5.5", replacedBy: nil),
+    Entry(model: "claude-opus-4-8", displayName: "Claude Opus 4.8", replacedBy: "claude-opus-5-5")
   ]
   let models = entries.enumerated().map { index, entry -> String in
-    let (model, displayName, replacedBy) = entry
-    let replacement = replacedBy.map { "\"\($0)\"" } ?? "null"
+    let replacement = entry.replacedBy.map { "\"\($0)\"" } ?? "null"
     return """
-      {"model":"\(model)","displayName":"\(displayName)","sortOrder":\(index),\
-      "replacedBy":\(replacement),"resolvedModel":"\(replacedBy ?? model)"}
+      {"model":"\(entry.model)","displayName":"\(entry.displayName)","sortOrder":\(index),\
+      "replacedBy":\(replacement),"resolvedModel":"\(entry.replacedBy ?? entry.model)"}
       """
   }
   return ChatHTTPResponse(

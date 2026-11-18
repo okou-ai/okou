@@ -2,7 +2,7 @@ use super::*;
 
 use std::sync::Arc;
 
-use crate::home_image_cache::{HomeCacheCheckoutResult, HomeImagePromotionContext};
+use crate::home_image_cache::{HomeCacheCheckoutResult, HomeImageCache, HomeImagePromotionContext};
 use crate::home_promotion::test_support::HomePromotionFixture;
 use crate::resource_budget::{BudgetLease, ResourceBudget};
 use runner_host::paths::RunnerPaths;
@@ -237,7 +237,13 @@ async fn idle_destroy_job_kill_error_still_attempts_destroy_and_releases_budget_
 
 #[tokio::test]
 async fn idle_destroy_job_publishes_frozen_home_only_after_successful_kill() {
-    let fixture = HomePromotionFixture::new("sess-idle-destroy-promote").await;
+    let recorded = runner_storage::operation_test_support::RecordedHomeObservations::default();
+    let dir = Arc::new(tempfile::tempdir().unwrap());
+    let cache = HomeImageCache::new(RunnerPaths::new(dir.path().join("runner")))
+        .with_telemetry(recorded.handle());
+    let fixture =
+        HomePromotionFixture::new_with_cache(dir, cache, "sess-idle-destroy-promote", None).await;
+    let producer = fixture.promotion.run_id();
     let overrides = Arc::new(MockSandboxOverrides::new());
     let (budget, lease) = reserved_budget_lease();
     let job = make_idle_destroy_job_for(
@@ -251,6 +257,32 @@ async fn idle_destroy_job_publishes_frozen_home_only_after_successful_kill() {
     let promoted = job.run_with_context("test_idle_destroy_promote").await;
 
     assert!(promoted);
+    let timings = recorded.timings();
+    let phases: Vec<_> = timings
+        .iter()
+        .map(|record| {
+            let home = record.home.as_ref().unwrap();
+            assert!(record.success);
+            assert_eq!(home.run_id, Some(producer));
+            assert!(home.cache_key.is_some());
+            home.reason.as_deref().unwrap()
+        })
+        .collect();
+    assert_eq!(
+        phases,
+        [
+            "idle_reclamation_admission",
+            "terminal_unpark",
+            "terminal_mount",
+            "terminal_preparation",
+            "terminal_freeze",
+            "sandbox_stop",
+            "publication_admission",
+            "durable_commit",
+            "publication",
+            "entry_lock_lifetime",
+        ]
+    );
     assert_eq!(overrides.terminal_unpark_call_count(), 1);
     assert_eq!(overrides.stop_call_count(), 0);
     assert_eq!(overrides.kill_call_count(), 1);

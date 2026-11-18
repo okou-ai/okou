@@ -741,12 +741,10 @@ class NativeRuleTests(unittest.TestCase):
             {name for name, value in defaults.items() if value == "no"},
             {
                 "identifier_name",
-                "large_tuple",
                 "line_length",
-                "nesting",
             },
         )
-        self.assertEqual(sum(value == "yes" for value in defaults.values()), 97)
+        self.assertEqual(sum(value == "yes" for value in defaults.values()), 99)
 
     def lint(self, root, source, rule, filename="Screen.swift"):
         path = root / filename

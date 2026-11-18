@@ -11,8 +11,19 @@ import type {
 } from "./agent-run-contracts";
 import type {
   SeedSkillVolume,
+  SkillVolume,
   TemplateSkillVolume,
 } from "./run-prompt-and-skills";
+
+import type { Environment } from "./run-environment";
+import type { ConnectorServerFirewallMetadataCatalog } from "./connector-server-firewall-catalog.service";
+import type { ResolvedPermissionGrant } from "./user-permission-grants.service";
+
+/** Captured policy sources; actual artifact expiry is evaluated at publication. */
+export interface ExecutionNetworkPolicyInputs {
+  readonly catalog: ConnectorServerFirewallMetadataCatalog;
+  readonly grants: readonly ResolvedPermissionGrant[];
+}
 
 /** Process-local admission facts; this receipt itself is never serialized. */
 export interface AdmittedExecutionFacts {
@@ -36,6 +47,11 @@ export interface AdmittedExecutionFacts {
   readonly realAgentInPreview: boolean | undefined;
   readonly apiStartTime: number | undefined;
   readonly connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[];
+  /** First accepted non-secret Connector environment, before source precedence. */
+  readonly connectorEnvironment: Environment;
+  readonly connectorNetworkPolicyInputs: ExecutionNetworkPolicyInputs | null;
+  /** Same effective Connector selection that supplied the Prompt. */
+  readonly connectorSkillVolumes: readonly SkillVolume[];
   /** First accepted template snapshot; later edits apply to subsequent Runs. */
   readonly templateSkillVolumes: readonly TemplateSkillVolume[];
   readonly integration: string | undefined;

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.48.5](https://github.com/okou-ai/okou/compare/ios-v0.48.4...ios-v0.48.5) (2026-11-18)
+
+
+### Refactoring
+
+* **ios:** enable the large tuple lint rule ([#48631](https://github.com/okou-ai/okou/issues/48631)) ([55aa63d](https://github.com/okou-ai/okou/commit/55aa63dc24ff614767e11e994563573c95599118))
+
 ## [0.48.4](https://github.com/okou-ai/okou/compare/ios-v0.48.3...ios-v0.48.4) (2026-11-18)
 
 

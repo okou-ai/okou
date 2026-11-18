@@ -91,6 +91,7 @@ impl HomeImagePromotionContext {
                         &self.cache_key,
                         lock,
                         HomeCacheLockOwner::Finalizing,
+                        self.run_id,
                     ),
                     Err(error) => {
                         info!(run_id = %self.run_id, cache_key = self.cache_key, %error,
@@ -125,7 +126,23 @@ impl HomeImagePromotionContext {
             .checkout_io
             .spawn(async move {
                 let _entry = entry;
+                let timing = HomePhaseTimer::new(
+                    &cache,
+                    request.run_id,
+                    &request.cache_key,
+                    HomePhase::Publication,
+                );
                 let result = cache.promote_locked(request.input(), &mut progress).await;
+                timing.finish(match &result {
+                    Ok(HomeImagePromotionOutcome::Promoted) => HomeObservationOutcome::Completed,
+                    Ok(HomeImagePromotionOutcome::PreservedExisting) => {
+                        HomeObservationOutcome::PreservedExisting
+                    }
+                    Ok(HomeImagePromotionOutcome::SkippedUnpublished) => {
+                        HomeObservationOutcome::Skipped
+                    }
+                    Err(_) => HomeObservationOutcome::Failed,
+                });
                 if result.is_err() {
                     cache.observe_publication(
                         &request.input(),
@@ -267,7 +284,19 @@ impl HomeImageCache {
         let metadata_peak = runner_host::state_file::HOME_METADATA_MAX_BYTES.saturating_add(8192);
         let mut io_slots = 1;
         loop {
-            let admission = match self.publication_admission(deadline, io_slots).await {
+            let timing = HomePhaseTimer::new(
+                self,
+                input.run_id,
+                input.cache_key,
+                HomePhase::PublicationAdmission,
+            );
+            let result = self.publication_admission(deadline, io_slots).await;
+            timing.finish(match &result {
+                Ok(Some(_)) => HomeObservationOutcome::Completed,
+                Ok(None) => HomeObservationOutcome::Skipped,
+                Err(_) => HomeObservationOutcome::Failed,
+            });
+            let admission = match result {
                 Ok(Some(admission)) => admission,
                 Ok(None) => {
                     info!(run_id = %input.run_id, cache_key = input.cache_key,
@@ -364,6 +393,12 @@ impl HomeImageCache {
                 return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
             }
             if own_commit {
+                let timing = HomePhaseTimer::new(
+                    self,
+                    input.run_id,
+                    input.cache_key,
+                    HomePhase::DurableCommit,
+                );
                 let expected = progress
                     .metadata
                     .as_ref()
@@ -394,6 +429,7 @@ impl HomeImageCache {
                     })?
                     .validate_path(&paths.metadata())?;
                 sync_directory(paths.entry_dir()).await?;
+                timing.finish(HomeObservationOutcome::Completed);
             } else {
                 let image = match &mut progress.image {
                     Some(image) => image,
@@ -462,6 +498,12 @@ impl HomeImageCache {
                         })
                     }
                 };
+                let timing = HomePhaseTimer::new(
+                    self,
+                    input.run_id,
+                    input.cache_key,
+                    HomePhase::DurableCommit,
+                );
                 if image.location == ImageLocation::Staging {
                     image.pin.validate_path(&staging)?;
                     #[cfg(test)]
@@ -506,6 +548,7 @@ impl HomeImageCache {
                 sync_directory(paths.entry_dir()).await?;
                 let fresh = self.fs_stats().await?;
                 if !has_copy_headroom(fresh, self.pressure_thresholds(fresh), metadata_peak) {
+                    timing.finish(HomeObservationOutcome::Skipped);
                     self.observe_publication(
                         &input,
                         HomeObservationOutcome::Skipped,
@@ -546,6 +589,7 @@ impl HomeImageCache {
                     &mut progress.metadata_pin,
                 )
                 .await?;
+                timing.finish(HomeObservationOutcome::Completed);
             }
             // A successful directory sync, including reconciliation, grants cleanup authority.
             progress.committed = true;

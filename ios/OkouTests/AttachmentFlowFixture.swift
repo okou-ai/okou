@@ -233,13 +233,13 @@ final class AttachmentFlowFixture: Sendable {
     struct Document: Codable {
       let version: Int
       let parts: [Part]
-      struct Part: Codable {
-        let type: String
-        let text: String?
-        let fileId: String?
-        let filenameSnapshot: String?
-        let contentType: String?
-      }
+    }
+    struct Part: Codable {
+      let type: String
+      let text: String?
+      let fileId: String?
+      let filenameSnapshot: String?
+      let contentType: String?
     }
   }
 }

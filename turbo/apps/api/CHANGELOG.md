@@ -10,6 +10,49 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.91.0](https://github.com/okou-ai/okou/compare/api-v2.90.2...api-v2.91.0) (2026-11-18)
+
+
+### Features
+
+* **core:** enable artifact generation timing by default ([#48626](https://github.com/okou-ai/okou/issues/48626)) ([f3c43bf](https://github.com/okou-ai/okou/commit/f3c43bf0cb414043f36623cc451d12d8ce223bae))
+
+
+### Refactoring
+
+* **api:** resolve direct run mounts from member memory ([#48641](https://github.com/okou-ai/okou/issues/48641)) ([831b2cb](https://github.com/okou-ai/okou/commit/831b2cb7c1bbc8f25f0fb6fae2b3b6f044a51ba9))
+
+
+### Performance Improvements
+
+* **api:** reuse accepted connector preparation ([#48634](https://github.com/okou-ai/okou/issues/48634)) ([2f150ac](https://github.com/okou-ai/okou/commit/2f150acc7c4f7b6861e101bebe82c2f5220d3cba))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.853.0
+    * @okouai/db bumped to 2.44.9
+    * @okouai/pi-agent-runtime bumped to 1.51.160
+
+## [2.90.2](https://github.com/okou-ai/okou/compare/api-v2.90.1...api-v2.90.2) (2026-11-18)
+
+
+### Refactoring
+
+* **api:** publish invitation facts and retire marketing read bridges ([#48630](https://github.com/okou-ai/okou/issues/48630)) ([fd53dd1](https://github.com/okou-ai/okou/commit/fd53dd1e7c58e7fdb39bb6f2d97b70ce8c53e162))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.86.2
+    * @okouai/core bumped to 8.852.2
+    * @okouai/db bumped to 2.44.8
+    * @okouai/pi-agent-runtime bumped to 1.51.159
+
 ## [2.90.1](https://github.com/okou-ai/okou/compare/api-v2.90.0...api-v2.90.1) (2026-11-18)
 
 

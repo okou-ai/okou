@@ -104,6 +104,21 @@ async fn publication_skips_and_failures_do_not_claim_success_or_remove_previous_
         recorded.events()[0].reason.as_deref(),
         Some("publication_error")
     );
+    let timings = recorded.timings();
+    for (phase, outcome) in [
+        ("durable_commit", Outcome::Incomplete),
+        ("publication", Outcome::Failed),
+    ] {
+        let record = timings
+            .iter()
+            .find(|record| record.home.as_ref().unwrap().reason.as_deref() == Some(phase))
+            .unwrap();
+        assert_eq!(record.home.as_ref().unwrap().outcome, outcome);
+        assert!(
+            !record.success,
+            "an uncommitted phase cannot claim completion"
+        );
+    }
 }
 
 #[tokio::test]

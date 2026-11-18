@@ -388,7 +388,11 @@ final class AuthenticationMembershipTests: XCTestCase {
       $0.activeWorkspaceID = expected[0]
       $0.workspaceIDs = expected
     }
-    let queries = Mutex<[(String?, String?, String?)]>([])
+    struct MembershipQuery {
+      let offset: String?
+      let sessionID: String?
+    }
+    let queries = Mutex<[MembershipQuery]>([])
     provider.identityOverride.withLock {
       $0 = { request in
         if request.url?.path == "/v1/me/organization_memberships" {
@@ -397,10 +401,9 @@ final class AuthenticationMembershipTests: XCTestCase {
           if limit == "100" {
             queries.withLock {
               $0.append(
-                (
-                  query?.first { $0.name == "offset" }?.value, limit,
-                  query?.first { $0.name == "_clerk_session_id" }?.value
-                ))
+                MembershipQuery(
+                  offset: query?.first { $0.name == "offset" }?.value,
+                  sessionID: query?.first { $0.name == "_clerk_session_id" }?.value))
             }
           }
         }
@@ -411,9 +414,11 @@ final class AuthenticationMembershipTests: XCTestCase {
     await authentication.refresh()
 
     XCTAssertEqual(authentication.workspaces.map(\.id), expected)
-    XCTAssertEqual(queries.withLock { $0.compactMap(\.0) }, ["0", "100", "200"])
+    XCTAssertEqual(queries.withLock { $0.compactMap(\.offset) }, ["0", "100", "200"])
     XCTAssertTrue(
-      queries.withLock { $0.allSatisfy { $0.2 == provider.state.withLock { $0.sessionID } } })
+      queries.withLock {
+        $0.allSatisfy { $0.sessionID == provider.state.withLock { $0.sessionID } }
+      })
     try await assertToken(authentication)
   }
 

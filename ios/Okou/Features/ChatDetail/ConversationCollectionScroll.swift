@@ -8,14 +8,20 @@ protocol ConversationCollectionScrolling: AnyObject {
   func captureReadingPosition() -> ConversationReadingPosition?
 }
 
+struct ConversationScrollRequest {
+  let id: String
+  let anchor: UnitPoint
+  let animated: Bool
+}
+
 @MainActor
 final class ConversationCollectionScroll {
   private weak var owner: (any ConversationCollectionScrolling)?
-  private var request: (String, UnitPoint, Bool)?
+  private var request: ConversationScrollRequest?
 
   func scrollTo(_ id: String, anchor: UnitPoint, animated: Bool = false) {
     guard let owner else {
-      request = (id, anchor, animated)
+      request = ConversationScrollRequest(id: id, anchor: anchor, animated: animated)
       return
     }
     owner.scrollTo(id, anchor: anchor, animated: animated)
@@ -29,7 +35,7 @@ final class ConversationCollectionScroll {
     self.owner = owner
     if let request {
       self.request = nil
-      owner.scrollTo(request.0, anchor: request.1, animated: request.2)
+      owner.scrollTo(request.id, anchor: request.anchor, animated: request.animated)
     }
   }
   func detach(_ owner: any ConversationCollectionScrolling) {

@@ -13,7 +13,8 @@ import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-co
 import { secrets } from "@okouai/db/schema/secret";
 import { command, computed, type Computed } from "ccstate";
 import { performance } from "node:perf_hooks";
-import { array, object, record, string } from "zod";
+import { array, object, record, string, unknown as zUnknown } from "zod";
+import { pgInt8ToBigIntSchema } from "../../lib/db-raw-rows";
 import {
   withPgPoolAcquisitionCapture,
   type PgPoolAcquisition,
@@ -21,7 +22,6 @@ import {
 } from "../../lib/db-instrumentation";
 import {
   nullableDriverValueDecoder,
-  pgInt8ToBigIntDecoder,
   zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { waitUntil } from "../context/wait-until";
@@ -80,11 +80,15 @@ import type {
   AgentConnectorSelection,
   AgentConnectorSelectionScope,
 } from "./execution-agent-connectors.service";
-import { createAgentSelectionContext } from "./execution-agent-selection-context.service";
+import {
+  agentSelectionColumns,
+  createAgentSelectionContext,
+} from "./execution-agent-selection-context.service";
 import type { SelectedAgentWorkflow } from "./execution-agent-workflows.service";
 import type { ConnectorPermissionGrant } from "./execution-connector-permissions.service";
 import {
   contextJsonProjection,
+  contextJsonRows,
   contextProjectionSchema,
 } from "./context-rowset";
 import { createGlobalModelContext } from "./execution-global-model-context.service";
@@ -100,7 +104,8 @@ import {
 } from "./execution-org-context.service";
 import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
 
-import { now } from "../../lib/time";
+import { now, nowDate } from "../../lib/time";
+import { createThreadConnectorSources } from "./thread-connector-sources.service";
 import {
   executionCreditBalance,
   type ExecutionCreditBalance,
@@ -147,6 +152,13 @@ export interface AgentRunContextSignals {
   readonly modelPricing$: ReturnType<typeof createModelPricing>;
   readonly memberMetadata$: Computed<Promise<ExecutionMemberMetadata>>;
   readonly selectedImageModel$: Computed<Promise<ImageModel>>;
+  /** Existing Thread preferences can start before its input is enqueued. */
+  readonly requestThreadConnectorIdentity$: Parameters<
+    typeof createThreadConnectorSources
+  >[0];
+  readonly requestThreadConnectorSources$: ReturnType<
+    typeof createThreadConnectorSources
+  >;
   /** Request candidate rows are consumed only by this exact picked input. */
   readonly requestTemplateInputId$: Computed<Promise<string | undefined>>;
   readonly requestTemplateSources$: ReturnType<typeof createRunTemplateSources>;
@@ -272,8 +284,9 @@ export function createAgentRunContextSignals(
   userId: string,
   orgId: string,
   agentId: string,
-  requestTemplates?: {
+  requestInputs?: {
     readonly inputId: string;
+    readonly chatThreadId?: string;
     readonly presentationIds: readonly string[];
     readonly userTemplateIds: readonly string[];
   },
@@ -283,7 +296,7 @@ export function createAgentRunContextSignals(
     orgId,
     agentId,
     undefined,
-    requestTemplates,
+    requestInputs,
   );
 }
 
@@ -500,24 +513,46 @@ function createSelectedImageModel(
   });
 }
 
+function createRequestInputSources(
+  scope: AgentConnectorSelectionScope,
+  requestInputs: Parameters<typeof createAgentRunContextSignals>[3],
+) {
+  const requestThreadConnectorIdentity$ = computed(() => {
+    const chatThreadId = requestInputs?.chatThreadId;
+    return Promise.resolve(
+      chatThreadId === undefined ? null : { ...scope, chatThreadId },
+    );
+  });
+  const requestThreadConnectorSources$ = createThreadConnectorSources(
+    requestThreadConnectorIdentity$,
+  );
+  const requestTemplateInputId$ = computed(() => {
+    return Promise.resolve(requestInputs?.inputId);
+  });
+  const requestTemplateSources$ = createRunTemplateSources(
+    computed(() => {
+      return Promise.resolve(
+        requestInputs ? { ...scope, ...requestInputs } : null,
+      );
+    }),
+  );
+  return {
+    requestThreadConnectorIdentity$,
+    requestThreadConnectorSources$,
+    requestTemplateInputId$,
+    requestTemplateSources$,
+  };
+}
+
 function createIdentityContext(
   userId: string,
   orgId: string,
   agentId: string,
   supplied?: AgentRunContextSignals,
-  requestTemplates?: Parameters<typeof createAgentRunContextSignals>[3],
+  requestInputs?: Parameters<typeof createAgentRunContextSignals>[3],
 ): OwnedAgentRunContext {
   const scope = { userId, orgId, agentId };
-  const requestTemplateInputId$ = computed(() => {
-    return Promise.resolve(requestTemplates?.inputId);
-  });
-  const requestTemplateSources$ = createRunTemplateSources(
-    computed(() => {
-      return Promise.resolve(
-        requestTemplates ? { ...scope, ...requestTemplates } : null,
-      );
-    }),
-  );
+  const requestSources = createRequestInputSources(scope, requestInputs);
   const {
     memberContext,
     orgRows$,
@@ -608,8 +643,7 @@ function createIdentityContext(
     memberModels$,
     ...modelSources,
     memberMetadata$,
-    requestTemplateInputId$,
-    requestTemplateSources$,
+    ...requestSources,
     selectedImageModel$:
       sharedMember?.selectedImageModel$ ??
       createSelectedImageModel(memberMetadata$),
@@ -634,6 +668,7 @@ export const preloadAgentRunContext$ = command(
     // Start the launch-critical dependency chains before independent projections.
     // All nodes start in this turn; the starter awaits none of them.
     const nodes: readonly Computed<Promise<unknown>>[] = [
+      signals.requestThreadConnectorSources$,
       signals.catalog$,
       signals.authorizedConnectors$,
       signals.connectors$,
@@ -766,10 +801,6 @@ const bootstrapConnectorAccountColumns = Object.freeze({
   defaultEnabledForChats: connectors.defaultEnabledForChats,
   createdAt: connectors.createdAt,
   automaticAuthType: connectors.automaticAuthType,
-  connectorStateRevision:
-    sql`(EXTRACT(EPOCH FROM ${connectors.updatedAt}) * 1000000)::bigint`.mapWith(
-      pgInt8ToBigIntDecoder,
-    ),
   needsReconnect: connectors.needsReconnect,
   authMethod: connectors.authMethod,
   storageVersion: connectors.storageVersion,
@@ -784,72 +815,117 @@ type BootstrapEnvironmentSnapshot =
     ? T
     : never;
 
-function createAgentEnvironment(
-  identity$: Computed<
-    Promise<{ readonly userId: string; readonly orgId: string }>
+const bootstrapAccountRowsDecoder = zodDriverValueDecoder(
+  array(
+    object({
+      account: contextProjectionSchema(bootstrapConnectorAccountColumns).and(
+        object({
+          connectorStateRevision: pgInt8ToBigIntSchema,
+        }),
+      ),
+      connectorVariables: record(string(), string()).nullable(),
+      credentials: array(object({ id: string(), name: string() })).nullable(),
+      automaticOAuthBindingId: string().nullable(),
+    }),
+  ),
+);
+
+function bootstrapConnectorAccountRows(
+  userId: string,
+  orgId: string,
+  connectorVariableSnapshot: ReturnType<
+    typeof bootstrapConnectorVariableSnapshot
   >,
-  projection: "admission" | "execution",
+  credentialSnapshot: ReturnType<typeof bootstrapCredentialSnapshot>,
+) {
+  return new QueryBuilder()
+    .select({
+      payload: sql`jsonb_build_object(
+        'account', ${contextJsonProjection(bootstrapConnectorAccountColumns)} || jsonb_build_object(
+          'connectorStateRevision', (EXTRACT(EPOCH FROM ${connectors.updatedAt}) * 1000000)::bigint::text
+        ),
+        'connectorVariables', ${connectorVariableSnapshot.values},
+        'credentials', ${credentialSnapshot.values},
+        'automaticOAuthBindingId', ${customConnectorAccountOauthBindings.connectorAccountId}
+      )`
+        .mapWith(zodDriverValueDecoder(zUnknown()))
+        .as("payload"),
+    })
+    .from(connectors)
+    .leftJoin(
+      connectorVariableSnapshot,
+      eq(connectorVariableSnapshot.connectorId, connectors.id),
+    )
+    .leftJoin(
+      credentialSnapshot,
+      eq(credentialSnapshot.connectorId, connectors.id),
+    )
+    .leftJoin(
+      customConnectorAccountOauthBindings,
+      and(
+        eq(
+          customConnectorAccountOauthBindings.connectorAccountId,
+          connectors.id,
+        ),
+        eq(
+          customConnectorAccountOauthBindings.customConnectorId,
+          connectors.customConnectorId,
+        ),
+      ),
+    )
+    .where(and(eq(connectors.orgId, orgId), eq(connectors.userId, userId)));
+}
+
+/** Related accounts, definitions, bindings, values and grants share one observation. */
+function createAgentEnvironment(
+  identity$: Computed<Promise<AgentConnectorSelectionScope>>,
+  featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
 ) {
   return computed(async (get) => {
-    const { userId, orgId } = await get(identity$);
+    const [identity, features] = await Promise.all([
+      get(identity$),
+      get(featureSwitches$),
+    ]);
+    const { userId, orgId } = identity;
     const db = get(db$);
-    const variableRows = bootstrapVariableRows(userId, orgId, projection);
-    const variableSnapshot =
-      projection === "admission"
-        ? bootstrapVariableSnapshot(variableRows)
-        : undefined;
+    const variableRows = bootstrapVariableRows(userId, orgId);
+    const variableSnapshot = bootstrapVariableSnapshot(variableRows);
     const connectorVariableSnapshot =
       bootstrapConnectorVariableSnapshot(variableRows);
     const credentialSnapshot = bootstrapCredentialSnapshot(userId, orgId);
-    // Selection owns account revisions and credential references, not values.
-    // Admission needs Agent variables even without accounts. Execution only
-    // needs the same one-row envelope, not another user/workspace aggregate.
+    const accountRows = bootstrapConnectorAccountRows(
+      userId,
+      orgId,
+      connectorVariableSnapshot,
+      credentialSnapshot,
+    );
+    // Scalar rowsets keep the envelope at one row, without multiplying selection
+    // or permission payloads by the member's number of accounts.
     const statement = db
       .with(
         variableRows,
-        ...(variableSnapshot ? [variableSnapshot] : []),
+        variableSnapshot,
         connectorVariableSnapshot,
         credentialSnapshot,
       )
       .select({
-        account: bootstrapConnectorAccountColumns,
-        ...(variableSnapshot
-          ? { variableValues: variableSnapshot.values }
-          : {}),
-        connectorVariables: connectorVariableSnapshot.values,
-        credentials: credentialSnapshot.values,
-        automaticOAuthBindingId:
-          customConnectorAccountOauthBindings.connectorAccountId,
-      })
-      .from(variableSnapshot ?? sql`(values (1)) as environment_seed(value)`)
-      .leftJoin(
-        connectors,
-        and(eq(connectors.orgId, orgId), eq(connectors.userId, userId)),
-      )
-      .leftJoin(
-        connectorVariableSnapshot,
-        eq(connectorVariableSnapshot.connectorId, connectors.id),
-      )
-      .leftJoin(
-        credentialSnapshot,
-        eq(credentialSnapshot.connectorId, connectors.id),
-      )
-      .leftJoin(
-        customConnectorAccountOauthBindings,
-        and(
-          eq(
-            customConnectorAccountOauthBindings.connectorAccountId,
-            connectors.id,
-          ),
-          eq(
-            customConnectorAccountOauthBindings.customConnectorId,
-            connectors.customConnectorId,
+        variableValues: variableSnapshot.values,
+        accountRows: contextJsonRows(accountRows).mapWith(
+          bootstrapAccountRowsDecoder,
+        ),
+        ...agentSelectionColumns(
+          identity,
+          nowDate(),
+          isFeatureEnabled(
+            FeatureSwitchKey.ConnectorChatAccountAccess,
+            features,
           ),
         ),
-      );
+      })
+      .from(variableSnapshot);
     const acquisitionCapture: PgPoolAcquisitionCapture = { acquisitions: [] };
     const queryStartedAt = performance.now();
-    const rows = await withPgPoolAcquisitionCapture(
+    const resultRows = await withPgPoolAcquisitionCapture(
       acquisitionCapture,
       async () => {
         return await statement;
@@ -857,51 +933,46 @@ function createAgentEnvironment(
     );
     const query = connectorContextDuration(queryStartedAt);
     const materializeStartedAt = performance.now();
-    const [first] = rows;
+    const [first] = resultRows;
     if (!first) {
       throw new Error("Bootstrap environment aggregate returned no row");
     }
+    const rows = first.accountRows;
     const snapshot = {
       variables: first.variableValues ?? [],
-      accounts: rows.flatMap((row) => {
-        return row.account
-          ? [
-              {
-                ...row.account,
-                automaticOAuthBindingId: row.automaticOAuthBindingId,
-              },
-            ]
-          : [];
+      accounts: rows.map((row) => {
+        return {
+          ...row.account,
+          automaticOAuthBindingId: row.automaticOAuthBindingId,
+        };
       }),
       values: {
         variables: rows.flatMap((row) => {
-          const account = row.account;
-          return account
-            ? Object.entries(row.connectorVariables ?? {}).map(
-                ([name, value]) => {
-                  return { sourceId: account.id, name, value };
-                },
-              )
-            : [];
+          return Object.entries(row.connectorVariables ?? {}).map(
+            ([name, value]) => {
+              return { sourceId: row.account.id, name, value };
+            },
+          );
         }),
         credentials: rows.flatMap((row) => {
-          const account = row.account;
-          return account
-            ? (row.credentials ?? []).map((credential) => {
-                return { ...credential, sourceId: account.id };
-              })
-            : [];
+          return (row.credentials ?? []).map((credential) => {
+            return { ...credential, sourceId: row.account.id };
+          });
         }),
       },
     };
     const materialize = connectorContextDuration(materializeStartedAt);
     return {
       ...snapshot,
+      builtin: first.builtin,
+      custom: first.custom,
+      permissions: first.permissions,
+      workflows: first.workflows,
       observation: bootstrapEnvironmentObservation({
         query,
         materialize,
         acquisitions: acquisitionCapture.acquisitions,
-        returnedRowCount: rows.length,
+        returnedRowCount: resultRows.length,
         accounts: snapshot.accounts,
         storedValueCount:
           snapshot.values.variables.length + snapshot.values.credentials.length,
@@ -910,11 +981,7 @@ function createAgentEnvironment(
   });
 }
 
-function bootstrapVariableRows(
-  userId: string,
-  orgId: string,
-  projection: "admission" | "execution",
-) {
+function bootstrapVariableRows(userId: string, orgId: string) {
   const db = new QueryBuilder();
   return db.$with("bootstrap_variables").as(
     db
@@ -928,24 +995,16 @@ function bootstrapVariableRows(
       .where(
         and(
           eq(variables.orgId, orgId),
-          projection === "admission"
-            ? or(
-                and(
-                  eq(variables.type, "user"),
-                  or(
-                    eq(variables.userId, ORG_SENTINEL_USER_ID),
-                    eq(variables.userId, userId),
-                  ),
-                ),
-                and(
-                  eq(variables.type, "connector"),
-                  eq(variables.userId, userId),
-                ),
-              )
-            : and(
-                eq(variables.type, "connector"),
+          or(
+            and(
+              eq(variables.type, "user"),
+              or(
+                eq(variables.userId, ORG_SENTINEL_USER_ID),
                 eq(variables.userId, userId),
               ),
+            ),
+            and(eq(variables.type, "connector"), eq(variables.userId, userId)),
+          ),
         ),
       ),
   );
@@ -1024,11 +1083,7 @@ function createConnectorContextGroups(
   const identity$ = computed(() => {
     return Promise.resolve({ userId, orgId, agentId });
   });
-  const sources = createConnectorSources(
-    identity$,
-    featureSwitches$,
-    "admission",
-  );
+  const sources = createConnectorSources(identity$, featureSwitches$);
   const runVariables$ = computed(async (get) => {
     const snapshot = await get(sources.environmentSnapshot$);
     return buildAgentRunVariables({ agentId, variables: snapshot.variables });
@@ -1043,27 +1098,16 @@ function createConnectorContextGroups(
   };
 }
 
-/** Connect current connector sources to an already-authorized execution identity. */
-export function createExecutionConnectorSources(
-  identity$: Computed<Promise<AgentConnectorSelectionScope>>,
-  featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
-) {
-  const { signals } = createConnectorSources(
-    identity$,
-    featureSwitches$,
-    "execution",
-  );
-  return { signals };
-}
-
 function createConnectorSources(
   identity$: Computed<Promise<AgentConnectorSelectionScope>>,
   featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
-  projection: "admission" | "execution",
 ) {
+  const environmentSnapshot$ = createAgentEnvironment(
+    identity$,
+    featureSwitches$,
+  );
   const { connectorSelection$, permissionGrants$, workflows$ } =
-    createAgentSelectionContext(identity$, featureSwitches$, projection);
-  const environmentSnapshot$ = createAgentEnvironment(identity$, projection);
+    createAgentSelectionContext(identity$, environmentSnapshot$);
   const customConnectorDefinitions$ = computed(async (get) => {
     return (await get(connectorSelection$)).customConnectorDefinitions;
   });

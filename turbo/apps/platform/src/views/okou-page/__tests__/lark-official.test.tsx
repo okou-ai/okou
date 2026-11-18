@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { larkOfficialContract } from "@okouai/api-contracts/contracts/lark-official";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -105,7 +106,16 @@ describe("official Lark connection", () => {
       name: "Okou",
     });
     expect(within(official).getByText("Official User")).toBeInTheDocument();
-    click(getAction("button", "More options for Okou", official));
+    const user = userEvent.setup();
+    const menu = getAction("button", "More options for Okou", official);
+    await user.click(menu);
+    await findAction("button", "Disconnect");
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(queryAction("button", "Disconnect")).toBeNull();
+      expect(menu).toHaveFocus();
+    });
+    await user.keyboard("{Enter}");
     const disconnect = await findAction("button", "Disconnect");
     click(disconnect);
     await expect(

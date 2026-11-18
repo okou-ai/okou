@@ -1517,7 +1517,7 @@ function LarkOfficialMenu({ title }: { title: string }) {
             className="shrink-0"
             aria-label={t(
               ($) => {
-                return $.connectors.providerSettings.feishu.moreOptions;
+                return $.connectors.providerSettings.lark.moreOptions;
               },
               { bot: title },
             )}
@@ -1567,7 +1567,7 @@ function LarkOfficialRow() {
     return (
       <p role="alert" className="px-4 py-4 text-sm text-destructive sm:px-5">
         {t(($) => {
-          return $.connectors.providerSettings.feishu.loadError;
+          return $.connectors.providerSettings.lark.loadError;
         })}
       </p>
     );

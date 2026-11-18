@@ -17,15 +17,13 @@ import {
 import { DEFAULT_FIREWALL_SECRET_PLACEHOLDER } from "./connector-server-firewall-catalog.service";
 import { buildPermissionManifest } from "./permission-manifest.service";
 import type { Environment } from "./run-environment";
-import {
-  type BuiltinConnectorRuntimeContext,
-  type ConnectorEnvBindingSet,
-  type ConnectedAccountsError,
-  emptyBuiltinConnectorRuntimeContext,
-  storedConnectorContextFromSnapshot,
-  type RunConnectorCatalogSelection,
-  type StoredConnectorMaterializationSnapshot,
-  type StoredConnectorSecretRow,
+import type {
+  BuiltinConnectorRuntimeContext,
+  ConnectorEnvBindingSet,
+  ConnectedAccountsError,
+  RunConnectorCatalogSelection,
+  StoredConnectorMaterializationSnapshot,
+  StoredConnectorSecretRow,
 } from "./thread-connected-accounts.signals";
 import type { ThreadContext } from "./thread-context.signals";
 import type { ThreadModelError } from "./thread-model.signals";
@@ -44,32 +42,11 @@ function isConnectorRuntimeError(
 interface ConnectorEnvironmentSources {
   readonly runVariables$: Computed<Promise<Record<string, string> | undefined>>;
   readonly permissionPolicies$: AgentRunContextSignals["permissionPolicies$"];
+  readonly catalog$: AgentRunContextSignals["catalog$"];
+  readonly permissionGrants$: AgentRunContextSignals["permissionGrants$"];
 }
 
-/**
- * The connector source of the Run environment: selected accounts become
- * placeholder environment entries, firewalls and runtime targets.
- */
-export function createConnectorEnvironmentSignals(
-  bootstrap: ConnectorEnvironmentSources,
-  threadContext: Pick<
-    ThreadContext,
-    "connectorSelection$" | "connectorSnapshot$" | "dispatchTiming$"
-  >,
-) {
-  const runtimeInputs = createConnectorRuntimeInputSignals(
-    bootstrap,
-    threadContext,
-  );
-  return createConnectorEnvironmentSignal(runtimeInputs);
-}
-
-type ConnectorRuntimeInputSignals = ReturnType<
-  typeof createConnectorRuntimeInputSignals
->;
-
-/** Admission validates policies and fixes diagnostic account bindings without
- * decrypting credentials or assembling a runtime environment. */
+/** Authorize and derive the first accepted Connector contribution once. */
 export function createConnectorAdmissionSignals(
   bootstrap: Parameters<typeof createConnectorRuntimeInputSignals>[0],
   threadContext: Parameters<typeof createConnectorRuntimeInputSignals>[1],
@@ -90,13 +67,25 @@ export function createConnectorAdmissionSignals(
     if (isConnectorRuntimeError(permissions)) {
       return permissions;
     }
-    return {
-      permissions,
-      runtimeTargets: [
-        ...(permissions?.builtinRuntimeTargets ?? []),
-        ...input.customConnectorContext.targets,
-      ],
-    };
+    const environment = connectorEnvironmentFromSnapshot(input, permissions);
+    const builtinTargets = environment.runtimeTargets.some((target) => {
+      return target.kind === "builtin";
+    });
+    const networkPolicyInputs = builtinTargets
+      ? await (async () => {
+          const [catalog, grants] = await Promise.all([
+            get(bootstrap.catalog$),
+            get(bootstrap.permissionGrants$),
+          ]);
+          if (!catalog) {
+            throw new Error(
+              "Accepted builtin targets require a scoped catalog",
+            );
+          }
+          return { catalog: catalog.serverFirewalls, grants };
+        })()
+      : null;
+    return { permissions, environment, networkPolicyInputs };
   });
 }
 
@@ -137,56 +126,37 @@ function createConnectorRuntimeInputSignals(
   return { inputs$ };
 }
 
-/** The connector source's contribution to the Run environment. */
-function createConnectorEnvironmentSignal(
-  inputs: ConnectorRuntimeInputSignals,
-) {
-  const { inputs$ } = inputs;
-  const environment$ = computed(
-    async (get): Promise<Environment | ConnectorRuntimeError> => {
-      const input = await get(inputs$);
-      if (isConnectorRuntimeError(input)) {
-        return input;
-      }
-      const manifest = await input.timing.measure(
-        "api_dispatch_prepare_context_build_permission_manifest",
-        "nested",
-        async () => {
-          return await buildPreparedPermissionManifest(input);
-        },
-      );
-      if (isConnectorRuntimeError(manifest)) {
-        return manifest;
-      }
-      const builtin = storedConnectorExecutionContextFromSnapshot(
-        input.storedConnectorSnapshot,
-        manifest?.environmentSecretPlaceholders,
-      );
-      const custom = input.customConnectorContext;
-      return {
-        vars: builtin.vars,
-        environment: expandStoredConnectorEnvironment({
-          environment: builtin.storedEnvironment,
-          vars: builtin.vars,
-          environmentSecretPlaceholders: builtin.environmentSecretPlaceholders,
-        }),
-        platformEnvironment: undefined,
-        secrets: undefined,
-        secretConnectorMap: builtin.secretConnectorMap,
-        secretConnectorMetadataMap: builtin.secretConnectorMetadataMap,
-        firewalls: manifest?.firewalls ?? [],
-        networkPolicies: manifest?.networkPolicies ?? {},
-        environmentSecretPlaceholders: builtin.environmentSecretPlaceholders,
-        billableFirewalls: manifest?.billableFirewalls ?? [],
-        runtimeTargets: [
-          ...(manifest?.builtinRuntimeTargets ?? []),
-          ...custom.targets,
-        ],
-        reservedSecretAliases: Object.keys(custom.reservedSecretAliases ?? {}),
-      };
-    },
+/** Pure projection of the same inputs used to authorize the manifest. */
+function connectorEnvironmentFromSnapshot(
+  input: RunPreparedConnectorInputs,
+  manifest: PermissionManifest | undefined,
+): Environment {
+  const builtin = storedConnectorEnvironmentFromSnapshot(
+    input.storedConnectorSnapshot,
+    manifest?.environmentSecretPlaceholders,
   );
-  return environment$;
+  const custom = input.customConnectorContext;
+  return {
+    vars: builtin.vars,
+    environment: expandStoredConnectorEnvironment({
+      environment: builtin.storedEnvironment,
+      vars: builtin.vars,
+      environmentSecretPlaceholders: builtin.environmentSecretPlaceholders,
+    }),
+    platformEnvironment: undefined,
+    secrets: undefined,
+    secretConnectorMap: builtin.secretConnectorMap,
+    secretConnectorMetadataMap: builtin.secretConnectorMetadataMap,
+    firewalls: manifest?.firewalls ?? [],
+    networkPolicies: manifest?.networkPolicies ?? {},
+    environmentSecretPlaceholders: builtin.environmentSecretPlaceholders,
+    billableFirewalls: manifest?.billableFirewalls ?? [],
+    runtimeTargets: [
+      ...(manifest?.builtinRuntimeTargets ?? []),
+      ...custom.targets,
+    ],
+    reservedSecretAliases: Object.keys(custom.reservedSecretAliases ?? {}),
+  };
 }
 
 const CONNECTOR_SECRET_REF_PREFIX = "$secrets.";
@@ -333,15 +303,24 @@ function availableStoredConnectorSecretNames(
   );
 }
 
-function storedConnectorExecutionContextFromSnapshot(
+function storedConnectorEnvironmentFromSnapshot(
   snapshot: StoredConnectorMaterializationSnapshot | null,
   declaredPlaceholders: Readonly<Record<string, string>> | undefined,
-): BuiltinConnectorRuntimeContext & {
+): Pick<
+  BuiltinConnectorRuntimeContext,
+  | "vars"
+  | "storedEnvironment"
+  | "secretConnectorMap"
+  | "secretConnectorMetadataMap"
+> & {
   readonly environmentSecretPlaceholders: Record<string, string> | undefined;
 } {
   if (!snapshot) {
     return {
-      ...emptyBuiltinConnectorRuntimeContext(),
+      vars: undefined,
+      storedEnvironment: undefined,
+      secretConnectorMap: undefined,
+      secretConnectorMetadataMap: undefined,
       environmentSecretPlaceholders: compactRecord({ ...declaredPlaceholders }),
     };
   }
@@ -352,7 +331,6 @@ function storedConnectorExecutionContextFromSnapshot(
     declaredPlaceholders,
   );
   return {
-    ...storedConnectorContextFromSnapshot(snapshot),
     vars: compactRecord(resolved.vars),
     secretConnectorMap: compactRecord(resolved.secretConnectorMap),
     secretConnectorMetadataMap: compactRecord(
