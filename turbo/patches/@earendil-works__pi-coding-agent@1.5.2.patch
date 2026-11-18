@@ -1,80 +1,21 @@
 diff --git a/dist/core/agent-session.d.ts b/dist/core/agent-session.d.ts
-index 8b6a58430eea2cbb463e2b51773a8bc6e4914505..7d54d109ad06c8a54a1316cf5bcd588d90288860 100644
+index 8b6a58430eea2cbb463e2b51773a8bc6e4914505..c5053c45edccac4dfd74a45ee8564e16e3b32bb5 100644
 --- a/dist/core/agent-session.d.ts
 +++ b/dist/core/agent-session.d.ts
-@@ -262,8 +262,6 @@ export declare class AgentSession {
-     private _lastActivityOutcome;
-     private _isBeforeSettle;
-     private _abortDuringBeforeSettle;
--    private _isEmittingAgentSettled;
--    private readonly _deferredSettledActions;
-     private _resourceLoader;
-     private _customTools;
-     private _baseToolDefinitions;
-@@ -374,7 +372,6 @@ export declare class AgentSession {
-     private _emitSessionCompactFailed;
-     private _getIdleWaitPromise;
-     private _resolveIdleWaitIfIdle;
--    private _emitAgentSettled;
-     /** Internal handler for agent events - shared by subscribe and reconnect */
-     private _handleAgentEvent;
-     private _willRetryAfterAgentEnd;
-@@ -505,6 +502,9 @@ export declare class AgentSession {
+@@ -505,6 +505,8 @@ export declare class AgentSession {
      private _normalizePromptSnippet;
      private _normalizePromptGuidelines;
      private _rebuildSystemPrompt;
 +    /** Resume unresolved tools; settlement extensions prepare once before native cancellation/input reconciliation and public settlement. */
 +    continuePendingTools(options?: Pick<PromptOptions, "preflightResult">): Promise<void>;
-+    private _createAgentSettlement;
      /**
       * Apply a prompt and tool loadout for the next request. Sets the executable tools and
       * returns a system message patching the prompt sections the model currently has (replayed
 diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
-index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..fa9bf847e10372f3960d8f0ef3614996737c0d1c 100644
+index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..21cb5680c33bf6a8e5b295d6bd5517fc5ad44173 100644
 --- a/dist/core/agent-session.js
 +++ b/dist/core/agent-session.js
-@@ -152,8 +152,6 @@ export class AgentSession {
-     _lastActivityOutcome = "completed";
-     _isBeforeSettle = false;
-     _abortDuringBeforeSettle = false;
--    _isEmittingAgentSettled = false;
--    _deferredSettledActions = [];
-     _resourceLoader;
-     _customTools;
-     _baseToolDefinitions = new Map();
-@@ -735,31 +733,6 @@ export class AgentSession {
-         this._resolveIdleWait = undefined;
-         resolve();
-     }
--    async _emitAgentSettled() {
--        this._cacheWarmer?.onAgentSettled();
--        this._isAgentRunActive = false;
--        this._isEmittingAgentSettled = true;
--        try {
--            const aborted = this._agentRunAbortRequested;
--            await this._extensionRunner.emit({ type: "agent_settled", aborted });
--            this._emit({ type: "agent_settled", aborted });
--        }
--        finally {
--            this._isEmittingAgentSettled = false;
--        }
--        const deferred = this._deferredSettledActions.splice(0);
--        if (deferred.length > 0) {
--            try {
--                for (const action of deferred)
--                    await action();
--            }
--            finally {
--                this._resolveIdleWaitIfIdle();
--            }
--            return;
--        }
--        this._resolveIdleWaitIfIdle();
--    }
-     /** Internal handler for agent events - shared by subscribe and reconnect */
-     _handleAgentEvent = async (event) => {
-         // An abort requested while the run was starting, e.g. during before_agent_start, stops it
-@@ -1478,6 +1451,54 @@ export class AgentSession {
+@@ -1478,6 +1478,48 @@ export class AgentSession {
      // =========================================================================
      // Prompting
      // =========================================================================
@@ -91,13 +32,7 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..fa9bf847e10372f3960d8f0ef3614996
 +                this._isAgentRunActive = true;
 +                options?.preflightResult?.(true);
 +            },
-+            ...this._createAgentSettlement(() => this._handlePostAgentRun()),
-+        });
-+    }
-+    /** Both entry points prepare once, then commit only after native input/cancellation reconciliation. */
-+    _createAgentSettlement(afterRun) {
-+        return {
-+            afterRun,
++            afterRun: () => this._handlePostAgentRun(),
 +            beforeSettled: async () => {
 +                this._flushPendingBashMessages();
 +                this._flushPendingCustomMessages();
@@ -124,16 +59,15 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..fa9bf847e10372f3960d8f0ef3614996
 +                    this._resolveIdleWaitIfIdle();
 +                }
 +            },
-+        };
++        });
 +    }
      /**
       * Start a run from a user or custom message. The session counts as busy from here on, so
       * messages sent while before_agent_start handlers run are queued into this run instead of
-@@ -1509,31 +1530,12 @@ export class AgentSession {
-         // The run records the loadout in the transcript; restored tools that did not register by now
+@@ -1510,20 +1552,16 @@ export class AgentSession {
          // are dropped, so a tool that never registers does not stay pending.
          this._pendingToolNames.clear();
--        try {
+         try {
 -            await this.agent.prompt(messages);
 -            while (!this._agentRunAbortRequested) {
 -                if (await this._handlePostAgentRun()) {
@@ -147,37 +81,31 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..fa9bf847e10372f3960d8f0ef3614996
 -                if (this._agentRunAbortRequested)
 -                    break;
 -                await this.agent.continue();
-+        await this.agent.prompt(messages, undefined, this._createAgentSettlement(async () => {
-+            if (await this._handlePostAgentRun()) {
-+                return !this._agentRunAbortRequested;
-             }
--        }
--        finally {
--            if (this._agentRunAbortRequested)
--                this._finishCancelledRetry();
--            this._failedResponse = undefined;
--            this._runSystemPromptOptions = undefined;
--            this._flushPendingBashMessages();
--            this._flushPendingCustomMessages();
--            await this._emitAgentSettled();
--        }
-+            return !this._agentRunAbortRequested && await this._runBeforeSettleBoundary();
-+        }));
+-            }
++            // Keep native cancellation/input ownership through actionable work.
++            // Final notifications retain upstream's idle/deferred-action semantics.
++            await this.agent.prompt(messages, undefined, {
++                afterRun: async () => {
++                    if (await this._handlePostAgentRun()) {
++                        return !this._agentRunAbortRequested;
++                    }
++                    return !this._agentRunAbortRequested && await this._runBeforeSettleBoundary();
++                },
++            });
+         }
+         finally {
+             if (this._agentRunAbortRequested)
+@@ -1834,6 +1872,9 @@ export class AgentSession {
+         }
      }
-     /**
-      * Prepare a run and return its starting messages: compact first when needed, emit
-@@ -1693,10 +1695,6 @@ export class AgentSession {
-      * @throws Error if no model selected or no API key available (when not streaming)
-      */
-     async prompt(text, options) {
--        if (this._isEmittingAgentSettled) {
--            this._deferredSettledActions.push(async () => await this.prompt(text, options));
--            return;
--        }
-         const expandPromptTemplates = options?.expandPromptTemplates ?? true;
-         const preflightResult = options?.preflightResult;
-         // Handle extension commands first (execute immediately, even during streaming)
-@@ -1877,8 +1875,6 @@ export class AgentSession {
+     async _queueUserInput(text, images, behavior, source) {
++        if (this._isEmittingAgentSettled) {
++            throw new Error("Agent is settling; send a new prompt after notification dispatch.");
++        }
+         if (text.startsWith("/")) {
+             this._throwIfExtensionCommand(text);
+         }
+@@ -1877,8 +1918,6 @@ export class AgentSession {
       * Internal: Queue a steering message (already expanded, no extension command check).
       */
      async _queueSteer(text, images) {
@@ -186,7 +114,7 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..fa9bf847e10372f3960d8f0ef3614996
          const content = [{ type: "text", text }];
          if (images) {
              content.push(...images);
-@@ -1887,13 +1883,13 @@ export class AgentSession {
+@@ -1887,13 +1926,13 @@ export class AgentSession {
          if (images?.length)
              this._queuedMessagesWithImages.add(message);
          this.agent.steer(message);
@@ -202,7 +130,7 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..fa9bf847e10372f3960d8f0ef3614996
          const content = [{ type: "text", text }];
          if (images) {
              content.push(...images);
-@@ -1902,6 +1898,8 @@ export class AgentSession {
+@@ -1902,6 +1941,8 @@ export class AgentSession {
          if (images?.length)
              this._queuedMessagesWithImages.add(message);
          this.agent.followUp(message);
@@ -211,18 +139,7 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..fa9bf847e10372f3960d8f0ef3614996
      }
      /** Replace a queued user message's images in place with normalized ones, appending hints to its text. */
      async _normalizeQueuedMessageImages(message) {
-@@ -1965,10 +1963,6 @@ export class AgentSession {
-             }
-         }
-         else if (options?.triggerTurn) {
--            if (this._isEmittingAgentSettled) {
--                this._deferredSettledActions.push(async () => await this.sendCustomMessage(message, options));
--                return;
--            }
-             await this._startRun({ messageType: "custom", message: appMessage });
-         }
-         else if (this.isStreaming) {
-@@ -2083,10 +2077,10 @@ export class AgentSession {
+@@ -2083,10 +2124,10 @@ export class AgentSession {
          await this.waitForIdle();
      }
      async waitForIdle() {
@@ -236,7 +153,7 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..fa9bf847e10372f3960d8f0ef3614996
      }
      // =========================================================================
      // Model Management
-@@ -2488,6 +2482,11 @@ export class AgentSession {
+@@ -2488,6 +2529,11 @@ export class AgentSession {
          const settings = this.settingsManager.getCompactionSettings(this.model);
          if (!settings.enabled)
              return false;
@@ -708,6 +625,26 @@ index 640d2259a2c6ffb78e67e389e4819b5785637eaf..c7629c97d239d676a9742b90ae18716f
          this.rawChunks = [];
      }
  }
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index bb8acdb1b034f89e8fcb86a5933fa513d49a8ef3..2255122249eaa0aef78e0065fb2a08992576cb67 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -1,4 +1,5 @@
+ export { type Args, parseArgs } from "./cli/args.ts";
++export { toJsonEvent } from "./modes/json-event.js";
+ export { CONFIG_DIR_NAME, getAgentDir, getDocsPath, getExamplesPath, getPackageDir, getReadmePath, VERSION, } from "./config.ts";
+ export { AgentSession, type AgentSessionConfig, type AgentSessionEvent, type AgentSessionEventListener, type ModelCycleResult, type ParsedSkillBlock, type PromptOptions, parseSkillBlock, type SessionStats, } from "./core/agent-session.ts";
+ export { readStoredCredential } from "./core/auth-storage.ts";
+diff --git a/dist/index.js b/dist/index.js
+index ab5cfccc3a90939e533b9118122189507a7af326..e93b4ac26549445e2f487d0d6459a9f1396cdc94 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -1,4 +1,5 @@
+ // Core session management
++export { toJsonEvent } from "./modes/json-event.js";
+ export { parseArgs } from "./cli/args.js";
+ // Config paths
+ export { CONFIG_DIR_NAME, getAgentDir, getDocsPath, getExamplesPath, getPackageDir, getReadmePath, VERSION, } from "./config.js";
 diff --git a/dist/modes/json-event.d.ts b/dist/modes/json-event.d.ts
 index d4f306ea3918aa07a981f948c8a3cb4f687f5708..e8efa89bd00f881b1ec9d917a5229fe0d4682d76 100644
 --- a/dist/modes/json-event.d.ts
@@ -894,15 +831,3 @@ index 3078895bedba898ce26c439b6123425834ca2586..d67667b307af07c5a001efd5f1f5849a
              return photonModule;
          }
          catch {
-diff --git a/dist/index.js b/dist/index.js
---- a/dist/index.js
-+++ b/dist/index.js
-@@ -1,1 +1,2 @@
-+export { toJsonEvent } from "./modes/json-event.js";
- // Core session management
-diff --git a/dist/index.d.ts b/dist/index.d.ts
---- a/dist/index.d.ts
-+++ b/dist/index.d.ts
-@@ -1,1 +1,2 @@
-+export { toJsonEvent } from "./modes/json-event.js";
- export { type Args, parseArgs } from "./cli/args.ts";

@@ -60,7 +60,10 @@ export default function (pi) {
       toolResultBytes: event.toolResults.reduce((bytes, result) => bytes + result.content[0].text.length, 0)
     });
   });
-  if (process.argv[3] !== "http" && !process.argv[3]?.startsWith("wire-")) pi.on("agent_settled", async (_event, ctx) => {
+  let holdingSettlement = true;
+  if (process.argv[3] !== "http" && !process.argv[3]?.startsWith("wire-")) pi.on("agent_before_settle", async (_event, ctx) => {
+    if (!holdingSettlement) return;
+    holdingSettlement = false;
     await new Promise((resolve) => {
       const release = (message) => {
         if (message === "release-settlement" || message === "release-settlement-abort") {
@@ -71,6 +74,22 @@ export default function (pi) {
       };
       process.on("message", release);
       process.send({ type: "settling" });
+    });
+  });
+  let notifying = true;
+  if (process.argv[3] === "wire-notification") pi.on("agent_settled", async (_event, ctx) => {
+    if (!notifying) return;
+    notifying = false;
+    pi.sendUserMessage("deferred notification follow-up");
+    await new Promise((resolve) => {
+      const release = (message) => {
+        if (message === "release-notification") {
+          process.off("message", release);
+          resolve();
+        }
+      };
+      process.on("message", release);
+      process.send({ type: "notifying", idle: ctx.isIdle(), hasSignal: ctx.signal !== undefined });
     });
   });
   if (process.argv[3] === "cancelled-input") pi.on("message_start", async (event, ctx) => {
@@ -478,6 +497,67 @@ function assertSettlement(
 }
 
 describe("official sandbox RPC cancellation", () => {
+  it("preserves idle notifications and defers requested prompts until notification dispatch finishes", async () => {
+    const rpc = await rpcFixture("wire-notification");
+    rpc.send({ id: "startup", type: "prompt", message: "run the tool" });
+    expect(await rpc.response("startup")).toMatchObject({ success: true });
+    await rpc.notification("tool-start");
+    rpc.child.send("release-tool");
+    expect(await rpc.notification("notifying")).toMatchObject({
+      idle: true,
+      hasSignal: false,
+    });
+    rpc.send({ id: "idle-notification", type: "get_state" });
+    expect(await rpc.response("idle-notification")).toMatchObject({
+      data: { isStreaming: false, pendingMessageCount: 0 },
+    });
+    for (const type of ["steer", "follow_up"]) {
+      rpc.send({
+        id: "late",
+        type,
+        message: "rejected after native completion",
+      });
+      expect(await rpc.response("late")).toMatchObject({
+        success: false,
+        error: expect.stringContaining("settling"),
+      });
+    }
+    expect(assistantEnds(rpc.records)).toHaveLength(2);
+    expect(
+      rpc.records.some((record) => {
+        return record.type === "agent_settled";
+      }),
+    ).toBe(false);
+    rpc.child.send("release-notification");
+    await rpc.settled();
+    await rpc.settled();
+    const memory = await rpc.reopen();
+    const users = memory.buildSessionContext().messages.filter((message) => {
+      return message.role === "user";
+    });
+    expect(
+      users.map((message) => {
+        return message.content;
+      }),
+    ).toEqual([
+      [{ type: "text", text: "run the tool" }],
+      [{ type: "text", text: "deferred notification follow-up" }],
+    ]);
+    expect(assistantEnds(rpc.records)).toHaveLength(3);
+    const firstSettled = rpc.records.findIndex((record) => {
+      return record.type === "agent_settled";
+    });
+    const followUpStart = rpc.records.findIndex((record) => {
+      return (
+        record.type === "message_start" &&
+        JSON.stringify(record.message).includes(
+          "deferred notification follow-up",
+        )
+      );
+    });
+    expect(firstSettled).toBeLessThan(followUpStart);
+  }, 30_000);
+
   it("retains before-settle boundary continuation within the prompt owner", async () => {
     const rpc = await rpcFixture("wire-before-settle");
     rpc.send({ id: "startup", type: "prompt", message: "run the tool" });
@@ -756,7 +836,13 @@ describe("official sandbox RPC cancellation", () => {
           );
         }),
       ).toBe(false);
-      expect(messages.at(-1)).toMatchObject({ stopReason: "aborted" });
+      expect(
+        messages
+          .filter((message) => {
+            return message.role === "assistant";
+          })
+          .at(-1),
+      ).toMatchObject({ stopReason: "aborted" });
       expect(
         messages.filter((message) => {
           return (
@@ -768,7 +854,7 @@ describe("official sandbox RPC cancellation", () => {
     30_000,
   );
 
-  it("drains late steering before follow-ups in native order without repeating settlement hooks", async () => {
+  it("drains late steering before follow-ups in native order before final notification", async () => {
     const rpc = await heldSettlement();
     for (const [type, message] of [
       ["follow_up", "follow-up one"],
@@ -868,19 +954,7 @@ describe("official sandbox RPC cancellation", () => {
             return record.id === "abort" || record.type === "agent_settled";
           }),
         ).toBe(false);
-        const settling = once(child, "message");
         child.send("release-tool");
-        expect((await settling)[0]).toMatchObject({ type: "settling" });
-        send({ id: "settlement-held", type: "get_state" });
-        expect(await response("settlement-held")).toMatchObject({
-          data: { isStreaming: true },
-        });
-        expect(
-          records.some((record) => {
-            return record.id === "abort" || record.type === "agent_settled";
-          }),
-        ).toBe(false);
-        child.send("release-settlement");
       }
       expect(await response("abort")).toMatchObject({
         command: "abort",

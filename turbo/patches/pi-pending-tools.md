@@ -10,21 +10,24 @@ version.
 ## Ordinary RPC prompt settlement
 
 Guest now starts an ordinary RPC `prompt`, rather than transferring an
-API-owned pending assistant. Both `AgentSession._startRun` and
-`continuePendingTools` use the same native settlement owner. The optional third
-`Agent.prompt` argument supplies the session's post-run, preparation and commit
-callbacks; bare Agent calls retain their existing two-argument behavior.
+API-owned pending assistant. The optional third `Agent.prompt` argument lets
+`AgentSession._startRun` retain native ownership through actionable post-run work;
+bare Agent calls retain their existing two-argument behavior.
 
 The owner and its abort signal remain active through tools, provider requests,
-retry/compaction and awaited settlement extensions. Ordinary prompts also retain
-upstream's `agent_before_settle` boundary continuations. Extension `agent_settled`
-handlers prepare once while `isStreaming` remains true; they may queue input or
-call the non-waiting `ctx.abort()`. They must not await their own idle state.
-After preparation, the owner drains accepted input or persists it once on
-cancellation, closes admission, and emits the sole public `agent_settled`
-synchronously before releasing ownership. RPC abort acknowledgements wait for
-this boundary, including duplicate aborts. This replaces upstream's early idle
-transition and deferred post-settlement prompts for this pinned integration.
+retry/compaction and upstream's actionable `agent_before_settle` boundary.
+Before-settle handlers may queue input or call the non-waiting `ctx.abort()`.
+The owner drains accepted input or persists it once on cancellation, then closes
+admission and releases ownership. Duplicate RPC aborts join this work.
+
+Ordinary `agent_settled` retains upstream's final notification-only semantics:
+handlers observe idle/no native signal, and requested prompts or custom turns
+are deferred until notification dispatch finishes. Direct steering/follow-up
+admission during notification is explicitly rejected, because the completed
+native owner cannot persist that input. Existing pending-tool callers retain
+their separate legacy preparation/commit callbacks; those semantics must not be
+imposed on ordinary prompts. Accepted cancelled input may follow the aborted
+assistant in history, so terminal assertions select the last assistant.
 
 `rpc-cancellation.test.ts` exercises the current ordinary prompt path with real
 RPC children, provider-boundary MSW and IPC barriers. Its transcript includes
