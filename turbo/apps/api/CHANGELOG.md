@@ -10,6 +10,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.87.2](https://github.com/okou-ai/okou/compare/api-v2.87.1...api-v2.87.2) (2026-11-18)
+
+
+### Refactoring
+
+* **api:** resolve data router token at firewall auth ([#48427](https://github.com/okou-ai/okou/issues/48427)) ([f63c8b6](https://github.com/okou-ai/okou/commit/f63c8b6ac4617ea3cbe93c61a38410ed2c33546e))
+
+
+### Performance Improvements
+
+* **api:** reuse admitted timezone and seed skill contributions ([#48425](https://github.com/okou-ai/okou/issues/48425)) ([ecd1e72](https://github.com/okou-ai/okou/commit/ecd1e722ba816f9a046be353035ab1bb6df227fb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.85.0
+    * @okouai/core bumped to 8.850.1
+    * @okouai/db bumped to 2.44.2
+    * @okouai/pi-agent-runtime bumped to 1.51.153
+
 ## [2.87.1](https://github.com/okou-ai/okou/compare/api-v2.87.0...api-v2.87.1) (2026-11-17)
 
 

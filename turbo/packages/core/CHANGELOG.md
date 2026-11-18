@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.850.1](https://github.com/okou-ai/okou/compare/core-v8.850.0...core-v8.850.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* **platform:** reveal preview actions together and keep downloads visible ([#48340](https://github.com/okou-ai/okou/issues/48340)) ([f8ae254](https://github.com/okou-ai/okou/commit/f8ae254298f87d0d514f3625ea6bf63ed59ecd22))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.85.0
+
 ## [8.850.0](https://github.com/okou-ai/okou/compare/core-v8.849.0...core-v8.850.0) (2026-11-17)
 
 
