@@ -89,10 +89,9 @@ function expectUnselectedOptions(options: HTMLElement): void {
 }
 
 async function openThreadChartOptions(editor: HTMLElement) {
-  const user = userEvent.setup({ delay: null });
-  await user.click(control("button", "Add", composerCard(editor)));
+  click(control("button", "Add", composerCard(editor)));
   const menu = await screen.findByRole("menu", { name: "Add" });
-  await user.click(control("menuitem", "Create", menu));
+  click(control("menuitem", "Create", menu));
   const create = await screen.findByRole("radiogroup", { name: "Create" });
   click(control("radio", "Chart", create));
   return await screen.findByRole("region", { name: "Visualization options" });
