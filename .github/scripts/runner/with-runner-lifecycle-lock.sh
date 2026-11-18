@@ -97,6 +97,8 @@ for host in "${hosts[@]}"; do
   fi
 done
 
+IFS= read -r release_id </proc/sys/kernel/random/uuid
+receipt_path="/run/vm0-runner-lifecycle-receipts/${JOB_REF}"
 umask 077
 state_dir=$(mktemp -d)
 declare -a lock_fds=()
@@ -107,8 +109,69 @@ command_pid=""
 locks_released=false
 phase=acquire
 
+holder_script=$(cat <<'REMOTE'
+set -euo pipefail
+lock_timeout=$1
+lock_path=$2
+lease_timeout=$3
+receipt_path=$4
+release_id=$5
+holder_status=0
+flock --exclusive --timeout "$lock_timeout" "$lock_path" bash -c '
+  printf "%s\n" VM0_RUNNER_LIFECYCLE_LOCK_ACQUIRED
+  while :; do
+    read_status=0
+    IFS= read -r -t "$1" message || read_status=$?
+    case $read_status in
+      0)
+        if [ "$message" = VM0_RUNNER_LIFECYCLE_LOCK_RELEASE ]; then
+          exit 42
+        fi
+        ;;
+      1) printf "%s\n" VM0_RUNNER_LIFECYCLE_LOCK_INPUT_EOF >&2; exit 0 ;;
+      *)
+        if [ "$read_status" -gt 128 ]; then
+          printf "%s\n" VM0_RUNNER_LIFECYCLE_LOCK_LEASE_EXPIRED >&2
+        else
+          printf "VM0_RUNNER_LIFECYCLE_LOCK_READ_ERROR status=%s\n" "$read_status" >&2
+        fi
+        exit "$read_status"
+        ;;
+    esac
+  done
+' bash "$lease_timeout" || holder_status=$?
+
+save_release_receipt() (
+  umask 077
+  install -d -m 700 -- "${receipt_path%/*}" || exit
+  temporary=$(mktemp "${receipt_path}.XXXXXX") || exit
+  trap 'rm -f -- "$temporary"' EXIT
+  printf '%s\n' "$release_id" >"$temporary" &&
+    mv -fT -- "$temporary" "$receipt_path"
+)
+
+case $holder_status in
+  42)
+    # flock and its child have exited. Record only explicitly requested releases.
+    if ! save_release_receipt; then
+      printf '%s\n' VM0_RUNNER_LIFECYCLE_LOCK_RECEIPT_UNAVAILABLE >&2
+    fi
+    printf '%s\n' VM0_RUNNER_LIFECYCLE_LOCK_RELEASED_AFTER_REQUEST >&2
+    ;;
+  0) ;;
+  *)
+    printf 'VM0_RUNNER_LIFECYCLE_LOCK_REMOTE_EXIT status=%s\n' "$holder_status" >&2
+    exit "$holder_status"
+    ;;
+esac
+printf '%s\n' VM0_RUNNER_LIFECYCLE_LOCK_RELEASED >&2
+REMOTE
+)
+holder_script=${holder_script//\'/\'\\\'\'}
+
 report_holder_result() {
   local host=$1 holder_phase=$2 holder_status=$3 error_file=$4
+  local require_commit=${5:-false}
   local remote_release=unconfirmed
   if grep -Fxq VM0_RUNNER_LIFECYCLE_LOCK_RELEASED "$error_file"; then
     remote_release=confirmed
@@ -117,7 +180,19 @@ report_holder_result() {
     "$JOB_REF" "$host" "$holder_phase" "$holder_status" "$remote_release" >&2
   # Sanitize before truncating so a cut cannot expose the suffix of a secret.
   cloudflare_ssh_sanitize_diagnostics "$error_file" | tail -c 8192 | sed 's/^/  /' >&2
-  [ "$holder_status" -eq 0 ] && [ "$remote_release" = confirmed ]
+  [ "$holder_status" -eq 0 ] && [ "$remote_release" = confirmed ] &&
+    { ! "$require_commit" || grep -Fxq VM0_RUNNER_LIFECYCLE_LOCK_RELEASED_AFTER_REQUEST "$error_file"; }
+}
+
+confirm_release_receipt() {
+  local host=$1
+  # shellcheck disable=SC2029
+  if timeout -k 1s 8s ssh -n "${METAL_USER}@${host}" \
+    "sudo grep -Fxq -- '${release_id}' '${receipt_path}'" >/dev/null 2>&1; then
+    printf 'Runner lifecycle lock: namespace=%s host=%s remote_release=reconciled\n' "$JOB_REF" "$host" >&2
+    return 0
+  fi
+  return 1
 }
 
 close_fd() {
@@ -150,6 +225,7 @@ release_locks() {
   fi
   locks_released=true
 
+  local require_commit=${1:-false}
   local index holder_status status=0
   # Heartbeat writers hold the release descriptors, so the remote holders only
   # see end-of-input once every writer is gone.
@@ -157,14 +233,21 @@ release_locks() {
   for ((index = ${#lock_fds[@]} - 1; index >= 0; index--)); do
     printf 'Requesting runner lifecycle lock release: namespace=%s host=%s phase=%s\n' \
       "$JOB_REF" "${lock_hosts[$index]}" "$phase" >&2
+    if "$require_commit"; then
+      printf '%s\n' VM0_RUNNER_LIFECYCLE_LOCK_RELEASE >&"${lock_fds[$index]}" || true
+    fi
     close_fd "${lock_fds[$index]}"
   done
   for index in "${!lock_pids[@]}"; do
     holder_status=0
     wait "${lock_pids[$index]}" || holder_status=$?
-    if ! report_holder_result "${lock_hosts[$index]}" "$phase" "$holder_status" "${state_dir}/${index}.err"; then
-      status=1
+    if report_holder_result "${lock_hosts[$index]}" "$phase" "$holder_status" "${state_dir}/${index}.err" "$require_commit"; then
+      continue
     fi
+    if "$require_commit" && [ "$holder_status" -eq 255 ] && confirm_release_receipt "${lock_hosts[$index]}"; then
+      continue
+    fi
+    status=1
   done
   rm -rf "$state_dir"
   return "$status"
@@ -198,32 +281,8 @@ for host in "${hosts[@]}"; do
 
   lock_path="/var/lock/vm0-runner-lifecycle-${JOB_REF}.lock"
   remote="${METAL_USER}@${host}"
-  remote_command="sudo flock --exclusive --timeout ${lock_timeout} ${lock_path} bash -c '
-    printf \"%s\\n\" VM0_RUNNER_LIFECYCLE_LOCK_ACQUIRED
-    while :; do
-      read_status=0
-      IFS= read -r -t ${lease_timeout} _ || read_status=\$?
-      case \$read_status in
-        0) ;;
-        1) printf \"%s\\n\" VM0_RUNNER_LIFECYCLE_LOCK_INPUT_EOF >&2; exit 0 ;;
-        *)
-          if [ \"\$read_status\" -gt 128 ]; then
-            printf \"%s\\n\" VM0_RUNNER_LIFECYCLE_LOCK_LEASE_EXPIRED >&2
-          else
-            printf \"VM0_RUNNER_LIFECYCLE_LOCK_READ_ERROR status=%s\\n\" \"\$read_status\" >&2
-          fi
-          exit \"\$read_status\"
-          ;;
-      esac
-    done
-  '
-  holder_status=\$?
-  if [ \"\$holder_status\" -eq 0 ]; then
-    printf \"%s\\n\" VM0_RUNNER_LIFECYCLE_LOCK_RELEASED >&2
-  else
-    printf \"VM0_RUNNER_LIFECYCLE_LOCK_REMOTE_EXIT status=%s\\n\" \"\$holder_status\" >&2
-  fi
-  exit \"\$holder_status\""
+  printf -v remote_command "sudo bash -c '%s' bash %s %s %s %s %s" \
+    "$holder_script" "$lock_timeout" "$lock_path" "$lease_timeout" "$receipt_path" "$release_id"
   # The validated host, timeout, and lock path select the remote lock. The
   # command itself is static and receives no untrusted shell fragments.
   # shellcheck disable=SC2029
@@ -347,8 +406,12 @@ else
   command_status=1
 fi
 
+require_commit=false
+if [ "$phase" = release ] && [ "$command_status" -eq 0 ]; then
+  require_commit=true
+fi
 release_status=0
-release_locks || release_status=$?
+release_locks "$require_commit" || release_status=$?
 trap - EXIT INT TERM
 if [ "$command_status" -ne 0 ]; then
   exit "$command_status"

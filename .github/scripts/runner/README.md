@@ -241,3 +241,14 @@ separate `vm0-ci-image-DIGEST-expire` names and remain image-owned.
 
 Stripe replacement uses the same lifecycle exclusion. Its Ansible playbooks
 remain deployment adapters; closed-PR teardown does not start Ansible per PR.
+
+The shared Stripe and preview Runner lock wrapper sends an explicit release
+request after the protected command succeeds. Each host closes its flock before
+acknowledging that request and saves the operation ID in a root-owned file
+under `/run/vm0-runner-lifecycle-receipts`. A transport exit 255 while
+releasing permits one bounded, read-only lookup on the affected host. Recovery
+requires a receipt for that exact operation and confirmed release on every host.
+The healthy path uses the original connection. The most recent receipt for each
+namespace survives SSH loss until replacement or reboot. EOF and lease expiry
+release the lock without writing a receipt. A lost release request, unavailable
+receipt, or failed protected command leaves CI failed.
