@@ -1,6 +1,6 @@
 #![cfg(target_os = "linux")]
 
-use std::os::unix::fs::symlink;
+use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
 use std::path::Path;
 use std::process::Output;
 use std::time::Duration;
@@ -68,6 +68,7 @@ async fn home_cleanup_preserves_work_installed_tools_and_session_state() -> Test
         "home/user/.codex/sessions/history.jsonl",
         "home/user/.codex/auth.json",
         "var/cache/apt/archives/package.deb",
+        "tmp/nested/keep",
     ];
     for path in preserved {
         put(root.path(), path, b"keep")?;
@@ -108,13 +109,15 @@ async fn home_cleanup_preserves_work_installed_tools_and_session_state() -> Test
 }
 
 #[tokio::test]
-async fn rootfs_cleanup_keeps_apt_lock_and_home_caches() -> TestResult {
+async fn rootfs_cleanup_reclaims_temporary_contents_and_preserves_roots() -> TestResult {
     let root = tempfile::tempdir()?;
     let containment = ContainmentFixture::new()?;
     for path in [
         "var/cache/apt/archives/package.deb",
         "var/cache/apt/archives/partial/download",
         "root/.cache/pip/download",
+        "tmp/nested/download",
+        "tmp/.hidden",
     ] {
         put(root.path(), path, b"discard")?;
     }
@@ -125,6 +128,10 @@ async fn rootfs_cleanup_keeps_apt_lock_and_home_caches() -> TestResult {
     ] {
         put(root.path(), path, b"keep")?;
     }
+    let tmp = root.path().join("tmp");
+    std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o1777))?;
+    symlink(root.path().join("home/user"), tmp.join("home-link"))?;
+    let tmp_before = std::fs::symlink_metadata(&tmp)?;
 
     let output = run_helper(root.path(), DiskCleanupFilesystem::Rootfs, &containment).await?;
     assert!(
@@ -134,7 +141,12 @@ async fn rootfs_cleanup_keeps_apt_lock_and_home_caches() -> TestResult {
     );
     let report: DiskCleanupReport = serde_json::from_slice(&output.stdout)?;
     assert_eq!(report.filesystem, DiskCleanupFilesystem::Rootfs);
-    assert_eq!(report.removed_entries, 3);
+    assert_eq!(report.removed_entries, 6);
+    let tmp_after = std::fs::symlink_metadata(&tmp)?;
+    assert_eq!(tmp_after.ino(), tmp_before.ino());
+    assert_eq!(tmp_after.dev(), tmp_before.dev());
+    assert_eq!(tmp_after.mode() & 0o7777, 0o1777);
+    assert_eq!(std::fs::read_dir(&tmp)?.count(), 0);
     assert_eq!(
         std::fs::read_dir(root.path().join("var/cache/apt/archives"))?.count(),
         1
@@ -154,6 +166,30 @@ async fn rootfs_cleanup_keeps_apt_lock_and_home_caches() -> TestResult {
         )?,
         b"keep"
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn symlinked_tmp_rejects_rootfs_cleanup_before_deletion() -> TestResult {
+    let root = tempfile::tempdir()?;
+    let containment = ContainmentFixture::new()?;
+    let preserved = [
+        "var/cache/apt/archives/package.deb",
+        "home/user/workspace/keep",
+    ];
+    for path in preserved {
+        put(root.path(), path, b"keep")?;
+    }
+    let tmp = root.path().join("tmp");
+    symlink(root.path().join("home/user/workspace"), &tmp)?;
+
+    let output = run_helper(root.path(), DiskCleanupFilesystem::Rootfs, &containment).await?;
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(std::fs::symlink_metadata(&tmp)?.file_type().is_symlink());
+    for path in preserved {
+        assert_eq!(std::fs::read(root.path().join(path))?, b"keep");
+    }
     Ok(())
 }
 
@@ -182,17 +218,21 @@ async fn symlinked_cache_parent_rejects_cleanup_before_deletion() -> TestResult 
 }
 
 #[tokio::test]
-async fn concurrent_supervised_workload_preserves_caches() -> TestResult {
-    let root = tempfile::tempdir()?;
-    let containment = ContainmentFixture::new()?;
-    put(root.path(), "home/user/.npm/_cacache/keep", b"keep")?;
-    std::fs::create_dir(containment.base.join("exec-other"))?;
+async fn concurrent_supervised_workload_preserves_recovery_candidates() -> TestResult {
+    for filesystem in [DiskCleanupFilesystem::Home, DiskCleanupFilesystem::Rootfs] {
+        let root = tempfile::tempdir()?;
+        let containment = ContainmentFixture::new()?;
+        let preserved = ["home/user/.npm/_cacache/keep", "tmp/nested/keep"];
+        for path in preserved {
+            put(root.path(), path, b"keep")?;
+        }
+        std::fs::create_dir(containment.base.join("exec-other"))?;
 
-    let output = run_helper(root.path(), DiskCleanupFilesystem::Home, &containment).await?;
-    assert_eq!(output.status.code(), Some(1));
-    assert_eq!(
-        std::fs::read(root.path().join("home/user/.npm/_cacache/keep"))?,
-        b"keep"
-    );
+        let output = run_helper(root.path(), filesystem, &containment).await?;
+        assert_eq!(output.status.code(), Some(1), "{filesystem:?}");
+        for path in preserved {
+            assert_eq!(std::fs::read(root.path().join(path))?, b"keep");
+        }
+    }
     Ok(())
 }

@@ -1,8 +1,10 @@
-//! Reclaim fixed package caches during bootstrap or reuse preparation.
+//! Reclaim fixed disposable paths during bootstrap or reuse preparation.
 //!
 //! This helper never initializes the ordinary agent runtime or writes a file in
-//! home. It retains cache roots, work, installed environments, credentials and
-//! histories. Deletion can be partial on error; it is not transactional.
+//! home. It retains cleanup roots and persistent state outside the disposable
+//! paths. Rootfs recovery treats `/tmp` contents as disposable
+//! after verifying sole-workload containment. Deletion can be partial on error;
+//! it is not transactional.
 
 use std::ffi::OsString;
 use std::io;
@@ -14,19 +16,20 @@ use crate::nofollow_fs::Dir;
 
 // uv's supported symlink link mode installs packages backed by its cache.
 // Retain that cache because deleting it can break an installed environment.
-const HOME_CACHES: &[&[&str]] = &[
+const HOME_CLEANUP_PATHS: &[&[&str]] = &[
     &[".npm", "_cacache"],
     &[".npm", "_logs"],
     &[".cache", "pip"],
 ];
-const ROOT_CACHES: &[&[&str]] = &[
+const ROOTFS_CLEANUP_PATHS: &[&[&str]] = &[
     &["var", "cache", "apt", "archives"],
     &["root", ".npm", "_cacache"],
     &["root", ".npm", "_logs"],
     &["root", ".cache", "pip"],
+    &["tmp"],
 ];
 
-/// Reclaim allowlisted caches on one selected filesystem.
+/// Reclaim allowlisted disposable contents on one selected filesystem.
 ///
 /// # Errors
 /// Refuses concurrent supervised workloads, unsafe path components, mount
@@ -37,42 +40,42 @@ pub fn recover(filesystem: DiskCleanupFilesystem) -> io::Result<DiskCleanupRepor
     let root = Dir::open_absolute(&path)?;
     let identity = root.identity()?;
     let (available_bytes_before, available_inodes_before) = root.available_capacity()?;
-    let caches = match filesystem {
-        DiskCleanupFilesystem::Home => HOME_CACHES,
-        DiskCleanupFilesystem::Rootfs => ROOT_CACHES,
+    let cleanup_paths = match filesystem {
+        DiskCleanupFilesystem::Home => HOME_CLEANUP_PATHS,
+        DiskCleanupFilesystem::Rootfs => ROOTFS_CLEANUP_PATHS,
     };
 
-    // Validate every existing candidate before mutating any cache. A missing
-    // standard cache is expected; an unsafe cache root must not widen deletion.
+    // Validate every existing candidate before deleting anything. Missing
+    // candidates are expected; an unsafe root must not widen deletion.
     let mut opened = Vec::new();
-    for components in caches {
-        if let Some(cache) = open_cache(&root, components)? {
-            cache.identity()?.ensure_same_mount(identity)?;
-            opened.push((components, cache));
+    for components in cleanup_paths {
+        if let Some(directory) = open_cleanup_dir(&root, components)? {
+            directory.identity()?.ensure_same_mount(identity)?;
+            opened.push((components, directory));
         }
     }
     let mut removed_entries = 0u64;
-    for (components, cache) in &opened {
+    for (components, directory) in &opened {
         let excluded = if **components == ["var", "cache", "apt", "archives"] {
             vec![OsString::from("lock")]
         } else {
             Vec::new()
         };
-        removed_entries = removed_entries.saturating_add(cache.remove_children_except(
+        removed_entries = removed_entries.saturating_add(directory.remove_children_except(
             &excluded,
             identity,
             &[],
         )?);
-        let current = open_cache(&root, components)?.ok_or_else(|| {
+        let current = open_cleanup_dir(&root, components)?.ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::NotFound,
-                "cache root disappeared during cleanup",
+                "cleanup root disappeared during cleanup",
             )
         })?;
-        if current.identity()? != cache.identity()? {
+        if current.identity()? != directory.identity()? {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
-                "cache root changed during cleanup",
+                "cleanup root changed during cleanup",
             ));
         }
     }
@@ -93,7 +96,7 @@ pub fn recover(filesystem: DiskCleanupFilesystem) -> io::Result<DiskCleanupRepor
     })
 }
 
-fn open_cache(root: &Dir, components: &[&str]) -> io::Result<Option<Dir>> {
+fn open_cleanup_dir(root: &Dir, components: &[&str]) -> io::Result<Option<Dir>> {
     let mut current = root.try_clone()?;
     for name in components {
         match current.open_child_dir(name.as_ref()) {
