@@ -3067,6 +3067,7 @@ export function createThreadClaimRunObjects(
           },
           modelProvider: {
             credentialOwner: modelProvider.credentialOwner,
+            accountIdentity: modelProvider.accountIdentity,
             id: modelProvider.id,
             type: modelProvider.type,
             selectedModel: modelProvider.selectedModel,
@@ -3089,7 +3090,10 @@ export function createThreadClaimRunObjects(
             templateSkillVolumes: context.templateSkillVolumes,
             integration,
             captureNetworkBodies: args.captureNetworkBodies === true,
-            piModelConfig: context.piSandbox,
+            modelProvider: {
+              ...modelProvider,
+              piModelConfig: context.piSandbox,
+            },
             modelProviderPermissions: context.modelProviderPermissions,
             seedSkillVolumes: context.seedSkillVolumes,
             userTimezone: context.userTimezone,
@@ -4053,6 +4057,7 @@ interface ThreadRunPersistenceContext {
   readonly modelProvider: Pick<
     ResolvedModelProviderEnvironment,
     | "credentialOwner"
+    | "accountIdentity"
     | "id"
     | "type"
     | "selectedModel"
@@ -4509,7 +4514,7 @@ interface ThreadRunnerFacts {
     | "templateSkillVolumes"
     | "integration"
     | "captureNetworkBodies"
-    | "piModelConfig"
+    | "modelProvider"
     | "modelProviderPermissions"
     | "seedSkillVolumes"
     | "userTimezone"
@@ -4828,10 +4833,7 @@ type CreateRunErrorResult =
   | ApiErrorResponse<400, "BAD_REQUEST">
   | ApiErrorResponse<403, "FORBIDDEN">
   | ApiErrorResponse<404, "NOT_FOUND">
-  | (ApiErrorResponse<409, "CONFLICT"> & {
-      /** Producer-facing classification; the HTTP response body is unchanged. */
-      readonly admissionFailure?: "subscription_account_disconnected";
-    })
+  | ApiErrorResponse<409, "CONFLICT">
   | ApiErrorResponse<402, "INSUFFICIENT_CREDITS">
   | ApiErrorResponse<402, "PRO_REQUIRED">
   | ApiErrorResponse<
@@ -5209,17 +5211,10 @@ const commitThreadLaunch$ = command(
     const { admissionTiming, timing } = args;
     admissionTiming.transactionStarted();
     admissionTiming.admissionStarted();
-    let admission = pendingLaunchAdmissionStart(args);
-    while ("kind" in admission && admission.kind === "statement") {
-      const step = admission;
-      const rows = parseRawRows(admissionRow, await db.execute(step.sql));
-      signal.throwIfAborted();
-      admission = advancePendingLaunchAdmission(args, step, rows);
-    }
-    if (!("kind" in admission)) {
-      admissionTiming.callbackFinished();
-      return admission;
-    }
+    const step = pendingLaunchAdmissionStart(args);
+    const rows = parseRawRows(admissionRow, await db.execute(step.sql));
+    signal.throwIfAborted();
+    const admission = advancePendingLaunchAdmission(args, step, rows);
     if (admission.kind === "queue-first-claim-lost") {
       admissionTiming.callbackFinished();
       return admission;

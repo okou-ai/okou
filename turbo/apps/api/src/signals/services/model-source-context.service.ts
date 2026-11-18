@@ -10,7 +10,7 @@ import {
   modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
 import { usagePricing } from "@okouai/db/runtime/usage-pricing";
-import { computed, type Computed } from "ccstate";
+import { computed } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
 import { array, object, string, unknown as zUnknown } from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
@@ -21,11 +21,11 @@ import {
 import { db$ } from "../external/db";
 import { usagePricingByKey } from "./built-in-route-pricing";
 import { personalSubscriptionAccountAccessCondition } from "./model-provider-account.service";
-import type { ModelSourceSnapshot } from "./execution-model-source.service";
 import {
-  memberModelBootstrapFromSources,
-  type MemberModelBootstrap,
-} from "./model-bootstrap.service";
+  personalSubscriptionAccountIdentity,
+  type ModelSourceSnapshot,
+} from "./execution-model-source.service";
+import type { MemberModelBootstrap } from "./model-bootstrap.service";
 
 function providerProjection() {
   return {
@@ -57,17 +57,13 @@ function providerFacts(rows: readonly ProviderRow[]) {
   ];
 }
 
-function memberModelSourcePredicates(
-  orgId: string,
-  userId: string,
-  runId?: string,
-) {
+function memberModelSourcePredicates(orgId: string, userId: string) {
   return {
     account: and(
       eq(modelProviderAccounts.modelProviderId, modelProviders.id),
       eq(modelProviderAccounts.orgId, orgId),
       eq(modelProviderAccounts.userId, userId),
-      personalSubscriptionAccountAccessCondition(runId),
+      personalSubscriptionAccountAccessCondition(),
     ),
     secret: eq(
       modelProviderAccountSecrets.modelProviderAccountId,
@@ -108,14 +104,9 @@ type AccountSourceRow = Pick<
 /**
  * The same member-source join as one JSON aggregate, for statements that
  * already read this member. Column decoders still own timestamps and enums.
- * A live Run identity also authorizes its retained bound account.
  */
-export function memberModelSourcesAggregate(
-  orgId: string,
-  userId: string,
-  runId?: string,
-) {
-  const on = memberModelSourcePredicates(orgId, userId, runId);
+export function memberModelSourcesAggregate(orgId: string, userId: string) {
+  const on = memberModelSourcePredicates(orgId, userId);
   const payload = sql`COALESCE(jsonb_agg(jsonb_build_object(
       'provider', ${contextJsonProjection(providerProjection().provider)},
       'account', CASE WHEN ${modelProviderAccounts.id} IS NULL THEN NULL
@@ -183,6 +174,7 @@ export function memberAccountSourceFromSnapshot(
       kind: "member",
       accountId,
       externalAccountId: first.account.externalAccountId,
+      accountIdentity: personalSubscriptionAccountIdentity(first.account),
     },
     configuration: {
       providerType: first.account.type,
@@ -194,40 +186,6 @@ export function memberAccountSourceFromSnapshot(
         : [];
     }),
   };
-}
-
-/** Read only the pinned account, including its admitted Run's retained access. */
-export function createRunModelSources(
-  identity$: Computed<
-    Promise<{
-      readonly orgId: string;
-      readonly userId: string;
-      readonly runId: string;
-      readonly accountId: string | null;
-    }>
-  >,
-) {
-  return computed(async (get): Promise<MemberModelBootstrap> => {
-    const { orgId, userId, runId, accountId } = await get(identity$);
-    const sources = memberModelSourcesAggregate(orgId, userId, runId);
-    const [row] = await get(db$)
-      .select({ payload: sources.payload })
-      .from(modelProviders)
-      .leftJoin(modelProviderAccounts, sources.joins.account)
-      .leftJoin(modelProviderAccountSecrets, sources.joins.secret)
-      .where(
-        and(
-          sources.joins.provider,
-          accountId === null
-            ? sql`false`
-            : eq(modelProviderAccounts.id, accountId),
-        ),
-      );
-    if (!row) {
-      throw new Error("Member model source query returned no row");
-    }
-    return memberModelBootstrapFromSources(sources.decode(row.payload));
-  });
 }
 
 /** Global managed source identities; credential values stay at firewall auth. */

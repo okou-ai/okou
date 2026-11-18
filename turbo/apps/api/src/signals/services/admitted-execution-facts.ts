@@ -1,12 +1,14 @@
 import type {
   ConnectorRuntimeTargetRegistration,
   NativeContinuation,
-  PiModelConfig,
   PreparedExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
 import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
 import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type { PermissionManifest } from "./agent-run-contracts";
+import type {
+  PermissionManifest,
+  ResolvedModelProviderEnvironment,
+} from "./agent-run-contracts";
 import type {
   SeedSkillVolume,
   TemplateSkillVolume,
@@ -38,7 +40,8 @@ export interface AdmittedExecutionFacts {
   readonly templateSkillVolumes: readonly TemplateSkillVolume[];
   readonly integration: string | undefined;
   readonly captureNetworkBodies: boolean;
-  readonly piModelConfig: PiModelConfig | undefined;
-  /** Pure pinned-provider policy; runtime still reloads credential sources. */
+  /** First accepted source and compiled environment, including its Pi configuration. */
+  readonly modelProvider: ResolvedModelProviderEnvironment;
+  /** Pure policy for the same accepted provider. */
   readonly modelProviderPermissions: PermissionManifest | undefined;
 }
