@@ -149,7 +149,7 @@ final class AppLifecycle {
     let scopeID = authentication.presentationScopeID
     foregroundTask = Task {
       guard ownsScope(scopeID), !Task.isCancelled, self.phase == .active else { return }
-      await authentication.refresh()
+      await authentication.refreshWorkspaces()
       guard ownsScope(scopeID), !Task.isCancelled, self.phase == .active else { return }
       await notifications.refreshRegistration()
       guard ownsScope(scopeID), !Task.isCancelled, self.phase == .active else { return }

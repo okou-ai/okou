@@ -73,9 +73,10 @@ final class AuthenticationHTTPFixture: Sendable {
   }
 
   @MainActor
-  func authentication(resetPersistedIdentity: Bool = false, restoredAccessGroup: String? = nil)
-    async throws -> AuthenticationService
-  {
+  func authentication(
+    resetPersistedIdentity: Bool = false, restoredAccessGroup: String? = nil,
+    middleware: Clerk.Options.MiddlewareConfig = .init()
+  ) async throws -> AuthenticationService {
     let url = try await withCheckedThrowingContinuation { continuation in
       startup.withLock { $0 = continuation }
       listener.stateUpdateHandler = { [weak self] state in
@@ -102,7 +103,7 @@ final class AuthenticationHTTPFixture: Sendable {
     }
     let options = Clerk.Options(
       telemetryEnabled: false, keychainConfig: .init(service: "ai.okou.tests." + host),
-      proxyUrl: url.absoluteString)
+      proxyUrl: url.absoluteString, middleware: middleware)
     let snapshot = state.withLock { value in
       let snapshot = value
       value.failActivation = false
@@ -122,7 +123,7 @@ final class AuthenticationHTTPFixture: Sendable {
     let restoredOptions = Clerk.Options(
       telemetryEnabled: false,
       keychainConfig: .init(service: "ai.okou.tests." + host, accessGroup: restoredAccessGroup),
-      proxyUrl: url.absoluteString)
+      proxyUrl: url.absoluteString, middleware: middleware)
     let restored = Clerk.configure(publishableKey: publishableKey, options: restoredOptions)
     configuredClerk = restored
     XCTAssertEqual(
