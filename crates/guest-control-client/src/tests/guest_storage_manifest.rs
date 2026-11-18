@@ -232,6 +232,9 @@ async fn guest_storage_manifest_sends_request_and_decodes_result() {
 
 #[tokio::test]
 async fn large_storage_payload_finishes_before_a_queued_control_frame() {
+    use std::future::{Future, poll_fn};
+    use std::task::Poll;
+
     let (host, mut guest) = setup_storage_pair_with_backpressure().await;
     let input = large_storage_input();
     let status = FileWriteStatus {
@@ -266,13 +269,21 @@ async fn large_storage_payload_finishes_before_a_queued_control_frame() {
             .await;
     };
 
-    // The storage write fills the socket before the control request and the
-    // peer runs. The peer checks that it receives two complete ordered frames.
-    let (storage, control, ()) = tokio::join!(biased;
-        host.guest_storage_manifest(&input, "run", "/run", 100, LARGE_STORAGE_REQUEST_TIMEOUT),
-        host.file_write_status(LARGE_STORAGE_REQUEST_TIMEOUT),
-        peer,
-    );
+    let writer = host.shared.writer.lock().await;
+    let storage =
+        host.guest_storage_manifest(&input, "run", "/run", 100, LARGE_STORAGE_REQUEST_TIMEOUT);
+    let control = host.file_write_status(LARGE_STORAGE_REQUEST_TIMEOUT);
+    tokio::pin!(storage, control);
+    // Queue the control query behind storage before any bytes are sent. If
+    // storage unlocks after its prefix, the queued query can cut into the frame.
+    poll_fn(|cx| {
+        assert!(storage.as_mut().poll(cx).is_pending());
+        assert!(control.as_mut().poll(cx).is_pending());
+        Poll::Ready(())
+    })
+    .await;
+    drop(writer);
+    let (storage, control, ()) = tokio::join!(storage, control, peer);
     assert_eq!(
         storage.unwrap().termination,
         ExecTermination::Exited { exit_code: 0 }
