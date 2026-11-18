@@ -360,6 +360,9 @@ describe("okou subagent", () => {
     expect(results.flat().join("\n")).toContain(
       "Inspect: okou subagent inspect",
     );
+    // Launch confirmation precedes readiness; keep both children at the provider boundary.
+    const providerA = await nextRequest();
+    const providerB = await nextRequest();
     const output = (await run("list")).join("\n");
     expect(output).toContain("1\t");
     expect(output).toContain("2\t");
@@ -377,8 +380,6 @@ describe("okou subagent", () => {
       "stdout",
       "task",
     ]);
-    const providerA = await nextRequest();
-    const providerB = await nextRequest();
     for (const request of [providerA, providerB]) {
       expect(request.body.model).toBe("deepseek/deepseek-v4.1-flash");
       expect(request.authorization).toBe("Bearer test-subagent-key");
