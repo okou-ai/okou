@@ -34,13 +34,8 @@ const prepareStorage$ = command(async ({ get, set }, signal: AbortSignal) => {
   return await set(
     prepareMemberMemoryWriteback$,
     {
-      auth: {
-        tokenType: "sandbox",
-        userId: auth.userId,
-        orgId: auth.orgId,
-        runId: auth.runId,
-      },
       ...body,
+      auth,
     },
     signal,
   );
@@ -61,12 +56,7 @@ const commitStorage$ = command(async ({ get, set }, signal: AbortSignal) => {
     commitMemberMemoryWriteback$,
     {
       ...body,
-      auth: {
-        tokenType: "sandbox",
-        userId: auth.userId,
-        orgId: auth.orgId,
-        runId: auth.runId,
-      },
+      auth,
     },
     signal,
   );

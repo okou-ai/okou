@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
@@ -65,7 +65,14 @@ describe("auth tokens", () => {
       identity.runId,
       identity.orgId,
     );
-    expect(verifyFirewallToken(token)).toStrictEqual(identity);
+    expect(verifyFirewallToken(token)).toStrictEqual({
+      ...identity,
+      scope: "firewall",
+    });
+    type VerifiedFirewall = NonNullable<ReturnType<typeof verifyFirewallToken>>;
+    type VerifiedSandbox = NonNullable<ReturnType<typeof verifySandboxToken>>;
+    expectTypeOf<VerifiedFirewall>().not.toExtend<VerifiedSandbox>();
+    expectTypeOf<VerifiedSandbox>().not.toExtend<VerifiedFirewall>();
     expect(verifySandboxToken(token)).toBeNull();
     expect(verifyOkouToken(token)).toBeNull();
     const expired = signSandboxJwtForTests({
@@ -119,6 +126,7 @@ describe("auth tokens", () => {
 
     expect(isSandboxToken(sandboxToken)).toBeTruthy();
     expect(verifySandboxToken(sandboxToken)).toStrictEqual({
+      scope: "sandbox",
       userId: "user_sandbox",
       orgId: "org_sandbox",
       runId: "run_sandbox",
