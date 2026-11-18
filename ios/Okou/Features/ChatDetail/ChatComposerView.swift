@@ -91,7 +91,7 @@ struct ChatComposerView: View {
   private var replacesSendWithMic: Bool {
     !hasContent && !canStop && draftState?.voice != nil && (!expandsInput || voiceActive)
   }
-  private var showsModelPicker: Bool { expandsInput && !voiceActive }
+  private var showsSecondaryActions: Bool { expandsInput && !voiceActive }
   private var resolvedPlaceholder: String { placeholder ?? String(localized: "Message Okou") }
 
   var body: some View {
@@ -348,34 +348,41 @@ struct ChatComposerView: View {
   private var trailingActions: some View {
     HStack(spacing: OkouSpace.xs) {
       if let modelSelection {
-        ChatModelPickerButton(selection: modelSelection, action: { showsModels = true })
-          .disabled(needsUpgrade)
-          .opacity(showsModelPicker ? 1 : 0)
-          .allowsHitTesting(showsModelPicker)
-          .accessibilityHidden(!showsModelPicker)
+        ZStack {
+          if showsSecondaryActions {
+            ChatModelPickerButton(selection: modelSelection, action: { showsModels = true })
+              .disabled(needsUpgrade)
+              .transition(.opacity)
+          }
+        }
+        .frame(width: actionSize, height: actionSize)
       }
       if let voice = draftState?.voice {
-        voiceInput(voice, isVisible: expandsInput && !voiceActive)
+        ZStack {
+          if showsSecondaryActions {
+            voiceInput(voice)
+              .transition(.opacity)
+          }
+        }
+        .frame(width: actionSize, height: actionSize)
       }
       // Keep the row width stable while the compact mic fades into the primary action.
       ZStack {
-        primaryAction
-          .opacity(replacesSendWithMic ? 0 : 1)
-          .allowsHitTesting(!replacesSendWithMic)
-          .accessibilityHidden(replacesSendWithMic)
-        if let voice = draftState?.voice {
-          voiceInput(voice, isVisible: replacesSendWithMic)
+        if replacesSendWithMic, let voice = draftState?.voice {
+          voiceInput(voice)
+            .transition(.opacity)
+        } else {
+          primaryAction
+            .transition(.opacity)
         }
       }
+      .frame(width: actionSize, height: actionSize)
     }
   }
 
-  private func voiceInput(_ voice: ComposerVoiceInputStore, isVisible: Bool) -> some View {
+  private func voiceInput(_ voice: ComposerVoiceInputStore) -> some View {
     ComposerVoiceInputButton(voice: voice)
       .disabled(isBusy || needsUpgrade || voiceActive || draftState?.canEditVoice != true)
-      .opacity(isVisible ? 1 : 0)
-      .allowsHitTesting(isVisible)
-      .accessibilityHidden(!isVisible)
   }
 
   private var primaryAction: some View {
