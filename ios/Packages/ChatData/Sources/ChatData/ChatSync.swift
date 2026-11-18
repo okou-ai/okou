@@ -24,62 +24,13 @@ public actor ChatSync {
   /// Dirty rows survive a failed write until a later catch-up persists them.
   public func releaseHistory(threadID: String) -> Bool {
     guard !readingHistories.contains(threadID) else { return false }
-    if cache != nil, let history = histories[threadID], history.replaced || !history.newRows.isEmpty
+    if cache != nil,
+      let history = histories[threadID], history.replaced || !history.newRows.isEmpty
     {
       return false
     }
     histories[threadID] = nil
     return true
-  }
-
-  public func pendingPrefetchReports() async throws -> [(
-    id: Int, report: NotificationPrefetchReport
-  )] {
-    try await cache?.prefetchReports() ?? []
-  }
-
-  public func acknowledgePrefetchReport(_ id: Int) async throws {
-    try await cache?.acknowledgePrefetchReport(id)
-  }
-
-  public func cachedNavigation() async -> SidebarNavigationSnapshot? {
-    do {
-      return try await cache?.loadNavigation()
-    } catch {
-      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error("Cannot read cached navigation: \(error.localizedDescription, privacy: .public)")
-      return nil
-    }
-  }
-
-  public func persistNavigation(_ snapshot: SidebarNavigationSnapshot) async {
-    do {
-      try Task.checkCancellation()
-      try await cache?.saveNavigation(snapshot)
-    } catch is CancellationError {
-    } catch {
-      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error("Cannot save navigation cache: \(error.localizedDescription, privacy: .public)")
-    }
-  }
-
-  public func cachedProjects() async -> [ChatProject]? {
-    do { return try await cache?.loadProjects() } catch {
-      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error("Cannot read cached Projects: \(error.localizedDescription, privacy: .public)")
-      return nil
-    }
-  }
-
-  public func persistProjects(_ projects: [ChatProject]) async {
-    do {
-      try Task.checkCancellation()
-      try await cache?.saveProjects(projects)
-    } catch is CancellationError {
-    } catch {
-      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error("Cannot save Projects: \(error.localizedDescription, privacy: .public)")
-    }
   }
 
   public func cachedThreads() async -> [ChatThread]? {
@@ -121,7 +72,9 @@ public actor ChatSync {
       throw CancellationError()
     } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatSync")
-        .info("Keeping available unread state: \(error.localizedDescription, privacy: .public)")
+        .info(
+          "event=chat.indicators.read.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+        )
       indicators = nil
     }
     let threads = result.threads.map { thread in
@@ -172,7 +125,8 @@ public actor ChatSync {
       } catch {
         Logger(subsystem: "ai.okou.ios", category: "ChatCache")
           .debug(
-            "Skipping chat list snapshot rebase: \(error.localizedDescription, privacy: .public)")
+            "event=chat.cache.list.rebase.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+          )
         rebased = nil
       }
       if let rebased { state = try await catchUpThreadEvents(rebased) }
@@ -193,7 +147,8 @@ public actor ChatSync {
       } catch {
         Logger(subsystem: "ai.okou.ios", category: "ChatCache")
           .error(
-            "Cannot remove deleted chat history: \(error.localizedDescription, privacy: .public)")
+            "event=chat.cache.history.delete.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+          )
       }
     }
     return (current, eventIDs, state.cursor)
@@ -263,7 +218,9 @@ public actor ChatSync {
 
   private func logIndicatorCacheFailure(_ error: Error) {
     Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-      .error("Unread cache unavailable: \(error.localizedDescription, privacy: .public)")
+      .error(
+        "event=chat.cache.unread.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+      )
   }
 
   /// Both push entry points own and cancel the optional indicators read. It
@@ -276,7 +233,9 @@ public actor ChatSync {
         do { _ = try await self.indicators() } catch {
           if !Task.isCancelled {
             Logger(subsystem: "ai.okou.ios", category: "ChatSync")
-              .info("Push unread unavailable: \(error.localizedDescription, privacy: .public)")
+              .info(
+                "event=notifications.unread.read.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+              )
           }
         }
         return nil
@@ -299,175 +258,6 @@ public actor ChatSync {
         }
       }
       throw CancellationError()
-    }
-  }
-
-  private struct ThreadListState {
-    var snapshot: [ThreadProjection]
-    var snapshotData: Data
-    var snapshotCursor: ChatCacheCursor
-    var events: [ThreadEvent]
-    var newEvents: [ChatCacheEvent]
-    var cursor: ChatCacheCursor
-    var replaced: Bool
-    var cursorFromServerSnapshot: Bool
-  }
-
-  private struct CachedThreadSnapshot: Decodable {
-    enum Format: String, Decodable { case projectEvents }
-    let cacheFormat: Format
-    let chatThreads: [ThreadProjection]
-  }
-
-  private func readCachedThreadList(newerThan sequence: Int? = nil) async -> ThreadListState? {
-    guard let cache else { return nil }
-    do {
-      guard let stored = try await cache.loadThreadList() else { return nil }
-      let cursor =
-        stored.events.last.map { ChatCacheCursor(eventID: $0.id, seqID: $0.seqID) }
-        ?? stored.snapshotCursor
-      // Consult shared storage on every read so NSE commits remain visible, but
-      // avoid decoding and replaying a list the caller has already applied.
-      if let sequence, cursor.seqID <= sequence { return nil }
-      let decoder = APIClient.decoder()
-      let snapshot = try decoder.decode(
-        CachedThreadSnapshot.self, from: stored.snapshot
-      ).chatThreads
-      let events = try stored.events.map { row in
-        let event = try decoder.decode(ThreadEvent.self, from: row.data)
-        guard event.id == row.id, event.seqId == row.seqID else {
-          throw ChatError.invalidContract("Cached chat list event identity is invalid.")
-        }
-        return event
-      }
-      var previous = stored.snapshotCursor.seqID
-      for event in events {
-        guard event.seqId > previous else {
-          throw ChatError.invalidContract("Cached chat list event order is invalid.")
-        }
-        previous = event.seqId
-      }
-      return ThreadListState(
-        snapshot: snapshot, snapshotData: stored.snapshot,
-        snapshotCursor: stored.snapshotCursor, events: events, newEvents: [],
-        cursor: cursor,
-        replaced: false, cursorFromServerSnapshot: false)
-    } catch {
-      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error("Cannot read cached chat list: \(error.localizedDescription, privacy: .public)")
-      return nil
-    }
-  }
-
-  private func fetchThreadSnapshot() async throws -> ThreadListState {
-    let response = try await client.data("/api/chat-threads/snapshot")
-    let snapshot = try Self.decode(ThreadSnapshot.self, from: response.data)
-    let archiveData: Data
-    let latestEventID: String?
-    let latestSeqID: Int?
-    switch snapshot {
-    case .inline(_, let eventID, let seqID):
-      // The inline response is an empty scope on current APIs. Keep the exact
-      // projection JSON for a rollback-window response as well.
-      guard let object = try JSONSerialization.jsonObject(with: response.data) as? [String: Any],
-        let threads = object["chatThreads"]
-      else { throw APIClientError.incompatibleData }
-      archiveData = try JSONSerialization.data(withJSONObject: ["chatThreads": threads])
-      latestEventID = eventID
-      latestSeqID = seqID
-    case .remote(let url, let eventID, let seqID):
-      archiveData = try await client.downloadSnapshot(url)
-      latestEventID = eventID
-      latestSeqID = seqID
-    }
-    let projections = try Self.decode(ThreadSnapshotArchive.self, from: archiveData).chatThreads
-    guard var cachedSnapshot = try JSONSerialization.jsonObject(with: archiveData) as? [String: Any]
-    else { throw APIClientError.incompatibleData }
-    cachedSnapshot["cacheFormat"] = CachedThreadSnapshot.Format.projectEvents.rawValue
-    let cachedData = try JSONSerialization.data(withJSONObject: cachedSnapshot)
-    let cursor = ChatCacheCursor(eventID: latestEventID, seqID: latestSeqID ?? 0)
-    return ThreadListState(
-      snapshot: projections, snapshotData: cachedData, snapshotCursor: cursor,
-      events: [], newEvents: [], cursor: cursor, replaced: true,
-      cursorFromServerSnapshot: true)
-  }
-
-  private func catchUpThreadEvents(_ initial: ThreadListState) async throws -> ThreadListState {
-    var state = initial
-    while true {
-      do {
-        try await loadThreadEventTail(into: &state)
-        return state
-      } catch let error as APIClientError where error.statusCode == 410 {
-        guard !state.cursorFromServerSnapshot else {
-          throw ChatError.invalidContract(
-            "Chat list cursor expired immediately after its snapshot.")
-        }
-        state = try await fetchThreadSnapshot()
-      }
-    }
-  }
-
-  private func loadThreadEventTail(into state: inout ThreadListState) async throws {
-    while true {
-      let query =
-        state.cursor.seqID > 0
-        ? [URLQueryItem(name: "sinceSeqId", value: String(state.cursor.seqID))] : []
-      let response = try await client.data("/api/chat-threads/events", query: query)
-      let page = try Self.decode(ThreadEventsPage.self, from: response.data)
-      let rawEvents = try Self.rawArray("events", in: response.data)
-      guard page.events.count == rawEvents.count else { throw APIClientError.incompatibleData }
-      for (event, data) in zip(page.events, rawEvents) {
-        guard event.seqId > state.cursor.seqID,
-          !state.events.contains(where: { $0.id == event.id })
-        else { throw ChatError.invalidContract("Chat list events are not ordered.") }
-        state.events.append(event)
-        state.newEvents.append(ChatCacheEvent(id: event.id, seqID: event.seqId, data: data))
-        state.cursor = ChatCacheCursor(eventID: event.id, seqID: event.seqId)
-      }
-      if !page.events.isEmpty { state.cursorFromServerSnapshot = false }
-      if !page.hasMore { return }
-      if page.events.isEmpty {
-        throw ChatError.invalidContract("Chat list cursor did not advance.")
-      }
-    }
-  }
-
-  private func persistThreadList(_ state: ThreadListState) async -> Bool {
-    guard let cache else { return false }
-    guard state.replaced || !state.newEvents.isEmpty else { return true }
-    do {
-      if state.replaced {
-        try await cache.replaceThreadList(
-          snapshot: state.snapshotData, cursor: state.snapshotCursor, events: state.newEvents)
-      } else {
-        try await cache.appendThreadEvents(state.newEvents)
-      }
-      return true
-    } catch {
-      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error("Cannot save chat list cache: \(error.localizedDescription, privacy: .public)")
-      return false
-    }
-  }
-
-  private static func decode<Value: Decodable>(
-    _ type: Value.Type, from data: Data, using decoder: JSONDecoder = APIClient.decoder()
-  ) throws -> Value {
-    do { return try decoder.decode(type, from: data) } catch {
-      throw APIClientError.incompatibleData
-    }
-  }
-
-  private static func rawArray(_ key: String, in data: Data) throws -> [Data] {
-    guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-      let values = object[key] as? [Any]
-    else { throw APIClientError.incompatibleData }
-    return try values.map { value in
-      guard JSONSerialization.isValidJSONObject(value) else {
-        throw APIClientError.incompatibleData
-      }
-      return try JSONSerialization.data(withJSONObject: value)
     }
   }
 
@@ -606,7 +396,7 @@ public actor ChatSync {
       do {
         var query = [
           URLQueryItem(name: "sinceSeqId", value: String(current.seqID)),
-          URLQueryItem(name: "limit", value: "50"),
+          URLQueryItem(name: "limit", value: "50")
         ]
         if let id = current.eventID { query.append(URLQueryItem(name: "sinceEventId", value: id)) }
         let response = try await client.data(
@@ -662,8 +452,9 @@ public actor ChatSync {
         ?? false)
   }
 
-  private func readHistory(threadID: String, requirePersistence: Bool) async throws -> CachedHistory
-  {
+  private func readHistory(
+    threadID: String, requirePersistence: Bool
+  ) async throws -> CachedHistory {
     // Actor methods can interleave at every network/cache await. Serialize each
     // thread's catch-up and durable cursor update, including calls from Stop.
     if !readingHistories.insert(threadID).inserted {
@@ -706,8 +497,9 @@ public actor ChatSync {
     }
   }
 
-  private func loadHistory(threadID: String, requirePersistence: Bool) async throws -> CachedHistory
-  {
+  private func loadHistory(
+    threadID: String, requirePersistence: Bool
+  ) async throws -> CachedHistory {
     let cached = await readCachedHistory(threadID: threadID)
     var history: CachedHistory
     if let cached {
@@ -738,10 +530,10 @@ public actor ChatSync {
     do {
       snapshot = try await client.request(
         "/api/chat-threads/\(threadID)/event-snapshot")
-    } catch let error as APIClientError
-      where error.statusCode == 404
-      && error.serverCode == "CHAT_EVENT_SNAPSHOT_NOT_FOUND"
-    {
+    } catch let error as APIClientError {
+      guard error.statusCode == 404, error.serverCode == "CHAT_EVENT_SNAPSHOT_NOT_FOUND" else {
+        throw error
+      }
       return CachedHistory(
         rows: [], rawRows: [], newRows: [], cursor: .start, replaced: true,
         cursorFromServerSnapshot: true)
@@ -806,7 +598,9 @@ public actor ChatSync {
         replaced: false, cursorFromServerSnapshot: false)
     } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error("Cannot read cached history: \(error.localizedDescription, privacy: .public)")
+        .error(
+          "event=chat.cache.history.read.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+        )
       return nil
     }
   }
@@ -834,7 +628,7 @@ public actor ChatSync {
     while true {
       var query = [
         URLQueryItem(name: "sinceSeqId", value: String(history.cursor.lastSeqId)),
-        URLQueryItem(name: "limit", value: "50"),
+        URLQueryItem(name: "limit", value: "50")
       ]
       if let eventID = history.cursor.lastEventId {
         query.append(URLQueryItem(name: "sinceEventId", value: eventID))
@@ -887,7 +681,9 @@ public actor ChatSync {
       return true
     } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error("Cannot save chat history cache: \(error.localizedDescription, privacy: .public)")
+        .error(
+          "event=chat.cache.history.save.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+        )
       return false
     }
   }
@@ -911,91 +707,5 @@ public actor ChatSync {
     var cursor: EventCursor
     var replaced: Bool
     var cursorFromServerSnapshot: Bool
-  }
-}
-
-extension ChatSync {
-  public func searchMessages(keyword: String) async throws -> [ChatSearchResult] {
-    struct Response: Decodable { let results: [ChatSearchResult] }
-    let response: Response = try await client.request(
-      "/api/chat/search", query: [URLQueryItem(name: "keyword", value: keyword)])
-    return response.results
-  }
-
-  /// The workspace's workflows the person can see, without Okou's built-in ones — the list the
-  /// web's search filters by name and description.
-  public func searchWorkflows() async throws -> [ChatSearchWorkflow] {
-    let workflows: [ChatSearchWorkflow] = try await client.request("/api/workflows")
-    return workflows.filter { $0.official == nil }
-  }
-
-  /// The workspace's results (sites, files, images, decks) whose title matches, as the web's
-  /// search asks the artifact catalog. Shared conversations are left out: the app cannot open them.
-  public func searchArtifacts(keyword: String) async throws -> [ChatSearchArtifact] {
-    struct Response: Decodable { let artifacts: [ChatSearchArtifact] }
-    let response: Response = try await client.request(
-      "/api/artifacts/catalog",
-      query: [
-        URLQueryItem(name: "keyword", value: keyword),
-        URLQueryItem(name: "limit", value: String(ChatSearchArtifact.searchLimit)),
-      ])
-    return response.artifacts.filter { $0.kind != "shared-thread" }
-  }
-}
-
-/// A workflow in workspace search: what to show and the agent and `/name` that run it.
-public struct ChatSearchWorkflow: Decodable, Equatable, Identifiable, Sendable {
-  public struct Official: Decodable, Equatable, Sendable {}
-  public let id: String
-  public let agentId: String
-  public let name: String
-  public let displayName: String?
-  public let description: String?
-  /// Present on Okou's built-in workflows, which search leaves out as the web does.
-  public let official: Official?
-
-  public init(
-    id: String, agentId: String, name: String, displayName: String? = nil,
-    description: String? = nil
-  ) {
-    self.id = id
-    self.agentId = agentId
-    self.name = name
-    self.displayName = displayName
-    self.description = description
-    self.official = nil
-  }
-
-  public var title: String { displayName ?? name }
-
-  public func matches(_ keyword: String) -> Bool {
-    keyword.isEmpty
-      || [displayName, name, description].contains { $0?.lowercased().contains(keyword) == true }
-  }
-}
-
-/// A result from the artifact catalog in workspace search.
-public struct ChatSearchArtifact: Decodable, Equatable, Identifiable, Sendable {
-  public struct Thumbnail: Decodable, Equatable, Sendable { public let url: String }
-  /// As many as the web's search shows.
-  public static let searchLimit = 25
-  public let id: String
-  /// `file`, `hosted-site`, `image`, `video`, `avatar` or `presentation`.
-  public let kind: String
-  public let title: String
-  public let thumbnail: Thumbnail?
-  public let sourceUrl: String?
-  public let aliasUrl: String?
-
-  public init(
-    id: String, kind: String, title: String, thumbnail: Thumbnail? = nil, sourceUrl: String? = nil,
-    aliasUrl: String? = nil
-  ) {
-    self.id = id
-    self.kind = kind
-    self.title = title
-    self.thumbnail = thumbnail
-    self.sourceUrl = sourceUrl
-    self.aliasUrl = aliasUrl
   }
 }

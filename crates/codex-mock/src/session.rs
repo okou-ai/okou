@@ -14,7 +14,7 @@ use std::ffi::CString;
 #[cfg(unix)]
 use std::io::Read;
 #[cfg(unix)]
-use std::os::fd::{AsRawFd, FromRawFd};
+use std::os::fd::AsRawFd;
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 #[cfg(unix)]
@@ -484,43 +484,39 @@ impl StoreDir {
 
     fn open_child_dir_by_cstr(&self, name: &CString) -> io::Result<Self> {
         let flags = libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC;
-        // SAFETY: `self.file` is an open directory fd, `name` is a validated
-        // NUL-terminated child basename, and the flags do not require a mode.
-        let fd = unsafe { libc::openat(self.file.as_raw_fd(), name.as_ptr(), flags) };
-        if fd < 0 {
-            return Err(io::Error::last_os_error());
-        }
-        // SAFETY: a non-negative `openat` return is a newly owned fd.
-        let file = unsafe { fs::File::from_raw_fd(fd) };
+        let fd = nix::fcntl::openat(
+            &self.file,
+            name.as_c_str(),
+            nix::fcntl::OFlag::from_bits_retain(flags),
+            nix::sys::stat::Mode::empty(),
+        )?;
+        let file = fs::File::from(fd);
         Ok(Self { file })
     }
 
     fn open_child_file(&self, name: &OsStr) -> io::Result<fs::File> {
         let name = cstring_child_name(name)?;
         let flags = libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK;
-        // SAFETY: `self.file` is an open directory fd, `name` is a validated
-        // NUL-terminated child basename, and the flags do not require a mode.
-        let fd = unsafe { libc::openat(self.file.as_raw_fd(), name.as_ptr(), flags) };
-        if fd < 0 {
-            return Err(io::Error::last_os_error());
-        }
-        // SAFETY: a non-negative `openat` return is a newly owned fd.
-        Ok(unsafe { fs::File::from_raw_fd(fd) })
+        let fd = nix::fcntl::openat(
+            &self.file,
+            name.as_c_str(),
+            nix::fcntl::OFlag::from_bits_retain(flags),
+            nix::sys::stat::Mode::empty(),
+        )?;
+        Ok(fs::File::from(fd))
     }
 
     fn open_or_create_child_file(&self, name: &OsStr) -> io::Result<fs::File> {
         let name = cstring_child_name(name)?;
         let flags =
             libc::O_RDWR | libc::O_CREAT | libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK;
-        // SAFETY: `self.file` is an open directory fd, `name` is a validated
-        // NUL-terminated child basename, and a mode is supplied because
-        // `O_CREAT` is set.
-        let fd = unsafe { libc::openat(self.file.as_raw_fd(), name.as_ptr(), flags, 0o600) };
-        if fd < 0 {
-            return Err(io::Error::last_os_error());
-        }
-        // SAFETY: a non-negative `openat` return is a newly owned fd.
-        Ok(unsafe { fs::File::from_raw_fd(fd) })
+        let fd = nix::fcntl::openat(
+            &self.file,
+            name.as_c_str(),
+            nix::fcntl::OFlag::from_bits_retain(flags),
+            nix::sys::stat::Mode::from_bits_retain(0o600),
+        )?;
+        Ok(fs::File::from(fd))
     }
 
     fn ensure_child_file_usable(&self, name: &OsStr, path: &Path) -> io::Result<()> {
@@ -557,15 +553,13 @@ impl StoreDir {
     fn create_child_file_exclusive(&self, name: &OsStr) -> io::Result<fs::File> {
         let name = cstring_child_name(name)?;
         let flags = libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_CLOEXEC;
-        // SAFETY: `self.file` is an open directory fd, `name` is a validated
-        // NUL-terminated child basename, and a mode is supplied because
-        // `O_CREAT` is set.
-        let fd = unsafe { libc::openat(self.file.as_raw_fd(), name.as_ptr(), flags, 0o600) };
-        if fd < 0 {
-            return Err(io::Error::last_os_error());
-        }
-        // SAFETY: a non-negative `openat` return is a newly owned fd.
-        Ok(unsafe { fs::File::from_raw_fd(fd) })
+        let fd = nix::fcntl::openat(
+            &self.file,
+            name.as_c_str(),
+            nix::fcntl::OFlag::from_bits_retain(flags),
+            nix::sys::stat::Mode::from_bits_retain(0o600),
+        )?;
+        Ok(fs::File::from(fd))
     }
 
     fn rename_child(&self, from: &OsStr, to: &OsStr) -> io::Result<()> {
@@ -657,12 +651,7 @@ fn lock_session(codex_home: &Path, thread_id: &str) -> io::Result<SessionLock> {
     if !file.metadata()?.file_type().is_file() {
         return Err(invalid_session_file_error(&lock_path));
     }
-    // SAFETY: `file.as_raw_fd()` is an open fd owned by `file`, and `flock`
-    // only affects the advisory lock associated with that fd.
-    let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) };
-    if result < 0 {
-        return Err(io::Error::last_os_error());
-    }
+    file.lock()?;
     Ok(SessionLock { _file: file })
 }
 

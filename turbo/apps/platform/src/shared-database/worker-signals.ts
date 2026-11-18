@@ -370,7 +370,7 @@ const startChatThreadIndicatorsRefresh$ = command(({ get, set }): void => {
  * Run output does not refetch them. Run-state signals share the throttle; a
  * user's own read-cursor change refreshes immediately.
  */
-export const startChatThreadIndicatorsRefreshFromRealtime$ = command(
+const startChatThreadIndicatorsRefreshFromRealtime$ = command(
   ({ set }, signal: AbortSignal): boolean => {
     signal.throwIfAborted();
     set(startChatThreadIndicatorsRefresh$);
@@ -445,7 +445,16 @@ const runSharedDatabaseWorkerDaemons$ = command(
         topic: null,
         loopCommand$: handleSharedDatabaseRealtimeMessage$,
         includeMessage: true,
-        options: { onError },
+        options: {
+          onError,
+          onResync: () => {
+            // Tabs need to catch up even when they have no topic subscription
+            // on this Worker-owned channel to forward a per-subscription resync.
+            set(broadcastSharedDatabaseWorkerMessage$, {
+              type: "realtime-gap",
+            });
+          },
+        },
       },
       signal,
     );

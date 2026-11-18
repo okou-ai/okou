@@ -120,7 +120,6 @@ test("Keep Copy to the right of an active run's logs before any assistant output
       status: "running",
       prompt,
       appendSystemPrompt: null,
-      error: null,
       createdAt: "2026-08-01T10:00:00.000Z",
       startedAt: "2026-08-01T10:00:01.000Z",
       completedAt: null,
@@ -248,7 +247,6 @@ test("Copy workflow trigger bubbles and inspect their associated runs", async ()
       status: "completed",
       prompt: triggerText,
       appendSystemPrompt: null,
-      error: null,
       createdAt: "2026-08-01T10:00:00.000Z",
       startedAt: "2026-08-01T10:00:00.000Z",
       completedAt: "2026-08-01T10:00:01.000Z",
@@ -340,7 +338,7 @@ test("Keep run logs under the user message when a run fails without output", asy
     "href",
     `/activities/${FIRST_CAPABILITY_RUN_ID}`,
   );
-  expect(screen.getByText("Connection failed")).toBeInTheDocument();
+  expect(screen.getByText("This run couldn't finish")).toBeInTheDocument();
 });
 
 test("Inspect a response from its prompt or copy it from history", async () => {
@@ -362,7 +360,6 @@ test("Inspect a response from its prompt or copy it from history", async () => {
       status: "completed",
       prompt: "Prepare the response",
       appendSystemPrompt: null,
-      error: null,
       createdAt: "2026-08-01T10:00:00.000Z",
       startedAt: "2026-08-01T10:00:01.000Z",
       completedAt: "2026-08-01T10:00:02.000Z",

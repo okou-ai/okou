@@ -1,5 +1,97 @@
 # Changelog
 
+## [0.21.0](https://github.com/okou-ai/okou/compare/android-v0.20.0...android-v0.21.0) (2026-11-18)
+
+
+### Features
+
+* **android:** sync composer drafts with web ([#48409](https://github.com/okou-ai/okou/issues/48409)) ([9c4533e](https://github.com/okou-ai/okou/commit/9c4533e1759c94add85742779eb169793038a1a9))
+
+## [0.20.0](https://github.com/okou-ai/okou/compare/android-v0.19.1...android-v0.20.0) (2026-11-17)
+
+
+### Features
+
+* add independent project sorting ([#48352](https://github.com/okou-ai/okou/issues/48352)) ([5ace277](https://github.com/okou-ai/okou/commit/5ace277384c9a3e0da65abdbf87a89fea3311d85))
+
+## [0.19.1](https://github.com/okou-ai/okou/compare/android-v0.19.0...android-v0.19.1) (2026-11-17)
+
+
+### Refactoring
+
+* define client run and activity read models ([#48165](https://github.com/okou-ai/okou/issues/48165)) ([9be7072](https://github.com/okou-ai/okou/commit/9be7072fcdb23c781cc0d68a93dc88fc7b86f8da))
+
+## [0.19.0](https://github.com/okou-ai/okou/compare/android-v0.18.1...android-v0.19.0) (2026-11-17)
+
+
+### Features
+
+* **android:** recover current assistant failures ([#48167](https://github.com/okou-ai/okou/issues/48167)) ([d94db12](https://github.com/okou-ai/okou/commit/d94db123ec646331a1171085c281b2fa8d8b650b))
+
+## [0.18.1](https://github.com/okou-ai/okou/compare/android-v0.18.0...android-v0.18.1) (2026-11-17)
+
+
+### Refactoring
+
+* prepare structured run failure clients ([#48006](https://github.com/okou-ai/okou/issues/48006)) ([4839506](https://github.com/okou-ai/okou/commit/483950651b69db523f06a72f7cf2490c913ff8ab))
+
+## [0.18.0](https://github.com/okou-ai/okou/compare/android-v0.17.0...android-v0.18.0) (2026-11-17)
+
+
+### Features
+
+* **android:** add target-bound run and queue controls ([#47921](https://github.com/okou-ai/okou/issues/47921)) ([c33e87f](https://github.com/okou-ai/okou/commit/c33e87f4e15b7e4adb5936c9ba2df7b97b87646a))
+
+
+### Performance Improvements
+
+* **ci:** skip android validation for release-please ([#48080](https://github.com/okou-ai/okou/issues/48080)) ([7b303ed](https://github.com/okou-ai/okou/commit/7b303edbf70e271950f1c3140241a6024bb6538c))
+
+## [0.17.0](https://github.com/okou-ai/okou/compare/android-v0.16.0...android-v0.17.0) (2026-11-17)
+
+
+### Features
+
+* **android:** align conversation reads and history warming with web ([#47910](https://github.com/okou-ai/okou/issues/47910)) ([8e92fed](https://github.com/okou-ai/okou/commit/8e92fedbb8a32f2360f6093247c469398758b026))
+
+
+### Bug Fixes
+
+* **android:** reject unversioned composer journals ([#47962](https://github.com/okou-ai/okou/issues/47962)) ([48323f3](https://github.com/okou-ai/okou/commit/48323f361f67379838d2f58df219980cd57a83f5))
+
+## [0.16.0](https://github.com/okou-ai/okou/compare/android-v0.15.0...android-v0.16.0) (2026-11-16)
+
+
+### Features
+
+* route presentation templates by output format ([#47842](https://github.com/okou-ai/okou/issues/47842)) ([b342805](https://github.com/okou-ai/okou/commit/b342805293be679b34781d7ff4811669feccbb77))
+
+## [0.15.0](https://github.com/okou-ai/okou/compare/android-v0.14.2...android-v0.15.0) (2026-11-16)
+
+
+### Features
+
+* **android:** stream active-run output with web data semantics ([#47766](https://github.com/okou-ai/okou/issues/47766)) ([7ab9764](https://github.com/okou-ai/okou/commit/7ab9764c662ec7ea5d8d261cdc714334aa4973d4))
+
+
+### Bug Fixes
+
+* **android:** route realtime refreshes to affected chat resources ([#47838](https://github.com/okou-ai/okou/issues/47838)) ([1ebe4df](https://github.com/okou-ai/okou/commit/1ebe4df021265aaf617a84e3d6f73da553839288))
+
+## [0.14.2](https://github.com/okou-ai/okou/compare/android-v0.14.1...android-v0.14.2) (2026-11-16)
+
+
+### Bug Fixes
+
+* **android:** defer git version code until metadata is needed ([#47763](https://github.com/okou-ai/okou/issues/47763)) ([e27dfaa](https://github.com/okou-ai/okou/commit/e27dfaabb5f3ecfd4e3a54f5c207522433b19b2e))
+
+## [0.14.1](https://github.com/okou-ai/okou/compare/android-v0.14.0...android-v0.14.1) (2026-11-16)
+
+
+### Performance Improvements
+
+* **android:** shrink release apk code and resources ([#47534](https://github.com/okou-ai/okou/issues/47534)) ([9ef8d65](https://github.com/okou-ai/okou/commit/9ef8d652eeadc6e481a86e9f3ae8159c957ed026))
+
 ## [0.14.0](https://github.com/okou-ai/okou/compare/android-v0.13.0...android-v0.14.0) (2026-11-16)
 
 

@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The one floating surface for chat feedback — a finished action ("Chat archived · Undo") or a
-/// sync failure with Retry — just under the header: Liquid Glass, a 16 pt Lucide glyph (a
+/// sync failure with Retry — above the bottom bar: Liquid Glass, a 16 pt Lucide glyph (a
 /// small spinner while it works), one 15 pt line, an optional text action and a ✕. Routine
 /// updates never show here. At accessibility sizes the action moves under the text.
 struct ChatFeedbackSurface: View {
@@ -14,6 +14,8 @@ struct ChatFeedbackSurface: View {
   let action: () -> Void
   let dismiss: () -> Void
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @GestureState private var dismissOffset: CGFloat = 0
 
   var body: some View {
     Group {
@@ -41,8 +43,26 @@ struct ChatFeedbackSurface: View {
     .padding(.vertical, OkouSpace.two)
     .frame(maxWidth: .infinity, minHeight: OkouControl.listRow, alignment: .leading)
     .glassEffect(.regular, in: RoundedRectangle(cornerRadius: OkouRadius.card, style: .continuous))
+    .contentShape(RoundedRectangle(cornerRadius: OkouRadius.card, style: .continuous))
+    .offset(y: reduceMotion ? 0 : dismissOffset)
+    .simultaneousGesture(
+      DragGesture(minimumDistance: OkouSpace.md)
+        .updating($dismissOffset) { value, offset, _ in
+          if value.translation.height > abs(value.translation.width) {
+            offset = value.translation.height
+          }
+        }
+        .onEnded { value in
+          guard value.translation.height > abs(value.translation.width),
+            value.translation.height > OkouControl.minimumTarget
+              || value.predictedEndTranslation.height > OkouControl.minimumTarget * 2
+          else { return }
+          dismiss()
+        }
+    )
     .padding(.vertical, OkouSpace.sm)
     .accessibilityElement(children: .contain)
+    .accessibilityAction(.escape, dismiss)
   }
 
   private var messageLabel: some View {

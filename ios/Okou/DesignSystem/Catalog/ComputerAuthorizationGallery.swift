@@ -54,7 +54,7 @@
       cards = try [
         "/computer-use/authorize/preview_computer",
         "/browser/authorize/preview_browser",
-        "/computer-use/shell/authorize/72000000-0000-4000-8000-000000000003",
+        "/computer-use/shell/authorize/72000000-0000-4000-8000-000000000003"
       ].map { path in
         guard
           let action = ChatComputerAuthorizationAction.parse(
@@ -82,11 +82,11 @@
 
     static func retire(host: String) { _ = states.withLock { $0.removeValue(forKey: host) } }
 
-    override class func canInit(with request: URLRequest) -> Bool {
+    override static func canInit(with request: URLRequest) -> Bool {
       request.url?.host()?.hasSuffix(".access-preview.invalid") == true
     }
 
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
       guard let url = request.url, let host = url.host(),

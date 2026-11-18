@@ -1,3 +1,4 @@
+import { switchRecoverySubscription } from "./helpers/subscription-recovery";
 import { integrationsWechatMessagesContract } from "@okouai/api-contracts/contracts/integrations-wechat-messages";
 import {
   integrationsWechatUploadInitContract,
@@ -314,7 +315,6 @@ describe("WeChat reply presentation and processing status", () => {
     const fixture = await responseFixture();
     await updateFeatureSwitchesForUser(context, fixture.actor, {
       [FeatureSwitchKey.WechatIntegration]: true,
-      [FeatureSwitchKey.IntegrationModelRecovery]: true,
     });
     await fixture.receive("Review this attachment");
     const run = await fixture.executionInput();
@@ -350,6 +350,18 @@ describe("WeChat reply presentation and processing status", () => {
         expect.objectContaining({ eventType: "run.failed", runId: run.runId }),
       ]),
     });
+    await switchRecoverySubscription(context, fixture.actor);
+    await flushWaitUntilForTest();
+    const continued = await fixture.executionInput();
+    expect(continued.runId).not.toBe(run.runId);
+    expect(continued.prompt).toBe("continue");
+    expect(fixture.provider.typingStatuses.at(-1)).toBe(1);
+    await fixture.finish(continued, "The attachment review is complete.");
+    await flushWaitUntilForTest();
+    expect(fixture.sentTexts.at(-1)).toContain(
+      "The attachment review is complete.",
+    );
+    expect(fixture.provider.typingStatuses.at(-1)).toBe(2);
   });
 
   it("offers billing recovery when a running WeChat task runs out of credits", async () => {
@@ -369,6 +381,54 @@ describe("WeChat reply presentation and processing status", () => {
     await flushWaitUntilForTest();
     expect(fixture.sentTexts.at(-1)).toContain("Insufficient credits");
     expect(fixture.sentTexts.at(-1)).toContain("/?settings=billing");
+  });
+
+  it("recovers generated failure copy without trusting repeated Runner diagnostics", async () => {
+    const fixture = await responseFixture();
+    await fixture.receive("Recover a subscription failure");
+    const run = await fixture.executionInput();
+    await flushWaitUntilForTest();
+    const memberships =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    const available = await memberships({
+      organizationId: fixture.actor.orgId,
+      userId: [fixture.actor.userId],
+      limit: 1,
+    });
+    const before = fixture.sentTexts.length;
+    memberships.mockRejectedValue(new Error("Clerk temporarily unavailable"));
+    const callbackHeaders = { authorization: `Bearer ${run.sandboxToken}` };
+    await fixture.webhooks.requestAgentComplete(
+      {
+        runId: run.runId,
+        exitCode: 1,
+        failureReason: "usage_limit",
+        error: "Private subscription diagnostic https://private.invalid/token",
+      },
+      callbackHeaders,
+      [500],
+    );
+    memberships.mockResolvedValue(available);
+    const retry = {
+      runId: run.runId,
+      exitCode: 1,
+      failureReason: "future_reason",
+      error: "Run cancelled",
+    };
+    await fixture.webhooks.requestAgentComplete(retry, callbackHeaders, [200]);
+    await flushWaitUntilForTest();
+    await fixture.webhooks.requestAgentComplete(retry, callbackHeaders, [200]);
+    await flushWaitUntilForTest();
+    expect(fixture.sentTexts.slice(before)).toStrictEqual([
+      expect.stringContaining(
+        "Your Claude subscription has reached its usage limit.",
+      ),
+    ]);
+    expect(fixture.sentTexts.at(-1)).toContain("?settings=model");
+    expect(fixture.sentTexts.at(-1)).not.toContain(
+      "Private subscription diagnostic",
+    );
+    expect(fixture.sentTexts.at(-1)).not.toContain("Run cancelled");
   });
 
   it.each(["membership", "feature"] as const)(

@@ -33,6 +33,7 @@ import type { ConnectorCredentialReconnectReason } from "@okouai/api-contracts/c
 import {
   getModelProviderEnvBindings,
   getSecretNameForType,
+  MODEL_PROVIDER_TYPES,
   modelProviderTypeSchema,
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -80,6 +81,11 @@ import {
 } from "@okouai/connectors/firewall-types";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
+import {
+  AUTO_RUN_KEY_VENDOR,
+  AUTO_RUN_PROVIDER,
+} from "@okouai/core/auto-run-model";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -95,7 +101,7 @@ import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import { command } from "ccstate";
 import { pgNullDecoder, pgTextDecoder } from "../../lib/db-structured-result";
-import { optionalEnv } from "../../lib/env";
+import { env, optionalEnv } from "../../lib/env";
 import { badRequestMessage, insufficientCredits } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
@@ -4417,17 +4423,27 @@ export const admitPreparedFirewallAuthResponse$ = command(
   },
 );
 
-const decryptFirewallAuthSecrets$ = command(
-  async function decryptFirewallAuthSecrets(
+const prepareNonCustomFirewallSecrets$ = command(
+  async function prepareNonCustomFirewallSecrets(
     { get },
-    auth: SandboxAuth,
-    orgId: string,
-    encryptedSecrets: string,
-  ): Promise<{
-    readonly featureSwitchContext: FeatureSwitchContext;
-    readonly secrets: Record<string, string> | null;
-  }> {
+    args: {
+      readonly auth: SandboxAuth;
+      readonly orgId: string;
+      readonly body: FirewallAuthBody;
+      readonly referenced: ReferencedAuthKeys;
+    },
+  ): Promise<
+    | {
+        readonly ok: true;
+        readonly prepared: {
+          readonly featureSwitchContext: FeatureSwitchContext;
+          readonly secrets: Record<string, string>;
+        };
+      }
+    | { readonly ok: false; readonly response: ResolveFirewallAuthResult }
+  > {
     const db = get(db$);
+    const { auth, orgId, body, referenced } = args;
     const featureSwitchContextRows0 = await db
       .select({
         userId: userFeatureSwitches.userId,
@@ -4441,11 +4457,70 @@ const decryptFirewallAuthSecrets$ = command(
       featureSwitchContextRows0,
     );
     const secrets = await tapError(
-      decryptPersistentSecretsMap(encryptedSecrets, featureSwitchContext),
+      decryptPersistentSecretsMap(body.encryptedSecrets, featureSwitchContext),
     );
+    if (!secrets) {
+      return {
+        ok: false,
+        response: badRequestMessage("Failed to decrypt secrets"),
+      };
+    }
+    const managedSecretName =
+      MODEL_PROVIDER_TYPES[AUTO_RUN_PROVIDER].secretName;
+    if (referenced.secrets.has(managedSecretName)) {
+      // Neither a model nor a same-name connector may use an envelope snapshot.
+      // Its current Run/account authority must supply the requested material.
+      delete secrets[managedSecretName];
+    }
+    if (
+      referenced.secrets.has(managedSecretName) &&
+      body.matchedFirewall === undefined &&
+      !Object.hasOwn(body.secretConnectorMap ?? {}, managedSecretName) &&
+      !Object.hasOwn(body.secretConnectorMetadataMap ?? {}, managedSecretName)
+    ) {
+      // The host requests a name; only the authenticated Run selects the key.
+      // Mapped account/connector names keep their own credential authority.
+      const [key] = await db
+        .select({ apiKey: builtInModelKeys.apiKey })
+        .from(agentRuns)
+        .innerJoin(
+          builtInModelKeys,
+          eq(builtInModelKeys.id, agentRuns.builtInModelKeyId),
+        )
+        .where(
+          and(
+            eq(agentRuns.id, auth.runId),
+            eq(agentRuns.orgId, auth.orgId),
+            eq(agentRuns.userId, auth.userId),
+            eq(agentRuns.modelProvider, "built-in"),
+            eq(agentRuns.modelRuntimeProvider, AUTO_RUN_PROVIDER),
+            eq(builtInModelKeys.vendor, AUTO_RUN_KEY_VENDOR),
+          ),
+        )
+        .limit(1);
+      if (!key?.apiKey.trim()) {
+        return { ok: false, response: connectorNotConfigured() };
+      }
+      secrets[managedSecretName] = key.apiKey;
+    }
+    if (referenced.secrets.has("OKOU_DATA_TOKEN")) {
+      delete secrets.OKOU_DATA_TOKEN;
+      if (
+        body.matchedFirewall === undefined &&
+        !Object.hasOwn(body.secretConnectorMap ?? {}, "OKOU_DATA_TOKEN") &&
+        !Object.hasOwn(body.secretConnectorMetadataMap ?? {}, "OKOU_DATA_TOKEN")
+      ) {
+        const url = env("OKOU_DATA_ROUTER_URL");
+        const token = env("OKOU_DATA_TOKEN");
+        if (!url || !token) {
+          return { ok: false, response: connectorNotConfigured() };
+        }
+        secrets.OKOU_DATA_TOKEN = token;
+      }
+    }
     return {
-      featureSwitchContext,
-      secrets: secrets ?? null,
+      ok: true,
+      prepared: { featureSwitchContext, secrets },
     };
   },
 );
@@ -5477,18 +5552,11 @@ const prepareNonCustomFirewallAuth$ = command(
         };
       }
     }
-    const decrypted = await set(
-      decryptFirewallAuthSecrets$,
-      args.auth,
-      args.orgId,
-      args.body.encryptedSecrets,
-    );
-    if (!decrypted.secrets) {
-      return {
-        ok: false,
-        response: badRequestMessage("Failed to decrypt secrets"),
-      };
+    const secretPreparation = await set(prepareNonCustomFirewallSecrets$, args);
+    if (!secretPreparation.ok) {
+      return secretPreparation;
     }
+    const decrypted = secretPreparation.prepared;
     const prepared = await set(prepareFirewallAuthResolutionContext$, {
       connectorCatalogSnapshot,
       auth: args.auth,

@@ -1,3 +1,8 @@
+import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
+import { addFeishuThinkingReaction$ } from "./feishu-thinking-indicator.service";
 import { connectors } from "@okouai/db/schema/connector";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { secrets } from "@okouai/db/schema/secret";
@@ -23,18 +28,15 @@ import { now, nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import {
   FeishuApiError,
-  feishuReactionCreationUrl,
   feishuMessageHistoryUrl,
   parseFeishuMessageHistoryResponse,
   type FeishuHistoryMessage,
   feishuTokenUpdateValues,
-  parseFeishuReactionCreationResponse,
   readFeishuResponseJson,
   replyWithFeishuMessage$,
   resolveFeishuRequestCredentials,
 } from "../external/feishu-client";
 import {
-  publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
   publishUserSignal,
 } from "../external/realtime";
@@ -43,7 +45,6 @@ import { waitUntil } from "../context/wait-until";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
-import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import {
   pickEnqueuedChatThread$,
   enqueuedChatQueueWaitReason$,
@@ -99,7 +100,6 @@ import { resolveOptionalChatEnrichment } from "./queued-launch-enrichment.servic
 
 const L = logger("CanonicalFeishuIngressProcessor");
 const feishuDispatchL = logger("FeishuDispatch");
-const FEISHU_THINKING_EMOJI = "Typing";
 const PROCESSING_STALE_AFTER_MS = 5 * 60 * 1000;
 const SWEEP_LIMIT = 20;
 
@@ -542,11 +542,21 @@ const notifyFeishuChatQueueWait$ = command(
     args: {
       readonly ingressId: string;
       readonly message: CanonicalFeishuInboundMessage;
-      readonly reason: ChatQueueWaitReason;
+      readonly orgId: string;
+      readonly chatThreadId: string;
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const notice = chatQueueWaitNotice(args.reason);
+    const pick = await set(
+      enqueuedChatQueueWaitReason$,
+      {
+        orgId: args.orgId,
+        chatThreadId: args.chatThreadId,
+        eventId: args.ingressId,
+      },
+      signal,
+    );
+    const notice = chatQueueWaitNotice(pick.reason);
     if (!notice) {
       return;
     }
@@ -745,101 +755,6 @@ const loadFeishuIngressDispatchContext$ = command(
     const connection = await set(loadConnection$, ingress.orgId, message);
     signal.throwIfAborted();
     return { ingress, message, installation, connection };
-  },
-);
-
-const addFeishuThinkingReaction$ = command(
-  async (
-    { set },
-    message: FeishuInboundMessage,
-    signal: AbortSignal,
-  ): Promise<string | undefined> => {
-    const db = set(writeDb$);
-    const creationArgs = {
-      installationId: message.installationId,
-      messageId: message.messageId,
-      emojiType: FEISHU_THINKING_EMOJI,
-    };
-    const creationSignal = signal;
-    const createdReactionId = await tapError(
-      (async () => {
-        const addReactionContextArgs = creationArgs;
-        const addReactionContextSignal = creationSignal;
-        const { token, apiOrigin, providerName } = await (async () => {
-          const [installation] = await db
-            .select()
-            .from(feishuOrgInstallations)
-            .where(
-              eq(
-                feishuOrgInstallations.id,
-                addReactionContextArgs.installationId,
-              ),
-            )
-            .limit(1);
-          addReactionContextSignal.throwIfAborted();
-          if (!installation) {
-            throw new Error("Bot installation not found");
-          }
-          if (
-            !(await (async () => {
-              const plan = feishuInstallationAvailabilityReadPlan(installation);
-              if (plan.kind === "resolved") {
-                return plan.enabled;
-              }
-              const rows = await db
-                .select(plan.columns)
-                .from(userFeatureSwitches)
-                .where(plan.condition);
-              return feishuInstallationEnabledFromRows(plan.scope, rows);
-            })())
-          ) {
-            throw new FeishuApiError("Lark integration is not enabled", 403);
-          }
-          const credentials = await resolveFeishuRequestCredentials(
-            installation,
-            addReactionContextSignal,
-          );
-          if (credentials.refreshedToken) {
-            await db
-              .update(feishuOrgInstallations)
-              .set(feishuTokenUpdateValues(credentials.refreshedToken))
-              .where(
-                eq(
-                  feishuOrgInstallations.id,
-                  addReactionContextArgs.installationId,
-                ),
-              );
-            addReactionContextSignal.throwIfAborted();
-          }
-          return credentials.context;
-        })();
-        const response = fetch(
-          feishuReactionCreationUrl(apiOrigin, creationArgs.messageId),
-          {
-            method: "POST",
-            headers: {
-              authorization: `Bearer ${token}`,
-              "content-type": "application/json; charset=utf-8",
-            },
-            body: JSON.stringify({
-              reaction_type: { emoji_type: creationArgs.emojiType },
-            }),
-          },
-        );
-        return parseFeishuReactionCreationResponse(
-          await readFeishuResponseJson(response, providerName),
-          providerName,
-        );
-      })(),
-      (error) => {
-        feishuDispatchL.warn("Failed to set Feishu thinking indicator", {
-          error,
-          messageId: message.messageId,
-        });
-      },
-    );
-    signal.throwIfAborted();
-    return createdReactionId;
   },
 );
 
@@ -1164,32 +1079,37 @@ export const processCanonicalFeishuIngress$ = command(
           userId: persisted.userId,
           orgId: persisted.orgId,
         });
-        await publishChatThreadMessageCreatedSafely({
-          userId: persisted.userId,
-          orgId: persisted.orgId,
-          threadId: persisted.chatThreadId,
-        });
+        waitUntil(
+          set(
+            projectCommittedChatThreadSearch$,
+            {
+              userId: persisted.userId,
+              orgId: persisted.orgId,
+              threadId: persisted.chatThreadId,
+            },
+            signal,
+          ),
+        );
+        await set(
+          publishChatThreadMessageCreated$,
+          {
+            userId: persisted.userId,
+            orgId: persisted.orgId,
+            threadId: persisted.chatThreadId,
+          },
+          signal,
+        );
         const noticed = await settle(
-          (async () => {
-            const pick = await set(
-              enqueuedChatQueueWaitReason$,
-              {
-                orgId: persisted.orgId,
-                chatThreadId: persisted.chatThreadId,
-                eventId: args.ingressId,
-              },
-              signal,
-            );
-            await set(
-              notifyFeishuChatQueueWait$,
-              {
-                ingressId: args.ingressId,
-                message: persisted.message,
-                reason: pick.reason,
-              },
-              signal,
-            );
-          })(),
+          set(
+            notifyFeishuChatQueueWait$,
+            {
+              ingressId: args.ingressId,
+              message: persisted.message,
+              orgId: persisted.orgId,
+              chatThreadId: persisted.chatThreadId,
+            },
+            signal,
+          ),
         );
         if (!picked.ok && !noticed.ok) {
           throw new AggregateError(

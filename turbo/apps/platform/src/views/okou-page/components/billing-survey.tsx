@@ -1,4 +1,5 @@
 import type { FormEvent } from "react";
+import { MessageSquare } from "lucide-react";
 import { useLastResolved, useSet, useGet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -20,6 +21,7 @@ import {
   CHECKOUT_ABANDONED_SURVEY_ANSWERS,
   CREDITS_EXHAUSTED_SURVEY_ANSWERS,
   checkoutAbandonedDraft$,
+  checkoutAbandonedSurveyReady$,
   creditsExhaustedDraft$,
   creditsExhaustedSurveyReward$,
   creditsExhaustedThanks$,
@@ -33,6 +35,7 @@ import {
 } from "../../../signals/billing-survey.ts";
 import { pageSignal$ } from "../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../signals/utils.ts";
+import { ChatCardDetails } from "./chat-card-details.tsx";
 
 interface SurveyOptionsProps<Answer extends string> {
   readonly name: string;
@@ -104,12 +107,43 @@ function SurveyOptions<Answer extends string>({
   );
 }
 
-/**
- * The upgrade question under the out-of-credits card's upgrade action. It
- * renders nothing until the member is known to be eligible, and stays as a
- * short thank-you line after the answer is sent.
- */
-export function CreditsExhaustedSurvey() {
+/** Keep asynchronous eligibility and the survey form inside a fixed action slot. */
+export function CreditsExhaustedSurvey({
+  eligible,
+}: {
+  readonly eligible: boolean;
+}) {
+  const { t } = useTranslation();
+  const reward = useLastResolved(creditsExhaustedSurveyReward$);
+  const thanks = useGet(creditsExhaustedThanks$);
+  if ((!eligible || reward === undefined || reward === null) && !thanks) {
+    return null;
+  }
+  const title = t(($) => {
+    return $.billing.survey.creditsExhausted.question;
+  });
+  return (
+    <ChatCardDetails
+      title={title}
+      trigger={
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
+          aria-label={title}
+          title={title}
+          className="shrink-0"
+        >
+          <MessageSquare size={16} />
+        </Button>
+      }
+    >
+      <CreditsExhaustedSurveyContent />
+    </ChatCardDetails>
+  );
+}
+
+function CreditsExhaustedSurveyContent() {
   const { t } = useTranslation();
   const reward = useLastResolved(creditsExhaustedSurveyReward$);
   const thanks = useGet(creditsExhaustedThanks$);
@@ -224,6 +258,7 @@ export function CreditsExhaustedSurvey() {
 export function CheckoutAbandonedSurveyDialog() {
   const { t } = useTranslation();
   const survey = useLastResolved(abandonedCheckoutSurvey$);
+  const ready = useGet(checkoutAbandonedSurveyReady$);
   const draft = useGet(checkoutAbandonedDraft$);
   const updateDraft = useSet(updateCheckoutAbandonedDraft$);
   const [dismissLoadable, dismiss] = useLoadableSet(
@@ -236,7 +271,7 @@ export function CheckoutAbandonedSurveyDialog() {
   const submitting =
     submitLoadable.state === "loading" || dismissLoadable.state === "loading";
 
-  if (!survey) {
+  if (!survey || !ready) {
     return null;
   }
 

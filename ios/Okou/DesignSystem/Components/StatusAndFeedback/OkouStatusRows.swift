@@ -7,7 +7,7 @@ struct OkouLoadErrorRow: View {
   let message: String
   var actionTitle: LocalizedStringKey = "Try again"
   var isRetrying = false
-  var retry: (@MainActor () async -> Void)? = nil
+  var retry: (@MainActor () async -> Void)?
 
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: OkouSpace.md) {

@@ -77,14 +77,15 @@ final class NotificationExtensionSession {
       await cache.close()
       Logger(subsystem: "ai.okou.ios", category: "NotificationExtension")
         .error(
-          "Prefetch failed: notification=\(destination.notificationId, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+          "event=notifications.prefetch.failed notification_id=\(destination.notificationId, privacy: .private) error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
         )
       throw error
     }
   }
 
-  private func token(destination: NotificationDestination, sessionID: String) async throws -> String
-  {
+  private func token(
+    destination: NotificationDestination, sessionID: String
+  ) async throws -> String {
     guard let identity = clerk.session, identity.id == sessionID,
       clerk.user?.id == destination.userId,
       identity.lastActiveOrganizationId == destination.workspaceId,

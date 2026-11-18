@@ -50,8 +50,6 @@ struct CompletePayload<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     failure_reason: Option<complete::RequestFailureReason>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     last_event_sequence: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     sandbox_id: Option<&'a str>,
@@ -80,7 +78,7 @@ pub async fn report_finalization_for_run(
     runtime: &GuestRuntime,
     exit_code: i32,
     failure_reason: Option<FailureReason>,
-    error: Option<&str>,
+    cancelled: bool,
     last_event_sequence: Option<u32>,
     finalization: PreparedFinalization,
 ) -> Result<(), AgentError> {
@@ -91,7 +89,7 @@ pub async fn report_finalization_for_run(
             runtime,
             exit_code,
             failure_reason,
-            error,
+            cancelled,
             last_event_sequence,
             Some(finalization.request()),
         ),
@@ -146,7 +144,7 @@ fn payload_for_runtime<'a>(
     runtime: &'a GuestRuntime,
     exit_code: i32,
     failure_reason: Option<FailureReason>,
-    error: Option<&'a str>,
+    cancelled: bool,
     last_event_sequence: Option<u32>,
     completion: Option<&'a complete::RequestCompletion>,
 ) -> CompletePayload<'a> {
@@ -154,8 +152,15 @@ fn payload_for_runtime<'a>(
     CompletePayload {
         run_id: &config.run_id,
         exit_code,
-        failure_reason: failure_reason.map(Into::into),
-        error,
+        failure_reason: if exit_code == 0 || cancelled {
+            None
+        } else {
+            Some(
+                failure_reason
+                    .map(Into::into)
+                    .unwrap_or(complete::RequestFailureReason::Unknown),
+            )
+        },
         last_event_sequence,
         sandbox_id: as_optional(&config.sandbox_id),
         completion,
@@ -172,7 +177,6 @@ fn metadata_free_payload_for_run<'a>(
         run_id,
         exit_code,
         failure_reason: None,
-        error: None,
         last_event_sequence,
         sandbox_id: as_optional(sandbox_id),
         completion: None,

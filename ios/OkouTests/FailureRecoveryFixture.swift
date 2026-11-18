@@ -59,16 +59,16 @@ final class FailureRecoveryFixture: Sendable {
     reason: String? = "execution_timeout", error: String = "Time limit reached",
     draft: ComposerDraft = ComposerDraft()
   ) {
-    let payload = try! JSONSerialization.data(withJSONObject: [
-      "error": error, "failureReason": reason.map { $0 as Any } ?? NSNull(),
-    ])
+    let payload = try! JSONSerialization.data(withJSONObject: ["error": error])
     let rows = [
       Self.row(
         1, type: "input.prompt",
         payload:
           #"{"userMessage":{"version":1,"parts":[{"type":"text","text":"Original question"}]}}"#),
       Self.row(2, type: "output.message", payload: #"{"content":"Already generated content."}"#),
-      Self.row(3, type: "run.failed", payload: String(decoding: payload, as: UTF8.self)),
+      Self.row(
+        3, type: "run.failed", payload: String(data: payload, encoding: .utf8)!,
+        failureReason: reason)
     ]
     var initial = State(rows: rows)
     initial.draft = draft
@@ -84,23 +84,7 @@ final class FailureRecoveryFixture: Sendable {
             {"chatThreads":[{"id":"\(ModelHTTPFixtures.threadID)","agentId":"\(ModelHTTPFixtures.agentID)","title":"Failure recovery","selectedModel":"codex-model","modelSettings":{"codex-model":{"effort":"max"}},"createdAt":"2026-10-20T00:00:00Z","updatedAt":"2026-10-20T00:00:00Z","sortAt":"2026-10-20T00:00:00Z"}],"latestEventId":null,"latestSeqId":0}
             """)
       case "/api/chat-threads/events":
-        let since =
-          URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
-          .first { $0.name == "sinceSeqId" }?.value.flatMap(Int.init) ?? 0
-        let (response, gate, requested) = state.value.withLock { value in
-          let response = ChatHTTPResponse(
-            body:
-              "{\"events\":[\(value.threadEvents.dropFirst(since).joined(separator: ","))],\"hasMore\":false}"
-          )
-          let gate = value.threadEventsGate
-          let requested = value.threadEventsRequested
-          value.threadEventsGate = nil
-          value.threadEventsRequested = nil
-          return (response, gate, requested)
-        }
-        requested?()
-        if let gate { await gate.wait() }
-        return response
+        return await Self.threadEventsResponse(request, state: state)
       case "/api/indicators":
         return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
       case threadPath + "/event-snapshot":
@@ -127,136 +111,26 @@ final class FailureRecoveryFixture: Sendable {
         }
         return ChatHTTPResponse(body: #"{"cancellationRecoveryPending":false}"#)
       case threadPath + "/draft":
-        return ChatHTTPResponse(
-          body: String(
-            decoding: try JSONEncoder().encode(state.value.withLock { $0.draft }), as: UTF8.self))
+        return try ChatHTTPResponse(
+          json: state.value.withLock { $0.draft })
       case "/api/web/file-url":
         return ChatHTTPResponse(body: #"{"url":"https://file.example.invalid/draft"}"#)
       case "/api/uploads/prepare":
         return ChatHTTPResponse(status: 503, body: #"{"error":{"message":"Upload unavailable"}}"#)
       case threadPath + "/mark-read":
-        let (gate, requested) = state.value.withLock { value in
-          let gate = value.markReadGate
-          let requested = value.markReadRequested
-          value.markReadGate = nil
-          value.markReadRequested = nil
-          return (gate, requested)
-        }
-        requested?()
-        if let gate { await gate.wait() }
-        let status = state.value.withLock { $0.markReadStatus }
-        return ChatHTTPResponse(
-          status: status,
-          body: status == 200
-            ? #"{"lastReadAt":"2030-01-01T00:00:00Z"}"#
-            : #"{"error":{"message":"Read receipt unavailable"}}"#)
+        return await Self.readReceiptResponse(state: state)
       case threadPath + "/connector-selections":
         return ChatHTTPResponse(body: #"{"selections":[]}"#)
       case threadPath + "/metadata":
-        let (response, gate, requested) = state.value.withLock { value in
-          let response =
-            value.metadataStatus == 200
-            ? ChatHTTPResponse(
-              body: ModelHTTPFixtures.metadata.replacingOccurrences(
-                of: "codex-model", with: value.model))
-            : ChatHTTPResponse(
-              status: value.metadataStatus,
-              body: #"{"error":{"message":"Model selection unavailable"}}"#)
-          let gate = value.metadataGate
-          let requested = value.metadataRequested
-          value.metadataGate = nil
-          value.metadataRequested = nil
-          return (response, gate, requested)
-        }
-        requested?()
-        if let gate { await gate.wait() }
-        return response
+        return await Self.metadataResponse(state: state)
       case threadPath + "/model-selection":
-        let body = try XCTUnwrap(
-          JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any])
-        let (status, gate, requested) = state.value.withLock { value in
-          value.model = body["model"] as? String ?? "auto"
-          return (value.modelSaveStatus, value.modelSaveGate, value.modelSaveRequested)
-        }
-        requested?()
-        if let gate { await gate.wait() }
-        return ChatHTTPResponse(
-          status: status,
-          body: status == 204 ? "" : #"{"error":{"message":"Save response unavailable"}}"#)
+        return try await Self.modelSelectionResponse(request, state: state)
       case "/api/chat/events":
-        let data = chatRequestBody(request)
-        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        return state.value.withLock { value in
-          if body["interruptsRunId"] != nil || body["revokesEventId"] != nil {
-            value.stopWrites += 1
-            return ChatHTTPResponse(
-              status: 503, body: #"{"error":{"message":"Stop response unavailable"}}"#)
-          }
-          value.sends.append(data)
-          if value.persistSend {
-            let id = body["clientEventId"] as! String
-            let document = try! JSONSerialization.data(withJSONObject: [
-              "userMessage": body["userMessage"]!
-            ])
-            value.rows.append(
-              Self.row(
-                value.rows.count + 1, type: "input.prompt",
-                payload: String(decoding: document, as: UTF8.self), id: id))
-            value.lastID = id
-            if value.failNextSend {
-              value.failNextSend = false
-              let seq = value.rows.count + 1
-              value.rows.append(
-                Self.row(
-                  seq, type: "run.failed",
-                  payload: #"{"error":"Unavailable","failureReason":"provider_server_error"}"#))
-              value.lastID = Self.id(seq)
-            }
-          }
-          return value.sendStatus == 200
-            ? ChatHTTPResponse(body: "{\"threadId\":\"\(ModelHTTPFixtures.threadID)\"}")
-            : ChatHTTPResponse(
-              status: value.sendStatus, body: #"{"error":{"message":"Response lost"}}"#)
-        }
+        return try Self.sendResponse(request, state: state)
       case "/api/me/3rd-party-subscriptions":
-        let (response, gate, requested) = state.value.withLock { value in
-          let response =
-            value.accountStatus == 200
-            ? ChatHTTPResponse(body: value.accounts)
-            : ChatHTTPResponse(
-              status: value.accountStatus, body: #"{"error":{"message":"Accounts unavailable"}}"#)
-          let gate = value.accountGate
-          let requested = value.accountRequested
-          value.accountGate = nil
-          value.accountRequested = nil
-          return (response, gate, requested)
-        }
-        requested?()
-        if let gate { await gate.wait() }
-        return response
+        return await Self.accountsResponse(state: state)
       case "/api/billing/status":
-        let (response, gate, requested, cancelled) = state.value.withLock { value in
-          let response =
-            value.billingStatus == 200
-            ? ChatHTTPResponse(
-              body: "{\"canBuyCredits\":\(value.canBuyCredits),\"credits\":\(value.credits)}")
-            : ChatHTTPResponse(
-              status: value.billingStatus, body: #"{"error":{"message":"Billing unavailable"}}"#)
-          let gate = value.billingGate
-          let requested = value.billingRequested
-          let cancelled = value.billingCancelled
-          value.billingGate = nil
-          value.billingRequested = nil
-          value.billingCancelled = nil
-          return (response, gate, requested, cancelled)
-        }
-        requested?()
-        return await withTaskCancellationHandler {
-          if let gate { await gate.wait() }
-          return response
-        } onCancel: {
-          cancelled?()
-        }
+        return await Self.billingResponse(state: state)
       case "/api/org":
         return state.value.withLock {
           ChatHTTPResponse(body: "{\"role\":\"\($0.billingAdmin ? "admin" : "member")\"}")
@@ -280,6 +154,173 @@ final class FailureRecoveryFixture: Sendable {
         }
         return try XCTUnwrap(ModelHTTPFixtures.response(path), "Unhandled request: \(path)")
       }
+    }
+  }
+
+  private static func threadEventsResponse(
+    _ request: URLRequest, state: FailureRecoveryState
+  ) async -> ChatHTTPResponse {
+    let since =
+      URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
+      .first { $0.name == "sinceSeqId" }?.value.flatMap(Int.init) ?? 0
+    let (response, gate, requested) = state.value.withLock { value in
+      let response = ChatHTTPResponse(
+        body:
+          "{\"events\":[\(value.threadEvents.dropFirst(since).joined(separator: ","))],\"hasMore\":false}"
+      )
+      let gate = value.threadEventsGate
+      let requested = value.threadEventsRequested
+      value.threadEventsGate = nil
+      value.threadEventsRequested = nil
+      return (response, gate, requested)
+    }
+    requested?()
+    if let gate { await gate.wait() }
+    return response
+  }
+
+  private static func readReceiptResponse(
+    state: FailureRecoveryState
+  ) async -> ChatHTTPResponse {
+    let (gate, requested) = state.value.withLock { value in
+      let gate = value.markReadGate
+      let requested = value.markReadRequested
+      value.markReadGate = nil
+      value.markReadRequested = nil
+      return (gate, requested)
+    }
+    requested?()
+    if let gate { await gate.wait() }
+    let status = state.value.withLock { $0.markReadStatus }
+    return ChatHTTPResponse(
+      status: status,
+      body: status == 200
+        ? #"{"lastReadAt":"2030-01-01T00:00:00Z"}"#
+        : #"{"error":{"message":"Read receipt unavailable"}}"#)
+  }
+
+  private static func metadataResponse(
+    state: FailureRecoveryState
+  ) async -> ChatHTTPResponse {
+    let (response, gate, requested) = state.value.withLock { value in
+      let response =
+        value.metadataStatus == 200
+        ? ChatHTTPResponse(
+          body: ModelHTTPFixtures.metadata.replacingOccurrences(
+            of: "codex-model", with: value.model))
+        : ChatHTTPResponse(
+          status: value.metadataStatus,
+          body: #"{"error":{"message":"Model selection unavailable"}}"#)
+      let gate = value.metadataGate
+      let requested = value.metadataRequested
+      value.metadataGate = nil
+      value.metadataRequested = nil
+      return (response, gate, requested)
+    }
+    requested?()
+    if let gate { await gate.wait() }
+    return response
+  }
+
+  private static func modelSelectionResponse(
+    _ request: URLRequest, state: FailureRecoveryState
+  ) async throws -> ChatHTTPResponse {
+    let body = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any])
+    let (status, gate, requested) = state.value.withLock { value in
+      value.model = body["model"] as? String ?? "auto"
+      return (value.modelSaveStatus, value.modelSaveGate, value.modelSaveRequested)
+    }
+    requested?()
+    if let gate { await gate.wait() }
+    return ChatHTTPResponse(
+      status: status,
+      body: status == 204 ? "" : #"{"error":{"message":"Save response unavailable"}}"#)
+  }
+
+  private static func sendResponse(
+    _ request: URLRequest, state: FailureRecoveryState
+  ) throws -> ChatHTTPResponse {
+    let data = chatRequestBody(request)
+    let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    return state.value.withLock { value in
+      if body["interruptsRunId"] != nil || body["revokesEventId"] != nil {
+        value.stopWrites += 1
+        return ChatHTTPResponse(
+          status: 503, body: #"{"error":{"message":"Stop response unavailable"}}"#)
+      }
+      value.sends.append(data)
+      if value.persistSend {
+        let id = body["clientEventId"] as! String
+        let document = try! JSONSerialization.data(withJSONObject: [
+          "userMessage": body["userMessage"]!
+        ])
+        value.rows.append(
+          Self.row(
+            value.rows.count + 1, type: "input.prompt",
+            payload: String(data: document, encoding: .utf8)!, id: id))
+        value.lastID = id
+        if value.failNextSend {
+          value.failNextSend = false
+          let seq = value.rows.count + 1
+          value.rows.append(
+            Self.row(
+              seq, type: "run.failed",
+              payload: #"{"error":"Unavailable"}"#, failureReason: "provider_server_error"))
+          value.lastID = Self.id(seq)
+        }
+      }
+      return value.sendStatus == 200
+        ? ChatHTTPResponse(body: "{\"threadId\":\"\(ModelHTTPFixtures.threadID)\"}")
+        : ChatHTTPResponse(
+          status: value.sendStatus, body: #"{"error":{"message":"Response lost"}}"#)
+    }
+  }
+
+  private static func accountsResponse(
+    state: FailureRecoveryState
+  ) async -> ChatHTTPResponse {
+    let (response, gate, requested) = state.value.withLock { value in
+      let response =
+        value.accountStatus == 200
+        ? ChatHTTPResponse(body: value.accounts)
+        : ChatHTTPResponse(
+          status: value.accountStatus, body: #"{"error":{"message":"Accounts unavailable"}}"#)
+      let gate = value.accountGate
+      let requested = value.accountRequested
+      value.accountGate = nil
+      value.accountRequested = nil
+      return (response, gate, requested)
+    }
+    requested?()
+    if let gate { await gate.wait() }
+    return response
+  }
+
+  private static func billingResponse(
+    state: FailureRecoveryState
+  ) async -> ChatHTTPResponse {
+    let (response, gate, requested, cancelled) = state.value.withLock { value in
+      let response =
+        value.billingStatus == 200
+        ? ChatHTTPResponse(
+          body: "{\"canBuyCredits\":\(value.canBuyCredits),\"credits\":\(value.credits)}")
+        : ChatHTTPResponse(
+          status: value.billingStatus, body: #"{"error":{"message":"Billing unavailable"}}"#)
+      let gate = value.billingGate
+      let requested = value.billingRequested
+      let cancelled = value.billingCancelled
+      value.billingGate = nil
+      value.billingRequested = nil
+      value.billingCancelled = nil
+      return (response, gate, requested, cancelled)
+    }
+    requested?()
+    return await withTaskCancellationHandler {
+      if let gate { await gate.wait() }
+      return response
+    } onCancel: {
+      cancelled?()
     }
   }
 
@@ -313,8 +354,14 @@ final class FailureRecoveryFixture: Sendable {
     "{\"id\":\"\(id(1000 + seq))\",\"seqId\":\(seq),\"kind\":\"\(kind)\",\"chatThreadId\":\"\(ModelHTTPFixtures.threadID)\",\"agentId\":\"\(ModelHTTPFixtures.agentID)\",\"createdAt\":\"2026-10-20T00:00:01Z\",\(fields)}"
   }
 
-  static func row(_ seq: Int, type: String, payload: String, id: String? = nil) -> String {
-    "{\"id\":\"\(id ?? Self.id(seq))\",\"chatThreadId\":\"\(ModelHTTPFixtures.threadID)\",\"runId\":\"\(runID)\",\"seqId\":\(seq),\"createdAt\":\"2026-10-20T00:00:00Z\",\"eventType\":\"\(type)\",\"payload\":\(payload)}"
+  static func row(
+    _ seq: Int, type: String, payload: String, id: String? = nil, failureReason: String? = nil
+  ) -> String {
+    let reason = failureReason.map { ",\"failureReason\":\"\($0)\"" } ?? ""
+    return """
+      {"id":"\(id ?? Self.id(seq))","chatThreadId":"\(ModelHTTPFixtures.threadID)","runId":"\(runID)",
+      "seqId":\(seq),"createdAt":"2026-10-20T00:00:00Z","eventType":"\(type)","payload":\(payload)\(reason)}
+      """
   }
 }
 

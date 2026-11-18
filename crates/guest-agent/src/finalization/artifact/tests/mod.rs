@@ -64,13 +64,11 @@ fn assert_artifact_hash_failure(telemetry_path: &std::path::Path, expected_error
 fn make_fifo(path: &std::path::Path) -> std::io::Result<()> {
     let path = CString::new(path.as_os_str().as_bytes())
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
-    // SAFETY: `path` is a NUL-terminated filesystem path owned for the call.
-    let result = unsafe { libc::mkfifo(path.as_ptr(), 0o600) };
-    if result == 0 {
-        Ok(())
-    } else {
-        Err(std::io::Error::last_os_error())
-    }
+    nix::unistd::mkfifo(
+        path.as_c_str(),
+        nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+    )
+    .map_err(std::io::Error::from)
 }
 
 #[cfg(target_os = "linux")]
@@ -435,8 +433,10 @@ async fn artifact_snapshot_enforces_traversal_entry_limit_before_storage_api_cal
         std::fs::create_dir(&parent).unwrap();
         let source = parent.join("source");
         make_fifo(&source).unwrap();
+        let mut link = parent.join("l00000");
         for link_index in 0..links_per_parent {
-            std::fs::hard_link(&source, parent.join(format!("l{link_index:05}"))).unwrap();
+            link.set_file_name(format!("l{link_index:05}"));
+            std::fs::hard_link(&source, &link).unwrap();
         }
     }
 

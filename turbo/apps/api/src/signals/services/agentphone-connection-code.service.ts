@@ -37,6 +37,7 @@ export type AgentPhoneConnectionCodeConsumeResult =
       readonly orgId: string;
       readonly phoneHandle: string;
       readonly userLinkId: string;
+      readonly marketingRewardEventId?: string;
     };
 
 function generateAgentPhoneConnectionCode(): string {
@@ -165,18 +166,21 @@ export const consumeAgentPhoneConnectionCode$ = command(
     }
     const result =
       args.channel === "whatsapp"
-        ? await set(
-            linkWhatsappIdentity$,
-            {
-              codeHash: hashAgentPhoneConnectionCode(
-                normalizedCode,
-                args.secret,
-                args.channel,
-              ),
-              phoneHandle: args.phoneHandle,
-            },
-            signal,
-          )
+        ? {
+            ...(await set(
+              linkWhatsappIdentity$,
+              {
+                codeHash: hashAgentPhoneConnectionCode(
+                  normalizedCode,
+                  args.secret,
+                  args.channel,
+                ),
+                phoneHandle: args.phoneHandle,
+              },
+              signal,
+            )),
+            marketingRewardEventId: undefined,
+          }
         : await set(
             linkAgentPhoneIdentity$,
             {
@@ -201,6 +205,7 @@ export const consumeAgentPhoneConnectionCode$ = command(
       orgId: result.userLink.orgId,
       phoneHandle: result.userLink.phoneHandle,
       userLinkId: result.userLink.id,
+      marketingRewardEventId: result.marketingRewardEventId,
     };
   },
 );

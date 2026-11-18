@@ -32,7 +32,7 @@ import {
   publishSharedThreadAttachments$,
   type SharedThreadAttachmentCopy,
 } from "./shared-thread-attachments.service";
-import { visibleChatEventPredicate } from "./chat-event-shared.service";
+import { visibleChatEventPredicate } from "./chat-event-visibility.service";
 import { generateSharedThreadTitle } from "./chat-title.service";
 import { projectUserMessageForPublicShare } from "./chat-user-message.service";
 import {
@@ -161,7 +161,7 @@ function localIndex(
   return next;
 }
 
-const loadSharedThreadSourceRows$ = command(
+export const loadSelectedChatMessageRows$ = command(
   async (
     { get, set },
     args: {
@@ -693,7 +693,7 @@ export const createSharedThread$ = command(
 
     const selectedEventIds = [...new Set(args.eventIds)];
     const rows = await set(
-      loadSharedThreadSourceRows$,
+      loadSelectedChatMessageRows$,
       {
         threadId: args.threadId,
         selectedEventIds,

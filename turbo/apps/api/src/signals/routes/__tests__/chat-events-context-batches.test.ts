@@ -2,6 +2,7 @@ import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
+import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "@okouai/api-contracts/contracts/model-providers";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
@@ -14,6 +15,7 @@ import {
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
+import { createFirewallApi } from "./helpers/api-bdd-firewall";
 
 const context = testContext();
 const {
@@ -49,6 +51,60 @@ function codexCredential() {
   });
 }
 
+async function expectCustomConnectorRegion(
+  execution: Awaited<ReturnType<typeof runExecution>>,
+  customConnectorId: string,
+  region: string,
+) {
+  const firewall = createFirewallApi(context);
+  const entry = execution.execution.firewalls?.find((candidate) => {
+    return (
+      candidate.kind === "inline" &&
+      candidate.customConnectorId === customConnectorId
+    );
+  });
+  if (!entry || entry.kind !== "inline") {
+    throw new Error("Expected the selected custom firewall");
+  }
+  const api = entry.firewall.apis[0];
+  if (!api?.id) {
+    throw new Error("Expected the selected custom API identity");
+  }
+  const target = execution.execution.connectorRuntimeTargets.find(
+    (candidate) => {
+      return (
+        candidate.kind === "custom" &&
+        candidate.customConnectorId === customConnectorId
+      );
+    },
+  );
+  if (!target || target.kind !== "custom") {
+    throw new Error("Expected the selected custom runtime target");
+  }
+  const auth = await firewall.requestFirewallAuth(
+    execution.sandboxHeaders,
+    {
+      encryptedSecrets:
+        execution.execution.encryptedSecrets ||
+        firewall.encryptedSecretsBody({}),
+      authHeaders: api.auth.headers ?? {},
+      authQuery: api.auth.query,
+      matchedFirewall: {
+        name: entry.firewall.name,
+        apiId: api.id,
+        customConnectorId,
+        sourceId: entry.sourceId,
+        routingVariables: target.baseUrlVars,
+      },
+    },
+    [200],
+  );
+  expect(auth.body).toMatchObject({
+    headers: { Authorization: "Bearer context-batch-custom-secret" },
+    query: { region },
+  });
+}
+
 describe("shared context statement projections through normal sends", () => {
   it.each(["providers", "all"] as const)(
     "preserves %s rowsets in first and continuation sends",
@@ -67,6 +123,7 @@ describe("shared context statement projections through normal sends", () => {
       );
       await api.updateUserModelPreference(actor, MODEL);
       let customId: string | undefined;
+      let customConnectionId: string | undefined;
       let workflowName: string | undefined;
       if (hasAgentRows) {
         mockSlackConnectorOAuth();
@@ -84,20 +141,39 @@ describe("shared context statement projections through normal sends", () => {
           code: "batch-slack-code",
           state,
         });
-        const custom = await connectors.createCustomConnector(
-          actor,
-          manualHttpCustomConnectorCreateBody({
+        const custom = await connectors.createCustomConnector(actor, {
+          ...manualHttpCustomConnectorCreateBody({
             slug: `_batch-${randomUUID()}`,
             displayName: "Batch custom connector",
             prefixTemplates: ["https://batch.example.test/"],
           }),
-        );
+          fields: [
+            { key: "secret", label: "Secret", kind: "secret", required: true },
+            {
+              key: "region",
+              label: "Region",
+              kind: "variable",
+              required: true,
+            },
+          ],
+          queryInjections: [
+            { name: "region", valueTemplate: "{{variables.region}}" },
+          ],
+        });
         customId = custom.id;
-        await connectors.setCustomConnectorSecret(
+        const account = await connectors.setCustomConnectorValues(
           actor,
           custom.id,
-          "context-batch-custom-secret",
+          [
+            {
+              key: "secret",
+              kind: "secret",
+              value: "context-batch-custom-secret",
+            },
+            { key: "region", kind: "variable", value: "first" },
+          ],
         );
+        customConnectionId = account.connectionId;
         await connectors.updateAgentCustomConnectors(actor, agentId, [
           custom.id,
         ]);
@@ -135,6 +211,24 @@ describe("shared context statement projections through normal sends", () => {
       }
       let threadId: string | undefined;
       for (const flow of ["first", "continuation"]) {
+        if (customId && flow === "continuation") {
+          if (!customConnectionId) {
+            throw new Error("Expected the original custom account");
+          }
+          await connectors.setCustomConnectorValues(
+            actor,
+            customId,
+            [
+              {
+                key: "secret",
+                kind: "secret",
+                value: "context-batch-custom-secret",
+              },
+              { key: "region", kind: "variable", value: flow },
+            ],
+            { intent: "reconnect", connectionId: customConnectionId },
+          );
+        }
         const run = await sendChatRun(actor, {
           agentId,
           ...(threadId ? { threadId } : {}),
@@ -143,6 +237,23 @@ describe("shared context statement projections through normal sends", () => {
         threadId = run.threadId;
         const execution = await runExecution(run.runId);
         expect(execution.execution.modelUsageProvider).toBe(MODEL);
+        expect(execution.execution.firewalls).toContainEqual({
+          kind: "builtin",
+          name: "model-provider:claude-code-oauth-token",
+        });
+        expect(
+          execution.execution.networkPolicies?.[
+            "model-provider:claude-code-oauth-token"
+          ],
+        ).toStrictEqual({
+          allow: [],
+          deny: [],
+          ask: [],
+          unknownPolicy: "allow",
+        });
+        expect(execution.execution.environment?.CLAUDE_CODE_OAUTH_TOKEN).toBe(
+          MODEL_PROVIDER_ENV_PLACEHOLDERS.CLAUDE_CODE_OAUTH_TOKEN,
+        );
         const targets = execution.execution.connectorRuntimeTargets;
         if (customId) {
           expect(targets).toContainEqual(
@@ -160,6 +271,7 @@ describe("shared context statement projections through normal sends", () => {
           expect(
             execution.execution.networkPolicies?.slack?.unknownPolicy,
           ).toBe("deny");
+          await expectCustomConnectorRegion(execution, customId, flow);
         } else {
           expect(targets).toStrictEqual([]);
         }

@@ -37,13 +37,13 @@ vi.hoisted(() => {
 const context = testContext();
 
 test.each([
-  { kind: "hosted-site", sidebar: false, refined: false },
-  { kind: "presentation", sidebar: false, refined: true },
-  { kind: "hosted-site", sidebar: true, refined: true },
-  { kind: "presentation", sidebar: true, refined: false },
+  { kind: "hosted-site", sidebar: false },
+  { kind: "presentation", sidebar: false },
+  { kind: "hosted-site", sidebar: true },
+  { kind: "presentation", sidebar: true },
 ] as const)(
-  "Catalog $kind download retains its type (sidebar: $sidebar, refined: $refined)",
-  async ({ kind, sidebar, refined }) => {
+  "Catalog $kind download retains its type (sidebar: $sidebar)",
+  async ({ kind, sidebar }) => {
     const telemetry = context.mocks.posthog();
     const browser = context.mocks.browser.blobDownload();
     // An editable title is not the file format or the product's semantic kind.
@@ -83,7 +83,6 @@ test.each([
       host: "app.okou.ai",
       featureSwitches: {
         [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
-        [FeatureSwitchKey.ArtifactPreviewToolbar]: refined,
       },
     });
     click(await findArtifactAction(title));
@@ -92,11 +91,7 @@ test.each([
     );
     click(
       await findNamedButton(
-        refined
-          ? "More artifact actions"
-          : sidebar
-            ? "Download artifact"
-            : "Download options",
+        sidebar ? "Download artifact" : "Download options",
         preview,
       ),
     );
@@ -211,7 +206,6 @@ test("A MIME-only draft video download retains its preview type", async () => {
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ComposerMediaPreviews]: true },
   });
   click(await findNamedButton(`Open video preview for ${filename}`));
   const preview = await screen.findByTestId("attachment-lightbox");
@@ -233,69 +227,60 @@ test("A MIME-only draft video download retains its preview type", async () => {
   ]);
 });
 
-test.each([false, true])(
-  "A MIME-only sent audio attachment retains its type in the sidebar (refined: %s)",
-  async (refined) => {
-    const telemetry = context.mocks.posthog();
-    const browser = context.mocks.browser.blobDownload();
-    const filename = "recording";
-    const fileId = "download-type-sent-audio";
-    const url = "https://files.example.test/audio?signature=private";
-    mockAttachmentChat(context, {
-      chatEvents: [
-        {
-          id: "download-type-sent-audio-message",
-          role: "user",
-          content: null,
-          runId: ATTACHMENT_RUN_ID,
-          createdAt: "2026-03-10T00:00:01Z",
-          userMessage: userMessage([
-            {
-              type: "file",
-              fileId,
-              filenameSnapshot: filename,
-              contentType: "audio/mpeg",
-            },
-          ]),
-        },
-      ],
-    });
-    mockPrivateUrlSequence(context, { [fileId]: [url] });
-
-    await setupPage({
-      context,
-      path: `/chats/${ATTACHMENT_THREAD_ID}`,
-      host: "app.okou.ai",
-      featureSwitches: {
-        [FeatureSwitchKey.ArtifactSidebarPreview]: true,
-        [FeatureSwitchKey.ArtifactPreviewToolbar]: refined,
+test("A MIME-only sent audio attachment retains its type in the sidebar", async () => {
+  const telemetry = context.mocks.posthog();
+  const browser = context.mocks.browser.blobDownload();
+  const filename = "recording";
+  const fileId = "download-type-sent-audio";
+  const url = "https://files.example.test/audio?signature=private";
+  mockAttachmentChat(context, {
+    chatEvents: [
+      {
+        id: "download-type-sent-audio-message",
+        role: "user",
+        content: null,
+        runId: ATTACHMENT_RUN_ID,
+        createdAt: "2026-03-10T00:00:01Z",
+        userMessage: userMessage([
+          {
+            type: "file",
+            fileId,
+            filenameSnapshot: filename,
+            contentType: "audio/mpeg",
+          },
+        ]),
       },
-    });
-    click(await findNamedButton(`Open audio preview for ${filename}`));
-    const preview = await screen.findByTestId("artifact-sidebar");
-    await waitFor(() => {
-      expect(preview.querySelector("audio")).toHaveAttribute("src", url);
-    });
-    click(
-      await findNamedButton(
-        refined ? "More artifact actions" : "Download artifact",
-        preview,
-      ),
-    );
-    click(await findNamedMenuItem("Download"));
-    await waitFor(() => {
-      expect(browser.downloads).toHaveLength(1);
-    });
-    expect(
-      telemetry.events
-        .filter((event) => {
-          return event.name === "artifact_action_clicked";
-        })
-        .map((event) => {
-          return event.properties;
-        }),
-    ).toStrictEqual([
-      { action: "download", surface: "page", artifact_type: "audio" },
-    ]);
-  },
-);
+    ],
+  });
+  mockPrivateUrlSequence(context, { [fileId]: [url] });
+
+  await setupPage({
+    context,
+    path: `/chats/${ATTACHMENT_THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: {
+      [FeatureSwitchKey.ArtifactSidebarPreview]: true,
+    },
+  });
+  click(await findNamedButton(`Open audio preview for ${filename}`));
+  const preview = await screen.findByTestId("artifact-sidebar");
+  await waitFor(() => {
+    expect(preview.querySelector("audio")).toHaveAttribute("src", url);
+  });
+  click(await findNamedButton("Download artifact", preview));
+  click(await findNamedMenuItem("Download"));
+  await waitFor(() => {
+    expect(browser.downloads).toHaveLength(1);
+  });
+  expect(
+    telemetry.events
+      .filter((event) => {
+        return event.name === "artifact_action_clicked";
+      })
+      .map((event) => {
+        return event.properties;
+      }),
+  ).toStrictEqual([
+    { action: "download", surface: "page", artifact_type: "audio" },
+  ]);
+});

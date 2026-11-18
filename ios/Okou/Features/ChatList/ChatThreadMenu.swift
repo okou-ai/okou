@@ -59,7 +59,7 @@ struct ChatThreadMenu {
           enabled: enabled && pinNeighbors.above != nil),
         Item(
           action: .movePinDown, title: String(localized: "Move down"), icon: "arrow-down",
-          enabled: enabled && pinNeighbors.below != nil),
+          enabled: enabled && pinNeighbors.below != nil)
       ]
     }
     items += [
@@ -75,7 +75,7 @@ struct ChatThreadMenu {
       Item(
         action: .mute,
         title: thread.isMuted ? String(localized: "Unmute chat") : String(localized: "Mute chat"),
-        icon: thread.isMuted ? "bell" : "bell-off", enabled: available && list.canMute(threadID)),
+        icon: thread.isMuted ? "bell" : "bell-off", enabled: available && list.canMute(threadID))
     ]
     if !thread.isMuted {
       items.append(

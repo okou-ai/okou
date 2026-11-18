@@ -122,7 +122,7 @@ not copied from CSS and are not all mandated by Apple.
 | Text scaling | Use `Font.okou(.body)` and corresponding named styles. A fixed `size:` is only for already scaled measurements or constrained artwork; ordinary body text uses Dynamic Type                                                                                                                                                       |
 | Spacing      | Prefer 4, 8, 12, 16, 20, 24, 32, 40, 48 via `OkouSpace`; smaller named steps serve tight component internals                                                                                                                                                                                                                      |
 | Radius       | Inline code 4, thumbnail 6, small 8, control 14, chat 16, card 20, sheet 28; circles/capsules remain native shapes                                                                                                                                                                                                                |
-| Type roles   | One surface uses at most three sizes: body 17 for content and input, callout 16 for controls inside the composer, footnote 13 for its supporting model note above the input, footnote/caption for other supporting text. The model note retains a 44 pt target; never shrink a control label to make it fit                       |
+| Type roles   | One surface uses at most three sizes: body 17 for content and input, callout 16 for controls inside the composer, footnote/caption for supporting text. Never shrink a control label to make it fit                                                                                                                               |
 | Controls     | Minimum interactive area 44 (`minimumTarget`); large form control 52; sidebar row 48; grouped row 52 (`groupedRow`); inline content action 36 tall × 44 wide; status column 22; filter chip 36; catalog logo tile 44 / 64 with a 32 pt add control; dictation waveform 28 tall (3 pt bars, 2 pt gaps); labels can grow vertically |
 | Layout       | Page inset 24 (`pageInset`) is the one leading edge for a screen's header, section headings, rows and footer; readable single-column width 440; respect safe areas and keyboard avoidance                                                                                                                                         |
 | Icons        | Canonical Lucide 24-unit paths; native 2-unit stroke. Compiled image intrinsic size is 20 pt for system menu hosts. Explicit SwiftUI geometry follows the role table below.                                                                                                                                                       |
@@ -435,7 +435,12 @@ single floating line, and colour is a small accent for status only.
   actions as footnote-semibold text buttons and an optional ✕. `.status` is muted; `.problem`
   only lifts the text to `foreground`. It is never red and never a tinted fill. The composer
   shows these banners and nothing hand-built.
-- **Chat feedback floats under the header** in `ChatFeedbackSurface`: a finished action
+- **Chat feedback floats above the bottom controls** in `ChatFeedbackSurface`: above the
+  list footer or the chat composer, following its height and the keyboard without moving
+  the content. Anchor to visible controls, not blank space reserved for hidden ones; keep
+  the 8 pt gap above the visible surface. A downward swipe dismisses it; the close button
+  and VoiceOver escape do too.
+  The scroll-to-bottom control stays above the feedback. A finished action
   ("Chat archived · Undo") or a sync failure with Retry, one at a time. Liquid Glass at
   card radius, a 16 pt muted Lucide glyph (a small spinner while retrying), one 15 pt
   medium line, an optional semibold `foreground` action (as `OkouBanner`'s) and a ✕; at
@@ -614,7 +619,7 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `OkouTextFieldStyle`                        | First-party standalone native text fields; resting, focused, disabled; the caller supplies `isFocused` from the native field binding and owns labels/validation                                                        |
 | `okouValuePicker()`                         | Menu picker whose trailing value and chevron are `trailingValue` (gray-700), a step lighter than the label                                                                                                             |
-| `OkouComposerValueLabel`                    | A quiet model note above the open composer: footnote muted text, optional Fast lightning mark and a chevron, with a 44 pt target                                                                                       |
+| `OkouComposerModelMark`                     | The open composer's model control: Okou's or the model company's mark at `toolbarMark` (18 pt) artwork size, or Lucide `cpu`, on the 44 pt toolbar target                                                              |
 | `OkouChip` / `OkouChipRail`                 | Filter capsules in the web's colours, in a sideways-scrolling row starting on the content edge; selected takes `state-selected`                                                                                        |
 | `OkouSegmentControl`                        | Large segmented shape in the web's segment colours: grey track, white raised selection                                                                                                                                 |
 | `OkouAddIndicator`                          | A catalog card's trailing "+" (add now) or chevron (added; the card opens it), 32 pt in a 44 pt target                                                                                                                 |
@@ -638,7 +643,7 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 
 | Component         | Use / states                                                                                                                                                                                             |
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OkouSearchBar`   | Shared 44 pt clear glass capsule with the Lucide `search` glyph in placeholder grey; wraps the sidebar's search prompt or the search page's native input                                                 |
+| `OkouSearchBar`   | Shared 44 pt clear glass capsule with the Lucide `search` glyph in placeholder grey; wraps a static search prompt or the search page's native input                                                      |
 | `OkouSearchPage`  | A large native sheet with a fixed search field, one-action trailing close, pinned filters on a solid header, transparent list rows and one empty state centred above the keyboard. Catalog: Search sheet |
 | `OkouSearchField` | Native text editing focused once during presentation, with IME composition and selection preserved; keyboard Search ends editing without closing the page                                                |
 
@@ -652,7 +657,7 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 | `OkouLoadErrorRow` / `OkouLoadingRow`    | A failed read (muted sentence + quiet Try again) and a loading line (small muted spinner + label) inside lists, sheets and cards                                                                                                                                   |
 | `OkouChatSkeleton` / `OkouSkeletonBlock` | A chat's first load as the web draws it: placeholder exchanges in `skeleton` grey, shimmering as one (`okouShimmer()`)                                                                                                                                             |
 | `OkouBanner`                             | In-flow status line: hairline card, glyph, footnote sentence, text actions, optional ✕; `.status` / `.problem`, never red                                                                                                                                          |
-| `ChatFeedbackSurface`                    | Chat feedback under the header: glass, Lucide glyph or spinner, one 15 pt medium line, optional action, ✕                                                                                                                                                          |
+| `ChatFeedbackSurface`                    | Chat feedback above the bottom controls: glass, Lucide glyph or spinner, one 15 pt medium line, optional action, ✕ and swipe-down dismissal                                                                                                                        |
 | `OkouEmptyState`                         | Quiet empty, failed or unavailable screen: muted glyph on a soft circle, 17 pt medium title, 15 pt muted description, up to two outline actions; `verbatim:` for a content title                                                                                   |
 | `OkouUsageMeter`                         | Allowance row: label, "% remaining", capacity bar (normal / low / exhausted), reset time                                                                                                                                                                           |
 | `OkouLiveWaveform`                       | Dictation waveform: one bar per level sample, gliding every frame, newest growing in at the trailing edge, baseline dots before audio; static under Reduce Motion                                                                                                  |
@@ -699,20 +704,22 @@ feature; the catalog shows each one.
   placeholder. The draft shows the selected passage with its neutral rule and remove
   action, without a separate source caption or Fork-specific reference surface. Source
   provenance is still retained when sending. Keep the shared composer geometry. The model
-  note stays above the composer, as in ordinary chat. Fit the sheet vertically to this
+  control stays in the composer's toolbar, as in ordinary chat. Fit the sheet vertically to this
   content rather than reserving a half/full page, and let the native editor scroll for a
   long draft. Sending still closes only after acceptance and leaves the source chat open.
 - **Chat header** has no title: the menu glass circle on the left, the chat's "…" menu on
   the right, over a soft blur. The selected row in the sidebar says which chat
   is open. The "…" menu is titled with the chat and starts with Pin chat.
-- **The model control is a quiet note above the open composer**, aligned to its trailing
-  edge. `ChatModelPickerButton` draws an `OkouComposerValueLabel` with the model's name in
-  footnote `muted-foreground`, a small Lucide `zap` when Fast is enabled, and a chevron.
-  Thinking effort remains in the model sheet and VoiceOver value rather than the visual
-  summary. The supporting note keeps a 44 pt target and stays mounted as the editor
-  expands, so loading or refreshing its configuration does not replace the editor.
-  It shows only while the composer is open and is gone from the one-line composer and
-  while dictating. On the home screen it is the next new chat's model; in a chat, that
+- **The model control is an icon in the open composer**, before the mic, as ChatGPT
+  places its own and Web's narrow composer draws it. `ChatModelPickerButton` draws an
+  `OkouComposerModelMark` with Web's mapping: Okou's mark for Auto and built-in models, the
+  Anthropic or OpenAI mark for a model with an enabled route through that subscription, and
+  Lucide `cpu` for a model the catalog does not name. The model's name, thinking effort and
+  Fast are its VoiceOver value and live in the sheet; a `circle-alert` badge marks settings
+  that need attention. It is laid out with the mic and send, so nothing above the composer
+  overlaps the conversation or moves on its own with the keyboard, and loading or refreshing
+  its configuration does not replace the editor. It shows only while the composer is open
+  and is gone from the one-line composer and while dictating. On the home screen it is the next new chat's model; in a chat, that
   chat's. The composer presents the model sheet, and keeps itself open under it,
   so the sheet survives the keyboard going down and the keyboard comes back after it. The
   composer's only leading control is `+`, which opens **Add to
@@ -743,7 +750,8 @@ feature; the catalog shows each one.
     selection haptic and the composer's model control shows the result. A failed save keeps
     the sheet and the draft, with the error above Done; ✕ or a swipe drops the draft.
 - **Send / stop / mic** share the composer's trailing slot: the mic alone on an empty
-  draft, mic then send (`.glassProminent`, `primary`) once there is content, and stop
+  draft, mic then send (a solid `.borderedProminent` circle, `primary`; the surface under it is
+  already glass; disabled, it takes the system's gray) once there is content, and stop
   (`interrupt`) alone while a run is active and the draft is empty. In the open composer
   the model control comes first.
 - **The composer never truncates a draft.** With text in it the editor keeps its
@@ -752,8 +760,11 @@ feature; the catalog shows each one.
   component catalog. Its empty, unfocused surface is at least 44 pt tall
   (`composerCompactHeight`), with 6 pt vertical text padding and separate 44 pt
   action targets. Larger text can grow the surface. Expansion retains the same
-  mounted editor and reserves a bottom row for the actions. Leading and trailing
-  action targets keep the same horizontal anchors through expansion. The composer
+  mounted editor and reserves a bottom row for the actions. The action targets are
+  concentric with the surface: each 44 pt target is centred on its corner's arc, inset
+  the corner radius less 22 pt (0 pt on the one-line surface, 6 pt open). A control is
+  then as far from the side as from the bottom, open `+` lines up with the text, and the
+  targets move with the corners as the surface expands. The composer
   uses the 24 pt page inset; its resting actions share the sidebar footer's vertical
   center with 6 pt below the surface. Focused editing keeps 8 pt above the keyboard.
 - **A tap outside the composer puts the keyboard away.** A tap anywhere on the transcript
@@ -784,6 +795,18 @@ feature; the catalog shows each one.
   return and Reduce Motion adaptation. Retain both page hosts across navigation
   so drafts and scroll state survive. Forward the SwiftUI environment to both
   hosts, including appearance, scene phase and scoped link/system-entry actions.
+  Automatic composer focus waits for the chat host's native appearance, not just
+  window attachment. Prepare new-message input expanded before entry; retain its
+  expanded layout through departure. Return actions request navigation while the
+  editor still owns focus; UIKit coordinates keyboard dismissal with the pop.
+  Cancelled interactive return restores the
+  same editor and selection through UIKit's transition coordinator. Let UIKit's
+  `UIKeyboardLayoutGuide` own keyboard geometry: constrain the hosted
+  content above the guide and set `usesBottomSafeArea` to `false`, so SwiftUI can
+  retain its normal container safe area when the keyboard is hidden. Set the
+  child `UIHostingController.safeAreaRegions` to `.container` to avoid applying
+  keyboard avoidance twice. The live content and editor remain mounted through
+  native transitions; ordinary focus changes use a value-scoped SwiftUI animation.
 - **Sidebar layout**: the workspace switcher top left, and top right one 44 pt glass capsule
   that groups the chat list menu (Lucide `list-filter`) on the left and back to the chat
   (`arrow-right`, toward the page it returns to; "Close sidebar" for VoiceOver) on the right,
@@ -796,8 +819,10 @@ feature; the catalog shows each one.
   logo beside its name and the system check on the current one, as the web's switcher
   lists them; a menu draws images, not views, so `OkouWorkspaceMenuLogos` draws each
   tile once (28 pt, `OkouAvatarSize.menu`) with the logo's own rounded corners. A thumb-reach bottom bar: the account's own photo
-  (`OkouProfileAvatar`, 44 pt) opens Settings on the left, a search capsule fills the
-  middle, and new chat is the prominent circle on the right.
+  (`OkouProfileAvatar`, 44 pt) opens Settings on the left, a "New Message" capsule with
+  `square-pen` fills the middle, and search is the glass circle on the right. Both actions
+  retain the existing native new-chat navigation and search sheet. New Message uses the
+  shared new-chat request so the composer focuses and opens the keyboard once attached.
 - **Sidebar order**: the header's one menu holds the chat filter (the web's Inbox — All
   chats without archiving — / Unread / Archived / Muted), then Mark all read and New project,
   so the list starts 12 pt below the header. Projects come first, oldest first, as the web

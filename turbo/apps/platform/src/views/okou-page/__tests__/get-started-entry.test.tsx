@@ -66,24 +66,7 @@ test("The gift opens invitations independently of credit quests and copies the i
       earnedCredits: 40_000,
     });
   });
-  await setupPage({
-    context,
-    path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.FriendReferrals]: true,
-      [FeatureSwitchKey.SingleAgent]: false,
-    },
-    auth: {
-      user: { id: "test-user-123", fullName: "Referral User" },
-      organization: {
-        activeOrg: {
-          id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
-          name: "Referral Workspace",
-        },
-        memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
-      },
-    },
-  });
+  await setupInvitationPage();
   const user = userEvent.setup({ delay: null });
   const entry = await waitFor(() => {
     return buttonNamed("Invite your friends", document.body);
@@ -124,6 +107,26 @@ test("The gift opens invitations independently of credit quests and copies the i
     expect(dialog).not.toBeInTheDocument();
     expect(entry).toHaveFocus();
   });
+});
+
+test("History navigation closes a reopened invitation dialog without restoring stale open state", async () => {
+  const status = configureQuestPage(context, "admin");
+  status.quests = [];
+  context.mocks.api(friendReferralsContract.link, ({ respond }) => {
+    return respond(200, {
+      code: "a7k2p9",
+      registeredCount: 3,
+      rewardedCount: 2,
+      earnedCredits: 40_000,
+    });
+  });
+  await setupInvitationPage();
+  await waitFor(() => {
+    return buttonNamed("Invite your friends", document.body);
+  });
+  expect(
+    screen.queryByRole("dialog", { name: "Invite friends, get $20 each" }),
+  ).not.toBeInTheDocument();
   click(linkNamed("Workflows", document.body));
   await screen.findByRole("heading", { name: "Workflows" });
   act(() => {
@@ -153,6 +156,26 @@ test("The gift opens invitations independently of credit quests and copies the i
   });
 });
 
+async function setupInvitationPage() {
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.SingleAgent]: false,
+    },
+    auth: {
+      user: { id: "test-user-123", fullName: "Referral User" },
+      organization: {
+        activeOrg: {
+          id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+          name: "Referral Workspace",
+        },
+        memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
+      },
+    },
+  });
+}
+
 test("Referral link failures can be retried in the same dialog", async () => {
   configureQuestPage(context, "admin");
   let failed = true;
@@ -161,7 +184,7 @@ test("Referral link failures can be retried in the same dialog", async () => {
       ? respond(403, {
           error: {
             code: "FORBIDDEN",
-            message: "Friend referrals are not available",
+            message: "Organization access denied",
           },
         })
       : respond(200, {
@@ -175,7 +198,6 @@ test("Referral link failures can be retried in the same dialog", async () => {
     context,
     path: questChatPath(),
     featureSwitches: {
-      [FeatureSwitchKey.FriendReferrals]: true,
       [FeatureSwitchKey.SingleAgent]: false,
     },
     auth: {
@@ -204,29 +226,12 @@ test("Referral link failures can be retried in the same dialog", async () => {
   });
 });
 
-test("The invitation gift is hidden when friend referrals are disabled", async () => {
-  configureQuestPage(context, "admin");
-  await setupPage({
-    context,
-    path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.FriendReferrals]: false },
-  });
-  await screen.findByTestId("get-started-entry");
-  expect(
-    queryAllByRoleFast("button").find((button) => {
-      return button.getAttribute("aria-label") === "Invite your friends";
-    }),
-  ).toBeUndefined();
-});
-
 test("The corner's icon buttons lead into the labelled Get started entry", async () => {
   configureQuestPage(context, "admin");
   await setupPage({
     context,
     path: questChatPath(),
     featureSwitches: {
-      [FeatureSwitchKey.FriendReferrals]: true,
-      [FeatureSwitchKey.UserNotifications]: true,
       [FeatureSwitchKey.SingleAgent]: false,
     },
     auth: {
@@ -244,16 +249,10 @@ test("The corner's icon buttons lead into the labelled Get started entry", async
   const gift = await waitFor(() => {
     return buttonNamed("Invite your friends", document.body);
   });
-  const bell = await waitFor(() => {
-    return buttonNamed("Notifications", document.body);
-  });
-
-  // Reading order, and with it keyboard order, runs gift, bell, then the
-  // labelled entry, which closes the row in the page's corner.
+  // Reading and keyboard order run from the gift to the labelled entry.
   const buttons = queryAllByRoleFast("button");
   expect(buttons).toContain(entry);
-  expect(buttons.indexOf(gift)).toBeLessThan(buttons.indexOf(bell));
-  expect(buttons.indexOf(bell)).toBeLessThan(buttons.indexOf(entry));
+  expect(buttons.indexOf(gift)).toBeLessThan(buttons.indexOf(entry));
 });
 
 function normalizedText(element: Element): string {
@@ -1458,6 +1457,41 @@ test("Check-in waits for refreshed rewards before showing the success dialog", a
   });
   expect(within(dialog).getByText("9-day streak")).toBeInTheDocument();
   expect(within(dialog).getByText("+100 credits")).toBeInTheDocument();
+});
+
+test("A saved check-in waits for a financial confirmation before celebrating", async () => {
+  const data = configureQuestPage(context, "member", { claimedToday: false });
+  context.mocks.api(getStartedContract.checkin, ({ respond }) => {
+    const checkin = data.quests.find((quest) => {
+      return quest.key === "checkin";
+    });
+    if (!checkin) {
+      throw new Error("Expected check-in quest");
+    }
+    checkin.pendingCount = 1;
+    return respond(202, {
+      status: "pending",
+      requestId: "3b37c105-4676-4a59-9c33-705330fe8439",
+    });
+  });
+  await setupPage({ context, path: questChatPath() });
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-checkin"));
+  await expect(
+    screen.findByText(
+      "Your check-in was saved. Credits will update after confirmation.",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByRole("dialog", { name: "Checked in for today" }),
+  ).not.toBeInTheDocument();
+  const panel = await openQuestPanel();
+  expect(
+    within(screen.getByTestId("get-started-quest-checkin")).getByText(
+      "In review",
+    ),
+  ).toBeInTheDocument();
+  expect(within(panel).queryByText("Checked in")).not.toBeInTheDocument();
 });
 
 test("A failed check-in does not show a success dialog", async () => {

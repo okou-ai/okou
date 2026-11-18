@@ -1,4 +1,5 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
+import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog";
@@ -130,6 +131,10 @@ export interface ComposerConnectorSignals {
   readonly remoteAccessScopeId$: Computed<string>;
   readonly dialogsOpen$: Computed<boolean>;
   readonly permissionConnectorSlug$: Computed<ConnectorSlug | null>;
+  readonly openAccountManager$: Command<
+    Promise<void>,
+    [ConnectorAccountTarget, AbortSignal]
+  >;
   readonly openAddConnectorsDialog$: Command<void, []>;
   readonly openConnectorPermissions$: Command<void, [BuiltinConnectorBrief]>;
   readonly directoryFinalFocus$: Command<HTMLElement | boolean, []>;
@@ -367,7 +372,6 @@ function createConnectorNavigation(
     openConnectorPermissions$,
     directoryFinalFocus$,
     searchConnectors$: command(({ get, set }, search: string) => {
-      set(chatAccess.navigation.reset$);
       if (get(chatAccess.target$)) {
         set(chatAccess.closeTarget$);
       }
@@ -415,6 +419,25 @@ function createConnectorUiSelectors(
   };
 }
 
+function createConnectorTriggerSignals(
+  chatAccess: ReturnType<typeof createChatConnectorAccessSignals>,
+) {
+  const internalTriggerElement$ = state<HTMLElement | null>(null);
+  const triggerElement$ = computed((get) => {
+    return get(internalTriggerElement$);
+  });
+  const setTriggerRef$ = onRef(
+    command(({ set }, element: HTMLElement, signal: AbortSignal) => {
+      set(internalTriggerElement$, element);
+      signal.addEventListener("abort", () => {
+        set(internalTriggerElement$, null);
+        set(chatAccess.accountManager.close$);
+      });
+    }),
+  );
+  return { triggerElement$, setTriggerRef$ };
+}
+
 function createConnectorUiSignals(
   resources: ReturnType<typeof createConnectorResourceSignals>,
   accounts: ComposerConnectorAccountSignals,
@@ -424,6 +447,7 @@ function createConnectorUiSignals(
   | "connectorUiState$"
   | "updateConnectorUiState$"
   | "openAddConnectorsDialog$"
+  | "openAccountManager$"
   | "openConnectorPermissions$"
   | "directoryFinalFocus$"
   | "setPopoverOpen$"
@@ -434,18 +458,8 @@ function createConnectorUiSignals(
   | "setTriggerRef$"
 > {
   const internalUiState$ = state(initialComposerConnectorUiState());
-  const internalTriggerElement$ = state<HTMLElement | null>(null);
-  const triggerElement$ = computed((get) => {
-    return get(internalTriggerElement$);
-  });
-  const setTriggerRef$ = onRef(
-    command(({ set }, element: HTMLElement, signal: AbortSignal) => {
-      set(internalTriggerElement$, element);
-      signal.addEventListener("abort", () => {
-        set(internalTriggerElement$, null);
-      });
-    }),
-  );
+  const { triggerElement$, setTriggerRef$ } =
+    createConnectorTriggerSignals(chatAccess);
   const resetBuiltinSubscription$ = resetSignal();
   const connectorUiState$ = computed((get): ComposerConnectorUiState => {
     return get(internalUiState$);
@@ -518,6 +532,13 @@ function createConnectorUiSignals(
       });
     }
   });
+  const openAccountManager$ = command(
+    async ({ set }, target: ConnectorAccountTarget, signal: AbortSignal) => {
+      if (await set(chatAccess.accountManager.open$, target, signal)) {
+        set(setPopoverOpen$, false);
+      }
+    },
+  );
   const openRemoteAccessDialog$ = command(({ set }): void => {
     set(accounts.closeMenu$);
     set(chatAccess.close$);
@@ -541,6 +562,7 @@ function createConnectorUiSignals(
       triggerElement$,
     }),
     setPopoverOpen$,
+    openAccountManager$,
     openRemoteAccessDialog$,
     closeRemoteAccessDialog$,
     triggerElement$,

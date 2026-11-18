@@ -822,7 +822,7 @@ async fn complete_execution(
     cli_exit_code: i32,
     mut exit_code: i32,
     cli_elapsed: Duration,
-    state: CompletionState<'_>,
+    mut state: CompletionState<'_>,
     telemetry: &Telemetry,
     runtime: &GuestRuntime,
 ) -> i32 {
@@ -832,6 +832,13 @@ async fn complete_execution(
     let failure_message = state
         .failure_message
         .map(|message| masker.mask_string(message));
+    if let Some(diagnostic) = state.failure_diagnostic.as_mut() {
+        failure_diagnostics::refine_disk_full_failure(
+            exit_code,
+            failure_message.as_deref(),
+            diagnostic,
+        );
+    }
     if let Some(message) = failure_message.as_deref() {
         failure_diagnostics::write_guest_error_file(
             runtime_paths.finalization_error_file(),
@@ -890,7 +897,7 @@ async fn complete_execution(
                     runtime,
                     0,
                     None,
-                    None,
+                    false,
                     state.last_event_sequence,
                     finalization,
                 )
@@ -967,7 +974,7 @@ async fn complete_execution(
                                 .failure_diagnostic
                                 .as_ref()
                                 .and_then(|diagnostic| diagnostic.failure_reason),
-                            failure_message.as_deref(),
+                            user_cancelled,
                             state.last_event_sequence,
                             finalization,
                         )

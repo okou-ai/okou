@@ -40,9 +40,11 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
-import { storages, storageVersions } from "@okouai/db/schema/storage";
+import {
+  memberMemories,
+  memoryVersions,
+} from "@okouai/db/schema/member-memory";
 import { workflows } from "@okouai/db/schema/workflow";
-import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
@@ -60,7 +62,7 @@ import { clerk$, createClerkReadContext } from "../external/clerk";
 import { listAllUserOrganizationMemberships } from "../external/clerk-organization-lists";
 import { db$ } from "../external/db";
 import { readUserExportAgentInstructions$ } from "./user-export-agent-instructions.service";
-import { chatEventRowFromDbRow } from "./chat-event-row-read.service";
+import { rawChatEventRowFromDbRow } from "./chat-event-row-read.service";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import {
   readAcceptedOfficialWorkflowCatalog$,
@@ -447,7 +449,7 @@ function messageSourceStep(
   head: SnapshotHead | undefined,
   window: ReturnType<typeof messageSourceWindow>,
   page: {
-    readonly rows: readonly Parameters<typeof chatEventRowFromDbRow>[0][];
+    readonly rows: readonly Parameters<typeof rawChatEventRowFromDbRow>[0][];
     readonly hasMore: boolean;
   },
 ) {
@@ -469,7 +471,7 @@ function messageSourceStep(
       content: Buffer.from(
         rows
           .map((row) => {
-            return JSON.stringify(chatEventRowFromDbRow(row));
+            return JSON.stringify(rawChatEventRowFromDbRow(row));
           })
           .join("\n") + "\n",
       ),
@@ -586,7 +588,7 @@ type MessageCapture = {
     readonly seqId: number;
     readonly payloadBytes: number;
   } | null;
-  readonly row: Parameters<typeof chatEventRowFromDbRow>[0] | null;
+  readonly row: Parameters<typeof rawChatEventRowFromDbRow>[0] | null;
 };
 
 function messageCapturedSourceStep(
@@ -979,21 +981,22 @@ const collectMemory$ = command(
     const db = get(db$);
     const [storage] = await db
       .select({
-        id: storages.id,
-        orgId: storages.orgId,
-        headVersionId: storages.headVersionId,
-        fileCount: storages.fileCount,
+        id: memberMemories.id,
+        orgId: memberMemories.orgId,
+        headVersionId: memberMemories.headVersionId,
+        fileCount: memberMemories.fileCount,
       })
-      .from(storages)
+      .from(memberMemories)
       .where(
         and(
-          eq(storages.userId, args.userId),
-          eq(storages.name, MEMORY_ARTIFACT_NAME),
-          lte(storages.createdAt, startedBefore(checkpoint)),
-          checkpoint.cursor ? gt(storages.id, checkpoint.cursor) : undefined,
+          eq(memberMemories.userId, args.userId),
+          lte(memberMemories.createdAt, startedBefore(checkpoint)),
+          checkpoint.cursor
+            ? gt(memberMemories.id, checkpoint.cursor)
+            : undefined,
         ),
       )
-      .orderBy(asc(storages.id))
+      .orderBy(asc(memberMemories.id))
       .limit(1);
     signal.throwIfAborted();
     if (!storage) {
@@ -1014,15 +1017,15 @@ const collectMemory$ = command(
     }
     const [version] = await db
       .select({
-        s3Key: storageVersions.s3Key,
-        archiveSize: storageVersions.archiveSize,
-        fileCount: storageVersions.fileCount,
+        s3Key: memoryVersions.objectPrefix,
+        archiveSize: memoryVersions.archiveSize,
+        fileCount: memoryVersions.fileCount,
       })
-      .from(storageVersions)
+      .from(memoryVersions)
       .where(
         and(
-          eq(storageVersions.storageId, storage.id),
-          eq(storageVersions.id, storage.headVersionId),
+          eq(memoryVersions.memoryId, storage.id),
+          eq(memoryVersions.id, storage.headVersionId),
         ),
       )
       .limit(1);

@@ -5,7 +5,7 @@ import {
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { memberConnectorSelectionQueries } from "./member-connector-selection";
-import { and, asc, eq, getTableColumns, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
@@ -26,25 +26,28 @@ import {
   agentConnectorSelectionFromRows,
   type AgentConnectorSelectionScope,
 } from "./execution-agent-connectors.service";
-import { customConnectorDefinitionSelection } from "./custom-connector-definition-selection";
+import {
+  customConnectorExecutionDefinitionSelection,
+  customConnectorExecutionOAuthSelection,
+} from "./custom-connector-definition-selection";
 import { customConnectorNetworkMetadataSchema } from "@okouai/api-contracts/validators/custom-connector-network";
 import { customConnectorSkillBundleSelection } from "./custom-connector-skill-bundle-columns";
 import { activeUserPermissionGrantCondition } from "./user-permission-grants.service";
 import { workflowsForRunFromRows } from "./workflow-data.service";
 
-/** All four selections have the same (org,user,agent) authority. */
+/** All selections have the same (org,user,agent) authority. */
 const builtinColumns = Object.freeze({
   connectorSlug: userBuiltinConnectors.connectorSlug,
 });
 const {
   networkBinding: connectorNetworkBinding,
   ...connectorDefinitionColumns
-} = customConnectorDefinitionSelection();
+} = customConnectorExecutionDefinitionSelection();
 const connectorColumns = Object.freeze({
   ...connectorDefinitionColumns,
   ...customConnectorSkillBundleSelection(),
 });
-const oauthColumns = getTableColumns(orgCustomConnectorOauthConfigs);
+const oauthColumns = customConnectorExecutionOAuthSelection();
 const permissionColumns = Object.freeze({
   connectorSlug: userPermissionGrants.connectorSlug,
   permission: userPermissionGrants.permission,
@@ -130,7 +133,13 @@ function agentSelectionQueries(
       asc(userPermissionGrants.connectorSlug),
       asc(userPermissionGrants.permission),
     );
-  const definitions = builder
+  return chatAccounts
+    ? memberConnectorSelectionQueries(scope, at)
+    : { builtin, custom, permissions };
+}
+
+function agentWorkflowQuery(scope: AgentConnectorSelectionScope) {
+  return new QueryBuilder()
     .select({
       payload: contextJsonProjection(workflowColumns)
         .mapWith(zodDriverValueDecoder(zUnknown()))
@@ -148,17 +157,12 @@ function agentSelectionQueries(
         ),
       ),
     );
-  return {
-    ...(chatAccounts
-      ? memberConnectorSelectionQueries(scope, at)
-      : { builtin, custom, permissions }),
-    definitions,
-  };
 }
 
 export function createAgentSelectionContext(
   scope$: Computed<Promise<AgentConnectorSelectionScope>>,
   featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
+  projection: "admission" | "execution",
 ) {
   const raw$ = computed(async (get) => {
     const scope = await get(scope$);
@@ -166,7 +170,7 @@ export function createAgentSelectionContext(
       FeatureSwitchKey.ConnectorChatAccountAccess,
       await get(featureSwitches$),
     );
-    const { builtin, custom, permissions, definitions } = agentSelectionQueries(
+    const { builtin, custom, permissions } = agentSelectionQueries(
       scope,
       nowDate(),
       chatAccounts,
@@ -182,9 +186,13 @@ export function createAgentSelectionContext(
         permissions: contextJsonRows(permissions).mapWith(
           zodDriverValueDecoder(zUnknown()),
         ),
-        workflows: contextJsonRows(definitions).mapWith(
-          zodDriverValueDecoder(zUnknown()),
-        ),
+        ...(projection === "admission"
+          ? {
+              workflows: contextJsonRows(agentWorkflowQuery(scope)).mapWith(
+                zodDriverValueDecoder(zUnknown()),
+              ),
+            }
+          : {}),
       })
       .from(sql`(values (1)) as context_seed(value)`);
     if (!row) {

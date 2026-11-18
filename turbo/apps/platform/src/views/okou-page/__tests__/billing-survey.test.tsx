@@ -11,6 +11,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
+  click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -30,7 +31,10 @@ const { installRunChat } = createChatRunFixtures(context);
 
 function buttonIn(container: HTMLElement, name: string): HTMLElement {
   const match = queryAllByRoleFast("button", container).find((button) => {
-    return button.textContent?.replace(/\s+/gu, " ").trim() === name;
+    return (
+      button.textContent?.replace(/\s+/gu, " ").trim() === name ||
+      button.getAttribute("aria-label") === name
+    );
   });
   if (!match) {
     throw new Error(`${name} button was not visible`);
@@ -40,6 +44,13 @@ function buttonIn(container: HTMLElement, name: string): HTMLElement {
 
 const BILLING_RUN_ID = "d0000000-0000-4000-a000-000000001401";
 const SURVEY_SWITCHES = { [FeatureSwitchKey.BillingSurvey]: true } as const;
+
+async function openExhaustionSurvey() {
+  click(await findButton("What's stopping you from upgrading today?"));
+  return screen.findByRole("form", {
+    name: "What's stopping you from upgrading today?",
+  });
+}
 
 function outOfCreditsChat(): MockChatEventInput[] {
   return [
@@ -151,19 +162,17 @@ test("Ask a free workspace admin why they are not upgrading and thank them with 
   });
   await readyChat();
 
-  const survey = await screen.findByRole("form", {
-    name: "What's stopping you from upgrading today?",
-  });
-  expect(
-    within(survey).getByText(
-      "The first eligible answer in this workspace earns 200 bonus credits, valid for 30 days.",
-    ),
-  ).toBeVisible();
-  // The upgrade action stays the card's primary choice.
+  // The upgrade action stays directly reachable outside the optional survey.
   expect(
     buttonIn(
       screen.getByTestId("assistant-error-card-shell"),
       "Upgrade to Pro",
+    ),
+  ).toBeVisible();
+  const survey = await openExhaustionSurvey();
+  expect(
+    within(survey).getByText(
+      "The first eligible answer in this workspace earns 200 bonus credits, valid for 30 days.",
     ),
   ).toBeVisible();
   const submit = buttonIn(survey, "Submit");
@@ -251,6 +260,52 @@ test("Ask why a purchase was not completed when Stripe sends the member back", a
   expect(window.location.search).not.toContain("billing=");
 });
 
+test("Wait for the restored plans dialog to close before asking about canceled checkout", async () => {
+  const submitted = installSurveyApi([], {
+    checkoutKind: "plan",
+    returnedOnly: true,
+  });
+  installRunChat({ chatEvents: outOfCreditsChat() });
+
+  await setupPage({
+    context,
+    path: `${RUN_PATH}?billing=canceled&settings=billing&billingView=plans`,
+    featureSwitches: SURVEY_SWITCHES,
+  });
+
+  const plans = await screen.findByRole("dialog", { name: "Choose a plan" });
+  // The feedback action confirms the shared survey response has resolved.
+  await screen.findByLabelText("What's stopping you from upgrading today?");
+  expect(
+    screen.queryByText("What stopped you from completing your purchase?"),
+  ).not.toBeInTheDocument();
+
+  click(buttonIn(plans, "Close"));
+
+  const survey = await screen.findByRole("dialog", {
+    name: "What stopped you from completing your purchase?",
+  });
+  expect(plans).not.toBeInTheDocument();
+  click(within(survey).getByText("The price was higher than I expected"));
+  click(buttonIn(survey, "Submit"));
+
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", {
+        name: "What stopped you from completing your purchase?",
+      }),
+    ).not.toBeInTheDocument();
+  });
+  expect(submitted).toStrictEqual([
+    {
+      survey: "checkout_abandoned",
+      answer: "price_higher_than_expected",
+      checkoutKind: "plan",
+      checkoutSessionId: "cs_survey_test",
+    },
+  ]);
+});
+
 test("Ask on a new device using the unpaid Checkout returned by the server", async () => {
   const user = userEvent.setup({ delay: null });
   const submitted = installSurveyApi([], { checkoutKind: "credits" });
@@ -284,11 +339,7 @@ test("Wait while a recent Checkout may still be open in another tab", async () =
   });
   await readyChat();
 
-  await expect(
-    screen.findByRole("form", {
-      name: "What's stopping you from upgrading today?",
-    }),
-  ).resolves.toBeVisible();
+  await expect(openExhaustionSurvey()).resolves.toBeVisible();
   expect(
     screen.queryByRole("dialog", {
       name: "What stopped you from completing your purchase?",
@@ -340,9 +391,7 @@ test("Ask another admin for feedback without promising an already claimed organi
     path: RUN_PATH,
     featureSwitches: SURVEY_SWITCHES,
   });
-  const survey = await screen.findByRole("form", {
-    name: "What's stopping you from upgrading today?",
-  });
+  const survey = await openExhaustionSurvey();
   expect(
     within(survey).queryByText(
       "The first eligible answer in this workspace earns 200 bonus credits, valid for 30 days.",
@@ -365,9 +414,7 @@ test("Keep a completed Checkout out of the abandonment survey even without a suc
     path: RUN_PATH,
     featureSwitches: SURVEY_SWITCHES,
   });
-  await screen.findByRole("form", {
-    name: "What's stopping you from upgrading today?",
-  });
+  await openExhaustionSurvey();
   expect(
     screen.queryByRole("dialog", {
       name: "What stopped you from completing your purchase?",

@@ -22,8 +22,6 @@ export const recoverWechatChatDeliveries$ = command(
       .select({
         id: agentRunCallbacks.id,
         runId: agentRuns.id,
-        status: agentRuns.status,
-        error: agentRuns.error,
       })
       .from(wechatChatThreadRoutes)
       .innerJoin(
@@ -62,14 +60,6 @@ export const recoverWechatChatDeliveries$ = command(
       {
         runId: callback.runId,
         redriveChatCallbackId: callback.id,
-        status: callback.status === "completed" ? "completed" : "failed",
-        error:
-          callback.status === "completed"
-            ? undefined
-            : callback.error ||
-              (callback.status === "cancelled"
-                ? "Run cancelled"
-                : "Run failed"),
       },
       signal,
     );

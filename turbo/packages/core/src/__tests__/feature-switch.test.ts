@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { FeatureSwitchKey } from "../feature-switch-key";
 import {
   isFeatureEnabled,
+  isFeatureSwitchAvailable,
   getAllFeatureStates,
   filterFeatureSwitchOverrides,
   getFeatureSwitchDescriptions,
@@ -17,48 +18,28 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.RealAgentInPreview).toBe("_realAgentInPreview");
     expect(FeatureSwitchKey.TestOauthConnector).toBe("_testOauthConnector");
     expect(FeatureSwitchKey.CodexExecution).toBe("_codexExecution");
-    expect(FeatureSwitchKey.ChatMessageVisualizationSummary).toBe(
-      "_chatMessageVisualizationSummary",
-    );
-  });
-
-  it("keeps chat visualization summaries internal to the staff audience", () => {
-    const key = FeatureSwitchKey.ChatMessageVisualizationSummary;
-    const staffOrgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
-
-    expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("internal");
-    expect(isFeatureEnabled(key, { orgId: staffOrgId })).toBe(true);
-    expect(
-      isFeatureEnabled(key, {
-        orgId: staffOrgId,
-        overrides: { [key]: false },
-      }),
-    ).toBe(false);
-    expect(
-      isFeatureEnabled(key, {
-        orgId: "external-org",
-        overrides: { [key]: true },
-      }),
-    ).toBe(false);
-    expect(
-      getAllFeatureStates({
-        orgId: "external-org",
-        overrides: { [key]: true },
-      })[key],
-    ).toBe(false);
   });
 });
 
 describe("isFeatureEnabled", () => {
+  it("defaults new workspace memberships to My Okou and honors retained overrides", () => {
+    const key = FeatureSwitchKey.SingleAgent;
+    for (const orgId of ["external-org", "org_3ANttyrbWYJk6JKRSTRLEsbsDLe"]) {
+      const identity = { userId: "existing-account", orgId };
+      expect(isFeatureEnabled(key, identity)).toBe(true);
+      expect(getAllFeatureStates(identity)[key]).toBe(true);
+      for (const enabled of [true, false]) {
+        const context = { ...identity, overrides: { [key]: enabled } };
+        expect(isFeatureEnabled(key, context)).toBe(enabled);
+        expect(getAllFeatureStates(context)[key]).toBe(enabled);
+      }
+    }
+  });
+
   it.each([
-    FeatureSwitchKey.SingleAgent,
-    FeatureSwitchKey.Projects,
     FeatureSwitchKey.ConnectorChatAccountAccess,
-    FeatureSwitchKey.SshChatApproval,
     FeatureSwitchKey.ArtifactSidebarPreview,
-    FeatureSwitchKey.ArtifactPreviewToolbar,
-    FeatureSwitchKey.UserNotifications,
-    FeatureSwitchKey.IosSettingsCredits,
+    FeatureSwitchKey.ArtifactPreviewActionGroup,
   ])("defaults %s to staff and honors Lab overrides", (key) => {
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
     for (const [context, enabled] of [
@@ -75,20 +56,61 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("defaults home capabilities to staff and honors Lab overrides", () => {
-    const key = FeatureSwitchKey.HomeCapabilities;
-    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
-    for (const [context, enabled] of [
-      [{}, false],
-      [{ userId: "external-user" }, false],
-      [{ orgId: "external-org" }, false],
-      [{ userId: "external-user", orgId: "external-org" }, false],
-      [{ orgId: "external-org", overrides: { [key]: true } }, true],
-      [staff, true],
-      [{ ...staff, overrides: { [key]: false } }, false],
-    ] as const) {
+  it("keeps presentation format available to Bingjie across workspaces", () => {
+    const key = FeatureSwitchKey.PresentationOutputFormat;
+    for (const orgId of [
+      undefined,
+      "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+      "external-org",
+    ]) {
+      for (const identity of [
+        { userId: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV" },
+        { email: "BINGJIE@OKOU.AI" },
+      ]) {
+        const context = { ...identity, orgId };
+        expect(isFeatureSwitchAvailable(key, context)).toBe(true);
+        expect(isFeatureEnabled(key, context)).toBe(true);
+        expect(getAllFeatureStates(context)[key]).toBe(true);
+        const optedOut = { ...context, overrides: { [key]: false } };
+        expect(isFeatureEnabled(key, optedOut)).toBe(false);
+        expect(getAllFeatureStates(optedOut)[key]).toBe(false);
+      }
+    }
+  });
+
+  it("enables presentation format for staff and honors Lab overrides", () => {
+    const key = FeatureSwitchKey.PresentationOutputFormat;
+    const identity = {
+      userId: "staff-colleague",
+      orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+    };
+    expect(isFeatureSwitchAvailable(key, identity)).toBe(true);
+    expect(isFeatureEnabled(key, identity)).toBe(true);
+    expect(getAllFeatureStates(identity)[key]).toBe(true);
+    for (const enabled of [false, true]) {
+      const context = { ...identity, overrides: { [key]: enabled } };
       expect(isFeatureEnabled(key, context)).toBe(enabled);
       expect(getAllFeatureStates(context)[key]).toBe(enabled);
+    }
+  });
+
+  it("keeps presentation format unavailable outside its rollout audience even with an opt-in override", () => {
+    const key = FeatureSwitchKey.PresentationOutputFormat;
+    for (const identity of [
+      {},
+      { userId: "external-user", orgId: "external-org" },
+      {
+        userId: "staff-colleague",
+        email: "ethan@okou.ai",
+        orgId: "external-org",
+      },
+    ]) {
+      expect(isFeatureSwitchAvailable(key, identity)).toBe(false);
+      for (const overrides of [{}, { [key]: true }]) {
+        const context = { ...identity, overrides };
+        expect(isFeatureEnabled(key, context)).toBe(false);
+        expect(getAllFeatureStates(context)[key]).toBe(false);
+      }
     }
   });
 
@@ -358,6 +380,9 @@ describe("getFeatureSwitchMetadata", () => {
     );
     expect(
       metadata[FeatureSwitchKey.ConnectorChatAccountAccess].rolloutStage,
+    ).toBe("beta");
+    expect(
+      metadata[FeatureSwitchKey.PresentationOutputFormat].rolloutStage,
     ).toBe("beta");
     expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");
   });

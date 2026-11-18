@@ -6,17 +6,15 @@ export type ModelSourceIdentity =
       readonly externalAccountId: string | null;
     };
 export type ModelSourceCredential =
-  EncryptedModelCredential | ManagedModelKeyReference;
+  ModelSecretReference | ManagedModelKeyReference;
 export interface ManagedModelKeyReference {
   readonly kind: "managed-key";
   readonly name: string;
   readonly modelKeyId: string;
-  readonly apiKey: string;
 }
-export interface EncryptedModelCredential {
-  readonly kind: "encrypted";
+export interface ModelSecretReference {
+  readonly kind: "secret-reference";
   readonly name: string;
-  readonly encryptedValue: string;
 }
 export interface ModelSourceConfiguration {
   readonly providerType: string;

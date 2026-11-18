@@ -74,29 +74,12 @@
       },
       "downloadRawData": "Unduh data mentah",
       "errorGuidance": {
-        "computerUseAuthorizationRequired": {
-          "guidance": "Minta tautan otorisasi Computer Use yang didelegasikan, minta pengguna memilih host {{assistantName}} Desktop untuk chat atau thread Slack ini, lalu jalankan run baru. Token run yang ada tidak dapat ditingkatkan di tempat.",
-          "title": "Otorisasi Computer Use diperlukan"
-        },
         "concurrentRunLimitReached": {
           "guidance": "Tunggu run saat ini selesai sebelum menjalankan run baru.",
           "title": "Batas run bersamaan tercapai"
         },
-        "creditsDepleted": {
-          "guidance": "Jalankan diagnostik kredit dulu. Beli kredit hanya jika paket saat ini mengizinkannya; jika tidak, kembalikan tautan upgrade paket.",
-          "title": "Kredit habis"
-        },
-        "noModelProvider": {
-          "guidance": "Hubungkan langganan pribadi Claude Code atau Codex di Pengaturan.",
-          "title": "Tidak ada penyedia model yang tersedia untuk eksekusi ini"
-        },
         "paidPlanRequired": {
-          "guidance": "Pembuatan video bawaan tidak tersedia pada paket ini.",
           "title": "Paket berbayar diperlukan"
-        },
-        "providerIncompatible": {
-          "guidance": "Sesi ini dibuat dengan jenis provider yang berbeda.",
-          "title": "Provider tidak kompatibel"
         },
         "providerTemporarilyUnavailable": {
           "guidance": "Provider model sedang tidak tersedia.",
@@ -414,7 +397,6 @@
       "resizeChatList": "Ubah ukuran daftar chat",
       "searchWorkspace": "Cari ruang kerja",
       "showChatList": "Tampilkan daftar chat",
-      "suggestionsWaiting_other": "{{count}} menunggu",
       "workspaceSwitcher": {
         "create": "Buat ruang kerja",
         "creating": "Membuat…",
@@ -463,7 +445,6 @@
       "nextImage": "Artefak gambar berikutnya",
       "openNewTab": "Buka di tab baru",
       "openSplitView": "Buka dalam tampilan terbagi",
-      "partiallyUnavailable": "Beberapa tindakan tidak tersedia",
       "previousImage": "Artefak gambar sebelumnya",
       "resetZoom": "Atur ulang zoom",
       "retry": "Coba lagi",
@@ -530,7 +511,6 @@
       "deleting": "Menghapus…",
       "description": "Artefak ini akan dihapus dan tautan Okou-nya dinonaktifkan. Salinan yang sudah diunduh atau disimpan di layanan lain akan tetap ada.",
       "hostedDescription": "Situs web dan semua versi yang dipublikasikan akan dinonaktifkan. Salinan yang disimpan di layanan lain akan tetap ada.",
-      "menu": "Tindakan lainnya untuk {{title}}",
       "sharedDescription": "Hapus percakapan yang dibagikan ini dari artefak Anda. Tautan berbaginya tidak akan berfungsi lagi. Percakapan asli Anda akan tetap tersedia.",
       "success": "Artefak dihapus",
       "title": "Hapus {{title}}?"
@@ -1055,8 +1035,10 @@
       "allowAll_other": "Berikan semua {{count}} izin",
       "allowed": "Izin diberikan",
       "allowedCount": "{{allowed}} dari {{total}} izin diberikan",
+      "alreadyAllowed_other": "{{count}} sudah diizinkan",
       "alwaysNote": "Izin ini tetap berlaku sampai Anda mengubah atau mencabutnya.",
       "continued": "Percakapan telah dilanjutkan.",
+      "continuedShort": "Chat dilanjutkan",
       "continueFailed": "Izin telah diberikan, tetapi percakapan tidak dapat dilanjutkan.",
       "details": "Lihat detail izin",
       "dismissed": "Tidak ada izin yang diubah.",
@@ -1066,6 +1048,7 @@
       "myOkouScopeNote": "Berlaku untuk penggunaan Okou Anda di ruang kerja ini, bukan hanya tugas saat ini.",
       "myOkouSharedScopeNote": "Berlaku untuk konektor ini di seluruh chat Anda dalam ruang kerja ini. Rekan tim memiliki izin sendiri.",
       "notNow": "Tidak sekarang",
+      "pending_other": "{{count}} izin untuk disetujui",
       "review": "Tinjau izin",
       "scopeNote": "Berlaku untuk agen ini, bukan hanya tugas saat ini.",
       "sharedScopeNote": "Berlaku untuk konektor ini di semua chat dan agen Anda.",
@@ -1197,21 +1180,25 @@
         "name": "Gratis"
       },
       "highlights": {
-        "addOnConcurrency": "Tambah konkurensi kapan saja",
-        "agentFanOut": "Okou membagi pekerjaan ke tim asisten AI",
-        "automations": "Otomatisasi terjadwal dan berbasis event",
-        "builtInResearchData": "Data SEO, lead, web, dan pasar bawaan",
-        "chatIntegrations": "Integrasi Slack dan Telegram",
-        "computerUse": "Okou mengendalikan aplikasi nyata di desktop Anda",
+        "addOnConcurrency": "Tambah kapasitas",
+        "advancedTools": "Puluhan alat canggih bawaan",
+        "appPermissions": "Akses aplikasi spesifik dan berbatas waktu",
+        "browserAndComputer": "Penggunaan browser dan komputer",
         "concurrentAgents": "{{slots}} tugas berjalan sekaligus",
-        "everythingInBuiltForTeams": "Semua di {{plan}}, dibuat untuk tim",
-        "included": "Termasuk",
-        "liveBrowser": "Lihat browser Okou secara langsung dan ambil alih",
-        "moreConnectorsChannels": "Lebih banyak custom connector & integrasi saluran",
-        "supportEmail": "Dukungan email",
+        "connectedAutomations": "Otomatisasi aplikasi dan terjadwal",
+        "create": "Presentasi, dokumen, gambar, situs dan grafik",
+        "everythingInBuiltForTeams": "Semua fitur {{plan}}, dirancang untuk kerja tim",
+        "exports": "PDF, Excel, Google Docs dan Sheets",
+        "memberManagement": "Peran anggota dan paket penggunaan",
+        "proDetails": "Suara: {{requests}} permintaan, {{minutes}} menit/hari · Dukungan email",
+        "projectContext": "Konteks proyek lintas chat",
+        "research": "Pencarian orang dan riset",
+        "sharedWorkflows": "Workflow tim yang dapat digunakan ulang",
         "supportPriority": "Dukungan prioritas",
-        "voiceInput": "Input suara: {{requests}} permintaan dan {{minutes}} menit per hari",
-        "webhookAutomations": "Mulai run dari sistem mana pun lewat satu webhook"
+        "teamCompliance": "SOC 2 Type II sedang berlangsung · Mematuhi GDPR dan CCPA/CPRA",
+        "templates": "Template siap pakai dan milik sendiri",
+        "voiceInput": "Suara: {{requests}} permintaan, {{minutes}} menit/hari",
+        "webhookAutomations": "Picu workflow lewat webhook"
       },
       "legacy": "Lama",
       "loadError": "Tidak dapat memuat status penagihan.",
@@ -1221,7 +1208,7 @@
       "perMonth": "/bulan",
       "pricePerMonth": "{{price}}/bulan",
       "pro": {
-        "description": "Pekerjaan sehari-hari, dengan harga per anggota.",
+        "description": "Pekerjaan harian Anda, tertangani.",
         "name": "Pro"
       },
       "renews": "Memperbarui {{date}}",
@@ -1229,7 +1216,7 @@
       "sectionTitle": "Paket",
       "selectedPlan": "paket yang dipilih",
       "team": {
-        "description": "Untuk tim yang bekerja dengan Okou sepanjang hari.",
+        "description": "Kapasitas dan kontrol tim lebih besar.",
         "name": "Tim"
       },
       "upgrade": "Tingkatkan",
@@ -1537,6 +1524,7 @@
           "action": "Check in",
           "description": "Check in sekali sehari. Direset pukul 00:00 UTC.",
           "name": "Check in setiap hari",
+          "pendingDescription": "Check-in Anda telah disimpan. Kredit akan diperbarui setelah dikonfirmasi.",
           "unit": "per hari"
         },
         "connector": {
@@ -1658,6 +1646,22 @@
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
       "feedLabel": "Feed",
+      "forYou": {
+        "loading": "Memuat saran",
+        "next": "Saran berikutnya",
+        "previous": "Saran sebelumnya",
+        "remaining": "{{total}} tersisa",
+        "sources": {
+          "description": "Pilih konten yang akan diterima. Kartu yang sudah ada tetap tersedia sampai Anda menanganinya. Pemberitahuan belum dibaca hanya mencakup sumber yang diaktifkan.",
+          "offers": "Penawaran",
+          "suggestions": "Saran",
+          "systemUpdates": "Pembaruan sistem",
+          "title": "Sumber Untuk Anda",
+          "whatsNew": "Yang baru"
+        },
+        "subtitle": "Satu per satu",
+        "title": "Untuk Anda"
+      },
       "homeCard": {
         "completeTitle": "Semua beres",
         "feedback": "Tindakan saran",
@@ -1833,14 +1837,6 @@
       "customAmountError": "Masukkan antara $1 dan $10.000",
       "customDollarAmount": "Jumlah dolar kustom",
       "outOfCredits": "Kredit Anda habis",
-      "proCard": {
-        "creditsNow": "kredit · Sekarang juga",
-        "description": "Fitur lanjutan · 3 komputer cloud",
-        "priceUnavailable": "Lihat paket untuk harga terbaru",
-        "title": "Tersisa sekitar 5 tugas",
-        "upgradeFromPrice": "Upgrade mulai {{price}}/bulan",
-        "upgradeNow": "Upgrade sekarang"
-      },
       "redirecting": "Mengarahkan...",
       "upgradeToContinue": "Upgrade ke Pro agar tetap bisa mengobrol dengan {{assistantName}}.",
       "upgradeToPro": "Upgrade ke Pro",
@@ -2049,7 +2045,6 @@
       "slashPanel": {
         "browseAll": "Jelajahi semua templat",
         "hint": "Cari alur kerja atau pilih templat…",
-        "make": "Buat",
         "useTemplate": "Gunakan templat {{title}}"
       },
       "temporarilySwitchTo": "Beralih sementara ke",
@@ -2365,10 +2360,10 @@
       "loading": "Memuat ponsel…",
       "noPhones": "Tidak ada ponsel online",
       "openApp": "Buka Okou iOS Use",
-      "openAppDescription": "Instal build pengembangan di iPhone, masuk dengan akun dan ruang kerja yang sama, lalu mulai jendela kontrol.",
+      "openAppDescription": "Instal build pengembangan di iPhone, masuk dengan akun dan ruang kerja yang sama, lalu pilih Go online.",
       "setupDescription": "Izinkan Okou menggunakan iPhone Anda dari obrolan ini.",
       "startTask": "Kirim tugas berikutnya",
-      "startTaskDescription": "Setelah mengizinkan akses, kirim pesan baru di sini. Biarkan jendela kontrol tetap aktif di ponsel Anda.",
+      "startTaskDescription": "Setelah mengizinkan akses, kirim pesan baru di sini. Pastikan iPhone tetap online dan tidak terkunci.",
       "yourPhone": "Ponsel Anda"
     },
     "promptDocumentTitle": "Prompt",
@@ -2576,206 +2571,6 @@
       "unsupported": "Reset manual tidak didukung; penggunaan akan pulih secara otomatis."
     },
     "taskChips": {
-      "chooseTask": "Pilih tugas",
-      "ideas": {
-        "document": {
-          "contract": {
-            "label": "Buat draf kontrak untuk klien baru",
-            "prompt": "Buat draf kontrak untuk klien baru"
-          },
-          "creativeBrief": {
-            "label": "Tulis arahan kreatif untuk peluncuran",
-            "prompt": "Tulis arahan kreatif untuk peluncuran"
-          },
-          "invoice": {
-            "label": "Buat faktur terperinci",
-            "prompt": "Buat faktur terperinci"
-          },
-          "serviceAgreement": {
-            "label": "Susun kerangka perjanjian layanan",
-            "prompt": "Susun kerangka perjanjian layanan"
-          }
-        },
-        "image": {
-          "birthdayInvitation": {
-            "label": "Desain undangan ulang tahun",
-            "prompt": "Desain undangan ulang tahun"
-          },
-          "brandCharacter": {
-            "label": "Buat karakter untuk merek saya",
-            "prompt": "Buat karakter untuk merek saya"
-          },
-          "businessLogo": {
-            "label": "Buat logo untuk bisnis saya",
-            "prompt": "Buat logo untuk bisnis saya"
-          },
-          "cafeMenu": {
-            "label": "Desain menu untuk kafe saya",
-            "prompt": "Desain menu untuk kafe saya"
-          },
-          "eventPoster": {
-            "label": "Desain poster untuk acara saya",
-            "prompt": "Desain poster untuk acara saya"
-          },
-          "finishedSketch": {
-            "label": "Ubah sketsa saya menjadi visual jadi",
-            "prompt": "Ubah sketsa saya menjadi visual jadi"
-          },
-          "greetingCard": {
-            "label": "Buat kartu ucapan pribadi",
-            "prompt": "Buat kartu ucapan pribadi"
-          },
-          "headshot": {
-            "label": "Buat foto profil profesional",
-            "prompt": "Buat foto profil profesional"
-          },
-          "infographic": {
-            "label": "Ubah ide menjadi infografik",
-            "prompt": "Ubah ide menjadi infografik"
-          },
-          "newsletterCover": {
-            "label": "Buat sampul untuk buletin saya",
-            "prompt": "Buat sampul untuk buletin saya"
-          },
-          "packaging": {
-            "label": "Jelajahi kemasan untuk produk saya",
-            "prompt": "Jelajahi kemasan untuk produk saya"
-          },
-          "photoLighting": {
-            "label": "Perbaiki pencahayaan foto saya",
-            "prompt": "Perbaiki pencahayaan foto saya"
-          },
-          "presentationVisual": {
-            "label": "Buat visual untuk presentasi saya",
-            "prompt": "Buat visual untuk presentasi saya"
-          },
-          "productScene": {
-            "label": "Tempatkan produk saya dalam suasana baru",
-            "prompt": "Tempatkan produk saya dalam suasana baru"
-          },
-          "profileBanner": {
-            "label": "Perbarui banner profil saya",
-            "prompt": "Perbarui banner profil saya"
-          },
-          "roomDesign": {
-            "label": "Coba tampilan baru untuk kamar saya",
-            "prompt": "Coba tampilan baru untuk kamar saya"
-          },
-          "storePhoto": {
-            "label": "Siapkan foto untuk toko saya",
-            "prompt": "Siapkan foto untuk toko saya"
-          },
-          "websiteImage": {
-            "label": "Buat gambar untuk situs saya",
-            "prompt": "Buat gambar untuk situs saya"
-          }
-        },
-        "presentation": {
-          "clientProposal": {
-            "label": "Menulis proposal untuk klien",
-            "prompt": "Buat dek proposal klien. Tanyakan tentang kliennya, pekerjaan yang saya usulkan, jadwal, dan harganya."
-          },
-          "companyOverview": {
-            "label": "Menjelaskan apa yang dikerjakan perusahaan saya",
-            "prompt": "Buat dek profil perusahaan. Tanyakan apa yang kami kerjakan, siapa yang kami layani, dan apa yang harus diingat audiens."
-          },
-          "eventTalk": {
-            "label": "Menyiapkan materi bicara untuk acara",
-            "prompt": "Buat dek untuk sesi bicara saya. Tanyakan tentang acaranya, audiensnya, dan satu gagasan yang ingin saya sampaikan."
-          },
-          "pitchDeck": {
-            "label": "Mempresentasikan bisnis ke investor",
-            "prompt": "Buat pitch deck investor untuk bisnis saya. Tanyakan masalahnya, produknya, traksi sejauh ini, dan berapa yang ingin saya galang."
-          },
-          "productIntro": {
-            "label": "Memperkenalkan produk baru",
-            "prompt": "Buat dek yang memperkenalkan produk baru. Tanyakan apa fungsinya, untuk siapa, dan apa yang membuatnya berbeda."
-          },
-          "resultsReadout": {
-            "label": "Mempresentasikan hasil saya",
-            "prompt": "Ubah hasil saya menjadi dek laporan. Tanyakan angkanya, periode yang dicakup, dan keputusan yang didukungnya."
-          },
-          "teamUpdate": {
-            "label": "Menyusun update untuk tim",
-            "prompt": "Buat dek untuk update tim saya. Tanyakan apa yang terjadi periode ini, apa berikutnya, dan siapa audiensnya."
-          },
-          "training": {
-            "label": "Mengajari tim saya sesuatu",
-            "prompt": "Buat dek pelatihan tentang topik yang saya pilih. Tanyakan siapa yang dilatih dan apa yang harus mereka kuasai setelahnya."
-          }
-        },
-        "website": {
-          "bookingPage": {
-            "label": "Buat halaman pemesanan layanan saya",
-            "prompt": "Buat halaman yang menjelaskan layanan saya dan cara memesan. Gunakan tautan pemesanan yang sudah ada dan tanyakan detail layanan."
-          },
-          "businessSite": {
-            "label": "Buat situs untuk bisnis saya",
-            "prompt": "Buat situs yang menjelaskan bisnis, layanan, dan cara menghubungi saya. Mulai dengan detail bisnis dan audiens."
-          },
-          "cafeMenu": {
-            "label": "Tampilkan menu kafe saya secara online",
-            "prompt": "Buat situs kafe dengan menu, harga, jam buka, dan lokasi. Gunakan detail dan foto yang saya berikan."
-          },
-          "coursePage": {
-            "label": "Buat halaman untuk kursus saya",
-            "prompt": "Buat halaman yang mengenalkan kursus, target peserta, hasil belajar, dan cara mendaftar melalui tautan yang saya berikan."
-          },
-          "eventPage": {
-            "label": "Buat halaman untuk acara saya",
-            "prompt": "Buat halaman acara dengan tanggal, lokasi, agenda, dan tautan pendaftaran yang saya berikan. Tanyakan detail yang belum tersedia."
-          },
-          "linkPage": {
-            "label": "Satukan tautan saya dalam satu halaman",
-            "prompt": "Buat halaman tautan sederhana dengan perkenalan, karya, dan akun sosial saya. Tanyakan tautan yang perlu disertakan."
-          },
-          "portfolio": {
-            "label": "Tampilkan karya saya dalam portofolio",
-            "prompt": "Buat situs portofolio untuk karya saya. Bantu susun proyek, perkenalan diri, dan informasi kontak."
-          },
-          "productLaunch": {
-            "label": "Luncurkan halaman untuk produk saya",
-            "prompt": "Buat halaman produk dengan manfaat, visual, dan langkah selanjutnya yang jelas. Tanyakan produk yang diluncurkan dan targetnya."
-          }
-        },
-        "workflow": {
-          "emailBrief": {
-            "label": "Dapatkan ringkasan email setiap pagi",
-            "prompt": "Ringkas email penting, balasan yang perlu dibuat, dan tugas setiap pagi. Konfirmasi kotak masuk dan waktu penerimaan terlebih dahulu."
-          },
-          "fileOrganization": {
-            "label": "Atur file yang baru masuk",
-            "prompt": "Atur file baru dengan aturan penamaan dan pengarsipan yang disepakati. Konfirmasi sumber, folder tujuan, dan kategori."
-          },
-          "meetingActions": {
-            "label": "Ubah catatan rapat menjadi tugas",
-            "prompt": "Saat catatan rapat baru tersedia, ambil tugas, penanggung jawab, dan tenggat. Tandai informasi yang belum ada dan konfirmasi lokasi catatan."
-          },
-          "meetingPrep": {
-            "label": "Bantu persiapkan rapat saya",
-            "prompt": "Sebelum rapat, siapkan informasi peserta, latar belakang, dan topik diskusi. Konfirmasi kalender, sumber materi, dan waktu pengingat."
-          },
-          "numbersBrief": {
-            "label": "Dapatkan ringkasan angka harian",
-            "prompt": "Rangkum angka yang saya pantau beserta perubahan sejak pembaruan terakhir setiap hari. Konfirmasi sumber data, metrik, dan waktu pengiriman."
-          },
-          "progressRecap": {
-            "label": "Rangkum progres dan langkah berikutnya",
-            "prompt": "Rangkum pekerjaan selesai, tugas tertunda, dan prioritas berikutnya secara rutin. Konfirmasi sumber catatan serta jadwal harian atau mingguan."
-          },
-          "replyWatch": {
-            "label": "Beri tahu saat email mendapat balasan",
-            "prompt": "Pantau balasan untuk satu email, lalu beri tahu saya dan rangkum isinya. Konfirmasi email yang perlu diikuti terlebih dahulu."
-          },
-          "topicUpdates": {
-            "label": "Ikuti kabar terbaru tentang suatu topik",
-            "prompt": "Ikuti topik yang saya minati dan rangkum informasi baru yang penting beserta sumbernya. Tanyakan topik dan frekuensi pembaruan."
-          }
-        }
-      },
-      "ideasLabel": "Ide untuk memulai",
-      "label": "Mulai tugas",
-      "more": "Lainnya",
       "presentationFormat": "Format presentasi",
       "presentationFormats": {
         "html": "HTML",
@@ -2788,8 +2583,7 @@
         "image": "Gaya gambar",
         "nextPage": "Halaman berikutnya",
         "previousPage": "Halaman sebelumnya",
-        "website": "Templat situs web",
-        "workflows": "Alur kerja"
+        "website": "Templat situs web"
       },
       "tasks": {
         "document": "Dokumen",
@@ -2923,215 +2717,53 @@
       },
       "workflows": {
         "browse": "Jelajahi workflow",
-        "close": "Tutup",
-        "contextPrefix": "Yang penting bagi saya: {{preference}}",
         "items": {
           "competitors": {
-            "cadence": "Harian atau mingguan",
             "description": "Pantau perubahan harga dan fitur di situs kompetitor, simpan temuannya di Notion, dan beri tahu Slack.",
-            "name": "Pemantau kompetitor",
             "prompt": "Bantu saya menyiapkan workflow ini: Pemantau kompetitor. Memeriksa halaman pesaing pilihan secara terjadwal. Menemukan perubahan penting pada harga, paket, atau pesan. Menyimpan temuan dan sumber ke Notion serta memberi tahu Slack jika diinginkan. Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya.",
-            "steps": {
-              "one": "Memeriksa halaman pesaing pilihan secara terjadwal",
-              "three": "Menyimpan temuan dan sumber ke Notion serta memberi tahu Slack jika diinginkan",
-              "two": "Menemukan perubahan penting pada harga, paket, atau pesan"
-            },
             "title": "Ketahui perubahan pesaing"
           },
           "inbox": {
-            "cadence": "Saat email baru tiba",
             "description": "Sortir inbox Anda dan buat draf balasan untuk email yang membutuhkannya.",
-            "name": "Sortir Gmail dan buat draf balasan",
             "prompt": "Bantu saya menyiapkan workflow ini: Sortir Gmail dan buat draf balasan. Membaca pesan dalam cakupan kotak masuk pilihan. Mengurutkan berdasarkan urgensi dan aturan yang disepakati. Menyimpan saran balasan sebagai draf Gmail. Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya. Balasan email hanya berupa draf yang akan saya tinjau dan kirim sendiri.",
-            "steps": {
-              "one": "Membaca pesan dalam cakupan kotak masuk pilihan",
-              "three": "Menyimpan saran balasan sebagai draf Gmail",
-              "two": "Mengurutkan berdasarkan urgensi dan aturan yang disepakati"
-            },
             "title": "Tindak lanjuti email penting"
           },
           "invoices": {
-            "cadence": "Saat Anda memberi label pada faktur",
             "description": "Simpan email invoice ke Drive dan catat semuanya di Sheet.",
-            "name": "Simpan invoice Gmail ke Google Drive",
             "prompt": "Bantu saya menyiapkan workflow ini: Simpan invoice Gmail ke Google Drive. Mengidentifikasi faktur dari label Gmail pilihan. Menyimpan lampiran faktur di folder Drive yang disepakati. Mencatat detail di Google Sheets jika diinginkan. Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya.",
-            "steps": {
-              "one": "Mengidentifikasi faktur dari label Gmail pilihan",
-              "three": "Mencatat detail di Google Sheets jika diinginkan",
-              "two": "Menyimpan lampiran faktur di folder Drive yang disepakati"
-            },
             "title": "Jaga faktur tetap rapi"
           },
           "meetings": {
-            "cadence": "Saat rapat ditambahkan",
             "description": "Teliti orang yang akan Anda temui sebelum setiap event kalender.",
-            "name": "Teliti meeting kalender Anda",
             "prompt": "Bantu saya menyiapkan workflow ini: Teliti meeting kalender Anda. Membaca peserta dan detail acara kalender baru. Meneliti konteks profesional dan perusahaan. Menyiapkan ringkasan dengan sumber dan topik diskusi. Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya.",
-            "steps": {
-              "one": "Membaca peserta dan detail acara kalender baru",
-              "three": "Menyiapkan ringkasan dengan sumber dan topik diskusi",
-              "two": "Meneliti konteks profesional dan perusahaan"
-            },
             "title": "Hadiri rapat dengan persiapan matang"
           },
           "metrics": {
-            "cadence": "Setiap pagi",
             "description": "Posting jumlah pengunjung, signup, dan aktivasi harian ke Slack.",
-            "name": "Posting metrik harian ke Slack",
             "prompt": "Bantu saya menyiapkan workflow ini: Posting metrik harian ke Slack. Membaca metrik situs dan pendaftaran yang disepakati. Menyusun ringkasan harian dengan periode yang jelas. Membagikannya ke tujuan Slack pilihan. Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya.",
-            "steps": {
-              "one": "Membaca metrik situs dan pendaftaran yang disepakati",
-              "three": "Membagikannya ke tujuan Slack pilihan",
-              "two": "Menyusun ringkasan harian dengan periode yang jelas"
-            },
             "title": "Pantau perkembangan bisnis Anda"
           },
           "morning": {
-            "cadence": "Setiap pagi",
             "description": "Ubah update Gmail, Calendar, dan Notion jadi rencana harian singkat di Slack.",
-            "name": "Ringkasan pagi",
             "prompt": "Bantu saya menyiapkan workflow ini: Ringkasan pagi. Membaca email penting dan rapat hari ini. Memprioritaskan keputusan, tindak lanjut, dan waktu fokus. Mengirim rencana pagi singkat ke Slack. Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya.",
-            "steps": {
-              "one": "Membaca email penting dan rapat hari ini",
-              "three": "Mengirim rencana pagi singkat ke Slack",
-              "two": "Memprioritaskan keputusan, tindak lanjut, dan waktu fokus"
-            },
             "title": "Mulai hari dengan rencana yang jelas"
           },
           "recap": {
-            "cadence": "Memeriksa catatan rapat baru secara berkala",
             "description": "Bagikan rangkuman berisi keputusan dan item aksi setelah setiap rapat.",
-            "name": "Dapatkan rangkuman rapat di Slack",
             "prompt": "Bantu saya menyiapkan workflow ini: Dapatkan rangkuman rapat di Slack. Membaca transkrip rapat baru. Mengambil keputusan, tindakan, penanggung jawab, dan tanggal yang disebutkan. Mengirim rangkuman singkat ke tujuan pilihan. Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya.",
-            "steps": {
-              "one": "Membaca transkrip rapat baru",
-              "three": "Mengirim rangkuman singkat ke tujuan pilihan",
-              "two": "Mengambil keputusan, tindakan, penanggung jawab, dan tanggal yang disebutkan"
-            },
             "title": "Ubah rapat menjadi langkah berikutnya"
           },
           "reply": {
-            "cadence": "Saat balasan yang sesuai tiba",
             "description": "Pantau satu percakapan dan dapatkan poin penting balasan baru serta langkah berikutnya.",
-            "name": "Pemantauan balasan email",
             "prompt": "Bantu saya menyiapkan workflow ini: Pemantauan balasan email. Mengikuti satu percakapan email dan pengirim yang disepakati. Mendeteksi balasan baru dan merangkum poin penting. Memberi tahu sekali dan menyiapkan draf jika diperlukan. Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya. Balasan email hanya berupa draf yang akan saya tinjau dan kirim sendiri.",
-            "steps": {
-              "one": "Mengikuti satu percakapan email dan pengirim yang disepakati",
-              "three": "Memberi tahu sekali dan menyiapkan draf jika diperlukan",
-              "two": "Mendeteksi balasan baru dan merangkum poin penting"
-            },
             "title": "Jangan lewatkan balasan yang ditunggu"
           },
           "weekly": {
-            "cadence": "Setiap minggu",
             "description": "Rangkum aktivitas GitHub, Gmail, dan Calendar jadi satu update mingguan di Slack.",
-            "name": "Ringkasan mingguan pribadi",
             "prompt": "Bantu saya menyiapkan workflow ini: Ringkasan mingguan pribadi. Mengumpulkan aktivitas dari sumber pilihan. Mengelompokkan pencapaian, keputusan tertunda, dan tindak lanjut. Membagikan rangkuman mingguan ke tujuan Slack pilihan. Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya.",
-            "steps": {
-              "one": "Mengumpulkan aktivitas dari sumber pilihan",
-              "three": "Membagikan rangkuman mingguan ke tujuan Slack pilihan",
-              "two": "Mengelompokkan pencapaian, keputusan tertunda, dan tindak lanjut"
-            },
             "title": "Tutup pekan kerja dengan rangkuman jelas"
           }
-        },
-        "preview": {
-          "competitors": {
-            "changed": "Changed",
-            "footer": "Source page and change history included",
-            "heading": "One change worth a closer look.",
-            "label": "Pemantau kompetitor",
-            "now": "Now",
-            "plan": "Example company’s team plan",
-            "previous": "Previous",
-            "unit": "/ mo"
-          },
-          "inbox": {
-            "draft": "Reply draft",
-            "label": "Sortir Gmail dan buat draf balasan",
-            "later": "Your weekly digest",
-            "needsReply": "Needs reply",
-            "readLater": "Read later",
-            "review": "Review before sending",
-            "subject": "Re: Next steps",
-            "text": "Thanks for the details. I’ve reviewed the proposal and…"
-          },
-          "invoices": {
-            "amount": "Amount",
-            "example": "Example studio",
-            "file": "Invoice — September",
-            "filed": "Filed",
-            "footer": "An optional Sheet keeps the record together",
-            "label": "Simpan invoice Gmail ke Google Drive",
-            "path": "Finance / Invoices / Sep",
-            "second": "Sample supply co.",
-            "status": "Status",
-            "vendor": "Vendor"
-          },
-          "meetings": {
-            "heading": "Your next conversation.",
-            "initials": "JL",
-            "label": "Teliti meeting kalender Anda",
-            "note": "A useful place to begin",
-            "person": "Jordan Lee",
-            "question": "Ask how the team handles customer handoffs.",
-            "role": "Operations lead · Example company",
-            "tagOne": "Company context",
-            "tagTwo": "Discussion points"
-          },
-          "metrics": {
-            "activated": "Activated",
-            "footer": "A clear period. Only the metrics you choose.",
-            "label": "Posting metrik harian ke Slack",
-            "period": "Yesterday vs. prior day",
-            "signups": "Signups",
-            "visitors": "Visitors"
-          },
-          "morning": {
-            "footer": "2 emails need your attention",
-            "heading": "A little clarity for your day.",
-            "label": "Ringkasan pagi",
-            "meetingOne": "Team check-in",
-            "meetingTwo": "Client discovery",
-            "priority": "First things first",
-            "task": "Review the proposal before your client call"
-          },
-          "recap": {
-            "assign": "To assign",
-            "decision": "Decision: move ahead with a pilot",
-            "due": "Due",
-            "friday": "Fri",
-            "label": "Dapatkan rangkuman rapat di Slack",
-            "monday": "Mon",
-            "one": "Send the revised brief",
-            "owner": "Owner",
-            "task": "Next step",
-            "team": "Team",
-            "three": "Book the next check-in",
-            "two": "Confirm the pilot scope",
-            "you": "You"
-          },
-          "reply": {
-            "heading": "The reply you were waiting for.",
-            "label": "Pemantauan balasan email",
-            "next": "Next step",
-            "quote": "“Thursday works for us. Could you share a short agenda?”",
-            "subject": "Re: Our next conversation",
-            "task": "Confirm the time and prepare an agenda"
-          },
-          "weekly": {
-            "heading": "A week worth looking back on.",
-            "label": "Ringkasan mingguan pribadi",
-            "next": "Carry into next week",
-            "one": "Shared the revised proposal",
-            "task": "Confirm the launch date with the team",
-            "two": "Wrapped up the onboarding guide"
-          }
-        },
-        "sample": "Contoh",
-        "tailor": "Apa yang ingin Anda sesuaikan?",
-        "use": "Gunakan workflow ini",
-        "whatHappens": "Proses setiap kali dijalankan"
+        }
       }
     },
     "templates": {
@@ -3289,13 +2921,13 @@
   },
   "connectorChatAccess": {
     "accountAccess": "Akses {{account}}",
+    "accountsInChat": "Pilih akun yang aktif dalam chat ini.",
     "enableByDefault": "Aktifkan {{account}} secara default",
-    "enabledAccounts": "{{value}} aktif",
     "manageAccounts": "Kelola akun",
-    "noEnabledAccount": "Tidak ada akun aktif untuk chat ini",
     "permissions": "Izin",
     "permissionsDescription": "Aturan ini berlaku untuk konektor ini di semua chat dan akun Anda.",
-    "settingsDescription": "Pilih akun yang aktif secara default."
+    "settingsDescription": "Pilih akun {{connector}} yang dapat digunakan Okou di chat Anda. Anda dapat mengubah akses di setiap chat.",
+    "totalAccounts": "{{value}} akun"
   },
   "connectors": {
     "access": {
@@ -4301,6 +3933,26 @@
     "previousFeature": "Fitur sebelumnya",
     "tryPrompt": "Coba tugas ini"
   },
+  "feedEvents": {
+    "automationDisabled": {
+      "backToWorkflows": "Kembali ke alur kerja",
+      "disabledAt": "Dinonaktifkan pada {{time}}",
+      "loadFailed": "Tidak dapat memuat otomatisasi ini",
+      "loadingAutomation": "Memuat otomatisasi",
+      "otherWorkspace": "Otomatisasi ini berada di {{workspace}}. Ganti ruang kerja untuk melihatnya.",
+      "reason_one": "{{count}} proses gagal. Tinjau otomatisasi sebelum mengaktifkannya kembali.",
+      "reason_other": "{{count}} proses berturut-turut gagal. Tinjau otomatisasi sebelum mengaktifkannya kembali.",
+      "switchFailed": "Tidak dapat mengganti ruang kerja. Coba lagi atau gunakan pemilih ruang kerja.",
+      "switchWorkspace": "Ganti ruang kerja",
+      "systemManaged": "Otomatisasi ini dikelola sistem. Status saat ini ditampilkan di bawah.",
+      "systemSource": "Peristiwa platform",
+      "title": "Otomatisasi dinonaktifkan",
+      "unavailable": "Otomatisasi tidak ditemukan atau Anda tidak memiliki akses",
+      "viewAutomation": "Lihat otomatisasi",
+      "workspaceFallback": "Ruang kerja asal"
+    },
+    "retry": "Coba lagi"
+  },
   "friendReferrals": {
     "copied": "Disalin",
     "copyFailed": "Gagal menyalin. Coba lagi.",
@@ -4438,6 +4090,10 @@
     "unsaved": "Perubahan belum disimpan"
   },
   "onboarding": {
+    "autoComplete": {
+      "continueManually": "Lanjutkan penyiapan",
+      "title": "Menyiapkan ruang kerja Anda"
+    },
     "common": {
       "next": "Berikutnya",
       "skip": "Lewati",
@@ -6121,7 +5777,6 @@
         "default": "Default",
         "description": "Tambahkan kartu atau ubah kartu default di dompet Link Anda.",
         "empty": "Belum ada kartu di dompet Link Anda",
-        "expires": "Berlaku hingga {{date}}",
         "loadError": "Kartu Anda tidak dapat dimuat.",
         "loading": "Memuat kartu",
         "manage": "Kelola kartu",
@@ -6580,48 +6235,6 @@
       "thread_one": "{{value}} utas",
       "thread_other": "{{value}} utas"
     }
-  },
-  "userNotifications": {
-    "automationDisabled": {
-      "backToWorkflows": "Kembali ke alur kerja",
-      "disabled": "Dinonaktifkan",
-      "disabledAt": "Dinonaktifkan pada {{time}}",
-      "loadFailed": "Tidak dapat memuat otomatisasi ini",
-      "loadingAutomation": "Memuat otomatisasi",
-      "notNow": "Tidak sekarang",
-      "otherWorkspace": "Otomatisasi ini berada di {{workspace}}. Ganti ruang kerja untuk melihatnya.",
-      "reason_one": "{{count}} proses gagal. Tinjau otomatisasi sebelum mengaktifkannya kembali.",
-      "reason_other": "{{count}} proses berturut-turut gagal. Tinjau otomatisasi sebelum mengaktifkannya kembali.",
-      "switchFailed": "Tidak dapat mengganti ruang kerja. Coba lagi atau gunakan pemilih ruang kerja.",
-      "switchWorkspace": "Ganti ruang kerja",
-      "systemManaged": "Otomatisasi ini dikelola sistem. Status saat ini ditampilkan di bawah.",
-      "systemSource": "Notifikasi sistem",
-      "title": "Otomatisasi dinonaktifkan",
-      "unavailable": "Otomatisasi tidak ditemukan atau Anda tidak memiliki akses",
-      "viewAutomation": "Lihat otomatisasi",
-      "workspace": "Ruang kerja",
-      "workspaceFallback": "Ruang kerja asal"
-    },
-    "close": "Tutup",
-    "countUnavailable": "Jumlah notifikasi belum dibaca tidak tersedia",
-    "detailFailed": "Tidak dapat memuat notifikasi ini",
-    "empty": "Belum ada notifikasi",
-    "emptyDescription": "Pembaruan dari Okou akan muncul di sini.",
-    "loadFailed": "Tidak dapat memuat notifikasi",
-    "loading": "Memuat notifikasi",
-    "loadMore": "Tampilkan yang lebih lama",
-    "nextPage": "Halaman berikutnya",
-    "pageNavigation": "Halaman dalam pesan ini",
-    "pageOf": "Halaman {{current}} dari {{total}}",
-    "previousPage": "Halaman sebelumnya",
-    "readAll": "Tandai semua sudah dibaca",
-    "readFailed": "Tidak dapat menandai sebagai dibaca",
-    "retry": "Coba lagi",
-    "sender": "Tim Okou",
-    "title": "Notifikasi",
-    "unread": "Belum dibaca",
-    "unreadCount_one": "{{count}} notifikasi belum dibaca",
-    "unreadCount_other": "{{count}} notifikasi belum dibaca"
   },
   "vnc": {
     "add": "Tambahkan host",

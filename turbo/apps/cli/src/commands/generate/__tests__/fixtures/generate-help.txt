@@ -13,7 +13,8 @@ Commands:
                                  waiting or submitting another job
   image-batch                    Run image jobs with at most three concurrent
                                  requests and one transient retry
-  presentation [options]         Generate an HTML presentation from a prompt
+  presentation [options]         Generate an HTML or native PPTX presentation
+                                 from a prompt
   report [options]               Generate an HTML report from a prompt
   docs-design [options]          Generate a documentation design from a prompt
   poster [options]               Generate an HTML poster from a prompt

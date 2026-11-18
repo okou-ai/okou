@@ -1,3 +1,5 @@
+import { waitUntil } from "../context/wait-until";
+import { continueIntegrationRecovery$ } from "./integration-recovery-continuation.service";
 import { command } from "ccstate";
 import { literal, object, string } from "zod";
 import {
@@ -61,7 +63,7 @@ export const handleFeishuModelRecovery$ = command(
     }
     if (action.action.option !== undefined) {
       const state = modelRecoveryStateSchema.safeParse(action.action.value);
-      const text = state.success
+      const saved = state.success
         ? await set(
             saveIntegrationModelChoice$,
             {
@@ -71,12 +73,17 @@ export const handleFeishuModelRecovery$ = command(
             },
             signal,
           )
-        : MODEL_RECOVERY_STALE;
+        : { message: MODEL_RECOVERY_STALE, input: null };
+      if (saved.input) {
+        waitUntil(set(continueIntegrationRecovery$, saved.input, signal));
+      }
       return Response.json({
         card: {
           type: "raw",
-          data: buildFeishuNoticeMessage({ title: "Model selection", text })
-            .content,
+          data: buildFeishuNoticeMessage({
+            title: "Model selection",
+            text: saved.message,
+          }).content,
         },
       });
     }

@@ -8,6 +8,59 @@ import XCTest
 
 @MainActor
 final class ChatSyncTests: XCTestCase {
+  func testStructuredRunAndOrdinaryErrorsSurviveHTTPAndOfflineCache() async throws {
+    for payload in ["null", #"{"error":"private diagnostic"}"#] {
+      try await assertCanonicalFailureSurvivesHTTPAndOfflineCache(payload: payload)
+    }
+  }
+
+  private func assertCanonicalFailureSurvivesHTTPAndOfflineCache(payload: String) async throws {
+    let directory = CacheTestDirectory(owner: self)
+    let offline = Mutex(false)
+    let row = """
+      {"id":"\(syncEventID(3))","chatThreadId":"\(syncThreadID)","runId":"\(syncRunID)","seqId":3,"createdAt":"2026-10-20T00:00:00Z","eventType":"run.failed","failureReason":"execution_timeout","payload":\(payload)}
+      """
+    let rejection = """
+      {"id":"\(syncEventID(1))","chatThreadId":"\(syncThreadID)","runId":"\(syncRunID)","seqId":1,"createdAt":"2026-10-20T00:00:00Z","eventType":"input.rejected","payload":{"error":"Input rejected","userMessage":{"version":1,"parts":[{"type":"text","text":"Question"}]}}}
+      """
+    let outputError = """
+      {"id":"\(syncEventID(2))","chatThreadId":"\(syncThreadID)","runId":"\(syncRunID)","seqId":2,"createdAt":"2026-10-20T00:00:00Z","eventType":"output.error","payload":{"error":"Ordinary output error"}}
+      """
+    let fixture = ChatHTTPFixture { request in
+      guard request.httpMethod == "GET", let path = request.url?.path,
+        [syncPath, syncPath + "/event-snapshot", syncPath + "/event-rows"].contains(path)
+      else { throw URLError(.unsupportedURL) }
+      if offline.withLock({ $0 }) { throw URLError(.notConnectedToInternet) }
+      switch path {
+      case syncPath + "/event-snapshot": return syncMissingSnapshot()
+      case syncPath + "/event-rows":
+        return syncSequence(request) == 0
+          ? syncPage([rejection, outputError, row], cursor: 3) : syncPage([], cursor: 3)
+      case syncPath: return ChatHTTPResponse(body: #"{"cancellationRecoveryPending":false}"#)
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let scope = syncScope(fixture)
+    let service = ChatSync(client: fixture.client, cache: directory.cache(scope: scope))
+    let history = try await service.history(threadID: syncThreadID)
+    XCTAssertEqual(history.latestFailureID, syncEventID(3))
+    XCTAssertEqual(history.messages.first?.inputError, "Input rejected")
+    XCTAssertEqual(history.messages[1].failure?.outputError, "Ordinary output error")
+    XCTAssertEqual(history.messages.last?.failure?.reason, "execution_timeout")
+    XCTAssertEqual(history.messages.last?.failure?.recovery(personalFramework: nil).kind, .timeout)
+    offline.withLock { $0 = true }
+    let reopened = ChatSync(client: fixture.client, cache: directory.cache(scope: scope))
+    let cached = await reopened.cachedHistory(threadID: syncThreadID)
+    XCTAssertEqual(cached?.latestFailureID, history.latestFailureID)
+    XCTAssertEqual(cached?.messages.last?.failure?.reason, "execution_timeout")
+    XCTAssertEqual(cached, history)
+    let stored = try await directory.cache(scope: scope).loadHistory(threadID: syncThreadID)
+    let retained = try XCTUnwrap(stored?.rows.last?.data)
+    XCTAssertEqual(
+      try JSONSerialization.jsonObject(with: retained) as? NSDictionary,
+      try JSONSerialization.jsonObject(with: Data(row.utf8)) as? NSDictionary)
+  }
+
   func testExtensionTailBecomesVisibleToAResidentReaderBeforeAnyForegroundRequest() async throws {
     let directory = CacheTestDirectory(owner: self)
     let later = Mutex(false)
@@ -24,7 +77,7 @@ final class ChatSyncTests: XCTestCase {
             ? syncPage(
               [
                 syncRow(3, text: "New answer", runID: syncSecondRunID),
-                syncRow(4, runID: syncSecondRunID),
+                syncRow(4, runID: syncSecondRunID)
               ], cursor: 4)
             : syncPage([], cursor: 2)
         case 4: return syncPage([], cursor: 4)
@@ -149,7 +202,7 @@ final class ChatSyncTests: XCTestCase {
             return syncPage(
               [
                 syncRow(3, text: "Later answer", runID: syncSecondRunID),
-                syncRow(4, runID: syncSecondRunID),
+                syncRow(4, runID: syncSecondRunID)
               ], cursor: 4)
           }
           return syncPage([], cursor: 2)
@@ -196,7 +249,7 @@ final class ChatSyncTests: XCTestCase {
     let initialRows = [syncRow(1, text: "Initial answer"), syncRow(2)]
     let laterRows = [
       syncRow(3, text: "Latest answer", runID: syncSecondRunID),
-      syncRow(4, runID: syncSecondRunID),
+      syncRow(4, runID: syncSecondRunID)
     ]
     let fixture = ChatHTTPFixture { request in
       requests.withLock { $0.append(request) }
@@ -278,12 +331,7 @@ final class ChatSyncTests: XCTestCase {
 
     XCTAssertEqual(first.messages.map(\.text), ["Initial answer"])
     XCTAssertEqual(second.messages.map(\.text), ["Initial answer", "Latest answer"])
-    let observed = requests.withLock { $0 }
-    XCTAssertEqual(
-      observed.filter { $0.url?.path == syncPath + "/event-snapshot" }.count, 1)
-    XCTAssertEqual(
-      observed.filter { $0.url?.path == syncPath + "/event-rows" }.compactMap(syncSequence),
-      [0, 2, 2])
+    assertOverlappingHistoryRequests(requests.withLock { $0 })
     let cache = directory.cache(scope: scope)
     let durable = try await cache.loadHistory(threadID: syncThreadID)
     XCTAssertEqual(durable?.cursor, ChatCacheCursor(eventID: syncEventID(4), seqID: 4))
@@ -292,6 +340,15 @@ final class ChatSyncTests: XCTestCase {
     let restored = await restarted.cachedHistory(threadID: syncThreadID)
     XCTAssertEqual(restored?.messages.map(\.text), ["Initial answer", "Latest answer"])
   }
+
+  private func assertOverlappingHistoryRequests(_ observed: [URLRequest]) {
+    XCTAssertEqual(
+      observed.filter { $0.url?.path == syncPath + "/event-snapshot" }.count, 1)
+    XCTAssertEqual(
+      observed.filter { $0.url?.path == syncPath + "/event-rows" }.compactMap(syncSequence),
+      [0, 2, 2])
+  }
+
   func testWarmingPersistsUnopenedHistoryAndContinuesItsCursor() async throws {
     let directory = CacheTestDirectory(owner: self)
     let cursors = Mutex<[Int]>([])

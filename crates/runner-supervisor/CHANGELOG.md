@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.25.26](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.25...runner-supervisor-v0.25.26) (2026-11-18)
+
+## [0.25.25](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.24...runner-supervisor-v0.25.25) (2026-11-18)
+
+## [0.25.24](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.23...runner-supervisor-v0.25.24) (2026-11-17)
+
+
+### Performance Improvements
+
+* **runner:** stop idle parking after local drain ([#48404](https://github.com/okou-ai/okou/issues/48404)) ([ffb675d](https://github.com/okou-ai/okou/commit/ffb675d9c3427d2ab8fd90bb4a68c0d34ce85137))
+
+## [0.25.23](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.22...runner-supervisor-v0.25.23) (2026-11-17)
+
+## [0.25.22](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.21...runner-supervisor-v0.25.22) (2026-11-17)
+
+## [0.25.21](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.20...runner-supervisor-v0.25.21) (2026-11-17)
+
+## [0.25.20](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.19...runner-supervisor-v0.25.20) (2026-11-17)
+
+## [0.25.19](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.18...runner-supervisor-v0.25.19) (2026-11-17)
+
+## [0.25.18](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.17...runner-supervisor-v0.25.18) (2026-11-17)
+
+## [0.25.17](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.16...runner-supervisor-v0.25.17) (2026-11-17)
+
+## [0.25.16](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.15...runner-supervisor-v0.25.16) (2026-11-16)
+
+## [0.25.15](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.14...runner-supervisor-v0.25.15) (2026-11-16)
+
+## [0.25.14](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.13...runner-supervisor-v0.25.14) (2026-11-16)
+
+## [0.25.13](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.12...runner-supervisor-v0.25.13) (2026-11-16)
+
+
+### Refactoring
+
+* prepare structured run failures and recovery ([#47749](https://github.com/okou-ai/okou/issues/47749)) ([fca7335](https://github.com/okou-ai/okou/commit/fca73354c6b5b0aa4f122e78947565b274323991))
+
+## [0.25.12](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.11...runner-supervisor-v0.25.12) (2026-11-16)
+
 ## [0.25.11](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.10...runner-supervisor-v0.25.11) (2026-11-16)
 
 ## [0.25.10](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.9...runner-supervisor-v0.25.10) (2026-11-16)

@@ -89,10 +89,10 @@ violations.py:85: use metadata_keys.FIREWALL_ERROR for flow.metadata access
 violations.py:86: use metadata_keys.AUTH_CACHE_HIT for flow.metadata access
 violations.py:87: use metadata_keys.NETWORK_LOG_TARGET for flow.metadata access
 violations.py:88: use metadata_keys.SANDBOX_NETWORK_LOG_PATH for flow.metadata access
-violations.py:89: use metadata_keys.STREAM_BUFFER for flow.metadata access
+violations.py:89: use metadata_keys.RESPONSE_STREAM_CAPTURE for flow.metadata access
 violations.py:90: use metadata_keys.CAPTURE_BODY for flow.metadata access
-violations.py:91: use metadata_keys.REQUEST_STREAM_BUFFER for flow.metadata access
-violations.py:91: use metadata_keys.REQUEST_STREAM_BUFFER_STATE for flow.metadata access
+violations.py:91: use metadata_keys.REQUEST_STREAM_CAPTURE for flow.metadata access
+violations.py:91: use metadata_keys.REQUEST_STREAM_STATE for flow.metadata access
 violations.py:92: use metadata_keys.TRUSTED_AUTHORITY_HOST for flow.metadata access
 violations.py:93: use metadata_keys.HTTP_REQUEST_START_MONOTONIC for flow.metadata access
 violations.py:94: use metadata_keys.SANDBOX_AUTH_KEY for flow.metadata access

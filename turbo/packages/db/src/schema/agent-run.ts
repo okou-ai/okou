@@ -1,10 +1,29 @@
 import { agentRunColumns } from "../columns/agent-run";
+import type {
+  AgentRunSecretNames,
+  AgentRunVars,
+} from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 
-import { pgTable, index, check, boolean } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  index,
+  check,
+  boolean,
+  text,
+  jsonb,
+} from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 const migrationColumns = {
   ...agentRunColumns(),
+  // Retain historical diagnostics without exposing this column to application
+  // INSERT, SELECT or RETURNING projections.
+  error: text("error"),
+  // Diagnostic data lives in Axiom. Retain physical storage without exposing
+  // these columns to application INSERT, SELECT or RETURNING projections.
+  appendSystemPrompt: text("append_system_prompt"),
+  vars: jsonb("vars").$type<AgentRunVars>(),
+  secretNames: jsonb("secret_names").$type<AgentRunSecretNames>(),
   // Retain physical storage until this runtime is independently deployed,
   // preceding API SQL drains and incompatible rollback targets are excluded.
   // Physical contraction is tracked by #40886.

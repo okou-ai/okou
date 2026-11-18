@@ -8,6 +8,7 @@ export const runFailureReasonTokenSchema = string()
 export type RunFailureReasonToken = zInfer<typeof runFailureReasonTokenSchema>;
 
 export const knownRunFailureReasonSchema = zEnum([
+  "unknown",
   "session_history_limit",
   "guest_root_filesystem_full",
   "guest_home_filesystem_full",
@@ -39,3 +40,11 @@ export const knownRunFailureReasonSchema = zEnum([
 ]);
 
 export type KnownRunFailureReason = zInfer<typeof knownRunFailureReasonSchema>;
+
+/** Legacy and future wire tokens are never additional canonical failure codes. */
+export function normalizeRunFailureReason(
+  reason: string | null | undefined,
+): KnownRunFailureReason {
+  const parsed = knownRunFailureReasonSchema.safeParse(reason);
+  return parsed.success ? parsed.data : "unknown";
+}

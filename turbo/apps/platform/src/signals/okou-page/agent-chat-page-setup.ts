@@ -1,4 +1,3 @@
-import { watchUserNotifications$ } from "./user-notifications.ts";
 import { hydrateProjects$ } from "../projects/projects.ts";
 import { resetProjectUi$ } from "../projects/project-ui.ts";
 import {
@@ -46,7 +45,6 @@ import {
   setAgentPhoneConnectDialogOpen$,
   watchAgentPhoneConnection$,
 } from "./agentphone.ts";
-import { enterHomeSuggestions$ } from "./agent-suggestion-session.ts";
 
 const restoreMarketingAgentDraft$ = command(
   async ({ get, set }, agentDraft: EnsuredAgentDraft, signal: AbortSignal) => {
@@ -102,7 +100,6 @@ const setupChatPageForAgent$ = command(
     set(resetChatPageModelSelection$);
     set(setAgentPhoneConnectDialogOpen$, false);
     set(updatePage$, createElement(AgentChatPage), "sidebar");
-    set(watchUserNotifications$, signal);
     // Keep the phone link current while Get started can open its connect
     // dialog here, so a link made from the phone closes it the way it does on
     // the pages that also offer the link. Link status never delays the chat,
@@ -111,12 +108,6 @@ const setupChatPageForAgent$ = command(
       set(watchAgentPhoneConnection$, signal),
       Reason.Daemon,
       "get started phone link",
-    );
-    // The suggestion cards render under the page while they load.
-    detach(
-      set(enterHomeSuggestions$, signal),
-      Reason.Daemon,
-      "home suggestions",
     );
 
     await set(hideAppSkeleton$, signal);

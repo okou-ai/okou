@@ -4,80 +4,62 @@ import {
   ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
   ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
 } from "@okouai/api-contracts/contracts/paid-tools";
-import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-types";
 import { expandVariables } from "@okouai/core/variable-expander";
 import { computed, type Computed } from "ccstate";
-import { badRequestMessage } from "../../lib/error";
-import { safeSync } from "../utils";
 import { compactRecord } from "./connector-runtime-preparation.service";
-import { modelProviderPermissionManifest } from "./permission-manifest.service";
-import { emptyEnvironment, type Environment } from "./run-environment";
-import type { AgentRunContextSignals } from "./agent-run-context.signals";
-import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
+import type { Environment } from "./run-environment";
+import type {
+  PermissionManifest,
+  ResolvedModelProviderEnvironment,
+} from "./agent-run-contracts";
 
-/** The selected model provider's environment, secrets and firewall. */
+/** The selected model provider's placeholders, source metadata and firewall. */
 export function createModelProviderEnvironmentSignals(
-  bodyEnvironment$: AgentRunContextSignals["bodyEnvironment$"],
-  modelRoute$: Computed<Promise<ResolvedModelProviderEnvironment | null>>,
+  runVariables$: Computed<Promise<Record<string, string> | undefined>>,
+  modelRoute$: Computed<Promise<ResolvedModelProviderEnvironment>>,
+  modelPermissions$: Computed<Promise<PermissionManifest | undefined>>,
 ) {
-  return computed(
-    async (
-      get,
-    ): Promise<Environment | ReturnType<typeof badRequestMessage>> => {
-      const [modelProvider, body] = await Promise.all([
-        get(modelRoute$),
-        get(bodyEnvironment$),
-      ]);
-      if (!modelProvider) {
-        return emptyEnvironment();
-      }
-      const manifestResult = safeSync(() => {
-        return modelProviderPermissionManifest(modelProvider, body.vars);
-      });
-      if ("error" in manifestResult) {
-        if (manifestResult.error instanceof FirewallBaseUrlResolutionError) {
-          return badRequestMessage(manifestResult.error.message);
-        }
-        throw manifestResult.error;
-      }
-      const manifest = manifestResult.ok;
-      return {
-        vars: undefined,
-        environment: compactRecord(
-          expandVariables(modelProvider.environment, {
-            vars: body.vars,
-            secrets: {
-              ...modelProvider.secrets,
-              ...manifest?.environmentSecretPlaceholders,
-            },
-          }).result,
-        ),
-        platformEnvironment: undefined,
-        secrets: compactRecord(modelProvider.secrets),
-        secretConnectorMap: modelProvider.secretConnectorMap,
-        secretConnectorMetadataMap: modelProvider.secretConnectorMetadataMap,
-        firewalls: manifest?.firewalls ?? [],
-        networkPolicies: manifest?.networkPolicies ?? {},
-        environmentSecretPlaceholders: manifest?.environmentSecretPlaceholders,
-        billableFirewalls: manifest?.billableFirewalls ?? [],
-        runtimeTargets: [],
-        reservedSecretAliases: [],
-      };
-    },
-  );
+  return computed(async (get): Promise<Environment> => {
+    const [modelProvider, vars, manifest] = await Promise.all([
+      get(modelRoute$),
+      get(runVariables$),
+      get(modelPermissions$),
+    ]);
+    return {
+      vars: undefined,
+      environment: compactRecord(
+        expandVariables(modelProvider.environment, {
+          vars,
+          secrets: manifest?.environmentSecretPlaceholders,
+        }).result,
+      ),
+      platformEnvironment: undefined,
+      secrets: undefined,
+      secretConnectorMap: modelProvider.secretConnectorMap,
+      secretConnectorMetadataMap: modelProvider.secretConnectorMetadataMap,
+      firewalls: manifest?.firewalls ?? [],
+      networkPolicies: manifest?.networkPolicies ?? {},
+      environmentSecretPlaceholders: manifest?.environmentSecretPlaceholders,
+      billableFirewalls: manifest?.billableFirewalls ?? [],
+      runtimeTargets: [],
+      // Managed model names belong to the Run even without a startup value.
+      reservedSecretAliases:
+        modelProvider.credentialOwner === "builtin"
+          ? Object.keys(manifest?.environmentSecretPlaceholders ?? {})
+          : [],
+    };
+  });
 }
 
 export function paidToolPlatformEnvironment(args: {
   readonly disabledTools: readonly string[];
   readonly framework: string;
-  readonly modelProviderType: string | null;
+  readonly modelProviderType: string;
   readonly piExecution: boolean;
 }): Record<string, string> {
   const { disabledTools, framework, modelProviderType, piExecution } = args;
   const allowFrameworkTools =
-    !piExecution &&
-    (modelProviderType === null ||
-      !isBuiltInModelProviderType(modelProviderType));
+    !piExecution && !isBuiltInModelProviderType(modelProviderType);
   return {
     [DISABLED_PAID_TOOLS_ENV_VAR]: JSON.stringify(disabledTools),
     ...(allowFrameworkTools &&

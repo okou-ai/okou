@@ -1,6 +1,6 @@
 [package]
 name = "guest-home-mount"
-version = "0.2.72"
+version = "0.2.82"
 edition.workspace = true
 description = "Fixed privileged home mount checks and bounded initialization"
 
@@ -8,7 +8,7 @@ description = "Fixed privileged home mount checks and bounded initialization"
 guest-contracts.workspace = true
 libc = { workspace = true, features = ["std"] }
 linux-mountinfo.workspace = true
-nix = { workspace = true, features = ["user"] }
+nix = { workspace = true, features = ["fs", "user"] }
 rustix = { workspace = true, features = ["fs", "linux_4_11", "std"] }
 
 [dev-dependencies]

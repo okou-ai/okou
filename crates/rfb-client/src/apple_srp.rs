@@ -222,15 +222,14 @@ fn hash(parts: &[&[u8]]) -> Zeroizing<[u8; HASH_BYTES]> {
     result
 }
 
-fn prf(password: &[u8], input: &[u8]) -> Result<Zeroizing<[u8; HASH_BYTES]>, Error> {
-    let mut mac =
-        HmacSha512::new_from_slice(password).map_err(|_| Error::InvalidAppleSrpParameters)?;
+fn prf(keyed_mac: &HmacSha512, input: &[u8]) -> Zeroizing<[u8; HASH_BYTES]> {
+    let mut mac = keyed_mac.clone();
     mac.update(input);
     let mut bytes = mac.finalize().into_bytes();
     let mut result = Zeroizing::new([0u8; HASH_BYTES]);
     result.copy_from_slice(&bytes);
     bytes.as_mut_slice().zeroize();
-    Ok(result)
+    result
 }
 
 async fn derive_password(
@@ -239,18 +238,23 @@ async fn derive_password(
     iterations: u32,
     deadline: Instant,
 ) -> Result<Zeroizing<[u8; 128]>, Error> {
+    // Clone the untouched keyed state for each message instead of hashing the
+    // password and key pads again. Its SHA-512 cores zeroize on drop, including
+    // when this future is cancelled at a yield below.
+    let keyed_mac =
+        HmacSha512::new_from_slice(password).map_err(|_| Error::InvalidAppleSrpParameters)?;
     let mut output = Zeroizing::new([0u8; 128]);
     for block in 1u32..=2 {
         let mut first_input = [0u8; 36];
         first_input[..32].copy_from_slice(salt);
         first_input[32..].copy_from_slice(&block.to_be_bytes());
-        let mut u = prf(password, &first_input)?;
+        let mut u = prf(&keyed_mac, &first_input);
         let chunk = output
             .get_mut(((block - 1) as usize * HASH_BYTES)..(block as usize * HASH_BYTES))
             .ok_or(Error::InvalidAppleSrpParameters)?;
         chunk.copy_from_slice(&*u);
         for iteration in 1..iterations {
-            u = prf(password, &*u)?;
+            u = prf(&keyed_mac, &*u);
             for (target, byte) in chunk.iter_mut().zip(u.iter()) {
                 *target ^= byte;
             }

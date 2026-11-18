@@ -6,7 +6,7 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { command } from "ccstate";
 import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
-import { boolean, literal, object, string, uuid } from "zod";
+import { boolean, literal, number, object, string, uuid } from "zod";
 import {
   CURRENT_LINK_LAYOUT,
   linkLayoutFromSegment,
@@ -34,6 +34,38 @@ import {
 } from "./artifact-catalog.service";
 
 const PRIVATE_STORAGE = "private-artifact-v1";
+export type PrivateArtifactUploadProtocol =
+  | { readonly kind: "fixed-size-put-v1"; readonly size: number }
+  | { readonly kind: "multipart-v1" };
+
+const uploadProtocolSchema = object({
+  kind: literal("fixed-size-put-v1"),
+  size: number().int().nonnegative().safe(),
+}).or(object({ kind: literal("multipart-v1") }));
+
+/** Only ordinary upload preparation mints this metadata-stability contract. */
+export function completedPrivateAttachmentSize(
+  row: typeof runUploadedFiles.$inferSelect,
+): number | null {
+  const protocol = uploadProtocolSchema.safeParse(row.metadata.uploadProtocol);
+  if (
+    !protocol.success ||
+    row.materializationStatus !== "ready" ||
+    row.sizeBytes === null ||
+    !Number.isSafeInteger(row.sizeBytes) ||
+    row.sizeBytes < 0
+  ) {
+    return null;
+  }
+  // Single-PUT retries may replace bytes, but the signed length cannot change.
+  // Multipart completion consumes the only upload ID issued for this new key.
+  // Every ready writer for these identities first verifies the stored object,
+  // including canonical registration of a pending attachment after its HEAD.
+  return protocol.data.kind === "multipart-v1" ||
+    protocol.data.size === row.sizeBytes
+    ? row.sizeBytes
+    : null;
+}
 const privateMetadataSchema = object({
   storage: literal(PRIVATE_STORAGE),
   bucket: string().min(1),
@@ -196,6 +228,8 @@ export const allocatePrivateArtifact$ = command(
       readonly size: number;
       readonly id?: string;
       readonly purpose?: "artifact";
+      readonly runId?: string;
+      readonly uploadProtocol?: PrivateArtifactUploadProtocol;
     },
     signal: AbortSignal,
   ) => {
@@ -230,6 +264,12 @@ export const allocatePrivateArtifact$ = command(
         materializationStatus: "pending",
         metadata: {
           ...location.storageMetadata,
+          ...(args.purpose === "artifact" && args.runId
+            ? { producingRunId: args.runId }
+            : {}),
+          ...(args.uploadProtocol
+            ? { uploadProtocol: args.uploadProtocol }
+            : {}),
         },
       })
       .onConflictDoNothing({ target: runUploadedFiles.id })
@@ -261,6 +301,37 @@ export const allocatePrivateArtifact$ = command(
   },
 );
 
+/** Decode a fetched row without issuing another ownership-record read. */
+export function privateArtifactFromRow(
+  row: typeof runUploadedFiles.$inferSelect | undefined,
+) {
+  if (!row || row.metadata.storage === undefined || row.deletedAt !== null) {
+    return null;
+  }
+  const { publicBrand, ...metadata } = privateMetadataSchema.parse(
+    row.metadata,
+  );
+  if (!row.orgId || !row.storageKey || !row.filename || !row.contentType) {
+    throw new Error(
+      `Private artifact ${row.id} has incomplete storage metadata`,
+    );
+  }
+  if (metadata.bucket !== privateArtifactsBucket()) {
+    throw new Error(
+      `Private artifact ${row.id} does not match the configured private bucket`,
+    );
+  }
+  return {
+    ...row,
+    orgId: row.orgId,
+    key: row.storageKey,
+    filename: row.filename,
+    contentType: row.contentType,
+    ...metadata,
+    layout: linkLayoutFromSegment(publicBrand),
+  };
+}
+
 export const privateArtifactRecord$ = command(
   async ({ get }, id: string, signal: AbortSignal) => {
     // Historical file IDs are not all UUIDs; the database key is a UUID.
@@ -275,29 +346,7 @@ export const privateArtifactRecord$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    if (!row || row.metadata.storage === undefined) {
-      return null;
-    }
-    const { publicBrand, ...metadata } = privateMetadataSchema.parse(
-      row.metadata,
-    );
-    if (!row.orgId || !row.storageKey || !row.filename || !row.contentType) {
-      throw new Error(`Private artifact ${id} has incomplete storage metadata`);
-    }
-    if (metadata.bucket !== privateArtifactsBucket()) {
-      throw new Error(
-        `Private artifact ${id} does not match the configured private bucket`,
-      );
-    }
-    return {
-      ...row,
-      orgId: row.orgId,
-      key: row.storageKey,
-      filename: row.filename,
-      contentType: row.contentType,
-      ...metadata,
-      layout: linkLayoutFromSegment(publicBrand),
-    };
+    return privateArtifactFromRow(row);
   },
 );
 

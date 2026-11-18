@@ -68,12 +68,24 @@ private struct ChatModelPickerButtonContent: View {
     return parts.joined(separator: " · ")
   }
 
+  /// As Web's narrow composer marks it: Auto is Okou's, a model with an enabled route through
+  /// a company's subscription is that company's, another catalog model is Okou's, and a model
+  /// the catalog cannot name yet is the generic `cpu`.
+  private var mark: OkouComposerModelMark.Mark {
+    guard let model = selection.selection.model else { return .okou }
+    guard let catalog = configuration?.catalog,
+      catalog.models.contains(where: { $0.model == model })
+    else { return .icon("cpu") }
+    let providers = Set(
+      catalog.routes.filter { $0.enabled && $0.model == model }.map(\.concreteProviderType))
+    if providers.contains("claude-code-oauth-token") { return .company("AnthropicMark") }
+    if providers.contains("codex-oauth-token") { return .company("OpenAIMark") }
+    return .okou
+  }
+
   var body: some View {
     Button(action: action) {
-      OkouComposerValueLabel(
-        title: configuration.map { $0.catalog.name(selection.selection.model) }
-          ?? String(localized: "Model settings"),
-        isFast: selection.selection.serviceTier == "priority")
+      OkouComposerModelMark(mark: mark)
     }
     .buttonStyle(.plain)
     .accessibilityIdentifier("chat-model-picker")
@@ -82,6 +94,7 @@ private struct ChatModelPickerButtonContent: View {
         OkouIcon("circle-alert", size: OkouIconSize.badge).foregroundStyle(
           OkouStatusColor.warning
         )
+        .padding(OkouSpace.xs)
         .accessibilityHidden(true)
       }
     }
@@ -372,8 +385,9 @@ private struct ChatModelPickerContent: View {
 
   private func modelSections(_ configuration: ChatModelConfiguration) -> some View {
     List {
-      ForEach(["built-in"] + PersonalSubscriptionType.allCases.map(\.rawValue), id: \.self) {
-        type in
+      ForEach(
+        ["built-in"] + PersonalSubscriptionType.allCases.map(\.rawValue), id: \.self
+      ) { type in
         let rows = configuration.models.filter {
           ($0.selectedModel == nil ? "built-in" : $0.memberEffective.providerType) == type
         }

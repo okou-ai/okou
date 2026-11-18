@@ -32,85 +32,12 @@ public enum ChatEventProjection {
       return left.id < right.id
     }.map(\.id)
 
-    var messages: [ChatMessage] = []
-    var previousRun: String?
-    var previousModel: ChatUserMessage.Model?
-    var hasPreviousRun = false
-    for row in rows where !revoked.contains(row.id) {
-      let text: String
-      var attachments: [ChatMessageAttachment] = []
-      let role: ChatMessage.Role
-      let isError: Bool
-      var userMessage: ChatUserMessage?
-      var modelChange: ChatModelChange?
-      switch row.eventType {
-      case .inputPrompt, .inputRejected, .inputAutomation:
-        if row.eventType == .inputAutomation && row.payload?.userMessage == nil { continue }
-        guard let document = row.payload?.userMessage, document.version == 1 else {
-          throw ChatError.invalidContract("Unsupported user message document.")
-        }
-        try document.validate()
-        userMessage = document
-        attachments = try document.attachments()
-        let body = document.displayText
-        text = row.payload?.error.map { body + "\n\n" + $0 } ?? body
-        if let run = row.runId.map({ "run:\($0)" })
-          ?? document.model.map({ _ in "event:\(row.id)" }),
-          run != previousRun
-        {
-          if hasPreviousRun, let previousModel, let model = document.model {
-            if !previousModel.selectsSameModel(as: model) {
-              modelChange = .model(model)
-            } else if previousModel.isFast != model.isFast {
-              modelChange = .fastMode(model.isFast)
-            }
-          }
-          previousRun = run
-          previousModel = document.model
-          hasPreviousRun = true
-        }
-        role = .user
-        isError = row.eventType == .inputRejected
-      case .outputMessage:
-        guard let content = row.payload?.content else {
-          throw ChatError.invalidContract("Assistant output is missing its content.")
-        }
-        text = content
-        role = .assistant
-        isError = false
-      case .outputError, .runFailed:
-        text =
-          row.payload?.error ?? "This task failed. Open the chat on the Okou website for details."
-        role = .system
-        isError = true
-      case .runCancelled:
-        text = "Task stopped."
-        role = .system
-        isError = false
-      default: continue
-      }
-      if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty
-        && userMessage?.annotation == nil
-      {
-        continue
-      }
-      messages.append(
-        ChatMessage(
-          id: row.id, role: role, text: text, attachments: attachments, createdAt: row.createdAt,
-          runID: row.runId, isQueued: queuedInputs.contains(row.id), isError: isError,
-          userMessage: userMessage, inputError: role == .user ? row.payload?.error : nil,
-          modelChange: modelChange,
-          failure: (row.eventType == .runFailed || row.eventType == .outputError)
-            ? ChatFailure(
-              id: row.id, error: row.payload?.error ?? "",
-              reason: row.payload?.failureReason, isRunFailure: row.eventType == .runFailed)
-            : nil))
-    }
+    let messages = try makeMessages(rows: rows, revoked: revoked, queuedInputs: queuedInputs)
 
     let state: ChatExecutionState
     if recovering {
       state = .recovering
-    } else if !activeRuns.intersection(interrupted).isEmpty {
+    } else if !activeRuns.isDisjoint(with: interrupted) {
       state = .stopping
     } else if !activeRuns.isEmpty {
       state = .running
@@ -141,6 +68,89 @@ public enum ChatEventProjection {
       recommendedFollowups: ChatFollowupProjection.source(
         rows: rows, active: state.isActive),
       usageEventIDs: usageEventIDs, runUsageAnchors: work.usageAnchors)
+  }
+
+  private static func makeMessages(
+    rows: [ChatEvent], revoked: Set<String>, queuedInputs: [String]
+  ) throws -> [ChatMessage] {
+    var messages: [ChatMessage] = []
+    var previousRun: String?
+    var previousModel: ChatUserMessage.Model?
+    var hasPreviousRun = false
+    for row in rows where !revoked.contains(row.id) {
+      let text: String
+      var attachments: [ChatMessageAttachment] = []
+      let role: ChatMessage.Role
+      let isError: Bool
+      var userMessage: ChatUserMessage?
+      var modelChange: ChatModelChange?
+      var failure: ChatFailure?
+      switch row.eventType {
+      case .inputPrompt, .inputRejected, .inputAutomation:
+        if row.eventType == .inputAutomation && row.payload?.userMessage == nil { continue }
+        guard let document = row.payload?.userMessage, document.version == 1 else {
+          throw ChatError.invalidContract("Unsupported user message document.")
+        }
+        try document.validate()
+        userMessage = document
+        attachments = try document.attachments()
+        let body = document.displayText
+        text = row.inputError.map { body + "\n\n" + $0 } ?? body
+        if let run = row.runId.map({ "run:\($0)" })
+          ?? document.model.map({ _ in "event:\(row.id)" }),
+          run != previousRun
+        {
+          if hasPreviousRun, let previousModel, let model = document.model {
+            if !previousModel.selectsSameModel(as: model) {
+              modelChange = .model(model)
+            } else if previousModel.isFast != model.isFast {
+              modelChange = .fastMode(model.isFast)
+            }
+          }
+          previousRun = run
+          previousModel = document.model
+          hasPreviousRun = true
+        }
+        role = .user
+        isError = row.eventType == .inputRejected
+      case .outputMessage:
+        guard let content = row.payload?.content else {
+          throw ChatError.invalidContract("Assistant output is missing its content.")
+        }
+        text = content
+        role = .assistant
+        isError = false
+      case .runFailed:
+        text = "This task failed. Open the chat on the Okou website for details."
+        role = .system
+        isError = true
+        failure = ChatFailure(id: row.id, runFailureReason: row.failureReason)
+      case .outputError:
+        text =
+          row.outputError ?? "This task failed. Open the chat on the Okou website for details."
+        role = .system
+        isError = true
+        failure = ChatFailure(id: row.id, outputError: row.outputError ?? "")
+      case .runCancelled:
+        text = "Task stopped."
+        role = .system
+        isError = false
+      default: continue
+      }
+      if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty
+        && userMessage?.annotation == nil
+      {
+        continue
+      }
+      messages.append(
+        ChatMessage(
+          id: row.id, role: role, text: text, attachments: attachments, createdAt: row.createdAt,
+          runID: row.runId, isQueued: queuedInputs.contains(row.id), isError: isError,
+          userMessage: userMessage, inputError: row.inputError,
+          modelChange: modelChange,
+          failure: failure))
+    }
+    return messages
   }
 
   /// PWA orders a run's events at its first occurrence and places queued inputs last.
@@ -181,6 +191,6 @@ public enum ChatEventProjection {
         if let message = visible[row.id] { candidate = message.failure }
       }
     }
-    return candidate.flatMap { $0.error.isEmpty ? nil : $0.id }
+    return candidate.flatMap { $0.isRunFailure || $0.outputError?.isEmpty == false ? $0.id : nil }
   }
 }

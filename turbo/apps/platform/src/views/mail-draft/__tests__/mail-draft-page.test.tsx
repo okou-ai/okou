@@ -105,7 +105,7 @@ test("An external mail link requires sign-in and preserves its destination", asy
   await waitFor(() => {
     expect(window.location.pathname).toBe("/sign-in");
   });
-  const signInQuery = new URLSearchParams(window.location.hash.split("?")[1]);
+  const signInQuery = new URL(window.location.href).searchParams;
   expect(signInQuery.get("redirect_url")).toBe(
     `https://app.okou.ai${MAIL_PATH}`,
   );

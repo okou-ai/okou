@@ -2011,6 +2011,7 @@ describe("RUN-04: agent run telemetry families", () => {
                       _time: runCreatedAt,
                       data: {
                         runId: agentRun.runId,
+                        prompt: "bounded run context",
                         sessionId: "bdd-bounded",
                         storageMounts: [
                           {
@@ -2201,6 +2202,13 @@ describe("RUN-04: agent run telemetry families", () => {
         runContext: [
           {
             runId,
+            prompt: "captured diagnostic prompt",
+            appendSystemPrompt: "captured system instructions",
+            secretNames: ["OKOU_TOKEN", "TEST_TOKEN"],
+            varEntries: [
+              { name: "REGION", value: "launch-region" },
+              { name: "EMPTY", value: "" },
+            ],
             cliAgentType: "claude-code",
             sessionId: "bdd-session-1",
             storageMounts: null,
@@ -2343,7 +2351,10 @@ describe("RUN-04: agent run telemetry families", () => {
     }
     expect(contextRead.body).toMatchObject({
       runId,
-      prompt: "agent run detail",
+      prompt: "captured diagnostic prompt",
+      appendSystemPrompt: "captured system instructions",
+      secretNames: ["OKOU_TOKEN", "TEST_TOKEN"],
+      vars: { REGION: "launch-region", EMPTY: "" },
       cliAgentType: "claude-code",
       sessionId: "bdd-session-1",
       environment: { NODE_ENV: "production" },
@@ -2961,7 +2972,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       expect(failedDetail.body).toMatchObject({
         id: failedRun.runId,
         status: "failed",
-        error: "bdd failure",
+        failureReason: "unknown",
       });
     });
   });

@@ -27,8 +27,7 @@ final class WorkspaceResources {
   private let billing: WorkspaceRead<WorkspaceBilling>
   private let creditBalance: WorkspaceRead<WorkspaceCreditBalance>
   let billingValue: Computed<Task<WorkspaceBilling, Error>>
-  let billingCreditsEnabled: Computed<Task<Bool, Error>>
-  let billingCreditsValue: Computed<Task<Double?, Error>>
+  let billingCreditsValue: Computed<Task<Double, Error>>
   let configuration: Computed<Task<ChatModelConfiguration, Error>>
 
   init(
@@ -77,20 +76,8 @@ final class WorkspaceResources {
     let featureValue = features.value
     let balanceValue = creditBalance.value
     let statusValue = billing.value
-    billingCreditsEnabled = computedTask { get, options in
-      guard try get(lifetime) else { throw CancellationError() }
-      let switches = try await get(featureValue).value
-      try Task.checkCancellation()
-      try options.signal.checkCancellation()
-      return switches.effectiveSwitches["iosSettingsCredits"] == true
-    }
-    let creditsEnabled = billingCreditsEnabled
     billingCreditsValue = computedTask { get, options in
       guard try get(lifetime) else { throw CancellationError() }
-      let enabled = try await get(creditsEnabled).value
-      try Task.checkCancellation()
-      try options.signal.checkCancellation()
-      guard enabled else { return nil }
       let balance = try get(balanceValue)
       let status = try get(statusValue)
       let (credits, billing) = try await (balance.value, status.value)
@@ -131,7 +118,31 @@ final class WorkspaceResources {
     let preferenceValue = preference.value
     let availableValue = available.value
     let catalogValue = catalog.value
-    invalidateReads = Command { context, changes in
+    invalidateReads = Self.makeInvalidation(
+      lifetime: lifetime, modelBootstrap: modelBootstrap, preference: preference,
+      available: available, catalog: catalog, features: features)
+    configuration = computedTask { get, options in
+      guard try get(lifetime) else { throw CancellationError() }
+      // Collect every dependency and start independent I/O before awaiting any result.
+      let preference = try get(preferenceValue)
+      let available = try get(availableValue)
+      let catalog = try get(catalogValue)
+      let features = try get(featureValue)
+      let value = try await ChatModelConfiguration(
+        preference: preference.value, available: available.value, catalog: catalog.value,
+        switches: features.value.effectiveSwitches)
+      try Task.checkCancellation()
+      try options.signal.checkCancellation()
+      return value
+    }
+  }
+
+  private static func makeInvalidation(
+    lifetime: CCState.State<Bool>, modelBootstrap: WorkspaceReadBootstrap?,
+    preference: WorkspaceRead<ModelPreference>, available: WorkspaceRead<AvailableRunModels>,
+    catalog: WorkspaceRead<ModelCatalog>, features: WorkspaceRead<SidebarFeatureSwitches>
+  ) -> Command<Void, Set<ChatInvalidation>> {
+    Command { context, changes in
       guard try context.get(lifetime) else { throw CancellationError() }
       var full = changes.contains(.reconnected)
       if changes.contains(.startup) {
@@ -152,20 +163,6 @@ final class WorkspaceResources {
         try context.set(catalog.reload)
       }
       if full { try context.set(features.reload) }
-    }
-    configuration = computedTask { get, options in
-      guard try get(lifetime) else { throw CancellationError() }
-      // Collect every dependency and start independent I/O before awaiting any result.
-      let preference = try get(preferenceValue)
-      let available = try get(availableValue)
-      let catalog = try get(catalogValue)
-      let features = try get(featureValue)
-      let value = try await ChatModelConfiguration(
-        preference: preference.value, available: available.value, catalog: catalog.value,
-        switches: features.value.effectiveSwitches)
-      try Task.checkCancellation()
-      try options.signal.checkCancellation()
-      return value
     }
   }
 
@@ -202,7 +199,6 @@ final class WorkspaceResources {
     try Task.checkCancellation()
     guard try store.get(lifetime) else { throw CancellationError() }
     try billing.retryFailed(in: store)
-    try features.retryFailed(in: store)
     try creditBalance.retryFailed(in: store)
     let status = try store.get(billingValue)
     let credits = try store.get(billingCreditsValue)
@@ -224,7 +220,7 @@ final class WorkspaceResources {
     do { try store.set(lifetime, false) } catch {
       Logger(subsystem: "ai.okou.ios", category: "WorkspaceResources")
         .error(
-          "Cannot notify retired resource observers: \(error.localizedDescription, privacy: .public)"
+          "event=workspace.resources.retired_observers.notify.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
         )
     }
   }

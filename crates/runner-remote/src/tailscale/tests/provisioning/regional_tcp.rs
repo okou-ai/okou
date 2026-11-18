@@ -25,7 +25,7 @@ use tokio_util::codec::{Encoder, Framed};
 use ts_derp::frame;
 use ts_http_util::Upgraded;
 use ts_keys::{NodeKeyPair, NodePublicKey};
-use ts_netstack_smoltcp_socket::CreateSocket;
+use ts_netstack_smoltcp::netsock::CreateSocket;
 
 use super::{
     configuration,

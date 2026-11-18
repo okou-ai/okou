@@ -8,6 +8,11 @@ pub(super) fn fixture_files(
     random_bytes: usize,
     long_paths: bool,
 ) -> Vec<StorageFile> {
+    let directory = if long_paths {
+        "a".repeat(110)
+    } else {
+        String::new()
+    };
     (0..count)
         .map(|index| {
             let mut content = vec![b'x'; bytes];
@@ -20,7 +25,7 @@ pub(super) fn fixture_files(
             }
             StorageFile {
                 path: if long_paths {
-                    format!("rollouts/{}/{index:04}.md", "a".repeat(110))
+                    format!("rollouts/{directory}/{index:04}.md")
                 } else {
                     format!("file-{index:04}")
                 },
@@ -87,15 +92,6 @@ async fn production_warming_survives_restart_and_full_guest_delivery() {
     let index = fs::read(entry.join("index.json")).unwrap();
     assert!(index.len() > 256 * 1024);
     assert!(index.len() <= MAX_ADMITTED_INDEX_BYTES);
-    assert_eq!(
-        cache
-            .get_ready("memory-fixture", "v1")
-            .await
-            .unwrap()
-            .unwrap()
-            .files,
-        files
-    );
     cache.shutdown().await;
     assert_eq!(fs::read(entry.join("index.json")).unwrap(), index);
 

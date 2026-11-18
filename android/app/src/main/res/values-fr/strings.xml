@@ -1,5 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="composer_sync_loading">Chargement du brouillon enregistré…</string>
+    <string name="composer_sync_saving">Synchronisation du brouillon…</string>
+    <string name="composer_sync_failed">La synchronisation a échoué. Votre texte reste sur cet appareil.</string>
+    <string name="composer_sync_unsupported">Ce brouillon contient du contenu modifiable sur le Web. Votre texte reste sur cet appareil ; la synchronisation automatique est suspendue.</string>
+    <string name="composer_sync_retry">Réessayer la synchronisation</string>
+    <string name="composer_restore_draft">Restaurer le brouillon conservé</string>
+    <string name="controls_storage_failed">Impossible de conserver les commandes en attente.</string>
+    <string name="controls_stop">Arrêter le travail en cours</string>
+    <string name="controls_queued_automation">Automatisation en attente</string>
+    <string name="controls_skip">Ignorer l’automatisation</string>
+    <string name="controls_preparing">Enregistrement de la commande…</string>
+    <string name="controls_sending">Envoi de la commande…</string>
+    <string name="controls_accepted">Demande acceptée. Confirmation en attente.</string>
+    <string name="controls_checking">Vérification du résultat…</string>
+    <string name="controls_unknown">Le résultat est encore inconnu.</string>
+    <string name="controls_retryable">La cible initiale est toujours disponible.</string>
+    <string name="controls_retry_original">Réessayer la demande initiale</string>
+    <string name="controls_check">Vérifier le résultat</string>
+    <string name="controls_recorded">Commande inscrite dans l’historique.</string>
+    <string name="controls_target_settled">La cible initiale est déjà traitée.</string>
+    <string name="controls_read_failed">Impossible de vérifier le résultat.</string>
+    <string name="controls_recovery_failed">Le statut de récupération est indisponible.</string>
+    <string name="controls_recovering">Préparation de la reprise de la conversation.</string>
+    <string name="output_live">Réponse en direct</string>
+    <string name="output_waiting">En attente de la réponse en direct</string>
+    <string name="output_catching_up">Chargement des messages enregistrés. Le texte reçu est conservé.</string>
     <string name="settings">Paramètres</string>
     <string name="back">Retour</string>
     <string name="appearance">Apparence</string>

@@ -14,22 +14,21 @@ struct ChatComposerView: View {
   let error: String?
   let attachmentURL: URL
   let attachments: AttachmentDraftStore
-  var draftState: ComposerDraftStore? = nil
+  var draftState: ComposerDraftStore?
   let submit: @MainActor () async -> Void
   let refresh: (@MainActor () async -> Void)?
 
-  var modelSelection: ChatModelSelectionStore? = nil
-  var showsModelSelection = true
-  var connectorSelection: ComposerConnectorStore? = nil
-  var mentionSource: ComposerMentionSource? = nil
-  var workflowSource: ComposerWorkflowSource? = nil
-  var agentID: String? = nil
-  var sendTransition: ConversationSendTransition? = nil
+  var modelSelection: ChatModelSelectionStore?
+  var connectorSelection: ComposerConnectorStore?
+  var mentionSource: ComposerMentionSource?
+  var workflowSource: ComposerWorkflowSource?
+  var agentID: String?
+  var sendTransition: ConversationSendTransition?
   /// "Message <agent>", so the field names who will do the work.
-  var placeholder: String? = nil
+  var placeholder: String?
   var showsTrailingFeedbackInput = true
-  var project: ChatProject? = nil
-  var removeProject: (() -> Void)? = nil
+  var project: ChatProject?
+  var removeProject: (() -> Void)?
 
   @Environment(\.composerPreferences) private var preferences
   @State private var isFocused = false
@@ -49,6 +48,7 @@ struct ChatComposerView: View {
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.newChatActivation) private var newChatActivation
+  @Environment(\.workspaceChatPresentation) private var presentation
   private let actionSize = OkouControl.minimumTarget
 
   private var hasText: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -64,11 +64,20 @@ struct ChatComposerView: View {
       && (showsStop || modelSelection?.canSend != false)
   }
   private var canSendFromKeyboard: Bool { hasContent && canPerformPrimaryAction }
+  private var showsEditingLayout: Bool {
+    isFocused || draftState?.focusRequest != nil || presentation?.keepsComposerExpanded == true
+  }
+  private var focusAnimation: Animation? {
+    guard !reduceMotion, presentation?.isTransitioning != true,
+      presentation?.allowsFocus != false
+    else { return nil }
+    return sendTransition?.composerAnimation ?? .easeInOut(duration: 0.22)
+  }
   /// A draft keeps the open layout after the keyboard closes; collapsing it cut the text to
   /// one truncated line under the controls. Voice input opens it too, and the model sheet
   /// keeps it open while the keyboard is down under the sheet.
   private var expandsInput: Bool {
-    isFocused || hasText || draftState?.document.hasFeedback == true
+    showsEditingLayout || hasText || draftState?.document.hasFeedback == true
       || draftState?.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
       || voiceActive || showsModels
   }
@@ -82,8 +91,7 @@ struct ChatComposerView: View {
   private var replacesSendWithMic: Bool {
     !hasContent && !canStop && draftState?.voice != nil && (!expandsInput || voiceActive)
   }
-  private var reservesModelPickerSpace: Bool { expandsInput && !voiceActive }
-  private var showsModelPicker: Bool { reservesModelPickerSpace && showsModelSelection }
+  private var showsModelPicker: Bool { expandsInput && !voiceActive }
   private var showsVoiceInput: Bool {
     replacesSendWithMic || (expandsInput && !voiceActive)
   }
@@ -91,94 +99,84 @@ struct ChatComposerView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: OkouSpace.sm) {
-      if let project {
-        OkouBanner(Text(verbatim: project.name), icon: "folder", dismiss: removeProject)
-          .accessibilityLabel("Project: \(project.name)")
-          .disabled(isBusy || needsUpgrade)
-      }
-      if let voice = draftState?.voice, voice.error != nil || voiceActive {
-        ComposerVoiceInputTray(voice: voice)
-          .transition(reduceMotion ? .identity : .move(edge: .bottom).combined(with: .opacity))
-      }
-      // Every notice above the composer is the same quiet banner (OkouBanner): one footnote
-      // sentence, its actions as text buttons, a ✕ where the reader can dismiss it.
-      if let state = draftState {
-        if !state.document.isSupported {
-          OkouBanner(
-            Text("This draft contains content this app cannot edit. Open it on the web."),
-            icon: "file-warning", tone: .problem
-          ) {
-            Link("Open on web", destination: attachmentURL)
+      Group {
+        if let project {
+          OkouBanner(Text(verbatim: project.name), icon: "folder", dismiss: removeProject)
+            .accessibilityLabel("Project: \(project.name)")
+            .disabled(isBusy || needsUpgrade)
+        }
+        if let voice = draftState?.voice, voice.error != nil || voiceActive {
+          ComposerVoiceInputTray(voice: voice)
+            .transition(reduceMotion ? .identity : .move(edge: .bottom).combined(with: .opacity))
+        }
+        // Every notice above the composer is the same quiet banner (OkouBanner): one footnote
+        // sentence, its actions as text buttons, a ✕ where the reader can dismiss it.
+        if let state = draftState {
+          if !state.document.isSupported {
+            OkouBanner(
+              Text("This draft contains content this app cannot edit. Open it on the web."),
+              icon: "file-warning", tone: .problem
+            ) {
+              Link("Open on web", destination: attachmentURL)
+            }
+          }
+          let contextLabels = ChatDraftDocument(
+            parts: state.document.parts.filter { !ComposerAttributedDocument.isInline($0) }
+          ).contextLabels
+          if !contextLabels.isEmpty {
+            Text(contextLabels.joined(separator: " · "))
+              .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground).lineLimit(3)
+              .padding(.horizontal, OkouSpace.md)
+              .accessibilityLabel("Saved context: " + contextLabels.joined(separator: ", "))
+          }
+          if let draftError = state.error,
+            state.document.isSupported || state.hasLocalFailure || state.conflictingRemote != nil
+          {
+            OkouBanner(Text(draftError), icon: "circle-alert", tone: .problem) {
+              if state.conflictingRemote != nil {
+                Button("Keep this draft") { state.keepLocal() }
+                Button("Use other device's draft") { state.useRemote() }
+              } else if state.hasLocalFailure {
+                Button("Copy draft text") { UIPasteboard.general.string = state.text }
+                  .disabled(state.text.isEmpty)
+                Button("Save on this device") { state.retryLocalSave() }
+                  .disabled(!state.canRetryLocalSave)
+              } else {
+                Button("Retry draft sync") { Task { await state.synchronize() } }
+              }
+            }
           }
         }
-        let contextLabels = ChatDraftDocument(
-          parts: state.document.parts.filter { !ComposerAttributedDocument.isInline($0) }
-        ).contextLabels
-        if !contextLabels.isEmpty {
-          Text(contextLabels.joined(separator: " · "))
-            .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground).lineLimit(3)
-            .padding(.horizontal, OkouSpace.md)
-            .accessibilityLabel("Saved context: " + contextLabels.joined(separator: ", "))
+        if let state = draftState, let warning = state.syncWarning {
+          OkouBanner(Text(warning), icon: "refresh-cw") {
+            Button("Sync draft") { Task { await state.synchronize() } }
+          }
         }
-        if let draftError = state.error,
-          state.document.isSupported || state.hasLocalFailure || state.conflictingRemote != nil
-        {
-          OkouBanner(Text(draftError), icon: "circle-alert", tone: .problem) {
-            if state.conflictingRemote != nil {
-              Button("Keep this draft") { state.keepLocal() }
-              Button("Use other device's draft") { state.useRemote() }
-            } else if state.hasLocalFailure {
-              Button("Copy draft text") { UIPasteboard.general.string = state.text }
-                .disabled(state.text.isEmpty)
-              Button("Save on this device") { state.retryLocalSave() }
-                .disabled(!state.canRetryLocalSave)
-            } else {
-              Button("Retry draft sync") { Task { await state.synchronize() } }
+        if !attachments.items.isEmpty {
+          ChatAttachmentChips(draft: attachments, isDisabled: isBusy || needsUpgrade)
+        }
+        if attachments.importingCount > 0 {
+          OkouLoadingRow("Preparing attachments…")
+            .padding(.horizontal, OkouSpace.md)
+        }
+        if let importError = attachments.error {
+          OkouBanner(
+            Text(importError), icon: "circle-alert", tone: .problem,
+            dismiss: { attachments.error = nil })
+        }
+        if let error {
+          OkouBanner(Text(error), icon: "circle-alert", tone: .problem) {
+            if let refresh {
+              Button("Refresh") { Task { await refresh() } }
+              Link("Open on web", destination: attachmentURL)
             }
           }
         }
       }
-      if let state = draftState, let warning = state.syncWarning {
-        OkouBanner(Text(warning), icon: "refresh-cw") {
-          Button("Sync draft") { Task { await state.synchronize() } }
-        }
-      }
-      if !attachments.items.isEmpty {
-        ChatAttachmentChips(draft: attachments, isDisabled: isBusy || needsUpgrade)
-      }
-      if attachments.importingCount > 0 {
-        OkouLoadingRow("Preparing attachments…")
-          .padding(.horizontal, OkouSpace.md)
-      }
-      if let importError = attachments.error {
-        OkouBanner(
-          Text(importError), icon: "circle-alert", tone: .problem,
-          dismiss: { attachments.error = nil })
-      }
-      if let error {
-        OkouBanner(Text(error), icon: "circle-alert", tone: .problem) {
-          if let refresh {
-            Button("Refresh") { Task { await refresh() } }
-            Link("Open on web", destination: attachmentURL)
-          }
-        }
-      }
+      .chatFeedbackContentAnchor()
 
       let inputID = attachments.inputID
       VStack(alignment: .trailing, spacing: 0) {
-        // Keep the model note mounted and reserve its space while reading history so hiding
-        // it does not change the scroll metrics that control the bottom button.
-        if let modelSelection {
-          ChatModelPickerButton(selection: modelSelection, action: { showsModels = true })
-            .disabled(needsUpgrade)
-            .opacity(showsModelPicker ? 1 : 0)
-            .animation(reduceMotion ? nil : OkouMotion.transition, value: showsModelPicker)
-            .allowsHitTesting(showsModelPicker)
-            .accessibilityHidden(!showsModelPicker)
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .frame(height: reservesModelPickerSpace ? nil : 0, alignment: .bottom)
-            .clipped()
-        }
         // Retired native editors must leave immediately. Fading a first responder
         // through a draft reset can restart keyboard avoidance during the send flight.
         OkouComposerSurface(isExpanded: expandsInput) {
@@ -188,6 +186,7 @@ struct ChatComposerView: View {
                 state: state, inputID: inputID, isFocused: $isFocused,
                 acceptsImages: !isBusy && !needsUpgrade, placeholder: resolvedPlaceholder,
                 showsTrailingParagraph: showsTrailingFeedbackInput,
+                expanded: showsEditingLayout,
                 returnKeyPreference: returnKeyPreference,
                 canSendFromKeyboard: canSendFromKeyboard, submitFromKeyboard: sendFromKeyboard
               )
@@ -201,6 +200,7 @@ struct ChatComposerView: View {
                 isCurrent: { attachments.inputID == inputID },
                 pasteImages: attachments.importPastedImages,
                 placeholder: resolvedPlaceholder,
+                expanded: showsEditingLayout,
                 returnKeyPreference: returnKeyPreference,
                 canSendFromKeyboard: canSendFromKeyboard, submitFromKeyboard: sendFromKeyboard
               )
@@ -233,7 +233,15 @@ struct ChatComposerView: View {
           }
         } trailing: {
           HStack(spacing: OkouSpace.xs) {
-            // The mic and send are already side by side when the text editor opens.
+            // The model, mic and send are already side by side when the text editor opens,
+            // so none of them moves or falls in on its own as the keyboard raises the surface.
+            if let modelSelection {
+              ChatModelPickerButton(selection: modelSelection, action: { showsModels = true })
+                .disabled(needsUpgrade)
+                .opacity(showsModelPicker ? 1 : 0)
+                .allowsHitTesting(showsModelPicker)
+                .accessibilityHidden(!showsModelPicker)
+            }
             if let voice = draftState?.voice {
               ComposerVoiceInputButton(voice: voice)
                 .disabled(isBusy || needsUpgrade || voiceActive || draftState?.canEditVoice != true)
@@ -262,11 +270,11 @@ struct ChatComposerView: View {
                     ? OkouColor.interruptForeground
                     : hasContent ? OkouColor.primaryForeground : OkouColor.mutedForeground)
               }
-              .buttonStyle(.glassProminent)
+              // A solid fill: the composer under it is already glass.
+              .buttonStyle(.borderedProminent)
               .buttonBorderShape(.circle)
-              .tint(
-                showsStop ? OkouColor.interrupt : hasContent ? OkouColor.primary : OkouColor.muted
-              )
+              // An empty draft always disables send, so it takes the system's disabled fill.
+              .tint(showsStop ? OkouColor.interrupt : OkouColor.primary)
               .disabled(!canPerformPrimaryAction)
               .accessibilityLabel(showsStop ? "Stop" : "Send message")
               .accessibilityIdentifier(showsStop ? "stop-message" : "send-message")
@@ -276,6 +284,7 @@ struct ChatComposerView: View {
             }
           }
         }
+        .chatFeedbackContentAnchor()
         .anchorPreference(key: ComposerSuggestionPresentation.self, value: .bounds) { bounds in
           guard let editor = draftState?.editor else { return nil }
           let content: ComposerSuggestionPresentation.Content
@@ -290,10 +299,7 @@ struct ChatComposerView: View {
             bounds: bounds, content: content, isDisabled: isBusy || needsUpgrade)
         }
       }
-      .animation(
-        reduceMotion ? nil : sendTransition?.composerAnimation ?? .easeInOut(duration: 0.22),
-        value: isFocused
-      )
+      .animation(focusAnimation, value: isFocused)
       .animation(
         !reduceMotion && sendTransition?.hidesBubbleID != nil
           ? sendTransition?.composerAnimation : nil,
@@ -302,7 +308,7 @@ struct ChatComposerView: View {
     .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: voiceActive)
     .padding(.horizontal, OkouControl.pageInset)
     .padding(.top, OkouSpace.sm)
-    .padding(.bottom, isFocused ? OkouSpace.sm : OkouSpace.six)
+    .padding(.bottom, showsEditingLayout ? OkouSpace.sm : OkouSpace.six)
     .fixedSize(horizontal: false, vertical: true)
     .sensoryFeedback(.impact(weight: .light), trigger: sendFeedback)
     .sensoryFeedback(.impact(weight: .medium), trigger: stopFeedback)
@@ -339,8 +345,9 @@ struct ChatComposerView: View {
     .onChange(of: mentionSource, initial: true) { _, source in
       draftState?.editor.mentionSource = source
     }
-    .onChange(of: "\(workflowSource?.id.uuidString ?? "")/\(agentID ?? "")", initial: true) {
-      _, _ in
+    .onChange(
+      of: "\(workflowSource?.id.uuidString ?? "")/\(agentID ?? "")", initial: true
+    ) { _, _ in
       draftState?.editor.workflows.configure(source: workflowSource, agentID: agentID)
     }
     .onChange(of: draftState.map(ObjectIdentifier.init), initial: true) { _, _ in

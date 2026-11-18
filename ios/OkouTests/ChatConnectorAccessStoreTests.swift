@@ -8,7 +8,7 @@ import XCTest
 
 @MainActor
 final class ChatConnectorAccessStoreTests: XCTestCase {
-  private typealias F = ConnectorHTTPFixtures
+  private typealias FixtureData = ConnectorHTTPFixtures
 
   func testEnablingAnotherDraftAccountKeepsTheDisplayedCurrentThroughCreationAndReopening()
     async throws
@@ -17,22 +17,22 @@ final class ChatConnectorAccessStoreTests: XCTestCase {
     let client = fixture.http.client
     let store = makeStore(fixture)
     defer { store.close() }
-    store.configure(agentID: F.agentID)
+    store.configure(agentID: FixtureData.agentID)
     await store.refresh()
     await store.setAccountAccess(
-      target: .builtin("slack"), connectionID: F.siblingID, enabled: true)
+      target: .builtin("slack"), connectionID: FixtureData.siblingID, enabled: true)
     let commands = ChatCommands(client: client, sync: ChatSync(client: client))
     let thread = try await commands.createThread(
       modelSelection: ChatModelSelection(),
       composerOptions: store.pendingOptions)
     let access = try await ChatComposerAccess(client: client).connectorAccess(
       target: .builtin("slack"), threadID: thread.id)
-    XCTAssertEqual(access.currentConnectionId, F.accountID)
-    XCTAssertTrue(try XCTUnwrap(access.accounts.first { $0.id == F.siblingID }).enabled)
+    XCTAssertEqual(access.currentConnectionId, FixtureData.accountID)
+    XCTAssertTrue(try XCTUnwrap(access.accounts.first { $0.id == FixtureData.siblingID }).enabled)
     let reopened = makeStore(fixture, thread: thread)
     defer { reopened.close() }
     await reopened.refresh()
-    XCTAssertEqual(reopened.connectors.first?.currentAccount?.id, F.accountID)
+    XCTAssertEqual(reopened.connectors.first?.currentAccount?.id, FixtureData.accountID)
   }
 
   func testSupportedPermissionEntryRemainsAvailableWithAllAccountsOff() async throws {
@@ -40,25 +40,26 @@ final class ChatConnectorAccessStoreTests: XCTestCase {
       var state = ConnectorAccessHTTPFixture.State()
       state.custom = kind == "custom"
       state.hasPermissions = kind != "unsupported"
-      state.enabled = [F.accountID: false, F.siblingID: false]
+      state.enabled = [FixtureData.accountID: false, FixtureData.siblingID: false]
       state.defaultID = nil
       let fixture = makeFixture(state)
       let store = makeStore(fixture)
       defer { store.close() }
-      store.configure(agentID: F.agentID)
+      store.configure(agentID: FixtureData.agentID)
       await store.refresh()
       let connector = try XCTUnwrap(store.connectors.first)
       XCTAssertEqual(
         store.canConfigurePermissions(slug: connector.target.connectorSlug), kind == "supported")
       if kind == "supported" {
         try await store.service.savePermissions(
-          slug: "slack", agentID: F.agentID,
+          slug: "slack", agentID: FixtureData.agentID,
           edits: [ChatPermissionEdit(permission: "read", action: "allow", expiresIn: "24h")])
-        let permissions = try await store.service.permissions(slug: "slack", agentID: F.agentID)
+        let permissions = try await store.service.permissions(
+          slug: "slack", agentID: FixtureData.agentID)
         XCTAssertEqual(
           permissions.metadata.policy(for: "read", grants: permissions.grants, at: .now), .allow)
         let access = try await store.service.connectorAccess(
-          target: .builtin("slack"), threadID: F.threadID)
+          target: .builtin("slack"), threadID: FixtureData.threadID)
         XCTAssertFalse(access.available)
         XCTAssertNil(access.currentConnectionId)
       }
@@ -75,11 +76,11 @@ final class ChatConnectorAccessStoreTests: XCTestCase {
     workspace.startNewChat()
     workspace.newChatDraft = "Keep this message"
     let store = workspace.newModelSelection.connectors
-    store.configure(agentID: F.agentID)
+    store.configure(agentID: FixtureData.agentID)
     await store.refresh()
     await store.setAccountAccess(
-      target: .builtin("slack"), connectionID: F.siblingID, enabled: true)
-    await store.selectAccount(target: .builtin("slack"), connectionID: F.siblingID)
+      target: .builtin("slack"), connectionID: FixtureData.siblingID, enabled: true)
+    await store.selectAccount(target: .builtin("slack"), connectionID: FixtureData.siblingID)
     await workspace.sendNewChat()
     XCTAssertEqual(workspace.newChatDraft, "Keep this message")
     XCTAssertNil(workspace.selectedThreadID)

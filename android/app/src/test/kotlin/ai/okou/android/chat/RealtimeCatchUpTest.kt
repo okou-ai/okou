@@ -131,7 +131,8 @@ class RealtimeCatchUpTest {
                             } == true
                     }
                 assertEquals(1, history.transcript!!.messages.count { it.id == added })
-                assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
+                val indicators = model.uiState.first { it.indicatorsPhase != ChatReadPhase.Loading }
+                assertEquals(ChatReadPhase.Failed, indicators.indicatorsPhase)
             }
         } finally {
             held.countDown()

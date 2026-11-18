@@ -3,7 +3,6 @@
 import asyncio
 import json
 import threading
-from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Never
@@ -16,6 +15,7 @@ from mitmproxy.flow import Error
 import auth
 import flow_metadata_keys as metadata_keys
 import mitm_addon
+import request_streaming
 import terminal_usage
 import usage
 from tests.auth_base_forwarder_helpers import fake_forwarder_upstream
@@ -152,13 +152,8 @@ async def _drain_request_task(
 
 
 @pytest.fixture
-def usage_control_root(tmp_path: Path) -> Iterator[Path]:
-    control_root = tmp_path / "delivery-control"
-    usage.counters.reset_for_tests()
-    try:
-        yield control_root
-    finally:
-        usage.counters.reset_for_tests()
+def usage_control_root(tmp_path: Path) -> Path:
+    return tmp_path / "delivery-control"
 
 
 def _write_billable_x_tracking_registry(
@@ -434,8 +429,8 @@ async def test_header_phase_streamed_billable_flow_error_releases_tracking(
         buffered=0,
         reports=0,
     )
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
-    assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
+    assert request_streaming.captured_request_stream_body(flow) is None
+    assert request_streaming.streamed_request_size(flow) is None
 
 
 async def test_duplicate_terminal_hooks_do_not_double_decrement_usage_flow(

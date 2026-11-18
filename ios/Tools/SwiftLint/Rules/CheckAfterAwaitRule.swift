@@ -114,8 +114,9 @@ private final class PublicationAnalysis {
         {
           flow.suspended = false
         }
-      } else if let condition = expression?.as(IfExprSyntax.self) ?? item.item.as(IfExprSyntax.self)
-      {
+      } else if let condition = expression?.as(
+        IfExprSyntax.self
+      ) ?? item.item.as(IfExprSyntax.self) {
         flow = conditional(condition, flow: flow, locals: locals)
       } else if let statement = item.item.as(DoStmtSyntax.self) {
         let body = block(statement.body.statements, flow: flow, locals: locals)

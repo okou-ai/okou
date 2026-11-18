@@ -3,12 +3,12 @@ use crate::instructions::InstructionCleanup;
 use crate::manifest::{ArtifactEntry, Manifest, StorageEntry};
 use std::path::Path;
 
-pub(crate) struct RunPlan {
+pub(crate) struct RunPlan<'input> {
     pub(crate) cleanup_paths: Vec<String>,
     pub(crate) instruction_cleanups: Vec<InstructionCleanup>,
     pub(crate) preserved_paths: Vec<String>,
     pub(crate) empty_artifacts: Vec<EmptyArtifactPreparation>,
-    pub(crate) download_tasks: Vec<DownloadTask>,
+    pub(crate) download_tasks: Vec<DownloadTask<'input>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,7 +69,7 @@ impl ManifestEntryKind {
     }
 }
 
-impl RunPlan {
+impl RunPlan<'_> {
     pub(crate) fn from_manifest(manifest: &Manifest) -> Self {
         let mut preserved_paths = Vec::new();
         preserved_paths.extend(
@@ -128,7 +128,7 @@ fn is_valid_url(url: &Option<String>) -> bool {
     matches!(url, Some(u) if u != "null")
 }
 
-fn append_storage_download_tasks(tasks: &mut Vec<DownloadTask>, entries: &[StorageEntry]) {
+fn append_storage_download_tasks(tasks: &mut Vec<DownloadTask<'_>>, entries: &[StorageEntry]) {
     for (idx, entry) in entries.iter().enumerate() {
         if !is_valid_url(&entry.archive_url) {
             continue;
@@ -152,7 +152,7 @@ fn append_storage_download_tasks(tasks: &mut Vec<DownloadTask>, entries: &[Stora
     }
 }
 
-fn append_artifact_download_tasks(tasks: &mut Vec<DownloadTask>, entries: &[ArtifactEntry]) {
+fn append_artifact_download_tasks(tasks: &mut Vec<DownloadTask<'_>>, entries: &[ArtifactEntry]) {
     for (idx, entry) in entries.iter().enumerate() {
         if entry.empty || entry.cached && Path::new(&entry.mount_path).is_dir() {
             continue;

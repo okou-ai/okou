@@ -25,10 +25,12 @@ mod dns_readiness;
 mod error;
 mod exec_env;
 mod factory;
+mod file_write_timing;
 mod guest_rpc;
 pub mod helper_exec;
 mod home_drive_pressure;
 mod operation_cancellation;
+mod request_timing;
 mod runtime;
 mod sandbox;
 mod snapshot;
@@ -56,19 +58,22 @@ pub use factory::{
     SandboxCreateObserver, SandboxCreateStage, SandboxFactory, SandboxNbdCowCreateOutcome,
     SandboxNbdCowCreateStage, SandboxNbdNetlinkConnectStage,
 };
+pub use file_write_timing::{FileWriteRequestTiming, FileWriteTiming};
 pub use guest_rpc::{AcceptedGuestRpc, GuestRpcAcceptor, GuestRpcStream};
 pub use home_drive_pressure::{
     HOME_DRIVE_RECLAIM_OBSERVATION, HomeDrivePressureFuture, HomeDrivePressurePolicy,
     home_drive_copy_peak_bytes, home_drive_copy_peak_bytes_from_file,
 };
 pub use operation_cancellation::{CancelledOperationOwner, OperationCancellationContext};
+pub use request_timing::RequestTiming;
 pub use runtime::{RuntimeProvider, SandboxRuntime};
 pub use sandbox::{
-    GuestMemorySnapshot, Sandbox, SandboxFinalExecParkHandoff, SandboxFinalExecParkHandoffOutcome,
-    SandboxFinalExecParkHandoffPoint, SandboxFinalExecParkObserver, SandboxFinalExecParkOutcome,
-    SandboxFinalExecParkStage, SandboxFinalExecParkSubstage, SandboxFinalExecParkSubstageOutcome,
-    SandboxGuestConnectionPhase, SandboxParkNonReusableReason, SandboxParkOutcome,
-    SandboxStartObserver, SandboxStartStage, SevereMemoryRetentionDiagnostics,
+    GuestMemorySnapshot, Sandbox, SandboxFinalExecParkHandoff, SandboxFinalExecParkHandoffPoint,
+    SandboxFinalExecParkObserver, SandboxFinalExecParkOutcome, SandboxFinalExecParkStage,
+    SandboxFinalExecParkSubstage, SandboxFinalExecParkSubstageOutcome,
+    SandboxFinalExecParkTransitionOutcome, SandboxGuestConnectionPhase, SandboxIdleAdmission,
+    SandboxParkNonReusableReason, SandboxParkOutcome, SandboxStartObserver, SandboxStartStage,
+    SevereMemoryRetentionDiagnostics,
 };
 pub use snapshot::{
     PendingSnapshotPublish, SnapshotCreateConfig, SnapshotError, SnapshotOutput, SnapshotProvider,

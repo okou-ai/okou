@@ -24,6 +24,62 @@ import {
 const storageId = "00000000-0000-4000-8000-000000000000";
 const manifestHash = "a".repeat(64);
 
+describe("staging write observations", () => {
+  const operation = {
+    ts: "2026-11-17T00:00:00Z",
+    action_type: "storage_cache_stage_batch_write",
+    duration_ms: 140,
+    success: true,
+  };
+  const observation = {
+    file_count: 29,
+    content_bytes: 14 * 1024 * 1024,
+    host_timing: "partial",
+    lock_wait_us: 0,
+    admission_us: 0,
+    response_wait_us: Number.MAX_SAFE_INTEGER,
+  };
+
+  it("accepts missing and partial observations, preserves zero and strips content", () => {
+    const measured = { ...operation, storage_stage_write: observation };
+    const parsed = webhookTelemetryContract.send.body.parse({
+      runId: "run",
+      sandboxOperations: [
+        operation,
+        {
+          ...measured,
+          storage_stage_write: {
+            ...observation,
+            path: "/private/archive",
+            archive_url: "https://private.example/?secret=private",
+            content: "private content",
+          },
+        },
+      ],
+    });
+    expect(parsed.sandboxOperations).toStrictEqual([operation, measured]);
+  });
+
+  it("rejects invalid counts, phases and availability labels", () => {
+    for (const invalid of [
+      { ...observation, file_count: 0 },
+      { ...observation, file_count: 65 },
+      { ...observation, content_bytes: 15 * 1024 * 1024 + 1 },
+      { ...observation, lock_wait_us: -1 },
+      { ...observation, frame_write_us: 0.5 },
+      { ...observation, admission_us: Number.MAX_SAFE_INTEGER + 1 },
+      { ...observation, host_timing: "private-error" },
+    ]) {
+      expect(
+        webhookTelemetryContract.send.body.safeParse({
+          runId: "run",
+          sandboxOperations: [{ ...operation, storage_stage_write: invalid }],
+        }).success,
+      ).toBe(false);
+    }
+  });
+});
+
 describe("captured runtime usage identities", () => {
   it.each(["okou-1.0", "@preset/okou-1-0", "@preset/" + "x".repeat(247)])(
     "accepts complete billing identity %s",
@@ -504,6 +560,7 @@ describe("agent completion failure reasons", () => {
 
   it("accepts known reasons, future tokens, and omission", () => {
     expect(knownRunFailureReasonSchema.options).toStrictEqual([
+      "unknown",
       "session_history_limit",
       "guest_root_filesystem_full",
       "guest_home_filesystem_full",

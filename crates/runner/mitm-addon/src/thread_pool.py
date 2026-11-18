@@ -16,11 +16,11 @@ def start_thread_pool(*, max_workers: int, thread_name_prefix: str) -> ThreadPoo
         # starts before any caller payload can enter the queue.
         for _ in range(max_workers):
             executor.submit(release_workers.wait)
+        release_workers.set()
+        return executor
     except BaseException:
         release_workers.set()
         # submit() may queue a task before Thread.start() raises. The failed
         # candidate owns only bootstrap work, which is safe to cancel and join.
         executor.shutdown(wait=True, cancel_futures=True)
         raise
-    release_workers.set()
-    return executor

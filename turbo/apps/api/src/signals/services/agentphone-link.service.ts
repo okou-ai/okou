@@ -1,4 +1,5 @@
 import { agentphoneConnectionCodes } from "@okouai/db/schema/agentphone-connection-code";
+import { randomUUID } from "node:crypto";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -18,6 +19,7 @@ import {
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { nowDate } from "../../lib/time";
+import { env } from "../../lib/env";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
@@ -29,6 +31,7 @@ import {
 } from "./agentphone-shared.service";
 import { completedGetStartedQuestPublication } from "./get-started-member-reward";
 import { slackRewardWalletEntitlement } from "./slack-installation-reward";
+import { marketingRewardLinkEventInsert } from "./marketing-reward-event-publication";
 
 type LinkResult =
   | { readonly kind: "invalid" }
@@ -36,7 +39,11 @@ type LinkResult =
       readonly kind: "conflict";
       readonly reason: "phone-handle-linked" | "org-linked" | "conflict";
     }
-  | { readonly kind: "linked"; readonly userLink: AgentPhoneUserLink };
+  | {
+      readonly kind: "linked";
+      readonly userLink: AgentPhoneUserLink;
+      readonly marketingRewardEventId?: string;
+    };
 type LinkSource =
   | { readonly kind: "direct"; readonly orgId: string; readonly userId: string }
   | { readonly kind: "code"; readonly codeHash: string };
@@ -83,8 +90,28 @@ export const switchAgentPhoneIdentity$ = command(
         ${previous.userId}, ${previous.orgId} FROM ${previous}
       RETURNING *
     `);
+    const marketingRewardEventId = randomUUID();
+    const sourceEvent =
+      args.channel === undefined || args.channel === "imessage"
+        ? db.$with("replacement_phone_source_event", {}).as(
+            marketingRewardLinkEventInsert(
+              {
+                id: marketingRewardEventId,
+                environment: env("ENV"),
+                type: "imessage.identity-linked",
+                occurredAt: nowDate().toISOString(),
+                orgId: args.orgId,
+                userId: args.userId,
+              },
+              db.select({ id: replacement.id }).from(replacement).getSQL(),
+            ),
+          )
+        : undefined;
     const result = await settle(
-      db.with(previous, replacement).select().from(replacement),
+      db
+        .with(previous, replacement, ...(sourceEvent ? [sourceEvent] : []))
+        .select()
+        .from(replacement),
     );
     signal.throwIfAborted();
     if (!result.ok) {
@@ -102,7 +129,11 @@ export const switchAgentPhoneIdentity$ = command(
     }
     const [userLink] = result.value;
     if (userLink) {
-      return { kind: "linked", userLink };
+      return {
+        kind: "linked",
+        userLink,
+        ...(sourceEvent ? { marketingRewardEventId } : {}),
+      };
     }
 
     // A repeated request after an uncertain response may already have succeeded.
@@ -254,7 +285,22 @@ function phoneLinkPublicationPlan(
   );
   const claim = builder.$with("claim", {}).as(publication.claim);
   const reward = builder.$with("phone_link_reward", {}).as(publication.grant);
+  const marketingRewardEventId = randomUUID();
+  const sourceEvent = builder.$with("phone_link_source_event", {}).as(
+    marketingRewardLinkEventInsert(
+      {
+        id: marketingRewardEventId,
+        environment: env("ENV"),
+        type: "imessage.identity-linked",
+        occurredAt: at.toISOString(),
+        orgId: identity.orgId,
+        userId: identity.userId,
+      },
+      builder.select({ id: inserted.id }).from(inserted).getSQL(),
+    ),
+  );
   return {
+    marketingRewardEventId,
     ctes: [
       ...(consumed ? [consumed] : []),
       admitted,
@@ -264,6 +310,7 @@ function phoneLinkPublicationPlan(
       inserted,
       claim,
       reward,
+      sourceEvent,
     ],
     admitted,
     existing,
@@ -387,6 +434,12 @@ export const linkAgentPhoneIdentity$ = command(
       .leftJoin(plan.existing, sql`true`)
       .leftJoin(plan.inserted, sql`true`);
     signal.throwIfAborted();
-    return phoneLinkResult(rows, identity, phoneHandle);
+    const result = phoneLinkResult(rows, identity, phoneHandle);
+    return result.kind === "linked" &&
+      rows.some((row) => {
+        return row.inserted !== null;
+      })
+      ? { ...result, marketingRewardEventId: plan.marketingRewardEventId }
+      : result;
   },
 );

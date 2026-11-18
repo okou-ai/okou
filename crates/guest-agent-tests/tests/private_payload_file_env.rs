@@ -155,7 +155,6 @@ fn write_private_files(root: &Path, name: &str) -> TestResult<PrivateFiles> {
         &run_payload_path,
         serde_json::to_vec(&guest_contracts::env::RunPayload {
             prompt: prompt.clone(),
-            tools: "Bash".to_string(),
             ..guest_contracts::env::RunPayload::default()
         })?,
     )?;
@@ -258,7 +257,6 @@ fn assert_canonical_is_authoritative_and_captured_once(root: &Path) -> TestResul
     let config = GuestConfig::from_raw(raw).map_err(std::io::Error::other)?;
 
     assert_eq!(config.prompt, files.prompt);
-    assert_eq!(config.tools, "Bash");
     assert_eq!(config.user_env.get("OPENAI_MODEL"), Some(&files.model));
     assert!(!files.user_env_path.exists());
     assert!(!files.user_env_dir.exists());

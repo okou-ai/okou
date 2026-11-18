@@ -2548,6 +2548,8 @@ export const prepareBuiltinConnectorTokenPublication$ = command(
       cleanup: tokenCleanupResult(args, existing, pendingTokenRevoke),
       publication: {
         orgId: args.orgId,
+        marketingRewardEventId: randomUUID(),
+        grantKind: args.runtimeMethod.method.grant.kind,
         metadata: tokenWriteArgs(
           values,
           resolution,
@@ -2673,11 +2675,19 @@ export const upsertBuiltinConnectorTokenConnection$ = command(
       throwCapturedAbort(postCommitAbort);
       return connectionResult;
     }
-    return await set(
+    const result = await set(
       finalizeBuiltinConnectorTokenConnection$,
       { prepared, connectionResult, postCommitAbort },
       signal,
     );
+    return {
+      ...result,
+      marketingRewardEventId:
+        publication.kind === "ready" &&
+        isOneClickConnectorGrantKind(publication.publication.grantKind)
+          ? publication.publication.marketingRewardEventId
+          : null,
+    };
   },
 );
 

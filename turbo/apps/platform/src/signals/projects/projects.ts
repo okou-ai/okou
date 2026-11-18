@@ -12,6 +12,11 @@ import type {
   projectEventQueryResultSchema,
 } from "@okouai/api-contracts/validators/projects";
 import { replayProjectEvents } from "@okouai/core/project-event-replay";
+import {
+  compareProjectSortOrder,
+  lastProjectSortOrder,
+  moveProjectSortOrder,
+} from "@okouai/core/project-sort-order";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { infer as zInfer } from "zod";
 import { installedSharedDatabaseBridge$ } from "../shared-database-bridge-state.ts";
@@ -29,7 +34,7 @@ import {
 } from "../chat-page/chat-thread-event-sourcing.ts";
 
 export const projectsEnabled$ = computed((get) => {
-  return get(featureSwitch$)[FeatureSwitchKey.Projects] ?? false;
+  return get(featureSwitch$)[FeatureSwitchKey.SingleAgent] ?? false;
 });
 type OptimisticProjectRename = Pick<
   ProjectEvent,
@@ -37,6 +42,11 @@ type OptimisticProjectRename = Pick<
 > & {
   readonly name: string;
 };
+interface OptimisticProjectMove {
+  readonly id: string;
+  readonly updates: readonly { projectId: string; sortOrder: string }[];
+  readonly confirmation: Promise<void>;
+}
 const projectState$ = computed((get) => {
   get(authenticatedSessionKey$);
   get(rootVersion$);
@@ -50,6 +60,7 @@ const projectState$ = computed((get) => {
       }[]
     >([]),
     optimisticRenames$: state<readonly OptimisticProjectRename[]>([]),
+    optimisticMoves$: state<readonly OptimisticProjectMove[]>([]),
   };
 });
 // A persisted rename also settles earlier local renames of its Project. One
@@ -67,6 +78,20 @@ function unsettledRenames(
   return renames.filter((rename, index) => {
     return index > (settledThrough.get(rename.projectId) ?? -1);
   });
+}
+// Reorders are serialized across the Project list. Confirming one operation
+// settles its predecessors, including requests absent from a compacted stream.
+function unsettledMoves(
+  moves: readonly OptimisticProjectMove[],
+  persistedIds: ReadonlySet<string>,
+) {
+  let settledThrough = -1;
+  for (const [index, move] of moves.entries()) {
+    if (persistedIds.has(move.id)) {
+      settledThrough = index;
+    }
+  }
+  return moves.slice(settledThrough + 1);
 }
 export const projects$ = computed((get) => {
   if (!get(projectsEnabled$)) {
@@ -93,15 +118,28 @@ export const projects$ = computed((get) => {
       },
     ),
   );
+  const pendingOrders = new Map(
+    unsettledMoves(get(owner.optimisticMoves$), persistedIds).flatMap(
+      (move) => {
+        return move.updates.map((update) => {
+          return [update.projectId, update.sortOrder] as const;
+        });
+      },
+    ),
+  );
   return replayProjectEvents(
     [...creations, ...(value?.snapshot?.projects ?? [])],
     value?.events ?? [],
-  ).map((project) => {
-    const rename = pending.get(project.id);
-    return rename
-      ? { ...project, name: rename.name, updatedAt: rename.createdAt }
-      : project;
-  });
+  )
+    .map((project) => {
+      const rename = pending.get(project.id);
+      const renamed = rename
+        ? { ...project, name: rename.name, updatedAt: rename.createdAt }
+        : project;
+      const sortOrder = pendingOrders.get(project.id);
+      return sortOrder === undefined ? renamed : { ...renamed, sortOrder };
+    })
+    .sort(compareProjectSortOrder);
 });
 /**
  * Projects created on this page that the server has not persisted yet. A chat
@@ -153,6 +191,9 @@ export const syncProjects$ = command(
     });
     set(owner.optimisticRenames$, (events) => {
       return unsettledRenames(events, persistedIds);
+    });
+    set(owner.optimisticMoves$, (moves) => {
+      return unsettledMoves(moves, persistedIds);
     });
   },
 );
@@ -232,6 +273,7 @@ export const createProject$ = command(
     const owner = get(projectState$);
     const eventId = operation();
     const createdAt = nowDate().toISOString();
+    const sortOrder = lastProjectSortOrder(get(projects$));
     const confirmation = accept(
       get(apiClient$)(projectsContract).create({
         body: { id: eventId, eventId, name, fromThreadId },
@@ -248,6 +290,7 @@ export const createProject$ = command(
           project: {
             id: eventId,
             name: name.trim(),
+            sortOrder,
             createdAt,
             updatedAt: createdAt,
           },
@@ -283,6 +326,78 @@ export const createProject$ = command(
     return result.body;
   },
 );
+const persistProjectMove$ = command(
+  async (
+    { get, set },
+    {
+      projectId,
+      targetId,
+      side,
+      eventId,
+      previous,
+    }: {
+      readonly projectId: string;
+      readonly targetId: string;
+      readonly side: "before" | "after";
+      readonly eventId: string;
+      readonly previous: Promise<void> | undefined;
+    },
+    signal: AbortSignal,
+  ) => {
+    // The preceding command reports its own failure. Wait for settlement so a
+    // later user move stays serialized without inheriting that rejection.
+    await Promise.allSettled(previous ? [previous] : []);
+    signal.throwIfAborted();
+    await set(waitForProjectCreation$, projectId, signal);
+    await set(waitForProjectCreation$, targetId, signal);
+    await accept(
+      get(apiClient$)(projectsContract).reorder({
+        params: { id: projectId },
+        body: { targetId, side, eventId },
+        fetchOptions: { signal },
+      }),
+      [204],
+      signal,
+    );
+    await set(syncProjects$, signal);
+  },
+);
+
+export const reorderProject$ = command(
+  async (
+    { get, set },
+    projectId: string,
+    targetId: string,
+    side: "before" | "after",
+    signal: AbortSignal,
+  ) => {
+    signal.throwIfAborted();
+    const updates = moveProjectSortOrder(
+      get(projects$),
+      projectId,
+      targetId,
+      side,
+    );
+    if (updates.length === 0) {
+      return;
+    }
+    const owner = get(projectState$);
+    const eventId = operation();
+    const previous = get(owner.optimisticMoves$).at(-1)?.confirmation;
+    const confirmation = set(
+      persistProjectMove$,
+      { projectId, targetId, side, eventId, previous },
+      signal,
+    );
+    set(owner.optimisticMoves$, (moves) => {
+      return [...moves, { id: eventId, updates, confirmation }];
+    });
+    // Failure or cancellation does not establish whether the server committed.
+    // Only matching persistent events settle these page-local moves.
+    await confirmation;
+  },
+);
+
 export const renameProject$ = command(
   async ({ get, set }, id: string, name: string, signal: AbortSignal) => {
     signal.throwIfAborted();
@@ -313,7 +428,12 @@ export const renameProject$ = command(
   },
 );
 export const deleteProject$ = command(
-  async ({ get, set }, id: string, signal: AbortSignal) => {
+  async (
+    { get, set },
+    id: string,
+    onDeleted: () => void,
+    signal: AbortSignal,
+  ) => {
     await set(waitForProjectCreation$, id, signal);
     await accept(
       get(apiClient$)(projectsContract).delete({
@@ -325,6 +445,10 @@ export const deleteProject$ = command(
       signal,
     );
     await set(syncProjects$, signal);
+    // The Project has left the list; chat synchronization must not keep its
+    // confirmation dialog open.
+    signal.throwIfAborted();
+    onDeleted();
     await set(catchUpChatThreadEventSource$, signal);
   },
 );

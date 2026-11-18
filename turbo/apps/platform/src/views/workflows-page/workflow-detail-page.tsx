@@ -259,11 +259,11 @@ import { WorkflowTooltip } from "./workflows-page.tsx";
 import { AutomationListIcon } from "../okou-page/workflow-automations-page.tsx";
 import { emptyAutomationsImg } from "../okou-page/platform-assets.ts";
 import {
-  automationNotificationTarget$,
-  revealAutomationNotificationLoadingRef$,
-  switchAutomationNotificationWorkspace$,
-  workflowAutomationNotificationAccess$,
-} from "../../signals/workflows-page/workflow-automation-notification.ts";
+  automationEventTarget$,
+  revealAutomationEventLoadingRef$,
+  switchAutomationEventWorkspace$,
+  workflowAutomationEventAccess$,
+} from "../../signals/workflows-page/workflow-automation-event.ts";
 import { WorkflowWebhookUpgradeDialog } from "./workflow-webhook-upgrade-dialog.tsx";
 import {
   GoogleCalendarRecoveryDialogs,
@@ -961,15 +961,15 @@ function copyText(value: string): void {
   detach(writeToClipboard(value), Reason.DomCallback);
 }
 
-export function WorkflowAutomationNotificationPage() {
+export function WorkflowAutomationEventPage() {
   const { t } = useTranslation();
-  const access = useLoadable(workflowAutomationNotificationAccess$);
-  const target = useGet(automationNotificationTarget$);
-  const revealLoading = useSet(revealAutomationNotificationLoadingRef$);
+  const access = useLoadable(workflowAutomationEventAccess$);
+  const target = useGet(automationEventTarget$);
+  const revealLoading = useSet(revealAutomationEventLoadingRef$);
   const retry = useSet(reloadWorkflows$);
   const signal = useGet(pageSignal$);
   const [switching, switchWorkspace] = useLoadableSet(
-    switchAutomationNotificationWorkspace$,
+    switchAutomationEventWorkspace$,
   );
   if (
     !target ||
@@ -991,7 +991,7 @@ export function WorkflowAutomationNotificationPage() {
             <LoadingSkeleton
               className="w-full max-w-[900px]"
               label={t(($) => {
-                return $.userNotifications.automationDisabled.loadingAutomation;
+                return $.feedEvents.automationDisabled.loadingAutomation;
               })}
             />
           </div>
@@ -1004,7 +1004,7 @@ export function WorkflowAutomationNotificationPage() {
       <DetailPageHeader>
         <h1 className="text-lg font-semibold tracking-tight sm:text-xl">
           {t(($) => {
-            return $.userNotifications.automationDisabled.viewAutomation;
+            return $.feedEvents.automationDisabled.viewAutomation;
           })}
         </h1>
       </DetailPageHeader>
@@ -1014,12 +1014,12 @@ export function WorkflowAutomationNotificationPage() {
             <>
               <p role="status" className="text-muted-foreground">
                 {t(($) => {
-                  return $.userNotifications.automationDisabled.loadFailed;
+                  return $.feedEvents.automationDisabled.loadFailed;
                 })}
               </p>
               <Button variant="outline" onClick={retry}>
                 {t(($) => {
-                  return $.userNotifications.retry;
+                  return $.feedEvents.retry;
                 })}
               </Button>
             </>
@@ -1028,14 +1028,13 @@ export function WorkflowAutomationNotificationPage() {
               <p className="text-muted-foreground">
                 {t(
                   ($) => {
-                    return $.userNotifications.automationDisabled
-                      .otherWorkspace;
+                    return $.feedEvents.automationDisabled.otherWorkspace;
                   },
                   {
                     workspace:
                       access.data.workspaceName.trim() ||
                       t(($) => {
-                        return $.userNotifications.automationDisabled
+                        return $.feedEvents.automationDisabled
                           .workspaceFallback;
                       }),
                   },
@@ -1049,13 +1048,13 @@ export function WorkflowAutomationNotificationPage() {
                 }}
               >
                 {t(($) => {
-                  return $.userNotifications.automationDisabled.switchWorkspace;
+                  return $.feedEvents.automationDisabled.switchWorkspace;
                 })}
               </Button>
               {switching.state === "hasError" && (
                 <p role="status" className="text-destructive">
                   {t(($) => {
-                    return $.userNotifications.automationDisabled.switchFailed;
+                    return $.feedEvents.automationDisabled.switchFailed;
                   })}
                 </p>
               )}
@@ -1063,7 +1062,7 @@ export function WorkflowAutomationNotificationPage() {
           ) : (
             <p role="status" className="text-muted-foreground">
               {t(($) => {
-                return $.userNotifications.automationDisabled.unavailable;
+                return $.feedEvents.automationDisabled.unavailable;
               })}
             </p>
           )}
@@ -1072,7 +1071,7 @@ export function WorkflowAutomationNotificationPage() {
             className={buttonVariants({ variant: "quiet", size: "sm" })}
           >
             {t(($) => {
-              return $.userNotifications.automationDisabled.backToWorkflows;
+              return $.feedEvents.automationDisabled.backToWorkflows;
             })}
           </Link>
         </div>
@@ -1127,7 +1126,7 @@ function WorkflowDetailContent() {
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {i18n.t(($) => {
-              return $.userNotifications.automationDisabled.systemManaged;
+              return $.feedEvents.automationDisabled.systemManaged;
             })}
           </p>
         </DetailPageHeader>

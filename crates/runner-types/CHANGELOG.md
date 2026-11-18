@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.18.15](https://github.com/okou-ai/okou/compare/runner-types-v0.18.14...runner-types-v0.18.15) (2026-11-18)
+
+## [0.18.14](https://github.com/okou-ai/okou/compare/runner-types-v0.18.13...runner-types-v0.18.14) (2026-11-18)
+
+## [0.18.13](https://github.com/okou-ai/okou/compare/runner-types-v0.18.12...runner-types-v0.18.13) (2026-11-17)
+
+## [0.18.12](https://github.com/okou-ai/okou/compare/runner-types-v0.18.11...runner-types-v0.18.12) (2026-11-17)
+
+## [0.18.11](https://github.com/okou-ai/okou/compare/runner-types-v0.18.10...runner-types-v0.18.11) (2026-11-17)
+
+## [0.18.10](https://github.com/okou-ai/okou/compare/runner-types-v0.18.9...runner-types-v0.18.10) (2026-11-17)
+
+
+### Refactoring
+
+* **runner:** remove unused execution overrides ([#48162](https://github.com/okou-ai/okou/issues/48162)) ([1f0afc6](https://github.com/okou-ai/okou/commit/1f0afc6aa21f773b54c1d64b540280698e58f699))
+
+## [0.18.9](https://github.com/okou-ai/okou/compare/runner-types-v0.18.8...runner-types-v0.18.9) (2026-11-17)
+
+## [0.18.8](https://github.com/okou-ai/okou/compare/runner-types-v0.18.7...runner-types-v0.18.8) (2026-11-17)
+
+## [0.18.7](https://github.com/okou-ai/okou/compare/runner-types-v0.18.6...runner-types-v0.18.7) (2026-11-16)
+
+## [0.18.6](https://github.com/okou-ai/okou/compare/runner-types-v0.18.5...runner-types-v0.18.6) (2026-11-16)
+
+## [0.18.5](https://github.com/okou-ai/okou/compare/runner-types-v0.18.4...runner-types-v0.18.5) (2026-11-16)
+
+
+### Refactoring
+
+* prepare structured run failures and recovery ([#47749](https://github.com/okou-ai/okou/issues/47749)) ([fca7335](https://github.com/okou-ai/okou/commit/fca73354c6b5b0aa4f122e78947565b274323991))
+
 ## [0.18.4](https://github.com/okou-ai/okou/compare/runner-types-v0.18.3...runner-types-v0.18.4) (2026-11-16)
 
 ## [0.18.3](https://github.com/okou-ai/okou/compare/runner-types-v0.18.2...runner-types-v0.18.3) (2026-11-15)

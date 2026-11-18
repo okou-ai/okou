@@ -1,3 +1,5 @@
+import { projectCommittedChatThreadSearch$ } from "./chat-event-publication.service";
+import { deliverMarketingRewardEvents$ } from "./marketing-reward-event-delivery.service";
 import { computed, command, state, type Computed } from "ccstate";
 import {
   count,
@@ -24,7 +26,12 @@ import { waitUntil } from "../context/wait-until";
 import { nowDate } from "../../lib/time";
 import type { ChatThreadRequestFacts } from "./chat-thread-request-facts";
 import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
-import { createDirectRunDispatcher } from "./direct-run-dispatch.service";
+import {
+  createDirectRunDispatchPreparation,
+  dispatchPreparedRun$,
+  type DirectRunDispatchResult,
+} from "./direct-run-dispatch.service";
+import { publishDirectRunCache$ } from "./direct-run-preparation.service";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   CHAT_THREAD_LEASE_MS,
@@ -34,6 +41,7 @@ import {
   createThreadClaimRunObjects,
   type ThreadClaim,
 } from "./thread-claim-run.service";
+import { joinAllInOrder, settle } from "../utils";
 
 export interface OrgPickCursor {
   readonly queuedAt: Date;
@@ -93,13 +101,15 @@ function createCapturedClaimObjects(
     context,
     claim.requestFacts,
   );
-  const dispatchRun$ = createDirectRunDispatcher(preparation.admittedLaunch$);
+  const prepareDispatch$ = createDirectRunDispatchPreparation(
+    preparation.admittedLaunch$,
+  );
   // Reobserve occupancy after release, but retain the same org capacity snapshot.
   // Newly purchased slots take effect only in a subsequent context.
   const orgHasCapacityAfterRelease$ = createOrgHasCapacity(context);
   return {
     ...preparation,
-    dispatchRun$,
+    prepareDispatch$,
     context,
     orgHasCapacityAfterRelease$,
   };
@@ -413,11 +423,15 @@ function createPickObjects() {
       }
       const claimed = await get(captured);
       signal.throwIfAborted();
-      const [threadHasActiveRun, hasCapacity, hasInput] = await Promise.all([
+      const availability = Promise.all([
         get(claimed.threadHasActiveRun$),
         get(claimed.orgHasCapacity$),
         get(claimed.hasFirstPickableChatEvent$),
       ]);
+      // Issue critical availability reads first. This bounded Thread source
+      // can overlap them; each later consumer still joins its own node.
+      waitUntil(settle(get(claimed.threadResources$)));
+      const [threadHasActiveRun, hasCapacity, hasInput] = await availability;
       signal.throwIfAborted();
       // Publication can wait for a launch whose active row was not visible in
       // its earlier snapshot. Reobserve before reporting full/deleting empty
@@ -443,16 +457,72 @@ function createPickObjects() {
       }
       // Load the run context only when this claim has work and capacity.
       set(preloadAgentRunContext$, claimed.context, signal);
+      waitUntil(settle(get(claimed.inputResources$)));
       signal.throwIfAborted();
       const pending = await set(claimed.admitRun$, signal);
+      // Admission can append a claim or a public rejection. This pick owns
+      // publication for its captured thread, independently of Runner dispatch.
+      waitUntil(
+        set(
+          projectCommittedChatThreadSearch$,
+          {
+            userId: claim.userId,
+            orgId: claim.orgId,
+            threadId: claim.chatThreadId,
+          },
+          signal,
+        ),
+      );
       if (pending === null) {
         await set(releaseClaim$, claim, signal);
         return { kind: "none" };
       }
+      if (pending.marketingRewardEventId) {
+        waitUntil(
+          set(
+            deliverMarketingRewardEvents$,
+            {
+              jobId: pending.marketingRewardEventId,
+              handlerVersion: 4,
+            },
+            signal,
+          ),
+        );
+      }
       // Activation is outside the admission-failure boundary. Slot scheduling
       // precedes terminal callbacks so they cannot delay the next queued input.
-      await set(claimed.publishPendingRun$, pending, signal);
-      const dispatched = await set(claimed.dispatchRun$, signal);
+      const [, preparation] = await joinAllInOrder(
+        [
+          set(claimed.publishPendingRun$, pending, signal),
+          set(claimed.prepareDispatch$, signal),
+        ],
+        signal,
+      );
+      let dispatched: DirectRunDispatchResult;
+      if (preparation.kind === "failed") {
+        dispatched = preparation.result;
+      } else {
+        const { input } = preparation.delivery;
+        // Signed URLs are already in the payload; optional reuse publication
+        // must not hold up ownership, intake or the pick's terminal effects.
+        waitUntil(
+          set(
+            publishDirectRunCache$,
+            {
+              runId: input.run.id,
+              runnerGroup: input.runnerGroup,
+              profile: input.profile,
+              cacheWrites: preparation.cacheWrites,
+            },
+            signal,
+          ),
+        );
+        dispatched = await set(
+          dispatchPreparedRun$,
+          preparation.delivery,
+          signal,
+        );
+      }
       if (dispatched.terminal !== null) {
         set(
           scheduleReleasedSlotPicks$,

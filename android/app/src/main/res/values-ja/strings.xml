@@ -1,5 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="composer_sync_loading">保存済みの下書きを読み込み中…</string>
+    <string name="composer_sync_saving">下書きを同期中…</string>
+    <string name="composer_sync_failed">下書きを同期できませんでした。入力内容はこの端末に保存されています。</string>
+    <string name="composer_sync_unsupported">この下書きには Web で編集できる内容が含まれています。入力内容はこの端末に保存され、自動同期は一時停止しています。</string>
+    <string name="composer_sync_retry">下書きの同期を再試行</string>
+    <string name="composer_restore_draft">保持した下書きを復元</string>
+    <string name="controls_storage_failed">保留中の操作リクエストを保存できません。</string>
+    <string name="controls_stop">実行中の作業を停止</string>
+    <string name="controls_queued_automation">待機中の自動処理</string>
+    <string name="controls_skip">自動処理をスキップ</string>
+    <string name="controls_preparing">操作リクエストを保存中…</string>
+    <string name="controls_sending">操作リクエストを送信中…</string>
+    <string name="controls_accepted">リクエストを受け付けました。確認を待っています。</string>
+    <string name="controls_checking">操作結果を確認中…</string>
+    <string name="controls_unknown">操作結果は未確認です。</string>
+    <string name="controls_retryable">元の対象はまだ操作できます。</string>
+    <string name="controls_retry_original">元のリクエストを再試行</string>
+    <string name="controls_check">操作結果を確認</string>
+    <string name="controls_recorded">操作が会話履歴に記録されました。</string>
+    <string name="controls_target_settled">元の対象はすでに処理済みです。</string>
+    <string name="controls_read_failed">操作結果を確認できません。</string>
+    <string name="controls_recovery_failed">会話の復旧状態を取得できません。</string>
+    <string name="controls_recovering">会話の再開を準備しています。</string>
+    <string name="output_live">リアルタイムの応答</string>
+    <string name="output_waiting">リアルタイムの応答を待っています</string>
+    <string name="output_catching_up">保存済みメッセージを同期しています。受信したテキストは保持されます。</string>
     <string name="settings">設定</string>
     <string name="back">戻る</string>
     <string name="appearance">外観</string>

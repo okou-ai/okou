@@ -21,7 +21,7 @@ use std::io;
 #[cfg(target_os = "linux")]
 use std::mem::MaybeUninit;
 #[cfg(target_os = "linux")]
-use std::os::fd::{AsRawFd, FromRawFd};
+use std::os::fd::AsRawFd;
 #[cfg(target_os = "linux")]
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 #[cfg(target_os = "linux")]
@@ -395,16 +395,13 @@ pub(crate) fn file_identity(file: &File) -> io::Result<FileIdentity> {
 #[cfg(target_os = "linux")]
 fn open_child(parent: &File, name: &OsStr, flags: i32) -> io::Result<File> {
     let name = child_name_c_string(name)?;
-    // SAFETY: `parent.as_raw_fd()` is an open directory fd owned by `Dir`,
-    // `name` is a NUL-terminated child basename produced by `CString`, and
-    // the flags do not request a mode argument.
-    let fd = unsafe { libc::openat(parent.as_raw_fd(), name.as_ptr(), flags) };
-    if fd < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: a non-negative `openat` result is a newly owned fd. Converting
-    // it into `File` transfers close responsibility to Rust.
-    Ok(unsafe { File::from_raw_fd(fd) })
+    let fd = nix::fcntl::openat(
+        parent,
+        name.as_c_str(),
+        nix::fcntl::OFlag::from_bits_retain(flags),
+        nix::sys::stat::Mode::empty(),
+    )?;
+    Ok(File::from(fd))
 }
 
 #[cfg(target_os = "linux")]

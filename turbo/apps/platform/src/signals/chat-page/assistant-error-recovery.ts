@@ -12,7 +12,7 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/client/third-party-subscriptions";
 import {
-  knownRunFailureReasonSchema,
+  normalizeRunFailureReason,
   type KnownRunFailureReason,
 } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -260,6 +260,7 @@ function classifyAssistantErrorFromText(
 }
 
 const STRUCTURED_RECOVERY_KIND = Object.freeze({
+  unknown: null,
   session_history_limit: "new-chat-required",
   guest_root_filesystem_full: "provider-retryable",
   guest_home_filesystem_full: "provider-retryable",
@@ -297,96 +298,15 @@ interface StructuredRecovery {
 
 function structuredRecoveryKind(
   event: EnrichedChatEvent,
-): StructuredRecovery | null | undefined {
-  if (event.eventType !== "run.failed" || event.failureReason === undefined) {
+): StructuredRecovery | undefined {
+  if (event.eventType !== "run.failed") {
     return undefined;
   }
 
-  const knownReason = knownRunFailureReasonSchema.safeParse(
-    event.failureReason,
-  );
-  if (!knownReason.success) {
-    return null;
-  }
+  const reason = normalizeRunFailureReason(event.failureReason);
   return {
-    failureReason: knownReason.data,
-    kind: STRUCTURED_RECOVERY_KIND[knownReason.data],
-  };
-}
-
-function structuredRecoveryFrameworkFromError(
-  kind: AssistantErrorRecoveryKind,
-  error: string,
-): ModelProviderFramework | null {
-  const normalized = normalizedProviderMessage(error);
-  if (kind === "model-capacity") {
-    if (isCodexModelCapacity(normalized)) {
-      return "codex";
-    }
-    if (isClaudeModelCapacity(normalized)) {
-      return "claude-code";
-    }
-  }
-  if (kind === "model-unavailable") {
-    return getCodexChatGptAccountUnsupportedModel(error) === undefined
-      ? null
-      : "codex";
-  }
-  if (kind === "usage-limit") {
-    if (/you(?:'|’)ve hit your usage limit\b/iu.test(normalized)) {
-      return "codex";
-    }
-    if (isClaudeUsageLimit(normalized)) {
-      return "claude-code";
-    }
-  }
-  return null;
-}
-
-function classifyStructuredAssistantError(
-  event: EnrichedChatEvent,
-  error: string,
-  failureReason: KnownRunFailureReason,
-  kind: AssistantErrorRecoveryKind,
-  framework: ModelProviderFramework | null,
-): ClassifiedAssistantError {
-  const normalized = normalizedProviderMessage(error);
-  const hasCodexUsageDetails =
-    kind === "usage-limit" &&
-    /you(?:'|’)ve hit your usage limit\b/iu.test(normalized);
-  const hasClaudeUsageDetails =
-    kind === "usage-limit" && isClaudeUsageLimit(normalized);
-  const codexModelScoped =
-    framework === "codex" &&
-    hasCodexUsageDetails &&
-    /\busage limit for\b/iu.test(normalized);
-  const limitWindow =
-    kind === "usage-limit"
-      ? framework === "claude-code" && hasClaudeUsageDetails
-        ? (claudeLimitWindow(normalized) ?? "unknown")
-        : codexModelScoped
-          ? "model"
-          : "unknown"
-      : null;
-
-  return {
-    sourceEventId: event.id,
-    failureReason,
-    providerMessage: error,
-    kind,
-    framework,
-    scope:
-      kind === "model-unavailable" ||
-      kind === "model-capacity" ||
-      codexModelScoped ||
-      limitWindow === "model"
-        ? "model"
-        : "framework",
-    limitWindow,
-    retryLabel:
-      hasCodexUsageDetails || hasClaudeUsageDetails
-        ? resetLabelFromProviderMessage(normalized)
-        : null,
+    failureReason: reason,
+    kind: STRUCTURED_RECOVERY_KIND[reason],
   };
 }
 
@@ -421,11 +341,14 @@ function latestAssistantErrorCandidate(groups: readonly ChatEventGroup[]): {
   if (
     event === undefined ||
     (event.eventType !== "output.error" && event.eventType !== "run.failed") ||
-    !event.error
+    (event.eventType === "output.error" && !event.error)
   ) {
     return null;
   }
-  return { event, error: event.error };
+  return {
+    event,
+    error: event.eventType === "output.error" ? event.error : "",
+  };
 }
 
 function exhaustedUsageWindows(
@@ -516,23 +439,10 @@ function createCurrentPersonalSubscriptionComputed(
   });
 }
 
-/** An unclassified failure may still come from the subscription it ran on. */
-function maySubscriptionFail(event: EnrichedChatEvent, error: string): boolean {
-  const subscriptionFailureReasons = [
-    "reconnect_required",
-    "invalid_credentials",
-    "provider_rate_limited",
-    "provider_stream_timeout",
-    "provider_server_error",
-    "response_connection_lost",
-  ];
-  return !(
-    (event.eventType === "run.failed" &&
-      event.failureReason !== undefined &&
-      !subscriptionFailureReasons.includes(event.failureReason)) ||
-    ["insufficient_credits", "pro_required"].includes(
-      error.trim().toLowerCase(),
-    )
+/** Output errors retain their separate subscription recovery contract. */
+function maySubscriptionFail(error: string): boolean {
+  return !["insufficient_credits", "pro_required"].includes(
+    error.trim().toLowerCase(),
   );
 }
 
@@ -566,13 +476,20 @@ function classifyCandidate(
   if (structuredKind.kind === "execution-timeout") {
     return classifyExecutionTimeout(candidate.event, candidate.error);
   }
-  return classifyStructuredAssistantError(
-    candidate.event,
-    candidate.error,
-    structuredKind.failureReason,
-    structuredKind.kind,
-    structuredRecoveryFrameworkFromError(structuredKind.kind, candidate.error),
-  );
+  return {
+    sourceEventId: candidate.event.id,
+    failureReason: structuredKind.failureReason,
+    providerMessage: "",
+    kind: structuredKind.kind,
+    framework: null,
+    scope:
+      structuredKind.kind === "model-unavailable" ||
+      structuredKind.kind === "model-capacity"
+        ? "model"
+        : "framework",
+    limitWindow: structuredKind.kind === "usage-limit" ? "unknown" : null,
+    retryLabel: null,
+  };
 }
 
 /**
@@ -595,12 +512,12 @@ function createClassifiedAssistantErrorComputed(
     }
 
     const structuredKind = structuredRecoveryKind(candidate.event);
-    const classified =
-      structuredKind === null
-        ? null
-        : classifyCandidate(candidate, structuredKind);
+    const classified = classifyCandidate(candidate, structuredKind);
     if (classified === null) {
-      if (!maySubscriptionFail(candidate.event, candidate.error)) {
+      if (candidate.event.eventType === "run.failed") {
+        return null;
+      }
+      if (!maySubscriptionFail(candidate.error)) {
         return null;
       }
       const subscription = await get(currentPersonalSubscription$);

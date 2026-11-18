@@ -1,14 +1,17 @@
 import { screen, waitFor, within } from "@testing-library/react";
-import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
+import {
+  logsByIdContract,
+  type LogDetail,
+} from "@okouai/api-contracts/contracts/logs";
 import { runAgentEventsContract } from "@okouai/api-contracts/contracts/run-routes";
 import { expect, test } from "vitest";
+import { CHAT_RUN_USAGE_LIMIT_MESSAGE } from "@okouai/api-contracts/contracts/errors";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type {
   AgentEvent,
   AgentEventsResponse,
-  LogDetail,
   LogStatus,
 } from "../../../signals/okou-page/log-types.ts";
 
@@ -33,7 +36,7 @@ function makeLogDetail(
     status,
     prompt: "",
     appendSystemPrompt: null,
-    error: status === "failed" ? "Run failed" : null,
+    failureReason: status === "failed" ? "unknown" : undefined,
     createdAt: CREATED_AT,
     startedAt: CREATED_AT,
     completedAt: status === "running" ? null : "2026-06-26T02:31:30Z",
@@ -94,6 +97,37 @@ function mockActivity(
 function openActivity(): Promise<void> {
   return setupPage({ context, path: "/activities/" + RUN_ID });
 }
+
+test.each([
+  {
+    error: "retained private diagnostic",
+    expected: "Oops, something went wrong.",
+  },
+  {
+    failureReason: "usage_limit" as const,
+    expected: CHAT_RUN_USAGE_LIMIT_MESSAGE,
+  },
+])(
+  "Failed activities accept old and new responses without displaying diagnostics: $expected",
+  async ({ expected, ...fields }) => {
+    context.mocks.api(logsByIdContract.getById, ({ respond }) => {
+      return respond(200, { ...makeLogDetail("failed"), ...fields });
+    });
+    context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
+      return respond(200, {
+        events: [],
+        hasMore: false,
+        status: "failed",
+        lastEventSequence: null,
+      });
+    });
+    await openActivity();
+    await expect(screen.findByText(expected)).resolves.toBeInTheDocument();
+    expect(
+      screen.queryByText("retained private diagnostic"),
+    ).not.toBeInTheDocument();
+  },
+);
 
 function summaryForText(
   text: string,

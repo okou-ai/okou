@@ -10,6 +10,8 @@ import {
 } from "../services/onboarding-recommendation.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 import { cleanupWorkflowAttachments$ } from "../services/workflow-attachment-cleanup.service";
+import { deliverMarketingRewardProjections$ } from "../services/marketing-reward-projection.service";
+import { deliverMarketingRewardEvents$ } from "../services/marketing-reward-event-delivery.service";
 
 const process$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!get(hasValidCronSecret$)) {
@@ -23,18 +25,32 @@ const process$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   // Each kind owns a disjoint queue, so a long export cannot keep a fresh
   // onboarding result from using the same durable wakeup.
-  const [exports, recommendations, approvals, attachments] = await Promise.all([
+  const [
+    exports,
+    recommendations,
+    approvals,
+    attachments,
+    rewardEvents,
+    rewardProjections,
+  ] = await Promise.all([
     set(executeDurableUserExportWork$, {}, workSignal),
     set(executeOnboardingRecommendationWork$, { maxJobs: 1 }, workSignal),
     set(recoverLinkApprovalWorkflows$, workSignal),
     set(cleanupWorkflowAttachments$, workSignal),
+    set(deliverMarketingRewardEvents$, {}, workSignal),
+    set(deliverMarketingRewardProjections$, workSignal),
   ]);
   signal.throwIfAborted();
   return {
     status: 200 as const,
     body: {
       processed:
-        exports.processed + recommendations.processed + approvals + attachments,
+        exports.processed +
+        recommendations.processed +
+        approvals +
+        attachments +
+        rewardEvents.processed +
+        rewardProjections,
       cleaned: cleanedExports.processed + cleanedRecommendations.processed,
     },
   };

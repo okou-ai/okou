@@ -1,28 +1,172 @@
 package ai.okou.android.api
 
 import ai.okou.android.CHAT_AGENT
+import ai.okou.android.CHAT_IN_PROJECT
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.CHAT_PROJECT
+import ai.okou.android.ChatListApiFixture
 import ai.okou.android.ComposerApiFixture
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.SendRequestVariant1
+import ai.okou.android.chat.HistoryCursor
+import ai.okou.android.chat.HistoryEvent
+import ai.okou.android.chat.ServerDraftTarget
 import ai.okou.android.chat.TextDisposition
+import ai.okou.android.chat.plainText
 import java.util.UUID
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.*
 import org.junit.Test
 
 class ChatComposerApiTest {
+    @Test
+    fun sharedChatFixtureServesCanonicalDraftsAlongsideConversationHistory() = runTest {
+        ChatListApiFixture().use { fixture ->
+            for (target in
+                listOf(
+                    ServerDraftTarget(CHAT_AGENT, false),
+                    ServerDraftTarget(CHAT_PERSONAL, true),
+                )) {
+                assertEquals("", fixture.service.composerDraft(target).plainText())
+                fixture.service.saveComposerDraft(target, "A healthy realtime composer draft")
+                assertEquals(
+                    "A healthy realtime composer draft",
+                    fixture.service.composerDraft(target).plainText(),
+                )
+            }
+            assertTrue(
+                fixture.service.historyRows(CHAT_PERSONAL, HistoryCursor()).rows.isNotEmpty()
+            )
+        }
+    }
+
+    @Test
+    fun canonicalDraftsRoundTripBothTargetsAndAcceptActualEmpty204Responses() = runTest {
+        ComposerApiFixture().use { fixture ->
+            val targets =
+                listOf(ServerDraftTarget(CHAT_AGENT, false), ServerDraftTarget(CHAT_PERSONAL, true))
+            for (target in targets) {
+                assertEquals("", fixture.service.composerDraft(target).plainText())
+                val text = "  Web ↔ Android 你好 👋\n**literal**  "
+                fixture.service.saveComposerDraft(target, text)
+                assertEquals(text, fixture.service.composerDraft(target).plainText())
+                val patch = fixture.requests.last { it.method == "PATCH" }
+                assertEquals(
+                    if (target.thread) "/api/chat-threads/${target.id}"
+                    else "/api/agents/${target.id}/draft",
+                    patch.requestUrl!!.encodedPath,
+                )
+                val wire = Json.parseToJsonElement(patch.body.clone().readUtf8())
+                assertEquals(
+                    Json.parseToJsonElement(
+                        """{"draftUserMessage":{"version":1,"parts":[{"type":"text","text":${JsonPrimitive(text)}}]},"draftAttachments":null}"""
+                    ),
+                    wire,
+                )
+                assertTrue(patch.getHeader("Authorization")!!.startsWith("Bearer "))
+                for (verbatim in listOf("\u001c", "\u200b")) {
+                    fixture.service.saveComposerDraft(target, verbatim)
+                    assertEquals(verbatim, fixture.service.composerDraft(target).plainText())
+                }
+                for (blank in listOf("", " \t\n", "\u00a0\ufeff")) {
+                    fixture.service.saveComposerDraft(target, blank)
+                    assertEquals(
+                        Json.parseToJsonElement(
+                            """{"draftUserMessage":null,"draftAttachments":null}"""
+                        ),
+                        JsonObject(fixture.service.composerDraft(target)),
+                    )
+                }
+            }
+        }
+    }
+
     private fun input(thread: String, text: String = "你好 👋\n**verbatim**") =
         Json.decodeFromJsonElement<SendRequestVariant1>(
             Json.parseToJsonElement(
                 """{"agentId":"$CHAT_AGENT","threadId":"$thread","clientEventId":"${UUID.randomUUID()}","chatThreadSortEventId":"${UUID.randomUUID()}","prompt":${JsonPrimitive(text)},"userMessage":{"version":1,"parts":[{"type":"text","text":${JsonPrimitive(text)}}]},"hasTextContent":true}"""
             )
         )
+
+    @Test
+    fun batchAndPerThreadHistoryShareAcceptedInputsAndContinueTheSameCursor() = runTest {
+        ComposerApiFixture().use { fixture ->
+            val thread =
+                fixture.service
+                    .createThread(
+                        CreateThreadRequest(
+                            agentId = CHAT_AGENT,
+                            clientThreadId = UUID.randomUUID().toString(),
+                            eventId = UUID.randomUUID().toString(),
+                        )
+                    )
+                    .id
+            val cold =
+                listOf(CHAT_PERSONAL, CHAT_IN_PROJECT, thread).associateWith { HistoryCursor() }
+            val empty = fixture.service.historyCatchUp(cold)
+            assertEquals(cold.mapValues { emptyList<HistoryEvent>() }, empty.events)
+            assertTrue(empty.notFoundThreads.isEmpty())
+            cold.forEach { (id, cursor) ->
+                val page = fixture.service.historyRows(id, cursor)
+                assertTrue(page.rows.isEmpty())
+                assertEquals(cursor, page.cursor)
+                assertFalse(page.hasMore)
+            }
+
+            val first = input(CHAT_PERSONAL)
+            val other = input(thread, "Created conversation")
+            fixture.service.sendInput(first)
+            fixture.service.sendInput(other)
+            val initial = fixture.service.historyRows(CHAT_PERSONAL, HistoryCursor())
+            assertEquals(listOf(first.clientEventId), initial.rows.map { it.id })
+            val second = input(CHAT_PERSONAL, "Next message after the cursor")
+            fixture.service.sendInput(second)
+
+            val cursors = cold + (CHAT_PERSONAL to initial.cursor)
+            val batch = fixture.service.historyCatchUp(cursors)
+            assertEquals(
+                mapOf(
+                    CHAT_PERSONAL to listOf(second.clientEventId),
+                    CHAT_IN_PROJECT to emptyList<String>(),
+                    thread to listOf(other.clientEventId),
+                ),
+                batch.events.mapValues { (_, rows) -> rows.map { it.id } },
+            )
+            val tails =
+                cursors.mapValues { (id, cursor) ->
+                    val page = fixture.service.historyRows(id, cursor)
+                    assertEquals(batch.events.getValue(id), page.rows)
+                    assertFalse(page.hasMore)
+                    page.cursor
+                }
+            val full = fixture.service.historyRows(CHAT_PERSONAL, HistoryCursor())
+            assertEquals(listOf(first.clientEventId, second.clientEventId), full.rows.map { it.id })
+            for ((request, row) in
+                listOf(
+                    first to full.rows[0],
+                    second to full.rows[1],
+                    other to batch.events.getValue(thread).single(),
+                )) {
+                assertEquals(request.threadId, row.threadId)
+                assertEquals("input.prompt", row.type)
+                assertEquals(Json.encodeToJsonElement(request.userMessage), row.userMessage)
+            }
+            val caughtUp = fixture.service.historyCatchUp(tails)
+            assertEquals(tails.mapValues { emptyList<HistoryEvent>() }, caughtUp.events)
+            tails.forEach { (id, cursor) ->
+                val page = fixture.service.historyRows(id, cursor)
+                assertTrue(page.rows.isEmpty())
+                assertEquals(cursor, page.cursor)
+                assertFalse(page.hasMore)
+            }
+        }
+    }
 
     @Test
     fun installedCreateAndSendUse201CanonicalDefaultsAndOriginalInputStatus() = runTest {

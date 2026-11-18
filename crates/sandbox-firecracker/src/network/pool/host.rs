@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fs::File;
+use std::fs::{File, TryLockError};
 use std::future::Future;
-use std::os::fd::AsRawFd;
 use std::pin::Pin;
 use std::sync::Arc;
 #[cfg(test)]
@@ -9,7 +8,6 @@ use std::sync::atomic::Ordering;
 #[cfg(test)]
 use std::time::Duration;
 
-use nix::errno::Errno;
 use nix::fcntl::{Flock, FlockArg};
 use tracing::{error, info, warn};
 
@@ -521,13 +519,10 @@ pub(super) struct PoolIndexLock {
 }
 
 impl PoolIndexLock {
-    pub(super) fn try_lock(file: File) -> std::result::Result<Self, (File, Errno)> {
-        // SAFETY: `file` owns a valid descriptor for the duration of the call.
-        let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
-        if result == 0 {
-            Ok(Self { _file: file })
-        } else {
-            Err((file, Errno::last()))
+    pub(super) fn try_lock(file: File) -> std::result::Result<Self, (File, TryLockError)> {
+        match file.try_lock() {
+            Ok(()) => Ok(Self { _file: file }),
+            Err(error) => Err((file, error)),
         }
     }
 }
@@ -563,7 +558,7 @@ pub(super) fn acquire_pool_lock(locks: &LockPaths) -> Result<(u32, PoolIndexLock
                 return Ok((index, lock));
             }
             Err((_, errno)) => {
-                if errno != nix::errno::Errno::EWOULDBLOCK {
+                if !matches!(errno, TryLockError::WouldBlock) {
                     warn!(index, %errno, "unexpected flock error, skipping index");
                 }
                 continue;

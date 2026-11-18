@@ -37,17 +37,21 @@ import { env } from "../../lib/env";
 import { now, nowDate } from "../../lib/time";
 import { authRoute } from "../auth/auth-route";
 import { organizationAuthContext$ } from "../auth/auth-context";
-import { bodyResultOf, pathParamsOf } from "../context/request";
+import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
 import { verifyClerkComputerUseSession } from "../external/clerk";
 import {
   createPhoneUseToken,
   phoneUseDeviceIsPresent,
   publishPhoneUseHint,
+  publishPhoneUseDevicesChanged,
+  createPhoneUseResultSubscription,
+  publishPhoneUseResultChanged,
 } from "../external/realtime";
 import { putS3Object$, signPresignedGetUrl$ } from "../external/s3";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
+import { notifyPhoneUseOwner$ } from "../services/phone-use-notifications.service";
 
 type OrganizationAuthContext = AuthContext & { readonly orgId: string };
 class PhoneUseError extends Error {
@@ -225,7 +229,9 @@ const runGrant$ = command(async ({ get }, signal: AbortSignal) => {
   }
   return { id: grant.id, deviceId: grant.deviceId, runId: auth.runId };
 });
-function deviceView(value: typeof devices.$inferSelect, online = false) {
+function deviceView(value: typeof devices.$inferSelect, present = false) {
+  const online =
+    present && value.ready && value.lastSeenAt.getTime() > now() - 45_000;
   return {
     id: value.id,
     displayName: value.displayName,
@@ -233,7 +239,6 @@ function deviceView(value: typeof devices.$inferSelect, online = false) {
     appVersion: value.appVersion,
     generation: value.generation,
     online,
-    ready: value.ready && value.lastSeenAt.getTime() > now() - 45_000,
     lastSeenAt: value.lastSeenAt.toISOString(),
   };
 }
@@ -307,7 +312,7 @@ const register$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!device) {
     throw new Error("Device registration returned no row");
   }
-  await set(writeDb$)
+  const retired = await set(writeDb$)
     .update(operations)
     .set({
       status: "unknown",
@@ -332,8 +337,29 @@ const register$ = command(async ({ get, set }, signal: AbortSignal) => {
           ),
         ),
       ),
-    );
+    )
+    .returning({
+      id: operations.id,
+      orgId: operations.orgId,
+      userId: operations.userId,
+    });
   signal.throwIfAborted();
+  for (const row of retired) {
+    publishPhoneUseResultChanged(row);
+  }
+  await publishPhoneUseDevicesChanged(device);
+  signal.throwIfAborted();
+  if (device.generation > 1) {
+    await publishPhoneUseHint(
+      phoneUseChannel(
+        device.orgId,
+        device.userId,
+        device.id,
+        device.generation - 1,
+      ),
+      signal,
+    );
+  }
   return { status: 200 as const, body: deviceView(device) };
 });
 const heartbeatBody$ = bodyResultOf(contract.heartbeat),
@@ -345,10 +371,11 @@ const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const path = get(heartbeatPath$);
-  await set(host$, path.deviceId, body.data.generation, signal);
+  const device = await set(host$, path.deviceId, body.data.generation, signal);
+  const lastSeenAt = nowDate();
   await set(writeDb$)
     .update(devices)
-    .set({ ready: body.data.ready, lastSeenAt: nowDate() })
+    .set({ ready: body.data.ready, lastSeenAt })
     .where(
       and(
         eq(devices.id, path.deviceId),
@@ -356,7 +383,20 @@ const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
       ),
     );
   signal.throwIfAborted();
-  return { status: 200 as const, body: { ok: true as const } };
+  if (
+    device.ready !== body.data.ready ||
+    device.lastSeenAt.getTime() <= now() - 45_000
+  ) {
+    await publishPhoneUseDevicesChanged(device);
+    signal.throwIfAborted();
+  }
+  return {
+    status: 200 as const,
+    body: {
+      ok: true as const,
+      readyUntil: new Date(lastSeenAt.getTime() + 45_000).toISOString(),
+    },
+  };
 });
 const disconnectBody$ = bodyResultOf(contract.disconnect),
   disconnectPath$ = pathParamsOf(contract.disconnect);
@@ -391,7 +431,7 @@ const disconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
       ),
     );
   signal.throwIfAborted();
-  await set(writeDb$)
+  const retired = await set(writeDb$)
     .update(operations)
     .set({
       status: "unknown",
@@ -416,7 +456,17 @@ const disconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
           ),
         ),
       ),
-    );
+    )
+    .returning({
+      id: operations.id,
+      orgId: operations.orgId,
+      userId: operations.userId,
+    });
+  signal.throwIfAborted();
+  for (const row of retired) {
+    publishPhoneUseResultChanged(row);
+  }
+  await publishPhoneUseDevicesChanged(get(organizationAuthContext$));
   signal.throwIfAborted();
   return { status: 200 as const, body: { ok: true as const } };
 });
@@ -600,10 +650,7 @@ const grant$ = command(async ({ get, set }, signal: AbortSignal) => {
         ),
       );
   }
-  await publishPhoneUseHint(
-    phoneUseChannel(auth.orgId, auth.userId, device.id, device.generation),
-    signal,
-  );
+  await set(notifyPhoneUseOwner$, auth, signal);
   return { status: 200 as const, body: { ok: true as const } };
 });
 const stoppedPhoneRun$ = command(
@@ -635,7 +682,7 @@ const closeRunAdmission$ = command(
     claim: { runId: string; grantId: string },
     signal: AbortSignal,
   ) => {
-    await set(writeDb$)
+    const retired = await set(writeDb$)
       .update(operations)
       .set({
         status: sql`case when ${operations.status} = 'queued' then 'failed' else 'unknown' end`,
@@ -653,8 +700,16 @@ const closeRunAdmission$ = command(
             "approval_required",
           ]),
         ),
-      );
+      )
+      .returning({
+        id: operations.id,
+        orgId: operations.orgId,
+        userId: operations.userId,
+      });
     signal.throwIfAborted();
+    for (const row of retired) {
+      publishPhoneUseResultChanged(row);
+    }
   },
 );
 const createBody$ = bodyResultOf(contract.create);
@@ -699,7 +754,7 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
     .limit(1);
   signal.throwIfAborted();
   if (!device) {
-    conflict("Open Okou iOS Use and start a native control window");
+    conflict("Open Okou iOS Use and go online");
   }
   const payloadHash = createHash("sha256")
     .update(JSON.stringify(body.data.action))
@@ -751,8 +806,15 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
     phoneUseChannel(device.orgId, device.userId, device.id, device.generation),
     signal,
   );
-  return { status: 200 as const, body: operationView(row) };
+  publishPhoneUseResultChanged(row);
+  const realtime = await createPhoneUseResultSubscription(row, signal);
+  signal.throwIfAborted();
+  return {
+    status: 200 as const,
+    body: { ...operationView(row), ...(realtime ? { realtime } : {}) },
+  };
 });
+const getQuery$ = queryOf(contract.get);
 const getPath$ = pathParamsOf(contract.get);
 const get$ = command(async ({ get, set }, signal: AbortSignal) => {
   const grant = await set(runGrant$, signal);
@@ -790,10 +852,38 @@ const get$ = command(async ({ get, set }, signal: AbortSignal) => {
       .returning();
     signal.throwIfAborted();
     if (expired) {
+      publishPhoneUseResultChanged(expired);
       return { status: 200 as const, body: operationView(expired) };
     }
   }
-  return { status: 200 as const, body: operationView(row) };
+  if (row.status === "queued") {
+    const [device] = await get(db$)
+      .select()
+      .from(devices)
+      .where(and(owned(auth), eq(devices.id, row.deviceId)))
+      .limit(1);
+    signal.throwIfAborted();
+    if (device) {
+      await publishPhoneUseHint(
+        phoneUseChannel(
+          device.orgId,
+          device.userId,
+          device.id,
+          device.generation,
+        ),
+        signal,
+      );
+    }
+  }
+  const realtime =
+    get(getQuery$)?.realtime === "true"
+      ? await createPhoneUseResultSubscription(row, signal)
+      : undefined;
+  signal.throwIfAborted();
+  return {
+    status: 200 as const,
+    body: { ...operationView(row), ...(realtime ? { realtime } : {}) },
+  };
 });
 const screenshotPath$ = pathParamsOf(contract.screenshot);
 const screenshot$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -832,7 +922,7 @@ const retireEndedOperations$ = command(
     device: typeof devices.$inferSelect,
     signal: AbortSignal,
   ) => {
-    await set(writeDb$)
+    const retired = await set(writeDb$)
       .update(operations)
       .set({
         status: sql`case when ${operations.status} = 'queued' then 'failed' else 'unknown' end`,
@@ -889,8 +979,16 @@ const retireEndedOperations$ = command(
             ),
           ),
         ),
-      );
+      )
+      .returning({
+        id: operations.id,
+        orgId: operations.orgId,
+        userId: operations.userId,
+      });
     signal.throwIfAborted();
+    for (const row of retired) {
+      publishPhoneUseResultChanged(row);
+    }
   },
 );
 const activeNativeRun$ = command(
@@ -1032,6 +1130,9 @@ const claimPhoneOperation$ = command(
       )
       .returning();
     signal.throwIfAborted();
+    if (row) {
+      publishPhoneUseResultChanged(row);
+    }
     return {
       status: 200 as const,
       body: { operation: row ? operationView(row) : null },
@@ -1187,7 +1288,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
       signal,
     );
   }
-  await set(writeDb$)
+  const [updated] = await set(writeDb$)
     .update(operations)
     .set({
       status: result.status,
@@ -1214,8 +1315,12 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
         eq(operations.status, row.status),
         eq(operations.claimedGeneration, device.generation),
       ),
-    );
+    )
+    .returning();
   signal.throwIfAborted();
+  if (updated) {
+    publishPhoneUseResultChanged(updated);
+  }
   return { status: 200 as const, body: { ok: true as const } };
 });
 

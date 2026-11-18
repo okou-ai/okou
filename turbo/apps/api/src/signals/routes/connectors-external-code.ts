@@ -1,3 +1,5 @@
+import { waitUntil } from "../context/wait-until";
+import { deliverMarketingRewardEvents$ } from "../services/marketing-reward-event-delivery.service";
 import { builtinConnectorExternalCodeSessionContract } from "@okouai/api-contracts/contracts/connectors";
 import { command } from "ccstate";
 
@@ -59,7 +61,7 @@ const completeBuiltinConnectorExternalCodeSessionInner$ = command(
       return body.response;
     }
 
-    return await set(
+    const result = await set(
       completeBuiltinConnectorExternalCodeSession$,
       {
         orgId: auth.orgId,
@@ -71,6 +73,20 @@ const completeBuiltinConnectorExternalCodeSessionInner$ = command(
       },
       signal,
     );
+    if ("marketingRewardEventId" in result) {
+      const { marketingRewardEventId, ...response } = result;
+      if (marketingRewardEventId) {
+        waitUntil(
+          set(
+            deliverMarketingRewardEvents$,
+            { jobId: marketingRewardEventId, handlerVersion: 1 },
+            signal,
+          ),
+        );
+      }
+      return response;
+    }
+    return result;
   },
 );
 

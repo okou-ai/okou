@@ -8,7 +8,7 @@ use guest_control_proto::{
     MSG_OPERATIONS_RESUMED, MSG_QUIESCE_OPERATIONS, MSG_RESUME_OPERATIONS, MSG_SHUTDOWN,
     MSG_SHUTDOWN_ACK, MemorySnapshot, RawMessage,
 };
-use sandbox::StorageManifestRequestTiming;
+use sandbox::RequestTiming;
 use tokio::sync::oneshot;
 use tokio::time::{self, Instant};
 
@@ -118,7 +118,7 @@ async fn write_request_frame(
     budget: &RequestBudget,
     before_write: impl FnOnce() -> io::Result<()>,
     progress: &RequestWriteProgress,
-    timing: Option<&mut StorageManifestRequestTiming>,
+    timing: Option<&mut RequestTiming>,
 ) -> io::Result<()> {
     let decision = shared
         .write_frame(
@@ -181,7 +181,7 @@ async fn write_request_frame_with_builder_and_progress(
     budget: &RequestBudget,
     before_write: impl FnOnce() -> io::Result<()>,
     progress: &RequestWriteProgress,
-    mut timing: Option<&mut StorageManifestRequestTiming>,
+    mut timing: Option<&mut RequestTiming>,
 ) -> io::Result<()> {
     let wait_started = timing.as_ref().map(|_| Instant::now());
     let frame_builder_guard = shared.frame_builder.lock().await;
@@ -275,7 +275,7 @@ async fn write_registered_request_and_wait_with_frame_builder(
     budget: RequestBudget,
     before_write: impl FnOnce() -> io::Result<()>,
     rx: oneshot::Receiver<RawMessage>,
-    mut timing: Option<&mut StorageManifestRequestTiming>,
+    mut timing: Option<&mut RequestTiming>,
 ) -> io::Result<RawMessage> {
     let progress = RequestWriteProgress::default();
     time::timeout_at(
@@ -379,7 +379,7 @@ pub(crate) async fn normal_request_on_shared_with_timing_frame_builder(
     timeout: Duration,
     write_observer: FrameWriteObserver,
     build_frame: impl FnOnce(u32, &mut Vec<u8>) -> io::Result<()>,
-    mut timing: Option<&mut StorageManifestRequestTiming>,
+    mut timing: Option<&mut RequestTiming>,
 ) -> io::Result<RawMessage> {
     if timeout.is_zero() {
         return Err(request_timeout_error(

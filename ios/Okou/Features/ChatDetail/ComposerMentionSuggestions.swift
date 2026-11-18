@@ -27,7 +27,7 @@ struct ComposerMentionSuggestion: Equatable, Identifiable {
   var part: MessageJSON {
     .object([
       "type": .string("chat_thread"), "threadId": .string(referenceID),
-      "titleSnapshot": .string(title),
+      "titleSnapshot": .string(title)
     ])
   }
 }

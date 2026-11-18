@@ -1,3 +1,4 @@
+import { ChatConnectorAccountDialogs } from "./chat-connector-account-dialogs.tsx";
 import { findDocumentTemplateItem } from "@okouai/core/document-template-items";
 import { DocumentTemplatePickerPane } from "./document-template-picker-pane.tsx";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -29,13 +30,14 @@ import {
   type ComposerConnectorActions,
 } from "./composer-connector-actions.ts";
 import { ComposerTaskControls } from "./composer-create.tsx";
+import { ComposerTools } from "./composer-tools.tsx";
 import { useComposerCapabilities } from "./composer-capabilities.ts";
 import {
   ComposerProjectControl,
   useComposerProjectMenuItem,
 } from "../projects/composer-project.tsx";
 import { useCustomTemplateRecommendations } from "./use-custom-template-recommendations.ts";
-import { ComposerTemplatePickerButton } from "./composer-template-picker-button.tsx";
+import { ComposerTemplateSuggestion } from "./composer-template-suggestion.tsx";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import type {
@@ -2000,12 +2002,10 @@ function templateDetailPreviewMatchesItem(
 
 function TemplatePreviewPage({
   item,
-  onBack,
   onSelect,
   signals,
 }: {
   item: PresentationTemplateItem;
-  onBack: () => void;
   onSelect: (item: PresentationTemplateItem, colorSystemId?: string) => void;
   signals: ComposerSignals;
 }) {
@@ -2091,15 +2091,11 @@ function TemplatePreviewPage({
         className="flex h-[68px] shrink-0 justify-center px-6 pr-14 text-left duration-200 motion-reduce:animate-none"
       >
         <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-left text-base leading-none">
-          <button
-            type="button"
-            className="inline-flex shrink-0 items-center p-0 leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={onBack}
-          >
+          <span className="shrink-0 text-muted-foreground">
             {t(($) => {
               return $.artifacts.templates.template;
             })}
-          </button>
+          </span>
           <span className="shrink-0 text-muted-foreground">/</span>
           <span className="block min-w-0 truncate leading-none">
             {item.title}
@@ -3298,38 +3294,38 @@ function ComposerPresentationSuggestion({
   title,
   children,
   onSelect,
+  onPreview,
 }: {
   readonly title: string;
   readonly children: ReactNode;
   readonly onSelect: () => void;
+  readonly onPreview: () => void;
 }) {
   return (
-    <TemplateCard title={title} ratio="aspect-video" onSelect={onSelect}>
-      {children}
-    </TemplateCard>
+    <ComposerTemplateSuggestion title={title} onPreview={onPreview}>
+      <TemplateCard title={title} ratio="aspect-video" onSelect={onSelect}>
+        {children}
+      </TemplateCard>
+    </ComposerTemplateSuggestion>
   );
 }
 
 export function ComposerPresentationRecommendations({
   signals,
-  headerAction,
-  headerless = false,
 }: {
   readonly signals: ComposerSignals;
-  readonly headerAction?: ReactNode;
-  /** The host draws the title and "View all" in its own header. */
-  readonly headerless?: boolean;
 }) {
   const { t } = useTranslation();
   const picker = useComposerTemplatePicker(signals);
   const custom = useCustomTemplateRecommendations(signals, "presentation");
   const builtIn = PRESENTATION_TEMPLATE_PICKER_ITEMS;
-  const openTemplates = useSet(signals.template.openTemplatePicker$);
+  const previewRecommendation = useSet(signals.template.previewRecommendation$);
+  const presentationSelection =
+    usePresentationTemplatePreviewSelection(signals);
   const setMode = useSet(signals.create.setMode$);
   const label = t(($) => {
     return $.chat.taskChips.presentationTemplates;
   });
-  // The same header line, rail and cover metrics as every other type's shelf.
   // The import tile leads the rail so members can start with their own deck.
   return (
     <div
@@ -3337,19 +3333,6 @@ export function ComposerPresentationRecommendations({
       role="group"
       aria-label={label}
     >
-      {!headerless && (
-        <div className="flex min-w-0 items-center justify-between gap-3">
-          <p className="min-w-0 truncate text-base font-medium">{label}</p>
-          <div className="flex shrink-0 items-center gap-2">
-            <ComposerTemplatePickerButton
-              onClick={() => {
-                openTemplates({ kind: "insert", category: "slides" });
-              }}
-            />
-            {headerAction}
-          </div>
-        </div>
-      )}
       <ComposerRail
         rail="templates:presentation"
         itemWidth={200}
@@ -3367,6 +3350,13 @@ export function ComposerPresentationRecommendations({
               <ComposerPresentationSuggestion
                 key={template.id}
                 title={template.title}
+                onPreview={() => {
+                  previewRecommendation({
+                    type: "custom",
+                    templateId: template.id,
+                    kind: "presentation",
+                  });
+                }}
                 onSelect={() => {
                   picker.onChange({
                     type: "custom",
@@ -3394,6 +3384,12 @@ export function ComposerPresentationRecommendations({
               <ComposerPresentationSuggestion
                 key={item.slug}
                 title={item.title}
+                onPreview={() => {
+                  previewRecommendation({
+                    type: "presentation",
+                    selection: presentationSelection(item),
+                  });
+                }}
                 onSelect={() => {
                   picker.onChange(toPresentationGenerationTemplate(item));
                 }}
@@ -3437,8 +3433,10 @@ function TemplatePickerDialogFrame({
   // Visibility stays below the gallery's built-in card construction.
   const open = useGet(signals.template.templatePickerOpen$);
   const initialFocus = useSet(signals.template.templatePickerInitialFocus$);
+  const finalFocus = useSet(signals.template.templatePickerFinalFocus$);
   const setPopup = useSet(signals.template.setTemplatePickerPopup$);
   const previewSlug = useGet(signals.template.openedTemplateId$);
+  const directPreview = useGet(signals.template.templatePickerDirectPreview$);
   const previewItem =
     presentationItems.find((item) => {
       return item.slug === previewSlug;
@@ -3456,6 +3454,12 @@ function TemplatePickerDialogFrame({
       open={open}
       onOpenChange={(nextOpen) => {
         if (!nextOpen) {
+          // A recommendation opened this detail directly, without a gallery
+          // underneath to return to. Keep its content through the exit motion.
+          if (directPreview) {
+            onClose();
+            return;
+          }
           if (documentPreview !== undefined) {
             closeDocumentPreview();
             return;
@@ -3476,6 +3480,7 @@ function TemplatePickerDialogFrame({
       <DialogContent
         ref={setPopup}
         initialFocus={initialFocus}
+        finalFocus={directPreview ? finalFocus : undefined}
         closeLabel={t(($) => {
           return $.artifacts.actions.close;
         })}
@@ -3494,6 +3499,7 @@ function TemplatePickerDialogFrame({
           <DocumentTemplatePreviewPage
             signals={signals}
             item={documentPreview}
+            onBack={directPreview ? onClose : undefined}
             onSelect={(item) => {
               onChange(toDocumentGenerationTemplate(item));
               onClose();
@@ -3502,17 +3508,40 @@ function TemplatePickerDialogFrame({
         ) : previewItem ? (
           <TemplatePreviewPage
             item={previewItem}
-            onBack={() => {
-              closeDetailPreview();
-            }}
             onSelect={handleSelectPresentation}
             signals={signals}
           />
         ) : null}
-        <WebsiteTemplatePreviewDialogSlot signals={signals} />
+        <WebsiteTemplatePreviewDialogSlot
+          signals={signals}
+          onClose={directPreview ? onClose : undefined}
+        />
       </DialogContent>
     </Dialog>
   );
+}
+
+function usePresentationTemplatePreviewSelection(signals: ComposerSignals) {
+  const cardThemeIdBySlug = useGet(signals.template.templateCardThemeIdBySlug$);
+  return (item: PresentationTemplateItem, slideIndex = 0) => {
+    const selectedTheme = findPresentationTemplateTheme(
+      cardThemeIdBySlug[item.slug] ?? defaultPresentationTemplateThemeId(item),
+    );
+    return {
+      index: Math.max(0, Math.floor(slideIndex)),
+      item,
+      themeCss: presentationTemplateThemeCss(selectedTheme),
+      themeId: selectedTheme.id,
+    };
+  };
+}
+
+function usePresentationTemplatePreview(signals: ComposerSignals) {
+  const selection = usePresentationTemplatePreviewSelection(signals);
+  const openDetailPreview = useSet(signals.template.openPresentationTemplate$);
+  return (item: PresentationTemplateItem, slideIndex = 0) => {
+    openDetailPreview(selection(item, slideIndex));
+  };
 }
 
 function TemplatePickerDialog({
@@ -3547,11 +3576,11 @@ function TemplatePickerDialog({
   const clearPresentationPreviews = useSet(
     signals.template.clearPresentationTemplatePreviews$,
   );
-  const openDetailPreview = useSet(signals.template.openPresentationTemplate$);
+  const handlePreview = usePresentationTemplatePreview(signals);
+  const directPreview = useGet(signals.template.templatePickerDirectPreview$);
   const openWebsiteTemplatePreview = useSet(
     signals.template.openWebsiteTemplatePreview$,
   );
-  const cardThemeIdBySlug = useGet(signals.template.templateCardThemeIdBySlug$);
   const illustrationVariantIndex = useGet(
     signals.template.illustrationVariantIndex$,
   );
@@ -3559,6 +3588,9 @@ function TemplatePickerDialog({
     signals.template.setIllustrationVariantIndex$,
   );
   const closeDocumentPreview = useSet(signals.template.closeDocumentPreview$);
+  const completeWebsitePreviewClose = useSet(
+    signals.template.completeWebsiteTemplatePreviewClose$,
+  );
   // A persona pill filters the grid, ideation-gallery style.
   // resolveWorkflowCatalog() keeps that logic out of this component to stay
   // under the complexity budget.
@@ -3587,6 +3619,7 @@ function TemplatePickerDialog({
   const completeTemplatePickerClose = () => {
     clearPresentationPreviews();
     closeDocumentPreview();
+    completeWebsitePreviewClose();
     resetCustomTemplatePicker();
     setPresentationGridScrollTop(0);
     onCloseComplete();
@@ -3627,19 +3660,6 @@ function TemplatePickerDialog({
   const handleSelectIllustration = (item: IllustrationTemplateItem) => {
     onChange(toIllustrationGenerationTemplate(item));
     closeTemplatePicker();
-  };
-
-  const handlePreview = (item: PresentationTemplateItem, slideIndex = 0) => {
-    const selectedTheme = findPresentationTemplateTheme(
-      cardThemeIdBySlug[item.slug] ?? defaultPresentationTemplateThemeId(item),
-    );
-    const selectedSlideIndex = Math.max(0, Math.floor(slideIndex));
-    openDetailPreview({
-      index: selectedSlideIndex,
-      item,
-      themeCss: presentationTemplateThemeCss(selectedTheme),
-      themeId: selectedTheme.id,
-    });
   };
 
   // The frame mounts these controls only while showing the gallery.
@@ -3741,6 +3761,9 @@ function TemplatePickerDialog({
                     closeTemplatePicker();
                   }}
                   onSelectCustom={handleSelectCustom}
+                  onCustomPreviewClose={
+                    directPreview ? closeTemplatePicker : undefined
+                  }
                   onImported={closeTemplatePicker}
                   onSelectWebsite={handleSelectWebsite}
                   onPreviewWebsite={handlePreviewWebsite}
@@ -3771,6 +3794,7 @@ function TemplatePickerCategoryContent({
   onPresentationScroll,
   onRestorePresentationScroll,
   onSelectCustom,
+  onCustomPreviewClose,
   onSelectDocument,
   onImported,
   onSelectWebsite,
@@ -3792,6 +3816,7 @@ function TemplatePickerCategoryContent({
   onPresentationScroll: (value: number) => void;
   onRestorePresentationScroll: RefCallback<HTMLDivElement>;
   onSelectCustom: (template: UserTemplateCatalogEntry) => void;
+  onCustomPreviewClose?: () => void;
   onSelectDocument: (
     item: import("@okouai/core/document-template-items").DocumentTemplateItem,
   ) => void;
@@ -3811,6 +3836,7 @@ function TemplatePickerCategoryContent({
         kind={kind}
         query={search}
         onSelect={onSelectCustom}
+        onPreviewClose={onCustomPreviewClose}
         importCard={
           <TemplateImportCard
             kind={kind}
@@ -4925,6 +4951,9 @@ function ConnectorsPopoverButton({
   );
   const setPopoverOpen = useSet(signals.connector.setPopoverOpen$);
   const chatPermissions = useGet(signals.connector.chatAccess.permissions$);
+  const accountManagerOpen = useGet(
+    signals.connector.chatAccess.accountManager.managerOpen$,
+  );
   const setTriggerRef = useSet(signals.connector.setTriggerRef$);
   const phoneUseSetupOpen = useGet(signals.connector.phoneUseSetupOpen$);
   const accountMenuOpen = useGet(signals.connector.accounts.menuOpen$);
@@ -4986,7 +5015,8 @@ function ConnectorsPopoverButton({
         finalFocus={
           remoteAccessDialogOpen ||
           phoneUseSetupOpen ||
-          chatPermissions !== null
+          chatPermissions !== null ||
+          accountManagerOpen
             ? false
             : undefined
         }
@@ -5644,9 +5674,7 @@ function useComposerAddMenuGroups(
   const openSkillImportDialog = useSet(openSkillImportDialog$);
   const project = useComposerProjectMenuItem(signals);
   const capabilities = useComposerCapabilities(signals);
-  const capabilityItem = (
-    capability: NonNullable<typeof capabilities>[number],
-  ) => {
+  const capabilityItem = (capability: (typeof capabilities)[number]) => {
     return {
       ...capability,
       onSelect: () => {
@@ -5676,14 +5704,10 @@ function useComposerAddMenuGroups(
         onSelect: template.open,
       },
     ],
-    ...(capabilities
-      ? [
-          [
-            capabilityItem(capabilities[0]),
-            ...capabilities.slice(1).map(capabilityItem),
-          ] satisfies ComposerAddMenuGroup,
-        ]
-      : []),
+    [
+      capabilityItem(capabilities[0]),
+      ...capabilities.slice(1).map(capabilityItem),
+    ],
     [
       {
         id: "import-skills",
@@ -6695,6 +6719,7 @@ function ComposerConnectorsSlot({
         actions={actions}
         onOpenAddDialog={openAddConnectorsDialog}
       />
+      <ChatConnectorAccountDialogs signals={signals} />
       {permissions && permissionSignals && (
         <ConnectorPermissionsDialog
           finalFocus={triggerElement}
@@ -6908,6 +6933,7 @@ function ComposerIdleControls({
         <ComposerConnectorsSlot signals={signals} actions={connectorActions} />
         <ComposerProjectControl signals={signals} />
         <ComposerTaskControls signals={signals} />
+        <ComposerTools signals={signals} />
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-1 composer-wide:gap-2">
         <ComposerModelPickerSlot signals={signals} />

@@ -15,6 +15,7 @@ export const projects = pgTable(
     userId: text("user_id").notNull(),
     orgId: text("org_id").notNull(),
     name: text("name").notNull(),
+    sortOrder: text("sort_order"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

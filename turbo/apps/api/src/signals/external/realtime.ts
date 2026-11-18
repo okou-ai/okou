@@ -1,3 +1,4 @@
+import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { HTTPException } from "hono/http-exception";
 import Ably, { type CapabilityOp } from "ably";
 import type { RunnerSshInvalidate } from "@okouai/api-contracts/contracts/runner-ssh";
@@ -17,9 +18,15 @@ import {
 } from "@okouai/api-contracts/contracts/realtime";
 import type { RunnerCancellationMode } from "@okouai/api-contracts/contracts/runners";
 import type { BuiltInGenerationRealtimeSubscription } from "@okouai/api-contracts/contracts/built-in-generation";
-import { phoneUseChannel } from "@okouai/api-contracts/contracts/phone-use";
+import {
+  phoneUseChannel,
+  phoneUseResultChannel,
+  phoneUseResultChangedEvent,
+  phoneUseDevicesChangedEvent,
+} from "@okouai/api-contracts/contracts/phone-use";
 
 import { env } from "../../lib/env";
+import { now } from "../../lib/time";
 import { logger } from "../../lib/log";
 import { singleton } from "../../lib/singleton";
 import { waitUntil } from "../context/wait-until";
@@ -172,6 +179,34 @@ async function createPlatformUserRealtimeToken(
   return tokenRequest;
 }
 
+/** OAuth chat readers cannot subscribe to global user, organization or remote-control signals. */
+export async function createOAuthChatRealtimeToken(
+  userId: string,
+  orgId: string,
+  expiresAtMs: number,
+  signal: AbortSignal,
+): Promise<Ably.TokenRequest | null> {
+  signal.throwIfAborted();
+  const timestamp = now();
+  // Ably can redeem the signed request up to two minutes after its timestamp.
+  // TTL starts at redemption, so reserve that entire window before signing.
+  const ttl = Math.min(60 * 60 * 1000, expiresAtMs - timestamp - 120_000);
+  if (ttl <= 0) {
+    return null;
+  }
+  const token = await ablyClient().auth.createTokenRequest({
+    capability: {
+      [getUserOrgChannelName(userId, orgId)]: ["subscribe"],
+      [sessionOutputChannelName(userId, orgId, "*")]: ["subscribe"],
+    },
+    timestamp,
+    ttl,
+    clientId: userId,
+  });
+  signal.throwIfAborted();
+  return now() >= expiresAtMs ? null : token;
+}
+
 export async function createPlatformRealtimeToken(
   userId: string,
   orgId: string | undefined,
@@ -186,6 +221,7 @@ export async function createPlatformRealtimeToken(
     capability[getOrgChannelName(orgId)] = ["subscribe"];
     capability[getUserOrgChannelName(userId, orgId)] = ["subscribe"];
     capability[sessionOutputChannelName(userId, orgId, "*")] = ["subscribe"];
+    capability[`phone-use:${orgId}:${userId}:*`] = ["subscribe"];
     capability[`${computerUseHostChannelScope(userId, orgId)}:*`] = [
       "subscribe",
     ];
@@ -267,7 +303,7 @@ export async function createBuiltInGenerationRealtimeSubscription(
   };
 }
 
-export async function createComputerUseResultSubscription(
+export function createComputerUseResultSubscription(
   target: {
     readonly userId: string;
     readonly orgId: string;
@@ -282,24 +318,40 @@ export async function createComputerUseResultSubscription(
     target.orgId,
     target.commandId,
   );
+  return createResultSubscription(
+    channelName,
+    computerUseCommandResultChangedEvent,
+    target.userId,
+    target.timeoutMs,
+    signal,
+  );
+}
+
+async function createResultSubscription(
+  channelName: string,
+  eventName: string,
+  userId: string,
+  timeoutMs: number,
+  signal: AbortSignal,
+): Promise<RealtimeSubscription | undefined> {
   const request = (async () => {
     return await ablyClient().auth.createTokenRequest({
       capability: { [channelName]: ["subscribe"] },
-      clientId: target.userId,
-      ttl: target.timeoutMs + 60_000,
+      clientId: userId,
+      ttl: timeoutMs + 60_000,
     });
   })();
   const token = await settle(awaitWithSignal(request, signal), signal);
   if (!token.ok) {
     // #38733: notification delivery is optional; the created operation remains readable.
-    L.warn("Unable to issue computer-use result subscription", {
-      commandId: target.commandId,
+    L.warn("Unable to issue result subscription", {
+      channelName,
     });
     return undefined;
   }
   return {
     channelName,
-    eventName: computerUseCommandResultChangedEvent,
+    eventName,
     tokenRequest: token.value,
   };
 }
@@ -678,6 +730,53 @@ export async function publishBuiltInGenerationChanged(
   );
 }
 
+/** Bound the provider operation itself; the durable job owns retries and cancellation. */
+const rewardProjectionClient = singleton(() => {
+  return new Ably.Rest({
+    key: env("ABLY_API_KEY"),
+    queryTime: false,
+    httpRequestTimeout: 5000,
+    httpMaxRetryCount: 0,
+  });
+});
+
+/** Await provider acceptance so the durable projection job owns retry, not waitUntil. */
+export async function publishMarketingRewardProjection(
+  target: {
+    readonly actorUserId: string;
+    readonly beneficiaryUserId: string | null;
+    readonly orgId: string;
+    readonly rewardTarget: "user" | "org";
+  },
+  signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted();
+  const client = rewardProjectionClient();
+  if (target.rewardTarget === "user") {
+    if (!target.beneficiaryUserId) {
+      throw new Error("Personal reward refresh has no beneficiary");
+    }
+    await client.channels
+      .get(getUserChannelName(target.beneficiaryUserId))
+      .publish(GET_STARTED_REWARDS_CHANGED_EVENT, null);
+  } else {
+    const published = await Promise.allSettled([
+      client.channels
+        .get(getUserChannelName(target.actorUserId))
+        .publish(GET_STARTED_REWARDS_CHANGED_EVENT, null),
+      client.channels
+        .get(getOrgChannelName(target.orgId))
+        .publish("slack:changed", null),
+    ]);
+    for (const result of published) {
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+    }
+  }
+  signal.throwIfAborted();
+}
+
 /** Publish an org-scoped signal for events shared by organization members. */
 export async function publishOrgSignal(
   orgId: string,
@@ -810,11 +909,60 @@ export async function phoneUseDeviceIsPresent(
   }
   return result.value.items.length > 0;
 }
-export async function publishPhoneUseHint(
+export function publishPhoneUseHint(
   channel: string,
   signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted();
+  waitUntil(
+    tapError(
+      ablyClient().channels.get(channel).publish("commands.changed", {}),
+      (error) => {
+        L.warn("Unable to publish phone command change", { channel, error });
+      },
+    ),
+  );
+  return Promise.resolve();
+}
+
+export function createPhoneUseResultSubscription(
+  target: { orgId: string; userId: string; id: string },
+  signal: AbortSignal,
 ) {
-  signal.throwIfAborted();
-  await ablyClient().channels.get(channel).publish("commands.changed", {});
-  signal.throwIfAborted();
+  return createResultSubscription(
+    phoneUseResultChannel(target.orgId, target.userId, target.id),
+    phoneUseResultChangedEvent,
+    target.userId,
+    300_000,
+    signal,
+  );
+}
+
+export function publishPhoneUseResultChanged(target: {
+  orgId: string;
+  userId: string;
+  id: string;
+}): void {
+  const channelName = phoneUseResultChannel(
+    target.orgId,
+    target.userId,
+    target.id,
+  );
+  waitUntil(
+    tapError(
+      ablyClient()
+        .channels.get(channelName)
+        .publish(phoneUseResultChangedEvent, null),
+      (error) => {
+        L.warn("Unable to publish phone result change", { channelName, error });
+      },
+    ),
+  );
+}
+
+export function publishPhoneUseDevicesChanged(target: {
+  orgId: string;
+  userId: string;
+}): Promise<void> {
+  return publishChatDatabaseSignal(target, phoneUseDevicesChangedEvent);
 }

@@ -2,11 +2,13 @@ import { literal, object, string, tuple } from "zod";
 import {
   formatRunBalanceError,
   MODEL_UNAVAILABLE_MESSAGE,
+  PROVIDER_INSUFFICIENT_CREDITS_MESSAGE,
 } from "./run-balance-errors";
 import type { ModelProviderType } from "./model-providers";
 import type { ModelProviderFramework } from "./model-provider-types";
 import {
   knownRunFailureReasonSchema,
+  normalizeRunFailureReason,
   type KnownRunFailureReason,
   type RunFailureReasonToken,
 } from "./run-failure-reasons";
@@ -723,6 +725,7 @@ const STRUCTURED_RUN_ERROR_BEHAVIOR: Record<
   KnownRunFailureReason,
   StructuredRunErrorBehavior
 > = {
+  unknown: "generic",
   session_history_limit: "generic",
   guest_root_filesystem_full: "generic",
   guest_home_filesystem_full: "generic",
@@ -790,7 +793,6 @@ function actionableRunErrorOrDefault(
 
 function formatStructuredRunError(params: {
   readonly failureReason: RunFailureReasonToken;
-  readonly errorMessage: string;
   readonly framework?: ModelProviderFramework | null;
   readonly selectedModelLabel?: string | null;
   readonly modelProviderType?: ModelProviderType | null;
@@ -855,16 +857,10 @@ function formatStructuredRunError(params: {
       );
     }
     case "usage-limit": {
-      return actionableRunErrorOrDefault(
-        params.errorMessage,
-        CHAT_RUN_USAGE_LIMIT_MESSAGE,
-      );
+      return CHAT_RUN_USAGE_LIMIT_MESSAGE;
     }
     case "unsupported-model": {
-      return actionableRunErrorOrDefault(
-        params.errorMessage,
-        CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE,
-      );
+      return CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE;
     }
     case "model-restricted": {
       return MODEL_UNAVAILABLE_MESSAGE;
@@ -875,8 +871,32 @@ function formatStructuredRunError(params: {
   }
 }
 
+/** Run presentation accepts structured facts, never provider diagnostic text. */
+export function formatRunFailureForExternalSurface(params: {
+  readonly failureReason?: RunFailureReasonToken | null;
+  readonly framework?: ModelProviderFramework | null;
+  readonly selectedModelLabel?: string | null;
+  readonly modelProviderType?: ModelProviderType | null;
+  readonly claudeCodeCredentialRecovery?: ClaudeCodeCredentialRecovery;
+}): string {
+  return formatStructuredRunError({
+    ...params,
+    failureReason: normalizeRunFailureReason(params.failureReason),
+  });
+}
+
+/** Public event reasons already omit platform-owned provider balance failures. */
+export function formatChatRunFailure(
+  failureReason: RunFailureReasonToken | null | undefined,
+): string {
+  return failureReason === "provider_insufficient_credits"
+    ? PROVIDER_INSUFFICIENT_CREDITS_MESSAGE
+    : formatRunFailureForExternalSurface({ failureReason });
+}
+
 /**
- * Plain-text run error copy shared by Web chat and external integrations.
+ * Pre-Run integration errors retain their separate text contract.
+ * Run failures use formatRunFailureForExternalSurface instead.
  * Web may wrap generic failures with its report-link affordance after this
  * shared classification step.
  */
@@ -904,14 +924,17 @@ export function formatRunErrorForExternalSurface(params: {
   const errorMessage = params.message.trim() || "Run failed";
   const modelProviderType = params.modelProviderType;
   if (params.failureReason !== undefined) {
-    return formatStructuredRunError({
+    const structured = formatStructuredRunError({
       failureReason: params.failureReason,
-      errorMessage,
       framework: params.framework,
       selectedModelLabel: params.selectedModelLabel,
       modelProviderType,
       claudeCodeCredentialRecovery: params.claudeCodeCredentialRecovery,
     });
+    return params.failureReason === "usage_limit" ||
+      params.failureReason === "unsupported_model"
+      ? actionableRunErrorOrDefault(errorMessage, structured)
+      : structured;
   }
 
   if (isAgentExecutionTimeoutRunError(errorMessage)) {
@@ -975,7 +998,6 @@ export function formatRunErrorForExternalSurface(params: {
 export function formatPersonalSubscriptionUsageLimitForExternalSurface(params: {
   readonly failureReason?: RunFailureReasonToken | null;
   readonly modelProviderType: ModelProviderType | null | undefined;
-  readonly message: string;
   readonly modelProvidersUrl: string;
 }): string | undefined {
   const subscription =
@@ -987,35 +1009,13 @@ export function formatPersonalSubscriptionUsageLimitForExternalSurface(params: {
   if (subscription === undefined) {
     return undefined;
   }
-  // The run error contract also accepts unstructured native quota messages.
-  const nativeLimit =
-    /^you(?:'|’)ve hit your (?:usage|session|weekly|5[- ]hour|five[- ]hour|opus(?:\s+[\w.-]+)?|sonnet(?:\s+[\w.-]+)?|haiku(?:\s+[\w.-]+)?) limit\b/iu.test(
-      params.message.trim(),
-    ) || isClaudeCodeLimitError(params.message);
   if (params.failureReason !== "usage_limit") {
-    if (params.failureReason !== undefined && params.failureReason !== null) {
-      return undefined;
-    }
-    if (!nativeLimit) {
-      return undefined;
-    }
+    return undefined;
   }
-  const hasQuotaDetails =
-    nativeLimit ||
-    /\b(?:usage[_ -]limit|(?:session|weekly|5[- ]hour|five[- ]hour) limit)\b/iu.test(
-      params.message,
-    );
-
-  const parts = [
+  return [
     `Your ${subscription} subscription has reached its usage limit.`,
-  ];
-  if (hasQuotaDetails && params.message !== CHAT_RUN_USAGE_LIMIT_MESSAGE) {
-    parts.push(params.message);
-  }
-  parts.push(
     "Wait for your subscription allowance to reset, or switch to an available subscription account.",
     `Manage subscriptions: ${params.modelProvidersUrl}`,
-    'After restoring access, reply "continue" in this conversation.',
-  );
-  return parts.join("\n\n");
+    'Switching accounts automatically continues this conversation. If you wait for the allowance to reset, reply "continue" here.',
+  ].join("\n\n");
 }

@@ -8,8 +8,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 SCRIPT = Path(__file__).with_name("debug_symbols.py")
 BUILD = Path(__file__).with_name("build.py")
@@ -130,13 +133,120 @@ class DebugSymbolsTests(unittest.TestCase):
 import json
 import os
 import sys
+from pathlib import Path
+from urllib.request import Request, urlopen
 with open(os.environ["SENTRY_TEST_CALLS"], "a") as log:
     log.write(json.dumps(sys.argv[1:]) + "\\n")
 if os.environ.get("SENTRY_TEST_FAILURE") == sys.argv[2]:
     sys.exit(23)
+if sys.argv[2] == "upload":
+    fixtures = json.loads(Path(os.environ["SENTRY_TEST_SYMBOLS"]).read_text())
+    required = {
+        sys.argv[index + 1] for index, arg in enumerate(sys.argv) if arg == "--id"
+    }
+    symbols = [
+        fixtures[Path(arg).name] for arg in sys.argv[3:]
+        if Path(arg).is_file()
+        and (not required or fixtures[Path(arg).name]["debugId"] in required)
+    ]
+    request = Request(
+        os.environ["SENTRY_URL"] + "/fixture/upload",
+        data=json.dumps(symbols).encode(),
+        headers={"Authorization": "Bearer " + os.environ["SENTRY_AUTH_TOKEN"]},
+    )
+    with urlopen(request, timeout=5) as response:
+        uploaded = json.load(response)
+    # Model 2.58.5: --require-all checks only this invocation's processed files.
+    if "--require-all" in sys.argv and required - {s["debugId"] for s in uploaded}:
+        sys.exit("Some symbols could not be found!")
 """
         )
         cli.chmod(0o755)
+        self.expected_symbols = {}
+        for dwarf in self.symbols.glob("*/Contents/Resources/DWARF/*"):
+            self.expected_symbols[dwarf.name] = {
+                "debugId": run("dwarfdump", "--uuid", dwarf).stdout.split()[1].lower(),
+                # Use an independent tool to calculate the fixture's expected checksum.
+                "sha1": run("shasum", "-a", "1", dwarf).stdout.split()[0],
+                "cpuName": "arm64",
+                "data": {"features": ["debug", "symtab", "unwind"]},
+            }
+        (self.case / "sentry-symbols.json").write_text(
+            json.dumps(self.expected_symbols)
+        )
+        self.remote_symbols = []
+        self.readback = {}
+        self.api_status = 200
+        self.page_size = 100
+        owner = self
+
+        class SentryHandler(BaseHTTPRequestHandler):
+            def log_message(self, *_args):
+                pass
+
+            def respond(self, status, data, **headers):
+                self.send_response(status)
+                for name, value in headers.items():
+                    self.send_header(name, value)
+                self.end_headers()
+                self.wfile.write(json.dumps(data).encode())
+
+            def do_POST(self):
+                owner.assertEqual(self.path, "/fixture/upload")
+                owner.assertEqual(
+                    self.headers["Authorization"],
+                    "Bearer test-token-kept-out-of-arguments",
+                )
+                symbols = json.loads(
+                    self.rfile.read(int(self.headers["Content-Length"]))
+                )
+                uploaded = [s for s in symbols if s not in owner.remote_symbols]
+                owner.remote_symbols.extend(uploaded)
+                self.respond(200, uploaded)
+
+            def do_GET(self):
+                url = urlsplit(self.path)
+                owner.assertEqual(
+                    url.path, "/api/0/projects/test-org/desktop/files/dsyms/"
+                )
+                owner.assertEqual(
+                    self.headers["Authorization"],
+                    "Bearer test-token-kept-out-of-arguments",
+                )
+                if owner.api_status != 200:
+                    self.respond(
+                        owner.api_status,
+                        {"detail": "Sentry request failed"},
+                        Location="https://untrusted.invalid/wrong-project/",
+                    )
+                    return
+                query = parse_qs(url.query)
+                owner.assertEqual(query["file_formats"], ["macho"])
+                identifier = query["debug_id"][0]
+                records = owner.readback.get(
+                    identifier,
+                    [s for s in owner.remote_symbols if s["debugId"] == identifier],
+                )
+                offset = int(query.get("cursor", ["0"])[0])
+                end = offset + owner.page_size
+                # Only the cursor may be reused from an untrusted pagination URL.
+                next_url = "https://untrusted.invalid/wrong-project/?" + urlencode(
+                    {"cursor": end}
+                )
+                more = "true" if end < len(records) else "false"
+                self.respond(
+                    200,
+                    records[offset:end],
+                    Link=f'<{next_url}>; rel="next"; results="{more}"',
+                )
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), SentryHandler)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        self.addCleanup(thread.join)
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        self.sentry_url = f"http://127.0.0.1:{server.server_port}"
 
     def command(self, *args, success=True, **environment):
         env = dict(os.environ)
@@ -144,9 +254,11 @@ if os.environ.get("SENTRY_TEST_FAILURE") == sys.argv[2]:
             {
                 "PATH": f"{self.bin}:{env['PATH']}",
                 "SENTRY_TEST_CALLS": str(self.log),
+                "SENTRY_TEST_SYMBOLS": str(self.case / "sentry-symbols.json"),
                 "SENTRY_AUTH_TOKEN": "test-token-kept-out-of-arguments",
                 "SENTRY_ORG": "test-org",
                 "SENTRY_PROJECT": "desktop",
+                "SENTRY_URL": self.sentry_url,
             }
         )
         env.update(environment)
@@ -164,6 +276,7 @@ if os.environ.get("SENTRY_TEST_FAILURE") == sys.argv[2]:
             env=env,
             capture_output=True,
             text=True,
+            timeout=60,
         )
         self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
         return result
@@ -237,37 +350,63 @@ if os.environ.get("SENTRY_TEST_FAILURE") == sys.argv[2]:
         self.assertFalse(self.log.exists())
         self.assert_dmg_detached(self.other_dmg)
 
-    def test_upload_requires_all_verified_ids_and_waits_for_processing(self):
-        self.command("--upload")
+    def test_upload_verifies_all_symbols_and_waits_for_processing(self):
+        result = self.command("--upload")
+        self.assertIn("Verified 2 canonical dSYM UUIDs in Sentry", result.stdout)
+        self.assertCountEqual(self.remote_symbols, self.expected_symbols.values())
         calls = [json.loads(line) for line in self.log.read_text().splitlines()]
-        self.assertEqual(
-            [call[:2] for call in calls],
-            [
-                ["debug-files", "check"],
-                ["debug-files", "check"],
-                ["debug-files", "upload"],
-            ],
-        )
         upload = calls[-1]
-        self.assertIn("--require-all", upload)
         self.assertEqual(upload[upload.index("--wait-for") + 1], "600")
-        expected = {
-            run("dwarfdump", "--uuid", self.app / relative).stdout.split()[1].lower()
-            for relative in (
-                "Contents/MacOS/Okou",
-                "Contents/Helpers/computer-use-helper",
-            )
-        }
-        actual = {
-            upload[index + 1] for index, arg in enumerate(upload) if arg == "--id"
-        }
-        self.assertEqual(len(actual), 2)
-        self.assertEqual(actual, expected)
         self.assertNotIn("test-token-kept-out-of-arguments", " ".join(upload))
         self.assertNotIn("--include-sources", upload)
 
+    def test_reuses_existing_app_while_uploading_helper_symbols(self):
+        self.remote_symbols.append(self.expected_symbols["Okou"])
+        result = self.command("--upload")
+        self.assertIn("Verified 2 canonical dSYM UUIDs in Sentry", result.stdout)
+        self.assertCountEqual(self.remote_symbols, self.expected_symbols.values())
+
+    def test_rerun_verifies_both_existing_symbols(self):
+        self.command("--upload")
+        rerun = self.command("--upload")
+        self.assertIn("Verified 2 canonical dSYM UUIDs in Sentry", rerun.stdout)
+        self.assertCountEqual(self.remote_symbols, self.expected_symbols.values())
+
+    def test_finds_exact_symbols_on_later_page(self):
+        self.page_size = 1
+        symbol = self.expected_symbols["computer-use-helper"]
+        self.readback[symbol["debugId"]] = [{**symbol, "sha1": "0" * 40}, symbol]
+        result = self.command("--upload")
+        self.assertIn("Verified 2 canonical dSYM UUIDs in Sentry", result.stdout)
+
+    def test_missing_or_incorrect_remote_symbols_fail_the_command(self):
+        symbol = self.expected_symbols["computer-use-helper"]
+        for records in (
+            [],
+            [{**symbol, "debugId": self.expected_symbols["Okou"]["debugId"]}],
+            [{**symbol, "sha1": "0" * 40}],
+            [{**symbol, "cpuName": "x86_64"}],
+            [{**symbol, "data": {"features": ["symtab"]}}],
+        ):
+            with self.subTest(records=records):
+                self.readback[symbol["debugId"]] = records
+                result = self.command("--upload", success=False)
+                self.assertIn("Cannot verify Sentry dSYM", result.stderr)
+
+    def test_sentry_readback_errors_fail_the_command(self):
+        for status in (302, 401, 500):
+            with self.subTest(status=status):
+                self.api_status = status
+                result = self.command("--upload", success=False)
+                self.assertIn(f"HTTP Error {status}", result.stderr)
+
     def test_sentry_upload_and_processing_failure_fail_the_command(self):
-        self.command("--upload", success=False, SENTRY_TEST_FAILURE="upload")
+        for stage in ("check", "upload"):
+            with self.subTest(stage=stage):
+                result = self.command(
+                    "--upload", success=False, SENTRY_TEST_FAILURE=stage
+                )
+                self.assertIn("non-zero exit status 23", result.stderr)
 
 
 if __name__ == "__main__":

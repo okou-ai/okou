@@ -9,6 +9,7 @@
   public ai.okou.android.chat.ChatCacheStore getChatCache();
   public ai.okou.android.chat.ComposerJournalStore getComposerJournal();
   public ai.okou.android.instructions.PersonalInstructionsDraftStore getInstructionsDrafts();
+  public ai.okou.android.chat.RunControlJournalStore getRunControlJournal();
   public ai.okou.android.updates.AppUpdates getUpdates();
 }
 -keep,allowobfuscation class ai.okou.android.R$string {
@@ -23,6 +24,7 @@
   int composer_accepted;
   int composer_new;
   int composer_send;
+  int composer_sync_loading;
   int composer_target_loading;
   int history_completed;
   int history_sidebar;
@@ -34,11 +36,15 @@
   int instructions_section;
   int instructions_unsaved;
   int language_en_us;
+  int language_zh_hant;
+  int palette_blue_horizon;
   int palette_default;
   int realtime_connecting;
   int realtime_unavailable;
+  int recovery_continue;
   int settings;
   int updates_available;
+  int updates_check;
   int updates_required;
 }
 -keep,allowobfuscation class ai.okou.android.R {
@@ -117,9 +123,25 @@
 }
 -keep,allowobfuscation class ai.okou.android.api.generated.ReadState {
 }
+-keep,allowobfuscation class ai.okou.android.api.generated.RecoveryBilling {
+}
+-keep,allowobfuscation class ai.okou.android.api.generated.RecoveryCatalog {
+}
+-keep,allowobfuscation class ai.okou.android.api.generated.RecoveryModels {
+}
+-keep,allowobfuscation class ai.okou.android.api.generated.RecoverySubscriptions {
+}
+-keep,allowobfuscation class ai.okou.android.api.generated.ResetSubscriptionResult {
+}
+-keep,allowobfuscation interface ai.okou.android.api.generated.SendRequest {
+}
 -keep,allowobfuscation class ai.okou.android.api.generated.SendRequestVariant1 {
 }
+-keep,allowobfuscation class ai.okou.android.api.generated.SessionOutputDelta {
+  public <init>(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, long, java.lang.String);
+}
 -keep,allowobfuscation class ai.okou.android.api.generated.ThreadDetail {
+  public boolean getCancellationRecoveryPending();
 }
 -keep,allowobfuscation class ai.okou.android.api.generated.UpdatePreferencesRequest {
   public ai.okou.android.api.generated.UpdatePreferencesRequestColorTheme getColorTheme();
@@ -172,6 +194,7 @@
 -keep,allowobfuscation class ai.okou.android.auth.ReadyWorkspace {
   public ai.okou.android.chat.ChatListModel getChats();
   public ai.okou.android.chat.ChatComposerModel getComposer();
+  public ai.okou.android.chat.RunControlsModel getControls();
   public ai.okou.android.instructions.PersonalInstructionsModel getInstructions();
 }
 -keep,allowobfuscation class ai.okou.android.auth.SessionModel {
@@ -201,41 +224,64 @@
   public java.lang.Object chatArchive(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object chatEvents(java.lang.Long, kotlin.coroutines.Continuation);
   public java.lang.Object chatSnapshot(kotlin.coroutines.Continuation);
+  public java.lang.Object composerDraft(ai.okou.android.chat.ServerDraftTarget, kotlin.coroutines.Continuation);
   public java.lang.Object createThread(ai.okou.android.api.generated.CreateThreadRequest, kotlin.coroutines.Continuation);
   public java.lang.Object featureSwitches(kotlin.coroutines.Continuation);
   public java.lang.Object historyArchive(java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object historyCatchUp(java.util.Map, kotlin.coroutines.Continuation);
   public java.lang.Object historyRows(java.lang.String, ai.okou.android.chat.HistoryCursor, kotlin.coroutines.Continuation);
   public java.lang.Object historySnapshot(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object indicators(kotlin.coroutines.Continuation);
   public java.lang.Object markRead(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object newChatAgent(kotlin.coroutines.Continuation);
   public java.lang.Object observeInput(java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
-  public java.lang.Object observeRealtime(kotlin.jvm.functions.Function2, kotlin.coroutines.Continuation);
+  public java.lang.Object observeRealtime(kotlinx.coroutines.flow.StateFlow, kotlin.jvm.functions.Function3, kotlin.jvm.functions.Function2, kotlin.coroutines.Continuation);
   public java.lang.Object personalInstructions(kotlin.coroutines.Continuation);
   public java.lang.Object personalInstructionsEnabled(kotlin.coroutines.Continuation);
   public java.lang.Object preferences(kotlin.coroutines.Continuation);
   public java.lang.Object projectArchive(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object projectEvents(long, kotlin.coroutines.Continuation);
   public java.lang.Object projectSnapshot(kotlin.coroutines.Continuation);
+  public java.lang.Object recoveryBilling(kotlin.coroutines.Continuation);
+  public java.lang.Object recoveryCatalog(kotlin.coroutines.Continuation);
+  public java.lang.Object recoveryModels(kotlin.coroutines.Continuation);
+  public java.lang.Object recoverySubscriptions(kotlin.coroutines.Continuation);
+  public java.lang.Object resetSubscription(java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object saveComposerDraft(ai.okou.android.chat.ServerDraftTarget, java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object sendControl(ai.okou.android.api.generated.SendRequest, kotlin.coroutines.Continuation);
   public java.lang.Object sendInput(ai.okou.android.api.generated.SendRequestVariant1, kotlin.coroutines.Continuation);
   public java.lang.Object threadDetail(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object updatePersonalInstructions(java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object updatePreferences(ai.okou.android.api.generated.UpdatePreferencesRequest, kotlin.coroutines.Continuation);
 }
+-keep,allowobfuscation interface ai.okou.android.chat.AssistantRecoveryService {
+  public java.lang.Object recoveryBilling(kotlin.coroutines.Continuation);
+  public java.lang.Object recoveryCatalog(kotlin.coroutines.Continuation);
+  public java.lang.Object recoveryModels(kotlin.coroutines.Continuation);
+  public java.lang.Object recoverySubscriptions(kotlin.coroutines.Continuation);
+  public java.lang.Object resetSubscription(java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
+}
 -keep,allowobfuscation class ai.okou.android.chat.ChatCacheStore {
   public java.lang.Object close(kotlin.coroutines.Continuation);
+}
+-keep,allowobfuscation class ai.okou.android.chat.ChatChanges {
+  public <init>(boolean, boolean, boolean, boolean, java.util.Set, java.util.Set, int, kotlin.jvm.internal.DefaultConstructorMarker);
 }
 -keep,allowobfuscation class ai.okou.android.chat.ChatComposerModel {
   public kotlinx.coroutines.flow.StateFlow getUiState();
 }
 -keep,allowobfuscation interface ai.okou.android.chat.ChatComposerService {
+  public java.lang.Object composerDraft(ai.okou.android.chat.ServerDraftTarget, kotlin.coroutines.Continuation);
   public java.lang.Object createThread(ai.okou.android.api.generated.CreateThreadRequest, kotlin.coroutines.Continuation);
   public java.lang.Object newChatAgent(kotlin.coroutines.Continuation);
   public java.lang.Object observeInput(java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object saveComposerDraft(ai.okou.android.chat.ServerDraftTarget, java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object sendInput(ai.okou.android.api.generated.SendRequestVariant1, kotlin.coroutines.Continuation);
 }
 -keep,allowobfuscation class ai.okou.android.chat.ChatListModel {
+  public ai.okou.android.chat.ConversationHistoryModel getHistory();
   public kotlinx.coroutines.flow.StateFlow getUiState();
+  public ai.okou.android.chat.ChatUpdatesModel getUpdates();
 }
 -keep,allowobfuscation interface ai.okou.android.chat.ChatListService {
   public java.lang.Object agents(kotlin.coroutines.Continuation);
@@ -244,6 +290,7 @@
   public java.lang.Object chatSnapshot(kotlin.coroutines.Continuation);
   public java.lang.Object featureSwitches(kotlin.coroutines.Continuation);
   public java.lang.Object historyArchive(java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object historyCatchUp(java.util.Map, kotlin.coroutines.Continuation);
   public java.lang.Object historyRows(java.lang.String, ai.okou.android.chat.HistoryCursor, kotlin.coroutines.Continuation);
   public java.lang.Object historySnapshot(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object indicators(kotlin.coroutines.Continuation);
@@ -256,6 +303,13 @@
 -keep,allowobfuscation class ai.okou.android.chat.ChatListUiState {
   public java.util.List getThreads();
 }
+-keep,allowobfuscation class ai.okou.android.chat.ChatUpdatesModel {
+  public kotlinx.coroutines.flow.StateFlow getPhase();
+}
+-keep,allowobfuscation class ai.okou.android.chat.ComposerDraftsKt {
+  public static kotlinx.serialization.json.JsonObject plainDraftDocument(java.lang.String);
+  public static java.lang.String plainText(java.util.Map);
+}
 -keep,allowobfuscation class ai.okou.android.chat.ComposerJournalStore {
   public <init>(android.content.Context, java.io.File, kotlinx.coroutines.CoroutineDispatcher, int, kotlin.jvm.internal.DefaultConstructorMarker);
   public java.lang.Object close(kotlin.coroutines.Continuation);
@@ -266,6 +320,10 @@
 -keep,allowobfuscation class ai.okou.android.chat.ComposerTarget {
   public <init>(java.lang.String, java.lang.String, java.lang.String, int, kotlin.jvm.internal.DefaultConstructorMarker);
 }
+-keep,allowobfuscation class ai.okou.android.chat.ConversationHistoryModel {
+  public ai.okou.android.chat.RunOutputModel getOutput();
+  public kotlinx.coroutines.flow.StateFlow getUiState();
+}
 -keep,allowobfuscation interface ai.okou.android.chat.ConversationHistoryService {
   public java.lang.Object historyArchive(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object historyRows(java.lang.String, ai.okou.android.chat.HistoryCursor, kotlin.coroutines.Continuation);
@@ -273,11 +331,36 @@
   public java.lang.Object markRead(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object threadDetail(java.lang.String, kotlin.coroutines.Continuation);
 }
+-keep,allowobfuscation class ai.okou.android.chat.ConversationUiState {
+  public ai.okou.android.api.generated.ThreadDetail getDetail();
+  public ai.okou.android.chat.HistoryTranscript getTranscript();
+}
+-keep,allowobfuscation class ai.okou.android.chat.HistoryBatch {
+  public <init>(java.util.Map, java.util.List);
+}
+-keep,allowobfuscation class ai.okou.android.chat.HistoryBlock {
+  public java.lang.String getText();
+}
 -keep,allowobfuscation class ai.okou.android.chat.HistoryCursor {
 }
+-keep,allowobfuscation class ai.okou.android.chat.HistoryEvent$Companion {
+  public ai.okou.android.chat.HistoryEvent decode(java.lang.String);
+}
 -keep,allowobfuscation class ai.okou.android.chat.HistoryEvent {
+  public java.lang.String archiveJson$app();
+  public java.lang.String getId();
+  public long getSeqId();
+  public java.lang.String getThreadId();
+  ai.okou.android.chat.HistoryEvent$Companion Companion;
+}
+-keep,allowobfuscation class ai.okou.android.chat.HistoryMessage {
+  public java.util.List getBlocks();
+  public java.lang.String getId();
 }
 -keep,allowobfuscation class ai.okou.android.chat.HistoryPage {
+}
+-keep,allowobfuscation class ai.okou.android.chat.HistoryTranscript {
+  public java.util.List getMessages();
 }
 -keep,allowobfuscation class ai.okou.android.chat.InputObservation {
 }
@@ -287,12 +370,52 @@
   ai.okou.android.chat.RealtimePhase Unavailable;
 }
 -keep,allowobfuscation interface ai.okou.android.chat.RealtimeService {
-  public java.lang.Object observeRealtime(kotlin.jvm.functions.Function2, kotlin.coroutines.Continuation);
+  public java.lang.Object observeRealtime(kotlinx.coroutines.flow.StateFlow, kotlin.jvm.functions.Function3, kotlin.jvm.functions.Function2, kotlin.coroutines.Continuation);
 }
 -keep,allowobfuscation class ai.okou.android.chat.RealtimeSnapshot {
-  public <init>(ai.okou.android.chat.RealtimePhase, long, java.lang.Exception, int, kotlin.jvm.internal.DefaultConstructorMarker);
-  public static ai.okou.android.chat.RealtimeSnapshot copy$default(ai.okou.android.chat.RealtimeSnapshot, ai.okou.android.chat.RealtimePhase, long, java.lang.Exception, int, java.lang.Object);
+  public <init>(ai.okou.android.chat.RealtimePhase, long, java.lang.Exception, ai.okou.android.chat.ChatChanges, int, kotlin.jvm.internal.DefaultConstructorMarker);
+  public static ai.okou.android.chat.RealtimeSnapshot copy$default(ai.okou.android.chat.RealtimeSnapshot, ai.okou.android.chat.RealtimePhase, long, java.lang.Exception, ai.okou.android.chat.ChatChanges, int, java.lang.Object);
   public long getRevision();
+}
+-keep,allowobfuscation class ai.okou.android.chat.RunControlJournal {
+  public java.util.List getPending();
+}
+-keep,allowobfuscation class ai.okou.android.chat.RunControlJournalStore {
+  public <init>(android.content.Context, java.io.File, kotlinx.coroutines.CoroutineDispatcher, int, kotlin.jvm.internal.DefaultConstructorMarker);
+  public java.lang.Object close(kotlin.coroutines.Continuation);
+}
+-keep enum ai.okou.android.chat.RunControlPhase {
+  ai.okou.android.chat.RunControlPhase Unknown;
+}
+-keep,allowobfuscation interface ai.okou.android.chat.RunControlService {
+  public java.lang.Object sendControl(ai.okou.android.api.generated.SendRequest, kotlin.coroutines.Continuation);
+}
+-keep,allowobfuscation class ai.okou.android.chat.RunControlsModel {
+  public kotlinx.coroutines.flow.StateFlow getUiState();
+}
+-keep,allowobfuscation class ai.okou.android.chat.RunControlsState {
+  public ai.okou.android.chat.RunControlJournal getJournal();
+  public java.util.Map getPhases();
+}
+-keep,allowobfuscation class ai.okou.android.chat.RunOutputModel {
+  public kotlinx.coroutines.flow.StateFlow getState();
+}
+-keep enum ai.okou.android.chat.RunOutputPhase {
+  ai.okou.android.chat.RunOutputPhase CatchingUp;
+}
+-keep,allowobfuscation class ai.okou.android.chat.RunOutputSignal$Delta {
+  public <init>(ai.okou.android.api.generated.SessionOutputDelta);
+}
+-keep,allowobfuscation interface ai.okou.android.chat.RunOutputSignal {
+}
+-keep,allowobfuscation class ai.okou.android.chat.RunOutputState {
+  public java.util.List getMessages();
+  public ai.okou.android.chat.RunOutputPhase getPhase();
+}
+-keep,allowobfuscation class ai.okou.android.chat.RunOutputTarget {
+  public java.lang.String getRunId();
+}
+-keep,allowobfuscation class ai.okou.android.chat.ServerDraftTarget {
 }
 -keep enum ai.okou.android.instructions.InstructionsPhase {
   ai.okou.android.instructions.InstructionsPhase Loading;
@@ -528,6 +651,8 @@
 -keep,allowobfuscation class kotlin.collections.CollectionsKt {
 }
 -keep,allowobfuscation class kotlin.collections.CollectionsKt__CollectionsJVMKt {
+  public static java.util.List build(java.util.List);
+  public static java.util.List createListBuilder();
   public static java.util.List listOf(java.lang.Object);
 }
 -keep,allowobfuscation class kotlin.collections.CollectionsKt__CollectionsKt {
@@ -545,21 +670,32 @@
   public static java.lang.Object firstOrNull(java.util.List);
   public static java.lang.Object getOrNull(java.util.List, int);
   public static java.lang.String joinToString$default(java.lang.Iterable, java.lang.CharSequence, java.lang.CharSequence, java.lang.CharSequence, int, java.lang.CharSequence, kotlin.jvm.functions.Function1, int, java.lang.Object);
+  public static java.lang.Object last(java.util.List);
   public static java.lang.Object lastOrNull(java.util.List);
+  public static java.util.List plus(java.util.Collection, java.lang.Object);
   public static java.lang.Object single(java.lang.Iterable);
   public static java.lang.Object single(java.util.List);
+  public static java.lang.Object singleOrNull(java.lang.Iterable);
   public static java.lang.Object singleOrNull(java.util.List);
   public static java.util.List toList(java.lang.Iterable);
   public static java.util.List toMutableList(java.util.Collection);
 }
 -keep,allowobfuscation class kotlin.collections.MapsKt {
 }
+-keep,allowobfuscation class kotlin.collections.MapsKt__MapsJVMKt {
+  public static int mapCapacity(int);
+}
 -keep,allowobfuscation class kotlin.collections.MapsKt__MapsKt {
   public static java.util.Map emptyMap();
   public static java.lang.Object getValue(java.util.Map, java.lang.Object);
+  public static java.util.Map mapOf(kotlin.Pair[]);
+  public static java.util.Map plus(java.util.Map, kotlin.Pair);
   public static java.util.Map toMap(java.util.Map);
 }
 -keep,allowobfuscation class kotlin.collections.SetsKt {
+}
+-keep,allowobfuscation class kotlin.collections.SetsKt__SetsJVMKt {
+  public static java.util.Set setOf(java.lang.Object);
 }
 -keep,allowobfuscation class kotlin.collections.SetsKt__SetsKt {
   public static java.util.Set setOf(java.lang.Object[]);
@@ -703,6 +839,8 @@
   boolean element;
 }
 -keep,allowobfuscation class kotlin.jvm.internal.Ref$LongRef {
+  public <init>();
+  long element;
 }
 -keep,allowobfuscation class kotlin.jvm.internal.Ref$ObjectRef {
   public <init>();
@@ -731,6 +869,7 @@
 -keep,allowobfuscation class kotlin.ranges.RangesKt {
 }
 -keep,allowobfuscation class kotlin.ranges.RangesKt___RangesKt {
+  public static int coerceAtLeast(int, int);
   public static kotlin.ranges.IntProgression step(kotlin.ranges.IntProgression, int);
   public static kotlin.ranges.IntRange until(int, int);
 }
@@ -781,6 +920,7 @@
   public static boolean contains$default(java.lang.CharSequence, char, boolean, int, java.lang.Object);
   public static boolean contains$default(java.lang.CharSequence, java.lang.CharSequence, boolean, int, java.lang.Object);
   public static int indexOf$default(java.lang.CharSequence, char, int, boolean, int, java.lang.Object);
+  public static java.lang.String removePrefix(java.lang.String, java.lang.CharSequence);
   public static java.util.List split$default(java.lang.CharSequence, char[], boolean, int, int, java.lang.Object);
   public static java.lang.CharSequence trim(java.lang.CharSequence);
 }
@@ -800,6 +940,7 @@
 }
 -keep,allowobfuscation class kotlinx.coroutines.BuildersKt {
   public static kotlinx.coroutines.Deferred async(kotlinx.coroutines.CoroutineScope, kotlin.coroutines.CoroutineContext, kotlinx.coroutines.CoroutineStart, kotlin.jvm.functions.Function2);
+  public static kotlinx.coroutines.Job launch$default(kotlinx.coroutines.CoroutineScope, kotlin.coroutines.CoroutineContext, kotlinx.coroutines.CoroutineStart, kotlin.jvm.functions.Function2, int, java.lang.Object);
   public static java.lang.Object runBlocking(kotlin.coroutines.CoroutineContext, kotlin.jvm.functions.Function2);
   public static java.lang.Object runBlockingK$default(kotlin.coroutines.CoroutineContext, kotlin.jvm.functions.Function2, int, java.lang.Object);
 }
@@ -825,6 +966,9 @@
 }
 -keep,allowobfuscation interface kotlinx.coroutines.CoroutineScope {
   public kotlin.coroutines.CoroutineContext getCoroutineContext();
+}
+-keep,allowobfuscation class kotlinx.coroutines.CoroutineScopeKt {
+  public static java.lang.Object coroutineScope(kotlin.jvm.functions.Function2, kotlin.coroutines.Continuation);
 }
 -keep enum kotlinx.coroutines.CoroutineStart {
   kotlinx.coroutines.CoroutineStart DEFAULT;
@@ -854,6 +998,26 @@
 -keep,allowobfuscation class kotlinx.coroutines.TimeoutKt {
   public static java.lang.Object withTimeout(long, kotlin.jvm.functions.Function2, kotlin.coroutines.Continuation);
   public static java.lang.Object withTimeout-KLykuaI(long, kotlin.jvm.functions.Function2, kotlin.coroutines.Continuation);
+}
+-keep enum kotlinx.coroutines.channels.BufferOverflow {
+}
+-keep,allowobfuscation interface kotlinx.coroutines.channels.Channel {
+}
+-keep,allowobfuscation interface kotlinx.coroutines.channels.ChannelIterator {
+  public java.lang.Object hasNext(kotlin.coroutines.Continuation);
+  public java.lang.Object next();
+}
+-keep,allowobfuscation class kotlinx.coroutines.channels.ChannelKt {
+  public static kotlinx.coroutines.channels.Channel Channel$default(int, kotlinx.coroutines.channels.BufferOverflow, kotlin.jvm.functions.Function1, int, java.lang.Object);
+}
+-keep,allowobfuscation class kotlinx.coroutines.channels.ChannelResult {
+  public static boolean isSuccess-impl(java.lang.Object);
+}
+-keep,allowobfuscation interface kotlinx.coroutines.channels.ReceiveChannel {
+  public kotlinx.coroutines.channels.ChannelIterator iterator();
+}
+-keep,allowobfuscation interface kotlinx.coroutines.channels.SendChannel {
+  public java.lang.Object trySend-JP2dKIU(java.lang.Object);
 }
 -keep,allowobfuscation interface kotlinx.coroutines.flow.Flow {
 }
@@ -893,18 +1057,22 @@
 }
 -keep,allowobfuscation class kotlinx.serialization.json.JsonArray {
   public <init>(java.util.List);
+  public kotlinx.serialization.json.JsonElement get(int);
 }
 -keep,allowobfuscation class kotlinx.serialization.json.JsonElement {
 }
 -keep,allowobfuscation class kotlinx.serialization.json.JsonElementKt {
   public static kotlinx.serialization.json.JsonPrimitive JsonPrimitive(java.lang.String);
+  public static kotlinx.serialization.json.JsonArray getJsonArray(kotlinx.serialization.json.JsonElement);
   public static kotlinx.serialization.json.JsonObject getJsonObject(kotlinx.serialization.json.JsonElement);
   public static kotlinx.serialization.json.JsonPrimitive getJsonPrimitive(kotlinx.serialization.json.JsonElement);
+  public static long getLong(kotlinx.serialization.json.JsonPrimitive);
 }
 -keep,allowobfuscation class kotlinx.serialization.json.JsonNull {
   kotlinx.serialization.json.JsonNull INSTANCE;
 }
 -keep,allowobfuscation class kotlinx.serialization.json.JsonObject {
+  public <init>(java.util.Map);
   public java.lang.Object get(java.lang.Object);
   public java.lang.String toString();
 }

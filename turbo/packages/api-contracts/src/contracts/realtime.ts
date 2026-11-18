@@ -117,7 +117,7 @@ export type RealtimeSubscription = zInfer<typeof realtimeSubscriptionSchema>;
 export const runnerRealtimeTokenContract = c.router({
   /**
    * POST /api/runners/realtime/token
-   * Get an Ably token to subscribe to a runner group's job notification channel
+   * Get an Ably token to subscribe to a runner group's control channel
    */
   create: {
     method: "POST",
@@ -133,7 +133,7 @@ export const runnerRealtimeTokenContract = c.router({
       403: apiErrorSchema,
       500: apiErrorSchema,
     },
-    summary: "Get Ably token for runner group job notifications",
+    summary: "Get Ably token for runner group control notifications",
   },
 });
 

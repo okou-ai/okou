@@ -19,7 +19,6 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   chatEvents,
   chatEventRunlessInputPredicate,
@@ -54,7 +53,7 @@ interface ValidatedPendingThreadSession {
 }
 
 interface AdmissionFacts {
-  readonly validatedThreadSession: ValidatedPendingThreadSession | undefined;
+  readonly validatedThreadSession: ValidatedPendingThreadSession;
   readonly validatedAccountIdentity: string | null;
 }
 
@@ -104,13 +103,6 @@ const subscriptionHeadRecordSchema = looseObject({
 });
 
 export const pendingAdmissionRecordSchema = discriminatedUnion("phase", [
-  object({
-    phase: literal("thread"),
-    threadAgentId: string().nullable(),
-    framework: string().nullable(),
-    frameworkSessionId: string().nullable(),
-    frameworkSessionRunId: string().nullable(),
-  }),
   subscriptionRecordSchema,
   headRecordSchema,
   subscriptionHeadRecordSchema,
@@ -121,7 +113,7 @@ type AdmissionStatement = AdmissionFacts &
   (
     | {
         readonly kind: "statement";
-        readonly phase: "thread" | "subscription" | "head";
+        readonly phase: "subscription" | "head";
         readonly sql: SQL;
       }
     | {
@@ -153,34 +145,21 @@ export type PendingAdmissionProgress =
 export function pendingLaunchAdmissionStart(
   args: PreparedThreadLaunchCommit,
 ): PendingAdmissionProgress {
-  const facts: AdmissionFacts = {
-    validatedThreadSession: undefined,
-    validatedAccountIdentity: null,
-  };
   const threadId = args.createArgs.chatThreadId;
   const resolution = args.createArgs.threadContinuation;
-  if (resolution) {
-    const captured: AdmissionFacts = {
-      ...facts,
-      validatedThreadSession: {
-        kind: "validated-thread-session-snapshot",
-        chatThreadId: threadId,
-        threadAgentId: resolution.expected.threadAgentId,
-        framework: resolution.expected.framework,
-        frameworkSessionId: resolution.expected.frameworkSessionId,
-        frameworkSessionRunId: resolution.expected.frameworkSessionRunId,
-        admission: resolution.admission,
-      },
-    };
-    return subscriptionStep(args, captured);
-  }
-  return {
-    ...facts,
-    kind: "statement",
-    phase: "thread",
-    sql: sql`SELECT 'thread' AS phase, ${chatThreads.agentId} AS "threadAgentId", ${chatThreads.framework} AS "framework", ${chatThreads.frameworkSessionId} AS "frameworkSessionId", ${chatThreads.frameworkSessionRunId} AS "frameworkSessionRunId"
-      FROM ${chatThreads} WHERE ${eq(chatThreads.id, threadId)} LIMIT 1`,
+  const captured: AdmissionFacts = {
+    validatedThreadSession: {
+      kind: "validated-thread-session-snapshot",
+      chatThreadId: threadId,
+      threadAgentId: resolution.expected.threadAgentId,
+      framework: resolution.expected.framework,
+      frameworkSessionId: resolution.expected.frameworkSessionId,
+      frameworkSessionRunId: resolution.expected.frameworkSessionRunId,
+      admission: resolution.admission,
+    },
+    validatedAccountIdentity: null,
   };
+  return subscriptionStep(args, captured);
 }
 
 function subscriptionStep(
@@ -294,9 +273,6 @@ export function advancePendingLaunchAdmission(
   };
 
   switch (step.phase) {
-    case "thread": {
-      return advanceThreadSnapshot(args, facts, row);
-    }
     case "subscription": {
       if (!row) {
         return disconnectedSubscription();
@@ -335,42 +311,6 @@ export function advancePendingLaunchAdmission(
   }
 }
 
-function advanceThreadSnapshot(
-  args: PreparedThreadLaunchCommit,
-  facts: AdmissionFacts,
-  row: AdmissionRecord | undefined,
-): PendingAdmissionProgress {
-  if (!row) {
-    throw new Error("Chat thread not found while validating session snapshot");
-  }
-  if (!("phase" in row) || row.phase !== "thread") {
-    throw new Error("Unexpected pending thread snapshot result");
-  }
-  const resolution = args.createArgs.threadContinuation;
-  if (!resolution) {
-    return subscriptionStep(args, facts);
-  }
-  if (
-    row.framework !== resolution.expected.framework ||
-    row.frameworkSessionId !== resolution.expected.frameworkSessionId ||
-    row.frameworkSessionRunId !== resolution.expected.frameworkSessionRunId
-  ) {
-    throw new Error("Chat thread session changed during run preparation");
-  }
-  const threadId = args.createArgs.chatThreadId;
-  const validatedThreadSession: ValidatedPendingThreadSession = Object.freeze({
-    kind: "validated-thread-session-snapshot",
-    chatThreadId: threadId,
-    threadAgentId: row.threadAgentId,
-    framework: row.framework,
-    frameworkSessionId: row.frameworkSessionId,
-    frameworkSessionRunId: row.frameworkSessionRunId,
-    admission: resolution.admission,
-  });
-  const captured = { ...facts, validatedThreadSession };
-  return subscriptionStep(args, captured);
-}
-
 function advanceQueueHead(
   args: PreparedThreadLaunchCommit,
   facts: AdmissionFacts,
@@ -392,7 +332,7 @@ function advanceQueueHead(
   if (row.eventType === "input.prompt" && row.contextType === null) {
     throw new Error("Queued user message is missing its context type");
   }
-  const pin = args.createArgs.agentRunModelPin;
+  const pin = args.createArgs.modelSelection;
   const serviceTier = args.createArgs.codexServiceTier
     ? ("priority" as const)
     : undefined;
@@ -404,14 +344,11 @@ function advanceQueueHead(
     ...(row.modelSelection === null
       ? {}
       : { modelSelection: row.modelSelection }),
-    userMessage:
-      pin.selectedModel === null
-        ? row.userMessage
-        : withRunModelAnnotation(
-            row.userMessage,
-            pin.selectedModel,
-            serviceTier,
-          ),
+    userMessage: withRunModelAnnotation(
+      row.userMessage,
+      pin.selectedModel,
+      serviceTier,
+    ),
   });
   return {
     ...facts,

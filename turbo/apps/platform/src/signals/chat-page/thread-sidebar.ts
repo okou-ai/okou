@@ -85,6 +85,7 @@ export type ArtifactPreviewKind =
 
 export type ArtifactRef = {
   readonly resourceUrl$: Computed<Promise<string | null>>;
+  readonly imageUrl$: Computed<Promise<string | null>>;
   readonly shareUrl$: Computed<Promise<string | null>>;
   readonly url: string;
   readonly kind: ArtifactPreviewKind;
@@ -231,6 +232,7 @@ export interface ThreadSidebarSignals {
   readonly openCatalogArtifact$: Command<Promise<void>, [string, AbortSignal]>;
   readonly openAttachment$: Command<void, [ArtifactRefInput, AbortSignal]>;
   readonly selectedArtifactResourceUrl$: Computed<Promise<string | null>>;
+  readonly selectedArtifactImageUrl$: Computed<Promise<string | null>>;
   readonly selectedArtifactShareUrl$: Computed<Promise<string | null>>;
   readonly close$: Command<void, []>;
   /** Clear presentation before another navigation owns the URL. */
@@ -447,10 +449,9 @@ export function createThreadSidebarSignals(
     dismiss$,
     animateEntry$: computed((get) => {
       const location = get(threadMailLocation$);
-      if (location?.threadId === threadId && location.view === "detail") {
-        return false;
-      }
-      return get(internalAnimateEntry$);
+      return location?.threadId === threadId && location.view === "detail"
+        ? false
+        : get(internalAnimateEntry$);
     }),
     enableEntryAnimations$: command(({ set }) => {
       set(internalEntryAnimationsEnabled$, true);
@@ -475,6 +476,7 @@ export function createThreadSidebarSignals(
     selectedArtifactText$: preview.text$,
     selectedArtifactMarkdownTree$: preview.markdownTree$,
     selectedArtifactResourceUrl$: preview.resourceUrl$,
+    selectedArtifactImageUrl$: preview.imageUrl$,
     selectedArtifactShareUrl$: preview.shareUrl$,
   };
 }

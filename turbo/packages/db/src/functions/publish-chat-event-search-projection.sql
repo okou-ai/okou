@@ -13,7 +13,25 @@ AS $function$
 DECLARE
   v_indexed_events integer := 0;
   v_deleted_docs integer := 0;
+  v_advanced_watermarks integer := 0;
 BEGIN
+  -- The watermark and its documents commit together. Arbitrate on the existing
+  -- thread key before publishing: an older worker must not reinsert documents
+  -- after a newer worker has already applied their recall.
+  IF p_watermark_thread_id IS NOT NULL THEN
+    INSERT INTO public.chat_event_search_message_watermarks AS watermark (
+      chat_thread_id, indexed_seq_id
+    ) VALUES (p_watermark_thread_id, p_watermark_seq_id)
+    ON CONFLICT (chat_thread_id) DO UPDATE
+    SET indexed_seq_id = EXCLUDED.indexed_seq_id
+    WHERE watermark.indexed_seq_id < EXCLUDED.indexed_seq_id;
+    GET DIAGNOSTICS v_advanced_watermarks = ROW_COUNT;
+    IF v_advanced_watermarks = 0 THEN
+      RETURN QUERY SELECT 0, 0;
+      RETURN;
+    END IF;
+  END IF;
+
   IF jsonb_array_length(p_messages) > 0 THEN
     INSERT INTO public.chat_event_search_messages (
       chat_thread_id, seq_id, run_id, user_id, org_id, agent_id,
@@ -42,14 +60,6 @@ BEGIN
         AND event.seq_id = message.seq_id
     );
     GET DIAGNOSTICS v_deleted_docs = ROW_COUNT;
-  END IF;
-
-  IF p_watermark_thread_id IS NOT NULL THEN
-    INSERT INTO public.chat_event_search_message_watermarks AS watermark (
-      chat_thread_id, indexed_seq_id
-    ) VALUES (p_watermark_thread_id, p_watermark_seq_id)
-    ON CONFLICT (chat_thread_id) DO UPDATE
-    SET indexed_seq_id = GREATEST(watermark.indexed_seq_id, EXCLUDED.indexed_seq_id);
   END IF;
 
   RETURN QUERY SELECT v_indexed_events, v_deleted_docs;

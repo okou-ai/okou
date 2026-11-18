@@ -170,8 +170,6 @@ fn guest_config_from_raw_builds_owned_config_without_process_env_mutation() {
         native_continuation: String::new(),
         secret_values: "encoded-secret".to_string(),
         disallowed_tools: "WebFetch".to_string(),
-        tools: "Bash".to_string(),
-        settings: "{}".to_string(),
         artifacts:
             r#"[{"name":"artifact","mountPath":"/mnt/a","storageId":"storage","versionId":"v1"}]"#
                 .to_string(),
@@ -218,8 +216,6 @@ fn guest_config_from_raw_builds_owned_config_without_process_env_mutation() {
     );
     assert_eq!(config.secret_values, "encoded-secret");
     assert_eq!(config.disallowed_tools, "WebFetch");
-    assert_eq!(config.tools, "Bash");
-    assert_eq!(config.settings, "{}");
     assert!(config.use_mock_claude);
     assert_eq!(config.mock_claude_path, DEFAULT_MOCK_CLAUDE_PATH);
     assert_eq!(config.cli_agent_type, "codex");
@@ -276,6 +272,35 @@ fn guest_config_from_raw_loads_user_env_and_removes_private_file() {
     assert!(!user_env_dir.exists());
 }
 
+#[test]
+fn guest_config_rejection_preserves_sorted_env_priority_and_private_file_cleanup() {
+    for (environment, expected) in [
+        (
+            serde_json::json!({"Z-BAD":"private-later", "A_GOOD":"private\0value"}),
+            r#"OKOU_USER_ENV_FILE contains NUL byte for env key "A_GOOD""#,
+        ),
+        (
+            serde_json::json!({"Z_GOOD":"later\0value", "A-BAD":"private\0value"}),
+            r#"OKOU_USER_ENV_FILE contains invalid env key "A-BAD""#,
+        ),
+    ] {
+        let (_tmp, mut raw) = raw_config_fixture_with_default_run_payload();
+        let directory = raw
+            .guest_runtime_dir
+            .as_ref()
+            .unwrap()
+            .join(guest_contracts::env::USER_ENV_PRIVATE_DIR_NAME);
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join(guest_contracts::env::USER_ENV_FILENAME);
+        std::fs::write(&path, serde_json::to_vec(&environment).unwrap()).unwrap();
+        raw.user_env_file = path.to_string_lossy().into_owned();
+
+        assert_eq!(GuestConfig::from_raw(raw).err().unwrap(), expected);
+        assert!(!path.exists());
+        assert!(!directory.exists());
+    }
+}
+
 #[cfg(debug_assertions)]
 #[test]
 fn guest_config_from_raw_uses_captured_test_claude_config_dir() {
@@ -314,8 +339,6 @@ fn guest_config_from_raw_loads_run_payload_and_removes_private_file() {
         native_continuation: String::new(),
         secret_values: "payload-secret".to_string(),
         disallowed_tools: "WebFetch".to_string(),
-        tools: "Bash".to_string(),
-        settings: "{}".to_string(),
         artifacts:
             r#"[{"name":"artifact","mountPath":"/mnt/a","storageId":"storage","versionId":"v1"}]"#
                 .to_string(),
@@ -340,8 +363,6 @@ fn guest_config_from_raw_loads_run_payload_and_removes_private_file() {
     assert_eq!(config.append_system_prompt, "payload system");
     assert_eq!(config.secret_values, "payload-secret");
     assert_eq!(config.disallowed_tools, "WebFetch");
-    assert_eq!(config.tools, "Bash");
-    assert_eq!(config.settings, "{}");
     assert_eq!(config.artifacts.len(), 1);
     assert_eq!(config.feature_flags.get("flag"), Some(&true));
     assert_eq!(

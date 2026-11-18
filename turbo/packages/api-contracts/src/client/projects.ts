@@ -67,6 +67,18 @@ export const projectsContract: ClientDescriptor<
       409: true,
     },
   },
+  reorder: {
+    method: "POST",
+    path: "/api/projects/:id/reorder",
+    statuses: {
+      204: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+      409: true,
+    },
+  },
   membership: {
     method: "PUT",
     path: "/api/chat-threads/:id/project",

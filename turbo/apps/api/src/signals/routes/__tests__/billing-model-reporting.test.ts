@@ -22,8 +22,6 @@ const fixture = createChatEventsFixture(context);
 
 describe("Billing model reporting", () => {
   it("settles the first Runner usage batch once when completion and duplicate reports overlap", async () => {
-    // Fixed-clock Runner heartbeats sweep stale records across all groups.
-    await setupApp({ context, routes: chatThreadRoutes, isolatePg: true });
     const at = Date.UTC(2026, 2, 1, 12, 15);
     mockNow(at);
     const {
@@ -150,8 +148,6 @@ describe("Billing model reporting", () => {
   it.each(["failed", "cancelled"] as const)(
     "returns settled usage and the captured completion time after a %s Run",
     async (status) => {
-      // Fixed-clock Runner heartbeats sweep stale records across all groups.
-      await setupApp({ context, routes: chatThreadRoutes, isolatePg: true });
       const at = Date.UTC(2026, 2, 1, 12, 15);
       mockNow(at);
       const {
@@ -242,8 +238,6 @@ describe("Billing model reporting", () => {
   );
 
   it("retains captured providers and settled totals after Thread deletion and Run deletion", async () => {
-    // Fixed-clock Runner heartbeats sweep stale records across all groups.
-    await setupApp({ context, routes: chatThreadRoutes, isolatePg: true });
     const at = Date.UTC(2026, 2, 1, 12, 15);
     mockNow(at);
     const {

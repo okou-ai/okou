@@ -1,5 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="composer_sync_loading">Carregando rascunho salvo…</string>
+    <string name="composer_sync_saving">Sincronizando rascunho…</string>
+    <string name="composer_sync_failed">Falha ao sincronizar o rascunho. Seu texto permanece neste dispositivo.</string>
+    <string name="composer_sync_unsupported">Este rascunho contém conteúdo que pode ser editado na Web. Seu texto permanece neste dispositivo; a sincronização automática está pausada.</string>
+    <string name="composer_sync_retry">Tentar sincronizar novamente</string>
+    <string name="composer_restore_draft">Restaurar rascunho preservado</string>
+    <string name="controls_storage_failed">Não foi possível salvar os controles pendentes.</string>
+    <string name="controls_stop">Parar o trabalho em andamento</string>
+    <string name="controls_queued_automation">Automação na fila</string>
+    <string name="controls_skip">Ignorar automação</string>
+    <string name="controls_preparing">Salvando solicitação de controle…</string>
+    <string name="controls_sending">Enviando solicitação de controle…</string>
+    <string name="controls_accepted">Solicitação aceita. Aguardando confirmação.</string>
+    <string name="controls_checking">Verificando o resultado…</string>
+    <string name="controls_unknown">O resultado ainda é desconhecido.</string>
+    <string name="controls_retryable">O destino original ainda está disponível.</string>
+    <string name="controls_retry_original">Repetir solicitação original</string>
+    <string name="controls_check">Verificar resultado</string>
+    <string name="controls_recorded">Controle registrado no histórico.</string>
+    <string name="controls_target_settled">O destino original já foi resolvido.</string>
+    <string name="controls_read_failed">Não foi possível verificar o resultado.</string>
+    <string name="controls_recovery_failed">O status de recuperação não está disponível.</string>
+    <string name="controls_recovering">Preparando a conversa para continuar.</string>
+    <string name="output_live">Resposta em tempo real</string>
+    <string name="output_waiting">Aguardando resposta em tempo real</string>
+    <string name="output_catching_up">Atualizando as mensagens salvas. O texto recebido é mantido.</string>
     <string name="settings">Configurações</string>
     <string name="back">Voltar</string>
     <string name="appearance">Aparência</string>

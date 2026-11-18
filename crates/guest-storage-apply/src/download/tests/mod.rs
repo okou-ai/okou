@@ -4,7 +4,7 @@ fn normalized_path(path: &str) -> PathBuf {
     normalize_path(Path::new(path))
 }
 
-fn task_at(path: &str) -> DownloadTask {
+fn task_at(path: &str) -> DownloadTask<'static> {
     DownloadTask::storage(
         format!("task {path}"),
         "file:///tmp/archive.tar.gz".to_owned(),
@@ -13,7 +13,7 @@ fn task_at(path: &str) -> DownloadTask {
     )
 }
 
-fn prepared_task_at(path: &str) -> PreparedDownloadTask {
+fn prepared_task_at(path: &str) -> PreparedDownloadTask<'static> {
     PreparedDownloadTask {
         source_ready: None,
         task: task_at(path),
@@ -21,7 +21,7 @@ fn prepared_task_at(path: &str) -> PreparedDownloadTask {
     }
 }
 
-fn pending_at(id: usize, path: &str) -> PendingDownload {
+fn pending_at(id: usize, path: &str) -> PendingDownload<'static> {
     PendingDownload::new(id, prepared_task_at(path))
 }
 

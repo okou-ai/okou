@@ -21,7 +21,8 @@ enum MessageActionBody {
     let url = URL(string: value, relativeTo: webURL)?.absoluteURL
     guard let url, url.host() == webURL.host(), url.scheme == webURL.scheme else { return nil }
     let parts = url.pathComponents.filter { $0 != "/" }
-    if parts.count == 3, parts[0] == "mail", parts[1] == "drafts", UUID(uuidString: parts[2]) != nil
+    if parts.count == 3,
+      parts[0] == "mail", parts[1] == "drafts", UUID(uuidString: parts[2]) != nil
     {
       return .mailDraft(parts[2].lowercased())
     }

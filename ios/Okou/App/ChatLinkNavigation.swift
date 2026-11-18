@@ -33,7 +33,7 @@ enum ChatLinkDestination: Equatable {
 }
 
 extension EnvironmentValues {
-  @Entry var openChatSource: (@MainActor (ChatLinkDestination) -> Void)? = nil
+  @Entry var openChatSource: (@MainActor (ChatLinkDestination) -> Void)?
 }
 
 struct ChatLinkNavigation: ViewModifier {

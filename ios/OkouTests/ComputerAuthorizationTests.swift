@@ -363,8 +363,7 @@ final class ComputerAuthorizationTests: XCTestCase {
     }
   }
 
-  func testRegistryKeepsUncertainGrantAndCallbackIdentityAcrossReturnAndReadPressure() async throws
-  {
+  func testRegistryPreservesUncertainGrantAndCallbackAcrossPressure() async throws {
     let fixture = ComputerAuthorizationFixture(kind: .computerUse)
     fixture.state.withLock { $0.loseGrantResponse = true }
     let conversation = fixture.conversation()
@@ -522,7 +521,7 @@ private final class ComputerAuthorizationFixture: Sendable {
           || (request.httpMethod == "GET"
             && [
               threadPath, threadPath + "/metadata", threadPath + "/event-snapshot",
-              threadPath + "/event-rows",
+              threadPath + "/event-rows"
             ]
             .contains(path))
           || (request.httpMethod == "POST" && path == "/api/chat/events")
@@ -535,51 +534,10 @@ private final class ComputerAuthorizationFixture: Sendable {
             status: value.readStatus,
             body: "{\"error\":{\"message\":\"Authorization read denied\"}}")
         }
-        let approved = value.status == "approved"
-        let expiration = value.expired ? "2020-01-01T00:00:00Z" : "2099-01-01T00:00:00Z"
         if isAuthorizationRead || isAuthorizationWrite {
-          if isAuthorizationWrite {
-            if path == authorizationPath + "/deny" {
-              value.status = "denied"
-            } else if path == authorizationPath + "/revoke" {
-              value.status = "revoked"
-            } else {
-              value.grantWrites += 1
-              value.status = "approved"
-              let body = try JSONDecoder().decode(
-                [String: MessageJSON].self, from: chatRequestBody(request))
-              value.appliedHostID = body["computerUseHostId"]?.string
-              if value.loseGrantResponse {
-                value.loseGrantResponse = false
-                return ChatHTTPResponse(
-                  status: 503, body: "{\"error\":{\"message\":\"Grant response lost\"}}")
-              }
-            }
-            if kind != .shell { return ChatHTTPResponse(body: "{}") }
-          }
-          let common = "\"id\":\"\(Self.requestID)\",\"chatThreadId\":\"\(value.threadID)\""
-          let host = "\"computerUseHostId\":\"\(value.appliedHostID ?? Self.hostID)\""
-          if kind == .shell {
-            return ChatHTTPResponse(
-              body:
-                "{\(common),\(host),\"computerName\":\"Preview Mac\",\"reason\":\"Build and screenshot\",\"status\":\"\(value.status)\",\"approvalBlockedReason\":null,\"requestExpiresAt\":\"\(expiration)\",\"grantExpiresAt\":\"\(expiration)\"}"
-            )
-          }
-          let completion = approved ? "\"2026-11-10T00:00:00Z\"" : "null"
-          if kind == .browser {
-            return ChatHTTPResponse(
-              body:
-                "{\(common),\"expiresAt\":\"\(expiration)\",\"completedAt\":\(completion),\"cloudBrowserEnabled\":\(approved)}"
-            )
-          }
-          let secondHost =
-            value.hasSecondHost
-            ? ",{\"id\":\"\(Self.secondHostID)\",\"displayName\":\"Another Preview Mac\",\"status\":\"online\"}"
-            : ""
-          return ChatHTTPResponse(
-            body:
-              "{\(common),\(host),\"source\":\"chat\",\"expiresAt\":\"\(expiration)\",\"completedAt\":\(completion),\"hosts\":[{\"id\":\"\(Self.hostID)\",\"displayName\":\"Preview Mac\",\"status\":\"\(value.online ? "online" : "offline")\"}\(secondHost)]}"
-          )
+          return try Self.authorizationResponse(
+            request, authorizationPath: authorizationPath, kind: kind,
+            isAuthorizationWrite: isAuthorizationWrite, state: &value)
         }
         if path == threadPath {
           return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
@@ -603,13 +561,13 @@ private final class ComputerAuthorizationFixture: Sendable {
               "id": .string(Self.requestID), "chatThreadId": .string(Self.threadID),
               "seqId": .number(1), "createdAt": .string("2026-11-10T00:00:00Z"),
               "eventType": .string("input.prompt"),
-              "payload": .object(["userMessage": input["userMessage"] ?? .object([:])]),
+              "payload": .object(["userMessage": input["userMessage"] ?? .object([:])])
             ]
           }
           let data = try JSONEncoder().encode(rows)
           return ChatHTTPResponse(
             body:
-              "{\"rows\":\(String(decoding: data, as: UTF8.self)),\"cursor\":{\"lastEventId\":\(rows.isEmpty ? "null" : "\"\(Self.requestID)\""),\"lastSeqId\":\(rows.count)},\"hasMore\":false}"
+              "{\"rows\":\(String(data: data, encoding: .utf8)!),\"cursor\":{\"lastEventId\":\(rows.isEmpty ? "null" : "\"\(Self.requestID)\""),\"lastSeqId\":\(rows.count)},\"hasMore\":false}"
           )
         }
         if path == "/api/chat/events" {
@@ -626,6 +584,57 @@ private final class ComputerAuthorizationFixture: Sendable {
         throw URLError(.unsupportedURL)
       }
     }
+  }
+
+  private static func authorizationResponse(
+    _ request: URLRequest, authorizationPath: String, kind: ChatComputerAuthorizationAction.Kind,
+    isAuthorizationWrite: Bool, state value: inout State
+  ) throws -> ChatHTTPResponse {
+    let path = request.url?.path ?? ""
+    let approved = value.status == "approved"
+    let expiration = value.expired ? "2020-01-01T00:00:00Z" : "2099-01-01T00:00:00Z"
+    if isAuthorizationWrite {
+      if path == authorizationPath + "/deny" {
+        value.status = "denied"
+      } else if path == authorizationPath + "/revoke" {
+        value.status = "revoked"
+      } else {
+        value.grantWrites += 1
+        value.status = "approved"
+        let body = try JSONDecoder().decode(
+          [String: MessageJSON].self, from: chatRequestBody(request))
+        value.appliedHostID = body["computerUseHostId"]?.string
+        if value.loseGrantResponse {
+          value.loseGrantResponse = false
+          return ChatHTTPResponse(
+            status: 503, body: "{\"error\":{\"message\":\"Grant response lost\"}}")
+        }
+      }
+      if kind != .shell { return ChatHTTPResponse(body: "{}") }
+    }
+    let common = "\"id\":\"\(Self.requestID)\",\"chatThreadId\":\"\(value.threadID)\""
+    let host = "\"computerUseHostId\":\"\(value.appliedHostID ?? Self.hostID)\""
+    if kind == .shell {
+      return ChatHTTPResponse(
+        body:
+          "{\(common),\(host),\"computerName\":\"Preview Mac\",\"reason\":\"Build and screenshot\",\"status\":\"\(value.status)\",\"approvalBlockedReason\":null,\"requestExpiresAt\":\"\(expiration)\",\"grantExpiresAt\":\"\(expiration)\"}"
+      )
+    }
+    let completion = approved ? "\"2026-11-10T00:00:00Z\"" : "null"
+    if kind == .browser {
+      return ChatHTTPResponse(
+        body:
+          "{\(common),\"expiresAt\":\"\(expiration)\",\"completedAt\":\(completion),\"cloudBrowserEnabled\":\(approved)}"
+      )
+    }
+    let secondHost =
+      value.hasSecondHost
+      ? ",{\"id\":\"\(Self.secondHostID)\",\"displayName\":\"Another Preview Mac\",\"status\":\"online\"}"
+      : ""
+    return ChatHTTPResponse(
+      body:
+        "{\(common),\(host),\"source\":\"chat\",\"expiresAt\":\"\(expiration)\",\"completedAt\":\(completion),\"hosts\":[{\"id\":\"\(Self.hostID)\",\"displayName\":\"Preview Mac\",\"status\":\"\(value.online ? "online" : "offline")\"}\(secondHost)]}"
+    )
   }
 
   @MainActor func card(callback: Bool, querySuffix: String = "") throws

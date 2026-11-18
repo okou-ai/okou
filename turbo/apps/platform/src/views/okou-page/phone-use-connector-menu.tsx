@@ -27,6 +27,7 @@ function PhoneRow({
   readonly device: PhoneDevice;
   readonly signals: ComposerConnectorSignals;
 }) {
+  const { t } = useTranslation();
   const selection = useLoadable(signals.phoneAccess.selection$);
   const lastSelection = useLastResolved(signals.phoneAccess.selection$);
   const saving = useLoadable(signals.phoneAccess.saving$);
@@ -48,10 +49,19 @@ function PhoneRow({
           >
             {device.displayName}
           </span>
+          {!device.online && (
+            <span className="block text-xs text-muted-foreground">
+              {t(($) => {
+                return $.chat.computerUse.offline;
+              })}
+            </span>
+          )}
         </span>
         <LoadingSwitch
           checked={checked}
-          disabled={selection.state !== "hasData"}
+          disabled={
+            selection.state !== "hasData" || (!checked && !device.online)
+          }
           loading={saving.state === "loading"}
           onCheckedChange={onDomEventFn(async (allow) => {
             await setDevice(
@@ -71,12 +81,15 @@ function PhoneUseDevices({ signals }: { signals: ComposerConnectorSignals }) {
   const { t } = useTranslation();
   const devices = useLoadable(signals.resources.phoneUseDevices$);
   const lastDevices = useLastResolved(signals.resources.phoneUseDevices$);
+  const selection = useLoadable(signals.phoneAccess.selection$);
+  const lastSelection = useLastResolved(signals.phoneAccess.selection$);
+  const selected =
+    selection.state === "hasData" ? selection.data : lastSelection;
   const visibleDevices = (
     devices.state === "hasData" ? devices.data : (lastDevices ?? [])
   ).filter((device) => {
-    return device.online;
+    return device.online || device.id === selected?.deviceId;
   });
-  const selection = useLoadable(signals.phoneAccess.selection$);
   const updateUi = useSet(signals.updateConnectorUiState$);
   return (
     <div className="shrink-0 border-t border-border/50 bg-gray-50 p-1 dark:bg-gray-100">

@@ -1,5 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="composer_sync_loading">저장된 초안 불러오는 중…</string>
+    <string name="composer_sync_saving">초안 동기화 중…</string>
+    <string name="composer_sync_failed">초안을 동기화하지 못했습니다. 입력 내용은 이 기기에 보관됩니다.</string>
+    <string name="composer_sync_unsupported">이 초안에는 Web에서 편집할 수 있는 콘텐츠가 있습니다. 입력 내용은 이 기기에 보관되며 자동 동기화는 일시 중지됩니다.</string>
+    <string name="composer_sync_retry">초안 동기화 다시 시도</string>
+    <string name="composer_restore_draft">보관된 초안 복원</string>
+    <string name="controls_storage_failed">대기 중인 제어 요청을 저장할 수 없습니다.</string>
+    <string name="controls_stop">실행 중인 작업 중지</string>
+    <string name="controls_queued_automation">대기 중인 자동화</string>
+    <string name="controls_skip">자동화 건너뛰기</string>
+    <string name="controls_preparing">제어 요청 저장 중…</string>
+    <string name="controls_sending">제어 요청 전송 중…</string>
+    <string name="controls_accepted">요청이 접수되었습니다. 확인을 기다립니다.</string>
+    <string name="controls_checking">제어 결과 확인 중…</string>
+    <string name="controls_unknown">제어 결과가 아직 확인되지 않았습니다.</string>
+    <string name="controls_retryable">원래 대상에 계속 요청할 수 있습니다.</string>
+    <string name="controls_retry_original">원래 요청 재시도</string>
+    <string name="controls_check">제어 결과 확인</string>
+    <string name="controls_recorded">제어 요청이 대화 기록에 저장되었습니다.</string>
+    <string name="controls_target_settled">원래 대상이 이미 처리되었습니다.</string>
+    <string name="controls_read_failed">제어 결과를 확인할 수 없습니다.</string>
+    <string name="controls_recovery_failed">대화 복구 상태를 확인할 수 없습니다.</string>
+    <string name="controls_recovering">대화를 계속할 준비를 하고 있습니다.</string>
+    <string name="output_live">실시간 응답</string>
+    <string name="output_waiting">실시간 응답을 기다리는 중</string>
+    <string name="output_catching_up">저장된 메시지를 불러오는 중입니다. 받은 텍스트는 유지됩니다.</string>
     <string name="settings">설정</string>
     <string name="back">뒤로</string>
     <string name="appearance">화면 모드</string>

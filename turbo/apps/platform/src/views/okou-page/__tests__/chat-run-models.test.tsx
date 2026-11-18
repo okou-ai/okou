@@ -209,6 +209,7 @@ interface StructuredFailureExpectation {
 }
 
 const STRUCTURED_FAILURE_EXPECTATIONS = {
+  unknown: { title: "This run couldn't finish" },
   session_history_limit: {
     title: "This chat has reached its limit",
     action: "New chat",
@@ -322,7 +323,7 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
     picker: true,
   },
   usage_limit: {
-    title: "Codex limit reached",
+    title: "Model provider limit reached",
     action: "Try again",
     picker: true,
   },
@@ -334,7 +335,7 @@ const STRUCTURED_FAILURE_CASES = Object.entries(
 
 /** Every backend-owned failure gets concise copy and recovery on the card. */
 test.each(STRUCTURED_FAILURE_CASES)(
-  "Render structured failure %s without a recovery details dialog",
+  "Render structured failure %s with its available recovery actions",
   async (failureReason, expected) => {
     configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
     if (failureReason === "insufficient_credits") {
@@ -376,9 +377,10 @@ test.each(STRUCTURED_FAILURE_CASES)(
     ].map((control) => {
       return control.textContent?.replace(/\s+/gu, " ").trim();
     });
-    expect(actionLabels).toStrictEqual(
-      expected.action === undefined ? [] : [expected.action],
-    );
+    expect(actionLabels).toStrictEqual([
+      ...(expected.action === undefined ? [] : [expected.action]),
+      ...(failureReason === "usage_limit" ? ["View details"] : []),
+    ]);
     expect(within(card).queryByRole("combobox") !== null).toBe(
       expected.picker === true,
     );
@@ -794,10 +796,7 @@ test.each([
   },
 );
 
-test.each([
-  { label: "structured", failureReason: "usage_limit" as const },
-  { label: "legacy", failureReason: undefined },
-])(
+test.each([{ label: "structured", failureReason: "usage_limit" as const }])(
   "Keep the error card's rows during delayed $label limit classification",
   async ({ failureReason }) => {
     const accountsReady = context.mocks.deferred<void>();
@@ -834,7 +833,7 @@ test.each([
     accountsReady.resolve();
     await page.ready;
     const settled = await recoveryCard();
-    expect(settled).toHaveTextContent("Codex limit reached");
+    expect(settled).toHaveTextContent("Model provider limit reached");
     expect(settled).toHaveTextContent(
       "Personal subscription current@example.com",
     );
@@ -851,6 +850,7 @@ test("Recover from a personal model account limit", async () => {
   configureCodexSubscriptionPolicies(["gpt-5.6-sol", "gpt-5.6-luna"]);
   context.mocks.data.personalModelProviders([
     codexSubscriptionAccount({
+      accountEmail: "long.subscription.account.for.recovery@example.com",
       subscriptionUsage: {
         fiveHour: {
           usedPercent: 100,
@@ -873,6 +873,7 @@ test("Recover from a personal model account limit", async () => {
     chatEvents: failedRunEvents(
       "You've hit your usage limit. Try again at tomorrow noon.",
       "gpt-5.6-sol",
+      "usage_limit",
     ),
   });
 
@@ -883,7 +884,7 @@ test("Recover from a personal model account limit", async () => {
 
   await readyChat();
   const recovery = await recoveryCard();
-  expect(recovery).toHaveTextContent("Codex limit reached");
+  expect(recovery).toHaveTextContent("Model provider limit reached");
   expect(recovery).toHaveTextContent(/5h resets/iu);
   expect(recovery).toHaveTextContent(/Week resets/iu);
   const description = within(recovery).getByTestId(
@@ -891,6 +892,29 @@ test("Recover from a personal model account limit", async () => {
   );
   expect(within(description).getByText(/5h resets/iu)).toBeVisible();
   expect(within(description).getByText(/Week resets/iu)).toBeVisible();
+
+  const detailsButton = await findButton("View details");
+  click(detailsButton);
+  const details = await screen.findByRole("dialog", {
+    name: "Model provider limit reached",
+  });
+  expect(details).toHaveTextContent(
+    "Personal subscription long.subscription.account.for.recovery@example.com",
+  );
+  expect(details).toHaveTextContent(/5h resets/iu);
+  expect(details).toHaveTextContent(/Week resets/iu);
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(detailsButton).toHaveFocus();
+  });
+  // Dismissal restores the actual trigger, so keyboard users can reopen it.
+  await user.keyboard("{Enter}");
+  await screen.findByRole("dialog", { name: "Model provider limit reached" });
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(detailsButton).toHaveFocus();
+  });
+
   const picker = within(recovery).getByRole("combobox");
   expect(picker).toBeVisible();
 
@@ -943,7 +967,7 @@ test("Show the reset time for a limit reached while the thread is open", async (
       },
     }),
   ]);
-  lifecycle.failRun("You've hit your usage limit.");
+  lifecycle.failRun("You've hit your usage limit.", "usage_limit");
 
   const recovery = await recoveryCard();
   await expect(
@@ -970,6 +994,7 @@ test.each([true, false])(
       chatEvents: failedRunEvents(
         "Selected model is at capacity. Please try a different model.",
         "gpt-5.6-luna",
+        "provider_overloaded",
       ),
     });
 
@@ -1108,7 +1133,7 @@ test("Leave a usage limit neutral once the thread leaves the subscription", asyn
   });
   await readyChat();
   const recovery = await recoveryCard();
-  expect(recovery).toHaveTextContent("Codex limit reached");
+  expect(recovery).toHaveTextContent("Model provider limit reached");
   expect(recovery).not.toHaveTextContent(/Personal subscription/iu);
   expect(queryButton("Reset · 1 left")).toBeNull();
   await expect(findButton("Try again")).resolves.toBeEnabled();
@@ -1118,7 +1143,11 @@ test("A failed subscription reset keeps the thread idle", async () => {
   const sent: unknown[] = [];
   installRunChat({
     selectedModel: "gpt-5.6-sol",
-    chatEvents: failedRunEvents("You've hit your usage limit.", "gpt-5.6-sol"),
+    chatEvents: failedRunEvents(
+      "You've hit your usage limit.",
+      "gpt-5.6-sol",
+      "usage_limit",
+    ),
     onRunCreate: (body) => {
       sent.push(body);
     },
@@ -1160,6 +1189,7 @@ test("Continue a run that reached its execution time limit", async () => {
     chatEvents: failedRunEvents(
       CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE,
       "gpt-5.6-sol",
+      "execution_timeout",
     ),
     onRunCreate: (body) => {
       retriedPrompts.push(body.prompt);
@@ -1254,7 +1284,7 @@ test.each(["AUTONOMY_BUDGET_EXHAUSTED"])(
   },
 );
 
-test("Preserve provider errors that have no guided recovery", async () => {
+test("Render unclassified Run failures without deriving actions from provider prose", async () => {
   const providerError =
     "Selected model capacity warning from the upstream provider; contact support.";
   configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
@@ -1269,69 +1299,17 @@ test("Preserve provider errors that have no guided recovery", async () => {
   });
 
   await readyChat();
-  // The card spins until the classification settles, so the preserved provider
-  // text is what it settles on rather than what it starts from.
-  await expect(screen.findByText(providerError)).resolves.toBeInTheDocument();
+  // A legacy row with no reason cannot turn provider prose into recovery authority.
+  await expect(
+    screen.findByText("This run couldn't finish"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText(providerError)).not.toBeInTheDocument();
   expect(
     screen.queryByText("This model is busy right now"),
   ).not.toBeInTheDocument();
   expect(
     screen.queryByRole("combobox", { name: "Switch model" }),
   ).not.toBeInTheDocument();
-});
-
-// Run errors persisted before the copy moved to Settings > Models are immutable
-// chat events, so their earlier text must still render as the current copy.
-test.each([
-  [
-    "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.",
-    "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Settings > Models, then retry.",
-  ],
-  [
-    "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.",
-    "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.",
-  ],
-  [
-    "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Model Providers, accept the updated terms and policy, then retry.",
-    "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Settings > Models, accept the updated terms and policy, then retry.",
-  ],
-])(
-  "Render a persisted pre-rename credential error as current copy: %s",
-  async (persistedError, currentCopy) => {
-    configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
-    installRunChat({
-      selectedModel: "gpt-5.6-sol",
-      chatEvents: failedRunEvents(persistedError, "gpt-5.6-sol"),
-    });
-
-    await setupPage({ context, path: RUN_PATH });
-    await readyChat();
-
-    await expect(screen.findByText(currentCopy)).resolves.toBeInTheDocument();
-    expect(screen.queryByText(persistedError)).not.toBeInTheDocument();
-  },
-);
-
-test("Render a persisted Open Model Providers action as the current label", async () => {
-  const actionUrl = "https://app.okou.ai/settings/models";
-  configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
-  installRunChat({
-    selectedModel: "gpt-5.6-sol",
-    chatEvents: failedRunEvents(
-      `ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.\n\nOpen Model Providers: ${actionUrl}`,
-      "gpt-5.6-sol",
-    ),
-  });
-
-  await setupPage({ context, path: RUN_PATH });
-  await readyChat();
-
-  const card = await screen.findByTestId("assistant-error-card-shell");
-  await waitFor(() => {
-    expect(card).toHaveTextContent(`Open model settings: ${actionUrl}`);
-  });
-  expect(card).not.toHaveTextContent("Open Model Providers");
-  expect(card).not.toHaveTextContent("in Model Providers");
 });
 
 const UNSUPPORTED_MODEL_ERROR = JSON.stringify({
@@ -1351,7 +1329,7 @@ test.each([
   {
     label: "an unsupported model",
     error: UNSUPPORTED_MODEL_ERROR,
-    failureReason: undefined,
+    failureReason: "unsupported_model",
     title: "Selected model isn't available",
   },
   {
@@ -1416,5 +1394,20 @@ test.each([
     await waitFor(() => {
       expect(sentModels).toStrictEqual(["gpt-5.6-luna"]);
     });
+  },
+);
+
+test.each([undefined, "unknown", "future_reason"])(
+  "Keep a missing-text failed Run visible with reason %s",
+  async (failureReason) => {
+    configureConnectedRunModels(["gpt-5.6-sol"]);
+    const events = failedRunEvents("", "gpt-5.6-sol", failureReason);
+    installRunChat({ selectedModel: "gpt-5.6-sol", chatEvents: events });
+    await setupPage({ context, path: RUN_PATH });
+    await readyChat();
+    const card = await screen.findByTestId("assistant-error-card-shell");
+    expect(card).toHaveTextContent("This run couldn't finish");
+    expect(queryButton("Continue", card)).not.toBeInTheDocument();
+    expect(queryButton("Reset · 1 left", card)).not.toBeInTheDocument();
   },
 );

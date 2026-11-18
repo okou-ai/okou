@@ -69,7 +69,13 @@ export function mergeRecords<T>(
 
 export type CustomConnectorRuntimeDataRows = readonly {
   readonly connector: CustomConnectorExecutionDefinition;
-  readonly values: readonly CustomConnectorStoredValueRow[];
+  readonly values: readonly (
+    | Omit<
+        Extract<CustomConnectorStoredValueRow, { readonly kind: "secret" }>,
+        "encryptedValue"
+      >
+    | Extract<CustomConnectorStoredValueRow, { readonly kind: "variable" }>
+  )[];
   readonly credentialAccess: CustomConnectorCredentialAccess;
 }[];
 

@@ -1,7 +1,7 @@
 import { performance } from "node:perf_hooks";
 import { computed, type Computed } from "ccstate";
 import { isValidVersionPrefix } from "@okouai/core/version-id";
-import { storageVersions } from "@okouai/db/schema/storage";
+import { memoryVersions } from "@okouai/db/schema/member-memory";
 import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import { and, desc, eq, like, or, sql } from "drizzle-orm";
 import { unionAll } from "drizzle-orm/pg-core";
@@ -223,42 +223,40 @@ function createStorageIndexSignals(
           queries.push(
             db
               .select({
-                storageId: storageVersions.storageId,
-                id: storageVersions.id,
-                s3Key: storageVersions.s3Key,
-                archiveSize: storageVersions.archiveSize,
-                fileCount: storageVersions.fileCount,
+                storageId: memoryVersions.memoryId,
+                id: memoryVersions.id,
+                s3Key: memoryVersions.objectPrefix,
+                archiveSize: memoryVersions.archiveSize,
+                fileCount: memoryVersions.fileCount,
                 cacheKey: systemStoragePresignedUrlCache.cacheKey,
                 cacheScope: systemStoragePresignedUrlCache.scope,
                 presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
                 expiresAt: systemStoragePresignedUrlCache.expiresAt,
               })
-              .from(storageVersions)
+              .from(memoryVersions)
               .leftJoin(
                 systemStoragePresignedUrlCache,
                 eq(
                   systemStoragePresignedUrlCache.cacheKey,
                   storageVersionCacheKeySql({
                     orgId: sql`${request.lookup.orgId}`,
-                    userId: sql`${request.lookup.userId}`,
-                    name: sql`${request.lookup.name}`,
-                    versionId: sql`${storageVersions.id}`,
-                    s3Key: sql`${storageVersions.s3Key}`,
+                    versionId: sql`${memoryVersions.id}`,
+                    s3Key: sql`${memoryVersions.objectPrefix}`,
                   }),
                 ),
               )
               .where(
                 and(
-                  eq(storageVersions.storageId, request.storageId),
+                  eq(memoryVersions.memoryId, request.storageId),
                   or(
-                    eq(storageVersions.id, request.version),
+                    eq(memoryVersions.id, request.version),
                     isValidVersionPrefix(request.version)
-                      ? like(storageVersions.id, `${request.version}%`)
+                      ? like(memoryVersions.id, `${request.version}%`)
                       : undefined,
                   ),
                 ),
               )
-              .orderBy(desc(eq(storageVersions.id, request.version)))
+              .orderBy(desc(eq(memoryVersions.id, request.version)))
               .limit(2),
           );
         }

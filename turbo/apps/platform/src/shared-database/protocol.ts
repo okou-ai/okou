@@ -26,6 +26,7 @@ export const sharedDatabaseRealtimeScopeSchema = zEnum([
   "org",
   "user",
   "run-output",
+  "phone-presence",
 ]);
 
 export type SharedDatabaseRealtimeScope = zInfer<
@@ -106,6 +107,14 @@ const realtimeSubscribeRequestSchema = object({
   .strict()
   .refine(
     ({ scope, topic }) => {
+      if (scope === "phone-presence") {
+        const [id, generation, extra] = topic.split(":");
+        return (
+          extra === undefined &&
+          uuid().safeParse(id).success &&
+          /^[1-9]\d*$/u.test(generation ?? "")
+        );
+      }
       return scope !== "run-output" || uuid().safeParse(topic).success;
     },
     { message: "Run-output subscriptions require a run UUID" },
@@ -236,6 +245,11 @@ const realtimeResyncMessageSchema = object({
   subscriptionId: requestIdSchema,
 }).strict();
 
+/** A Worker-owned database channel lost continuity, independent of tab subscriptions. */
+const realtimeGapMessageSchema = object({
+  type: literal("realtime-gap"),
+}).strict();
+
 const realtimeEventMessageSchema = object({
   type: literal("realtime-event"),
   subscriptionId: requestIdSchema,
@@ -258,6 +272,7 @@ export const sharedDatabaseWorkerMessageSchema = discriminatedUnion("type", [
   chatThreadReadCursorUpdatedMessageSchema,
   realtimeSubscribedMessageSchema,
   realtimeResyncMessageSchema,
+  realtimeGapMessageSchema,
   realtimeEventMessageSchema,
   realtimeSubscriptionErrorMessageSchema,
 ]);

@@ -9,12 +9,14 @@ import Observation
 @MainActor @Observable
 final class ThreadListStore {
   private let lifecycleTasks: LifecycleTasks
+  @ObservationIgnored private lazy var navigation = ThreadListNavigation(
+    resources: resources, sync: sync, lifecycleTasks: lifecycleTasks,
+    didLoadAgents: didLoadAgents, didFail: didFail,
+    didBlock: { [weak self] in self?.blocked = true })
   @ObservationIgnored private let confirmedThreads = CCState.State<[ChatThread]>([])
-  @ObservationIgnored private let confirmedAgents = CCState.State<[AgentRecord]>([])
   @ObservationIgnored private let replaceThreads: Command<Void, [ChatThread]>
-  @ObservationIgnored private let replaceAgents: Command<Void, [AgentRecord]>
   let threadsValue: Computed<[ChatThread]>
-  let agentsValue: Computed<[AgentRecord]>
+  var agentsValue: Computed<[AgentRecord]> { navigation.agentsValue }
 
   private(set) var threads: [ChatThread] {
     get {
@@ -30,33 +32,14 @@ final class ThreadListStore {
       }
     }
   }
-  /// Confirmed navigation drives default-Agent decisions and the durable ChatSync baseline.
-  /// Current read loading/errors belong exclusively to navigationValue.
-  private(set) var agents: [AgentRecord] {
-    get {
-      access(keyPath: \.agents)
-      return confirmed(agentsValue)
-    }
-    set {
-      guard newValue != confirmed(agentsValue) else { return }
-      withMutation(keyPath: \.agents) {
-        do { try stateStore.set(replaceAgents, newValue) } catch {
-          preconditionFailure("Cannot publish confirmed Agents: \(error)")
-        }
-      }
-    }
-  }
+  var agents: [AgentRecord] { navigation.agents }
   private(set) var unreadAgentIDs: Set<String> = []
-  var hasUnreadThreads: Bool {
-    threads.contains { !$0.isMuted && $0.indicator == .unread }
-  }
   private(set) var markingAgentRead = false
   private var readRevision = 0
   private(set) var actionError: String?
   private var indicatorsError: String?
   // Standalone indicator failures retain their own policy; list errors live on listValue.
   var syncError: String? { indicatorsError }
-  var error: String? { actionError ?? syncError }
   private(set) var hasLoadedThreads = false
   private(set) var updatingThreads: Set<String> = []
   private let client: APIClient
@@ -68,6 +51,7 @@ final class ThreadListStore {
   private let didLoadAgents: @MainActor ([AgentRecord]) -> Void
   private let didFail: @MainActor (Error) -> Void
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
+  private let indicatorsBootstrap: WorkspaceReadBootstrap?
   private var refreshAgain = false
   private var indicatorsAgain = false
   private var refreshGeneration = UUID()
@@ -84,21 +68,11 @@ final class ThreadListStore {
   // Original request ownership and coalescing, not a second read phase/result.
   private var listTask: Task<Void, Error>?
   private var listReadID: UUID?
-  @ObservationIgnored private var navigationSubscription: Subscription?
-  @ObservationIgnored private var navigationPublication: Task<Void, Never>?
-  private var navigationReadID = UUID()
-  private var navigationRevision = 0
-  private var restoredNavigation = false
   private var indicatorsTask: Task<Void, Never>?
   private var updateTasks: [String: Task<Void, Never>] = [:]
   private var pinTasks: [String: Task<Void, Never>] = [:]
   private var lastPinIDs: [String: String] = [:]
   private var optimisticChanges: [(id: String, change: ChatThreadChange)] = []
-  struct RenameRequest: Identifiable {
-    let id: UUID
-    let threadID: String
-    var error: String?
-  }
   private(set) var renameRequest: RenameRequest?
   private(set) var isSavingRename = false
   var renameTitle = ""
@@ -115,15 +89,13 @@ final class ThreadListStore {
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     },
+    indicatorsBootstrap: WorkspaceReadBootstrap? = nil,
     lifecycleTasks: LifecycleTasks? = nil
   ) {
     self.lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
     let confirmedThreads = confirmedThreads
-    let confirmedAgents = confirmedAgents
     threadsValue = Computed { try $0(confirmedThreads) }
-    agentsValue = Computed { try $0(confirmedAgents) }
     replaceThreads = Command { context, value in try context.set(confirmedThreads, value) }
-    replaceAgents = Command { context, value in try context.set(confirmedAgents, value) }
     let listDemand = listDemand
     let listLifetime = listLifetime
     reloadList = Command { context in
@@ -140,20 +112,13 @@ final class ThreadListStore {
     self.didLoadAgents = didLoadAgents
     self.didFail = didFail
     self.readRetrySleep = readRetrySleep
+    self.indicatorsBootstrap = indicatorsBootstrap
   }
 
   func restoreCached() async {
     guard !closed, !Task.isCancelled else { return }
-    if !restoredNavigation, navigationRevision == 0 {
-      let revision = navigationRevision
-      let cached = await sync.cachedNavigation()
-      guard !closed, !Task.isCancelled else { return }
-      if let cached, !restoredNavigation, navigationRevision == revision {
-        agents = cached.agents
-        didLoadAgents(agents)
-      }
-      restoredNavigation = true
-    }
+    await navigation.restoreCached()
+    guard !closed, !Task.isCancelled else { return }
     let revision = creationRevision
     let sequence = hasLoadedThreads ? appliedThreadSequence : nil
     var restoredThreads = false
@@ -287,60 +252,7 @@ final class ThreadListStore {
     }
   }
 
-  func refreshNavigation() async {
-    guard !closed, !blocked, !Task.isCancelled else { return }
-    await restoreCached()
-    guard !closed, !blocked, !Task.isCancelled else { return }
-    do {
-      if navigationSubscription == nil {
-        navigationSubscription = try stateStore.watch(navigationValue) { [weak self] in
-          self?.confirmNavigation()
-        }
-        // watch establishes dependencies but does not initially invoke its listener.
-        confirmNavigation()
-      } else if navigationPublication == nil {
-        try stateStore.set(resources.reloadNavigation)
-      }
-      // This waiter owns neither the shared I/O nor confirmed-snapshot publication.
-      await navigationPublication?.value
-    } catch is CancellationError {
-    } catch { didFail(error) }
-  }
-
-  /// A workspace-owned subscriber reconciles successful reads to business/persistence state.
-  /// SwiftUI observes navigationValue itself; this waiter never mirrors its loadable phase.
-  private func confirmNavigation() {
-    guard !closed, !blocked else { return }
-    navigationPublication?.cancel()
-    let id = UUID()
-    navigationReadID = id
-    do {
-      let read = try stateStore.get(navigationValue)
-      navigationPublication = Task { [weak self] in
-        guard let self else { return }
-        defer {
-          if navigationReadID == id { navigationPublication = nil }
-        }
-        do {
-          let value = try await read.value
-          try Task.checkCancellation()
-          guard !closed, !blocked, navigationReadID == id else { return }
-          navigationRevision += 1
-          agents = value
-          didLoadAgents(value)
-          await sync.persistNavigation(SidebarNavigationSnapshot(agents: value))
-        } catch is CancellationError {
-        } catch {
-          guard !closed, !Task.isCancelled, navigationReadID == id else { return }
-          blocked = (error as? APIClientError)?.statusCode == 426
-          didFail(error)
-        }
-      }
-      if let navigationPublication { lifecycleTasks.track(navigationPublication) }
-    } catch is CancellationError {
-      navigationPublication = nil
-    } catch { didFail(error) }
-  }
+  func refreshNavigation() async { await navigation.refreshNavigation() }
 
   /// Explicit invalidations coalesce into the resident read and one follow-up cycle.
   /// Only an awaited successful cycle can authorize navigation that needed fresh chats.
@@ -448,19 +360,10 @@ final class ThreadListStore {
     }
   }
 
-  func threads(agentID: String?, archived: Bool, onlyUnread: Bool = false) -> [ChatThread] {
-    threads.filter {
-      guard $0.agentID == agentID else { return false }
-      if onlyUnread {
-        // PWA's unread list includes archived chats and retains active-indicator precedence.
-        return !$0.isMuted && $0.indicator == .unread
-      }
-      return $0.isArchived == archived
-    }
-  }
-
-  func refreshIndicators() async {
+  func refreshIndicators(waitForSubscriptions: Bool = false) async {
     guard !closed, !blocked, !Task.isCancelled else { return }
+    // Real invalidations must also release a startup read still waiting for attachment.
+    if !waitForSubscriptions { indicatorsBootstrap?.allowHTTP() }
     if let indicatorsTask {
       indicatorsAgain = true
       await indicatorsTask.value
@@ -478,6 +381,9 @@ final class ThreadListStore {
       repeat {
         indicatorsAgain = false
         do {
+          try await indicatorsBootstrap?.wait()
+          try Task.checkCancellation()
+          indicatorsBootstrap?.didScheduleRead()
           let revision = readRevision
           let result = try await ChatReadRecovery.read("chat indicators", sleep: readRetrySleep) {
             try await sync.indicators()
@@ -512,7 +418,9 @@ final class ThreadListStore {
             // Unread refresh is best-effort: retain the confirmed presentation
             // without adding a user-facing synchronization warning.
             Logger(subsystem: "ai.okou.ios", category: "ChatSync")
-              .info("Keeping unread indicators: \(error.localizedDescription, privacy: .public)")
+              .info(
+                "event=chat.indicators.read.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+              )
           }
         }
       } while indicatorsAgain && !closed && !blocked && !Task.isCancelled
@@ -520,11 +428,6 @@ final class ThreadListStore {
     lifecycleTasks.track(task)
     indicatorsTask = task
     await task.value
-  }
-
-  func togglePinned(_ id: String) async {
-    guard let thread = threads.first(where: { $0.id == id }) else { return }
-    await setPinned(thread, pinned: thread.pinnedAt == nil)
   }
 
   func canPin(_ id: String) -> Bool {
@@ -694,10 +597,6 @@ final class ThreadListStore {
       && threads.contains(where: { $0.id == id })
   }
 
-  func canMute(_ id: String) -> Bool {
-    canUpdate(id)
-  }
-
   @discardableResult
   func setArchived(
     _ thread: ChatThread, archived: Bool, eventID: String = UUID().uuidString.lowercased(),
@@ -728,8 +627,9 @@ final class ThreadListStore {
   ) async -> Bool {
     guard canMute(id), !Task.isCancelled else { return false }
     readRevision += 1
-    return await updateThread(id, includingIndicators: true, onFailure: onFailure) {
-      [self, commands] in
+    return await updateThread(
+      id, includingIndicators: true, onFailure: onFailure
+    ) { [self, commands] in
       // Replies suppressed while muted must not reappear as unread. Keep the chat
       // muted if marking read fails; retry can safely repeat both operations.
       if !muted && markRead {
@@ -859,20 +759,14 @@ final class ThreadListStore {
     activeThreadIDs.removeAll()
     cancelRefresh()
     do { try stateStore.set(listLifetime, false) } catch { didFail(error) }
-    cancelNavigationPublication()
+    navigation.close()
     for task in updateTasks.values { task.cancel() }
     for task in pinTasks.values { task.cancel() }
     cancelRename()
   }
 
   /// Startup retirement detaches confirmation without cancelling another consumer's I/O.
-  func cancelNavigationPublication() {
-    navigationReadID = UUID()
-    navigationPublication?.cancel()
-    navigationPublication = nil
-    do { try navigationSubscription?.cancel() } catch { didFail(error) }
-    navigationSubscription = nil
-  }
+  func cancelNavigationPublication() { navigation.cancelNavigationPublication() }
 
   private func show(_ failure: Error) {
     guard !closed, !Task.isCancelled else { return }

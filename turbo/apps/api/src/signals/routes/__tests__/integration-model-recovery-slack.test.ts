@@ -1,6 +1,11 @@
+import {
+  createAuthDeviceApiActions,
+  mockClaudeCodeTokenEndpoint,
+} from "./helpers/api-bdd-auth-device";
+import { addRecoverySubscription } from "./helpers/subscription-recovery";
+import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import { describe, expect, it } from "vitest";
 import { array, literal, object, string, unknown as zUnknown } from "zod";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
@@ -9,7 +14,7 @@ import { publicChatActor } from "./helpers/public-chat-actor";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { now } from "../../../lib/time";
 
 const context = testContext();
 const chat = createChatEventsFixture(context);
@@ -36,22 +41,32 @@ const modalSchema = object({
 });
 
 async function failedSlackConversation(
-  enabled = true,
-  failureReason = "account_verification_required",
+  failureReason: string | null = "account_verification_required",
+  providerType:
+    "claude-code-oauth-token" | "codex-oauth-token" = "claude-code-oauth-token",
+  withProfileMetadata = true,
 ) {
   const owner = await publicChatActor(context);
-  owner.ownsFeatureSwitches();
-  const orgId = owner.actor.orgId;
-  if (!orgId) {
-    throw new Error("Expected an owned workspace");
+  if (providerType === "codex-oauth-token") {
+    await owner.run(() => {
+      return chat.configureSubscriptionPiModel(owner.actor);
+    });
   }
-  await owner.run(() => {
-    return updateFeatureSwitchesForUser(
-      context,
-      { ...owner.actor, orgId },
-      { [FeatureSwitchKey.IntegrationModelRecovery]: enabled },
-    );
-  });
+
+  if (!withProfileMetadata) {
+    await owner.run(async () => {
+      mockClaudeCodeTokenEndpoint({ accountEmail: "", organizationName: "" });
+      await createMiscRoutesApi(context).upsertPersonalModelProvider(
+        owner.actor,
+        {
+          type: "claude-code-oauth-token",
+          secret: "sk-ant-oat-without-profile",
+        },
+        [200, 201],
+      );
+    });
+  }
+
   const installed = await owner.run(() => {
     return slack.installOrg({ actor: owner.actor, withConnection: true });
   });
@@ -59,6 +74,11 @@ async function failedSlackConversation(
   chat.api.acceptStorageDownloads();
   chat.api.acceptTelemetryIngest();
   context.mocks.slack.views.update.mockResolvedValue({ ok: true });
+  context.mocks.slack.chat.postMessage.mockResolvedValue({
+    ok: true,
+    ts: "1794840001.000003",
+    message: { ts: "1794840001.000003" },
+  });
   const before = await chat.chat.requestThreadEvents(owner.actor, {}, [200]);
   await owner.run(() => {
     return integrations.postSlackEvent(installed.slackWorkspaceId, {
@@ -103,8 +123,11 @@ async function failedSlackConversation(
       {
         runId,
         exitCode: 1,
-        error: "Claude account requires verification",
-        failureReason,
+        error:
+          failureReason === null
+            ? "You've hit your usage limit. Try again tomorrow."
+            : "Claude account requires verification",
+        ...(failureReason === null ? {} : { failureReason }),
       },
       { authorization: `Bearer ${execution.sandboxToken}` },
       [200],
@@ -162,7 +185,330 @@ async function failedSlackConversation(
 }
 
 describe("integration model recovery in Slack", () => {
-  it("switches the failed DM to GPT without changing the default or replaying the failed request", async () => {
+  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
+    "automatically continues a %s quota failure after switching accounts exactly once",
+    async (providerType) => {
+      const fixture = await failedSlackConversation(
+        "usage_limit",
+        providerType,
+      );
+      const replacementId = await fixture.owner.run(() => {
+        return addRecoverySubscription(
+          context,
+          fixture.owner.actor,
+          providerType,
+        );
+      });
+      const reads = createRunReadsApi(context);
+      expect(
+        (
+          await reads.requestListLogs(
+            fixture.owner.actor,
+            { triggerSource: "slack", limit: 50 },
+            [200],
+          )
+        ).body.data,
+      ).toHaveLength(1);
+      context.mocks.slack.apiCall.mockClear();
+      const support = createAuthDeviceSupportApi(context);
+      await fixture.owner.run(() => {
+        return support.activatePersonalModelProviderAccount(
+          fixture.owner.actor,
+          replacementId,
+        );
+      });
+      await flushWaitUntilForTest();
+      const recovered = await reads.requestListLogs(
+        fixture.owner.actor,
+        { triggerSource: "slack", limit: 50 },
+        [200],
+      );
+      expect(recovered.body.data).toHaveLength(2);
+      const next = recovered.body.data.find((run) => {
+        return run.id !== fixture.runId;
+      });
+      if (!next) {
+        throw new Error("Expected automatic subscription recovery");
+      }
+      await chat.api.heartbeatRunner(fixture.owner.runnerGroup);
+      const execution = await fixture.owner.executionInput(next.id);
+      expect(execution.prompt).toBe("continue");
+      expect(execution.appendSystemPrompt).toContain("D0RECOVERY");
+      expect(execution.appendSystemPrompt).toContain("1794840000.000001");
+      expect(context.mocks.slack.apiCall.mock.calls).toContainEqual([
+        "agents.sessions.setStatus",
+        {
+          channel_id: "D0RECOVERY",
+          thread_ts: "1794840000.000001",
+          status: "processing",
+        },
+      ]);
+      await support.activatePersonalModelProviderAccount(
+        fixture.owner.actor,
+        replacementId,
+      );
+      await flushWaitUntilForTest();
+      expect(
+        (
+          await reads.requestListLogs(
+            fixture.owner.actor,
+            { triggerSource: "slack", limit: 50 },
+            [200],
+          )
+        ).body.data,
+      ).toHaveLength(2);
+      await fixture.owner.run(() => {
+        return chat.webhooks.requestAgentComplete(
+          {
+            runId: next.id,
+            exitCode: 1,
+            error: "recovery finished",
+            failureReason: "provider_server_error",
+          },
+          { authorization: `Bearer ${execution.sandboxToken}` },
+          [200],
+        );
+      });
+      await flushWaitUntilForTest();
+      expect(context.mocks.slack.apiCall.mock.calls.at(-1)).toStrictEqual([
+        "agents.sessions.setStatus",
+        {
+          channel_id: "D0RECOVERY",
+          thread_ts: "1794840000.000001",
+          status: "active",
+        },
+      ]);
+    },
+  );
+
+  it.each(["invalid_credentials", "usage_limit"] as const)(
+    "handles same-account reauthorization after %s without blindly retrying an exhausted account",
+    async (reason) => {
+      const fixture = await failedSlackConversation(reason);
+      const device = createAuthDeviceApiActions(context);
+      await fixture.owner.run(async () => {
+        mockClaudeCodeTokenEndpoint();
+        const started = await device.requestClaudeCodeStart(
+          fixture.owner.actor,
+          "personal",
+          [200],
+          { mode: "reconnect", modelProviderId: fixture.owner.providerId },
+        );
+        if (started.status !== 200) {
+          throw new Error("Expected reauthorization");
+        }
+        const state = new URL(started.body.browserUrl).searchParams.get(
+          "state",
+        );
+        if (!state) {
+          throw new Error("Expected OAuth state");
+        }
+        await device.requestClaudeCodeComplete(
+          fixture.owner.actor,
+          started.body.sessionToken,
+          `claude_code_test#${state}`,
+          [200],
+        );
+      });
+      await flushWaitUntilForTest();
+      expect(
+        (
+          await createRunReadsApi(context).requestListLogs(
+            fixture.owner.actor,
+            { triggerSource: "slack", limit: 50 },
+            [200],
+          )
+        ).body.data,
+      ).toHaveLength(reason === "usage_limit" ? 1 : 2);
+    },
+  );
+
+  it("continues after changing models when optional upstream profile metadata is absent", async () => {
+    const fixture = await failedSlackConversation(
+      "usage_limit",
+      "claude-code-oauth-token",
+      false,
+    );
+    await fixture.owner.run(() => {
+      return chat.connectSubscriptionPiModel(fixture.owner.actor);
+    });
+    const modal = await fixture.open();
+    if (!modal.private_metadata) {
+      throw new Error("Expected model recovery without an upstream profile");
+    }
+    await fixture.submit(modal.private_metadata, "gpt-6-luna");
+    await flushWaitUntilForTest();
+    expect(
+      (
+        await createRunReadsApi(context).requestListLogs(
+          fixture.owner.actor,
+          { triggerSource: "slack", limit: 50 },
+          [200],
+        )
+      ).body.data,
+    ).toHaveLength(2);
+  });
+
+  it("ignores delayed Slack Stop events but lets the user stop an automatically continued Run", async () => {
+    const fixture = await failedSlackConversation("usage_limit");
+    const id = await fixture.owner.run(() => {
+      return addRecoverySubscription(context, fixture.owner.actor);
+    });
+    await fixture.owner.run(() => {
+      return createAuthDeviceSupportApi(
+        context,
+      ).activatePersonalModelProviderAccount(fixture.owner.actor, id);
+    });
+    await flushWaitUntilForTest();
+    const next = (
+      await createRunReadsApi(context).requestListLogs(
+        fixture.owner.actor,
+        { triggerSource: "slack", limit: 50 },
+        [200],
+      )
+    ).body.data.find((run) => {
+      return run.id !== fixture.runId;
+    });
+    if (!next) {
+      throw new Error("Expected automatic subscription recovery");
+    }
+    await chat.api.heartbeatRunner(fixture.owner.runnerGroup);
+    await fixture.owner.executionInput(next.id);
+    const stop = {
+      type: "agent_session_stopped",
+      channel: "D0RECOVERY",
+      user: fixture.installed.slackUserId,
+      thread_ts: "1794840000.000001",
+      streaming_message_ts: [],
+    };
+    await fixture.owner.run(() => {
+      return integrations.postSlackEvent(fixture.installed.slackWorkspaceId, {
+        ...stop,
+        event_ts: "1794840000.000002",
+      });
+    });
+    await flushWaitUntilForTest();
+    expect((await chat.api.readRun(fixture.owner.actor, next.id)).status).toBe(
+      "running",
+    );
+    await fixture.owner.run(() => {
+      return integrations.postSlackEvent(fixture.installed.slackWorkspaceId, {
+        ...stop,
+        event_ts: `${Math.floor(now() / 1000) + 60}.000000`,
+      });
+    });
+    await flushWaitUntilForTest();
+    expect((await chat.api.readRun(fixture.owner.actor, next.id)).status).toBe(
+      "cancelled",
+    );
+    expect(context.mocks.slack.apiCall.mock.calls.at(-1)).toStrictEqual([
+      "agents.sessions.setStatus",
+      {
+        channel_id: "D0RECOVERY",
+        thread_ts: "1794840000.000001",
+        status: "active",
+      },
+    ]);
+  });
+
+  it("keeps an unclassified Run manual when switching subscription accounts", async () => {
+    const fixture = await failedSlackConversation(null);
+    await expect(
+      chat.api.readRun(fixture.owner.actor, fixture.runId),
+    ).resolves.toMatchObject({ status: "failed", failureReason: "unknown" });
+    const id = await fixture.owner.run(() => {
+      return addRecoverySubscription(context, fixture.owner.actor);
+    });
+    await fixture.owner.run(() => {
+      return createAuthDeviceSupportApi(
+        context,
+      ).activatePersonalModelProviderAccount(fixture.owner.actor, id);
+    });
+    await flushWaitUntilForTest();
+    expect(
+      (
+        await createRunReadsApi(context).requestListLogs(
+          fixture.owner.actor,
+          { triggerSource: "slack", limit: 50 },
+          [200],
+        )
+      ).body.data,
+    ).toHaveLength(1);
+  });
+
+  it("continues after replacing the active subscription credentials", async () => {
+    const fixture = await failedSlackConversation("usage_limit");
+    await fixture.owner.run(async () => {
+      mockClaudeCodeTokenEndpoint({ accountEmail: "replacement@example.com" });
+      await createMiscRoutesApi(context).upsertPersonalModelProvider(
+        fixture.owner.actor,
+        { type: "claude-code-oauth-token", secret: "sk-ant-oat-replacement" },
+        [200, 201],
+      );
+    });
+    await flushWaitUntilForTest();
+    const listed = await createRunReadsApi(context).requestListLogs(
+      fixture.owner.actor,
+      { triggerSource: "slack", limit: 50 },
+      [200],
+    );
+    expect(listed.body.data).toHaveLength(2);
+  });
+
+  it.each(["archived", "manually-continued", "non-model-failure"] as const)(
+    "does not revive a %s conversation when switching subscriptions",
+    async (state) => {
+      const fixture = await failedSlackConversation(
+        state === "non-model-failure"
+          ? "guest_home_filesystem_full"
+          : "usage_limit",
+      );
+      if (state === "archived") {
+        await chat.chat.requestSetThreadArchived(
+          fixture.owner.actor,
+          fixture.thread.id,
+          true,
+          [204],
+        );
+      }
+      if (state === "manually-continued") {
+        await fixture.owner.run(() => {
+          return integrations.postSlackEvent(
+            fixture.installed.slackWorkspaceId,
+            {
+              type: "message",
+              channel_type: "im",
+              channel: "D0RECOVERY",
+              user: fixture.installed.slackUserId,
+              ts: "1794840000.000002",
+              text: "continue",
+            },
+          );
+        });
+        await flushWaitUntilForTest();
+      }
+      const id = await fixture.owner.run(() => {
+        return addRecoverySubscription(context, fixture.owner.actor);
+      });
+      await fixture.owner.run(() => {
+        return createAuthDeviceSupportApi(
+          context,
+        ).activatePersonalModelProviderAccount(fixture.owner.actor, id);
+      });
+      await flushWaitUntilForTest();
+      expect(
+        (
+          await createRunReadsApi(context).requestListLogs(
+            fixture.owner.actor,
+            { triggerSource: "slack", limit: 50 },
+            [200],
+          )
+        ).body.data,
+      ).toHaveLength(state === "manually-continued" ? 2 : 1);
+    },
+  );
+
+  it("continues the failed DM on GPT with its native indicator without changing the default", async () => {
     const fixture = await failedSlackConversation();
     const posted = context.mocks.slack.chat.postMessage.mock.calls
       .map(([body]) => {
@@ -203,12 +549,6 @@ describe("integration model recovery in Slack", () => {
       fixture.thread.id,
       "Forwarded attachment review",
     );
-    await chat.chat.requestSetThreadArchived(
-      fixture.owner.actor,
-      fixture.thread.id,
-      true,
-      [204],
-    );
     const modal = await fixture.open();
     expect(modal.blocks).toStrictEqual(
       expect.arrayContaining([
@@ -240,6 +580,7 @@ describe("integration model recovery in Slack", () => {
         "Expected the selector to identify its current model state",
       );
     }
+    context.mocks.slack.apiCall.mockClear();
     const saved = await fixture.submit(modal.private_metadata, "gpt-6-luna");
     expect(saved).toMatchObject({
       response_action: "update",
@@ -267,27 +608,12 @@ describe("integration model recovery in Slack", () => {
     ).toBe("gpt-6-astra");
     await flushWaitUntilForTest();
     const reads = createRunReadsApi(context);
-    const beforeResend = await reads.requestListLogs(
+    const recovered = await reads.requestListLogs(
       fixture.owner.actor,
       { triggerSource: "slack", limit: 50 },
       [200],
     );
-    expect(
-      beforeResend.body.data.map((run) => {
-        return run.id;
-      }),
-    ).toStrictEqual([fixture.runId]);
-    await fixture.owner.run(() => {
-      return integrations.postSlackEvent(fixture.installed.slackWorkspaceId, {
-        type: "message",
-        channel_type: "im",
-        channel: "D0RECOVERY",
-        user: fixture.installed.slackUserId,
-        ts: "1794840000.000002",
-        text: "Review the attachment again",
-      });
-    });
-    await flushWaitUntilForTest();
+    expect(recovered.body.data).toHaveLength(2);
     const nextInput = (
       await chat.chat.listThreadEvents(fixture.owner.actor, fixture.thread.id)
     ).events.find((event) => {
@@ -299,13 +625,37 @@ describe("integration model recovery in Slack", () => {
     });
     if (!nextInput?.runId) {
       throw new Error(
-        "Expected the next Slack request on the same conversation",
+        "Expected automatic continuation on the same conversation",
       );
     }
+    expect(nextInput).toMatchObject({
+      userMessage: {
+        parts: expect.arrayContaining([{ type: "text", text: "continue" }]),
+      },
+    });
     expect(
       (await chat.api.readRun(fixture.owner.actor, nextInput.runId)).source
         .model,
     ).toBe("gpt-6-luna");
+    expect(context.mocks.slack.apiCall.mock.calls).toContainEqual([
+      "agents.sessions.setStatus",
+      expect.objectContaining({
+        channel_id: "D0RECOVERY",
+        thread_ts: "1794840000.000001",
+        status: "processing",
+      }),
+    ]);
+    await fixture.submit(modal.private_metadata, "gpt-6-luna");
+    await flushWaitUntilForTest();
+    expect(
+      (
+        await reads.requestListLogs(
+          fixture.owner.actor,
+          { triggerSource: "slack", limit: 50 },
+          [200],
+        )
+      ).body.data,
+    ).toHaveLength(2);
   });
 
   it("rejects another sender and an old modal after the owner changes the model in Web", async () => {
@@ -349,6 +699,13 @@ describe("integration model recovery in Slack", () => {
         )
       ).selectedModel,
     ).toBe("claude-sonnet-5-5");
+    await flushWaitUntilForTest();
+    const recovered = await createRunReadsApi(context).requestListLogs(
+      fixture.owner.actor,
+      { triggerSource: "slack", limit: 50 },
+      [200],
+    );
+    expect(recovered.body.data).toHaveLength(2);
   });
 
   it("recovers when the conversation's subscription becomes unavailable before launch", async () => {
@@ -400,52 +757,29 @@ describe("integration model recovery in Slack", () => {
     ).resolves.toMatchObject({ selectedModel: "auto" });
   });
 
-  it("rejects an open selector after recovery is disabled", async () => {
-    const fixture = await failedSlackConversation();
-    const modal = await fixture.open();
-    if (!modal.private_metadata || !fixture.owner.actor.orgId) {
-      throw new Error("Expected an owned recovery selector");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...fixture.owner.actor, orgId: fixture.owner.actor.orgId },
-      { [FeatureSwitchKey.IntegrationModelRecovery]: false },
-    );
-    await fixture.submit(modal.private_metadata, "auto");
-    await expect(
-      chat.chat.readThreadMetadata(fixture.owner.actor, fixture.thread.id),
-    ).resolves.toMatchObject({ selectedModel: "claude-fable-5-1" });
-  });
-
-  it.each([
-    { enabled: false, failure: "account_verification_required" },
-    { enabled: true, failure: "guest_home_filesystem_full" },
-  ])(
-    "keeps the original error without model controls for $failure when enabled=$enabled",
-    async ({ enabled, failure }) => {
-      const fixture = await failedSlackConversation(enabled, failure);
-      expect(fixture.failed.eventType).toBe("run.failed");
-      const messages = context.mocks.slack.chat.postMessage.mock.calls
-        .map(([body]) => {
-          return postedMessageSchema.safeParse(body);
-        })
-        .filter((result) => {
-          return result.success;
-        });
-      expect(
-        messages.some((result) => {
-          return result.data.blocks.some((block) => {
-            return block.elements?.some((element) => {
-              return element.action_id === "switch_model";
-            });
+  it("keeps the original error for a non-model failure", async () => {
+    const fixture = await failedSlackConversation("guest_home_filesystem_full");
+    expect(fixture.failed.eventType).toBe("run.failed");
+    const messages = context.mocks.slack.chat.postMessage.mock.calls
+      .map(([body]) => {
+        return postedMessageSchema.safeParse(body);
+      })
+      .filter((result) => {
+        return result.success;
+      });
+    expect(
+      messages.some((result) => {
+        return result.data.blocks.some((block) => {
+          return block.elements?.some((element) => {
+            return element.action_id === "switch_model";
           });
-        }),
-      ).toBeFalsy();
-      expect(
-        messages.some((result) => {
-          return result.data.text.length > 0;
-        }),
-      ).toBeTruthy();
-    },
-  );
+        });
+      }),
+    ).toBeFalsy();
+    expect(
+      messages.some((result) => {
+        return result.data.text.length > 0;
+      }),
+    ).toBeTruthy();
+  });
 });

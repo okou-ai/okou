@@ -11,7 +11,7 @@ export const runPhaseTimingContract: ClientDescriptor<
     method: "POST",
     path: "/api/runs/current/phase-mark",
     statuses: {
-      200: true,
+      202: true,
       400: true,
       401: true,
       403: true,

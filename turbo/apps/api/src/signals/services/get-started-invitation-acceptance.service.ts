@@ -1,5 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { command } from "ccstate";
+import { sql } from "drizzle-orm";
+import { env } from "../../lib/env";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -15,6 +18,8 @@ import {
 } from "./get-started-member-reward";
 import { slackRewardIneligibleValues } from "./slack-installation-reward";
 import { ensureGetStartedRewardWallet$ } from "./get-started-wallet.service";
+import { marketingRewardInvitationEventInsert } from "./marketing-reward-event-publication";
+import { getStartedRewardWriter } from "./marketing-reward-ownership";
 import {
   acceptedInvitationClaimQuery,
   acceptedInvitationPurchaseQuery,
@@ -45,6 +50,7 @@ const publishAcceptedReward$ = command(
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
+    const marketingRewardEventId = randomUUID();
     const { rowCount } = await db.execute(
       getStartedMemberRewardSql({
         claim: plan.claim,
@@ -52,10 +58,59 @@ const publishAcceptedReward$ = command(
         rewardSlot: plan.slot,
         at: plan.at,
         acceptance: plan.acceptance,
+        invitationEvent: {
+          id: marketingRewardEventId,
+          environment: env("ENV"),
+          type: "invitation.accepted",
+          occurredAt: plan.acceptance.completedAt.toISOString(),
+        },
       }),
     );
     signal.throwIfAborted();
-    return rowCount;
+
+    if (rowCount !== 0 && rowCount !== 1) {
+      throw new Error("Invitation reward grant was not committed");
+    }
+    return rowCount === 1 ? marketingRewardEventId : undefined;
+  },
+);
+
+const publishUnfundedAcceptance$ = command(
+  async (
+    { set },
+    args: {
+      readonly claim: GetStartedClaimRow;
+      readonly acceptance: ReturnType<typeof invitationAcceptanceValues>;
+      readonly reason: string | null;
+      readonly at: Date;
+    },
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const marketingRewardEventId = randomUUID();
+    const accepted = db
+      .update(getStartedClaims)
+      .set({
+        ...(args.reason === null
+          ? { reason: null, updatedAt: args.at }
+          : slackRewardIneligibleValues(args.reason, args.at)),
+        ...args.acceptance,
+      })
+      .where(unresolvedClaimWhere(args.claim))
+      .returning();
+    const { rowCount } = await db.execute(
+      sql`WITH accepted_invitation AS (${accepted.getSQL()}) ${marketingRewardInvitationEventInsert(
+        {
+          id: marketingRewardEventId,
+          environment: env("ENV"),
+          type: "invitation.accepted",
+          occurredAt: args.acceptance.completedAt.toISOString(),
+        },
+        sql`SELECT * FROM accepted_invitation`,
+      )}`,
+    );
+    signal.throwIfAborted();
+    return rowCount === 1 ? marketingRewardEventId : undefined;
   },
 );
 
@@ -65,7 +120,7 @@ export const acceptGetStartedInvitation$ = command(
     { set },
     args: AcceptedGetStartedInvitation,
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<string | undefined> => {
     if (!args.invitationId && !args.getStartedClaimId && !args.purchaseId) {
       return;
     }
@@ -103,13 +158,28 @@ export const acceptGetStartedInvitation$ = command(
     requireInvitationRewardIdentity(args, claim);
     const at = nowDate();
     const acceptance = invitationAcceptanceValues(args, claim.invitationId, at);
-    if (claim.beneficiaryUserId === args.userId) {
-      await db
-        .update(getStartedClaims)
-        .set(slackRewardIneligibleValues("self_invitation", at))
-        .where(unresolvedClaimWhere(claim));
+    if (!claim.beneficiaryUserId) {
+      throw new Error("Invitation reward has no original inviter");
+    }
+    if (
+      getStartedRewardWriter("user", claim.beneficiaryUserId) === "marketing"
+    ) {
+      const marketingRewardEventId = await set(
+        publishUnfundedAcceptance$,
+        { claim, acceptance, reason: null, at },
+        signal,
+      );
       signal.throwIfAborted();
-      return;
+      return marketingRewardEventId;
+    }
+    if (claim.beneficiaryUserId === args.userId) {
+      const marketingRewardEventId = await set(
+        publishUnfundedAcceptance$,
+        { claim, acceptance, reason: "self_invitation", at },
+        signal,
+      );
+      signal.throwIfAborted();
+      return marketingRewardEventId;
     }
     const rewardKey = `invite:${args.userId}`;
     const awards = await db
@@ -122,15 +192,13 @@ export const acceptGetStartedInvitation$ = command(
       awards,
     );
     if (availability.kind === "ineligible") {
-      await db
-        .update(getStartedClaims)
-        .set({
-          ...slackRewardIneligibleValues(availability.reason, at),
-          ...acceptance,
-        })
-        .where(unresolvedClaimWhere(claim));
+      const marketingRewardEventId = await set(
+        publishUnfundedAcceptance$,
+        { claim, acceptance, reason: availability.reason, at },
+        signal,
+      );
       signal.throwIfAborted();
-      return;
+      return marketingRewardEventId;
     }
     const slot = availability.slots[0];
     if (slot === undefined) {
@@ -154,10 +222,7 @@ export const acceptGetStartedInvitation$ = command(
     );
     signal.throwIfAborted();
     if (result.ok) {
-      if (result.value !== 0 && result.value !== 1) {
-        throw new Error("Invitation reward grant was not committed");
-      }
-      return;
+      return result.value;
     }
     if (
       isUniqueViolation(result.error, "uq_get_started_reward_key") ||

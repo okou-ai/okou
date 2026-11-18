@@ -21,8 +21,9 @@ enum OkouNavigationBar {
     if let glass = OkouIcon.uiImage("search")?.withTintColor(grey, renderingMode: .alwaysOriginal) {
       bar.setImage(glass, for: .search, state: .normal)
     }
-    if let clear = OkouIcon.uiImage("circle-x")?.withTintColor(grey, renderingMode: .alwaysOriginal)
-    {
+    if let clear = OkouIcon.uiImage("circle-x")?.withTintColor(
+      grey, renderingMode: .alwaysOriginal
+    ) {
       bar.setImage(clear, for: .clear, state: .normal)
     }
   }

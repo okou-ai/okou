@@ -26,7 +26,6 @@ export interface AgentRunFailureLogSnapshot {
 interface LogAgentRunFailureInput {
   readonly runId: string;
   readonly exitCode: number;
-  readonly error?: string;
   readonly failureReason?: RunFailureReasonToken;
   readonly run: AgentRunFailureLogSnapshot;
 }
@@ -60,6 +59,7 @@ const KNOWN_FAILURE_LOG_POLICY = Object.freeze({
   reconnect_required: "suppress-caller-owned",
   usage_limit: "suppress-caller-owned",
   session_history_limit: "retain",
+  unknown: "retain",
   guest_root_filesystem_full: "retain",
   guest_home_filesystem_full: "retain",
   unsupported_model: "retain",
@@ -159,7 +159,6 @@ export function logAgentRunFailure(input: LogAgentRunFailureInput): void {
   const fields = {
     runId: input.runId,
     exitCode: input.exitCode,
-    error: input.error,
     failureReason: input.failureReason,
     ...evidence,
   };

@@ -121,6 +121,40 @@ test("recovers a window lost during the provider await through a fresh binding r
   });
 });
 
+test.each(["run", "chat"] as const)(
+  "opens a new %s window without probing an unrelated live sibling",
+  async (entry) => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const a = await f.start();
+      const b = await f.start();
+      const sibling = await open(a);
+      if (!sibling.window) {
+        throw new Error("Expected the sibling's native window");
+      }
+      f.provider.native.nativeWindowErrors.set(
+        sibling.window.primaryWindowId,
+        "Sibling health unavailable",
+      );
+      const commands = f.provider.native.commands.length;
+      const created = await accept(request(b, entry), [200]);
+      expect(created.body.browser.window?.instanceId).toBe(
+        sibling.window.instanceId,
+      );
+      expect(created.body.browser.window?.primaryWindowId).not.toBe(
+        sibling.window.primaryWindowId,
+      );
+      expect(
+        f.provider.native.commands.slice(commands).filter(({ method }) => {
+          return method === "Browser.getWindowBounds";
+        }),
+      ).toHaveLength(0);
+      expect((await view(a)).window).toStrictEqual(sibling.window);
+      expect(f.provider.sessionRequests).toHaveLength(1);
+    });
+  },
+);
+
 test("recovers a confirmed stopped provider without reusing its old instance", async () => {
   const f = await fixture();
   await f.owned.run(async () => {
@@ -188,6 +222,48 @@ test.each(["provider", "native", "connection"] as const)(
       const unchanged = await view(a);
       expect(unchanged.window).toStrictEqual(first.window);
       expect(unchanged.idleExpiresAt).toBe(first.idleExpiresAt);
+    });
+  },
+);
+
+test.each(["before-reply", "after-reply"] as const)(
+  "retains the native binding when the provider closes %s without replaying health",
+  async (timing) => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const chat = await f.start();
+      const first = await open(chat);
+      let nativeSocket: Pick<WebSocket, "close"> | undefined;
+      f.provider.native.onSocketConnection = (socket) => {
+        nativeSocket = socket;
+      };
+      const close = () => {
+        if (!nativeSocket) {
+          throw new Error("Expected the external CDP socket");
+        }
+        nativeSocket.close(1013, "private-provider-close-reason");
+      };
+      if (timing === "before-reply") {
+        f.provider.native.beforeNativeWindowReply = close;
+      } else {
+        f.provider.native.afterWindowBoundsReply = close;
+      }
+      const start = f.provider.native.commands.length;
+      const result = await request(chat);
+      expect(result.status).toBe(timing === "before-reply" ? 502 : 200);
+      expect(JSON.stringify(result.body)).not.toContain("private-provider");
+      expect(
+        f.provider.native.commands.slice(start).map(({ method }) => {
+          return method;
+        }),
+      ).toStrictEqual(["Browser.getWindowBounds"]);
+      expect(f.provider.sessionRequests).toHaveLength(1);
+      expect(f.provider.stoppedSessionIds.size).toBe(0);
+      f.provider.native.onSocketConnection = undefined;
+      f.provider.native.beforeNativeWindowReply = undefined;
+      f.provider.native.afterWindowBoundsReply = undefined;
+      expect((await view(chat)).window).toStrictEqual(first.window);
+      expect((await open(chat)).window).toStrictEqual(first.window);
     });
   },
 );

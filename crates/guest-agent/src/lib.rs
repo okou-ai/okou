@@ -200,6 +200,7 @@ pub mod error;
 pub mod events;
 pub mod failure_diagnostics;
 mod failure_patterns;
+mod filesystem;
 pub mod finalization;
 pub mod heartbeat;
 pub mod home_cache_history;

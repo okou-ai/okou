@@ -1,6 +1,10 @@
 import { command, computed } from "ccstate";
 import { and, asc, eq, gt } from "drizzle-orm";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
+import {
+  iosProjectSortOrderTransform,
+  androidProjectSortOrderTransform,
+} from "@okouai/api-contracts/client-transforms/project-sort-order";
 import { chatThreadSnapshotProjectionSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -29,7 +33,7 @@ import type { RouteEntry } from "../route-entry";
 export const projectAccess$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   return isFeatureEnabled(
-    FeatureSwitchKey.Projects,
+    FeatureSwitchKey.SingleAgent,
     await get(userFeatureSwitchContext(auth.orgId, auth.userId)),
   );
 });
@@ -121,6 +125,30 @@ const update$ = command(async ({ get, set }, signal: AbortSignal) => {
   await publishThreadListChanged(owner);
   signal.throwIfAborted();
   return { status: 200 as const, body: project };
+});
+const reorder$ = command(async ({ get, set }, signal: AbortSignal) => {
+  if (!(await get(projectAccess$))) {
+    return unavailable;
+  }
+  const body = await get(bodyResultOf(projectsContract.reorder));
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const owner = get(organizationAuthContext$);
+  const id = get(pathParamsOf(projectsContract.reorder)).id;
+  const result = await set(
+    mutateProject$,
+    owner,
+    { kind: "sort_updated", id, ...body.data },
+    signal,
+  );
+  if (result !== "written") {
+    return result === "conflict" ? conflict : unavailable;
+  }
+  await publishThreadListChanged(owner);
+  signal.throwIfAborted();
+  return { status: 204 as const, body: undefined };
 });
 const remove$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!(await get(projectAccess$))) {
@@ -262,35 +290,59 @@ export const projectRoutes: readonly RouteEntry[] = [
   {
     route: projectsContract.snapshot,
     handler: authRoute(
-      { requireOrganization: true, requiredCapability: "project:read" },
+      {
+        requireOrganization: true,
+        requiredCapability: "project:read",
+        oauthScope: "okou:project:read",
+      },
       snapshot$,
     ),
   },
   {
     route: projectsContract.events,
+    responseTransforms: [
+      iosProjectSortOrderTransform,
+      androidProjectSortOrderTransform,
+    ],
     handler: authRoute(
-      { requireOrganization: true, requiredCapability: "project:read" },
+      {
+        requireOrganization: true,
+        requiredCapability: "project:read",
+        oauthScope: "okou:project:read",
+      },
       events$,
     ),
   },
   {
     route: projectsContract.list,
     handler: authRoute(
-      { requireOrganization: true, requiredCapability: "project:read" },
+      {
+        requireOrganization: true,
+        requiredCapability: "project:read",
+        oauthScope: "okou:project:read",
+      },
       list$,
     ),
   },
   {
     route: projectsContract.threads,
     handler: authRoute(
-      { requireOrganization: true, requiredCapability: "project:read" },
+      {
+        requireOrganization: true,
+        requiredCapability: "project:read",
+        oauthScope: "okou:project:read",
+      },
       threads$,
     ),
   },
   {
     route: projectsContract.get,
     handler: authRoute(
-      { requireOrganization: true, requiredCapability: "project:read" },
+      {
+        requireOrganization: true,
+        requiredCapability: "project:read",
+        oauthScope: "okou:project:read",
+      },
       read$,
     ),
   },
@@ -306,6 +358,13 @@ export const projectRoutes: readonly RouteEntry[] = [
     handler: authRoute(
       { requireOrganization: true, requiredCapability: "project:write" },
       update$,
+    ),
+  },
+  {
+    route: projectsContract.reorder,
+    handler: authRoute(
+      { requireOrganization: true, requiredCapability: "project:write" },
+      reorder$,
     ),
   },
   {

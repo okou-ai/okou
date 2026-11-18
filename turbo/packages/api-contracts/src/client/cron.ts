@@ -2,6 +2,7 @@
 // Regenerate: cd turbo && pnpm -F @okouai/api-contracts generate:client
 
 import type {
+  cronAggregateRunPhaseTimingsContract as OriginalCronAggregateRunPhaseTimingsContract,
   cronBrowserReconcileContract as OriginalCronBrowserReconcileContract,
   cronCleanupSandboxesContract as OriginalCronCleanupSandboxesContract,
   cronCleanupSuggestionsContract as OriginalCronCleanupSuggestionsContract,
@@ -12,7 +13,6 @@ import type {
   cronConnectorOauthStateCleanupContract as OriginalCronConnectorOauthStateCleanupContract,
   cronDrainEmailOutboxContract as OriginalCronDrainEmailOutboxContract,
   cronExecuteWorkflowAutomationsContract as OriginalCronExecuteWorkflowAutomationsContract,
-  cronMaterializePiResourceIndexesContract as OriginalCronMaterializePiResourceIndexesContract,
   cronMonitorChatEventQueueContract as OriginalCronMonitorChatEventQueueContract,
   cronOfficialWorkflowCatalogContract as OriginalCronOfficialWorkflowCatalogContract,
   cronProcessBackgroundJobsContract as OriginalCronProcessBackgroundJobsContract,
@@ -33,6 +33,20 @@ import type {
   cronTelegramCleanupContract as OriginalCronTelegramCleanupContract,
 } from "../contracts/cron";
 import type { ClientDescriptor } from "./types";
+
+export const cronAggregateRunPhaseTimingsContract: ClientDescriptor<
+  typeof OriginalCronAggregateRunPhaseTimingsContract
+> = {
+  aggregate: {
+    method: "GET",
+    path: "/api/cron/aggregate-run-phase-timings",
+    statuses: {
+      200: true,
+      401: true,
+      500: true,
+    },
+  },
+};
 
 export const cronBrowserReconcileContract: ClientDescriptor<
   typeof OriginalCronBrowserReconcileContract
@@ -158,19 +172,6 @@ export const cronExecuteWorkflowAutomationsContract: ClientDescriptor<
   execute: {
     method: "GET",
     path: "/api/cron/execute-workflow-automations",
-    statuses: {
-      200: true,
-      401: true,
-    },
-  },
-};
-
-export const cronMaterializePiResourceIndexesContract: ClientDescriptor<
-  typeof OriginalCronMaterializePiResourceIndexesContract
-> = {
-  materialize: {
-    method: "GET",
-    path: "/api/cron/materialize-pi-resource-indexes",
     statuses: {
       200: true,
       401: true,

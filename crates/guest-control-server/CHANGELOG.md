@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.24.120](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.119...guest-control-server-v0.24.120) (2026-11-18)
+
+## [0.24.119](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.118...guest-control-server-v0.24.119) (2026-11-18)
+
+## [0.24.118](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.117...guest-control-server-v0.24.118) (2026-11-17)
+
+## [0.24.117](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.116...guest-control-server-v0.24.117) (2026-11-17)
+
+## [0.24.116](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.115...guest-control-server-v0.24.116) (2026-11-17)
+
+## [0.24.115](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.114...guest-control-server-v0.24.115) (2026-11-17)
+
+## [0.24.114](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.113...guest-control-server-v0.24.114) (2026-11-17)
+
+## [0.24.113](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.112...guest-control-server-v0.24.113) (2026-11-17)
+
+
+### Refactoring
+
+* use typed fallible native clock queries ([#48072](https://github.com/okou-ai/okou/issues/48072)) ([4b16d0b](https://github.com/okou-ai/okou/commit/4b16d0b56361a1f955133d6a161ff21eb8083394))
+
+## [0.24.112](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.111...guest-control-server-v0.24.112) (2026-11-16)
+
+
+### Refactoring
+
+* **guest-control:** delegate pipe read initialization to rustix ([#47968](https://github.com/okou-ai/okou/issues/47968)) ([b350b0c](https://github.com/okou-ai/okou/commit/b350b0cf2cfd4549e1e6ca296a340713a4e8a7ef))
+
+## [0.24.111](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.110...guest-control-server-v0.24.111) (2026-11-16)
+
+
+### Refactoring
+
+* **rust:** use typed waitid for owned-child observation ([#47916](https://github.com/okou-ai/okou/issues/47916)) ([63c1cb4](https://github.com/okou-ai/okou/commit/63c1cb42b3e5ddec5e783b089540bb315a19fffe))
+
+## [0.24.110](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.109...guest-control-server-v0.24.110) (2026-11-16)
+
+## [0.24.109](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.108...guest-control-server-v0.24.109) (2026-11-16)
+
 ## [0.24.108](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.107...guest-control-server-v0.24.108) (2026-11-16)
 
 ## [0.24.107](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.106...guest-control-server-v0.24.107) (2026-11-15)

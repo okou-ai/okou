@@ -2580,7 +2580,7 @@ test("does not infer financial actions from a scope or from a pending consent up
   ).toBeTruthy();
 });
 
-test("projects saved methods and user limits without exposing credential or address fields", async () => {
+test("projects saved-card summaries and user limits without exposing credential or address fields", async () => {
   const fixture = await carrier();
   server.use(tokenHandler({ scope: "payment_methods.agentic userinfo:read" }));
   await connect(fixture);
@@ -2592,8 +2592,6 @@ test("projects saved methods and user limits without exposing credential or addr
     card_details: {
       brand: "visa",
       last4: "4242",
-      exp_month: 12,
-      exp_year: 2030,
       number: "private-pan",
       cvc: "private-cvc",
     },
@@ -2666,11 +2664,9 @@ test("projects saved methods and user limits without exposing credential or addr
     );
   }
   mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
-  expect(retrieved.body.card).toStrictEqual({
+  expect(retrieved.body.cardSummary).toStrictEqual({
     brand: "visa",
     last4: "4242",
-    expMonth: 12,
-    expYear: 2030,
   });
   await accept(
     client().paymentMethod({
@@ -2711,70 +2707,6 @@ test("projects saved methods and user limits without exposing credential or addr
     ).body,
   ).toStrictEqual({ data: [] });
 });
-
-test.each([{}, { exp_month: 0, exp_year: 0 }])(
-  "reads saved cards without requiring deprecated expiry metadata: %j",
-  async (expiry) => {
-    const fixture = await carrier();
-    server.use(tokenHandler());
-    await connect(fixture);
-    const method = {
-      id: "pm_summary",
-      type: "CARD",
-      name: "Visa",
-      is_default: true,
-      card_details: {
-        brand: "visa",
-        last4: "4242",
-        ...expiry,
-        number: "private-pan",
-        cvc: "private-cvc",
-      },
-    };
-    server.use(
-      http.get("https://api.link.com/payment-details", () => {
-        return HttpResponse.json({ payment_details: [method] });
-      }),
-      http.get("https://api.link.com/payment-details/pm_summary", () => {
-        return HttpResponse.json(method);
-      }),
-    );
-    const expected = {
-      id: method.id,
-      type: method.type,
-      name: method.name,
-      isDefault: true,
-      cardSummary: { brand: "visa", last4: "4242" },
-    };
-    expect(
-      (
-        await accept(
-          client().paymentMethods({ headers: fixture.headers }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ data: [expected] });
-    expect(
-      (
-        await accept(
-          userClient().paymentMethods({ headers: sessionHeaders }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ data: [expected] });
-    expect(
-      (
-        await accept(
-          client().paymentMethod({
-            headers: fixture.headers,
-            params: { id: method.id },
-          }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual(expected);
-  },
-);
 
 test("paginates owner-isolated recorded spend history and retains it after reauthorization", async () => {
   const fixture = await carrier();
@@ -3408,35 +3340,66 @@ test("approval callbacks authenticate exact bodies", async () => {
   ).toBe(401);
 });
 
-test("cron repairs a failed durable approval Workflow start without querying Link", async () => {
+test("cron recovers a failed approval Workflow without another purchase request and continues the original chat once", async () => {
   await setupApp({ context, routes: walletRoutes, isolatePg: true });
+  mockEnv("CRON_SECRET", "wallet-recovery-cron");
   const fixture = await trackedPurchase(true);
-  let reads = 0;
+  let extraPurchases = 0;
   server.use(
-    http.get(
-      `https://api.link.com/spend_requests/${fixture.provider.id}`,
-      () => {
-        reads++;
-        return HttpResponse.json(
-          { error: { message: "Unexpected provider poll" } },
-          { status: 500 },
-        );
-      },
-    ),
+    http.post("https://api.link.com/spend_requests", () => {
+      extraPurchases++;
+      return HttpResponse.json(
+        { error: { message: "Unexpected new purchase" } },
+        { status: 500 },
+      );
+    }),
   );
+  // No caller retry: the durable recovery schedule must restart the original
+  // approval watch after the initial Worker request failed.
   await accept(
     setupApp({ context, routes: cronProcessBackgroundJobsRoutes })(
       cronProcessBackgroundJobsContract,
-    ).process({
-      headers: { authorization: "Bearer test-cron-secret" },
+    ).process({ headers: { authorization: "Bearer wallet-recovery-cron" } }),
+    [200],
+  );
+  await flushWaitUntilForTest();
+  expect(fixture.starts.slice(1)).toContainEqual({
+    spendId: fixture.spend.id,
+    deadline: fixture.spend.expiresAt,
+  });
+  const resumed = await accept(
+    client().getSpend({
+      headers: fixture.headers,
+      params: { id: fixture.spend.id },
     }),
     [200],
   );
-  expect(fixture.starts).toStrictEqual([
-    { spendId: fixture.spend.id, deadline: fixture.spend.expiresAt },
-    { spendId: fixture.spend.id, deadline: fixture.spend.expiresAt },
-  ]);
-  expect(reads).toBe(0);
+  expect(resumed.body).toMatchObject({
+    id: fixture.spend.id,
+    expiresAt: fixture.spend.expiresAt,
+    approvalUrl: fixture.spend.approvalUrl,
+    autoContinue: true,
+  });
+  fixture.provider.approve();
+  await fixture.complete();
+  for (const response of await Promise.all([
+    pollPurchase(fixture.spend.id),
+    pollPurchase(fixture.spend.id),
+  ])) {
+    expect(response.body).toStrictEqual({ state: "done" });
+  }
+  await flushWaitUntilForTest();
+  expect((await approvalCard(fixture)).body.status).toBe("continued");
+  const { events } = await createChatFilesBddApi(context).listThreadEvents(
+    fixture.actor,
+    fixture.run.threadId,
+  );
+  expect(
+    events.filter((event) => {
+      return event.id === fixture.spend.id;
+    }),
+  ).toHaveLength(1);
+  expect(extraPurchases).toBe(0);
 });
 
 test("approval polling distinguishes resumable Link actions from actions requiring a new approval", async () => {

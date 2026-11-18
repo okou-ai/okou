@@ -167,6 +167,6 @@ enum CreditUsageDisplay {
     "seedance-1-5-pro-251215": "Seedance 1.5 Pro", "MiniMax-H3": "MiniMax H3",
     "fal-ai/veo3.1": "Veo 3.1", "fal-ai/veo3.1/fast": "Veo 3.1 Fast",
     "fal-ai/kling-video/o3/standard/text-to-video": "Kling O3 Standard",
-    "fal-ai/kling-video/v3/4k/text-to-video": "Kling 3 4K",
+    "fal-ai/kling-video/v3/4k/text-to-video": "Kling 3 4K"
   ]
 }

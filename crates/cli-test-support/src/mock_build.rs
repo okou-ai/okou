@@ -4,7 +4,6 @@ use crate::readiness::wait_for_file_contains;
 use shell_quote::quote_shell_arg;
 use std::ffi::{CString, OsStr};
 use std::io;
-use std::os::fd::FromRawFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -20,35 +19,33 @@ impl PostOpenMockGate {
         let fifo = dir.join("agent-log-mock-start.fifo");
         let fifo_c = CString::new(fifo.as_os_str().as_bytes())
             .map_err(|error| format!("encode mock gate path: {error}"))?;
-        // SAFETY: fifo_c is a valid NUL-terminated path and the mode is a
-        // normal POSIX permission mask for this test-only FIFO.
-        if unsafe { libc::mkfifo(fifo_c.as_ptr(), 0o600) } != 0 {
-            return Err(format!(
+        nix::unistd::mkfifo(
+            fifo_c.as_c_str(),
+            nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+        )
+        .map_err(|error| {
+            format!(
                 "create mock gate {}: {}",
                 fifo.display(),
-                io::Error::last_os_error()
-            ));
-        }
+                io::Error::from(error)
+            )
+        })?;
 
         // Keep both FIFO ends open so release can happen immediately after
         // readiness even if the wrapper has not entered its read yet.
-        // SAFETY: fifo_c remains valid for the call and ownership of the
-        // returned descriptor transfers to File below.
-        let fd = unsafe {
-            libc::open(
-                fifo_c.as_ptr(),
-                libc::O_RDWR | libc::O_NONBLOCK | libc::O_CLOEXEC,
-            )
-        };
-        if fd < 0 {
-            return Err(format!(
+        let fd = nix::fcntl::open(
+            fifo_c.as_c_str(),
+            nix::fcntl::OFlag::from_bits_retain(libc::O_RDWR | libc::O_NONBLOCK | libc::O_CLOEXEC),
+            nix::sys::stat::Mode::empty(),
+        )
+        .map_err(|error| {
+            format!(
                 "open mock gate {}: {}",
                 fifo.display(),
-                io::Error::last_os_error()
-            ));
-        }
-        // SAFETY: fd is a fresh descriptor owned by this function.
-        let writer = unsafe { std::fs::File::from_raw_fd(fd) };
+                io::Error::from(error)
+            )
+        })?;
+        let writer = std::fs::File::from(fd);
 
         let ready_file = dir.join("agent-log-mock-ready");
         let wrapper = dir.join("gated-agent-log-mock.sh");
@@ -79,17 +76,9 @@ impl PostOpenMockGate {
     }
 }
 
-/// Build a mock in a Cargo test's output profile and cache it for one build session.
-pub fn build_and_locate_mock_package_in_workspace(
-    workspace_dir: &Path,
-    test_executable: &Path,
-    package: &str,
-    binary: &str,
-    build_session: Option<&str>,
-) -> Result<PathBuf, String> {
-    let target_profile_dir = match test_executable.parent() {
-        // Cargo through 1.99: <target>/<profile>/deps/<test>.
-        Some(dir) if dir.file_name() == Some(OsStr::new("deps")) => dir.parent(),
+/// Resolve the output profile directory of a test built by the pinned Cargo.
+pub fn cargo_test_profile_dir(test_executable: &Path) -> Result<&Path, String> {
+    match test_executable.parent() {
         // Cargo 1.100: <target>/<profile>/build/<package>/<hash>/out/<test>.
         Some(dir) if dir.file_name() == Some(OsStr::new("out")) => dir
             .ancestors()
@@ -103,7 +92,18 @@ pub fn build_and_locate_mock_package_in_workspace(
             "unsupported Cargo test executable layout: {}",
             test_executable.display()
         )
-    })?;
+    })
+}
+
+/// Build a mock in a Cargo test's output profile and cache it for one build session.
+pub fn build_and_locate_mock_package_in_workspace(
+    workspace_dir: &Path,
+    test_executable: &Path,
+    package: &str,
+    binary: &str,
+    build_session: Option<&str>,
+) -> Result<PathBuf, String> {
+    let target_profile_dir = cargo_test_profile_dir(test_executable)?;
     let target_dir = target_profile_dir
         .parent()
         .ok_or_else(|| "target dir".to_string())?;

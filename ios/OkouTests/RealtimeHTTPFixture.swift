@@ -110,7 +110,7 @@ final class RealtimeHTTPFixture: Sendable {
     try send(
       [
         "action": 9, "channel": name,
-        "error": ["code": 40160, "statusCode": 403, "message": "Fixture channel unavailable"],
+        "error": ["code": 40160, "statusCode": 403, "message": "Fixture channel unavailable"]
       ],
       channel: name)
   }
@@ -150,8 +150,9 @@ final class RealtimeHTTPFixture: Sendable {
   }
 
   private func receive(_ connection: NWConnection, buffer: Data, websocket: Bool) {
-    connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) {
-      [weak self] data, _, complete, error in
+    connection.receive(
+      minimumIncompleteLength: 1, maximumLength: 65_536
+    ) { [weak self] data, _, complete, error in
       guard let self, !state.withLock({ $0.closed }) else {
         connection.cancel()
         return
@@ -175,7 +176,9 @@ final class RealtimeHTTPFixture: Sendable {
             }
           }
         } else if let end = bytes.range(of: Data("\r\n\r\n".utf8)) {
-          let header = String(decoding: bytes[..<end.upperBound], as: UTF8.self)
+          guard let header = String(data: bytes[..<end.upperBound], encoding: .utf8) else {
+            throw URLError(.cannotDecodeContentData)
+          }
           if let key = header.components(separatedBy: "\r\n").first(where: {
             $0.lowercased().hasPrefix("sec-websocket-key:")
           })?.components(separatedBy: ":").dropFirst().joined(separator: ":")
@@ -193,8 +196,8 @@ final class RealtimeHTTPFixture: Sendable {
                 "action": 4, "connectionId": "fixture-connection", "connectionKey": "fixture-key",
                 "connectionDetails": [
                   "clientId": clientID, "connectionStateTtl": 120_000,
-                  "maxIdleInterval": 120_000, "maxMessageSize": 65_536,
-                ],
+                  "maxIdleInterval": 120_000, "maxMessageSize": 65_536
+                ]
               ], connection: connection)
             receive(connection, buffer: Data(bytes[end.upperBound...]), websocket: true)
             return
@@ -225,7 +228,7 @@ final class RealtimeHTTPFixture: Sendable {
           let now = Int64(Date().timeIntervalSince1970 * 1000)
           let body = try JSONSerialization.data(withJSONObject: [
             "token": "fixture-token", "issued": now, "expires": now + 3_600_000,
-            "clientId": clientID, "capability": "{\"*\":[\"subscribe\"]}",
+            "clientId": clientID, "capability": "{\"*\":[\"subscribe\"]}"
           ])
           let response =
             "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"

@@ -11,7 +11,9 @@ import {
   chatThreadEventsContract,
   chatThreadByIdContract,
   chatThreadMarkReadContract,
+  chatThreadDraftContract,
 } from "../contracts/chat-threads";
+import { agentDraftContract } from "../contracts/agent-draft";
 import { chatEventRowSchema } from "../contracts/chat-event-rows";
 import { agentsMainContract } from "../contracts/agents";
 import { projectsContract } from "../contracts/projects";
@@ -22,6 +24,12 @@ import { chatEventsContract } from "../contracts/chat-event-send";
 import { chatInputStatusContract } from "../contracts/chat-input-status";
 import { onboardingStatusContract } from "../contracts/onboarding";
 import { platformRealtimeTokenContract } from "../contracts/realtime";
+import { sessionOutputDeltaSchema } from "../validators/realtime";
+import { modelCatalogContract } from "../contracts/model-catalog";
+import { runModelsMainContract } from "../contracts/run-models";
+import { thirdPartySubscriptionsMainContract } from "../contracts/third-party-subscriptions";
+import { billingStatusContract } from "../contracts/billing";
+import { personalModelProviderAccountsByIdContract } from "../contracts/personal-model-providers";
 
 export interface KotlinRouteBinding {
   readonly authenticated?: boolean;
@@ -34,11 +42,11 @@ export interface KotlinRouteBinding {
     readonly body?: ZodType | NoBodyMarker;
     readonly query?: ZodType;
     readonly pathParams?: ZodType;
-    readonly responses: Readonly<Record<number, ZodType>>;
+    readonly responses: Readonly<Record<number, ZodType | NoBodyMarker>>;
   };
 }
 
-const chatReadBindings: readonly KotlinRouteBinding[] = [
+const chatReadBindings = [
   {
     name: "chatSnapshot",
     response: "ChatSnapshot",
@@ -70,9 +78,15 @@ const chatReadBindings: readonly KotlinRouteBinding[] = [
     response: "FeatureSwitches",
     route: featureSwitchesContract.get,
   },
-];
+] satisfies readonly KotlinRouteBinding[];
 
-const historyReadBindings: readonly KotlinRouteBinding[] = [
+const historyReadBindings = [
+  {
+    name: "historyCatchUp",
+    request: "HistoryCatchUpRequest",
+    response: "HistoryCatchUp",
+    route: chatThreadEventsContract.catchUp,
+  },
   {
     name: "historySnapshot",
     response: "HistorySnapshot",
@@ -93,10 +107,58 @@ const historyReadBindings: readonly KotlinRouteBinding[] = [
     response: "ReadState",
     route: chatThreadMarkReadContract.markRead,
   },
-];
+] satisfies readonly KotlinRouteBinding[];
 
 /** Only routes used by the installed native client, not every Web contract. */
 export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
+  {
+    name: "agentDraft",
+    response: "ComposerDraft",
+    route: agentDraftContract.get,
+  },
+  {
+    name: "threadDraft",
+    response: "ComposerDraft",
+    route: chatThreadDraftContract.get,
+  },
+  {
+    name: "saveAgentDraft",
+    request: "SaveAgentDraft",
+    response: "Unit",
+    route: agentDraftContract.patch,
+  },
+  {
+    name: "saveThreadDraft",
+    request: "SaveThreadDraft",
+    response: "Unit",
+    route: chatThreadByIdContract.patch,
+  },
+  {
+    name: "recoveryCatalog",
+    response: "RecoveryCatalog",
+    route: modelCatalogContract.get,
+  },
+  {
+    name: "recoveryModels",
+    response: "RecoveryModels",
+    route: runModelsMainContract.list,
+  },
+  {
+    name: "recoverySubscriptions",
+    response: "RecoverySubscriptions",
+    route: thirdPartySubscriptionsMainContract.list,
+  },
+  {
+    name: "recoveryBilling",
+    response: "RecoveryBilling",
+    route: billingStatusContract.get,
+  },
+  {
+    name: "resetSubscription",
+    request: "ResetSubscriptionRequest",
+    response: "ResetSubscriptionResult",
+    route: personalModelProviderAccountsByIdContract.resetSubscriptionUsage,
+  },
   {
     name: "androidUpdates",
     response: "AndroidUpdates",
@@ -168,9 +230,70 @@ export interface KotlinTypeBinding {
   readonly name: string;
   readonly schema: ZodType;
   readonly direction: "input" | "output";
+  /** Raw transport/cache envelopes retain all JSON members; their consumer owns decoding. */
+  readonly representation?: "raw-object";
 }
 
 export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
+  {
+    name: "ComposerDraft",
+    schema: agentDraftContract.get.responses[200],
+    direction: "output",
+    representation: "raw-object",
+  },
+  {
+    name: "SaveAgentDraft",
+    schema: agentDraftContract.patch.body,
+    direction: "input",
+  },
+  {
+    name: "SaveThreadDraft",
+    schema: chatThreadByIdContract.patch.body,
+    direction: "input",
+  },
+  {
+    name: "RecoveryCatalog",
+    schema: modelCatalogContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "RecoveryModels",
+    schema: runModelsMainContract.list.responses[200],
+    direction: "output",
+  },
+  {
+    name: "RecoverySubscriptions",
+    schema: thirdPartySubscriptionsMainContract.list.responses[200],
+    direction: "output",
+  },
+  {
+    name: "RecoveryBilling",
+    schema: billingStatusContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "ResetSubscriptionRequest",
+    schema:
+      personalModelProviderAccountsByIdContract.resetSubscriptionUsage.body,
+    direction: "input",
+  },
+  {
+    name: "ResetSubscriptionResult",
+    schema:
+      personalModelProviderAccountsByIdContract.resetSubscriptionUsage
+        .responses[200],
+    direction: "output",
+  },
+  {
+    name: "SessionOutputDelta",
+    schema: sessionOutputDeltaSchema,
+    direction: "output",
+  },
+  {
+    name: "HistoryCatchUpRequest",
+    schema: chatThreadEventsContract.catchUp.body,
+    direction: "input",
+  },
   {
     name: "RealtimeTokenRequest",
     schema: platformRealtimeTokenContract.create.body,
@@ -266,7 +389,12 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
       direction: "output" as const,
     };
   }),
-  { name: "RawHistoryRow", schema: chatEventRowSchema, direction: "output" },
+  {
+    name: "RawHistoryRow",
+    schema: chatEventRowSchema,
+    direction: "output",
+    representation: "raw-object",
+  },
   {
     name: "ChatArchive",
     schema: chatThreadSnapshotArchiveSchema,

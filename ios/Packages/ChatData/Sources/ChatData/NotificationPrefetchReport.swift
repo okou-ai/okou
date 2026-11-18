@@ -41,7 +41,8 @@ extension APIClient {
       // Reporting is best effort, including when a supported API rollback lacks this route.
       Logger(subsystem: "ai.okou.ios", category: "Notifications")
         .info(
-          "Cannot report notification prefetch: \(error.localizedDescription, privacy: .public)")
+          "event=notifications.prefetch.report.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+        )
       return false
     }
   }

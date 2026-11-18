@@ -2,7 +2,7 @@ import { command } from "ccstate";
 import { feedContract } from "@okouai/api-contracts/contracts/feed";
 import {
   readSuggestionManagement$,
-  readSuggestions$,
+  readFeedItems$,
 } from "../services/agent-suggestion-read.service";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
@@ -16,11 +16,25 @@ import {
   consumeSuggestion$,
   recordSuggestionFeedback$,
 } from "../services/agent-suggestions.service";
+import { dismissFeedEvent$ } from "../services/feed-events.service";
+import {
+  readFeedSources$,
+  updateFeedSources$,
+  readFeedSummary$,
+  markFeedItemRead$,
+} from "../services/feed-sources.service";
 
-const list$ = command(async ({ set }, signal: AbortSignal) => {
+const list$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
   const owner = await set(suggestionAccess$, signal);
-  return "status" in owner ? owner : await set(readSuggestions$, owner, signal);
+  return "status" in owner
+    ? owner
+    : await set(
+        readFeedItems$,
+        owner,
+        get(queryOf(feedContract.list)).type,
+        signal,
+      );
 });
 const create$ = command(async ({ get, set }, signal: AbortSignal) => {
   const owner = await set(suggestionAccess$, signal);
@@ -89,6 +103,92 @@ const writeAuth = {
   requiredCapability: "suggestion:write",
 } as const;
 export const feedRoutes: readonly RouteEntry[] = [
+  {
+    route: feedContract.sources,
+    handler: authRoute(
+      { accept: ["session"], requireOrganization: true },
+      command(async ({ get, set }, signal: AbortSignal) => {
+        set(setResHeader$, "Cache-Control", "no-store");
+        const owner = await set(suggestionAccess$, signal);
+        return "status" in owner
+          ? owner
+          : {
+              status: 200 as const,
+              body: await get(readFeedSources$),
+            };
+      }),
+    ),
+  },
+  {
+    route: feedContract.updateSources,
+    handler: authRoute(
+      { accept: ["session"], requireOrganization: true },
+      command(async ({ get, set }, signal: AbortSignal) => {
+        const owner = await set(suggestionAccess$, signal);
+        if ("status" in owner) {
+          return owner;
+        }
+        const body = await get(bodyResultOf(feedContract.updateSources));
+        signal.throwIfAborted();
+        return body.ok
+          ? {
+              status: 200 as const,
+              body: await set(updateFeedSources$, owner, body.data, signal),
+            }
+          : body.response;
+      }),
+    ),
+  },
+  {
+    route: feedContract.summary,
+    handler: authRoute(
+      { accept: ["session"], requireOrganization: true },
+      command(async ({ get, set }, signal: AbortSignal) => {
+        set(setResHeader$, "Cache-Control", "no-store");
+        const owner = await set(suggestionAccess$, signal);
+        return "status" in owner
+          ? owner
+          : {
+              status: 200 as const,
+              body: await get(readFeedSummary$),
+            };
+      }),
+    ),
+  },
+  {
+    route: feedContract.markRead,
+    handler: authRoute(
+      { accept: ["session"], requireOrganization: true },
+      command(async ({ get, set }, signal: AbortSignal) => {
+        const owner = await set(suggestionAccess$, signal);
+        return "status" in owner
+          ? owner
+          : await set(
+              markFeedItemRead$,
+              owner,
+              get(pathParamsOf(feedContract.markRead)).id,
+              signal,
+            );
+      }),
+    ),
+  },
+  {
+    route: feedContract.dismiss,
+    handler: authRoute(
+      { accept: ["session"], requireOrganization: true },
+      command(async ({ get, set }, signal: AbortSignal) => {
+        const owner = await set(suggestionAccess$, signal);
+        return "status" in owner
+          ? owner
+          : await set(
+              dismissFeedEvent$,
+              owner,
+              get(pathParamsOf(feedContract.dismiss)).id,
+              signal,
+            );
+      }),
+    ),
+  },
   {
     route: feedContract.manage,
     handler: authRoute(

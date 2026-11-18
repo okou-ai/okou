@@ -4886,7 +4886,6 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return enableFeishuIntegration(platform, fixture.actor, {
             [FeatureSwitchKey.OkouDebug]: true,
-            [FeatureSwitchKey.IntegrationModelRecovery]: true,
           });
         });
         await connectFixtureUser(fixture);
@@ -5000,6 +4999,7 @@ export function registerFeishuIntegrationTests(
           })?.behaviors?.[0]?.value,
           "Expected the native selector state",
         );
+        const reactionsBeforeRecovery = fixtureState.addedReactions.length;
         const saved = await own(() => {
           return postEvent(
             fixture.callbackUrl,
@@ -5014,6 +5014,24 @@ export function registerFeishuIntegrationTests(
           (await chat.readThreadMetadata(fixture.actor, thread.chatThreadId))
             .selectedModel,
         ).toBe("auto");
+        await own(flushWaitUntilForTest);
+        const continued = (
+          await chat.listThreadEvents(fixture.actor, thread.chatThreadId)
+        ).events.find((event) => {
+          return (
+            event.eventType === "input.prompt" &&
+            event.runId &&
+            event.runId !== run.id
+          );
+        });
+        expect(continued).toMatchObject({
+          userMessage: {
+            parts: expect.arrayContaining([{ type: "text", text: "continue" }]),
+          },
+        });
+        expect(fixtureState.addedReactions).toHaveLength(
+          reactionsBeforeRecovery + 1,
+        );
         const stale = await own(() => {
           return postEvent(
             fixture.callbackUrl,
@@ -5028,6 +5046,29 @@ export function registerFeishuIntegrationTests(
           (await chat.readThreadMetadata(fixture.actor, thread.chatThreadId))
             .selectedModel,
         ).toBe("auto");
+        const continuedRunId = continued?.runId;
+        if (!continuedRunId) {
+          throw new Error("Expected the continued Feishu run");
+        }
+        const continuedExecution = await readRunExecution(continuedRunId);
+        expect(continuedExecution.prompt).toBe("continue");
+        const removedBeforeCompletion = fixtureState.removedReactions.length;
+        await own(() => {
+          return webhooksApi.requestAgentComplete(
+            {
+              runId: continuedRunId,
+              exitCode: 1,
+              error: "Finished recovery",
+              failureReason: "provider_server_error",
+            },
+            { authorization: `Bearer ${continuedExecution.sandboxToken}` },
+            [200],
+          );
+        });
+        await own(flushWaitUntilForTest);
+        expect(fixtureState.removedReactions).toHaveLength(
+          removedBeforeCompletion + 1,
+        );
         await removeFeishuInstallation(fixture);
       });
 

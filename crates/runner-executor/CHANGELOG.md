@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.21.52](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.51...runner-executor-v0.21.52) (2026-11-18)
+
+
+### Performance Improvements
+
+* **runner:** borrow decoded file contents during guest apply ([#48426](https://github.com/okou-ai/okou/issues/48426)) ([cb7d9e7](https://github.com/okou-ai/okou/commit/cb7d9e73ee9bf10be6ce4466526c8c39414011cb))
+
+## [0.21.51](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.50...runner-executor-v0.21.51) (2026-11-18)
+
+## [0.21.50](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.49...runner-executor-v0.21.50) (2026-11-17)
+
+## [0.21.49](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.48...runner-executor-v0.21.49) (2026-11-17)
+
+
+### Performance Improvements
+
+* **runner:** attribute archive staging writes ([#48338](https://github.com/okou-ai/okou/issues/48338)) ([1aeffbc](https://github.com/okou-ai/okou/commit/1aeffbc8c757415acb407157dba177305ed1b210))
+
+## [0.21.48](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.47...runner-executor-v0.21.48) (2026-11-17)
+
+## [0.21.47](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.46...runner-executor-v0.21.47) (2026-11-17)
+
+## [0.21.46](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.45...runner-executor-v0.21.46) (2026-11-17)
+
+
+### Refactoring
+
+* **runner:** remove unused execution overrides ([#48162](https://github.com/okou-ai/okou/issues/48162)) ([1f0afc6](https://github.com/okou-ai/okou/commit/1f0afc6aa21f773b54c1d64b540280698e58f699))
+
+## [0.21.45](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.44...runner-executor-v0.21.45) (2026-11-17)
+
+## [0.21.44](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.43...runner-executor-v0.21.44) (2026-11-17)
+
+## [0.21.43](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.42...runner-executor-v0.21.43) (2026-11-17)
+
+## [0.21.42](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.41...runner-executor-v0.21.42) (2026-11-16)
+
+## [0.21.41](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.40...runner-executor-v0.21.41) (2026-11-16)
+
+## [0.21.40](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.39...runner-executor-v0.21.40) (2026-11-16)
+
+
+### Refactoring
+
+* **runtime:** share sorted environment entry validation ([#47883](https://github.com/okou-ai/okou/issues/47883)) ([2170f64](https://github.com/okou-ai/okou/commit/2170f647745a06ae5957e4e230ff3701a9b14e1f))
+
+## [0.21.39](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.38...runner-executor-v0.21.39) (2026-11-16)
+
+## [0.21.38](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.37...runner-executor-v0.21.38) (2026-11-16)
+
 ## [0.21.37](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.36...runner-executor-v0.21.37) (2026-11-16)
 
 ## [0.21.36](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.35...runner-executor-v0.21.36) (2026-11-16)

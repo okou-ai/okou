@@ -1,6 +1,4 @@
 use std::io;
-#[cfg(unix)]
-use std::io::ErrorKind;
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, ExitStatus};
 
 #[cfg(unix)]
@@ -158,30 +156,24 @@ fn signalable_child_pid(child_pid: u32) -> Option<libc::pid_t> {
 
 #[cfg(unix)]
 pub fn observe_child_exit_without_reaping(child_pid: u32) -> io::Result<()> {
+    use rustix::process::{Pid, WaitId, WaitIdOptions, waitid};
+
     let pid = libc::pid_t::try_from(child_pid).map_err(|_| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
             "child PID does not fit in pid_t",
         )
     })?;
+    let pid = Pid::from_raw(pid).ok_or_else(|| io::Error::from_raw_os_error(libc::EINVAL))?;
 
     loop {
-        let mut info = std::mem::MaybeUninit::<libc::siginfo_t>::uninit();
-        let result = unsafe {
-            libc::waitid(
-                libc::P_PID,
-                pid as libc::id_t,
-                info.as_mut_ptr(),
-                libc::WEXITED | libc::WNOWAIT,
-            )
-        };
-        if result == 0 {
-            return Ok(());
-        }
-
-        let error = io::Error::last_os_error();
-        if error.kind() != ErrorKind::Interrupted {
-            return Err(error);
+        match waitid(
+            WaitId::Pid(pid),
+            WaitIdOptions::EXITED | WaitIdOptions::NOWAIT,
+        ) {
+            Ok(_) => return Ok(()),
+            Err(rustix::io::Errno::INTR) => continue,
+            Err(error) => return Err(error.into()),
         }
     }
 }

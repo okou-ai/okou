@@ -1,5 +1,4 @@
-import { storages } from "@okouai/db/schema/storage";
-import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
+import { memberMemories } from "@okouai/db/schema/member-memory";
 import {
   AUTO_SELECTED_MODEL,
   isAutoSelectedModel,
@@ -131,13 +130,12 @@ export function userPreferences({
         )
         .limit(1),
       db
-        .select({ headVersionId: storages.headVersionId })
-        .from(storages)
+        .select({ headVersionId: memberMemories.headVersionId })
+        .from(memberMemories)
         .where(
           and(
-            eq(storages.orgId, orgId),
-            eq(storages.userId, userId),
-            eq(storages.name, MEMORY_ARTIFACT_NAME),
+            eq(memberMemories.orgId, orgId),
+            eq(memberMemories.userId, userId),
           ),
         )
         .limit(1),

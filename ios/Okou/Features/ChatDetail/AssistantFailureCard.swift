@@ -93,7 +93,7 @@ struct AssistantFailureCard: View {
   let state: AssistantFailureState
   @Bindable var conversation: ConversationStore
   /// The provider's own error line from the same run, shown instead of the generic description.
-  var providerMessage: String? = nil
+  var providerMessage: String?
   @State private var showsModels = false
 
   private var copy: (title: String, description: String) {
@@ -139,9 +139,11 @@ struct AssistantFailureCard: View {
           OkouLoadErrorRow(message: error)
         }
       }
-      if state.failure.error != copy.description && !state.failure.error.isEmpty {
+      if let outputError = state.failure.outputError,
+        outputError != copy.description && !outputError.isEmpty
+      {
         DisclosureGroup("Details") {
-          Text(state.failure.error).font(.okou(.footnote)).textSelection(.enabled)
+          Text(outputError).font(.okou(.footnote)).textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .font(.okou(.footnote))
@@ -174,7 +176,7 @@ struct AssistantFailureCard: View {
             billing.canBuyCredits ? "Add credits" : "Upgrade to Pro",
             destination: conversation.webURL.appending(queryItems: [
               URLQueryItem(name: "settings", value: "billing"),
-              URLQueryItem(name: "billingView", value: billing.canBuyCredits ? "credits" : "plans"),
+              URLQueryItem(name: "billingView", value: billing.canBuyCredits ? "credits" : "plans")
             ])
           )
           .buttonStyle(ChatCardButtonStyle())
@@ -243,6 +245,7 @@ struct AssistantFailureCard: View {
 enum AssistantFailureCopy {
   static func content(_ state: AssistantFailureState) -> (title: String, description: String) {
     let recovery = state.recovery
+    let outputError = state.failure.outputError ?? ""
     if recovery.kind == .billing {
       guard let billing = state.billing else {
         return state.isCurrent
@@ -262,18 +265,21 @@ enum AssistantFailureCopy {
       return (title, description)
     }
     if recovery.kind == .usage {
-      let title =
-        recovery.framework.map { "\($0 == .codex ? "Codex" : "Claude Code") limit reached" }
-        ?? "Model provider limit reached"
+      let title: String
+      if !state.failure.isRunFailure, let framework = recovery.framework {
+        title = "\(framework == .codex ? "Codex" : "Claude Code") limit reached"
+      } else {
+        title = "Model provider limit reached"
+      }
       return (
         title,
         state.accountLabel != nil || state.disconnected || !state.resetDetails.isEmpty
           ? "" : "You can continue when your usage limit resets, or switch models now."
       )
     }
-    if recovery.kind == .subscription { return ("This run couldn't finish", state.failure.error) }
-    if recovery.kind == .unknown,
-      state.failure.error.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if recovery.kind == .subscription { return ("This run couldn't finish", outputError) }
+    if !state.failure.isRunFailure, recovery.kind == .unknown,
+      outputError.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         == "run cancelled"
     {
       return ("Run paused — resume anytime.", "")
@@ -282,6 +288,9 @@ enum AssistantFailureCopy {
       let copy = structured[reason]
     {
       return copy
+    }
+    if state.failure.isRunFailure, recovery.kind == .unknown {
+      return ("This run couldn't finish", "Open the chat on the Okou website for details.")
     }
     switch recovery.kind {
     case .timeout: return ("Time limit reached", "You can continue from where this run stopped.")
@@ -312,10 +321,10 @@ enum AssistantFailureCopy {
     default:
       return (
         "This run couldn't finish",
-        state.failure.error.isEmpty
+        outputError.isEmpty
           ? "Open the chat on the Okou website for details."
-          : state.failure.error.count <= 240 && !state.failure.error.contains("\n")
-            ? state.failure.error : ""
+          : outputError.count <= 240 && !outputError.contains("\n")
+            ? outputError : ""
       )
     }
   }
@@ -402,6 +411,6 @@ enum AssistantFailureCopy {
     "usage_limit": (
       "Model provider limit reached",
       "You can continue when your usage limit resets, or switch models now."
-    ),
+    )
   ]
 }

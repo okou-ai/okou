@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { array, object, string, unknown as zUnknown } from "zod";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -10,7 +9,6 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   postTeamsActivityForTest,
   teamsMessageActivityForTest,
@@ -30,11 +28,6 @@ describe("integration model recovery in Teams", () => {
         withDefaultAgent: true,
         paidNative: true,
       });
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...fixture.actor, orgId: fixture.installation.orgId },
-        { [FeatureSwitchKey.IntegrationModelRecovery]: true },
-      );
       await fixtures.dispatch(fixture, "Recover this Teams model");
       const listed = await reads.requestListLogs(
         fixture.actor,
@@ -48,7 +41,15 @@ describe("integration model recovery in Teams", () => {
       await runs.heartbeatRunner("vm0/test");
       const execution = await runs.executionInput(run.id);
       const messages: unknown[] = [];
+      const indicators: unknown[] = [];
       server.use(
+        http.post(
+          `${fixture.installation.serviceUrl}v3/conversations/:conversationId/activities`,
+          async ({ request }) => {
+            indicators.push(await request.json());
+            return HttpResponse.json({ id: "recovery-typing" });
+          },
+        ),
         http.post(
           `${fixture.installation.serviceUrl}v3/conversations/:conversationId/activities/:activityId`,
           async ({ request }) => {
@@ -179,6 +180,10 @@ describe("integration model recovery in Teams", () => {
         (await chat.readThreadMetadata(fixture.actor, thread.chatThreadId))
           .selectedModel,
       ).toBe("auto");
+      await flushWaitUntilForTest();
+      expect(indicators).toContainEqual(
+        expect.objectContaining({ type: "typing" }),
+      );
       expect(
         (
           await reads.requestListLogs(
@@ -187,7 +192,7 @@ describe("integration model recovery in Teams", () => {
             [200],
           )
         ).body.data,
-      ).toHaveLength(1);
+      ).toHaveLength(2);
     });
   });
 });

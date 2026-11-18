@@ -3,11 +3,11 @@
 import ctypes
 import mmap
 import os
-from pathlib import Path
 import stat
 import sys
 import threading
 import time
+from pathlib import Path
 
 MAX_EXTENT_BYTES = 64 * 1024 * 1024
 MAX_SCAN_BYTES = 32 * 1024 * 1024 * 1024
@@ -46,6 +46,11 @@ def require(condition, message):
 def metadata(fd):
     value = os.fstat(fd)
     require(stat.S_ISREG(value.st_mode), "original must be a regular file")
+    return metadata_from_stat(value)
+
+
+def metadata_from_stat(value):
+    """Project original-inode evidence after the caller validates its type."""
     return {
         "device": value.st_dev,
         "inode": value.st_ino,

@@ -2819,7 +2819,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       visibleMessages,
       "https://vm0.slack.com/archives/C_BDD_CANONICAL_INGRESS/p2900000100",
     );
-    const canonicalInputRun = await runs.readRun(actor, run1Id);
+    const canonicalInputRun = await runs.executionInput(run1Id);
     expect(canonicalInputRun.prompt).toBe(
       `@Slack User (${botUserId}) admit this event once with @Slack User (${mentionedSlackUserId}) and @Slack User (${secondMentionedSlackUserId})\n\n[Web file] source-notes.txt (text/plain)\n   [ID] ${canonicalInputAssetId}`,
     );
@@ -5583,7 +5583,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await flushWaitUntilAndAssert(() => {
       expect(context.mocks.slack.chat.postMessage).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          text: "Cannot continue session from history",
+          text: "Oops, something went wrong. Please try again later.",
         }),
       );
     });

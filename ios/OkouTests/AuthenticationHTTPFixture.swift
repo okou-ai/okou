@@ -116,10 +116,8 @@ final class AuthenticationHTTPFixture: Sendable {
     state.withLock { $0 = snapshot }
     try await clerk.refreshClient()
     try await clerk.refreshEnvironment()
-    // Test-only SDK reconfiguration cancels pending persistence. Retire this
-    // fixture's cache owner and await its queued writes before replacing it.
-    let cache = try XCTUnwrap(clerk.cacheManager)
-    await cache.shutdownAndDrain()
+    // Retire SDK-owned work and drain persistence before replacing this fixture's runtime.
+    await clerk.runtime.shutdown()
     // Recreate the SDK with its real persisted session, as on a cold launch.
     let restoredOptions = Clerk.Options(
       telemetryEnabled: false,
@@ -141,8 +139,9 @@ final class AuthenticationHTTPFixture: Sendable {
   }
 
   private func receive(_ connection: NWConnection, bytes: Data) {
-    connection.receive(minimumIncompleteLength: 1, maximumLength: 16_384) {
-      [weak self] data, _, complete, error in
+    connection.receive(
+      minimumIncompleteLength: 1, maximumLength: 16_384
+    ) { [weak self] data, _, complete, error in
       guard let self else {
         connection.cancel()
         return
@@ -178,8 +177,9 @@ final class AuthenticationHTTPFixture: Sendable {
         let responded = Mutex(false)
         // Observe the client's original HTTP cancellation while its server reply is held.
         // Normal responses mark completion before closing their connection.
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 1) {
-          [weak self] _, _, complete, error in
+        connection.receive(
+          minimumIncompleteLength: 1, maximumLength: 1
+        ) { [weak self] _, _, complete, error in
           if complete || error != nil, !responded.withLock({ $0 }) {
             self?.pendingRequestDisconnected.withLock { $0 }?(received)
           }
@@ -293,7 +293,7 @@ final class AuthenticationHTTPFixture: Sendable {
     case let path where path.hasSuffix("/touch"):
       await activation.enter()
       if state.withLock({ $0.failActivation }) { return failure("Activation unavailable") }
-      let body = String(decoding: chatRequestBody(request), as: UTF8.self)
+      let body = try XCTUnwrap(String(data: chatRequestBody(request), encoding: .utf8))
       let workspaceID = URLComponents(string: "?" + body)?.queryItems?
         .first(where: { $0.name == "active_organization_id" })?.value
       state.withLock {
@@ -311,7 +311,7 @@ final class AuthenticationHTTPFixture: Sendable {
       let identity = state.withLock { $0 }
       var claims: [String: Any] = [
         "exp": 4_102_444_800, "iat": 1_792_540_800,
-        "sid": identity.sessionID, "sub": identity.userID,
+        "sid": identity.sessionID, "sub": identity.userID
       ]
       if let workspace = identity.activeWorkspaceID { claims["o"] = ["id": workspace] }
       let payload = try JSONSerialization.data(withJSONObject: claims).base64EncodedString()
@@ -347,9 +347,9 @@ final class AuthenticationHTTPFixture: Sendable {
     encoder.keyEncodingStrategy = .convertToSnakeCase
     encoder.dateEncodingStrategy = .millisecondsSince1970
     return ChatHTTPResponse(
-      body: String(decoding: try encoder.encode(value), as: UTF8.self),
+      body: try encoder.encodeString(value),
       headers: [
-        "Content-Type": "application/json", "Authorization": "synthetic-startup-device",
+        "Content-Type": "application/json", "Authorization": "synthetic-startup-device"
       ])
   }
 

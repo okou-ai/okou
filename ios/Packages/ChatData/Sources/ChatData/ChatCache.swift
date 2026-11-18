@@ -3,94 +3,6 @@ import CryptoKit
 import Foundation
 import OSLog
 
-public struct ChatCacheScope: Sendable {
-  public let apiBaseURL: URL
-  public let userID: String
-  public let workspaceID: String
-
-  public init(
-    apiBaseURL: URL,
-    userID: String,
-    workspaceID: String
-  ) {
-    self.apiBaseURL = apiBaseURL
-    self.userID = userID
-    self.workspaceID = workspaceID
-  }
-}
-
-public struct ChatCacheCursor: Equatable, Sendable {
-  public let eventID: String?
-  public let seqID: Int
-
-  public init(
-    eventID: String?,
-    seqID: Int
-  ) {
-    self.eventID = eventID
-    self.seqID = seqID
-  }
-}
-
-public struct ChatCacheEvent: Equatable, Sendable {
-  public let id: String
-  public let seqID: Int
-  public let data: Data
-
-  public init(
-    id: String,
-    seqID: Int,
-    data: Data
-  ) {
-    self.id = id
-    self.seqID = seqID
-    self.data = data
-  }
-}
-
-public struct CachedThreadList: Sendable {
-  public let snapshot: Data
-  public let snapshotCursor: ChatCacheCursor
-  public let events: [ChatCacheEvent]
-
-  public init(
-    snapshot: Data,
-    snapshotCursor: ChatCacheCursor,
-    events: [ChatCacheEvent]
-  ) {
-    self.snapshot = snapshot
-    self.snapshotCursor = snapshotCursor
-    self.events = events
-  }
-}
-
-public struct CachedChatHistory: Sendable {
-  public let rows: [ChatCacheEvent]
-  public let cursor: ChatCacheCursor
-  public let schemaVersion: Int
-
-  public init(
-    rows: [ChatCacheEvent],
-    cursor: ChatCacheCursor,
-    schemaVersion: Int
-  ) {
-    self.rows = rows
-    self.cursor = cursor
-    self.schemaVersion = schemaVersion
-  }
-}
-
-public enum ChatCacheError: Error {
-  case unavailable
-  case missingThreadList
-  case missingHistory
-  case invalidCursor
-  case invalidEventSequence
-  case incompatibleHistorySchema
-  case corrupt
-  case unsupportedVersion
-}
-
 // Only server-confirmed snapshots and events enter this store. Presentation and
 // optimistic state are reconstructed outside it, so a retry cannot persist a
 // local guess as if it were an authoritative event.
@@ -243,7 +155,9 @@ public actor ChatCache {
       // An unreadable cache is not a Project list. Rebuild from the canonical
       // snapshot instead of inventing a cursor for the unversioned warm display.
       Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error("Invalid cached Project baseline: \(error.localizedDescription, privacy: .public)")
+        .error(
+          "event=chat.cache.projects.baseline.invalid error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+        )
       return nil
     }
   }
@@ -568,7 +482,9 @@ public actor ChatCache {
       } catch {
         // A damaged old cache must not reset a newer store created by the NSE.
         Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-          .error("Cannot import previous cache: \(error.localizedDescription, privacy: .public)")
+          .error(
+            "event=chat.cache.import.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+          )
       }
     }
     for suffix in ["", "-wal", "-shm"] {
@@ -681,10 +597,8 @@ extension SQLiteDatabase {
     )
     let currentVersion: Int
     do {
-      let check = try prepare("PRAGMA quick_check")
-      guard try check.step(), check.optionalText(at: 0) == "ok" else {
-        throw ChatCacheError.corrupt
-      }
+      // Opening the sidebar must not scan unrelated cached chat histories.
+      // Actual reads retain withDatabase's corrupt/not-a-database recovery.
       let query = try prepare("PRAGMA user_version")
       guard try query.step() else { throw ChatCacheError.corrupt }
       currentVersion = try query.integer(at: 0)

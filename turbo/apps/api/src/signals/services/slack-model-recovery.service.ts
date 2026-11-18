@@ -1,3 +1,4 @@
+import { continueIntegrationRecovery$ } from "./integration-recovery-continuation.service";
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
 import { array, literal, object, string } from "zod";
@@ -84,7 +85,7 @@ export const handleSlackModelRecovery$ = command(
         },
         signal,
       );
-      const message = identity
+      const saved = identity
         ? await set(
             saveIntegrationModelChoice$,
             {
@@ -96,10 +97,13 @@ export const handleSlackModelRecovery$ = command(
             },
             signal,
           )
-        : MODEL_RECOVERY_STALE;
+        : { message: MODEL_RECOVERY_STALE, input: null };
+      if (saved.input) {
+        waitUntil(set(continueIntegrationRecovery$, saved.input, signal));
+      }
       return Response.json({
         response_action: "update",
-        view: noticeView(message),
+        view: noticeView(saved.message),
       });
     }
     const opened = openSchema.safeParse(payload);
@@ -218,7 +222,7 @@ const populateSlackModelRecovery$ = command(
                 type: "section",
                 text: {
                   type: "mrkdwn",
-                  text: `Current model: *${recovery.currentModelLabel}*\nThis changes only this conversation. Send your previous request again after saving.`,
+                  text: `Current model: *${recovery.currentModelLabel}*\nThis changes only this conversation and automatically continues your previous request.`,
                 },
               },
               {

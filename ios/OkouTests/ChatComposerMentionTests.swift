@@ -43,7 +43,11 @@ final class ChatComposerMentionTests: XCTestCase {
     try await focusMentionInput(input)
     input.insertText("Before @pl after 🌷")
     input.selectedRange = NSRange(location: 10, length: 0)
-    try await eventually { mentionTable(in: host.view)?.visibleCells.first != nil }
+    try await eventually(
+      message: "Inline mention candidates; " + mentionState(input, in: host.view)
+    ) {
+      mentionTable(in: host.view)?.visibleCells.first != nil
+    }
     let first = try XCTUnwrap(mentionTable(in: host.view)?.visibleCells.first)
     XCTAssertTrue(first.accessibilityActivate())
     try await waitForBusinessResult {
@@ -126,9 +130,9 @@ final class ChatComposerMentionTests: XCTestCase {
         $0.referenceID == MentionNavigationFixture.thread(35)
       })
     try await waitForBusinessResult { editor.mentionSuggestions.contains(target) }
-    try await mentionKey(UIKeyCommand.inputDownArrow, input: input)
-    try await mentionKey(UIKeyCommand.inputDownArrow, input: input)
-    try await mentionKey(UIKeyCommand.inputUpArrow, input: input)
+    try await mentionKey(UIKeyCommand.inputDownArrow, input: input, host: host.view)
+    try await mentionKey(UIKeyCommand.inputDownArrow, input: input, host: host.view)
+    try await mentionKey(UIKeyCommand.inputUpArrow, input: input, host: host.view)
     input.insertText("\n")
     try await waitForBusinessResult {
       workspace.newComposer.document.parts.contains(target.part)
@@ -137,7 +141,7 @@ final class ChatComposerMentionTests: XCTestCase {
     XCTAssertTrue(navigation.paths.value.withLock { $0.allSatisfy { !$0.contains("/search") } })
     input.insertText("@")
     try await waitForBusinessResult { editor.mentionSuggestions.contains(target) }
-    try await mentionKey(UIKeyCommand.inputEscape, input: input)
+    try await mentionKey(UIKeyCommand.inputEscape, input: input, host: host.view)
     XCTAssertFalse(editor.handleMentionKey("\r", in: input))
     XCTAssertTrue(input.isFirstResponder)
     input.insertText("missing")
@@ -156,10 +160,10 @@ final class ChatComposerMentionTests: XCTestCase {
     }
     let reference: MessageJSON = .object([
       "type": .string("agent"), "agentId": .string(MentionNavigationFixture.agent(1)),
-      "nameSnapshot": .string("Planner"),
+      "nameSnapshot": .string("Planner")
     ])
     let draft = ChatDraftDocument(parts: [
-      reference, .object(["type": .string("text"), "text": .string(" ")]),
+      reference, .object(["type": .string("text"), "text": .string(" ")])
     ])
     let expected = ChatDraftDocument(parts: [reference])
     let block = try XCTUnwrap(conversation.composer.editorBlocks.first)
@@ -208,14 +212,14 @@ final class ChatComposerMentionTests: XCTestCase {
     let chat = try XCTUnwrap(source.suggestions(for: "plan").first)
     let agent: MessageJSON = .object([
       "type": .string("agent"), "agentId": .string(MentionNavigationFixture.agent(1)),
-      "nameSnapshot": .string("Planner"),
+      "nameSnapshot": .string("Planner")
     ])
     let note = ChatDraftDocument(parts: [
       .object(["type": .string("text"), "text": .string("Compare ")]),
       chat.part,
       .object(["type": .string("text"), "text": .string(" with ")]),
       agent,
-      .object(["type": .string("text"), "text": .string(" ")]),
+      .object(["type": .string("text"), "text": .string(" ")])
     ])
     conversation.composer.editBlock(block, document: note)
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -259,7 +263,7 @@ final class ChatComposerMentionTests: XCTestCase {
     let reference = try XCTUnwrap(
       candidates.mentionTestSource.suggestions(for: "plan").first)
     let draft = ChatDraftDocument(parts: [
-      reference.part, .object(["type": .string("text"), "text": .string(" ")]),
+      reference.part, .object(["type": .string("text"), "text": .string(" ")])
     ])
     let expected = ChatDraftDocument(parts: [reference.part])
     let block = try XCTUnwrap(workspace.newComposer.editorBlocks.first)
@@ -283,16 +287,24 @@ final class ChatComposerMentionTests: XCTestCase {
     XCTAssertEqual(sends[0].clientEventId, sends[1].clientEventId)
   }
 
-  private func mentionKey(_ key: String, input: ComposerTextView) async throws {
+  private func mentionKey(
+    _ key: String, input: ComposerTextView, host: UIView,
+    file: StaticString = #filePath, line: UInt = #line
+  ) async throws {
     // IME confirmation settles on a later UIKit turn than the business document.
-    try await eventually {
+    try await eventually(
+      file: file, line: line,
+      message: "Mention key \(String(reflecting: key)); " + mentionState(input, in: host)
+    ) {
       input.keyCommands?.contains { $0.input == key && $0.modifierFlags.isEmpty } == true
     }
     let command = try XCTUnwrap(
-      input.keyCommands?.first { $0.input == key && $0.modifierFlags.isEmpty })
+      input.keyCommands?.first { $0.input == key && $0.modifierFlags.isEmpty },
+      "Missing mention key \(String(reflecting: key))", file: file, line: line)
     XCTAssertTrue(
       UIApplication.shared.sendAction(
-        try XCTUnwrap(command.action), to: input, from: command, for: nil))
+        try XCTUnwrap(command.action, file: file, line: line), to: input, from: command, for: nil),
+      "Unhandled mention key \(String(reflecting: key))", file: file, line: line)
   }
 
   func testLateStructuredPasteAndCandidateStayWithTheirDraftAfterOpeningAChat() async throws {

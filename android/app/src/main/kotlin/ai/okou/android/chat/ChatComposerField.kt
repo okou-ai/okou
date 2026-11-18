@@ -67,6 +67,33 @@ fun ChatComposerField(
                 Text(stringResource(R.string.retry))
             }
         }
+        when (state.sync(target)) {
+            ComposerSync.Loading -> Text(stringResource(R.string.composer_sync_loading))
+            ComposerSync.Saving -> Text(stringResource(R.string.composer_sync_saving))
+            ComposerSync.Failed,
+            ComposerSync.Unsupported -> {
+                Text(
+                    stringResource(
+                        if (state.sync(target) == ComposerSync.Unsupported)
+                            R.string.composer_sync_unsupported
+                        else R.string.composer_sync_failed
+                    )
+                )
+                TextButton(onClick = { model.retrySync(target) }) {
+                    Text(stringResource(R.string.composer_sync_retry))
+                }
+            }
+            else -> Unit
+        }
+        state.journal?.retainedDrafts?.forEach { (key, text) ->
+            Text(text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            TextButton(
+                onClick = { model.restoreDraft(target, key) },
+                enabled = entry.text.isEmpty(),
+            ) {
+                Text(stringResource(R.string.composer_restore_draft))
+            }
+        }
         if (target.threadId == null && state.context != ComposerContext.Ready) {
             Text(
                 stringResource(

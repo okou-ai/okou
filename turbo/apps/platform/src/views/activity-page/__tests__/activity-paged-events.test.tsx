@@ -1,5 +1,8 @@
 import { screen } from "@testing-library/react";
-import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
+import {
+  logsByIdContract,
+  type LogDetail,
+} from "@okouai/api-contracts/contracts/logs";
 import { runAgentEventsContract } from "@okouai/api-contracts/contracts/run-routes";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
@@ -9,10 +12,7 @@ import {
   startPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import type {
-  AgentEventsResponse,
-  LogDetail,
-} from "../../../signals/okou-page/log-types.ts";
+import type { AgentEventsResponse } from "../../../signals/okou-page/log-types.ts";
 
 const context = testContext();
 
@@ -31,7 +31,6 @@ function makeLogDetail(overrides: Partial<LogDetail>): LogDetail {
     status: "running",
     prompt: "Hello",
     appendSystemPrompt: null,
-    error: null,
     createdAt: "2026-03-10T14:56:00Z",
     startedAt: "2026-03-10T14:56:01Z",
     completedAt: null,

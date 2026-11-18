@@ -24,7 +24,6 @@ import {
   pgInt8ToBigIntDecoder,
   zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
-import { mapConcurrent } from "../../lib/map-concurrent";
 import { waitUntil } from "../context/wait-until";
 import { safeSync, settle } from "../utils";
 import type { BootstrapAgent } from "./agent-data.service";
@@ -33,7 +32,6 @@ import {
   type MemberMemoryContext,
 } from "./agent-storage-context.service";
 import { memberMemoryReadPlan } from "./member-memory";
-import { decryptStoredSecretValue } from "./crypto.utils";
 import {
   connectorSourceSnapshotsFromRows,
   type ConnectorSourceIdentity,
@@ -69,15 +67,13 @@ import {
   type AgentConnectorScopeSnapshot,
 } from "./agent-connector-scope.service";
 import { expandConnectorServerFirewallPolicies } from "./connector-server-firewall-catalog.service";
-import {
-  buildAgentRunEnvironment,
-  type RunBodyEnvironment,
-} from "./run-body-environment";
+import { buildAgentRunVariables } from "./agent-run-variables";
+import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
 import {
   createAuthorizedConnectors,
   type AuthorizedConnectors,
 } from "./authorized-connectors.service";
-import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
+import type { ConnectorExecutionRuntimeSelection } from "./connector-catalog-runtime.service";
 import type { CustomConnectorExecutionDefinition } from "./custom-connector-definition-selection";
 import { customConnectorPermissionBundleDependencySlug } from "./custom-connector-permission-bundle.service";
 import type {
@@ -113,6 +109,7 @@ import {
   cappedBaseConcurrencyLimit,
   totalConcurrencyLimit,
 } from "./org-concurrency-entitlements.service";
+import { createRunTemplateSources } from "./run-template-sources.service";
 
 export interface BootstrapFeatureSwitchContext {
   readonly userId: string;
@@ -150,13 +147,15 @@ export interface AgentRunContextSignals {
   readonly modelPricing$: ReturnType<typeof createModelPricing>;
   readonly memberMetadata$: Computed<Promise<ExecutionMemberMetadata>>;
   readonly selectedImageModel$: Computed<Promise<ImageModel>>;
+  /** Request candidate rows are consumed only by this exact picked input. */
+  readonly requestTemplateInputId$: Computed<Promise<string | undefined>>;
+  readonly requestTemplateSources$: ReturnType<typeof createRunTemplateSources>;
   readonly connectorSelection$: Computed<Promise<AgentConnectorSelection>>;
   /** Connectors the Agent may use, derived from its connector selection. */
   readonly connectorScope$: Computed<Promise<AgentConnectorScopeSnapshot>>;
   /** The Agent's permission grants, expanded into firewall policies. */
   readonly permissionPolicies$: Computed<Promise<FirewallPolicies | null>>;
-  /** The Run body's own variables and placeholder secrets for this Agent. */
-  readonly bodyEnvironment$: Computed<Promise<RunBodyEnvironment>>;
+  readonly runVariables$: Computed<Promise<Record<string, string>>>;
   readonly authorizedConnectors$: Computed<Promise<AuthorizedConnectors>>;
   readonly permissionGrants$: Computed<
     Promise<readonly ConnectorPermissionGrant[]>
@@ -170,12 +169,14 @@ export interface AgentRunContextSignals {
   >["seedSkills$"];
   readonly memory$: Computed<Promise<MemberMemoryContext>>;
   readonly featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>;
-  readonly disabledPaidTools$: Computed<Promise<readonly string[]>>;
+  readonly disabledPaidTools$: Computed<Promise<readonly PaidToolId[]>>;
   readonly environment$: Computed<Promise<BootstrapEnvironment>>;
   readonly customConnectorDefinitions$: Computed<
     Promise<readonly CustomConnectorExecutionDefinition[]>
   >;
-  readonly catalog$: Computed<Promise<ConnectorRuntimeSelection | null>>;
+  readonly catalog$: Computed<
+    Promise<ConnectorExecutionRuntimeSelection | null>
+  >;
   readonly connectors$: Computed<Promise<BootstrapConnectorData>>;
 }
 
@@ -271,8 +272,19 @@ export function createAgentRunContextSignals(
   userId: string,
   orgId: string,
   agentId: string,
+  requestTemplates?: {
+    readonly inputId: string;
+    readonly presentationIds: readonly string[];
+    readonly userTemplateIds: readonly string[];
+  },
 ): AgentRunContextSignals {
-  return createIdentityContext(userId, orgId, agentId);
+  return createIdentityContext(
+    userId,
+    orgId,
+    agentId,
+    undefined,
+    requestTemplates,
+  );
 }
 
 /** Reuse by each group's authority key before wiring dependent computeds. */
@@ -493,8 +505,19 @@ function createIdentityContext(
   orgId: string,
   agentId: string,
   supplied?: AgentRunContextSignals,
+  requestTemplates?: Parameters<typeof createAgentRunContextSignals>[3],
 ): OwnedAgentRunContext {
   const scope = { userId, orgId, agentId };
+  const requestTemplateInputId$ = computed(() => {
+    return Promise.resolve(requestTemplates?.inputId);
+  });
+  const requestTemplateSources$ = createRunTemplateSources(
+    computed(() => {
+      return Promise.resolve(
+        requestTemplates ? { ...scope, ...requestTemplates } : null,
+      );
+    }),
+  );
   const {
     memberContext,
     orgRows$,
@@ -585,6 +608,8 @@ function createIdentityContext(
     memberModels$,
     ...modelSources,
     memberMetadata$,
+    requestTemplateInputId$,
+    requestTemplateSources$,
     selectedImageModel$:
       sharedMember?.selectedImageModel$ ??
       createSelectedImageModel(memberMetadata$),
@@ -612,6 +637,7 @@ export const preloadAgentRunContext$ = command(
       signals.catalog$,
       signals.authorizedConnectors$,
       signals.connectors$,
+      signals.requestTemplateSources$,
       signals.memory$,
       signals.agent$,
       signals.orgRows$,
@@ -710,66 +736,6 @@ function bootstrapConnectorSnapshot(
   };
 }
 
-export interface EagerConnectorCredentialObservation {
-  readonly builtinResolve: ConnectorContextDuration | undefined;
-  readonly builtinDecrypt: ConnectorContextDuration | undefined;
-  /** Selected credential attempts, including settled failures; not total Run KMS. */
-  readonly builtinDecryptCount: number;
-}
-
-export interface EagerConnectorCredentialContext {
-  readonly credentials$: Computed<
-    Promise<{
-      readonly credentials: ReadonlyMap<
-        string,
-        Awaited<ReturnType<typeof settle<string>>>
-      >;
-      readonly observation: EagerConnectorCredentialObservation | undefined;
-    }>
-  >;
-}
-
-/** Connect the lazy credential read while constructing its owning graph. */
-export function createEagerConnectorCredentialContext(
-  input$: Computed<
-    Promise<{
-      readonly credentials: readonly {
-        readonly id: string;
-        readonly encryptedValue: string;
-      }[];
-      readonly resolveStartedAt: number;
-    }>
-  >,
-): EagerConnectorCredentialContext {
-  const credentials$ = computed(async (get) => {
-    const { credentials, resolveStartedAt } = await get(input$);
-    const decryptStartedAt = performance.now();
-    const decrypted = await mapConcurrent(
-      credentials,
-      4,
-      async (credential) => {
-        return [
-          credential.id,
-          await settle(decryptStoredSecretValue(credential.encryptedValue)),
-        ] as const;
-      },
-    );
-    const result = new Map(decrypted);
-    const observation = safeSync((): EagerConnectorCredentialObservation => {
-      return {
-        builtinDecrypt: connectorContextDuration(decryptStartedAt),
-        builtinResolve: connectorContextDuration(resolveStartedAt),
-        builtinDecryptCount: result.size,
-      };
-    });
-    return {
-      credentials: result,
-      observation: "ok" in observation ? observation.ok : undefined,
-    };
-  });
-  return { credentials$ };
-}
-
 const bootstrapVariablesDecoder = zodDriverValueDecoder(
   array(
     object({
@@ -788,7 +754,6 @@ const bootstrapCredentialsDecoder = zodDriverValueDecoder(
     object({
       id: string(),
       name: string(),
-      encryptedValue: string(),
     }),
   ),
 );
@@ -823,33 +788,40 @@ function createAgentEnvironment(
   identity$: Computed<
     Promise<{ readonly userId: string; readonly orgId: string }>
   >,
+  projection: "admission" | "execution",
 ) {
   return computed(async (get) => {
     const { userId, orgId } = await get(identity$);
     const db = get(db$);
-    const variableRows = bootstrapVariableRows(userId, orgId);
-    const variableSnapshot = bootstrapVariableSnapshot(variableRows);
+    const variableRows = bootstrapVariableRows(userId, orgId, projection);
+    const variableSnapshot =
+      projection === "admission"
+        ? bootstrapVariableSnapshot(variableRows)
+        : undefined;
     const connectorVariableSnapshot =
       bootstrapConnectorVariableSnapshot(variableRows);
     const credentialSnapshot = bootstrapCredentialSnapshot(userId, orgId);
-    // A single statement owns the account revision and its credential values.
-    // It also supplies Agent variables, including the empty-account case.
+    // Selection owns account revisions and credential references, not values.
+    // Admission needs Agent variables even without accounts. Execution only
+    // needs the same one-row envelope, not another user/workspace aggregate.
     const statement = db
       .with(
         variableRows,
-        variableSnapshot,
+        ...(variableSnapshot ? [variableSnapshot] : []),
         connectorVariableSnapshot,
         credentialSnapshot,
       )
       .select({
         account: bootstrapConnectorAccountColumns,
-        variableValues: variableSnapshot.values,
+        ...(variableSnapshot
+          ? { variableValues: variableSnapshot.values }
+          : {}),
         connectorVariables: connectorVariableSnapshot.values,
         credentials: credentialSnapshot.values,
         automaticOAuthBindingId:
           customConnectorAccountOauthBindings.connectorAccountId,
       })
-      .from(variableSnapshot)
+      .from(variableSnapshot ?? sql`(values (1)) as environment_seed(value)`)
       .leftJoin(
         connectors,
         and(eq(connectors.orgId, orgId), eq(connectors.userId, userId)),
@@ -938,7 +910,11 @@ function createAgentEnvironment(
   });
 }
 
-function bootstrapVariableRows(userId: string, orgId: string) {
+function bootstrapVariableRows(
+  userId: string,
+  orgId: string,
+  projection: "admission" | "execution",
+) {
   const db = new QueryBuilder();
   return db.$with("bootstrap_variables").as(
     db
@@ -952,16 +928,24 @@ function bootstrapVariableRows(userId: string, orgId: string) {
       .where(
         and(
           eq(variables.orgId, orgId),
-          or(
-            and(
-              eq(variables.type, "user"),
-              or(
-                eq(variables.userId, ORG_SENTINEL_USER_ID),
+          projection === "admission"
+            ? or(
+                and(
+                  eq(variables.type, "user"),
+                  or(
+                    eq(variables.userId, ORG_SENTINEL_USER_ID),
+                    eq(variables.userId, userId),
+                  ),
+                ),
+                and(
+                  eq(variables.type, "connector"),
+                  eq(variables.userId, userId),
+                ),
+              )
+            : and(
+                eq(variables.type, "connector"),
                 eq(variables.userId, userId),
               ),
-            ),
-            and(eq(variables.type, "connector"), eq(variables.userId, userId)),
-          ),
         ),
       ),
   );
@@ -1013,7 +997,7 @@ function bootstrapCredentialSnapshot(userId: string, orgId: string) {
       .select({
         connectorId: secrets.connectorId,
         values: sql`jsonb_agg(jsonb_build_object(
-          'id', ${secrets.id}, 'name', ${secrets.name}, 'encryptedValue', ${secrets.encryptedValue}
+          'id', ${secrets.id}, 'name', ${secrets.name}
         ))`
           .mapWith(nullableDriverValueDecoder(bootstrapCredentialsDecoder))
           .as("credential_values"),
@@ -1040,7 +1024,23 @@ function createConnectorContextGroups(
   const identity$ = computed(() => {
     return Promise.resolve({ userId, orgId, agentId });
   });
-  return createExecutionConnectorSources(identity$, featureSwitches$);
+  const sources = createConnectorSources(
+    identity$,
+    featureSwitches$,
+    "admission",
+  );
+  const runVariables$ = computed(async (get) => {
+    const snapshot = await get(sources.environmentSnapshot$);
+    return buildAgentRunVariables({ agentId, variables: snapshot.variables });
+  });
+  return {
+    environmentSnapshot$: sources.environmentSnapshot$,
+    signals: {
+      ...sources.signals,
+      workflows$: sources.workflows$,
+      runVariables$,
+    },
+  };
 }
 
 /** Connect current connector sources to an already-authorized execution identity. */
@@ -1048,9 +1048,22 @@ export function createExecutionConnectorSources(
   identity$: Computed<Promise<AgentConnectorSelectionScope>>,
   featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
 ) {
+  const { signals } = createConnectorSources(
+    identity$,
+    featureSwitches$,
+    "execution",
+  );
+  return { signals };
+}
+
+function createConnectorSources(
+  identity$: Computed<Promise<AgentConnectorSelectionScope>>,
+  featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
+  projection: "admission" | "execution",
+) {
   const { connectorSelection$, permissionGrants$, workflows$ } =
-    createAgentSelectionContext(identity$, featureSwitches$);
-  const environmentSnapshot$ = createAgentEnvironment(identity$);
+    createAgentSelectionContext(identity$, featureSwitches$, projection);
+  const environmentSnapshot$ = createAgentEnvironment(identity$, projection);
   const customConnectorDefinitions$ = computed(async (get) => {
     return (await get(connectorSelection$)).customConnectorDefinitions;
   });
@@ -1100,14 +1113,6 @@ export function createExecutionConnectorSources(
       observation: snapshot.observation,
     };
   });
-  const bodyEnvironment$ = computed(async (get) => {
-    const { agentId } = await get(identity$);
-    const snapshot = await get(environmentSnapshot$);
-    return buildAgentRunEnvironment({
-      agentId,
-      persistedEnvironment: { variables: snapshot.variables },
-    });
-  });
   const permissionPolicies$ = computed(async (get) => {
     const [grants, scope, catalog] = await Promise.all([
       get(permissionGrants$),
@@ -1136,16 +1141,15 @@ export function createExecutionConnectorSources(
   });
   return {
     environmentSnapshot$,
+    workflows$,
     signals: {
       connectorSelection$,
       connectorScope$,
       authorizedConnectors$,
       permissionGrants$,
-      workflows$,
       customConnectorDefinitions$,
       catalog$,
       connectors$,
-      bodyEnvironment$,
       permissionPolicies$,
     },
   };

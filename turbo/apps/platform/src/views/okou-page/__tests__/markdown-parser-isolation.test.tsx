@@ -223,7 +223,6 @@ test("Opening Instructions keeps rich Activity logs readable", async () => {
       status: "completed",
       prompt: "Inspect the response",
       appendSystemPrompt: null,
-      error: null,
       createdAt: "2026-09-04T09:29:00Z",
       startedAt: "2026-09-04T09:29:01Z",
       completedAt: "2026-09-04T09:29:02Z",

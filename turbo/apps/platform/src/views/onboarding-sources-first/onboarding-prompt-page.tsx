@@ -81,7 +81,8 @@ function usePromptOnboarding() {
 
   return {
     prompt: draft.prompt,
-    output: draft.output,
+    outputs: draft.outputs,
+    multipleOutputs: draft.multipleOutputs,
     files: draft.files,
     setPrompt,
     selectOutput,
@@ -294,7 +295,8 @@ export function OnboardingSourcesFirstPromptPage() {
   const mobile = useMobileOnboarding();
   const {
     prompt,
-    output,
+    outputs,
+    multipleOutputs,
     files,
     setPrompt,
     selectOutput,
@@ -392,7 +394,8 @@ export function OnboardingSourcesFirstPromptPage() {
           />
         </section>
         <OnboardingOutputFormats
-          output={output}
+          outputs={outputs}
+          multiple={multipleOutputs}
           onSelect={selectOutput}
           disabled={busy}
         />

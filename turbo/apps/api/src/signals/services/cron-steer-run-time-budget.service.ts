@@ -19,7 +19,7 @@ import { createUserMessageDocument } from "./chat-user-message.service";
 
 const RUN_TIME_BUDGET_LIMIT_MS = 120 * 60 * 1000;
 const RUN_TIME_BUDGET_REMAINING_MS = 5 * 60 * 1000;
-const RUN_TIME_BUDGET_STEER_AT_MS =
+export const RUN_TIME_BUDGET_STEER_AT_MS =
   RUN_TIME_BUDGET_LIMIT_MS - RUN_TIME_BUDGET_REMAINING_MS;
 /**
  * A run leaves the window as soon as the runner terminates it at the hard
@@ -128,6 +128,32 @@ const persistRunTimeBudgetInput$ = command(
   },
 );
 
+/** The authenticated Run heartbeat and scheduled sweep share one append path. */
+export const steerRunNearTimeBudget$ = command(
+  async ({ set }, candidate: RunTimeBudgetCandidate, signal: AbortSignal) => {
+    const createdAt = nowDate();
+    const inserted = await set(
+      persistRunTimeBudgetInput$,
+      {
+        candidate,
+        startedBefore: new Date(
+          createdAt.getTime() - RUN_TIME_BUDGET_STEER_AT_MS,
+        ),
+        createdAt,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    await set(
+      notifyRunningChatRunOfPendingInput$,
+      candidate.chatThreadId,
+      signal,
+    );
+    signal.throwIfAborted();
+    return inserted;
+  },
+);
+
 const steerOwnedRunsNearTimeBudget$ = command(
   async (
     { set },
@@ -146,25 +172,9 @@ const steerOwnedRunsNearTimeBudget$ = command(
 
     let steered = 0;
     for (const candidate of candidates) {
-      if (
-        await set(
-          persistRunTimeBudgetInput$,
-          {
-            candidate,
-            startedBefore,
-            createdAt,
-          },
-          signal,
-        )
-      ) {
+      if (await set(steerRunNearTimeBudget$, candidate, signal)) {
         steered += 1;
       }
-      signal.throwIfAborted();
-      await set(
-        notifyRunningChatRunOfPendingInput$,
-        candidate.chatThreadId,
-        signal,
-      );
       signal.throwIfAborted();
     }
 

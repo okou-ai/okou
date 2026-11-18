@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "ably-subscriber"
-version = "2.0.15"
+version = "2.0.18"
 dependencies = [
  "base64 0.23.1",
  "cli-test-support",
@@ -167,7 +167,7 @@ dependencies = [
 
 [[package]]
 name = "api-contracts"
-version = "0.71.2"
+version = "0.71.5"
 dependencies = [
  "serde",
  "serde_json",
@@ -470,9 +470,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-http-client"
-version = "1.5.2"
+version = "1.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "859a81364f8185349c584fb41cd8765a400cf982f447adada590cf008a9f3b85"
+checksum = "203e36a754ced29dab0d710dab8c4fecf181d78f229e90fa6e75c6406ecb55a3"
 dependencies = [
  "aws-smithy-async",
  "aws-smithy-protocol-test",
@@ -553,9 +553,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-runtime"
-version = "1.16.3"
+version = "1.16.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5bc688673e282f42d3152dcd9cacc1a9a75734d7cd39d02e58989276fc750f3c"
+checksum = "7ed38b842f93dd8220cc8816750c72ce914b22c6eb3df02beb9632333ccb366d"
 dependencies = [
  "aws-smithy-async",
  "aws-smithy-http",
@@ -576,9 +576,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-runtime-api"
-version = "1.21.0"
+version = "1.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0467a2414e84b1b01e37452896fb3562b93926e81c619eba6ecf27ce9e682a0e"
+checksum = "c0b79dbb5331ccd297686df811d50ab3f39db171f5c765372a69272a0990b014"
 dependencies = [
  "aws-smithy-async",
  "aws-smithy-runtime-api-macros",
@@ -1037,9 +1037,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.6.7"
+version = "4.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa8876b300ab35ba921adea3dfd70157a46249b33f95c9084ae5709785478946"
+checksum = "ac230478587d0269d8d6998b82ae69ea51509d55df66d9e92edd1f986904cd4a"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -1059,9 +1059,9 @@ dependencies = [
 
 [[package]]
 name = "clap_derive"
-version = "4.6.7"
+version = "4.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9c751b79415d4e559e3d1fcf128e09e720eb673a06d26cf6f392d37d75b66e0"
+checksum = "895c9d8d2ac2dd8b8a29f3724a14e72aaaa6debcf8c38c82f97305c6a172767a"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -1071,18 +1071,19 @@ dependencies = [
 
 [[package]]
 name = "clap_lex"
-version = "1.1.1"
+version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
+checksum = "e0921b3876b3a1df8a1c9f912e7f94342458022c2e84288015893d83c4d62a79"
 
 [[package]]
 name = "claude-mock"
-version = "0.22.108"
+version = "0.22.119"
 dependencies = [
  "api-contracts",
  "cli-test-support",
  "guest-contracts",
  "libc",
+ "rustix",
  "serde_json",
  "tempfile",
  "uuid",
@@ -1090,7 +1091,7 @@ dependencies = [
 
 [[package]]
 name = "cli-test-support"
-version = "0.1.13"
+version = "0.1.16"
 dependencies = [
  "aho-corasick",
  "base64 0.23.1",
@@ -1135,13 +1136,15 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "codex-mock"
-version = "0.12.68"
+version = "0.12.79"
 dependencies = [
  "chrono",
  "clap",
  "cli-test-support",
  "guest-contracts",
  "libc",
+ "nix 0.32.0",
+ "rustix",
  "serde_json",
  "tempfile",
  "uuid",
@@ -1473,15 +1476,6 @@ dependencies = [
 
 [[package]]
 name = "defmt"
-version = "0.3.101"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4deef977660e373c458df605a913d4ab121db0ccd18d1ad6976dff7d37cddb53"
-dependencies = [
- "defmt 1.2.0",
-]
-
-[[package]]
-name = "defmt"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4a0795ac740cb54d7b3775c9c17345f6aaecf884c01733b39d6017738e0e3e1"
@@ -1791,9 +1785,9 @@ checksum = "64cd1e32ddd350061ae6edb1b082d7c54915b5c672c389143b9a63403a109f24"
 
 [[package]]
 name = "filetime"
-version = "0.2.29"
+version = "0.2.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c287a33c7f0a620c38e641e7f60827713987b3c0f26e8ddc9462cc69cf75759"
+checksum = "e1255e7a9f1902190d4c10a75f2f7f495d3d3ce13e9ba26e6c48683a0f4dbed7"
 dependencies = [
  "cfg-if",
  "libc",
@@ -2048,7 +2042,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.109.88"
+version = "0.109.103"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2067,6 +2061,7 @@ dependencies = [
  "http-body",
  "httpmock",
  "libc",
+ "nix 0.32.0",
  "pin-project-lite",
  "process-control-ipc",
  "raw-http-test-support",
@@ -2087,7 +2082,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.197"
+version = "0.1.212"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2099,6 +2094,7 @@ dependencies = [
  "guest-telemetry",
  "httpmock",
  "libc",
+ "nix 0.32.0",
  "process-control-ipc",
  "reqwest",
  "rustix",
@@ -2113,7 +2109,7 @@ dependencies = [
 
 [[package]]
 name = "guest-contracts"
-version = "0.32.10"
+version = "0.32.20"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2129,7 +2125,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-client"
-version = "0.23.96"
+version = "0.23.107"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -2147,7 +2143,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-proto"
-version = "0.22.75"
+version = "0.22.85"
 dependencies = [
  "guest-contracts",
  "proptest",
@@ -2155,7 +2151,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.24.108"
+version = "0.24.120"
 dependencies = [
  "chrono",
  "cli-test-support",
@@ -2175,7 +2171,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.179"
+version = "0.12.192"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -2184,6 +2180,7 @@ dependencies = [
  "guest-control-server",
  "guest-write-file",
  "libc",
+ "nix 0.32.0",
  "sandbox",
  "shell-quote",
  "tempfile",
@@ -2192,7 +2189,7 @@ dependencies = [
 
 [[package]]
 name = "guest-home-mount"
-version = "0.2.72"
+version = "0.2.82"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -2204,19 +2201,20 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.20.94"
+version = "0.20.106"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
  "guest-home-mount",
  "libc",
  "nix 0.32.0",
+ "rustix",
  "tempfile",
 ]
 
 [[package]]
 name = "guest-state-restore"
-version = "0.4.15"
+version = "0.4.25"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -2225,7 +2223,7 @@ dependencies = [
 
 [[package]]
 name = "guest-storage-apply"
-version = "0.32.8"
+version = "0.32.21"
 dependencies = [
  "cli-test-support",
  "flate2",
@@ -2251,7 +2249,7 @@ dependencies = [
 
 [[package]]
 name = "guest-task-exec"
-version = "0.2.72"
+version = "0.2.82"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -2261,12 +2259,11 @@ dependencies = [
 
 [[package]]
 name = "guest-telemetry"
-version = "0.3.205"
+version = "0.3.216"
 dependencies = [
  "chrono",
  "cli-test-support",
  "guest-contracts",
- "libc",
  "serde",
  "serde_json",
  "tempfile",
@@ -2274,7 +2271,7 @@ dependencies = [
 
 [[package]]
 name = "guest-tool-exec"
-version = "0.3.76"
+version = "0.3.86"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -2288,7 +2285,7 @@ dependencies = [
 
 [[package]]
 name = "guest-write-file"
-version = "0.1.295"
+version = "0.1.305"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -3132,7 +3129,7 @@ dependencies = [
 
 [[package]]
 name = "nbd-cow"
-version = "0.5.26"
+version = "0.5.29"
 dependencies = [
  "bitvec",
  "cli-test-support",
@@ -3152,9 +3149,9 @@ dependencies = [
 
 [[package]]
 name = "nix"
-version = "0.31.3"
+version = "0.31.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf20d2fde8ff38632c426f1165ed7436270b44f199fc55284c38276f9db47c3d"
+checksum = "2bc81ce8148d3b4f3274da811f11cdd824ae661ee4ef732cdb229825cf5be7f7"
 dependencies = [
  "bitflags 2.13.2",
  "cfg-if",
@@ -3660,7 +3657,7 @@ dependencies = [
 
 [[package]]
 name = "process-control-ipc"
-version = "0.5.72"
+version = "0.5.82"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -3672,7 +3669,7 @@ dependencies = [
 
 [[package]]
 name = "process-launch"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "libc",
  "nix 0.32.0",
@@ -3965,7 +3962,7 @@ dependencies = [
 
 [[package]]
 name = "rfb-client"
-version = "0.25.2"
+version = "0.25.4"
 dependencies = [
  "aes",
  "base64 0.23.1",
@@ -4107,7 +4104,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.249.19"
+version = "0.249.44"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4181,7 +4178,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.21.37"
+version = "0.21.52"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4229,7 +4226,7 @@ dependencies = [
 
 [[package]]
 name = "runner-host"
-version = "0.11.9"
+version = "0.11.22"
 dependencies = [
  "chrono",
  "cli-test-support",
@@ -4254,7 +4251,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.17.107"
+version = "0.17.122"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4285,7 +4282,7 @@ dependencies = [
 
 [[package]]
 name = "runner-network"
-version = "0.6.11"
+version = "0.6.24"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4317,7 +4314,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.20.10"
+version = "0.20.24"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4362,7 +4359,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.31.59"
+version = "0.31.74"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4425,10 +4422,8 @@ dependencies = [
  "ts_derp",
  "ts_http_util",
  "ts_keys",
- "ts_netstack_smoltcp_core",
- "ts_netstack_smoltcp_socket",
+ "ts_netstack_smoltcp",
  "ts_noise",
- "ts_overlay_router",
  "ts_packet",
  "ts_packetfilter",
  "ts_packetfilter_state",
@@ -4464,7 +4459,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.10.26"
+version = "0.10.41"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4509,7 +4504,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.25.11"
+version = "0.25.26"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4557,7 +4552,7 @@ dependencies = [
 
 [[package]]
 name = "runner-types"
-version = "0.18.4"
+version = "0.18.15"
 dependencies = [
  "api-contracts",
  "guest-contracts",
@@ -4647,7 +4642,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3aec6cb630dbe85d72ffd7bcd95f07e1bd69f9f270ee8adfa1afe443a6331438"
 dependencies = [
  "log",
- "nix 0.31.3",
+ "nix 0.31.4",
  "ssh-encoding",
  "windows-sys 0.61.2",
 ]
@@ -4826,7 +4821,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox"
-version = "0.28.28"
+version = "0.28.39"
 dependencies = [
  "async-trait",
  "guest-contracts",
@@ -4842,7 +4837,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.53.104"
+version = "0.53.117"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4880,7 +4875,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-mock"
-version = "0.17.63"
+version = "0.17.74"
 dependencies = [
  "async-trait",
  "guest-contracts",
@@ -4988,9 +4983,9 @@ checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
 name = "sentry"
-version = "0.49.5"
+version = "0.49.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7c2c887f17023c9462a4202176efc33ca7228f9c30c0141c765ab534ab2d36b"
+checksum = "d7bc7fb14982f395d53924f4feebd48c6cc136399c49ac2160dcf2b260e74b75"
 dependencies = [
  "cfg_aliases",
  "sentry-core",
@@ -4999,9 +4994,9 @@ dependencies = [
 
 [[package]]
 name = "sentry-backtrace"
-version = "0.49.5"
+version = "0.49.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c391d4330f3b37fdddf2b928151244e8c2dc0cfea1740e455cc8942af436f919"
+checksum = "f68328b53eb7defc20f993ed7cd1f4ce10d06feecefdf914db062ce2523e4b77"
 dependencies = [
  "backtrace",
  "regex",
@@ -5010,22 +5005,21 @@ dependencies = [
 
 [[package]]
 name = "sentry-core"
-version = "0.49.5"
+version = "0.49.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edcb294ca821e5c5624edaf33535eb18b06ef4f8675201d3e4d81ce325741692"
+checksum = "8367f7f31654b35453e20c8aca06e0ecf5a4d4793e33be139c1581e475a94e6a"
 dependencies = [
  "rand 0.10.4",
  "sentry-types",
- "serde",
  "serde_json",
  "url",
 ]
 
 [[package]]
 name = "sentry-panic"
-version = "0.49.5"
+version = "0.49.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5d28522f81ed90510ec43ed01cb1873a393b329dc719f93335b4c75fbef05d1"
+checksum = "2ab095af8f107e893941f857d8e204f5d25404247c34af131c7d199e3021679f"
 dependencies = [
  "sentry-backtrace",
  "sentry-core",
@@ -5033,9 +5027,9 @@ dependencies = [
 
 [[package]]
 name = "sentry-types"
-version = "0.49.5"
+version = "0.49.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83d84a36b6bdeeb7813976fb899fca45d94540d2e2b80eac91ba66b4c654d8f0"
+checksum = "03da7c1f79d001b4f18e277f8207470efb262fb94c761baa195873d2ace8eb8a"
 dependencies = [
  "debugid",
  "hex",
@@ -5348,14 +5342,14 @@ checksum = "149309498a5f7334b12ddae0cad8aba81ce785fe91755068867e017cf98fee46"
 
 [[package]]
 name = "smoltcp"
-version = "0.13.1"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f73d40463bba65efc9adc6370b56df76d563cc46e2482bba58351b4afb7535e"
+checksum = "b6f8b28ad56c6e35524a37dd492af5d1a47e31e1a4d175cd12f89c075f01980f"
 dependencies = [
  "bitflags 1.3.2",
  "byteorder",
  "cfg-if",
- "defmt 0.3.101",
+ "defmt",
  "heapless",
  "managed",
 ]
@@ -5920,9 +5914,9 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "trybuild"
-version = "1.0.123"
+version = "1.0.125"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5dc7029163734745d9a24da4e1c74122e719d5045495c2d8d55c4cc2f6055fdf"
+checksum = "9838b494ee14d28f1eeea490e8f4f10248fa6dd371d4bc874b635de499408245"
 dependencies = [
  "glob",
  "serde",
@@ -5935,8 +5929,8 @@ dependencies = [
 
 [[package]]
 name = "ts_array256"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "heapless",
  "static_assertions",
@@ -5945,8 +5939,8 @@ dependencies = [
 
 [[package]]
 name = "ts_bart"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "cfg-if",
  "heapless",
@@ -5958,8 +5952,8 @@ dependencies = [
 
 [[package]]
 name = "ts_bitset"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "cfg-if",
  "static_assertions",
@@ -5967,16 +5961,16 @@ dependencies = [
 
 [[package]]
 name = "ts_capabilityversion"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "ts_control"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "bytes",
  "chrono",
@@ -6009,8 +6003,8 @@ dependencies = [
 
 [[package]]
 name = "ts_control_noise"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -6023,16 +6017,16 @@ dependencies = [
  "tokio-util",
  "tracing",
  "ts_capabilityversion",
- "ts_hexdump",
  "ts_keys",
  "ts_noise",
+ "ts_util",
  "zerocopy",
 ]
 
 [[package]]
 name = "ts_control_serde"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -6050,29 +6044,28 @@ dependencies = [
 
 [[package]]
 name = "ts_dataplane"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "bitrs",
  "bytes",
  "etherparse",
+ "itertools",
  "tokio",
  "tracing",
  "ts_bart",
  "ts_disco_protocol",
- "ts_overlay_router",
  "ts_packet",
  "ts_packetfilter",
  "ts_time",
  "ts_transport",
  "ts_tunnel",
- "ts_underlay_router",
 ]
 
 [[package]]
 name = "ts_derp"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "bytes",
  "crypto_box",
@@ -6084,12 +6077,12 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "ts_hexdump",
  "ts_http_util",
  "ts_keys",
  "ts_packet",
  "ts_tls_util",
  "ts_transport",
+ "ts_util",
  "url",
  "yoke",
  "zerocopy",
@@ -6097,40 +6090,32 @@ dependencies = [
 
 [[package]]
 name = "ts_disco_protocol"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "aead 0.5.2",
  "crypto_box",
  "num-derive",
  "num-traits",
  "thiserror",
- "ts_hexdump",
  "ts_keys",
+ "ts_util",
  "zerocopy",
 ]
 
 [[package]]
 name = "ts_dynbitset"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "smallvec",
  "ts_bitset",
 ]
 
 [[package]]
-name = "ts_hexdump"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
-dependencies = [
- "heapless",
-]
-
-[[package]]
 name = "ts_http_util"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "bytes",
  "futures",
@@ -6149,8 +6134,8 @@ dependencies = [
 
 [[package]]
 name = "ts_keys"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "crypto_box",
  "serde",
@@ -6161,33 +6146,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "ts_netstack_smoltcp_core"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+name = "ts_netstack_smoltcp"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "bytes",
  "flume",
+ "futures-util",
  "heapless",
  "smoltcp",
  "thiserror",
- "tracing",
-]
-
-[[package]]
-name = "ts_netstack_smoltcp_socket"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
-dependencies = [
- "bytes",
  "tokio",
  "tracing",
- "ts_netstack_smoltcp_core",
 ]
 
 [[package]]
 name = "ts_nodecapability"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "cfg-if",
  "serde",
@@ -6196,8 +6172,8 @@ dependencies = [
 
 [[package]]
 name = "ts_noise"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "aead 0.5.2",
  "blake2 0.10.6",
@@ -6211,33 +6187,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "ts_overlay_router"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
-dependencies = [
- "itertools",
- "tracing",
- "ts_bart",
- "ts_packet",
- "ts_transport",
-]
-
-[[package]]
 name = "ts_packet"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "bytes",
  "crypto_box",
  "stable_deref_trait",
- "ts_hexdump",
+ "ts_util",
  "yoke",
 ]
 
 [[package]]
 name = "ts_packetfilter"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "hashbrown 0.17.1",
  "ipnet",
@@ -6247,8 +6211,8 @@ dependencies = [
 
 [[package]]
 name = "ts_packetfilter_serde"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "ipnet",
  "nom 8.0.0",
@@ -6260,8 +6224,8 @@ dependencies = [
 
 [[package]]
 name = "ts_packetfilter_state"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "ts_packetfilter",
  "ts_packetfilter_serde",
@@ -6269,8 +6233,8 @@ dependencies = [
 
 [[package]]
 name = "ts_peercapability"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "serde",
  "url",
@@ -6278,13 +6242,13 @@ dependencies = [
 
 [[package]]
 name = "ts_time"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 
 [[package]]
 name = "ts_tls_util"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "tokio",
  "tokio-rustls",
@@ -6295,22 +6259,22 @@ dependencies = [
 
 [[package]]
 name = "ts_transport"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "dyn-eq",
  "dyn-hash",
  "smallbox",
- "ts_hexdump",
  "ts_keys",
  "ts_packet",
+ "ts_util",
  "zerocopy",
 ]
 
 [[package]]
 name = "ts_tunnel"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "aead 0.5.2",
  "blake2 0.10.6",
@@ -6326,12 +6290,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "ts_underlay_router"
-version = "0.6.1"
-source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+name = "ts_util"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
- "ts_packet",
- "ts_transport",
+ "futures-core",
+ "heapless",
+ "pin-project-lite",
 ]
 
 [[package]]
@@ -6495,9 +6460,9 @@ checksum = "3a3b425286980a367278453f3b6d28cdcb134b574e5a35824a6ff5eebad50bb6"
 
 [[package]]
 name = "uuid"
-version = "1.29.2"
+version = "1.29.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bed99139f7dac9b5cfe5f17be4d66dc7079a34dee1d74bcc77217119240e267c"
+checksum = "3c14b15dffa2f4bd712103e857140aa04a4f2ff6e955c77d7eb8e53ee02a3b64"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",

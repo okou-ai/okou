@@ -28,6 +28,7 @@ import {
   type infer as zInfer,
 } from "zod";
 
+import { env } from "../../lib/env";
 import {
   piModelConfigObservation,
   type PiModelConfigObservation,
@@ -59,7 +60,7 @@ type RunContextVolume = NonNullable<
   RetainedRunContextStorage["volumes"]
 >[number];
 
-export interface RunContextEnvironmentEntry {
+export interface RunContextValueEntry {
   readonly name: string;
   readonly value: string;
 }
@@ -119,7 +120,8 @@ export type RunContextAxiomSnapshot = Omit<
     readonly userId: string;
     readonly cliAgentType?: string;
     readonly storageMounts: RunContextStorageMount[];
-    readonly environmentEntries: readonly RunContextEnvironmentEntry[];
+    readonly environmentEntries: readonly RunContextValueEntry[];
+    readonly varEntries: readonly RunContextValueEntry[];
     readonly firewalls: readonly RunContextAxiomFirewall[];
     readonly networkPolicyEntries: readonly RunContextNetworkPolicyEntry[];
     readonly featureFlagEntries: readonly RunContextFeatureFlagEntry[];
@@ -131,56 +133,63 @@ export function recordRunContextSnapshot(args: {
   readonly userId: string;
   readonly prompt: string;
   readonly appendSystemPrompt: string | null;
+  /** Original admitted variables, before prepared-context overrides. */
+  readonly vars: Readonly<Record<string, string>>;
   readonly recordedAt: Date;
   readonly context: PreparedExecutionContext;
   readonly secretNames: readonly string[];
   readonly secretValues: readonly string[] | null;
 }): void {
-  const context = args.context;
-  const secrets = new Set(args.secretValues);
-  const environment = Object.fromEntries(
-    Object.entries({
-      ...context.environment,
-      ...context.platformEnvironment,
-    }).map(([name, value]) => {
-      return [name, secrets.has(value) ? "***" : value];
-    }),
-  );
-  const snapshot: RunContextAxiomSnapshot = {
-    _time: args.recordedAt.toISOString(),
-    runId: args.runId,
-    userId: args.userId,
-    prompt: args.prompt,
-    appendSystemPrompt: args.appendSystemPrompt,
-    sessionId:
-      context.piSessionId ?? context.nativeContinuation?.sessionId ?? null,
-    cliAgentType: context.cliAgentType,
-    ...piModelConfigObservation(context.cliAgentType, context.piModelConfig),
-    secretNames: [...args.secretNames],
-    environmentEntries: environmentRecordToEntries(environment),
-    firewalls: executionFirewallsToAxiomEntries(context.firewalls),
-    networkPolicyEntries: networkPoliciesRecordToEntries(
-      context.networkPolicies,
-    ),
-    storageMounts: context.storageMounts.map((mount) => {
-      return {
-        name: mount.name,
-        version: mount.versionId,
-        mountPath: mount.mountPath,
-        writeback: mount.writeback === true,
-      };
-    }),
-    featureFlagEntries: featureFlagsRecordToEntries(context.featureFlags),
-    ...(context.templateGuidanceBundles?.length
-      ? { templateGuidanceBundles: context.templateGuidanceBundles }
-      : {}),
-  };
-  // Diagnostic ingestion is best effort and cannot change Run ownership.
+  // Capture, including serialization, cannot change published Run ownership.
   safeSync(() => {
+    const context = args.context;
+    const secrets = new Set(args.secretValues);
+    const secretNames = new Set(args.secretNames);
+    // API-only credentials still mask diagnostic collisions without entering
+    // the Runner's startup secret-value index.
+    const dataRouterToken = env("OKOU_DATA_ROUTER_URL")
+      ? env("OKOU_DATA_TOKEN")
+      : undefined;
+    if (dataRouterToken) {
+      secrets.add(dataRouterToken);
+      secretNames.add("OKOU_DATA_TOKEN");
+    }
+    const snapshot: RunContextAxiomSnapshot = {
+      _time: args.recordedAt.toISOString(),
+      runId: args.runId,
+      userId: args.userId,
+      prompt: args.prompt,
+      appendSystemPrompt: args.appendSystemPrompt,
+      sessionId: context.piSessionId ?? context.nativeContinuation.sessionId,
+      cliAgentType: context.cliAgentType,
+      ...piModelConfigObservation(context.cliAgentType, context.piModelConfig),
+      secretNames: [...secretNames],
+      environmentEntries: redactedValueEntries(
+        { ...context.environment, ...context.platformEnvironment },
+        secrets,
+      ),
+      varEntries: redactedValueEntries(args.vars, secrets),
+      firewalls: executionFirewallsToAxiomEntries(context.firewalls),
+      networkPolicyEntries: networkPoliciesRecordToEntries(
+        context.networkPolicies,
+      ),
+      storageMounts: context.storageMounts.map((mount) => {
+        return {
+          name: mount.name,
+          version: mount.versionId,
+          mountPath: mount.mountPath,
+          writeback: mount.writeback === true,
+        };
+      }),
+      featureFlagEntries: featureFlagsRecordToEntries(context.featureFlags),
+      ...(context.templateGuidanceBundles.length
+        ? { templateGuidanceBundles: context.templateGuidanceBundles }
+        : {}),
+    };
     return ingestToAxiom(getDatasetName("run-context"), [
       {
         ...snapshot,
-        officialWorkflowBundles: (context.officialWorkflowBundles ?? []).map(
+        officialWorkflowBundles: context.officialWorkflowBundles.map(
           (bundle) => {
             return {
               sha256: bundle.sha256,
@@ -195,11 +204,12 @@ export function recordRunContextSnapshot(args: {
   });
 }
 
-interface NormalizedRunContextSnapshot {
+export interface NormalizedRunContextSnapshot {
   readonly runId?: string;
   readonly userId?: string;
   readonly prompt?: string;
   readonly appendSystemPrompt?: string | null;
+  readonly vars: Record<string, string> | null;
   readonly sessionId: string | null;
   readonly cliAgentType: string | null;
   readonly secretNames: readonly string[];
@@ -546,31 +556,42 @@ function stringArrayFromUnknown(value: unknown): string[] {
   return stringArrayValue(value) ?? [];
 }
 
-export function environmentRecordToEntries(
-  environment: Record<string, string>,
-): RunContextEnvironmentEntry[] {
-  return Object.entries(environment).map(([name, value]) => {
-    return { name, value };
+function redactedValueEntries(
+  values: Readonly<Record<string, string>>,
+  secrets: ReadonlySet<string>,
+): RunContextValueEntry[] {
+  return Object.entries(values).map(([name, value]) => {
+    return { name, value: secrets.has(value) ? "***" : value };
   });
 }
 
-export function networkPoliciesRecordToEntries(
-  networkPolicies: NetworkPolicies | null | undefined,
+const variableEntriesSchema = array(
+  object({ name: string(), value: string() }),
+);
+
+function variablesFromEntries(value: unknown): Record<string, string> | null {
+  // Missing historical capture is not the same as captured empty variables.
+  const parsed = variableEntriesSchema.safeParse(value);
+  return parsed.success
+    ? Object.fromEntries(
+        parsed.data.map(({ name, value }): [string, string] => {
+          return [name, value];
+        }),
+      )
+    : null;
+}
+
+function networkPoliciesRecordToEntries(
+  networkPolicies: NetworkPolicies,
 ): RunContextNetworkPolicyEntry[] {
-  if (!networkPolicies) {
-    return [];
-  }
   return Object.entries(networkPolicies).map(([name, policy]) => {
     return { name, policy };
   });
 }
 
-export function featureFlagsRecordToEntries(
-  featureFlags: Record<string, boolean> | null | undefined,
+function featureFlagsRecordToEntries(
+  featureFlags: Record<string, boolean>,
 ): RunContextFeatureFlagEntry[] {
-  if (!featureFlags) {
-    return [];
-  }
   return Object.entries(featureFlags).map(([name, enabled]) => {
     return { name, enabled };
   });
@@ -619,10 +640,10 @@ function inlineFirewallToAxiomEntry(
   };
 }
 
-export function executionFirewallsToAxiomEntries(
-  firewalls: ExecutionFirewalls | null | undefined,
+function executionFirewallsToAxiomEntries(
+  firewalls: ExecutionFirewalls,
 ): RunContextAxiomFirewall[] {
-  return (firewalls ?? []).map((entry) => {
+  return firewalls.map((entry) => {
     return entry.kind === "inline" ? inlineFirewallToAxiomEntry(entry) : entry;
   });
 }
@@ -642,6 +663,7 @@ export function normalizeRunContextSnapshot(
     sessionId: stringValue(snapshot.sessionId) ?? null,
     cliAgentType: stringValue(snapshot.cliAgentType) ?? null,
     secretNames: stringArrayFromUnknown(snapshot.secretNames),
+    vars: variablesFromEntries(snapshot.varEntries),
     environment: environmentFromEntries(snapshot.environmentEntries),
     firewalls: firewallsFromUnknown(snapshot.firewalls),
     networkPolicies: networkPoliciesFromEntries(snapshot.networkPolicyEntries),

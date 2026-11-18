@@ -7,8 +7,8 @@ import {
   isChatRunTerminalEventType,
 } from "@okouai/api-contracts/contracts/chat-events";
 import { hasChatEventBodyContent } from "./chat-event-body-blocks.ts";
+import { chatEventDisplayError } from "./chat-event-display.ts";
 import type { ChatEventGroup, EnrichedChatEvent } from "./chat-event.ts";
-import type { ChatEvent } from "./chat-event-types.ts";
 import { isCancelledRunEvent } from "./chat-run-lifecycle.ts";
 import type { MarkdownCardRef } from "./markdown-card-ref.ts";
 
@@ -55,18 +55,6 @@ export interface RunWorkFolding {
 interface RunWorkStatusTail {
   readonly anchorEventId: string | undefined;
   readonly events: readonly EnrichedChatEvent[];
-}
-
-function chatEventDisplayError(event: ChatEvent): string | undefined {
-  if (
-    event.eventType === "input.rejected" ||
-    event.eventType === "output.error" ||
-    event.eventType === "run.failed" ||
-    event.eventType === "run.cancelled"
-  ) {
-    return event.error;
-  }
-  return undefined;
 }
 
 function chatEventHasAttachments(event: EnrichedChatEvent): boolean {

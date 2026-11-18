@@ -58,7 +58,7 @@ final class ChatFeedbackSelectionTests: XCTestCase {
     for range in [
       NSRange(location: NSNotFound, length: 1), NSRange(location: 0, length: 0),
       NSRange(location: 1, length: 1), NSRange(location: 50, length: 1),
-      NSRange(location: 2, length: 2), NSRange(location: 0, length: Int.max),
+      NSRange(location: 2, length: 2), NSRange(location: 0, length: Int.max)
     ] { XCTAssertNil(ChatFeedbackSelection(message: message(text), range: range)) }
     for role in [ChatMessage.Role.user, .system] {
       XCTAssertNil(
@@ -73,7 +73,7 @@ final class ChatFeedbackSelectionTests: XCTestCase {
   func testUnsupportedQuotedDraftsStayLosslessAndCannotBecomeEditableEmptyNotes() throws {
     for part in [
       #"{"type":"feedback","quote":"Passage"}"#,
-      #"{"type":"feedback","quote":"Passage","note":[{"type":"future","value":"preserve"}]}"#,
+      #"{"type":"feedback","quote":"Passage","note":[{"type":"future","value":"preserve"}]}"#
     ] {
       let data = Data("{\"version\":1,\"parts\":[\(part)]}".utf8)
       let document = try JSONDecoder().decode(ChatDraftDocument.self, from: data)

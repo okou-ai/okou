@@ -178,6 +178,55 @@ or advisory, such as `NSCache`; do not describe an estimated cache cost as a
 process-memory limit. Ordinary computed memoization does not need a second
 dictionary of the same results.
 
+## Diagnostic Logging
+
+Use `OSLog.Logger` at the existing operation or integration owner. Keep the
+established `ai.okou.ios` subsystem, or the owning extension's existing
+subsystem, and a stable module category such as `API`, `ChatSync`, or
+`Notifications`. Categories must not contain account, workspace, or request IDs.
+Pure Domain code returns its failures to the owner rather than acquiring a
+logging dependency.
+
+Use a fixed English message template with a stable dotted event name and named
+context. Dynamic values belong in interpolations, not the event name. For example:
+
+```swift
+let failure = error as NSError
+log.error(
+  "event=chat.sync.failed error_domain=\(failure.domain, privacy: .public) error_code=\(failure.code)"
+)
+```
+
+Include the native error domain/code when reporting a failure; a localized
+description alone loses its identity. Descriptions, user content, URL paths,
+and business identifiers use explicit private interpolation. Keep credentials,
+tokens, message bodies, and signed URLs out of diagnostics. Only known safe
+classifications and diagnostic codes should be public. Keep useful context such
+as the operation, attempt, and elapsed duration at the boundary that knows it.
+
+Choose severity from the consequence: `debug` for diagnostic detail, `info` for
+useful normal lifecycle events, `warning` for a recoverable condition requiring
+attention, `error` for an operation failure, and `fault` for a broken program
+invariant. Existing `notice` records retain their normal important-event role.
+Expected optional recovery can remain at `debug` or `info`; normal cancellation
+must not acquire an error record. Do not add redundant log-and-rethrow catches
+or outcome classifiers solely to choose a level.
+
+OSLog owns timestamps, levels, subsystem/category metadata, and privacy-aware
+interpolation. Keep the native message format rather than serializing JSON at
+each call site. An eventual remote exporter owns the mapping to the shared
+`level`, `source`, `message`, and `fields` record structure, along with redaction
+and delivery. Named values inside an OSLog message are not independently indexed
+JSON attributes. OSLog's `warning` shares its native storage level with `error`;
+an exporter needing that distinction must preserve the intended logical level.
+
+Production diagnostics must not use implicit console output through `print`,
+`debugPrint`, `dump`, `NSLog`, or legacy `os_log`. Tests, tools, and inline
+`#Preview` diagnostics retain their native role. An explicit `TextOutputStream`
+is caller-owned output, such as a document export, rather than an implicit
+console diagnostic. The [logging lint](ios-lint.md) checks this entry boundary;
+event wording, useful context, severity, and privacy remain review decisions.
+
 ## Verification and Review
 
 Use [iOS testing](ios-testing.md) for production entry points, external fixtures,

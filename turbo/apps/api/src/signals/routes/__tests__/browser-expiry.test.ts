@@ -1,6 +1,5 @@
 import { once } from "node:events";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import { cronBrowserReconcileContract } from "@okouai/api-contracts/contracts/cron";
 import { http, HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -9,7 +8,6 @@ import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserRoutes } from "../browser";
-import { cronBrowserReconcileRoutes } from "../cron-browser-reconcile";
 import { controlBrowserDeadline } from "./helpers/browser-deadline";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
@@ -181,62 +179,6 @@ test.each([
     f.provider.native.windowBoundsError = undefined;
     const leased = await renew(a);
     expect(leased.window).toStrictEqual(first.window);
-    expect(f.provider.sessionRequests).toHaveLength(1);
-  });
-});
-
-test("reports failed provider reconciliation without retiring a healthy shared window", async () => {
-  const app = await setupApp({
-    context,
-    routes: cronBrowserReconcileRoutes,
-    isolatePg: true,
-  });
-  const cron = app(cronBrowserReconcileContract);
-  const reconcile = () => {
-    return accept(
-      cron.reconcile({
-        headers: { authorization: "Bearer test-cron-secret" },
-      }),
-      [200],
-    );
-  };
-  const f = await fixture();
-  await f.owned.run(async () => {
-    const a = await f.start();
-    const first = await open(a);
-    const [providerId] = f.provider.sessionIds;
-    if (!providerId) {
-      throw new Error("Expected the accepted provider instance");
-    }
-    let unavailable = true;
-    server.use(
-      http.get(`${PROVIDER_URL}/browsers/${providerId}`, () => {
-        if (unavailable) {
-          return HttpResponse.json(
-            { detail: "Provider unavailable" },
-            { status: 503 },
-          );
-        }
-        return;
-      }),
-    );
-    expect((await reconcile()).body).toMatchObject({
-      checked: 1,
-      stopped: 0,
-      errors: 1,
-    });
-    // Public reads also consult the provider; restore it before observing bindings.
-    unavailable = false;
-    expect((await view(a)).window).toStrictEqual(first.window);
-    expect(f.provider.stoppedSessionIds.size).toBe(0);
-
-    expect((await reconcile()).body).toMatchObject({
-      checked: 1,
-      stopped: 0,
-      errors: 0,
-    });
-    expect((await view(a)).window).toStrictEqual(first.window);
-    expect(f.provider.sessionIds.has(providerId)).toBeTruthy();
     expect(f.provider.sessionRequests).toHaveLength(1);
   });
 });

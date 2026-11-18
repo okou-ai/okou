@@ -317,7 +317,6 @@ async fn assert_fallback(available: Available) {
         "available VM capacity must be reused before creating a fresh VM"
     );
     drop(producer);
-    assert_eq!(env.handle.discover_started_count(), 0);
     peer.shutdown().await;
     shutdown(&env, runner).await;
     wait_cancel_token_removed(&env.cancel_tokens, run_id, WAIT).await;

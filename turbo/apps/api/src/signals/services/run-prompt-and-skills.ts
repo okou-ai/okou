@@ -49,6 +49,10 @@ export type SkillVolume =
       readonly contentBundle: ContentBundle;
     };
 
+export type SeedSkillVolume = SkillVolume & {
+  readonly source: "system_skill";
+};
+
 /** Prompt text and skill or template guidance packages for one run. */
 export interface RunPromptAndSkills {
   readonly systemPromptVariables: SystemPromptVariables;
@@ -93,12 +97,17 @@ export function mergeRunPromptAndSkills(
     systemPromptVariables,
     userPromptVariables,
     // Preserve mount precedence while keeping each source's captured order.
-    skillVolumes: skillVolumes.sort((left, right) => {
-      return (
-        VOLUME_SOURCE_ORDER[left.source] - VOLUME_SOURCE_ORDER[right.source]
-      );
-    }),
+    skillVolumes: mergeRunSkillVolumes([skillVolumes]),
   };
+}
+
+/** The same package precedence for prompt and package-only consumers. */
+export function mergeRunSkillVolumes(
+  parts: readonly (readonly SkillVolume[])[],
+): readonly SkillVolume[] {
+  return parts.flat().sort((left, right) => {
+    return VOLUME_SOURCE_ORDER[left.source] - VOLUME_SOURCE_ORDER[right.source];
+  });
 }
 
 type ResolvedSkillVolume =

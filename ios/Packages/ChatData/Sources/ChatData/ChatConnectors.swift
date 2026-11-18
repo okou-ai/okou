@@ -180,41 +180,7 @@ public struct ChatConnectorService: Sendable {
     } else if custom?.managed == true {
       account = nil
     } else {
-      struct Response: Decodable, Sendable {
-        let connections: [ChatConnectorAccount]
-        let nextCursor: String?
-        let defaultConnection: ChatConnectorAccount?
-        enum CodingKeys: String, CodingKey { case connections, nextCursor, defaultConnection }
-        // A missing nullable field cannot establish an empty account inventory.
-        init(from decoder: any Decoder) throws {
-          let values = try decoder.container(keyedBy: CodingKeys.self)
-          connections = try values.decode([ChatConnectorAccount].self, forKey: .connections)
-          nextCursor = try values.decode(String?.self, forKey: .nextCursor)
-          defaultConnection = try values.decode(
-            ChatConnectorAccount?.self, forKey: .defaultConnection)
-        }
-      }
-      let response: Response = try await client.request(
-        "/api/connector-accounts/connections",
-        query: target.query + [URLQueryItem(name: "limit", value: "1")])
-      guard
-        response.connections.allSatisfy({
-          $0.target == target && UUID(uuidString: $0.id) != nil
-        })
-      else { throw APIClientError.invalidResponse }
-      account = response.defaultConnection
-      if let account {
-        guard account.target == target, UUID(uuidString: account.id) != nil else {
-          throw APIClientError.invalidResponse
-        }
-      } else if !chatAccountAccess && (!response.connections.isEmpty || response.nextCursor != nil)
-      {
-        throw APIClientError.http(
-          status: 409,
-          message:
-            "This connector has saved accounts but no default. Choose an account on the web, then refresh."
-        )
-      }
+      account = try await defaultAccount(target: target, chatAccountAccess: chatAccountAccess)
     }
     if case .reconnect = action.kind {
       guard let account,
@@ -231,23 +197,8 @@ public struct ChatConnectorService: Sendable {
       return nil
     }
     if custom?.managed == true, custom?.connected == nil { throw APIClientError.incompatibleData }
-    let authorized: Bool
-    if chatAccountAccess {
-      authorized = false
-    } else if let slug = target.connectorSlug {
-      struct Response: Decodable, Sendable { let enabledConnectorSlugs: [String] }
-      let response: Response = try await client.request(
-        "/api/agents/\(action.agentID)/user-connectors")
-      authorized = response.enabledConnectorSlugs.contains(slug)
-    } else {
-      struct Grant: Decodable, Sendable { let customConnectorId: String }
-      struct Response: Decodable, Sendable { let grants: [Grant] }
-      let response: Response = try await client.request(
-        "/api/agents/\(action.agentID)/custom-connectors")
-      authorized = response.grants.contains {
-        $0.customConnectorId.lowercased() == target.customConnectorId?.lowercased()
-      }
-    }
+    let authorized = try await isAuthorized(
+      target: target, agentID: action.agentID, chatAccountAccess: chatAccountAccess)
     var selected = false
     if case .select = action.kind {
       guard chatAccountAccess || authorized, let threadID = action.threadID else { return nil }
@@ -273,8 +224,70 @@ public struct ChatConnectorService: Sendable {
       selected: selected, chatAccountAccess: chatAccountAccess)
   }
 
-  public func account(id: String, target: ChatConnectorTarget) async throws -> ChatConnectorAccount
+  private func isAuthorized(target: ChatConnectorTarget, agentID: String, chatAccountAccess: Bool)
+    async throws -> Bool
   {
+    if chatAccountAccess {
+      return false
+    } else if let slug = target.connectorSlug {
+      struct Response: Decodable, Sendable { let enabledConnectorSlugs: [String] }
+      let response: Response = try await client.request(
+        "/api/agents/\(agentID)/user-connectors")
+      return response.enabledConnectorSlugs.contains(slug)
+    } else {
+      struct Grant: Decodable, Sendable { let customConnectorId: String }
+      struct Response: Decodable, Sendable { let grants: [Grant] }
+      let response: Response = try await client.request(
+        "/api/agents/\(agentID)/custom-connectors")
+      return response.grants.contains {
+        $0.customConnectorId.lowercased() == target.customConnectorId?.lowercased()
+      }
+    }
+  }
+
+  private func defaultAccount(
+    target: ChatConnectorTarget, chatAccountAccess: Bool
+  ) async throws -> ChatConnectorAccount? {
+    struct Response: Decodable, Sendable {
+      let connections: [ChatConnectorAccount]
+      let nextCursor: String?
+      let defaultConnection: ChatConnectorAccount?
+      enum CodingKeys: String, CodingKey { case connections, nextCursor, defaultConnection }
+      // A missing nullable field cannot establish an empty account inventory.
+      init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        connections = try values.decode([ChatConnectorAccount].self, forKey: .connections)
+        nextCursor = try values.decode(String?.self, forKey: .nextCursor)
+        defaultConnection = try values.decode(
+          ChatConnectorAccount?.self, forKey: .defaultConnection)
+      }
+    }
+    let response: Response = try await client.request(
+      "/api/connector-accounts/connections",
+      query: target.query + [URLQueryItem(name: "limit", value: "1")])
+    guard
+      response.connections.allSatisfy({
+        $0.target == target && UUID(uuidString: $0.id) != nil
+      })
+    else { throw APIClientError.invalidResponse }
+    let account = response.defaultConnection
+    if let account {
+      guard account.target == target, UUID(uuidString: account.id) != nil else {
+        throw APIClientError.invalidResponse
+      }
+    } else if !chatAccountAccess, !response.connections.isEmpty || response.nextCursor != nil {
+      throw APIClientError.http(
+        status: 409,
+        message:
+          "This connector has saved accounts but no default. Choose an account on the web, then refresh."
+      )
+    }
+    return account
+  }
+
+  public func account(
+    id: String, target: ChatConnectorTarget
+  ) async throws -> ChatConnectorAccount {
     let account: ChatConnectorAccount = try await client.request(
       "/api/connector-accounts/\(id)", query: target.query)
     guard account.id.lowercased() == id.lowercased(), account.target == target else {

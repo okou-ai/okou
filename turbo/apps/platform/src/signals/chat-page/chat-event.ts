@@ -1,9 +1,8 @@
 import type { SuggestionContext } from "@okouai/api-contracts/contracts/suggestion-context";
 import type { Root } from "hast";
 import { command } from "ccstate";
-import { detachedNavigateTo$ } from "../route.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { navigateToChat$ } from "../okou-page/nav.ts";
+import { navigateToNewChat$ } from "../okou-page/nav.ts";
 import { currentChatThreadId$, chatThreads$ } from "../agent-chat.ts";
 import {
   chatThreadArchiveContract,
@@ -171,7 +170,6 @@ export interface ChatEventGroup {
 
 export const deleteChatThread$ = command(
   async ({ get, set }, threadId: string, signal: AbortSignal) => {
-    const threads = await get(chatThreads$);
     signal.throwIfAborted();
     const eventId = crypto.randomUUID();
     const existingThread = get(eventDrivenChatThreads$).find((thread) => {
@@ -204,18 +202,7 @@ export const deleteChatThread$ = command(
     );
 
     if (get(currentChatThreadId$) === threadId) {
-      const idx = threads.findIndex((t) => {
-        return t.id === threadId;
-      });
-      const remaining = threads.filter((t) => {
-        return t.id !== threadId;
-      });
-      if (remaining.length === 0) {
-        set(detachedNavigateTo$, "/");
-      } else {
-        const nextThread = remaining[idx] ?? remaining[remaining.length - 1];
-        set(navigateToChat$, nextThread.id);
-      }
+      await set(navigateToNewChat$, signal);
     }
   },
 );

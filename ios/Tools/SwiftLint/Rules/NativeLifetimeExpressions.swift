@@ -134,28 +134,7 @@ extension NativeLifetimeTrace {
     let receiver = member?.base.map { value($0, path: &path) } ?? .unknown
     let arguments = call.arguments.map { value($0.expression, path: &path) }
     if kind.isTask, nativeTaskCall(call), let closure = nativeTaskBody(call) {
-      var entering = path
-      entering.exit = .normal
-      entering.deferred = []
-      // A Task reads mutable captures later. Only immutable local values and
-      // explicit capture-list snapshots preserve the original at acquisition.
-      entering.values = path.values.filter { path.immutable.contains($0.key) }
-      for capture in closure.signature?.capture?.items ?? [] {
-        let name = capture.name.text
-        let source =
-          capture.initializer?.value
-          ?? ExprSyntax(DeclReferenceExprSyntax(baseName: .identifier(name)))
-        entering.locals.insert(name)
-        entering.immutable.insert(name)
-        entering.values[name] = capture.specifier == nil ? value(source, path: &path) : .unknown
-      }
-      for name in closureParameters(closure) {
-        entering.locals.insert(name)
-        entering.immutable.remove(name)
-        entering.values[name] = .unknown
-      }
-      let results = block(closure.statements, states: [entering])
-      return !path.released && results.allSatisfy(\.released) ? .completion : .unknown
+      return taskValue(closure, path: &path)
     }
     if kind.isTask, callName(call.calledExpression) == "Array", arguments.count == 1,
       let first = arguments.first, [.collection, .completionCollection].contains(first)
@@ -236,6 +215,33 @@ extension NativeLifetimeTrace {
     return .unknown
   }
 
+  private func taskValue(
+    _ closure: ClosureExprSyntax, path: inout NativeLifetimePath
+  ) -> NativeLifetimeValue {
+    var entering = path
+    entering.exit = .normal
+    entering.deferred = []
+    // A Task reads mutable captures later. Only immutable local values and
+    // explicit capture-list snapshots preserve the original at acquisition.
+    entering.values = path.values.filter { path.immutable.contains($0.key) }
+    for capture in closure.signature?.capture?.items ?? [] {
+      let name = capture.name.text
+      let source =
+        capture.initializer?.value
+        ?? ExprSyntax(DeclReferenceExprSyntax(baseName: .identifier(name)))
+      entering.locals.insert(name)
+      entering.immutable.insert(name)
+      entering.values[name] = capture.specifier == nil ? value(source, path: &path) : .unknown
+    }
+    for name in closureParameters(closure) {
+      entering.locals.insert(name)
+      entering.immutable.remove(name)
+      entering.values[name] = .unknown
+    }
+    let results = block(closure.statements, states: [entering])
+    return !path.released && results.allSatisfy(\.released) ? .completion : .unknown
+  }
+
   private func isEvaluationCleanup(_ call: FunctionCallExprSyntax) -> Bool {
     guard let member = call.calledExpression.as(MemberAccessExprSyntax.self),
       member.declName.baseName.text == "onCancel", let receiver = member.base?.trimmedDescription
@@ -283,8 +289,9 @@ extension NativeLifetimeTrace {
       let parameters =
         ancestor.as(FunctionDeclSyntax.self)?.signature.parameterClause.parameters
         ?? ancestor.as(InitializerDeclSyntax.self)?.signature.parameterClause.parameters
-      if let parameter = parameters?.first(where: { ($0.secondName ?? $0.firstName).text == base })
-      {
+      if let parameter = parameters?.first(
+        where: { ($0.secondName ?? $0.firstName).text == base }
+      ) {
         return ["XCTestCase", "XCTest.XCTestCase"].contains(parameter.type.trimmedDescription)
       }
     }

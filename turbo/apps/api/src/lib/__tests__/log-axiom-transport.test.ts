@@ -5,7 +5,6 @@ import { beforeEach, describe, expect, it, onTestFinished, test } from "vitest";
 import { array, boolean, number, object, string } from "zod";
 import { encodeHTML } from "entities";
 import { webhookTelemetryContract } from "@okouai/api-contracts/contracts/webhooks";
-import { cronBrowserReconcileContract } from "@okouai/api-contracts/contracts/cron";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import { presentationTemplatesContract } from "@okouai/api-contracts/contracts/presentation-templates";
 import {
@@ -46,8 +45,8 @@ import { webhooksAgentHealthUsageTelemetryRoutes } from "../../signals/routes/we
 import { createDeferredPromise } from "../../signals/utils";
 import { flushWaitUntilForTest } from "../../signals/context/wait-until";
 import { healthRoutes } from "../../signals/routes/health";
-import { cronBrowserReconcileRoutes } from "../../signals/routes/cron-browser-reconcile";
 import { createBrowserFixtures } from "../../signals/routes/__tests__/helpers/browser-fixture";
+import { createChatFilesBddApi } from "../../signals/routes/__tests__/helpers/api-bdd-chat-files";
 import { controlBrowserDeadline } from "../../signals/routes/__tests__/helpers/browser-deadline";
 import { mockOptionalEnv } from "../env";
 import { clearMockMonotonicNow, mockMonotonicNow, mockNow, now } from "../time";
@@ -141,16 +140,17 @@ test("keeps OAuth callback stages and exception classes without private details"
 });
 
 // Logger-owned redaction contract: trigger failures at the external CDP boundary
-// through the authenticated production cron, without observing private services.
-test.each(["cdp", "connection", "command"] as const)(
+// through an owner thread deletion, without observing private services.
+test.each([
+  "cdp",
+  "connection",
+  "command",
+  "admission-close",
+  "command-close",
+  "normal-close",
+] as const)(
   "keeps private provider details out of native window failure logs: %s",
   async (failure) => {
-    const app = await setupApp({
-      context,
-      routes: cronBrowserReconcileRoutes,
-      isolatePg: true,
-    });
-    const cron = app(cronBrowserReconcileContract);
     const { fixture, open, view } = createBrowserFixtures(context);
     const f = await fixture();
     await f.owned.run(async () => {
@@ -160,7 +160,14 @@ test.each(["cdp", "connection", "command"] as const)(
       if (!providerSessionId) {
         throw new Error("Expected the external Browser provider session");
       }
+      const threads = createChatFilesBddApi(context);
+      const sibling = await threads.createThread(f.owned.actor, {
+        agentId: f.owned.agentId,
+        model: f.owned.model,
+      });
       const privateDetail = "private-provider-window-detail";
+      const nativeClose = failure.endsWith("-close");
+      const closeCode = failure === "normal-close" ? 1000 : 1013;
       if (failure === "cdp") {
         f.provider.native.windowBoundsError = {
           code: -32_602,
@@ -168,25 +175,34 @@ test.each(["cdp", "connection", "command"] as const)(
         };
       } else if (failure === "connection") {
         f.provider.native.onSocketConnection = controlBrowserDeadline(context);
-      } else {
+      } else if (failure === "command") {
         f.provider.native.windowReply = "withhold";
         f.provider.native.onWithheldReply = controlBrowserDeadline(context);
+      } else if (failure === "admission-close") {
+        f.provider.native.onSocketConnection = (socket) => {
+          socket.close(closeCode, privateDetail);
+        };
+      } else {
+        let nativeSocket: Pick<WebSocket, "close"> | undefined;
+        f.provider.native.onSocketConnection = (socket) => {
+          nativeSocket = socket;
+        };
+        f.provider.native.beforeNativeWindowReply = () => {
+          if (!nativeSocket) {
+            throw new Error("Expected the external CDP socket");
+          }
+          nativeSocket.close(closeCode, privateDetail);
+        };
       }
 
-      const result = await accept(
-        cron.reconcile({
-          headers: { authorization: "Bearer test-cron-secret" },
-        }),
-        [200],
-      );
-      expect(result.body).toMatchObject({ checked: 1, errors: 1, stopped: 0 });
+      await threads.deleteThread(f.owned.actor, sibling.id);
       const warning = context.mocks.axiomLogging.warn.mock.calls
         .filter(([message]) => {
           return message === "Browser window reconciliation failed";
         })
         .at(-1);
       const record = object({})
-        .catchall(string().or(number()))
+        .catchall(string().or(number()).or(boolean()))
         .parse(warning?.[1]);
       expect(record).toStrictEqual({
         instanceId: first.window?.instanceId,
@@ -194,12 +210,27 @@ test.each(["cdp", "connection", "command"] as const)(
         phase: "check-native-window",
         ...(failure === "cdp"
           ? { errorKind: "cdp", errorCode: -32_602 }
-          : {
-              errorKind: "provider",
-              providerStatus: 503,
-              errorCode: "BROWSER_USE_TIMEOUT",
-              nativePhase: failure,
-            }),
+          : nativeClose
+            ? {
+                errorKind: "transport",
+                nativePhase:
+                  failure === "admission-close" ? "connection" : "command",
+                errorClass: "CdpConnectionError",
+                socketSource: "native-close",
+                socketPhase:
+                  failure === "admission-close"
+                    ? expect.stringMatching(/^(opening|open)$/u)
+                    : "open",
+                socketReadyState: 3,
+                closeCode,
+                wasClean: true,
+              }
+            : {
+                errorKind: "provider",
+                providerStatus: 503,
+                errorCode: "BROWSER_USE_TIMEOUT",
+                nativePhase: failure,
+              }),
         context: "BrowserReconcile",
       });
       const serialized = JSON.stringify(warning);
@@ -213,18 +244,7 @@ test.each(["cdp", "connection", "command"] as const)(
       f.provider.native.onSocketConnection = undefined;
       f.provider.native.windowReply = "reply";
       f.provider.native.onWithheldReply = undefined;
-      expect((await view(chat)).window).toStrictEqual(first.window);
-      const recovered = await accept(
-        cron.reconcile({
-          headers: { authorization: "Bearer test-cron-secret" },
-        }),
-        [200],
-      );
-      expect(recovered.body).toMatchObject({
-        checked: 1,
-        errors: 0,
-        stopped: 0,
-      });
+      f.provider.native.beforeNativeWindowReply = undefined;
       expect((await view(chat)).window).toStrictEqual(first.window);
       expect(f.provider.sessionRequests).toHaveLength(1);
     });
@@ -1244,7 +1264,8 @@ describe("template usage Axiom transport", () => {
       await flushWaitUntilForTest();
       const persisted = await fixture.api.readRun(owned.actor, run.runId);
       expect(persisted.status).toBe("running");
-      expect(persisted.appendSystemPrompt).toContain(
+      const { execution } = await owned.runExecution(run.runId);
+      expect(execution.appendSystemPrompt).toContain(
         "Selected document template:",
       );
     });
@@ -1594,119 +1615,6 @@ describe("Axiom ingest HTTP error diagnostics", () => {
           }),
         );
       });
-    },
-  );
-});
-
-// Logger-owned transport exception: verify the selected-eager operation payload
-// at the existing external SDK ingest boundary, using the real connect/send/dispatch
-// flow. Ordinary API route tests must not inspect incidental diagnostics.
-describe("selected eager Axiom operation payload", () => {
-  it.each([0, 1, 2])(
-    "reports %i selected decrypts with both completed intervals",
-    async (expectedCount) => {
-      const fixture = createChatEventsFixture(context);
-      const { actor, agentId } = await fixture.entitledChatActor();
-      await fixture.api.updateUserModelPreference(actor, "claude-fable-5-1");
-      await fixture.connectors.connectManualGrant(
-        actor,
-        "figma",
-        "api-token",
-        {
-          accessToken: "deferred-transport-token",
-        },
-        agentId,
-      );
-      if (expectedCount) {
-        await fixture.connectors.connectManualGrant(
-          actor,
-          "openai",
-          "api-token",
-          {
-            apiKey: "eager-transport-token",
-          },
-          agentId,
-        );
-      }
-      if (expectedCount === 2) {
-        await fixture.connectors.connectManualGrant(
-          actor,
-          "parallel",
-          "api-token",
-          { apiKey: "parallel-transport-token" },
-          agentId,
-        );
-      }
-      context.mocks.axiom.useRealTelemetry.mockReturnValue(true);
-      const kms = useSecretKmsProbe();
-      const run = await fixture.sendChatRun(actor, {
-        agentId,
-        model: "claude-fable-5-1",
-        prompt: "Verify selected eager observations",
-      });
-      const execution = await fixture.runExecution(run.runId);
-      const actualDecrypts = kms.decryptCalls;
-      expect(execution.execution.environment).toMatchObject({
-        FIGMA_TOKEN: "fixture-figma-token",
-        ...(expectedCount ? { OPENAI_TOKEN: "eager-transport-token" } : {}),
-        ...(expectedCount === 2
-          ? { PARALLEL_API_KEY: "parallel-transport-token" }
-          : {}),
-      });
-      expect(actualDecrypts).toBe(expectedCount);
-      const eventSchema = object({
-        run_id: string().optional(),
-        op_type: string().optional(),
-        connector_context_schema: string().optional(),
-        connector_context_builtin_decrypt_count: number().optional(),
-        connector_context_builtin_decrypt_count_bucket: string().optional(),
-        preparation_phase: string().optional(),
-        duration_ms: number().optional(),
-        _time: string().optional(),
-      });
-      const events = context.mocks.axiom.sdkIngest.mock.calls
-        .flatMap(([, payload]) => {
-          return array(eventSchema).parse(payload);
-        })
-        .filter((event) => {
-          return event.run_id === run.runId;
-        });
-      const selected = events.filter((event) => {
-        return event.connector_context_schema === "selected_eager_v1";
-      });
-      expect(selected).toHaveLength(2);
-      for (const suffix of ["builtin_resolve", "builtin_decrypt"]) {
-        const matches = selected.filter((event) => {
-          return (
-            event.op_type ===
-            `api_dispatch_prepare_context_connector_context_${suffix}`
-          );
-        });
-        expect(matches).toHaveLength(1);
-        expect(matches[0]).toMatchObject({
-          connector_context_builtin_decrypt_count: actualDecrypts,
-          preparation_phase: "dispatch",
-          connector_context_builtin_decrypt_count_bucket:
-            expectedCount === 2 ? "2_4" : String(expectedCount),
-          duration_ms: expect.any(Number),
-          _time: expect.any(String),
-        });
-        expect(matches[0]!.duration_ms).toBeGreaterThanOrEqual(0);
-        expect(Number.isFinite(Date.parse(matches[0]!._time!))).toBeTruthy();
-      }
-      const shared = events.filter((event) => {
-        return event.connector_context_schema === "shared_v2";
-      });
-      expect(shared.length).toBeGreaterThan(0);
-      expect(
-        shared.every((event) => {
-          return (
-            event.connector_context_builtin_decrypt_count === undefined &&
-            event.connector_context_builtin_decrypt_count_bucket === undefined
-          );
-        }),
-      ).toBeTruthy();
-      await fixture.cancelChatRun(actor, run.runId, execution.sandboxHeaders);
     },
   );
 });

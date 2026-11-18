@@ -1,5 +1,80 @@
 # Changelog
 
+## [0.109.103](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.102...guest-agent-v0.109.103) (2026-11-18)
+
+## [0.109.102](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.101...guest-agent-v0.109.102) (2026-11-18)
+
+
+### Refactoring
+
+* delegate file opens to owned descriptor apis ([#48437](https://github.com/okou-ai/okou/issues/48437)) ([5ef5cab](https://github.com/okou-ai/okou/commit/5ef5cab9bc706528c66d21a9315fd76ed8e1ea10))
+
+## [0.109.101](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.100...guest-agent-v0.109.101) (2026-11-17)
+
+## [0.109.100](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.99...guest-agent-v0.109.100) (2026-11-17)
+
+
+### Refactoring
+
+* use typed fifo creation in native fixtures ([#48355](https://github.com/okou-ai/okou/issues/48355)) ([05bf56d](https://github.com/okou-ai/okou/commit/05bf56dbc4876786786c0379dfce0776e09b4519))
+
+## [0.109.99](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.98...guest-agent-v0.109.99) (2026-11-17)
+
+
+### Refactoring
+
+* use typed resource limit calls ([#48257](https://github.com/okou-ai/okou/issues/48257)) ([6a91f3e](https://github.com/okou-ai/okou/commit/6a91f3e48eae8cb2f0c01294602c0fa00bd2eb6c))
+
+## [0.109.98](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.97...guest-agent-v0.109.98) (2026-11-17)
+
+
+### Bug Fixes
+
+* **guest-agent:** classify disk exhaustion before completion ([#48222](https://github.com/okou-ai/okou/issues/48222)) ([2ba7427](https://github.com/okou-ai/okou/commit/2ba742774dce0ce2d76c4a2064fb78e75af0dcf3))
+
+## [0.109.97](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.96...guest-agent-v0.109.97) (2026-11-17)
+
+
+### Refactoring
+
+* **runner:** remove unused execution overrides ([#48162](https://github.com/okou-ai/okou/issues/48162)) ([1f0afc6](https://github.com/okou-ai/okou/commit/1f0afc6aa21f773b54c1d64b540280698e58f699))
+
+## [0.109.96](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.95...guest-agent-v0.109.96) (2026-11-17)
+
+## [0.109.95](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.94...guest-agent-v0.109.95) (2026-11-17)
+
+## [0.109.94](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.93...guest-agent-v0.109.94) (2026-11-17)
+
+## [0.109.93](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.92...guest-agent-v0.109.93) (2026-11-17)
+
+
+### Refactoring
+
+* **guest-agent:** use typed cgroup filesystem queries ([#47975](https://github.com/okou-ai/okou/issues/47975)) ([c5f39eb](https://github.com/okou-ai/okou/commit/c5f39eb9d6788912cbf100144e091075fcb8ad27))
+
+## [0.109.92](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.91...guest-agent-v0.109.92) (2026-11-16)
+
+## [0.109.91](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.90...guest-agent-v0.109.91) (2026-11-16)
+
+
+### Refactoring
+
+* **rust:** use typed waitid for owned-child observation ([#47916](https://github.com/okou-ai/okou/issues/47916)) ([63c1cb4](https://github.com/okou-ai/okou/commit/63c1cb42b3e5ddec5e783b089540bb315a19fffe))
+
+## [0.109.90](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.89...guest-agent-v0.109.90) (2026-11-16)
+
+
+### Refactoring
+
+* **runtime:** share sorted environment entry validation ([#47883](https://github.com/okou-ai/okou/issues/47883)) ([2170f64](https://github.com/okou-ai/okou/commit/2170f647745a06ae5957e4e230ff3701a9b14e1f))
+
+## [0.109.89](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.88...guest-agent-v0.109.89) (2026-11-16)
+
+
+### Refactoring
+
+* prepare structured run failures and recovery ([#47749](https://github.com/okou-ai/okou/issues/47749)) ([fca7335](https://github.com/okou-ai/okou/commit/fca73354c6b5b0aa4f122e78947565b274323991))
+
 ## [0.109.88](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.87...guest-agent-v0.109.88) (2026-11-16)
 
 

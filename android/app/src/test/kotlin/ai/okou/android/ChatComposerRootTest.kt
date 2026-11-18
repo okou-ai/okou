@@ -1,7 +1,10 @@
 package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
+import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.ComposerJournalStore
+import ai.okou.android.chat.ComposerPersistence
+import android.content.Intent
 import android.os.Looper
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsEnabled
@@ -19,6 +22,7 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.text.TextRange
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.test.core.app.ActivityScenario
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.Job
@@ -38,6 +42,7 @@ class ComposerRootApplication : TestOkouApplication() {
     lateinit var cacheSnapshot: ChatCacheSnapshot
     val contextGate = CountDownLatch(1)
     val sendGate = CountDownLatch(1)
+    val journalDirectory by lazy { noBackupFilesDir.resolve("composer-root-${UUID.randomUUID()}") }
 
     override fun onCreate() {
         fixture = ComposerApiFixture()
@@ -45,11 +50,7 @@ class ComposerRootApplication : TestOkouApplication() {
         fixture.beforeSendReturn = { sendGate.await() }
         chatService = fixture.service
         composerService = fixture.service
-        journalStore =
-            ComposerJournalStore(
-                this,
-                noBackupFilesDir.resolve("composer-root-${UUID.randomUUID()}"),
-            )
+        journalStore = ComposerJournalStore(this, journalDirectory)
         cacheSnapshot = ChatCacheSnapshot(noBackupFilesDir.resolve("chat-list"), chatCache)
         super.onCreate()
     }
@@ -66,20 +67,90 @@ class ChatComposerRootTest {
     private var editorJob: Job? = null
     private var listJob: Job? = null
     private var editor: ai.okou.android.chat.ChatComposerModel? = null
+    private var replacement: ActivityScenario<MainActivity>? = null
+    private var cleanupApplication: ComposerRootApplication? = null
 
-    private fun captureOwners() {
+    private fun captureOwners(activity: MainActivity = compose.activity) {
         compose.runOnIdle {
             val ready =
                 checkNotNull(
-                    ViewModelProvider(compose.activity)[SessionModel::class.java]
-                        .uiState
-                        .value
-                        .ready
+                    ViewModelProvider(activity)[SessionModel::class.java].uiState.value.ready
                 )
             editorJob = ready.composer.viewModelScope.coroutineContext[Job]
             editor = ready.composer
             listJob = ready.chats.viewModelScope.coroutineContext[Job]
         }
+    }
+
+    @Test
+    fun unversionedJournalShowsStorageFailureWithoutBlockingHistoryOrNavigation() {
+        val app = compose.activity.application as ComposerRootApplication
+        cleanupApplication = app
+        app.contextGate.countDown()
+        compose.onNodeWithText("New chat").performClick()
+        compose.onNodeWithTag("message_input").performTextInput("Retained draft before retirement")
+        captureOwners()
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { editor?.uiState?.value?.persistence == ComposerPersistence.Durable }
+        }
+        compose.activityRule.scenario.close()
+        compose.waitUntil(10_000) {
+            shadowOf(Looper.getMainLooper()).idle()
+            editorJob?.isCompleted != false && listJob?.isCompleted != false
+        }
+        runBlocking { checkNotNull(app.journalStore).close() }
+        val file = checkNotNull(app.journalDirectory.listFiles()).single { it.extension == "json" }
+        file.writeText("{}")
+        app.journalStore = ComposerJournalStore(app, app.journalDirectory)
+        val fresh = ActivityScenario.launch<MainActivity>(Intent(app, MainActivity::class.java))
+        replacement = fresh
+        compose.onNodeWithText("New chat").performClick()
+        var activity: MainActivity? = null
+        fresh.onActivity { activity = it }
+        captureOwners(checkNotNull(activity))
+        fun assertStorageFailure() {
+            compose.waitUntil(10_000) {
+                compose
+                    .onAllNodesWithText("Draft changes could not be saved on this device.")
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            }
+            compose
+                .onNodeWithText("Draft changes could not be saved on this device.")
+                .assertExists()
+            compose.onNodeWithTag("message_input").assertIsNotEnabled()
+            compose.onNodeWithText("Send").assertIsNotEnabled()
+        }
+        assertStorageFailure()
+        compose.onNodeWithText("Try again").performClick()
+        assertStorageFailure()
+        val chats =
+            compose.runOnIdle {
+                checkNotNull(
+                        ViewModelProvider(checkNotNull(activity))[SessionModel::class.java]
+                            .uiState
+                            .value
+                            .ready
+                    )
+                    .chats
+            }
+        // Finish the real HTTP warm and cache write before opening the unselected conversation.
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { chats.warming.state.value.phase == ChatReadPhase.Ready }
+        }
+        assertEquals(0, app.fixture.chats.readRequests.get())
+        compose.onNodeWithText("Back").performClick()
+        compose.onNodeWithText("Personal chat").performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("No messages yet.").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("No messages yet.").assertExists()
+        compose.onNodeWithTag("message_input").assertIsNotEnabled()
+        compose.onNodeWithText("Send").assertIsNotEnabled()
+        compose.onNodeWithText("Back").performClick()
+        compose.onNodeWithText("Chats").assertExists()
+        assertEquals("{}", file.readText())
+        assertEquals(0, app.fixture.requests.count { it.method == "POST" })
     }
 
     @Test
@@ -173,12 +244,13 @@ class ChatComposerRootTest {
 
     @After
     fun close() {
-        val app = compose.activity.application as ComposerRootApplication
+        val app = cleanupApplication ?: compose.activity.application as ComposerRootApplication
         app.contextGate.countDown()
         app.sendGate.countDown()
         val failures = mutableListOf<Throwable>()
         for (cleanup in
             listOf<() -> Unit>(
+                { replacement?.close() },
                 { compose.activityRule.scenario.close() },
                 {
                     compose.waitUntil(10_000) {

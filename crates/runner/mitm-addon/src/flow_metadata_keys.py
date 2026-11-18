@@ -147,31 +147,29 @@ Response streaming
 - ``RESPONSE_STREAM_STATE``: ``dict`` containing ``total_bytes`` for the
   general response stream callback. Read for exact response-size logging and
   removed by stream cleanup.
-- ``STREAM_BUFFER``: capped ``bytearray`` written by ``responseheaders()`` via
+- ``RESPONSE_STREAM_CAPTURE``: ``stream_capture.StreamCapture`` written by ``responseheaders()`` via
   response streaming setup only when body capture or bounded terminal
   inspection needs raw response bytes. Read by body capture, model JSON usage
   inspection, and connector fallback parsing. Removed by stream
   cleanup after terminal hooks.
-- ``STREAM_BUFFER_STATE``: ``dict`` containing ``truncated``. Written only
-  with ``STREAM_BUFFER`` and read for capture truncation, model JSON terminal
-  inspection, and connector fallback parsing. Removed by stream cleanup.
+  Its retained bytearray and truncation flag have one owner; the public
+  ``CapturedStreamBody`` view is read by capture and usage consumers.
 
 Request streaming
 -----------------
-- ``REQUEST_STREAM_BUFFER``: capped ``bytearray`` written by
+- ``REQUEST_STREAM_CAPTURE``: ``stream_capture.StreamCapture`` written by
   ``requestheaders()`` only when this module installs its callback with body
   capture or bounded billing inspection enabled. Inspection does not enable
   persisted body capture. A setup attempt that finds an externally owned callable
   does not create this buffer; repeated addon setup preserves the existing buffer. Read
   by request body capture and connector billing refinement. Removed by stream
   cleanup after terminal hooks.
-- ``REQUEST_STREAM_BUFFER_STATE``: ``dict`` with at least ``truncated`` and
-  ``total_bytes``. Written only when this module installs its callback and read
+- ``REQUEST_STREAM_STATE``: ``dict`` containing ``total_bytes`` independently of
+  optional capture. Written only when this module installs its callback and read
   for request size. A setup attempt that finds an externally owned callable does
   not create this state; repeated addon setup preserves existing state.
-  Capture/inspection paths also write ``REQUEST_STREAM_BUFFER`` and use this state
-  for capture truncation and connector billing refinement. Removed by stream
-  cleanup.
+  Capture/inspection paths also write ``REQUEST_STREAM_CAPTURE``; its bytearray
+  and truncation flag have one owner. Both are removed by stream cleanup.
 - ``REQUEST_STREAM_COMPLETE``: ``bool`` written by ``request()`` after
   mitmproxy finishes delivering a request whose stream size is tracked by this
   module. The external-callable no-op path provides no addon stream state from
@@ -286,10 +284,9 @@ MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS: Final = (
 X_RESOURCE_STREAM_REPORTED: Final = "x_resource_stream_reported"
 X_RESOURCE_REPORTED: Final = "x_resource_reported"
 RESPONSE_STREAM_STATE: Final = "response_stream_state"
-STREAM_BUFFER: Final = "stream_buffer"
-STREAM_BUFFER_STATE: Final = "stream_buffer_state"
-REQUEST_STREAM_BUFFER: Final = "request_stream_buffer"
-REQUEST_STREAM_BUFFER_STATE: Final = "request_stream_buffer_state"
+RESPONSE_STREAM_CAPTURE: Final = "response_stream_capture"
+REQUEST_STREAM_CAPTURE: Final = "request_stream_capture"
+REQUEST_STREAM_STATE: Final = "request_stream_state"
 REQUEST_STREAM_COMPLETE: Final = "request_stream_complete"
 X_NDJSON_STATE: Final = "x_ndjson_state"
 X_JSON_STATE: Final = "x_json_state"

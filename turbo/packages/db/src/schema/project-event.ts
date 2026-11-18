@@ -14,6 +14,7 @@ export const projectEventKind = pgEnum("project_event_kind", [
   "created",
   "renamed",
   "deleted",
+  "sort_updated",
 ]);
 
 /** Sequence reservation and event publication must share one atomic statement. */
@@ -40,6 +41,9 @@ export const projectEvents = pgTable(
     projectId: uuid("project_id").notNull(),
     kind: projectEventKind("kind").notNull(),
     name: text("name"),
+    sortOrder: text("sort_order"),
+    reorderTargetId: uuid("reorder_target_id"),
+    reorderSide: text("reorder_side"),
     fromThreadId: uuid("from_thread_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },

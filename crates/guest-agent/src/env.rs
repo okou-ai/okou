@@ -399,15 +399,6 @@ pub struct GuestConfig {
     /// string means there is no explicit deny list; the values become repeated
     /// `--disallowed-tools` arguments.
     pub disallowed_tools: String,
-    /// Comma-separated Claude Code tool names from
-    /// [`guest_contracts::env::RunPayload`] that should be allowed. An empty
-    /// string means there is no explicit allow list; the values become repeated
-    /// `--tools` arguments.
-    pub tools: String,
-    /// Opaque raw Claude Code settings payload from
-    /// [`guest_contracts::env::RunPayload`]. An empty string means there is no
-    /// settings override; a non-empty value is passed as `--settings`.
-    pub settings: String,
     /// Whether to launch the mock Claude binary. This is materialized from
     /// [`guest_contracts::env::USE_MOCK_CLAUDE_ENV`] and is true only for the
     /// exact string `"true"`.
@@ -593,8 +584,6 @@ impl GuestConfig {
             )?,
             secret_values: payload.secret_values,
             disallowed_tools: payload.disallowed_tools,
-            tools: payload.tools,
-            settings: payload.settings,
             use_mock_claude: bool_true_value(Some(&raw.use_mock_claude)),
             mock_claude_path: default_mock_path(
                 raw.mock_claude_path.as_deref(),
@@ -866,25 +855,7 @@ fn validate_private_runtime_file_path_for_runtime(
 }
 
 fn validate_user_env(user_env: &HashMap<String, String>) -> Result<(), String> {
-    let mut entries: Vec<(&String, &String)> = user_env.iter().collect();
-    entries.sort_by_key(|(key, _)| *key);
-
-    for (key, value) in entries {
-        if !guest_contracts::env::is_shell_identifier_env_key(key) {
-            return Err(format!(
-                "{USER_ENV_FILE_ENV_KEY} contains invalid env key {:?}",
-                guest_contracts::env::sanitize_env_key_for_diagnostic(key)
-            ));
-        }
-        if value.contains('\0') {
-            return Err(format!(
-                "{USER_ENV_FILE_ENV_KEY} contains NUL byte for env key {:?}",
-                guest_contracts::env::sanitize_env_key_for_diagnostic(key)
-            ));
-        }
-    }
-
-    Ok(())
+    guest_contracts::env::validate_sorted_shell_environment(user_env.iter(), USER_ENV_FILE_ENV_KEY)
 }
 
 fn resolve_home_dir(

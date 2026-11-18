@@ -2,14 +2,12 @@ import {
   androidReleaseManifestSchema,
   type AndroidRelease,
 } from "@okouai/api-contracts/contracts/android-updates";
-import {
-  readBoundedResponseText,
-  safeJsonParse,
-  settle,
-  startUntrackedBestEffortCleanup,
-} from "../utils";
+import { command } from "ccstate";
+import { env } from "../../lib/env";
+import { downloadS3BufferWithMaxBytes$ } from "../external/s3";
+import { safeJsonParse, settleIncludingAbort } from "../utils";
 
-const MANIFEST_URL = "https://static.okou.io/android-updates/manifest.json";
+const MANIFEST_KEY = "android-updates/manifest.json";
 
 export class AndroidUpdateUnavailable extends Error {
   constructor() {
@@ -17,47 +15,81 @@ export class AndroidUpdateUnavailable extends Error {
   }
 }
 
-async function readManifest(signal: AbortSignal): Promise<string> {
-  const deadline = AbortSignal.any([signal, AbortSignal.timeout(5000)]);
-  const response = await fetch(MANIFEST_URL, {
-    signal: deadline,
-    redirect: "error",
-  });
-  if (!response.ok) {
-    if (response.body) {
-      startUntrackedBestEffortCleanup(response.body.cancel());
-    }
-    throw new AndroidUpdateUnavailable();
+function isStorageUnavailable(error: unknown): boolean {
+  if (error instanceof TypeError || error instanceof DOMException) {
+    return true;
   }
-  const body = await readBoundedResponseText(response, 65_536, deadline);
-  if (body.kind !== "text") {
-    throw new Error("Android release manifest exceeds its limit");
+  if (!(error instanceof Error)) {
+    return false;
   }
-  return body.text;
+  if (
+    // A missing manifest is retryable; NoSuchBucket is a configuration error.
+    error.name === "NoSuchKey" ||
+    error.name === "TimeoutError" ||
+    error.name === "NetworkingError"
+  ) {
+    return true;
+  }
+  if (
+    "code" in error &&
+    typeof error.code === "string" &&
+    [
+      "ECONNRESET",
+      "ECONNREFUSED",
+      "ETIMEDOUT",
+      "ENOTFOUND",
+      "EAI_AGAIN",
+      "EPIPE",
+    ].includes(error.code)
+  ) {
+    return true;
+  }
+  if (
+    "$metadata" in error &&
+    typeof error.$metadata === "object" &&
+    error.$metadata !== null &&
+    "httpStatusCode" in error.$metadata &&
+    typeof error.$metadata.httpStatusCode === "number"
+  ) {
+    const status = error.$metadata.httpStatusCode;
+    return status === 408 || status === 429 || (status >= 500 && status < 600);
+  }
+  return false;
 }
 
-/** Public release bytes have no dependency on session credentials or GitHub API limits. */
-export async function loadAndroidRelease(
-  signal: AbortSignal,
-): Promise<AndroidRelease> {
-  const loaded = await settle(readManifest(signal), signal);
-  if (!loaded.ok) {
-    if (
-      loaded.error instanceof TypeError ||
-      loaded.error instanceof DOMException
-    ) {
-      throw new AndroidUpdateUnavailable();
+/** Resolve the publisher's current pointer without a public delivery cache. */
+export const loadAndroidRelease$ = command(
+  async ({ set }, signal: AbortSignal): Promise<AndroidRelease> => {
+    const bucket = env("R2_STATIC_BUCKET_NAME");
+    if (!bucket) {
+      throw new Error("Android release storage is not configured");
     }
-    throw loaded.error;
-  }
-  const { release } = androidReleaseManifestSchema.parse(
-    safeJsonParse(loaded.value),
-  );
-  if (
-    release.url !==
-    `https://static.okou.io/android-updates/releases/${release.version}/${release.sha256}.apk`
-  ) {
-    throw new Error("Android release identity is inconsistent");
-  }
-  return release;
-}
+    const deadline = AbortSignal.any([signal, AbortSignal.timeout(5000)]);
+    // S3 reports AbortError for an owned timeout too. Preserve caller aborts,
+    // while the five-second storage deadline remains a retryable check failure.
+    const loaded = await settleIncludingAbort(
+      set(
+        downloadS3BufferWithMaxBytes$,
+        { bucket, key: MANIFEST_KEY, maxBytes: 65_536 },
+        deadline,
+      ),
+    );
+    signal.throwIfAborted();
+    if (!loaded.ok) {
+      if (deadline.aborted || isStorageUnavailable(loaded.error)) {
+        throw new AndroidUpdateUnavailable();
+      }
+      throw loaded.error;
+    }
+    const { release } = androidReleaseManifestSchema.parse(
+      safeJsonParse(loaded.value.toString("utf8")),
+    );
+    if (
+      release.url !==
+      `https://static.okou.io/android-updates/releases/${release.version}/${release.sha256}.apk`
+    ) {
+      throw new Error("Android release identity is inconsistent");
+    }
+    return release;
+  },
+);

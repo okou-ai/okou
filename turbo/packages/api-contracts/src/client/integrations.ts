@@ -385,6 +385,17 @@ export const integrationsSlackUploadInitContract: ClientDescriptor<
 export const integrationsSlackUploadMaterializeContract: ClientDescriptor<
   typeof OriginalIntegrationsSlackUploadMaterializeContract
 > = {
+  deliver: {
+    method: "POST",
+    path: "/api/integrations/slack/upload-file/deliver",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+    },
+  },
   materialize: {
     method: "POST",
     path: "/api/integrations/slack/upload-file/materialize",

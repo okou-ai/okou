@@ -4,17 +4,14 @@ use std::os::unix::fs::symlink;
 
 fn set_delegate_xattr(path: &Path) {
     let path = CString::new(path.as_os_str().as_bytes()).unwrap();
-    // SAFETY: pointers and lengths refer to valid process memory.
-    let result = unsafe {
-        libc::setxattr(
-            path.as_ptr(),
-            DELEGATE_XATTR.as_ptr().cast(),
-            b"1".as_ptr().cast(),
-            1,
-            0,
-        )
-    };
-    assert_eq!(result, 0, "setxattr: {}", io::Error::last_os_error());
+    let result = rustix::fs::setxattr(
+        path.as_c_str(),
+        DELEGATE_XATTR,
+        b"1",
+        rustix::fs::XattrFlags::empty(),
+    )
+    .map_err(io::Error::from);
+    assert!(result.is_ok(), "setxattr: {}", result.unwrap_err());
 }
 
 fn fake_delegated_tree() -> (tempfile::TempDir, PathBuf, PathBuf) {

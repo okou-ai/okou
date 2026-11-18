@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.20.106](https://github.com/okou-ai/okou/compare/guest-init-v0.20.105...guest-init-v0.20.106) (2026-11-18)
+
+## [0.20.105](https://github.com/okou-ai/okou/compare/guest-init-v0.20.104...guest-init-v0.20.105) (2026-11-18)
+
+## [0.20.104](https://github.com/okou-ai/okou/compare/guest-init-v0.20.103...guest-init-v0.20.104) (2026-11-17)
+
+## [0.20.103](https://github.com/okou-ai/okou/compare/guest-init-v0.20.102...guest-init-v0.20.103) (2026-11-17)
+
+## [0.20.102](https://github.com/okou-ai/okou/compare/guest-init-v0.20.101...guest-init-v0.20.102) (2026-11-17)
+
+## [0.20.101](https://github.com/okou-ai/okou/compare/guest-init-v0.20.100...guest-init-v0.20.101) (2026-11-17)
+
+## [0.20.100](https://github.com/okou-ai/okou/compare/guest-init-v0.20.99...guest-init-v0.20.100) (2026-11-17)
+
+## [0.20.99](https://github.com/okou-ai/okou/compare/guest-init-v0.20.98...guest-init-v0.20.99) (2026-11-17)
+
+## [0.20.98](https://github.com/okou-ai/okou/compare/guest-init-v0.20.97...guest-init-v0.20.98) (2026-11-16)
+
+## [0.20.97](https://github.com/okou-ai/okou/compare/guest-init-v0.20.96...guest-init-v0.20.97) (2026-11-16)
+
+
+### Refactoring
+
+* **rust:** use typed waitid for owned-child observation ([#47916](https://github.com/okou-ai/okou/issues/47916)) ([63c1cb4](https://github.com/okou-ai/okou/commit/63c1cb42b3e5ddec5e783b089540bb315a19fffe))
+
+## [0.20.96](https://github.com/okou-ai/okou/compare/guest-init-v0.20.95...guest-init-v0.20.96) (2026-11-16)
+
+## [0.20.95](https://github.com/okou-ai/okou/compare/guest-init-v0.20.94...guest-init-v0.20.95) (2026-11-16)
+
 ## [0.20.94](https://github.com/okou-ai/okou/compare/guest-init-v0.20.93...guest-init-v0.20.94) (2026-11-16)
 
 ## [0.20.93](https://github.com/okou-ai/okou/compare/guest-init-v0.20.92...guest-init-v0.20.93) (2026-11-15)

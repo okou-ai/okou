@@ -11,38 +11,13 @@ import { apiClient$ } from "./api-client.ts";
 import { onRef, resetSignal } from "./utils.ts";
 import { pageSignal$ } from "./page-signal.ts";
 import { authenticatedSessionKey$ } from "./auth.ts";
-import type { GoogleWorkspaceTarget } from "@okouai/core/google-workspace-conversion";
-import { getArtifactShareScope } from "./artifact-sharing.ts";
-import { getHostedSiteShareScope } from "./hosted-site-sharing.ts";
-import { reloadBuiltinConnectors$ } from "./external/connectors.ts";
-
-export interface ArtifactPreviewMenuSnapshot {
-  readonly url: string;
-  readonly delete: string | null;
-  readonly recovery: boolean;
-  readonly drive: GoogleWorkspaceTarget | "file" | null;
-  readonly original: boolean;
-}
-
 export type ArtifactDeletionSourceKind = "shared-thread" | "reference";
 
 const internalArtifactCatalogRevision$ = state(0);
 export const artifactCatalogRevision$ = computed((get) => {
   return get(internalArtifactCatalogRevision$);
 });
-const internalDeleteTarget$ = state<ArtifactSummary | null>(null);
-const internalReturnFocus$ = state<HTMLElement | null>(null);
 const internalViewport$ = state<HTMLElement | null>(null);
-const internalDeletionCompleted$ = state(false);
-export const artifactDeleteTarget$ = computed((get) => {
-  return get(internalDeleteTarget$);
-});
-export const setArtifactDeleteTarget$ = command(
-  ({ set }, artifact: ArtifactSummary | null) => {
-    set(internalDeleteTarget$, artifact);
-    set(internalDeletionCompleted$, false);
-  },
-);
 
 export const artifactCatalogViewportRef$ = onRef(
   command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
@@ -57,51 +32,6 @@ export const artifactCatalogViewportRef$ = onRef(
       { once: true },
     );
   }),
-);
-
-// The menu item disappears when it opens the dialog. Cancellation returns to
-// the persistent card trigger; deletion returns to the remaining catalog.
-export const artifactDeletionFinalFocus$ = command(({ get }) => {
-  return get(internalDeletionCompleted$)
-    ? get(internalViewport$)
-    : get(internalReturnFocus$);
-});
-
-export function createArtifactDeleteMenuSignals(artifact: ArtifactSummary) {
-  const internalTrigger$ = state<HTMLElement | null>(null);
-  return {
-    triggerRef$: onRef(
-      command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
-        set(internalTrigger$, element);
-        signal.addEventListener(
-          "abort",
-          () => {
-            set(internalTrigger$, null);
-            if (get(internalReturnFocus$) === element) {
-              set(internalReturnFocus$, null);
-            }
-          },
-          { once: true },
-        );
-      }),
-    ),
-    request$: command(({ get, set }) => {
-      set(setArtifactDeleteTarget$, artifact);
-      set(internalReturnFocus$, get(internalTrigger$));
-    }),
-  };
-}
-
-export const deleteCatalogArtifact$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const target = get(internalDeleteTarget$);
-    if (!target) {
-      return;
-    }
-    await set(deleteOwnedArtifact$, target.id, signal);
-    set(internalDeleteTarget$, null);
-    set(internalDeletionCompleted$, true);
-  },
 );
 
 const deleteOwnedArtifact$ = command(
@@ -134,11 +64,9 @@ function createPreviewArtifactDeletion(
   const target$ = state<ArtifactSummary | null>(null);
   const trigger$ = state<HTMLElement | null>(null);
   const completed$ = state(false);
-  const reload$ = state(0);
   // Shared pages carry source resource IDs. Only an owner-scoped catalog read
   // can resolve the identity accepted by deletion, including for public links.
   const detail$ = computed(async (get) => {
-    get(reload$);
     get(artifactCatalogRevision$);
     // A token refresh must not reload the action and unmount its focus target.
     if (surface === "page" && !get(authenticatedSessionKey$)) {
@@ -174,11 +102,6 @@ function createPreviewArtifactDeletion(
     artifactId,
     sourceKind,
     detail$,
-    retry$: command(({ set }) => {
-      set(reload$, (revision) => {
-        return revision + 1;
-      });
-    }),
     target$: computed((get) => {
       return get(target$);
     }),
@@ -234,17 +157,6 @@ function createPreviewArtifactDeletion(
 }
 
 function createPreviewDeletionScope(surface: "dialog" | "sidebar" | "page") {
-  // Additions are captured by the opening event, not by asynchronous renders.
-  // Consumers still intersect this snapshot with current authorization.
-  const snapshot$ = state<ArtifactPreviewMenuSnapshot | null>(null);
-  const menuSnapshot$ = computed((get) => {
-    return get(snapshot$);
-  });
-  const captureMenu$ = command(
-    ({ set }, snapshot: ArtifactPreviewMenuSnapshot) => {
-      set(snapshot$, snapshot);
-    },
-  );
   const menuTrigger$ = state<HTMLButtonElement | null>(null);
   const menuTriggerRef$ = onRef(
     command(({ get, set }, element: HTMLButtonElement, signal: AbortSignal) => {
@@ -254,7 +166,6 @@ function createPreviewDeletionScope(surface: "dialog" | "sidebar" | "page") {
         () => {
           if (get(menuTrigger$) === element) {
             set(menuTrigger$, null);
-            set(snapshot$, null);
           }
         },
         { once: true },
@@ -275,37 +186,6 @@ function createPreviewDeletionScope(surface: "dialog" | "sidebar" | "page") {
         )
       : null;
   });
-  const detail$ = computed((get) => {
-    const session = get(session$);
-    return session ? get(session.detail$) : null;
-  });
-  const retryActions$ = command(
-    (
-      { get, set },
-      failed: {
-        deletion: boolean;
-        sharing: boolean;
-        hostedSite: boolean;
-        drive: boolean;
-      },
-    ) => {
-      const session = get(session$);
-      if (failed.deletion && session) {
-        set(session.retry$);
-      }
-      if (failed.drive) {
-        set(reloadBuiltinConnectors$);
-      }
-      if (surface !== "page") {
-        if (failed.sharing) {
-          set(getArtifactShareScope(surface).retry$);
-        }
-        if (failed.hostedSite) {
-          set(getHostedSiteShareScope(surface).retry$);
-        }
-      }
-    },
-  );
   const resetMountSignal$ = resetSignal();
   const mountRef$ = onRef(
     command(
@@ -349,13 +229,9 @@ function createPreviewDeletionScope(surface: "dialog" | "sidebar" | "page") {
   );
   return {
     session$,
-    detail$,
     mountRef$,
     menuTriggerRef$,
     requestFromMenu$,
-    menuSnapshot$,
-    captureMenu$,
-    retryActions$,
   };
 }
 

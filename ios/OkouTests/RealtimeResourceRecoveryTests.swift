@@ -217,7 +217,7 @@ private final class RealtimeResourceHarness {
       return try JSONSerialization.data(withJSONObject: [
         "keyName": "fixture.key", "timestamp": timestamp, "ttl": 3_600_000,
         "nonce": "fixture-nonce", "mac": "ZmFrZQ==", "clientId": userID,
-        "capability": "{\"*\":[\"subscribe\"]}",
+        "capability": "{\"*\":[\"subscribe\"]}"
       ])
     },
     onChange: { [weak self] change in
@@ -334,7 +334,7 @@ private final class RealtimeResourceHarness {
   func expectedRequests(rounds: Int) -> [String: Int] {
     [
       "/api/user-model-preference": rounds, "/api/run-models": rounds,
-      "/api/model-catalog": rounds, "/api/feature-switches": rounds,
+      "/api/model-catalog": rounds, "/api/feature-switches": rounds
     ]
   }
 }
@@ -455,9 +455,17 @@ final class WorkspaceModelRecoveryTests: XCTestCase {
   }
 
   func testResumedChannelPreservesTheBaselineAndStillAppliesPreferenceNotifications() async throws {
-    let fixture = try ModelRecoveryFixture(bootstrap: WorkspaceReadBootstrap())
-    addTeardownBlock { await fixture.close() }
+    let deadline = ModelResponseGate()
+    let registered = expectation(description: "The workspace channel is registered for injection")
+    let fixture = try ModelRecoveryFixture(
+      bootstrap: WorkspaceReadBootstrap { await deadline.wait() },
+      onChannelAttach: { registered.fulfill() })
+    addTeardownBlock {
+      deadline.open()
+      await fixture.close()
+    }
     try await fixture.start()
+    await fulfillment(of: [registered], timeout: 3)
     fixture.http.setRemoteModel("claude-model")
 
     try fixture.server.attached(fixture.channel, resumed: true)
@@ -474,26 +482,158 @@ final class WorkspaceModelRecoveryTests: XCTestCase {
 
 @MainActor
 final class WorkspaceIndicatorRecoveryTests: XCTestCase {
+  func testStartupAndInitialSubscriptionsShareOneIndicatorRead() async throws {
+    let deadline = ModelResponseGate()
+    let releaseToken = ModelResponseGate()
+    let waiting = expectation(description: "Startup indicators await the initial subscriptions")
+    let fixture = try ModelRecoveryFixture(
+      bootstrap: WorkspaceReadBootstrap(),
+      indicatorsBootstrap: WorkspaceReadBootstrap {
+        waiting.fulfill()
+        await deadline.wait()
+      },
+      beforeRealtimeToken: { await releaseToken.wait() },
+      indicators: { _ in Self.indicatorResponse("active") })
+    let startup = Task { try await fixture.start(loadModels: false) }
+    addTeardownBlock { @MainActor in
+      startup.cancel()
+      releaseToken.open()
+      deadline.open()
+      await fixture.close()
+      _ = await startup.result
+    }
+
+    await fulfillment(of: [waiting], timeout: 3)
+    releaseToken.open()
+    try await startup.value
+    try await waitForBusinessResult { fixture.workspace.connectionStatus == .connected }
+    await fixture.workspace.resumePendingRefresh()?.value
+
+    XCTAssertEqual(fixture.workspace.list.threads.first?.indicator, .active)
+    XCTAssertEqual(fixture.indicatorReads, 1)
+  }
+
+  func testDeadlineReadInFlightStillCatchesUpAfterLateSubscriptions() async throws {
+    let releaseToken = ModelResponseGate()
+    let releaseRead = ModelResponseGate()
+    let reading = expectation(description: "The deadline releases indicators before attachment")
+    let remote = Mutex((reads: 0, state: "active"))
+    let fixture = try ModelRecoveryFixture(
+      bootstrap: WorkspaceReadBootstrap(),
+      indicatorsBootstrap: WorkspaceReadBootstrap(waitForTimeout: {}),
+      beforeRealtimeToken: { await releaseToken.wait() },
+      indicators: { _ in
+        let (read, state) = remote.withLock {
+          $0.reads += 1
+          return ($0.reads, $0.state)
+        }
+        if read == 1 {
+          reading.fulfill()
+          await releaseRead.wait()
+        }
+        return Self.indicatorResponse(state)
+      })
+    let startup = Task { try await fixture.start(loadModels: false) }
+    addTeardownBlock { @MainActor in
+      startup.cancel()
+      releaseToken.open()
+      releaseRead.open()
+      await fixture.close()
+      _ = await startup.result
+    }
+
+    await fulfillment(of: [reading], timeout: 3)
+    remote.withLock { $0.state = "unread" }
+    releaseToken.open()
+    try await waitForBusinessResult { fixture.workspace.connectionStatus == .connected }
+    releaseRead.open()
+    try await startup.value
+    await fixture.workspace.resumePendingRefresh()?.value
+
+    XCTAssertTrue(fixture.workspace.list.hasUnreadThreads)
+    XCTAssertEqual(fixture.workspace.list.unreadAgentIDs, [ConversationHistoryFixture.agentID])
+    XCTAssertEqual(fixture.indicatorReads, 2)
+  }
+
+  func testReadCursorRefreshReleasesIndicatorsWaitingForSubscriptions() async throws {
+    let deadline = ModelResponseGate()
+    let waiting = expectation(description: "Startup indicators are waiting for subscriptions")
+    let fixture = WorkspaceStartupFixture(indicators: { _ in Self.indicatorResponse("unread") })
+    let workspace = fixture.workspace(
+      indicatorsBootstrap: WorkspaceReadBootstrap {
+        waiting.fulfill()
+        await deadline.wait()
+      })
+    let startup = Task { await workspace.refresh([.startup]) }
+    addTeardownBlock { @MainActor in
+      startup.cancel()
+      deadline.open()
+      await workspace.close().value
+      await startup.value
+    }
+    await fulfillment(of: [waiting], timeout: 3)
+
+    await workspace.refresh([.readCursor])
+    await startup.value
+
+    XCTAssertTrue(workspace.list.hasUnreadThreads)
+    XCTAssertEqual(workspace.list.unreadAgentIDs, [ConversationHistoryFixture.agentID])
+  }
+
+  func testClosingWorkspaceReleasesThePendingIndicatorBaseline() async throws {
+    let deadline = ModelResponseGate()
+    let waiting = expectation(description: "Startup indicators have not started HTTP")
+    let fixture = WorkspaceStartupFixture()
+    let workspace = fixture.workspace(
+      indicatorsBootstrap: WorkspaceReadBootstrap {
+        waiting.fulfill()
+        await deadline.wait()
+      })
+    let startup = Task { await workspace.refresh([.startup]) }
+    addTeardownBlock { @MainActor in
+      startup.cancel()
+      deadline.open()
+      await workspace.close().value
+      await startup.value
+    }
+    await fulfillment(of: [waiting], timeout: 3)
+
+    await workspace.close().value
+    await startup.value
+
+    XCTAssertFalse(
+      fixture.history.requests.values.withLock { $0.contains("GET /api/indicators") })
+  }
+
   func testDedicatedIndicatorReadCursorAndContinuitySignalsRefreshTheirAuthoritativeState()
     async throws
   {
     let remote = Mutex("active")
+    let releaseToken = ModelResponseGate()
+    let tokenRequested = expectation(
+      description: "Realtime token delivery is held before attachment")
+    let registered = expectation(description: "The workspace channel is registered for injection")
     let fixture = try ModelRecoveryFixture(
-      bootstrap: WorkspaceReadBootstrap(),
-      indicators: { _ in
-        let state = remote.withLock { $0 }
-        let thread = ConversationHistoryFixture.threadID
-        let agent = ConversationHistoryFixture.agentID
-        let threads = state == "none" ? "{}" : "{\"\(thread)\":\"\(state)\"}"
-        let unread = state == "unread"
-        return ChatHTTPResponse(
-          body: """
-            {"threads":\(threads),"agents":\(unread ? "{\"\(agent)\":\"unread\"}" : "{}"),\
-            "unreadAt":\(unread ? "{\"\(thread)\":\"2026-11-13T00:00:00Z\"}" : "{}")}
-            """)
-      })
-    addTeardownBlock { await fixture.close() }
+      bootstrap: WorkspaceReadBootstrap(waitForTimeout: {}),
+      indicatorsBootstrap: WorkspaceReadBootstrap(waitForTimeout: {}),
+      beforeRealtimeToken: {
+        tokenRequested.fulfill()
+        await releaseToken.wait()
+      },
+      onChannelAttach: { registered.fulfill() },
+      indicators: { _ in Self.indicatorResponse(remote.withLock { $0 }) })
+    addTeardownBlock {
+      releaseToken.open()
+      await fixture.close()
+    }
     try await fixture.start()
+    await fulfillment(of: [tokenRequested], timeout: 3)
+    XCTAssertEqual(fixture.workspace.list.threads.first?.indicator, .active)
+
+    releaseToken.open()
+    await fulfillment(of: [registered], timeout: 3)
+    // Late initial subscriptions schedule a catch-up read before reporting connected.
+    try await waitForBusinessResult { fixture.workspace.connectionStatus == .connected }
     await fixture.workspace.resumePendingRefresh()?.value
     XCTAssertEqual(fixture.workspace.list.threads.first?.indicator, .active)
     let initial = fixture.http.history.requests.values.withLock { $0 }
@@ -524,6 +664,18 @@ final class WorkspaceIndicatorRecoveryTests: XCTestCase {
         $0.filter { $0 == "GET /api/indicators" }.count
       }, indicatorReads + 3)
   }
+
+  private nonisolated static func indicatorResponse(_ state: String) -> ChatHTTPResponse {
+    let thread = ConversationHistoryFixture.threadID
+    let agent = ConversationHistoryFixture.agentID
+    let threads = state == "none" ? "{}" : "{\"\(thread)\":\"\(state)\"}"
+    let unread = state == "unread"
+    return ChatHTTPResponse(
+      body: """
+        {"threads":\(threads),"agents":\(unread ? "{\"\(agent)\":\"unread\"}" : "{}"),\
+        "unreadAt":\(unread ? "{\"\(thread)\":\"2026-11-13T00:00:00Z\"}" : "{}")}
+        """)
+  }
 }
 
 @MainActor
@@ -532,32 +684,51 @@ private final class ModelRecoveryFixture {
   var server: RealtimeHTTPFixture { realtime.server }
   let http: WorkspaceStartupFixture
   private let bootstrap: WorkspaceReadBootstrap
+  private let indicatorsBootstrap: WorkspaceReadBootstrap?
   private let userID = "recovery-user-\(UUID().uuidString)"
   private let workspaceID = "recovery-workspace-\(UUID().uuidString)"
   var sdk: ARTRealtime? { realtime.sdk }
   var channel: String { "user-org:\(userID):\(workspaceID)" }
+  var indicatorReads: Int {
+    http.history.requests.values.withLock { $0.filter { $0 == "GET /api/indicators" }.count }
+  }
 
-  lazy var workspace = http.workspace(modelBootstrap: bootstrap, createRealtime: realtime.factory)
+  lazy var workspace = http.workspace(
+    modelBootstrap: bootstrap, indicatorsBootstrap: indicatorsBootstrap,
+    createRealtime: realtime.factory)
 
   init(
     bootstrap: WorkspaceReadBootstrap,
+    indicatorsBootstrap: WorkspaceReadBootstrap? = nil,
+    beforeRealtimeToken: (@Sendable () async throws -> Void)? = nil,
+    onChannelAttach: @escaping @Sendable () -> Void = {},
     indicators: ChatHTTPFixture.Handler? = nil
   ) throws {
     self.bootstrap = bootstrap
-    realtime = try LoopbackRealtimeFixture(clientID: userID)
+    self.indicatorsBootstrap = indicatorsBootstrap
+    let expectedChannel = "user-org:\(userID):\(workspaceID)"
+    realtime = try LoopbackRealtimeFixture(clientID: userID) { action, channel in
+      guard action == 10, channel == expectedChannel else { return }
+      onChannelAttach()
+    }
     let token = try JSONSerialization.data(withJSONObject: [
       "keyName": "fixture.key", "timestamp": Int64(Date().timeIntervalSince1970 * 1000),
       "ttl": 3_600_000, "nonce": "fixture-nonce", "mac": "ZmFrZQ==",
-      "clientId": userID, "capability": "{\"*\":[\"subscribe\"]}",
+      "clientId": userID, "capability": "{\"*\":[\"subscribe\"]}"
     ])
     http = WorkspaceStartupFixture(
-      realtimeToken: String(decoding: token, as: UTF8.self), indicators: indicators)
+      beforeRealtimeToken: beforeRealtimeToken,
+      realtimeToken: String(data: token, encoding: .utf8)!, indicators: indicators)
   }
 
-  func start() async throws {
+  func start(loadModels: Bool = true) async throws {
     try await realtime.start()
     server.attachAutomatically()
     workspace.setPhase(.active)
+    guard loadModels else {
+      await workspace.start(userID: userID, workspaceID: workspaceID)
+      return
+    }
     async let models: Void = workspace.newModelSelection.open()
     await workspace.start(userID: userID, workspaceID: workspaceID)
     await models

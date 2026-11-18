@@ -14,6 +14,9 @@ import kotlinx.serialization.json.Json
 
 /** Empty external workspace data for shell/preferences tests. */
 open class TestChatService : ChatListService {
+    override suspend fun historyCatchUp(cursors: Map<String, ai.okou.android.chat.HistoryCursor>) =
+        ai.okou.android.chat.HistoryBatch(cursors.mapValues { emptyList() }, emptyList())
+
     override suspend fun historySnapshot(
         threadId: String
     ): ai.okou.android.api.generated.HistorySnapshot = error("Unexpected history request")

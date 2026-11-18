@@ -136,10 +136,10 @@ export const changeEmailSession$ = command(
       .from(confirmation);
     signal.throwIfAborted();
     if (!result) {
-      return false;
+      return null;
     }
     await publishUserSignal([args.userId], "email:changed");
     signal.throwIfAborted();
-    return true;
+    return result.id;
   },
 );

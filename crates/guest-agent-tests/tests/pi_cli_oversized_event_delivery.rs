@@ -57,6 +57,13 @@ fn tool_result(id: &str, content: Value, failed: bool) -> Value {
     ]))
 }
 
+fn text_content(text: String) -> Value {
+    Value::Array(vec![Value::Object(serde_json::Map::from_iter([
+        ("type".into(), "text".into()),
+        ("text".into(), Value::String(text)),
+    ]))])
+}
+
 #[test]
 fn owned_pi_message_fixtures_preserve_canonical_bytes() {
     for content in [
@@ -169,7 +176,7 @@ async fn pi_rpc_bounds_delivery_and_preserves_truth_and_originals()
     // Numeric values reach the traversal bound without becoming reduction
     // candidates. The final string makes the event oversized after that bound.
     let mut structure_values = vec![json!(0); 4_100];
-    structure_values.push(json!("x".repeat(LIMIT)));
+    structure_values.push(Value::String("x".repeat(LIMIT)));
     let messages = vec![
         assistant(
             "small",
@@ -212,7 +219,7 @@ async fn pi_rpc_bounds_delivery_and_preserves_truth_and_originals()
             ),
             false,
         ),
-        tool_result("tool-input-id", json!([{"type":"text","text":text}]), true),
+        tool_result("tool-input-id", text_content(text), true),
         tool_result("small-image", json!([image(&small_image)]), false),
         tool_result("large-image", json!([image(&large_image)]), true),
         tool_result(
@@ -227,11 +234,7 @@ async fn pi_rpc_bounds_delivery_and_preserves_truth_and_originals()
         json!([{"type":"text","text":input}]),
         true,
     )];
-    let mut failed_terminal = assistant(
-        "failed-terminal",
-        json!([{"type":"text","text":input}]),
-        true,
-    );
+    let mut failed_terminal = assistant("failed-terminal", text_content(input), true);
     failed_terminal["message"]
         .as_object_mut()
         .unwrap()

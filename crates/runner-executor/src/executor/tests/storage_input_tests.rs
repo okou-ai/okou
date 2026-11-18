@@ -85,7 +85,26 @@ fn apply_guest_storage(
     for call in overrides.storage_manifest_calls().iter().skip(first_call) {
         let (json, mut files) = if call.manifest_json.starts_with(storage_files::INPUT_MAGIC) {
             let (json, payload) = storage_files::split_input(&call.manifest_json).unwrap();
-            (json, storage_files::decode(payload).unwrap())
+            // The fixture rewrites Guest paths and re-encodes an owned Host
+            // input; production Guest application borrows this payload instead.
+            let files = storage_files::decode(payload)
+                .unwrap()
+                .into_iter()
+                .map(|group| storage_files::StorageFiles {
+                    mount_path: group.mount_path,
+                    files: group
+                        .files
+                        .into_iter()
+                        .map(|file| storage_files::StorageFile {
+                            path: file.path,
+                            mode: file.mode,
+                            mtime: file.mtime,
+                            content: file.content.to_vec(),
+                        })
+                        .collect(),
+                })
+                .collect();
+            (json, files)
         } else {
             (call.manifest_json.as_slice(), Vec::new())
         };

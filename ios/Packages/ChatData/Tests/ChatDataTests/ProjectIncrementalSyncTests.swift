@@ -8,6 +8,51 @@ import XCTest
 
 @MainActor
 final class ProjectIncrementalSyncTests: XCTestCase {
+  func testProjectRanksReplayAndSurviveCacheReopening() async throws {
+    let changed = Mutex(false)
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/projects/snapshot":
+        return ChatHTTPResponse(
+          body: """
+            {"projects":[
+            {"id":"\(projectID(101))","name":"Old","createdAt":"2026-11-13T00:00:00Z","updatedAt":"2026-11-13T00:00:00Z"},
+            {"id":"\(projectID(102))","name":"Later","sortOrder":null,"createdAt":"2026-11-14T00:00:00Z","updatedAt":"2026-11-14T00:00:00Z"}
+            ],"latestEventId":"\(projectID(1))","latestSeqId":1}
+            """)
+      case "/api/projects/events":
+        guard changed.withLock({ $0 }), projectCursor(request) == 1 else {
+          return projectPage([])
+        }
+        return projectPage([
+          """
+          {"id":"\(projectID(2))","seqId":2,"projectId":"\(projectID(102))","kind":"sort_updated","name":null,"sortOrder":"Zz","createdAt":"2026-11-15T00:00:00Z"}
+          """,
+          """
+          {"id":"\(projectID(3))","seqId":3,"projectId":"\(projectID(102))","kind":"renamed","name":"Moved","createdAt":"2026-11-15T01:00:00Z"}
+          """,
+          """
+          {"id":"\(projectID(4))","seqId":4,"projectId":"\(projectID(103))","kind":"created","name":"Tie","sortOrder":"Zz","createdAt":"2026-11-15T02:00:00Z"}
+          """
+        ])
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let directory = CacheTestDirectory(owner: self)
+    let scope = projectScope(fixture)
+    let initial = ChatSync(client: fixture.client, cache: directory.cache(scope: scope))
+    let old = try await initial.projectList()
+    XCTAssertEqual(old.map(\.name), ["Old", "Later"])
+    changed.withLock { $0 = true }
+    let reopened = ChatSync(client: fixture.client, cache: directory.cache(scope: scope))
+    let ranked = try await reopened.projectList()
+    XCTAssertEqual(ranked.map(\.name), ["Moved", "Tie", "Old"])
+    XCTAssertEqual(ranked.first?.sortOrder, "Zz")
+    let saved = ChatSync(client: fixture.client, cache: directory.cache(scope: scope))
+    let restored = try await saved.projectList()
+    XCTAssertEqual(restored, ranked)
+  }
+
   func testPagedProjectChangesResumeFromThePersistedFrontierAfterReopening() async throws {
     let cursors = Mutex<[Int]>([])
     let fixture = ChatHTTPFixture { request in
@@ -224,7 +269,7 @@ final class ProjectIncrementalSyncTests: XCTestCase {
       projectPage([projectEvent(1, name: "Out of order")]),
       projectPage([projectEvent(2, project: 2, name: "Missing baseline")]),
       ChatHTTPResponse(status: 410, body: #"{"error":{"message":"Expired"}}"#),
-      ChatHTTPResponse(status: 426, body: #"{"error":{"message":"Upgrade required"}}"#),
+      ChatHTTPResponse(status: 426, body: #"{"error":{"message":"Upgrade required"}}"#)
     ] {
       let fixture = ChatHTTPFixture { request in
         switch request.url?.path {
@@ -240,7 +285,7 @@ final class ProjectIncrementalSyncTests: XCTestCase {
         if page.status == 426 {
           XCTAssertEqual((error as? APIClientError)?.statusCode, 426)
         } else {
-          guard let contract = error as? ChatError, case .invalidContract(_) = contract else {
+          guard let contract = error as? ChatError, case .invalidContract = contract else {
             return XCTFail("Expected the Project stream contract error, got \(error)")
           }
         }

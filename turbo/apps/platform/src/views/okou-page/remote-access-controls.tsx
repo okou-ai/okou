@@ -63,7 +63,6 @@ import { sshIdentity$ } from "../../signals/ssh.ts";
 import { Button } from "@okouai/ui/components/ui/button";
 import { Link } from "../router/link.tsx";
 import { ROUTES } from "../../signals/route-paths.ts";
-import type { VncConnectionResponse } from "@okouai/api-contracts/contracts/vnc-connections";
 
 interface RemoteHostDefaultToggleProps {
   protocol: RemoteAccessProtocol;
@@ -761,8 +760,6 @@ interface RemoteAccessEntry {
   protocol: RemoteAccessProtocol;
   host: ThreadRemoteHostAccess;
 }
-type VncConfiguration = Loadable<readonly VncConnectionResponse[] | null>;
-
 function RemoteAccessFilters({
   signals,
   entries,
@@ -825,49 +822,17 @@ function RemoteAccessNotices({
   operation,
   readFailed,
   hasVnc,
-  configuration,
   onReload,
 }: {
   operation: DialogOperation;
   readFailed: boolean;
   hasVnc: boolean;
-  configuration: VncConfiguration;
   onReload: (event: unknown) => void;
 }) {
   const { t } = useTranslation();
-  const reloadVnc = useSet(invalidateVnc$);
-  const vncFailed = hasVnc && configuration.state === "hasError";
-  const vncLoading = hasVnc && configuration.state === "loading";
   return (
     <>
-      {!readFailed && (vncFailed || vncLoading) && (
-        <div
-          role={vncFailed ? "alert" : "status"}
-          className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-gray-50 p-3 text-xs text-muted-foreground"
-        >
-          <span className="min-w-0 flex-1">
-            {vncFailed ? (
-              t(($) => {
-                return $.vnc.loadFailed;
-              })
-            ) : (
-              <LoadingSkeleton
-                variant="text"
-                label={t(($) => {
-                  return $.vnc.loading;
-                })}
-              />
-            )}
-          </span>
-          {vncFailed && (
-            <Button variant="outline" size="sm" onClick={reloadVnc}>
-              {t(($) => {
-                return $.chat.remoteAccess.reload;
-              })}
-            </Button>
-          )}
-        </div>
-      )}
+      {!readFailed && hasVnc && <VncConfigurationNotice />}
       {(readFailed || operation.state === "hasError") && (
         <div
           role="alert"
@@ -898,17 +863,56 @@ function RemoteAccessNotices({
   );
 }
 
+function VncConfigurationNotice() {
+  const { t } = useTranslation();
+  const configuration = useLoadable(vncConnections$);
+  const reloadVnc = useSet(invalidateVnc$);
+  const vncFailed = configuration.state === "hasError";
+  const vncLoading = configuration.state === "loading";
+  return (
+    <>
+      {(vncFailed || vncLoading) && (
+        <div
+          role={vncFailed ? "alert" : "status"}
+          className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-gray-50 p-3 text-xs text-muted-foreground"
+        >
+          <span className="min-w-0 flex-1">
+            {vncFailed ? (
+              t(($) => {
+                return $.vnc.loadFailed;
+              })
+            ) : (
+              <LoadingSkeleton
+                variant="text"
+                label={t(($) => {
+                  return $.vnc.loading;
+                })}
+              />
+            )}
+          </span>
+          {vncFailed && (
+            <Button variant="outline" size="sm" onClick={reloadVnc}>
+              {t(($) => {
+                return $.chat.remoteAccess.reload;
+              })}
+            </Button>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 function VncConnectionChoice({
   host,
-  configuration,
   sshHosts,
   actions,
 }: {
   host: ThreadRemoteHostAccess;
-  configuration: VncConfiguration;
   sshHosts: readonly ThreadRemoteHostAccess[];
   actions: RemoteHostChoiceActions;
 }) {
+  const configuration = useLoadable(vncConnections$);
   const configured =
     configuration.state === "hasData"
       ? configuration.data?.find((item) => {
@@ -962,7 +966,6 @@ function RemoteAccessInventory({
   signals,
   entries,
   sshHosts,
-  configuration,
   actions,
   initialLoading,
   readFailed,
@@ -970,7 +973,6 @@ function RemoteAccessInventory({
   signals: ComposerSignals;
   entries: readonly RemoteAccessEntry[];
   sshHosts: readonly ThreadRemoteHostAccess[];
-  configuration: VncConfiguration;
   actions: RemoteHostChoiceActions;
   initialLoading: boolean;
   readFailed: boolean;
@@ -1049,7 +1051,6 @@ function RemoteAccessInventory({
               ) : (
                 <VncConnectionChoice
                   host={host}
-                  configuration={configuration}
                   sshHosts={sshHosts}
                   actions={actions}
                 />
@@ -1152,7 +1153,6 @@ function ThreadRemoteHostChoices({
   const lastDefaults = useLastResolved(defaults$);
   const lastAccess = useLastResolved(remoteAccess$);
   const pendingOverrides = useGet(pendingRemoteAccess.overrides$);
-  const configuration = useLoadable(vncConnections$);
   const defaultData = resolvedDuringRefresh(defaults, lastDefaults);
   const accessData = resolvedDuringRefresh(access, lastAccess);
   const sshHosts = visibleHostChoices(
@@ -1206,14 +1206,12 @@ function ThreadRemoteHostChoices({
           operation={operation}
           readFailed={readFailed}
           hasVnc={vncHosts.length > 0}
-          configuration={configuration}
           onReload={onReload}
         />
         <RemoteAccessInventory
           signals={signals}
           entries={entries}
           sshHosts={sshHosts}
-          configuration={configuration}
           actions={actions}
           initialLoading={initialLoading}
           readFailed={readFailed}

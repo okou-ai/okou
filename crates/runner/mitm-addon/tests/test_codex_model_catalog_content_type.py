@@ -221,8 +221,8 @@ async def test_oversized_content_type_releases_follower_and_capacity_before_body
         assert owner.response.status_code == 200
         assert owner.response.headers.fields == fields
         stream = response_stream(owner)
-        assert stream(wire_body[:3]) == wire_body[:3]
-        assert stream(wire_body[3:]) == wire_body[3:]
+        for chunk in (wire_body[:3], wire_body[3:]):
+            assert stream(chunk) == chunk
         assert stream(b"") == b""
         assert owner.response.raw_content == wire_body
     finally:

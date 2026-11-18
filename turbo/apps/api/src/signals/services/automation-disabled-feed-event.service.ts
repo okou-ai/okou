@@ -1,0 +1,80 @@
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
+import { workflows } from "@okouai/db/schema/workflow";
+import { feedPreferences } from "@okouai/db/schema/feed-preference";
+import { command } from "ccstate";
+import { and, eq } from "drizzle-orm";
+import { db$ } from "../external/db";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
+
+export interface PreparedAutomationDisabledFeedEvent {
+  readonly automationId: string;
+  readonly workflowId: string;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly automationName: string;
+  readonly disabledAt: string;
+  readonly id: string;
+}
+
+/** Prepare the owner's audience before the owning atomic disable statement. */
+export const prepareAutomationDisabledFeedEvent$ = command(
+  async (
+    { get, set },
+    automation: typeof workflowAutomations.$inferSelect,
+    disabledAt: Date,
+    signal?: AbortSignal,
+  ): Promise<PreparedAutomationDisabledFeedEvent | null> => {
+    if (
+      !automation.enabled ||
+      automation.kind !== "schedule" ||
+      (automation.scheduleType !== "cron" && automation.scheduleType !== "loop")
+    ) {
+      return null;
+    }
+    const context = await set(
+      loadUserFeatureSwitchContext$,
+      automation.orgId,
+      automation.ownerUserId,
+      signal,
+    );
+    if (!isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, context)) {
+      return null;
+    }
+    const [workflow] = await get(db$)
+      .select({
+        name: workflows.name,
+        systemUpdates: feedPreferences.systemUpdates,
+      })
+      .from(workflows)
+      .leftJoin(
+        feedPreferences,
+        and(
+          eq(feedPreferences.orgId, automation.orgId),
+          eq(feedPreferences.userId, automation.ownerUserId),
+        ),
+      )
+      .where(
+        and(
+          eq(workflows.id, automation.workflowId),
+          eq(workflows.orgId, automation.orgId),
+        ),
+      )
+      .limit(1);
+    signal?.throwIfAborted();
+    if (!workflow || workflow.systemUpdates === false) {
+      return null;
+    }
+    return {
+      automationId: automation.id,
+      workflowId: automation.workflowId,
+      orgId: automation.orgId,
+      userId: automation.ownerUserId,
+      automationName: workflow.name,
+      disabledAt: disabledAt.toISOString(),
+      // This identity belongs to this attempted transition, not the automation's lifetime.
+      id: crypto.randomUUID(),
+    };
+  },
+);

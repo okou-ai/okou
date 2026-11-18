@@ -1,4 +1,5 @@
 import { command } from "ccstate";
+import { toast } from "@okouai/ui/components/ui/sonner";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { reloadWorkflowData$ } from "./workflow-reload.ts";
 import { createElement } from "react";
@@ -12,9 +13,9 @@ import {
 import { i18n } from "../../i18n/index.ts";
 import {
   WorkflowDetailPage,
-  WorkflowAutomationNotificationPage,
+  WorkflowAutomationEventPage,
 } from "../../views/workflows-page/workflow-detail-page.tsx";
-import { automationNotificationTarget$ } from "./workflow-automation-notification.ts";
+import { automationEventTarget$ } from "./workflow-automation-event.ts";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
@@ -48,20 +49,16 @@ export const setupWorkflowDetailPage$ = command(
       },
       signal,
     );
-    if (get(automationNotificationTarget$)) {
-      // Notification links recheck live access, including after an org switch.
+    if (get(automationEventTarget$)) {
+      // Event links recheck live access, including after an org switch.
       // The destination page also permits read-only inspection of an exact
       // system-managed automation without exposing Workflow editing.
       set(reloadWorkflowData$);
-      set(
-        updatePage$,
-        createElement(WorkflowAutomationNotificationPage),
-        "sidebar",
-      );
+      set(updatePage$, createElement(WorkflowAutomationEventPage), "sidebar");
       set(
         updateDocumentTitle$,
         i18n.t(($) => {
-          return $.userNotifications.automationDisabled.viewAutomation;
+          return $.feedEvents.automationDisabled.viewAutomation;
         }),
       );
       await set(hideAppSkeleton$, signal);
@@ -69,9 +66,18 @@ export const setupWorkflowDetailPage$ = command(
     }
     const detail = await get(currentWorkflowDetail$);
     signal.throwIfAborted();
+    if (!detail) {
+      toast.error(
+        i18n.t(($) => {
+          return $.workflows.detail.notFound;
+        }),
+      );
+      set(detachedNavigateTo$, ROUTES.workflows, { replace: true });
+      return;
+    }
     // Official Workflows are system-managed: Morning Brief is configured in
     // Settings, and no other Official Workflow has a user-facing page.
-    if (detail?.official) {
+    if (detail.official) {
       if (isMorningBriefDefinitionName(detail.official.definitionName)) {
         const searchParams = new URLSearchParams({
           settings: MORNING_BRIEF_PREFERENCES_SECTION,

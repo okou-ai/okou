@@ -8,6 +8,9 @@ use httpmock::prelude::*;
 use serde_json::json;
 use std::sync::LazyLock;
 
+#[cfg(target_os = "linux")]
+mod disk_failure;
+
 static TEST_STATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[test]
@@ -838,7 +841,7 @@ fn complete_execution_attributes_proven_codex_child_oom_without_changing_wrapper
                     let complete = server.mock(|when, then| {
                         when.method(POST)
                             .path("/api/webhooks/agent/complete")
-                            .json_body_includes(json!({"exitCode": 1, "error": expected}).to_string());
+                            .json_body_includes(json!({"exitCode": 1, "failureReason": "unknown"}).to_string());
                         then.status(200)
                             .json_body(json!({"success": true, "status": "failed"}));
                     });
@@ -1112,7 +1115,6 @@ async fn complete_execution_after_cli_failure_inner(
                 serde_json::json!({
                     "exitCode": failure_exit_code,
                     "failureReason": failure_reason.as_str(),
-                    "error": failure_message,
                     "completion": {
                         "cliAgentSessionId": "recovery-session-from-main"
                     }

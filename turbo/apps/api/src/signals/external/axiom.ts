@@ -1,5 +1,5 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
-import { computed, type Computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import { Axiom } from "@axiomhq/js";
 import { serializeError } from "@okouai/core/log-utils";
 import { delay } from "signal-timers";
@@ -813,6 +813,47 @@ async function queryAxiomDirect<T = Record<string, unknown>>(
   });
   return mapAxiomMatches<T>(result);
 }
+
+export interface AxiomQueryRequest {
+  readonly apl: string;
+  readonly options: QueryAxiomOptions & { readonly format: "tabular" };
+}
+
+/** A bounded operator read owns its transport cancellation, not a cached graph. */
+export const queryAxiom$ = command(
+  async (
+    _,
+    request: AxiomQueryRequest,
+    signal: AbortSignal,
+  ): Promise<readonly Record<string, unknown>[]> => {
+    signal.throwIfAborted();
+    const tokenEnvName = getAxiomTokenEnvNameForApl(request.apl);
+    const client = new Axiom({
+      token: env(tokenEnvName),
+      fetch: createAxiomFetch(signal),
+      onError: (error) => {
+        logClientError(
+          tokenEnvName === "AXIOM_TOKEN_SESSIONS" ? "sessions" : "telemetry",
+          error,
+        );
+      },
+    });
+    const result = await awaitWithSignal(
+      client.query(request.apl, request.options),
+      signal,
+    );
+    signal.throwIfAborted();
+    if (
+      result.status.isPartial !== false ||
+      result.status.isEstimate === true
+    ) {
+      throw new Error("Axiom query returned incomplete results");
+    }
+    return result.tables.flatMap((table) => {
+      return [...table.events()];
+    });
+  },
+);
 
 export function queryAxiom<T = Record<string, unknown>>(
   apl: string,

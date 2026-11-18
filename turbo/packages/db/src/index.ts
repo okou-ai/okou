@@ -15,6 +15,7 @@ import * as mailNotificationSchema from "./schema/mail-notification";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
 import * as activeAgentRunSchema from "./schema/active-agent-run";
 import * as agentSuggestionSchema from "./schema/feed-item";
+import * as feedPreferenceSchema from "./schema/feed-preference";
 import * as artifactShareSchema from "./schema/artifact-share";
 import * as userSchema from "./schema/user";
 import * as featureGuideSchema from "./schema/feature-guide";
@@ -24,8 +25,8 @@ import * as instructionsSchema from "./schema/instructions";
 import * as agentSchema from "./schema/agent";
 import * as agentRunSchema from "./runtime/agent-run";
 import * as agentRunConnectorDiagnosticRegistrationSchema from "./schema/agent-run-connector-diagnostic-registration";
-import * as agentRunPhaseTimingSchema from "./schema/agent-run-phase-timing";
 import * as storageSchema from "./schema/storage";
+import * as memberMemorySchema from "./schema/member-memory";
 import * as registryResourceArchiveSchema from "./schema/registry-resource-archive";
 import * as systemStoragePresignedUrlCacheSchema from "./runtime/system-storage-presigned-url-cache";
 import * as blobSchema from "./schema/blob";
@@ -196,6 +197,7 @@ export const schema = {
   ...userNotificationSchema,
   ...activeAgentRunSchema,
   ...agentSuggestionSchema,
+  ...feedPreferenceSchema,
   ...userSchema,
   ...featureGuideSchema,
   ...artifactShareSchema,
@@ -205,8 +207,8 @@ export const schema = {
   ...instructionsSchema,
   ...agentRunSchema,
   ...agentRunConnectorDiagnosticRegistrationSchema,
-  ...agentRunPhaseTimingSchema,
   ...storageSchema,
+  ...memberMemorySchema,
   ...registryResourceArchiveSchema,
   ...systemStoragePresignedUrlCacheSchema,
   ...blobSchema,

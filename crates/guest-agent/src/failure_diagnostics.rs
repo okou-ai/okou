@@ -5,6 +5,10 @@
 //! failure message, applies source-sensitive text classification, and persists
 //! the resulting guest failure artifacts.
 
+mod filesystem;
+
+pub use filesystem::refine_disk_full_failure;
+
 use crate::cli;
 use crate::env;
 use crate::error::AgentError;

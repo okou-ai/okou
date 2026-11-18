@@ -1,6 +1,6 @@
 [package]
 name = "runner-provider"
-version = "0.20.10"
+version = "0.20.24"
 edition.workspace = true
 description = "Runner API and local job-provider coordination"
 
@@ -35,6 +35,7 @@ uuid = { workspace = true, features = ["serde", "std", "v4", "v5"] }
 
 [dev-dependencies]
 flate2 = { workspace = true, features = ["rust_backend"] }
+nix = { workspace = true, features = ["time"] }
 runner-types = { workspace = true, features = ["test-support"] }
 runner-host = { workspace = true, features = ["test-support"] }
 rcgen = { workspace = true, features = ["crypto", "ring", "pem"] }

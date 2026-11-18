@@ -65,7 +65,7 @@ export function projectReferenceWritesEnabled(
       return false;
     }
     return isFeatureEnabled(
-      FeatureSwitchKey.Projects,
+      FeatureSwitchKey.SingleAgent,
       await get(userFeatureSwitchContext(auth.orgId, auth.userId)),
     );
   });

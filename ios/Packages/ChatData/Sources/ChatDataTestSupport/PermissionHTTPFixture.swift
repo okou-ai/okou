@@ -62,9 +62,9 @@ public final class PermissionHTTPFixture: Sendable {
         if path == threadPath + "/activity-summary" {
           let body = try JSONDecoder().decode([String: String].self, from: chatRequestBody(request))
           let data = try JSONSerialization.data(withJSONObject: [
-            "runId": body["runId"] ?? "", "status": "ineligible", "messages": [],
+            "runId": body["runId"] ?? "", "status": "ineligible", "messages": []
           ])
-          return ChatHTTPResponse(body: String(decoding: data, as: UTF8.self))
+          return ChatHTTPResponse(body: String(data: data, encoding: .utf8)!)
         }
         if path == threadPath + "/metadata" {
           return ChatHTTPResponse(
@@ -88,23 +88,7 @@ public final class PermissionHTTPFixture: Sendable {
         }
         if path == "/api/user-permission-grants" { return ChatHTTPResponse(body: value.grants) }
         if path == "/api/user-permission-grants/apply" {
-          if value.failApplyOnce {
-            value.failApplyOnce = false
-            return Self.error(503, "Please retry permission")
-          }
-          let body =
-            try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
-          let grant = (body?["grants"] as? [[String: Any]])?.first ?? [:]
-          let action = grant["action"] as? String ?? "allow"
-          value.grants = Self.grant(
-            action: action, permission: grant["permission"] as? String ?? "mail.send",
-            expiration: action == "deny" || grant["expiresIn"] as? String == "always"
-              ? nil : "2099-01-01T00:00:00Z")
-          if value.loseApplyResponseOnce {
-            value.loseApplyResponseOnce = false
-            return Self.error(503, "Permission response lost")
-          }
-          return ChatHTTPResponse(body: value.grants)
+          return try Self.applyPermission(request, state: &value)
         }
         if path == threadPath + "/connector-selections" {
           return ChatHTTPResponse(body: "{\"selections\":[]}")
@@ -158,6 +142,28 @@ public final class PermissionHTTPFixture: Sendable {
     }
   }
 
+  private static func applyPermission(_ request: URLRequest, state value: inout State) throws
+    -> ChatHTTPResponse
+  {
+    if value.failApplyOnce {
+      value.failApplyOnce = false
+      return Self.error(503, "Please retry permission")
+    }
+    let body =
+      try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
+    let grant = (body?["grants"] as? [[String: Any]])?.first ?? [:]
+    let action = grant["action"] as? String ?? "allow"
+    value.grants = Self.grant(
+      action: action, permission: grant["permission"] as? String ?? "mail.send",
+      expiration: action == "deny" || grant["expiresIn"] as? String == "always"
+        ? nil : "2099-01-01T00:00:00Z")
+    if value.loseApplyResponseOnce {
+      value.loseApplyResponseOnce = false
+      return Self.error(503, "Permission response lost")
+    }
+    return ChatHTTPResponse(body: value.grants)
+  }
+
   public static func grant(
     action: String = "allow", permission: String = "mail.send", expiration: String? = nil
   ) -> String {
@@ -168,11 +174,12 @@ public final class PermissionHTTPFixture: Sendable {
     ChatHTTPResponse(status: status, body: "{\"error\":{\"message\":\"\(message)\"}}")
   }
 
-  private static func row(id: String, sequence: Int, type: String, payload: [String: Any]) -> String
-  {
+  private static func row(
+    id: String, sequence: Int, type: String, payload: [String: Any]
+  ) -> String {
     let encoded = try! JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
     return """
-      {"id":"\(id)","chatThreadId":"\(threadID)","runId":"61000000-0000-4000-8000-000000000004","seqId":\(sequence),"createdAt":"2026-10-20T00:00:00Z","eventType":"\(type)","payload":\(String(decoding: encoded, as: UTF8.self))}
+      {"id":"\(id)","chatThreadId":"\(threadID)","runId":"61000000-0000-4000-8000-000000000004","seqId":\(sequence),"createdAt":"2026-10-20T00:00:00Z","eventType":"\(type)","payload":\(String(data: encoded, encoding: .utf8)!)}
       """
   }
 }

@@ -1,4 +1,14 @@
-import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
+import { waitUntil } from "../context/wait-until";
+import { notifyPhoneUseOwner$ } from "./phone-use-notifications.service";
+import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
+import { env } from "../../lib/env";
+import {
+  normalizeRunFailureReason,
+  type RunFailureReasonToken,
+} from "@okouai/api-contracts/contracts/run-failure-reasons";
 import {
   runStatusSchema,
   type RunResult,
@@ -18,7 +28,6 @@ import type { SandboxAuth } from "../../types/auth";
 import { db$, writeDb$ } from "../external/db";
 import {
   publishChatThreadDetailChangedSafely,
-  publishChatThreadMessageCreatedSafely,
   publishDesktopShellAuthorizationChangedSafely,
 } from "../external/realtime";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
@@ -52,7 +61,6 @@ export interface TerminalSideEffectsInput {
   readonly runId: string;
   readonly orgId: string;
   readonly status: TerminalStatus;
-  readonly error?: string;
   readonly deliveryNotification?: {
     readonly userId: string;
     readonly chatThreadId: string;
@@ -97,6 +105,7 @@ interface CompletionSuccessResponse {
    * `scheduleReleasedSlotPicks$` for them before any side effect. */
   readonly releasedSlots: readonly ReleasedRunSlot[];
   readonly sideEffects?: CompleteSideEffectsInput;
+  readonly marketingRewardEventId?: string | null;
 }
 
 type CompletionResponse =
@@ -105,7 +114,7 @@ type CompletionResponse =
 interface RunRecord extends AgentRunFailureLogSnapshot {
   readonly id: string;
   readonly cancellationRecoveryCompleted: boolean | null;
-  readonly error: string | null;
+  readonly failureReason: RunFailureReasonToken | null;
   readonly orgId: string;
   readonly status: RunStatus;
   readonly userId: string;
@@ -117,7 +126,6 @@ interface RunRecord extends AgentRunFailureLogSnapshot {
 interface PreparedCompletion {
   readonly status: TerminalStatus;
   readonly result?: RunResult;
-  readonly error?: string;
   readonly failureReason?: RunFailureReasonToken;
   readonly failureKind?: "missing-outputs" | "reported";
 }
@@ -132,7 +140,6 @@ interface CompletionCommit {
   readonly run: RunRecord;
   readonly transitioned: boolean;
   readonly responseStatus: TerminalStatus;
-  readonly transitionError?: string;
   readonly transitionFailureKind?: PreparedCompletion["failureKind"];
   readonly transitionFailureReason?: RunFailureReasonToken;
   readonly finalization: ActiveInputFinalization;
@@ -140,6 +147,7 @@ interface CompletionCommit {
 
 type ReleasedCompletionCommit = CompletionCommit & {
   readonly releasedSlots: readonly ReleasedRunSlot[];
+  readonly marketingRewardEventId?: string | null;
 };
 
 const L = logger("webhook:complete");
@@ -155,14 +163,13 @@ function logAgentRunCompletionOutcome(
   if (commit.transitionFailureKind === "missing-outputs") {
     L.warn("Run failed because completion outputs were not provided", {
       runId: input.body.runId,
-      error: commit.transitionError,
+      failureReason: commit.transitionFailureReason,
     });
     return;
   }
   logAgentRunFailure({
     runId: input.body.runId,
     exitCode: input.body.exitCode,
-    error: commit.transitionError,
     failureReason: commit.transitionFailureReason,
     run: commit.run,
   });
@@ -174,7 +181,7 @@ function createInitialCompletionRun(runId: string, userId: string) {
     const [run] = await db
       .select({
         id: agentRuns.id,
-        error: agentRuns.error,
+        failureReason: agentRuns.failureReason,
         orgId: agentRuns.orgId,
         status: agentRuns.status,
         userId: agentRuns.userId,
@@ -206,15 +213,14 @@ function prepareCompletion(
     return {
       status: "failed",
       result,
-      error: input.body.error?.trim() || "Run failed without error message",
-      failureReason: input.body.failureReason,
+      failureReason: normalizeRunFailureReason(input.body.failureReason),
       failureKind: "reported",
     };
   }
   if (!result) {
     return {
       status: "failed",
-      error: "Run completion outputs were not provided",
+      failureReason: "unknown",
       failureKind: "missing-outputs",
     };
   }
@@ -225,17 +231,6 @@ function noActiveInputFinalization(): ActiveInputFinalization {
   return {
     finalized: false,
     chatEventsAppended: false,
-  };
-}
-
-function persistedTerminalError(
-  run: RunRecord,
-): { readonly transitionError: string } | Record<string, never> {
-  if (run.status !== "failed") {
-    return {};
-  }
-  return {
-    transitionError: run.error?.trim() || "Run failed without error message",
   };
 }
 
@@ -283,11 +278,10 @@ function completionPublicationCommit(
       prepared?.status ?? (run.status === "completed" ? "completed" : "failed"),
     ...(prepared
       ? {
-          transitionError: prepared.error,
           transitionFailureKind: prepared.failureKind,
           transitionFailureReason: prepared.failureReason,
         }
-      : persistedTerminalError(run)),
+      : { transitionFailureReason: run.failureReason ?? undefined }),
     finalization: noActiveInputFinalization(),
     releasedSlots,
   };
@@ -306,9 +300,6 @@ function completionResponse(
       runId,
       orgId: commit.run.orgId,
       status: commit.responseStatus,
-      ...(commit.transitionError !== undefined
-        ? { error: commit.transitionError }
-        : {}),
       ...(commit.run.chatThreadId !== null
         ? {
             deliveryNotification: {
@@ -349,6 +340,7 @@ function completionResponse(
     status: 200,
     body: { success: true, status: commit.responseStatus },
     releasedSlots: commit.releasedSlots,
+    marketingRewardEventId: commit.marketingRewardEventId,
     ...(sideEffects ? { sideEffects } : {}),
   };
 }
@@ -373,22 +365,33 @@ const dispatchTerminalCompleteSideEffects$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     if (input.deliveryNotification?.chatEventsAppended) {
-      await publishChatThreadMessageCreatedSafely({
-        userId: input.deliveryNotification.userId,
-        orgId: input.orgId,
-        threadId: input.deliveryNotification.chatThreadId,
-      });
+      waitUntil(
+        set(
+          projectCommittedChatThreadSearch$,
+          {
+            userId: input.deliveryNotification.userId,
+            orgId: input.orgId,
+            threadId: input.deliveryNotification.chatThreadId,
+          },
+          signal,
+        ),
+      );
+      await set(
+        publishChatThreadMessageCreated$,
+        {
+          userId: input.deliveryNotification.userId,
+          orgId: input.orgId,
+          threadId: input.deliveryNotification.chatThreadId,
+        },
+        signal,
+      );
       signal.throwIfAborted();
     }
-    const callbackStatus =
-      input.status === "completed" ? "completed" : "failed";
     await tapError(
       set(
         dispatchRunCallbacks$,
         {
           runId: input.runId,
-          status: callbackStatus,
-          error: input.error,
           skipChatCallback: input.skipChatCallback,
         },
         signal,
@@ -418,7 +421,7 @@ const dispatchTerminalCompleteSideEffects$ = command(
     await set(processOrgUsageEvents$, input.orgId, signal);
     signal.throwIfAborted();
 
-    await tapError(
+    const usagePublication = await tapError(
       set(maybeEmitRunUsageEvent$, input.runId, signal),
       (error) => {
         L.error("Failed to emit chat usage message after run completion", {
@@ -429,6 +432,11 @@ const dispatchTerminalCompleteSideEffects$ = command(
       },
     );
     signal.throwIfAborted();
+    if (usagePublication) {
+      waitUntil(
+        set(projectCommittedChatThreadSearch$, usagePublication, signal),
+      );
+    }
   },
 );
 
@@ -447,6 +455,11 @@ export const dispatchCompleteSideEffectsCore$ = command(
           ? input.userId
           : undefined;
     if (shellOwnerId !== undefined) {
+      await set(
+        notifyPhoneUseOwner$,
+        { orgId: input.orgId, userId: shellOwnerId },
+        signal,
+      );
       await publishDesktopShellAuthorizationChangedSafely(shellOwnerId);
       signal.throwIfAborted();
     }
@@ -458,11 +471,26 @@ export const dispatchCompleteSideEffectsCore$ = command(
         );
         signal.throwIfAborted();
         if (input.chatEventsAppended) {
-          await publishChatThreadMessageCreatedSafely({
-            userId: input.userId,
-            orgId: input.orgId,
-            threadId: input.chatThreadId,
-          });
+          waitUntil(
+            set(
+              projectCommittedChatThreadSearch$,
+              {
+                userId: input.userId,
+                orgId: input.orgId,
+                threadId: input.chatThreadId,
+              },
+              signal,
+            ),
+          );
+          await set(
+            publishChatThreadMessageCreated$,
+            {
+              userId: input.userId,
+              orgId: input.orgId,
+              threadId: input.chatThreadId,
+            },
+            signal,
+          );
           signal.throwIfAborted();
         }
       }
@@ -470,11 +498,26 @@ export const dispatchCompleteSideEffectsCore$ = command(
     }
     if (input.kind === "delivery-finalization") {
       if (input.chatEventsAppended) {
-        await publishChatThreadMessageCreatedSafely({
-          userId: input.userId,
-          orgId: input.orgId,
-          threadId: input.chatThreadId,
-        });
+        waitUntil(
+          set(
+            projectCommittedChatThreadSearch$,
+            {
+              userId: input.userId,
+              orgId: input.orgId,
+              threadId: input.chatThreadId,
+            },
+            signal,
+          ),
+        );
+        await set(
+          publishChatThreadMessageCreated$,
+          {
+            userId: input.userId,
+            orgId: input.orgId,
+            threadId: input.chatThreadId,
+          },
+          signal,
+        );
         signal.throwIfAborted();
       }
       // Undelivered input stays queued; the released slot's org pick or the
@@ -563,6 +606,25 @@ function createCompletionTerminalRedrive(runId: string) {
   });
 }
 
+/** A timed-out Runner's completion acknowledges release of its claimed packages. */
+const releaseTimedOutRunAttachments$ = command(
+  async (
+    { set },
+    owner: { readonly runId: string; readonly orgId: string },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    await set(writeDb$)
+      .delete(claimedWorkflowAttachments)
+      .where(
+        and(
+          eq(claimedWorkflowAttachments.runId, owner.runId),
+          eq(claimedWorkflowAttachments.orgId, owner.orgId),
+        ),
+      );
+    signal.throwIfAborted();
+  },
+);
+
 /** One validated completion request owns this graph and its lazy post-commit read. */
 export function createAgentRunCompletion(runId: string, userId: string) {
   const initialRun$ = createInitialCompletionRun(runId, userId);
@@ -583,14 +645,11 @@ export function createAgentRunCompletion(runId: string, userId: string) {
       if (initialRun.status === "timeout") {
         // Terminal status or silence did not release the claim's packages.
         // This authenticated completion is the Runner's actual acknowledgement.
-        await db
-          .delete(claimedWorkflowAttachments)
-          .where(
-            and(
-              eq(claimedWorkflowAttachments.runId, runId),
-              eq(claimedWorkflowAttachments.orgId, initialRun.orgId),
-            ),
-          );
+        await set(
+          releaseTimedOutRunAttachments$,
+          { runId, orgId: initialRun.orgId },
+          signal,
+        );
         signal.throwIfAborted();
         return settledRunCompletionResponse(initialRun);
       }
@@ -603,6 +662,7 @@ export function createAgentRunCompletion(runId: string, userId: string) {
           orgId: input.auth.orgId,
           expectedChatThreadId,
           at: nowDate(),
+          environment: env("ENV"),
         });
         const result = await (async () => {
           const rows = await db
@@ -652,7 +712,13 @@ export function createAgentRunCompletion(runId: string, userId: string) {
               await db.execute(statement);
             }
           }
-          return { kind: "committed", commit: committed } as const;
+          return {
+            kind: "committed",
+            commit: {
+              ...committed,
+              marketingRewardEventId: row.marketingRewardEventId,
+            },
+          } as const;
         })();
         signal.throwIfAborted();
         if (result.kind === "retry") {

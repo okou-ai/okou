@@ -288,6 +288,27 @@ test("Releasing at the viewport origin applies the final coordinate before clean
   expect(handle).toHaveAttribute("aria-valuenow", "1020");
 });
 
+test("A folded chat list divider holds at zero for decreasing keys and reopens its remembered width", async () => {
+  await openUnifiedWorkspace();
+  const listSeam = await chatListSeam();
+  listSeam.focus();
+  fireEvent.keyDown(listSeam, { key: "ArrowRight", shiftKey: true });
+  expect(listSeam).toHaveAttribute("aria-valuenow", "364");
+  click(buttonNamed("Hide chat list"));
+  const seam = await chatListSeam();
+  expect(seam).toHaveAttribute("aria-valuenow", "0");
+
+  seam.focus();
+  fireEvent.keyDown(seam, { key: "ArrowLeft" });
+  fireEvent.keyDown(seam, { key: "Home" });
+  expect(seam).toHaveAttribute("aria-valuenow", "0");
+  expect(buttonNamed("Show chat list")).toBeInTheDocument();
+
+  fireEvent.keyDown(seam, { key: "ArrowRight" });
+  await screen.findByTestId("chat-list-column");
+  expect(seam).toHaveAttribute("aria-valuenow", "364");
+});
+
 test("A folded chat list can be dragged open from its persistent divider", async () => {
   await openUnifiedWorkspace();
   click(buttonNamed("Hide chat list"));

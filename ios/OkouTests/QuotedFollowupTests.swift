@@ -34,7 +34,7 @@ final class QuotedFollowupTests: XCTestCase {
       input.setMarkedText("拼音", selectedRange: NSRange(location: 2, length: 0))
       conversation.composer.removeFeedback(id)
       let expected = "Keep the ordinary draft." + (index == 0 ? "" : " Edited.")
-      try await eventually { input.text == expected }
+      try await eventually(message: mentionInputStatus(input)) { input.text == expected }
       XCTAssertTrue(input.isFirstResponder)
       input.selectedRange = NSRange(location: input.text.utf16.count, length: 0)
       input.insertText(index == 0 ? " Edited." : " Continue.")
@@ -48,14 +48,14 @@ final class QuotedFollowupTests: XCTestCase {
       ChatDraftDocument(parts: [
         .object([
           "type": .string("text"),
-          "text": .string("Keep the ordinary draft. Edited. Continue."),
+          "text": .string("Keep the ordinary draft. Edited. Continue.")
         ])
       ]))
   }
 
   func testNativeQuoteActionFocusesANoteWithUndoAndMarkedText() async throws {
     let text = "👋 **First paragraph.**\n\nSelected 🌷 é passage.\n\nLast paragraph."
-    let payload = String(decoding: try JSONEncoder().encode(["content": text]), as: UTF8.self)
+    let payload = try JSONEncoder().encodeString(["content": text])
     let fixture = ConversationHistoryFixture(rows: [
       """
       {"id":"\(ConversationHistoryFixture.id(1))","chatThreadId":"\(ConversationHistoryFixture.threadID)","seqId":1,"eventType":"output.message","createdAt":"2026-10-20T10:00:00Z","payload":\(payload)}
@@ -142,7 +142,7 @@ final class QuotedFollowupTests: XCTestCase {
 
   func testQuoteCommandRejectsForeignStaleAndClosedSourcesBeforeSending() async throws {
     let text = "Café status. Review the final evidence."
-    let payload = String(decoding: try JSONEncoder().encode(["content": text]), as: UTF8.self)
+    let payload = try JSONEncoder().encodeString(["content": text])
     let fixture = ConversationHistoryFixture(rows: [
       """
       {"id":"\(ConversationHistoryFixture.id(1))","chatThreadId":"\(ConversationHistoryFixture.threadID)","seqId":1,"eventType":"output.message","createdAt":"2026-10-20T10:00:00Z","payload":\(payload)}

@@ -15,7 +15,7 @@
           .originURL: apiURL,
           .path: apiURL.appendingPathComponent("api").path,
           .secure: "TRUE",
-          .expires: Date().addingTimeInterval(3600),
+          .expires: Date().addingTimeInterval(3600)
         ])
       else { return }
       storage.setCookie(cookie)

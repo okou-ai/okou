@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.23.107](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.106...guest-control-client-v0.23.107) (2026-11-18)
+
+## [0.23.106](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.105...guest-control-client-v0.23.106) (2026-11-18)
+
+## [0.23.105](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.104...guest-control-client-v0.23.105) (2026-11-17)
+
+## [0.23.104](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.103...guest-control-client-v0.23.104) (2026-11-17)
+
+
+### Performance Improvements
+
+* **runner:** attribute archive staging writes ([#48338](https://github.com/okou-ai/okou/issues/48338)) ([1aeffbc](https://github.com/okou-ai/okou/commit/1aeffbc8c757415acb407157dba177305ed1b210))
+
+## [0.23.103](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.102...guest-control-client-v0.23.103) (2026-11-17)
+
+## [0.23.102](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.101...guest-control-client-v0.23.102) (2026-11-17)
+
+## [0.23.101](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.100...guest-control-client-v0.23.101) (2026-11-17)
+
+## [0.23.100](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.99...guest-control-client-v0.23.100) (2026-11-17)
+
+## [0.23.99](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.98...guest-control-client-v0.23.99) (2026-11-16)
+
+## [0.23.98](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.97...guest-control-client-v0.23.98) (2026-11-16)
+
+## [0.23.97](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.96...guest-control-client-v0.23.97) (2026-11-16)
+
 ## [0.23.96](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.95...guest-control-client-v0.23.96) (2026-11-16)
 
 ## [0.23.95](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.94...guest-control-client-v0.23.95) (2026-11-15)

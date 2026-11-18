@@ -1,6 +1,6 @@
 [package]
 name = "guest-control-tests"
-version = "0.12.179"
+version = "0.12.192"
 edition.workspace = true
 
 [dependencies]
@@ -21,6 +21,9 @@ tokio = { workspace = true, features = ["fs", "macros", "net", "rt", "time"] }
 [[test]]
 name = "integration"
 path = "tests/integration/main.rs"
+
+[target.'cfg(unix)'.dev-dependencies]
+nix = { workspace = true, features = ["fs"] }
 
 [lints]
 workspace = true

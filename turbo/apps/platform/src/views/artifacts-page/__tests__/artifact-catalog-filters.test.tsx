@@ -79,6 +79,44 @@ test("Artifact kind filters remain available while switching catalogs", async ()
   expect(screen.queryByText("launch-deck")).not.toBeInTheDocument();
 });
 
+test("Artifact kind filters remain available for an empty catalog", async () => {
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, { artifacts: [], nextCursor: null });
+  });
+
+  await setupArtifactCatalogPage(context);
+
+  await expect(
+    screen.findByText("No artifacts found"),
+  ).resolves.toBeInTheDocument();
+  const filters = screen.getByLabelText("Artifact kind filters");
+  expect(
+    queryAllByRoleFast("button", filters).map((button) => {
+      return button.textContent?.trim();
+    }),
+  ).toStrictEqual([
+    "Presentations",
+    "Websites",
+    "Images",
+    "Videos",
+    "Avatars",
+    "Shared chats",
+    "Files",
+  ]);
+
+  click(getButtonByName("Show file artifacts", filters));
+
+  await waitFor(() => {
+    expect(getButtonByName("Show file artifacts", filters)).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+  await expect(
+    screen.findByText("No artifacts found"),
+  ).resolves.toBeInTheDocument();
+});
+
 test.each([false, true])(
   "A shared conversation links directly to its shared thread with sidebar preview %s",
   async (sidebarPreview) => {

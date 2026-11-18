@@ -118,10 +118,6 @@ pub struct ExecutionContext {
     pub connector_runtime_targets: Vec<ConnectorRuntimeTargetRegistration>,
     #[serde(default)]
     pub disallowed_tools: Option<Vec<String>>,
-    #[serde(default)]
-    pub tools: Option<Vec<String>>,
-    #[serde(default)]
-    pub settings: Option<String>,
     // Feature flags evaluated at job creation time (all switch states for user/org)
     #[serde(default)]
     pub feature_flags: Option<HashMap<String, bool>>,
@@ -1801,7 +1797,8 @@ pub struct CompleteRequest {
     pub exit_code: i32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failure_reason: Option<RequestFailureReason>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Diagnostic retained for the Runner-owned local provider, never the API wire.
+    #[serde(skip_serializing)]
     pub error: Option<String>,
     /// Sandbox the run executed against. `None` when the run failed before
     /// sandbox allocation; otherwise set on every completion regardless of

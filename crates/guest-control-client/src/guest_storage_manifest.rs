@@ -195,14 +195,14 @@ impl GuestControlClient {
                 )
                 .map_err(protocol_invalid_input)
             },
-            timing.as_deref_mut(),
+            timing.as_deref_mut().map(|timing| &mut timing.host),
         )
         .await?;
 
         let decode_started = timing.as_ref().map(|_| Instant::now());
         let result = decode_storage_manifest_response(response, run_id, timing.as_deref_mut());
         if let (Some(timing), Some(started)) = (timing, decode_started) {
-            timing.result_decode = Some(started.elapsed());
+            timing.host.result_decode = Some(started.elapsed());
         }
         result
     }

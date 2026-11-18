@@ -11,13 +11,13 @@ import { decodeSandboxTokenPayload } from "../sandbox-token";
 type PhaseMarkOutcome =
   | RunPhaseMarkResult
   | {
-      readonly schemaVersion: 1;
+      readonly schemaVersion: 2;
       readonly status: "unavailable";
       readonly reason:
         | "missing-capability"
         | "http-error"
         | "invalid-response"
-        | "timeout-commit-unknown"
+        | "timeout-delivery-unknown"
         | "transport-error";
     };
 
@@ -27,7 +27,7 @@ export async function markRunPhase(
 ): Promise<PhaseMarkOutcome> {
   if (!decodeSandboxTokenPayload()?.capabilities.includes("run-timing:write")) {
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       status: "unavailable",
       reason: "missing-capability",
     };
@@ -40,17 +40,17 @@ export async function markRunPhase(
       body,
       fetchOptions: { signal },
     });
-    if (result.status !== 200)
-      return { schemaVersion: 1, status: "unavailable", reason: "http-error" };
+    if (result.status !== 202)
+      return { schemaVersion: 2, status: "unavailable", reason: "http-error" };
     const parsed = runPhaseMarkResultSchema.safeParse(result.body);
     return parsed.success
       ? parsed.data
-      : { schemaVersion: 1, status: "unavailable", reason: "invalid-response" };
+      : { schemaVersion: 2, status: "unavailable", reason: "invalid-response" };
   } catch {
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       status: "unavailable",
-      reason: signal.aborted ? "timeout-commit-unknown" : "transport-error",
+      reason: signal.aborted ? "timeout-delivery-unknown" : "transport-error",
     };
   }
 }

@@ -1,5 +1,5 @@
 import { computed, type Computed } from "ccstate";
-import { formatRunBalanceError } from "@okouai/api-contracts/contracts/run-balance-errors";
+import { publicRunFailureReason } from "../../lib/run-failure";
 import {
   triggerSourceSchema,
   type LogDetail,
@@ -26,7 +26,8 @@ import {
 
 import { db$ } from "../external/db";
 import { logDetailRunSelection } from "./log-detail-run-selection";
-import { runContextCliAgentType } from "./run-context-framework.service";
+import { runContextObservation } from "./run-context-observation.service";
+import { tapError } from "../utils";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -299,7 +300,7 @@ interface LogDetailParams {
 export function logDetail(
   params: LogDetailParams,
 ): Computed<Promise<LogDetail | null>> {
-  return computed(async (get): Promise<LogDetail | null> => {
+  const detail$ = computed(async (get) => {
     const db = get(db$);
 
     const [result] = await db
@@ -325,6 +326,15 @@ export function logDetail(
       )
       .limit(1);
 
+    return result ?? null;
+  });
+  const run$ = computed(async (get) => {
+    return (await get(detail$))?.run ?? null;
+  });
+  const snapshot$ = runContextObservation({ runId: params.runId, run: run$ });
+
+  return computed(async (get): Promise<LogDetail | null> => {
+    const result = await get(detail$);
     if (!result) {
       return null;
     }
@@ -339,10 +349,9 @@ export function logDetail(
       modelRuntimeProvider,
       modelRuntimeModel,
     } = result;
+    const snapshot = await tapError(get(snapshot$));
     const framework =
-      (await get(runContextCliAgentType(params.runId))) ??
-      run.launchSnapshot?.framework ??
-      null;
+      snapshot?.cliAgentType ?? run.launchSnapshot?.framework ?? null;
 
     return {
       id: run.id,
@@ -359,13 +368,12 @@ export function logDetail(
       triggerSource: normalizeTriggerSource(triggerSource),
       status: run.status as LogStatus,
       prompt: run.prompt,
-      appendSystemPrompt: run.appendSystemPrompt ?? null,
-      error: run.error
-        ? (formatRunBalanceError({
-            failureReason: run.failureReason,
-            modelProvider,
-          }) ?? run.error)
-        : null,
+      appendSystemPrompt: snapshot?.appendSystemPrompt ?? null,
+      failureReason: publicRunFailureReason(
+        run.status,
+        run.failureReason,
+        modelProvider,
+      ),
       createdAt: run.createdAt.toISOString(),
       startedAt: run.startedAt?.toISOString() ?? null,
       completedAt: run.completedAt?.toISOString() ?? null,

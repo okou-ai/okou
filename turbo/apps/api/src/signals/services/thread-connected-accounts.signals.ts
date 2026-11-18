@@ -23,11 +23,11 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatThreadConnectorAccessOverrides } from "@okouai/db/schema/chat-thread-connector-access";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db$ } from "../external/db";
 import { badRequestMessage } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
-import { safeSync } from "../utils";
+import { joinAll, safeSync } from "../utils";
 import type { AgentConnectorScope } from "./agent-connector-scope.service";
 import type {
   AgentRunContextSignals,
@@ -44,7 +44,7 @@ import {
 import { connectorAccountTargetKey } from "./connector-account-resolution.service";
 import {
   type ConnectorRuntimeMethod,
-  type ConnectorRuntimeSelection,
+  type ConnectorExecutionRuntimeSelection,
   connectorScopeForRuntimeSnapshot,
   getConnectorRuntimeConnector,
 } from "./connector-catalog-runtime.service";
@@ -59,12 +59,13 @@ import {
   type CustomConnectorRuntimeContext,
   type CustomConnectorRuntimeDataRows,
   loadEffectiveCustomConnectorPermissionBundle,
+  mergeRecords,
   resolveCustomConnectorBaseUrlVars,
 } from "./connector-runtime-preparation.service";
+import { orderByCustomConnectorId } from "./custom-connector-order";
 import {
   customConnectorAccountAuthMethodIsCompatible,
-  type CustomConnectorRuntimeStorageRow,
-  customConnectorRuntimeStorageSnapshot,
+  customConnectorCredentialAccesses,
 } from "./custom-connector-credential-access.service";
 import type { CustomConnectorPermissionBundle } from "./custom-connector-permission-bundle.service";
 import {
@@ -118,11 +119,13 @@ export function createConnectedAccountsSignals(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   connectorSourceId$: ConnectorSourceId$,
   dispatchTiming$: DispatchTiming$,
+  accessOverrides$: ReturnType<typeof createThreadAccountAccessOverrides>,
 ): ConnectedAccounts {
   const inputs = createConnectorInputSignals(
     pickedEvent$,
     execution,
     dispatchTiming$,
+    accessOverrides$,
   );
   const accounts = createThreadAccountSignals(connectorSourceId$, inputs);
   const connectors$ = computed(async (get) => {
@@ -232,23 +235,22 @@ function createConnectorMaterialization(
 
 type ConnectorInputSignals = ReturnType<typeof createConnectorInputSignals>;
 
-function createChatAccountInputSignals(
-  execution: Pick<AgentRunContextSignals, "featureSwitches$" | "connectors$">,
-  connectorInput$: Computed<Promise<{ readonly chatThreadId: string }>>,
+/** Raw Thread facts; current execution constructs its own fresh source. */
+export function createThreadAccountAccessOverrides(
+  identity$: Computed<Promise<{ readonly chatThreadId: string }>>,
+  featureSwitches$: AgentRunContextSignals["featureSwitches$"],
 ) {
-  const chatAccountsEnabled$ = computed(async (get) => {
-    return isFeatureEnabled(
-      FeatureSwitchKey.ConnectorChatAccountAccess,
-      await get(execution.featureSwitches$),
-    );
-  });
-  const effectiveAccounts$ = computed(async (get) => {
-    const accounts = (await get(execution.connectors$)).connectorAccounts;
-    if (!(await get(chatAccountsEnabled$))) {
-      return accounts;
+  const accessOverrides$ = computed(async (get) => {
+    if (
+      !isFeatureEnabled(
+        FeatureSwitchKey.ConnectorChatAccountAccess,
+        await get(featureSwitches$),
+      )
+    ) {
+      return [];
     }
-    const input = await get(connectorInput$);
-    const overrides = await get(db$)
+    const input = await get(identity$);
+    return await get(db$)
       .select({
         connectorId: chatThreadConnectorAccessOverrides.connectorId,
         enabled: chatThreadConnectorAccessOverrides.enabled,
@@ -257,6 +259,30 @@ function createChatAccountInputSignals(
       .where(
         eq(chatThreadConnectorAccessOverrides.chatThreadId, input.chatThreadId),
       );
+  });
+  return accessOverrides$;
+}
+
+function createChatAccountInputSignals(
+  execution: Pick<AgentRunContextSignals, "featureSwitches$" | "connectors$">,
+  accessOverrides$: ReturnType<typeof createThreadAccountAccessOverrides>,
+) {
+  const chatAccountsEnabled$ = computed(async (get) => {
+    return isFeatureEnabled(
+      FeatureSwitchKey.ConnectorChatAccountAccess,
+      await get(execution.featureSwitches$),
+    );
+  });
+  const effectiveAccounts$ = computed(async (get) => {
+    const [snapshot, overrides, chatAccountsEnabled] = await joinAll([
+      get(execution.connectors$),
+      get(accessOverrides$),
+      get(chatAccountsEnabled$),
+    ]);
+    const accounts = snapshot.connectorAccounts;
+    if (!chatAccountsEnabled) {
+      return accounts;
+    }
     const enabledById = new Map(
       overrides.map((row) => {
         return [row.connectorId, row.enabled];
@@ -300,31 +326,50 @@ interface ExecutionConnectedAccountsArgs {
   readonly timing$: DispatchTiming$;
 }
 
-function createExecutionAccountInputs(args: ExecutionConnectedAccountsArgs) {
+function createExecutionAccountInputs(
+  args: ExecutionConnectedAccountsArgs,
+  connectorScope$: Computed<Promise<EffectiveConnectorScope>>,
+) {
   const connectorInput$ = computed(async (get) => {
-    const [identity, targets] = await Promise.all([
+    const [identity, targets, scope] = await Promise.all([
       get(args.identity$),
       get(args.targets$),
+      get(connectorScope$),
     ]);
-    const rows = await get(db$)
-      .select({
-        connectorId: chatThreadConnectorSelections.connectorId,
-        connectorSlug: chatThreadConnectorSelections.connectorSlug,
-        customConnectorId: chatThreadConnectorSelections.customConnectorId,
-      })
-      .from(chatThreadConnectorSelections)
-      .where(
-        eq(chatThreadConnectorSelections.chatThreadId, identity.chatThreadId),
-      );
     const registered = new Set(targets.map(connectorAccountTargetKey));
+    // Only native-only bindings can remain in scope without a registration.
+    const nativeSlugs = scope.allowedConnectorSlugs.filter((connectorSlug) => {
+      return !registered.has(
+        connectorAccountTargetKey({ kind: "builtin", connectorSlug }),
+      );
+    });
+    const rows =
+      nativeSlugs.length === 0
+        ? []
+        : await get(db$)
+            .select({
+              connectorId: chatThreadConnectorSelections.connectorId,
+              connectorSlug: chatThreadConnectorSelections.connectorSlug,
+              customConnectorId:
+                chatThreadConnectorSelections.customConnectorId,
+            })
+            .from(chatThreadConnectorSelections)
+            .where(
+              and(
+                eq(
+                  chatThreadConnectorSelections.chatThreadId,
+                  identity.chatThreadId,
+                ),
+                inArray(
+                  chatThreadConnectorSelections.connectorSlug,
+                  nativeSlugs,
+                ),
+              ),
+            );
     return {
       ...identity,
       threadSelectionRows: [
-        ...rows.filter((row) => {
-          return !registered.has(
-            connectorAccountTargetKey(runConnectorTargetFromRow(row)),
-          );
-        }),
+        ...rows,
         ...targets.flatMap((target) => {
           return target.sourceId
             ? [
@@ -342,9 +387,13 @@ function createExecutionAccountInputs(args: ExecutionConnectedAccountsArgs) {
       timing: get(args.timing$),
     };
   });
+  const accessOverrides$ = createThreadAccountAccessOverrides(
+    args.identity$,
+    args.features$,
+  );
   const currentAccounts = createChatAccountInputSignals(
     { featureSwitches$: args.features$, connectors$: args.connectors$ },
-    connectorInput$,
+    accessOverrides$,
   );
   const effectiveAccounts$ = computed(async (get) => {
     const [rows, targets] = await Promise.all([
@@ -411,8 +460,11 @@ function createExecutionConnectorScope(args: ExecutionConnectedAccountsArgs) {
 export function createExecutionConnectedAccounts(
   args: ExecutionConnectedAccountsArgs,
 ): ConnectedAccounts {
-  const { connectorInput$, chatAccounts } = createExecutionAccountInputs(args);
   const connectorScope$ = createExecutionConnectorScope(args);
+  const { connectorInput$, chatAccounts } = createExecutionAccountInputs(
+    args,
+    connectorScope$,
+  );
   const inputs: ConnectorInputSignals = {
     connectorInput$,
     connectorScope$,
@@ -448,6 +500,7 @@ function createConnectorInputSignals(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   execution: AgentRunContextSignals,
   dispatchTiming$: DispatchTiming$,
+  accessOverrides$: ReturnType<typeof createThreadAccountAccessOverrides>,
 ) {
   const connectorInput$ = computed(async (get) => {
     const event = await get(pickedEvent$);
@@ -464,7 +517,7 @@ function createConnectorInputSignals(
   });
   const chatAccounts = createChatAccountInputSignals(
     execution,
-    connectorInput$,
+    accessOverrides$,
   );
   const chatAccountsEnabled$ = chatAccounts.chatAccountsEnabled$;
   const effectiveAccounts$ = chatAccounts.effectiveAccounts$;
@@ -593,7 +646,7 @@ function createThreadAccountSignals(
       get,
     ): Promise<ThreadConnectorSelectionIds | ConnectedAccountsError> => {
       const [thread, selections, accountRows, scope, connectorSourceId] =
-        await Promise.all([
+        await joinAll([
           get(ownedThread$),
           get(threadSelections$),
           get(accountRows$),
@@ -694,7 +747,7 @@ function createConnectorPreparationSignals(
   const connectorSelection$ = computed(
     async (get): Promise<RunConnectorSelection | ConnectedAccountsError> => {
       const [connectorCatalogSelection, threadConnectorSelectionIds] =
-        await Promise.all([get(connectorCatalog$), get(selectionIds$)]);
+        await joinAll([get(connectorCatalog$), get(selectionIds$)]);
       if (isConnectedAccountsError(threadConnectorSelectionIds)) {
         return threadConnectorSelectionIds;
       }
@@ -969,8 +1022,8 @@ function createCustomConnectorStorageSignals(
       requestedCustomCount: scope.allowedCustomConnectorIds.length,
     };
   });
-  const customConnectorStorageRows$ = computed(
-    async (get): Promise<readonly CustomConnectorRuntimeStorageRow[]> => {
+  const customConnectorSelectionRows$ = computed(
+    async (get): Promise<readonly CustomConnectorSelectionRow[]> => {
       const { timing } = await get(connectorInput$);
       const startedAt = now();
       const result = await get(customConnectorSources$);
@@ -993,7 +1046,7 @@ function createCustomConnectorStorageSignals(
       const projectionStartedAt = performance.now();
       const rows = result.sources.flatMap((source) => {
         return source.kind === "available"
-          ? customConnectorSourceStorageRows(source.snapshot)
+          ? customConnectorSourceSelectionRows(source.snapshot)
           : [];
       });
       safeSync(() => {
@@ -1008,7 +1061,7 @@ function createCustomConnectorStorageSignals(
       return rows;
     },
   );
-  return { customConnectorStorageRows$ };
+  return { customConnectorSelectionRows$ };
 }
 
 type CustomConnectorBundleSignals = ReturnType<
@@ -1024,13 +1077,13 @@ function createCustomConnectorBundleSignals(
   const { customConnectorDefinitions$ } = inputs;
   const { accountCandidates$ } = accounts;
   const { preparation$ } = prepared;
-  const { customConnectorStorageRows$ } = customStorage;
+  const { customConnectorSelectionRows$ } = customStorage;
   const customConnectorPermissionBundles$ = computed(async (get) => {
     const [preparation, connectors, storageRows, candidates] =
       await Promise.all([
         get(preparation$),
         get(customConnectorDefinitions$),
-        get(customConnectorStorageRows$),
+        get(customConnectorSelectionRows$),
         get(accountCandidates$),
       ]);
     if (isConnectedAccountsError(preparation) || !preparation.custom) {
@@ -1092,7 +1145,7 @@ function createCustomConnectorContextSignals(
   } = inputs;
   const { accountCandidates$ } = accounts;
   const { preparation$ } = prepared;
-  const { customConnectorStorageRows$ } = customStorage;
+  const { customConnectorSelectionRows$ } = customStorage;
   const { customConnectorPermissionBundles$ } = customBundles;
   const customConnectorContext$ = computed(
     async (
@@ -1108,7 +1161,7 @@ function createCustomConnectorContextSignals(
       ] = await Promise.all([
         get(preparation$),
         get(customConnectorDefinitions$),
-        get(customConnectorStorageRows$),
+        get(customConnectorSelectionRows$),
         get(accountCandidates$),
         get(featureSwitchContext$),
         get(customConnectorPermissionBundles$),
@@ -1123,57 +1176,78 @@ function createCustomConnectorContextSignals(
       const memberPermissionPolicies = await get(
         inputs.memberPermissionPolicies$,
       );
-      const chosenRows = await Promise.all(
-        connectors
-          .filter((connector) => {
-            return args.allowedCustomConnectorIds.includes(connector.id);
-          })
-          .map(async (connector) => {
-            const rows = customConnectorCandidateRuntimeRows({
-              connector,
-              storageRows,
-              candidateIds:
-                candidates.get(
-                  connectorAccountTargetKey({
-                    kind: "custom",
-                    customConnectorId: connector.id,
-                  }),
-                ) ?? [],
-            });
-            for (const row of rows) {
-              const context = await buildNewRunCustomConnectorRuntimeContext({
-                rows: [row],
-                permissionBundlesByConnectorId,
-                featureSwitchContext,
-                connectorCatalogSnapshot: args.connectorCatalogSnapshot,
-                grants: args.customConnectorGrants,
-                memberPermissionPolicies,
-              });
-              if (context.targets.length > 0) {
-                return row;
-              }
-            }
-            return {
-              connector,
-              values: [],
-              credentialAccess: { kind: "absent" as const },
-            };
-          }),
-      );
       return await (
         await get(connectorInput$)
       ).timing.measure(
         "api_dispatch_prepare_context_build_custom_connector_firewalls",
         "nested",
         async () => {
-          return await buildNewRunCustomConnectorRuntimeContext({
-            rows: chosenRows,
-            permissionBundlesByConnectorId,
-            featureSwitchContext,
-            connectorCatalogSnapshot: args.connectorCatalogSnapshot,
-            grants: args.customConnectorGrants,
-            memberPermissionPolicies,
-          });
+          const contexts = await Promise.all(
+            orderByCustomConnectorId(
+              connectors.filter((connector) => {
+                return args.allowedCustomConnectorIds.includes(connector.id);
+              }),
+              (connector) => {
+                return connector.id;
+              },
+            ).map(async (connector) => {
+              const rows = customConnectorCandidateRuntimeRows({
+                connector,
+                storageRows,
+                candidateIds:
+                  candidates.get(
+                    connectorAccountTargetKey({
+                      kind: "custom",
+                      customConnectorId: connector.id,
+                    }),
+                  ) ?? [],
+              });
+              for (const row of rows) {
+                const context = await buildNewRunCustomConnectorRuntimeContext({
+                  rows: [row],
+                  permissionBundlesByConnectorId,
+                  featureSwitchContext,
+                  connectorCatalogSnapshot: args.connectorCatalogSnapshot,
+                  grants: args.customConnectorGrants,
+                  memberPermissionPolicies,
+                });
+                if (context.targets.length > 0) {
+                  return context;
+                }
+              }
+              return emptyCustomConnectorRuntimeContext();
+            }),
+          );
+          return {
+            firewalls: contexts.flatMap((context) => {
+              return context.firewalls;
+            }),
+            reservedSecretAliases: mergeRecords(
+              ...contexts.map((context) => {
+                return context.reservedSecretAliases;
+              }),
+            ),
+            permissionPolicies: mergeRecords(
+              ...contexts.map((context) => {
+                return context.permissionPolicies;
+              }),
+            ),
+            targets: contexts.flatMap((context) => {
+              return context.targets;
+            }),
+            customConnectorIdByFirewallName: Object.fromEntries(
+              contexts.flatMap((context) => {
+                return Object.entries(context.customConnectorIdByFirewallName);
+              }),
+            ),
+            customConnectorSourceIdByFirewallName: Object.fromEntries(
+              contexts.flatMap((context) => {
+                return Object.entries(
+                  context.customConnectorSourceIdByFirewallName,
+                );
+              }),
+            ),
+          };
         },
       );
     },
@@ -1182,7 +1256,7 @@ function createCustomConnectorContextSignals(
 }
 
 /** The Agent's stored connector scope as a Run connector scope. */
-export function runConnectorScope(
+function runConnectorScope(
   scope: AgentConnectorScope,
 ): EffectiveConnectorScope {
   return {
@@ -1194,12 +1268,12 @@ export function runConnectorScope(
 }
 
 /** The bootstrap connector catalog, explicit about an empty scope. */
-export function runConnectorCatalogSelection(
+function runConnectorCatalogSelection(
   scope: Pick<
     AgentConnectorScope,
     "allowedConnectorSlugs" | "allowedCustomConnectorIds"
   >,
-  catalog: ConnectorRuntimeSelection | null,
+  catalog: ConnectorExecutionRuntimeSelection | null,
 ): RunConnectorCatalogSelection {
   if (isEmptyRunConnectorScope(scope)) {
     return { kind: "empty" };
@@ -1210,9 +1284,16 @@ export function runConnectorCatalogSelection(
   return { kind: "scoped", selection: catalog };
 }
 
-function customConnectorSourceStorageRows(
+interface CustomConnectorSelectionRow {
+  readonly connection: Parameters<
+    typeof customConnectorCredentialAccesses
+  >[1][number];
+  readonly values: CustomConnectorRuntimeDataRows[number]["values"];
+}
+
+function customConnectorSourceSelectionRows(
   snapshot: ConnectorSourceSnapshot,
-): readonly CustomConnectorRuntimeStorageRow[] {
+): readonly CustomConnectorSelectionRow[] {
   const { source, connection, customBinding: binding } = snapshot;
   if (source.kind !== "custom" || !binding) {
     return [];
@@ -1256,24 +1337,25 @@ function customConnectorSourceStorageRows(
           ? []
           : snapshot.credentials.map((credential) => {
               return {
+                connectorId: source.customConnectorId,
                 kind: "secret" as const,
                 key: credential.name,
-                storedValue: credential.encryptedValue,
               };
             })),
-        ...Object.entries(snapshot.variables).map(([key, storedValue]) => {
-          return { kind: "variable" as const, key, storedValue };
+        ...Object.entries(snapshot.variables).map(([key, value]) => {
+          return {
+            connectorId: source.customConnectorId,
+            kind: "variable" as const,
+            key,
+            value,
+          };
         }),
       ]
     : [];
-  return values.length === 0
-    ? [{ ...base, kind: null, key: null, storedValue: null }]
-    : values.map((value) => {
-        return { ...base, ...value };
-      });
+  return [{ connection: base, values }];
 }
 
-export type ConnectorScopeSource = "explicit" | "stored_agent" | "empty";
+type ConnectorScopeSource = "stored_agent" | "empty";
 
 export interface EffectiveConnectorScope {
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
@@ -1295,7 +1377,7 @@ interface ThreadConnectorSelectionIds {
   >;
 }
 
-export function isEmptyRunConnectorScope(scope: {
+function isEmptyRunConnectorScope(scope: {
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
   readonly allowedCustomConnectorIds: readonly string[];
 }): boolean {
@@ -1317,7 +1399,6 @@ function emptyCustomConnectorRuntimeContext(): CustomConnectorRuntimeContext {
 }
 
 export interface BuiltinConnectorRuntimeContext {
-  readonly secrets: Record<string, string> | undefined;
   readonly vars: Record<string, string> | undefined;
   readonly secretConnectorMap: Record<string, string> | undefined;
   readonly secretConnectorMetadataMap:
@@ -1390,7 +1471,6 @@ export interface StoredConnectorMaterializationSnapshot {
 
 export function emptyBuiltinConnectorRuntimeContext(): BuiltinConnectorRuntimeContext {
   return {
-    secrets: undefined,
     vars: undefined,
     secretConnectorMap: undefined,
     secretConnectorMetadataMap: undefined,
@@ -1404,7 +1484,7 @@ export function emptyBuiltinConnectorRuntimeContext(): BuiltinConnectorRuntimeCo
 function allowedStoredConnectorRows(
   rows: readonly StoredConnectorRuntimeRowCandidate[],
   allowedConnectorSlugs: readonly ConnectorSlug[],
-  snapshot: ConnectorRuntimeSelection,
+  snapshot: ConnectorExecutionRuntimeSelection,
   now: Date,
 ): readonly StoredConnectorRuntimeRow[] {
   const validRows = rows.flatMap((row) => {
@@ -1479,18 +1559,16 @@ function connectorEnvBindingSets(
   });
 }
 
-export function storedConnectorCredentialNames(args: {
+function storedConnectorCredentialNames(args: {
   readonly runtimeBindings: readonly ConnectorRuntimeBindingEntry[];
   readonly kind: "secret" | "variable";
-  readonly names?: ReadonlySet<string>;
 }): readonly string[] {
   return [
     ...new Set(
       args.runtimeBindings.flatMap(({ source }) => {
         if (
           (args.kind === "secret" && source.kind !== "connector-secret") ||
-          (args.kind === "variable" && source.kind !== "connector-variable") ||
-          (args.names !== undefined && !args.names.has(source.name))
+          (args.kind === "variable" && source.kind !== "connector-variable")
         ) {
           return [];
         }
@@ -1562,7 +1640,6 @@ export function storedConnectorContextFromSnapshot(
     return emptyBuiltinConnectorRuntimeContext();
   }
   return {
-    secrets: undefined,
     vars: compactRecord(
       storedConnectorRuntimeVariables(
         snapshot.bindingSets,
@@ -1585,7 +1662,7 @@ export function storedConnectorContextFromSnapshot(
 function buildStoredConnectorMaterializationPlan(args: {
   readonly connectorRows: readonly StoredConnectorRuntimeRowCandidate[];
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
+  readonly connectorCatalogSnapshot: ConnectorExecutionRuntimeSelection;
 }): StoredConnectorMaterializationPlan | null {
   const allowedConnectorRows = allowedStoredConnectorRows(
     args.connectorRows,
@@ -1608,7 +1685,7 @@ function materializeStoredConnectorSnapshotRows(
   args: {
     readonly rows: readonly StoredConnectorMaterializationSnapshotRow[];
     readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-    readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
+    readonly connectorCatalogSnapshot: ConnectorExecutionRuntimeSelection;
     readonly timingDimensions: ApiDispatchTimingDimensions;
   },
   timing?: ApiDispatchTimingCollector,
@@ -1693,7 +1770,7 @@ interface StoredConnectorMaterializationArgs {
   readonly connectorIdCandidatesBySlug:
     ReadonlyMap<ConnectorSlug, readonly string[]> | undefined;
   readonly scopeSource: ConnectorScopeSource;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
+  readonly connectorCatalogSnapshot: ConnectorExecutionRuntimeSelection;
 }
 
 function customConnectorRequiredMemberCredentialsAreComplete(
@@ -1824,7 +1901,7 @@ function recordConnectorContextObservation(
   }
 }
 
-export function storedConnectorTimingDimensions(args: {
+function storedConnectorTimingDimensions(args: {
   readonly scopeSource: ConnectorScopeSource;
   readonly connectorCount?: number;
 }): ApiDispatchTimingDimensions {
@@ -1859,7 +1936,7 @@ interface RunConnectorPreparation {
       ReadonlyMap<string, readonly string[]> | undefined;
     readonly customConnectorGrants:
       readonly AgentCustomConnectorGrant[] | undefined;
-    readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
+    readonly connectorCatalogSnapshot: ConnectorExecutionRuntimeSelection;
   } | null;
 }
 
@@ -2031,7 +2108,7 @@ function runConnectorAccountCandidatesFromRows(args: {
 function customConnectorCandidateRuntimeRows(args: {
   readonly connector: CustomConnectorRuntimeDataRows[number]["connector"];
   readonly candidateIds: readonly string[];
-  readonly storageRows: readonly CustomConnectorRuntimeStorageRow[];
+  readonly storageRows: readonly CustomConnectorSelectionRow[];
 }): CustomConnectorRuntimeDataRows {
   const { connector } = args;
   const declaredFields = new Set(
@@ -2041,21 +2118,33 @@ function customConnectorCandidateRuntimeRows(args: {
     ? args.candidateIds
     : [undefined];
   return ids.map((id) => {
-    const storage = customConnectorRuntimeStorageSnapshot(
+    const accesses = customConnectorCredentialAccesses(
       [connector],
-      args.storageRows,
+      args.storageRows.map((row) => {
+        return row.connection;
+      }),
       new Map(id ? [[connector.id, id]] : []),
     );
-    const credentialAccess = storage.accesses.get(connector.id);
+    const credentialAccess = accesses.get(connector.id);
     if (!credentialAccess) {
       throw new Error("Expected custom connector credential access");
     }
     return {
       connector,
       credentialAccess,
-      values: storage.values.filter((value) => {
-        return declaredFields.has(customConnectorValueMarkerKey(value));
-      }),
+      values:
+        credentialAccess.kind === "current"
+          ? args.storageRows.flatMap((row) => {
+              return row.connection.id === credentialAccess.memberConnectorId
+                ? row.values.filter((value) => {
+                    return (
+                      value.connectorId === connector.id &&
+                      declaredFields.has(customConnectorValueMarkerKey(value))
+                    );
+                  })
+                : [];
+            })
+          : [],
     };
   });
 }
@@ -2064,5 +2153,5 @@ export type RunConnectorCatalogSelection =
   | { readonly kind: "empty" }
   | {
       readonly kind: "scoped";
-      readonly selection: ConnectorRuntimeSelection;
+      readonly selection: ConnectorExecutionRuntimeSelection;
     };

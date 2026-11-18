@@ -16,7 +16,6 @@ export interface ThreadlessRunCandidate {
   readonly orgId: string;
   readonly userId: string;
   readonly status: string;
-  readonly error: string | null;
   readonly completedAt: Date | null;
   readonly cancellationRecoveryCompleted: boolean | null;
 }

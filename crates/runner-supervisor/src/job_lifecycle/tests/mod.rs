@@ -77,7 +77,10 @@ fn completion_reason_reports_proven_rootfs_exhaustion() {
 #[test]
 fn completion_reason_does_not_infer_rootfs_exhaustion_from_error_text() {
     let failure = executor::ExecutionFailure::new(1, "No space left on device", None);
-    assert_eq!(completion_failure_reason(1, false, Some(&failure)), None);
+    assert_eq!(
+        completion_failure_reason(1, false, Some(&failure)),
+        Some(RequestFailureReason::Unknown)
+    );
     for kind in [
         executor::ResourceFailureKind::GuestMemoryOomKilled,
         executor::ResourceFailureKind::HostMemoryOomKilled,
@@ -86,7 +89,10 @@ fn completion_reason_does_not_infer_rootfs_exhaustion_from_error_text() {
             .with_resource_diagnostics(Some(
                 executor::ResourceFailureDiagnostics::from_failure_kind(kind),
             ));
-        assert_eq!(completion_failure_reason(1, false, Some(&failure)), None);
+        assert_eq!(
+            completion_failure_reason(1, false, Some(&failure)),
+            Some(RequestFailureReason::Unknown)
+        );
     }
 }
 

@@ -1,5 +1,4 @@
 import { useGet, useSet } from "ccstate-react";
-import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ToggleButton, cn } from "@okouai/ui";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
@@ -19,15 +18,16 @@ import { ComposerPresentationOutputPicker } from "./composer-presentation-output
 
 function VisualizationOutputPicker({
   signals,
-  headerAction,
 }: {
   readonly signals: ComposerSignals;
-  readonly headerAction?: ReactNode;
 }) {
   const { t } = useTranslation();
-  const copy = t(
+  const outputFormat = t(($) => {
+    return $.chat.taskChips.visualization.outputFormat;
+  });
+  const outputs = t(
     ($) => {
-      return $.chat.taskChips.visualization;
+      return $.chat.taskChips.visualization.outputs;
     },
     { returnObjects: true },
   );
@@ -36,13 +36,12 @@ function VisualizationOutputPicker({
   return (
     <div className="flex min-w-0 flex-col gap-3">
       <ComposerOutputPicker
-        label={copy.outputFormat}
+        label={outputFormat}
         options={VISUALIZATION_OUTPUTS.map((value) => {
-          return { value, label: copy.outputs[value] };
+          return { value, label: outputs[value] };
         })}
         selectedValue={selectedOutput}
         onSelect={setOutput}
-        headerAction={headerAction}
       />
       {selectedOutput === "presentation" && (
         <ComposerPresentationOutputPicker nested />
@@ -59,15 +58,11 @@ function VisualizationChartButton({
   readonly signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
-  const copy = t(
-    ($) => {
-      return $.chat.taskChips.visualization;
-    },
-    { returnObjects: true },
-  );
+  const label = t(($) => {
+    return $.chat.taskChips.visualization.charts[chart];
+  });
   const charts = useGet(signals.taskChips.visualization.charts$);
   const toggleChart = useSet(signals.taskChips.visualization.toggleChart$);
-  const label = copy.charts[chart];
   const selected = charts.includes(chart);
   return (
     /*
@@ -123,19 +118,16 @@ function VisualizationChartPicker({
   readonly signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
-  const copy = t(
-    ($) => {
-      return $.chat.taskChips.visualization;
-    },
-    { returnObjects: true },
-  );
+  const preferredCharts = t(($) => {
+    return $.chat.taskChips.visualization.preferredCharts;
+  });
   return (
     <div
       className="flex min-w-0 flex-col gap-3"
       role="group"
-      aria-label={copy.preferredCharts}
+      aria-label={preferredCharts}
     >
-      <p className={COMPOSER_SECTION_LABEL}>{copy.preferredCharts}</p>
+      <p className={COMPOSER_SECTION_LABEL}>{preferredCharts}</p>
       <ComposerRail
         rail="charts"
         // The shelf labels its own wrapper, so the rail inside stays unnamed:
@@ -157,32 +149,20 @@ function VisualizationChartPicker({
 
 export function ComposerVisualizationOptions({
   signals,
-  headerAction,
 }: {
   readonly signals: ComposerSignals;
-  readonly headerAction?: ReactNode;
 }) {
   const { t } = useTranslation();
-  const copy = t(
-    ($) => {
-      return $.chat.taskChips.visualization;
-    },
-    { returnObjects: true },
-  );
+  const panelLabel = t(($) => {
+    return $.chat.taskChips.visualization.panelLabel;
+  });
   return (
     <section
-      // Two groups, so they take the air the other panels put between their own
-      // two: a shelf's `gap-3` is what a title keeps from its row, not what one
-      // group keeps from the next. Tracks the panel gap in `composer-task-chips`
-      // — the two modes have to read as the same surface.
-      className="flex min-w-0 flex-col gap-10 in-data-[slot=capability-tray]:gap-6"
+      className="flex min-w-0 flex-col gap-6"
       role="region"
-      aria-label={copy.panelLabel}
+      aria-label={panelLabel}
     >
-      <VisualizationOutputPicker
-        signals={signals}
-        headerAction={headerAction}
-      />
+      <VisualizationOutputPicker signals={signals} />
       <VisualizationChartPicker signals={signals} />
     </section>
   );

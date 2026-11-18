@@ -22,6 +22,8 @@ struct Operation {
     archive_size_mismatch: Option<ArchiveSizeMismatch>,
     #[serde(skip_serializing_if = "Option::is_none")]
     archive_connection_attempt: Option<ArchiveConnectionAttempt>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    storage_stage_write: Option<crate::StorageStageWrite>,
 }
 
 impl Operation {
@@ -42,6 +44,7 @@ impl Operation {
             reason: None,
             archive_size_mismatch: None,
             archive_connection_attempt: None,
+            storage_stage_write: None,
         }
     }
 }
@@ -106,12 +109,36 @@ impl TestJobTelemetry {
             .collect()
     }
 
+    pub(crate) fn pending_stage_write_payloads(&self) -> Vec<serde_json::Value> {
+        self.pending_ops
+            .iter()
+            .filter(|op| op.storage_stage_write.is_some())
+            .map(|op| serde_json::to_value(op).unwrap())
+            .collect()
+    }
+
     pub(crate) async fn flush(self) {
         send(self.api_url, self.pending_ops).await;
     }
 }
 
 impl StorageTelemetry for TestJobTelemetry {
+    fn record_stage_write(
+        &mut self,
+        record: SandboxOpRecord,
+        observation: crate::StorageStageWrite,
+    ) {
+        let mut op = Operation::new(
+            record.action_type,
+            record.duration,
+            record.success,
+            record.error,
+            Utc::now(),
+        );
+        op.storage_stage_write = Some(observation);
+        self.pending_ops.push(op);
+    }
+
     fn record(
         &mut self,
         action_type: &str,

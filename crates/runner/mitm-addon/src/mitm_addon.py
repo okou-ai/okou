@@ -24,7 +24,7 @@ import addon_process_logging
 
 # --- Sub-module imports ---
 #
-# auth_base_forwarder/body_capture/connector_diagnostics/connector_intent/
+# auth_base_forwarder/connector_diagnostics/connector_intent/
 # matching/model_websocket_usage/
 # response_encoding_negotiation/
 # response_streaming/
@@ -33,7 +33,7 @@ import addon_process_logging
 # websocket_retention are imported
 # by module (not selective `from X import ...`) so that:
 #   1. Cross-module calls read as ``auth_base_forwarder.X(...)`` /
-#      ``body_capture.X(...)`` / ``connector_diagnostics.X(...)`` /
+#      ``connector_diagnostics.X(...)`` /
 #      ``connector_intent.X(...)`` /
 #      ``matching.X(...)`` / ``model_websocket_usage.X(...)`` /
 #      ``response_streaming.X(...)`` / ``runner_flush_lifecycle.X(...)`` /
@@ -48,7 +48,6 @@ import auth_base_forwarder
 import aws_sigv4_body_admission
 import aws_sigv4_flow
 import aws_sigv4_hash_executor
-import body_capture
 import builtin_connector_diagnostics
 import builtin_host_policy
 import codex_model_catalog_cache
@@ -95,7 +94,7 @@ from auth import (
     FirewallAuthHandlingResult,
     FirewallHeaderPhaseAuthResult,
     handle_firewall_request,
-    invalidate_network_admission,
+    handle_response_auth_failure,
     is_billable_firewall,
     mark_auth_base_forwarding_saturated,
     mark_auth_base_request_length_required,
@@ -108,15 +107,9 @@ from auth import (
     try_apply_stream_safe_firewall_auth_for_requestheaders,
 )
 from body_limits import STREAM_BUFFER_LIMIT
-from firewall_auth_cache import (
-    FirewallAuthCacheEntryIdentity,
-    FirewallAuthCacheKey,
-    invalidate_cached_firewall_headers,
-)
 from generated.data_router import DATA_ROUTER_REQUEST_BODY_MAX_BYTES
 from logging_utils import (
     elapsed_ms,
-    log_http_network_entry,
     log_proxy_entry,
     project_connection_error_for_log,
     project_url_for_proxy_log,
@@ -124,7 +117,6 @@ from logging_utils import (
 )
 
 # HTTP status boundaries used in response-phase classification.
-_HTTP_STATUS_UNAUTHORIZED = 401
 _HTTP_STATUS_BAD_GATEWAY = 502
 _HTTP_STATUS_ERROR_MIN = 400  # inclusive: start of 4xx/5xx error range
 # Request-header phase state.
@@ -161,7 +153,6 @@ _STALE_FIREWALL_AUTHORIZATION_METADATA_KEYS = (
 )
 
 _AUTH_BASE_BODYLESS_METHODS = frozenset(("GET", "HEAD"))
-_HTTP_RESPONSE_BODYLESS_METHODS = frozenset(("CONNECT", "HEAD"))
 _WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT = 8 * 1024
 
 
@@ -1367,7 +1358,12 @@ async def _try_firewall_request_stream_from_headers(
         fall_back()
         return
 
-    _maybe_normalize_accept_encoding_for_body_inspection(flow, allow, sandbox_info)
+    response_encoding_negotiation.prepare_request(
+        flow,
+        firewall_name=allow.name,
+        billable=is_billable_firewall(allow.name, sandbox_info),
+        websocket_header_work_limit=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
+    )
     _start_request_timing(flow)
     expected_run_id = flow_metadata.run_id(flow.metadata)
     expected_request = request_authority.capture_firewall_request_identity(flow)
@@ -1792,7 +1788,12 @@ async def request(flow: http.HTTPFlow) -> None:
                     error=host_policy_error,
                 )
                 return
-            _maybe_normalize_accept_encoding_for_body_inspection(flow, allow, sandbox_info)
+            response_encoding_negotiation.prepare_request(
+                flow,
+                firewall_name=allow.name,
+                billable=is_billable_firewall(allow.name, sandbox_info),
+                websocket_header_work_limit=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
+            )
             run_usage.admit(flow, namespace=allow.name)
             terminal_usage.track_flow_if_needed(
                 flow,
@@ -1858,48 +1859,6 @@ async def request(flow: http.HTTPFlow) -> None:
     finally:
         aws_sigv4_flow.release_inspection(flow)
         request_classification.pop_cached_classification(flow)
-
-
-def _maybe_normalize_accept_encoding_for_body_inspection(
-    flow: http.HTTPFlow,
-    allow: matching.FirewallAllow,
-    sandbox_info: dict,
-) -> None:
-    is_websocket_upgrade = websocket_handshake.is_websocket_upgrade_request(
-        flow,
-        websocket_header_work_limit=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
-    )
-    if is_websocket_upgrade:
-        flow.metadata[metadata_keys.WEBSOCKET_UPGRADE_REQUEST] = True
-    if _expects_http_response_body_usage_inspection(
-        flow,
-        allow,
-        sandbox_info,
-        is_websocket_upgrade=is_websocket_upgrade,
-    ):
-        flow.metadata[metadata_keys.RESPONSE_ENCODING_NEGOTIATION] = (
-            response_encoding_negotiation.normalize_accept_encoding_for_body_inspection(
-                flow.request.headers
-            )
-        )
-
-
-def _expects_http_response_body_usage_inspection(
-    flow: http.HTTPFlow,
-    allow: matching.FirewallAllow,
-    sandbox_info: dict,
-    *,
-    is_websocket_upgrade: bool,
-) -> bool:
-    if flow.request.method.upper() in _HTTP_RESPONSE_BODYLESS_METHODS:
-        return False
-    if is_websocket_upgrade:
-        return False
-    if allow.name.startswith("model-provider:") and is_billable_firewall(allow.name, sandbox_info):
-        return True
-    return is_billable_firewall(allow.name, sandbox_info) and usage.has_connector_response_parser(
-        allow.name
-    )
 
 
 # ============================================================================
@@ -2117,20 +2076,15 @@ def _finish_response_handling(
     proxy_log_path = flow_metadata.proxy_log_path(flow.metadata)
     if network_log_path:
         response_size = http_network_log.response_size(flow)
-        log_entry, raw_url = http_network_log.build_entry(
+        http_network_log.write_entry(
             flow,
+            log_path=network_log_path,
             action=firewall_action,
             status_code=status_code,
             latency_ms=latency_ms,
             request_size=request_size,
             response_size=response_size,
         )
-
-        # Add captured header names, selected safe header values, and bodies when enabled
-        if flow_metadata.should_capture_body(flow.metadata):
-            body_capture.add_capture_fields(flow, log_entry)
-
-        log_http_network_entry(network_log_path, log_entry, raw_url)
 
     response_streaming.finalize_model_sse_usage(flow)
     response_streaming.finalize_model_json_usage(flow, proxy_log_path)
@@ -2145,42 +2099,7 @@ def _finish_response_handling(
     response_streaming.finalize_connector_response_state(flow)
     usage.report_connector_usage(flow, run_id)
 
-    # Invalidate firewall header cache on 401 so next request gets fresh headers.
-    # Also request a force-refresh so the next /firewall/auth fetch refreshes
-    # the access token regardless of DB tokenExpiresAt — the provider just told
-    # us the token is no longer valid, overriding whatever the DB believes.
-    # request_force_refresh enforces a cooldown so a persistent non-token 401
-    # can't amplify into a loop of provider refresh calls (#9860).
-    # Both reverse-proxied auth layers can send the same challenges and OAuth
-    # error bodies. A bound rejection cannot authorize app credential refresh.
-    authentication_unattributed = bool(
-        flow.response
-        and flow.metadata.get(metadata_keys.CUSTOM_NETWORK_BOUND)
-        and flow.response.status_code in (401, 403)
-    )
-    if flow.response and flow.response.status_code in (401, 403):
-        invalidate_network_admission(flow)
-    if authentication_unattributed:
-        log_proxy_entry(
-            proxy_log_path,
-            "warn",
-            "The Access-protected request failed authentication; its source is unknown. "
-            "Check network access and application authentication, then retry explicitly",
-            type="cloudflare_access",
-            status=flow.response.status_code if flow.response else 0,
-        )
-    if (
-        flow.response
-        and flow.response.status_code == _HTTP_STATUS_UNAUTHORIZED
-        and flow_metadata.firewall_base(flow.metadata)
-        and not authentication_unattributed
-    ):
-        cache_key = flow.metadata.get(metadata_keys.FIREWALL_AUTH_CACHE_KEY)
-        cache_entry_identity = flow.metadata.get(metadata_keys.FIREWALL_AUTH_CACHE_ENTRY_IDENTITY)
-        if isinstance(cache_key, FirewallAuthCacheKey) and isinstance(
-            cache_entry_identity, FirewallAuthCacheEntryIdentity
-        ):
-            invalidate_cached_firewall_headers(cache_key, cache_entry_identity)
+    handle_response_auth_failure(flow, proxy_log_path=proxy_log_path)
 
     # Log HTTP error responses to the per-job proxy JSONL log.
     if flow.response and flow.response.status_code >= _HTTP_STATUS_ERROR_MIN:
@@ -2270,20 +2189,16 @@ def _finish_error_handling(flow: http.HTTPFlow, *, latency_ms: int) -> None:
 
     if network_log_path:
         # [NETWORK_LOG_FIELDS] — HTTP error fields; api-contracts is the shared schema boundary.
-        log_entry, raw_url = http_network_log.build_entry(
+        http_network_log.write_entry(
             flow,
+            log_path=network_log_path,
             action=firewall_action,
             status_code=0,
             latency_ms=latency_ms,
             request_size=request_size,
             response_size=0,
+            error=error_msg,
         )
-        log_entry["error"] = error_msg
-
-        if flow_metadata.should_capture_body(flow.metadata):
-            body_capture.add_capture_fields(flow, log_entry, response_incomplete=True)
-
-        log_http_network_entry(network_log_path, log_entry, raw_url)
 
     # Report proxy-extracted usage for model provider responses.
     # The SSE parser may have partially populated model_provider_usage before the

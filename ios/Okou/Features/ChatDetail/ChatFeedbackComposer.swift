@@ -10,9 +10,10 @@ struct ChatFeedbackComposer: View {
   let acceptsImages: Bool
   var placeholder = String(localized: "Message Okou")
   var showsTrailingParagraph = true
+  var expanded = false
   var returnKeyPreference = ComposerReturnKeyPreference.newline
   var canSendFromKeyboard = false
-  var submitFromKeyboard: (@MainActor () -> Void)? = nil
+  var submitFromKeyboard: (@MainActor () -> Void)?
   @State private var focusedBlock: UUID?
   @State private var contentHeight: CGFloat = 24
 
@@ -57,7 +58,7 @@ struct ChatFeedbackComposer: View {
                     },
                     set: { state.editBlock(block.id, text: $0) }),
                   isFocused: Binding(
-                    get: { focusedBlock == block.id },
+                    get: { (state.focusRequest?.blockID ?? focusedBlock) == block.id },
                     set: { focused in
                       if focused {
                         focusedBlock = block.id
@@ -89,7 +90,7 @@ struct ChatFeedbackComposer: View {
                   placeholder: block.isFeedback
                     ? String(localized: "Ask or comment on this quote") : placeholder,
                   identifier: block.isFeedback ? "feedback-note-\(block.id)" : "message-input",
-                  expanded: state.document.hasFeedback || isFocused,
+                  expanded: expanded || state.document.hasFeedback || isFocused,
                   returnKeyPreference: returnKeyPreference,
                   canSendFromKeyboard: canSendFromKeyboard,
                   submitFromKeyboard: submitFromKeyboard

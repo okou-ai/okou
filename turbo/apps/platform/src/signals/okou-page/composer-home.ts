@@ -182,16 +182,29 @@ export function createComposerHomeSignals(
   openTask$: Command<void, [ComposerTask]>,
   selectTask$: Command<void, [ComposerTask | null]>,
   actions: WorkflowRecommendationActions,
-  closeWorkflow$: Command<void, []>,
 ) {
   const home = createHomeDiscoverySignals(
     selectedTask$,
     openTask$,
     selectTask$,
     actions,
-    closeWorkflow$,
   );
   return { ...home, swap$: createHomeSwapCommand(home, openTask$) };
+}
+
+/** Remember Create's type separately from the active submission intent. */
+function createRememberedCreationTaskSignals(
+  selectedTask$: Computed<ComposerTask | null>,
+) {
+  const remembered$ = state<Exclude<ComposerTask, "workflow">>("presentation");
+  const task$ = computed((get) => {
+    const task = get(selectedTask$);
+    return task !== null && task !== "workflow" ? task : get(remembered$);
+  });
+  const remember$ = command(({ get, set }) => {
+    set(remembered$, get(task$));
+  });
+  return { task$, remember$ };
 }
 
 function createHomeDiscoverySignals(
@@ -199,7 +212,6 @@ function createHomeDiscoverySignals(
   openTask$: Command<void, [ComposerTask]>,
   selectTask$: Command<void, [ComposerTask | null]>,
   actions: WorkflowRecommendationActions,
-  closeWorkflow$: Command<void, []>,
 ) {
   const internalVisible$ = state(true);
   const internalMenuOpen$ = state(false);
@@ -207,6 +219,7 @@ function createHomeDiscoverySignals(
   const layout = createCapabilityLayoutSignals();
   const internalExploreKind$ = state<HomeExploreKind | null>(null);
   const internalWorkflowKind$ = state<HomeWorkflowKind>("scheduled");
+  const creationTask = createRememberedCreationTaskSignals(selectedTask$);
   const task$ = computed((get) => {
     return get(internalVisible$)
       ? (get(internalExploreKind$) ?? get(selectedTask$))
@@ -238,7 +251,6 @@ function createHomeDiscoverySignals(
     signal.throwIfAborted();
     set(internalVisible$, false);
     set(internalMenuOpen$, false);
-    set(closeWorkflow$);
     const cleared = set(actions.clearPrompt$);
     // The initiating capability control has unmounted; the composer remains.
     set(actions.focusEditor$);
@@ -248,11 +260,13 @@ function createHomeDiscoverySignals(
     }
   });
   const openWorkflow$ = command(({ set }, kind: HomeWorkflowKind) => {
+    set(creationTask.remember$);
     set(internalWorkflowKind$, kind);
     set(openTask$, "workflow");
   });
   const openExplore$ = command(({ set }, kind: HomeExploreKind) => {
-    set(closeWorkflow$);
+    set(creationTask.remember$);
+    set(selectTask$, null);
     set(internalVisible$, true);
     set(internalExploreKind$, kind);
   });
@@ -287,11 +301,7 @@ function createHomeDiscoverySignals(
           break;
         }
         case "create": {
-          const task = get(selectedTask$);
-          set(
-            openTask$,
-            task !== null && task !== "workflow" ? task : "presentation",
-          );
+          set(openTask$, get(creationTask.task$));
           break;
         }
         case "workflow": {

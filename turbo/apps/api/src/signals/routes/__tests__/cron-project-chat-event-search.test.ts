@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockEnv } from "../../../lib/env";
 import { withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
@@ -28,7 +28,7 @@ function cronClient() {
   })(cronProjectChatEventSearchContract);
 }
 
-describe("GET /api/cron/project-chat-event-search", () => {
+describe("chat search publication", () => {
   it("requires the cron secret", async () => {
     const response = await accept(cronClient().project({ headers: {} }), [401]);
 
@@ -37,12 +37,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
     });
   });
 
-  it("withdraws a previously indexed queued message after its public recall", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronProjectChatEventSearchRoutes,
-      isolatePg: true,
-    });
+  it("withdraws recalled queued messages while another input is published", async () => {
     const bdd = createBddApi(context);
     const chat = createChatFilesBddApi(context);
     await createRunsApi(context).configureRunnerGroup();
@@ -72,10 +67,6 @@ describe("GET /api/cron/project-chat-event-search", () => {
       [201],
     );
     await flushWaitUntilForTest();
-    mockEnv("CRON_SECRET", CRON_SECRET);
-    const operator = app(cronProjectChatEventSearchContract);
-    const headers = { authorization: `Bearer ${CRON_SECRET}` };
-    await accept(operator.project({ headers }), [200]);
     expect((await chat.searchChat(owner, keyword)).results).toContainEqual(
       expect.objectContaining({
         chatThreadId: threadId,
@@ -89,18 +80,47 @@ describe("GET /api/cron/project-chat-event-search", () => {
       [201],
     );
     await flushWaitUntilForTest();
-    await accept(operator.project({ headers }), [200]);
     expect((await chat.searchChat(owner, keyword)).results).toStrictEqual([]);
+
+    const racingEventId = randomUUID();
+    const survivingKeyword = `survivingsearch${randomUUID().replaceAll("-", "")}`;
+    await chat.requestSendEvent(
+      owner,
+      {
+        agentId: agent.agentId,
+        threadId,
+        clientEventId: racingEventId,
+        prompt: keyword,
+      },
+      [201],
+    );
+    // These requests may overlap the accepted input's background publication.
+    // Observe the final caller contract without driving or pausing the indexer.
+    await Promise.all([
+      chat.requestSendEvent(
+        owner,
+        { agentId: agent.agentId, threadId, revokesEventId: racingEventId },
+        [201],
+      ),
+      chat.requestSendEvent(
+        owner,
+        { agentId: agent.agentId, threadId, prompt: survivingKeyword },
+        [201],
+      ),
+    ]);
+    await flushWaitUntilForTest();
+    expect((await chat.searchChat(owner, keyword)).results).toStrictEqual([]);
+    expect(
+      (await chat.searchChat(owner, survivingKeyword)).results,
+    ).toContainEqual(
+      expect.objectContaining({
+        chatThreadId: threadId,
+        matchedMessage: expect.objectContaining({ content: survivingKeyword }),
+      }),
+    );
   });
 
   it("publishes scoped MCP and Web search hits and respects revoked sharing", async () => {
-    // This is the operator index-publication boundary, not a user fixture that
-    // privately drives indexing. All business data and observations use APIs.
-    const app = await setupApp({
-      context,
-      routes: cronProjectChatEventSearchRoutes,
-      isolatePg: true,
-    });
     const bdd = createBddApi(context);
     const chat = createChatFilesBddApi(context);
     const mcp = createMcpWebApi(context);
@@ -164,13 +184,6 @@ describe("GET /api/cron/project-chat-event-search", () => {
       );
       await flushWaitUntilForTest();
     }
-    mockEnv("CRON_SECRET", CRON_SECRET);
-    await accept(
-      app(cronProjectChatEventSearchContract).project({
-        headers: { authorization: `Bearer ${CRON_SECRET}` },
-      }),
-      [200],
-    );
     const native = await chat.searchChat(owner, keyword);
     expect(native.results.length).toBeGreaterThan(0);
     const token = mcp.authorize(owner);
@@ -307,11 +320,6 @@ describe("GET /api/cron/project-chat-event-search", () => {
   it.each(["UTF-16 ranges", "the documented token policy"] as const)(
     "publishes Unicode search hits with %s",
     async (contract) => {
-      const app = await setupApp({
-        context,
-        routes: cronProjectChatEventSearchRoutes,
-        isolatePg: true,
-      });
       const bdd = createBddApi(context);
       const chat = createChatFilesBddApi(context);
       const mcp = createMcpWebApi(context);
@@ -391,13 +399,6 @@ describe("GET /api/cron/project-chat-event-search", () => {
         }),
       );
       await flushWaitUntilForTest();
-      mockEnv("CRON_SECRET", CRON_SECRET);
-      await accept(
-        app(cronProjectChatEventSearchContract).project({
-          headers: { authorization: `Bearer ${CRON_SECRET}` },
-        }),
-        [200],
-      );
       const token = mcp.authorize(owner);
       async function search(keyword: string) {
         const response = await mcp.call(token(), "search_chat_messages", {
@@ -485,13 +486,6 @@ describe("GET /api/cron/project-chat-event-search", () => {
   );
 
   it("returns published MCP and Web search hits newest first", async () => {
-    // Authenticated operator publication is the system boundary in this case;
-    // message construction and all search observations use normal public APIs.
-    const app = await setupApp({
-      context,
-      routes: cronProjectChatEventSearchRoutes,
-      isolatePg: true,
-    });
     const bdd = createBddApi(context);
     const chat = createChatFilesBddApi(context);
     const mcp = createMcpWebApi(context);
@@ -543,13 +537,6 @@ describe("GET /api/cron/project-chat-event-search", () => {
         await flushWaitUntilForTest();
       });
     }
-    mockEnv("CRON_SECRET", CRON_SECRET);
-    await accept(
-      app(cronProjectChatEventSearchContract).project({
-        headers: { authorization: `Bearer ${CRON_SECRET}` },
-      }),
-      [200],
-    );
 
     const token = mcp.authorize(owner);
     const response = await mcp.call(token(), "search_chat_messages", {
@@ -582,104 +569,4 @@ describe("GET /api/cron/project-chat-event-search", () => {
       }),
     );
   }, 60_000);
-
-  it.each([
-    {
-      scenario: "candidates across the head/tail boundary",
-      pending: [7, 8, 11],
-    },
-    {
-      scenario: "a full head at the source-window boundary",
-      pending: [6, 7, 8, 11],
-    },
-  ])("publishes $scenario in global thread-ID order", async ({ pending }) => {
-    const app = await setupApp({
-      context,
-      routes: cronProjectChatEventSearchRoutes,
-      isolatePg: true,
-    });
-    const bdd = createBddApi(context);
-    const chat = createChatFilesBddApi(context);
-    await createRunsApi(context).configureRunnerGroup();
-    bdd.acceptAgentStorageWrites();
-    context.mocks.s3.send.mockImplementation((request: unknown) => {
-      return Promise.resolve(
-        request instanceof ListObjectsV2Command
-          ? { Contents: [], IsTruncated: false }
-          : { ContentLength: 1024 },
-      );
-    });
-    const owner = bdd.user({ orgId: `org_${randomUUID()}` });
-    const agent = await bdd.createAgent(owner, {
-      displayName: "Ordered background search publication",
-      visibility: "private",
-    });
-    // Empty conversations are normal source threads but have no pending input.
-    // With batch=2, the first eight source IDs form the head's probe window.
-    const sourceIds: string[] = [];
-    for (let index = 0; index < 12; index += 1) {
-      const thread = await chat.createThread(owner, {
-        agentId: agent.agentId,
-        model: null,
-      });
-      sourceIds.push(thread.id);
-    }
-    sourceIds.sort();
-    const keyword = `hybridpublication${randomUUID().replaceAll("-", "")}`;
-    const pendingIds = pending.map((index) => {
-      const threadId = sourceIds[index];
-      if (!threadId) {
-        throw new Error("Expected a publicly created source thread");
-      }
-      return threadId;
-    });
-    for (const threadId of pendingIds) {
-      await chat.requestSendEvent(
-        owner,
-        { agentId: agent.agentId, threadId, prompt: `${keyword} ${threadId}` },
-        [201],
-      );
-      await flushWaitUntilForTest();
-    }
-    mockEnv("CRON_SECRET", CRON_SECRET);
-    mockOptionalEnv("CHAT_EVENT_SEARCH_PROJECTION_BATCH_SIZE", "2");
-    const operator = app(cronProjectChatEventSearchContract);
-    const headers = { authorization: `Bearer ${CRON_SECRET}` };
-    const first = await accept(operator.project({ headers }), [200]);
-    expect(first.body.threads).toBe(2);
-    expect(first.body.convergence).toStrictEqual({
-      eligibleThreads: pendingIds.length,
-      durableCaughtUpThreads: 2,
-    });
-    const published = await chat.searchChat(owner, keyword);
-    expect(
-      published.results
-        .map((hit) => {
-          return hit.chatThreadId;
-        })
-        .sort(),
-    ).toStrictEqual(pendingIds.slice(0, 2));
-    for (const threadId of pendingIds.slice(0, 2)) {
-      expect(published.results).toContainEqual(
-        expect.objectContaining({
-          chatThreadId: threadId,
-          matchedMessage: expect.objectContaining({
-            content: `${keyword} ${threadId}`,
-          }),
-        }),
-      );
-    }
-    const next = await accept(operator.project({ headers }), [200]);
-    expect(next.body.convergence).toStrictEqual({
-      eligibleThreads: pendingIds.length,
-      durableCaughtUpThreads: pendingIds.length,
-    });
-    expect(
-      (await chat.searchChat(owner, keyword)).results
-        .map((hit) => {
-          return hit.chatThreadId;
-        })
-        .sort(),
-    ).toStrictEqual(pendingIds);
-  });
 });

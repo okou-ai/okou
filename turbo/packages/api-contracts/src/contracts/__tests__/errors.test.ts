@@ -11,6 +11,8 @@ import {
   CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE,
   formatReplacementSubscriptionRequiredMessage,
   formatRunErrorForExternalSurface,
+  formatRunFailureForExternalSurface,
+  formatChatRunFailure,
   formatPersonalSubscriptionUsageLimitForExternalSurface,
   getCodexChatGptAccountUnsupportedModel,
   INSUFFICIENT_CREDITS_ASK_ADMIN_MESSAGE,
@@ -22,6 +24,45 @@ import {
 
 const SHORT_CLAUDE_OAUTH_REVOCATION =
   "Failed to authenticate: OAuth token revoked. Please log in again or contact your administrator.";
+
+describe("structured client failure copy", () => {
+  it.each([
+    [undefined, CHAT_RUN_TRANSIENT_ERROR_MESSAGE],
+    ["future_reason", CHAT_RUN_TRANSIENT_ERROR_MESSAGE],
+    ["usage_limit", CHAT_RUN_USAGE_LIMIT_MESSAGE],
+    ["unsupported_model", CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE],
+    ["execution_timeout", CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE],
+  ] as const)(
+    "presents %s without accepting diagnostic text",
+    (failureReason, expected) => {
+      expect(formatRunFailureForExternalSurface({ failureReason })).toBe(
+        expected,
+      );
+    },
+  );
+
+  it("preserves the existing API formatter's actionable usage-limit text", () => {
+    expect(
+      formatRunErrorForExternalSurface({
+        code: "UNKNOWN",
+        message: "Cannot continue session with this provider",
+        failureReason: "usage_limit",
+      }),
+    ).toBe("Cannot continue session with this provider");
+  });
+
+  it("uses public chat balance causes while masking platform-owned balance details", () => {
+    expect(formatChatRunFailure("provider_insufficient_credits")).toBe(
+      "Your connected subscription account has insufficient balance.",
+    );
+    expect(
+      formatRunFailureForExternalSurface({
+        failureReason: "provider_insufficient_credits",
+        modelProviderType: "built-in",
+      }),
+    ).toBe("The current model is unavailable.");
+  });
+});
 
 describe("formatRunErrorForExternalSurface", () => {
   it("shows account-verification guidance without leaking the personal portal link", () => {
@@ -1020,60 +1061,73 @@ describe("formatRunErrorForExternalSurface", () => {
   });
 });
 
+describe("structured Run failure presentation", () => {
+  it.each([undefined, null, "unknown", "future_reason"])(
+    "generates safe presentation for an unavailable cause %s",
+    (failureReason) => {
+      expect(formatRunFailureForExternalSurface({ failureReason })).toBe(
+        CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
+      );
+    },
+  );
+
+  it("preserves structured timeout, quota and model recovery guidance", () => {
+    expect(
+      formatRunFailureForExternalSurface({
+        failureReason: "execution_timeout",
+      }),
+    ).toBe(CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE);
+    expect(
+      formatRunFailureForExternalSurface({ failureReason: "usage_limit" }),
+    ).toBe(CHAT_RUN_USAGE_LIMIT_MESSAGE);
+    expect(
+      formatRunFailureForExternalSurface({
+        failureReason: "unsupported_model",
+      }),
+    ).toBe(CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE);
+  });
+});
+
 describe("personal subscription usage guidance for integrations", () => {
   it.each([
     {
       modelProviderType: "codex-oauth-token",
       label: "ChatGPT (Codex)",
-      message:
-        "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage or try again at 6:17 AM (Asia/Shanghai).",
     },
     {
       modelProviderType: "claude-code-oauth-token",
       label: "Claude",
-      message:
-        "You've hit your weekly limit · resets 10am (Asia/Shanghai). Visit https://claude.ai/settings/usage.",
     },
   ] as const)(
-    "preserves native reset details for $label",
-    ({ modelProviderType, label, message }) => {
+    "generates structured subscription recovery for $label",
+    ({ modelProviderType, label }) => {
       const result = formatPersonalSubscriptionUsageLimitForExternalSurface({
         failureReason: "usage_limit",
         modelProviderType,
-        message,
         modelProvidersUrl: "https://app.example.test/?settings=model",
       });
-      expect(result).toContain(`Your ${label} subscription`);
-      expect(result).toContain(message);
+      expect(result).toContain(
+        `Your ${label} subscription has reached its usage limit`,
+      );
+      expect(result).toContain("Wait for your subscription allowance to reset");
+      expect(result).toContain("switch to an available subscription account");
       expect(result).toContain("https://app.example.test/?settings=model");
       expect(result).toContain('reply "continue"');
     },
   );
 
-  it("gives account recovery when the provider supplies no reset details", () => {
+  it("explains automatic continuation after switching subscription accounts", () => {
     const result = formatPersonalSubscriptionUsageLimitForExternalSurface({
       failureReason: "usage_limit",
       modelProviderType: "codex-oauth-token",
-      message: CHAT_RUN_USAGE_LIMIT_MESSAGE,
       modelProvidersUrl: "https://app.example.test/?settings=model",
     });
     expect(result).toContain("Wait for your subscription allowance to reset");
     expect(result).toContain("switch to an available subscription account");
-    expect(result).not.toContain("choose a different model");
-  });
-
-  it("keeps a subscription-wide limit authoritative over a model-switch suggestion", () => {
-    const result = formatPersonalSubscriptionUsageLimitForExternalSurface({
-      failureReason: "usage_limit",
-      modelProviderType: "codex-oauth-token",
-      message: "Selected model is at capacity. Please try a different model.",
-      modelProvidersUrl: "https://app.example.test/?settings=model",
-    });
     expect(result).toContain(
-      "Your ChatGPT (Codex) subscription has reached its usage limit",
+      "Switching accounts automatically continues this conversation.",
     );
-    expect(result).toContain("switch to an available subscription account");
-    expect(result).not.toContain("try a different model");
+    expect(result).not.toContain("choose a different model");
   });
 
   it("leaves a platform usage limit with its existing recovery surface", () => {
@@ -1081,18 +1135,16 @@ describe("personal subscription usage guidance for integrations", () => {
       formatPersonalSubscriptionUsageLimitForExternalSurface({
         failureReason: "usage_limit",
         modelProviderType: "built-in",
-        message: CHAT_RUN_USAGE_LIMIT_MESSAGE,
         modelProvidersUrl: "https://app.example.test/?settings=model",
       }),
     ).toBeUndefined();
   });
 
-  it("does not reclassify a structured non-quota failure from its text", () => {
+  it("limits subscription guidance to the structured usage reason", () => {
     expect(
       formatPersonalSubscriptionUsageLimitForExternalSurface({
         failureReason: "provider_server_error",
         modelProviderType: "codex-oauth-token",
-        message: "You've hit your usage limit.",
         modelProvidersUrl: "https://app.example.test/?settings=model",
       }),
     ).toBeUndefined();

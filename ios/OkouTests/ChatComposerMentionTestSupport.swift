@@ -24,14 +24,14 @@ final class MentionNavigationFixture: Sendable {
       .object(["type": .string("text"), "text": .string("Before ")]),
       .object([
         "type": .string("chat_thread"), "threadId": .string(thread(31)),
-        "titleSnapshot": .string("Cross Agent archived plan"),
+        "titleSnapshot": .string("Cross Agent archived plan")
       ]),
       .object(["type": .string("text"), "text": .string(" and ")]),
       .object([
         "type": .string("chat_thread"), "threadId": .string(thread(30)),
-        "titleSnapshot": .string("Project 30"),
+        "titleSnapshot": .string("Project 30")
       ]),
-      .object(["type": .string("text"), "text": .string(" after 🌷")]),
+      .object(["type": .string("text"), "text": .string(" after 🌷")])
     ])
   }
 
@@ -48,7 +48,7 @@ final class MentionNavigationFixture: Sendable {
       case "/api/agents":
         let names = [
           "Planner", "Research Agent", "Notes", "Release",
-          "研究 Agent — Long workspace name with 中文 and 🌷 to check native truncation and accessibility",
+          "研究 Agent — Long workspace name with 中文 and 🌷 to check native truncation and accessibility"
         ]
         let others = names.enumerated().map { index, name in
           ["agentId": Self.agent(index + 1), "displayName": name, "isDefaultAgent": false]
@@ -58,11 +58,11 @@ final class MentionNavigationFixture: Sendable {
           [
             [
               "agentId": AttachmentFlowFixture.agentID, "displayName": "Okou",
-              "isDefaultAgent": true,
+              "isDefaultAgent": true
             ] as [String: Any]
           ] + others
         return ChatHTTPResponse(
-          body: String(decoding: try JSONSerialization.data(withJSONObject: values), as: UTF8.self))
+          body: try JSONSerialization.string(withJSONObject: values))
 
       case "/api/feature-switches":
         return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
@@ -93,10 +93,9 @@ final class MentionNavigationFixture: Sendable {
             id: Self.thread(35), title: "Pinned recent", day: 2, agent: Self.agent(1),
             pinOrder: "a1"))
         return ChatHTTPResponse(
-          body: String(
-            decoding: try JSONSerialization.data(withJSONObject: [
-              "chatThreads": threads, "latestEventId": NSNull(), "latestSeqId": 0,
-            ]), as: UTF8.self))
+          body: try JSONSerialization.string(withJSONObject: [
+            "chatThreads": threads, "latestEventId": NSNull(), "latestSeqId": 0
+          ]))
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
@@ -115,7 +114,7 @@ final class MentionNavigationFixture: Sendable {
       "id": id, "agentId": agent, "title": title, "createdAt": date, "updatedAt": date,
       "sortAt": date,
       "archived": archived, "hidden": hidden, "pinnedAt": pinOrder == nil ? NSNull() : date as Any,
-      "pinOrder": pinOrder as Any? ?? NSNull(),
+      "pinOrder": pinOrder as Any? ?? NSNull()
     ]
   }
 
@@ -197,16 +196,48 @@ func mentionInputs(in view: UIView) -> [ComposerTextView] {
 @MainActor
 func focusMentionInput(_ input: ComposerTextView) async throws {
   input.becomeFirstResponder()
-  try await eventually(
-    message:
-      "Native composer focus: \(input.isFirstResponder); "
-      + "window: \(input.window != nil); current: \(input.isCurrent()); "
-      + "bound focus: \(String(describing: (input.delegate as? ChatComposerTextInput.Coordinator)?.input.isFocused)); "
-      + "key window: \(String(describing: input.window?.isKeyWindow)); "
-      + "scene: \(String(describing: input.window?.windowScene?.activationState))"
-  ) {
+  try await eventually(message: mentionInputStatus(input)) {
     input.isFirstResponder
   }
+}
+
+@MainActor
+func mentionInputStatus(_ input: ComposerTextView) -> String {
+  "Native composer \(input.accessibilityIdentifier ?? "unidentified"): "
+    + "focus: \(input.isFirstResponder); text: \(String(reflecting: input.text)); "
+    + "window: \(input.window != nil); current: \(input.isCurrent()); "
+    + "marked text: \(input.markedTextRange != nil); settling: \(input.isSettlingComposition); "
+    + "bound focus: \(String(describing: (input.delegate as? ChatComposerTextInput.Coordinator)?.input.isFocused)); "
+    + "key window: \(String(describing: input.window?.isKeyWindow)); "
+    + "scene: \(String(describing: input.window?.windowScene?.activationState))"
+}
+
+@MainActor
+func mentionState(_ input: ComposerTextView, in host: UIView) -> String {
+  let editor = input.mentionEditor
+  let table = mentionTable(in: host)
+  let rows = table.map { table in
+    (0..<table.numberOfSections).map { table.numberOfRows(inSection: $0) }
+  }
+  return mentionInputStatus(input) + "; "
+    + "editable=\(input.isEditable); structured=\(input.usesStructuredDocument); "
+    + "applyingDocument=\(input.isApplyingDocument); "
+    + "hosted=\(mentionInputs(in: host).contains { $0 === input }); "
+    + "caret=\(input.selectedRange); "
+    + "query=\(String(reflecting: editor?.mentionQuery)); "
+    + "source=\(editor?.mentionSource != nil); "
+    + "sourceAgent=\(String(describing: editor?.mentionSource?.agentID)); "
+    + "sourceThreads=\(String(describing: editor?.mentionSource?.threads.count)); "
+    + "candidates=\(String(describing: editor?.mentionSuggestions.map(\.referenceID))); "
+    + "selected=\(String(describing: editor?.selectedMentionIndex)); "
+    + "commands=\(String(describing: input.keyCommands?.map { "\(String(reflecting: $0.input))/\($0.modifierFlags.rawValue)" })); "
+    + "table=\(table != nil); tableAttached=\(table?.window != nil); "
+    + "tableInHostWindow=\(host.window != nil && table?.window === host.window); "
+    + "tableHidden=\(String(describing: table?.isHidden)); "
+    + "tableBounds=\(String(describing: table?.bounds)); "
+    + "tableContentSize=\(String(describing: table?.contentSize)); "
+    + "rows=\(String(describing: rows)); "
+    + "visible=\(String(describing: table?.visibleCells.map(\.accessibilityLabel)))"
 }
 
 @MainActor

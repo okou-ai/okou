@@ -46,13 +46,11 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.IntegrationModelRecovery]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Integration model recovery",
+  [FeatureSwitchKey.OnboardingMultipleOutputs]: {
+    maintainer: "scarlettx@okou.ai",
     description:
-      "Switch the current conversation's model from an integration error.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+      "Honor multiple output formats selected by onboarding task links.",
+    enabled: true,
   },
   [FeatureSwitchKey.ArtifactGenerationTiming]: {
     maintainer: "bingjie@okou.ai",
@@ -67,27 +65,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Internal cloud-controlled iOS device automation.",
     enabled: false,
   },
-  [FeatureSwitchKey.SshChatApproval]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Remote host chat approval",
-    description:
-      "Review SSH and VNC host access in chat and continue after approval.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.CustomConnectorCloudflareAccess]: {
     maintainer: "liangyou@okou.ai",
     displayName: "Custom connector Cloudflare Access",
     description:
       "Use organization Cloudflare Access for custom HTTP API and MCP connectors.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ComposerMediaPreviews]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Composer media previews",
-    description:
-      "Show image and video thumbnails during upload, then enable preview.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -103,27 +85,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       fnv1a("qa-signup-20261112-21e53024@okou.io"),
     ],
   },
-  [FeatureSwitchKey.HomeCapabilities]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Home capabilities",
-    description:
-      "Explore capabilities in a shared home, project, and chat layout with a bottom-aligned composer.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.PresentationOutputFormat]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Presentation output format",
     description:
-      "Choose HTML or PPTX for presentations and remember the preference on this device. Requires Home capabilities.",
+      "Choose HTML or PPTX for presentations and remember the preference on this device.",
     enabled: false,
-  },
-  [FeatureSwitchKey.PastedTextAttachments]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Long pasted text attachments",
-    description:
-      "Turn plain-text pastes over 10,000 characters into text attachments in chat and onboarding.",
-    enabled: false,
+    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
+    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
@@ -131,7 +100,15 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "lancy@okou.ai",
     displayName: "My Okou",
     description:
-      "Use personal Instructions and workspace Workflows with one Okou experience.",
+      "Use personal Instructions, workspace Workflows, and private Projects with one Okou experience.",
+    enabled: true,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.ProjectTitleReveal]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Project title reveal",
+    description:
+      "Show more of Project names with fading overflow and reveal them on hover or keyboard focus.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -142,15 +119,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Draw Okou's avatar with the animated design-system avatar everywhere the default artwork appears.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.FriendReferrals]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Friend referrals",
-    description:
-      "Earn credits when a referred friend buys a usage pack on Pro or above.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    restrictOverridesToAudience: true,
   },
   [FeatureSwitchKey.TikTokOAuthConnector]: {
     maintainer: "yuma@okou.ai",
@@ -198,11 +166,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ArtifactPreviewToolbar]: {
+  [FeatureSwitchKey.ArtifactPreviewActionGroup]: {
     maintainer: "bingjie@okou.ai",
-    displayName: "Artifact preview toolbar",
+    displayName: "Artifact preview action group",
     description:
-      "Keep sharing and view controls visible while grouping downloads, Google Drive, and deletion in a stable More menu.",
+      "Reveal preview actions together after loading, keep the original download menu visible, and place only deletion in More.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -213,30 +181,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Lead the composer's slash menu with chat actions, and open Workflows and Templates as second-level lists.",
     enabled: false,
   },
-  [FeatureSwitchKey.ChatActionFollowups]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Workflow and email follow-ups",
-    description:
-      "Recommend reusable workflows and email reply reminders with dedicated chat icons.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    restrictOverridesToAudience: true,
-  },
   [FeatureSwitchKey.ChatReplyNameLine]: {
     maintainer: "tongx@okou.ai",
     displayName: "Agent name on replies",
     description:
       "Open each chat reply with the agent's avatar and name inside the reading column, and pick messages to share from a checkbox column beside them.",
     enabled: false,
-  },
-  [FeatureSwitchKey.ChatMessageVisualizationSummary]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Chat visualization summaries",
-    description:
-      "Show selected output formats and chart types on user messages.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    restrictOverridesToAudience: true,
   },
   [FeatureSwitchKey.CloudBrowserPanel]: {
     maintainer: "tongx@okou.ai",
@@ -264,7 +214,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Free plan artifact paywall",
     description:
       "Reserve artifact downloads, Customize URL, and hiding the website banner for paid plans; free-plan workspaces see an upgrade prompt instead.",
-    enabled: false,
+    enabled: true,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.BillingSurvey]: {
@@ -272,14 +222,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Billing one-question surveys",
     description:
       "Ask one single-choice question where members are closest to paying: under the upgrade action when credits run out (with a one-time credit thank-you), and after leaving a Stripe Checkout without paying.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.IosSettingsCredits]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "iOS settings credit balance",
-    description:
-      "Show the current account's available credits in iOS Settings using the Web account menu balance.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -410,13 +352,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.Projects]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Private cross-agent Projects. Enable only after supported readers and API/Runner drain gates.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.GoogleSlidesConversion]: {
     maintainer: "bingjie@okou.ai",
     description:
@@ -425,21 +360,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
-  },
-  [FeatureSwitchKey.AutomationDisableNotifications]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Automation disable notifications",
-    description:
-      "Notify automation owners in the home bell when consecutive failures automatically disable a recurring schedule.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.UserNotifications]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "In-app notifications",
-    description: "Receive personal announcements from the Okou team.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
 };
 

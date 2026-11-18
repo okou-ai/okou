@@ -124,6 +124,9 @@ readonly CHAT_EVENT_V8_PATH=.github/rollback-floors/chat-event-v8
 # #41860 always reads Agent instructions from the DB, without the retired
 # execution-context marker. Earlier APIs may select the deleted Storage instead.
 readonly AGENT_INSTRUCTIONS_DB_ONLY_READER_COMMIT=b4a90a6b3f79527f91836df6a2bcc8fe81c622e8
+# #47043's accepted protocol D owns Memory without legacy compatibility SQL.
+# Keep rollback at D before the retained Storage/Pi schema can contract.
+readonly MEMBER_MEMORY_PROTOCOL_PATH=.github/rollback-floors/member-memory-dual-writer
 # #43808 explicitly clears callbacks, queue rows and usage links before Run deletion.
 readonly RUN_REFERENCE_PREPARATION_PATH=.github/rollback-floors/run-reference-preparation
 # #41393 prepared inline file injection before release 2 emits it.
@@ -1174,6 +1177,21 @@ if ! git merge-base --is-ancestor "$run_reference_preparation_commit" origin/mai
 fi
 if ! git merge-base --is-ancestor "$run_reference_preparation_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates explicit Run reference cleanup: ${run_reference_preparation_commit}."
+fi
+
+# The Memory protocol floor comes from main, not the selected rollback target.
+# Reject C's compatibility SQL before this resolver selects provider artifacts.
+if ! member_memory_protocol_commit=$(git show "origin/main:${MEMBER_MEMORY_PROTOCOL_PATH}"); then
+  fail "Cannot read the member Memory protocol rollback floor from main."
+fi
+if [[ ! "$member_memory_protocol_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid member Memory protocol rollback floor."
+fi
+if ! git merge-base --is-ancestor "$member_memory_protocol_commit" origin/main; then
+  fail "Member Memory protocol rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$member_memory_protocol_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the supported member Memory protocol: ${member_memory_protocol_commit}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

@@ -620,23 +620,27 @@ export const cronPruneStoragePresignedUrlsContract = c.router({
   },
 });
 
-export const cronMaterializePiResourceIndexesContract = c.router({
-  materialize: {
+export const cronAggregateRunPhaseTimingsContract = c.router({
+  aggregate: {
     method: "GET",
-    path: "/api/cron/materialize-pi-resource-indexes",
+    path: "/api/cron/aggregate-run-phase-timings",
     headers: authHeadersSchema,
     responses: {
       200: object({
         success: literal(true),
-        claimed: number().int().nonnegative(),
-        ready: number().int().nonnegative(),
-        unindexable: number().int().nonnegative(),
-        retried: number().int().nonnegative(),
-        stale: number().int().nonnegative(),
+        days: array(
+          object({
+            date: iso.date(),
+            objectKey: string(),
+            markedRuns: number().int().nonnegative(),
+          }),
+        ),
       }),
       401: apiErrorSchema,
+      500: apiErrorSchema,
     },
-    summary: "Materialize a bounded batch of immutable Pi resource indexes",
+    summary:
+      "Persist daily artifact phase distributions before raw logs expire",
   },
 });
 

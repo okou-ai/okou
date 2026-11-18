@@ -88,7 +88,9 @@ def _abandon_inspection(checkpoint: _InspectionHook) -> None:
 class _ReaderInspectionCheckpoints:
     owner: asyncio.Task[object] | None
     managed: managed_upload_runtime.Reader
+    connection: Connection
     pending: list[_InspectionHook] = field(default_factory=list)
+    close_requested: bool = False
     closed: bool = False
     provider_writers: set[managed_upload_runtime.DrainWriter] | None = None
 
@@ -197,6 +199,7 @@ def _install_response_inspection_bridge() -> None:
     current_hook = ConnectionHandler.hook_task
     current_connection = ConnectionHandler.handle_connection
     current_drain = ConnectionHandler.drain_writers
+    current_close = ConnectionHandler.close_connection
     current_relay = websocket.WebsocketLayer.relay_messages
 
     def register_checkpoint(checkpoint: _InspectionHook) -> None:
@@ -285,7 +288,7 @@ def _install_response_inspection_bridge() -> None:
 
     async def handle_connection(self: ConnectionHandler, connection: Connection) -> None:
         with managed_upload_runtime.reader_scope(self, connection) as managed:
-            reader = _ReaderInspectionCheckpoints(asyncio.current_task(), managed)
+            reader = _ReaderInspectionCheckpoints(asyncio.current_task(), managed, connection)
             token = _READER_INSPECTION.set(reader)
             try:
                 await current_connection(self, connection)
@@ -295,27 +298,54 @@ def _install_response_inspection_bridge() -> None:
                 for checkpoint in reader.pending:
                     _abandon_inspection(checkpoint)
 
+    def close_connection(
+        self: ConnectionHandler, connection: Connection, half_close: bool = False
+    ) -> None:
+        reader = _READER_INSPECTION.get()
+        if (
+            not half_close
+            and reader is not None
+            and reader.owner is asyncio.current_task()
+            and reader.connection is connection
+            and (reader.pending or _INSPECTION_CHECKPOINTS.get())
+        ):
+            # HTTP/1 EOM can request close in the same read that paused an
+            # inspector. Native close cancels this reader, so execute it only
+            # after that read's complete hook/continuation has settled.
+            reader.close_requested = True
+            return
+        current_close(self, connection, half_close)
+
     async def drain_writers(self: ConnectionHandler) -> None:
         reader = _READER_INSPECTION.get()
         # Native hook tasks inherit the reader's context, but their buffered
         # HookCompleted continuations must keep their own checkpoint joins.
         if reader is not None and reader.owner is asyncio.current_task():
-            while True:
-                checkpoints, reader.pending = reader.pending, []
-                active = getattr(self, _ACTIVE_WEBSOCKET_CHECKPOINT, None)
-                if (
-                    isinstance(active, _WebsocketInspectionCheckpoint)
-                    and active.completed is not None
-                    and not active.completed.done()
-                    and all(checkpoint is not active for checkpoint in checkpoints)
-                ):
-                    # The opposite WebSocket reader may have delivered a read
-                    # while this layer was paused. Both readers must wait;
-                    # otherwise its buffered DataReceived queue can grow.
-                    checkpoints.append(active)
-                if not checkpoints:
-                    break
-                await join_checkpoints(checkpoints)
+            try:
+                while True:
+                    checkpoints, reader.pending = reader.pending, []
+                    active = getattr(self, _ACTIVE_WEBSOCKET_CHECKPOINT, None)
+                    if (
+                        isinstance(active, _WebsocketInspectionCheckpoint)
+                        and active.completed is not None
+                        and not active.completed.done()
+                        and all(checkpoint is not active for checkpoint in checkpoints)
+                    ):
+                        # The opposite WebSocket reader may have delivered a read
+                        # while this layer was paused. Both readers must wait;
+                        # otherwise its buffered DataReceived queue can grow.
+                        checkpoints.append(active)
+                    if not checkpoints:
+                        break
+                    await join_checkpoints(checkpoints)
+            except BaseException:
+                # External cancellation already owns native teardown. A second
+                # cancel here would interrupt its ConnectionClosed delivery.
+                reader.close_requested = False
+                raise
+            if reader.close_requested:
+                reader.close_requested = False
+                current_close(self, reader.connection, False)
             await reader.managed.wait_capacity()
             if reader.provider_writers is not None:
                 for writer in reader.provider_writers:
@@ -384,6 +414,7 @@ def _install_response_inspection_bridge() -> None:
     ConnectionHandler.hook_task = hook_task
     ConnectionHandler.handle_connection = handle_connection
     ConnectionHandler.drain_writers = drain_writers
+    ConnectionHandler.close_connection = close_connection
 
 
 def take_request_end_stream(flow: http.HTTPFlow) -> bool | None:

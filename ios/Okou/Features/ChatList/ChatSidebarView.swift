@@ -118,6 +118,10 @@ struct ChatSidebarView: View {
         }
       }
     }
+    // The first snapshot establishes the list; subsequent membership changes animate.
+    .transaction(value: store.list.hasLoadedThreads) { transaction in
+      transaction.animation = nil
+    }
     .transaction(value: threadRowIDs) { transaction in
       transaction.animation = reduceMotion ? nil : OkouMotion.transition
       // Keep removed content invisible until the native list finishes closing its space.
@@ -149,11 +153,10 @@ struct ChatSidebarView: View {
     // the glass buttons.
     .safeAreaBar(edge: .top, spacing: OkouSpace.md) {
       VStack(spacing: 0) {
-        // Sync problems float with the rest of the chat feedback, outside the sliding sidebar.
         header.padding(.horizontal, rowInset)
       }
     }
-    .safeAreaBar(edge: .bottom, spacing: 0) { footer }
+    .safeAreaBar(edge: .bottom, spacing: 0) { footer.chatFeedbackAnchor() }
     // VoiceOver's escape gesture returns to the chat.
     .accessibilityAction(.escape, close)
     .background { chatNumberShortcuts }
@@ -390,8 +393,7 @@ struct ChatSidebarView: View {
   /// the chat, so the shortcuts work whether or not it is open.
   @ViewBuilder private var chatNumberShortcuts: some View {
     if case .hasData(let contents) = presentation {
-      ForEach(Array(contents.chats.rows.prefix(9).enumerated()), id: \.element.id) {
-        index, row in
+      ForEach(Array(contents.chats.rows.prefix(9).enumerated()), id: \.element.id) { index, row in
         Button(row.title) {
           store.selectChat(row.id)
           close()
@@ -444,7 +446,7 @@ struct ChatSidebarView: View {
     .accessibilityValue(
       [
         expanded ? String(localized: "Expanded") : String(localized: "Collapsed"),
-        unread ? String(localized: "Unread") : nil,
+        unread ? String(localized: "Unread") : nil
       ].compactMap { $0 }.joined(separator: ", ")
     )
     .listRowInsets(EdgeInsets(top: 0, leading: rowInset, bottom: 0, trailing: rowInset))
@@ -636,8 +638,7 @@ struct ChatSidebarView: View {
     .disabled(store.list.updatingThreads.contains(thread.id) || store.list.markingAgentRead)
   }
 
-  /// Thumb-reach bar: the account (settings) on the left, search in the middle, and the one
-  /// primary action, a new chat, on the right.
+  /// Thumb-reach bar: settings on the left, a new-message capsule, and search on the right.
   private var footer: some View {
     HStack(spacing: OkouSpace.md) {
       Button {
@@ -664,21 +665,27 @@ struct ChatSidebarView: View {
         .preferredColorScheme(colorScheme)
       }
       Button {
-        store.search.present()
-      } label: {
-        OkouSearchBar(prompt: "Search chats")
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel("Search chats")
-      .accessibilityIdentifier("search-chats")
-      Button {
         newChat()
       } label: {
-        OkouToolbarIcon("square-pen")
+        Label("New Message", okouSymbol: "square-pen")
+          .font(.okou(.body))
+          .foregroundStyle(OkouColor.placeholder)
+          .lineLimit(1)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal, OkouSpace.lg)
+          .modifier(OkouGlassControl(shape: .capsule))
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel("New Message")
+      .accessibilityIdentifier("new-chat")
+      Button {
+        store.search.present()
+      } label: {
+        OkouToolbarIcon("search")
           .modifier(OkouGlassControl(shape: .circle))
       }
-      .accessibilityLabel("New chat")
-      .accessibilityIdentifier("new-chat")
+      .accessibilityLabel("Search chats")
+      .accessibilityIdentifier("search-chats")
     }
     .buttonStyle(.plain)
     .frame(height: OkouControl.minimumTarget + OkouSpace.md)

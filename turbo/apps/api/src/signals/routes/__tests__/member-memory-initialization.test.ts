@@ -325,6 +325,44 @@ describe("member memory account initialization", () => {
     });
   });
 
+  it("preserves publication racing a membership initialization replay", async () => {
+    const fixture = createPublicRunnerMemory(context, {
+      orgRole: "org:member",
+    });
+    await fixture.run(async () => {
+      const agentId = await fixture.initializeNative();
+      const writer = await fixture.startExecution(
+        agentId,
+        "Publish while membership delivery is replayed",
+      );
+      fixture.installObjects();
+      const content = "Publication survives concurrent member initialization";
+      const [versionId] = await Promise.all([
+        fixture.publish(writer, [{ path: "memory.md", content }]),
+        membershipCreated(fixture.actor),
+      ]);
+      const reader = await fixture.startExecution(
+        agentId,
+        "Read the published Memory after membership replay",
+      );
+      expect(reader.memory).toMatchObject({
+        storageId: writer.memory.storageId,
+        versionId,
+        archiveUrl: expect.any(String),
+      });
+      if (!reader.memory.archiveUrl) {
+        throw new Error("Expected the published Memory archive URL");
+      }
+      const downloaded = await fetch(reader.memory.archiveUrl, {
+        signal: context.signal,
+      });
+      expect(downloaded.status).toBe(200);
+      expect(Buffer.from(await downloaded.arrayBuffer())).toStrictEqual(
+        memoryArchive("memory.md", content),
+      );
+    });
+  });
+
   it("preserves published memory when either initialization entry is repeated", async () => {
     const fixture = createPublicRunnerMemory(context, {
       orgRole: "org:member",

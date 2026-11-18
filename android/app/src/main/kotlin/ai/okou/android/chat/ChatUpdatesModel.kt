@@ -15,7 +15,9 @@ class ChatUpdatesModel(
     private val scope: CoroutineScope,
     private val authorized: () -> Boolean,
     private val onFailure: (Exception) -> Unit,
-    private val invalidate: () -> Unit,
+    private val output: RunOutputModel? = null,
+    private val foregroundChanged: (Boolean) -> Unit = {},
+    private val invalidate: (ChatChanges) -> Unit,
 ) {
     private val mutable = MutableStateFlow(RealtimePhase.Stopped)
     val phase = mutable.asStateFlow()
@@ -24,15 +26,18 @@ class ChatUpdatesModel(
     private var generation = 0L
     private var observation: Job? = null
     private val connection = Mutex()
+    private val noOutput = MutableStateFlow<RunOutputTarget?>(null)
 
     fun foreground(value: Boolean) {
         if (closed || foreground == value) return
         foreground = value
+        foregroundChanged(value)
         if (value) retry()
         else {
             generation++
             observation?.cancel()
             mutable.value = RealtimePhase.Stopped
+            output?.transport(RealtimePhase.Stopped)
         }
     }
 
@@ -43,21 +48,25 @@ class ChatUpdatesModel(
         previous?.cancel()
         val ticket = ++generation
         mutable.value = RealtimePhase.Connecting
-        invalidate()
+        output?.transport(RealtimePhase.Connecting)
+        invalidate(ChatChanges(resync = true))
         observation =
             scope.launch {
                 connection.withLock {
                     if (!current(ticket)) return@withLock
-                    var revision = -1L
                     try {
-                        source.observeRealtime { next ->
+                        source.observeRealtime(
+                            output?.target ?: noOutput,
+                            { target, signal ->
+                                if (current(ticket)) output?.receive(target, signal)
+                            },
+                        ) { next ->
                             if (current(ticket)) {
                                 mutable.value = next.phase
+                                output?.transport(next.phase)
                                 next.failure?.let(onFailure)
-                                if (current(ticket) && next.revision != revision) {
-                                    revision = next.revision
-                                    invalidate()
-                                }
+                                if (current(ticket) && next.changes != ChatChanges())
+                                    invalidate(next.changes)
                             }
                         }
                     } catch (cancelled: CancellationException) {
@@ -65,6 +74,7 @@ class ChatUpdatesModel(
                     } catch (error: Exception) {
                         if (current(ticket)) {
                             mutable.value = RealtimePhase.Unavailable
+                            output?.transport(RealtimePhase.Unavailable)
                             onFailure(error)
                         }
                     }
@@ -79,6 +89,7 @@ class ChatUpdatesModel(
         closed = true
         generation++
         observation?.cancel()
+        foregroundChanged(false)
         mutable.value = RealtimePhase.Stopped
     }
 }

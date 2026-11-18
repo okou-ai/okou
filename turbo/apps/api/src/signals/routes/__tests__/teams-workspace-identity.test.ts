@@ -727,7 +727,7 @@ test.each([
             expect(messages).toContainEqual({
               conversationId: sender.teamsConversationId,
               text: expect.stringContaining(
-                "Cannot continue session from history",
+                "Oops, something went wrong. Please try again later.",
               ),
             });
           } else {

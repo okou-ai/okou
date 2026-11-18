@@ -1,6 +1,11 @@
+import { isMemberMemoryIdentity } from "./member-memory-records";
+import {
+  memberMemories,
+  memoryVersions,
+  memoryVersionLineage,
+} from "@okouai/db/schema/member-memory";
 import type { FileEntryWithHash } from "@okouai/api-contracts/contracts/storage-content-hash";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
 import { and, eq, getTableColumns, is, SQL, sql } from "drizzle-orm";
@@ -28,7 +33,6 @@ import {
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { conflict, notFound } from "../../lib/error";
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
-import { PI_RESOURCE_EXTRACTOR_VERSION } from "../../lib/pi-resource-index";
 import {
   sandboxStorageRunCondition,
   storageCommitLineageCondition,
@@ -40,7 +44,7 @@ import type {
   StorageRow,
   StorageVersionRow,
   VerifiedStorageCommit,
-} from "./storage-write.service";
+} from "./storage-write-protocol";
 
 const ACTIVE_SANDBOX_STORAGE_RUN_STATUSES = ["pending", "running"] as const;
 const integerRow = union([int(), pgInt8ToSafeIntegerSchema]);
@@ -85,7 +89,6 @@ export const storageCommitPublicationRow = object({
   version: versionRow.nullable(),
   admitted: boolean(),
   inserted: boolean(),
-  indexed: boolean(),
   memoryConflict: boolean(),
 });
 
@@ -156,13 +159,74 @@ function versionSelection() {
       .as("createdAt"),
   };
 }
+function memoryStorageSelection() {
+  return {
+    id: memberMemories.id,
+    userId: sql`${memberMemories.userId}`
+      .mapWith(memberMemories.userId)
+      .as("userId"),
+    name: sql`${MEMORY_ARTIFACT_NAME}`
+      .mapWith(memberMemories.userId)
+      .as("name"),
+    orgId: sql`${memberMemories.orgId}`
+      .mapWith(memberMemories.orgId)
+      .as("orgId"),
+    s3Prefix: sql`${memberMemories.objectPrefix}`
+      .mapWith(memberMemories.objectPrefix)
+      .as("s3Prefix"),
+    size: sql`${memberMemories.contentSize}`
+      .mapWith(memberMemories.contentSize)
+      .as("size"),
+    fileCount: sql`${memberMemories.fileCount}`
+      .mapWith(memberMemories.fileCount)
+      .as("fileCount"),
+    headVersionId: sql`${memberMemories.headVersionId}`
+      .mapWith(nullableDriverValueDecoder(memberMemories.headVersionId))
+      .as("headVersionId"),
+    createdAt: sql`${memberMemories.createdAt}`
+      .mapWith(memberMemories.createdAt)
+      .as("createdAt"),
+    updatedAt: sql`${memberMemories.updatedAt}`
+      .mapWith(memberMemories.updatedAt)
+      .as("updatedAt"),
+  };
+}
+function memoryVersionSelection() {
+  return {
+    id: memoryVersions.id,
+    storageId: sql`${memoryVersions.memoryId}`
+      .mapWith(memoryVersions.memoryId)
+      .as("storageId"),
+    s3Key: sql`${memoryVersions.objectPrefix}`
+      .mapWith(memoryVersions.objectPrefix)
+      .as("s3Key"),
+    size: sql`${memoryVersions.contentSize}`
+      .mapWith(memoryVersions.contentSize)
+      .as("size"),
+    archiveSize: sql`${memoryVersions.archiveSize}`
+      .mapWith(memoryVersions.archiveSize)
+      .as("archiveSize"),
+    fileCount: sql`${memoryVersions.fileCount}`
+      .mapWith(memoryVersions.fileCount)
+      .as("fileCount"),
+    message: memoryVersions.message,
+    createdBy: sql`${memoryVersions.createdBy}`
+      .mapWith(memoryVersions.createdBy)
+      .as("createdBy"),
+    createdAt: sql`${memoryVersions.createdAt}`
+      .mapWith(memoryVersions.createdAt)
+      .as("createdAt"),
+  };
+}
 // The installed dialect owns complete INSERT syntax and every value retains its
 // schema encoder. SELECT supplies all insertable columns in schema order.
 function insertSelectedStorageSql<T extends PgTable>(
   table: T,
-  values: T["$inferInsert"],
+  values: {
+    readonly [K in keyof T["$inferInsert"]]: T["$inferInsert"][K] | SQL;
+  },
   source: SQL,
-  returning: Readonly<Record<string, AnyPgColumn>>,
+  returning: Readonly<Record<string, AnyPgColumn | SQL>>,
   conflict?: SQL,
 ) {
   const columns: Readonly<Record<string, AnyPgColumn>> = getTableColumns(table);
@@ -170,7 +234,7 @@ function insertSelectedStorageSql<T extends PgTable>(
   const fields = Object.entries(columns).map(([name, column]) => {
     const value = supplied[name];
     if (value !== undefined) {
-      return sql.param(value, column);
+      return is(value, SQL) ? value : sql.param(value, column);
     }
     const fallback = column.default;
     if (is(fallback, SQL)) {
@@ -191,9 +255,29 @@ function insertSelectedStorageSql<T extends PgTable>(
     }),
   });
 }
+
+function memoryStorageAdmission(input: CommitStorageForStorageInput) {
+  const auth = input.sandboxAuth;
+  return new QueryBuilder()
+    .select(memoryStorageSelection())
+    .from(memberMemories)
+    .where(
+      and(
+        eq(memberMemories.id, input.storageId),
+        auth
+          ? sql`EXISTS (SELECT 1 FROM commit_mount AS m WHERE m.value->>'orgId'=${memberMemories.orgId}
+        AND m.value->>'userId'=${memberMemories.userId} AND m.value->>'name'=${MEMORY_ARTIFACT_NAME})`
+          : sql`EXISTS (SELECT 1 FROM commit_run)`,
+      ),
+    )
+    .limit(1)
+    .getSQL();
+}
+
 function storageCommitAdmission(
   input: CommitStorageForStorageInput,
   verification: VerifiedStorageCommit,
+  memoryAuthority = false,
 ) {
   const auth = input.sandboxAuth;
   const run = auth
@@ -227,34 +311,62 @@ function storageCommitAdmission(
   const authority = auth
     ? sql`EXISTS (SELECT 1 FROM commit_mount AS m WHERE m.value->>'orgId'=${storages.orgId} AND m.value->>'userId'=${storages.userId} AND m.value->>'name'=${storages.name})`
     : sql`EXISTS (SELECT 1 FROM commit_run)`;
-  const storage = new QueryBuilder()
-    .select(storageSelection())
-    .from(storages)
-    .where(and(eq(storages.id, input.storageId), authority))
-    .limit(1)
-    .getSQL();
-  const version = new QueryBuilder()
-    .select(versionSelection())
-    .from(storageVersions)
-    .where(storageVersionCondition(input.storageId, input.versionId))
-    .limit(1)
-    .getSQL();
+  const storage = memoryAuthority
+    ? memoryStorageAdmission(input)
+    : new QueryBuilder()
+        .select(storageSelection())
+        .from(storages)
+        .where(and(eq(storages.id, input.storageId), authority))
+        .limit(1)
+        .getSQL();
+  const version = memoryAuthority
+    ? new QueryBuilder()
+        .select(memoryVersionSelection())
+        .from(memoryVersions)
+        .where(
+          and(
+            eq(memoryVersions.memoryId, input.storageId),
+            eq(memoryVersions.id, input.versionId),
+          ),
+        )
+        .limit(1)
+        .getSQL()
+    : new QueryBuilder()
+        .select(versionSelection())
+        .from(storageVersions)
+        .where(storageVersionCondition(input.storageId, input.versionId))
+        .limit(1)
+        .getSQL();
   const parent = input.parentVersionId;
   const lineage =
     auth && parent
-      ? new QueryBuilder()
-          .select({ id: storageVersionLineage.id })
-          .from(storageVersionLineage)
-          .where(
-            storageCommitLineageCondition(
-              input.storageId,
-              input.versionId,
-              parent,
-              auth.runId,
-            ),
-          )
-          .limit(1)
-          .getSQL()
+      ? memoryAuthority
+        ? new QueryBuilder()
+            .select({ id: memoryVersionLineage.id })
+            .from(memoryVersionLineage)
+            .where(
+              and(
+                eq(memoryVersionLineage.memoryId, input.storageId),
+                eq(memoryVersionLineage.versionId, input.versionId),
+                eq(memoryVersionLineage.parentVersionId, parent),
+                eq(memoryVersionLineage.runId, auth.runId),
+              ),
+            )
+            .limit(1)
+            .getSQL()
+        : new QueryBuilder()
+            .select({ id: storageVersionLineage.id })
+            .from(storageVersionLineage)
+            .where(
+              storageCommitLineageCondition(
+                input.storageId,
+                input.versionId,
+                parent,
+                auth.runId,
+              ),
+            )
+            .limit(1)
+            .getSQL()
       : sql`SELECT NULL::uuid AS id WHERE false`;
   const terminal = sql`r.status NOT IN ('pending','running')`;
   const exact = sql`
@@ -322,7 +434,8 @@ function storageCommitLineageInsert(input: CommitStorageForStorageInput) {
   const auth = input.sandboxAuth,
     parent = input.parentVersionId;
   if (!auth || !parent) {
-    return sql`SELECT NULL::uuid AS id WHERE false`;
+    return sql`SELECT NULL::uuid AS id,NULL::uuid AS "storageId",NULL::text AS "versionId",
+      NULL::text AS "parentVersionId",NULL::uuid AS "runId",NULL::timestamp AS "createdAt" WHERE false`;
   }
   return insertSelectedStorageSql(
     storageVersionLineage,
@@ -333,51 +446,21 @@ function storageCommitLineageInsert(input: CommitStorageForStorageInput) {
       runId: auth.runId,
     },
     sql`locked_storage AS s CROSS JOIN published_version CROSS JOIN (SELECT count(*) FROM published_head) AS completed_head WHERE ${memoryPublicationAllowed(input)}`,
-    { id: storageVersionLineage.id },
+    getTableColumns(storageVersionLineage),
   );
 }
-function storageCommitIndexInsert(changedAt: Date) {
-  const columns = getTableColumns(piResourceVersionIndexes);
-  const fields = Object.entries(columns).map(([name, column]) => {
-    if (name === "storageVersionId") {
-      return sql`v.id`;
-    }
-    if (name === "extractorVersion") {
-      return sql.param(PI_RESOURCE_EXTRACTOR_VERSION, column);
-    }
-    if (name === "sourceArchiveSize") {
-      return sql`v."archiveSize"`;
-    }
-    if (is(column.default, SQL)) {
-      return column.default;
-    }
-    return sql.param(column.default ?? null, column);
-  });
-  return new PgDialect().buildInsertQuery({
-    table: piResourceVersionIndexes,
-    select: true,
-    values: sql`SELECT ${sql.join(fields, sql`, `)} FROM published_version AS v CROSS JOIN (SELECT count(*) FROM published_head) AS completed_head CROSS JOIN (SELECT count(*) FROM recorded_lineage) AS completed_lineage`,
-    onConflict: sql`
-    (storage_version_id,extractor_version) DO UPDATE
-      SET status='pending',projection=NULL,projection_hash=NULL,source_archive_size=excluded.source_archive_size,lease_id=NULL,lease_expires_at=NULL,available_at=${sql.param(changedAt, piResourceVersionIndexes.availableAt)},attempt_count=0,updated_at=${sql.param(changedAt, piResourceVersionIndexes.updatedAt)}
-      WHERE ${piResourceVersionIndexes.sourceArchiveSize} IS DISTINCT FROM excluded.source_archive_size
-  `,
-    returning: [
-      {
-        path: ["id"],
-        field: sql`${piResourceVersionIndexes.storageVersionId}`.as("id"),
-      },
-    ],
-  });
+
+function headTransition(input: CommitStorageForStorageInput) {
+  return sql`s."headVersionId" IS DISTINCT FROM v.id AND ${memoryPublicationAllowed(input)}
+    AND (s.name <> ${MEMORY_ARTIFACT_NAME} OR ${input.sandboxAuth === undefined}
+      OR (NOT EXISTS (SELECT 1 FROM terminal_lineage) AND v.id IS DISTINCT FROM ${memoryParentVersion(input)}))`;
 }
 
-/** One statement publishes the version, HEAD, lineage and index work together. */
-export function storageCommitPublicationStatement(
+function legacyHeadStatement(
   input: CommitStorageForStorageInput,
-  verification: VerifiedStorageCommit,
   changedAt: Date,
 ) {
-  const head = new PgDialect().buildUpdateQuery({
+  return new PgDialect().buildUpdateQuery({
     table: storages,
     set: {
       headVersionId: sql`v.id`,
@@ -386,14 +469,19 @@ export function storageCommitPublicationStatement(
       updatedAt: sql.param(changedAt, storages.updatedAt),
     },
     from: sql`locked_storage AS s CROSS JOIN published_version AS v`,
-    where: sql`${storages.id}=s.id AND ${storages.headVersionId} IS DISTINCT FROM v.id
-      AND ${memoryPublicationAllowed(input)}
-      AND (s.name <> ${MEMORY_ARTIFACT_NAME} OR ${input.sandboxAuth === undefined}
-        OR (NOT EXISTS (SELECT 1 FROM terminal_lineage)
-          AND v.id IS DISTINCT FROM ${memoryParentVersion(input)}))`,
+    where: sql`${storages.id}=s.id AND ${headTransition(input)}`,
     joins: [],
     returning: [{ path: ["id"], field: storages.id }],
   });
+}
+
+/** One statement publishes the version, HEAD and lineage together. */
+function legacyStorageCommitPublicationStatement(
+  input: CommitStorageForStorageInput,
+  verification: VerifiedStorageCommit,
+  changedAt: Date,
+) {
+  const head = legacyHeadStatement(input, changedAt);
   return sql`
     WITH ${storageCommitAdmission(input, verification)}, locked_storage AS MATERIALIZED (${storageCommitLockedSelection(input)}), inserted_version AS (${storageCommitVersionInsert(input, verification)}), published_version AS MATERIALIZED (SELECT v.*
       FROM existing_version AS v
@@ -404,7 +492,7 @@ export function storageCommitPublicationStatement(
       FROM locked_storage)
       UNION ALL
       SELECT *
-      FROM inserted_version), published_head AS (${head}), recorded_lineage AS (${storageCommitLineageInsert(input)}), enqueued_index AS (${storageCommitIndexInsert(changedAt)})
+      FROM inserted_version), published_head AS (${head}), recorded_lineage AS (${storageCommitLineageInsert(input)})
       SELECT (SELECT row_to_json(r)
       FROM commit_run AS r) AS run, (SELECT row_to_json(s)
       FROM initial_storage AS s) AS storage, (SELECT row_to_json(v)
@@ -413,8 +501,7 @@ export function storageCommitPublicationStatement(
       OR EXISTS(SELECT 1
       FROM admitted_storage
       WHERE terminal) AS admitted, EXISTS(SELECT 1
-      FROM inserted_version) AS inserted, (SELECT count(*)
-      FROM enqueued_index)>=0 AS indexed,
+      FROM inserted_version) AS inserted,
       EXISTS (SELECT 1 FROM locked_storage AS s WHERE NOT ${memoryPublicationAllowed(input)}) AS "memoryConflict"
   `;
 }
@@ -521,4 +608,132 @@ export function storageCommitSuccess(args: {
       ...(args.deduplicated ? { deduplicated: true } : {}),
     },
   };
+}
+
+function memoryVersionReturning() {
+  return {
+    id: memoryVersions.id,
+    storageId: memoryVersions.memoryId,
+    s3Key: memoryVersions.objectPrefix,
+    size: memoryVersions.contentSize,
+    archiveSize: memoryVersions.archiveSize,
+    fileCount: memoryVersions.fileCount,
+    message: memoryVersions.message,
+    createdBy: memoryVersions.createdBy,
+    createdAt: memoryVersions.createdAt,
+  };
+}
+function memoryCandidateStatement(
+  input: CommitStorageForStorageInput,
+  verification: VerifiedStorageCommit,
+) {
+  return insertSelectedStorageSql(
+    memoryVersions,
+    {
+      id: input.versionId,
+      memoryId: input.storageId,
+      objectPrefix: verification.s3Key,
+      contentSize: totalSize(input.files),
+      archiveSize: verification.archiveSize,
+      fileCount: input.files.length,
+      message: input.message ?? null,
+      createdBy: input.runId ? "agent" : "user",
+    },
+    sql`locked_storage WHERE NOT EXISTS (SELECT 1 FROM existing_version)`,
+    { ...memoryVersionReturning(), newlyInserted: sql`xmax=0` },
+    sql`(id) DO UPDATE SET id=excluded.id WHERE ${memoryVersions.memoryId}=excluded.memory_id AND ${memoryVersions.objectPrefix}=excluded.object_prefix`,
+  );
+}
+function memoryLineageStatement(input: CommitStorageForStorageInput) {
+  const auth = input.sandboxAuth,
+    parent = input.parentVersionId;
+  if (!auth || !parent) {
+    return sql`SELECT NULL::uuid AS id,NULL::uuid AS "storageId",NULL::text AS "versionId",
+    NULL::text AS "parentVersionId",NULL::uuid AS "runId",NULL::timestamp AS "createdAt" WHERE false`;
+  }
+  return insertSelectedStorageSql(
+    memoryVersionLineage,
+    {
+      memoryId: input.storageId,
+      versionId: input.versionId,
+      parentVersionId: parent,
+      runId: auth.runId,
+    },
+    sql`locked_storage AS s CROSS JOIN published_version CROSS JOIN (SELECT count(*) FROM published_head) AS completed_head WHERE ${memoryPublicationAllowed(input)}`,
+    {
+      id: memoryVersionLineage.id,
+      storageId: memoryVersionLineage.memoryId,
+      versionId: memoryVersionLineage.versionId,
+      parentVersionId: memoryVersionLineage.parentVersionId,
+      runId: memoryVersionLineage.runId,
+      createdAt: memoryVersionLineage.createdAt,
+    },
+  );
+}
+
+/** Protocol D publishes only Memory-owned state under the Run/root boundary. */
+function memberMemoryCommitPublicationStatement(
+  input: CommitStorageForStorageInput,
+  verification: VerifiedStorageCommit,
+  changedAt: Date,
+) {
+  const locked = new QueryBuilder()
+    .select(memoryStorageSelection())
+    .from(memberMemories)
+    .where(
+      and(
+        eq(memberMemories.id, input.storageId),
+        sql`EXISTS (SELECT 1 FROM admitted_storage AS s WHERE NOT s.terminal AND s.id=${memberMemories.id}
+        AND s."orgId"=${memberMemories.orgId} AND s."userId"=${memberMemories.userId})`,
+      ),
+    )
+    .limit(1)
+    .for("update", { of: memberMemories })
+    .getSQL();
+  const consistent = sql`v."storageId"=s.id AND v."s3Key"=s."s3Prefix" || '/' || v.id`;
+  const advance = headTransition(input);
+  // An invalid candidate locator must fail the complete statement, including
+  // registration and lineage, even when the candidate cannot advance HEAD.
+  const head = new PgDialect().buildUpdateQuery({
+    table: memberMemories,
+    set: {
+      objectPrefix: sql`CASE WHEN ${consistent} THEN s."s3Prefix" ELSE NULL END`,
+      headVersionId: sql`CASE WHEN ${advance} THEN v.id ELSE s."headVersionId" END`,
+      contentSize: sql`CASE WHEN ${advance} THEN v.size ELSE s.size END`,
+      fileCount: sql`CASE WHEN ${advance} THEN v."fileCount" ELSE s."fileCount" END`,
+      updatedAt: sql`CASE WHEN ${advance} THEN ${sql.param(changedAt, memberMemories.updatedAt)} ELSE s."updatedAt" END`,
+    },
+    from: sql`locked_storage AS s CROSS JOIN published_version AS v`,
+    where: sql`${memberMemories.id}=s.id AND (${advance} OR NOT (${consistent}))`,
+    joins: [],
+    returning: [{ path: ["id"], field: memberMemories.id }],
+  });
+  return sql`WITH ${storageCommitAdmission(input, verification, true)},
+    locked_storage AS MATERIALIZED (${locked}),
+    inserted_version AS (${memoryCandidateStatement(input, verification)}),
+    published_version AS MATERIALIZED (
+      SELECT v.*,false AS "newlyInserted" FROM existing_version AS v
+      WHERE EXISTS (SELECT 1 FROM admitted_storage WHERE terminal) OR EXISTS (SELECT 1 FROM locked_storage)
+      UNION ALL SELECT * FROM inserted_version
+    ), published_head AS (${head}),
+    recorded_lineage AS (${memoryLineageStatement(input)})
+    SELECT (SELECT row_to_json(r) FROM commit_run AS r) AS run,
+      (SELECT row_to_json(s) FROM initial_storage AS s) AS storage,
+      (SELECT row_to_json(v) FROM published_version AS v) AS version,
+      EXISTS (SELECT 1 FROM locked_storage) OR EXISTS (SELECT 1 FROM admitted_storage WHERE terminal) AS admitted,
+      EXISTS (SELECT 1 FROM inserted_version WHERE "newlyInserted") AS inserted,
+      EXISTS (SELECT 1 FROM locked_storage AS s WHERE NOT ${memoryPublicationAllowed(input)}) AS "memoryConflict"
+  `;
+}
+
+/** Route by the actual owner row, never by a callback-selected backend. */
+export function storageCommitPublicationStatement(
+  input: CommitStorageForStorageInput,
+  verification: VerifiedStorageCommit,
+  changedAt: Date,
+  storage: StorageRow,
+) {
+  return isMemberMemoryIdentity(storage)
+    ? memberMemoryCommitPublicationStatement(input, verification, changedAt)
+    : legacyStorageCommitPublicationStatement(input, verification, changedAt);
 }

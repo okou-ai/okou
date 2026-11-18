@@ -7,7 +7,6 @@ import {
   pruneStoragePresignedUrls$,
   READ_ONLY_STORAGE_PRESIGNED_URL_PRUNE_LIMIT,
   SYSTEM_STORAGE_PRESIGNED_URL_PRUNE_LIMIT,
-  WORKFLOW_SKILL_STORAGE_PRESIGNED_URL_PRUNE_LIMIT,
 } from "./system-storage-presigned-url-cache.service";
 export const pruneStoragePresignedUrlCache$ = command(
   async ({ set }, signal: AbortSignal) => {
@@ -31,8 +30,9 @@ export const pruneStoragePresignedUrlCache$ = command(
       set(
         pruneStoragePresignedUrls$,
         {
+          // Expire retained rows from the retired Workflow Storage writer.
           scope: "workflow_skill_storage",
-          limit: WORKFLOW_SKILL_STORAGE_PRESIGNED_URL_PRUNE_LIMIT,
+          limit: 100,
         },
         signal,
       ),

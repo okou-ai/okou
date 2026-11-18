@@ -1,5 +1,51 @@
 # Changelog
 
+## [0.11.22](https://github.com/okou-ai/okou/compare/runner-host-v0.11.21...runner-host-v0.11.22) (2026-11-18)
+
+## [0.11.21](https://github.com/okou-ai/okou/compare/runner-host-v0.11.20...runner-host-v0.11.21) (2026-11-18)
+
+## [0.11.20](https://github.com/okou-ai/okou/compare/runner-host-v0.11.19...runner-host-v0.11.20) (2026-11-17)
+
+
+### Refactoring
+
+* use typed extended attribute operations ([#48421](https://github.com/okou-ai/okou/issues/48421)) ([6b3377e](https://github.com/okou-ai/okou/commit/6b3377e7ac70cd97e7aed16fabffe3df20778bd6))
+
+## [0.11.19](https://github.com/okou-ai/okou/compare/runner-host-v0.11.18...runner-host-v0.11.19) (2026-11-17)
+
+
+### Refactoring
+
+* use typed fifo creation in native fixtures ([#48355](https://github.com/okou-ai/okou/issues/48355)) ([05bf56d](https://github.com/okou-ai/okou/commit/05bf56dbc4876786786c0379dfce0776e09b4519))
+
+## [0.11.18](https://github.com/okou-ai/okou/compare/runner-host-v0.11.17...runner-host-v0.11.18) (2026-11-17)
+
+
+### Refactoring
+
+* use typed resource limit calls ([#48257](https://github.com/okou-ai/okou/issues/48257)) ([6a91f3e](https://github.com/okou-ai/okou/commit/6a91f3e48eae8cb2f0c01294602c0fa00bd2eb6c))
+
+## [0.11.17](https://github.com/okou-ai/okou/compare/runner-host-v0.11.16...runner-host-v0.11.17) (2026-11-17)
+
+## [0.11.16](https://github.com/okou-ai/okou/compare/runner-host-v0.11.15...runner-host-v0.11.16) (2026-11-17)
+
+## [0.11.15](https://github.com/okou-ai/okou/compare/runner-host-v0.11.14...runner-host-v0.11.15) (2026-11-17)
+
+## [0.11.14](https://github.com/okou-ai/okou/compare/runner-host-v0.11.13...runner-host-v0.11.14) (2026-11-17)
+
+## [0.11.13](https://github.com/okou-ai/okou/compare/runner-host-v0.11.12...runner-host-v0.11.13) (2026-11-16)
+
+## [0.11.12](https://github.com/okou-ai/okou/compare/runner-host-v0.11.11...runner-host-v0.11.12) (2026-11-16)
+
+## [0.11.11](https://github.com/okou-ai/okou/compare/runner-host-v0.11.10...runner-host-v0.11.11) (2026-11-16)
+
+## [0.11.10](https://github.com/okou-ai/okou/compare/runner-host-v0.11.9...runner-host-v0.11.10) (2026-11-16)
+
+
+### Bug Fixes
+
+* **runner:** observe ingress processes without querying systemd ([#47660](https://github.com/okou-ai/okou/issues/47660)) ([1a6bd09](https://github.com/okou-ai/okou/commit/1a6bd09c167b5490f632bd513b11c14378edeba8))
+
 ## [0.11.9](https://github.com/okou-ai/okou/compare/runner-host-v0.11.8...runner-host-v0.11.9) (2026-11-16)
 
 ## [0.11.8](https://github.com/okou-ai/okou/compare/runner-host-v0.11.7...runner-host-v0.11.8) (2026-11-15)

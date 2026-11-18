@@ -63,7 +63,12 @@ internal fun httpClient(callTimeout: Duration = DEFAULT_CALL_TIMEOUT): OkHttpCli
                 val envelope =
                     response.use {
                         try {
-                            it.errorBody().bounded(64L * 1024).use { body -> body.string() }
+                            val body = it.errorBody()
+                            body
+                                .source()
+                                .timeout()
+                                .deadline(callTimeout.inWholeNanoseconds, TimeUnit.NANOSECONDS)
+                            body.bounded(64L * 1024).use { error -> error.string() }
                         } catch (_: IOException) {
                             null
                         }
@@ -73,6 +78,10 @@ internal fun httpClient(callTimeout: Duration = DEFAULT_CALL_TIMEOUT): OkHttpCli
             response
         }
 }
+
+/** Share the owner's dispatcher/pool and idle protection while allowing progressing reads. */
+internal fun OkHttpClient.forCanonicalReads(): OkHttpClient =
+    newBuilder().callTimeout(0, TimeUnit.MILLISECONDS).build()
 
 private fun Response.errorBody(): ResponseBody {
     val original = checkNotNull(body)

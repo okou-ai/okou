@@ -178,7 +178,6 @@ test("Activity identifies a Discord run as its source", async () => {
       status: "completed",
       prompt: "Review the launch thread",
       appendSystemPrompt: null,
-      error: null,
       createdAt: CREATED_AT,
       startedAt: CREATED_AT,
       completedAt: "2026-09-24T09:00:03.000Z",

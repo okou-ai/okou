@@ -1,3 +1,4 @@
+import type { ChatThreadArtifactFile } from "@okouai/api-contracts/contracts/chat-threads";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -5,6 +6,7 @@ import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   ATTACHMENT_THREAD_ID,
+  artifactFile,
   findNamedLink,
   getNamedButton,
   getNamedLink,
@@ -14,8 +16,12 @@ import {
 
 const context = testContext();
 
-function installMessage(content: string) {
+function installMessage(
+  content: string,
+  artifacts?: readonly ChatThreadArtifactFile[],
+) {
   mockAttachmentChat(context, {
+    artifacts,
     chatEvents: [
       {
         id: "markdown-artifact-message",
@@ -102,42 +108,123 @@ test("Repeated images share load state and open an image preview", async () => {
   ).resolves.toHaveAttribute("src", url);
 });
 
-test("Artifact links show image, video, and file kinds", async () => {
-  const imageUrl = publicArtifactUrl("screenshot.png");
-  const videoUrl = publicArtifactUrl("walkthrough.mp4");
-  const fileUrl = publicArtifactUrl("report.pdf");
+test("Artifact links show content-specific icons", async () => {
+  const artifacts = [
+    ["screenshot.png", "image"],
+    ["walkthrough.mp4", "video"],
+    ["dashboard.html", "website"],
+    ["report.pdf", "document"],
+    ["brief.docx", "document"],
+    ["notes.md", "document"],
+    ["readme.txt", "document"],
+    ["budget.xlsx", "spreadsheet"],
+    ["export.csv", "spreadsheet"],
+    ["slides.pptx", "presentation"],
+    ["recording.mp3", "audio"],
+    ["data.json", "code"],
+    ["script.py", "code"],
+    ["app.tsx", "code"],
+    ["config.yaml", "code"],
+    ["assets.zip", "archive"],
+    ["backup.7z", "archive"],
+    ["attachment.bin", "file"],
+  ] as const;
   const externalUrl = "https://media.example.com/reference.png";
   installMessage(
     [
-      `[Screenshot](${imageUrl})`,
-      `[Walkthrough](${videoUrl})`,
-      `[Report](${fileUrl})`,
+      ...artifacts.map(([filename]) => {
+        return `[${filename}](${publicArtifactUrl(filename)})`;
+      }),
       `[Reference](${externalUrl})`,
     ].join("\n\n"),
   );
 
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
 
-  expect(
-    within(await findNamedLink("Screenshot")).getByTestId(
-      "markdown-artifact-link-icon-image",
-    ),
-  ).toBeVisible();
-  expect(
-    within(getNamedLink("Walkthrough")).getByTestId(
-      "markdown-artifact-link-icon-video",
-    ),
-  ).toBeVisible();
-  expect(
-    within(getNamedLink("Report")).getByTestId(
-      "markdown-artifact-link-icon-file",
-    ),
-  ).toBeVisible();
+  await findNamedLink("screenshot.png");
+  for (const [filename, iconKind] of artifacts) {
+    const link = getNamedLink(filename);
+    expect(link).toHaveAttribute("href", publicArtifactUrl(filename));
+    expect(
+      within(link).getByTestId(`markdown-artifact-link-icon-${iconKind}`),
+    ).toBeInTheDocument();
+  }
   expect(
     getNamedLink("Reference").querySelector(
       "[data-testid^='markdown-artifact-link-icon-']",
     ),
   ).toBeNull();
+});
+
+test("Artifact link icons follow the file rather than its label or URL parameters", async () => {
+  const presentationUrl = `${publicArtifactUrl("slides.PPTX")}?download=1#page=2`;
+  const dashboardUrl = "/artifacts/a1b2c3d4e5.html";
+  installMessage(
+    [
+      `[Download file](${presentationUrl})`,
+      `[Open private dashboard](${dashboardUrl})`,
+    ].join("\n\n"),
+  );
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+
+  const presentationLink = await findNamedLink("Download file");
+  expect(presentationLink).toHaveAttribute("href", presentationUrl);
+  expect(
+    within(presentationLink).getByTestId(
+      "markdown-artifact-link-icon-presentation",
+    ),
+  ).toBeInTheDocument();
+  const dashboardLink = getNamedLink("Open private dashboard");
+  expect(dashboardLink).toHaveAttribute("href", dashboardUrl);
+  expect(
+    within(dashboardLink).getByTestId("markdown-artifact-link-icon-website"),
+  ).toBeInTheDocument();
+});
+
+test("HTML links keep website icons for presentations and ordinary sites", async () => {
+  const hostedDeckUrl = "https://quarterly-deck.sites.vm7.io/";
+  const privateDeckUrl = "/artifacts/a1b2c3d4e5.html";
+  const websiteUrl = "https://ordinary-site.sites.vm7.io/";
+  const unmarkedHtmlUrl = publicArtifactUrl("slides.html");
+  const links = [
+    ["Quarterly overview", `${hostedDeckUrl}#/2`, "website"],
+    ["Private overview", `${privateDeckUrl}#slide-3`, "website"],
+    ["Company website", websiteUrl, "website"],
+    ["Unmarked HTML", unmarkedHtmlUrl, "website"],
+  ] as const;
+  installMessage(
+    links
+      .map(([label, url]) => {
+        return `[${label}](${url})`;
+      })
+      .join("\n\n"),
+    [
+      artifactFile("index.html", {
+        id: "html-presentation",
+        url: hostedDeckUrl,
+        aliasUrl: privateDeckUrl,
+        artifactKind: "presentation-html",
+        contentType: "text/html",
+      }),
+      artifactFile("index.html", {
+        id: "html-website",
+        url: websiteUrl,
+        artifactKind: "hosted-site",
+        contentType: "text/html",
+      }),
+    ],
+  );
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+
+  for (const [label, url, iconKind] of links) {
+    const link = await findNamedLink(label);
+    await expect(
+      within(link).findByTestId(`markdown-artifact-link-icon-${iconKind}`),
+    ).resolves.toBeInTheDocument();
+    expect(link).toHaveAttribute("href", url);
+  }
 });
 
 test("Bare platform URLs stay links and fenced URLs stay code", async () => {

@@ -51,7 +51,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 
 @Composable
-fun ChatListRoute(model: ChatListModel, composer: ChatComposerModel) {
+fun ChatListRoute(
+    model: ChatListModel,
+    composer: ChatComposerModel,
+    controls: RunControlsModel,
+    recovery: AssistantRecoveryModel? = null,
+) {
     val state by model.uiState.collectAsStateWithLifecycle()
     val inputState by composer.uiState.collectAsStateWithLifecycle()
     var selected by rememberUiTargetId()
@@ -176,6 +181,14 @@ fun ChatListRoute(model: ChatListModel, composer: ChatComposerModel) {
                 state.threads
                     .firstOrNull { it.id == selected }
                     ?.let { thread ->
+                        RunControlsPanel(controls, model.history, thread.id)
+                        recovery?.let {
+                            AssistantRecoveryPanel(
+                                it,
+                                composer,
+                                ComposerTarget(thread.id, thread.agentId, thread.projectId),
+                            )
+                        }
                         ChatComposerField(
                             composer,
                             ComposerTarget(thread.id, thread.agentId, thread.projectId),

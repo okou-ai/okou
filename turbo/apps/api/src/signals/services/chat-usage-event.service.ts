@@ -1,7 +1,11 @@
+import {
+  publishChatThreadMessageCreated$,
+  type ChatEventPublicationScope,
+} from "./chat-event-publication.service";
 import { command } from "ccstate";
 
 import { writeDb$ } from "../external/db";
-import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
+
 import { randomUUID } from "node:crypto";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
@@ -12,14 +16,18 @@ import {
 import { readSettledRunUsage$ } from "./chat-run-usage.service";
 /** Usage events are refresh hints; the settled ledger owns displayed amounts. */
 export const maybeEmitRunUsageEvent$ = command(
-  async ({ set }, runId: string, signal: AbortSignal): Promise<boolean> => {
+  async (
+    { set },
+    runId: string,
+    signal: AbortSignal,
+  ): Promise<ChatEventPublicationScope | null> => {
     const [settled] = await set(
       readSettledRunUsage$,
       { runIds: [runId] },
       signal,
     );
     if (!settled) {
-      return false;
+      return null;
     }
     const db = set(writeDb$);
     // Preserve the established payload for supported older Apps. Duplicate or
@@ -44,14 +52,22 @@ export const maybeEmitRunUsageEvent$ = command(
     );
     signal.throwIfAborted();
     if (!inserted) {
-      return false;
+      return null;
     }
-    await publishChatThreadMessageCreatedSafely({
+    await set(
+      publishChatThreadMessageCreated$,
+      {
+        userId: settled.userId,
+        orgId: settled.orgId,
+        threadId: settled.chatThreadId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return {
       userId: settled.userId,
       orgId: settled.orgId,
       threadId: settled.chatThreadId,
-    });
-    signal.throwIfAborted();
-    return true;
+    };
   },
 );

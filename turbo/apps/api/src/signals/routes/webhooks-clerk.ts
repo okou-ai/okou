@@ -1,3 +1,4 @@
+import { deliverMarketingRewardEvents$ } from "../services/marketing-reward-event-delivery.service";
 import {
   acceptGetStartedInvitation$,
   InvitationRewardSlotConflict,
@@ -256,7 +257,20 @@ const enqueueUsagePackInvitationAcceptance$ = command(
   ): void => {
     waitUntil(
       tapError(
-        set(handleUsagePackInvitationAccepted$, identity, signal),
+        (async () => {
+          const accepted = await set(
+            handleUsagePackInvitationAccepted$,
+            identity,
+            signal,
+          );
+          if (accepted.marketingRewardEventId) {
+            await set(
+              deliverMarketingRewardEvents$,
+              { jobId: accepted.marketingRewardEventId, handlerVersion: 3 },
+              signal,
+            );
+          }
+        })(),
         (error) => {
           L.error(`${eventType} activation failed`, {
             orgId: identity.orgId,
@@ -519,6 +533,15 @@ const acceptInvitationReward$ = command(
     );
     signal.throwIfAborted();
     if (outcome.ok) {
+      if (outcome.value) {
+        waitUntil(
+          set(
+            deliverMarketingRewardEvents$,
+            { jobId: outcome.value, handlerVersion: 3 },
+            signal,
+          ),
+        );
+      }
       return null;
     }
     if (outcome.error instanceof InvitationRewardSlotConflict) {

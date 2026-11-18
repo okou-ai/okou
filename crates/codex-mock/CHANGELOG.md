@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.12.79](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.78...codex-mock-v0.12.79) (2026-11-18)
+
+## [0.12.78](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.77...codex-mock-v0.12.78) (2026-11-18)
+
+
+### Refactoring
+
+* delegate file opens to owned descriptor apis ([#48437](https://github.com/okou-ai/okou/issues/48437)) ([5ef5cab](https://github.com/okou-ai/okou/commit/5ef5cab9bc706528c66d21a9315fd76ed8e1ea10))
+
+## [0.12.77](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.76...codex-mock-v0.12.77) (2026-11-17)
+
+
+### Refactoring
+
+* use typed fifo creation in native fixtures ([#48355](https://github.com/okou-ai/okou/issues/48355)) ([05bf56d](https://github.com/okou-ai/okou/commit/05bf56dbc4876786786c0379dfce0776e09b4519))
+
+## [0.12.76](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.75...codex-mock-v0.12.76) (2026-11-17)
+
+## [0.12.75](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.74...codex-mock-v0.12.75) (2026-11-17)
+
+## [0.12.74](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.73...codex-mock-v0.12.74) (2026-11-17)
+
+## [0.12.73](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.72...codex-mock-v0.12.73) (2026-11-17)
+
+## [0.12.72](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.71...codex-mock-v0.12.72) (2026-11-16)
+
+
+### Refactoring
+
+* **rust:** borrow files for advisory locking ([#47963](https://github.com/okou-ai/okou/issues/47963)) ([1ce772e](https://github.com/okou-ai/okou/commit/1ce772ecd56bd86b0bb212327e78fa4ba28d5b1a))
+
+## [0.12.71](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.70...codex-mock-v0.12.71) (2026-11-16)
+
+
+### Refactoring
+
+* **rust:** use typed waitid for owned-child observation ([#47916](https://github.com/okou-ai/okou/issues/47916)) ([63c1cb4](https://github.com/okou-ai/okou/commit/63c1cb42b3e5ddec5e783b089540bb315a19fffe))
+
+## [0.12.70](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.69...codex-mock-v0.12.70) (2026-11-16)
+
+## [0.12.69](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.68...codex-mock-v0.12.69) (2026-11-16)
+
 ## [0.12.68](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.67...codex-mock-v0.12.68) (2026-11-16)
 
 ## [0.12.67](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.66...codex-mock-v0.12.67) (2026-11-16)

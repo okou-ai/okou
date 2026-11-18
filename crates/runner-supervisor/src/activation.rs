@@ -27,6 +27,7 @@ use crate::idle_lifecycle::{
     IdleDestroyTracker, add_preparing_run_with_idle_status_snapshot,
     add_running_run_with_idle_status_snapshot,
 };
+use crate::job_lifecycle::completion_failure_reason;
 use crate::orphan_reap::OrphanedActiveRuns;
 use crate::ownership::{OwnershipTransitions, RunSandbox};
 
@@ -329,7 +330,11 @@ async fn recover_activation_failure(
             CompleteRequest {
                 run_id,
                 exit_code: execution_failure.exit_code,
-                failure_reason: None,
+                failure_reason: completion_failure_reason(
+                    execution_failure.exit_code,
+                    false,
+                    Some(&execution_failure),
+                ),
                 error: Some(execution_failure.error),
                 sandbox_id: None,
             },

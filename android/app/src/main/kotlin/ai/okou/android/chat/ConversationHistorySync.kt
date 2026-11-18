@@ -16,8 +16,6 @@ class ConversationHistorySync(
 ) {
     suspend fun synchronize(threadId: String, cached: HistoryCheckpoint?): HistoryCheckpoint =
         withContext(dispatcher) {
-            // Verify this thread itself. A missing archive is a different protocol outcome.
-            service.threadDetail(threadId)
             var state =
                 cached?.also {
                     it.validate()

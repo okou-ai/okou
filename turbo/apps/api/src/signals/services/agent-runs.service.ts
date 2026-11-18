@@ -4,7 +4,7 @@ import {
   modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
-import { formatRunBalanceError } from "@okouai/api-contracts/contracts/run-balance-errors";
+import { publicRunFailureReason } from "../../lib/run-failure";
 import { isOrgTier, type OrgTier } from "@okouai/api-contracts/contracts/orgs";
 import type {
   ConcurrencyMemberUsage,
@@ -217,12 +217,10 @@ export function agentRunById(args: {
         id: agentRuns.id,
         launchSnapshot: agentRuns.launchSnapshot,
         status: agentRuns.status,
+        artifactResult: agentRuns.artifactResult,
         prompt: agentRuns.prompt,
-        appendSystemPrompt: agentRuns.appendSystemPrompt,
-        vars: agentRuns.vars,
         sandboxId: agentRuns.sandboxId,
         result: agentRuns.result,
-        error: agentRuns.error,
         failureReason: agentRuns.failureReason,
         createdAt: agentRuns.createdAt,
         startedAt: agentRuns.startedAt,
@@ -295,21 +293,18 @@ export function agentRunById(args: {
     return {
       runId: run.id,
       status: run.status as RunStatus,
+      artifactResult: run.artifactResult,
       prompt: run.prompt,
-      appendSystemPrompt: run.appendSystemPrompt,
-      vars:
-        run.vars === null ? undefined : (run.vars as Record<string, string>),
       sandboxId: run.sandboxId || undefined,
       result:
         run.result === null
           ? undefined
           : (run.result as GetRunResponse["result"]),
-      error: run.error
-        ? (formatRunBalanceError({
-            failureReason: run.failureReason,
-            modelProvider: run.modelProvider,
-          }) ?? run.error)
-        : undefined,
+      failureReason: publicRunFailureReason(
+        run.status,
+        run.failureReason,
+        run.modelProvider,
+      ),
       createdAt: run.createdAt.toISOString(),
       startedAt: run.startedAt?.toISOString(),
       completedAt: run.completedAt?.toISOString(),

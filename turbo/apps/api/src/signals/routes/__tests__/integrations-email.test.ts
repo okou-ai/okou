@@ -1,6 +1,8 @@
+import { switchRecoverySubscription } from "./helpers/subscription-recovery";
 import { mockNow, now } from "../../../lib/time";
 import { randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { cronSyncSkillsContract } from "@okouai/api-contracts/contracts/cron";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { http, HttpResponse } from "msw";
 import { array, object, string, record } from "zod";
@@ -29,6 +31,7 @@ import { uploadsCompleteRoutes } from "../uploads-complete";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorPermissionsRoutes } from "../connector-permissions";
 import { chatConnectorAccessRoutes } from "../chat-connector-access";
+import { cronSyncSkillsRoutes } from "../cron-sync-skills";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -44,7 +47,11 @@ import {
   mockGmailConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
+import { createUniqueEmailSignupAddressFixture } from "../../../test-fixtures/email-signup-identity";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { githubSource, sourceArchive } from "./helpers/seed-skill-source";
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
+import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -175,15 +182,7 @@ beforeEach(() => {
 describe("email model recovery", () => {
   it("links a model failure to the original Web conversation", async () => {
     mockEnv("OKOU_WEB_URL", "https://app.okou.ai");
-    const { actor, execution, runId } = await startEmailFileExecution();
-    if (!actor.orgId) {
-      throw new Error("Expected an owned workspace");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      { [FeatureSwitchKey.IntegrationModelRecovery]: true },
-    );
+    const { actor, execution, runId, group } = await startEmailFileExecution();
     await webhooks.requestAgentComplete(
       {
         runId,
@@ -210,16 +209,27 @@ describe("email model recovery", () => {
         expect.objectContaining({ eventType: "run.failed", runId }),
       ]),
     });
+    await switchRecoverySubscription(context, actor);
+    await flushWaitUntilForTest();
+    await runs.heartbeatRunner(group);
+    const continued = await runs.nextReceivedExecution(group);
+    expect(continued.runId).not.toBe(runId);
+    expect(continued.prompt).toBe("continue");
+    expect(continued.appendSystemPrompt).toContain("Requested report");
   });
 });
 
 describe("email-native signup", () => {
-  async function pendingSignup() {
-    const sender = "yuma@vm0.ai";
+  function anonymousSender() {
     context.mocks.clerk.users.getUserList.mockResolvedValue({
       data: [],
       totalCount: 0,
     });
+    return createUniqueEmailSignupAddressFixture();
+  }
+
+  async function pendingSignup() {
+    const sender = anonymousSender();
     const original = incoming({
       sender,
       text: "Please compare these options after signup",
@@ -315,11 +325,6 @@ describe("email-native signup", () => {
   }
 
   it("creates the account and workspace only after consent, then resumes the original request once", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
     const pending = await pendingSignup();
     const { actor, group } = await signupProvider(pending.sender);
     const confirmation = incoming({
@@ -416,21 +421,19 @@ describe("email-native signup", () => {
     });
   });
 
-  it.each(["*@vm0.ai", "YUMA@VM0.AI"])(
+  it.each(["domain", "uppercase-address"] as const)(
     "refuses a Clerk-blocked sender matching %s before confirming or creating an account",
-    async (identifier) => {
-      await setupApp({
-        context,
-        routes: integrationsEmailRoutes,
-        isolatePg: true,
-      });
+    async (kind) => {
+      const sender = anonymousSender();
+      const identifier =
+        kind === "domain" ? `*@${sender.split("@")[1]}` : sender.toUpperCase();
       context.mocks.clerk.blocklistIdentifiers.getBlocklistIdentifierList.mockResolvedValue(
         { data: [{ identifier }], totalCount: 1 },
       );
-      await incoming({ sender: "yuma@vm0.ai" }).send();
+      await incoming({ sender }).send();
       expect(sentEmails()).toMatchObject([
         {
-          to: "yuma@vm0.ai",
+          to: sender,
           text: expect.stringContaining("did not pass our security checks"),
         },
       ]);
@@ -443,12 +446,7 @@ describe("email-native signup", () => {
   );
 
   it("refuses email-native signup for a disposable address", async () => {
-    const sender = "test@mailinator.com";
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
+    const sender = `disposable-${randomUUID()}@mailinator.com`;
     const actor = bdd.user({
       email: sender,
       orgId: createUniqueStaffOrgIdFixture(),
@@ -489,11 +487,6 @@ describe("email-native signup", () => {
   it.each(["> CONFIRM", "Please CONFIRM this account"])(
     "does not register when the reply only contains or quotes CONFIRM: %s",
     async (text) => {
-      await setupApp({
-        context,
-        routes: integrationsEmailRoutes,
-        isolatePg: true,
-      });
       const pending = await pendingSignup();
       await incoming({
         sender: pending.sender,
@@ -510,11 +503,6 @@ describe("email-native signup", () => {
   );
 
   it("rejects another mailbox's confirmation reply address without creating or running anything", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
     const pending = await pendingSignup();
     const other = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
     verifiedDirectory(other);
@@ -531,11 +519,6 @@ describe("email-native signup", () => {
   });
 
   it("rejects expired consent and does not create an account", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
     const pending = await pendingSignup();
     const confirmation = incoming({
       sender: pending.sender,
@@ -549,11 +532,6 @@ describe("email-native signup", () => {
   });
 
   it("rejects an unissued confirmation reply address without creating an account", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
     const pending = await pendingSignup();
     const forged = incoming({
       sender: pending.sender,
@@ -566,11 +544,6 @@ describe("email-native signup", () => {
   });
 
   it("requires the issued reply address even when CONFIRM references the original request", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
     const pending = await pendingSignup();
     await incoming({
       sender: pending.sender,
@@ -585,18 +558,13 @@ describe("email-native signup", () => {
   });
 
   it("does not accuse a sender when the Clerk precheck is unavailable, and recovers on redelivery", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
     const unavailable = new ClerkTransportTestError(403, [
       { code: "authorization_invalid", message: "Unauthorized" },
     ]);
     context.mocks.clerk.blocklistIdentifiers.getBlocklistIdentifierList.mockRejectedValueOnce(
       unavailable,
     );
-    const message = incoming({ sender: "yuma@vm0.ai" });
+    const message = incoming({ sender: anonymousSender() });
     await expect(message.send(true)).rejects.toBe(unavailable);
     expect(sentEmails()).toHaveLength(0);
     expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
@@ -607,14 +575,10 @@ describe("email-native signup", () => {
   });
 
   it("bounds unconfirmed signup messages from one sender", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
+    const sender = anonymousSender();
     for (let index = 0; index < 4; index += 1) {
       await incoming({
-        sender: "yuma@vm0.ai",
+        sender,
         text: `Request ${index}`,
       }).send();
     }
@@ -627,11 +591,6 @@ describe("email-native signup", () => {
   });
 
   it("preserves Clerk's authoritative rejection after a successful precheck", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
     const pending = await pendingSignup();
     await signupProvider(pending.sender);
     context.mocks.clerk.users.createUser.mockRejectedValue(
@@ -1548,6 +1507,94 @@ describe("Email integration", () => {
     expect(receivedExecution.appendSystemPrompt).toContain(
       "- LOOKUP_STATUS: permission-required",
     );
+  });
+
+  it("retains admitted timezone and Seed bundles when sources change during mailbox lookup", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronSyncSkillsRoutes,
+      isolatePg: true,
+    });
+    const cronSecret = "email-seed-observation";
+    mockEnv("CRON_SECRET", cronSecret);
+    const { actor, group } = await entitledActor();
+    await bdd.updateUserTimezone(actor, "America/Los_Angeles");
+    const s3 = installWorkflowVolumeS3Fixture(context);
+    const acceptedSource = await sourceArchive("admitted gen instructions");
+    const laterSource = await sourceArchive("later gen instructions");
+    const sync = () => {
+      return accept(
+        app(cronSyncSkillsContract).sync({
+          headers: { authorization: `Bearer ${cronSecret}` },
+        }),
+        [200],
+      );
+    };
+    githubSource("2".repeat(40), acceptedSource.archive);
+    expect((await sync()).body.failed).toBe(0);
+    await connectorsApi.updateFeatureSwitches(actor, {
+      connectorChatAccountAccess: true,
+    });
+    await connectEmailMailbox(actor, "gmail", actor.email);
+    verifiedDirectory(actor);
+    await setGmailContextReadPermission("allow");
+    const message = incoming({ sender: actor.email });
+    const source = mockEmailMessageLookup(
+      "gmail",
+      message.messageId,
+      "Message body after the admission observation",
+    );
+    server.use(
+      http.get(
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+        async () => {
+          // The mailbox body is read after the complete admission Run plan.
+          await bdd.updateUserTimezone(actor, "Asia/Shanghai");
+          githubSource("3".repeat(40), laterSource.archive);
+          expect((await sync()).body.failed).toBe(0);
+          return HttpResponse.json({
+            messages: [{ id: source.providerMessageId }],
+          });
+        },
+        { once: true },
+      ),
+    );
+    await message.send();
+    const first = await readPendingEmailExecution(group);
+    expect(first.appendSystemPrompt).toContain(
+      "Message body after the admission observation",
+    );
+    expect(first.appendSystemPrompt).toContain("Timezone: America/Los_Angeles");
+    const acceptedBundle = first.contentBundles.skills.find((bundle) => {
+      return bundle.mountPath.endsWith("/gen");
+    })!;
+    expect({
+      timezone: first.userTimezone,
+      seedFiles: readExecutionContentBundle(s3.objects, acceptedBundle),
+    }).toStrictEqual({
+      timezone: "America/Los_Angeles",
+      seedFiles: new Map([
+        ["SKILL.md", acceptedSource.files.get("gen/SKILL.md")],
+      ]),
+    });
+    await runs.requestCancelRun(actor, first.runId, [200]);
+    await flushWaitUntilForTest();
+
+    const next = incoming({ sender: actor.email });
+    mockEmailMessageLookup("gmail", next.messageId, "Observe the next Run");
+    await next.send();
+    const later = await readPendingEmailExecution(group);
+    expect(later.appendSystemPrompt).toContain("Timezone: Asia/Shanghai");
+    expect(later.userTimezone).toBe("Asia/Shanghai");
+    const laterBundle = later.contentBundles.skills.find((bundle) => {
+      return bundle.mountPath.endsWith("/gen");
+    })!;
+    expect(readExecutionContentBundle(s3.objects, laterBundle)).toStrictEqual(
+      new Map([["SKILL.md", laterSource.files.get("gen/SKILL.md")]]),
+    );
+    expect(laterBundle.sha256).not.toBe(acceptedBundle.sha256);
+    await runs.requestCancelRun(actor, later.runId, [200]);
+    await flushWaitUntilForTest();
   });
 
   it("refreshes rejected Gmail credentials before fetching and appending the exact message", async () => {
@@ -2470,7 +2517,7 @@ describe("Email integration", () => {
   });
 
   it("preserves workspace-selection links for existing accounts and resumes the original request only once", async () => {
-    const sender = "yuma@vm0.ai";
+    const sender = `signup-${randomUUID()}@vm0.ai`;
     const actor = bdd.user({
       email: sender,
       orgId: createUniqueStaffOrgIdFixture(),
@@ -3275,7 +3322,6 @@ describe("Email multi-account connections", () => {
         [200],
       );
       expect(deleted.body.emailSources).toStrictEqual({});
-      await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
       await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
     },
   );

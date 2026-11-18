@@ -2,7 +2,6 @@ import { randomInt } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { array, object, string } from "zod";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
@@ -15,7 +14,6 @@ import {
 } from "./helpers/api-bdd-integrations";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const BOT_TOKEN = "123456:recovery-bot";
@@ -34,25 +32,18 @@ describe("integration model recovery in Telegram", () => {
     const owner = await publicChatActor(context);
     const integrations = createBddIntegrationApi(context);
     const chat = createChatEventsFixture(context);
-    owner.ownsFeatureSwitches();
-    const orgId = owner.actor.orgId;
-    if (!orgId) {
-      throw new Error("Expected a workspace");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...owner.actor, orgId },
-      { [FeatureSwitchKey.IntegrationModelRecovery]: true },
-    );
+
     mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", BOT_TOKEN);
     mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", "model_recovery_bot");
     mockEnv("TELEGRAM_OFFICIAL_WEBHOOK_SECRET", WEBHOOK_SECRET);
     const messages: unknown[] = [];
+    const typing: unknown[] = [];
     const notices: string[] = [];
     server.use(
       http.post(
         `https://api.telegram.org/bot${BOT_TOKEN}/sendChatAction`,
-        () => {
+        async ({ request }) => {
+          typing.push(await request.json());
           return HttpResponse.json({ ok: true, result: true });
         },
       ),
@@ -162,8 +153,11 @@ describe("integration model recovery in Telegram", () => {
       throw new Error("Expected Auto in the user's model choices");
     }
     expect(Buffer.byteLength(automatic.callback_data)).toBeLessThanOrEqual(64);
+    const typingBeforeRecovery = typing.length;
     await press(automatic.callback_data);
+    await flushWaitUntilForTest();
     expect(notices.at(-1)).toContain("Switched to Auto");
+    expect(typing.length).toBeGreaterThan(typingBeforeRecovery);
     const events = await chat.chat.requestThreadEvents(owner.actor, {}, [200]);
     if (events.status !== 200) {
       throw new Error("Expected the conversation events");
@@ -181,6 +175,21 @@ describe("integration model recovery in Telegram", () => {
     expect(
       (await integrations.readUserModelPreference(owner.actor)).selectedModel,
     ).toBe("claude-fable-5-1");
+    const recovered = await createRunReadsApi(context).requestListLogs(
+      owner.actor,
+      { triggerSource: "telegram", limit: 10 },
+      [200],
+    );
+    expect(recovered.body.data).toHaveLength(2);
+    const next = recovered.body.data.find((candidate) => {
+      return candidate.id !== run.id;
+    });
+    if (!next) {
+      throw new Error("Expected a continued Telegram run");
+    }
+    await chat.api.heartbeatRunner(owner.runnerGroup);
+    const resumed = await owner.executionInput(next.id);
+    expect(resumed.prompt).toBe("continue");
     await press(automatic.callback_data);
     expect(notices.at(-1)).toContain("no longer current");
   });

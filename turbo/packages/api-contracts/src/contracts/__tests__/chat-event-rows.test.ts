@@ -4,7 +4,14 @@ import {
   CHAT_EVENT_TYPES,
   type ChatEventType,
 } from "../chat-events";
-import { chatEventFromRow } from "../chat-event-row-projection";
+import {
+  chatEventFromRow,
+  projectRunFailureRow,
+} from "../chat-event-row-projection";
+import {
+  CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
+  CHAT_RUN_USAGE_LIMIT_MESSAGE,
+} from "../errors";
 import { chatEventRowSchema, type ChatEventRow } from "../chat-event-rows";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "../chat-event-schema-version";
 import {
@@ -14,6 +21,71 @@ import {
 } from "../chat-threads";
 
 const CREATED_AT = "2026-08-08T10:00:00.000Z";
+
+describe("structured Run failure presentation", () => {
+  it.each([
+    [undefined, CHAT_RUN_TRANSIENT_ERROR_MESSAGE],
+    ["future_reason", CHAT_RUN_TRANSIENT_ERROR_MESSAGE],
+    ["usage_limit", CHAT_RUN_USAGE_LIMIT_MESSAGE],
+  ] as const)(
+    "presents reason %s without mutating retained archive data",
+    (failureReason, expected) => {
+      const row = canonicalRow({
+        eventType: "run.failed",
+        runId: "run-1",
+        runEventId: "event-1",
+        runEventSequenceNumber: 9,
+        failureReason,
+        payload: {
+          content: "retained diagnostic",
+          error: "retained diagnostic",
+        },
+      });
+      const original = JSON.stringify(row);
+      const displayed = chatEventFromRow(row);
+      expect(displayed).toMatchObject({
+        id: row.id,
+        seqId: row.seqId,
+        runId: row.runId,
+        runEventId: row.runEventId,
+        sequenceNumber: 9,
+        createdAt: CREATED_AT,
+        content: expected,
+        failureReason:
+          failureReason === "usage_limit" ? "usage_limit" : "unknown",
+      });
+      expect(displayed).not.toHaveProperty("error");
+      expect(JSON.stringify(row)).toBe(original);
+    },
+  );
+
+  it("accepts Run failures without diagnostics and keeps ordinary output errors", () => {
+    const failed = canonicalRow({
+      eventType: "run.failed",
+      runId: "run-1",
+      failureReason: "usage_limit",
+      payload: null,
+    });
+    expect(chatEventFromRow(failed)).toMatchObject({
+      content: CHAT_RUN_USAGE_LIMIT_MESSAGE,
+      failureReason: "usage_limit",
+    });
+    const cancelled = canonicalRow({
+      eventType: "run.cancelled",
+      runId: "run-1",
+      payload: {
+        content: "private cancellation detail",
+        error: "Stopped by user",
+      },
+    });
+    expect(chatEventFromRow(cancelled)).toMatchObject({
+      content: "Run cancelled",
+    });
+    expect(chatEventFromRow(cancelled)).not.toHaveProperty("error");
+    const output = projectableRow("output.error");
+    expect(chatEventFromRow(output)).toHaveProperty("error", "output error");
+  });
+});
 
 function canonicalRow(
   overrides: Readonly<Record<string, unknown>>,
@@ -212,6 +284,51 @@ describe("Chat Event versioned read contract", () => {
 });
 
 describe("canonical row projection preserves the public ChatEvent contract", () => {
+  it("preserves a public personal-account balance reason without reintroducing diagnostics", () => {
+    const row = canonicalRow({
+      eventType: "run.failed",
+      runId: "00000000-0000-4000-8000-000000000013",
+      failureReason: "provider_insufficient_credits",
+      payload: {
+        content: "Private balance details",
+        error: "Private balance details",
+      },
+    });
+    expect(chatEventFromRow(row)).toMatchObject({
+      failureReason: "provider_insufficient_credits",
+      content: "Your connected subscription account has insufficient balance.",
+    });
+  });
+
+  it("projects retained failure text without mutating archived rows or unrelated output", () => {
+    const diagnostic =
+      "Private provider response https://private.invalid/token";
+    const row = canonicalRow({
+      eventType: "run.failed",
+      runId: "00000000-0000-4000-8000-000000000013",
+      failureReason: "future_reason",
+      payload: { content: diagnostic, error: diagnostic },
+    });
+    const original = JSON.stringify(row);
+    const projected = projectRunFailureRow(row);
+    expect(projected).toMatchObject({
+      id: row.id,
+      runId: row.runId,
+      seqId: row.seqId,
+      createdAt: row.createdAt,
+      failureReason: "unknown",
+      payload: {
+        content: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
+      },
+    });
+    expect(JSON.stringify(row)).toBe(original);
+    const output = canonicalRow({
+      eventType: "output.error",
+      payload: { content: diagnostic, error: diagnostic },
+    });
+    expect(projectRunFailureRow(output)).toEqual(output);
+  });
+
   it("serializes and projects every event type from canonical fields", () => {
     expect(
       CHAT_EVENT_TYPES.map((eventType) => {
@@ -220,7 +337,13 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
         ) as unknown;
         const row = chatEventRowSchema.parse(wireRow);
         const projected = chatEventFromRow(row);
-        expect(projected.content).toBe(row.payload?.content ?? null);
+        expect(projected.content).toBe(
+          eventType === "run.failed"
+            ? CHAT_RUN_TRANSIENT_ERROR_MESSAGE
+            : eventType === "run.cancelled"
+              ? "Run cancelled"
+              : (row.payload?.content ?? null),
+        );
         return projected.eventType;
       }),
     ).toStrictEqual(CHAT_EVENT_TYPES);
@@ -336,13 +459,13 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
     expect(failed).toMatchObject({
       eventType: "run.failed",
       runId,
-      content: "run failed",
-      error: "runner error",
+      content: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
+      failureReason: "unknown",
       runLifecycleEvent: "failed",
     });
   });
 
-  it("accepts an optional failure reason only on failed runs", () => {
+  it("normalizes optional historical failure reasons while preserving event identity", () => {
     const runId = "00000000-0000-4000-8000-000000000013";
     const withoutReason = chatEventFromRow(
       canonicalRow({
@@ -354,13 +477,13 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
     expect(JSON.parse(JSON.stringify(withoutReason))).toStrictEqual({
       id: "00000000-0000-4000-8000-000000000003",
       threadId: "00000000-0000-4000-8000-000000000002",
-      content: null,
+      content: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
       runId,
       seqId: 2,
       sequenceNumber: null,
       createdAt: CREATED_AT,
       eventType: "run.failed",
-      error: "runner error",
+      failureReason: "unknown",
       runLifecycleEvent: "failed",
     });
 
@@ -375,7 +498,7 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
     expect(chatEventSchema.parse(withReason)).toMatchObject({
       eventType: "run.failed",
       runId,
-      failureReason: "future_reason",
+      failureReason: "unknown",
     });
 
     expect(

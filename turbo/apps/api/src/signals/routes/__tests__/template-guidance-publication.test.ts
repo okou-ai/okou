@@ -11,6 +11,8 @@ import { readTemplateGuidanceBundle } from "@okouai/core/template-guidance-bundl
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
+import { mockEnv } from "../../../lib/env";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { userTemplatesRoutes } from "../user-templates";
 import { presentationTemplatesRoutes } from "../presentation-templates";
@@ -161,6 +163,96 @@ function executionFiles(
 }
 
 describe.each(ownerKinds)("%s bundle publication", (kind) => {
+  it("uses the FIFO head's template when a later send supplies a different prefetch candidate", async () => {
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    let waitingThreadId: string | undefined;
+    const owner = await publicChatActor(context, {
+      beforeRuns: async (actor) => {
+        if (waitingThreadId) {
+          await chat.chat.deleteThread(actor, waitingThreadId);
+          await flushWaitUntilForTest();
+        }
+      },
+    });
+    const fixture = await owner.run(() => {
+      return Promise.resolve(installS3Fixture(context));
+    });
+    const templates: string[] = [];
+    for (const revision of ["head", "later"]) {
+      const published = await owner.run(async () => {
+        return await publish(
+          kind,
+          await uploadInputs(owner.actor, fixture, tarGz(guidance(revision))),
+        );
+      });
+      if (published.status !== 200) {
+        throw new Error("Expected a published template");
+      }
+      templates.push(published.body.id);
+    }
+    const [headId, laterId] = templates;
+    if (!headId || !laterId) {
+      throw new Error("Expected two distinct template selections");
+    }
+    const blocker = await owner.sendChatRun(owner.actor, {
+      agentId: owner.agentId,
+      prompt: "Occupy the organization slot",
+    });
+    const blockerExecution = await owner.runExecution(blocker.runId);
+    const thread = await owner.run(() => {
+      return chat.chat.createThread(owner.actor, { agentId: owner.agentId });
+    });
+    waitingThreadId = thread.id;
+    const head = await owner.sendWaitingChatInput(owner.actor, {
+      agentId: owner.agentId,
+      threadId: thread.id,
+      prompt: "Use the head template",
+      template: selection(kind, headId),
+    });
+    await flushWaitUntilForTest();
+    // Free capacity without triggering a pick; the next send must pick the
+    // already queued head with that send's different request context.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");
+    const later = await owner.sendWaitingChatInput(owner.actor, {
+      agentId: owner.agentId,
+      threadId: head.threadId,
+      prompt: "Use the later template",
+      template: selection(kind, laterId),
+    });
+    await flushWaitUntilForTest();
+    const firstRun = await head.launchedRun();
+    const first = await owner.runExecution(firstRun.runId);
+    expect(
+      executionFiles(fixture, first.execution, kind, headId),
+    ).toStrictEqual(guidance("head"));
+    await owner.run(() => {
+      return chat.cancelChatRun(
+        owner.actor,
+        firstRun.runId,
+        first.sandboxHeaders,
+      );
+    });
+    await flushWaitUntilForTest();
+    const secondRun = await later.launchedRun();
+    const second = await owner.runExecution(secondRun.runId);
+    expect(
+      executionFiles(fixture, second.execution, kind, laterId),
+    ).toStrictEqual(guidance("later"));
+    await owner.run(async () => {
+      await chat.cancelChatRun(
+        owner.actor,
+        secondRun.runId,
+        second.sandboxHeaders,
+      );
+      await chat.cancelChatRun(
+        owner.actor,
+        blocker.runId,
+        blockerExecution.sandboxHeaders,
+      );
+    });
+    waitingThreadId = undefined;
+  });
+
   it.each([
     { framework: "claude-code", model: "claude-fable-5-1" },
     { framework: "codex", model: "gpt-6-luna" },
@@ -348,7 +440,7 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
   });
 });
 
-test("mounts both template owner kinds once when selections repeat", async () => {
+test("mounts every user-template kind and presentation guidance once in selection order", async () => {
   const owner = await publicChatActor(context);
   const fixture = await owner.run(() => {
     return Promise.resolve(installS3Fixture(context));
@@ -368,6 +460,71 @@ test("mounts both template owner kinds once when selections repeat", async () =>
     }
     selections.push(selection(kind, published.body.id));
     expected.push({ ownerKind: kind, templateId: published.body.id, files });
+  }
+  for (const kind of ["document", "illustration"] as const) {
+    const files = [
+      { path: "SKILL.md", content: `# Use this ${kind} template\n` },
+      kind === "document"
+        ? { path: "reference.docx", content: "PK reference styles\n" }
+        : { path: "ref-example.png", content: "Approved example\n" },
+    ];
+    const published = await owner.run(async () => {
+      const sourceFileId = await uploadTemplateFile(
+        context,
+        owner.actor,
+        fixture,
+        kind === "document"
+          ? {
+              filename: "source.docx",
+              contentType:
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            }
+          : { filename: "source.png", contentType: "image/png" },
+        Buffer.from(kind === "document" ? "PK source" : "PNG source"),
+      );
+      const packageFileId = await uploadTemplateFile(
+        context,
+        owner.actor,
+        fixture,
+        { filename: "package.tar.gz", contentType: "application/gzip" },
+        tarGz(files),
+      );
+      const kindInputs =
+        kind === "illustration"
+          ? {
+              kind,
+              exampleFileIds: [
+                await uploadTemplateFile(
+                  context,
+                  owner.actor,
+                  fixture,
+                  { filename: "example.png", contentType: "image/png" },
+                  Buffer.from("PNG example"),
+                ),
+              ],
+            }
+          : { kind };
+      return await accept(
+        userClient().publish({
+          headers: authHeaders(),
+          body: {
+            title: `Selected ${kind} template`,
+            sourceFileId,
+            packageFileId,
+            ...kindInputs,
+          },
+        }),
+        [200],
+      );
+    });
+    // Select in the reverse of creation order so database order cannot stand
+    // in for the caller's order.
+    selections.unshift(selection("user-template", published.body.id));
+    expected.unshift({
+      ownerKind: "user-template",
+      templateId: published.body.id,
+      files,
+    });
   }
   const run = await owner.sendChatRun(owner.actor, {
     agentId: owner.agentId,
@@ -389,6 +546,23 @@ test("mounts both template owner kinds once when selections repeat", async () =>
   });
   const { execution } = await owner.runExecution(run.runId);
   expect(execution.contentBundles.templates).toHaveLength(expected.length);
+  expect(
+    execution.contentBundles.templates
+      ?.filter((bundle) => {
+        return bundle.ownerKind === "user-template";
+      })
+      .map((bundle) => {
+        return bundle.templateId;
+      }),
+  ).toStrictEqual(
+    expected
+      .filter((item) => {
+        return item.ownerKind === "user-template";
+      })
+      .map((item) => {
+        return item.templateId;
+      }),
+  );
   for (const item of expected) {
     const bundle = execution.contentBundles.templates?.find((candidate) => {
       return (

@@ -245,7 +245,7 @@ fn recovery_finalization_resolves_history_from_codex_sessions_root() -> TestResu
             &guest_runtime,
             1,
             None,
-            None,
+            false,
             None,
             finalization,
         )

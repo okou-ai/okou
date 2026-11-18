@@ -14,11 +14,11 @@ import {
   MARKETING_HANDOFF_MAX_FILES,
   MARKETING_HANDOFF_PROMPT_MAX_CHARS,
 } from "@okouai/api-contracts/validators/marketing-handoffs";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { HttpResponse } from "msw";
+import { Buffer } from "node:buffer";
 import deDECommonUrl from "../../../i18n/locales/de-DE/common.json?url";
 import {
   click,
@@ -38,16 +38,6 @@ const FIRST_FILENAME = "Pasted text-1.txt";
 const SECOND_FILENAME = "Pasted text-2.txt";
 const DOCUMENT =
   "Create a complete document with the results in the requested file format (Markdown by default). Upload it as an artifact and include the working artifact link in your final response.";
-
-function staffAuth() {
-  return {
-    user: { id: "test-user-123", fullName: "Test User" },
-    organization: {
-      activeOrg: { id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe", name: "Staff" },
-      memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
-    },
-  };
-}
 
 function button(
   name: string,
@@ -88,11 +78,7 @@ function uploadedFile(
 }
 
 function uploadText(data: string): string {
-  return new TextDecoder().decode(
-    Uint8Array.from(atob(data), (character) => {
-      return character.charCodeAt(0);
-    }),
-  );
+  return new TextDecoder().decode(Buffer.from(atob(data), "latin1"));
 }
 
 async function openPrompt({
@@ -101,16 +87,12 @@ async function openPrompt({
   legacy = false,
   mobile = false,
   host,
-  staff = true,
-  override,
 }: {
   readonly prompt?: string;
   readonly files?: MarketingHandoffFile[];
   readonly legacy?: boolean;
   readonly mobile?: boolean;
   readonly host?: string;
-  readonly staff?: boolean;
-  readonly override?: boolean;
 } = {}): Promise<HTMLTextAreaElement> {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
@@ -131,11 +113,6 @@ async function openPrompt({
       : `/onboarding?handoff=${ORIGINAL_HASH}`,
     locale: "en-US",
     host,
-    auth: staff ? staffAuth() : undefined,
-    featureSwitches:
-      override === undefined
-        ? undefined
-        : { [FeatureSwitchKey.PastedTextAttachments]: override },
   });
   const input = await screen.findByRole("textbox", {
     name: "Onboarding prompt",
@@ -157,43 +134,6 @@ function captureSavedHandoff(): { manifests: MarketingHandoffManifest[] } {
   });
   return { manifests };
 }
-
-test.each([
-  { audience: "external organizations", staff: false },
-  {
-    audience: "external organizations with an enabled override",
-    staff: false,
-    override: true,
-  },
-  {
-    audience: "staff with a disabled override",
-    staff: true,
-    override: false,
-  },
-])(
-  "Keep long onboarding pastes editable with the prompt limit for $audience",
-  async ({ staff, override }) => {
-    const user = userEvent.setup({ delay: null });
-    const text = "a".repeat(25_000);
-    const input = await openPrompt({ staff, override });
-    await user.click(input);
-    await user.keyboard("{Control>}a{/Control}");
-
-    await user.paste(clipboard(text));
-
-    expect(input).toHaveValue(text);
-    expect(input).toHaveAttribute("aria-invalid", "true");
-    expect(
-      screen.getByText(
-        `25000 / ${String(MARKETING_HANDOFF_PROMPT_MAX_CHARS)} characters (including output instructions)`,
-      ),
-    ).toBeInTheDocument();
-    expect(button("Next")).toBeDisabled();
-    expect(
-      screen.queryByLabelText(`Remove ${FIRST_FILENAME}`),
-    ).not.toBeInTheDocument();
-  },
-);
 
 test.each(["a".repeat(10_000), "😀".repeat(5000)])(
   "A paste at the UTF-16 threshold stays editable text",
@@ -363,7 +303,6 @@ test("A 25,000-character paste reaches the first task as a private attachment af
     context,
     path: `/onboarding?handoff=${ORIGINAL_HASH}`,
     locale: "en-US",
-    auth: staffAuth(),
   });
   const input = await screen.findByRole("textbox", {
     name: "Onboarding prompt",
@@ -655,7 +594,7 @@ test.each([false, true])(
     const prompt =
       TASK + "x".repeat(MARKETING_HANDOFF_PROMPT_MAX_CHARS - TASK.length);
     const capture = captureSavedHandoff();
-    const input = await openPrompt({ prompt, mobile, staff: false });
+    const input = await openPrompt({ prompt, mobile });
     const action = mobile ? "Start task" : "Next";
     expect(input).toHaveValue(prompt);
     expect(button(action)).toBeEnabled();

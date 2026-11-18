@@ -6,7 +6,7 @@
   struct OkouNativeIconComparison: View {
     private let pairs = [
       ("search", "magnifyingglass"), ("settings", "gearshape"),
-      ("plus", "plus"), ("x", "xmark"),
+      ("plus", "plus"), ("x", "xmark")
     ]
 
     var body: some View {
@@ -68,7 +68,7 @@
         ("Unpin chat", "pin.slash", "pin-off"),
         ("Rename", "pencil", "pencil"),
         ("Mute chat", "bell.slash", "bell-off"),
-        ("Archive chat", "archivebox", "archive"),
+        ("Archive chat", "archivebox", "archive")
       ]
       button.menu = UIMenu(children: [
         UIMenu(
@@ -80,7 +80,7 @@
           title: "Okou", options: .displayInline,
           children: examples.map { title, _, icon in
             UIAction(title: title, image: OkouIcon.uiImage(icon)) { _ in }
-          }),
+          })
       ])
       return button
     }

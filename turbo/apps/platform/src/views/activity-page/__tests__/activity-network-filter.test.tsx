@@ -64,7 +64,6 @@ async function openNetworkActivity() {
       status: "completed",
       prompt: "Inspect captured network traffic",
       appendSystemPrompt: null,
-      error: null,
       createdAt: "2026-09-24T06:00:00Z",
       startedAt: "2026-09-24T06:00:00Z",
       completedAt: "2026-09-24T06:00:04Z",

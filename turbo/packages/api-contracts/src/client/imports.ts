@@ -285,6 +285,11 @@ export const clientContractImportManifest = [
     ],
   },
   {
+    module: "chat-thread-pdf-filename",
+    contracts: ["chatThreadPdfFilenameContract"],
+    bindings: [],
+  },
+  {
     module: "chat-threads",
     contracts: [
       "chatSearchContract",
@@ -640,6 +645,7 @@ export const clientContractImportManifest = [
   {
     module: "cron",
     contracts: [
+      "cronAggregateRunPhaseTimingsContract",
       "cronBrowserReconcileContract",
       "cronCleanupSandboxesContract",
       "cronCleanupSuggestionsContract",
@@ -650,7 +656,6 @@ export const clientContractImportManifest = [
       "cronConnectorOauthStateCleanupContract",
       "cronDrainEmailOutboxContract",
       "cronExecuteWorkflowAutomationsContract",
-      "cronMaterializePiResourceIndexesContract",
       "cronMonitorChatEventQueueContract",
       "cronOfficialWorkflowCatalogContract",
       "cronProcessBackgroundJobsContract",
@@ -981,6 +986,16 @@ export const clientContractImportManifest = [
     ],
   },
   {
+    module: "get-started-history",
+    contracts: ["getStartedHistoryContract"],
+    bindings: [],
+  },
+  {
+    module: "get-started-receipt",
+    contracts: ["getStartedReceiptContract"],
+    bindings: [],
+  },
+  {
     module: "github-oauth",
     contracts: ["githubOauthContract"],
     bindings: [],
@@ -1167,6 +1182,16 @@ export const clientContractImportManifest = [
     contracts: ["logsByIdContract", "logsListContract"],
     bindings: [
       {
+        name: "logDetailSchema",
+        source: "validators/logs",
+        imported: "activityDetailSchema",
+      },
+      {
+        name: "logStatusSchema",
+        source: "validators/logs",
+        imported: "logStatusSchema",
+      },
+      {
         name: "triggerSourceSchema",
         source: "validators/logs",
         imported: "triggerSourceSchema",
@@ -1203,6 +1228,26 @@ export const clientContractImportManifest = [
         imported: "MARKETING_HANDOFF_PROMPT_MAX_CHARS",
       },
     ],
+  },
+  {
+    module: "marketing-invitation-source",
+    contracts: ["marketingInvitationSourceContract"],
+    bindings: [],
+  },
+  {
+    module: "marketing-reward-projection",
+    contracts: ["marketingRewardProjectionContract"],
+    bindings: [],
+  },
+  {
+    module: "marketing-reward-settlement",
+    contracts: ["marketingRewardSettlementContract"],
+    bindings: [],
+  },
+  {
+    module: "marketing-workflow-source",
+    contracts: ["marketingWorkflowSourceContract"],
+    bindings: [],
   },
   {
     module: "mcp-chat-search",
@@ -1381,7 +1426,28 @@ export const clientContractImportManifest = [
   {
     module: "phone-use",
     contracts: ["phoneUseContract"],
-    bindings: [],
+    bindings: [
+      {
+        name: "phoneUseChannel",
+        source: "validators/phone-use",
+        imported: "phoneUseChannel",
+      },
+      {
+        name: "phoneUseDevicesChangedEvent",
+        source: "validators/phone-use",
+        imported: "phoneUseDevicesChangedEvent",
+      },
+      {
+        name: "phoneUseResultChangedEvent",
+        source: "validators/phone-use",
+        imported: "phoneUseResultChangedEvent",
+      },
+      {
+        name: "phoneUseResultChannel",
+        source: "validators/phone-use",
+        imported: "phoneUseResultChannel",
+      },
+    ],
   },
   {
     module: "presentation-templates",
@@ -1928,11 +1994,6 @@ export const clientContractImportManifest = [
   {
     module: "user-model-preference",
     contracts: ["userModelPreferenceContract"],
-    bindings: [],
-  },
-  {
-    module: "user-notifications",
-    contracts: ["userNotificationsContract"],
     bindings: [],
   },
   {

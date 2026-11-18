@@ -248,7 +248,7 @@ impl Shared {
     pub(super) async fn transfer(
         &mut self,
         client: &mut crate::tailscale::tcp::Stream,
-        server: &mut ts_netstack_smoltcp_socket::TcpStream,
+        server: &mut ts_netstack_smoltcp::netsock::TcpStream,
         size: usize,
     ) {
         let expected = (0..size).map(|i| (i % 251) as u8).collect::<Vec<_>>();

@@ -1,12 +1,15 @@
+import { chatThreadPdfFilenameContract } from "@okouai/api-contracts/client/chat-thread-pdf-filename";
 import { command } from "ccstate";
 import type { Root } from "hast";
 import { visit } from "unist-util-visit";
 
+import { accept } from "../../lib/accept.ts";
 import { generateMessagePdfBlob } from "../../lib/message-pdf/index.ts";
+import { apiClient$ } from "../api-client.ts";
 import { createObjectUrlResource } from "../object-url-resource.ts";
 import { attachmentDownloadSource$ } from "../attachment-download-source.ts";
 import { eventBodyPlan } from "./parse-body-blocks.ts";
-import { onRef } from "../utils.ts";
+import { abortAfter, onRef } from "../utils.ts";
 
 /** Pass the committed DOM owner's lifetime directly to the click action. */
 export class GenerateMessagePdfEvent extends Event {
@@ -30,6 +33,8 @@ export const messagePdfActionRef$ = onRef(
 );
 
 interface MessagePdfInput {
+  readonly threadId: string;
+  readonly eventIds: readonly string[];
   readonly contents: readonly string[];
   readonly trees: readonly Root[];
   readonly trigger: HTMLElement;
@@ -43,7 +48,7 @@ interface MessagePdfDownload {
 /** Generate bytes only; the user downloads them with a second, native click. */
 export const generateMessagePdf$ = command(
   async (
-    { set },
+    { get, set },
     input: MessagePdfInput,
     signal: AbortSignal,
   ): Promise<MessagePdfDownload> => {
@@ -73,9 +78,28 @@ export const generateMessagePdf$ = command(
     });
     const blob = await generateMessagePdfBlob(sources, imageUrls, signal);
     signal.throwIfAborted();
+    // Naming is optional: older API deployments and request failures must not
+    // prevent downloading already-generated PDF bytes.
+    const namingSignal = abortAfter(3000, signal);
+    const [name] = await Promise.allSettled([
+      accept(
+        get(apiClient$)(chatThreadPdfFilenameContract).generate({
+          params: { threadId: input.threadId },
+          body: { eventIds: [...input.eventIds] },
+          fetchOptions: { signal: namingSignal },
+        }),
+        [200],
+        namingSignal,
+        { showErrorToast: false },
+      ),
+    ]);
+    signal.throwIfAborted();
     const transferFocus = document.activeElement === input.trigger;
     return {
-      filename: "okou-message.pdf",
+      filename:
+        name.status === "fulfilled" && name.value.body
+          ? `${name.value.body}.pdf`
+          : "okou-message.pdf",
       // Acquire the URL only when the download link commits. Each attachment
       // gets its own resource, including a React Strict Mode reattachment.
       ref: (element) => {

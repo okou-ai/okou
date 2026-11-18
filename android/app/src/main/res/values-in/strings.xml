@@ -1,5 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="composer_sync_loading">Memuat draf tersimpan…</string>
+    <string name="composer_sync_saving">Menyinkronkan draf…</string>
+    <string name="composer_sync_failed">Sinkronisasi draf gagal. Teks Anda tetap tersimpan di perangkat ini.</string>
+    <string name="composer_sync_unsupported">Draf ini berisi konten yang dapat diedit di Web. Teks Anda tetap di perangkat ini; sinkronisasi otomatis dijeda.</string>
+    <string name="composer_sync_retry">Coba sinkronkan lagi</string>
+    <string name="composer_restore_draft">Pulihkan draf tersimpan</string>
+    <string name="controls_storage_failed">Permintaan kontrol tertunda tidak dapat disimpan.</string>
+    <string name="controls_stop">Hentikan pekerjaan berjalan</string>
+    <string name="controls_queued_automation">Otomasi dalam antrean</string>
+    <string name="controls_skip">Lewati otomasi</string>
+    <string name="controls_preparing">Menyimpan permintaan kontrol…</string>
+    <string name="controls_sending">Mengirim permintaan kontrol…</string>
+    <string name="controls_accepted">Permintaan diterima. Menunggu konfirmasi.</string>
+    <string name="controls_checking">Memeriksa hasil kontrol…</string>
+    <string name="controls_unknown">Hasil kontrol belum diketahui.</string>
+    <string name="controls_retryable">Target semula masih tersedia.</string>
+    <string name="controls_retry_original">Ulangi permintaan semula</string>
+    <string name="controls_check">Periksa hasil kontrol</string>
+    <string name="controls_recorded">Kontrol tercatat dalam riwayat.</string>
+    <string name="controls_target_settled">Target semula sudah selesai diproses.</string>
+    <string name="controls_read_failed">Hasil kontrol tidak dapat diperiksa.</string>
+    <string name="controls_recovery_failed">Status pemulihan percakapan tidak tersedia.</string>
+    <string name="controls_recovering">Menyiapkan percakapan untuk dilanjutkan.</string>
+    <string name="output_live">Respons langsung</string>
+    <string name="output_waiting">Menunggu respons langsung</string>
+    <string name="output_catching_up">Menyelaraskan pesan tersimpan. Teks yang diterima tetap disimpan.</string>
     <string name="settings">Setelan</string>
     <string name="back">Kembali</string>
     <string name="appearance">Tampilan</string>

@@ -9,6 +9,7 @@ from mitmproxy import http
 import body_decoding
 import flow_metadata_keys as metadata_keys
 import mitm_addon
+import request_streaming
 import response_encoding_negotiation
 import websocket_handshake
 from tests.flow_helpers import response_stream
@@ -878,7 +879,7 @@ async def test_header_phase_websocket_auth_fallback_restores_upgrade_marker(
     auth_fetch.assert_not_called()
     assert metadata_keys.WEBSOCKET_UPGRADE_REQUEST not in flow.metadata
     assert metadata_keys.RESPONSE_ENCODING_NEGOTIATION not in flow.metadata
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
+    assert request_streaming.captured_request_stream_body(flow) is None
     assert flow.request.headers[_ACCEPT_ENCODING] == "gzip, zstd, br"
 
 

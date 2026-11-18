@@ -9,6 +9,11 @@ struct NewChatGreeting: View {
   let text: String
   @State private var revealed = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.workspaceChatPresentation) private var presentation
+
+  private var canReveal: Bool {
+    presentation.map { $0.allowsFocus && !$0.isTransitioning } ?? true
+  }
 
   var body: some View {
     let words = text.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
@@ -32,7 +37,8 @@ struct NewChatGreeting: View {
       .accessibilityElement(children: .ignore)
       .accessibilityLabel(text)
     }
-    .onAppear {
+    .onChange(of: canReveal, initial: true) { _, ready in
+      guard ready else { return }
       if reduceMotion {
         revealed = true
       } else {
@@ -117,7 +123,7 @@ enum NewChatTagline {
         String(localized: "Welcome back."), String(localized: "What's the move?"),
         String(localized: "Good to see you."), String(localized: "What's on your mind?"),
         String(localized: "Ready to roll?"), String(localized: "Ready to build something?"),
-        String(localized: "What are we working on?"),
+        String(localized: "What are we working on?")
       ]
       return taglines[abs(index) % taglines.count]
     }
@@ -137,7 +143,7 @@ enum NewChatTagline {
       String(localized: "New ideas today, \(name)?"),
       String(localized: "Right on time, \(name)."),
       String(localized: "What are we working on, \(name)?"),
-      String(localized: "The usual, \(name)?"),
+      String(localized: "The usual, \(name)?")
     ]
     return taglines[abs(index) % taglines.count]
   }

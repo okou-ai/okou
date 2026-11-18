@@ -1,0 +1,173 @@
+import { createHash } from "node:crypto";
+import {
+  discriminatedUnion,
+  iso,
+  literal,
+  object,
+  string,
+  union,
+  uuid,
+  enum as zEnum,
+  type infer as zInfer,
+} from "zod";
+
+// Versioned with Marketing's event inbox; this protocol carries source facts,
+// never provider credentials, campaign eligibility or funding instructions.
+const environment = zEnum(["production", "preview", "development"]);
+export const marketingRewardOAuthEventSchema = object({
+  version: literal(1),
+  id: uuid(),
+  environment,
+  type: literal("connector.oauth-authorized"),
+  occurredAt: iso.datetime(),
+  orgId: string().min(1).max(256),
+  userId: string().min(1).max(256),
+  connectionId: uuid(),
+  connector: discriminatedUnion("kind", [
+    object({
+      kind: literal("builtin"),
+      connectorSlug: string()
+        .min(1)
+        .max(64)
+        .regex(/^[a-z0-9][a-z0-9-]*$/u),
+    }).strict(),
+    object({ kind: literal("custom"), customConnectorId: uuid() }).strict(),
+  ]),
+}).strict();
+
+export type MarketingRewardOAuthEvent = zInfer<
+  typeof marketingRewardOAuthEventSchema
+>;
+
+const linkedSourceIdentity = Object.freeze({
+  version: literal(2),
+  id: uuid(),
+  environment,
+});
+const linkedSourceOwnership = Object.freeze({
+  occurredAt: iso.datetime(),
+  orgId: string().min(1).max(256),
+  userId: string().min(1).max(256),
+});
+
+const marketingRewardLinkEventSchema = discriminatedUnion("type", [
+  object({
+    ...linkedSourceIdentity,
+    type: literal("imessage.identity-linked"),
+    ...linkedSourceOwnership,
+    linkId: uuid(),
+  }).strict(),
+  object({
+    ...linkedSourceIdentity,
+    type: literal("slack.oauth-authorized"),
+    ...linkedSourceOwnership,
+    workspaceId: string().min(1).max(255),
+  }).strict(),
+]);
+export type MarketingRewardLinkEvent = zInfer<
+  typeof marketingRewardLinkEventSchema
+>;
+
+const invitationIdentity = Object.freeze({
+  version: literal(3),
+  id: uuid(),
+  environment,
+});
+const invitationSource = Object.freeze({
+  claimId: uuid(),
+  sourceKey: string().min(1).max(256),
+  invitationId: string().min(1).max(256),
+});
+const marketingRewardInvitationEventSchema = discriminatedUnion("type", [
+  object({
+    ...invitationIdentity,
+    type: literal("invitation.attributed"),
+    ...linkedSourceOwnership,
+    ...invitationSource,
+  }).strict(),
+  object({
+    ...invitationIdentity,
+    type: literal("invitation.revoked"),
+    ...linkedSourceOwnership,
+    ...invitationSource,
+  }).strict(),
+  object({
+    ...invitationIdentity,
+    type: literal("invitation.accepted"),
+    ...linkedSourceOwnership,
+    ...invitationSource,
+    invitationId: invitationSource.invitationId.nullable(),
+    inviteeUserId: string().min(1).max(256),
+  }).strict(),
+]);
+export type MarketingRewardInvitationEvent = zInfer<
+  typeof marketingRewardInvitationEventSchema
+>;
+
+const workflowIdentity = Object.freeze({
+  version: literal(4),
+  id: uuid(),
+  environment,
+});
+const workflowSource = Object.freeze({
+  sourceEventId: uuid(),
+  workflowId: uuid(),
+  creatorUserId: string().min(1).max(256),
+});
+const marketingRewardWorkflowEventSchema = discriminatedUnion("type", [
+  object({
+    ...workflowIdentity,
+    type: literal("workflow.input-queued"),
+    ...linkedSourceOwnership,
+    ...workflowSource,
+  }).strict(),
+  object({
+    ...workflowIdentity,
+    type: literal("workflow.run-created"),
+    ...linkedSourceOwnership,
+    ...workflowSource,
+    runId: uuid(),
+  }).strict(),
+  object({
+    ...workflowIdentity,
+    type: literal("workflow.run-completed"),
+    ...linkedSourceOwnership,
+    ...workflowSource,
+    runId: uuid(),
+  }).strict(),
+]);
+
+export const marketingRewardCheckinEventSchema = object({
+  version: literal(5),
+  id: uuid(),
+  environment,
+  type: literal("checkin.requested"),
+  occurredAt: iso.datetime(),
+  orgId: string().min(1).max(256),
+  userId: string().min(1).max(256),
+}).strict();
+
+export const marketingRewardSourceEventSchema = union([
+  marketingRewardOAuthEventSchema,
+  marketingRewardLinkEventSchema,
+  marketingRewardInvitationEventSchema,
+  marketingRewardWorkflowEventSchema,
+  marketingRewardCheckinEventSchema,
+]);
+export type MarketingRewardSourceEvent = zInfer<
+  typeof marketingRewardSourceEventSchema
+>;
+
+export const marketingRewardEventReceiptSchema = object({
+  version: literal(1),
+  environment,
+  eventId: uuid(),
+  hash: string().regex(/^[a-f0-9]{64}$/u),
+  receivedAt: iso.datetime(),
+}).strict();
+
+export function marketingRewardEventHash(event: MarketingRewardSourceEvent) {
+  return createHash("sha256")
+    .update(JSON.stringify(marketingRewardSourceEventSchema.parse(event)))
+    .digest("hex");
+}

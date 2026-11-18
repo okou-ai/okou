@@ -7,6 +7,7 @@ from mitmproxy.net.http import http1, validate
 import flow_metadata_keys as metadata_keys
 import managed_upload
 import mitm_addon
+import request_streaming
 from tests.managed_openrouter_helpers import sandbox
 from tests.repeated_bytes_helpers import repeat_bytes
 from tests.request_handler_helpers import _sandbox_without_firewalls, _write_registry
@@ -156,4 +157,4 @@ async def test_native_valid_transfer_encoding_preserves_ordinary_upload_streamin
         mitm_addon.response(flow)
 
     assert flow.request.stream is False
-    assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
+    assert request_streaming.streamed_request_size(flow) is None

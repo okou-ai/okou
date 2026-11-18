@@ -9,8 +9,10 @@ import ai.okou.android.api.generated.CanonicalApi
 import ai.okou.android.api.generated.CanonicalZero
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ChatSnapshot
+import ai.okou.android.api.generated.ComposerDraft
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.FeatureSwitches
+import ai.okou.android.api.generated.HistoryCatchUpRequestItem
 import ai.okou.android.api.generated.HistoryRowsQueryVariant1
 import ai.okou.android.api.generated.HistoryRowsQueryVariant2
 import ai.okou.android.api.generated.Indicators
@@ -20,12 +22,16 @@ import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.ProjectEvents
 import ai.okou.android.api.generated.ProjectSnapshot
 import ai.okou.android.api.generated.RealtimeTokenRequest
-import ai.okou.android.api.generated.SendRequestVariant1
+import ai.okou.android.api.generated.SaveAgentDraft
+import ai.okou.android.api.generated.SaveThreadDraft
+import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.api.generated.historyRows
 import ai.okou.android.chat.HistoryCursor
+import ai.okou.android.chat.ServerDraftTarget
+import ai.okou.android.chat.plainDraftDocument
 import ai.okou.android.updates.isAndroidVersion
 import java.io.Closeable
 import java.io.IOException
@@ -44,6 +50,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromJsonElement
 import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import retrofit2.Response
@@ -99,6 +106,7 @@ class ApiClient(
     val updateRequired = required.asStateFlow()
     private val http: okhttp3.OkHttpClient
     private val api: CanonicalApi
+    private val reads: CanonicalApi
 
     init {
         validateTransportUrl(origin)
@@ -131,22 +139,28 @@ class ApiClient(
                     )
                 }
                 .build()
-        api =
+        val retrofit =
             Retrofit.Builder()
                 .baseUrl(origin)
                 .client(http)
                 .addConverterFactory(StreamingJsonConverterFactory(json))
                 .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
                 .build()
+        api = retrofit.create(CanonicalApi::class.java)
+        reads =
+            retrofit
+                .newBuilder()
+                .client(http.forCanonicalReads())
+                .build()
                 .create(CanonicalApi::class.java)
     }
 
-    suspend fun organization(): Organization = execute { api.organization(it) }
+    suspend fun organization(): Organization = execute { reads.organization(it) }
 
     suspend fun realtimeToken() = execute { api.realtimeToken(it, RealtimeTokenRequest) }
 
     suspend fun personalInstructions(): PersonalInstructions = execute {
-        api.personalInstructions(it)
+        reads.personalInstructions(it)
     }
 
     suspend fun updatePersonalInstructions(body: UpdateInstructionsRequest): PersonalInstructions =
@@ -154,46 +168,91 @@ class ApiClient(
             api.updatePersonalInstructions(it, body)
         }
 
-    suspend fun chatSnapshot(): ChatSnapshot = execute { api.chatSnapshot(it) }
+    suspend fun chatSnapshot(): ChatSnapshot = execute { reads.chatSnapshot(it) }
 
-    suspend fun chatEvents(since: Long?): ChatEvents = execute { api.chatEvents(it, since) }
+    suspend fun chatEvents(since: Long?): ChatEvents = execute { reads.chatEvents(it, since) }
 
-    suspend fun indicators(): Indicators = execute { api.indicators(it) }
+    suspend fun indicators(): Indicators = execute { reads.indicators(it) }
 
-    suspend fun agents(): Agents = execute { api.agents(it) }
+    suspend fun agents(): Agents = execute { reads.agents(it) }
 
     suspend fun createThread(body: CreateThreadRequest) =
         execute(201) { api.createThread(it, body) }
 
-    suspend fun sendInput(body: SendRequestVariant1) = execute(201) { api.sendInput(it, body) }
+    suspend fun sendInput(body: SendRequest) = execute(201) { api.sendInput(it, body) }
 
     suspend fun inputStatus(threadId: String, eventId: String) = execute {
-        api.inputStatus(it, threadId, eventId)
+        reads.inputStatus(it, threadId, eventId)
     }
 
-    suspend fun onboardingStatus() = execute { api.onboardingStatus(it) }
+    suspend fun onboardingStatus() = execute { reads.onboardingStatus(it) }
 
-    suspend fun projectSnapshot(): ProjectSnapshot = execute { api.projectSnapshot(it) }
+    suspend fun composerDraft(target: ServerDraftTarget): ComposerDraft = execute {
+        if (target.thread) reads.threadDraft(it, target.id) else reads.agentDraft(it, target.id)
+    }
 
-    suspend fun projectEvents(since: Long): ProjectEvents = execute { api.projectEvents(it, since) }
+    suspend fun saveComposerDraft(target: ServerDraftTarget, text: String) {
+        val body = plainDraftDocument(text)
+        executeResponse(204) {
+            if (target.thread)
+                api.saveThreadDraft(
+                    it,
+                    target.id,
+                    json.decodeFromJsonElement<SaveThreadDraft>(body),
+                )
+            else api.saveAgentDraft(it, target.id, json.decodeFromJsonElement<SaveAgentDraft>(body))
+        }
+    }
 
-    suspend fun featureSwitches(): FeatureSwitches = execute { api.featureSwitches(it) }
+    suspend fun recoveryCatalog() = execute { reads.recoveryCatalog(it) }
 
-    suspend fun historySnapshot(threadId: String) = execute { api.historySnapshot(it, threadId) }
+    suspend fun recoveryModels() = execute { reads.recoveryModels(it) }
+
+    suspend fun recoverySubscriptions() = execute { reads.recoverySubscriptions(it) }
+
+    suspend fun recoveryBilling() = execute { reads.recoveryBilling(it) }
+
+    suspend fun resetSubscription(accountId: String, idempotencyKey: String) = execute {
+        api.resetSubscription(
+            it,
+            accountId,
+            ai.okou.android.api.generated.ResetSubscriptionRequest(idempotencyKey),
+        )
+    }
+
+    suspend fun projectSnapshot(): ProjectSnapshot = execute { reads.projectSnapshot(it) }
+
+    suspend fun projectEvents(since: Long): ProjectEvents = execute {
+        reads.projectEvents(it, since)
+    }
+
+    suspend fun featureSwitches(): FeatureSwitches = execute { reads.featureSwitches(it) }
+
+    suspend fun historySnapshot(threadId: String) = execute { reads.historySnapshot(it, threadId) }
+
+    suspend fun historyCatchUp(cursors: Map<String, HistoryCursor>) = execute { token ->
+        reads.historyCatchUp(
+            token,
+            cursors.map { (threadId, cursor) ->
+                cursor.validate()
+                HistoryCatchUpRequestItem(threadId, cursor.seqId)
+            },
+        )
+    }
 
     suspend fun historyRows(threadId: String, cursor: HistoryCursor) = execute {
         cursor.validate()
         val query =
             if (cursor.eventId == null) HistoryRowsQueryVariant1(CanonicalZero, 50.0)
             else HistoryRowsQueryVariant2(cursor.seqId, cursor.eventId, 50.0)
-        api.historyRows(it, threadId, query)
+        reads.historyRows(it, threadId, query)
     }
 
-    suspend fun threadDetail(threadId: String) = execute { api.threadDetail(it, threadId) }
+    suspend fun threadDetail(threadId: String) = execute { reads.threadDetail(it, threadId) }
 
     suspend fun markRead(threadId: String) = execute { api.markRead(it, threadId) }
 
-    suspend fun preferences(): UserPreferences = execute { api.preferences(it) }
+    suspend fun preferences(): UserPreferences = execute { reads.preferences(it) }
 
     suspend fun initializePreferences(body: InitializePreferencesRequest): UserPreferences =
         execute {
@@ -212,7 +271,12 @@ class ApiClient(
     private suspend fun <T> execute(
         success: Int = 200,
         request: suspend (String) -> Response<T>,
-    ): T =
+    ): T = executeResponse(success, request).body() ?: throw ApiFailure.IncompatibleResponse()
+
+    private suspend fun <T> executeResponse(
+        success: Int,
+        request: suspend (String) -> Response<T>,
+    ): Response<T> =
         withContext(dispatcher) {
             checkAccess()
             val token =
@@ -224,7 +288,7 @@ class ApiClient(
                 currentCoroutineContext().ensureActive()
                 checkAccess()
                 if (response.code() != success) throw ApiFailure.IncompatibleResponse()
-                response.body() ?: throw ApiFailure.IncompatibleResponse()
+                response
             } catch (_: SerializationException) {
                 // Serializer diagnostics can contain response values or input snippets.
                 throw ApiFailure.IncompatibleResponse()

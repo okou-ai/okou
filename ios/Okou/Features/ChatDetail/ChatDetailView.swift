@@ -5,7 +5,7 @@ import Textual
 struct ChatDetailView: View {
   @Bindable var conversation: ConversationStore
   let agents: ThreadListStore?
-  var didSend: (@MainActor () async -> Void)? = nil
+  var didSend: (@MainActor () async -> Void)?
   let topContentInset: CGFloat
   let mentionSource: ComposerMentionSource?
   let onFirstMessagePresented: (@MainActor (String) -> Void)?
@@ -15,6 +15,7 @@ struct ChatDetailView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.openURL) private var openURL
   @Environment(\.openChatSource) private var openChatSource
+  @Environment(\.chatFeedbackClearance) private var feedbackClearance
   @State private var scrolling: ConversationScrollCoordinator
   @State private var composerHeight: CGFloat = 0
   @State private var activityOwner = UUID()
@@ -168,7 +169,8 @@ struct ChatDetailView: View {
       case .message(let message, _):
         if message.role == .user { return false }
         if let failure = message.failure {
-          return failure.error.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+          let outputError = failure.outputError ?? ""
+          return outputError.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             != "run cancelled"
         }
         next += 1
@@ -216,11 +218,12 @@ struct ChatDetailView: View {
       refresh: {
         await conversation.refresh()
         await conversation.connectorActions.refreshKnown()
+      },
+      content: { row, anchor in
+        rowContent(row, anchor: anchor).environment(\.openURL, openURL)
+          .environment(\.openChatSource, openChatSource)
       }
-    ) { row, anchor in
-      rowContent(row, anchor: anchor).environment(\.openURL, openURL)
-        .environment(\.openChatSource, openChatSource)
-    }
+    )
     .ignoresSafeArea(.container, edges: .vertical)
     .overlay {
       if conversation.history == nil && conversation.historySyncError != nil {
@@ -257,7 +260,7 @@ struct ChatDetailView: View {
       .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
       .animation(reduceMotion ? nil : OkouMotion.press, value: scrolling.showsBottomButton)
       .allowsHitTesting(scrolling.showsBottomButton)
-      .padding(.bottom, OkouSpace.sm)
+      .padding(.bottom, feedbackClearance + OkouSpace.sm)
     }
     .task(id: displayedMessages.last) { await scrolling.latestMessageChanged() }
     .onChange(of: conversation.visibleItems) { _, _ in scrolling.messagesChanged() }
@@ -343,9 +346,11 @@ struct ChatDetailView: View {
           }
           .padding(.horizontal, OkouSpace.lg)
           .padding(.bottom, OkouSpace.xs)
+          .chatFeedbackContentAnchor()
         }
         if conversation.sharing.isSelecting {
           ChatSharingFooter(sharing: conversation.sharing)
+            .chatFeedbackContentAnchor()
         } else {
           ChatComposerView(
             draft: $conversation.draft,
@@ -365,7 +370,6 @@ struct ChatDetailView: View {
               }
             }, refresh: { await conversation.refresh() },
             modelSelection: conversation.modelSelection,
-            showsModelSelection: !scrolling.showsBottomButton,
             connectorSelection: conversation.modelSelection?.connectors,
             mentionSource: mentionSource,
             workflowSource: conversation.workflowSource, agentID: conversation.thread.agentID,
@@ -379,6 +383,7 @@ struct ChatDetailView: View {
       } action: {
         composerHeight = $0
       }
+      .chatFeedbackAnchor()
     }
     .animation(
       reduceMotion ? nil : .easeInOut(duration: 0.22),

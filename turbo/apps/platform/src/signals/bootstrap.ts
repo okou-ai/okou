@@ -83,6 +83,7 @@ import {
 } from "./onboarding/onboarding-sources-first-page-setup.ts";
 import { setupIdeationPage$ } from "./okou-page/ideation-page-setup.ts";
 import { setupConnectorsPage$ } from "./connectors-page/connectors-page-setup.ts";
+import { setupForYouPage$ } from "./okou-page/for-you-page-setup.ts";
 import { setupComputerUseAuthorizationPage$ } from "./computer-use-authorization/computer-use-authorization-page-setup.ts";
 import {
   setupSshAuthorizationPage$,
@@ -130,6 +131,7 @@ import { setupGlobalKeyboardShortcuts$ } from "./okou-page/nav.ts";
 import { setupChatThreadFilterShortcut$ } from "./okou-page/chat-thread-filter-selection.ts";
 import { setupChatThreadPinShortcuts$ } from "./chat-page/chat-thread-pin-shortcuts.ts";
 import { setupProjectFoldShortcuts$ } from "./projects/project-fold-shortcuts.ts";
+import { setupProjectOrderShortcuts$ } from "./projects/project-order-shortcuts.ts";
 import { bootstrapOnboardingGuard$ } from "./okou-page/onboard-guard.ts";
 import {
   applyFeatureSwitches$,
@@ -372,6 +374,11 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.connectors,
     setup: setupAuthSidebarPageWrapper(setupConnectorsPage$),
+  },
+  {
+    path: ROUTES.forYou,
+    setup: setupAuthSidebarPageWrapper(setupForYouPage$),
+    inPlaceSearchParams: ["suggestion"],
   },
   {
     path: ROUTES.me,
@@ -709,6 +716,7 @@ const completeBootstrap$ = command(
       set(setupChatThreadFilterShortcut$, signal),
       set(setupChatThreadPinShortcuts$, signal),
       set(setupProjectFoldShortcuts$, signal),
+      set(setupProjectOrderShortcuts$, signal),
       set(watchOrgSwitch$, signal),
       set(syncInitialPreferences$, signal),
     ]);

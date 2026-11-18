@@ -44,6 +44,19 @@ budget per stage. Missing readiness still fails without injecting OOM. Nested
 readiness/exit failures include the private bounded diagnostic tail in the JSONL
 failure result so structured-result precedence cannot hide worker progress.
 
+The single-tool `@guest-wide-tool-oom-injected` case prepares its complete
+384 MiB offender payload with four private 96 MiB allocations in one Bash-tool
+cgroup. All four workers report residency through an owned pipe before the
+cgroup marker permits an explicit injection handoff. The controller checks that
+its children are still alive, acknowledges the handoff, and then retains the
+payload until the kernel kills their complete tool group. This allows the first
+victim to exit before the kernel finishes its group sweep. A returning preparation
+failure or a closed owner control pipe reaps the workers. Its private bounded
+stderr is included in structured readiness/exit errors, including the last
+completed worker stage. Parallel preparation uses the
+existing workload CPU ceiling and does not renew the shared deadline or change
+the runtime/sibling allocations, OOM policy, recovery or reuse assertions.
+
 The required nested-task global-OOM case uses
 `@guest-wide-task-oom-injected`. Four workers each retain 96 MiB, report readiness
 through an owned pipe after touching their allocation, and remain in the nested
@@ -63,10 +76,10 @@ same thread/session:
 TASK_PRESSURE_THREAD_ID=$(cat /proc/sys/kernel/random/uuid)
 sudo "$BIN_DIR/runner" local submit --group "$GROUP" --timeout 240 \
   --chat-thread-id "$TASK_PRESSURE_THREAD_ID" --session-id nested-task-pressure \
-  --feature-flag sandboxReuse=true --prompt '@guest-wide-task-oom'
+  --prompt '@guest-wide-task-oom'
 sudo "$BIN_DIR/runner" local submit --group "$GROUP" --timeout 240 \
   --chat-thread-id "$TASK_PRESSURE_THREAD_ID" --session-id nested-task-pressure \
-  --feature-flag sandboxReuse=true --prompt 'true'
+  --prompt 'true'
 ```
 
 Retain the Guest `guest_wide=true`, `memcg_ooms=0` and `trigger=pressure` evidence,

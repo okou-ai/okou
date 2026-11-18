@@ -201,7 +201,6 @@ for ((ATTEMPT = 1; ATTEMPT <= MAX_ATTEMPTS; ATTEMPT++)); do
   sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
     --chat-thread-id "$CHAT_THREAD_ID" \
     --session-id "$SESSION_ID" \
-    --feature-flag sandboxReuse=true \
     --prompt 'set -eu
 rm -f /tmp/vm0-home-cache-release
 mkfifo /tmp/vm0-home-cache-release
@@ -360,7 +359,6 @@ exit 42' 2>&1)
   if ! sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
     --chat-thread-id "$CHAT_THREAD_ID" \
     --session-id "$SESSION_ID" \
-    --feature-flag sandboxReuse=true \
     --prompt 'set -eu
 test ! -e /home/user/workspace/cache-marker
 test ! -e /home/user/live-writer
@@ -422,7 +420,6 @@ sudo touch /home/user/workspace/nested/ephemeral'; then
   if timeout --kill-after=5s 60s sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
     --chat-thread-id "$CHAT_THREAD_ID" \
     --session-id "$SESSION_ID" \
-    --feature-flag sandboxReuse=true \
     --prompt 'set -eu
 test "$(pwd)" = /home/user/workspace
 test "$(cat /home/user/workspace/cache-marker)" = home-cache-marker

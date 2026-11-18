@@ -95,7 +95,7 @@ describe("selected Kotlin chat readers", () => {
       object({ kind: literal("b") }),
     ]),
     object({ value: record(string(), union([string(), number()])) }),
-    object({ value: tuple([string(), number()]) }),
+    object({ value: tuple([string(), number()]).rest(number()) }),
     object({ value: zEnum(["a-b", "a_b"]) }),
   ])(
     "rejects ambiguous or unrepresented shapes instead of weakening them",

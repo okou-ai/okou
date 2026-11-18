@@ -6,7 +6,7 @@ import { safeSqlStateCode } from "../../lib/pg-errors";
 import { CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY } from "./get-started-rewards.service";
 import { feishuPlatformFromTokenUrl } from "@okouai/core/feishu-platform";
 import { Buffer } from "node:buffer";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import { command } from "ccstate";
 import { and, count, eq, exists, gte, inArray, sql } from "drizzle-orm";
@@ -1973,7 +1973,11 @@ function customOAuthTokenRows(
 }
 
 type StoreCustomConnectorOAuth2ConnectionResult =
-  | { readonly kind: "stored"; readonly connectionId: string }
+  | {
+      readonly kind: "stored";
+      readonly connectionId: string;
+      readonly marketingRewardEventId: string;
+    }
   | { readonly kind: "missing" | "ambiguous" | "sibling-disabled" };
 
 const customOAuthPublicationRow = object({
@@ -2050,8 +2054,11 @@ export const storeCustomConnectorOAuth2Connection$ = command(
         "Custom OAuth reconnect has no observed account revision",
       );
     }
+    const marketingRewardEventId = randomUUID();
     const query = customOAuthConnectionPublicationSql({
+      marketingRewardEventId,
       ...contractRef,
+      userId: args.userId,
       definitionUpdatedAt: args.definitionUpdatedAt,
       networkSnapshot: args.networkSnapshot,
       providerAdapter: contract.providerAdapter,
@@ -2097,7 +2104,11 @@ export const storeCustomConnectorOAuth2Connection$ = command(
       if (published.connection_id === null) {
         throw new Error("Custom OAuth publication did not return its account");
       }
-      return { kind: "stored", connectionId: published.connection_id };
+      return {
+        kind: "stored",
+        connectionId: published.connection_id,
+        marketingRewardEventId,
+      };
     })();
   },
 );

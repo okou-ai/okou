@@ -29,6 +29,12 @@ import {
   personalSubscriptionAccountIdentity,
 } from "../services/personal-subscription-recovery.service";
 import { resetDisconnectedMemberModelSelection } from "../services/member-subscription-models.service";
+import {
+  subscriptionSwitchRecoveries,
+  enqueueSubscriptionRecovery$,
+} from "../services/subscription-switch-recovery.service";
+import { waitUntil } from "../context/wait-until";
+import { continueIntegrationRecovery$ } from "../services/integration-recovery-continuation.service";
 
 const resetMemberModelSelection$ = resetDisconnectedMemberModelSelection(
   organizationAuthContext$,
@@ -171,6 +177,10 @@ const activateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const params = get(
     pathParamsOf(personalModelProviderAccountsByIdContract.activate),
   );
+  const recoveries = await get(
+    subscriptionSwitchRecoveries({ ...auth, id: params.id }),
+  );
+  signal.throwIfAborted();
   const result = await set(
     activatePersonalModelProviderAccount$,
     {
@@ -181,6 +191,18 @@ const activateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
+  if (!("status" in result)) {
+    for (const recovery of recoveries) {
+      const input = await set(
+        enqueueSubscriptionRecovery$,
+        { ...auth, recovery, account: result, change: "switch" },
+        signal,
+      );
+      if (input) {
+        waitUntil(set(continueIntegrationRecovery$, input, signal));
+      }
+    }
+  }
   return "status" in result ? result : { status: 200 as const, body: result };
 });
 

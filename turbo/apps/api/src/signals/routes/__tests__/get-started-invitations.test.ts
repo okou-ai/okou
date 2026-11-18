@@ -318,7 +318,7 @@ test("acceptance racing the Clerk send response retains attribution and webhook 
   });
 });
 
-test("concurrent acceptances fill all 15 global invitation slots while pending invitations consume none", async () => {
+test("concurrent acceptances fill one inviter's 15 slots across organizations while pending invitations consume none", async () => {
   const first = await org();
   const sameInvitee = `user_${randomUUID()}`;
   const initialInvitations = [];

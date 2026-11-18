@@ -291,6 +291,7 @@ export const presentationGenerationTemplateRequestSchema = object({
   type: literal("presentation"),
   selection: object({
     templateId: string().min(1),
+    outputFormat: zEnum(["html", "pptx"]).optional(),
     colorSystemId: string().min(1).optional(),
     previewUrl: url().optional(),
   }).strict(),

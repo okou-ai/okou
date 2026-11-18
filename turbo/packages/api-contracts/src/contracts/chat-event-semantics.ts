@@ -2,7 +2,7 @@ import {
   chatEventCompatibilityRole,
   isChatInputEventType,
 } from "./chat-events";
-import type { ChatEvent as PersistedChatEvent } from "./chat-threads";
+import type { ClientChatEvent as PersistedChatEvent } from "./chat-threads";
 
 type UnsequencedChatEvent<T> = T extends unknown
   ? Omit<T, "seqId"> & { readonly seqId?: never }
@@ -51,7 +51,6 @@ function createInterruptedAssistantProjection(
     eventType: "run.cancelled" as const,
     content: "Run cancelled",
     runId,
-    error: "Run cancelled",
     runLifecycleEvent: "cancelled",
   };
 }

@@ -28,7 +28,7 @@ async function enableProjects(actor: ApiTestUser, enabled = true) {
   await updateFeatureSwitchesForUser(
     context,
     { ...actor, orgId: actor.orgId },
-    { [FeatureSwitchKey.Projects]: enabled },
+    { [FeatureSwitchKey.SingleAgent]: enabled },
   );
 }
 

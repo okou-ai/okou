@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { NetworkLogEntry } from "@okouai/api-contracts/contracts/runs";
+import type { LogDetail } from "@okouai/api-contracts/contracts/logs";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
@@ -11,10 +12,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import type {
-  AgentEvent,
-  LogDetail,
-} from "../../../signals/okou-page/log-types.ts";
+import type { AgentEvent } from "../../../signals/okou-page/log-types.ts";
 
 const context = testContext();
 const user = userEvent.setup();
@@ -32,7 +30,6 @@ function inspectFile(): File {
     status: "completed",
     prompt: "Inspect the latest OAuth trace",
     appendSystemPrompt: "Prefer concise findings",
-    error: null,
     createdAt: "2026-03-10T14:56:00Z",
     startedAt: "2026-03-10T14:56:01Z",
     completedAt: "2026-03-10T14:56:06Z",
@@ -171,7 +168,7 @@ function codexInspectFile(): File {
     status: "failed",
     prompt: "Inspect Codex adapter events",
     appendSystemPrompt: "Prefer normalized Codex rows",
-    error: "Inspect adapter failed",
+    failureReason: "unknown",
     createdAt: "2026-03-10T16:56:00Z",
     startedAt: "2026-03-10T16:56:01Z",
     completedAt: "2026-03-10T16:56:06Z",
@@ -286,7 +283,6 @@ function codexThreadItemsInspectFile(): File {
     status: "completed",
     prompt: "Inspect Codex thread items",
     appendSystemPrompt: null,
-    error: null,
     createdAt: "2026-03-10T18:00:00Z",
     startedAt: "2026-03-10T18:00:01Z",
     completedAt: "2026-03-10T18:00:12Z",

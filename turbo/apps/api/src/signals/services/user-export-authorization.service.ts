@@ -1,9 +1,20 @@
 import { instructions } from "@okouai/db/schema/instructions";
 import { command } from "ccstate";
-import { and, asc, count, eq, gt, inArray, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  gt,
+  inArray,
+  sql,
+  type SQL,
+  type SQLWrapper,
+} from "drizzle-orm";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { storages } from "@okouai/db/schema/storage";
+import { memberMemories } from "@okouai/db/schema/member-memory";
 import { workflows } from "@okouai/db/schema/workflow";
 import { userExportEntries } from "@okouai/db/schema/user-export-entry";
 import { clerk$, createClerkReadContext } from "../external/clerk";
@@ -26,6 +37,15 @@ function identifiers(
     ),
   ];
 }
+function memberMemoryExportOwnerCondition(
+  memoryIds: readonly string[] | SQLWrapper,
+  userId: string,
+) {
+  return and(
+    inArray(memberMemories.id, memoryIds),
+    eq(memberMemories.userId, userId),
+  );
+}
 function requireAll(
   actual: readonly unknown[],
   expected: readonly string[],
@@ -35,15 +55,54 @@ function requireAll(
   }
 }
 
+function exportPageResourceIds(rows: Parameters<typeof identifiers>[0]) {
+  const agentIds = identifiers(
+    rows.filter((row) => {
+      return row.metadata.sourceKind === "agent";
+    }),
+    "agentId",
+  );
+  const workflowIds = identifiers(rows, "workflowId");
+  const threadIds = identifiers(rows, "threadId");
+  const memoryIds = identifiers(
+    rows.filter((row) => {
+      return row.metadata.sourceKind === "memory";
+    }),
+    "storageId",
+  );
+  const storageIds = identifiers(
+    rows.filter((row) => {
+      return row.metadata.sourceKind !== "memory";
+    }),
+    "storageId",
+  );
+  const instructionOrgIds = identifiers(
+    rows.filter((row) => {
+      return row.metadata.sourceKind === "instructions";
+    }),
+    "orgId",
+  );
+  return {
+    agentIds,
+    workflowIds,
+    threadIds,
+    memoryIds,
+    storageIds,
+    instructionOrgIds,
+  };
+}
+
+interface ExportPageAuthority {
+  readonly jobId: string;
+  readonly userId: string;
+  readonly cursor: number;
+}
+
 /** Recheck current product visibility before publishing a long-running export. */
 export const authorizeUserExportPage$ = command(
   async (
     { get },
-    args: {
-      readonly jobId: string;
-      readonly userId: string;
-      readonly cursor: number;
-    },
+    args: ExportPageAuthority,
     signal: AbortSignal,
   ): Promise<{ readonly cursor: number; readonly done: boolean }> => {
     const db = get(db$);
@@ -63,21 +122,14 @@ export const authorizeUserExportPage$ = command(
       .orderBy(asc(userExportEntries.ordinal))
       .limit(100);
     signal.throwIfAborted();
-    const agentIds = identifiers(
-      rows.filter((row) => {
-        return row.metadata.sourceKind === "agent";
-      }),
-      "agentId",
-    );
-    const workflowIds = identifiers(rows, "workflowId");
-    const threadIds = identifiers(rows, "threadId");
-    const storageIds = identifiers(rows, "storageId");
-    const instructionOrgIds = identifiers(
-      rows.filter((row) => {
-        return row.metadata.sourceKind === "instructions";
-      }),
-      "orgId",
-    );
+    const {
+      agentIds,
+      workflowIds,
+      threadIds,
+      memoryIds,
+      storageIds,
+      instructionOrgIds,
+    } = exportPageResourceIds(rows);
     if (
       agentIds.length > 0 ||
       workflowIds.length > 0 ||
@@ -149,6 +201,14 @@ export const authorizeUserExportPage$ = command(
         );
       signal.throwIfAborted();
       requireAll(owned, threadIds);
+    }
+    if (memoryIds.length > 0) {
+      const owned = await db
+        .select({ id: memberMemories.id })
+        .from(memberMemories)
+        .where(memberMemoryExportOwnerCondition(memoryIds, userId));
+      signal.throwIfAborted();
+      requireAll(owned, memoryIds);
     }
     if (storageIds.length > 0) {
       const owned = await db
@@ -298,12 +358,10 @@ function userExportPublicationChecks(
   checks.push({
     expected: storageIds.getSQL(),
     readable: db
-      .select({ id: storages.id })
-      .from(storages)
-      .where(
-        and(inArray(storages.id, storageIds), eq(storages.userId, args.userId)),
-      )
-      .orderBy(asc(storages.id))
+      .select({ id: memberMemories.id })
+      .from(memberMemories)
+      .where(memberMemoryExportOwnerCondition(storageIds, args.userId))
+      .orderBy(asc(memberMemories.id))
       .for("share")
       .getSQL(),
   });

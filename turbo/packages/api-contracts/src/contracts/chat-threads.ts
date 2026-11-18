@@ -306,24 +306,22 @@ const runCompletedEventSchema = chatEventBaseSchema
   })
   .strict();
 
-const runFailedEventSchema = chatEventBaseSchema
-  .extend({
-    eventType: literal("run.failed"),
-    runId: string(),
-    error: string().optional(),
-    failureReason: runFailureReasonTokenSchema.optional(),
-    runLifecycleEvent: literal("failed"),
-  })
-  .strict();
+const clientRunFailedEventSchema = chatEventBaseSchema.extend({
+  eventType: literal("run.failed"),
+  runId: string(),
+  failureReason: runFailureReasonTokenSchema.optional(),
+  runLifecycleEvent: literal("failed"),
+});
 
-const runCancelledEventSchema = chatEventBaseSchema
-  .extend({
-    eventType: literal("run.cancelled"),
-    runId: string(),
-    error: string().optional(),
-    runLifecycleEvent: literal("cancelled"),
-  })
-  .strict();
+const runFailedEventSchema = clientRunFailedEventSchema.strict();
+
+const clientRunCancelledEventSchema = chatEventBaseSchema.extend({
+  eventType: literal("run.cancelled"),
+  runId: string(),
+  runLifecycleEvent: literal("cancelled"),
+});
+
+const runCancelledEventSchema = clientRunCancelledEventSchema.strict();
 
 const controlInterruptEventSchema = chatEventBaseSchema
   .extend({
@@ -1326,6 +1324,22 @@ export type ChatThreadDetail = zInfer<typeof chatThreadDetailSchema>;
 export type ChatThreadMetadata = zInfer<typeof chatThreadMetadataSchema>;
 export type ChatThreadDraft = zInfer<typeof composerDraftSchema>;
 export type ChatEvent = zInfer<typeof chatEventSchema>;
+/** The event variants the client consumes. */
+export type ClientChatEvent = zInfer<
+  | typeof inputPromptEventSchema
+  | typeof inputAutomationEventSchema
+  | typeof inputBudgetEventSchema
+  | typeof inputRejectedEventSchema
+  | typeof outputMessageEventSchema
+  | typeof outputErrorEventSchema
+  | typeof outputFollowupsEventSchema
+  | typeof runCompletedEventSchema
+  | typeof clientRunFailedEventSchema
+  | typeof clientRunCancelledEventSchema
+  | typeof controlInterruptEventSchema
+  | typeof controlRevokeEventSchema
+  | typeof usageRecordedEventSchema
+>;
 export type Indicator = zInfer<typeof indicatorSchema>;
 export type Indicators = zInfer<typeof indicatorsSchema>;
 

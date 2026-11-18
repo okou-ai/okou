@@ -1,5 +1,6 @@
 package ai.okou.android
 
+import ai.okou.android.chat.plainDraftDocument
 import java.io.Closeable
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
@@ -9,8 +10,10 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.SocketPolicy
@@ -32,6 +35,10 @@ class ComposerApiFixture : Closeable {
     @Volatile var beforeSendReturn: () -> Unit = {}
     @Volatile var beforeContextReturn: () -> Unit = {}
     @Volatile var inputDisposition = "queued"
+    val drafts = ConcurrentHashMap<String, JsonObject>()
+    @Volatile var beforeDraftRead: (String) -> Unit = {}
+    @Volatile var beforeDraftWrite: (String) -> Unit = {}
+    @Volatile var draftReadStatus = 200
 
     init {
         chats.flags = {
@@ -40,6 +47,22 @@ class ComposerApiFixture : Closeable {
         chats.commandResponse = { request ->
             val path = request.requestUrl?.encodedPath.orEmpty()
             when {
+                request.method == "GET" && path.endsWith("/draft") -> {
+                    requests += request
+                    val body = drafts[path] ?: plainDraftDocument("")
+                    beforeDraftRead(path)
+                    json(body.toString()).setResponseCode(draftReadStatus)
+                }
+                request.method == "PATCH" &&
+                    (path.startsWith("/api/agents/") && path.endsWith("/draft") ||
+                        path.startsWith("/api/chat-threads/") &&
+                            !path.removePrefix("/api/chat-threads/").contains('/')) -> {
+                    requests += request
+                    val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
+                    beforeDraftWrite(path)
+                    drafts[if (path.endsWith("/draft")) path else "$path/draft"] = body
+                    MockResponse().setResponseCode(204)
+                }
                 path == "/api/onboarding/status" -> {
                     requests += request
                     beforeContextReturn()
@@ -168,30 +191,40 @@ class ComposerApiFixture : Closeable {
             json("""{"events":${JsonArray(rows)},"hasMore":false}""")
         }
         chats.historyRows = ::rows
+        chats.historyCatchUp = { request ->
+            val events =
+                Json.parseToJsonElement(request.body.clone().readUtf8()).jsonArray.associate {
+                    val tuple = it.jsonArray
+                    val thread = tuple[0].jsonPrimitive.content
+                    thread to JsonArray(history(thread, tuple[1].jsonPrimitive.long))
+                }
+            json("""{"events":${JsonObject(events)},"notFoundThreads":[]}""")
+        }
     }
+
+    private fun history(thread: String, since: Long): List<JsonObject> =
+        inputOrder
+            .mapNotNull(inputs::get)
+            .filter { it["threadId"]?.jsonPrimitive?.content == thread }
+            .mapIndexed { index, body ->
+                Json.parseToJsonElement(
+                        historyEventWire(
+                            id = body.getValue("clientEventId").jsonPrimitive.content,
+                            seq = 40L + index,
+                            thread = thread,
+                            type = "input.prompt",
+                            payload = "{\"userMessage\":${body.getValue("userMessage")}}",
+                            run = null,
+                        )
+                    )
+                    .jsonObject
+            }
+            .filter { it.getValue("seqId").jsonPrimitive.content.toLong() > since }
 
     private fun rows(request: RecordedRequest): MockResponse {
         val url = checkNotNull(request.requestUrl)
-        val thread = url.pathSegments[2]
         val since = checkNotNull(url.queryParameter("sinceSeqId")).toLong()
-        val rows =
-            inputOrder
-                .mapNotNull(inputs::get)
-                .filter { it["threadId"]?.jsonPrimitive?.content == thread }
-                .mapIndexed { index, body ->
-                    Json.parseToJsonElement(
-                            historyEventWire(
-                                id = body.getValue("clientEventId").jsonPrimitive.content,
-                                seq = 40L + index,
-                                thread = thread,
-                                type = "input.prompt",
-                                payload = "{\"userMessage\":${body.getValue("userMessage")}}",
-                                run = null,
-                            )
-                        )
-                        .jsonObject
-                }
-                .filter { it.getValue("seqId").jsonPrimitive.content.toLong() > since }
+        val rows = history(url.pathSegments[2], since)
         val cursor =
             rows.lastOrNull()?.let {
                 "{\"lastEventId\":${it.getValue("id")},\"lastSeqId\":${it.getValue("seqId")}}"

@@ -76,29 +76,12 @@
       },
       "downloadRawData": "Descargar datos en bruto",
       "errorGuidance": {
-        "computerUseAuthorizationRequired": {
-          "guidance": "Solicita un enlace de autorización delegado para Uso del Ordenador, pide al usuario que seleccione un host de escritorio {{assistantName}} para este chat o hilo Slack, y luego inicia una nueva ejecución. Los tokens de ejecución existentes no pueden actualizarse en su lugar.",
-          "title": "Se requiere autorización para el uso de ordenadores"
-        },
         "concurrentRunLimitReached": {
           "guidance": "Espera a que termine la ejecución actual antes de iniciar otra.",
           "title": "Se alcanzó el límite de ejecuciones simultáneas"
         },
-        "creditsDepleted": {
-          "guidance": "Haz primero el diagnóstico de créditos. Compra créditos solo cuando el plan actual lo permita; de lo contrario, devuelve el enlace de actualización del plan.",
-          "title": "Créditos agotados"
-        },
-        "noModelProvider": {
-          "guidance": "Conecta una suscripción personal de Claude Code o Codex en Configuración.",
-          "title": "No hay ningún proveedor de modelos disponible para esta ejecución"
-        },
         "paidPlanRequired": {
-          "guidance": "La generación de vídeo integrada no está disponible en el plan actual.",
           "title": "Se requiere un plan de pago"
-        },
-        "providerIncompatible": {
-          "guidance": "Esta sesión se creó con un tipo de proveedor diferente.",
-          "title": "Proveedor no compatible"
         },
         "providerTemporarilyUnavailable": {
           "guidance": "El proveedor del modelo está temporalmente indisponible.",
@@ -428,9 +411,6 @@
       "resizeChatList": "Cambiar el tamaño de la lista de chats",
       "searchWorkspace": "Buscar en el espacio de trabajo",
       "showChatList": "Mostrar lista de chats",
-      "suggestionsWaiting_one": "{{count}} pendiente",
-      "suggestionsWaiting_many": "{{count}} pendientes",
-      "suggestionsWaiting_other": "{{count}} pendientes",
       "workspaceSwitcher": {
         "create": "Crear espacio de trabajo",
         "creating": "Creando…",
@@ -479,7 +459,6 @@
       "nextImage": "Siguiente artefacto de imagen",
       "openNewTab": "Abrir en una pestaña nueva",
       "openSplitView": "Abrir en vista dividida",
-      "partiallyUnavailable": "Algunas acciones no están disponibles",
       "previousImage": "Artefacto de imagen anterior",
       "resetZoom": "Reiniciar el zoom",
       "retry": "Reintentar",
@@ -548,7 +527,6 @@
       "deleting": "Eliminando…",
       "description": "Se eliminará el artefacto y se desactivarán sus enlaces de Okou. Las copias ya descargadas o guardadas en otros servicios se conservarán.",
       "hostedDescription": "El sitio web y todas sus versiones publicadas dejarán de estar disponibles. Las copias guardadas en otros servicios se conservarán.",
-      "menu": "Más acciones para {{title}}",
       "sharedDescription": "Elimina esta conversación compartida de tus artefactos. Su enlace compartido dejará de funcionar. Tu conversación original seguirá disponible.",
       "success": "Artefacto eliminado",
       "title": "¿Eliminar {{title}}?"
@@ -1079,8 +1057,12 @@
       "allowAll_other": "Conceder los {{count}} permisos",
       "allowed": "Permisos concedidos",
       "allowedCount": "{{allowed}} de {{total}} permisos concedidos",
+      "alreadyAllowed_one": "{{count}} ya permitido",
+      "alreadyAllowed_many": "{{count}} ya permitidos",
+      "alreadyAllowed_other": "{{count}} ya permitidos",
       "alwaysNote": "Estos permisos seguirán concedidos hasta que los cambies o revoques.",
       "continued": "La conversación ha continuado.",
+      "continuedShort": "Chat reanudado",
       "continueFailed": "Se han concedido los permisos, pero no se ha podido continuar la conversación.",
       "details": "Ver detalles de los permisos",
       "dismissed": "No se ha cambiado ningún permiso.",
@@ -1090,6 +1072,9 @@
       "myOkouScopeNote": "Se aplica a tu uso de Okou en este espacio de trabajo, no solo a la tarea actual.",
       "myOkouSharedScopeNote": "Se aplica a este conector en tus chats de este espacio de trabajo. Tus compañeros tienen sus propios permisos.",
       "notNow": "Ahora no",
+      "pending_one": "{{count}} permiso por permitir",
+      "pending_many": "{{count}} permisos por permitir",
+      "pending_other": "{{count}} permisos por permitir",
       "review": "Revisar permisos",
       "scopeNote": "Se aplica a este agente, no solo a la tarea actual.",
       "sharedScopeNote": "Se aplica a este conector en todos tus chats y agentes.",
@@ -1223,21 +1208,25 @@
         "name": "Gratis"
       },
       "highlights": {
-        "addOnConcurrency": "Añade concurrencia cuando quieras",
-        "agentFanOut": "Okou delega el trabajo a un equipo de asistentes de IA",
-        "automations": "Automatizaciones programadas y por eventos",
-        "builtInResearchData": "Datos SEO, de leads, web y de mercado integrados",
-        "chatIntegrations": "Integración con Slack y Telegram",
-        "computerUse": "Okou controla aplicaciones reales en tu escritorio",
+        "addOnConcurrency": "Añade más capacidad",
+        "advancedTools": "Decenas de herramientas avanzadas integradas",
+        "appPermissions": "Acceso específico y temporal a apps",
+        "browserAndComputer": "Uso del navegador y ordenador",
         "concurrentAgents": "{{slots}} tareas a la vez",
-        "everythingInBuiltForTeams": "Todo lo de {{plan}}, creado para equipos",
-        "included": "Incluido",
-        "liveBrowser": "Observa el navegador de Okou en directo y toma el control",
-        "moreConnectorsChannels": "Más conectores personalizados e integraciones de canal",
-        "supportEmail": "Soporte por correo",
+        "connectedAutomations": "Automatizaciones de apps y programadas",
+        "create": "Presentaciones, documentos, imágenes, sitios y gráficos",
+        "everythingInBuiltForTeams": "Todo lo de {{plan}}, pensado para trabajar en equipo",
+        "exports": "PDF, Excel, Google Docs y Sheets",
+        "memberManagement": "Roles y paquetes de uso",
+        "proDetails": "Voz: {{requests}} solicitudes, {{minutes}} min/día · Soporte por correo",
+        "projectContext": "Contexto del proyecto entre chats",
+        "research": "Búsqueda de personas e investigación",
+        "sharedWorkflows": "Workflows de equipo reutilizables",
         "supportPriority": "Soporte prioritario",
-        "voiceInput": "Entrada de voz: {{requests}} solicitudes y {{minutes}} minutos al día",
-        "webhookAutomations": "Lanza una ejecución desde cualquier sistema con un webhook"
+        "teamCompliance": "SOC 2 Type II en curso · Conforme con GDPR y CCPA/CPRA",
+        "templates": "Plantillas listas o propias",
+        "voiceInput": "Voz: {{requests}} solicitudes, {{minutes}} min/día",
+        "webhookAutomations": "Activa workflows con webhooks"
       },
       "legacy": "Heredado",
       "loadError": "No se pudo cargar el estado de facturación.",
@@ -1247,7 +1236,7 @@
       "perMonth": "/mes",
       "pricePerMonth": "{{price}}/mes",
       "pro": {
-        "description": "Trabajo diario, con precio por miembro.",
+        "description": "Tu trabajo diario, resuelto.",
         "name": "Pro"
       },
       "renews": "Renueva {{date}}",
@@ -1255,7 +1244,7 @@
       "sectionTitle": "Plan",
       "selectedPlan": "El plan seleccionado",
       "team": {
-        "description": "Para equipos que trabajan con Okou todo el día.",
+        "description": "Más capacidad y control de equipo.",
         "name": "Equipo"
       },
       "upgrade": "Actualización",
@@ -1564,6 +1553,7 @@
           "action": "Registrar visita",
           "description": "Registra tu visita una vez al día. Se reinicia a las 00:00 UTC.",
           "name": "Entrar cada día",
+          "pendingDescription": "Tu registro diario se ha guardado. Los créditos se actualizarán tras la confirmación.",
           "unit": "al día"
         },
         "connector": {
@@ -1685,6 +1675,22 @@
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
       "feedLabel": "Actividad",
+      "forYou": {
+        "loading": "Cargando sugerencias",
+        "next": "Siguiente sugerencia",
+        "previous": "Sugerencia anterior",
+        "remaining": "Quedan {{total}}",
+        "sources": {
+          "description": "Elige qué recibir a continuación. Las tarjetas ya recibidas se conservan hasta que las gestiones. Los avisos de contenido sin leer solo incluyen las fuentes activadas.",
+          "offers": "Ofertas",
+          "suggestions": "Sugerencias",
+          "systemUpdates": "Actualizaciones del sistema",
+          "title": "Fuentes para ti",
+          "whatsNew": "Novedades"
+        },
+        "subtitle": "Una cosa a la vez",
+        "title": "Para ti"
+      },
       "homeCard": {
         "completeTitle": "Todo al día",
         "feedback": "Acciones de sugerencia",
@@ -1867,14 +1873,6 @@
       "customAmountError": "Introduce entre $1 y $10,000",
       "customDollarAmount": "Cantidad personalizada en dólares",
       "outOfCredits": "Se te han acabado los créditos",
-      "proCard": {
-        "creditsNow": "créditos · Ahora mismo",
-        "description": "Funciones avanzadas · 3 ordenadores en la nube",
-        "priceUnavailable": "Consulta los precios actuales de los planes",
-        "title": "Quedan unas 5 tareas",
-        "upgradeFromPrice": "Mejorar desde {{price}}/mes",
-        "upgradeNow": "Mejorar plan ahora"
-      },
       "redirecting": "Redirigiendo...",
       "upgradeToContinue": "Actualiza a Pro para seguir charlando con {{assistantName}}.",
       "upgradeToPro": "Actualizar a Pro",
@@ -2083,7 +2081,6 @@
       "slashPanel": {
         "browseAll": "Ver todas las plantillas",
         "hint": "Busca flujos de trabajo o elige una plantilla…",
-        "make": "Crear",
         "useTemplate": "Usar la plantilla {{title}}"
       },
       "temporarilySwitchTo": "Cambiar temporalmente a",
@@ -2410,10 +2407,10 @@
       "loading": "Cargando teléfonos…",
       "noPhones": "No hay teléfonos en línea",
       "openApp": "Abrir Okou iOS Use",
-      "openAppDescription": "Instala la versión de desarrollo en tu iPhone, inicia sesión con la misma cuenta y espacio de trabajo, e inicia una ventana de control.",
+      "openAppDescription": "Instala la versión de desarrollo en tu iPhone, inicia sesión con la misma cuenta y espacio de trabajo y selecciona Go online.",
       "setupDescription": "Permite que Okou use tu iPhone desde este chat.",
       "startTask": "Enviar tu próxima tarea",
-      "startTaskDescription": "Tras autorizar el acceso, envía un mensaje nuevo aquí. Mantén activa la ventana de control en tu teléfono.",
+      "startTaskDescription": "Tras permitir el acceso, envía un nuevo mensaje aquí. Mantén tu iPhone en línea y desbloqueado.",
       "yourPhone": "Tu teléfono"
     },
     "promptDocumentTitle": "Prompt",
@@ -2635,206 +2632,6 @@
       "unsupported": "No se admite el restablecimiento manual; el uso se recupera automáticamente."
     },
     "taskChips": {
-      "chooseTask": "Elegir una tarea",
-      "ideas": {
-        "document": {
-          "contract": {
-            "label": "Redactar un contrato para un nuevo cliente",
-            "prompt": "Redactar un contrato para un nuevo cliente"
-          },
-          "creativeBrief": {
-            "label": "Redactar un brief creativo para un lanzamiento",
-            "prompt": "Redactar un brief creativo para un lanzamiento"
-          },
-          "invoice": {
-            "label": "Crear una factura detallada",
-            "prompt": "Crear una factura detallada"
-          },
-          "serviceAgreement": {
-            "label": "Esbozar un acuerdo de servicios",
-            "prompt": "Esbozar un acuerdo de servicios"
-          }
-        },
-        "image": {
-          "birthdayInvitation": {
-            "label": "Diseñar una invitación de cumpleaños",
-            "prompt": "Diseñar una invitación de cumpleaños"
-          },
-          "brandCharacter": {
-            "label": "Crear un personaje para mi marca",
-            "prompt": "Crear un personaje para mi marca"
-          },
-          "businessLogo": {
-            "label": "Crear un logotipo para mi negocio",
-            "prompt": "Crear un logotipo para mi negocio"
-          },
-          "cafeMenu": {
-            "label": "Diseñar un menú para mi cafetería",
-            "prompt": "Diseñar un menú para mi cafetería"
-          },
-          "eventPoster": {
-            "label": "Diseñar un cartel para mi evento",
-            "prompt": "Diseñar un cartel para mi evento"
-          },
-          "finishedSketch": {
-            "label": "Convertir mi boceto en una imagen terminada",
-            "prompt": "Convertir mi boceto en una imagen terminada"
-          },
-          "greetingCard": {
-            "label": "Crear una tarjeta personal",
-            "prompt": "Crear una tarjeta personal"
-          },
-          "headshot": {
-            "label": "Crear una foto profesional para mi perfil",
-            "prompt": "Crear una foto profesional para mi perfil"
-          },
-          "infographic": {
-            "label": "Convertir una idea en una infografía",
-            "prompt": "Convertir una idea en una infografía"
-          },
-          "newsletterCover": {
-            "label": "Crear una portada para mi boletín",
-            "prompt": "Crear una portada para mi boletín"
-          },
-          "packaging": {
-            "label": "Explorar envases para mi producto",
-            "prompt": "Explorar envases para mi producto"
-          },
-          "photoLighting": {
-            "label": "Mejorar la iluminación de mi foto",
-            "prompt": "Mejorar la iluminación de mi foto"
-          },
-          "presentationVisual": {
-            "label": "Crear un recurso visual para mi presentación",
-            "prompt": "Crear un recurso visual para mi presentación"
-          },
-          "productScene": {
-            "label": "Poner mi producto en un nuevo escenario",
-            "prompt": "Poner mi producto en un nuevo escenario"
-          },
-          "profileBanner": {
-            "label": "Renovar mi banner de perfil",
-            "prompt": "Renovar mi banner de perfil"
-          },
-          "roomDesign": {
-            "label": "Probar un nuevo estilo para mi habitación",
-            "prompt": "Probar un nuevo estilo para mi habitación"
-          },
-          "storePhoto": {
-            "label": "Preparar una foto para mi tienda",
-            "prompt": "Preparar una foto para mi tienda"
-          },
-          "websiteImage": {
-            "label": "Crear una imagen para mi web",
-            "prompt": "Crear una imagen para mi web"
-          }
-        },
-        "presentation": {
-          "clientProposal": {
-            "label": "Escribir una propuesta para un cliente",
-            "prompt": "Crea una presentación de propuesta para un cliente. Pregúntame por el cliente, el trabajo propuesto, el plazo y el precio."
-          },
-          "companyOverview": {
-            "label": "Explicar a qué se dedica mi empresa",
-            "prompt": "Crea una presentación corporativa. Pregúntame qué hacemos, a quién servimos y qué debería recordar la audiencia."
-          },
-          "eventTalk": {
-            "label": "Preparar una charla para un evento",
-            "prompt": "Crea una presentación para una charla. Pregúntame por el evento, la audiencia y la idea principal que quiero transmitir."
-          },
-          "pitchDeck": {
-            "label": "Presentar mi negocio a inversores",
-            "prompt": "Crea un pitch deck para inversores sobre mi negocio. Pregúntame por el problema, el producto, la tracción y cuánto quiero levantar."
-          },
-          "productIntro": {
-            "label": "Presentar un producto nuevo",
-            "prompt": "Crea una presentación que introduzca un producto nuevo. Pregúntame qué hace, para quién es y qué lo diferencia."
-          },
-          "resultsReadout": {
-            "label": "Presentar mis resultados",
-            "prompt": "Convierte mis resultados en una presentación de informe. Pregúntame por las cifras, el periodo y la decisión que respaldan."
-          },
-          "teamUpdate": {
-            "label": "Preparar una actualización para el equipo",
-            "prompt": "Crea una presentación para la actualización de mi equipo. Pregúntame qué pasó en el periodo, qué viene después y quién estará presente."
-          },
-          "training": {
-            "label": "Enseñar algo a mi equipo",
-            "prompt": "Crea una presentación de formación sobre un tema que yo elija. Pregúntame a quién se forma y qué debería saber hacer después."
-          }
-        },
-        "website": {
-          "bookingPage": {
-            "label": "Crear una página para que me reserven",
-            "prompt": "Crea una página que explique mis servicios y cómo reservar. Usa mi enlace de reservas actual y pregunta por los detalles del servicio."
-          },
-          "businessSite": {
-            "label": "Crear una web para mi negocio",
-            "prompt": "Crea una web que explique mi negocio, mis servicios y cómo contactarme. Empieza por los detalles del negocio y la audiencia."
-          },
-          "cafeMenu": {
-            "label": "Publicar el menú de mi cafetería",
-            "prompt": "Crea una web de cafetería con mi menú, precios, horario y ubicación. Usa los datos y fotos que proporcione."
-          },
-          "coursePage": {
-            "label": "Crear una página para mi curso",
-            "prompt": "Crea una página que presente mi curso, a quién se dirige y qué se aprenderá. Usa mi enlace de inscripción para apuntarse."
-          },
-          "eventPage": {
-            "label": "Crear una página para mi evento",
-            "prompt": "Crea una página de evento con fecha, lugar, programa y enlace de inscripción que proporcione. Pregunta por los datos que falten."
-          },
-          "linkPage": {
-            "label": "Reunir mis enlaces en una página",
-            "prompt": "Crea una página sencilla de enlaces con mi presentación, trabajo y redes sociales. Pregunta qué enlaces incluir."
-          },
-          "portfolio": {
-            "label": "Mostrar mi trabajo en un portafolio",
-            "prompt": "Crea una web de portafolio para mi trabajo. Ayúdame a organizar proyectos, presentarme y añadir datos de contacto."
-          },
-          "productLaunch": {
-            "label": "Lanzar una página para mi producto",
-            "prompt": "Crea una página de producto con beneficios, imágenes y un siguiente paso claro. Pregunta qué lanzo y a quién va dirigido."
-          }
-        },
-        "workflow": {
-          "emailBrief": {
-            "label": "Recibir mi resumen de correos cada mañana",
-            "prompt": "Resume cada mañana los correos importantes, las respuestas pendientes y las tareas. Confirma primero qué bandeja usar y a qué hora recibirlo."
-          },
-          "fileOrganization": {
-            "label": "Organizar los archivos que llegan",
-            "prompt": "Organiza los archivos nuevos con reglas acordadas de nombres y clasificación. Confirma origen, carpeta de destino y categorías."
-          },
-          "meetingActions": {
-            "label": "Convertir notas de reunión en tareas",
-            "prompt": "Cuando lleguen nuevas notas de reunión, extrae tareas, responsables y fechas límite. Señala lo que falte y confirma dónde encontrar las notas."
-          },
-          "meetingPrep": {
-            "label": "Preparar mis reuniones",
-            "prompt": "Antes de las reuniones, prepara información sobre los participantes, el contexto y los temas. Confirma calendario, materiales y antelación del aviso."
-          },
-          "numbersBrief": {
-            "label": "Recibir un resumen diario de mis cifras",
-            "prompt": "Resume a diario las cifras que sigo y sus cambios desde la última actualización. Confirma la fuente, los indicadores y la hora."
-          },
-          "progressRecap": {
-            "label": "Resumir mis avances y próximos pasos",
-            "prompt": "Resume periódicamente el trabajo terminado, lo pendiente y las próximas prioridades. Confirma la fuente y si quiero un resumen diario o semanal."
-          },
-          "replyWatch": {
-            "label": "Avisarme cuando respondan a un correo",
-            "prompt": "Vigila la respuesta a un correo concreto, avísame y resúmela. Confirma primero qué correo debo seguir."
-          },
-          "topicUpdates": {
-            "label": "Seguir las novedades de un tema",
-            "prompt": "Sigue un tema que me interese y resume la información nueva importante con fuentes. Pregunta qué tema y con qué frecuencia quiero novedades."
-          }
-        }
-      },
-      "ideasLabel": "Ideas para empezar",
-      "label": "Tareas para empezar",
-      "more": "Más",
       "presentationFormat": "Formato de presentación",
       "presentationFormats": {
         "html": "HTML",
@@ -2847,8 +2644,7 @@
         "image": "Estilos de imagen",
         "nextPage": "Página siguiente",
         "previousPage": "Página anterior",
-        "website": "Plantillas de sitio web",
-        "workflows": "Flujos de trabajo"
+        "website": "Plantillas de sitio web"
       },
       "tasks": {
         "document": "Documento",
@@ -2982,215 +2778,53 @@
       },
       "workflows": {
         "browse": "Explorar workflows",
-        "close": "Cerrar",
-        "contextPrefix": "Lo importante para mí: {{preference}}",
         "items": {
           "competitors": {
-            "cadence": "A diario o semanalmente",
             "description": "Vigila precios y funciones en las webs de la competencia, guarda los hallazgos en Notion y avisa en Slack.",
-            "name": "Monitor de competencia",
             "prompt": "Ayúdame a configurar este workflow: Monitor de competencia. Revisar periódicamente las páginas de competidores elegidas. Detectar cambios importantes en precios, ofertas o mensajes. Guardar hallazgos y fuentes en Notion y avisar por Slack si se desea. Prepara primero un borrador. Confirma las fuentes, el alcance, el horario y el destino antes de activarlo.",
-            "steps": {
-              "one": "Revisar periódicamente las páginas de competidores elegidas",
-              "three": "Guardar hallazgos y fuentes en Notion y avisar por Slack si se desea",
-              "two": "Detectar cambios importantes en precios, ofertas o mensajes"
-            },
             "title": "Detecta cambios de la competencia"
           },
           "inbox": {
-            "cadence": "Cuando llega un email",
             "description": "Ordena tu bandeja de entrada y redacta las respuestas a los correos que las necesiten.",
-            "name": "Ordena Gmail y redacta las respuestas",
             "prompt": "Ayúdame a configurar este workflow: Ordena Gmail y redacta las respuestas. Leer los mensajes dentro del alcance elegido. Ordenarlos por urgencia y las reglas acordadas. Guardar propuestas de respuesta como borradores de Gmail. Prepara primero un borrador. Confirma las fuentes, el alcance, el horario y el destino antes de activarlo. Las respuestas a emails deben quedar como borradores que revisaré y enviaré personalmente.",
-            "steps": {
-              "one": "Leer los mensajes dentro del alcance elegido",
-              "three": "Guardar propuestas de respuesta como borradores de Gmail",
-              "two": "Ordenarlos por urgencia y las reglas acordadas"
-            },
             "title": "Avanza con los emails importantes"
           },
           "invoices": {
-            "cadence": "Cuando etiquetas una factura",
             "description": "Archiva en Drive los correos con facturas y registra cada una en una hoja.",
-            "name": "Archivar facturas de Gmail en Google Drive",
             "prompt": "Ayúdame a configurar este workflow: Archivar facturas de Gmail en Google Drive. Identificar una factura mediante la etiqueta de Gmail elegida. Archivar el adjunto en la carpeta de Drive acordada. Registrar detalles en Google Sheets si se desea. Prepara primero un borrador. Confirma las fuentes, el alcance, el horario y el destino antes de activarlo.",
-            "steps": {
-              "one": "Identificar una factura mediante la etiqueta de Gmail elegida",
-              "three": "Registrar detalles en Google Sheets si se desea",
-              "two": "Archivar el adjunto en la carpeta de Drive acordada"
-            },
             "title": "Mantén las facturas organizadas"
           },
           "meetings": {
-            "cadence": "Cuando se añade una reunión",
             "description": "Investiga a las personas que vas a conocer antes de cada evento del calendario.",
-            "name": "Investiga tus reuniones en el calendario",
             "prompt": "Ayúdame a configurar este workflow: Investiga tus reuniones en el calendario. Leer participantes y detalles de un nuevo evento. Investigar el contexto profesional y de las empresas. Preparar un informe con fuentes y temas de conversación. Prepara primero un borrador. Confirma las fuentes, el alcance, el horario y el destino antes de activarlo.",
-            "steps": {
-              "one": "Leer participantes y detalles de un nuevo evento",
-              "three": "Preparar un informe con fuentes y temas de conversación",
-              "two": "Investigar el contexto profesional y de las empresas"
-            },
             "title": "Llega preparado a las reuniones"
           },
           "metrics": {
-            "cadence": "Cada mañana",
             "description": "Publica cada día en Slack las cifras de visitantes, registros y activación.",
-            "name": "Publicar métricas diarias en Slack",
             "prompt": "Ayúdame a configurar este workflow: Publicar métricas diarias en Slack. Consultar las métricas web y de registro acordadas. Preparar una vista diaria con el periodo claramente indicado. Compartirla en el destino de Slack elegido. Prepara primero un borrador. Confirma las fuentes, el alcance, el horario y el destino antes de activarlo.",
-            "steps": {
-              "one": "Consultar las métricas web y de registro acordadas",
-              "three": "Compartirla en el destino de Slack elegido",
-              "two": "Preparar una vista diaria con el periodo claramente indicado"
-            },
             "title": "Sigue la marcha de tu negocio"
           },
           "morning": {
-            "cadence": "Cada mañana",
             "description": "Convierte las novedades de Gmail, Calendar y Notion en un plan diario breve en Slack.",
-            "name": "Resumen matinal",
             "prompt": "Ayúdame a configurar este workflow: Resumen matinal. Leer emails importantes y reuniones de hoy. Priorizar decisiones, seguimientos y tiempo de concentración. Enviar un breve plan matinal a Slack. Prepara primero un borrador. Confirma las fuentes, el alcance, el horario y el destino antes de activarlo.",
-            "steps": {
-              "one": "Leer emails importantes y reuniones de hoy",
-              "three": "Enviar un breve plan matinal a Slack",
-              "two": "Priorizar decisiones, seguimientos y tiempo de concentración"
-            },
             "title": "Empieza el día con un plan claro"
           },
           "recap": {
-            "cadence": "Comprobación periódica de nuevas notas",
             "description": "Comparte un resumen con las decisiones y acciones después de cada reunión.",
-            "name": "Recibir resúmenes de reuniones en Slack",
             "prompt": "Ayúdame a configurar este workflow: Recibir resúmenes de reuniones en Slack. Leer una nueva transcripción de reunión. Extraer decisiones, acciones, responsables y fechas indicados. Enviar un resumen breve al destino elegido. Prepara primero un borrador. Confirma las fuentes, el alcance, el horario y el destino antes de activarlo.",
-            "steps": {
-              "one": "Leer una nueva transcripción de reunión",
-              "three": "Enviar un resumen breve al destino elegido",
-              "two": "Extraer decisiones, acciones, responsables y fechas indicados"
-            },
             "title": "Convierte las reuniones en acciones"
           },
           "reply": {
-            "cadence": "Cuando llega una respuesta coincidente",
             "description": "Sigue una conversación y recibe los puntos clave de cada respuesta y los siguientes pasos.",
-            "name": "Seguimiento de respuestas por email",
             "prompt": "Ayúdame a configurar este workflow: Seguimiento de respuestas por email. Seguir una conversación y los remitentes acordados. Detectar una nueva respuesta y resumir sus puntos clave. Notificar una vez y preparar un borrador si hace falta. Prepara primero un borrador. Confirma las fuentes, el alcance, el horario y el destino antes de activarlo. Las respuestas a emails deben quedar como borradores que revisaré y enviaré personalmente.",
-            "steps": {
-              "one": "Seguir una conversación y los remitentes acordados",
-              "three": "Notificar una vez y preparar un borrador si hace falta",
-              "two": "Detectar una nueva respuesta y resumir sus puntos clave"
-            },
             "title": "No te pierdas la respuesta esperada"
           },
           "weekly": {
-            "cadence": "Cada semana",
             "description": "Resume la actividad de GitHub, Gmail y Calendar en una actualización semanal en Slack.",
-            "name": "Resumen semanal personal",
             "prompt": "Ayúdame a configurar este workflow: Resumen semanal personal. Recopilar actividad de las fuentes elegidas. Agrupar logros, decisiones pendientes y seguimientos. Compartir el resumen semanal en el destino de Slack elegido. Prepara primero un borrador. Confirma las fuentes, el alcance, el horario y el destino antes de activarlo.",
-            "steps": {
-              "one": "Recopilar actividad de las fuentes elegidas",
-              "three": "Compartir el resumen semanal en el destino de Slack elegido",
-              "two": "Agrupar logros, decisiones pendientes y seguimientos"
-            },
             "title": "Cierra la semana con claridad"
           }
-        },
-        "preview": {
-          "competitors": {
-            "changed": "Changed",
-            "footer": "Source page and change history included",
-            "heading": "One change worth a closer look.",
-            "label": "Monitor de competencia",
-            "now": "Now",
-            "plan": "Example company’s team plan",
-            "previous": "Previous",
-            "unit": "/ mo"
-          },
-          "inbox": {
-            "draft": "Reply draft",
-            "label": "Ordena Gmail y redacta las respuestas",
-            "later": "Your weekly digest",
-            "needsReply": "Needs reply",
-            "readLater": "Read later",
-            "review": "Review before sending",
-            "subject": "Re: Next steps",
-            "text": "Thanks for the details. I’ve reviewed the proposal and…"
-          },
-          "invoices": {
-            "amount": "Amount",
-            "example": "Example studio",
-            "file": "Invoice — September",
-            "filed": "Filed",
-            "footer": "An optional Sheet keeps the record together",
-            "label": "Archivar facturas de Gmail en Google Drive",
-            "path": "Finance / Invoices / Sep",
-            "second": "Sample supply co.",
-            "status": "Status",
-            "vendor": "Vendor"
-          },
-          "meetings": {
-            "heading": "Your next conversation.",
-            "initials": "JL",
-            "label": "Investiga tus reuniones en el calendario",
-            "note": "A useful place to begin",
-            "person": "Jordan Lee",
-            "question": "Ask how the team handles customer handoffs.",
-            "role": "Operations lead · Example company",
-            "tagOne": "Company context",
-            "tagTwo": "Discussion points"
-          },
-          "metrics": {
-            "activated": "Activated",
-            "footer": "A clear period. Only the metrics you choose.",
-            "label": "Publicar métricas diarias en Slack",
-            "period": "Yesterday vs. prior day",
-            "signups": "Signups",
-            "visitors": "Visitors"
-          },
-          "morning": {
-            "footer": "2 emails need your attention",
-            "heading": "A little clarity for your day.",
-            "label": "Resumen matinal",
-            "meetingOne": "Team check-in",
-            "meetingTwo": "Client discovery",
-            "priority": "First things first",
-            "task": "Review the proposal before your client call"
-          },
-          "recap": {
-            "assign": "To assign",
-            "decision": "Decision: move ahead with a pilot",
-            "due": "Due",
-            "friday": "Fri",
-            "label": "Recibir resúmenes de reuniones en Slack",
-            "monday": "Mon",
-            "one": "Send the revised brief",
-            "owner": "Owner",
-            "task": "Next step",
-            "team": "Team",
-            "three": "Book the next check-in",
-            "two": "Confirm the pilot scope",
-            "you": "You"
-          },
-          "reply": {
-            "heading": "The reply you were waiting for.",
-            "label": "Seguimiento de respuestas por email",
-            "next": "Next step",
-            "quote": "“Thursday works for us. Could you share a short agenda?”",
-            "subject": "Re: Our next conversation",
-            "task": "Confirm the time and prepare an agenda"
-          },
-          "weekly": {
-            "heading": "A week worth looking back on.",
-            "label": "Resumen semanal personal",
-            "next": "Carry into next week",
-            "one": "Shared the revised proposal",
-            "task": "Confirm the launch date with the team",
-            "two": "Wrapped up the onboarding guide"
-          }
-        },
-        "sample": "Ejemplo",
-        "tailor": "¿Qué te gustaría adaptar?",
-        "use": "Usar este workflow",
-        "whatHappens": "Qué ocurre en cada ejecución"
+        }
       }
     },
     "templates": {
@@ -3352,13 +2986,13 @@
   },
   "connectorChatAccess": {
     "accountAccess": "Acceso de {{account}}",
+    "accountsInChat": "Elige qué cuentas están activadas en este chat.",
     "enableByDefault": "Activar {{account}} de forma predeterminada",
-    "enabledAccounts": "{{value}} activas",
     "manageAccounts": "Gestionar cuentas",
-    "noEnabledAccount": "Ninguna cuenta está activa en este chat",
     "permissions": "Permisos",
     "permissionsDescription": "Estas reglas se aplican a este conector en todos tus chats y cuentas.",
-    "settingsDescription": "Elige las cuentas activas por defecto."
+    "settingsDescription": "Elige qué cuentas de {{connector}} puede usar Okou en tus chats. Puedes cambiar el acceso en cada chat.",
+    "totalAccounts": "{{value}} cuentas"
   },
   "connectors": {
     "access": {
@@ -4370,6 +4004,27 @@
     "previousFeature": "Función anterior",
     "tryPrompt": "Probar esta tarea"
   },
+  "feedEvents": {
+    "automationDisabled": {
+      "backToWorkflows": "Volver a los flujos de trabajo",
+      "disabledAt": "Desactivada el {{time}}",
+      "loadFailed": "No se pudo cargar esta automatización",
+      "loadingAutomation": "Cargando automatización",
+      "otherWorkspace": "Esta automatización está en {{workspace}}. Cambia de espacio de trabajo para verla.",
+      "reason_one": "Ha fallado {{count}} ejecución. Revisa la automatización antes de volver a activarla.",
+      "reason_many": "Han fallado {{count}} ejecuciones consecutivas. Revisa la automatización antes de volver a activarla.",
+      "reason_other": "Han fallado {{count}} ejecuciones consecutivas. Revisa la automatización antes de volver a activarla.",
+      "switchFailed": "No se pudo cambiar de espacio de trabajo. Inténtalo de nuevo o usa el selector de espacios de trabajo.",
+      "switchWorkspace": "Cambiar de espacio de trabajo",
+      "systemManaged": "El sistema gestiona esta automatización. Su estado actual se muestra a continuación.",
+      "systemSource": "Evento de plataforma",
+      "title": "Automatización desactivada",
+      "unavailable": "No se encontró la automatización o no tienes acceso",
+      "viewAutomation": "Ver automatización",
+      "workspaceFallback": "Espacio de trabajo original"
+    },
+    "retry": "Reintentar"
+  },
   "friendReferrals": {
     "copied": "Copiado",
     "copyFailed": "No se pudo copiar. Inténtalo de nuevo.",
@@ -4511,6 +4166,10 @@
     "unsaved": "Cambios sin guardar"
   },
   "onboarding": {
+    "autoComplete": {
+      "continueManually": "Continuar con la configuración",
+      "title": "Preparando tu espacio de trabajo"
+    },
     "common": {
       "next": "Siguiente",
       "skip": "Omitir",
@@ -6205,7 +5864,6 @@
         "default": "Predeterminada",
         "description": "Añade una tarjeta o cambia la predeterminada en tu cartera de Link.",
         "empty": "Aún no hay tarjetas en tu cartera de Link",
-        "expires": "Vence en {{date}}",
         "loadError": "No se han podido cargar tus tarjetas.",
         "loading": "Cargando tarjetas",
         "manage": "Gestionar tarjetas",
@@ -6670,50 +6328,6 @@
       "thread_many": "{{value}} hilos",
       "thread_other": "{{value}} hilos"
     }
-  },
-  "userNotifications": {
-    "automationDisabled": {
-      "backToWorkflows": "Volver a los flujos de trabajo",
-      "disabled": "Desactivada",
-      "disabledAt": "Desactivada el {{time}}",
-      "loadFailed": "No se pudo cargar esta automatización",
-      "loadingAutomation": "Cargando automatización",
-      "notNow": "Ahora no",
-      "otherWorkspace": "Esta automatización está en {{workspace}}. Cambia de espacio de trabajo para verla.",
-      "reason_one": "Ha fallado {{count}} ejecución. Revisa la automatización antes de volver a activarla.",
-      "reason_many": "Han fallado {{count}} ejecuciones consecutivas. Revisa la automatización antes de volver a activarla.",
-      "reason_other": "Han fallado {{count}} ejecuciones consecutivas. Revisa la automatización antes de volver a activarla.",
-      "switchFailed": "No se pudo cambiar de espacio de trabajo. Inténtalo de nuevo o usa el selector de espacios de trabajo.",
-      "switchWorkspace": "Cambiar de espacio de trabajo",
-      "systemManaged": "El sistema gestiona esta automatización. Su estado actual se muestra a continuación.",
-      "systemSource": "Notificación del sistema",
-      "title": "Automatización desactivada",
-      "unavailable": "No se encontró la automatización o no tienes acceso",
-      "viewAutomation": "Ver automatización",
-      "workspace": "Espacio de trabajo",
-      "workspaceFallback": "Espacio de trabajo original"
-    },
-    "close": "Cerrar",
-    "countUnavailable": "Recuento de notificaciones sin leer no disponible",
-    "detailFailed": "No se pudo cargar esta notificación",
-    "empty": "Aún no hay notificaciones",
-    "emptyDescription": "Las novedades de Okou aparecerán aquí.",
-    "loadFailed": "No se pudieron cargar las notificaciones",
-    "loading": "Cargando notificaciones",
-    "loadMore": "Mostrar anteriores",
-    "nextPage": "Página siguiente",
-    "pageNavigation": "Páginas de este mensaje",
-    "pageOf": "Página {{current}} de {{total}}",
-    "previousPage": "Página anterior",
-    "readAll": "Marcar todas como leídas",
-    "readFailed": "No se pudo marcar como leído",
-    "retry": "Reintentar",
-    "sender": "Equipo de Okou",
-    "title": "Notificaciones",
-    "unread": "Sin leer",
-    "unreadCount_one": "{{count}} notificación sin leer",
-    "unreadCount_many": "",
-    "unreadCount_other": "{{count}} notificaciones sin leer"
   },
   "vnc": {
     "add": "Añadir host",

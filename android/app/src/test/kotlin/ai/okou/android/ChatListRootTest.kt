@@ -1,6 +1,7 @@
 package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
+import android.os.Looper
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
@@ -22,7 +23,9 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.junit.runners.model.MultipleFailureException
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 class ChatListApplication : TestOkouApplication() {
@@ -59,6 +62,62 @@ class ChatListRootTest {
                     .chats
                     .viewModelScope
                     .coroutineContext[Job]
+        }
+    }
+
+    @Test
+    fun heldHistoryWarmingFailureKeepsFirstDisplayAndSelectedConversationUsable() {
+        val app = compose.activity.application as ChatListApplication
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        app.fixture.historyCatchUp = {
+            entered.countDown()
+            release.await()
+            okhttp3.mockwebserver.MockResponse().setResponseCode(503)
+        }
+        try {
+            app.responseGate.countDown()
+            awaitListAndNames()
+            compose.waitUntil(10_000) { compose.runOnIdle { entered.count == 0L } }
+            compose.onNodeWithText("Chats").assertExists()
+            org.junit.Assert.assertEquals(0, app.fixture.readRequests.get())
+            val chats =
+                compose.runOnIdle {
+                    checkNotNull(
+                            ViewModelProvider(compose.activity)[SessionModel::class.java]
+                                .uiState
+                                .value
+                                .ready
+                        )
+                        .chats
+                }
+            compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Personal chat"))
+            compose.onNodeWithText("Personal chat").performClick()
+            compose.waitUntil(10_000) {
+                compose.runOnIdle {
+                    chats.history.uiState.value.phase == ai.okou.android.chat.HistoryPhase.Ready
+                }
+            }
+            compose
+                .onNodeWithTag("conversation")
+                .performScrollToNode(hasText("Native history", substring = true))
+            compose.onNodeWithText("Native history", substring = true).assertExists()
+            compose.onNodeWithContentDescription("Settings").performClick()
+            compose.onNodeWithText("Appearance").assertExists()
+            release.countDown()
+            compose.waitUntil(10_000) {
+                compose.runOnIdle {
+                    chats.warming.state.value.phase == ai.okou.android.chat.ChatReadPhase.Failed
+                }
+            }
+            compose.onNodeWithText("Appearance").assertExists()
+            compose.onNodeWithContentDescription("Back").performClick()
+            compose
+                .onNodeWithTag("conversation")
+                .performScrollToNode(hasText("Native history", substring = true))
+            compose.onNodeWithText("Native history", substring = true).assertExists()
+        } finally {
+            release.countDown()
         }
     }
 
@@ -163,13 +222,26 @@ class ChatListRootTest {
     fun close() {
         val app = compose.activity.application as ChatListApplication
         app.responseGate.countDown()
-        compose.activityRule.scenario.close()
-        compose.waitUntil(10_000) { chatJob?.isCompleted != false }
-        try {
-            app.fixture.close()
-        } finally {
-            app.cacheSnapshot.restore()
+        val failures = mutableListOf<Throwable>()
+        for (cleanup in
+            listOf<() -> Unit>(
+                { compose.activityRule.scenario.close() },
+                {
+                    compose.waitUntil(10_000) {
+                        shadowOf(Looper.getMainLooper()).idle()
+                        chatJob?.isCompleted != false
+                    }
+                },
+                { app.fixture.close() },
+                { app.cacheSnapshot.restore() },
+            )) {
+            try {
+                cleanup()
+            } catch (error: Throwable) {
+                failures += error
+            }
         }
+        MultipleFailureException.assertEmpty(failures)
     }
 
     @Test

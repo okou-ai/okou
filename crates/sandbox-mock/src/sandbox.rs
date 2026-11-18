@@ -145,8 +145,9 @@ impl MockSandbox {
             &SandboxFinalExecParkHandoff,
             SandboxFinalExecParkHandoffPoint,
         )>,
+        admission: Option<&dyn SandboxIdleAdmission>,
         observer: &mut dyn SandboxFinalExecParkObserver,
-    ) -> Result<SandboxFinalExecParkHandoffOutcome> {
+    ) -> Result<SandboxFinalExecParkTransitionOutcome> {
         let preparation_started = Instant::now();
         let exec_result = match self
             .exec_with_diagnostic_label(request, diagnostic_label)
@@ -172,6 +173,32 @@ impl MockSandbox {
         let handoff_point =
             handoff.and_then(|(signal, point)| signal.accept_if_requested().then_some(point));
         let physical_park_started = Instant::now();
+        if handoff_point.is_none() && admission.is_some_and(|gate| !gate.is_open()) {
+            self.run_control_id = None;
+            for substage in [
+                SandboxFinalExecParkSubstage::BalloonSetup,
+                SandboxFinalExecParkSubstage::BalloonSettle,
+                SandboxFinalExecParkSubstage::BalloonDeflate,
+                SandboxFinalExecParkSubstage::VcpuPause,
+            ] {
+                observer.record_substage(
+                    substage,
+                    Duration::ZERO,
+                    true,
+                    Some(if substage == SandboxFinalExecParkSubstage::BalloonSetup {
+                        SandboxFinalExecParkSubstageOutcome::AdmissionClosed
+                    } else {
+                        SandboxFinalExecParkSubstageOutcome::Skipped
+                    }),
+                );
+            }
+            observer.record_stage(
+                SandboxFinalExecParkStage::PhysicalPark,
+                physical_park_started.elapsed(),
+                true,
+            );
+            return Ok(SandboxFinalExecParkTransitionOutcome::Terminal { exec_result });
+        }
         observer.record_substage(
             SandboxFinalExecParkSubstage::BalloonSetup,
             Duration::ZERO,
@@ -231,7 +258,7 @@ impl MockSandbox {
                 physical_park_started.elapsed(),
                 true,
             );
-            return Ok(SandboxFinalExecParkHandoffOutcome::Handoff { exec_result, point });
+            return Ok(SandboxFinalExecParkTransitionOutcome::Handoff { exec_result, point });
         }
         let park_outcome = match self.park().await {
             Ok(park_outcome) => {
@@ -263,7 +290,7 @@ impl MockSandbox {
                 return Err(error);
             }
         };
-        Ok(SandboxFinalExecParkHandoffOutcome::Parked(
+        Ok(SandboxFinalExecParkTransitionOutcome::Parked(
             SandboxFinalExecParkOutcome {
                 exec_result,
                 park_outcome,
@@ -847,12 +874,14 @@ impl Sandbox for MockSandbox {
                 request,
                 diagnostic_label,
                 None,
+                None,
                 observer,
             )
             .await?
         {
-            SandboxFinalExecParkHandoffOutcome::Parked(outcome) => Ok(outcome),
-            SandboxFinalExecParkHandoffOutcome::Handoff { .. } => {
+            SandboxFinalExecParkTransitionOutcome::Parked(outcome) => Ok(outcome),
+            SandboxFinalExecParkTransitionOutcome::Handoff { .. }
+            | SandboxFinalExecParkTransitionOutcome::Terminal { .. } => {
                 Err(SandboxError::IdleTransition {
                     transition: SandboxIdleTransition::Park,
                     message: "mock accepted a handoff without a handoff signal".into(),
@@ -867,7 +896,7 @@ impl Sandbox for MockSandbox {
         diagnostic_label: &'static str,
         handoff: &SandboxFinalExecParkHandoff,
         observer: &mut dyn SandboxFinalExecParkObserver,
-    ) -> Result<SandboxFinalExecParkHandoffOutcome> {
+    ) -> Result<SandboxFinalExecParkTransitionOutcome> {
         let point = self.overrides.as_ref().and_then(|overrides| {
             overrides
                 .lifecycle
@@ -879,6 +908,32 @@ impl Sandbox for MockSandbox {
             request,
             diagnostic_label,
             point.map(|point| (handoff, point)),
+            None,
+            observer,
+        )
+        .await
+    }
+
+    async fn final_exec_and_park_with_admission(
+        &mut self,
+        request: &ExecRequest<'_>,
+        diagnostic_label: &'static str,
+        handoff: Option<&SandboxFinalExecParkHandoff>,
+        admission: &dyn SandboxIdleAdmission,
+        observer: &mut dyn SandboxFinalExecParkObserver,
+    ) -> Result<SandboxFinalExecParkTransitionOutcome> {
+        let point = self.overrides.as_ref().and_then(|overrides| {
+            overrides
+                .lifecycle
+                .final_exec_park_handoff_points
+                .lock_ignoring_poison()
+                .pop_front()
+        });
+        self.final_exec_and_park_with_observer_and_handoff(
+            request,
+            diagnostic_label,
+            handoff.zip(point),
+            Some(admission),
             observer,
         )
         .await
@@ -971,16 +1026,20 @@ impl Sandbox for MockSandbox {
             runtime_dir: request.runtime_dir.to_string(),
             timeout: request.timeout,
         };
-        self.storage_manifest_calls
-            .lock_ignoring_poison()
-            .push(call.clone());
         if let Some(overrides) = &self.overrides {
+            self.storage_manifest_calls
+                .lock_ignoring_poison()
+                .push(call.clone());
             overrides
                 .exec
                 .storage_manifest_calls
                 .lock_ignoring_poison()
                 .push(call);
             wait_lifecycle_gate(&overrides.exec.storage_manifest_gate).await;
+        } else {
+            self.storage_manifest_calls
+                .lock_ignoring_poison()
+                .push(call);
         }
         let result = self
             .exec_results

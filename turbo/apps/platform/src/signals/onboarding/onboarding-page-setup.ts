@@ -1,3 +1,5 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import { loadMarketingHandoff$ } from "../prompt-page/marketing-handoff.ts";
 import { command } from "ccstate";
 import { createElement } from "react";
@@ -14,6 +16,8 @@ import {
   forwardOnboardedVisitor$,
   promptHandoffParams,
 } from "./onboarding-actions.ts";
+import { trySkipOnboarding$ } from "./onboarding-entry.ts";
+import { claimSourcesFirstStartEvent$ } from "./onboarding-sources-first-state.ts";
 import {
   clearOnboardingPasteState$,
   hydrateOnboardingRoute$,
@@ -38,6 +42,9 @@ export const setupOnboardingPromptPage$ = command(
       await set(forwardOnboardedVisitor$, status.isAdmin, signal);
       return;
     }
+    if (await set(trySkipOnboarding$, signal)) {
+      return;
+    }
     if (!status.isAdmin && !searchParams.get("handoff")) {
       const prompt =
         searchParams.get("handoff") || searchParams.get("prompt")?.trim();
@@ -60,8 +67,17 @@ export const setupOnboardingPromptPage$ = command(
       return;
     }
     set(subscribeBuiltinConnectorChanges$, signal);
-    set(sendEvent$, "onboarding-start");
-    set(hydrateOnboardingRoute$, searchParams, handoff?.manifest);
+    if (set(claimSourcesFirstStartEvent$)) {
+      set(sendEvent$, "onboarding-start");
+    }
+    const features = await get(featureSwitch$);
+    signal.throwIfAborted();
+    set(
+      hydrateOnboardingRoute$,
+      searchParams,
+      handoff?.manifest,
+      features[FeatureSwitchKey.OnboardingMultipleOutputs],
+    );
     signal.addEventListener(
       "abort",
       () => {

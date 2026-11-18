@@ -148,7 +148,7 @@ interface MockLifecycleControl {
   setThreadList: (list: ThreadListItem[]) => void;
   setCodexServiceTier: (tier: CodexServiceTier | null) => void;
   completeRun: (content?: string) => void;
-  failRun: (error: string) => void;
+  failRun: (error: string, failureReason?: string) => void;
   cancelRun: () => void;
 }
 
@@ -414,6 +414,7 @@ export function mockChatLifecycle(
 
   let runStatus: RunStatus = "running";
   let runError: string | null = null;
+  let runFailureReason: string | undefined;
   let resultContent = "";
   let threadListOverride: ThreadListItem[] | null = null;
   let runPrompt: string | null = null;
@@ -543,6 +544,9 @@ export function mockChatLifecycle(
         content: resultContent || null,
         runId: currentRunId,
         error: runError ?? undefined,
+        ...(runFailureReason === undefined
+          ? {}
+          : { failureReason: runFailureReason }),
         runLifecycleEvent:
           runStatus === "failed" || runStatus === "cancelled"
             ? runStatus
@@ -722,6 +726,7 @@ export function mockChatLifecycle(
     options?.onRunCreate?.({ ...body, modelSelection });
     runStatus = "running";
     runError = null;
+    runFailureReason = undefined;
     resultContent = "";
     if (modelSelection !== undefined) {
       selectedModel = modelSelection?.selectedModel ?? null;
@@ -951,7 +956,7 @@ export function mockChatLifecycle(
       status: runStatus,
       prompt: "Hello",
       appendSystemPrompt: null,
-      error: runError,
+      failureReason: runStatus === "failed" ? "unknown" : undefined,
       createdAt: "2026-03-10T00:00:00Z",
       startedAt: "2026-03-10T00:00:01Z",
       completedAt: null,
@@ -969,7 +974,6 @@ export function mockChatLifecycle(
       runId: "a0000000-0000-4000-a000-000000000001",
       status: runStatus,
       prompt: runPrompt ?? "Hello",
-      appendSystemPrompt: null,
       source: {
         providerType: null,
         runtimeProviderType: null,
@@ -1059,9 +1063,10 @@ export function mockChatLifecycle(
       createChatEvent(threadId);
       changeChatIndicators();
     },
-    failRun: (error: string) => {
+    failRun: (error: string, failureReason?: string) => {
       runStatus = "failed";
       runError = error;
+      runFailureReason = failureReason;
       assistantSeqId = allocateDynamicSeqId();
       createChatEvent(threadId);
       changeChatIndicators();

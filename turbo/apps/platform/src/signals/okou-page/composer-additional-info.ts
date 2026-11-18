@@ -1,4 +1,4 @@
-import type { PresentationOutputFormat } from "./presentation-output-format.ts";
+import type { PresentationOutputFormat } from "@okouai/core/presentation-output-format";
 import type {
   ComposerCreateMode,
   PresentationSlideCount,
@@ -56,6 +56,12 @@ export function parseComposerVisualizationPreferences(
   return output || charts.length > 0 ? { output, charts } : undefined;
 }
 
+function presentationTemplateFormatInstruction(
+  format: PresentationOutputFormat,
+): string {
+  return `- When no presentation template is selected, use \`okou generate presentation --format ${format} --prompt "<user request>"\` to choose a matching built-in package. If the message requests a different format, use that format instead.`;
+}
+
 export function buildComposerAdditionalInfo(
   mode: ComposerCreateMode | null,
   presentationSlideCount: PresentationSlideCount,
@@ -69,7 +75,10 @@ export function buildComposerAdditionalInfo(
           "# Presentation Generation Defaults",
           "The user set these for presentations generated in this run:",
           ...(presentationFormat
-            ? [`- Output format: ${presentationFormat.toUpperCase()} format`]
+            ? [
+                `- Output format: ${presentationFormat.toUpperCase()} format`,
+                presentationTemplateFormatInstruction(presentationFormat),
+              ]
             : []),
           `- Slide count: ${
             presentationSlideCount === "auto"
@@ -90,6 +99,9 @@ export function buildComposerAdditionalInfo(
               ? ` (${presentationFormat.toUpperCase()} format)`
               : ""
           }`,
+          ...(visualization.output === "presentation" && presentationFormat
+            ? [presentationTemplateFormatInstruction(presentationFormat)]
+            : []),
           visualization.charts.length > 0
             ? `- Preferred chart types: ${visualization.charts.join(", ")}`
             : "",

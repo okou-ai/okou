@@ -21,6 +21,7 @@ use tracing_test_support::{
 mod backing_process;
 mod guest_connection_timing;
 mod guest_rpc;
+mod local_drain;
 mod managed_exit;
 mod park_native;
 mod private_write_diagnostics;
@@ -1202,7 +1203,7 @@ async fn final_exec_park_observer_reports_completed_stages_in_order() {
         "test-sandbox",
         (&coordinator).into(),
         Some(&mut observer),
-        |_| false,
+        |_| ParkCompletion::Parked,
         || async { Ok((TestNormalOperationFence, "prepared")) },
         || async { Ok(()) },
         |_timing, events| async {
@@ -1234,7 +1235,7 @@ async fn final_exec_park_observer_reports_preparation_failure_only() {
         "test-sandbox",
         (&coordinator).into(),
         Some(&mut observer),
-        |_| false,
+        |_| ParkCompletion::Parked,
         || async {
             Err::<(TestNormalOperationFence, ()), _>(ParkNormalOperationFenceError::FinalOperation(
                 io::Error::new(io::ErrorKind::ConnectionReset, "final exec disconnected"),
@@ -1267,7 +1268,7 @@ async fn final_exec_park_observer_reports_physical_park_failure() {
         "test-sandbox",
         (&coordinator).into(),
         Some(&mut observer),
-        |_| false,
+        |_| ParkCompletion::Parked,
         || async { Ok((TestNormalOperationFence, ())) },
         || async { Ok(()) },
         |_timing, events| async {
@@ -1305,7 +1306,7 @@ async fn final_exec_park_observer_keeps_completed_substage_on_cancellation() {
             "test-sandbox",
             (&coordinator).into(),
             Some(&mut observer),
-            |_| false,
+            |_| ParkCompletion::Parked,
             || async { Ok((TestNormalOperationFence, ())) },
             || async { Ok(()) },
             |timing, mut events| async move {
@@ -1419,7 +1420,7 @@ fn ready_for_park_boundary_missing_fence_marks_dirty_after_ready_for_park() {
         ParkBoundaryGuard::new(coordinator.clone(), attempt, None);
 
     guard.complete_prepare().unwrap();
-    let error = guard.mark_completed(false).unwrap_err();
+    let error = guard.mark_completed(ParkCompletion::Parked).unwrap_err();
 
     assert!(matches!(error, PrepareParkError::Dirty { .. }));
     assert!(matches!(
@@ -2898,13 +2899,13 @@ async fn apply_storage_manifest_preserves_terminal_metadata() {
     let result = result.unwrap();
 
     assert!(timing.admission.is_some());
-    assert!(timing.request.setup.is_some());
-    assert!(timing.request.frame_builder_wait.is_some());
-    assert!(timing.request.frame_encode.is_some());
-    assert!(timing.request.writer_wait.is_some());
-    assert!(timing.request.frame_write.is_some());
-    assert!(timing.request.response_wait.is_some());
-    assert!(timing.request.result_decode.is_some());
+    assert!(timing.request.host.setup.is_some());
+    assert!(timing.request.host.frame_builder_wait.is_some());
+    assert!(timing.request.host.frame_encode.is_some());
+    assert!(timing.request.host.writer_wait.is_some());
+    assert!(timing.request.host.frame_write.is_some());
+    assert!(timing.request.host.response_wait.is_some());
+    assert!(timing.request.host.result_decode.is_some());
     assert!(timing.resource_log.is_some());
     assert_eq!(timing.request.guest.request_ownership_us, Some(0));
     assert_eq!(timing.request.guest.worker_wait_us, Some(71));
@@ -2934,6 +2935,48 @@ async fn apply_storage_manifest_preserves_terminal_metadata() {
     assert_eq!(resources["memory_high_limit_bytes"], "max");
     assert!(resources["memory_pgscan"].is_null());
     assert!(!summaries[0].fields["resources"].contains("must-not-be-logged"));
+}
+
+#[tokio::test]
+async fn observed_file_batch_uses_the_existing_admission_and_request_owner() {
+    let sandbox = test_sandbox_with_state(SandboxState::Running);
+    let mut guest = attach_mock_shutdown_guest(&sandbox).await;
+    let files = [sandbox::WriteFileEntry {
+        path: "/tmp/staged",
+        content: b"exact\0bytes",
+    }];
+    let mut timing = sandbox::FileWriteTiming::default();
+    let write = sandbox.write_files_with_timing(&files, &mut timing);
+    let respond = async {
+        let request = read_vsock_message(&mut guest).await;
+        assert_eq!(request.msg_type, guest_control_proto::MSG_WRITE_FILES);
+        let files = guest_control_proto::decode_write_files(&request.payload).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "/tmp/staged");
+        assert_eq!(files[0].content, b"exact\0bytes");
+        guest
+            .write_all(
+                &guest_control_proto::encode(
+                    guest_control_proto::MSG_WRITE_FILES_RESULT,
+                    request.seq,
+                    &guest_control_proto::encode_write_files_result(false, "denied"),
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+    };
+    let (result, ()) = tokio::join!(write, respond);
+    assert!(result.unwrap_err().to_string().contains("denied"));
+    assert!(timing.admission.is_some());
+    assert!(timing.request.host.frame_write.is_some());
+    assert!(timing.request.host.result_decode.is_some());
+
+    let stopped = test_sandbox_with_state(SandboxState::Stopped);
+    let result = stopped.write_files_with_timing(&files, &mut timing).await;
+    assert!(result.is_err());
+    assert!(timing.admission.is_some());
+    assert_eq!(timing.request, sandbox::FileWriteRequestTiming::default());
 }
 
 #[tokio::test]
@@ -5424,6 +5467,7 @@ async fn wait_for_balloon_extends_low_free_progress_with_fresh_guest_memory() {
         "fresh-progress-grace",
         Some(&guest),
         None,
+        None,
     );
     tokio::pin!(wait);
 
@@ -5494,6 +5538,7 @@ async fn fresh_guest_memory_probe_time_is_charged_to_the_fixed_settle_schedule()
         target_mib,
         "fresh-progress-fixed-deadline",
         Some(&guest),
+        None,
         None,
     );
     tokio::pin!(wait);
@@ -5589,6 +5634,7 @@ async fn wait_for_balloon_refreshes_guest_memory_at_each_low_free_boundary() {
         "fresh-progress-each-boundary",
         Some(&guest),
         None,
+        None,
     );
     tokio::pin!(wait);
 
@@ -5653,6 +5699,7 @@ async fn wait_for_balloon_rejects_insufficient_fresh_guest_memory_without_retry(
         target_mib,
         "fresh-reserve-insufficient",
         Some(&guest),
+        None,
         None,
     );
     tokio::pin!(wait);
@@ -5793,6 +5840,7 @@ async fn exact_handoff_interrupts_balloon_settle_during_fresh_guest_memory_snaps
         "fresh-guest-handoff-during-settle",
         Some(&guest),
         Some(&handoff),
+        None,
     );
     tokio::pin!(wait);
 
@@ -6400,6 +6448,7 @@ async fn park_pauses_when_balloon_stats_are_unavailable() {
                 pause_custody: None,
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: None,
+                admission: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
                 state_rx: state_rx.clone(),
             },
@@ -6458,6 +6507,7 @@ async fn exact_handoff_before_balloon_reverses_target_without_pausing() {
                 pause_custody: None,
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: Some(&handoff),
+                admission: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
                 state_rx: state_rx.clone(),
             },
@@ -6534,6 +6584,7 @@ async fn exact_handoff_interrupts_in_flight_balloon_settle() {
                 pause_custody: None,
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: Some(&handoff),
+                admission: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
                 state_rx: state_rx.clone(),
             },
@@ -6628,6 +6679,7 @@ async fn exact_handoff_interrupts_balloon_settle_after_multiple_progress_extensi
         "handoff-after-progress-extensions",
         None,
         Some(&handoff),
+        None,
     );
     tokio::pin!(wait);
 
@@ -6882,6 +6934,7 @@ async fn park_small_vm_skips_balloon_but_pauses_vcpus() {
                 pause_custody: None,
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: None,
+                admission: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
                 state_rx: state_rx.clone(),
             },
@@ -7210,6 +7263,7 @@ async fn park_balloon_failure_leaves_flag_false() {
                 pause_custody: None,
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: None,
+                admission: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
                 state_rx: state_rx.clone(),
             },
@@ -7711,6 +7765,7 @@ async fn severe_park_retries_terminal_snapshot_after_failed_progress_probe() {
                 pause_custody: None,
                 guest,
                 handoff: None,
+                admission: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
                 state_rx: state_rx.clone(),
             },
@@ -7792,6 +7847,7 @@ async fn severe_park_collects_terminal_guest_memory_before_pause() {
                 pause_custody: None,
                 guest,
                 handoff: None,
+                admission: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
                 state_rx: state_rx.clone(),
             },
@@ -7865,6 +7921,7 @@ async fn reusable_park_does_not_request_terminal_guest_memory() {
                 pause_custody: None,
                 guest,
                 handoff: None,
+                admission: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
                 state_rx: state_rx.clone(),
             },
@@ -7922,6 +7979,7 @@ async fn park_small_vm_pause_failure_leaves_flag_false() {
                 pause_custody: None,
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: None,
+                admission: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
                 state_rx: state_rx.clone(),
             },

@@ -1,13 +1,11 @@
 import { chatEventCompatibilityRole } from "@okouai/api-contracts/contracts/chat-events";
-import type { ChatRunEventContext } from "@okouai/api-contracts/contracts/chat-run-state";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { isCancelledRunEvent } from "./chat-run-lifecycle.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
 
-import {
-  isUsageEvent,
-  type SemanticChatEventState,
-  type SemanticChatGroups,
+import type {
+  SemanticChatEventState,
+  SemanticChatGroups,
 } from "@okouai/api-contracts/contracts/chat-event-semantics";
 
 type QueuedChatEvent = Extract<
@@ -40,28 +38,6 @@ export function lastAssistantCancelledFromGroups(
   const lastGroup = groups.allGroups.at(-1);
   const lastEvent = lastGroup?.events.at(-1)?.event;
   return lastEvent ? isCancelledRunEvent(lastEvent) : false;
-}
-
-export function liveRunIdsFromChatEvents(
-  events: readonly ChatEvent[],
-  { terminatedRunIds, revokedEventIds }: ChatRunEventContext,
-): string[] {
-  const liveRunIds: string[] = [];
-  const seenRunIds = new Set<string>();
-  for (const event of events) {
-    const runId = event.runId;
-    if (
-      runId !== undefined &&
-      !revokedEventIds.has(event.id) &&
-      !terminatedRunIds.has(runId) &&
-      !isUsageEvent(event) &&
-      !seenRunIds.has(runId)
-    ) {
-      liveRunIds.push(runId);
-      seenRunIds.add(runId);
-    }
-  }
-  return liveRunIds;
 }
 
 export interface ChatRunModelSelection {

@@ -22,7 +22,7 @@
     "@types/node": "^24.3.0",
     "@typescript/native": "npm:typescript@7.0.2",
     "eslint": "^9.34.0",
-    "miniflare": "5.20260903.0-alpha",
+    "miniflare": "5.20261012.0-beta",
     "oxlint": "^1.75.0",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "vitest": "^5.1.0",

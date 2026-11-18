@@ -4,7 +4,6 @@ import { i18n } from "../../i18n/index.ts";
 
 import { ArtifactCatalogPage } from "../../views/artifacts-page/artifact-catalog-page.tsx";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
-import { setArtifactDeleteTarget$ } from "../artifact-deletion.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
@@ -26,12 +25,10 @@ import { artifactCatalogSidebar } from "./artifact-catalog-instance.ts";
 
 export const setupArtifactsPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    set(setArtifactDeleteTarget$, null);
     set(artifactCatalogSidebar.close$);
     signal.addEventListener(
       "abort",
       () => {
-        set(setArtifactDeleteTarget$, null);
         set(artifactCatalogSidebar.close$);
       },
       { once: true },

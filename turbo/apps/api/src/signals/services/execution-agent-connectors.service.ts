@@ -1,10 +1,10 @@
-import type { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import type {
-  CustomConnectorDefinitionRow,
+  CustomConnectorExecutionDefinitionRow,
   CustomConnectorExecutionDefinition,
+  CustomConnectorExecutionOAuthConfig,
 } from "./custom-connector-definition-selection";
-import { normaliseCustomConnectorRow } from "./custom-connector.service";
+import { normaliseCustomConnectorConnectionDefinition } from "./custom-connector.service";
 
 export interface AgentConnectorSelectionScope {
   readonly orgId: string;
@@ -66,24 +66,25 @@ export function agentConnectorSelectionFromRows(
 }
 
 type SelectedDefinitionRow = {
-  readonly connector: CustomConnectorDefinitionRow &
+  readonly connector: CustomConnectorExecutionDefinitionRow &
     Pick<
       SelectedCustomConnector,
       "skillContentBundle" | "skillContentBundleSourceVersionId"
     >;
-  readonly oauthConfig:
-    typeof orgCustomConnectorOauthConfigs.$inferSelect | null;
+  readonly oauthConfig: CustomConnectorExecutionOAuthConfig | null;
 };
 
 function executionDefinitionFromRow(
   row: SelectedDefinitionRow,
 ): CustomConnectorExecutionDefinition {
-  const definition = normaliseCustomConnectorRow(
+  const definition = normaliseCustomConnectorConnectionDefinition(
     row.connector,
     row.oauthConfig,
   );
-  const config = definition.oauthConfig;
   const shared = {
+    ...(definition.networkBinding
+      ? { networkBinding: definition.networkBinding }
+      : {}),
     id: definition.id,
     orgId: definition.orgId,
     slug: definition.slug,
@@ -92,23 +93,9 @@ function executionDefinitionFromRow(
     headerInjections: definition.headerInjections,
     queryInjections: definition.queryInjections,
     authMode: definition.authMode,
-    skillMarkdown: definition.skillMarkdown,
-    skillStorageVersionId: definition.skillStorageVersionId,
+    skillStorageVersionId: row.connector.skillStorageVersionId,
     storageVersion: definition.storageVersion,
-    oauthConfig:
-      config === null
-        ? null
-        : {
-            providerAdapter: config.providerAdapter,
-            clientId: config.clientId,
-            encryptedClientSecret: config.encryptedClientSecret,
-            authorizationUrl: config.authorizationUrl,
-            tokenUrl: config.tokenUrl,
-            tokenEndpointAuthMethod: config.tokenEndpointAuthMethod,
-            pkceMethod: config.pkceMethod,
-            scopes: config.scopes,
-            authorizationParams: config.authorizationParams,
-          },
+    oauthConfig: definition.oauthConfig,
   };
   return definition.kind === "http"
     ? {

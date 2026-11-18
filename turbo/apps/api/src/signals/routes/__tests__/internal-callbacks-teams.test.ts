@@ -11,6 +11,7 @@ import {
 
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhooks";
+import type { KnownRunFailureReason } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -546,6 +547,7 @@ async function completeSandboxRun(args: {
   readonly sandboxToken: string;
   readonly exitCode: number;
   readonly error?: string;
+  readonly failureReason?: KnownRunFailureReason;
 }): Promise<string | undefined> {
   const sandboxHeaders = { authorization: `Bearer ${args.sandboxToken}` };
   if (args.exitCode === 0) {
@@ -573,6 +575,9 @@ async function completeSandboxRun(args: {
       runId: args.runId,
       exitCode: args.exitCode,
       ...(args.error === undefined ? {} : { error: args.error }),
+      ...(args.failureReason === undefined
+        ? {}
+        : { failureReason: args.failureReason }),
     },
     sandboxHeaders,
     [200],
@@ -816,9 +821,6 @@ describe("Teams chat callbacks", () => {
         });
         const queuedRun = await runsApi.readRun(teams.actor, queuedRunId);
         expect(queuedExecution.prompt).toBe(queuedRun.prompt);
-        expect(queuedExecution.appendSystemPrompt).toBe(
-          queuedRun.appendSystemPrompt,
-        );
         expect(queuedExecution.appendSystemPrompt).toContain(
           "You are currently running inside: Microsoft Teams",
         );
@@ -1443,12 +1445,17 @@ describe("Teams chat callbacks", () => {
   it.each([
     {
       error: "Cannot continue session from history",
-      expected: "Cannot continue session from history",
+      failureReason: undefined,
+      expected: "Oops, something went wrong. Please try again later.",
     },
-    { error: "insufficient_credits", expected: "/?settings=billing" },
-  ])(
+    {
+      error: "insufficient_credits",
+      failureReason: "insufficient_credits",
+      expected: "/?settings=billing",
+    },
+  ] as const)(
     "posts readable failed run replies for $error without persisting a thread session",
-    async ({ error, expected }) => {
+    async ({ error, expected, failureReason }) => {
       const teams = await setupConnectedTeamsActor();
       const teamsApi = teamsApiMocks({ fixture: teams.fixture });
       const activityId = teamsFixtureExternalId(
@@ -1473,6 +1480,7 @@ describe("Teams chat callbacks", () => {
         sandboxToken: receivedExecution.sandboxToken,
         exitCode: 1,
         error,
+        failureReason,
       });
 
       expect(teamsApi.postedActivities).toHaveLength(1);

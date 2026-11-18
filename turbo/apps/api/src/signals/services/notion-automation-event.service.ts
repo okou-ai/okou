@@ -618,57 +618,98 @@ export const repairNotionAutomationAccountProjectionsForOwner$ = command(
   },
 );
 
-const repairNotionAutomationProjections$ = command(
-  async (
-    { set },
-    automations: readonly AutomationRow[],
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    const owners = new Map<
-      string,
-      { readonly orgId: string; readonly userId: string }
-    >();
-    for (const automation of automations) {
-      if (
-        automation.eventConnectorId !== null &&
-        notionConfigConnectorId(
-          automation.eventType,
-          automation.eventConfig,
-        ) === automation.eventConnectorId
-      ) {
-        continue;
-      }
-      const owner = { orgId: automation.orgId, userId: automation.ownerUserId };
-      owners.set(`${owner.orgId}:${owner.userId}`, owner);
-    }
-    const orderedOwners = [...owners.values()].sort((left, right) => {
+function notionAutomationMatchesWebhookScope(
+  automation: AutomationRow,
+  event: NotionWebhookEvent,
+): boolean {
+  switch (automation.eventType) {
+    case "notion-child-page-created": {
+      const config = notionChildPageCreatedEventConfigSchema.safeParse(
+        automation.eventConfig,
+      );
       return (
-        left.orgId.localeCompare(right.orgId) ||
-        left.userId.localeCompare(right.userId)
-      );
-    });
-    for (const owner of orderedOwners) {
-      await set(
-        repairNotionAutomationAccountProjectionsForOwner$,
-        owner,
-        signal,
+        config.success && config.data.parentPage.id === eventPageParentId(event)
       );
     }
-    return orderedOwners.length > 0;
-  },
-);
+    case "notion-database-item-created": {
+      const config = notionDatabaseItemCreatedEventConfigSchema.safeParse(
+        automation.eventConfig,
+      );
+      return (
+        config.success &&
+        config.data.dataSource.id === eventDataSourceParentId(event)
+      );
+    }
+    case "notion-page-content-updated": {
+      const config = notionPageContentUpdatedEventConfigSchema.safeParse(
+        automation.eventConfig,
+      );
+      if (!config.success) {
+        return false;
+      }
+      if (config.data.scope.type === "page") {
+        return config.data.scope.page.id === eventPageId(event);
+      }
+      const dataSourceId = eventDataSourceParentId(event);
+      if (dataSourceId) {
+        return config.data.scope.dataSource.id === dataSourceId;
+      }
+      // Without a data-source identity, retain the provider's current parent
+      // lookup, including when a delayed event still names a page parent.
+      return true;
+    }
+    default: {
+      return false;
+    }
+  }
+}
 
 const loadCurrentNotionAutomations$ = command(
   async (
     { set },
     eventType: NotionAutomationEventType,
+    event: NotionWebhookEvent,
     signal: AbortSignal,
   ): Promise<readonly AutomationRow[]> => {
-    const automations = await set(queryNotionAutomations$, eventType, signal);
-    if (!(await set(repairNotionAutomationProjections$, automations, signal))) {
+    const automations = (
+      await set(queryNotionAutomations$, eventType, signal)
+    ).filter((automation) => {
+      return notionAutomationMatchesWebhookScope(automation, event);
+    });
+    const stale = automations
+      .filter((automation) => {
+        return (
+          automation.eventConnectorId === null ||
+          notionConfigConnectorId(
+            automation.eventType,
+            automation.eventConfig,
+          ) !== automation.eventConnectorId
+        );
+      })
+      .sort((left, right) => {
+        return left.id.localeCompare(right.id);
+      });
+    // A provider event repairs only its candidate subscriptions. Account
+    // selection changes retain their separate owner-wide repair path.
+    for (const automation of stale) {
+      await set(
+        repairNotionAutomationProjection$,
+        {
+          automationId: automation.id,
+          orgId: automation.orgId,
+          userId: automation.ownerUserId,
+        },
+        signal,
+      );
+    }
+    if (stale.length === 0) {
       return automations;
     }
-    return await set(queryNotionAutomations$, eventType, signal);
+    return (await set(queryNotionAutomations$, eventType, signal)).filter(
+      (automation) => {
+        return notionAutomationMatchesWebhookScope(automation, event);
+      },
+    );
   },
 );
 
@@ -685,6 +726,7 @@ const enqueueNotionChildPageEvents$ = command(
     const automations = await set(
       loadCurrentNotionAutomations$,
       "notion-child-page-created",
+      args.event,
       signal,
     );
     let pending = 0;
@@ -752,6 +794,7 @@ const enqueueNotionDatabaseItemEvents$ = command(
     const automations = await set(
       loadCurrentNotionAutomations$,
       "notion-database-item-created",
+      args.event,
       signal,
     );
     let pending = 0;
@@ -1011,6 +1054,7 @@ const enqueueOrRefreshNotionPageContentUpdatedEvents$ = command(
     const automations = await set(
       loadCurrentNotionAutomations$,
       "notion-page-content-updated",
+      args.event,
       signal,
     );
     let pending = 0;

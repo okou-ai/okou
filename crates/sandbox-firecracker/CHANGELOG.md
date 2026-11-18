@@ -1,5 +1,56 @@
 # Changelog
 
+## [0.53.117](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.116...sandbox-firecracker-v0.53.117) (2026-11-18)
+
+## [0.53.116](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.115...sandbox-firecracker-v0.53.116) (2026-11-18)
+
+## [0.53.115](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.114...sandbox-firecracker-v0.53.115) (2026-11-17)
+
+
+### Refactoring
+
+* use typed extended attribute operations ([#48421](https://github.com/okou-ai/okou/issues/48421)) ([6b3377e](https://github.com/okou-ai/okou/commit/6b3377e7ac70cd97e7aed16fabffe3df20778bd6))
+
+
+### Performance Improvements
+
+* **runner:** stop idle parking after local drain ([#48404](https://github.com/okou-ai/okou/issues/48404)) ([ffb675d](https://github.com/okou-ai/okou/commit/ffb675d9c3427d2ab8fd90bb4a68c0d34ce85137))
+
+## [0.53.114](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.113...sandbox-firecracker-v0.53.114) (2026-11-17)
+
+
+### Performance Improvements
+
+* **runner:** attribute archive staging writes ([#48338](https://github.com/okou-ai/okou/issues/48338)) ([1aeffbc](https://github.com/okou-ai/okou/commit/1aeffbc8c757415acb407157dba177305ed1b210))
+
+## [0.53.113](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.112...sandbox-firecracker-v0.53.113) (2026-11-17)
+
+
+### Refactoring
+
+* use typed resource limit calls ([#48257](https://github.com/okou-ai/okou/issues/48257)) ([6a91f3e](https://github.com/okou-ai/okou/commit/6a91f3e48eae8cb2f0c01294602c0fa00bd2eb6c))
+
+## [0.53.112](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.111...sandbox-firecracker-v0.53.112) (2026-11-17)
+
+## [0.53.111](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.110...sandbox-firecracker-v0.53.111) (2026-11-17)
+
+## [0.53.110](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.109...sandbox-firecracker-v0.53.110) (2026-11-17)
+
+## [0.53.109](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.108...sandbox-firecracker-v0.53.109) (2026-11-17)
+
+## [0.53.108](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.107...sandbox-firecracker-v0.53.108) (2026-11-16)
+
+
+### Refactoring
+
+* **rust:** borrow files for advisory locking ([#47963](https://github.com/okou-ai/okou/issues/47963)) ([1ce772e](https://github.com/okou-ai/okou/commit/1ce772ecd56bd86b0bb212327e78fa4ba28d5b1a))
+
+## [0.53.107](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.106...sandbox-firecracker-v0.53.107) (2026-11-16)
+
+## [0.53.106](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.105...sandbox-firecracker-v0.53.106) (2026-11-16)
+
+## [0.53.105](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.104...sandbox-firecracker-v0.53.105) (2026-11-16)
+
 ## [0.53.104](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.103...sandbox-firecracker-v0.53.104) (2026-11-16)
 
 ## [0.53.103](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.102...sandbox-firecracker-v0.53.103) (2026-11-15)

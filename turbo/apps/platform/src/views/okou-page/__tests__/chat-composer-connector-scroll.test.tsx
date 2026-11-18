@@ -68,86 +68,56 @@ async function connectorButton(popup: HTMLElement, label: string) {
 
 async function openAccountPanel(popup: HTMLElement, label = "Scroll 7") {
   click(await connectorButton(popup, label));
-  const panel = await within(popup).findByRole("group", { name: label });
-  await within(panel).findByRole("combobox", { name: "Account 1 access" });
-  return panel;
-}
-
-async function backToOverview(popup: HTMLElement, panel: HTMLElement) {
-  const back = await findFastControl("button", "Back", panel);
-  click(back);
-  return await within(popup).findByRole("list", { name: "Connectors" });
+  const submenu = await screen.findByRole("dialog", { name: label });
+  const panel = within(submenu).getByRole("group", { name: label });
+  await within(panel).findByRole("switch", { name: "Account 1 access" });
+  return { submenu, panel };
 }
 
 test.each([12, 30])(
-  "Start account views at the top and restore the %i-connector overview",
+  "Preserve the %i-connector overview position while accounts open alongside it",
   async (count) => {
     const user = userEvent.setup();
     const { popup } = await setup(count);
-    const overview = within(popup).getByRole("list", { name: "Connectors" });
-    overview.scrollTop = 180;
-    const panel = await openAccountPanel(popup);
+    const overview = () => {
+      return within(popup).getByRole("list", { name: "Connectors" });
+    };
+    overview().scrollTop = 180;
+    const { panel } = await openAccountPanel(popup);
+    expect(overview().scrollTop).toBe(180);
     expect(panel.scrollTop).toBe(0);
-    expect(panel).toHaveFocus();
-    expect(
-      within(popup).queryByRole("list", { name: "Connectors" }),
-    ).toBeNull();
     panel.scrollTop = 140;
-    await user.keyboard("{Tab}{Enter}");
-    const restored = await within(popup).findByRole("list", {
-      name: "Connectors",
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Scroll 7" })).toBeNull();
     });
-    expect(restored.scrollTop).toBe(180);
-    const returnButton = await connectorButton(popup, "Scroll 7");
-    expect(returnButton).toHaveFocus();
-    await user.keyboard("{Enter}");
-    const reopened = await within(popup).findByRole("group", {
-      name: "Scroll 7",
-    });
-    await within(reopened).findByRole("combobox", { name: "Account 1 access" });
-    expect(reopened.scrollTop).toBe(0);
-    reopened.scrollTop = 120;
-    const returned = await backToOverview(popup, reopened);
-    expect(returned.scrollTop).toBe(180);
-    returned.scrollTop = 220;
+    const row = await connectorButton(popup, "Scroll 7");
+    expect(row).toHaveFocus();
+    expect(overview().scrollTop).toBe(180);
+    const reopened = await openAccountPanel(popup);
+    expect(reopened.panel.scrollTop).toBe(0);
+    await user.keyboard("{Escape}");
+    overview().scrollTop = 220;
     const other = await openAccountPanel(popup, "Scroll 8");
-    expect(other.scrollTop).toBe(0);
-    const otherReturned = await backToOverview(popup, other);
-    expect(otherReturned.scrollTop).toBe(220);
+    expect(other.panel.scrollTop).toBe(0);
+    expect(overview().scrollTop).toBe(220);
   },
 );
 
-test("Keep search focus and discard the previous result position on a new query or popup", async () => {
-  const { popup, trigger } = await setup(30);
+test("Keep connector search focus and reset its scroll position on a new query", async () => {
+  const { popup } = await setup(30);
   const search = within(popup).getByPlaceholderText("Find connectors...");
   const overview = within(popup).getByRole("list", { name: "Connectors" });
   overview.scrollTop = 180;
-  const panel = await openAccountPanel(popup);
-  panel.scrollTop = 120;
-  await fill(search, "Scroll");
-  const results = await within(popup).findByRole("list", {
-    name: "Connectors",
+  await openAccountPanel(popup);
+  await fill(search, "Scroll 2");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Scroll 7" })).toBeNull();
   });
-  expect(results.scrollTop).toBe(0);
   expect(search).toHaveFocus();
-  const reopened = await openAccountPanel(popup);
-  const returned = await backToOverview(popup, reopened);
-  expect(returned.scrollTop).toBe(0);
-  returned.scrollTop = 180;
-  click(trigger);
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: "Connectors" })).toBeNull();
-  });
-  click(trigger);
-  const fresh = await screen.findByRole("dialog", { name: "Connectors" });
-  expect(
-    within(fresh).getByRole("list", { name: "Connectors" }).scrollTop,
-  ).toBe(0);
-  await waitFor(() => {
-    expect(
-      within(fresh).getByPlaceholderText("Find connectors..."),
-    ).toHaveFocus();
-  });
+  const results = within(popup).getByRole("list", { name: "Connectors" });
+  expect(results.scrollTop).toBe(0);
+  await within(results).findByText("Scroll 2", { exact: true });
 });
 
 test("Start a fresh overview when reopening before the previous popup finishes closing", async () => {
@@ -173,143 +143,48 @@ test("Start a fresh overview when reopening before the previous popup finishes c
   }
 });
 
-test("Keep a valid overview focus destination if the returning connector was removed", async () => {
-  const { popup } = await setup(30);
-  within(popup).getByRole("list", { name: "Connectors" }).scrollTop = 180;
-  const panel = await openAccountPanel(popup);
-  context.mocks.api(
-    chatConnectorAccessContract.overviewTarget,
-    ({ respond }) => {
-      return respond(200, { connector: null });
-    },
-  );
-  context.mocks.ably.trigger("connector:changed", {
-    connectorSlug: "scroll-7",
-  });
-  await waitFor(() => {
-    expect(
-      within(panel).queryByRole("combobox", { name: "Account 1 access" }),
-    ).toBeNull();
-  });
-  expect(
-    within(panel).getByText("Accounts are unavailable for this connector."),
-  ).toBeInTheDocument();
-  const overview = await backToOverview(popup, panel);
-  expect(within(overview).queryByText("Scroll 7", { exact: true })).toBeNull();
-  expect(overview.scrollTop).toBe(180);
-  expect(overview).toHaveFocus();
-});
-
-test("Keep popup focus as the final connector disappears and returns", async () => {
-  const user = userEvent.setup();
-  const { popup, catalog, accounts } = await setup(1);
-  const panel = await openAccountPanel(popup, "Scroll 1");
-  context.mocks.api(
-    chatConnectorAccessContract.overviewTarget,
-    ({ respond }) => {
-      return respond(200, { connector: null });
-    },
-  );
-  context.mocks.ably.trigger("connector:changed", {
-    connectorSlug: "scroll-1",
-  });
-  await waitFor(() => {
-    expect(
-      within(panel).queryByRole("combobox", { name: "Account 1 access" }),
-    ).toBeNull();
-  });
-  await user.keyboard("{Tab}");
-  await expect(findFastControl("button", "Back", panel)).resolves.toHaveFocus();
-  await user.keyboard("{Enter}");
-  await waitFor(() => {
-    expect(popup.contains(document.activeElement)).toBeTruthy();
-  });
-  await user.keyboard("{Tab}");
-  await expect(
-    findFastControl("button", "Add connectors", popup),
-  ).resolves.toHaveFocus();
-  context.mocks.api(
-    chatConnectorAccessContract.overviewTarget,
-    ({ respond }) => {
-      return respond(200, {
-        connector: chatConnectorOverviewFixture({
-          target: { kind: "builtin", connectorSlug: catalog[0]!.slug },
-          label: catalog[0]!.label,
-          accounts,
-        }),
-      });
-    },
-  );
-  context.mocks.ably.trigger("connector:changed", {
-    connectorSlug: "scroll-1",
-  });
-  await within(popup).findByText("Scroll 1", { exact: true });
-  await expect(
-    findFastControl("button", "Add connectors", popup),
-  ).resolves.toHaveFocus();
-});
-
-test("Return focus inside the connector popup when an open account Select disappears", async () => {
-  const user = userEvent.setup();
-  const { popup, trigger } = await setup(12);
-  const panel = await openAccountPanel(popup);
-  await user.click(
-    await within(panel).findByRole("combobox", { name: "Account 1 access" }),
-  );
-  const options = await screen.findByRole("listbox");
-  await waitFor(() => {
-    expect(options.contains(document.activeElement)).toBeTruthy();
-  });
-  context.mocks.api(
-    chatConnectorAccessContract.overviewTarget,
-    ({ respond }) => {
-      return respond(200, { connector: null });
-    },
-  );
-  context.mocks.ably.trigger("connector:changed", {
-    connectorSlug: "scroll-7",
-  });
-  await within(panel).findByText(
-    "Accounts are unavailable for this connector.",
-  );
-  await waitFor(() => {
-    expect(screen.queryByRole("listbox")).toBeNull();
-    expect(panel.contains(document.activeElement)).toBeTruthy();
-  });
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: "Connectors" })).toBeNull();
-    expect(trigger).toHaveFocus();
-  });
-});
-
-test("Keep normal Select dismissal and deliberate focus moves with their controls", async () => {
-  const user = userEvent.setup();
-  const { popup, trigger } = await setup(30);
-  const panel = await openAccountPanel(popup);
-  const select = await within(panel).findByRole("combobox", {
-    name: "Account 1 access",
-  });
-  await user.click(select);
-  await screen.findByRole("listbox");
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(screen.queryByRole("listbox")).toBeNull();
-    expect(select).toHaveFocus();
-  });
-  await user.click(select);
-  await screen.findByRole("listbox");
-  const search = within(popup).getByPlaceholderText("Find connectors...");
-  await user.click(search);
-  await waitFor(() => {
-    expect(screen.queryByRole("listbox")).toBeNull();
-    expect(search).toHaveFocus();
-  });
-  await user.click(select);
-  await screen.findByRole("listbox");
-  await user.click(trigger);
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: "Connectors" })).toBeNull();
-    expect(trigger).toHaveFocus();
-  });
-});
+test.each([1, 30])(
+  "Keep focus after removing an open connector from a %i-connector overview",
+  async (count) => {
+    const { popup, catalog, accounts } = await setup(count);
+    const index = count === 1 ? 0 : 6;
+    const connector = catalog[index]!;
+    await openAccountPanel(popup, connector.label);
+    context.mocks.api(
+      chatConnectorAccessContract.overviewTarget,
+      ({ respond }) => {
+        return respond(200, { connector: null });
+      },
+    );
+    context.mocks.ably.trigger("connector:changed", {
+      connectorSlug: connector.slug,
+    });
+    await waitFor(() => {
+      expect(
+        within(popup).queryByText(connector.label, { exact: true }),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("dialog", { name: connector.label }),
+      ).toBeNull();
+      expect(popup.contains(document.activeElement)).toBeTruthy();
+    });
+    await findFastControl("button", "Add connectors", popup);
+    context.mocks.api(
+      chatConnectorAccessContract.overviewTarget,
+      ({ respond }) => {
+        return respond(200, {
+          connector: chatConnectorOverviewFixture({
+            target: { kind: "builtin", connectorSlug: connector.slug },
+            label: connector.label,
+            accounts,
+          }),
+        });
+      },
+    );
+    context.mocks.ably.trigger("connector:changed", {
+      connectorSlug: connector.slug,
+    });
+    await within(popup).findByText(connector.label, { exact: true });
+    expect(screen.queryByRole("dialog", { name: connector.label })).toBeNull();
+  },
+);

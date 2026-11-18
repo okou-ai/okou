@@ -226,9 +226,10 @@ private struct WorkspaceRootView: View {
 
   var body: some View {
     WorkspaceNavigation(sidebar: sidebar) {
-      // Identity restoration gates the sidebar, never the new-chat screen.
+      // Mount the sidebar after identity and its complete local baseline are restored.
       Group {
-        if authentication.presentation?.userID == userID,
+        if store.hasRestoredSidebar,
+          authentication.presentation?.userID == userID,
           authentication.presentation?.preparedWorkspaceID == workspaceID
         {
           StoreProvider(store.projects.stateStore) {
@@ -241,6 +242,7 @@ private struct WorkspaceRootView: View {
               newChat: startNewChat
             )
             .id(ObjectIdentifier(store))
+            .chatFeedbackOverlay(store: store, isPresented: sidebar.isOpen)
           }
         }
       }
@@ -249,9 +251,14 @@ private struct WorkspaceRootView: View {
     }
     .ignoresSafeArea()
     .sensoryFeedback(.selection, trigger: sidebar.isOpen)
-    .overlay(alignment: .top) {
-      ChatFeedbackBanner(store: store)
-        .padding(.top, headerHeight)
+    .task(id: store.threadFeedback?.id) {
+      guard let feedback = store.threadFeedback else { return }
+      UIAccessibility.post(notification: .announcement, argument: feedback.message)
+      guard !feedback.persists else { return }
+      do {
+        try await Task.sleep(for: .seconds(UIAccessibility.isVoiceOverRunning ? 20 : 4))
+        store.dismissThreadFeedback(feedback.id)
+      } catch {}
     }
     .modifier(ChatLinkNavigation(store: store, didOpen: closeSidebar))
     .background { ChatThreadRenameDialog(list: store.list).frame(width: 0, height: 0) }
@@ -328,6 +335,7 @@ private struct WorkspaceRootView: View {
           .frame(minHeight: 0, maxHeight: .infinity)
           .safeAreaInset(edge: .bottom, spacing: 0) {
             newChatComposer
+              .chatFeedbackAnchor()
           }
           .animation(
             reduceMotion ? nil : .easeInOut(duration: 0.22),
@@ -358,8 +366,10 @@ private struct WorkspaceRootView: View {
     ) { flow in
       ChatForkView(
         flow: flow, webURL: store.webURL, threads: store.list.threads,
+        project: store.projects.projects.first(where: { $0.id == flow.projectID }),
         needsUpgrade: store.needsUpgrade, dismiss: store.dismissFork)
     }
+    .chatFeedbackOverlay(store: store, isPresented: !sidebar.isOpen)
     .composerSuggestionOverlay(
       topInset: topContentHeight, isEnabled: !sidebar.isOpen && !sidebar.isTransitioning
     )
@@ -451,8 +461,6 @@ private struct WorkspaceRootView: View {
   }
 
   private func openSidebar() {
-    UIApplication.shared.sendAction(
-      #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     sidebar.setOpen(true)
   }
 
@@ -461,9 +469,6 @@ private struct WorkspaceRootView: View {
   }
 
   private func startNewChat() {
-    UIApplication.shared.sendAction(
-      #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-    store.startNewChat()
-    closeSidebar()
+    NewChatRequests.shared.request()
   }
 }

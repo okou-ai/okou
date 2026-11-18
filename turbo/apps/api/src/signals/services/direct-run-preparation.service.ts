@@ -1,16 +1,20 @@
 import { contentBundleSchema } from "@okouai/api-contracts/contracts/content-bundle";
-import type { ExecutionInput } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { command, computed, type Computed } from "ccstate";
 import { and, eq, isNotNull, ne, sql } from "drizzle-orm";
 import { array, boolean, object } from "zod";
+import { normalizeBuildCommitSha } from "../../lib/build-info";
 import { parseRawRows } from "../../lib/db-raw-rows";
+import { env } from "../../lib/env";
+import { nowDate } from "../../lib/time";
 import { rawSqlReadDb$ } from "../external/db";
+import { recordSandboxOperations } from "../external/sandbox-op-log";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { agentInstructionsSelectionSql } from "./execution-instructions-selection";
-import { createExecutionContext } from "./execution-context";
+import { createExecutionRuntimeContext } from "./execution-runtime-context";
 import { contentBundleAvailableCondition } from "./execution-content-bundle";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   cachedContentBundleUrlSchema,
   contentBundleUrlCacheContext$,
@@ -18,14 +22,15 @@ import {
 } from "./content-bundle-presigned-url-cache";
 import { encryptExecutionSecrets$ } from "./execution-secrets.service";
 import {
-  executionContextBody,
   prepareExecutionPublication$,
-  withExecutionContentBundles$,
   executionBundleHashes,
   type ExecutionPublicationRun,
 } from "./run-execution-publication.service";
 import type { RunnerReusePreparation } from "./runner-reuse-preference";
-import { persistStoragePresignedUrls$ } from "./system-storage-presigned-url-cache.service";
+import {
+  persistStoragePresignedUrls$,
+  type StoragePresignedUrlCacheWrite,
+} from "./system-storage-presigned-url-cache.service";
 import { recordExecutionPreparationTimings } from "./api-dispatch-timing.service";
 import {
   executionWorkflowSchema,
@@ -33,16 +38,15 @@ import {
   executionWorkflowSelectionSql,
 } from "./execution-workflow-selection";
 
-/** Receipt from this graph's durable Run admission. */
+/** Receipt from durable Thread Run admission, before first-run classification. */
 export interface AdmittedRunLaunch {
-  readonly run: ExecutionPublicationRun;
-  readonly executionContext: ExecutionInput;
-  readonly executionFacts: AdmittedExecutionFacts;
+  readonly run: Omit<ExecutionPublicationRun, "isFirstRun">;
+  readonly facts: AdmittedExecutionFacts;
   readonly runnerGroup: string;
   readonly profile: string;
-  readonly reuseKey: string | null;
+  readonly reuseKey: string;
   readonly createdAt: Date;
-  readonly reusePreparation: RunnerReusePreparation | undefined;
+  readonly reusePreparation: RunnerReusePreparation;
 }
 
 const packageSelectionSchema = object({
@@ -57,34 +61,29 @@ const packageSelectionSchema = object({
 export function createDirectRunPreparation(
   input$: Computed<Promise<AdmittedRunLaunch>>,
 ) {
-  const executionInput$ = computed(async (get) => {
-    const input = await get(input$);
-    return {
-      run: input.run,
-      context: input.executionContext,
-      facts: input.executionFacts,
-    };
-  });
-  const prepared$ = createExecutionContext(executionInput$);
+  const { prepared$, packageContext$ } = createExecutionRuntimeContext(input$);
   const packages$ = computed(async (get) => {
-    const [input, prepared] = await Promise.all([get(input$), get(prepared$)]);
+    const [input, packageContext] = await Promise.all([
+      get(input$),
+      get(packageContext$),
+    ]);
     const db = get(rawSqlReadDb$);
-    const selection = executionWorkflowInput(prepared.context);
+    const selection = executionWorkflowInput(packageContext);
     const cache = get(contentBundleUrlCacheContext$);
     // Read the admitted identity and its authorized packages in one snapshot.
     const rows = await db.execute(sql`WITH admitted_run AS MATERIALIZED (
       SELECT ${agentRuns.id} AS "id",${agentRuns.chatThreadId} AS "chatThreadId",${agentRuns.agentId} AS "agentId",
         ${agentRuns.userId} AS "userId",${agentRuns.orgId} AS "orgId",${agentRuns.triggerSource} AS "triggerSource",${agentRuns.workflowAutomationId} AS "workflowAutomationId"
       FROM ${agentRuns} WHERE ${and(eq(agentRuns.id, input.run.id), eq(agentRuns.userId, input.run.userId), eq(agentRuns.orgId, input.run.orgId), eq(agentRuns.status, "pending"))}
-    ), ${agentInstructionsSelectionSql(sql`${input.executionContext.featureFlags?.singleAgent === true}`)},
+    ), ${agentInstructionsSelectionSql(sql`${input.facts.featureFlags[FeatureSwitchKey.SingleAgent]}`)},
       ${executionWorkflowSelectionSql(selection)}
     SELECT EXISTS(SELECT 1 FROM workflow_admission)
       AND COALESCE((SELECT "bundlesAvailable" FROM workflow_selection),false)
       AND NOT EXISTS(SELECT 1 FROM selected_agent WHERE NOT ${contentBundleAvailableCondition(sql`selected_agent."instructionsBundle"`)}) AS available,
-      NOT EXISTS(SELECT 1 FROM ${chatEvents} WHERE ${input.run.chatThreadId === null ? sql`false` : and(eq(chatEvents.chatThreadId, input.run.chatThreadId), isNotNull(chatEvents.runId), ne(chatEvents.runId, input.run.id))}) AS "isFirstRun",
+      NOT EXISTS(SELECT 1 FROM ${chatEvents} WHERE ${and(eq(chatEvents.chatThreadId, input.run.chatThreadId), isNotNull(chatEvents.runId), ne(chatEvents.runId, input.run.id))}) AS "isFirstRun",
       (SELECT documents FROM workflow_selection) AS workflows,
       (SELECT "instructionsBundle" FROM selected_agent) AS "instructionsBundle",
-      ${contentBundleUrlCacheSnapshotSql(cache, executionBundleHashes(prepared.context))} AS "cachedBundleUrls"`);
+      ${contentBundleUrlCacheSnapshotSql(cache, executionBundleHashes(packageContext))} AS "cachedBundleUrls"`);
     const [row] = parseRawRows(packageSelectionSchema, rows);
     if (!row?.available) {
       throw new Error(
@@ -118,8 +117,7 @@ export const prepareDirectRun$ = command(
     signal.throwIfAborted();
     const run = {
       ...input.run,
-      isFirstRun:
-        input.run.chatThreadId === null ? null : packages.row.isFirstRun,
+      isFirstRun: packages.row.isFirstRun,
     };
     const context = {
       ...prepared.context,
@@ -129,36 +127,17 @@ export const prepareDirectRun$ = command(
         signal,
       ),
     };
-    const response = await set(
+    const publication = await set(
       prepareExecutionPublication$,
       {
         run,
+        reuseKey: input.reuseKey,
         preparedContext: context,
         networkPolicyInputs: prepared.networkPolicyInputs,
-      },
-      signal,
-    );
-    const publication = await set(
-      withExecutionContentBundles$,
-      {
-        executionContext: executionContextBody({
-          run,
-          reuseKey: input.reuseKey,
-          preparedContext: context,
-          ...response,
-        }),
         packages: packages.row,
         workflowInput: packages.selection,
-        officialWorkflowBundles: context.officialWorkflowBundles,
-        seedSkillBundles: context.seedSkillBundles,
-        templateGuidanceBundles: context.templateGuidanceBundles,
         bundleUrlCache: packages.cache,
       },
-      signal,
-    );
-    await set(
-      persistStoragePresignedUrls$,
-      [...prepared.storageCacheWrites, ...publication.cacheWrites],
       signal,
     );
     signal.throwIfAborted();
@@ -169,26 +148,75 @@ export const prepareDirectRun$ = command(
       records: prepared.connectorOperationTimings,
     });
     return {
+      cacheWrites: [...prepared.storageCacheWrites, ...publication.cacheWrites],
       executionContext: publication.executionContext,
       sourceAuthorization: {
         workflows: packages.selection,
         workflowIds: packages.row.workflows.map((workflow) => {
           return workflow.id;
         }),
-        singleAgent: context.featureFlags?.singleAgent === true,
+        singleAgent: input.facts.featureFlags[FeatureSwitchKey.SingleAgent],
       },
       contextSnapshot: {
         runId: run.id,
         userId: run.userId,
         prompt: run.prompt,
         appendSystemPrompt: run.appendSystemPrompt,
+        vars: run.vars,
         context: {
           ...context,
-          networkPolicies: response.refreshedPolicies.networkPolicies,
+          networkPolicies: publication.executionContext.networkPolicies,
         },
         secretNames: Object.keys(prepared.secrets ?? {}),
-        secretValues: response.secretValues,
+        secretValues: [
+          ...Object.values(prepared.secrets ?? {}),
+          ...(publication.executionContext.secretValues ?? []),
+        ],
       },
     };
+  },
+);
+
+/** The pick entry owns this optional publication independently of delivery. */
+export const publishDirectRunCache$ = command(
+  async (
+    { set },
+    args: {
+      readonly runId: string;
+      readonly runnerGroup: string;
+      readonly profile: string;
+      readonly cacheWrites: readonly StoragePresignedUrlCacheWrite[];
+    },
+    signal: AbortSignal,
+  ) => {
+    const publication = await set(
+      persistStoragePresignedUrls$,
+      args.cacheWrites,
+      signal,
+    );
+    const apiCommitSha = normalizeBuildCommitSha(env("GIT_COMMIT_SHA"));
+    recordSandboxOperations([
+      {
+        sandboxType: "runner",
+        actionType: "api_dispatch_presigned_url_cache_write",
+        runId: args.runId,
+        durationMs: publication.durationMs,
+        success: publication.status !== "error",
+        timestamp: nowDate().toISOString(),
+        dimensions: {
+          span_kind: "background",
+          cache_write_status: publication.status,
+          cache_entry_count: new Set(
+            args.cacheWrites.map((value) => {
+              return value.cacheKey;
+            }),
+          ).size,
+          runner_group: args.runnerGroup,
+          profile: args.profile,
+          ...(apiCommitSha ? { api_commit_sha: apiCommitSha } : {}),
+        },
+      },
+    ]);
+    return publication;
   },
 );

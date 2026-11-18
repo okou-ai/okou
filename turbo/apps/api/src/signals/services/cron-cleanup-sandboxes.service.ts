@@ -47,6 +47,7 @@ import {
 import { failPendingInlineOnlyDeliveryCallbacksForDeletedThread$ } from "./agent-run-callback.service";
 import { dispatchCancelSideEffects$ } from "./run-cancel.service";
 import { cleanupExpiredExportJobs$ } from "./user-export-cleanup.service";
+import { cleanupStaleRunnerState$ } from "./runner-state-cleanup.service";
 
 const L = logger("CronCleanupSandboxes");
 
@@ -102,22 +103,6 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function terminalError(candidate: ThreadlessRunCandidate): string | undefined {
-  if (candidate.status === "completed") {
-    return undefined;
-  }
-  if (candidate.error) {
-    return candidate.error;
-  }
-  if (candidate.status === "cancelled") {
-    return "Run cancelled";
-  }
-  if (candidate.status === "timeout") {
-    return "Run timed out";
-  }
-  return "Run failed";
-}
-
 function threadlessRunCandidateReadPlan() {
   const forwardCutoff = new Date(THREADLESS_RUN_FORWARD_CUTOFF_ISO);
   return {
@@ -126,7 +111,6 @@ function threadlessRunCandidateReadPlan() {
       orgId: agentRuns.orgId,
       userId: agentRuns.userId,
       status: agentRuns.status,
-      error: agentRuns.error,
       completedAt: agentRuns.completedAt,
       cancellationRecoveryCompleted: agentRuns.cancellationRecoveryCompleted,
     },
@@ -206,7 +190,6 @@ interface CleanupCutoffs {
 interface MaintenanceTerminalSideEffectsInput {
   readonly runId: string;
   readonly orgId: string;
-  readonly error: string;
   readonly deliveryNotification?: {
     readonly userId: string;
     readonly chatThreadId: string;
@@ -241,7 +224,6 @@ const dispatchMaintenanceTerminalSideEffects$ = command(
         runId: input.runId,
         orgId: input.orgId,
         status: "failed",
-        error: input.error,
         ...(input.deliveryNotification
           ? { deliveryNotification: input.deliveryNotification }
           : {}),
@@ -264,13 +246,7 @@ const cleanupSingleRun$ = command(
         ? "Run timed out while pending (never started)"
         : "Run timed out (no heartbeat)";
     const cutoff = staleRunCutoff(run, cutoffs);
-    const committed = await set(
-      commitStaleRunTimeout$,
-      run,
-      cutoff,
-      timeoutReason,
-      signal,
-    );
+    const committed = await set(commitStaleRunTimeout$, run, cutoff, signal);
     signal.throwIfAborted();
 
     if (!committed) {
@@ -309,7 +285,6 @@ const cleanupSingleRun$ = command(
       {
         runId: run.id,
         orgId: committed.orgId,
-        error: timeoutReason,
         ...(committed.chatThreadId !== null
           ? {
               deliveryNotification: {
@@ -408,7 +383,6 @@ const redriveTerminalLifecycle$ = command(
       }
     }
 
-    const error = terminalError(candidate);
     await set(
       dispatchCompleteSideEffects$,
       {
@@ -417,7 +391,6 @@ const redriveTerminalLifecycle$ = command(
         runId: candidate.runId,
         orgId: candidate.orgId,
         status: candidate.status === "completed" ? "completed" : "failed",
-        ...(error === undefined ? {} : { error }),
       },
       signal,
     );
@@ -572,6 +545,21 @@ export const cleanupSandboxes$ = command(
   async ({ set }, signal: AbortSignal): Promise<CleanupSandboxesResult> => {
     const db = set(writeDb$);
     const currentTime = now();
+    const runnerCleanup = await settle(
+      set(
+        cleanupStaleRunnerState$,
+        { runnerGroup: null, at: new Date(currentTime) },
+        signal,
+      ),
+      signal,
+    );
+    if (!runnerCleanup.ok) {
+      // Registry reclamation must not prevent Run timeout and queue recovery.
+      // The next scheduled maintenance pass retries the same stale rows.
+      L.error("Failed to clean stale Runner registrations", {
+        error: errorMessage(runnerCleanup.error),
+      });
+    }
     const cutoffs = {
       running: new Date(currentTime - HEARTBEAT_TIMEOUT_MS),
       debug: new Date(currentTime - DEBUG_HEARTBEAT_TIMEOUT_MS),

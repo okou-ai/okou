@@ -9,78 +9,7 @@ struct NativeLifetimeIndex {
   ) -> NativeLifetimeIndex {
     guard depth < 16 else { return NativeLifetimeIndex(identity: "unknown:\(expression.position)") }
     if let reference = expression.as(DeclReferenceExprSyntax.self) {
-      let name = reference.baseName.text
-      for ancestor in ancestors(of: expression) {
-        if let statements = ancestor.as(CodeBlockItemListSyntax.self) {
-          for statement in statements.reversed() where statement.position < expression.position {
-            if let guardStatement = statement.item.as(GuardStmtSyntax.self),
-              expression.position >= guardStatement.endPosition,
-              let binding = optional(name, in: guardStatement.conditions)
-            {
-              return binding
-            }
-            guard let variable = statement.item.as(VariableDeclSyntax.self) else { continue }
-            for binding in variable.bindings
-            where binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text == name
-              && !(binding.position <= expression.position
-                && expression.position < binding.endPosition)
-            {
-              guard variable.bindingSpecifier.text == "let" else {
-                return NativeLifetimeIndex(
-                  identity: "mutable:\(binding.position):\(expression.position)")
-              }
-              if let source = binding.initializer?.value {
-                let original = resolve(source, aliases: aliases, depth: depth + 1)
-                if source.is(DeclReferenceExprSyntax.self)
-                  || source.is(MemberAccessExprSyntax.self)
-                  || source.is(StringLiteralExprSyntax.self)
-                  || source.is(IntegerLiteralExprSyntax.self) || original.freshUUID != nil
-                {
-                  return original
-                }
-              }
-              return NativeLifetimeIndex(identity: "local:\(binding.position)")
-            }
-          }
-        }
-        if let branch = ancestor.as(IfExprSyntax.self),
-          branch.body.position <= expression.position
-            && expression.position < branch.body.endPosition,
-          let binding = optional(name, in: branch.conditions)
-        {
-          return binding
-        }
-        if let loop = ancestor.as(WhileStmtSyntax.self),
-          loop.body.position <= expression.position && expression.position < loop.body.endPosition,
-          let binding = optional(name, in: loop.conditions)
-        {
-          return binding
-        }
-        let parameters =
-          ancestor.as(FunctionDeclSyntax.self)?.signature.parameterClause.parameters
-          ?? ancestor.as(InitializerDeclSyntax.self)?.signature.parameterClause.parameters
-        if let parameter = parameters?.first(where: { ($0.secondName ?? $0.firstName).text == name }
-        ) {
-          if parameter.type.trimmedDescription.hasPrefix("inout ") {
-            return NativeLifetimeIndex(
-              identity: "mutable:\(parameter.position):\(expression.position)")
-          }
-          let identity = "parameter:\(parameter.position)"
-          return aliases[identity] ?? NativeLifetimeIndex(identity: identity)
-        }
-        if let loop = ancestor.as(ForStmtSyntax.self),
-          nativeLifetimeBindings(loop.pattern).contains(name)
-        {
-          return NativeLifetimeIndex(identity: "iteration:\(loop.position):\(name)")
-        }
-        if let closure = ancestor.as(ClosureExprSyntax.self),
-          closureParameters(closure).contains(name)
-        {
-          return NativeLifetimeIndex(identity: "closure:\(closure.position):\(name)")
-        }
-        if ancestor.is(MemberBlockSyntax.self) { break }
-      }
-      return NativeLifetimeIndex(identity: "self." + name)
+      return resolveReference(reference, expression: expression, aliases: aliases, depth: depth)
     }
     if let member = expression.as(MemberAccessExprSyntax.self), let base = member.base {
       if base.trimmedDescription == "self" {
@@ -116,6 +45,84 @@ struct NativeLifetimeIndex {
       }
     }
     return NativeLifetimeIndex(identity: "expression:\(expression.position)")
+  }
+
+  private static func resolveReference(
+    _ reference: DeclReferenceExprSyntax, expression: ExprSyntax,
+    aliases: [String: NativeLifetimeIndex], depth: Int
+  ) -> NativeLifetimeIndex {
+    let name = reference.baseName.text
+    for ancestor in ancestors(of: expression) {
+      if let statements = ancestor.as(CodeBlockItemListSyntax.self) {
+        for statement in statements.reversed() where statement.position < expression.position {
+          if let guardStatement = statement.item.as(GuardStmtSyntax.self),
+            expression.position >= guardStatement.endPosition,
+            let binding = optional(name, in: guardStatement.conditions)
+          {
+            return binding
+          }
+          guard let variable = statement.item.as(VariableDeclSyntax.self) else { continue }
+          for binding in variable.bindings
+          where binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text == name
+            && !(binding.position <= expression.position
+              && expression.position < binding.endPosition)
+          {
+            guard variable.bindingSpecifier.text == "let" else {
+              return NativeLifetimeIndex(
+                identity: "mutable:\(binding.position):\(expression.position)")
+            }
+            if let source = binding.initializer?.value {
+              let original = resolve(source, aliases: aliases, depth: depth + 1)
+              if source.is(DeclReferenceExprSyntax.self)
+                || source.is(MemberAccessExprSyntax.self)
+                || source.is(StringLiteralExprSyntax.self)
+                || source.is(IntegerLiteralExprSyntax.self) || original.freshUUID != nil
+              {
+                return original
+              }
+            }
+            return NativeLifetimeIndex(identity: "local:\(binding.position)")
+          }
+        }
+      }
+      if let branch = ancestor.as(IfExprSyntax.self),
+        branch.body.position <= expression.position
+          && expression.position < branch.body.endPosition,
+        let binding = optional(name, in: branch.conditions)
+      {
+        return binding
+      }
+      if let loop = ancestor.as(WhileStmtSyntax.self),
+        loop.body.position <= expression.position && expression.position < loop.body.endPosition,
+        let binding = optional(name, in: loop.conditions)
+      {
+        return binding
+      }
+      let parameters =
+        ancestor.as(FunctionDeclSyntax.self)?.signature.parameterClause.parameters
+        ?? ancestor.as(InitializerDeclSyntax.self)?.signature.parameterClause.parameters
+      if let parameter = parameters?.first(where: { ($0.secondName ?? $0.firstName).text == name }
+      ) {
+        if parameter.type.trimmedDescription.hasPrefix("inout ") {
+          return NativeLifetimeIndex(
+            identity: "mutable:\(parameter.position):\(expression.position)")
+        }
+        let identity = "parameter:\(parameter.position)"
+        return aliases[identity] ?? NativeLifetimeIndex(identity: identity)
+      }
+      if let loop = ancestor.as(ForStmtSyntax.self),
+        nativeLifetimeBindings(loop.pattern).contains(name)
+      {
+        return NativeLifetimeIndex(identity: "iteration:\(loop.position):\(name)")
+      }
+      if let closure = ancestor.as(ClosureExprSyntax.self),
+        closureParameters(closure).contains(name)
+      {
+        return NativeLifetimeIndex(identity: "closure:\(closure.position):\(name)")
+      }
+      if ancestor.is(MemberBlockSyntax.self) { break }
+    }
+    return NativeLifetimeIndex(identity: "self." + name)
   }
 
   private static func optional(_ name: String, in conditions: ConditionElementListSyntax)

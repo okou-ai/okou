@@ -1,3 +1,8 @@
+import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
+import { sendTeamsRunStartIndicator } from "./teams-thinking-indicator.service";
 import type {
   TeamsInboundActivity,
   TeamsInboundAttachment,
@@ -25,10 +30,7 @@ import { teamsBotDisplayName } from "../../lib/teams-official-app";
 import { nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import { writeDb$ } from "../external/db";
-import {
-  publishChatThreadMessageCreatedSafely,
-  publishThreadListChangedSafely,
-} from "../external/realtime";
+import { publishThreadListChangedSafely } from "../external/realtime";
 import {
   checkTeamsConversationMember,
   fetchTeamsChannelMessage,
@@ -37,13 +39,11 @@ import {
   fetchTeamsPersonalChatMessages,
   fetchTeamsUsers,
   sendTeamsMessageReply,
-  sendTeamsReaction,
-  sendTeamsTypingActivity,
   type TeamsGraphAttachment,
   type TeamsGraphMessage,
   type TeamsGraphUserInfo,
 } from "../external/teams-bot-client";
-import { bestEffort, safeJsonParse, settle } from "../utils";
+import { safeJsonParse, settle } from "../utils";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
@@ -77,7 +77,6 @@ import { formatTeamsFileForContext } from "./teams-prompt";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
 const L = logger("TeamsDispatch");
 const TEAMS_SUPPORTED_COMMANDS_TEXT = "`help`, `connect`, `disconnect`";
-const TEAMS_THINKING_REACTION_TYPE = "1f4ad_thoughtballoon";
 const TEAMS_FILE_DOWNLOAD_INFO_CONTENT_TYPE =
   "application/vnd.microsoft.teams.file.download.info";
 const TEAMS_REFERENCE_ATTACHMENT_CONTENT_TYPE = "reference";
@@ -513,40 +512,6 @@ function userConnectionWhere(tenantId: string, teamsUserId: string) {
     eq(teamsOrgConnections.teamsTenantId, tenantId),
     eq(teamsOrgConnections.teamsUserId, teamsUserId),
   );
-}
-
-async function sendTeamsRunStartIndicator(
-  args: {
-    readonly activity: TeamsMessageActivity;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const activityId = args.activity.activityId;
-  let indicator:
-    | ReturnType<typeof sendTeamsTypingActivity>
-    | ReturnType<typeof sendTeamsReaction>;
-  if (isTeamsDirectMessage(args.activity) || !activityId) {
-    indicator = sendTeamsTypingActivity(
-      {
-        serviceUrl: args.activity.serviceUrl,
-        conversationId: args.activity.conversationId,
-        tenantId: args.activity.tenantId,
-      },
-      signal,
-    );
-  } else {
-    indicator = sendTeamsReaction(
-      {
-        serviceUrl: args.activity.serviceUrl,
-        conversationId: args.activity.conversationId,
-        activityId,
-        tenantId: args.activity.tenantId,
-        reactionType: TEAMS_THINKING_REACTION_TYPE,
-      },
-      signal,
-    );
-  }
-  await bestEffort(indicator, signal);
 }
 
 function composeAgentFields() {
@@ -1534,11 +1499,26 @@ const runAgentForTeams$ = command(
           userId: args.connection.userId,
           orgId: args.installation.executionOrgId,
         });
-        await publishChatThreadMessageCreatedSafely({
-          userId: args.connection.userId,
-          orgId: args.installation.executionOrgId,
-          threadId: persisted.chatThreadId,
-        });
+        waitUntil(
+          set(
+            projectCommittedChatThreadSearch$,
+            {
+              userId: args.connection.userId,
+              orgId: args.installation.executionOrgId,
+              threadId: persisted.chatThreadId,
+            },
+            signal,
+          ),
+        );
+        await set(
+          publishChatThreadMessageCreated$,
+          {
+            userId: args.connection.userId,
+            orgId: args.installation.executionOrgId,
+            threadId: persisted.chatThreadId,
+          },
+          signal,
+        );
         const noticed = await settle(
           (async () => {
             const pick = await set(

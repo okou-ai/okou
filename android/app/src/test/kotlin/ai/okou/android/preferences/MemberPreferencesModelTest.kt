@@ -32,9 +32,15 @@ import org.junit.Test
 class MemberPreferencesModelTest {
     private class Service :
         WorkspaceSession,
+        ai.okou.android.chat.AssistantRecoveryService by ai.okou.android
+            .TestAssistantRecoveryService(),
         ai.okou.android.chat.RealtimeService by ai.okou.android.TestRealtimeService(),
         ChatListService by TestChatService(),
         ai.okou.android.chat.ChatComposerService by ai.okou.android.TestChatComposerService() {
+        override suspend fun sendControl(
+            request: ai.okou.android.api.generated.SendRequest
+        ): ai.okou.android.api.generated.AcceptedInput = error("No control backend in this fixture")
+
         override suspend fun personalInstructionsEnabled() = false
 
         override suspend fun personalInstructions():

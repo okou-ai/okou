@@ -25,6 +25,7 @@ import {
   presentationDeliveryInstructions,
 } from "@okouai/core/presentation-generation-instructions";
 import { artifactPreviewInstructions } from "@okouai/core/artifact-preview-instructions";
+import type { PresentationOutputFormat } from "@okouai/core/presentation-output-format";
 import { websiteImageInstructions } from "@okouai/core/website-generation-instructions";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import { userTemplateDirectory } from "@okouai/core/user-template-selection";
@@ -34,6 +35,7 @@ interface PresentationGenerationTemplateInput {
   readonly type: "presentation";
   readonly selection: {
     readonly templateId: string;
+    readonly outputFormat?: PresentationOutputFormat;
     readonly colorSystemId?: string;
     readonly previewUrl?: string;
   };
@@ -103,6 +105,10 @@ type GenerationTemplatePromptResult =
       readonly message: string;
     };
 
+type GenerationTemplateGuidanceResult =
+  | { readonly status: "resolved"; readonly render: () => string }
+  | Extract<GenerationTemplatePromptResult, { readonly status: "invalid" }>;
+
 /**
  * What a caller must tell the prompt builder about the run it is building for.
  *
@@ -130,8 +136,26 @@ export function buildGenerationTemplatePrompt(
   generationTemplate: GenerationTemplateInput | null | undefined,
   options: GenerationTemplatePromptOptions = {},
 ): GenerationTemplatePromptResult {
+  const guidance = resolveGenerationTemplateGuidance(
+    generationTemplate,
+    options,
+  );
+  return guidance.status === "invalid"
+    ? guidance
+    : { status: "resolved", prompt: guidance.render() };
+}
+
+function resolveGenerationTemplateGuidance(
+  generationTemplate: GenerationTemplateInput | null | undefined,
+  options: GenerationTemplatePromptOptions,
+): GenerationTemplateGuidanceResult {
   if (!generationTemplate) {
-    return { status: "resolved", prompt: "" };
+    return {
+      status: "resolved",
+      render: () => {
+        return "";
+      },
+    };
   }
   const imageGenerationEnabled =
     options.includeManagedImageInstructions !== false;
@@ -195,34 +219,62 @@ export function buildGenerationTemplatesPrompt(
   generationTemplates: readonly GenerationTemplateInput[],
   options: GenerationTemplatePromptOptions = {},
 ): GenerationTemplatePromptResult {
+  const guidance = resolveGenerationTemplatesGuidance(
+    generationTemplates,
+    options,
+  );
+  return guidance.status === "invalid"
+    ? guidance
+    : { status: "resolved", prompt: guidance.render() };
+}
+
+/** Validate selections now; package-only consumers never render prompt text. */
+export function resolveGenerationTemplatesGuidance(
+  generationTemplates: readonly GenerationTemplateInput[],
+  options: GenerationTemplatePromptOptions = {},
+): GenerationTemplateGuidanceResult {
   if (generationTemplates.length === 0) {
-    return { status: "resolved", prompt: "" };
+    return {
+      status: "resolved",
+      render: () => {
+        return "";
+      },
+    };
   }
-  const details: string[] = [];
+  const details: (() => string)[] = [];
   for (const [index, generationTemplate] of generationTemplates.entries()) {
-    const built = buildGenerationTemplatePrompt(generationTemplate, options);
+    const built = resolveGenerationTemplateGuidance(
+      generationTemplate,
+      options,
+    );
     if (built.status === "invalid") {
       return built;
     }
-    details.push(
-      [
+    details.push(() => {
+      return [
         `## Template #${index + 1} (${generationTemplateKind(generationTemplate)})`,
         "",
-        stripGenerationTemplateContext(built.prompt),
-      ].join("\n"),
-    );
+        stripGenerationTemplateContext(built.render()),
+      ].join("\n");
+    });
   }
   return {
     status: "resolved",
-    prompt: [
-      "# Inline Templates",
-      "",
-      "Match each numbered template marker in the current user message with the same numbered section below.",
-      "- Apply each template only to the request around its marker.",
-      "- A template is context, not a request by itself.",
-      "",
-      details.join("\n\n"),
-    ].join("\n"),
+    render: () => {
+      return [
+        "# Inline Templates",
+        "",
+        "Match each numbered template marker in the current user message with the same numbered section below.",
+        "- Apply each template only to the request around its marker.",
+        "- A template is context, not a request by itself.",
+        "",
+        details
+          .map((render) => {
+            return render();
+          })
+          .join("\n\n"),
+      ].join("\n");
+    },
   };
 }
 
@@ -239,14 +291,19 @@ function templateFraming(artifactNoun: string): readonly string[] {
 
 function buildWorkflowGenerationTemplatePrompt(
   generationTemplate: WorkflowGenerationTemplateInput,
-): GenerationTemplatePromptResult {
+): GenerationTemplateGuidanceResult {
   const template = findWorkflowTemplateItem(
     generationTemplate.selection.workflowTemplateId,
   );
   if (!template) {
     return { status: "invalid", message: "Unknown workflow template" };
   }
-  return { status: "resolved", prompt: template.promptGuidance };
+  return {
+    status: "resolved",
+    render: () => {
+      return template.promptGuidance;
+    },
+  };
 }
 
 /**
@@ -282,7 +339,7 @@ function customTemplateArtifactNoun(kind: MountedUserTemplate["kind"]): string {
 function buildCustomGenerationTemplatePrompt(
   generationTemplate: CustomGenerationTemplateInput,
   mountedUserTemplates: readonly MountedUserTemplate[],
-): GenerationTemplatePromptResult {
+): GenerationTemplateGuidanceResult {
   const { userTemplateId } = generationTemplate.selection;
   const mounted = mountedUserTemplates.find((candidate) => {
     return candidate.templateId === userTemplateId;
@@ -295,13 +352,15 @@ function buildCustomGenerationTemplatePrompt(
   const directory = userTemplateDirectory(userTemplateId);
   return {
     status: "resolved",
-    prompt: [
-      ...templateFraming(customTemplateArtifactNoun(mounted.kind)),
-      `Selected custom template: one this workspace compiled from its own file, mounted at ./${directory}.`,
-      "",
-      `- Read ./${directory}/SKILL.md fully and follow only the files and assets it names for content, visual style, and content QA.`,
-      "- Do not substitute a house style, a built-in template, or your own defaults for what it specifies.",
-    ].join("\n"),
+    render: () => {
+      return [
+        ...templateFraming(customTemplateArtifactNoun(mounted.kind)),
+        `Selected custom template: one this workspace compiled from its own file, mounted at ./${directory}.`,
+        "",
+        `- Read ./${directory}/SKILL.md fully and follow only the files and assets it names for content, visual style, and content QA.`,
+        "- Do not substitute a house style, a built-in template, or your own defaults for what it specifies.",
+      ].join("\n");
+    },
   };
 }
 
@@ -309,7 +368,7 @@ function buildPresentationGenerationTemplatePrompt(
   generationTemplate: PresentationGenerationTemplateInput,
   mountedUserPresentationTemplateIds: readonly string[],
   imageGenerationEnabled: boolean,
-): GenerationTemplatePromptResult {
+): GenerationTemplateGuidanceResult {
   const { templateId } = generationTemplate.selection;
   if (isUserPresentationTemplateId(templateId)) {
     const rowId = parseUserPresentationTemplateId(templateId);
@@ -326,7 +385,10 @@ function buildPresentationGenerationTemplatePrompt(
   // Presentation picker selections are valid only when they resolve to a
   // self-contained runbook package. The legacy multi-resource registry flow has
   // been retired, so ids without a runbook package are rejected.
-  const runbookPackage = findPresentationRunbookPackage(templateId);
+  const runbookPackage = findPresentationRunbookPackage(
+    templateId,
+    generationTemplate.selection.outputFormat,
+  );
   if (!runbookPackage) {
     return { status: "invalid", message: "Unknown generation template" };
   }
@@ -353,25 +415,27 @@ function buildPresentationGenerationTemplatePrompt(
 function buildUserPresentationTemplatePrompt(
   rowId: string,
   imageGenerationEnabled: boolean,
-): GenerationTemplatePromptResult {
+): GenerationTemplateGuidanceResult {
   return {
     status: "resolved",
-    prompt: [
-      ...templateFraming("a presentation"),
-      `Selected presentation template: the user's own imported deck, mounted at ./${userPresentationTemplateDirectory(rowId)}.`,
-      "",
-      "To produce the presentation:",
-      `- Read ./${userPresentationTemplateDirectory(rowId)}/SKILL.md fully and follow only the files and assets it names.`,
-      "- Author the finished deck directly as semantic HTML, CSS, and SVG for this request's content.",
-      "- Do not produce slide JSON, read a `tokens.json`, call a layout-id API, or run a template-specific JSON-to-HTML renderer first. None of those exist for this package; the guidance describes a visual language, not a renderer.",
-      "- Lay out live rows, columns, and text flow with CSS Grid or Flexbox. Absolute positioning is for backgrounds, fixed chrome, decoration, and intentional overlays.",
-      "- Background images from the package are optional visual material. New text, charts, tables, labels, and diagrams stay live HTML or SVG so they reflow and stay legible.",
-      "- Use the slide count the user asks for; if unspecified, default to 8 pages.",
-      ...presentationImageInstructions(imageGenerationEnabled),
-      PRESENTATION_STATIC_HTML_INSTRUCTION,
-      ...presentationDeliveryInstructions(),
-      "- Check `okou host --help` and, when supported, add `--title` with a concise human-readable presentation name, independently of the URL slug.",
-    ].join("\n"),
+    render: () => {
+      return [
+        ...templateFraming("a presentation"),
+        `Selected presentation template: the user's own imported deck, mounted at ./${userPresentationTemplateDirectory(rowId)}.`,
+        "",
+        "To produce the presentation:",
+        `- Read ./${userPresentationTemplateDirectory(rowId)}/SKILL.md fully and follow only the files and assets it names.`,
+        "- Author the finished deck directly as semantic HTML, CSS, and SVG for this request's content.",
+        "- Do not produce slide JSON, read a `tokens.json`, call a layout-id API, or run a template-specific JSON-to-HTML renderer first. None of those exist for this package; the guidance describes a visual language, not a renderer.",
+        "- Lay out live rows, columns, and text flow with CSS Grid or Flexbox. Absolute positioning is for backgrounds, fixed chrome, decoration, and intentional overlays.",
+        "- Background images from the package are optional visual material. New text, charts, tables, labels, and diagrams stay live HTML or SVG so they reflow and stay legible.",
+        "- Use the slide count the user asks for; if unspecified, default to 8 pages.",
+        ...presentationImageInstructions(imageGenerationEnabled),
+        PRESENTATION_STATIC_HTML_INSTRUCTION,
+        ...presentationDeliveryInstructions(),
+        "- Check `okou host --help` and, when supported, add `--title` with a concise human-readable presentation name, independently of the URL slug.",
+      ].join("\n");
+    },
   };
 }
 
@@ -379,7 +443,7 @@ function buildPresentationRunbookPrompt(
   generationTemplate: PresentationGenerationTemplateInput,
   runbookPackage: PresentationRunbookPackage,
   imageGenerationEnabled: boolean,
-): GenerationTemplatePromptResult {
+): GenerationTemplateGuidanceResult {
   const color = resolvePresentationRunbookColorToken(
     runbookPackage,
     generationTemplate.selection.colorSystemId,
@@ -393,22 +457,28 @@ function buildPresentationRunbookPrompt(
 
   return {
     status: "resolved",
-    prompt: [
-      ...templateFraming("a presentation"),
-      ...buildPresentationRunbookInstructionLines({
-        runbookPackage,
-        colorSystemToken: color.token,
-        imageGenerationEnabled,
-      }),
-      "- Check `okou host --help` and, when supported, add `--title` with a concise human-readable presentation name, independently of the URL slug.",
-    ].join("\n"),
+    render: () => {
+      return [
+        ...templateFraming("a presentation"),
+        ...buildPresentationRunbookInstructionLines({
+          runbookPackage,
+          colorSystemToken: color.token,
+          imageGenerationEnabled,
+        }),
+        ...(runbookPackage.outputFormat === "html"
+          ? [
+              "- Check `okou host --help` and, when supported, add `--title` with a concise human-readable presentation name, independently of the URL slug.",
+            ]
+          : []),
+      ].join("\n");
+    },
   };
 }
 
 function buildWebsiteGenerationTemplatePrompt(
   generationTemplate: WebsiteGenerationTemplateInput,
   imageGenerationEnabled: boolean,
-): GenerationTemplatePromptResult {
+): GenerationTemplateGuidanceResult {
   const item = findWebsiteTemplateItem(
     generationTemplate.selection.websiteTemplateId,
   );
@@ -428,62 +498,68 @@ function buildWebsiteTemplatePackagePrompt(
   item: WebsiteTemplateItem,
   pkg: WebsiteTemplatePackage,
   imageGenerationEnabled: boolean,
-): GenerationTemplatePromptResult {
+): GenerationTemplateGuidanceResult {
   const packageDir = `./generated/resources/${pkg.slug}`;
 
   return {
     status: "resolved",
-    prompt: [
-      ...templateFraming("a website"),
-      "Selected website template:",
-      "- Artifact type: website",
-      `- Template: ${item.title} (${item.id})`,
-      `- Template description: ${pkg.description}`,
-      `- Template package id: ${pkg.templateId}`,
-      `- Package resource: ${pkg.resourceId}`,
-      `- Template archive SHA-256: ${pkg.source.archive.sha256}`,
-      "",
-      "When you produce a website from the user's request:",
-      `- Pull the package: okou resource pull ${pkg.resourceId} --dir ./generated/resources`,
-      `- Work from ${packageDir}. Inspect the bundled package metadata and instructions before editing.`,
-      `- Read ${packageDir}/SKILL.md before authoring; it owns this package's contract.`,
-      "- Assemble the page once with `node tools/compose.mjs <section-ids...>`, then author the composed index.html directly. The command refuses a second compose pass; bypassing that guard would discard authored work.",
-      ...websiteImageInstructions(imageGenerationEnabled).map((line) => {
-        return `- ${line}`;
-      }),
-      "- Repair every blocking failure from `bash checks/verify.sh index.html qa` until it prints QA_READY.",
-      "- Stage once: `node tools/stage.mjs publish` writes the final clean ./publish directory before cover capture.",
-      ...artifactPreviewInstructions({ outputDir: "./publish" }),
-      "- Publish once: `okou host ./publish --site <slug> --preview ./generated/previews/cover.png --json`.",
-      "- Check `okou host --help` and, when supported, add `--title` with a concise human-readable site name, independently of the URL slug.",
-      "- Check the deployed page with `bash checks/verify-published.sh <url>`; a local pass is not evidence about the deployment.",
-      "- Use this built-in R2-backed package; do not substitute generic Open Design website templates for the selected template.",
-      "- Return the hosted website URL and keep the generated static site as the final deliverable.",
-    ].join("\n"),
+    render: () => {
+      return [
+        ...templateFraming("a website"),
+        "Selected website template:",
+        "- Artifact type: website",
+        `- Template: ${item.title} (${item.id})`,
+        `- Template description: ${pkg.description}`,
+        `- Template package id: ${pkg.templateId}`,
+        `- Package resource: ${pkg.resourceId}`,
+        `- Template archive SHA-256: ${pkg.source.archive.sha256}`,
+        "",
+        "When you produce a website from the user's request:",
+        `- Pull the package: okou resource pull ${pkg.resourceId} --dir ./generated/resources`,
+        `- Work from ${packageDir}. Inspect the bundled package metadata and instructions before editing.`,
+        `- Read ${packageDir}/SKILL.md before authoring; it owns this package's contract.`,
+        "- Assemble the page once with `node tools/compose.mjs <section-ids...>`, then author the composed index.html directly. The command refuses a second compose pass; bypassing that guard would discard authored work.",
+        ...websiteImageInstructions(imageGenerationEnabled).map((line) => {
+          return `- ${line}`;
+        }),
+        "- Repair every blocking failure from `bash checks/verify.sh index.html qa` until it prints QA_READY.",
+        "- Stage once: `node tools/stage.mjs publish` writes the final clean ./publish directory before cover capture.",
+        ...artifactPreviewInstructions({ outputDir: "./publish" }),
+        "- Publish once: `okou host ./publish --site <slug> --preview ./generated/previews/cover.png --json`.",
+        "- Check `okou host --help` and, when supported, add `--title` with a concise human-readable site name, independently of the URL slug.",
+        "- Check the deployed page with `bash checks/verify-published.sh <url>`; a local pass is not evidence about the deployment.",
+        "- Use this built-in R2-backed package; do not substitute generic Open Design website templates for the selected template.",
+        "- Return the hosted website URL and keep the generated static site as the final deliverable.",
+      ].join("\n");
+    },
   };
 }
 
 function buildIllustrationGenerationTemplatePrompt(
   generationTemplate: IllustrationGenerationTemplateInput,
   imageGenerationEnabled: boolean,
-): GenerationTemplatePromptResult {
+): GenerationTemplateGuidanceResult {
   const imageStyle = findImageStyle(
     generationTemplate.selection.illustrationStyleId,
   );
   if (!imageStyle) {
     return { status: "invalid", message: "Unknown generation image style" };
   }
-  const styleContext = [
-    ...templateFraming("an illustration or image"),
-    "Selected illustration style:",
-    "- Artifact type: illustration",
-    `- Style: ${imageStyle.name} (${imageStyle.id})`,
-    `- Style description: ${imageStyle.description}`,
-  ];
+  const styleContext = () => {
+    return [
+      ...templateFraming("an illustration or image"),
+      "Selected illustration style:",
+      "- Artifact type: illustration",
+      `- Style: ${imageStyle.name} (${imageStyle.id})`,
+      `- Style description: ${imageStyle.description}`,
+    ];
+  };
   if (!imageGenerationEnabled) {
     return {
       status: "resolved",
-      prompt: styleContext.join("\n"),
+      render: () => {
+        return styleContext().join("\n");
+      },
     };
   }
   const styleSource = `private R2 registry resource ${imageStyle.id}`;
@@ -493,22 +569,24 @@ function buildIllustrationGenerationTemplatePrompt(
 
   return {
     status: "resolved",
-    prompt: [
-      ...styleContext,
-      `- Style source: ${styleSource}`,
-      "",
-      "When you produce an illustration or image from the user's request:",
-      `- Run once: ${compileCommand}`,
-      `- ${sourceInstruction}`,
-      '- Then run `okou generate image --provider built-in --compiled-prompt "<compiled prompt>"` with the resolved compatible CLI options and required reference image URLs, without `--style`.',
-      "- If a flag above no longer applies, run `okou generate image -h` to discover the current flags, models, providers, and styles.",
-    ].join("\n"),
+    render: () => {
+      return [
+        ...styleContext(),
+        `- Style source: ${styleSource}`,
+        "",
+        "When you produce an illustration or image from the user's request:",
+        `- Run once: ${compileCommand}`,
+        `- ${sourceInstruction}`,
+        '- Then run `okou generate image --provider built-in --compiled-prompt "<compiled prompt>"` with the resolved compatible CLI options and required reference image URLs, without `--style`.',
+        "- If a flag above no longer applies, run `okou generate image -h` to discover the current flags, models, providers, and styles.",
+      ].join("\n");
+    },
   };
 }
 
 function buildDocumentGenerationTemplatePrompt(
   selection: DocumentGenerationTemplateInput,
-): GenerationTemplatePromptResult {
+): GenerationTemplateGuidanceResult {
   const item = findDocumentTemplateItem(selection.selection.documentTemplateId);
   if (!item) {
     return { status: "invalid", message: "Unknown document template" };
@@ -520,18 +598,20 @@ function buildDocumentGenerationTemplatePrompt(
   };
   return {
     status: "resolved",
-    prompt: [
-      ...templateFraming("a document"),
-      `Selected document template: ${item.title}`,
-      `- Public upstream original (fixed commit/path): ${sourceUrl(source.path)}`,
-      ...(source.supportingPaths?.length
-        ? [
-            `- Supporting upstream files (same fixed commit): ${source.supportingPaths.map(sourceUrl).join(", ")}`,
-          ]
-        : []),
-      `- Layout previews: ${item.previewPages.join(", ")}`,
-      "- Read the complete upstream template, including its supporting files and referenced content, styles, fonts, and assets at their pinned versions. Preserve its content organization and visual design together: typography, color, columns, tables, charts, and callouts. Use the previews to check fidelity to the original.",
-      "- Replace sample content, branding, and payment links with the user's facts; leave missing details as placeholders. Recalculate totals and keep dates, units, identifiers, and repeated values consistent.",
-    ].join("\n"),
+    render: () => {
+      return [
+        ...templateFraming("a document"),
+        `Selected document template: ${item.title}`,
+        `- Public upstream original (fixed commit/path): ${sourceUrl(source.path)}`,
+        ...(source.supportingPaths?.length
+          ? [
+              `- Supporting upstream files (same fixed commit): ${source.supportingPaths.map(sourceUrl).join(", ")}`,
+            ]
+          : []),
+        `- Layout previews: ${item.previewPages.join(", ")}`,
+        "- Read the complete upstream template, including its supporting files and referenced content, styles, fonts, and assets at their pinned versions. Preserve its content organization and visual design together: typography, color, columns, tables, charts, and callouts. Use the previews to check fidelity to the original.",
+        "- Replace sample content, branding, and payment links with the user's facts; leave missing details as placeholders. Recalculate totals and keep dates, units, identifiers, and repeated values consistent.",
+      ].join("\n");
+    },
   };
 }

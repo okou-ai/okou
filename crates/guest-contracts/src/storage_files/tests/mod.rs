@@ -1,6 +1,21 @@
 use super::*;
 use crate::storage_manifest::{ArtifactEntry, Manifest, StorageEntry};
 
+fn assert_files(actual: &[StorageFile<&[u8]>], expected: &[StorageFile]) {
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected) {
+        assert_eq!(
+            (&actual.path, actual.mode, actual.mtime, actual.content),
+            (
+                &expected.path,
+                expected.mode,
+                expected.mtime,
+                expected.content.as_slice()
+            )
+        );
+    }
+}
+
 fn storage_entry(mount_path: &str) -> StorageEntry {
     StorageEntry {
         template_guidance: None,
@@ -46,7 +61,8 @@ fn validates_sizes_before_encoding_and_rejects_truncated_and_extra_input() {
     let encoded = encode_input(b"{}", &[("/mount", &files)]).unwrap();
     let (manifest, payload) = split_input(&encoded).unwrap();
     assert_eq!(manifest, b"{}");
-    assert_eq!(decode(payload).unwrap()[0].files, files);
+    let decoded = decode(payload).unwrap();
+    assert_files(&decoded[0].files, &files);
     files[0].content.push(0);
     assert!(encode_input(b"{}", &[("/mount", &files)]).is_err());
     assert!(PreparedInput::new(b"{}".to_vec(), vec![("/mount", &files)]).is_err());
@@ -282,7 +298,7 @@ fn decoding_enforces_each_groups_content_and_path_envelopes() {
         })
         .collect();
     let encoded = encode(&[("/mount", &files)]).unwrap();
-    assert_eq!(decode(&encoded).unwrap().remove(0).files, files);
+    assert_files(&decode(&encoded).unwrap().remove(0).files, &files);
     files.push(StorageFile {
         path: "overflow".into(),
         mode: 0o640,
@@ -306,7 +322,7 @@ fn decoding_enforces_each_groups_content_and_path_envelopes() {
         })
         .collect();
     let encoded = encode(&[("/mount", &files)]).unwrap();
-    assert_eq!(decode(&encoded).unwrap().remove(0).files, files);
+    assert_files(&decode(&encoded).unwrap().remove(0).files, &files);
     files[0].path.push('a');
     let mut unchecked = Vec::new();
     encode_groups_into(&mut unchecked, &[("/mount", &files)]);

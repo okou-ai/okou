@@ -72,7 +72,10 @@ test("Lab groups active feature switches", async () => {
     context,
     path: "/_/lab",
     auth: {
-      user: { id: "data-rollout-lab-user", fullName: "Rollout Tester" },
+      user: {
+        id: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
+        fullName: "Bingjie Zang",
+      },
       organization: {
         activeOrg: { id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe", name: "Staff" },
         memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
@@ -100,11 +103,6 @@ test("Lab groups active feature switches", async () => {
   }
   expect(screen.getAllByRole("switch")).toHaveLength(keys.length);
   expect(
-    within(featureSwitchRow(FeatureSwitchKey.PastedTextAttachments)).getByRole(
-      "switch",
-    ),
-  ).toHaveAttribute("aria-checked", "true");
-  expect(
     within(featureSwitchGroup("Alpha")).getByText(FeatureSwitchKey.Banking),
   ).toBeVisible();
   expect(
@@ -115,23 +113,45 @@ test("Lab groups active feature switches", async () => {
   expect(buttonNamed("Reset all")).toBeEnabled();
 });
 
-test("External members cannot opt into long pasted text attachments in Lab", async () => {
+test("Staff see presentation format enabled by default in Beta", async () => {
+  const orgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
   await setupPage({
     context,
     path: "/_/lab",
-    featureSwitches: {
-      [FeatureSwitchKey.Lab]: true,
-      [FeatureSwitchKey.Banking]: true,
-      [FeatureSwitchKey.PastedTextAttachments]: true,
+    auth: {
+      user: { id: "presentation-format-peer", fullName: "Peer" },
+      organization: {
+        activeOrg: { id: orgId, name: "Staff" },
+        memberships: [{ id: orgId }],
+      },
     },
   });
 
   await screen.findByRole("heading", { name: "Lab" });
   expect(
-    within(featureSwitchRow(FeatureSwitchKey.Banking)).getByRole("switch"),
-  ).toHaveAttribute("aria-checked", "true");
+    within(featureSwitchGroup("Beta")).getByText("Presentation output format"),
+  ).toBeInTheDocument();
   expect(
-    screen.queryByText("Long pasted text attachments"),
+    within(
+      featureSwitchRow(FeatureSwitchKey.PresentationOutputFormat),
+    ).getByRole("switch"),
+  ).toHaveAttribute("aria-checked", "true");
+});
+
+test("External peers cannot opt into presentation format in Lab", async () => {
+  await setupPage({
+    context,
+    path: "/_/lab",
+    featureSwitches: {
+      [FeatureSwitchKey.Lab]: true,
+      [FeatureSwitchKey.PresentationOutputFormat]: true,
+    },
+  });
+
+  await screen.findByRole("heading", { name: "Lab" });
+  expect(screen.getByText(FeatureSwitchKey.Banking)).toBeInTheDocument();
+  expect(
+    screen.queryByText("Presentation output format"),
   ).not.toBeInTheDocument();
 });
 

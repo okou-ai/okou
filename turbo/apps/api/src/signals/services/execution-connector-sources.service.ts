@@ -19,10 +19,10 @@ export interface ConnectorSourcesRequest {
   readonly userId: string;
   readonly sources: readonly ConnectorSourceIdentity[];
 }
-export interface EncryptedConnectorCredential {
+/** Selection and firewall preparation need identity and presence, never values. */
+export interface ConnectorCredentialReference {
   readonly id: string;
   readonly name: string;
-  readonly encryptedValue: string;
 }
 /** Saved connection facts needed to judge credential validity at execution. */
 export interface ConnectorSourceConnection {
@@ -44,7 +44,7 @@ export interface ConnectorSourceSnapshot {
   readonly connection: ConnectorSourceConnection;
   readonly customBinding: CustomConnectorSourceBinding | null;
   readonly variables: Readonly<Record<string, string>>;
-  readonly credentials: readonly EncryptedConnectorCredential[];
+  readonly credentials: readonly ConnectorCredentialReference[];
 }
 export type ConnectorSourceResult =
   | { readonly kind: "available"; readonly snapshot: ConnectorSourceSnapshot }
@@ -68,7 +68,7 @@ export interface ConnectorSourceValues {
     readonly name: string;
     readonly value: string;
   }[];
-  readonly credentials: readonly (EncryptedConnectorCredential & {
+  readonly credentials: readonly (ConnectorCredentialReference & {
     readonly sourceId: string | null;
   })[];
 }
@@ -127,8 +127,8 @@ function sourceSnapshot(
       .filter((value) => {
         return value.sourceId === source.sourceId;
       })
-      .map(({ id, name, encryptedValue }) => {
-        return { id, name, encryptedValue };
+      .map(({ id, name }) => {
+        return { id, name };
       }),
   };
 }

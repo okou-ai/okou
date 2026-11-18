@@ -6,7 +6,6 @@ import {
   object,
   string,
   uuid,
-  enum as zEnum,
   type infer as zInfer,
 } from "zod";
 
@@ -16,7 +15,11 @@ import {
   timestampQueryNumberSchema,
 } from "./base";
 import { apiErrorSchema } from "./errors";
-import { triggerSourceSchema } from "../validators/logs";
+import {
+  activityDetailSchema,
+  logStatusSchema,
+  triggerSourceSchema,
+} from "../validators/logs";
 
 export { triggerSourceSchema } from "../validators/logs";
 
@@ -40,19 +43,6 @@ const listQuerySchema = object({
 });
 
 const c = initContract();
-
-/**
- * Run status enum for logs
- */
-const logStatusSchema = zEnum([
-  "queued",
-  "pending",
-  "running",
-  "completed",
-  "failed",
-  "timeout",
-  "cancelled",
-]);
 
 export type TriggerSource = zInfer<typeof triggerSourceSchema>;
 
@@ -98,25 +88,7 @@ const logsListResponseSchema = object({
 /**
  * Log detail response schema
  */
-const logDetailSchema = object({
-  id: uuid(),
-  sessionId: string().nullable(),
-  agentId: string().nullable(),
-  displayName: string().nullable(),
-  framework: string().nullable(),
-  modelProvider: string().nullable(),
-  selectedModel: string().nullable(),
-  modelRuntimeProvider: string().nullable().optional(),
-  modelRuntimeModel: string().nullable().optional(),
-  triggerSource: triggerSourceSchema.nullable(),
-  status: logStatusSchema,
-  prompt: string(),
-  appendSystemPrompt: string().nullable(),
-  error: string().nullable(),
-  createdAt: string(),
-  startedAt: string().nullable(),
-  completedAt: string().nullable(),
-});
+const logDetailSchema = activityDetailSchema;
 
 /**
  * Logs list contract

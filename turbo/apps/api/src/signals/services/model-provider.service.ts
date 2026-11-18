@@ -11,7 +11,6 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import { command } from "ccstate";
 import { notFound } from "../../lib/error";
-import { decryptStoredSecretValue } from "./crypto.utils";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 
 import {
@@ -88,7 +87,7 @@ function deferredCredentialReferences(
 ): ModelCredentialValues {
   const values: Record<string, string> = {};
   for (const credential of source.credentials) {
-    if (credential.kind === "encrypted") {
+    if (credential.kind === "secret-reference") {
       values[credential.name] = `\${{ secrets.${credential.name} }}`;
     }
   }
@@ -120,32 +119,7 @@ function codexAccountCredentialReferences(
   return deferredCredentialReferences(own);
 }
 
-async function resolveModelCredentialValues(
-  source: ModelSourceSnapshot,
-): Promise<ModelCredentialValues | null> {
-  const values: Record<string, string> = {};
-  for (const credential of source.credentials) {
-    if (credential.kind === "encrypted") {
-      values[credential.name] = await decryptStoredSecretValue(
-        credential.encryptedValue,
-      );
-    } else {
-      if (
-        source.identity.kind !== "built-in" ||
-        credential.modelKeyId !== source.identity.modelKeyId
-      ) {
-        throw new Error("Managed key identity mismatch");
-      }
-      if (!credential.apiKey) {
-        return null;
-      }
-      values[credential.name] = credential.apiKey;
-    }
-  }
-  return values;
-}
-
-/** Exact subscription account source → resolved credentials → runtime. */
+/** Exact subscription account source → secret references → runtime. */
 export function prepareSubscriptionModelEnvironment(
   source: ModelSourceSnapshot,
   selectedModel: string,
@@ -165,8 +139,8 @@ export function prepareSubscriptionModelEnvironment(
     return null;
   }
   const accountId = source.identity.accountId;
-  // Subscription credentials are firewall-injected and stay encrypted: the
-  // runtime only sees their secret references.
+  // Subscription tokens stay in storage for Firewall injection; preparation
+  // only carries references for the account's existing secret rows.
   let credentials =
     type === "codex-oauth-token"
       ? codexAccountCredentialReferences(source)
@@ -189,7 +163,7 @@ export function prepareSubscriptionModelEnvironment(
     selection: { kind: "subscription", selectedModel, upstreamModel },
     credentials,
   });
-  const names = Object.keys(compiled.secrets);
+  const names = compiled.secretNames;
   const sourceUserId = userId;
   const environment = { ...compiled.environment };
   // Pi owns account routing through its explicit source binding rather
@@ -208,7 +182,6 @@ export function prepareSubscriptionModelEnvironment(
     type,
     credentialOwner: "member",
     environment,
-    secrets: {},
     selectedModel: compiled.selectedModel,
     upstreamModel: compiled.upstreamModel,
     ...(source.configuration.authMethod
@@ -243,11 +216,11 @@ interface ManagedModelEnvironmentInput {
   readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute;
 }
 
-/** Exact managed-key source → explicit key resolution → managed runtime. */
-export async function prepareManagedModelEnvironment(
+/** Exact managed-key reference → managed runtime placeholders. */
+export function prepareManagedModelEnvironment(
   source: ModelSourceSnapshot,
   args: ManagedModelEnvironmentInput,
-): Promise<ResolvedModelProviderEnvironment | null> {
+): ResolvedModelProviderEnvironment | null {
   if (source.identity.kind !== "built-in") {
     throw new Error("Managed preparation requires a managed source");
   }
@@ -260,10 +233,6 @@ export async function prepareManagedModelEnvironment(
   ) {
     return null;
   }
-  const credentials = await resolveModelCredentialValues(source);
-  if (!credentials) {
-    return null;
-  }
   const compiled = compileModelRuntime({
     source,
     selection: {
@@ -273,7 +242,7 @@ export async function prepareManagedModelEnvironment(
       upstreamModel: route.upstreamModel,
       modelKeyId: route.modelKeyId,
     },
-    credentials,
+    credentials: {},
   });
   const environment = { ...compiled.environment };
   const codexRuntimeConfig = resolveModelProviderCodexRuntimeConfig({
@@ -288,7 +257,6 @@ export async function prepareManagedModelEnvironment(
     credentialOwner: "builtin",
     concreteType: route.providerType,
     environment,
-    secrets: { ...compiled.secrets },
     selectedModel: compiled.selectedModel,
     builtInModelRuntimeRoute: route,
     upstreamModel: compiled.upstreamModel,

@@ -18,7 +18,7 @@ test.each(["slack", "teams", "github"] as const)(
     await waitFor(() => {
       return expect(window.location.pathname).toBe("/sign-in");
     });
-    const params = new URLSearchParams(window.location.hash.split("?")[1]);
+    const params = new URL(window.location.href).searchParams;
     expect(params.get("redirect_url")).toBe(`https://app.okou.ai${path}`);
   },
 );

@@ -94,6 +94,7 @@ contract update before existing fields are removed or their meanings change.
 """
 
 import json
+from dataclasses import dataclass
 
 from mitmproxy import http
 
@@ -116,14 +117,7 @@ _CONNECTOR_DIAGNOSTIC_ACTIVE_FIREWALL_NAMES = "_connector_diagnostic_active_fire
 _CONNECTOR_DIAGNOSTIC_CATALOG_SNAPSHOT = "_connector_diagnostic_catalog_snapshot"
 _CONNECTOR_DIAGNOSTIC_LOOKUP_DONE = "_connector_diagnostic_lookup_done"
 _CONNECTOR_DIAGNOSTIC_CANDIDATE = "_connector_diagnostic_candidate"
-_CONNECTOR_DIAGNOSTIC_AUTH_HEADER_NAMES = "_connector_diagnostic_auth_header_names"
-_CONNECTOR_DIAGNOSTIC_AUTH_QUERY_PARAM_NAMES = "_connector_diagnostic_auth_query_param_names"
-_CONNECTOR_DIAGNOSTIC_RESPONSE_REPLACED_IN_HEADERS = (
-    "_connector_diagnostic_response_replaced_in_headers"
-)
-_CONNECTOR_DIAGNOSTIC_RESPONSE_BODY = "_connector_diagnostic_response_body"
-_CONNECTOR_DIAGNOSTIC_RESPONSE_STREAM_BODY_SENT = "_connector_diagnostic_response_stream_body_sent"
-_CONNECTOR_DIAGNOSTIC_RESPONSE_STREAM_CALLBACK = "_connector_diagnostic_response_stream_callback"
+_CONNECTOR_DIAGNOSTIC_RESPONSE_STREAM = "_connector_diagnostic_response_stream"
 _CONNECTOR_DIAGNOSTIC_PROXY_ENTRY_LOGGED = "_connector_diagnostic_proxy_entry_logged"
 _CONNECTOR_DIAGNOSTIC_OWNERSHIP_REASON = "_connector_diagnostic_ownership_reason"
 _CONNECTOR_DIAGNOSTIC_OWNERSHIP_CANDIDATES = "_connector_diagnostic_ownership_candidates"
@@ -137,6 +131,19 @@ _DISCARDED_RESPONSE_HEADER_NAMES = (
 _DISCARDED_RESPONSE_HEADER_NAME_LENGTHS = frozenset(
     len(name) for name in _DISCARDED_RESPONSE_HEADER_NAMES
 )
+
+
+@dataclass(slots=True)
+class _DiagnosticResponseStream:
+    """One callback owns a replacement payload until its EOF emission."""
+
+    pending_body: bytes | None
+
+    def __call__(self, chunk: bytes) -> bytes | tuple[bytes, ...]:
+        if chunk or self.pending_body is None:
+            return _EMPTY_RESPONSE_STREAM_CHUNKS
+        body, self.pending_body = self.pending_body, None
+        return body
 
 
 def record_allow_context(
@@ -314,21 +321,9 @@ def install_response_stream_if_needed(flow: http.HTTPFlow) -> bool:
     )
     if body is None:
         return False
-    flow.metadata[_CONNECTOR_DIAGNOSTIC_RESPONSE_BODY] = body
-    flow.metadata[_CONNECTOR_DIAGNOSTIC_RESPONSE_REPLACED_IN_HEADERS] = True
-
-    def stream_connector_diagnostic_response(chunk: bytes) -> bytes | tuple[bytes, ...]:
-        if chunk:
-            return _EMPTY_RESPONSE_STREAM_CHUNKS
-        if flow.metadata.get(_CONNECTOR_DIAGNOSTIC_RESPONSE_STREAM_BODY_SENT):
-            return _EMPTY_RESPONSE_STREAM_CHUNKS
-        flow.metadata[_CONNECTOR_DIAGNOSTIC_RESPONSE_STREAM_BODY_SENT] = True
-        return body
-
-    flow.response.stream = stream_connector_diagnostic_response
-    flow.metadata[_CONNECTOR_DIAGNOSTIC_RESPONSE_STREAM_CALLBACK] = (
-        stream_connector_diagnostic_response
-    )
+    stream = _DiagnosticResponseStream(body)
+    flow.metadata[_CONNECTOR_DIAGNOSTIC_RESPONSE_STREAM] = stream
+    flow.response.stream = stream
     return True
 
 
@@ -353,12 +348,11 @@ def maybe_replace_response(
     """
     if flow.response is None:
         return
-    if flow.metadata.get(_CONNECTOR_DIAGNOSTIC_RESPONSE_REPLACED_IN_HEADERS):
+    stream = flow.metadata.get(_CONNECTOR_DIAGNOSTIC_RESPONSE_STREAM)
+    if isinstance(stream, _DiagnosticResponseStream):
         flow.response.trailers = None
-        body = flow.metadata.get(_CONNECTOR_DIAGNOSTIC_RESPONSE_BODY)
-        if isinstance(body, bytes) and not flow.metadata.get(
-            _CONNECTOR_DIAGNOSTIC_RESPONSE_STREAM_BODY_SENT
-        ):
+        body = stream.pending_body
+        if body is not None:
             http_local_responses.apply_synthetic_json_response_content(
                 flow,
                 flow.response,
@@ -406,7 +400,9 @@ def handle_error(flow: http.HTTPFlow) -> None:
     trailers before terminal cleanup detaches the owned stream callback.
     """
     if (
-        flow.metadata.get(_CONNECTOR_DIAGNOSTIC_RESPONSE_REPLACED_IN_HEADERS)
+        isinstance(
+            flow.metadata.get(_CONNECTOR_DIAGNOSTIC_RESPONSE_STREAM), _DiagnosticResponseStream
+        )
         and flow.response is not None
     ):
         flow.response.trailers = None
@@ -430,16 +426,11 @@ def release_flow_state(flow: http.HTTPFlow) -> None:
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_ACTIVE_FIREWALL_NAMES, None)
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_LOOKUP_DONE, None)
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_CANDIDATE, None)
-    flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_AUTH_HEADER_NAMES, None)
-    flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_AUTH_QUERY_PARAM_NAMES, None)
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_OWNERSHIP_REASON, None)
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_OWNERSHIP_CANDIDATES, None)
-    stream_callback = flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_RESPONSE_STREAM_CALLBACK, None)
-    flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_RESPONSE_BODY, None)
-    flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_RESPONSE_STREAM_BODY_SENT, None)
-    flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_RESPONSE_REPLACED_IN_HEADERS, None)
+    stream = flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_RESPONSE_STREAM, None)
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_PROXY_ENTRY_LOGGED, None)
-    if stream_callback is not None and flow.response and flow.response.stream is stream_callback:
+    if stream is not None and flow.response and flow.response.stream is stream:
         flow.response.stream = False
 
 
@@ -476,17 +467,15 @@ def _candidate_from_flow(
         return None
 
     env_names = _metadata_str_tuple(meta.get(metadata_keys.CONNECTOR_DIAGNOSTIC_ENV_NAMES))
-    auth_header_names = _metadata_str_tuple(meta.get(_CONNECTOR_DIAGNOSTIC_AUTH_HEADER_NAMES))
-    auth_query_param_names = _metadata_str_tuple(
-        meta.get(_CONNECTOR_DIAGNOSTIC_AUTH_QUERY_PARAM_NAMES)
-    )
+    # Public metadata is a reporting projection. Live auth hints remain in the
+    # complete cached candidate, which _resolve_candidate checks first.
     return builtin_connector_diagnostics.ConnectorDiagnosticCandidate(
         connector_slug=connector_slug,
         reason=reason,
         env_names=env_names,
         base=base,
-        auth_header_names=auth_header_names,
-        auth_query_param_names=auth_query_param_names,
+        auth_header_names=(),
+        auth_query_param_names=(),
     )
 
 
@@ -588,8 +577,6 @@ def _set_failure_metadata(
     candidate: builtin_connector_diagnostics.ConnectorDiagnosticCandidate,
 ) -> None:
     flow.metadata[_CONNECTOR_DIAGNOSTIC_CANDIDATE] = candidate
-    flow.metadata[_CONNECTOR_DIAGNOSTIC_AUTH_HEADER_NAMES] = candidate.auth_header_names
-    flow.metadata[_CONNECTOR_DIAGNOSTIC_AUTH_QUERY_PARAM_NAMES] = candidate.auth_query_param_names
     flow.metadata[metadata_keys.FIREWALL_BASE] = candidate.base
     flow.metadata[metadata_keys.FIREWALL_NAME] = candidate.connector_slug
     flow.metadata[metadata_keys.FIREWALL_PERMISSION] = ""

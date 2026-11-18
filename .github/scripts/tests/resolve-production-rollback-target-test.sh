@@ -27,6 +27,7 @@ template_guidance_bundle_reader_floor=$(<"${repo_root}/.github/rollback-floors/t
 template_guidance_bundle_writer_floor=$(<"${repo_root}/.github/rollback-floors/template-guidance-bundle-writer")
 content_bundle_reference_api_floor=$(<"${repo_root}/.github/rollback-floors/content-bundle-reference-only-api")
 home_cache_capacity_reader_floor=$(<"${repo_root}/.github/rollback-floors/home-cache-capacity-reader")
+member_memory_protocol_floor=$(<"${repo_root}/.github/rollback-floors/member-memory-dual-writer")
 
 cat >"${fake_bin}/git" <<'SH'
 #!/usr/bin/env bash
@@ -239,6 +240,12 @@ case "${1:-}" in
       [ "${MOCK_RUNNER_STEER_ENDPOINTS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "45b537a596a153a91b76c3bc7223187840f52775" ]; then
       [ "${MOCK_VIDEO_GENERATION_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "$MOCK_MEMBER_MEMORY_PROTOCOL_FLOOR" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_MEMBER_MEMORY_PROTOCOL_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_MEMBER_MEMORY_PROTOCOL_VALID:-1}" = "1" ]
+      fi
     elif [ "${3:-}" = "66e1cae65d0468a50149f0dafab9d0d35abd0819" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_RUN_REFERENCE_PREPARATION_ON_MAIN:-1}" = "1" ]
@@ -491,6 +498,11 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_CONTENT_BUNDLE_REFERENCE_API_COMMIT-$MOCK_CONTENT_BUNDLE_REFERENCE_API_FLOOR}"
       exit 0
     fi
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/member-memory-dual-writer" ]; then
+      [ "${MOCK_MEMBER_MEMORY_PROTOCOL_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_MEMBER_MEMORY_PROTOCOL_COMMIT-$MOCK_MEMBER_MEMORY_PROTOCOL_FLOOR}"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/run-reference-preparation" ]; then
       [ "${MOCK_RUN_REFERENCE_PREPARATION_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_RUN_REFERENCE_PREPARATION_COMMIT-66e1cae65d0468a50149f0dafab9d0d35abd0819}"
@@ -626,6 +638,7 @@ run_resolver() {
     MOCK_DESKTOP_MANIFEST_R2_READER_FLOOR="$desktop_manifest_r2_reader_floor" \
     MOCK_DATA_ROUTER_STATELESS_MCP_API_FLOOR="$data_router_stateless_mcp_api_floor" \
     MOCK_HOME_CACHE_CAPACITY_READER_FLOOR="$home_cache_capacity_reader_floor" \
+    MOCK_MEMBER_MEMORY_PROTOCOL_FLOOR="$member_memory_protocol_floor" \
     MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR="$official_workflow_bundle_reader_floor" \
     MOCK_REGISTRY_ARCHIVE_READER_FLOOR="$registry_archive_reader_floor" \
     MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_FLOOR="$template_guidance_bundle_reader_floor" \
@@ -2496,6 +2509,22 @@ for expectation in \
   [ ! -s "${tmp_dir}/teams-upload-v2-cli.output" ] || fail "v1 Teams Runner must not publish outputs"
   if grep -Eq '^ssh |releases/tags/' "${tmp_dir}/boundaries.log"; then
     fail "v1 Teams Runner must reject before Runner artifact or host access"
+  fi
+done
+
+
+for memory_case in \
+  "MOCK_MEMBER_MEMORY_PROTOCOL_AVAILABLE=0|Cannot read the member Memory protocol rollback floor from main" \
+  "MOCK_MEMBER_MEMORY_PROTOCOL_COMMIT=|Missing or invalid member Memory protocol rollback floor" \
+  "MOCK_MEMBER_MEMORY_PROTOCOL_COMMIT=invalid|Missing or invalid member Memory protocol rollback floor" \
+  "MOCK_MEMBER_MEMORY_PROTOCOL_ON_MAIN=0|Member Memory protocol rollback floor is not on main" \
+  "MOCK_MEMBER_MEMORY_PROTOCOL_VALID=0|Rollback target predates the supported member Memory protocol"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${memory_case#*|}" \
+    run_resolver "${tmp_dir}/memory-policy.output" "${memory_case%%|*}"
+  [ ! -s "${tmp_dir}/memory-policy.output" ] || fail "invalid Memory floor must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "Memory floor must reject before provider or host access"
   fi
 done
 

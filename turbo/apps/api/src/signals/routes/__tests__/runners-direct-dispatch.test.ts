@@ -91,8 +91,9 @@ test("fails a Run with no serving process and releases its concurrency slot", as
   });
   expect(run).toMatchObject({
     status: "failed",
-    error: "No eligible serving Runner is available",
+    failureReason: "unknown",
   });
+  await f.api.requestRunContext(f.actor, run.runId, [404]);
   expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
 });
 
@@ -133,7 +134,7 @@ test("persists preparation failure and releases admission before another Run", a
   }
   await expect(f.api.readRun(f.actor, admitted.runId)).resolves.toMatchObject({
     status: "failed",
-    error: "Run execution preparation failed",
+    failureReason: "unknown",
   });
   expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
   f.api.acceptStorageDownloads();
@@ -260,7 +261,7 @@ test("recovers interrupted delivery through the ordinary Run heartbeat timeout",
   await flushWaitUntilForTest();
   await expect(f.api.readRun(f.actor, admitted.runId)).resolves.toMatchObject({
     status: "timeout",
-    error: "Run timed out (no heartbeat)",
+    failureReason: "unknown",
   });
   expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
   const next = await f.api.createThreadRun(f.actor, {
@@ -269,6 +270,14 @@ test("recovers interrupted delivery through the ordinary Run heartbeat timeout",
     prompt: "Continue after interrupted delivery recovered",
   });
   expect(next.status).toBe("running");
+
+  const input = await f.api.executionInput(next.runId);
+  await completePublicClaudeRun(
+    context,
+    next,
+    { authorization: `Bearer ${input.sandboxToken}` },
+    "Recovered after interrupted delivery.",
+  );
 });
 
 test.each(["lost", "process", "generation", "run"] as const)(
@@ -473,9 +482,39 @@ test.each([
   });
 });
 
+test("keeps another group's serving process when a heartbeat observes a later clock", async () => {
+  const f = await launchFixture();
+  const clock = now();
+  mockNow(clock);
+  onTestFinished(clearMockNow);
+  const identity = await f.api.registerDirectRunner(f.group);
+
+  // A different group's heartbeat cannot retire this group's receiver. Return
+  // to its clock before dispatch so freshness and reclamation are distinguished.
+  mockNow(clock + 5 * 60_000 + 1);
+  await f.api.registerDirectRunner(`vm0/other-${randomUUID()}`);
+  mockNow(clock);
+  const run = await f.api.createThreadRun(f.actor, {
+    agentId: f.agentId,
+    prompt: "Use this group's serving process",
+  });
+  expect(run.status).toBe("running");
+  expect(
+    (await f.api.requestRunRunner(f.actor, run.runId, [200])).body,
+  ).toMatchObject({
+    runnerId: identity.runnerId,
+    runnerHeartbeatGeneration: identity.heartbeatGeneration,
+  });
+  const input = await f.api.executionInput(run.runId);
+  await completePublicClaudeRun(
+    context,
+    run,
+    { authorization: `Bearer ${input.sandboxToken}` },
+    "The owning group retained its serving process.",
+  );
+});
+
 test("selects a fresh serving process after stale, unavailable and untrusted-host observations", async () => {
-  // The three-minute shift can prune another case's still-fresh receiver.
-  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
   const f = await launchFixture();
   const clock = now();
   mockNow(clock);
@@ -637,7 +676,7 @@ test("definite refusal releases a preselected Run even though startedAt is set",
   });
   expect(run).toMatchObject({
     status: "failed",
-    error: "Every eligible Runner refused this Run",
+    failureReason: "unknown",
   });
   expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
 });

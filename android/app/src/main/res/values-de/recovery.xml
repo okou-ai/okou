@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="recovery_loading">Wiederherstellungsoptionen werden geladen…</string>
+    <string name="recovery_read_failed">Wiederherstellungsoptionen sind nicht verfügbar.</string>
+    <string name="recovery_continue">Fortsetzen</string>
+    <string name="recovery_reset">Nutzung zurücksetzen und fortsetzen (verbraucht ein Guthaben)</string>
+    <string name="recovery_reset_unknown">Das ursprüngliche Zurücksetzen ist unbestätigt. Kein automatischer Neuversuch.</string>
+    <string name="recovery_reset_retry">Ursprüngliches Zurücksetzen wiederholen</string>
+    <string name="recovery_needs_changes">Vor dem Fortsetzen Modell, Kontoeinstellungen oder Unterhaltung ändern.</string>
+    <string name="recovery_billing">Workspace-Guthaben: %1$s. Abrechnung prüfen.</string>
+    <string name="recovery_no_credit">Beim letzten Zurücksetzen war kein Guthaben verfügbar.</string>
+    <string name="recovery_submitted">Fortsetzung angenommen. Warte auf den Verlauf.</string>
+    <string name="recovery_failed">Wiederherstellung unvollständig. Ursprünglichen Vorgang vor Wiederholung prüfen.</string>
+    <string name="recovery_credits">Guthaben zum Zurücksetzen: %1$d</string>
+</resources>

@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.api.generated.AcceptedInput
+import ai.okou.android.api.generated.ComposerDraft
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.CreatedThread
 import ai.okou.android.api.generated.SendRequestVariant1
@@ -13,6 +14,10 @@ data class InputObservation(
 
 interface ChatComposerService {
     suspend fun newChatAgent(): String?
+
+    suspend fun composerDraft(target: ServerDraftTarget): ComposerDraft
+
+    suspend fun saveComposerDraft(target: ServerDraftTarget, text: String)
 
     suspend fun createThread(request: CreateThreadRequest): CreatedThread
 

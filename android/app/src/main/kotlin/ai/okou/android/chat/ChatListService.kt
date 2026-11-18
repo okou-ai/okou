@@ -15,6 +15,8 @@ class ChatSnapshotUnavailable(val status: Int) : Exception("Chat snapshot could 
 
 /** The workspace's canonical read boundary. None of these operations marks a thread read. */
 interface ChatListService : ConversationHistoryService {
+    suspend fun historyCatchUp(cursors: Map<String, HistoryCursor>): HistoryBatch
+
     suspend fun chatSnapshot(): ChatSnapshot
 
     suspend fun chatArchive(url: String): ChatArchive

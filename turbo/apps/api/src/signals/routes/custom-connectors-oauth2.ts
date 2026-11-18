@@ -1,3 +1,5 @@
+import { waitUntil } from "../context/wait-until";
+import { deliverMarketingRewardEvents$ } from "../services/marketing-reward-event-delivery.service";
 import {
   prepareCustomConnectorNetworkFetch$,
   type CustomConnectorNetworkSnapshot,
@@ -268,7 +270,11 @@ const authorizeCustomConnectorAgent$ = command(
 );
 
 type CustomOAuthPersistenceResult =
-  | { readonly ok: true; readonly connectionId: string }
+  | {
+      readonly ok: true;
+      readonly connectionId: string;
+      readonly marketingRewardEventId: string;
+    }
   | { readonly ok: false; readonly message: string };
 
 interface CustomOAuthPersistenceArgs {
@@ -366,7 +372,11 @@ const persistCustomConnectorOAuth2Connection$ = command(
       };
     }
     signal.throwIfAborted();
-    return { ok: true, connectionId: result.connectionId };
+    return {
+      ok: true,
+      connectionId: result.connectionId,
+      marketingRewardEventId: result.marketingRewardEventId,
+    };
   },
 );
 
@@ -638,6 +648,20 @@ const completeCurrentOAuthCallback$ = command(
   },
 );
 
+function customOAuthCallbackIssuerMatches(
+  context: NonNullable<ReturnType<typeof parseValidCustomConnectorOAuthState>>,
+  issuer: string | undefined,
+): boolean {
+  if (!isCustomConnectorAutomaticOAuthStateContext(context)) {
+    return true;
+  }
+  const validation = safeSync(() => {
+    validateMcpAutomaticOAuthCallbackIssuer(context, issuer);
+    return true;
+  });
+  return "ok" in validation;
+}
+
 const completeOAuth2Callback$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<Response> => {
     const query = get(queryOf(customConnectorOAuth2Contract.callback));
@@ -677,17 +701,11 @@ const completeOAuth2Callback$ = command(
     )
       ? state.context
       : null;
-    if (automaticContext) {
-      const issuerValidation = safeSync(() => {
-        validateMcpAutomaticOAuthCallbackIssuer(automaticContext, query.iss);
-        return true;
-      });
-      if (!("ok" in issuerValidation)) {
-        return callbackError(
-          origin,
-          "OAuth authorization issuer did not match - please try again",
-        );
-      }
+    if (!customOAuthCallbackIssuerMatches(state.context, query.iss)) {
+      return callbackError(
+        origin,
+        "OAuth authorization issuer did not match - please try again",
+      );
     }
     if (providerError) {
       return callbackError(origin, query.error_description ?? providerError);
@@ -735,6 +753,15 @@ const completeOAuth2Callback$ = command(
     signal.throwIfAborted();
     if (!persistence.ok) {
       return callbackError(origin, persistence.message);
+    }
+    if (persistence.marketingRewardEventId) {
+      waitUntil(
+        set(
+          deliverMarketingRewardEvents$,
+          { jobId: persistence.marketingRewardEventId, handlerVersion: 1 },
+          signal,
+        ),
+      );
     }
     const completionError = await set(
       authorizeCustomConnectorAgent$,

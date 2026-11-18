@@ -108,7 +108,7 @@ final class ChatModelCommandTests: XCTestCase {
       writes.withLock { $0 },
       [
         ["model": "codex-model", "reasoningEffort": "high", "codexServiceTier": "fast"],
-        ["model": "claude-model", "reasoningEffort": "high"],
+        ["model": "claude-model", "reasoningEffort": "high"]
       ])
     // A level the model does not offer, and Fast on a model without it, leave the draft as it was.
     XCTAssertEqual(switched.choosing(effort: "ultra", in: configuration), switched)
@@ -173,8 +173,7 @@ final class ChatModelCommandTests: XCTestCase {
     XCTAssertEqual(current.configuration?.defaultSelection.model, "codex-model")
   }
 
-  func testCrossDeviceThreadAndPreferenceInvalidationRemainSeparateAndDoNotReadUsage() async throws
-  {
+  func testThreadAndPreferenceInvalidationsStaySeparateWithoutUsageReads() async throws {
     let changed = Mutex(false)
     let quotaReads = Mutex(0)
     let fixture = ChatHTTPFixture { request in

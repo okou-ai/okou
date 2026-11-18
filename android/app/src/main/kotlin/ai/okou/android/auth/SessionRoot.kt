@@ -81,7 +81,14 @@ fun SessionRoot(
                     homeContent = {
                         Column(Modifier.fillMaxSize()) {
                             RealtimeNotice(ready.chats.updates)
-                            Box(Modifier.weight(1f)) { ChatListRoute(ready.chats, ready.composer) }
+                            Box(Modifier.weight(1f)) {
+                                ChatListRoute(
+                                    ready.chats,
+                                    ready.composer,
+                                    ready.controls,
+                                    ready.recovery,
+                                )
+                            }
                         }
                     },
                 )

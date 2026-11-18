@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "2.37.0",
+  "version": "2.44.3",
   "private": true,
   "type": "module",
   "exports": {
@@ -61,6 +61,7 @@
     "db:reset": "tsx scripts/reset-db.ts",
     "test:migration-consistency": "tsx scripts/test-migration-consistency-schema.ts",
     "test:migration-runner": "tsx scripts/test-migration-runner-timeouts.ts",
+    "test:project-sort-order-migration": "tsx scripts/test-project-sort-order-migration.ts",
     "test:presentation-template-copy": "node --import tsx scripts/migrations/025-presentation-template-copy/test-copy.ts",
     "lint:jsonb-contracts": "tsx scripts/check-jsonb-contracts.ts",
     "billing:attribution": "tsx scripts/billing-attribution.ts",
@@ -82,8 +83,10 @@
     "test:single-agent-migration": "node --import tsx scripts/migrations/030-single-agent/test-tool.ts && node --import tsx scripts/migrations/030-single-agent/test-execution.ts && node --import tsx scripts/migrations/030-single-agent/test-production.ts",
     "test:single-agent-execution": "node --import tsx scripts/migrations/030-single-agent/test-execution.ts",
     "test:staff-single-agent-copy": "node --import tsx scripts/test-staff-single-agent-copy.ts",
+    "test:single-agent-default-rollout": "node --import tsx scripts/test-single-agent-default-rollout.ts",
     "single-agent:production": "tsx scripts/migrations/030-single-agent/production.ts",
-    "single-agent:package": "tsx scripts/migrations/030-single-agent/production-package-cli.ts"
+    "single-agent:package": "tsx scripts/migrations/030-single-agent/production-package-cli.ts",
+    "test:inactive-single-agent-pilot": "node --import tsx scripts/test-inactive-single-agent-pilot.ts"
   },
   "dependencies": {
     "@okouai/api-contracts": "workspace:*",

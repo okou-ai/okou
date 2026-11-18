@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { ToggleButton, cn } from "@okouai/ui";
 
 export const COMPOSER_SECTION_LABEL = cn(
@@ -11,7 +10,6 @@ export function ComposerOutputPicker<Value extends string>({
   options,
   selectedValue,
   onSelect,
-  headerAction,
 }: {
   readonly label: string;
   readonly options: readonly {
@@ -20,7 +18,6 @@ export function ComposerOutputPicker<Value extends string>({
   }[];
   readonly selectedValue: Value | null;
   readonly onSelect: (value: Value) => void;
-  readonly headerAction?: ReactNode;
 }) {
   return (
     <div
@@ -28,10 +25,7 @@ export function ComposerOutputPicker<Value extends string>({
       role="group"
       aria-label={label}
     >
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <p className={COMPOSER_SECTION_LABEL}>{label}</p>
-        {headerAction}
-      </div>
+      <p className={COMPOSER_SECTION_LABEL}>{label}</p>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         {options.map((option) => {
           const selected = selectedValue === option.value;

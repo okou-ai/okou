@@ -15,6 +15,7 @@ import {
   CHAT_RUN_CODEX_ACCESS_PROGRAM_UNAVAILABLE_MESSAGE,
   CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
   CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE,
+  CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
   CHAT_RUN_USAGE_LIMIT_MESSAGE,
 } from "@okouai/api-contracts/contracts/errors";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
@@ -26,7 +27,6 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { WebPushError } from "web-push";
 import { testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 
@@ -36,19 +36,15 @@ import {
   type ApiTestUser,
   type ApiTestUserOptions,
 } from "./helpers/api-bdd";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { readThreadMessagesAfterBackgroundWork } from "./helpers/chat-events-fixture";
-import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { chatEventDisplayText } from "./helpers/chat-event";
-import { agentsRoutes } from "../agents";
 const context = testContext();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
@@ -78,7 +74,6 @@ type LifecycleChatEvent<Event extends LifecycleEvent> = Extract<
   { eventType: `run.${Event}` }
 >;
 type FollowupsEvent = Extract<ChatEvent, { eventType: "output.followups" }>;
-type TestOrgRole = "admin" | "member";
 
 interface EntitledChatActor {
   readonly actor: ApiTestUser;
@@ -114,25 +109,6 @@ async function entitledChatActor(
     visibility: "private",
   });
   return { actor, agentId: agent.agentId, runnerGroup, providerId, storage };
-}
-
-async function entitledChatMemberActor(): Promise<EntitledChatActor> {
-  const adminFixture = await entitledChatActor();
-  if (!adminFixture.actor.orgId) {
-    throw new Error("Expected the admin fixture to be org-scoped");
-  }
-  const actor = bdd.user({
-    orgId: adminFixture.actor.orgId,
-    orgRole: "org:member",
-  });
-  await bdd.completeOnboarding(actor);
-
-  const agent = await bdd.createAgent(actor, {
-    displayName: "BDD member chat callback agent",
-    description: "Exercises member-owned chat callback terminal processing.",
-    visibility: "private",
-  });
-  return { ...adminFixture, actor, agentId: agent.agentId };
 }
 
 async function configureClaudeCodeSubscriptionProvider(
@@ -1033,86 +1009,62 @@ describe("CHAT-02: completed chat callback", () => {
     }
   }, 90_000);
 
-  it.each([
-    { audience: "staff", staff: true, enabled: true },
-    { audience: "staff who opted out", staff: true, enabled: false },
-    { audience: "external members", staff: false, enabled: false },
-    {
-      audience: "external members opting in",
-      staff: false,
-      enabled: false,
-      override: true,
-    },
-  ])(
-    "gates workflow and email follow-ups for $audience",
-    async ({ staff, enabled, override }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor(
-        staff ? { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" } : {},
-      );
-      if ((staff && !enabled) || override) {
-        await createAuthDeviceSupportApi(context).updateFeatureSwitches(actor, {
-          [FeatureSwitchKey.ChatActionFollowups]: override ?? false,
-        });
+  it("recommends workflow and email follow-ups for ordinary members", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const followupSystemPrompts: string[] = [];
+    const workflow = {
+      prompt: "Save this reconciliation as a workflow",
+      kind: "workflow",
+    };
+    const email = {
+      prompt: "After I send it, notify me when they reply",
+      kind: "email",
+    };
+    const talk = { prompt: "Check the reconciliation totals", kind: "talk" };
+    chatCallbacks.mockVertexCompletions((body) => {
+      if (
+        body.messages[0]?.content.includes("recommended follow-up messages")
+      ) {
+        followupSystemPrompts.push(body.messages[0].content);
+        return JSON.stringify([
+          { ...workflow, generationType: "website" },
+          { prompt: "Save another workflow", kind: "workflow" },
+          { ...email, generationType: "image" },
+          { prompt: "Track another reply", kind: "email" },
+          talk,
+        ]);
       }
-      const followupSystemPrompts: string[] = [];
-      const workflow = {
-        prompt: "Save this reconciliation as a workflow",
-        kind: "workflow",
-      };
-      const email = {
-        prompt: "After I send it, notify me when they reply",
-        kind: "email",
-      };
-      const talk = { prompt: "Check the reconciliation totals", kind: "talk" };
-      chatCallbacks.mockVertexCompletions((body) => {
-        if (
-          body.messages[0]?.content.includes("recommended follow-up messages")
-        ) {
-          followupSystemPrompts.push(body.messages[0].content);
-          return JSON.stringify([
-            { ...workflow, generationType: "website" },
-            { prompt: "Save another workflow", kind: "workflow" },
-            { ...email, generationType: "image" },
-            { prompt: "Track another reply", kind: "email" },
-            talk,
-          ]);
-        }
-        return "Reconciliation summary";
-      });
-      const run = await startChatRun(actor, {
-        agentId,
-        prompt:
-          "Reconcile these invoices and draft an email asking about the discrepancies",
-      });
-      const headers = await runExecution(runnerGroup, run.runId);
-      chatCallbacks.mockChatOutputEvents([
-        assistantEvent(
-          0,
-          "Reconciliation complete. The email is ready for you to review and send.",
-        ),
-      ]);
-      await completeChatRunOk(run.runId, headers, { lastEventSequence: 0 });
-      await flushWaitUntilForTest();
-      expect(followupSystemPrompts).toHaveLength(1);
-      expect(followupSystemPrompts[0]?.includes('"kind":"workflow"')).toBe(
-        enabled,
-      );
-      expect(followupSystemPrompts[0]?.includes('"kind":"email"')).toBe(
-        enabled,
-      );
-      const events = await chat.listThreadEvents(actor, run.threadId);
-      const [recommendation] = recommendedFollowupEvents(
-        events.events,
-        run.runId,
-      );
-      expect(recommendation).toBeDefined();
-      expect(
-        resolveChatEventRecommendedFollowups({
-          content: recommendation?.content ?? null,
-        }),
-      ).toStrictEqual(enabled ? [workflow, email, talk] : [talk]);
-    },
-  );
+      return "Reconciliation summary";
+    });
+    const run = await startChatRun(actor, {
+      agentId,
+      prompt:
+        "Reconcile these invoices and draft an email asking about the discrepancies",
+    });
+    const headers = await runExecution(runnerGroup, run.runId);
+    chatCallbacks.mockChatOutputEvents([
+      assistantEvent(
+        0,
+        "Reconciliation complete. The email is ready for you to review and send.",
+      ),
+    ]);
+    await completeChatRunOk(run.runId, headers, { lastEventSequence: 0 });
+    await flushWaitUntilForTest();
+    expect(followupSystemPrompts).toHaveLength(1);
+    expect(followupSystemPrompts[0]).toContain('"kind":"workflow"');
+    expect(followupSystemPrompts[0]).toContain('"kind":"email"');
+    const events = await chat.listThreadEvents(actor, run.threadId);
+    const [recommendation] = recommendedFollowupEvents(
+      events.events,
+      run.runId,
+    );
+    expect(recommendation).toBeDefined();
+    expect(
+      resolveChatEventRecommendedFollowups({
+        content: recommendation?.content ?? null,
+      }),
+    ).toStrictEqual([workflow, email, talk]);
+  });
 
   it("accepts a retried recommended follow-up send as a duplicate", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -1676,7 +1628,7 @@ describe("CHAT-02: completed chat callback", () => {
     expect(events.events).toContainEqual(
       expect.objectContaining({
         eventType: "run.failed",
-        error: "insufficient_credits",
+        failureReason: "insufficient_credits",
         content: "insufficient_credits",
       }),
     );
@@ -1961,8 +1913,7 @@ describe("CHAT-02: completed chat callback", () => {
     ).toHaveLength(1);
     await expectArchiveState(cancelled.threadId, true, 0);
 
-    // A sandbox that reports its own cancellation goes through the failed
-    // callback but still lands a cancelled marker.
+    // Legacy cancellation prose cannot override the failed Run lifecycle.
     const sandboxCancelled = await startArchivedRun("sandbox cancels");
     const sandboxCancelledHeaders = await runExecution(
       runnerGroup,
@@ -1982,10 +1933,10 @@ describe("CHAT-02: completed chat callback", () => {
       lifecycleMarkers(
         afterSandboxCancel.events,
         sandboxCancelled.runId,
-        "cancelled",
+        "failed",
       ),
     ).toHaveLength(1);
-    await expectArchiveState(sandboxCancelled.threadId, true, 0);
+    await expectArchiveState(sandboxCancelled.threadId, false, 1);
   }, 90_000);
 
   it("pins the model, reasoning effort, and token budget of every fast-path completion", async () => {
@@ -3235,19 +3186,14 @@ describe("CHAT-02: failed chat callbacks", () => {
       ).toMatchObject([
         {
           content: scenario.expected,
-          error: scenario.expected,
           ...(scenario.publicReason
             ? { failureReason: scenario.publicReason }
             : {}),
         },
       ]);
-      const detailError =
-        scenario.expected === "insufficient_credits"
-          ? scenario.error
-          : scenario.expected;
       await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
         status: "failed",
-        error: detailError,
+        failureReason: scenario.publicReason ?? "unknown",
       });
       const detail = await createRunReadsApi(context).requestReadLogById(
         actor,
@@ -3256,7 +3202,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       );
       expect(detail.body).toMatchObject({
         status: "failed",
-        error: detailError,
+        failureReason: scenario.publicReason ?? "unknown",
       });
       expect(
         userMessages(messages.events).filter((event) => {
@@ -3682,11 +3628,20 @@ describe("CHAT-02: failed chat callbacks", () => {
       if (!failure || failure.eventType !== "run.failed") {
         throw new Error("Expected the subscription run failure");
       }
-      if (source === "web") {
-        expect(failure.error).toBe(nativeMessage);
-      } else {
-        expect(failure.error).toContain(`Your ${label} subscription`);
-        expect(failure.error).toContain(nativeMessage);
+      expect(failure.content).toBe(
+        structured
+          ? CHAT_RUN_USAGE_LIMIT_MESSAGE
+          : CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
+      );
+      expect(failure.failureReason).toBe(
+        structured ? "usage_limit" : "unknown",
+      );
+      if (source === "slack" && structured) {
+        expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
+          expect.objectContaining({
+            text: expect.stringContaining(`Your ${label} subscription`),
+          }),
+        );
         expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
           expect.objectContaining({
             text: expect.stringContaining("?settings=model"),
@@ -3697,6 +3652,16 @@ describe("CHAT-02: failed chat callbacks", () => {
             text: expect.stringContaining('reply "continue"'),
           }),
         );
+      }
+      if (source === "slack") {
+        for (const [message] of context.mocks.slack.chat.postMessage.mock
+          .calls) {
+          expect(message).not.toStrictEqual(
+            expect.objectContaining({
+              text: expect.stringContaining(nativeMessage),
+            }),
+          );
+        }
       }
     },
   );
@@ -3723,7 +3688,11 @@ describe("CHAT-02: failed chat callbacks", () => {
       /** Null selects Auto. */
       readonly selectedModel?: string | null;
     }[] = [
-      { prompt: "round one", error: actionableError },
+      {
+        prompt: "round one",
+        error: actionableError,
+        expectedError: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
+      },
       {
         prompt: "round two",
         error: executionTimeoutError,
@@ -3735,11 +3704,16 @@ describe("CHAT-02: failed chat callbacks", () => {
         error: "Second runner failure",
         expectedError: "Oops, something went wrong. Please try again later.",
       },
-      { prompt: "round four", error: usageLimitError },
+      {
+        prompt: "round four",
+        error: usageLimitError,
+        expectedError: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
+      },
       {
         prompt: "round five",
         error: executionTimeoutError,
         expectedError: CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE,
+        failureReason: "execution_timeout",
       },
       {
         prompt: "round six",
@@ -3764,8 +3738,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       {
         prompt: "round ten",
         error: "Contradictory runner failure",
-        expectedError:
-          "Claude Fable 5.1 is overloaded. Please wait a few minutes and try again, or switch to another model.",
+        expectedError: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
         failureReason: "provider_overloaded",
         selectedModel: "claude-fable-5-1",
       },
@@ -3846,7 +3819,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       });
       return runIds.every((runId) => {
         return failed.some((message) => {
-          return message.runId === runId && message.error !== undefined;
+          return message.runId === runId && message.content !== undefined;
         });
       });
     });
@@ -3873,7 +3846,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       runIds.map((runId) => {
         return failed.find((message) => {
           return message.runId === runId;
-        })?.error;
+        })?.content;
       }),
     ).toStrictEqual(
       rounds.map((round) => {
@@ -3884,12 +3857,12 @@ describe("CHAT-02: failed chat callbacks", () => {
       failed.find((message) => {
         return message.runId === runIds[0];
       })?.content,
-    ).toBe(actionableError);
+    ).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
     expect(
       failed.find((message) => {
         return message.runId === runIds[3];
       })?.content,
-    ).toBe(usageLimitError);
+    ).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
     expect(
       failed.find((message) => {
         return message.runId === runIds[4];
@@ -3903,7 +3876,10 @@ describe("CHAT-02: failed chat callbacks", () => {
       }),
     ).toStrictEqual(
       rounds.map((round) => {
-        return round.failureReason;
+        return round.failureReason === undefined ||
+          round.failureReason === "future_reason"
+          ? "unknown"
+          : round.failureReason;
       }),
     );
 
@@ -3919,7 +3895,10 @@ describe("CHAT-02: failed chat callbacks", () => {
       }),
     ).toStrictEqual(
       rounds.map((round) => {
-        return round.failureReason;
+        return round.failureReason === undefined ||
+          round.failureReason === "future_reason"
+          ? "unknown"
+          : round.failureReason;
       }),
     );
     expect(
@@ -3928,7 +3907,6 @@ describe("CHAT-02: failed chat callbacks", () => {
       })?.payload,
     ).toStrictEqual({
       content: "Oops, something went wrong. Please try again later.",
-      error: "Oops, something went wrong. Please try again later.",
     });
 
     const codexAccessProgramRunId = runIds.at(-1);
@@ -3939,7 +3917,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       api.readRun(actor, codexAccessProgramRunId),
     ).resolves.toMatchObject({
       status: "failed",
-      error: codexAccessProgramError,
+      failureReason: "codex_access_program_unavailable",
     });
 
     expect(context.mocks.webpush.sendNotification).toHaveBeenCalledTimes(
@@ -3973,6 +3951,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       run.runId,
       sandboxHeaders,
       "INSUFFICIENT_CREDITS: Insufficient credits. Please add credits to continue.",
+      "insufficient_credits",
     );
 
     const page = await waitForThreadMessages(
@@ -3981,17 +3960,17 @@ describe("CHAT-02: failed chat callbacks", () => {
       (messages) => {
         return lifecycleMarkers(messages, run.runId, "failed").some(
           (message) => {
-            return message.error === "insufficient_credits";
+            return message.failureReason === "insufficient_credits";
           },
         );
       },
     );
     const marker = lifecycleMarkers(page.events, run.runId, "failed")[0];
-    expect(marker?.error).toBe("insufficient_credits");
+    expect(marker?.failureReason).toBe("insufficient_credits");
     expect(marker?.content).toBe("insufficient_credits");
   }, 90_000);
 
-  it("shows friendly Claude overload guidance while preserving the raw run error", async () => {
+  it("presents overload from its reason without forwarding the raw run error", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const rawOverloadError =
       "API Error: 529 Overloaded. This is a server-side issue, usually temporary - try again in a moment. If it persists, check https://status.claude.com.";
@@ -4002,7 +3981,12 @@ describe("CHAT-02: failed chat callbacks", () => {
       selectedModel: "claude-fable-5-1",
     });
     const sandboxHeaders = await runExecution(runnerGroup, run.runId);
-    await failChatRun(run.runId, sandboxHeaders, rawOverloadError);
+    await failChatRun(
+      run.runId,
+      sandboxHeaders,
+      rawOverloadError,
+      "provider_overloaded",
+    );
 
     const page = await waitForThreadMessages(
       actor,
@@ -4010,93 +3994,69 @@ describe("CHAT-02: failed chat callbacks", () => {
       (messages) => {
         return lifecycleMarkers(messages, run.runId, "failed").some(
           (message) => {
-            return message.error?.includes("Claude Fable 5.1") ?? false;
+            return message.failureReason === "provider_overloaded";
           },
         );
       },
     );
     const marker = lifecycleMarkers(page.events, run.runId, "failed")[0];
-    expect(marker?.error).toBe(
-      "Claude Fable 5.1 is overloaded. Please wait a few minutes and try again, or switch to another model.",
-    );
-    expect(marker?.content).toBe(marker?.error);
+    expect(marker?.content).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
 
     const rawRun = await api.readRun(actor, run.runId);
-    expect(rawRun.error).toBe(rawOverloadError);
+    expect(rawRun.failureReason).toBe("provider_overloaded");
   }, 90_000);
 
-  it("shows Claude Code credential recovery guidance for upstream auth 401s", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
-    const upstreamAuthError =
-      "Failed to authenticate. API Error: 401 Invalid authentication credentials";
-    const revokedOAuthError =
-      "Failed to authenticate. API Error: 401 OAuth access token has been revoked.";
-    const invalidOAuthError =
-      "Failed to authenticate. API Error: 401 OAuth access token is invalid.";
-
-    async function failAndReadError(params: {
-      readonly prompt: string;
-      readonly errorMessage?: string;
-      readonly failureReason?: RunFailureReasonToken;
-      readonly selectedModel?: string;
-      readonly orgRole?: TestOrgRole;
-      readonly configureProvider?: (
-        fixture: EntitledChatActor,
-      ) => Promise<void>;
-    }): Promise<string> {
-      const fixture =
-        params.orgRole === "member"
-          ? await entitledChatMemberActor()
-          : await entitledChatActor();
-      await (
-        params.configureProvider ?? configureClaudeCodeSubscriptionProvider
-      )(fixture);
+  it.each([
+    {
+      name: "legacy diagnostic",
+      reason: undefined,
+      expectedReason: "unknown",
+    },
+    {
+      name: "invalid credentials",
+      reason: "invalid_credentials",
+      expectedReason: "invalid_credentials",
+    },
+    {
+      name: "reconnection required",
+      reason: "reconnect_required",
+      expectedReason: "reconnect_required",
+    },
+  ] as const)(
+    "preserves credential recovery state for $name without parsing diagnostic text",
+    async ({ reason, expectedReason }) => {
+      const fixture = await entitledChatActor();
+      await configureClaudeCodeSubscriptionProvider(fixture);
       const run = await startChatRun(fixture.actor, {
         agentId: fixture.agentId,
-        prompt: params.prompt,
-        ...(params.selectedModel === undefined
-          ? {}
-          : { selectedModel: params.selectedModel }),
+        prompt: "Exercise captured subscription recovery",
+        selectedModel: "claude-opus-5-5",
       });
-      const sandboxHeaders = await runExecution(fixture.runnerGroup, run.runId);
-      if (params.orgRole !== undefined) {
-        mockClerkMembership(
-          context,
-          fixture.actor,
-          params.orgRole === "admin" ? "org:admin" : "org:member",
-        );
-      }
+      const headers = await runExecution(fixture.runnerGroup, run.runId);
       await failChatRun(
         run.runId,
-        sandboxHeaders,
-        params.errorMessage ?? upstreamAuthError,
-        params.failureReason,
+        headers,
+        "Failed to authenticate. API Error: 401 OAuth access token has been revoked.",
+        reason,
       );
-
-      const page = await waitForThreadMessages(
-        fixture.actor,
-        run.threadId,
-        (messages) => {
-          return lifecycleMarkers(messages, run.runId, "failed").some(
-            (message) => {
-              return message.error !== undefined;
-            },
-          );
+      await flushWaitUntilForTest();
+      const events = await chat.listThreadEvents(fixture.actor, run.threadId);
+      expect(
+        lifecycleMarkers(events.events, run.runId, "failed"),
+      ).toMatchObject([
+        {
+          failureReason: expectedReason,
+          content: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
         },
-      );
-      const marker = lifecycleMarkers(page.events, run.runId, "failed")[0];
-      if (!marker?.error) {
-        throw new Error("Expected failed chat callback to store an error");
-      }
-      expect(marker.content).toBe(marker.error);
+      ]);
       await expect(
         api.readRun(fixture.actor, run.runId),
       ).resolves.toMatchObject({
         status: "failed",
-        error: params.errorMessage ?? upstreamAuthError,
+        failureReason: expectedReason,
+        source: { providerType: "claude-code-oauth-token" },
       });
-      if (params.failureReason === "reconnect_required") {
-        expect(marker.failureReason).toBe("reconnect_required");
+      if (reason === "reconnect_required") {
         await misc.upsertPersonalModelProvider(
           fixture.actor,
           {
@@ -4108,7 +4068,8 @@ describe("CHAT-02: failed chat callbacks", () => {
         const retry = await startChatRun(fixture.actor, {
           agentId: fixture.agentId,
           threadId: run.threadId,
-          prompt: "retry after replacing the Claude OAuth token",
+          prompt:
+            "Retry after replacing the captured Claude subscription token",
           selectedModel: "claude-opus-5-5",
         });
         const retryHeaders = await runExecution(
@@ -4118,97 +4079,12 @@ describe("CHAT-02: failed chat callbacks", () => {
         await completeChatRunOk(retry.runId, retryHeaders);
         await expect(
           api.readRun(fixture.actor, retry.runId),
-        ).resolves.toMatchObject({ status: "completed" });
+        ).resolves.toMatchObject({
+          status: "completed",
+        });
       }
-      return marker.error;
-    }
-
-    await expect(
-      failAndReadError({
-        prompt: "subscription credential failed",
-        selectedModel: "claude-opus-5-5",
-        configureProvider: configureClaudeCodeSubscriptionProvider,
-      }),
-    ).resolves.toBe(
-      "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
-    );
-    await expect(
-      failAndReadError({
-        prompt: "structured subscription credential failed",
-        errorMessage: "Provider authentication copy changed",
-        failureReason: "invalid_credentials",
-        selectedModel: "claude-opus-5-5",
-        configureProvider: configureClaudeCodeSubscriptionProvider,
-      }),
-    ).resolves.toBe(
-      "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
-    );
-    await expect(
-      failAndReadError({
-        prompt: "revoked subscription credential failed",
-        errorMessage: revokedOAuthError,
-        selectedModel: "claude-opus-5-5",
-        configureProvider: configureClaudeCodeSubscriptionProvider,
-      }),
-    ).resolves.toBe(
-      "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
-    );
-    await expect(
-      failAndReadError({
-        prompt: "revoked OAuth text with the default personal subscription",
-        errorMessage: revokedOAuthError,
-        selectedModel: "claude-fable-5-1",
-      }),
-    ).resolves.toBe(
-      "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
-    );
-    await expect(
-      failAndReadError({
-        prompt: "invalid subscription credential failed",
-        errorMessage: invalidOAuthError,
-        selectedModel: "claude-opus-5-5",
-        configureProvider: configureClaudeCodeSubscriptionProvider,
-      }),
-    ).resolves.toBe(
-      "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
-    );
-    await expect(
-      failAndReadError({
-        prompt: "structured invalid subscription credential failed",
-        errorMessage: invalidOAuthError,
-        failureReason: "reconnect_required",
-        selectedModel: "claude-opus-5-5",
-        configureProvider: configureClaudeCodeSubscriptionProvider,
-      }),
-    ).resolves.toBe(
-      "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
-    );
-    await expect(
-      failAndReadError({
-        prompt: "invalid OAuth text with the default personal subscription",
-        errorMessage: invalidOAuthError,
-        selectedModel: "claude-fable-5-1",
-      }),
-    ).resolves.toBe(
-      "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
-    );
-    await expect(
-      failAndReadError({
-        prompt: "personal subscription failed for an admin",
-        orgRole: "admin",
-      }),
-    ).resolves.toBe(
-      "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
-    );
-    await expect(
-      failAndReadError({
-        prompt: "personal subscription failed for a member",
-        orgRole: "member",
-      }),
-    ).resolves.toBe(
-      "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
-    );
-  }, 90_000);
+    },
+  );
 });
 
 describe("CHAT-02: auto-send after failures", () => {
@@ -5194,9 +5070,6 @@ describe("CHAT-02: thread deletion while a run is active", () => {
 
 describe("CHAT-02: push notification gating", () => {
   it("reuses the native signing token until its fifty-minute lifetime ends", async () => {
-    // Serving heartbeats at minute 49/50 prune the global fleet. Keep that
-    // operator in this case's database so parallel Runs retain their receiver.
-    await setupApp({ context, routes: agentsRoutes, isolatePg: true });
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const provider = await createApnsFixture(context);
     await registerIosPush(context, { ...actor, orgId: actor.orgId! });

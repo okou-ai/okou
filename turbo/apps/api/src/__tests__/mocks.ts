@@ -6,7 +6,8 @@ import type {
   BatchResult,
   ClientOptions,
 } from "ably";
-import { computed } from "ccstate";
+import { command, computed } from "ccstate";
+import type { AxiomQueryRequest } from "../signals/external/axiom";
 import { ws } from "msw";
 import { Buffer } from "node:buffer";
 import type StripeSDK from "stripe";
@@ -1385,6 +1386,19 @@ vi.mock("../signals/external/axiom", async () => {
         return apiTestMocks.axiom.query(apl, options);
       });
     },
+    queryAxiom$: command(
+      async ({ set }, request: AxiomQueryRequest, signal: AbortSignal) => {
+        if (apiTestMocks.axiom.useRealQuery()) {
+          return await set(actual.queryAxiom$, request, signal);
+        }
+        const rows = await apiTestMocks.axiom.query(
+          request.apl,
+          request.options,
+        );
+        signal.throwIfAborted();
+        return array(record(string(), zUnknown())).parse(rows);
+      },
+    ),
     getDatasetName: (name: string) => {
       return apiTestMocks.axiom.useRealQuery() ||
         apiTestMocks.axiom.useRealTelemetry()

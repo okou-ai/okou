@@ -7,7 +7,7 @@ let package = Package(
   products: [.library(name: "ChatDomain", targets: ["ChatDomain"])],
   targets: [
     .target(name: "ChatDomain"),
-    .testTarget(name: "ChatDomainTests", dependencies: ["ChatDomain"]),
+    .testTarget(name: "ChatDomainTests", dependencies: ["ChatDomain"])
   ],
   swiftLanguageModes: [.v6]
 )

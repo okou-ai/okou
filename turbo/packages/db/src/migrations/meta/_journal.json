@@ -3347,6 +3347,104 @@
       "when": 1794810429438,
       "tag": "1556_cap_connector_rewards",
       "breakpoints": true
+    },
+    {
+      "idx": 1557,
+      "version": "7",
+      "when": 1794815633315,
+      "tag": "1557_platform_event_feed",
+      "breakpoints": true
+    },
+    {
+      "idx": 1558,
+      "version": "7",
+      "when": 1794819499473,
+      "tag": "1558_for_you_sources_and_read_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 1559,
+      "version": "7",
+      "when": 1794826728121,
+      "tag": "1559_system_update_source_preference",
+      "breakpoints": true
+    },
+    {
+      "idx": 1560,
+      "version": "7",
+      "when": 1794830206912,
+      "tag": "1560_drop_agent_run_phase_timings",
+      "breakpoints": true
+    },
+    {
+      "idx": 1561,
+      "version": "7",
+      "when": 1794847317568,
+      "tag": "1561_presentation_pptx_resource_heads",
+      "breakpoints": true
+    },
+    {
+      "idx": 1562,
+      "version": "7",
+      "when": 1794876610732,
+      "tag": "1562_prepare_member_memory_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 1563,
+      "version": "7",
+      "when": 1794876635401,
+      "tag": "1563_backfill_member_memory_preparation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1564,
+      "version": "7",
+      "when": 1794880308395,
+      "tag": "1564_preserve_initialized_single_agent_members",
+      "breakpoints": true
+    },
+    {
+      "idx": 1565,
+      "version": "7",
+      "when": 1794903288573,
+      "tag": "1565_reconcile_member_memory_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 1566,
+      "version": "7",
+      "when": 1794912069366,
+      "tag": "1566_run_artifact_result",
+      "breakpoints": true
+    },
+    {
+      "idx": 1567,
+      "version": "7",
+      "when": 1794918056450,
+      "tag": "1567_copy_inactive_single_agent_pilot",
+      "breakpoints": true
+    },
+    {
+      "idx": 1568,
+      "version": "7",
+      "when": 1794920638828,
+      "tag": "1568_monotonic_chat_search_publication",
+      "breakpoints": true
+    },
+    {
+      "idx": 1569,
+      "version": "7",
+      "when": 1794927075246,
+      "tag": "1569_project_sort_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 1570,
+      "version": "7",
+      "when": 1794927104281,
+      "tag": "1570_backfill_project_sort_order",
+      "breakpoints": true
     }
   ]
 }

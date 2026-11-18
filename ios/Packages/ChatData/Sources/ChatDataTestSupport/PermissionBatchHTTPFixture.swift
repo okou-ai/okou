@@ -9,7 +9,7 @@ public final class PermissionBatchHTTPFixture: Sendable {
     ["connectorSlug": "gmail", "permission": "mail.read"],
     ["connectorSlug": "gmail", "permission": "mail.send"],
     ["connectorSlug": "google-drive", "permission": "files.read"],
-    ["connectorSlug": "google-drive", "permission": "files.write"],
+    ["connectorSlug": "google-drive", "permission": "files.write"]
   ]
 
   public struct Grant: Codable, Sendable {
@@ -65,8 +65,8 @@ public final class PermissionBatchHTTPFixture: Sendable {
     components.path = "/agents/\(agentID)/permissions/batch"
     let json = try! JSONSerialization.data(withJSONObject: items, options: [.sortedKeys])
     components.queryItems = [
-      URLQueryItem(name: "items", value: String(decoding: json, as: UTF8.self)),
-      URLQueryItem(name: "action", value: "allow"),
+      URLQueryItem(name: "items", value: String(data: json, encoding: .utf8)!),
+      URLQueryItem(name: "action", value: "allow")
     ]
     if let duration {
       components.queryItems!.append(URLQueryItem(name: "expiresIn", value: duration))
@@ -74,7 +74,7 @@ public final class PermissionBatchHTTPFixture: Sendable {
     if callback {
       components.queryItems! += [
         URLQueryItem(name: "threadId", value: threadID),
-        URLQueryItem(name: "callbackPrompt", value: "Continue after permissions"),
+        URLQueryItem(name: "callbackPrompt", value: "Continue after permissions")
       ]
     }
     return components.string!
@@ -99,7 +99,7 @@ public final class PermissionBatchHTTPFixture: Sendable {
           return Self.response([
             "effectiveSwitches": [
               "batchConnectorPermissions": value.enabled,
-              "connectorChatAccountAccess": value.shared,
+              "connectorChatAccountAccess": value.shared
             ]
           ])
         }
@@ -109,66 +109,33 @@ public final class PermissionBatchHTTPFixture: Sendable {
         if path == threadPath + "/metadata" {
           return Self.response([
             "id": Self.threadID, "agentId": value.threadAgentID,
-            "computerUseHostId": NSNull(), "cloudBrowserEnabled": false,
+            "computerUseHostId": NSNull(), "cloudBrowserEnabled": false
           ])
         }
-        for slug in ["gmail", "google-drive"] {
-          if path == "/api/connector-catalog/\(slug)/permissions" {
-            if let status = value.metadataStatus[slug], status != 200 {
-              return Self.error(status)
-            }
-            return Self.response([
-              "permissions": [
-                "connectorSlug": slug, "label": slug == "gmail" ? "Gmail" : "Google Drive",
-                "permissions": Self.items.filter { $0["connectorSlug"] == slug }.map {
-                  ["name": $0["permission"]!, "description": "Use \($0["permission"]!)"]
-                },
-                "defaultPolicy": ["permissionDefault": "ask", "unknownPolicy": "ask"],
-              ]
-            ])
+        for slug in ["gmail", "google-drive"]
+        where path == "/api/connector-catalog/\(slug)/permissions" {
+          if let status = value.metadataStatus[slug], status != 200 {
+            return Self.error(status)
           }
+          return Self.response([
+            "permissions": [
+              "connectorSlug": slug, "label": slug == "gmail" ? "Gmail" : "Google Drive",
+              "permissions": Self.items.filter { $0["connectorSlug"] == slug }.map {
+                ["name": $0["permission"]!, "description": "Use \($0["permission"]!)"]
+              },
+              "defaultPolicy": ["permissionDefault": "ask", "unknownPolicy": "ask"]
+            ]
+          ])
         }
         if path == "/api/user-permission-grants" {
           if value.grantReadStatus != 200 { return Self.error(value.grantReadStatus) }
           return Self.encoded(value.grants)
         }
         if path == "/api/connector-permissions" {
-          let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
-          if request.httpMethod == "GET" {
-            if value.grantReadStatus != 200 { return Self.error(value.grantReadStatus) }
-            let slug = query?.first { $0.name == "connectorSlug" }?.value ?? ""
-            return Self.memberGrants(slug, grants: value.grants)
-          }
-          struct Body: Decodable {
-            struct Target: Decodable { let connectorSlug: String }
-            let target: Target
-            let mode: String
-            let grants: [Edit]
-          }
-          let body = try JSONDecoder().decode(Body.self, from: request.httpBody!)
-          if value.failConnector == body.target.connectorSlug { return Self.error(503) }
-          Self.apply(body.grants, slug: body.target.connectorSlug, state: &value)
-          return Self.memberGrants(body.target.connectorSlug, grants: value.grants)
+          return try Self.connectorPermissions(request, state: &value)
         }
         if path == "/api/user-permission-grants/apply-batch" {
-          struct Body: Decodable {
-            struct Group: Decodable {
-              let connectorSlug: String
-              let grants: [Edit]
-            }
-            let agentId: String
-            let groups: [Group]
-          }
-          let body = try JSONDecoder().decode(Body.self, from: request.httpBody!)
-          for group in body.groups {
-            Self.apply(group.grants, slug: group.connectorSlug, state: &value)
-          }
-          if value.failReadbackAfterWrite { value.grantReadStatus = 503 }
-          if value.loseBatchResponseOnce {
-            value.loseBatchResponseOnce = false
-            return Self.error(503)
-          }
-          return Self.encoded(value.grants)
+          return try Self.applyBatch(request, state: &value)
         }
         if path == threadPath + "/connector-selections" {
           return Self.response(["selections": []])
@@ -219,6 +186,50 @@ public final class PermissionBatchHTTPFixture: Sendable {
     }
   }
 
+  private static func connectorPermissions(_ request: URLRequest, state value: inout State) throws
+    -> ChatHTTPResponse
+  {
+    let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+    if request.httpMethod == "GET" {
+      if value.grantReadStatus != 200 { return Self.error(value.grantReadStatus) }
+      let slug = query?.first { $0.name == "connectorSlug" }?.value ?? ""
+      return Self.memberGrants(slug, grants: value.grants)
+    }
+    struct Body: Decodable {
+      struct Target: Decodable { let connectorSlug: String }
+      let target: Target
+      let mode: String
+      let grants: [Edit]
+    }
+    let body = try JSONDecoder().decode(Body.self, from: request.httpBody!)
+    if value.failConnector == body.target.connectorSlug { return Self.error(503) }
+    Self.apply(body.grants, slug: body.target.connectorSlug, state: &value)
+    return Self.memberGrants(body.target.connectorSlug, grants: value.grants)
+  }
+
+  private static func applyBatch(_ request: URLRequest, state value: inout State) throws
+    -> ChatHTTPResponse
+  {
+    struct Body: Decodable {
+      struct Group: Decodable {
+        let connectorSlug: String
+        let grants: [Edit]
+      }
+      let agentId: String
+      let groups: [Group]
+    }
+    let body = try JSONDecoder().decode(Body.self, from: request.httpBody!)
+    for group in body.groups {
+      Self.apply(group.grants, slug: group.connectorSlug, state: &value)
+    }
+    if value.failReadbackAfterWrite { value.grantReadStatus = 503 }
+    if value.loseBatchResponseOnce {
+      value.loseBatchResponseOnce = false
+      return Self.error(503)
+    }
+    return Self.encoded(value.grants)
+  }
+
   private struct Edit: Decodable {
     let permission: String
     let expiresIn: String
@@ -238,12 +249,12 @@ public final class PermissionBatchHTTPFixture: Sendable {
     let json = try! JSONEncoder().encode(grants.filter { $0.connectorSlug == slug })
     return ChatHTTPResponse(
       body: """
-        {"target":{"kind":"builtin","connectorSlug":"\(slug)"},"grants":\(String(decoding: json, as: UTF8.self))}
+        {"target":{"kind":"builtin","connectorSlug":"\(slug)"},"grants":\(String(data: json, encoding: .utf8)!)}
         """)
   }
 
   private static func encoded(_ grants: [Grant]) -> ChatHTTPResponse {
-    ChatHTTPResponse(body: String(decoding: try! JSONEncoder().encode(grants), as: UTF8.self))
+    ChatHTTPResponse(body: try! JSONEncoder().encodeString(grants))
   }
 
   private static func error(_ status: Int) -> ChatHTTPResponse {
@@ -253,14 +264,15 @@ public final class PermissionBatchHTTPFixture: Sendable {
 
   private static func response(_ value: [String: Any]) -> ChatHTTPResponse {
     ChatHTTPResponse(
-      body: String(decoding: try! JSONSerialization.data(withJSONObject: value), as: UTF8.self))
+      body: try! JSONSerialization.string(withJSONObject: value))
   }
 
-  private static func row(id: String, sequence: Int, type: String, payload: [String: Any]) -> String
-  {
+  private static func row(
+    id: String, sequence: Int, type: String, payload: [String: Any]
+  ) -> String {
     let encoded = try! JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
     return """
-      {"id":"\(id)","chatThreadId":"\(threadID)","runId":"61000000-0000-4000-8000-000000000004","seqId":\(sequence),"createdAt":"2026-11-03T00:00:00Z","eventType":"\(type)","payload":\(String(decoding: encoded, as: UTF8.self))}
+      {"id":"\(id)","chatThreadId":"\(threadID)","runId":"61000000-0000-4000-8000-000000000004","seqId":\(sequence),"createdAt":"2026-11-03T00:00:00Z","eventType":"\(type)","payload":\(String(data: encoded, encoding: .utf8)!)}
       """
   }
 }

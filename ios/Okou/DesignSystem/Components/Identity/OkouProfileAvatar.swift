@@ -9,8 +9,8 @@ struct OkouProfileAvatar: View {
   let hasImage: Bool
   let size: CGFloat
   /// The account's name (or email); its first letter stands in for a missing photo.
-  var name: String? = nil
-  var cachedImage: UIImage? = nil
+  var name: String?
+  var cachedImage: UIImage?
   var usesSharedImage = false
 
   var body: some View {

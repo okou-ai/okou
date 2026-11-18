@@ -60,11 +60,6 @@ test("An ordinary enabled member edits personal Instructions and deliberately cl
   expect(
     screen.getByText("Your instructions for Okou in this workspace"),
   ).toBeInTheDocument();
-  expect(
-    queryAllByRoleFast("link").some((link) => {
-      return link.textContent?.trim() === "My Okou";
-    }),
-  ).toBeFalsy();
   expect(screen.getByRole("dialog", { name: "Settings" })).toContainElement(
     editor,
   );

@@ -77,6 +77,7 @@ import { builtinConnectorsSlugCallbackRoutes } from "./routes/connectors-slug-ca
 import { cronBrowserReconcileRoutes } from "./routes/cron-browser-reconcile";
 import { cronCleanupSandboxesRoutes } from "./routes/cron-cleanup-sandboxes";
 import { cronCleanupXResourceReadsRoutes } from "./routes/cron-cleanup-x-resource-reads";
+import { cronAggregateRunPhaseTimingsRoutes } from "./routes/cron-aggregate-run-phase-timings";
 import { cronCompactChatThreadSnapshotsRoutes } from "./routes/cron-compact-chat-thread-snapshots";
 import { cronCompactUsageEventsRoutes } from "./routes/cron-compact-usage-events";
 import { cronComputerUseScreenshotCleanupRoutes } from "./routes/cron-computer-use-screenshot-cleanup";
@@ -85,7 +86,6 @@ import { cronConnectorOauthStateCleanupRoutes } from "./routes/cron-connector-oa
 import { cronCleanupSuggestionsRoutes } from "./routes/cron-cleanup-suggestions";
 import { cronDrainEmailOutboxRoutes } from "./routes/cron-drain-email-outbox";
 import { cronExecuteWorkflowAutomationsRoutes } from "./routes/cron-execute-workflow-automations";
-import { cronMaterializePiResourceIndexesRoutes } from "./routes/cron-materialize-pi-resource-indexes";
 import { cronMonitorChatEventQueueRoutes } from "./routes/cron-monitor-chat-event-queue";
 import { cronOfficialWorkflowCatalogRoutes } from "./routes/cron-official-workflow-catalog";
 import { cronProcessBackgroundJobsRoutes } from "./routes/cron-process-background-jobs";
@@ -124,8 +124,13 @@ import { feishuConnectRoutes } from "./routes/feishu-connect";
 import { feishuEventsRoutes } from "./routes/feishu-events";
 import { feishuOauthRoutes } from "./routes/feishu-oauth";
 import { getStartedRoutes } from "./routes/get-started";
+import { getStartedHistoryRoutes } from "./routes/get-started-history";
+import { getStartedReceiptRoutes } from "./routes/get-started-receipt";
+import { marketingRewardSettlementRoutes } from "./routes/marketing-reward-settlement";
+import { marketingRewardProjectionRoutes } from "./routes/marketing-reward-projection";
+import { marketingWorkflowSourceRoutes } from "./routes/marketing-workflow-source";
+import { marketingInvitationSourceRoutes } from "./routes/marketing-invitation-source";
 import { friendReferralRoutes } from "./routes/friend-referrals";
-import { userNotificationRoutes } from "./routes/user-notifications";
 import { githubOauthRoutes } from "./routes/github-oauth";
 import { healthRoutes } from "./routes/health";
 import { hostRoutes } from "./routes/host";
@@ -207,6 +212,7 @@ import { runnersRoutes } from "./routes/runners";
 import { runsRoutes } from "./routes/runs";
 import { runsCancelRoutes } from "./routes/runs-cancel";
 import { sharedThreadRoutes } from "./routes/shared-threads";
+import { chatThreadPdfFilenameRoutes } from "./routes/chat-thread-pdf-filename";
 import { skillImportRoutes } from "./routes/skill-import";
 import { slackChannelsRoutes } from "./routes/slack-channels";
 import { slackCommandsRoutes } from "./routes/slack-commands";
@@ -264,8 +270,13 @@ import { workflowsRoutes } from "./routes/workflows";
 export const ROUTES: readonly RouteEntry[] = [
   ...runnersStartupRoutes,
   ...getStartedRoutes,
+  ...getStartedHistoryRoutes,
+  ...getStartedReceiptRoutes,
+  ...marketingRewardSettlementRoutes,
+  ...marketingRewardProjectionRoutes,
+  ...marketingWorkflowSourceRoutes,
+  ...marketingInvitationSourceRoutes,
   ...friendReferralRoutes,
-  ...userNotificationRoutes,
   ...healthRoutes,
   ...buildInfoRoutes,
   ...authMeRoutes,
@@ -321,7 +332,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronProcessUsageEventsRoutes,
   ...cronReconcileBillingEntitlementsRoutes,
   ...cronPruneStoragePresignedUrlsRoutes,
-  ...cronMaterializePiResourceIndexesRoutes,
   ...cronComputerUseScreenshotCleanupRoutes,
   ...cronBrowserReconcileRoutes,
   ...cronSteerRunTimeBudgetRoutes,
@@ -357,6 +367,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...welcomeChatThreadRoutes,
   ...chatEventsRoutes,
   ...sharedThreadRoutes,
+  ...chatThreadPdfFilenameRoutes,
   ...claudeCodeDeviceAuthRoutes,
   ...computerUseAuthorizationRoutes,
   ...desktopShellAuthorizationRoutes,
@@ -412,6 +423,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...modelCatalogRoutes,
   ...runModelsRoutes,
   ...runPhaseTimingRoutes,
+  ...cronAggregateRunPhaseTimingsRoutes,
   ...meModelProvidersDeleteRoutes,
   ...meModelProviderAccountRoutes,
   ...meModelProvidersListRoutes,

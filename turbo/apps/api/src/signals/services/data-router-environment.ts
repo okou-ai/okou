@@ -1,7 +1,7 @@
 import { env } from "../../lib/env";
 import { emptyEnvironment, type Environment } from "./run-environment";
 
-/** The service token exists only in encrypted runtime secrets, never the sandbox env. */
+/** The service token resolves at firewall auth; execution carries only its reference. */
 export function dataRouterEnvironment(): Environment {
   const url = env("OKOU_DATA_ROUTER_URL");
   const token = env("OKOU_DATA_TOKEN");
@@ -12,7 +12,7 @@ export function dataRouterEnvironment(): Environment {
   return {
     ...emptyEnvironment(),
     platformEnvironment: { OKOU_DATA_ROUTER_URL: endpoint.toString() },
-    secrets: { OKOU_DATA_TOKEN: token },
+    reservedSecretAliases: ["OKOU_DATA_TOKEN"],
     firewalls: [
       {
         kind: "inline",

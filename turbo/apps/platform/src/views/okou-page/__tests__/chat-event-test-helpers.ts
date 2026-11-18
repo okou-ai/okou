@@ -174,7 +174,6 @@ const mockChatEventOverrides = {
   "run.failed": (message, id) => {
     return {
       runId: message.runId ?? `mock-run-${id}`,
-      error: message.error,
       failureReason: message.failureReason,
       runLifecycleEvent: "failed",
     };
@@ -182,7 +181,6 @@ const mockChatEventOverrides = {
   "run.cancelled": (message, id) => {
     return {
       runId: message.runId ?? `mock-run-${id}`,
-      error: message.error,
       runLifecycleEvent: "cancelled",
     };
   },
@@ -343,7 +341,7 @@ function mockChatEventRowPayload(event: ChatEvent): ChatEventRow["payload"] {
     }
     case "run.failed":
     case "run.cancelled": {
-      return event.error === undefined ? null : { error: event.error };
+      return event.content === null ? null : { content: event.content };
     }
     case "usage.recorded": {
       return { usage: event.usage };

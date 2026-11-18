@@ -15,15 +15,15 @@ struct AssistantFailureState: Equatable {
   let resetAccountID: String?
   let resetsRemaining: Int
   let accountError: String?
-  var billing: ChatBillingRecovery? = nil
-  var billingError: String? = nil
+  var billing: ChatBillingRecovery?
+  var billingError: String?
 
   var showsModelPicker: Bool {
     recovery.showsModelPicker
       || (recovery.kind == .retryable
         && ![
           "guest_root_filesystem_full", "guest_home_filesystem_full",
-          "codex_access_program_unavailable",
+          "codex_access_program_unavailable"
         ]
         .contains(failure.reason))
   }
@@ -59,7 +59,7 @@ struct AssistantFailureState: Equatable {
       case .unknown:
         windows = [
           (.fiveHour, account.subscriptionUsage?.fiveHour),
-          (.weekly, account.subscriptionUsage?.weekly),
+          (.weekly, account.subscriptionUsage?.weekly)
         ]
         .filter { $0.1?.remainingPercent == 0 || ($0.1?.usedPercent ?? 0) >= 100 }
       default: break

@@ -1488,7 +1488,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "50a2fe216ae85095eb34b877a41d9093",
+    bodyHash: "0e8b8d597400c863a0b0364df18e8fef",
   },
 ];
 

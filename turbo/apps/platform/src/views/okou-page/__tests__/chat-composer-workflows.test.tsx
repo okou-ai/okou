@@ -126,7 +126,9 @@ function workflowHighlights(editor: HTMLElement): HTMLElement[] {
 }
 
 function composerFileInput(): HTMLInputElement {
-  const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+  const input = document.querySelector<HTMLInputElement>(
+    '[data-slot="chat-composer-card"] input[type="file"]',
+  );
   if (!input) {
     throw new Error("Expected composer file input");
   }
@@ -225,7 +227,10 @@ test("Insert an attached workflow with slash suggestions", async () => {
     ];
   });
 
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+  });
 
   const user = userEvent.setup();
   const editor = await findComposerEditor();
@@ -251,7 +256,8 @@ test("Insert an attached workflow with slash suggestions", async () => {
   );
   expect(emphasizedMatch).toHaveTextContent("research");
 
-  await user.keyboard("{ArrowDown}{Enter}");
+  // The matching Deep research capability precedes the workflow rows.
+  await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
 
   await waitFor(() => {
     expect(editor).toHaveTextContent("/sales-research");

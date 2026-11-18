@@ -12,6 +12,7 @@ import response_streaming
 from body_limits import LARGE_RESPONSE_DECOMPRESS_LIMIT, STREAM_BUFFER_LIMIT
 from tests.flow_helpers import response_stream
 from tests.repeated_bytes_helpers import repeat_bytes
+from tests.stream_buffer_helpers import response_stream_capture
 from tests.x_flow_helpers import (
     json_body_that_exceeds_x_json_work_limit,
     make_x_response_flow,
@@ -123,8 +124,8 @@ class TestNdjsonExtractor:
 
         parse(repeat_bytes(b'{"data":{"id":"1"}}\n', b"x", 200 * 1024, b""))
 
-        assert len(flow.metadata[metadata_keys.STREAM_BUFFER]) == STREAM_BUFFER_LIMIT
-        assert flow.metadata[metadata_keys.STREAM_BUFFER_STATE]["truncated"] is True
+        assert len(response_stream_capture(flow).buffer) == STREAM_BUFFER_LIMIT
+        assert response_stream_capture(flow).truncated is True
         assert state["data_count"] == 1
         assert "connector_response_finish" in flow.metadata
 
@@ -534,10 +535,9 @@ class TestXJsonFinalize:
         callback = response_stream(flow)
         midpoint = len(body) // 2
 
-        assert callback(body[:midpoint]) == body[:midpoint]
-        await mitm_addon.responseinspection(flow)
-        assert callback(body[midpoint:]) == body[midpoint:]
-        await mitm_addon.responseinspection(flow)
+        for chunk in (body[:midpoint], body[midpoint:]):
+            assert callback(chunk) == chunk
+            await mitm_addon.responseinspection(flow)
         response_streaming.finalize_connector_response_state(flow)
 
         state = dict(flow.metadata[metadata_keys.X_JSON_STATE])
@@ -579,8 +579,8 @@ class TestXJsonFinalize:
         )
         response_streaming.finalize_connector_response_state(flow)
 
-        assert len(flow.metadata[metadata_keys.STREAM_BUFFER]) == STREAM_BUFFER_LIMIT
-        assert flow.metadata[metadata_keys.STREAM_BUFFER_STATE]["truncated"] is True
+        assert len(response_stream_capture(flow).buffer) == STREAM_BUFFER_LIMIT
+        assert response_stream_capture(flow).truncated is True
         assert metadata_keys.X_NDJSON_STATE not in flow.metadata
         state = flow.metadata[metadata_keys.X_JSON_STATE]
         assert state["body_parsed"] is True

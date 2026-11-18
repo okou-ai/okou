@@ -316,7 +316,10 @@ run_action() {
   repo_vars_json="$(jq -c '. + {OKOU_PUBLIC_ARTIFACTS_BASE_URL: "https://cdn.okou.test", OKOU_PUBLIC_HOST_DOMAIN: "okou.app", OKOU_HOST_SCHEME: "https", OKOU_ONE_TIME_CAMPAIGN: "test-campaign"}' <<< "$repo_vars_json")"
   repo_secrets_json='{"R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID":"private-prod-key","R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY":"private-prod-secret","R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV":"private-dev-key","R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV":"private-dev-secret","GH_OAUTH_CLIENT_SECRET":"github-gh-client-secret","SLACK_OAUTH_CLIENT_SECRET":"github-slack-client-secret","GOOGLE_ADS_DEVELOPER_TOKEN":"github-google-ads-secret","OKOU_DATA_ROUTER_URL":"https://data.okou.ai/mcp","OKOU_DATA_TOKEN":"github-data-router-token","OKOU_BROWSER_USE_API_KEY":"github-browser-use-api-key","STEAM_WEB_API_KEY":"github-steam-web-api-key","LINK_OAUTH_CLIENT_ID":"github-link-client-id","LINK_OAUTH_CLIENT_SECRET":"github-link-client-secret","FINICITY_APP_KEY":"github-finicity-app-key","FINICITY_APP_SECRET":"github-finicity-app-secret","OKOU_MACHINE_SECRET_KEY":"github-atom-machine-secret","MICROSOFT_TEAMS_BOT_APP_PASSWORD":"github-teams-bot-app-password","VERCEL_AUTOMATION_BYPASS_SECRET":"github-vercel-bypass-secret","STRIPE_WEBHOOK_SECRET":"github-stripe-billing-webhook-secret","STRIPE_AUTOMATION_WEBHOOK_SECRET":"github-stripe-automation-webhook-secret","R2_MARKETING_HANDOFF_ACCESS_KEY_ID":"handoff-prod-key","R2_MARKETING_HANDOFF_SECRET_ACCESS_KEY":"handoff-prod-secret","R2_MARKETING_HANDOFF_ACCESS_KEY_ID_DEV":"handoff-dev-key","R2_MARKETING_HANDOFF_SECRET_ACCESS_KEY_DEV":"handoff-dev-secret"}'
   repo_vars_json="$(jq -c '. + {APNS_KEY_ID: "TESTKEY001", APNS_TEAM_ID: "TESTTEAM01"}' <<< "$repo_vars_json")"
+  repo_vars_json="$(jq -c '. + {R2_STATIC_BUCKET_NAME: "static-releases"}' <<< "$repo_vars_json")"
   repo_secrets_json="$(jq -c '. + {
+    R2_STATIC_ACCESS_KEY_ID: "static-release-key",
+    R2_STATIC_SECRET_ACCESS_KEY: "static-release-secret",
     APNS_PRIVATE_KEY_BASE64: "github-apns-test-key",
     PREVIEW_KMS_KEY_ID: "github-preview-kms-key",
     PREVIEW_KMS_ACCESS_KEY_ID: "github-preview-kms-access-key",
@@ -687,6 +690,39 @@ assert_env_value "$success_env_file" AWS_ACCESS_KEY_ID "github-preview-kms-acces
 assert_env_value "$success_env_file" AWS_SECRET_ACCESS_KEY "github-preview-kms-secret"
 assert_env_absent_value "$success_env_file" "github-production-kms"
 assert_debug_canonical "$success_env_file"
+
+# Render an operator credential through the same API deployment boundary, and
+# ensure web deployments never receive these cross-tenant service capabilities.
+for history_app in api web; do
+  history_dir="$(mktemp -d)"
+  TEMP_DIRS+=("$history_dir")
+  history_output="$(run_action "$(build_doppler_secrets_json)" "$history_dir" \
+    "$history_app" preview canonical '{"MARKETING_REWARDS_EVENTS_ORIGIN":"https://events.example.test"}' \
+    '{"MARKETING_REWARDS_EXPORT_SECRET":"history-export-operator-fixture-123456789","MARKETING_REWARDS_RECEIPT_SECRET":"receipt-lookup-service-fixture-123456789","MARKETING_REWARDS_EVENTS_SECRET":"event-delivery-service-fixture-123456789"}' 2>&1)"
+  history_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${history_dir}/github-output")"
+  assert_not_contains "$history_output" "history-export-operator-fixture-123456789"
+  assert_not_contains "$history_output" "receipt-lookup-service-fixture-123456789"
+  assert_not_contains "$history_output" "event-delivery-service-fixture-123456789"
+  if [[ "$history_app" == api ]]; then
+    assert_env_value "$history_env_file" MARKETING_REWARDS_EXPORT_SECRET "history-export-operator-fixture-123456789"
+    assert_env_value "$history_env_file" MARKETING_REWARDS_RECEIPT_SECRET "receipt-lookup-service-fixture-123456789"
+    assert_env_value "$history_env_file" MARKETING_REWARDS_EVENTS_SECRET "event-delivery-service-fixture-123456789"
+    assert_env_value "$history_env_file" MARKETING_REWARDS_EVENTS_ORIGIN "https://events.example.test"
+  else
+    assert_env_key_absent "$history_env_file" MARKETING_REWARDS_EXPORT_SECRET
+    assert_env_key_absent "$history_env_file" MARKETING_REWARDS_RECEIPT_SECRET
+    assert_env_key_absent "$history_env_file" MARKETING_REWARDS_EVENTS_SECRET
+    assert_env_key_absent "$history_env_file" MARKETING_REWARDS_EVENTS_ORIGIN
+  fi
+done
+assert_env_value "$success_env_file" MARKETING_REWARDS_EXPORT_SECRET ""
+assert_env_value "$success_env_file" MARKETING_REWARDS_RECEIPT_SECRET ""
+assert_env_value "$success_env_file" MARKETING_REWARDS_EVENTS_SECRET ""
+assert_env_value "$success_env_file" MARKETING_REWARDS_EVENTS_ORIGIN ""
+assert_env_value "$success_env_file" R2_STATIC_BUCKET_NAME "static-releases"
+assert_env_value "$success_env_file" R2_STATIC_ACCESS_KEY_ID "static-release-key"
+assert_env_value "$success_env_file" R2_STATIC_SECRET_ACCESS_KEY "static-release-secret"
+assert_not_contains "$success_output" "static-release-secret"
 assert_env_value "$success_env_file" R2_MARKETING_HANDOFF_BUCKET_NAME "marketing-handoff-dev"
 assert_env_value "$success_env_file" R2_MARKETING_HANDOFF_ACCESS_KEY_ID "handoff-dev-key"
 assert_env_value "$success_env_file" R2_MARKETING_HANDOFF_SECRET_ACCESS_KEY "handoff-dev-secret"
@@ -865,6 +901,11 @@ assert_env_key_absent "$preview_web_env_file" APNS_TEAM_ID
 assert_env_key_absent "$production_web_env_file" APNS_PRIVATE_KEY_BASE64
 assert_env_key_absent "$production_web_env_file" APNS_KEY_ID
 assert_env_key_absent "$production_web_env_file" APNS_TEAM_ID
+assert_env_key_absent "$production_web_env_file" R2_STATIC_ACCESS_KEY_ID
+assert_env_key_absent "$production_web_env_file" R2_STATIC_SECRET_ACCESS_KEY
+assert_env_value "$production_api_env_file" R2_STATIC_BUCKET_NAME "static-releases"
+assert_env_value "$production_api_env_file" R2_STATIC_ACCESS_KEY_ID "static-release-key"
+assert_env_value "$production_api_env_file" R2_STATIC_SECRET_ACCESS_KEY "static-release-secret"
 assert_env_value "$production_api_env_file" SECRETS_KMS_KEY_ID "github-production-kms-key"
 assert_env_value "$production_api_env_file" AWS_ACCESS_KEY_ID "github-production-kms-access-key"
 assert_env_value "$production_api_env_file" AWS_SECRET_ACCESS_KEY "github-production-kms-secret"
