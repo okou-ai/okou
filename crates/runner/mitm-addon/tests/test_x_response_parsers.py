@@ -60,8 +60,7 @@ class TestBodylessXResponseParserAdmission:
 
         mitm_addon.responseheaders(flow)
 
-        assert "connector_response_finish" not in flow.metadata
-        assert "connector_response_report_on_interruption" not in flow.metadata
+        assert "_connector_response_finalizer" not in flow.metadata
         assert metadata_keys.X_JSON_STATE not in flow.metadata
         assert metadata_keys.X_NDJSON_STATE not in flow.metadata
 
@@ -127,7 +126,7 @@ class TestNdjsonExtractor:
         assert len(response_stream_capture(flow).buffer) == STREAM_BUFFER_LIMIT
         assert response_stream_capture(flow).truncated is True
         assert state["data_count"] == 1
-        assert "connector_response_finish" in flow.metadata
+        assert "_connector_response_finalizer" in flow.metadata
 
     @pytest.mark.parametrize("content_encoding", ["gzip", "br"])
     def test_decompresses_stream_before_parsing(self, real_flow, content_encoding):
@@ -155,7 +154,7 @@ class TestNdjsonExtractor:
         state = flow.metadata[metadata_keys.X_NDJSON_STATE]
         assert state["data_count"] == 3
         assert state["includes"] == {"users": 3}
-        assert "connector_response_finish" in flow.metadata
+        assert "_connector_response_finalizer" in flow.metadata
 
     def test_chunked_line_split_mid_json(self, real_flow):
         parse, state = self._stream_parser(real_flow)
@@ -449,13 +448,13 @@ class TestXJsonFinalize:
     def test_finalizes_successful_x_json_state(self, real_flow):
         flow = self._billable_x_json_flow(real_flow)
         mitm_addon.responseheaders(flow)
-        assert "connector_response_finish" in flow.metadata
+        assert "_connector_response_finalizer" in flow.metadata
 
         response_stream(flow)(b'{"data":[{"id":"1"}]}')
         response_streaming.finalize_connector_response_state(flow)
 
         state = dict(flow.metadata[metadata_keys.X_JSON_STATE])
-        assert "connector_response_finish" not in flow.metadata
+        assert "_connector_response_finalizer" not in flow.metadata
         assert state["body_parsed"] is True
         assert state["response_data_count"] == 1
         assert "parse_error" not in state
@@ -634,13 +633,13 @@ class TestXJsonFinalize:
     def test_finalizes_x_json_parse_error(self, real_flow):
         flow = self._billable_x_json_flow(real_flow)
         mitm_addon.responseheaders(flow)
-        assert "connector_response_finish" in flow.metadata
+        assert "_connector_response_finalizer" in flow.metadata
 
         response_stream(flow)(b'{"data":[1')
         response_streaming.finalize_connector_response_state(flow)
 
         state = dict(flow.metadata[metadata_keys.X_JSON_STATE])
-        assert "connector_response_finish" not in flow.metadata
+        assert "_connector_response_finalizer" not in flow.metadata
         assert state["body_parsed"] is False
         assert isinstance(state["parse_error"], str)
         assert state["parse_error"]
@@ -651,12 +650,12 @@ class TestXJsonFinalize:
     def test_finalizes_non_object_x_json_without_parse_error(self, real_flow):
         flow = self._billable_x_json_flow(real_flow)
         mitm_addon.responseheaders(flow)
-        assert "connector_response_finish" in flow.metadata
+        assert "_connector_response_finalizer" in flow.metadata
 
         response_stream(flow)(b"[1,2,3]")
         response_streaming.finalize_connector_response_state(flow)
 
         state = flow.metadata[metadata_keys.X_JSON_STATE]
-        assert "connector_response_finish" not in flow.metadata
+        assert "_connector_response_finalizer" not in flow.metadata
         assert state["body_parsed"] is False
         assert "parse_error" not in state

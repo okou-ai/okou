@@ -40,8 +40,7 @@ _HTTP_STATUS_BAD_GATEWAY = 502
 
 _MODEL_JSON_USAGE_FINISH = "model_json_usage_finish"
 _MODEL_SSE_USAGE_FINISH = "model_sse_usage_finish"
-_CONNECTOR_RESPONSE_FINISH = "connector_response_finish"
-_CONNECTOR_RESPONSE_REPORT_ON_INTERRUPTION = "connector_response_report_on_interruption"
+_CONNECTOR_RESPONSE_FINALIZER = "_connector_response_finalizer"
 _RESPONSE_STREAM_CALLBACK = "_response_stream_callback"
 _RESPONSE_INSPECTION = "_response_inspection"
 
@@ -61,19 +60,29 @@ class _ResponseStreamSetup(NamedTuple):
 
 
 class _ConnectorResponseFinalizer:
-    """Keep failed inspection from reaching either decoder or parser completion."""
+    """Own connector completion and its one-shot interruption opt-in."""
 
     def __init__(
         self,
         flow: http.HTTPFlow,
         parser: ConnectorResponseParser,
         *,
+        report_on_interruption: bool,
         finish_decode: Callable[[], str | None] | None = None,
     ) -> None:
         self._flow = flow
         self._parser = parser
+        self._report_on_interruption = report_on_interruption
         self._finish_decode = finish_decode
         self._inspection_failed = False
+
+    def consume_interruption_opt_in(self) -> bool:
+        opted_in = self._report_on_interruption
+        self._report_on_interruption = False
+        return opted_in
+
+    def has_finish_hooks(self) -> bool:
+        return self._parser.finish is not None or self._parser.finish_decode_error is not None
 
     def fail_decode(self, error: str) -> None:
         self._inspection_failed = True
@@ -93,7 +102,7 @@ class _ConnectorResponseFinalizer:
         )
 
     def finish(self) -> None:
-        if self._inspection_failed:
+        if self._inspection_failed or not self.has_finish_hooks():
             return
         decode_error = self._finish_decode() if self._finish_decode is not None else None
         if decode_error is not None:
@@ -206,7 +215,7 @@ def _configure_buffered_connector_inspection(flow: http.HTTPFlow) -> None:
     if parser is None or parser.feed_steps is None or parser.finish_decode_error is None:
         raise RuntimeError("buffered connector inspection requires cooperative parser hooks")
     feed_steps = parser.feed_steps
-    finalizer = _ConnectorResponseFinalizer(flow, parser)
+    finalizer = _ConnectorResponseFinalizer(flow, parser, report_on_interruption=False)
 
     def inspect_body(_chunk: bytes) -> Generator[None]:
         captured = stream_capture.captured_response_stream_body(flow)
@@ -222,7 +231,7 @@ def _configure_buffered_connector_inspection(flow: http.HTTPFlow) -> None:
         inspect_body, finalizer.interrupt, allow_interrupted_start=False
     )
     flow.metadata[_RESPONSE_INSPECTION] = inspection
-    flow.metadata[_CONNECTOR_RESPONSE_FINISH] = finalizer.finish
+    flow.metadata[_CONNECTOR_RESPONSE_FINALIZER] = finalizer
 
 
 def _configure_model_sse_inspection(
@@ -506,8 +515,12 @@ def _configure_connector_response_inspection(
         if decode_session is None:
             raise RuntimeError("stream-decodable connector response did not create a decoder")
         connector_inspection: response_inspection.CooperativeResponseInspection | None = None
+        report_on_interruption = connector_parser.report_on_interruption
         finalizer = _ConnectorResponseFinalizer(
-            flow, connector_parser, finish_decode=decode_session.finish_error
+            flow,
+            connector_parser,
+            report_on_interruption=report_on_interruption,
+            finish_decode=decode_session.finish_error,
         )
         if connector_parser.feed_steps is not None:
             feed_steps = connector_parser.feed_steps
@@ -523,10 +536,8 @@ def _configure_connector_response_inspection(
                 finalizer.interrupt,
             )
             flow.metadata[_RESPONSE_INSPECTION] = connector_inspection
-        if connector_parser.report_on_interruption:
-            flow.metadata[_CONNECTOR_RESPONSE_REPORT_ON_INTERRUPTION] = True
-        if connector_parser.finish is not None or connector_parser.finish_decode_error is not None:
-            flow.metadata[_CONNECTOR_RESPONSE_FINISH] = finalizer.finish
+        if report_on_interruption or finalizer.has_finish_hooks():
+            flow.metadata[_CONNECTOR_RESPONSE_FINALIZER] = finalizer
         return _ResponseStreamSetup(
             connector_inspection.feed if connector_inspection is not None else decode_session.feed,
             False,
@@ -743,24 +754,27 @@ def observe_interrupted_model_json(flow: http.HTTPFlow) -> None:
         finish()
 
 
-def _finish_connector_response_state(flow: http.HTTPFlow) -> None:
+def _finish_connector_response_state(flow: http.HTTPFlow, *, interrupted: bool) -> bool:
+    finalizer: _ConnectorResponseFinalizer | None = flow.metadata.get(_CONNECTOR_RESPONSE_FINALIZER)
+    opted_in = finalizer is not None and finalizer.consume_interruption_opt_in()
+    if interrupted and not opted_in:
+        return False
+    # A pending inspection retains completion work. A failing completion
+    # callback has already consumed that work and must not be retried.
     _require_response_inspection_complete(flow)
-    finish = flow.metadata.pop(_CONNECTOR_RESPONSE_FINISH, None)
-    if finish is not None:
-        finish()
+    flow.metadata.pop(_CONNECTOR_RESPONSE_FINALIZER, None)
+    if finalizer is not None:
+        finalizer.finish()
+    return True
 
 
 def finalize_connector_response_state(flow: http.HTTPFlow) -> None:
     """Finalize connector response parser state before connector usage reporting.
 
-    Called from ``response()`` before ``usage.report_connector_usage()``. Clears
-    the interrupted-report opt-in and pops ``_CONNECTOR_RESPONSE_FINISH``, so
-    repeated calls after the first are no-ops. Connector-specific parser state
-    is owned by the registered finish callback, for example X JSON or NDJSON
-    usage metadata.
+    Called from ``response()`` before ``usage.report_connector_usage()``.
+    Consumes the interruption opt-in and retires the registered finalizer.
     """
-    flow.metadata.pop(_CONNECTOR_RESPONSE_REPORT_ON_INTERRUPTION, None)
-    _finish_connector_response_state(flow)
+    _finish_connector_response_state(flow, interrupted=False)
 
 
 def finalize_interrupted_connector_response_state(flow: http.HTTPFlow) -> bool:
@@ -770,10 +784,7 @@ def finalize_interrupted_connector_response_state(flow: http.HTTPFlow) -> bool:
     finalizer handles decoder completion first, so an incomplete compressed body
     can invalidate best-effort state before the reporter observes it.
     """
-    if not flow.metadata.pop(_CONNECTOR_RESPONSE_REPORT_ON_INTERRUPTION, False):
-        return False
-    _finish_connector_response_state(flow)
-    return True
+    return _finish_connector_response_state(flow, interrupted=True)
 
 
 def release_response_stream_state(flow: http.HTTPFlow) -> None:
@@ -784,9 +795,9 @@ def release_response_stream_state(flow: http.HTTPFlow) -> None:
     stream/parser state even when a 101 response keeps usage tracking alive
     until ``websocket_end()``. Removes ``_RESPONSE_STREAM_CALLBACK``,
     ``metadata_keys.RESPONSE_STREAM_STATE``, optional body-buffer metadata, and
-    outstanding model or connector finish callbacks. Preserves externally
-    replaced ``flow.response.stream`` callbacks and only disables the callback
-    installed by this module.
+    outstanding model finish callbacks or the connector finalizer. Preserves
+    externally replaced ``flow.response.stream`` callbacks and only disables
+    the callback installed by this module.
     """
     inspection = flow.metadata.pop(_RESPONSE_INSPECTION, None)
     if isinstance(inspection, response_inspection.CooperativeResponseInspection):
@@ -795,7 +806,6 @@ def release_response_stream_state(flow: http.HTTPFlow) -> None:
     stream_capture.clear_response_capture_state(flow)
     flow.metadata.pop(_MODEL_JSON_USAGE_FINISH, None)
     flow.metadata.pop(_MODEL_SSE_USAGE_FINISH, None)
-    flow.metadata.pop(_CONNECTOR_RESPONSE_FINISH, None)
-    flow.metadata.pop(_CONNECTOR_RESPONSE_REPORT_ON_INTERRUPTION, None)
+    flow.metadata.pop(_CONNECTOR_RESPONSE_FINALIZER, None)
     if stream_callback is not None and flow.response and flow.response.stream is stream_callback:
         flow.response.stream = False

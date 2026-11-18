@@ -126,4 +126,4 @@ class TestResponseStreamBuffer:
 
         assert stream_capture.captured_response_stream_body(flow) is None
         assert metadata_keys.X_NDJSON_STATE not in flow.metadata
-        assert "connector_response_finish" not in flow.metadata
+        assert "_connector_response_finalizer" not in flow.metadata

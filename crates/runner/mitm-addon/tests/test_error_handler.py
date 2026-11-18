@@ -428,7 +428,7 @@ class TestErrorHandler:
 
         mitm_addon.responseheaders(flow)
         response_stream(flow)(b'{"data":[{"id":"1"}')
-        assert "connector_response_finish" in flow.metadata
+        assert "_connector_response_finalizer" in flow.metadata
         flow.error = Error("connection reset")
 
         with mitm_ctx():
@@ -436,7 +436,7 @@ class TestErrorHandler:
 
         assert flow.response.stream is False
         assert stream_capture.captured_response_stream_body(flow) is None
-        assert "connector_response_finish" not in flow.metadata
+        assert "_connector_response_finalizer" not in flow.metadata
 
     def test_error_without_run_id_releases_request_stream_state(self, real_flow, mitm_ctx):
         """Early-returning error flows should still drop request stream closures."""
@@ -490,7 +490,7 @@ class TestErrorHandler:
         assert webhook.request_count == 0
         assert flow.response.stream is False
         assert stream_capture.captured_response_stream_body(flow) is None
-        assert "connector_response_finish" not in flow.metadata
+        assert "_connector_response_finalizer" not in flow.metadata
 
     def test_skips_log_when_no_metadata(self, real_flow, mitm_ctx):
         flow = real_flow(with_response=False)

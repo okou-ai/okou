@@ -70,14 +70,14 @@ def test_response_without_run_id_releases_x_json_streaming_state(real_flow):
 
     mitm_addon.responseheaders(flow)
     response_stream(flow)(b'{"data":[{"id":"1"}]}')
-    assert "connector_response_finish" in flow.metadata
+    assert "_connector_response_finalizer" in flow.metadata
 
     mitm_addon.response(flow)
 
     assert flow.response.stream is False
     assert metadata_keys.RESPONSE_STREAM_STATE not in flow.metadata
     assert stream_capture.captured_response_stream_body(flow) is None
-    assert "connector_response_finish" not in flow.metadata
+    assert "_connector_response_finalizer" not in flow.metadata
 
 
 def test_response_without_run_id_releases_request_stream_state(real_flow):

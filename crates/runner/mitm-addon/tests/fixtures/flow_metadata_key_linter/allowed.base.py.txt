@@ -1,7 +1,7 @@
 
 entry["firewall_name"] = "github"
 payload = {"sandbox_run_id": "run-1"}
-assert "connector_response_finish" in flow.metadata
+assert "_connector_response_finalizer" in flow.metadata
 flow.metadata["_local_marker"] = "private"
 flow.metadata[f"sandbox_{dynamic_suffix}"] = "run-1"
 flow.metadata[metadata_keys.SANDBOX_RUN_ID + ""] = "run-1"
