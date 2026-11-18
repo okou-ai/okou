@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.20](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.19...guest-storage-apply-v0.32.20) (2026-11-18)
+
+
+### Refactoring
+
+* delegate file opens to owned descriptor apis ([#48437](https://github.com/okou-ai/okou/issues/48437)) ([5ef5cab](https://github.com/okou-ai/okou/commit/5ef5cab9bc706528c66d21a9315fd76ed8e1ea10))
+
 ## [0.32.19](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.18...guest-storage-apply-v0.32.19) (2026-11-17)
 
 

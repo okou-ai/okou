@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.48.1](https://github.com/okou-ai/okou/compare/ios-v0.48.0...ios-v0.48.1) (2026-11-18)
+
+
+### Refactoring
+
+* **ios:** enforce 100-line function bodies ([#48406](https://github.com/okou-ai/okou/issues/48406)) ([36918bb](https://github.com/okou-ai/okou/commit/36918bb484f28c31afe1b48452edb879d5a6eef7))
+
 ## [0.48.0](https://github.com/okou-ai/okou/compare/ios-v0.47.4...ios-v0.48.0) (2026-11-17)
 
 

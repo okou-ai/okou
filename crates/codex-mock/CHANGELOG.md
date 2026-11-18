@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.78](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.77...codex-mock-v0.12.78) (2026-11-18)
+
+
+### Refactoring
+
+* delegate file opens to owned descriptor apis ([#48437](https://github.com/okou-ai/okou/issues/48437)) ([5ef5cab](https://github.com/okou-ai/okou/commit/5ef5cab9bc706528c66d21a9315fd76ed8e1ea10))
+
 ## [0.12.77](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.76...codex-mock-v0.12.77) (2026-11-17)
 
 

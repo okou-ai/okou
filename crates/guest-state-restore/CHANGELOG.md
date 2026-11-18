@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.4.24](https://github.com/okou-ai/okou/compare/guest-state-restore-v0.4.23...guest-state-restore-v0.4.24) (2026-11-18)
+
 ## [0.4.23](https://github.com/okou-ai/okou/compare/guest-state-restore-v0.4.22...guest-state-restore-v0.4.23) (2026-11-17)
 
 ## [0.4.22](https://github.com/okou-ai/okou/compare/guest-state-restore-v0.4.21...guest-state-restore-v0.4.22) (2026-11-17)
