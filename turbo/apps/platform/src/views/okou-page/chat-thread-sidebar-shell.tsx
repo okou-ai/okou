@@ -12,6 +12,7 @@ import {
   chatThreadSidebarWidths$,
 } from "../../signals/chat-page/chat-thread-sidebar-layout.ts";
 import { ResizeSeam } from "./resize-seam.tsx";
+import { SHEET_PANE_CORNERS } from "./workspace-inset.tsx";
 import { workspaceResizing$ } from "../../signals/chat-page/workspace-resize.ts";
 
 function sidebarWidthValue(width: number | null): string {
@@ -53,7 +54,7 @@ function ChatThreadSidebarResizeHandle({
   const { t } = useTranslation();
   const resizeHandleRef = useSet(chatThreadSidebarResizeHandleRef$);
 
-  // Rendered after the panel and centred on its leading edge, so ordinary
+  // Rendered after the panel and placed on its leading edge, so ordinary
   // paint order puts the target above both panes without a z-index. The
   // panel's own border draws the resting line.
   return (
@@ -65,27 +66,26 @@ function ChatThreadSidebarResizeHandle({
       valueMin={CHAT_THREAD_SIDEBAR_MIN_WIDTH}
       valueNow={width}
       resizing={resizing}
-      line="center"
-      className="absolute inset-y-0 right-[var(--chat-thread-sidebar-width)] hidden translate-x-1/2 xl:block"
+      className="absolute inset-y-0 right-[var(--chat-thread-sidebar-width)] hidden xl:block"
       widthKey={widthKey}
     />
   );
 }
 
-function workspaceFrameClassName(
-  beside: "chat-list" | "nav-rail" | undefined,
-): string {
+function workspaceFrameClassName(workspace: boolean): string {
   const frame = cn(
     "flex flex-1 min-h-0",
-    beside &&
-      "min-w-0 flex-col md:m-2 md:rounded-2xl md:border md:border-border [anchor-name:--workspace-canvas]",
-    // The chat list supplies this sheet's left edge and corners.
-    beside === "chat-list" && "md:ml-0 md:rounded-l-none",
+    // The shell's sheet owns the margin and hairline; this frame paints the
+    // workspace canvas inside it, so it takes the sheet's corners.
+    workspace && "min-w-0 flex-col [anchor-name:--workspace-canvas]",
+    workspace && SHEET_PANE_CORNERS,
     // Positions the divider without a stacking context; fixed surfaces inside
     // still compete in #root.
-    !beside && "relative",
+    !workspace && "relative",
   );
-  const fill = beside
+  // Kept outside `cn()`: the class merger reads both background utilities as
+  // colours and would drop the fill in favour of the gradient.
+  const fill = workspace
     ? "bg-workspace-canvas bg-workspace-canvas-image bg-[length:100%_100%]"
     : "bg-transparent";
   return `${frame} ${fill}`;
@@ -122,7 +122,6 @@ interface ChatThreadSidebarShellProps {
   /** Which remembered width this panel takes. */
   readonly widthKey?: string;
   readonly workspace?: {
-    readonly beside: "chat-list" | "nav-rail";
     readonly header: ReactNode;
     readonly footer: ReactNode;
     readonly pwaNavigation: boolean;
@@ -188,7 +187,7 @@ export function ChatThreadSidebarShell({
     <div
       // The shell frame must not establish a stacking context or containing
       // block: its sidebar's fixed surface needs to compete inside #root.
-      className={workspaceFrameClassName(workspace?.beside)}
+      className={workspaceFrameClassName(workspace !== undefined)}
       style={style}
     >
       {workspace ? (

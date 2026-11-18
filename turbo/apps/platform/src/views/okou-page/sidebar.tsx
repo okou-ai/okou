@@ -633,11 +633,12 @@ function ChatListResizeSeam() {
       valueMax={CHAT_LIST_MAX_WIDTH}
       valueNow={hidden ? 0 : width}
       resizing={resizing}
-      // This shell-owned 12px target straddles the list/workspace boundary.
-      // Its local paint priority keeps the later workspace from covering the
-      // right half; shared modal/menu portals still paint above the shell.
-      line="center"
-      className="absolute inset-y-2 right-0 z-1 translate-x-1/2"
+      // In flow between the list and the workspace, the divider's own hairline
+      // is the line. Its 12px target reaches into the later workspace, so it
+      // paints one step above it; shared modal/menu portals still paint above
+      // the shell. Collapsed, it drops its hairline so the workspace meets the
+      // sheet's own edge, which is then the line, and the list can only grow.
+      className="z-1 border-l border-border group-data-[chat-list=collapsed]/workspace-sheet:cursor-e-resize group-data-[chat-list=collapsed]/workspace-sheet:border-l-0"
     />
   );
 }
@@ -650,10 +651,10 @@ function ChatListColumn() {
       data-testid="chat-list-column"
       className={cn(
         "hidden md:flex shrink-0 flex-col",
-        // The list is the left part of the workspace sheet, which continues it
-        // from the divider rightwards. It sits half a step toward the ground,
-        // so it reads below the content without leaving the sheet.
-        "relative my-2 rounded-l-2xl border border-r-0 border-border bg-workspace-canvas-recessed",
+        // The list is the leading part of the workspace sheet, which owns the
+        // frame. It sits half a step toward the ground, so it reads below the
+        // content without leaving the sheet.
+        "relative rounded-l-2xl bg-workspace-canvas-recessed",
       )}
       style={{ width }}
     >
@@ -679,55 +680,51 @@ function ChatListColumn() {
   );
 }
 
-function ThreeColumnNav() {
+/** The chat list and its divider: the leading part of the workspace sheet. */
+export function ChatListPane() {
   const hidden = useGet(sidebarOff$);
   const width = useGet(chatListWidth$);
   const resizing = useGet(workspaceResizing$);
   return (
-    <>
-      <LabeledNavRail />
-      <Collapsible.Root
-        open={!hidden}
-        className="relative hidden shrink-0 md:flex"
+    <Collapsible.Root open={!hidden} className="hidden shrink-0 md:flex">
+      <Collapsible.Panel
+        render={(props, state) => {
+          return (
+            <div
+              {...props}
+              data-sidebar-layout-owner="chat-list"
+              data-sidebar-layout-resizing={resizing ? "true" : undefined}
+              data-sidebar-layout-starting={
+                state.transitionStatus === "starting" ? "" : undefined
+              }
+            />
+          );
+        }}
+        inert={hidden}
+        className={cn(
+          "flex overflow-hidden w-[var(--chat-list-width)] data-[starting-style]:w-0 data-[ending-style]:w-0",
+          resizing
+            ? "transition-none"
+            : "motion-safe:transition-[width] motion-safe:duration-200 motion-safe:ease-out",
+        )}
+        style={
+          {
+            "--chat-list-width": `${String(width)}px`,
+          } as CSSProperties
+        }
       >
-        <Collapsible.Panel
-          render={(props, state) => {
-            return (
-              <div
-                {...props}
-                data-sidebar-layout-owner="chat-list"
-                data-sidebar-layout-resizing={resizing ? "true" : undefined}
-                data-sidebar-layout-starting={
-                  state.transitionStatus === "starting" ? "" : undefined
-                }
-              />
-            );
-          }}
-          inert={hidden}
-          className={cn(
-            "flex overflow-hidden w-[var(--chat-list-width)] data-[starting-style]:w-0 data-[ending-style]:w-0",
-            resizing
-              ? "transition-none"
-              : "motion-safe:transition-[width] motion-safe:duration-200 motion-safe:ease-out",
-          )}
-          style={
-            {
-              "--chat-list-width": `${String(width)}px`,
-            } as CSSProperties
-          }
-        >
-          <ChatListColumn />
-        </Collapsible.Panel>
-        <ChatListResizeSeam />
-      </Collapsible.Root>
-    </>
+        <ChatListColumn />
+      </Collapsible.Panel>
+      <ChatListResizeSeam />
+    </Collapsible.Root>
   );
 }
 
+/** The nav rail and the dialogs it opens; the chat list lives in the sheet. */
 export function Sidebar() {
   return (
     <>
-      <ThreeColumnNav />
+      <LabeledNavRail />
       <ThreeColumnSearchDialogContainer />
       <PinAgentDialogContainer />
       <ChatThreadDialogs />

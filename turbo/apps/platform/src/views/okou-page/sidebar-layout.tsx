@@ -18,7 +18,11 @@ import { useTranslation } from "react-i18next";
 import { Share2, UserPlus } from "lucide-react";
 import type { RouteKey } from "../../signals/route-paths.ts";
 import { Button, cn } from "@okouai/ui";
-import { Sidebar, ThreeColumnSearchDialogContainer } from "./sidebar.tsx";
+import {
+  ChatListPane,
+  Sidebar,
+  ThreeColumnSearchDialogContainer,
+} from "./sidebar.tsx";
 import {
   AutomationMenuButton,
   ChatThreadHeaderTitle,
@@ -60,7 +64,10 @@ import { skillImportDialogOpen$ } from "../../signals/skill-import/skill-import-
 import { SkillImportDialog } from "../skill-import/skill-import-dialog.tsx";
 import { CreateAgentDialogContainer } from "../agents-page/create-agent-dialog.tsx";
 import { paletteColorTheme$ } from "../../signals/theme.ts";
-import { WorkspaceInset } from "./workspace-inset.tsx";
+import {
+  SHEET_PANE_LEADING_CORNERS,
+  WorkspaceInset,
+} from "./workspace-inset.tsx";
 import { MobileChatThreadMoreMenu } from "./chat-thread-header-actions.tsx";
 import { ThreadMailButton } from "./thread-mail.tsx";
 import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
@@ -371,13 +378,11 @@ function SkillImportDialogMount() {
 
 function ChatWorkspace({
   children,
-  beside,
   header,
   footer,
   pwaNavigation,
 }: {
   readonly children: ReactNode;
-  readonly beside: "chat-list" | "nav-rail";
   readonly header: ReactNode;
   readonly footer: ReactNode;
   readonly pwaNavigation: boolean;
@@ -388,7 +393,6 @@ function ChatWorkspace({
   // A route can change before its setup releases the previous thread graph.
   const active = route === "chat" ? threadSidebar : null;
   const fullscreen = active !== null && threadFullscreen;
-  const joinedToChatList = beside === "chat-list";
   return (
     <ChatThreadSidebarShell
       animateEntry={active?.animateEntry ?? true}
@@ -397,20 +401,15 @@ function ChatWorkspace({
       // The browser scales a 1440px screen into the panel and wants room;
       // every other panel shares one remembered width.
       widthKey={active?.target.type === "browser" ? "browser" : "panel"}
-      workspace={{ beside, header, footer, pwaNavigation, fullscreen }}
+      workspace={{ header, footer, pwaNavigation, fullscreen }}
     >
       <WorkspaceInset
-        beside={beside}
-        framed={false}
-        className={
-          joinedToChatList
-            ? active
-              ? "md:rounded-none"
-              : "md:rounded-r-2xl"
-            : active
-              ? "md:rounded-l-2xl"
-              : "md:rounded-2xl"
-        }
+        surface="transparent"
+        // The side panel, when open, holds the sheet's trailing corners.
+        className={cn(
+          SHEET_PANE_LEADING_CORNERS,
+          !active && "md:rounded-r-2xl",
+        )}
       >
         {children}
       </WorkspaceInset>
@@ -429,15 +428,12 @@ function SidebarWorkspaceFrame({
   footer: ReactNode;
   pwaNavigation: boolean;
 }) {
-  const chatListHidden = useGet(sidebarOff$);
   const activeRoute = useGet(activeRoute$);
-  const beside = chatListHidden ? "nav-rail" : "chat-list";
   const agentChatPage = useGet(agentChatPageActive$);
   const sharedWorkspace = agentChatPage || activeRoute === "project";
 
   return activeRoute === "chat" || sharedWorkspace ? (
     <ChatWorkspace
-      beside={beside}
       header={header}
       footer={footer}
       pwaNavigation={pwaNavigation}
@@ -445,7 +441,7 @@ function SidebarWorkspaceFrame({
       {children}
     </ChatWorkspace>
   ) : (
-    <WorkspaceInset beside={beside}>
+    <WorkspaceInset>
       {header}
       {children}
       {footer}
@@ -497,6 +493,39 @@ function SidebarWorkspace({
   );
 }
 
+/**
+ * The workspace sheet: one framed card holding the chat list and the
+ * workspace pane, in the shape of shadcn's inset sidebar. It owns the margin,
+ * hairline and corners. While the list is expanded the sheet joins the nav
+ * rail's edge; collapsed, it keeps the frame on all four sides. Descendants
+ * read the list's state from `data-chat-list` through the `workspace-sheet`
+ * group rather than a prop.
+ *
+ * The sheet must not establish a stacking context or containing block: the
+ * thread sidebar's fixed surface competes inside #root.
+ */
+function WorkspaceSheet({
+  chatList,
+  children,
+}: {
+  readonly chatList: ReactNode;
+  readonly children: ReactNode;
+}) {
+  const chatListHidden = useGet(sidebarOff$);
+  // Keep the workspace in the same child slot whether or not the list
+  // renders, so crossing the mobile breakpoint does not remount it.
+  return (
+    <div
+      data-slot="workspace-sheet"
+      data-chat-list={chatList && !chatListHidden ? "expanded" : "collapsed"}
+      className="group/workspace-sheet flex min-h-0 min-w-0 flex-1 md:m-2 md:rounded-2xl md:border md:border-border md:data-[chat-list=expanded]:ml-0"
+    >
+      {chatList}
+      {children}
+    </div>
+  );
+}
+
 function SidebarLayoutInner({ children }: { children: ReactNode }) {
   const paletteColorTheme = useGet(paletteColorTheme$);
   const shellRef = useSet(threadSidebarLayoutRootRef$);
@@ -539,9 +568,11 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       ) : (
         <Sidebar />
       )}
-      <SidebarWorkspace pwaNavigation={pwaNavigation}>
-        {children}
-      </SidebarWorkspace>
+      <WorkspaceSheet chatList={pwaNavigation ? null : <ChatListPane />}>
+        <SidebarWorkspace pwaNavigation={pwaNavigation}>
+          {children}
+        </SidebarWorkspace>
+      </WorkspaceSheet>
     </div>,
   );
 }
