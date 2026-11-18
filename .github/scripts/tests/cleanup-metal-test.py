@@ -60,9 +60,10 @@ import json,os,shlex,signal,subprocess,sys
 from pathlib import Path
 root=Path(os.environ['FIXTURE']);host=sys.argv[1].split('@')[1];args=sys.argv[2:]
 if os.environ.get('OFFLINE')==host:sys.exit(255)
-if len(args)==1 and args[0].startswith('sudo flock '):
+if len(args)==1 and args[0].startswith('sudo bash -c '):
  namespace=os.environ['JOB_REF'];lock=root/host/'var/lock'/f'vm0-runner-lifecycle-{namespace}.lock';lock.parent.mkdir(parents=True,exist_ok=True)
  command=args[0].removeprefix('sudo ').replace(f'/var/lock/vm0-runner-lifecycle-{namespace}.lock',str(lock))
+ command=command.replace('/run/vm0-runner-lifecycle-receipts',str(root/host/'receipts'))
  status=subprocess.call(['bash','-c',command])
  sys.exit(255 if os.environ.get('RELEASE_ERROR') else status)
 os.environ['FIXTURE_HOST']=str(root/host)

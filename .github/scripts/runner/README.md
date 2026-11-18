@@ -250,5 +250,6 @@ releasing permits one bounded, read-only lookup on the affected host. Recovery
 requires a receipt for that exact operation and confirmed release on every host.
 The healthy path uses the original connection. The most recent receipt for each
 namespace survives SSH loss until replacement or reboot. EOF and lease expiry
-release the lock without writing a receipt. A lost release request, unavailable
-receipt, or failed protected command leaves CI failed.
+release the lock without writing a receipt. If acknowledgement is lost, a
+missing request or unavailable receipt leaves CI failed. A failed protected
+command always retains its exit status.
