@@ -6651,7 +6651,7 @@ WITH member_inventory AS MATERIALIZED (
   FROM inactive_batch_cohort c JOIN agents source ON source.org_id=c.org_id AND source.id<>c.default_agent_id
   JOIN chat_threads x ON x.agent_id=source.id GROUP BY source.org_id
 )
-SELECT c.*, a.instructions, a.instructions_bundle
+SELECT c.*, a.instructions, a.instructions_bundle,a.xmin::text || ':' || a.ctid::text AS default_row_version
 FROM inactive_batch_cohort c
 JOIN org_metadata o ON o.org_id=c.org_id AND o.default_agent_id=c.default_agent_id
 JOIN agents a ON a.id=c.default_agent_id AND a.org_id=c.org_id
@@ -6698,12 +6698,13 @@ WHERE o.created_at < now()-interval '30 days'
         OR (source.visibility='private' AND b.user_id<>source.owner)
         OR (chat.id IS NOT NULL AND (chat.user_id<>b.user_id OR chat_agent.org_id<>c.org_id))));
 ALTER TABLE inactive_copy_target ADD PRIMARY KEY (org_id);
+ANALYZE inactive_copy_target;
 --> statement-breakpoint
 -- Canonical Agent slugs supply the same bounded prefix namespace as the staff
 -- planner. Project labels retain the authored display name, including non-ASCII.
 CREATE TEMP TABLE inactive_copy_agents ON COMMIT DROP AS
 WITH named AS (
-  SELECT a.*, t.default_agent_id AS target_agent_id,
+  SELECT a.*, a.xmin::text || ':' || a.ctid::text AS source_row_version,t.default_agent_id AS target_agent_id,
     coalesce(nullif(btrim(a.display_name),''),a.name) AS project_label,
     coalesce(nullif(rtrim(left(trim(both '-' from regexp_replace(lower(a.name),'[^a-z0-9]+','-','g')),12),'-'),''),
       'a-' || left(replace(a.id::text,'-',''),8)) AS proposed_prefix
@@ -6716,7 +6717,8 @@ SELECT ranked.*, CASE WHEN prefix_count>1
   THEN rtrim(left(proposed_prefix,3),'-') || '-' || left(replace(id::text,'-',''),8)
   ELSE proposed_prefix END AS prefix FROM ranked;
 CREATE TEMP TABLE inactive_copy_workflows ON COMMIT DROP AS
-SELECT w.*, pg_temp.inactive_batch_uuid('inactive-batch-workflow-v1:' || w.id::text) AS copy_id,
+SELECT w.*, w.xmin::text || ':' || w.ctid::text AS source_row_version,
+  pg_temp.inactive_batch_uuid('inactive-batch-workflow-v1:' || w.id::text) AS copy_id,
   a.target_agent_id, a.visibility AS source_agent_visibility, a.owner AS source_agent_owner,
   CASE WHEN a.visibility='private' THEN 'private' ELSE w.visibility END AS copy_visibility,
   CASE WHEN length(a.prefix || '--wf-' || w.name)<=64 THEN a.prefix || '--wf-' || w.name
@@ -6730,6 +6732,9 @@ SELECT c.id,c.user_id,c.agent_id AS source_agent_id,a.org_id,a.target_agent_id,
   CASE WHEN a.label_count>1 THEN a.project_label || ' (' || left(a.id::text,8) || ')'
     ELSE a.project_label END AS project_name
 FROM chat_threads c JOIN inactive_copy_agents a ON a.id=c.agent_id;
+ANALYZE inactive_copy_agents;
+ANALYZE inactive_copy_workflows;
+ANALYZE inactive_copy_chat_routes;
 --> statement-breakpoint
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM inactive_copy_agents WHERE prefix !~ '^[a-z0-9]+(-[a-z0-9]+)*$' OR length(prefix)>12)
@@ -6853,20 +6858,23 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM inactive_copy_chat_routes r LEFT JOIN chat_threads c ON c.id=r.id
     WHERE c.id IS NULL OR c.user_id<>r.user_id OR c.agent_id<>r.target_agent_id OR c.project_id IS DISTINCT FROM r.project_id)
     OR EXISTS (SELECT 1 FROM inactive_copy_target t JOIN agent_runs r ON r.org_id=t.org_id
-      WHERE r.created_at >= now()-interval '30 days' OR r.status IN ('pending','running'))
+      WHERE r.created_at >= now()-interval '30 days')
+    OR EXISTS (SELECT 1 FROM inactive_copy_target t JOIN agent_runs r ON r.org_id=t.org_id
+      WHERE r.status IN ('pending','running'))
     OR EXISTS (SELECT 1 FROM inactive_copy_target t JOIN queued_chat_threads q ON q.org_id=t.org_id)
     OR EXISTS (SELECT 1 FROM inactive_copy_target t JOIN active_agent_runs a ON a.org_id=t.org_id)
     OR EXISTS (SELECT 1 FROM inactive_copy_target t JOIN workflow_automations a ON a.org_id=t.org_id WHERE a.enabled)
     OR EXISTS (SELECT 1 FROM inactive_copy_target t LEFT JOIN org_metadata o ON o.org_id=t.org_id
       LEFT JOIN agents a ON a.id=t.default_agent_id
+      LEFT JOIN (SELECT org_id,array_agg(id ORDER BY id) AS ids FROM agents GROUP BY org_id) inventory ON inventory.org_id=t.org_id
       WHERE o.default_agent_id IS DISTINCT FROM t.default_agent_id OR a.id IS NULL
-        OR a.instructions IS DISTINCT FROM t.instructions OR a.instructions_bundle IS DISTINCT FROM t.instructions_bundle
-        OR ARRAY(SELECT source.id FROM agents source WHERE source.org_id=t.org_id ORDER BY source.id)<>t.agents)
+        OR a.xmin::text || ':' || a.ctid::text IS DISTINCT FROM t.default_row_version
+        OR inventory.ids IS DISTINCT FROM t.agents)
     OR EXISTS (SELECT 1 FROM inactive_copy_agents s LEFT JOIN agents a ON a.id=s.id
-      WHERE to_jsonb(a) IS DISTINCT FROM to_jsonb(s)-ARRAY['target_agent_id','project_label','proposed_prefix','prefix_count','label_count','prefix'])
+      WHERE a.xmin::text || ':' || a.ctid::text IS DISTINCT FROM s.source_row_version)
     OR EXISTS (SELECT 1 FROM workflows w JOIN inactive_copy_agents a ON a.id=w.agent_id
       LEFT JOIN inactive_copy_workflows s ON s.id=w.id
-      WHERE to_jsonb(w) IS DISTINCT FROM to_jsonb(s)-ARRAY['copy_id','target_agent_id','source_agent_visibility','source_agent_owner','copy_visibility','copy_name'])
+      WHERE w.xmin::text || ':' || w.ctid::text IS DISTINCT FROM s.source_row_version)
     OR EXISTS (SELECT 1 FROM inactive_copy_workflows s LEFT JOIN workflows w ON w.id=s.id WHERE w.id IS NULL)
     OR EXISTS (SELECT 1 FROM chat_threads c JOIN inactive_copy_agents a ON a.id=c.agent_id)
     OR EXISTS (SELECT 1 FROM workflow_automations a JOIN inactive_copy_workflows s ON s.id=a.workflow_id)

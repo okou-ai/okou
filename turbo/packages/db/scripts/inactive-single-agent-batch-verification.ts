@@ -180,7 +180,7 @@ export async function verifyInactiveBatch(sql: postgres.Sql) {
     "workflow_copies",
     `SELECT count(*)::int AS n FROM batch_workflows s LEFT JOIN workflows w ON w.id=s.copy_id
     WHERE w.id IS NULL OR (to_jsonb(w)-'updated_at') IS DISTINCT FROM
-      (to_jsonb(s)-ARRAY['copy_id','target_agent_id','source_agent_visibility','source_agent_owner','copy_visibility','copy_name','updated_at'])
+      (to_jsonb(s)-ARRAY['copy_id','target_agent_id','source_agent_visibility','source_agent_owner','copy_visibility','copy_name','source_row_version','updated_at'])
       || jsonb_build_object('id',s.copy_id,'agent_id',s.target_agent_id,'name',s.copy_name,'visibility',s.copy_visibility)`,
   );
   await check(
