@@ -23,6 +23,10 @@ guest-telemetry.workspace = true
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["fs", "time"] }
 
+[target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dependencies]
+# Local Guest archive replays showed lower inflate CPU with zlib-rs on x86_64.
+flate2 = { workspace = true, features = ["zlib-rs"] }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 nix = { workspace = true, features = ["resource"] }
 rustix = { workspace = true, features = ["event", "fs", "std"] }
