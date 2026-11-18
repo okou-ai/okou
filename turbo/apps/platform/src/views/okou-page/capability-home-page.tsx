@@ -286,15 +286,13 @@ function CapabilityCards({
   // Explore takes the top row in halves. Below it the row runs 5:4, which still
   // fits Create's five choices on one line and gives Workflow the width its
   // wide flow drawing needs. On the first home of the session the rows rise in
-  // with the greeting, without a delay: a delayed fade holds its cards at
-  // opacity 0, and the browser counts nothing painted under that hold until
-  // the fade ends, so the largest drawing on the page would only count as
-  // shown when the bottom row had finished rising.
+  // one 70ms step after the greeting: the top row at 140ms, the bottom at 210.
   return (
     <div
       className={cn(
         "grid min-w-0 gap-3 @2xl:grid-cols-18",
-        entrance && "[&>*]:motion-safe:animate-capability-row-in",
+        entrance &&
+          "[&>*]:motion-safe:animate-capability-row-in [&>*:nth-child(-n+2)]:[--capability-row-delay:140ms] [&>*:nth-child(n+3)]:[--capability-row-delay:210ms]",
       )}
       role="group"
       aria-label={t(($) => {
