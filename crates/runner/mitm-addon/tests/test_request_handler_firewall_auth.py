@@ -82,9 +82,9 @@ async def test_reference_auth_without_envelope_reaches_resolver_and_reuses_cache
     with endpoint.run(), mitm_ctx(registry_path=str(reg_path), api_url=endpoint.api_url):
         for flow in flows:
             if requestheaders_first:
-                result = mitm_addon.requestheaders(flow)
-                if result is not None:
-                    await await_requestheaders_result(result)
+                flow.request.headers["Content-Length"] = str(STREAM_BUFFER_LIMIT + 1)
+                await await_requestheaders_result(mitm_addon.requestheaders(flow))
+                assert flow.request.headers["Authorization"] == "Bearer current-account"
             await mitm_addon.request(flow)
 
     for flow in flows:
