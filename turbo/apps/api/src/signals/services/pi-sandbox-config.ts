@@ -83,7 +83,6 @@ export function shouldUsePiExecution(args: {
 
 interface PiModelProviderConfigInput {
   readonly upstreamModel?: string;
-  readonly piModelConfig?: PiModelConfig;
   readonly type: string;
   readonly concreteType?: string;
   readonly environment: Record<string, string>;
@@ -168,9 +167,6 @@ function resolvePiRouteModelConfig(
 ): PiModelConfig | null {
   if (!provider || !provider.selectedModel) {
     return null;
-  }
-  if (provider.piModelConfig) {
-    return provider.piModelConfig;
   }
   if (provider.type === "codex-oauth-token") {
     return resolveCodexSubscriptionPiModelConfig(
@@ -270,7 +266,7 @@ function resolveOpenRouterPiModelConfig(
 }
 
 /** Apply the run's effective effort to every Pi dialect before capturing its launch context. */
-export function resolvePiSandboxModelConfig(
+function resolvePiSandboxModelConfig(
   provider: PiModelProviderConfigInput | null,
   catalogModel: PiCatalogModel | null,
   codexServiceTier: "fast" | "ultrafast" | undefined = undefined,
@@ -296,7 +292,7 @@ export function resolvePiSandboxModelConfig(
 }
 
 /** The plain run facts Pi model preparation reads. */
-export interface PiModelPreparationInput {
+interface PiModelPreparationInput {
   readonly catalog: ModelCatalog;
   readonly piExecution: boolean;
   readonly codexServiceTier?: "fast" | "ultrafast";
@@ -323,25 +319,4 @@ export function materializePreparedPiProvider(
     );
   }
   return { ...provider, piModelConfig: config };
-}
-
-export function resolvePreparedPiModelConfig(args: {
-  readonly input: PiModelPreparationInput;
-  readonly modelProvider: ResolvedModelProviderEnvironment;
-}): PiModelConfig | undefined {
-  if (!args.input.piExecution) {
-    return undefined;
-  }
-  const config = resolvePiSandboxModelConfig(
-    args.modelProvider,
-    piCatalogModel(args.input.catalog, args.modelProvider.selectedModel),
-    args.input.codexServiceTier,
-    args.input.reasoningEffort,
-  );
-  if (!config) {
-    throw new Error(
-      "Selected Pi execution requires a supported Pi model provider configuration",
-    );
-  }
-  return config;
 }
