@@ -13,6 +13,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1147.3](https://github.com/okou-ai/okou/compare/app-v0.1147.2...app-v0.1147.3) (2026-11-18)
+
+
+### Bug Fixes
+
+* **platform:** size the feature guide dialog to its content ([#48627](https://github.com/okou-ai/okou/issues/48627)) ([9696c89](https://github.com/okou-ai/okou/commit/9696c892614faaf6930a6f7b3e5f63d0e2fd8459))
+
+
+### Refactoring
+
+* **platform:** bound onboarding suffix stripping by its match ([#48636](https://github.com/okou-ai/okou/issues/48636)) ([8e1ce85](https://github.com/okou-ai/okou/commit/8e1ce859655e45112628de6c4502def1bbd1c3a3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.853.0
+    * @okouai/ui bumped to 1.21.54
+
 ## [0.1147.2](https://github.com/okou-ai/okou/compare/app-v0.1147.1...app-v0.1147.2) (2026-11-18)
 
 
