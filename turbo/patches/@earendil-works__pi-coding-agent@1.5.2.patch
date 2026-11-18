@@ -1,8 +1,8 @@
 diff --git a/dist/core/agent-session.d.ts b/dist/core/agent-session.d.ts
-index f8b11c9634799b32ce69d3b1be02cfc1605f5e05..b4df150d6ed6c02a742e1baecf22d8d0952071d0 100644
+index 8b6a58430eea2cbb463e2b51773a8bc6e4914505..1880829b93dbacea72e90b092dbb9dc2d0a46e51 100644
 --- a/dist/core/agent-session.d.ts
 +++ b/dist/core/agent-session.d.ts
-@@ -483,6 +483,8 @@ export declare class AgentSession {
+@@ -505,6 +505,8 @@ export declare class AgentSession {
      private _normalizePromptSnippet;
      private _normalizePromptGuidelines;
      private _rebuildSystemPrompt;
@@ -12,10 +12,10 @@ index f8b11c9634799b32ce69d3b1be02cfc1605f5e05..b4df150d6ed6c02a742e1baecf22d8d0
       * Apply a prompt and tool loadout for the next request. Sets the executable tools and
       * returns a system message patching the prompt sections the model currently has (replayed
 diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
-index c5ad71905832cac59341cff04729260936dfba77..37435f47e694065ae21cd0390db823d642e32d4e 100644
+index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..923b5e832c63b6bd79e87e49a6acf69aaca2406c 100644
 --- a/dist/core/agent-session.js
 +++ b/dist/core/agent-session.js
-@@ -1377,6 +1377,47 @@ export class AgentSession {
+@@ -1478,6 +1478,47 @@ export class AgentSession {
      // =========================================================================
      // Prompting
      // =========================================================================
@@ -26,7 +26,7 @@ index c5ad71905832cac59341cff04729260936dfba77..37435f47e694065ae21cd0390db823d6
 +        }
 +        await this.agent.continuePendingTools({
 +            onStart: () => {
-+                // Mirrors _runAgentPrompt: upstream's cancellation flag is per-run,
++                // Mirrors _startRun: upstream's cancellation flag is per-run,
 +                // so this owner must reset it before claiming the native lifecycle.
 +                this._agentRunAbortRequested = false;
 +                this._isAgentRunActive = true;
@@ -60,10 +60,10 @@ index c5ad71905832cac59341cff04729260936dfba77..37435f47e694065ae21cd0390db823d6
 +            },
 +        });
 +    }
-     async _runAgentPrompt(messages) {
-         this._agentRunAbortRequested = false;
-         // Compaction before the prompt may have scheduled a retry; the new prompt replaces it.
-@@ -1731,8 +1772,6 @@ export class AgentSession {
+     /**
+      * Start a run from a user or custom message. The session counts as busy from here on, so
+      * messages sent while before_agent_start handlers run are queued into this run instead of
+@@ -1877,8 +1918,6 @@ export class AgentSession {
       * Internal: Queue a steering message (already expanded, no extension command check).
       */
      async _queueSteer(text, images) {
@@ -72,10 +72,10 @@ index c5ad71905832cac59341cff04729260936dfba77..37435f47e694065ae21cd0390db823d6
          const content = [{ type: "text", text }];
          if (images) {
              content.push(...images);
-@@ -1742,18 +1781,20 @@ export class AgentSession {
-             content,
-             timestamp: Date.now(),
-         });
+@@ -1887,13 +1926,13 @@ export class AgentSession {
+         if (images?.length)
+             this._queuedMessagesWithImages.add(message);
+         this.agent.steer(message);
 +        this._steeringMessages.push(text);
 +        this._emitQueueUpdate();
      }
@@ -88,14 +88,16 @@ index c5ad71905832cac59341cff04729260936dfba77..37435f47e694065ae21cd0390db823d6
          const content = [{ type: "text", text }];
          if (images) {
              content.push(...images);
-         }
-         this.agent.followUp({ role: "user", content, timestamp: Date.now() });
+@@ -1902,6 +1941,8 @@ export class AgentSession {
+         if (images?.length)
+             this._queuedMessagesWithImages.add(message);
+         this.agent.followUp(message);
 +        this._followUpMessages.push(text);
 +        this._emitQueueUpdate();
      }
-     /**
-      * Throw an error if the text is an extension command.
-@@ -1919,10 +1960,10 @@ export class AgentSession {
+     /** Replace a queued user message's images in place with normalized ones, appending hints to its text. */
+     async _normalizeQueuedMessageImages(message) {
+@@ -2083,10 +2124,10 @@ export class AgentSession {
          await this.waitForIdle();
      }
      async waitForIdle() {
@@ -109,7 +111,7 @@ index c5ad71905832cac59341cff04729260936dfba77..37435f47e694065ae21cd0390db823d6
      }
      // =========================================================================
      // Model Management
-@@ -2330,6 +2371,11 @@ export class AgentSession {
+@@ -2488,6 +2529,11 @@ export class AgentSession {
          const settings = this.settingsManager.getCompactionSettings(this.model);
          if (!settings.enabled)
              return false;
@@ -121,8 +123,26 @@ index c5ad71905832cac59341cff04729260936dfba77..37435f47e694065ae21cd0390db823d6
          // Skip if message was aborted (user cancelled) - unless skipAbortedCheck is false
          if (skipAbortedCheck && assistantMessage.stopReason === "aborted")
              return false;
+diff --git a/dist/core/session-manager.js b/dist/core/session-manager.js
+index 7ee05014e13c6434040bfdd7b39b455a6731a7d6..a182ce261b4ad84690231d0412065bed2545deb7 100644
+--- a/dist/core/session-manager.js
++++ b/dist/core/session-manager.js
+@@ -981,7 +981,12 @@ export class SessionManager {
+         const target = this.byId.get(targetId);
+         if (!target)
+             throw new Error(`Entry ${targetId} not found`);
+-        if (!this.getBranch().some((entry) => entry.id === targetId)) {
++        // Recent retained targets do not require walking all compacted ancestors.
++        let ancestor = this.leafId ? this.byId.get(this.leafId) : undefined;
++        while (ancestor && ancestor.id !== targetId) {
++            ancestor = ancestor.parentId ? this.byId.get(ancestor.parentId) : undefined;
++        }
++        if (!ancestor) {
+             throw new Error(`Entry ${targetId} is not on the active branch`);
+         }
+         const editable = target.type === "custom_message" ||
 diff --git a/dist/core/tools/bash.d.ts b/dist/core/tools/bash.d.ts
-index 64be599a321c7486ebe8c9a21608ad8ce61f7778..a0a77775eff9dc53d13263dd4e50f53460de4837 100644
+index 27f12efdfda5720d774a5939a655663902a268f6..1a8838988cf5633c832fa5e63a236416a199fdd2 100644
 --- a/dist/core/tools/bash.d.ts
 +++ b/dist/core/tools/bash.d.ts
 @@ -43,6 +43,8 @@ export interface BashOperations {
@@ -135,10 +155,10 @@ index 64be599a321c7486ebe8c9a21608ad8ce61f7778..a0a77775eff9dc53d13263dd4e50f534
          timeout?: number;
          env?: NodeJS.ProcessEnv;
 diff --git a/dist/core/tools/bash.js b/dist/core/tools/bash.js
-index e52c9d779bdb50667083810d946e11da6c7e29ba..9c17544952761d2932404da6b84fd3bcda065ccd 100644
+index 60e7b06fee585cad635d91e924ad7c8b2766fa3e..0cecfa51c4eb54b13c945b83963957f41e02edf7 100644
 --- a/dist/core/tools/bash.js
 +++ b/dist/core/tools/bash.js
-@@ -47,7 +47,7 @@ const bashOutputSchema = Type.Object({
+@@ -59,7 +59,7 @@ class ShellTimeoutError extends Error {
  /** Shared process execution used by the built-in shell tools. */
  export function createLocalShellOperations(shellName, resolveShellConfig) {
      return {
@@ -147,7 +167,7 @@ index e52c9d779bdb50667083810d946e11da6c7e29ba..9c17544952761d2932404da6b84fd3bc
              const timeoutMs = resolveTimeoutMs(timeout);
              if (signal?.aborted) {
                  throw new Error("aborted");
-@@ -59,6 +59,7 @@ export function createLocalShellOperations(shellName, resolveShellConfig) {
+@@ -71,6 +71,7 @@ export function createLocalShellOperations(shellName, resolveShellConfig) {
              catch {
                  throw new Error(`Working directory does not exist: ${cwd}\nCannot execute ${shellName} commands.`);
              }
@@ -155,11 +175,15 @@ index e52c9d779bdb50667083810d946e11da6c7e29ba..9c17544952761d2932404da6b84fd3bc
              const commandFromStdin = shellConfig.commandTransport === "stdin";
              const child = spawn(shellConfig.shell, commandFromStdin ? shellConfig.args : [...shellConfig.args, command], {
                  cwd,
-@@ -73,52 +74,80 @@ export function createLocalShellOperations(shellName, resolveShellConfig) {
-             }
-             if (child.pid)
-                 trackDetachedChildPid(child.pid);
+@@ -90,59 +91,85 @@ export function createLocalShellOperations(shellName, resolveShellConfig) {
+             child.once("exit", () => {
+                 shellExitedAfterMs = performance.now() - startedAt;
+             });
 -            let timedOut = false;
+-            let exitedBeforeDeadlineAfterMs;
++            const timeoutError = () => new ShellTimeoutError(timeout, shellExitedAfterMs !== undefined
++                ? { exitCode: child.exitCode ?? (child.signalCode ? 128 + (osConstants.signals[child.signalCode] ?? 0) : 1), afterSeconds: Math.round(shellExitedAfterMs / 100) / 10 }
++                : undefined);
 +            const execution = new AbortController();
              let timeoutHandle;
 -            const onAbort = () => {
@@ -167,7 +191,8 @@ index e52c9d779bdb50667083810d946e11da6c7e29ba..9c17544952761d2932404da6b84fd3bc
 -                    killProcessTree(child.pid);
 +            let outputPaused = false;
 +            let pendingOutput;
-+            const onAbort = () => execution.abort(new Error("aborted"));
++            const onAbort = () => execution.abort(signal?.reason instanceof Error && signal.reason.message.startsWith("timeout:")
++                ? timeoutError() : new Error("aborted"));
 +            const stopChild = () => {
 +                if (child.pid) killProcessTree(child.pid);
 +            };
@@ -209,6 +234,9 @@ index e52c9d779bdb50667083810d946e11da6c7e29ba..9c17544952761d2932404da6b84fd3bc
                  if (timeoutMs !== undefined) {
 -                    timeoutHandle = setTimeout(() => {
 -                        timedOut = true;
+-                        exitedBeforeDeadlineAfterMs = shellExitedAfterMs;
+-                        // Also when the shell already exited: on Unix the group kill still reaches background
+-                        // processes holding the pipes. Windows cannot find them once the shell pid is gone.
 -                        if (child.pid)
 -                            killProcessTree(child.pid);
 -                    }, timeoutMs);
@@ -222,7 +250,7 @@ index e52c9d779bdb50667083810d946e11da6c7e29ba..9c17544952761d2932404da6b84fd3bc
 -                        onAbort();
 -                    else
 -                        signal.addEventListener("abort", onAbort, { once: true });
-+                    timeoutHandle = setTimeout(() => execution.abort(new Error(`timeout:${timeout}`)), timeoutMs);
++                    timeoutHandle = setTimeout(() => execution.abort(timeoutError()), timeoutMs);
                  }
 +                child.stdout?.on("resume", onResume);
 +                child.stderr?.on("resume", onResume);
@@ -233,9 +261,6 @@ index e52c9d779bdb50667083810d946e11da6c7e29ba..9c17544952761d2932404da6b84fd3bc
 -                const exitCode = await waitForChildProcess(child);
 -                if (signal?.aborted) {
 -                    throw new Error("aborted");
--                }
--                if (timedOut) {
--                    throw new Error(`timeout:${timeout}`);
 -                }
 +                const completion = waitForChildProcess(child, {
 +                    signal: execution.signal,
@@ -249,7 +274,13 @@ index e52c9d779bdb50667083810d946e11da6c7e29ba..9c17544952761d2932404da6b84fd3bc
                  // A signal-killed shell has no exit code. Use the standard shell convention so
                  // callers do not mistake the termination for a successful command.
                  const signalCode = child.signalCode;
-                 return { exitCode: exitCode ?? (signalCode ? 128 + (osConstants.signals[signalCode] ?? 0) : 1) };
+                 const resolvedExitCode = exitCode ?? (signalCode ? 128 + (osConstants.signals[signalCode] ?? 0) : 1);
+-                if (timedOut) {
+-                    throw new ShellTimeoutError(timeout, exitedBeforeDeadlineAfterMs !== undefined
+-                        ? { exitCode: resolvedExitCode, afterSeconds: Math.round(exitedBeforeDeadlineAfterMs / 100) / 10 }
+-                        : undefined);
+-                }
+                 return { exitCode: resolvedExitCode };
              }
              finally {
 -                if (child.pid)
@@ -269,7 +300,7 @@ index e52c9d779bdb50667083810d946e11da6c7e29ba..9c17544952761d2932404da6b84fd3bc
              }
          },
      };
-@@ -172,7 +201,14 @@ export function createShellToolDefinition(cwd, config, options) {
+@@ -196,7 +223,14 @@ export function createShellToolDefinition(cwd, config, options) {
          async execute(_toolCallId, { command, timeout }, signal, onUpdate, ctx) {
              const resolvedCommand = commandPrefix ? `${commandPrefix}\n${command}` : command;
              const spawnContext = resolveSpawnContext(resolvedCommand, ctx?.cwd || cwd, spawnHook, exposeSessionEnvironment, ctx);
@@ -285,7 +316,7 @@ index e52c9d779bdb50667083810d946e11da6c7e29ba..9c17544952761d2932404da6b84fd3bc
              let acceptingOutput = true;
              let updateTimer;
              let updateDirty = false;
-@@ -209,12 +245,10 @@ export function createShellToolDefinition(cwd, config, options) {
+@@ -233,12 +267,10 @@ export function createShellToolDefinition(cwd, config, options) {
                  }
                  updateTimer ??= setTimeout(() => {
                      updateTimer = undefined;
@@ -300,7 +331,7 @@ index e52c9d779bdb50667083810d946e11da6c7e29ba..9c17544952761d2932404da6b84fd3bc
              const handleData = (data) => {
                  if (!acceptingOutput)
                      return;
-@@ -227,7 +261,7 @@ export function createShellToolDefinition(cwd, config, options) {
+@@ -251,7 +283,7 @@ export function createShellToolDefinition(cwd, config, options) {
                  clearUpdateTimer();
                  emitOutputUpdate();
                  const snapshot = output.snapshot({ persistIfTruncated: true });
@@ -309,7 +340,7 @@ index e52c9d779bdb50667083810d946e11da6c7e29ba..9c17544952761d2932404da6b84fd3bc
                  return snapshot;
              };
              const formatOutput = (snapshot, emptyText = "(no output)") => {
-@@ -254,30 +288,26 @@ export function createShellToolDefinition(cwd, config, options) {
+@@ -278,36 +310,26 @@ export function createShellToolDefinition(cwd, config, options) {
              const appendStatus = (text, status) => `${text ? `${text}\n\n` : ""}${status}`;
              const startedAt = performance.now();
              try {
@@ -331,7 +362,13 @@ index e52c9d779bdb50667083810d946e11da6c7e29ba..9c17544952761d2932404da6b84fd3bc
 -                    }
 -                    if (err instanceof Error && err.message.startsWith("timeout:")) {
 -                        const timeoutSecs = err.message.split(":")[1];
--                        throw new Error(appendStatus(text, `Command timed out after ${timeoutSecs} seconds`));
+-                        let status = `Command timed out after ${timeoutSecs} seconds`;
+-                        if (err instanceof ShellTimeoutError && err.shellExit) {
+-                            // Both facts matter: the command's real result, and that its background processes
+-                            // were still writing output when the timeout hit (#11613).
+-                            status += `. The shell exited with code ${err.shellExit.exitCode} after ${err.shellExit.afterSeconds} seconds, but background processes it started kept writing output until the timeout.`;
+-                        }
+-                        throw new Error(appendStatus(text, status));
 -                    }
 -                    throw err;
 +                signal?.addEventListener("abort", onAbort, { once: true });
@@ -357,12 +394,12 @@ index e52c9d779bdb50667083810d946e11da6c7e29ba..9c17544952761d2932404da6b84fd3bc
                  if (exitCode === null) {
                      throw new Error(appendStatus(outputText, "Command terminated without an exit code"));
                  }
-@@ -302,8 +332,25 @@ export function createShellToolDefinition(cwd, config, options) {
+@@ -332,8 +354,29 @@ export function createShellToolDefinition(cwd, config, options) {
                  }
                  return { content: [{ type: "text", text: outputText }], details, structuredContent };
              }
 +            catch (error) {
-+                const err = execution.signal.aborted ? execution.signal.reason : error;
++                const err = error instanceof ShellTimeoutError ? error : execution.signal.aborted ? execution.signal.reason : error;
 +                acceptingOutput = false;
 +                output.finish({ persist: false });
 +                const text = output.snapshot().content;
@@ -370,7 +407,11 @@ index e52c9d779bdb50667083810d946e11da6c7e29ba..9c17544952761d2932404da6b84fd3bc
 +                    throw new Error(appendStatus(text, "Command aborted"));
 +                }
 +                if (err instanceof Error && err.message.startsWith("timeout:")) {
-+                    throw new Error(appendStatus(text, `Command timed out after ${err.message.split(":")[1]} seconds`));
++                    let status = `Command timed out after ${err.message.split(":")[1]} seconds`;
++                    if (err instanceof ShellTimeoutError && err.shellExit) {
++                        status += `. The shell exited with code ${err.shellExit.exitCode} after ${err.shellExit.afterSeconds} seconds, but background processes it started kept writing output until the timeout.`;
++                    }
++                    throw new Error(appendStatus(text, status));
 +                }
 +                throw err;
 +            }
@@ -543,7 +584,7 @@ index 640d2259a2c6ffb78e67e389e4819b5785637eaf..c7629c97d239d676a9742b90ae18716f
      }
  }
 diff --git a/dist/modes/json-event.d.ts b/dist/modes/json-event.d.ts
-index d4f306ea3918aa07a981f948c8a3cb4f687f5708..f07bd95d70c7e25b634963ae696a13436d8be5f6 100644
+index d4f306ea3918aa07a981f948c8a3cb4f687f5708..e8efa89bd00f881b1ec9d917a5229fe0d4682d76 100644
 --- a/dist/modes/json-event.d.ts
 +++ b/dist/modes/json-event.d.ts
 @@ -18,15 +18,39 @@ type JsonMessageUpdateEvent = {
@@ -588,7 +629,7 @@ index d4f306ea3918aa07a981f948c8a3cb4f687f5708..f07bd95d70c7e25b634963ae696a1343
  export declare function toJsonEvent(event: MessageUpdateEvent): JsonMessageUpdateEvent;
  export declare function toJsonEvent(event: AgentSessionEvent): JsonAgentSessionEvent;
 diff --git a/dist/modes/json-event.js b/dist/modes/json-event.js
-index b2671b8e69be943b5c2918a972082eac84b38948..097ebe01f7bbe24f498a4730dbaecf91f54ec927 100644
+index b2671b8e69be943b5c2918a972082eac84b38948..65d1b28a4edb8ece89f3f93f21272be741fb3410 100644
 --- a/dist/modes/json-event.js
 +++ b/dist/modes/json-event.js
 @@ -13,7 +13,32 @@ function toJsonAssistantMessageEvent(event) {
@@ -728,3 +769,15 @@ index 3078895bedba898ce26c439b6123425834ca2586..d67667b307af07c5a001efd5f1f5849a
              return photonModule;
          }
          catch {
+diff --git a/dist/index.js b/dist/index.js
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -1,1 +1,2 @@
++export { toJsonEvent } from "./modes/json-event.js";
+ // Core session management
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -1,1 +1,2 @@
++export { toJsonEvent } from "./modes/json-event.js";
+ export { type Args, parseArgs } from "./cli/args.ts";

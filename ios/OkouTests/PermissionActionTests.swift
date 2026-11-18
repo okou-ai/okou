@@ -89,6 +89,60 @@ final class PermissionActionTests: XCTestCase {
     XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
   }
 
+  func testFirstConfirmationUsesTheReviewedPermissionWithoutRepeatedPreflightReads() async throws {
+    let fixture = PermissionHTTPFixture()
+    let (conversation, card) = try await setup(fixture)
+    defer { conversation.close() }
+    let firstRequest = fixture.state.withLock { $0.requests.count }
+    await card.confirm()
+    XCTAssertNil(card.error)
+    let requests = fixture.state.withLock { Array($0.requests.dropFirst(firstRequest)) }
+    let write = try XCTUnwrap(requests.firstIndex { $0.httpMethod == "PUT" })
+    // The reviewed grant reaches its canonical write after only the thread ownership check.
+    let metadataPath = "/api/chat-threads/\(PermissionHTTPFixture.threadID)/metadata"
+    XCTAssertEqual(requests[..<write].map { $0.url!.path }, [metadataPath])
+    let saved = try await ChatPermissions(client: fixture.http.client).load(card.action)
+    XCTAssertEqual(saved.grants.first?.action, .allow)
+    XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permission" })
+  }
+
+  func testAcceptedApprovalFinishesSavingWhileConversationSynchronizationIsPending() async throws {
+    let gate = ModelResponseGate()
+    let started = expectation(description: "Conversation refresh after accepted continuation")
+    let synchronize = Mutex(false)
+    let fixture = PermissionHTTPFixture { request in
+      if request.url!.path == "/api/chat/events" {
+        synchronize.withLock { $0 = true }
+      } else if request.url!.path.hasSuffix("/event-rows"),
+        synchronize.withLock({ pending in
+          guard pending else { return false }
+          pending = false
+          return true
+        })
+      {
+        started.fulfill()
+        await gate.wait()
+      }
+    }
+    let (conversation, card) = try await setup(fixture)
+    let confirmation = Task { await card.confirm() }
+    addTeardownBlock { @MainActor in
+      conversation.close()
+      confirmation.cancel()
+      gate.open()
+      await confirmation.value
+    }
+    await fulfillment(of: [started], timeout: 3)
+    XCTAssertFalse(card.isSaving)
+    XCTAssertTrue(card.applied)
+    let saved = try await ChatPermissions(client: fixture.http.client).load(card.action)
+    XCTAssertEqual(saved.grants.first?.action, .allow)
+    gate.open()
+    await confirmation.value
+    XCTAssertNil(card.error)
+    XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permission" })
+  }
+
   func testClosingDuringAWriteCancelsItWithoutContinuingTheChat() async throws {
     let gate = ModelResponseGate()
     let started = expectation(description: "Permission write started")

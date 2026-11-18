@@ -113,32 +113,47 @@ test("Lab groups active feature switches", async () => {
   expect(buttonNamed("Reset all")).toBeEnabled();
 });
 
-test.each(["org_external", "org_3ANttyrbWYJk6JKRSTRLEsbsDLe"])(
-  "Peers cannot opt into presentation format in Lab: %s",
-  async (orgId) => {
-    await setupPage({
-      context,
-      path: "/_/lab",
-      auth: {
-        user: { id: "presentation-format-peer", fullName: "Peer" },
-        organization: {
-          activeOrg: { id: orgId, name: "Test workspace" },
-          memberships: [{ id: orgId }],
-        },
+test("Staff see presentation format enabled by default in Beta", async () => {
+  const orgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
+  await setupPage({
+    context,
+    path: "/_/lab",
+    auth: {
+      user: { id: "presentation-format-peer", fullName: "Peer" },
+      organization: {
+        activeOrg: { id: orgId, name: "Staff" },
+        memberships: [{ id: orgId }],
       },
-      featureSwitches: {
-        [FeatureSwitchKey.Lab]: true,
-        [FeatureSwitchKey.PresentationOutputFormat]: true,
-      },
-    });
+    },
+  });
 
-    await screen.findByRole("heading", { name: "Lab" });
-    expect(screen.getByText(FeatureSwitchKey.Banking)).toBeInTheDocument();
-    expect(
-      screen.queryByText("Presentation output format"),
-    ).not.toBeInTheDocument();
-  },
-);
+  await screen.findByRole("heading", { name: "Lab" });
+  expect(
+    within(featureSwitchGroup("Beta")).getByText("Presentation output format"),
+  ).toBeInTheDocument();
+  expect(
+    within(
+      featureSwitchRow(FeatureSwitchKey.PresentationOutputFormat),
+    ).getByRole("switch"),
+  ).toHaveAttribute("aria-checked", "true");
+});
+
+test("External peers cannot opt into presentation format in Lab", async () => {
+  await setupPage({
+    context,
+    path: "/_/lab",
+    featureSwitches: {
+      [FeatureSwitchKey.Lab]: true,
+      [FeatureSwitchKey.PresentationOutputFormat]: true,
+    },
+  });
+
+  await screen.findByRole("heading", { name: "Lab" });
+  expect(screen.getByText(FeatureSwitchKey.Banking)).toBeInTheDocument();
+  expect(
+    screen.queryByText("Presentation output format"),
+  ).not.toBeInTheDocument();
+});
 
 test("Maintainer filters narrow the feature list", async () => {
   const user = userEvent.setup({ delay: null });

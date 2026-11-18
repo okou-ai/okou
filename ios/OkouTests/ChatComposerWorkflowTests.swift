@@ -175,6 +175,85 @@ final class ChatComposerWorkflowTests: XCTestCase {
     XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
   }
 
+  func testRetiredWorkflowRowsCannotChangeReplacementInputOrClosedWorkspaceDraft() async throws {
+    let fixture = AttachmentFlowFixture(workflows: { request in
+      let agent = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
+        .first { $0.name == "agentId" }?.value
+      return agent == AttachmentFlowFixture.agentID
+        ? ChatHTTPResponse(body: workflowResponse)
+        : ChatHTTPResponse(
+          body: #"[{"id":"fresh","name":"fresh","displayName":null,"description":null}]"#)
+    })
+    let workspace = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
+    defer { workspace.close() }
+    await workspace.refreshNavigation()
+    let host = UIHostingController(rootView: WorkflowNewChatHost(workspace: workspace))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let old = try XCTUnwrap(inputs(in: host.view).first)
+    try await focusMentionInput(old)
+    old.insertText("/rel")
+    let retired = try await workflowCell("release", in: host.view)
+    let replacement = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
+    defer { replacement.close() }
+    await replacement.refreshNavigation()
+    host.rootView = WorkflowNewChatHost(workspace: replacement)
+    try await eventually {
+      guard let current = self.inputs(in: host.view).first else { return false }
+      return current !== old
+    }
+    let current = try XCTUnwrap(inputs(in: host.view).first)
+    try await focusMentionInput(current)
+    current.insertText("/")
+    let fresh = try await workflowCell("release", in: host.view)
+    XCTAssertTrue(retired.accessibilityActivate())
+    XCTAssertEqual(current.text, "/")
+    XCTAssertEqual(replacement.newComposer.text, "/")
+    replacement.close()
+    XCTAssertTrue(fresh.accessibilityActivate())
+    XCTAssertEqual(current.text, "/")
+    XCTAssertEqual(replacement.newComposer.text, "/")
+  }
+
+  func testQuotedNoteKeepsQuoteAndAttachmentAndRecordsOnlyTypedWorkflowAfterSend() async throws {
+    let fixture = workflowFixture()
+    let source = ComposerWorkflowSource(
+      client: fixture.http.client, storage: nil, didFail: { _ in })
+    let conversation = fixture.conversation(workflowSource: source)
+    defer {
+      conversation.close()
+      source.close()
+    }
+    let message = ChatMessage(
+      id: "assistant", role: .assistant, text: "Quoted /rel", createdAt: .now,
+      isQueued: false, isError: false)
+    let selection = try XCTUnwrap(
+      ChatFeedbackSelection(
+        message: message, range: NSRange(location: 0, length: message.text.utf16.count)))
+    let note = try XCTUnwrap(conversation.composer.addFeedback(selection))
+    conversation.composer.editBlock(note, text: "Please /release ")
+    XCTAssertEqual(conversation.composer.document.parts.first?["quote"]?.string, "Quoted /rel")
+    conversation.attachmentDraft.importFiles([try attachmentFile()])
+    try await waitForBusinessResult {
+      conversation.attachmentDraft.isReady && conversation.attachmentDraft.hasAttachments
+    }
+    await conversation.send()
+    XCTAssertEqual(source.recentIDs(), ["release"])
+    let body = try XCTUnwrap(fixture.state.value.withLock { $0.messages.first })
+    let request = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+    let document = try XCTUnwrap(request["userMessage"] as? [String: Any])
+    let parts = try XCTUnwrap(document["parts"] as? [[String: Any]])
+    XCTAssertTrue(parts.contains { $0["type"] as? String == "file" })
+    let feedback = try XCTUnwrap(parts.first { $0["type"] as? String == "feedback" })
+    XCTAssertEqual(feedback["quote"] as? String, "Quoted /rel")
+    XCTAssertEqual(
+      (feedback["note"] as? [[String: Any]])?.first?["text"] as? String, "Please /release ")
+  }
+}
+
+@MainActor
+final class ComposerWorkflowResourceTests: XCTestCase {
+
   func testWorkflowHTTPFailureCanBeRetriedAndClosedWorkspaceRejectsLateResults() async throws {
     let gate = WorkflowGate()
     let started = expectation(description: "Old Agent Workflow request")
@@ -226,46 +305,6 @@ final class ChatComposerWorkflowTests: XCTestCase {
     } catch is CancellationError {}
   }
 
-  func testRetiredWorkflowRowsCannotChangeReplacementInputOrClosedWorkspaceDraft() async throws {
-    let fixture = AttachmentFlowFixture(workflows: { request in
-      let agent = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
-        .first { $0.name == "agentId" }?.value
-      return agent == AttachmentFlowFixture.agentID
-        ? ChatHTTPResponse(body: workflowResponse)
-        : ChatHTTPResponse(
-          body: #"[{"id":"fresh","name":"fresh","displayName":null,"description":null}]"#)
-    })
-    let workspace = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
-    defer { workspace.close() }
-    await workspace.refreshNavigation()
-    let host = UIHostingController(rootView: WorkflowNewChatHost(workspace: workspace))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    let old = try XCTUnwrap(inputs(in: host.view).first)
-    try await focusMentionInput(old)
-    old.insertText("/rel")
-    let retired = try await workflowCell("release", in: host.view)
-    let replacement = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
-    defer { replacement.close() }
-    await replacement.refreshNavigation()
-    host.rootView = WorkflowNewChatHost(workspace: replacement)
-    try await eventually {
-      guard let current = self.inputs(in: host.view).first else { return false }
-      return current !== old
-    }
-    let current = try XCTUnwrap(inputs(in: host.view).first)
-    try await focusMentionInput(current)
-    current.insertText("/")
-    let fresh = try await workflowCell("release", in: host.view)
-    XCTAssertTrue(retired.accessibilityActivate())
-    XCTAssertEqual(current.text, "/")
-    XCTAssertEqual(replacement.newComposer.text, "/")
-    replacement.close()
-    XCTAssertTrue(fresh.accessibilityActivate())
-    XCTAssertEqual(current.text, "/")
-    XCTAssertEqual(replacement.newComposer.text, "/")
-  }
-
   func testRecentUseIsRecordedAfterSuccessfulRetryAndPersistsWithinWorkspaceOnly() async throws {
     let fixture = workflowFixture(failSend: true)
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -301,41 +340,6 @@ final class ChatComposerWorkflowTests: XCTestCase {
     let available = try await reopened.load(agentID: AttachmentFlowFixture.agentID)
     let recent = ComposerWorkflowSearch.matches(available, query: "", recent: reopened.recentIDs())
     XCTAssertEqual(recent.first?.name, "release")
-  }
-
-  func testQuotedNoteKeepsQuoteAndAttachmentAndRecordsOnlyTypedWorkflowAfterSend() async throws {
-    let fixture = workflowFixture()
-    let source = ComposerWorkflowSource(
-      client: fixture.http.client, storage: nil, didFail: { _ in })
-    let conversation = fixture.conversation(workflowSource: source)
-    defer {
-      conversation.close()
-      source.close()
-    }
-    let message = ChatMessage(
-      id: "assistant", role: .assistant, text: "Quoted /rel", createdAt: .now,
-      isQueued: false, isError: false)
-    let selection = try XCTUnwrap(
-      ChatFeedbackSelection(
-        message: message, range: NSRange(location: 0, length: message.text.utf16.count)))
-    let note = try XCTUnwrap(conversation.composer.addFeedback(selection))
-    conversation.composer.editBlock(note, text: "Please /release ")
-    XCTAssertEqual(conversation.composer.document.parts.first?["quote"]?.string, "Quoted /rel")
-    conversation.attachmentDraft.importFiles([try attachmentFile()])
-    try await waitForBusinessResult {
-      conversation.attachmentDraft.isReady && conversation.attachmentDraft.hasAttachments
-    }
-    await conversation.send()
-    XCTAssertEqual(source.recentIDs(), ["release"])
-    let body = try XCTUnwrap(fixture.state.value.withLock { $0.messages.first })
-    let request = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
-    let document = try XCTUnwrap(request["userMessage"] as? [String: Any])
-    let parts = try XCTUnwrap(document["parts"] as? [[String: Any]])
-    XCTAssertTrue(parts.contains { $0["type"] as? String == "file" })
-    let feedback = try XCTUnwrap(parts.first { $0["type"] as? String == "feedback" })
-    XCTAssertEqual(feedback["quote"] as? String, "Quoted /rel")
-    XCTAssertEqual(
-      (feedback["note"] as? [[String: Any]])?.first?["text"] as? String, "Please /release ")
   }
 
   func testNewChatWorkflowSurvivesReopenAndUsesTextProtocol() async throws {
@@ -491,8 +495,12 @@ final class ChatComposerWorkflowTests: XCTestCase {
     let empty = try await resources.store.get(resources.matches).value
     XCTAssertTrue(empty.values.isEmpty)
   }
+}
 
-  private func workflowFixture(failSend: Bool = false) -> AttachmentFlowFixture {
+@MainActor
+extension XCTestCase {
+
+  fileprivate func workflowFixture(failSend: Bool = false) -> AttachmentFlowFixture {
     AttachmentFlowFixture(
       failSend: failSend,
       workflows: { request in
@@ -503,7 +511,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
         return ChatHTTPResponse(body: workflowResponse)
       })
   }
-  private func composer(_ conversation: ConversationStore) -> some View {
+  fileprivate func composer(_ conversation: ConversationStore) -> some View {
     ChatComposerView(
       draft: Binding(get: { conversation.draft }, set: { conversation.draft = $0 }),
       isBusy: conversation.isSending, showsProgress: false, canStop: false, needsUpgrade: false,
@@ -516,17 +524,17 @@ final class ChatComposerWorkflowTests: XCTestCase {
     .background(Color(uiColor: .systemBackground))
     .composerSuggestionOverlay()
   }
-  private func inputs(in view: UIView) -> [ComposerTextView] {
+  fileprivate func inputs(in view: UIView) -> [ComposerTextView] {
     if let view = view as? ComposerTextView { return [view] }
     return view.subviews.flatMap { inputs(in: $0) }
   }
-  private func workflowTable(in view: UIView) -> UITableView? {
+  fileprivate func workflowTable(in view: UIView) -> UITableView? {
     if let table = view as? UITableView, table.accessibilityIdentifier == "workflow-suggestions" {
       return table
     }
     return view.subviews.compactMap { workflowTable(in: $0) }.first
   }
-  private func workflowCell(_ id: String, in view: UIView) async throws -> UITableViewCell {
+  fileprivate func workflowCell(_ id: String, in view: UIView) async throws -> UITableViewCell {
     func cell() -> UITableViewCell? {
       nativeViews(in: view).compactMap { $0 as? UITableViewCell }.first {
         $0.accessibilityIdentifier == "workflow-" + id
@@ -535,14 +543,14 @@ final class ChatComposerWorkflowTests: XCTestCase {
     try await eventually { cell() != nil }
     return try XCTUnwrap(cell())
   }
-  private func type(_ text: String, in input: ComposerTextView, conversation: ConversationStore)
+  fileprivate func type(_ text: String, in input: ComposerTextView, conversation: ConversationStore)
     async throws
   {
     input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
     input.insertText(text)
     try await waitForBusinessResult { conversation.draft == text }
   }
-  private func attachmentFile() throws -> URL {
+  fileprivate func attachmentFile() throws -> URL {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent(
       UUID().uuidString + ".txt")
     try Data("notes".utf8).write(to: url)

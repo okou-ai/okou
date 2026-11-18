@@ -39,7 +39,7 @@ describe("isFeatureEnabled", () => {
   it.each([
     FeatureSwitchKey.ConnectorChatAccountAccess,
     FeatureSwitchKey.ArtifactSidebarPreview,
-    FeatureSwitchKey.ArtifactPreviewToolbar,
+    FeatureSwitchKey.ArtifactPreviewActionGroup,
   ])("defaults %s to staff and honors Lab overrides", (key) => {
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
     for (const [context, enabled] of [
@@ -56,7 +56,7 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("makes presentation format available only to Bingjie across workspaces", () => {
+  it("keeps presentation format available to Bingjie across workspaces", () => {
     const key = FeatureSwitchKey.PresentationOutputFormat;
     for (const orgId of [
       undefined,
@@ -78,7 +78,23 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("keeps presentation format unavailable to peers even with an opt-in override", () => {
+  it("enables presentation format for staff and honors Lab overrides", () => {
+    const key = FeatureSwitchKey.PresentationOutputFormat;
+    const identity = {
+      userId: "staff-colleague",
+      orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+    };
+    expect(isFeatureSwitchAvailable(key, identity)).toBe(true);
+    expect(isFeatureEnabled(key, identity)).toBe(true);
+    expect(getAllFeatureStates(identity)[key]).toBe(true);
+    for (const enabled of [false, true]) {
+      const context = { ...identity, overrides: { [key]: enabled } };
+      expect(isFeatureEnabled(key, context)).toBe(enabled);
+      expect(getAllFeatureStates(context)[key]).toBe(enabled);
+    }
+  });
+
+  it("keeps presentation format unavailable outside its rollout audience even with an opt-in override", () => {
     const key = FeatureSwitchKey.PresentationOutputFormat;
     for (const identity of [
       {},
@@ -86,7 +102,7 @@ describe("isFeatureEnabled", () => {
       {
         userId: "staff-colleague",
         email: "ethan@okou.ai",
-        orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+        orgId: "external-org",
       },
     ]) {
       expect(isFeatureSwitchAvailable(key, identity)).toBe(false);
@@ -364,6 +380,9 @@ describe("getFeatureSwitchMetadata", () => {
     );
     expect(
       metadata[FeatureSwitchKey.ConnectorChatAccountAccess].rolloutStage,
+    ).toBe("beta");
+    expect(
+      metadata[FeatureSwitchKey.PresentationOutputFormat].rolloutStage,
     ).toBe("beta");
     expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");
   });

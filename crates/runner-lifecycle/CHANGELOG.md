@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.17.124](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.123...runner-lifecycle-v0.17.124) (2026-11-18)
+
+## [0.17.123](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.122...runner-lifecycle-v0.17.123) (2026-11-18)
+
+
+### Refactoring
+
+* delegate filesystem capacity queries to typed apis ([#48537](https://github.com/okou-ai/okou/issues/48537)) ([485baf9](https://github.com/okou-ai/okou/commit/485baf98d0291be3d9b70ca3aa11021d5facfc1a))
+
+## [0.17.122](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.121...runner-lifecycle-v0.17.122) (2026-11-18)
+
+## [0.17.121](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.120...runner-lifecycle-v0.17.121) (2026-11-18)
+
 ## [0.17.120](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.119...runner-lifecycle-v0.17.120) (2026-11-17)
 
 

@@ -54,7 +54,7 @@ const site = Object.freeze({
 async function openSite({
   sidebar = false,
   shareRows = false,
-  refined = false,
+  groupedActions = false,
 } = {}) {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
@@ -84,7 +84,7 @@ async function openSite({
     featureSwitches: {
       [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
       [FeatureSwitchKey.HostedSiteShareRows]: shareRows,
-      [FeatureSwitchKey.ArtifactPreviewToolbar]: refined,
+      [FeatureSwitchKey.ArtifactPreviewActionGroup]: groupedActions,
     },
   });
   click(await findArtifactAction("Weekly report"));
@@ -549,6 +549,42 @@ test("Unavailable banner settings stay unknown when copying the site link", asyn
   ]);
 });
 
+test.each([false, true])(
+  "the grouped toolbar does not wait for banner settings (sidebar=%s)",
+  async (sidebar) => {
+    const clipboard = context.mocks.browser.clipboardWriteText();
+    const response = context.mocks.deferred<void>();
+    context.mocks.api(hostContract.siteBanner, async ({ respond }) => {
+      await response.promise;
+      return respond(200, { siteId, showBanner: false, revision: null });
+    });
+
+    await openSite({ sidebar, groupedActions: true });
+    const preview = await screen.findByTestId(
+      sidebar ? "artifact-sidebar" : "attachment-lightbox",
+    );
+    const shareLabel = sidebar ? "Share artifact" : "Share";
+    await waitFor(() => {
+      expect(getButtonByName(shareLabel, preview)).toBeVisible();
+    });
+    expect(getButtonByName(shareLabel, preview)).toBeEnabled();
+    expect(within(preview).queryByRole("status")).not.toBeInTheDocument();
+    expect(
+      getButtonByName(sidebar ? "Close artifact" : "Close", preview),
+    ).toBeEnabled();
+    await openShare(shareLabel);
+    click(getButtonByName("Copy link"));
+    await waitFor(() => {
+      expect(clipboard.writes).toStrictEqual([site.url]);
+    });
+
+    response.resolve();
+    await expect(
+      screen.findByRole("switch", { name: "Show Okou banner" }),
+    ).resolves.not.toBeChecked();
+  },
+);
+
 test("Copy link snapshots a pending banner as unknown without delaying the copy", async () => {
   const telemetry = context.mocks.posthog();
   const clipboard = context.mocks.browser.clipboardWriteText();
@@ -599,66 +635,6 @@ test("Copy link snapshots a pending banner as unknown without delaying the copy"
       show_banner: false,
     },
   ]);
-});
-
-test("More retries an initial banner read failure without exposing an unready setting", async () => {
-  const user = userEvent.setup({ delay: null });
-  const response = context.mocks.deferred<void>();
-  let unavailable = true;
-  context.mocks.api(hostContract.siteBanner, async ({ respond }) => {
-    await response.promise;
-    return unavailable
-      ? respond(500, {
-          error: {
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Banner settings unavailable",
-          },
-        })
-      : respond(200, { siteId, showBanner: false, revision: null });
-  });
-
-  await openSite({ refined: true });
-  await openShare();
-  await expectPermission("Anyone with the link");
-  const share = screen.getByRole("dialog", { name: "Share" });
-  // The label accompanies the legacy loading skeleton; neither is a ready action.
-  expect(within(share).queryByText("Show Okou banner")).not.toBeInTheDocument();
-  expect(
-    within(share).queryByRole("switch", { name: "Show Okou banner" }),
-  ).not.toBeInTheDocument();
-
-  response.resolve();
-  await expect(
-    screen.findByText("Banner settings unavailable"),
-  ).resolves.toBeInTheDocument();
-  expect(within(share).queryByText("Show Okou banner")).not.toBeInTheDocument();
-  expect(
-    within(share).queryByRole("switch", { name: "Show Okou banner" }),
-  ).not.toBeInTheDocument();
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(share).not.toBeInTheDocument();
-  });
-
-  click(getButtonByName("More artifact actions"));
-  const more = await screen.findByRole("menu");
-  await expect(
-    within(more).findByText("Some actions are unavailable"),
-  ).resolves.toBeInTheDocument();
-  const retry = within(more).getByText("Retry");
-  expect(retry).not.toHaveAttribute("aria-disabled", "true");
-  unavailable = false;
-  click(retry);
-  await waitFor(() => {
-    expect(more).not.toBeInTheDocument();
-  });
-
-  await openShare();
-  const toggle = await screen.findByRole("switch", {
-    name: "Show Okou banner",
-  });
-  expect(toggle).not.toBeChecked();
-  expect(toggle).toBeEnabled();
 });
 
 test("Copy link records click intent even when the clipboard write fails", async () => {

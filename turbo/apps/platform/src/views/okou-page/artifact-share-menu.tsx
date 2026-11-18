@@ -416,19 +416,14 @@ interface ShareButtonProps {
   readonly className?: string;
   readonly iconSize?: number;
   readonly ariaLabel?: string;
-  readonly readyOnly?: boolean;
 }
 
 function ShareButtonPlaceholder({
   className,
   iconSize = 16,
   ariaLabel,
-  readyOnly = false,
 }: ShareButtonProps) {
   const { t } = useTranslation();
-  if (readyOnly) {
-    return null;
-  }
   return (
     <Button
       variant="quiet"
@@ -451,7 +446,6 @@ function ShareSessionMenu({
   className,
   iconSize = 16,
   ariaLabel,
-  readyOnly = false,
 }: ShareButtonProps & { readonly session: ArtifactShareSession }) {
   const { t } = useTranslation();
   // Subscribing as soon as the preview mounts preloads permissions before Share.
@@ -473,9 +467,6 @@ function ShareSessionMenu({
   const recipient = loadable.state === "hasData" && !loadable.data?.status;
   const failed = loadable.state === "hasError";
   const loading = !details && loadable.state === "loading";
-  if (readyOnly && !details && !requestedOpen) {
-    return null;
-  }
   return (
     <Popover
       open={requestedOpen && !recipient}
@@ -577,7 +568,7 @@ function ArtifactShareMenuContent({
           ? "true"
           : undefined
       }
-      className={buttonProps.readyOnly ? "contents" : "inline-flex"}
+      className="inline-flex"
     >
       {session && artifactShareMenuKey(session.source) === identityKey ? (
         <ShareSessionMenu session={session} {...buttonProps} />

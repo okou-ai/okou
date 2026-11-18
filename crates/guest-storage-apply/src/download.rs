@@ -20,20 +20,20 @@ use std::time::{Duration, Instant};
 
 const LOCAL_CONCURRENT: usize = 4;
 const MAX_CONCURRENT: usize = 16;
-type AttemptRunner = fn(&mut StartedDownload) -> Result<(), DownloadError>;
+type AttemptRunner = fn(&mut StartedDownload<'_>) -> Result<(), DownloadError>;
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct DownloadTask {
+pub(crate) struct DownloadTask<'input> {
     label: String,
     url: String,
     mount_path: String,
     normalized_mount_path: PathBuf,
     telemetry: DownloadTaskTelemetry,
-    files: Option<Vec<guest_contracts::storage_files::StorageFile>>,
+    files: Option<Vec<guest_contracts::storage_files::StorageFile<&'input [u8]>>>,
     template_guidance: Option<guest_contracts::storage_manifest::TemplateGuidanceReference>,
 }
 
-impl DownloadTask {
+impl<'input> DownloadTask<'input> {
     pub(crate) fn with_template_guidance(
         mut self,
         reference: Option<guest_contracts::storage_manifest::TemplateGuidanceReference>,
@@ -46,7 +46,10 @@ impl DownloadTask {
         &self.mount_path
     }
 
-    pub(crate) fn set_files(&mut self, files: Vec<guest_contracts::storage_files::StorageFile>) {
+    pub(crate) fn set_files(
+        &mut self,
+        files: Vec<guest_contracts::storage_files::StorageFile<&'input [u8]>>,
+    ) {
         self.files = Some(files);
         self.telemetry.decoded();
         self.label.push_str(" delivery=decoded_files");
@@ -86,7 +89,7 @@ impl DownloadTask {
         }
     }
 
-    fn prepare(self) -> Result<PreparedDownloadTask, String> {
+    fn prepare(self) -> Result<PreparedDownloadTask<'input>, String> {
         fs::create_dir_all(&self.mount_path).map_err(|e| {
             format!(
                 "{} target preparation failed: failed to create directory {}: {e}",
@@ -108,13 +111,13 @@ impl DownloadTask {
     }
 }
 
-pub(crate) struct PreparedDownloadTask {
-    task: DownloadTask,
+pub(crate) struct PreparedDownloadTask<'input> {
+    task: DownloadTask<'input>,
     effective_mount_path: PathBuf,
     source_ready: Option<Arc<AtomicBool>>,
 }
 
-impl PreparedDownloadTask {
+impl PreparedDownloadTask<'_> {
     fn logical_mount_path(&self) -> &Path {
         &self.task.normalized_mount_path
     }
@@ -128,14 +131,14 @@ impl PreparedDownloadTask {
     }
 }
 
-struct PendingDownload {
+struct PendingDownload<'input> {
     id: usize,
-    task: PreparedDownloadTask,
+    task: PreparedDownloadTask<'input>,
     estimated_work: u64,
 }
 
-impl PendingDownload {
-    fn new(id: usize, task: PreparedDownloadTask) -> Self {
+impl<'input> PendingDownload<'input> {
+    fn new(id: usize, task: PreparedDownloadTask<'input>) -> Self {
         Self {
             id,
             task,
@@ -144,9 +147,9 @@ impl PendingDownload {
     }
 }
 
-struct StartedDownload {
+struct StartedDownload<'input> {
     id: usize,
-    task: PreparedDownloadTask,
+    task: PreparedDownloadTask<'input>,
     start: Instant,
     opened_file_compressed_bytes: Option<u64>,
     remote_metrics: Option<RemoteArchiveTaskMetrics>,
@@ -154,8 +157,8 @@ struct StartedDownload {
     concurrency: usize,
 }
 
-impl StartedDownload {
-    fn new(download: PendingDownload, concurrency: usize) -> Self {
+impl<'input> StartedDownload<'input> {
+    fn new(download: PendingDownload<'input>, concurrency: usize) -> Self {
         let start = Instant::now();
         log_info!(
             LOG_TAG,
@@ -218,7 +221,7 @@ struct DownloadReservation {
 }
 
 impl DownloadReservation {
-    fn new(download: &StartedDownload) -> Self {
+    fn new(download: &StartedDownload<'_>) -> Self {
         Self {
             id: download.id,
             logical_mount_path: download.task.logical_mount_path().to_path_buf(),
@@ -227,13 +230,13 @@ impl DownloadReservation {
     }
 }
 
-struct DownloadCompletion {
-    download: StartedDownload,
+struct DownloadCompletion<'input> {
+    download: StartedDownload<'input>,
     outcome: AttemptOutcome,
 }
 
 enum DownloadEvent {
-    Completed(Box<DownloadCompletion>),
+    Completed,
     SourceReadiness(std::io::Result<()>),
 }
 
@@ -242,8 +245,8 @@ enum AttemptOutcome {
     Panicked(String),
 }
 
-struct DownloadScheduler {
-    pending: VecDeque<PendingDownload>,
+struct DownloadScheduler<'input> {
+    pending: VecDeque<PendingDownload<'input>>,
     reservations: Vec<DownloadReservation>,
     active_attempts: usize,
     concurrency: usize,
@@ -251,8 +254,8 @@ struct DownloadScheduler {
     prioritize_large: bool,
 }
 
-impl DownloadScheduler {
-    fn new(pending: VecDeque<PendingDownload>, concurrency: usize) -> Self {
+impl<'input> DownloadScheduler<'input> {
+    fn new(pending: VecDeque<PendingDownload<'input>>, concurrency: usize) -> Self {
         let prioritize_large = pending.iter().any(|download| download.estimated_work > 0);
         Self {
             pending,
@@ -274,7 +277,7 @@ impl DownloadScheduler {
 
     fn start_ready_attempts(
         &mut self,
-        work_tx: &mpsc::SyncSender<StartedDownload>,
+        work_tx: &mpsc::SyncSender<StartedDownload<'input>>,
         telemetry: &mut DownloadRunTelemetry,
     ) -> bool {
         while self.active_attempts < self.concurrency {
@@ -309,7 +312,7 @@ impl DownloadScheduler {
         true
     }
 
-    fn record_completion(&mut self, completion: DownloadCompletion) {
+    fn record_completion(&mut self, completion: DownloadCompletion<'input>) {
         self.active_attempts -= 1;
 
         match completion.outcome {
@@ -332,8 +335,8 @@ impl DownloadScheduler {
 
 /// Prepare download targets before any archive worker can start.
 pub(crate) fn prepare_download_tasks(
-    tasks: Vec<DownloadTask>,
-) -> Result<Vec<PreparedDownloadTask>, String> {
+    tasks: Vec<DownloadTask<'_>>,
+) -> Result<Vec<PreparedDownloadTask<'_>>, String> {
     tasks.into_iter().map(DownloadTask::prepare).collect()
 }
 
@@ -342,7 +345,7 @@ pub(crate) fn prepare_download_tasks(
 /// extraction bounded. Serializes logically or physically overlapping mounts.
 /// Returns true if all downloads succeeded, false if any failed.
 pub(crate) fn download_all_parallel(
-    tasks: Vec<PreparedDownloadTask>,
+    tasks: Vec<PreparedDownloadTask<'_>>,
     readiness: Option<Readiness>,
 ) -> bool {
     download_with_readiness(tasks, readiness, run_download_attempt)
@@ -350,14 +353,14 @@ pub(crate) fn download_all_parallel(
 
 #[cfg(test)]
 fn download_all_parallel_with_runner(
-    tasks: Vec<PreparedDownloadTask>,
+    tasks: Vec<PreparedDownloadTask<'_>>,
     attempt_runner: AttemptRunner,
 ) -> bool {
     download_with_readiness(tasks, None, attempt_runner)
 }
 
 fn download_with_readiness(
-    mut tasks: Vec<PreparedDownloadTask>,
+    mut tasks: Vec<PreparedDownloadTask<'_>>,
     readiness: Option<Readiness>,
     attempt_runner: AttemptRunner,
 ) -> bool {
@@ -416,12 +419,16 @@ fn download_with_readiness(
     );
 
     let success = thread::scope(|scope| {
+        // The readiness watcher owns a 'static notification callback. Keep its
+        // wakeups separate from completion values that borrow this input and
+        // remain inside the scoped application lifetime.
+        let (event_tx, event_rx) = mpsc::channel();
         let (completion_tx, completion_rx) = mpsc::channel();
         let mut watcher = match readiness
             .map(|readiness| {
-                let completion_tx = completion_tx.clone();
+                let event_tx = event_tx.clone();
                 readiness.watch(move |event| {
-                    let _ = completion_tx.send(DownloadEvent::SourceReadiness(event));
+                    let _ = event_tx.send(DownloadEvent::SourceReadiness(event));
                 })
             })
             .transpose()
@@ -435,11 +442,12 @@ fn download_with_readiness(
         // Admission counts queued and running attempts together, so this queue
         // cannot add work beyond the selected bound. The sender is
         // local to this scope's closure: every return closes it before joining.
-        let (work_tx, work_rx) = mpsc::sync_channel::<StartedDownload>(concurrency);
+        let (work_tx, work_rx) = mpsc::sync_channel::<StartedDownload<'_>>(concurrency);
         let work_rx = Arc::new(Mutex::new(work_rx));
         for _ in 0..concurrency {
             let work_rx = Arc::clone(&work_rx);
             let completion_tx = completion_tx.clone();
+            let event_tx = event_tx.clone();
             scope.spawn(move || {
                 loop {
                     // Only receiving is serialized; extraction and panic
@@ -459,14 +467,14 @@ fn download_with_readiness(
                     }))
                     .map(AttemptOutcome::Finished)
                     .unwrap_or_else(|e| AttemptOutcome::Panicked(panic_message(e.as_ref())));
-                    let _ = completion_tx.send(DownloadEvent::Completed(Box::new(
-                        DownloadCompletion { download, outcome },
-                    )));
+                    let _ = completion_tx.send(DownloadCompletion { download, outcome });
+                    let _ = event_tx.send(DownloadEvent::Completed);
                 }
             });
         }
         drop(work_rx);
         drop(completion_tx);
+        drop(event_tx);
         let mut scheduler = DownloadScheduler::new(pending, concurrency);
 
         while scheduler.has_work() {
@@ -479,8 +487,14 @@ fn download_with_readiness(
                 return false;
             }
 
-            let completion = match completion_rx.recv() {
-                Ok(DownloadEvent::Completed(completion)) => *completion,
+            let completion = match event_rx.recv() {
+                Ok(DownloadEvent::Completed) => match completion_rx.recv() {
+                    Ok(completion) => completion,
+                    Err(error) => {
+                        log_error!(LOG_TAG, "Download completion channel closed: {error}");
+                        return false;
+                    }
+                },
                 Ok(DownloadEvent::SourceReadiness(Ok(()))) => continue,
                 Ok(DownloadEvent::SourceReadiness(Err(error))) => {
                     log_error!(LOG_TAG, "Archive readiness failed: {error}");
@@ -506,7 +520,7 @@ fn download_with_readiness(
 }
 
 fn find_startable_download(
-    pending: &VecDeque<PendingDownload>,
+    pending: &VecDeque<PendingDownload<'_>>,
     reservations: &[DownloadReservation],
     prioritize_large: bool,
     on_conflict: &mut impl FnMut(usize, &Path, usize, &Path),
@@ -566,7 +580,7 @@ fn find_startable_download(
 }
 
 fn conflicting_mount_paths<'pending, 'other>(
-    pending: &'pending PreparedDownloadTask,
+    pending: &'pending PreparedDownloadTask<'_>,
     other_logical: &'other Path,
     other_effective: &'other Path,
 ) -> Option<(&'pending Path, &'other Path)> {
@@ -592,7 +606,7 @@ fn panic_message(payload: &(dyn Any + Send)) -> String {
 }
 
 /// Download and extract one archive. Files written before an error remain in place.
-fn run_download_attempt(download: &mut StartedDownload) -> Result<(), DownloadError> {
+fn run_download_attempt(download: &mut StartedDownload<'_>) -> Result<(), DownloadError> {
     if let Some(files) = &download.task.task.files {
         if download.task.task.template_guidance.is_some() {
             return Err(DownloadError::new(

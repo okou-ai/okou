@@ -131,8 +131,13 @@ class ComposerJournalStore(
             .use { json.decodeFromStream<ComposerJournal>(it) }
             .also {
                 if (
-                    it.format !in 1..2 ||
-                        it.format == 1 && it.entries.values.any { entry -> entry.recovery != null }
+                    it.format !in 1..3 ||
+                        it.format == 1 &&
+                            it.entries.values.any { entry -> entry.recovery != null } ||
+                        it.format < 3 &&
+                            (it.drafts.isNotEmpty() ||
+                                it.retainedDrafts.isNotEmpty() ||
+                                it.defaultAgentId != null)
                 )
                     throw IOException("Unsupported composer journal format")
             }

@@ -105,7 +105,11 @@ export const sendUserPushNotifications$ = command(
 
     // Read at delivery time, not Run admission: the user may mute a running chat.
     const [thread] = await get(db$)
-      .select({ muted: chatThreads.muted, hidden: chatThreads.hidden })
+      .select({
+        muted: chatThreads.muted,
+        hidden: chatThreads.hidden,
+        archived: chatThreads.archived,
+      })
       .from(chatThreads)
       .where(
         and(
@@ -115,7 +119,7 @@ export const sendUserPushNotifications$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    if (!thread || thread.muted || thread.hidden) {
+    if (!thread || thread.muted || thread.hidden || thread.archived) {
       return;
     }
 
@@ -208,8 +212,8 @@ export const sendUserPushNotifications$ = command(
 );
 
 /**
- * Badge-only pushes and widget reloads keep installed clients current after reads,
- * mutes and deletions on any device.
+ * Badge-only pushes and widget reloads keep installed clients current after
+ * reminder changes on any device.
  */
 export const synchronizeUserPushBadge$ = command(
   async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {

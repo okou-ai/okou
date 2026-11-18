@@ -31,7 +31,7 @@ export function createSubagentCommand(
     .description("Manage background Pi subagents in the current Run")
     .addHelpText(
       "after",
-      "\nPi sessions only. Stopping a task also stops its nested subagents and tools. Completed tasks delete their temporary logs; write deliverables to the workspace. IDs may be reused after deletion. Steering is fire-and-forget (4096-byte frame limit).\n",
+      "\nPi sessions only. All subagents belong to the Run, not their creator. Any Pi session in this Run can stop a subagent by ID without stopping other subagents. Run teardown stops all remaining processes. Temporary logs are deleted best effort on completion; write deliverables to the workspace. IDs are not reused within a Run. Start confirms process launch, not model readiness; inspect stderr for later failures. Steering is fire-and-forget (4096-byte frame limit).\n",
     )
     .hook("preAction", () => {
       return requirePiSession();
@@ -68,7 +68,9 @@ export function createSubagentCommand(
 
   command
     .command("start [prompt]")
-    .description("Start an independent Pi child without waiting for completion")
+    .description(
+      "Launch an independent Pi process without waiting for model readiness",
+    )
     .option("-f, --file <prompt-file>", "Read the prompt from a UTF-8 file")
     .action(
       withErrorHandler(

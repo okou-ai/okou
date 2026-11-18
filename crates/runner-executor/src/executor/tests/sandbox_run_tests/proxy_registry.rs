@@ -116,6 +116,7 @@ async fn proxy_registration_projects_captured_model_policy_without_reselection()
     let config = test_executor_config(dir.path()).await;
     let mut context = minimal_context();
     context.cli_agent_type = "pi".into();
+    context.firewall_token = Some("host-only-firewall-authority".into());
     let captured = serde_json::json!({
         "schemaVersion": 5,
         "provider": "openrouter",
@@ -139,6 +140,11 @@ async fn proxy_registration_projects_captured_model_policy_without_reselection()
         registry["sandboxes"]["10.200.0.3"]["piModelConfig"],
         captured
     );
+    assert_eq!(
+        registry["sandboxes"]["10.200.0.3"]["firewallToken"],
+        "host-only-firewall-authority"
+    );
+    assert_eq!(registry["sandboxes"]["10.200.0.3"]["sandboxToken"], "tok");
 }
 
 #[tokio::test]

@@ -4,15 +4,19 @@ import ai.okou.android.CHAT_AGENT
 import ai.okou.android.CHAT_IN_PROJECT
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.CHAT_PROJECT
+import ai.okou.android.ChatListApiFixture
 import ai.okou.android.ComposerApiFixture
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.SendRequestVariant1
 import ai.okou.android.chat.HistoryCursor
 import ai.okou.android.chat.HistoryEvent
+import ai.okou.android.chat.ServerDraftTarget
 import ai.okou.android.chat.TextDisposition
+import ai.okou.android.chat.plainText
 import java.util.UUID
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
@@ -21,6 +25,68 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ChatComposerApiTest {
+    @Test
+    fun sharedChatFixtureServesCanonicalDraftsAlongsideConversationHistory() = runTest {
+        ChatListApiFixture().use { fixture ->
+            for (target in
+                listOf(
+                    ServerDraftTarget(CHAT_AGENT, false),
+                    ServerDraftTarget(CHAT_PERSONAL, true),
+                )) {
+                assertEquals("", fixture.service.composerDraft(target).plainText())
+                fixture.service.saveComposerDraft(target, "A healthy realtime composer draft")
+                assertEquals(
+                    "A healthy realtime composer draft",
+                    fixture.service.composerDraft(target).plainText(),
+                )
+            }
+            assertTrue(
+                fixture.service.historyRows(CHAT_PERSONAL, HistoryCursor()).rows.isNotEmpty()
+            )
+        }
+    }
+
+    @Test
+    fun canonicalDraftsRoundTripBothTargetsAndAcceptActualEmpty204Responses() = runTest {
+        ComposerApiFixture().use { fixture ->
+            val targets =
+                listOf(ServerDraftTarget(CHAT_AGENT, false), ServerDraftTarget(CHAT_PERSONAL, true))
+            for (target in targets) {
+                assertEquals("", fixture.service.composerDraft(target).plainText())
+                val text = "  Web ↔ Android 你好 👋\n**literal**  "
+                fixture.service.saveComposerDraft(target, text)
+                assertEquals(text, fixture.service.composerDraft(target).plainText())
+                val patch = fixture.requests.last { it.method == "PATCH" }
+                assertEquals(
+                    if (target.thread) "/api/chat-threads/${target.id}"
+                    else "/api/agents/${target.id}/draft",
+                    patch.requestUrl!!.encodedPath,
+                )
+                val wire = Json.parseToJsonElement(patch.body.clone().readUtf8())
+                assertEquals(
+                    Json.parseToJsonElement(
+                        """{"draftUserMessage":{"version":1,"parts":[{"type":"text","text":${JsonPrimitive(text)}}]},"draftAttachments":null}"""
+                    ),
+                    wire,
+                )
+                assertTrue(patch.getHeader("Authorization")!!.startsWith("Bearer "))
+                for (verbatim in listOf("\u001c", "\u200b")) {
+                    fixture.service.saveComposerDraft(target, verbatim)
+                    assertEquals(verbatim, fixture.service.composerDraft(target).plainText())
+                }
+                for (blank in listOf("", " \t\n", "\u00a0\ufeff")) {
+                    fixture.service.saveComposerDraft(target, blank)
+                    assertEquals(
+                        Json.parseToJsonElement(
+                            """{"draftUserMessage":null,"draftAttachments":null}"""
+                        ),
+                        JsonObject(fixture.service.composerDraft(target)),
+                    )
+                }
+            }
+        }
+    }
+
     private fun input(thread: String, text: String = "你好 👋\n**verbatim**") =
         Json.decodeFromJsonElement<SendRequestVariant1>(
             Json.parseToJsonElement(

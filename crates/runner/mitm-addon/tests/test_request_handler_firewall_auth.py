@@ -44,6 +44,68 @@ def _resolved_firewall_auth() -> auth_client.FirewallAuthSuccess:
     )
 
 
+@pytest.mark.parametrize("requestheaders_first", [False, True])
+@pytest.mark.parametrize("include_encrypted_secrets", [False, True])
+async def test_host_firewall_auth_reaches_resolver_and_reuses_cache(
+    tmp_path, real_flow, mitm_ctx, requestheaders_first, include_encrypted_secrets
+):
+    reg_path = _write_registry(
+        tmp_path,
+        sandbox_info=_single_firewall_sandbox(
+            tmp_path,
+            api_entry={
+                "base": "https://api.github.com",
+                "auth": {"headers": {"Authorization": "Bearer ${{ secrets.GITHUB_TOKEN }}"}},
+                "permissions": [{"name": "repo-read", "rules": ["GET /repos"]}],
+            },
+            network_policy={
+                "allow": ["repo-read"],
+                "deny": [],
+                "ask": [],
+                "unknownPolicy": "deny",
+            },
+            include_encrypted_secrets=include_encrypted_secrets,
+            sandbox_fields={"firewallToken": "host-only-firewall"},
+        ),
+    )
+    endpoint = FakeAuthEndpoint()
+    endpoint.queue_json_response(
+        firewall_auth_success_response({"Authorization": "Bearer current-account"})
+    )
+    flows = [
+        real_flow(
+            with_response=False,
+            client_ip="10.200.0.5",
+            host="api.github.com",
+            path="/repos",
+        )
+        for _ in range(2)
+    ]
+    with endpoint.run(), mitm_ctx(registry_path=str(reg_path), api_url=endpoint.api_url):
+        for flow in flows:
+            if requestheaders_first:
+                flow.request.headers["Content-Length"] = str(STREAM_BUFFER_LIMIT + 1)
+                await await_requestheaders_result(mitm_addon.requestheaders(flow))
+                assert flow.request.headers["Authorization"] == "Bearer current-account"
+            await mitm_addon.request(flow)
+
+    for flow in flows:
+        assert flow.response is None
+        assert flow.request.headers["Authorization"] == "Bearer current-account"
+    assert endpoint.request_count == 1
+    request = endpoint.requests[0]
+    assert request.method == "POST"
+    assert request.headers["authorization"] == "Bearer host-only-firewall"
+    assert request.json_body()["authHeaders"] == {
+        "Authorization": "Bearer ${{ secrets.GITHUB_TOKEN }}"
+    }
+    if include_encrypted_secrets:
+        assert request.json_body()["encryptedSecrets"] == "iv:tag:data"
+    else:
+        assert "encryptedSecrets" not in request.json_body()
+    assert flows[1].metadata[metadata_keys.AUTH_CACHE_HIT] is True
+
+
 async def test_repeated_firewall_requests_reuse_snapshot_auth_identity(
     tmp_path, real_flow, mitm_ctx
 ):

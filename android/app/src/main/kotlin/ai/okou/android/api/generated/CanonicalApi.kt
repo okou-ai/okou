@@ -10,6 +10,7 @@ import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Header
+import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
@@ -17,6 +18,32 @@ import retrofit2.http.Query
 import retrofit2.http.QueryMap
 
 internal interface CanonicalApi {
+    @GET("/api/agents/{id}/draft")
+    suspend fun `agentDraft`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+    ): Response<ComposerDraft>
+
+    @GET("/api/chat-threads/{id}/draft")
+    suspend fun `threadDraft`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+    ): Response<ComposerDraft>
+
+    @PATCH("/api/agents/{id}/draft")
+    suspend fun `saveAgentDraft`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Body body: SaveAgentDraft,
+    ): Response<Unit>
+
+    @PATCH("/api/chat-threads/{id}")
+    suspend fun `saveThreadDraft`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Body body: SaveThreadDraft,
+    ): Response<Unit>
+
     @GET("/api/model-catalog")
     suspend fun `recoveryCatalog`(@Header("Authorization") token: String): Response<RecoveryCatalog>
 

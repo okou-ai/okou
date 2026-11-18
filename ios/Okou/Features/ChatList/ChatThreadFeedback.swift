@@ -9,6 +9,7 @@ struct ChatThreadFeedback: Identifiable {
   let threadID: String
   let message: String
   let actionTitle: String?
+  let actionHint: String
   let persists: Bool
   let requiresNavigation: Bool
   let isWorking: Bool
@@ -16,13 +17,15 @@ struct ChatThreadFeedback: Identifiable {
   let action: @MainActor () async -> Void
 
   init(
-    threadID: String, message: String, actionTitle: String?, persists: Bool = false,
-    requiresNavigation: Bool = false, isWorking: Bool = false, kind: Kind = .operation,
+    threadID: String, message: String, actionTitle: String?, actionHint: String = "",
+    persists: Bool = false, requiresNavigation: Bool = false, isWorking: Bool = false,
+    kind: Kind = .operation,
     action: @escaping @MainActor () async -> Void
   ) {
     self.threadID = threadID
     self.message = message
     self.actionTitle = actionTitle
+    self.actionHint = actionHint
     self.persists = persists
     self.requiresNavigation = requiresNavigation
     self.isWorking = isWorking
@@ -43,6 +46,8 @@ struct ChatThreadFeedbackView: View {
       actionTitle: feedback.actionTitle,
       actionEnabled: store.list.canUpdate(feedback.threadID) && !store.needsUpgrade
         && (!feedback.requiresNavigation || !store.isCreating),
+      actionHint: feedback.actionHint,
+      autoDismissAfter: feedback.persists ? nil : .seconds(6),
       action: {
         store.dismissThreadFeedback(feedback.id)
         Task { await feedback.action() }

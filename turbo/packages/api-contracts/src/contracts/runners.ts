@@ -926,6 +926,9 @@ const executionContextObjectSchema = object({
   appendSystemPrompt: string().nullable(),
   vars: record(string(), string()).nullable(),
   sandboxToken: string(),
+  // Host-only resolver authority. Never export into Guest env/config/masking.
+  // Optional for launches from API versions predating host-scope separation.
+  firewallToken: string().min(1).optional(),
   storageManifest: storageManifestSchema.nullable(),
   environment: record(string(), string()).nullable(),
   platformEnvironment: record(string(), string()),

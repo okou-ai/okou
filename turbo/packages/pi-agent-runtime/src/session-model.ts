@@ -5,6 +5,7 @@ import {
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 import { piAgentStreamForConfig } from "./model";
+import type { PiImageHistory } from "./image-history";
 import { resolvePiAgentModel } from "./model-catalog";
 import type { PiAgentModelConfig, PiAgentStreamConfig } from "./types";
 
@@ -25,6 +26,7 @@ export async function createPiModelRuntime(
     readonly model: NonNullable<ReturnType<typeof resolvePiAgentModel>>;
     readonly config: PiAgentModelConfig;
     readonly credentials?: InMemoryCredentialStore;
+    readonly imageHistory?: PiImageHistory;
   },
   signal?: AbortSignal,
 ): Promise<ModelRuntime> {
@@ -41,7 +43,12 @@ export async function createPiModelRuntime(
   // corrections. Resolving the catalog again would discard those corrections.
   modelRuntime.registerProvider(
     args.config.provider,
-    registeredModelConfig(args.model, args.config.apiKey, args.config),
+    registeredModelConfig(
+      args.model,
+      args.config.apiKey,
+      args.config,
+      args.imageHistory,
+    ),
   );
   return modelRuntime;
 }
@@ -50,13 +57,14 @@ export function registeredModelConfig(
   model: NonNullable<ReturnType<typeof resolvePiAgentModel>>,
   apiKey: string,
   config: PiAgentStreamConfig,
+  imageHistory?: PiImageHistory,
 ) {
   return {
     name: model.provider,
     baseUrl: model.baseUrl,
     apiKey,
     api: model.api,
-    streamSimple: piAgentStreamForConfig(config),
+    streamSimple: piAgentStreamForConfig(config, imageHistory),
     models: [
       {
         id: model.id,

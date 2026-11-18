@@ -732,8 +732,14 @@ async fn complete_after_workload_resource_limit(
     }
 
     let mut config = test_guest_config(server, Some("plain prompt"));
-    config.framework = env::Framework::Codex;
-    config.cli_agent_type = "codex".to_string();
+    config.framework = match failure_diagnostic
+        .as_ref()
+        .map(|diagnostic| diagnostic.framework)
+    {
+        Some(AgentFramework::Pi) => env::Framework::Pi,
+        _ => env::Framework::Codex,
+    };
+    config.cli_agent_type = config.framework.agent_type().to_string();
     let masker = Arc::new(masker::SecretMasker::from_config(&config));
     let http = if session_metadata.is_some() {
         test_http_client(server)
@@ -749,10 +755,10 @@ async fn complete_after_workload_resource_limit(
     let runtime = test_guest_runtime(config, http);
     let mut error_message = initial_error_message.to_string();
     apply_workload_resource_limit(&mut failure_diagnostic, hard_limit);
-    attribute_codex_child_oom(
+    attribute_cli_oom(
         cli_exit_code,
         &mut error_message,
-        failure_diagnostic.as_ref(),
+        failure_diagnostic.as_mut(),
         evidence,
     );
     let exit_code = complete_execution(
@@ -831,17 +837,17 @@ fn complete_execution_attributes_proven_codex_child_oom_without_changing_wrapper
                     "11111111-1111-4111-8111-111111111111",
                     None,
                 );
-                for (evidence, expected) in [
-                    (Some(&runtime_oom), GUEST_MEMORY_OOM_KILLED_ERROR),
-                    (Some(&tool_oom), original),
-                    (Some(&unproven), original),
-                    (None, original),
+                for (evidence, expected, reason) in [
+                    (Some(&runtime_oom), GUEST_MEMORY_OOM_KILLED_ERROR, Some(FailureReason::GuestMemoryOomKilled)),
+                    (Some(&tool_oom), original, None),
+                    (Some(&unproven), original, None),
+                    (None, original, None),
                 ] {
                     server.reset_async().await;
                     let complete = server.mock(|when, then| {
                         when.method(POST)
                             .path("/api/webhooks/agent/complete")
-                            .json_body_includes(json!({"exitCode": 1, "failureReason": "unknown"}).to_string());
+                            .json_body_includes(json!({"exitCode": 1, "failureReason": reason.map_or("unknown", FailureReason::as_str)}).to_string());
                         then.status(200)
                             .json_body(json!({"success": true, "status": "failed"}));
                     });
@@ -861,13 +867,138 @@ fn complete_execution_attributes_proven_codex_child_oom_without_changing_wrapper
                     .await;
                     assert_eq!(exit, 1);
                     assert_eq!(error.as_deref(), Some(expected));
-                    assert_eq!(
-                        retained,
-                        Some(diagnostic.clone().with_workload_resource_limit(hard_limit))
-                    );
+                    let mut expected_diagnostic = diagnostic.clone().with_workload_resource_limit(hard_limit);
+                    expected_diagnostic.failure_reason = reason;
+                    assert_eq!(retained, Some(expected_diagnostic));
                     complete.assert_calls(1);
                 }
             });
+}
+
+#[test]
+fn first_completion_classifies_proven_cli_oom_and_preserves_terminal_ownership() {
+    let _test_state_guard = lock_test_state();
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(first_completion_classifies_proven_cli_oom_inner());
+}
+
+async fn first_completion_classifies_proven_cli_oom_inner() {
+    use guest_contracts::diagnostics::GUEST_MEMORY_OOM_KILLED_ERROR;
+    use guest_contracts::oom_evidence::OomEvidence;
+    let server = &*COMPLETE_EXECUTION_MOCK_SERVER;
+    let _runtime_root_guard = TestRuntimeRootGuard::new();
+    let runtime_oom: OomEvidence = serde_json::from_str(include_str!(
+        "../../../guest-contracts/tests/fixtures/runtime-counter-oom.json"
+    ))
+    .unwrap();
+    let tool_oom: OomEvidence = serde_json::from_str(include_str!(
+        "../../../guest-contracts/tests/fixtures/contained-tool-oom.json"
+    ))
+    .unwrap();
+    let natural = FailureDiagnostic::new(
+        FailureClass::CliNonzero,
+        AgentFramework::Pi,
+        PromptMetadata::from_prompt("plain prompt"),
+    )
+    .with_cli_exit_code(137)
+    .with_cli_observed_exit(CliObservedExitDiagnostic::from_signal(libc::SIGKILL))
+    .with_failure_detail_source(FailureDetailSource::Stderr);
+    let mut explicit_exit = natural.clone();
+    explicit_exit.cli_observed_exit = Some(CliObservedExitDiagnostic::from_exit_code(137));
+    let hard_limit = WorkloadResourceLimitDiagnostic {
+        memory_max_events: 0,
+        memory_oom_events: 0,
+        memory_oom_kill_events: 1,
+        memory_oom_group_kill_events: 0,
+        pids_max_events: 0,
+    };
+    let session_metadata = session_metadata::CapturedSessionMetadata::for_test(
+        "11111111-1111-4111-8111-111111111111",
+        None,
+    );
+    for (diagnostic, evidence, reason) in [
+        (
+            natural.clone(),
+            Some(&runtime_oom),
+            Some(FailureReason::GuestMemoryOomKilled),
+        ),
+        (natural.clone(), Some(&tool_oom), None),
+        (natural.clone(), None, None),
+        (explicit_exit, Some(&runtime_oom), None),
+        (
+            natural
+                .clone()
+                .with_failure_reason(FailureReason::ProviderOverloaded),
+            Some(&runtime_oom),
+            Some(FailureReason::ProviderOverloaded),
+        ),
+        (
+            natural
+                .clone()
+                .with_cli_termination(CliTerminationDiagnostic::new(
+                    CliTerminationReason::ExecutionTimeout,
+                )),
+            Some(&runtime_oom),
+            None,
+        ),
+        (
+            natural.with_cli_termination(CliTerminationDiagnostic::new(
+                CliTerminationReason::UserCancellation,
+            )),
+            Some(&runtime_oom),
+            None,
+        ),
+    ] {
+        server.reset_async().await;
+        let cancelled = diagnostic
+            .cli_termination
+            .as_ref()
+            .is_some_and(|termination| {
+                termination.reason == CliTerminationReason::UserCancellation
+            });
+        let complete = server.mock(|when, then| {
+            let when = when
+                .method(POST)
+                .path("/api/webhooks/agent/complete")
+                .json_body_includes(json!({"exitCode":137}).to_string());
+            if !cancelled {
+                when.json_body_includes(
+                    json!({"failureReason":reason.map_or("unknown", FailureReason::as_str)})
+                        .to_string(),
+                );
+            }
+            then.status(200)
+                .json_body(json!({"success":true,"status":"failed"}));
+        });
+        let _telemetry = server.mock(|when, then| {
+            when.method(POST).path("/api/webhooks/agent/telemetry");
+            then.status(200).json_body(json!({}));
+        });
+        let (exit, error, retained) = complete_after_workload_resource_limit(
+            server,
+            137,
+            "selected stderr tail",
+            Some(diagnostic),
+            hard_limit,
+            evidence,
+            Some(&session_metadata),
+        )
+        .await;
+        assert_eq!(exit, 137);
+        assert_eq!(
+            error.as_deref(),
+            Some(if reason == Some(FailureReason::GuestMemoryOomKilled) {
+                GUEST_MEMORY_OOM_KILLED_ERROR
+            } else {
+                "selected stderr tail"
+            })
+        );
+        assert_eq!(retained.unwrap().failure_reason, reason);
+        complete.assert_calls(1);
+    }
 }
 
 async fn complete_execution_writes_finalization_failure_diagnostic_inner() {

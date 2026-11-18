@@ -471,6 +471,7 @@ async fn run_sandbox(
         run_id: &run_id,
         cli_agent_type: "claude-code",
         sandbox_token: "",
+        firewall_token: None,
         network_log_path: &network_log_path,
         proxy_log_path: &proxy_log_path,
         firewalls: None,

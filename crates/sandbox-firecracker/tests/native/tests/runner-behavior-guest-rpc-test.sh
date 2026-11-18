@@ -7,15 +7,15 @@ TEST_ROOT=$(mktemp -d)
 trap 'rm -rf -- "$TEST_ROOT"' EXIT
 mkdir -p "$TEST_ROOT/bin"
 
-cat >"$TEST_ROOT/bin/scp" <<'SCP'
-#!/usr/bin/env bash
-set -euo pipefail
-cp -- "$1" "$RPC_CASE/remote-bin"
-SCP
 cat >"$TEST_ROOT/bin/ssh" <<'SSH'
 #!/usr/bin/env bash
 set -euo pipefail
 shift
+if [ "$#" -eq 1 ] && [[ "$1" == *native-test-stage* ]]; then
+  command_source=${1//\/tmp\/runner-guest-rpc-${JOB_REF}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/"$RPC_CASE/remote-bin"}
+  bash -c "$command_source"
+  exit 0
+fi
 if [ "$1" = sudo ] && [ "$2" = rm ]; then
   rm -f -- "$RPC_CASE/remote-bin"
   exit 0
@@ -26,6 +26,8 @@ shift # uploaded binary path
 source_text=$(cat)
 source_text=${source_text//\/var\/lib\/vm0-runner/"$RPC_CASE/fixtures"}
 bash -s -- "$RPC_CASE/remote-bin" "$@" <<<"$source_text"
+printf 'submitted\n' >> "$RPC_CASE/submissions"
+if [ "${RPC_LOST_RESPONSE:-0}" = 1 ]; then exit 255; fi
 SSH
 cat >"$TEST_ROOT/bin/systemctl" <<'SYSTEMCTL'
 #!/usr/bin/env bash
@@ -71,8 +73,13 @@ SNAPSHOT_HASH=$(printf 'b%.0s' {1..64})
 FC_VERSION=$(sed -n 's/^pub const FIRECRACKER_VERSION: &str = "\([^"]*\)";$/\1/p' "$REPO_ROOT/crates/runner/src/deps.rs")
 KERNEL_VERSION=$(sed -n 's/^pub const KERNEL_VERSION: &str = "\([^"]*\)";$/\1/p' "$REPO_ROOT/crates/runner/src/deps.rs")
 
-for native_status in 0 42; do
-  case_dir="$TEST_ROOT/case-$native_status"
+for scenario in success native-failure lost-response; do
+  native_status=0
+  lost_response=0
+  expected_status=0
+  if [ "$scenario" = native-failure ]; then native_status=42; expected_status=42; fi
+  if [ "$scenario" = lost-response ]; then lost_response=1; expected_status=255; fi
+  case_dir="$TEST_ROOT/case-$scenario"
   fixture_dir="$case_dir/fixtures"
   snapshot_dir="$fixture_dir/images/$ROOTFS_HASH/snapshots/$SNAPSHOT_HASH"
   mkdir -p "$fixture_dir/firecracker/$FC_VERSION" "$fixture_dir/locks" "$snapshot_dir"
@@ -83,11 +90,12 @@ for native_status in 0 42; do
     printf 'immutable fixture\n' >"$fixture"
   done
   status=0
-  env PATH="$TEST_ROOT/bin:$PATH" RPC_CASE="$case_dir" RPC_NATIVE_STATUS="$native_status" \
+  env PATH="$TEST_ROOT/bin:$PATH" RPC_CASE="$case_dir" RPC_NATIVE_STATUS="$native_status" RPC_LOST_RESPONSE="$lost_response" \
     METAL_USER=test HOST=test JOB_REF=pr-123 DEFAULT_ROOTFS_HASH="$ROOTFS_HASH" \
     DEFAULT_SNAPSHOT_HASH="$SNAPSHOT_HASH" TEST_BIN="$TEST_ROOT/native-test" \
     GITHUB_RUN_ID=17 GITHUB_RUN_ATTEMPT=2 bash "$WORKER" || status=$?
-  test "$status" -eq "$native_status"
+  test "$status" -eq "$expected_status"
+  if [ "$native_status" -eq 0 ]; then test "$(wc -l < "$case_dir/submissions")" -eq 1; fi
   test -s "$case_dir/launch" && test -s "$case_dir/cleanup"
   test ! -e "$case_dir/remote-bin"
   test ! -e "$fixture_dir/guest-rpc-tests/pr-123-17-2"

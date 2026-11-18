@@ -93,15 +93,16 @@ struct AppleNotificationSystem: NotificationSystem {
 final class NotificationService {
   private let system: any NotificationSystem
   private let defaults: UserDefaults
-  private let installationID: String
   @ObservationIgnored var prepareWorkspace: (@MainActor () async -> NotificationWorkspace?)?
   private var requestedDeviceToken = false
   private var deviceToken: String?
   private var workspace: NotificationWorkspace?
-  @ObservationIgnored private var preparedWorkspace: NotificationWorkspace?
+  private let registration: NotificationRegistrationIdentity
+  private let workspaceCache = NotificationWorkspaceCache()
+
   private var registrationTask: Task<Void, Never>?
   private var generation = UUID()
-  private var binding: Binding?
+  private var binding: NotificationRegistrationIdentity.Binding?
   private(set) var status = UNAuthorizationStatus.notDetermined
   private(set) var error: String?
   private(set) var registrationError: String?
@@ -132,24 +133,20 @@ final class NotificationService {
   private var pendingBadgeClearSequence: Int?
   private let log = Logger(subsystem: "ai.okou.ios", category: "Notifications")
 
-  private struct Binding: Encodable {
-    let installationId: String
-    let revision: Int
-    let deviceToken: String
-    let environment: String
-    /// Lets the API refresh this device's widgets when a chat starts or finishes elsewhere.
-    let widgetPushToken: String?
-  }
-
   init(
     system: any NotificationSystem = AppleNotificationSystem(), defaults: UserDefaults = .standard
   ) {
     self.system = system
     self.defaults = defaults
-    let key = "ios-push-installation-id"
-    installationID = defaults.string(forKey: key) ?? UUID().uuidString.lowercased()
-    defaults.set(installationID, forKey: key)
+    registration = NotificationRegistrationIdentity(defaults: defaults)
     pendingBadgeClearSequence = defaults.object(forKey: "ios-pending-badge-clear-sequence") as? Int
+  }
+
+  func data(
+    authentication: AuthenticationService, configuration: AppConfiguration, session: URLSession
+  ) -> NotificationWorkspace? {
+    workspaceCache.data(
+      authentication: authentication, configuration: configuration, session: session)
   }
 
   /// Installed by the application initializer, before any background delegate callback.
@@ -162,38 +159,6 @@ final class NotificationService {
       return self?.data(
         authentication: authentication, configuration: configuration, session: session)
     }
-  }
-
-  func data(
-    authentication: AuthenticationService, configuration: AppConfiguration, session: URLSession
-  ) -> NotificationWorkspace? {
-    guard let scopeID = authentication.presentationScopeID, let userID = authentication.userID,
-      let workspaceID = authentication.presentationWorkspaceID
-    else {
-      preparedWorkspace = nil
-      return nil
-    }
-    if let preparedWorkspace, preparedWorkspace.scopeID == scopeID { return preparedWorkspace }
-    let client = APIClient(
-      baseURL: configuration.apiURL, clientVersion: configuration.appVersion, session: session
-    ) {
-      try await authentication.accessToken(workspaceID: workspaceID, scopeID: scopeID)
-    }
-    let sharedDirectory = PushConfiguration.directory()
-    let cache = ChatCache(
-      scope: ChatCacheScope(
-        apiBaseURL: configuration.apiURL, userID: userID, workspaceID: workspaceID),
-      directory: sharedDirectory,
-      migratingFrom: sharedDirectory == nil
-        ? nil
-        : FileManager.default.urls(
-          for: .applicationSupportDirectory, in: .userDomainMask
-        ).first)
-    let data = NotificationWorkspace(
-      scopeID: scopeID, userID: userID, workspaceID: workspaceID, client: client,
-      sync: ChatSync(client: client, cache: cache), cache: cache)
-    preparedWorkspace = data
-    return data
   }
 
   func update(workspace: NotificationWorkspace?) async {
@@ -275,6 +240,8 @@ final class NotificationService {
     let generation = generation
     let workspace = workspace
     let status = await system.authorizationStatus()
+    // WidgetKit issues its token only after a widget is added, so each refresh reads it again.
+    let widgetToken = await system.widgetPushToken()
     guard self.generation == generation, !Task.isCancelled else { return }
     self.status = status
     guard let workspace else { return }
@@ -288,18 +255,11 @@ final class NotificationService {
         requestedDeviceToken = true
         system.register()
       }
-      guard let deviceToken, let environment = system.environment else { return }
-      // WidgetKit issues this token only after a widget is added, so each foreground refresh
-      // reads it again and rebinds when it appears or changes.
-      let widgetPushToken = await system.widgetPushToken()
-      guard self.generation == generation, !Task.isCancelled else { return }
-      if binding?.deviceToken == deviceToken && binding?.environment == environment
-        && binding?.widgetPushToken == widgetPushToken
-      {
-        return
-      }
-      let next = nextBinding(
-        deviceToken: deviceToken, environment: environment, widgetPushToken: widgetPushToken)
+      // An unchanged binding is not rewritten; a widget token that appears or changes rebinds.
+      guard let deviceToken, let environment = system.environment,
+        let next = registration.nextBinding(
+          replacing: binding, device: deviceToken, environment: environment, widget: widgetToken)
+      else { return }
       // Save the attempt before I/O so sign-out can fence even an uncertain write.
       binding = next
       defaults.set(true, forKey: "ios-push-registration-attempted")
@@ -331,7 +291,7 @@ final class NotificationService {
       )
     }
     guard authentication.presentationScopeID == scopeID else {
-      throw AuthenticationService.AuthenticationError.workspaceChanged
+      throw AuthenticationError.workspaceChanged
     }
     try await authentication.signOut()
     await update(workspace: nil)
@@ -353,31 +313,13 @@ final class NotificationService {
     let generation = generation
     registrationTask?.cancel()
     for task in backgroundTasks.values { task.cancel() }
-    let next = Unregistration(installationId: installationID, revision: nextRevision())
+    let next = NotificationRegistrationIdentity.Unregistration(
+      installationId: registration.installationID, revision: registration.nextRevision())
     binding = nil
     _ = try await workspace.client.data(
       "/api/ios-push-registrations", method: "DELETE", body: JSONEncoder().encode(next))
     guard self.generation == generation, !Task.isCancelled else { return }
     defaults.set(false, forKey: "ios-push-registration-attempted")
-  }
-
-  private struct Unregistration: Encodable {
-    let installationId: String
-    let revision: Int
-  }
-
-  private func nextRevision() -> Int {
-    let revision = defaults.integer(forKey: "ios-push-revision") + 1
-    defaults.set(revision, forKey: "ios-push-revision")
-    return revision
-  }
-
-  private func nextBinding(
-    deviceToken: String, environment: String, widgetPushToken: String?
-  ) -> Binding {
-    Binding(
-      installationId: installationID, revision: nextRevision(), deviceToken: deviceToken,
-      environment: environment, widgetPushToken: widgetPushToken)
   }
 
   /// A foreground visit acknowledges this device's badge before chat reads or network I/O.
@@ -524,7 +466,7 @@ final class NotificationService {
         for offset in stride(from: 0, to: max(1, current.count), by: 500) {
           let batch = Array(current.dropFirst(offset).prefix(500))
           let request = NotificationStateRequest(
-            installationId: installationID, registrationRevision: binding?.revision,
+            installationId: registration.installationID, registrationRevision: binding?.revision,
             badgeClearSequence: binding == nil ? nil : badgeClearSequence,
             notifications: batch.map {
               NotificationStateRequest.Receipt(
@@ -699,4 +641,53 @@ final class NotificationService {
     }
   }
 
+}
+
+/// Installation identity and monotonic revisions shared by registration and removal.
+@MainActor
+private final class NotificationRegistrationIdentity {
+  private let defaults: UserDefaults
+  let installationID: String
+
+  init(defaults: UserDefaults) {
+    self.defaults = defaults
+    let key = "ios-push-installation-id"
+    installationID = defaults.string(forKey: key) ?? UUID().uuidString.lowercased()
+    defaults.set(installationID, forKey: key)
+  }
+
+  struct Binding: Encodable {
+    let installationId: String
+    let revision: Int
+    let deviceToken: String
+    let environment: String
+    /// Lets the API refresh this device's widgets when a chat starts or finishes elsewhere.
+    let widgetPushToken: String?
+  }
+
+  struct Unregistration: Encodable {
+    let installationId: String
+    let revision: Int
+  }
+
+  func nextRevision() -> Int {
+    let revision = defaults.integer(forKey: "ios-push-revision") + 1
+    defaults.set(revision, forKey: "ios-push-revision")
+    return revision
+  }
+
+  /// The next binding, or nil when `current` already registers these tokens.
+  func nextBinding(
+    replacing current: Binding?, device deviceToken: String, environment: String,
+    widget widgetPushToken: String?
+  ) -> Binding? {
+    if current?.deviceToken == deviceToken && current?.environment == environment
+      && current?.widgetPushToken == widgetPushToken
+    {
+      return nil
+    }
+    return Binding(
+      installationId: installationID, revision: nextRevision(), deviceToken: deviceToken,
+      environment: environment, widgetPushToken: widgetPushToken)
+  }
 }

@@ -2,6 +2,7 @@ import { switchRecoverySubscription } from "./helpers/subscription-recovery";
 import { mockNow, now } from "../../../lib/time";
 import { randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { cronSyncSkillsContract } from "@okouai/api-contracts/contracts/cron";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { http, HttpResponse } from "msw";
 import { array, object, string, record } from "zod";
@@ -30,9 +31,12 @@ import { uploadsCompleteRoutes } from "../uploads-complete";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorPermissionsRoutes } from "../connector-permissions";
 import { chatConnectorAccessRoutes } from "../chat-connector-access";
+import { cronSyncSkillsRoutes } from "../cron-sync-skills";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
+import { mockGoogleText } from "./helpers/google-text";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
 import {
@@ -47,6 +51,9 @@ import {
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { createUniqueEmailSignupAddressFixture } from "../../../test-fixtures/email-signup-identity";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { githubSource, sourceArchive } from "./helpers/seed-skill-source";
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
+import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -1009,7 +1016,35 @@ describe("Email integration", () => {
           },
         ],
       );
+      const titleRequests: string[] = [];
+      const expectedTitle = "Review customer discussion";
+      mockGoogleText();
+      createChatCallbacksApi(context).mockVertexCompletions((body) => {
+        if (
+          body.messages[0]?.content.includes(
+            "Generate a short, descriptive title",
+          )
+        ) {
+          const content = body.messages[1]?.content ?? "";
+          titleRequests.push(content);
+          return content.includes(sourceBody) && content.includes(historyBody)
+            ? expectedTitle
+            : "Review forwarded message";
+        }
+        return "Thinking";
+      });
       await message.send();
+      const threadEvents = await accept(
+        files.requestThreadEvents(actor, {}, [200]),
+        [200],
+      );
+      expect(threadEvents.body.events).toContainEqual(
+        expect.objectContaining({ kind: "renamed", title: expectedTitle }),
+      );
+      expect(titleRequests).toHaveLength(1);
+      expect(titleRequests[0]).toContain(sourceBody);
+      expect(titleRequests[0]).toContain(historyBody);
+      expect(titleRequests[0]).toContain('Subject: "Fwd: Customer discussion"');
       await runs.heartbeatRunner(group);
       const execution = await runs.nextReceivedExecution(group);
       const runId = execution.runId;
@@ -1502,6 +1537,94 @@ describe("Email integration", () => {
     expect(receivedExecution.appendSystemPrompt).toContain(
       "- LOOKUP_STATUS: permission-required",
     );
+  });
+
+  it("retains admitted timezone and Seed bundles when sources change during mailbox lookup", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronSyncSkillsRoutes,
+      isolatePg: true,
+    });
+    const cronSecret = "email-seed-observation";
+    mockEnv("CRON_SECRET", cronSecret);
+    const { actor, group } = await entitledActor();
+    await bdd.updateUserTimezone(actor, "America/Los_Angeles");
+    const s3 = installWorkflowVolumeS3Fixture(context);
+    const acceptedSource = await sourceArchive("admitted gen instructions");
+    const laterSource = await sourceArchive("later gen instructions");
+    const sync = () => {
+      return accept(
+        app(cronSyncSkillsContract).sync({
+          headers: { authorization: `Bearer ${cronSecret}` },
+        }),
+        [200],
+      );
+    };
+    githubSource("2".repeat(40), acceptedSource.archive);
+    expect((await sync()).body.failed).toBe(0);
+    await connectorsApi.updateFeatureSwitches(actor, {
+      connectorChatAccountAccess: true,
+    });
+    await connectEmailMailbox(actor, "gmail", actor.email);
+    verifiedDirectory(actor);
+    await setGmailContextReadPermission("allow");
+    const message = incoming({ sender: actor.email });
+    const source = mockEmailMessageLookup(
+      "gmail",
+      message.messageId,
+      "Message body after the admission observation",
+    );
+    server.use(
+      http.get(
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+        async () => {
+          // The mailbox body is read after the complete admission Run plan.
+          await bdd.updateUserTimezone(actor, "Asia/Shanghai");
+          githubSource("3".repeat(40), laterSource.archive);
+          expect((await sync()).body.failed).toBe(0);
+          return HttpResponse.json({
+            messages: [{ id: source.providerMessageId }],
+          });
+        },
+        { once: true },
+      ),
+    );
+    await message.send();
+    const first = await readPendingEmailExecution(group);
+    expect(first.appendSystemPrompt).toContain(
+      "Message body after the admission observation",
+    );
+    expect(first.appendSystemPrompt).toContain("Timezone: America/Los_Angeles");
+    const acceptedBundle = first.contentBundles.skills.find((bundle) => {
+      return bundle.mountPath.endsWith("/gen");
+    })!;
+    expect({
+      timezone: first.userTimezone,
+      seedFiles: readExecutionContentBundle(s3.objects, acceptedBundle),
+    }).toStrictEqual({
+      timezone: "America/Los_Angeles",
+      seedFiles: new Map([
+        ["SKILL.md", acceptedSource.files.get("gen/SKILL.md")],
+      ]),
+    });
+    await runs.requestCancelRun(actor, first.runId, [200]);
+    await flushWaitUntilForTest();
+
+    const next = incoming({ sender: actor.email });
+    mockEmailMessageLookup("gmail", next.messageId, "Observe the next Run");
+    await next.send();
+    const later = await readPendingEmailExecution(group);
+    expect(later.appendSystemPrompt).toContain("Timezone: Asia/Shanghai");
+    expect(later.userTimezone).toBe("Asia/Shanghai");
+    const laterBundle = later.contentBundles.skills.find((bundle) => {
+      return bundle.mountPath.endsWith("/gen");
+    })!;
+    expect(readExecutionContentBundle(s3.objects, laterBundle)).toStrictEqual(
+      new Map([["SKILL.md", laterSource.files.get("gen/SKILL.md")]]),
+    );
+    expect(laterBundle.sha256).not.toBe(acceptedBundle.sha256);
+    await runs.requestCancelRun(actor, later.runId, [200]);
+    await flushWaitUntilForTest();
   });
 
   it("refreshes rejected Gmail credentials before fetching and appending the exact message", async () => {

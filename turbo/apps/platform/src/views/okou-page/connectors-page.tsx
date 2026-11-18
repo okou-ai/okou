@@ -1,5 +1,8 @@
+import {
+  BuiltinConnectorAccountDialogs,
+  useBuiltinConnectorConnectHandlers,
+} from "./builtin-connector-account-dialogs.tsx";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
-import { useLoadableSet } from "ccstate-react/experimental";
 import {
   remoteResource$,
   remoteNetworkPage$,
@@ -68,14 +71,8 @@ import {
   setConnectorsConnectionFilter$,
   setConnectorsSearch$,
   relatedCatalogItems$,
-  builtinConnectorScopeReviewSelection$,
-  setBuiltinConnectorScopeReviewSelection$,
   type ConnectorsConnectionFilter,
 } from "../../signals/okou-page/settings/connectors.ts";
-import {
-  connectBuiltinConnectorNoAuthAndContinue$,
-  connectBuiltinConnectorOAuthAuthCodeAndContinue$,
-} from "../../signals/okou-page/settings/connector-connect-continuation.ts";
 import {
   buildConnectorShelves,
   emptyConnectorShelfLayout,
@@ -94,8 +91,6 @@ import {
   CONNECTOR_CATEGORY_GRID_ROW_HEIGHT,
 } from "../../signals/okou-page/settings/connector-category-grid.ts";
 import { connectorCategoryLabels } from "./components/settings/connector-category-labels.ts";
-import { pageSignal$ } from "../../signals/page-signal.ts";
-import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import {
   ConnectorCard,
   connectorInventoryStatus,
@@ -104,11 +99,6 @@ import {
   ConnectorShelfChips,
   ConnectorShelfSection,
 } from "./components/settings/connector-shelf.tsx";
-import {
-  launchConnectorConnect,
-  type ConnectorConnectHandlers,
-} from "./components/settings/launch-connector-connect.ts";
-import { ScopeReviewModal } from "./components/settings/scope-review-modal.tsx";
 import { ConnectorAccessManagementDialog } from "./components/settings/connector-access-management-dialog.tsx";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -138,15 +128,6 @@ import {
 } from "@okouai/ui";
 import { i18n } from "../../i18n/index.ts";
 import { connectedConnectorTargetKeys$ } from "../../signals/okou-page/connector-accounts.ts";
-import { ConnectorAccountManagerDialog } from "./components/settings/connector-account-manager-dialog.tsx";
-import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
-import {
-  builtinAccountConnectDialog$,
-  builtinAccountManager$,
-  closeBuiltinAccountConnectDialog$,
-  closeBuiltinAccountManager$,
-  openBuiltinAccountConnectDialog$,
-} from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 import { ConnectorAccountNameDialog } from "./components/settings/connector-account-name-dialog.tsx";
 import { vncSummary$ } from "../../signals/vnc.ts";
 import { sshSummary$ } from "../../signals/ssh.ts";
@@ -1020,7 +1001,12 @@ function ConnectorAccessButton(props: {
   const { t } = useTranslation();
   return enabled ? (
     props.allowAccessIncrease && props.hasPermissions ? (
-      <Button variant="quiet" size="xs" onClick={props.onClick}>
+      <Button
+        variant="quiet"
+        size="xs"
+        className="px-2 text-xs font-normal"
+        onClick={props.onClick}
+      >
         {t(($) => {
           return $.connectorChatAccess.permissions;
         })}
@@ -1328,63 +1314,6 @@ function ManagedConnectorAccessDialogBody({
   );
 }
 
-function useBuiltinConnectorConnectHandlers() {
-  const openAccountConnect = useSet(openBuiltinAccountConnectDialog$);
-  const [browserAuth, connect] = useLoadableSet(
-    connectBuiltinConnectorOAuthAuthCodeAndContinue$,
-  );
-  const [noAuth, connectNoAuth] = useLoadableSet(
-    connectBuiltinConnectorNoAuthAndContinue$,
-  );
-  const signal = useGet(pageSignal$);
-
-  const accountConnectHandlers = (
-    connector: PlatformConnectorCatalogStatusItem,
-  ): ConnectorConnectHandlers => {
-    return {
-      openModal: () => {
-        openAccountConnect(connector, { kind: "add" });
-      },
-      connectBrowserAuth: async (authMethod) => {
-        await connect(
-          {
-            connectorSlug: connector.slug,
-            method: authMethod,
-            options: {
-              account: { intent: "add" },
-              authorizeVisibleAgents: true,
-              connectorLabel: connector.label,
-              connectorIcon: connector.icon,
-            },
-            origin: { kind: "account", mode: { kind: "add" } },
-          },
-          signal,
-        );
-      },
-      connectNoAuth: async (authMethod) => {
-        await connectNoAuth(
-          {
-            connectorSlug: connector.slug,
-            authMethod,
-            options: {
-              account: { intent: "add" },
-              authorizeVisibleAgents: true,
-              connectorLabel: connector.label,
-            },
-            origin: { kind: "account", mode: { kind: "add" } },
-          },
-          signal,
-        );
-      },
-    };
-  };
-
-  return {
-    accountConnectHandlers,
-    connecting: browserAuth.state === "loading" || noAuth.state === "loading",
-  };
-}
-
 function renderDirectoryCard(connector: DirectoryCatalogItem) {
   return (
     <SettingsConnectorCard
@@ -1586,130 +1515,12 @@ function ConnectorsDirectoryPage() {
         </div>
       </main>
 
-      <BuiltinAccountConnectDialog />
-      <BuiltinAccountManagerDialog />
-      <BuiltinScopeReviewDialog />
+      <BuiltinConnectorAccountDialogs />
       <DirectoryCustomDialogs />
       <ConnectorAccountNameDialog />
       <ManagedConnectorAccessDialog />
     </div>
   );
-}
-
-function BuiltinAccountConnectDialog() {
-  const accountConnect = useGet(builtinAccountConnectDialog$);
-  const closeAccountConnect = useSet(closeBuiltinAccountConnectDialog$);
-  return accountConnect ? (
-    <ConnectModal
-      item={accountConnect.connector}
-      authorizeVisibleAgentsOnConnect
-      accountMode={accountConnect.mode}
-      accountOptions={{
-        account:
-          accountConnect.mode.kind === "add"
-            ? { intent: "add" }
-            : {
-                intent: "reconnect",
-                connectionId: accountConnect.mode.connectionId,
-              },
-      }}
-      onClose={() => {
-        closeAccountConnect();
-      }}
-      origin={{ kind: "account", mode: accountConnect.mode }}
-    />
-  ) : null;
-}
-
-function BuiltinAccountManagerDialog() {
-  const managedAccountConnector = useGet(builtinAccountManager$);
-  return managedAccountConnector ? (
-    <BuiltinAccountManagerBody connector={managedAccountConnector} />
-  ) : null;
-}
-
-function BuiltinAccountManagerBody({
-  connector: managedAccountConnector,
-}: {
-  readonly connector: PlatformConnectorCatalogStatusItem;
-}) {
-  const closeAccountManager = useSet(closeBuiltinAccountManager$);
-  const openAccountConnect = useSet(openBuiltinAccountConnectDialog$);
-  const setScopeReviewSelection = useSet(
-    setBuiltinConnectorScopeReviewSelection$,
-  );
-  const { accountConnectHandlers } = useBuiltinConnectorConnectHandlers();
-  return (
-    <ConnectorAccountManagerDialog
-      target={{
-        kind: "builtin",
-        connectorSlug: managedAccountConnector.slug,
-      }}
-      connectorLabel={managedAccountConnector.label}
-      icon={<ConnectorIcon icon={managedAccountConnector.icon} size={20} />}
-      onClose={() => {
-        closeAccountManager();
-      }}
-      onAdd={() => {
-        closeAccountManager();
-        launchConnectorConnect({
-          connector: managedAccountConnector,
-          ...accountConnectHandlers(managedAccountConnector),
-        });
-      }}
-      onReconnect={(account) => {
-        openAccountConnect(managedAccountConnector, {
-          kind: "reconnect",
-          connectionId: account.id,
-          authMethod: account.authMethod,
-        });
-      }}
-      onReviewScopes={(account) => {
-        closeAccountManager();
-        setScopeReviewSelection({
-          connectorSlug: managedAccountConnector.slug,
-          connectionId: account.id,
-          authMethod: account.authMethod,
-        });
-      }}
-    />
-  );
-}
-
-function BuiltinScopeReviewDialog() {
-  const selection = useGet(builtinConnectorScopeReviewSelection$);
-  return selection ? <BuiltinScopeReviewBody /> : null;
-}
-
-function BuiltinScopeReviewBody() {
-  const scopeReviewSelection = useGet(builtinConnectorScopeReviewSelection$);
-  const setScopeReviewSelection = useSet(
-    setBuiltinConnectorScopeReviewSelection$,
-  );
-  const openAccountConnect = useSet(openBuiltinAccountConnectDialog$);
-  const catalog = useLastLoadable(relatedCatalogItems$);
-  const allConnectors = catalog.state === "hasData" ? catalog.data : [];
-  return scopeReviewSelection ? (
-    <ScopeReviewModal
-      selection={scopeReviewSelection}
-      onClose={() => {
-        return setScopeReviewSelection(null);
-      }}
-      onReconnect={(selection) => {
-        setScopeReviewSelection(null);
-        const connector = allConnectors.find((connector) => {
-          return connector.slug === selection.connectorSlug;
-        });
-        if (connector) {
-          openAccountConnect(connector, {
-            kind: "reconnect",
-            connectionId: selection.connectionId,
-            authMethod: selection.authMethod,
-          });
-        }
-      }}
-    />
-  ) : null;
 }
 
 function DirectoryCustomDialogs() {

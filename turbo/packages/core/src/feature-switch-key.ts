@@ -29,7 +29,7 @@ export enum FeatureSwitchKey {
   ZoomConnector = "zoomConnector",
   RealAgentInPreview = "_realAgentInPreview",
   ArtifactSidebarPreview = "artifactSidebarPreview",
-  ArtifactPreviewToolbar = "artifactPreviewToolbar",
+  ArtifactPreviewActionGroup = "artifactPreviewActionGroup",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "larkIntegration",
   WechatIntegration = "wechatIntegration",

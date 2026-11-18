@@ -63,9 +63,8 @@ async function diagnosticFixture() {
 
 test("round-trips original launch variables and real secret names through diagnostic capture", async () => {
   const f = await diagnosticFixture();
-  // This service credential exists only in firewall secrets, not environment
-  // values. Give it the same value as an admitted variable to exercise masking
-  // that the Runner's environment-only secret index cannot supply.
+  // This service credential stays at the API. Give it the same value as an
+  // admitted variable to exercise masking without a Runner secret-value index.
   const knownSecret = f.agentId;
   mockEnv("OKOU_DATA_ROUTER_URL", "https://data-router.example.test");
   mockEnv("OKOU_DATA_TOKEN", knownSecret);

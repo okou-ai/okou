@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="composer_sync_loading">Gespeicherten Entwurf laden…</string>
+    <string name="composer_sync_saving">Entwurf synchronisieren…</string>
+    <string name="composer_sync_failed">Entwurf konnte nicht synchronisiert werden. Deine Eingabe bleibt auf diesem Gerät.</string>
+    <string name="composer_sync_unsupported">Diesen Entwurf kannst du im Web weiterbearbeiten. Deine Eingabe bleibt auf diesem Gerät; die automatische Synchronisierung pausiert.</string>
+    <string name="composer_sync_retry">Entwurf erneut synchronisieren</string>
+    <string name="composer_restore_draft">Behaltenen Entwurf wiederherstellen</string>
     <string name="controls_storage_failed">Ausstehende Steuerbefehle können nicht gespeichert werden.</string>
     <string name="controls_stop">Laufende Arbeit stoppen</string>
     <string name="controls_queued_automation">Automatisierung in Warteschlange</string>

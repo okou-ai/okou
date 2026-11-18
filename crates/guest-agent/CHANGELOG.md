@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.109.105](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.104...guest-agent-v0.109.105) (2026-11-18)
+
+
+### Bug Fixes
+
+* classify codex terminal failures and agent oom ([#48521](https://github.com/okou-ai/okou/issues/48521)) ([00075f2](https://github.com/okou-ai/okou/commit/00075f2f8a0d64e6aa8c3cecc8dc7bdc6cccde5f))
+* **runner:** bound guest disk recovery by time and capacity ([#48523](https://github.com/okou-ai/okou/issues/48523)) ([6107729](https://github.com/okou-ai/okou/commit/61077298e7c6594e68b818d99c5ec5eeab68ae6b))
+
+## [0.109.104](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.103...guest-agent-v0.109.104) (2026-11-18)
+
+
+### Refactoring
+
+* delegate filesystem capacity queries to typed apis ([#48537](https://github.com/okou-ai/okou/issues/48537)) ([485baf9](https://github.com/okou-ai/okou/commit/485baf98d0291be3d9b70ca3aa11021d5facfc1a))
+
+## [0.109.103](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.102...guest-agent-v0.109.103) (2026-11-18)
+
+## [0.109.102](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.101...guest-agent-v0.109.102) (2026-11-18)
+
+
+### Refactoring
+
+* delegate file opens to owned descriptor apis ([#48437](https://github.com/okou-ai/okou/issues/48437)) ([5ef5cab](https://github.com/okou-ai/okou/commit/5ef5cab9bc706528c66d21a9315fd76ed8e1ea10))
+
 ## [0.109.101](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.100...guest-agent-v0.109.101) (2026-11-17)
 
 ## [0.109.100](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.99...guest-agent-v0.109.100) (2026-11-17)

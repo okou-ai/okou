@@ -99,7 +99,6 @@ class _FirewallAuthPlanFailure(Enum):
     UNSAFE_METHOD = "unsafe_method"
     METHOD_OVERRIDE = "method_override"
     INSECURE_TRANSPORT = "insecure_transport"
-    AUTH_UNAVAILABLE = "auth_unavailable"
 
 
 type CurrentFirewallAuthorizationGuard = Callable[[], bool]
@@ -402,7 +401,9 @@ def _build_firewall_auth_context(
                 **({"sourceId": source_id} if isinstance(source_id, str) else {}),
             }
     auth_request = FirewallAuthRequest(
-        sandbox_token=sandbox_info.get("sandboxToken", ""),
+        # Keep reporting/callback identity in sandboxToken. Only resolver
+        # traffic uses host-only authority; absence is the rollout legacy path.
+        sandbox_token=sandbox_info.get("firewallToken", sandbox_info.get("sandboxToken", "")),
         encrypted_secrets=sandbox_info.get("encryptedSecrets") or "",
         auth_headers=auth_config.get("headers", {}),
         auth_base=auth_config.get("base"),
@@ -648,8 +649,6 @@ def _build_firewall_auth_plan(
         and not custom_http_auth_is_allowed(flow, allow.api_entry, sandbox_info)
     ):
         failure = _FirewallAuthPlanFailure.INSECURE_TRANSPORT
-    elif needs_resolution and not sandbox_info.get("encryptedSecrets"):
-        failure = _FirewallAuthPlanFailure.AUTH_UNAVAILABLE
 
     return _FirewallAuthPlan(
         injects_credentials=injects_credentials,
@@ -1289,24 +1288,6 @@ def _preflight_firewall_auth(
             action="BLOCK",
             error_code="insecure_transport",
             message="Firewall credentials cannot be injected over non-HTTPS transport",
-            permission=context.allow.name,
-        )
-        return FirewallAuthHandlingResult.LOCAL_RESPONSE
-
-    if plan.failure is _FirewallAuthPlanFailure.AUTH_UNAVAILABLE:
-        log_proxy_entry(
-            context.proxy_log_path,
-            "error",
-            f"No encryptedSecrets for firewall rule {context.firewall_base}",
-            type="firewall",
-            firewall_base=context.firewall_base,
-        )
-        _set_matched_firewall_failure_response(
-            flow,
-            status=502,
-            action="ALLOW",
-            error_code="auth_unavailable",
-            message="Auth secrets not configured",
             permission=context.allow.name,
         )
         return FirewallAuthHandlingResult.LOCAL_RESPONSE

@@ -18,9 +18,13 @@ export function needsArtifactGoogleDriveCatalog(
   );
 }
 
-// One catalog subscription shared by the toolbar's readiness and recovery UI.
+// One catalog subscription shared by the download menu's recovery actions.
 export const artifactGoogleDriveCatalogItem$ =
   connectorCatalogItemBySlug("google-drive");
 export const inactiveArtifactGoogleDriveCatalogItem$ = computed(() => {
   return null;
+});
+
+export const unresolvedArtifactPreviewAction$ = computed(() => {
+  return undefined;
 });

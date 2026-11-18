@@ -8,6 +8,11 @@ import OSLog
 final class WorkspaceResources {
   let store = CCState.Store()
   private let lifetime = CCState.State(true)
+  private struct RunModelReads {
+    let available: WorkspaceRead<AvailableRunModels>
+    let catalog: WorkspaceRead<ModelCatalog>
+  }
+
   private let invalidateReads: Command<Void, Set<ChatInvalidation>>
   private let modelBootstrap: WorkspaceReadBootstrap?
   private let projectBootstrap: WorkspaceReadBootstrap?
@@ -120,7 +125,7 @@ final class WorkspaceResources {
     let catalogValue = catalog.value
     invalidateReads = Self.makeInvalidation(
       lifetime: lifetime, modelBootstrap: modelBootstrap, preference: preference,
-      available: available, catalog: catalog, features: features)
+      runModels: RunModelReads(available: available, catalog: catalog), features: features)
     configuration = computedTask { get, options in
       guard try get(lifetime) else { throw CancellationError() }
       // Collect every dependency and start independent I/O before awaiting any result.
@@ -139,8 +144,8 @@ final class WorkspaceResources {
 
   private static func makeInvalidation(
     lifetime: CCState.State<Bool>, modelBootstrap: WorkspaceReadBootstrap?,
-    preference: WorkspaceRead<ModelPreference>, available: WorkspaceRead<AvailableRunModels>,
-    catalog: WorkspaceRead<ModelCatalog>, features: WorkspaceRead<SidebarFeatureSwitches>
+    preference: WorkspaceRead<ModelPreference>, runModels: RunModelReads,
+    features: WorkspaceRead<SidebarFeatureSwitches>
   ) -> Command<Void, Set<ChatInvalidation>> {
     Command { context, changes in
       guard try context.get(lifetime) else { throw CancellationError() }
@@ -159,8 +164,8 @@ final class WorkspaceResources {
         try context.set(preference.reload)
       }
       if full || changes.contains(.runModels) {
-        try context.set(available.reload)
-        try context.set(catalog.reload)
+        try context.set(runModels.available.reload)
+        try context.set(runModels.catalog.reload)
       }
       if full { try context.set(features.reload) }
     }

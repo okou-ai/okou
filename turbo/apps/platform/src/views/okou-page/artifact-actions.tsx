@@ -8,7 +8,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { isShareableArtifactReference } from "../../signals/artifact-sharing.ts";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
-import type { ArtifactPreviewMenuSnapshot } from "../../signals/artifact-deletion.ts";
 import { ArtifactShareMenu } from "./artifact-share-menu.tsx";
 import { HostedSiteShareMenu } from "./hosted-site-share-menu.tsx";
 import {
@@ -16,12 +15,11 @@ import {
   hostedSiteUrlChanges$,
 } from "../../signals/hosted-site-url-changes.ts";
 import { isHostedSiteUrl } from "../../signals/chat-page/parse-body-blocks.ts";
-import type { ReactElement, ReactNode, Ref } from "react";
+import type { ReactElement, ReactNode } from "react";
 import {
   ChevronLeft,
   ChevronRight,
   Download,
-  Ellipsis,
   Loader2,
   RotateCcw,
   Share2,
@@ -180,8 +178,6 @@ export function ArtifactShareButton({
   url: string;
 }) {
   const { t } = useTranslation();
-  const readyOnly =
-    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactPreviewToolbar];
   const label =
     ariaLabel ??
     t(($) => {
@@ -195,7 +191,6 @@ export function ArtifactShareButton({
         ariaLabel={label}
         className={className}
         iconSize={iconSize}
-        readyOnly={readyOnly}
         {...(artifactShareIdentity$ ? { artifactShareIdentity$ } : {})}
       />
     );
@@ -213,7 +208,6 @@ export function ArtifactShareButton({
         ariaLabel={label}
         className={className}
         iconSize={iconSize}
-        readyOnly={readyOnly}
       />
     );
   }
@@ -248,7 +242,7 @@ function useGoogleDriveCompletedOperation(
     : undefined;
 }
 
-export function useGoogleDriveAvailability(
+function useGoogleDriveAvailability(
   syncTarget: ArtifactDownloadSyncTarget | undefined,
   enabled: boolean,
 ) {
@@ -277,7 +271,6 @@ export function useGoogleDriveAvailability(
   return {
     googleDriveAuthMethod,
     googleDriveConnector,
-    googleDriveCatalogFailed: catalogItemLoadable.state === "hasError",
     googleDriveReady: accountReady,
     pendingAction: resolveGoogleDrivePendingAction(recovery),
     scopeRequired: completedOperation?.recovery !== undefined,
@@ -754,35 +747,11 @@ function GoogleDriveMenuItem({
   );
 }
 
-function googleDriveActionReady(
-  syncTarget: ArtifactDownloadSyncTarget | undefined,
-  availability: ReturnType<typeof useGoogleDriveAvailability>,
-  busy: boolean,
-): boolean {
-  if (!syncTarget) {
-    return false;
-  }
-  if (busy || syncTarget.synced || availability.googleImport) {
-    return true;
-  }
-  if (!syncTarget.agentId) {
-    return false;
-  }
-  return (
-    availability.googleDriveReady ||
-    availability.pendingAction.kind === "authorize" ||
-    (availability.pendingAction.kind === "connect" &&
-      availability.googleDriveConnector !== null &&
-      availability.googleDriveAuthMethod !== null)
-  );
-}
-
-export type ArtifactDownloadMenuProps = {
+type ArtifactDownloadMenuProps = {
   align?: "center" | "end" | "start";
   ariaLabel?: string;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
   className?: string;
-  children?: ReactNode;
   contentType?: string | undefined;
   previewKind?: ArtifactKind | undefined;
   filename: string;
@@ -790,14 +759,6 @@ export type ArtifactDownloadMenuProps = {
   showGoogleDriveAction?: boolean;
   syncTarget?: ArtifactDownloadSyncTarget;
   surface?: "dialog" | "page";
-  trigger?: "download" | "more";
-  triggerRef?: Ref<HTMLButtonElement>;
-  previewMenu?: {
-    readonly snapshot: ArtifactPreviewMenuSnapshot | null;
-    readonly deleteArtifactId: string | null;
-    readonly recovery: boolean;
-    readonly onOpen: (snapshot: ArtifactPreviewMenuSnapshot) => void;
-  };
   url: string;
 };
 
@@ -806,73 +767,37 @@ function useArtifactDriveMenu({
   showGoogleDriveAction,
   syncTarget,
   surface,
-  previewMenu,
-  url,
-}: Pick<
-  ArtifactDownloadMenuProps,
-  "filename" | "syncTarget" | "previewMenu" | "url"
-> &
+}: Pick<ArtifactDownloadMenuProps, "filename" | "syncTarget"> &
   Required<
     Pick<ArtifactDownloadMenuProps, "showGoogleDriveAction" | "surface">
   >) {
   const workspaceTarget = useGoogleWorkspaceTarget(filename);
   const primary = useGoogleDriveMenuAction(syncTarget, surface);
   const original = useGoogleDriveMenuAction(syncTarget, surface);
-  // Keep capabilities subscribed while the popup is closed.
   const availability = useGoogleDriveAvailability(
     syncTarget,
     showGoogleDriveAction,
   );
-  const primaryReady = googleDriveActionReady(
-    syncTarget,
-    availability,
-    primary.syncing || primary.connecting,
-  );
-  const originalReady = googleDriveActionReady(
-    syncTarget,
-    availability,
-    original.syncing || original.connecting,
-  );
-  const snapshot =
-    previewMenu?.snapshot?.url === url ? previewMenu.snapshot : null;
-  const driveTarget = workspaceTarget ?? "file";
-  const showPrimary =
-    showGoogleDriveAction &&
-    (!previewMenu || (primaryReady && snapshot?.drive === driveTarget));
-  const showOriginal =
-    showGoogleDriveAction &&
-    workspaceTarget &&
-    !primaryOwnsDriveRecovery(syncTarget, workspaceTarget, availability) &&
-    (!previewMenu ||
-      (originalReady &&
-        snapshot?.original &&
-        snapshot.drive === workspaceTarget));
-  return {
-    onOpenChange: (open: boolean) => {
-      if (open && previewMenu) {
-        previewMenu.onOpen({
-          url,
-          delete: previewMenu.deleteArtifactId,
-          recovery: previewMenu.recovery,
-          drive: primaryReady ? driveTarget : null,
-          original: !!workspaceTarget && originalReady,
-        });
-      }
-    },
-    items: (
-      <>
-        {showPrimary && (
-          <GoogleDriveMenuItem
-            syncTarget={syncTarget}
-            availability={availability}
-            surface={surface}
-            target={workspaceTarget}
-            syncing={primary.syncing}
-            connecting={primary.connecting}
-            onSyncOrConnect={primary.syncOrConnect}
-          />
-        )}
-        {showOriginal && (
+  return (
+    <>
+      {showGoogleDriveAction && (
+        <GoogleDriveMenuItem
+          syncTarget={syncTarget}
+          availability={availability}
+          surface={surface}
+          target={workspaceTarget}
+          syncing={primary.syncing}
+          connecting={primary.connecting}
+          onSyncOrConnect={primary.syncOrConnect}
+        />
+      )}
+      {showGoogleDriveAction &&
+        workspaceTarget &&
+        !primaryOwnsDriveRecovery(
+          syncTarget,
+          workspaceTarget,
+          availability,
+        ) && (
           <GoogleDriveMenuItem
             syncTarget={syncTarget}
             availability={availability}
@@ -883,9 +808,8 @@ function useArtifactDriveMenu({
             onSyncOrConnect={original.syncOrConnect}
           />
         )}
-      </>
-    ),
-  };
+    </>
+  );
 }
 
 export function ArtifactDownloadMenu({
@@ -893,7 +817,6 @@ export function ArtifactDownloadMenu({
   ariaLabel,
   artifactKind,
   className,
-  children,
   contentType,
   previewKind,
   filename,
@@ -901,22 +824,15 @@ export function ArtifactDownloadMenu({
   showGoogleDriveAction = true,
   syncTarget,
   surface = "page",
-  trigger = "download",
-  triggerRef,
-  previewMenu,
   url: sourceUrl,
 }: ArtifactDownloadMenuProps) {
   const { t } = useTranslation();
   const url = currentHostedSiteUrl(sourceUrl, useGet(hostedSiteUrlChanges$));
   const label =
     ariaLabel ??
-    (trigger === "more"
-      ? t(($) => {
-          return $.artifacts.actions.more;
-        })
-      : t(($) => {
-          return $.artifacts.actions.downloadOptions;
-        }));
+    t(($) => {
+      return $.artifacts.actions.downloadOptions;
+    });
   const [downloadLoadable, downloadAttachment] =
     useLoadableSet(downloadAttachment$);
   const pageSignal = useGet(pageSignal$);
@@ -928,24 +844,14 @@ export function ArtifactDownloadMenu({
     showGoogleDriveAction,
     syncTarget,
     surface,
-    previewMenu,
-    url: sourceUrl,
   });
   return (
-    <DropdownMenu
-      // A toolbar menu must not put an invisible modal backdrop over Share,
-      // fullscreen, or Close. Base UI still owns dismissal and focus handoff.
-      modal={trigger === "more" ? false : undefined}
-      onOpenChange={drive.onOpenChange}
-    >
+    <DropdownMenu>
       <ArtifactActionTooltip label={label}>
         <DropdownMenuTrigger
-          ref={triggerRef}
           aria-label={label}
-          aria-busy={
-            trigger === "download" && downloadPending ? "true" : undefined
-          }
-          disabled={trigger === "download" && downloadPending}
+          aria-busy={downloadPending ? "true" : undefined}
+          disabled={downloadPending}
           render={
             <Button
               type="button"
@@ -958,9 +864,7 @@ export function ArtifactDownloadMenu({
             />
           }
         >
-          {trigger === "more" ? (
-            <Ellipsis size={iconSize} />
-          ) : downloadPending ? (
+          {downloadPending ? (
             <Loader2 size={iconSize} className="animate-spin" />
           ) : (
             <Download size={iconSize} />
@@ -1002,8 +906,7 @@ export function ArtifactDownloadMenu({
             </span>
           )}
         </DropdownMenuItem>
-        {drive.items}
-        {children}
+        {drive}
       </DropdownMenuContent>
     </DropdownMenu>
   );

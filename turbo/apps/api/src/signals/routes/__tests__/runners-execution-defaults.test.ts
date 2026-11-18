@@ -23,6 +23,9 @@ describe("Direct Run launch defaults", () => {
       await bdd.updateUserTimezone(owned.actor, "Asia/Shanghai");
 
       const { execution } = await owned.runExecution(queued.runId);
+      expect(execution.appendSystemPrompt).toContain(
+        "Timezone: America/Los_Angeles",
+      );
       expect(execution.userTimezone).toBe("America/Los_Angeles");
       expect(execution.disallowedTools).toStrictEqual(
         expect.arrayContaining(["CronCreate", "Skill(loop)"]),
@@ -36,6 +39,16 @@ describe("Direct Run launch defaults", () => {
       expect(execution.vars).toMatchObject({
         OKOU_AGENT_ID: owned.agentId,
       });
+      await api.requestCancelRun(owned.actor, queued.runId, [200]);
+      const next = await api.createThreadRun(owned.actor, {
+        agentId: owned.agentId,
+        prompt: "use the edited timezone in the next Run",
+      });
+      const later = await owned.runExecution(next.runId);
+      expect(later.execution.appendSystemPrompt).toContain(
+        "Timezone: Asia/Shanghai",
+      );
+      expect(later.execution.userTimezone).toBe("Asia/Shanghai");
     });
   });
 });

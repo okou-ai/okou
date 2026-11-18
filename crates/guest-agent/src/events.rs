@@ -292,6 +292,9 @@ fn codex_error_failure_reason(error: Option<&Value>) -> Option<FailureReason> {
     if let Some(reason) = crate::provider_failure::provider_error_reason(error) {
         return Some(reason);
     }
+    if let Some(reason) = codex_other_failure_reason(error) {
+        return Some(reason);
+    }
     if codex_error_message(Some(error))
         .as_deref()
         .is_some_and(is_codex_provider_server_error_message)
@@ -336,22 +339,72 @@ fn codex_error_failure_reason(error: Option<&Value>) -> Option<FailureReason> {
     None
 }
 
-fn is_codex_access_program_unavailable(error: &Value) -> bool {
-    // Codex 0.166.0 preserves an HTTP 400 body as InvalidRequest's complete
-    // message and projects its native kind as `other`. TurnError does not expose
-    // the raw HTTP fields. Do not override a stronger native cause or infer this
-    // reason from display prose/additional details.
+fn codex_other_error_message(error: &Value) -> Option<&str> {
+    // Only the selected native catch-all can supply these opaque signatures.
+    // Additional details and output prose do not establish the same cause.
     if error.get("codex_error_info").and_then(Value::as_str) != Some("other") {
-        return false;
+        return None;
     }
-    let Some(message) = error.get("message").and_then(Value::as_str) else {
-        return false;
-    };
-    let Ok(body) = serde_json::from_str::<Value>(message) else {
-        return false;
-    };
-    // HTTP bodies have no wrapper. Codex also preserves complete WebSocket
-    // error envelopes, whose explicit status must agree with the rejection.
+    let message = error.get("message").and_then(Value::as_str)?.trim();
+    Some(
+        message
+            .strip_prefix("Error running remote compact task: ")
+            .unwrap_or(message),
+    )
+}
+
+fn codex_other_failure_reason(error: &Value) -> Option<FailureReason> {
+    let message = codex_other_error_message(error)?;
+    match message {
+        "stream disconnected before completion: idle timeout waiting for SSE" => {
+            return Some(FailureReason::ProviderStreamTimeout);
+        }
+        "request timed out" => return Some(FailureReason::ProviderRequestTimeout),
+        "Incomplete response returned, reason: content_filter"
+        | "stream disconnected before completion: Incomplete response returned, reason: content_filter"
+        | "This content was flagged for possible biological risk." => {
+            return Some(FailureReason::SafetyPolicyRefusal);
+        }
+        _ => {}
+    }
+    let body: Value = serde_json::from_str(message).ok()?;
+    if body.as_object().is_some_and(|body| {
+        body.len() == 1 && body.get("detail").and_then(Value::as_str) == Some("Bad Request")
+    }) {
+        return Some(FailureReason::ProviderBadRequest);
+    }
+    let provider_error = codex_request_error(&body)?;
+    if matches!(
+        provider_error.get("code").and_then(Value::as_str),
+        Some("bio_policy" | "cyber_policy" | "misalignment_policy_violation")
+    ) {
+        return Some(FailureReason::SafetyPolicyRefusal);
+    }
+    crate::provider_failure::provider_error_reason(provider_error)
+        .or_else(|| {
+            let message = provider_error.get("message").and_then(Value::as_str)?;
+            if is_codex_chatgpt_account_unsupported_model_message(message) {
+                Some(FailureReason::UnsupportedModel)
+            } else if is_codex_output_token_limit_message(message) {
+                Some(FailureReason::OutputTokenLimit)
+            } else {
+                None
+            }
+        })
+        .or_else(|| {
+            ["type", "code"]
+                .iter()
+                .any(|field| {
+                    provider_error.get(field).and_then(Value::as_str)
+                        == Some("invalid_request_error")
+                })
+                .then_some(FailureReason::ProviderBadRequest)
+        })
+}
+
+fn codex_request_error(body: &Value) -> Option<&Value> {
+    // InvalidRequest retains complete HTTP bodies. WebSocket rejection frames
+    // additionally carry a type/status, which must agree with the request error.
     let supported_envelope = match (
         body.get("type"),
         body.get("status"),
@@ -363,7 +416,18 @@ fn is_codex_access_program_unavailable(error: &Value) -> bool {
         }
         _ => false,
     };
-    let Some(provider_error) = body.get("error").filter(|_| supported_envelope) else {
+    body.get("error")
+        .filter(|error| supported_envelope && error.is_object())
+}
+
+fn is_codex_access_program_unavailable(error: &Value) -> bool {
+    let Some(message) = codex_other_error_message(error) else {
+        return false;
+    };
+    let Ok(body) = serde_json::from_str::<Value>(message) else {
+        return false;
+    };
+    let Some(provider_error) = codex_request_error(&body) else {
         return false;
     };
     provider_error.get("type").and_then(Value::as_str) == Some("invalid_request_error")

@@ -61,7 +61,9 @@ required_tool=$(jq -er '[.result.tools[] | select(._meta["ai.okou/data"] and ((.
 if okou data call "$required_tool" --input '{}' --json >"$result"; then
     exit 1
 fi
-jq -e '.isError == true and any(.content[]; .type == "text" and (.text | length > 0))' "$result" >/dev/null
+# The call prints a summary; the rejected MCP result itself is the saved body.
+body=$(jq -er 'select(.status >= 400) | .file' "$result")
+jq -e '.isError == true and any(.content[]; .type == "text" and (.text | length > 0))' "$body" >/dev/null
 printf 'DATA_ROUTER_DIRECT_OK\n'
 EOF
 )

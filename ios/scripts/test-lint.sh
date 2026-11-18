@@ -186,6 +186,133 @@ for path in "${file_length_paths[@]}"; do
   rm "$fixture/$path/FunctionLengthBoundary.swift"
 done
 
+# Type bodies share the same hard limit in every production and test target.
+# Exercise every declaration kind checked by the upstream rule.
+for path in "${file_length_paths[@]}"; do
+  python3 - "$fixture/$path" <<'PY'
+import sys
+from pathlib import Path
+
+for kind in ("class", "struct", "enum", "actor"):
+    name = "TypeLengthBoundary" + kind.title()
+    header = ("final " if kind == "class" else "") + kind + " " + name
+    members = [
+        (f"  case value{index}" if kind == "enum" else f"  let value{index} = 0")
+        for index in range(500)
+    ]
+    Path(sys.argv[1], name + ".swift").write_text(
+        header + " {\n\n  // Ignored by the body length rule.\n"
+        + "\n".join(members) + "\n}\n"
+    )
+PY
+done
+if ! run_lint; then
+  cat "$test_root/lint.log" >&2
+  exit 1
+fi
+for path in "${file_length_paths[@]}"; do
+  python3 - "$fixture/$path" <<'PY'
+import sys
+from pathlib import Path
+
+for kind in ("class", "struct", "enum", "actor"):
+    source = Path(sys.argv[1], "TypeLengthBoundary" + kind.title() + ".swift")
+    member = "  case value500" if kind == "enum" else "  let value500 = 0"
+    source.write_text(source.read_text().removesuffix("}\n") + member + "\n}\n")
+PY
+done
+if run_lint; then
+  echo 'A type above 500 body lines passed strict lint.' >&2
+  exit 1
+fi
+for path in "${file_length_paths[@]}"; do
+  for kind in Class Struct Enum Actor; do
+    grep -F "$path/TypeLengthBoundary$kind.swift" "$test_root/lint.log" | grep -F '(type_body_length)' >/dev/null
+    rm "$fixture/$path/TypeLengthBoundary$kind.swift"
+  done
+done
+
+# Complexity counts decisions in functions, initializers and switch dispatch.
+# Verify both the hard threshold and the upstream switch-case policy.
+for path in "${file_length_paths[@]}"; do
+  python3 - "$fixture/$path/ComplexityBoundary.swift" <<'PY'
+import sys
+from pathlib import Path
+
+decisions = "".join(f"  if value == {index} {{ _ = value }}\n" for index in range(20))
+cases = "".join(f"  case {index}: return {index}\n" for index in range(19))
+Path(sys.argv[1]).write_text(
+    "func decisionBoundary(_ value: Int) {\n" + decisions + "}\n"
+    + "final class DecisionBoundary {\n  init(_ value: Int) {\n" + decisions + "  }\n}\n"
+    + "func switchBoundary(_ value: Int) -> Int {\n  switch value {\n"
+    + cases + "  default: return -1\n  }\n}\n"
+)
+PY
+done
+if ! run_lint; then
+  cat "$test_root/lint.log" >&2
+  exit 1
+fi
+for path in "${file_length_paths[@]}"; do
+  python3 - "$fixture/$path/ComplexityBoundary.swift" <<'PY'
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+source.write_text(
+    source.read_text()
+    .replace("  if value == 19 { _ = value }\n", "  if value == 19 { _ = value }\n  if value == 20 { _ = value }\n")
+    .replace("  default: return -1", "  case 19: return 19\n  default: return -1")
+)
+PY
+done
+if run_lint; then
+  echo 'A function, initializer or switch above complexity 20 passed strict lint.' >&2
+  exit 1
+fi
+for path in "${file_length_paths[@]}"; do
+  # Every fixture contains three independent declarations above the limit.
+  findings=$(grep -F "$path/ComplexityBoundary.swift" "$test_root/lint.log" | grep -c '(cyclomatic_complexity)')
+  if [[ "$findings" -ne 3 ]]; then
+    cat "$test_root/lint.log" >&2
+    echo "Expected three complexity failures in $path, found $findings." >&2
+    exit 1
+  fi
+  rm "$fixture/$path/ComplexityBoundary.swift"
+done
+
+# Strict lint rejects a sixth required parameter, while default arguments are ignored.
+for path in "${file_length_paths[@]}"; do
+  cat > "$fixture/$path/ParameterCountBoundary.swift" <<'SWIFT'
+func parameterBoundary(
+  first: Int, second: Int, third: Int, fourth: Int, fifth: Int, sixth: Int = 0
+) -> Int {
+  first + second + third + fourth + fifth + sixth
+}
+SWIFT
+done
+if ! run_lint; then
+  cat "$test_root/lint.log" >&2
+  exit 1
+fi
+for path in "${file_length_paths[@]}"; do
+  python3 - "$fixture/$path/ParameterCountBoundary.swift" <<'PYTHON'
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+source.write_text(source.read_text().replace("sixth: Int = 0", "sixth: Int"))
+PYTHON
+done
+if run_lint; then
+  echo 'A function with six required parameters passed strict lint.' >&2
+  exit 1
+fi
+for path in "${file_length_paths[@]}"; do
+  grep -F "$path/ParameterCountBoundary.swift" "$test_root/lint.log" | grep -F '(function_parameter_count)' >/dev/null
+  rm "$fixture/$path/ParameterCountBoundary.swift"
+done
+
 # The production-only state rule must be enabled by the real root config.
 for path in "${production_paths[@]}"; do
   printf 'var sharedState = 0\n' > "$fixture/$path/GlobalState.swift"

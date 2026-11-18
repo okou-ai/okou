@@ -5,6 +5,13 @@ import OSLog
 public actor ChatSync {
   let client: APIClient
   private let chatEventSchemaVersion = 8
+  private typealias CachedHistory = ChatHistoryIO.State
+  private var historyIO: ChatHistoryIO {
+    ChatHistoryIO(client: client, cache: cache, schemaVersion: chatEventSchemaVersion)
+  }
+  private func readCachedHistory(threadID: String) async -> CachedHistory? {
+    await historyIO.readCachedHistory(threadID: threadID, memory: histories[threadID])
+  }
   private let threadEventRebaseThreshold = 100
   let cache: ChatCache?
   private var indicatorState = ChatIndicatorCacheState()
@@ -289,7 +296,7 @@ public actor ChatSync {
       let rawEvents = object["events"] as? [String: [Any]]
     else { throw ChatError.invalidContract("Chat history catch-up returned an invalid partition.") }
     for (id, rows) in response.events {
-      try Self.validate(rows: rows, threadID: id, after: cursors[id]?.lastSeqId ?? 0)
+      try ChatHistoryIO.validate(rows: rows, threadID: id, after: cursors[id]?.lastSeqId ?? 0)
       guard rawEvents[id]?.count == rows.count else { throw APIClientError.incompatibleData }
     }
     for id in ids {
@@ -298,8 +305,8 @@ public actor ChatSync {
       var rebuilt: CachedHistory?
       if missing.contains(id) {
         // Network work stays outside the per-thread read lock. Opening the chat can overtake it.
-        let snapshot = try await loadSnapshot(threadID: id)
-        rebuilt = try await catchUpHistory(threadID: id, initial: snapshot)
+        let snapshot = try await historyIO.loadSnapshot(threadID: id)
+        rebuilt = try await historyIO.catchUpHistory(threadID: id, initial: snapshot)
       } else if response.events[id]?.isEmpty == true, cursors[id] != nil {
         continue
       }
@@ -332,7 +339,7 @@ public actor ChatSync {
           next.cursor = EventCursor(lastEventId: last.id, lastSeqId: last.seqId)
         }
       }
-      let saved = await persistHistory(next, threadID: id)
+      let saved = await historyIO.persistHistory(next, threadID: id)
       if saved {
         next.newRows = []
         next.replaced = false
@@ -379,8 +386,8 @@ public actor ChatSync {
     var fromSnapshot = false
     var confirmFreshTail = false
     func rebuild() async throws -> ChatCacheCursor {
-      let snapshot = try await loadSnapshot(threadID: threadID)
-      guard await persistHistory(snapshot, threadID: threadID),
+      let snapshot = try await historyIO.loadSnapshot(threadID: threadID)
+      guard await historyIO.persistHistory(snapshot, threadID: threadID),
         let cursor = try await cache.loadHistoryCursor(
           threadID: threadID, schemaVersion: chatEventSchemaVersion)
       else { throw ChatCacheError.unavailable }
@@ -403,7 +410,7 @@ public actor ChatSync {
           "/api/chat-threads/\(threadID)/event-rows", query: query)
         let page = try Self.decode(EventRowsPage.self, from: response.data)
         let raw = try Self.rawArray("rows", in: response.data)
-        try Self.validate(rows: page.rows, threadID: threadID, after: current.seqID)
+        try ChatHistoryIO.validate(rows: page.rows, threadID: threadID, after: current.seqID)
         let expected =
           page.rows.last.map { EventCursor(lastEventId: $0.id, lastSeqId: $0.seqId) }
           ?? EventCursor(lastEventId: current.eventID, lastSeqId: current.seqID)
@@ -505,10 +512,10 @@ public actor ChatSync {
     if let cached {
       history = cached
     } else {
-      history = try await loadSnapshot(threadID: threadID)
+      history = try await historyIO.loadSnapshot(threadID: threadID)
     }
-    history = try await catchUpHistory(threadID: threadID, initial: history)
-    if await persistHistory(history, threadID: threadID) {
+    history = try await historyIO.catchUpHistory(threadID: threadID, initial: history)
+    if await historyIO.persistHistory(history, threadID: threadID) {
       history.newRows = []
       history.replaced = false
     } else if requirePersistence {
@@ -523,189 +530,5 @@ public actor ChatSync {
       return durable
     }
     return history
-  }
-
-  private func loadSnapshot(threadID: String) async throws -> CachedHistory {
-    let snapshot: EventSnapshot
-    do {
-      snapshot = try await client.request(
-        "/api/chat-threads/\(threadID)/event-snapshot")
-    } catch let error as APIClientError {
-      guard error.statusCode == 404, error.serverCode == "CHAT_EVENT_SNAPSHOT_NOT_FOUND" else {
-        throw error
-      }
-      return CachedHistory(
-        rows: [], rawRows: [], newRows: [], cursor: .start, replaced: true,
-        cursorFromServerSnapshot: true)
-    }
-    let data = try await client.downloadSnapshot(snapshot.url)
-    // URLSession decompresses HTTP Content-Encoding: gzip before delivering data.
-    guard let text = String(data: data, encoding: .utf8) else {
-      throw ChatError.invalidContract("The history snapshot is not UTF-8 NDJSON.")
-    }
-    if !text.isEmpty && !text.hasSuffix("\n") {
-      throw ChatError.invalidContract("The history snapshot is not NDJSON.")
-    }
-    var rows: [ChatEventRow] = []
-    var rawRows: [ChatCacheEvent] = []
-    for line in text.split(separator: "\n")
-    where !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      let raw = Data(line.utf8)
-      let row = try Self.decode(ChatEventRow.self, from: raw)
-      rows.append(row)
-      rawRows.append(ChatCacheEvent(id: row.id, seqID: row.seqId, data: raw))
-    }
-    try Self.validate(rows: rows, threadID: threadID, after: 0)
-    let cursor = rows.last.map { EventCursor(lastEventId: $0.id, lastSeqId: $0.seqId) } ?? .start
-    guard snapshot.cursor.isValid, snapshot.cursor == cursor else {
-      throw ChatError.invalidContract("The history snapshot does not match its cursor.")
-    }
-    return CachedHistory(
-      rows: rows, rawRows: rawRows, newRows: rawRows, cursor: cursor, replaced: true,
-      cursorFromServerSnapshot: true)
-  }
-
-  private func readCachedHistory(threadID: String) async -> CachedHistory? {
-    let memory = histories[threadID]
-    guard let cache else { return memory }
-    if let memory {
-      do {
-        let cursor = try await cache.loadHistoryCursor(
-          threadID: threadID, schemaVersion: chatEventSchemaVersion)
-        if (cursor?.seqID ?? 0) <= memory.cursor.lastSeqId { return memory }
-      } catch { return memory }
-    }
-    // The NSE is a separate process; its committed cursor can outrun resident memory.
-    do {
-      guard let stored = try await cache.loadHistory(threadID: threadID),
-        stored.schemaVersion == chatEventSchemaVersion
-      else { return nil }
-      let decoder = APIClient.decoder()
-      let rows = try stored.rows.map { entry in
-        let row = try Self.decode(ChatEventRow.self, from: entry.data, using: decoder)
-        guard row.id == entry.id, row.seqId == entry.seqID else {
-          throw ChatError.invalidContract("Cached chat event identity is invalid.")
-        }
-        return row
-      }
-      try Self.validate(rows: rows, threadID: threadID, after: 0)
-      guard stored.cursor.eventID == rows.last?.id,
-        stored.cursor.seqID == (rows.last?.seqId ?? 0)
-      else { throw ChatError.invalidContract("Cached chat history cursor is invalid.") }
-      return CachedHistory(
-        rows: rows, rawRows: stored.rows, newRows: [],
-        cursor: EventCursor(lastEventId: stored.cursor.eventID, lastSeqId: stored.cursor.seqID),
-        replaced: false, cursorFromServerSnapshot: false)
-    } catch {
-      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error(
-          "event=chat.cache.history.read.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
-        )
-      return nil
-    }
-  }
-
-  private func catchUpHistory(threadID: String, initial: CachedHistory) async throws
-    -> CachedHistory
-  {
-    var history = initial
-    while true {
-      do {
-        try await loadHistoryTail(threadID: threadID, into: &history)
-        return history
-      } catch let error as APIClientError where error.statusCode == 410 {
-        guard !history.cursorFromServerSnapshot else {
-          throw ChatError.invalidContract(
-            "Chat history cursor expired immediately after its snapshot.")
-        }
-        history = try await loadSnapshot(threadID: threadID)
-      }
-    }
-  }
-
-  private func loadHistoryTail(threadID: String, into history: inout CachedHistory) async throws {
-    var confirmFreshTail = history.replaced
-    while true {
-      var query = [
-        URLQueryItem(name: "sinceSeqId", value: String(history.cursor.lastSeqId)),
-        URLQueryItem(name: "limit", value: "50")
-      ]
-      if let eventID = history.cursor.lastEventId {
-        query.append(URLQueryItem(name: "sinceEventId", value: eventID))
-      }
-      let response = try await client.data(
-        "/api/chat-threads/\(threadID)/event-rows", query: query)
-      let page = try Self.decode(EventRowsPage.self, from: response.data)
-      let rawRows = try Self.rawArray("rows", in: response.data)
-      guard page.rows.count == rawRows.count else { throw APIClientError.incompatibleData }
-      try Self.validate(rows: page.rows, threadID: threadID, after: history.cursor.lastSeqId)
-      let existingIDs = Set(history.rows.map(\.id))
-      guard page.rows.allSatisfy({ !existingIDs.contains($0.id) }) else {
-        throw ChatError.invalidContract("Chat history repeats an existing event identity.")
-      }
-      guard page.cursor.isValid,
-        page.cursor
-          == (page.rows.last.map { EventCursor(lastEventId: $0.id, lastSeqId: $0.seqId) }
-            ?? history.cursor),
-        !page.hasMore || !page.rows.isEmpty
-      else { throw ChatError.invalidContract("Chat history cursor is inconsistent.") }
-      for (row, raw) in zip(page.rows, rawRows) {
-        let entry = ChatCacheEvent(id: row.id, seqID: row.seqId, data: raw)
-        history.rawRows.append(entry)
-        history.newRows.append(entry)
-      }
-      history.rows.append(contentsOf: page.rows)
-      history.cursor = page.cursor
-      if !page.rows.isEmpty { history.cursorFromServerSnapshot = false }
-      let shouldContinue = page.hasMore || confirmFreshTail
-      confirmFreshTail = false
-      if !shouldContinue { return }
-    }
-  }
-
-  private func persistHistory(_ history: CachedHistory, threadID: String) async -> Bool {
-    guard let cache else { return false }
-    guard history.replaced || !history.newRows.isEmpty else { return true }
-    let cursor = ChatCacheCursor(
-      eventID: history.cursor.lastEventId, seqID: history.cursor.lastSeqId)
-    do {
-      if history.replaced {
-        try await cache.replaceHistory(
-          threadID: threadID, rows: history.rawRows, cursor: cursor,
-          schemaVersion: chatEventSchemaVersion)
-      } else {
-        try await cache.appendHistory(
-          threadID: threadID, rows: history.newRows, cursor: cursor,
-          schemaVersion: chatEventSchemaVersion)
-      }
-      return true
-    } catch {
-      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error(
-          "event=chat.cache.history.save.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
-        )
-      return false
-    }
-  }
-
-  private static func validate(rows: [ChatEventRow], threadID: String, after: Int) throws {
-    var previous = after
-    var identities = Set<String>()
-    for row in rows {
-      guard row.chatThreadId == threadID, row.seqId > previous, identities.insert(row.id).inserted
-      else {
-        throw ChatError.invalidContract("Chat history contains an invalid event sequence.")
-      }
-      previous = row.seqId
-    }
-  }
-
-  private struct CachedHistory: Sendable {
-    var rows: [ChatEventRow]
-    var rawRows: [ChatCacheEvent]
-    var newRows: [ChatCacheEvent]
-    var cursor: EventCursor
-    var replaced: Bool
-    var cursorFromServerSnapshot: Bool
   }
 }

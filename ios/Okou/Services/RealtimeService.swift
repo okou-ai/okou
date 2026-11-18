@@ -71,34 +71,7 @@ final class RealtimeService {
     connectionAvailability = .connecting
     channelAvailability = Dictionary(uniqueKeysWithValues: channelNames.map { ($0, .connecting) })
     reportAvailability()
-    let options = ARTClientOptions()
-    options.autoConnect = false
-    options.clientId = userID
-    options.useTokenAuth = true
-    options.authCallback = { [weak self, tokenProvider] _, completion in
-      Task { @MainActor [weak self] in
-        guard let self, self.generation == generation, self.realtime != nil else {
-          completion(nil, CancellationError())
-          return
-        }
-        let id = UUID()
-        let task = Task { [weak self] in
-          defer { self?.tokenRequests[id] = nil }
-          do {
-            try Task.checkCancellation()
-            let data = try await tokenProvider()
-            try Task.checkCancellation()
-            guard let json = String(data: data, encoding: .utf8) else {
-              throw APIClientError.invalidResponse
-            }
-            let request = try ARTTokenRequest.fromJson(json as ARTJsonCompatible)
-            completion(request, nil)
-          } catch { completion(nil, error) }
-        }
-        lifecycleTasks.track(task)
-        tokenRequests[id] = task
-      }
-    }
+    let options = clientOptions(generation: generation)
     let realtime = createRealtime(options)
     self.realtime = realtime
     realtime.connection.on { [weak self] change in
@@ -149,6 +122,38 @@ final class RealtimeService {
       }
     }
     realtime.connect()
+  }
+
+  private func clientOptions(generation: UUID) -> ARTClientOptions {
+    let options = ARTClientOptions()
+    options.autoConnect = false
+    options.clientId = userID
+    options.useTokenAuth = true
+    options.authCallback = { [weak self, tokenProvider] _, completion in
+      Task { @MainActor [weak self] in
+        guard let self, self.generation == generation, self.realtime != nil else {
+          completion(nil, CancellationError())
+          return
+        }
+        let id = UUID()
+        let task = Task { [weak self] in
+          defer { self?.tokenRequests[id] = nil }
+          do {
+            try Task.checkCancellation()
+            let data = try await tokenProvider()
+            try Task.checkCancellation()
+            guard let json = String(data: data, encoding: .utf8) else {
+              throw APIClientError.invalidResponse
+            }
+            let request = try ARTTokenRequest.fromJson(json as ARTJsonCompatible)
+            completion(request, nil)
+          } catch { completion(nil, error) }
+        }
+        lifecycleTasks.track(task)
+        tokenRequests[id] = task
+      }
+    }
+    return options
   }
 
   func retry() {

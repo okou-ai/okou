@@ -97,6 +97,16 @@ export const setTheme$ = command(({ set }, preference: ThemePreference) => {
 });
 
 /**
+ * Apply a member's theme choice locally, then save it to their workspace.
+ */
+export const updateThemePreference$ = command(
+  async ({ set }, theme: ThemePreference, signal: AbortSignal) => {
+    set(setTheme$, theme);
+    await set(updateUserPreference$, { theme }, signal);
+  },
+);
+
+/**
  * Set the palette-derived workspace color theme in memory.
  */
 const setColorTheme$ = command(({ set }, colorTheme: ColorTheme) => {
@@ -116,7 +126,8 @@ export const updateColorThemePreference$ = command(
 
 /**
  * Reconcile the in-memory color theme with the authoritative workspace
- * preference. Light/dark/system stays owned exclusively by the shared cookie.
+ * preference. Light/dark/system is still restored from the shared cookie;
+ * explicit choices in Settings are also saved to the workspace.
  *
  * A member who has never chosen a palette carries no stored one, and this
  * keeps it that way: the absent preference resolves to the default palette in

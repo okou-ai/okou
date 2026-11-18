@@ -55,6 +55,13 @@ pub fn completion_failure_reason(
             .as_ref()
             .and_then(|diagnostic| diagnostic.failure_reason)
             .map(Into::into)
+            .or_else(|| {
+                (failure
+                    .resource_diagnostics
+                    .and_then(|diagnostics| diagnostics.failure_kind)
+                    == Some(ResourceFailureKind::GuestMemoryOomKilled))
+                .then_some(RequestFailureReason::GuestMemoryOomKilled)
+            })
             .or(Some(RequestFailureReason::Unknown)),
         ExecutionFailureKind::RunnerJobTimeout { .. } => {
             Some(RequestFailureReason::ExecutionTimeout)

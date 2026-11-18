@@ -2016,6 +2016,7 @@ pub(super) async fn register_proxy(
         run_id: &run_id_str,
         cli_agent_type,
         sandbox_token: &context.sandbox_token,
+        firewall_token: context.firewall_token.as_deref(),
         network_log_path: &network_log_path,
         proxy_log_path: &proxy_log_path,
         firewalls: context.firewalls.as_deref(),

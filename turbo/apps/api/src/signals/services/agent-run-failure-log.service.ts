@@ -52,6 +52,7 @@ const KNOWN_FAILURE_LOG_POLICY = Object.freeze({
   provider_rate_limited: "suppress-caller-owned",
   provider_overloaded: "suppress-caller-owned",
   provider_stream_timeout: "suppress-caller-owned",
+  provider_request_timeout: "suppress-caller-owned",
   provider_queue_timeout: "suppress-caller-owned",
   provider_server_error: "suppress-caller-owned",
   firewall_auth_failed: "retain",
@@ -62,6 +63,7 @@ const KNOWN_FAILURE_LOG_POLICY = Object.freeze({
   unknown: "retain",
   guest_root_filesystem_full: "retain",
   guest_home_filesystem_full: "retain",
+  guest_memory_oom_killed: "retain",
   unsupported_model: "retain",
   provider_model_restricted: "retain",
   // An opaque Codex 400 can still indicate an integration defect.

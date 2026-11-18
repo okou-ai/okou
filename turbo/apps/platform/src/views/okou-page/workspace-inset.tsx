@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { cn } from "@okouai/ui";
 
 /**
  * Repaints the workspace canvas behind a surface that has to occlude scrolled
@@ -35,37 +36,56 @@ export function WorkspaceCanvasBackdrop({
 }
 
 /**
- * The workspace sheet: the app's canvas, framed by the chrome around it. The
- * chat list is the sheet's left part in the app shell and supplies its left
- * edge and corners, so the sheet drops that margin and those corners there;
- * beside the bare nav rail -- or with no chrome at all -- nothing supplies
- * them, so the sheet keeps the frame on all four sides.
+ * The workspace pane's leading corners inside the shell's sheet. The sheet owns
+ * the frame and exposes the chat list's state as `data-chat-list` on the
+ * `workspace-sheet` group; the pane meets the sheet's leading corners only
+ * while the list is collapsed, because otherwise the list holds them.
+ */
+export const SHEET_PANE_LEADING_CORNERS =
+  "md:group-data-[chat-list=collapsed]/workspace-sheet:rounded-l-2xl";
+
+/** A pane that ends the sheet always meets its trailing corners. */
+export const SHEET_PANE_CORNERS =
+  "md:rounded-r-2xl md:group-data-[chat-list=collapsed]/workspace-sheet:rounded-l-2xl";
+
+// Kept outside `cn()`: the class merger reads both background utilities as
+// colours and would drop the fill in favour of the gradient.
+const CANVAS_PAINT =
+  "before:absolute before:inset-0 before:-z-1 before:bg-workspace-canvas before:bg-workspace-canvas-image before:bg-[length:100%_100%] before:content-[''] bg-background [anchor-name:--workspace-canvas]";
+
+/**
+ * The workspace pane: the app's canvas. Inside the app shell it is the
+ * trailing part of the workspace sheet, which owns the margin, hairline and
+ * corners (`sheet`). A page with no shell frames the pane itself on all four
+ * sides (`standalone`). A shell-owned frame that already paints the canvas
+ * leaves the pane transparent and supplies its corners (`transparent`).
  */
 export function WorkspaceInset({
-  beside = "chat-list",
+  surface = "sheet",
   children,
-  framed = true,
   className,
 }: {
-  readonly beside?: "chat-list" | "nav-rail" | "nothing";
+  readonly surface?: "sheet" | "standalone" | "transparent";
   readonly children: ReactNode;
-  /** A shell-owned sidebar supplies the shared frame outside this boundary. */
-  readonly framed?: boolean;
   readonly className?: string;
 }) {
+  const layout = cn(
+    "relative z-0 flex min-h-0 min-w-0 flex-1 flex-col md:overflow-clip",
+    surface === "standalone" &&
+      "md:m-2 md:rounded-2xl md:border md:border-border",
+    surface === "sheet" && SHEET_PANE_CORNERS,
+    surface === "transparent" && "bg-transparent",
+    className,
+  );
   return (
     <div
-      className={`relative z-0 flex min-h-0 min-w-0 flex-1 flex-col md:overflow-clip ${
-        framed
-          ? "before:absolute before:inset-0 before:-z-1 before:bg-workspace-canvas before:bg-workspace-canvas-image before:bg-[length:100%_100%] before:content-[''] bg-background md:m-2 md:rounded-2xl md:border md:border-border [anchor-name:--workspace-canvas]"
-          : "bg-transparent"
-      } ${framed && beside === "chat-list" ? "md:ml-0 md:rounded-l-none" : ""} ${
-        className ?? ""
-      }`}
+      className={
+        surface === "transparent" ? layout : `${layout} ${CANVAS_PAINT}`
+      }
       data-testid="workspace-inset"
-      // The chrome the sheet is framed against, so the rendered layout case is
-      // readable as data rather than inferred from the margin utility.
-      data-beside={beside}
+      // Which frame the pane is drawn in, readable as data rather than
+      // inferred from the margin utility.
+      data-surface={surface}
     >
       {children}
     </div>

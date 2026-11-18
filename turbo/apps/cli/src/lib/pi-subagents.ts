@@ -1,4 +1,4 @@
-import { execFile, type ChildProcess } from "node:child_process";
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { constants, closeSync, openSync } from "node:fs";
 import {
@@ -7,10 +7,10 @@ import {
   readFile,
   readdir,
   rename,
+  rm,
   writeFile,
 } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
-import { setTimeout as scheduleTimeout, clearTimeout } from "node:timers";
 import { promisify } from "node:util";
 
 import { PI_SESSION_ROLE_ENV, requirePiSession } from "./pi-session-env";
@@ -74,40 +74,8 @@ function taskDirectory(id: string): string {
 
 export async function removeSubagentDirectory(
   directory: string,
-  handle?: string,
-  record: "task" | "task.pending" = "task",
 ): Promise<void> {
-  // Serialize removers with a kernel lock, including when SIGKILL interrupts a
-  // child's cleanup. Check the UUID while locked so ID reuse stays safe. The
-  // short-lived helper belongs to this invocation; it is not a task runtime.
-  const cleanup = `
-const fs = require("node:fs");
-const path = require("node:path");
-const [directory, handle, record] = process.argv.slice(1);
-try {
-  if (handle && JSON.parse(fs.readFileSync(path.join(directory, record), "utf8")).handle !== handle) process.exit(0);
-  fs.rmSync(directory, { recursive: true, force: true });
-} catch (error) {
-  if (error.code !== "ENOENT") throw error;
-}
-`;
-  await execFileAsync(
-    "flock",
-    [
-      "--no-fork",
-      "-x",
-      "-w",
-      "5",
-      join(dirname(directory), ".cleanup.lock"),
-      process.execPath,
-      "-e",
-      cleanup,
-      directory,
-      handle ?? "",
-      record,
-    ],
-    { timeout: 5_000, killSignal: "SIGKILL" },
-  ).catch(() => {}); // Disposable control/log deletion is intentionally best effort.
+  await rm(directory, { recursive: true, force: true }).catch(() => {});
 }
 
 async function readTask(directory: string) {
@@ -121,67 +89,14 @@ async function readTask(directory: string) {
   }
 }
 
-function observeReady(child: ChildProcess) {
-  let dispose = () => {};
-  let arm = () => {};
-  const ready = new Promise<void>((resolve, reject) => {
-    let timer: ReturnType<typeof scheduleTimeout> | undefined;
-    let settled = false;
-    const cleanup = () => {
-      settled = true;
-      clearTimeout(timer);
-      child.off("message", onMessage);
-      child.off("error", onError);
-      child.off("exit", onExit);
-    };
-    const onMessage = (message: unknown) => {
-      if (
-        typeof message === "object" &&
-        message !== null &&
-        "type" in message &&
-        message.type === "ready"
-      ) {
-        cleanup();
-        resolve();
-      }
-    };
-    const onError = (error: Error) => {
-      cleanup();
-      reject(error);
-    };
-    const onExit = () => {
-      return onError(
-        new Error("Subagent exited before startup. Check its stderr."),
-      );
-    };
-    child.on("message", onMessage);
-    child.once("error", onError);
-    child.once("exit", onExit);
-    dispose = cleanup;
-    arm = () => {
-      if (!settled)
-        timer = scheduleTimeout(() => {
-          return onError(new Error("Subagent startup timed out."));
-        }, 10_000);
-    };
-  });
-  // Readiness can fail while the independent native admission is still pending.
-  void ready.catch(() => {});
-  return {
-    ready,
-    dispose: () => {
-      return dispose();
-    },
-    arm: () => {
-      arm();
-    },
-  };
-}
-
 async function allocateDirectory(): Promise<{ id: string; directory: string }> {
   const root = runDirectory();
   await mkdir(root, { recursive: true, mode: 0o700 });
-  const names = await readdir(root);
+  // Reservations live for the Run, even after disposable task directories go.
+  // mkdir both allocates safely across callers and avoids reusing a stale ID.
+  const reservations = join(root, ".ids");
+  await mkdir(reservations, { recursive: true, mode: 0o700 });
+  const names = await readdir(reservations);
   let id =
     names.reduce((max, name) => {
       return ID_PATTERN.test(name) && BigInt(name) > max ? BigInt(name) : max;
@@ -189,12 +104,14 @@ async function allocateDirectory(): Promise<{ id: string; directory: string }> {
   for (;;) {
     const directory = join(root, String(id));
     try {
-      await mkdir(directory, { mode: 0o700 });
-      return { id: String(id), directory };
+      await mkdir(join(reservations, String(id)), { mode: 0o700 });
     } catch (error) {
       if (!hasCode(error, "EEXIST")) throw error;
       id += 1n;
+      continue;
     }
+    await mkdir(directory, { mode: 0o700 });
+    return { id: String(id), directory };
   }
 }
 
@@ -204,15 +121,7 @@ export async function startSubagent(
 ): Promise<SubagentInspection> {
   if (!prompt.trim())
     throw new Error("A non-empty subagent prompt is required.");
-  if (
-    Buffer.byteLength(
-      JSON.stringify({
-        prompt,
-        handle: "00000000-0000-0000-0000-000000000000",
-      }),
-    ) >
-    1024 * 1024
-  )
+  if (Buffer.byteLength(JSON.stringify({ prompt })) > 1024 * 1024)
     throw new Error("Subagent prompt exceeds 1 MiB.");
   const entry = options.entry ?? process.argv[1];
   if (!entry)
@@ -220,9 +129,6 @@ export async function startSubagent(
   const { id, directory } = await allocateDirectory();
   const descriptors: number[] = [];
   let task: GuestTask | undefined;
-  let readiness: ReturnType<typeof observeReady> | undefined;
-  let bootstrap: Promise<void> | undefined;
-  let published = false;
   try {
     await execFileAsync("mkfifo", ["-m", "600", join(directory, "stdin")]);
     const stdout = openSync(join(directory, "stdout"), "wx", 0o600);
@@ -246,47 +152,27 @@ export async function startSubagent(
           OKOU_PI_SESSION_ID: randomUUID(),
           OKOU_PI_PREPARATION_TIMING: "0",
         },
-        onSpawn(child) {
-          readiness = observeReady(child);
-        },
       },
     );
-    const admitted = task;
-    const started = admitted.child;
-    if (!readiness) throw new Error("Subagent readiness was not observed.");
-    readiness.arm();
-    const publishAndBootstrap = async () => {
-      await writeFile(
-        join(directory, "task.pending"),
-        JSON.stringify({ handle: admitted.handle, pid: admitted.pid }),
-        { mode: 0o600, flag: "wx" },
-      );
-      // Publish one complete native identity; list/inspect must never read a
-      // partially written JSON record. Before publication, rollback owns the
-      // staged record; afterward UUID-guarded cleanup uses the visible record.
-      await rename(join(directory, "task.pending"), join(directory, "task"));
-      published = true;
-      await new Promise<void>((done, fail) => {
-        const stdin = started.stdin;
-        if (!stdin) {
-          fail(new Error("Subagent has no bootstrap input."));
-          return;
-        }
-        stdin.once("error", fail);
-        stdin.once("close", () => {
-          stdin.off("error", fail);
-        });
-        stdin.end(
-          JSON.stringify({ prompt, handle: admitted.handle }),
-          (error?: Error | null) => {
-            if (error) fail(error);
-            else done();
-          },
-        );
+    await writeFile(
+      join(directory, "task.pending"),
+      JSON.stringify({ handle: task.handle, pid: task.pid }),
+      { mode: 0o600, flag: "wx" },
+    );
+    // Readers see a complete record; this is not an application readiness gate.
+    await rename(join(directory, "task.pending"), join(directory, "task"));
+    const stdin = task.child.stdin;
+    if (!stdin) throw new Error("Subagent has no bootstrap input.");
+    await new Promise<void>((done, fail) => {
+      stdin.once("error", fail);
+      stdin.once("close", () => {
+        stdin.off("error", fail);
       });
-    };
-    bootstrap = publishAndBootstrap();
-    await Promise.all([readiness.ready, bootstrap]);
+      stdin.end(JSON.stringify({ prompt }), (error?: Error | null) => {
+        if (error) fail(error);
+        else done();
+      });
+    });
     task.detach();
     return {
       id,
@@ -300,48 +186,16 @@ export async function startSubagent(
       try {
         await task.stop();
       } catch (cleanup) {
-        await bootstrap?.catch(() => {});
         throw new AggregateError(
           [error, cleanup],
           "Subagent startup and Guest cleanup failed; its directory was retained.",
         );
       }
     }
-    // Readiness may reject while publication or a pipe write is still pending.
-    // Native stop closes the child first; drain the writer before ID reuse.
-    await bootstrap?.catch(() => {});
-    await removeSubagentDirectory(
-      directory,
-      task?.handle,
-      published ? "task" : "task.pending",
-    );
+    await removeSubagentDirectory(directory);
     throw error;
   } finally {
-    readiness?.dispose();
     for (const fd of descriptors) closeSync(fd);
-  }
-}
-
-interface ProcessIdentity {
-  readonly pid: number;
-}
-
-async function processIdentity(
-  pid: number,
-): Promise<ProcessIdentity | undefined> {
-  try {
-    const stat = await readFile(`/proc/${pid}/stat`, "utf8");
-    const fields = stat
-      .slice(stat.lastIndexOf(")") + 2)
-      .trim()
-      .split(/\s+/u);
-    const state = fields[0];
-    const start = fields[19];
-    if (!state || !start || state === "Z") return undefined;
-    return { pid };
-  } catch (error) {
-    if (hasCode(error, "ENOENT") || hasCode(error, "ESRCH")) return undefined;
-    throw error;
   }
 }
 
@@ -349,7 +203,6 @@ async function isOwnedProcess(
   pid: number,
   directory: string,
 ): Promise<boolean> {
-  if (!(await processIdentity(pid))) return false;
   try {
     const argv = (await readFile(`/proc/${pid}/cmdline`, "utf8")).split("\0");
     return argv.includes(LOOP_COMMAND) && argv.includes(directory);
@@ -424,10 +277,6 @@ export async function steerSubagent(id: string, prompt: string): Promise<void> {
     constants.O_WRONLY | constants.O_NONBLOCK,
   );
   try {
-    // Pin the FIFO first, then verify its generation before the atomic write.
-    // A concurrent completion/ID reuse must not steer the replacement task.
-    if ((await readTask(directory))?.handle !== task.handle)
-      throw new Error(`Subagent ${id} changed while steering.`);
     const { bytesWritten } = await fifo.write(frame);
     if (bytesWritten !== frame.length)
       throw new Error("Could not write the complete steering frame.");
@@ -442,5 +291,5 @@ export async function killSubagent(id: string): Promise<void> {
   if (!task)
     throw new Error(`Subagent ${id} was not found or is still starting.`);
   await stopGuestTask(task.handle);
-  await removeSubagentDirectory(directory, task.handle);
+  await removeSubagentDirectory(directory);
 }

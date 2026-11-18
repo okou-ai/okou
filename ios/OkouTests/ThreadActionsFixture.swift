@@ -36,6 +36,7 @@ final class ThreadActionsFixture: Sendable {
   struct State: Sendable {
     var muted = false
     var unread = true
+    var archived = false
     var title = "Planning a useful week"
     var failNext: [String: Int] = [:]
     var nextGate: ThreadActionGate?
@@ -155,8 +156,12 @@ final class ThreadActionsFixture: Sendable {
         kind = "sort_touched"
         state.muted = action == "mute"
         extra = ",\"muted\":\(state.muted)"
-      case "archive": kind = "archived"
-      case "unarchive": kind = "unarchived"
+      case "archive":
+        kind = "archived"
+        state.archived = true
+      case "unarchive":
+        kind = "unarchived"
+        state.archived = false
       case "rename":
         kind = "renamed"
         state.title = title ?? ""
@@ -255,7 +260,8 @@ final class ThreadActionsFixture: Sendable {
       let indicator = unread ? "{\"\(Self.thread)\":\"unread\"}" : "{}"
       let unreadAt = unread ? "{\"\(Self.thread)\":\"\(Self.date)\"}" : "{}"
       let agents =
-        state.value.withLock { $0.unread && !$0.muted } ? "{\"\(Self.agent)\":\"unread\"}" : "{}"
+        state.value.withLock { $0.unread && !$0.muted && !$0.archived }
+        ? "{\"\(Self.agent)\":\"unread\"}" : "{}"
       return ChatHTTPResponse(
         body: "{\"agents\":\(agents),\"threads\":\(indicator),\"unreadAt\":\(unreadAt)}")
     default: throw URLError(.unsupportedURL)
@@ -264,6 +270,8 @@ final class ThreadActionsFixture: Sendable {
 
   func remote(kind: String, extra: String = "") {
     state.value.withLock {
+      if kind == "archived" { $0.archived = true }
+      if kind == "unarchived" { $0.archived = false }
       $0.events.append(
         Self.event(kind: kind, id: UUID().uuidString, seq: $0.events.count + 1, extra: extra))
     }

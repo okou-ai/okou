@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="composer_sync_loading">Cargando borrador guardado…</string>
+    <string name="composer_sync_saving">Sincronizando borrador…</string>
+    <string name="composer_sync_failed">No se pudo sincronizar el borrador. Tu texto sigue en este dispositivo.</string>
+    <string name="composer_sync_unsupported">Este borrador contiene contenido que puedes editar en la Web. Tu texto sigue en este dispositivo; la sincronización automática está pausada.</string>
+    <string name="composer_sync_retry">Reintentar sincronización</string>
+    <string name="composer_restore_draft">Restaurar borrador conservado</string>
     <string name="controls_storage_failed">No se pueden guardar las solicitudes de control pendientes.</string>
     <string name="controls_stop">Detener el trabajo en curso</string>
     <string name="controls_queued_automation">Automatización en cola</string>

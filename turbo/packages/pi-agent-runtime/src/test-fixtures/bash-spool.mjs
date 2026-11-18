@@ -502,7 +502,7 @@ async function compatibility() {
       ["-e", 'process.stdout.write("out"); process.stderr.write("err")'],
       root,
     ),
-    { stdout: "out", stderr: "err", code: 0, killed: false },
+    { stdout: "out", stderr: "err", code: 0, killed: false, truncated: false },
   );
   const failed = await execute("printf failure; exit 7");
   assert.ifError(failed.error);

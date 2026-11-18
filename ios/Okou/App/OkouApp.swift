@@ -254,11 +254,6 @@ private struct WorkspaceRootView: View {
     .task(id: store.threadFeedback?.id) {
       guard let feedback = store.threadFeedback else { return }
       UIAccessibility.post(notification: .announcement, argument: feedback.message)
-      guard !feedback.persists else { return }
-      do {
-        try await Task.sleep(for: .seconds(UIAccessibility.isVoiceOverRunning ? 20 : 4))
-        store.dismissThreadFeedback(feedback.id)
-      } catch {}
     }
     .modifier(ChatLinkNavigation(store: store, didOpen: closeSidebar))
     .background { ChatThreadRenameDialog(list: store.list).frame(width: 0, height: 0) }

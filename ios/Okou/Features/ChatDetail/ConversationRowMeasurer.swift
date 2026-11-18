@@ -8,8 +8,80 @@ struct ConversationMeasurementInput<Content: View> {
   let defersHostedMeasurement: Bool
 }
 
+struct ConversationMeasurementLayout {
+  let width: CGFloat
+  let category: UIContentSizeCategory
+  let environment: ConversationHeightDiskCache.Layout
+}
+
 @MainActor
 final class ConversationRowMeasurer<Content: View> {
+  func prepareMissingRows(
+    _ missing: [ConversationCollectionRow], source: ConversationCollectionView<Content>,
+    layout: ConversationMeasurementLayout,
+    preparedMeasurements initial: [String: ConversationMeasurementCache.Measurement],
+    isCurrent: @escaping @MainActor () -> Bool
+  ) async -> (
+    measurements: [String: ConversationMeasurementCache.Measurement],
+    settledHeights: [ConversationHeightDiskCache.Key: Double]
+  )? {
+    typealias Measurement = ConversationMeasurementCache.Measurement
+    typealias Measurer = ConversationRowMeasurer<Content>
+    let width = layout.width
+    let category = layout.category
+    let environment = layout.environment
+    guard let traits = input()?.controller.traitCollection else { return nil }
+    var preparedMeasurements = initial
+    let disk = ConversationHeightDiskCache.shared
+    var keys: [String: ConversationHeightDiskCache.Key] = [:]
+    var warmed = Set<String>()
+    if let namespace = source.measurements.namespace, missing.count <= 64 {
+      let layout = Measurer.diskLayout(width: width, traits: traits)
+      for row in missing {
+        guard let message = row.message, message.role == .assistant else { continue }
+        await prepareMarkdown(row)
+        guard !Task.isCancelled, isCurrent() else { return nil }
+        warmed.insert(row.id)
+      }
+      for row in missing {
+        keys[row.id] = Measurer.diskKey(
+          for: row, namespace: namespace, layout: layout, source: source)
+      }
+      if !keys.isEmpty {
+        let heights = await disk.heights(for: keys)
+        guard !Task.isCancelled, isCurrent() else { return nil }
+        for row in missing {
+          if let height = heights[row.id] {
+            preparedMeasurements[row.id] = Measurement(
+              row: row, width: width, category: category, environment: environment,
+              height: height, diskKey: keys[row.id])
+          }
+        }
+      }
+    }
+    let unmeasured = missing.filter { preparedMeasurements[$0.id] == nil }
+    var settledHeights: [ConversationHeightDiskCache.Key: Double] = [:]
+    // Four temporary hosts at a time bound retained views even in an expanded history.
+    for start in stride(from: 0, to: unmeasured.count, by: 4) {
+      let batch = Array(unmeasured[start..<min(start + 4, unmeasured.count)])
+      for row in batch where !warmed.contains(row.id) {
+        await prepareMarkdown(row)
+        guard !Task.isCancelled, isCurrent() else { return nil }
+      }
+      let (heights, settled) = await measure(batch, width: width)
+      guard !Task.isCancelled, isCurrent() else { return nil }
+      for (row, height) in zip(batch, heights) {
+        let key = settled ? keys[row.id] : nil
+        if let key { settledHeights[key] = height }
+        preparedMeasurements[row.id] = Measurement(
+          row: row, width: width, category: category, environment: environment,
+          height: height, diskKey: key)
+      }
+    }
+    guard !Task.isCancelled, isCurrent() else { return nil }
+    return (preparedMeasurements, settledHeights)
+  }
+
   private var markdownLookahead: Task<Void, Never>?
   private let input: @MainActor () -> ConversationMeasurementInput<Content>?
 

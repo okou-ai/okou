@@ -179,34 +179,7 @@ final class ConnectorActionStore {
           try await accept(result.operatedID, flow: flow)
           return
         }
-        let result = try await service.start(
-          flow.action, status: current, method: flow.method, values: flow.values,
-          options: flow.options)
-        try check(flow)
-        flow.values = [:]
-        flow.code = ""
-        flow.browserClosed = false
-        if let sessionID = result.sessionId {
-          guard UUID(uuidString: sessionID) != nil, result.sessionToken != nil,
-            let expires = result.expiresIn, expires > 0
-          else { throw APIClientError.invalidResponse }
-          flow.session = result
-          flow.expiresAt = Date().addingTimeInterval(expires)
-          flow.pollInterval = max(1, result.interval ?? 2)
-          flow.browserURL = try browserURL(
-            result.authorizationUrl ?? result.verificationUriComplete ?? result.verificationUri)
-          if flow.method?.grantKind == "device-auth" { startPolling(flow) }
-          return
-        }
-        if let attemptID = result.oauthAttemptId {
-          guard UUID(uuidString: attemptID) != nil else { throw APIClientError.invalidResponse }
-          flow.session = result
-          flow.expiresAt = Date().addingTimeInterval(600)
-          flow.browserURL = try browserURL(result.authorizationUrl)
-          startPolling(flow)
-          return
-        }
-        try await accept(result.operatedID, flow: flow)
+        try await startAuthorization(flow, status: current)
       } catch is CancellationError {
       } catch {
         guard active === flow, !closed else { return }
@@ -215,6 +188,39 @@ final class ConnectorActionStore {
       }
     }
   }
+  private func startAuthorization(
+    _ flow: ConnectorAuthorizationFlow, status current: ChatConnectorStatus
+  ) async throws {
+    let result = try await service.start(
+      flow.action, status: current, method: flow.method, values: flow.values,
+      options: flow.options)
+    try check(flow)
+    flow.values = [:]
+    flow.code = ""
+    flow.browserClosed = false
+    if let sessionID = result.sessionId {
+      guard UUID(uuidString: sessionID) != nil, result.sessionToken != nil,
+        let expires = result.expiresIn, expires > 0
+      else { throw APIClientError.invalidResponse }
+      flow.session = result
+      flow.expiresAt = Date().addingTimeInterval(expires)
+      flow.pollInterval = max(1, result.interval ?? 2)
+      flow.browserURL = try browserURL(
+        result.authorizationUrl ?? result.verificationUriComplete ?? result.verificationUri)
+      if flow.method?.grantKind == "device-auth" { startPolling(flow) }
+      return
+    }
+    if let attemptID = result.oauthAttemptId {
+      guard UUID(uuidString: attemptID) != nil else { throw APIClientError.invalidResponse }
+      flow.session = result
+      flow.expiresAt = Date().addingTimeInterval(600)
+      flow.browserURL = try browserURL(result.authorizationUrl)
+      startPolling(flow)
+      return
+    }
+    try await accept(result.operatedID, flow: flow)
+  }
+
   private func browserURL(_ url: URL?) throws -> URL {
     guard let url, url.scheme?.lowercased() == "https", url.user == nil, url.password == nil else {
       throw APIClientError.invalidResponse

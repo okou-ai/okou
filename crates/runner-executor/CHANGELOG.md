@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.21.54](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.53...runner-executor-v0.21.54) (2026-11-18)
+
+
+### Bug Fixes
+
+* classify codex terminal failures and agent oom ([#48521](https://github.com/okou-ai/okou/issues/48521)) ([00075f2](https://github.com/okou-ai/okou/commit/00075f2f8a0d64e6aa8c3cecc8dc7bdc6cccde5f))
+* **runner:** bound guest disk recovery by time and capacity ([#48523](https://github.com/okou-ai/okou/issues/48523)) ([6107729](https://github.com/okou-ai/okou/commit/61077298e7c6594e68b818d99c5ec5eeab68ae6b))
+
+## [0.21.53](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.52...runner-executor-v0.21.53) (2026-11-18)
+
+## [0.21.52](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.51...runner-executor-v0.21.52) (2026-11-18)
+
+
+### Performance Improvements
+
+* **runner:** borrow decoded file contents during guest apply ([#48426](https://github.com/okou-ai/okou/issues/48426)) ([cb7d9e7](https://github.com/okou-ai/okou/commit/cb7d9e73ee9bf10be6ce4466526c8c39414011cb))
+
+## [0.21.51](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.50...runner-executor-v0.21.51) (2026-11-18)
+
 ## [0.21.50](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.49...runner-executor-v0.21.50) (2026-11-17)
 
 ## [0.21.49](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.48...runner-executor-v0.21.49) (2026-11-17)

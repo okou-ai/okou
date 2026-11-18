@@ -16,6 +16,7 @@ pub fn execution_context_for_test(run_id: RunId) -> ExecutionContext {
         instruction_file: None,
         vars: None,
         sandbox_token: "tok".into(),
+        firewall_token: None,
         storage_manifest: None,
         environment: None,
         platform_environment: HashMap::new(),

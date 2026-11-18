@@ -44,7 +44,6 @@ interface ShareButtonProps {
   readonly ariaLabel: string;
   readonly className?: string;
   readonly iconSize?: number;
-  readonly readyOnly?: boolean;
 }
 
 function HostedSiteBannerSetting({
@@ -65,8 +64,7 @@ function HostedSiteBannerSetting({
     !signal ||
     owner.state !== "hasData" ||
     !owner.data ||
-    (banner.state === "hasData" && !banner.data) ||
-    (features[FeatureSwitchKey.ArtifactPreviewToolbar] && !current)
+    (banner.state === "hasData" && !banner.data)
   ) {
     return null;
   }
@@ -620,7 +618,6 @@ function HostedSiteSharePopover({
   ariaLabel,
   className,
   iconSize = 16,
-  readyOnly = false,
   saving,
   children,
 }: ShareButtonProps & {
@@ -633,15 +630,11 @@ function HostedSiteSharePopover({
   const open = useGet(session.open$);
   const setOpen = useSet(session.setOpen$);
   const show = useSet(session.show$);
-  // Preload even while the trigger is absent. The toolbar does not own these
-  // requests through the conditional presence of the popover body.
+  // Keep settings subscribed while the share popup is closed.
   useLoadable(session.copyUrl$);
   useLoadable(session.visibility$);
   useLoadable(session.banner$);
-  if (
-    !signal ||
-    (readyOnly && settings.state !== "hasData" && !open && !saving)
-  ) {
+  if (!signal) {
     return null;
   }
   return (
@@ -742,12 +735,7 @@ export function HostedSiteShareMenu({
   const session = useGet(scope.session$);
   const mountRef = useSet(scope.mountRef$);
   return (
-    <span
-      key={url}
-      ref={mountRef}
-      data-share-url={url}
-      className={props.readyOnly ? "contents" : "inline-flex"}
-    >
+    <span key={url} ref={mountRef} data-share-url={url} className="inline-flex">
       {session?.sourceUrl === url ? (
         // Settings have independent subscriptions; URL saves keep these nodes.
         <HostedSiteShareSessionMenu
@@ -757,7 +745,7 @@ export function HostedSiteShareMenu({
           banner={<HostedSiteBannerSetting session={session} />}
           {...props}
         />
-      ) : props.readyOnly ? null : (
+      ) : (
         <Button
           variant="quiet"
           size="icon-sm"

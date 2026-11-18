@@ -47,6 +47,7 @@ export interface FeatureGuideSnapshot {
   readonly owner: string;
   readonly edition: FeatureGuideEdition;
   readonly preview: boolean;
+  readonly previewEdition?: string;
   readonly selection: ReturnType<typeof createFeatureGuideSelection>;
 }
 
@@ -58,14 +59,16 @@ const dismissed$ = state<{
 export const featureGuide$ = computed(
   async (get): Promise<FeatureGuideSnapshot | null> => {
     const owner = get(authenticatedSessionKey$);
-    const preview = get(searchParams$).get("featureGuidePreview") === "1";
+    const searchParams = get(searchParams$);
+    const preview = searchParams.get("featureGuidePreview") === "1";
+    const edition = searchParams.get("featureGuideEdition") ?? undefined;
     const enabled = get(featureSwitch$)[FeatureSwitchKey.FeatureGuides];
     if (!owner || !enabled) {
       return null;
     }
     const response = await accept(
       get(apiClient$)(featureGuidesContract).current({
-        query: preview ? { preview: "1" } : undefined,
+        query: preview ? { preview: "1", edition } : undefined,
       }),
       [200],
     );
@@ -76,6 +79,7 @@ export const featureGuide$ = computed(
       owner,
       edition: response.body.edition,
       preview: response.body.preview === true,
+      previewEdition: preview ? edition : undefined,
       selection: createFeatureGuideSelection(
         response.body.edition.content.items.length,
       ),

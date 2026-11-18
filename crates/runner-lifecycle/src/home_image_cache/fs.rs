@@ -204,19 +204,15 @@ pub(super) fn statvfs_bytes_sync(path: &Path) -> LifecycleResult<FsStats> {
     Ok(fs_stats_from_statvfs(&stats))
 }
 
-pub(super) fn statvfs_for_path(path: &Path) -> LifecycleResult<libc::statvfs> {
+pub(super) fn statvfs_for_path(path: &Path) -> LifecycleResult<rustix::fs::StatVfs> {
     let bytes = path.as_os_str().as_bytes();
     let c_path = std::ffi::CString::new(bytes)
         .map_err(|_| LifecycleError::Internal("statvfs path contains nul byte".to_owned()))?;
-    let mut stats = std::mem::MaybeUninit::<libc::statvfs>::uninit();
-    let rc = unsafe { libc::statvfs(c_path.as_ptr(), stats.as_mut_ptr()) };
-    if rc != 0 {
-        return Err(with_path(std::io::Error::last_os_error(), "statvfs", path).into());
-    }
-    Ok(unsafe { stats.assume_init() })
+    rustix::fs::statvfs(c_path.as_c_str())
+        .map_err(|error| with_path(error.into(), "statvfs", path).into())
 }
 
-pub(super) fn fs_stats_from_statvfs(stats: &libc::statvfs) -> FsStats {
+pub(super) fn fs_stats_from_statvfs(stats: &rustix::fs::StatVfs) -> FsStats {
     let block_size = stats.f_frsize;
     FsStats {
         total_bytes: stats.f_blocks.saturating_mul(block_size),

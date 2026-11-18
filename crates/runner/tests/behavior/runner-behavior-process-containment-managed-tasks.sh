@@ -71,6 +71,10 @@ def delegation_action(action):
         assert select.select([child.stdout], [], [], 15)[0], "nested command timed out"
         print(child.stdout.readline().strip(), flush=True)
         return True
+    if action.startswith("wait "):
+        handle = action.split(" ", 1)[1]
+        print(json.dumps({"exit_code": children[handle].wait(timeout=10)}), flush=True)
+        return True
     if action.startswith("stop "):
         handle = action.split(" ", 1)[1]
         stopped = subprocess.run(["/usr/local/bin/guest-task-exec", "stop", handle],
@@ -86,7 +90,7 @@ nested_program = r'''
 import json, os, pathlib, signal, subprocess, sys
 exec(os.environ["TASK_NESTED_SUPPORT"])
 relative = pathlib.Path("/proc/self/cgroup").read_text().strip().removeprefix("0::")
-assert relative.endswith("/runtime") and relative.count("/tools/task-") >= 2
+assert relative.endswith("/runtime") and relative.count("/tools/task-") == 1
 assert pathlib.Path("/proc/self/oom_score_adj").read_text().strip() == "1000"
 signal.signal(signal.SIGTERM, signal.SIG_IGN)
 detached = subprocess.Popen(["/usr/bin/setsid", "/bin/bash", "-c", "trap '' TERM; while :; do sleep 1; done"],
@@ -122,19 +126,22 @@ for level, kind, data in control:
     fds.frombytes(data)
 assert len(fds) == 1
 print(json.dumps({"placement_pending": True}), flush=True)
-assert stream.recv(1) == b"", "closed ancestor allowed a tool ACK"
+assert stream.recv(1) == b"", "stopped runtime allowed a tool ACK"
 os.close(fds[0])
 """
         peer = subprocess.Popen(["python3", "-u", "-c", pending], stdout=subprocess.PIPE, text=True)
         assert json.loads(peer.stdout.readline())["placement_pending"]
         print(json.dumps({"placement_pending": True}), flush=True)
         assert peer.wait(timeout=10) == 0
+# A creator's stdio closure is not task cancellation.
+while True:
+    signal.pause()
 '''
 os.environ["TASK_NESTED_SUPPORT"] = nested_support
 os.environ["TASK_NESTED_PROGRAM"] = nested_program
 
 runtime_program = r'''
-import errno, json, os, pathlib, signal, subprocess, sys
+import errno, json, os, pathlib, shlex, signal, subprocess, sys
 exec(os.environ["TASK_NESTED_SUPPORT"])
 assert os.geteuid() != 0
 assert sys.argv[1:] == ["ordinary task arg", ""]
@@ -162,6 +169,12 @@ for action in sys.stdin:
         continue
     if action.strip() == "exit":
         sys.exit(0)
+    if action.strip() == "persistent_tool":
+        program = "import json,os,pathlib,signal; signal.signal(signal.SIGTERM, signal.SIG_IGN); print(json.dumps({'pid':os.getpid(),'cgroup':pathlib.Path('/proc/self/cgroup').read_text().strip()[3:]}),flush=True); signal.pause()"
+        tool = subprocess.Popen(["/usr/local/bin/guest-tool-exec", "-c", "exec python3 -u -c " + shlex.quote(program)],
+                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True)
+        assert select.select([tool.stdout], [], [], 10)[0]
+        print(json.dumps({"persistent_tool": json.loads(tool.stdout.readline())}), flush=True)
     if action.strip() == "oom":
         # Test-only leaf limit: production adds no per-task quota or protection.
         oom = """leaf=/sys/fs/cgroup$(awk -F: '$1 == "0" {print $3}' /proc/self/cgroup); sudo sh -c 'echo 50331648 > "$1/memory.max"' sh "$leaf"; python3 -c 'a=bytearray(134217728); print(len(a))'"""
@@ -177,7 +190,7 @@ for action in sys.stdin:
         os.kill(os.getpid(), signal.SIGKILL)
     if action.strip() == "pending_task_exit":
         # Hold a real nested task handoff across creator exit, then confirm it.
-        # The closed ancestor must prevent ACK, not merely clean up a running target.
+        # Placement transfers ownership to the operation before creator exit.
         pending = r"""
 import array, json, os, pathlib, socket, struct
 stream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -209,9 +222,8 @@ print(json.dumps(dict(task, runtime=runtime)), flush=True)
 with open(os.environ["TASK_PENDING_GATE"], "rb", buffering=0) as gate:
     assert gate.read(1) == b"1"
 stream.sendall(b"C")
-if stream.recv(1) == b"A":
-    pathlib.Path(os.environ["TASK_PENDING_GATE"] + ".acked").touch()
-    raise AssertionError("exited creator admitted its nested task")
+assert stream.recv(1) == b"A", "creator exit cancelled operation-owned admission"
+pathlib.Path(os.environ["TASK_PENDING_GATE"] + ".acked").touch()
 """
         peer = subprocess.Popen(["python3", "-u", "-c", pending], stdout=subprocess.PIPE, text=True)
         assert select.select([peer.stdout], [], [], 10)[0]
@@ -307,15 +319,21 @@ def stop(task):
     gone(pathlib.Path(f"/proc/{ready['detached']}"))
 
 
+def alive(pid):
+    fields = pathlib.Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+    assert fields[0] not in ("Z", "X", "x"), f"task {pid} is not alive"
+    return True
+
+
 def command(process, action):
     process.stdin.write(action + "\n")
     process.stdin.flush()
     return read_json(process)
 
 
-def nested_path(parent, child):
+def nested_path(child):
     path = pathlib.Path("/sys/fs/cgroup" + child["runtime"]).parent
-    assert path == parent / "tools" / ("task-" + child["handle"])
+    assert path == main_runtime.parent / "tools" / ("task-" + child["handle"])
     for node, oom_group in [(path, "0"), (path / "runtime", "1"), (path / "tools", "0")]:
         assert (node / "memory.oom.group").read_text().strip() == oom_group
         assert (node / "memory.min").read_text().strip() == "0"
@@ -326,55 +344,98 @@ def nested_path(parent, child):
 
 a, b = launch(), launch()  # Deliberately one starter Bash, not two tool owners.
 assert a[1]["handle"] != b[1]["handle"] and a[3] != b[3]
+# A real same-UID peer outside this operation cannot use even a known live handle.
+foreign = main_runtime.parents[2] / ("exec-foreign-" + str(uuid.uuid4()))
+foreign_runtime = foreign / "workload/runtime"
+subprocess.run(["sudo", "mkdir", "-p", str(foreign_runtime)], check=True, timeout=10)
+try:
+    probe = r'''
+import os, subprocess, sys
+subprocess.run(["sudo", "sh", "-c", 'echo "$1" > "$2/cgroup.procs"',
+                "sh", str(os.getpid()), sys.argv[1]], check=True)
+result = subprocess.run(["/usr/local/bin/guest-task-exec", "stop", sys.argv[2]],
+                        capture_output=True, text=True, timeout=20)
+assert result.returncode == 125, result
+assert "task caller is not in an owned runtime/tools domain" in result.stderr, result.stderr
+'''
+    subprocess.run(["python3", "-c", probe, str(foreign_runtime), a[1]["handle"]],
+                   check=True, timeout=25)
+    assert a[0].poll() is None and a[3].exists()
+finally:
+    for path in (foreign_runtime, foreign_runtime.parent, foreign):
+        subprocess.run(["sudo", "rmdir", str(path)], check=True, timeout=10)
 a[0].stdin.write("oom\n")
 a[0].stdin.flush()
 assert read_json(a[0])["tool_oom_survived"]
 assert a[0].poll() is None and b[0].poll() is None
 n = command(a[0], "nested")["nested"]
-np = nested_path(a[3], n)
+np = nested_path(n)
 g = command(a[0], "child " + n["handle"] + " nested")["nested"]
-gp = nested_path(np, g)
-assert command(a[0], "stop " + b[1]["handle"])["stop_code"] == 125
-assert b[0].poll() is None
+gp = nested_path(g)
+assert command(a[0], "stop " + b[1]["handle"])["stop_code"] == 0
+b[0].wait(timeout=5)
+gone(b[3])
+gone(pathlib.Path(f"/proc/{b[2]['detached']}"))
+b = launch()
 assert command(a[0], "child " + n["handle"] + " stop " + g["handle"])["stop_code"] == 0
 gone(gp)
 gone(pathlib.Path(f"/proc/{g['detached']}"))
 assert pathlib.Path(f"/proc/{n['pid']}").exists() and a[0].poll() is None
 g2 = command(a[0], "child " + n["handle"] + " nested")["nested"]
-gp2 = nested_path(np, g2)
+gp2 = nested_path(g2)
 assert g2["handle"] != g["handle"]
 assert command(a[0], "child " + n["handle"] + " stop " + g["handle"])["stop_code"] == 0
 assert pathlib.Path(f"/proc/{g2['pid']}").exists(), "retired handle stopped a replacement"
 assert command(a[0], "child " + n["handle"] + " child " + g2["handle"] + " runtime_oom")["nested_runtime_oom_armed"]
+assert command(a[0], "child " + n["handle"] + " wait " + g2["handle"])["exit_code"] in (-9, 137)
+# The kernel kills the runtime's OOM group, but Guest does not reap the task.
+assert gp2.exists()
+assert command(a[0], "stop " + g2["handle"])["stop_code"] == 0
 gone(gp2)
 gone(pathlib.Path(f"/proc/{g2['detached']}"))
 assert a[0].poll() is None and pathlib.Path(f"/proc/{n['pid']}").exists()
 g3 = command(a[0], "child " + n["handle"] + " nested")["nested"]
-gp3 = nested_path(np, g3)
+gp3 = nested_path(g3)
 assert command(a[0], "child " + n["handle"] + " child " + g3["handle"] + " pending")["placement_pending"]
-stop(a)  # Runtime/descendant ignore TERM: task-only cgroup.kill is required.
+stop(a)  # Stop kills A's runtime/ordinary tools, not separately launched tasks.
+for child, path in ((n, np), (g3, gp3)):
+    assert path.exists() and alive(child["pid"])
+# Stopping N must also leave G3 and its pending tool handoff independent.
+subprocess.run([helper, "stop", n["handle"]], check=True, timeout=20)
+gone(np)
+assert gp3.exists() and alive(g3["pid"])
+subprocess.run([helper, "stop", g3["handle"]], check=True, timeout=20)
+gone(gp3)
 for child in (n, g3):
     gone(pathlib.Path(f"/proc/{child['pid']}"))
     gone(pathlib.Path(f"/proc/{child['detached']}"))
-gone(gp3)
 assert b[0].poll() is None
 assert (main_runtime / "cgroup.procs").read_text() == main_pids
 assert (main_runtime / "memory.min").read_text() == main_min
 assert pathlib.Path("/proc/self/cgroup").read_text().strip() == "0::" + parent_tool
+bt = command(b[0], "persistent_tool")["persistent_tool"]
+assert pathlib.Path("/sys/fs/cgroup" + bt["cgroup"]).parent == b[3] / "tools"
 b[0].stdin.write("exit\n")
 b[0].stdin.flush()
 assert b[0].wait(timeout=5) == 0
-gone(b[3])  # The runtime socket is long closed; pidfd lifetime owns descendants.
+assert b[3].exists() and alive(b[2]["detached"]) and alive(bt["pid"])
+assert pathlib.Path("/sys/fs/cgroup" + bt["cgroup"]).exists()
+stop(b)
+gone(pathlib.Path(f"/proc/{bt['pid']}"))
 
 c = launch()
 cn = command(c[0], "nested")["nested"]
-cnp = nested_path(c[3], cn)
+cnp = nested_path(cn)
 c[0].stdin.write("runtime_oom\n")
 c[0].stdin.flush()
 assert c[0].wait(timeout=10) in (-9, 137)
-gone(c[3])
+assert cnp.exists() and alive(cn["pid"])
+stop(c)
+assert cnp.exists() and alive(cn["pid"])
+subprocess.run([helper, "stop", cn["handle"]], check=True, timeout=20)
 gone(cnp)
 gone(pathlib.Path(f"/proc/{cn['pid']}"))
+gone(pathlib.Path(f"/proc/{cn['detached']}"))
 assert (main_runtime / "cgroup.procs").read_text() == main_pids
 
 pending = launch()
@@ -387,11 +448,14 @@ assert read_json(pending[0])["placement_drained"]
 for action in ("exit", "crash"):
     ancestor = launch()
     child = command(ancestor[0], "nested")["nested"]
-    child_path = nested_path(ancestor[3], child)
+    child_path = nested_path(child)
     ancestor[0].stdin.write(action + "\n")
     ancestor[0].stdin.flush()
     assert ancestor[0].wait(timeout=5) == (0 if action == "exit" else -9)
-    gone(ancestor[3])
+    assert child_path.exists() and alive(child["pid"])
+    stop(ancestor)
+    assert child_path.exists() and alive(child["pid"])
+    subprocess.run([helper, "stop", child["handle"]], check=True, timeout=20)
     gone(child_path)
     gone(pathlib.Path(f"/proc/{child['pid']}"))
     gone(pathlib.Path(f"/proc/{child['detached']}"))
@@ -402,18 +466,24 @@ os.environ["TASK_PENDING_GATE"] = str(gate)
 ancestor = launch()
 unconfirmed = command(ancestor[0], "pending_task_exit")
 assert ancestor[0].wait(timeout=5) == 0
-unconfirmed_path = nested_path(ancestor[3], unconfirmed)
+unconfirmed_path = nested_path(unconfirmed)
 with gate.open("wb", buffering=0) as release_gate:
     release_gate.write(b"1")
-gone(ancestor[3])
+acked = pathlib.Path(str(gate) + ".acked")
+deadline = time.monotonic() + 10
+while not acked.exists() and time.monotonic() < deadline:
+    time.sleep(0.05)
+assert acked.exists(), "creator exit prevented independent task admission"
+stop(ancestor)
+subprocess.run([helper, "stop", unconfirmed["handle"]], check=True, timeout=20)
 gone(unconfirmed_path)
 gone(pathlib.Path(f"/proc/{unconfirmed['pid']}"))
-assert not pathlib.Path(str(gate) + ".acked").exists()
 gate.unlink()
 
 failed, metadata = startup(["/no/such/managed-task-program"])
 assert metadata is not None and failed.wait(timeout=10) == 126
 failed_task = main_runtime.parent / "tools" / ("task-" + metadata["handle"])
+subprocess.run([helper, "stop", metadata["handle"]], check=True, timeout=20)
 gone(failed_task)
 
 # An unavailable/stopped broker never runs the target and produces no startup
@@ -549,13 +619,14 @@ for state, task_path, pid in batch_tasks:
     assert "hero\thttps://cdn.example/fixture.png" in waited.stdout
     assert "Image batch joined:" in waited.stdout
     assert "image-batch-worker-output" in (state / "output.log").read_text()
+    subprocess.run([helper, "stop", task_path.name.removeprefix("task-")], check=True, timeout=20)
     gone(task_path)
     gone(pathlib.Path(f"/proc/{pid}"))
 print("image-batch-native-task-consumer-passed", flush=True)
 
 # The actual packaged Pi loop, model/session factories and Bash wrapper run
 # against a local provider fixture. A creates B through its real scoped Bash;
-# an unrelated sibling remains alive when A's complete subtree is stopped.
+# B and an unrelated sibling remain alive when A's runtime/tools are stopped.
 import http.server
 import shlex
 import threading
@@ -661,7 +732,7 @@ try:
     rb, cb = pi_task(pb)
     rc, cc = pi_task(pc)
     assert ca.parent == cc.parent == main_runtime.parent / "tools"
-    assert cb.parent == ca / "tools", "Pi child escaped its creator's subtree"
+    assert cb.parent == ca.parent, "Pi task was not owned directly by the operation"
     for item, path, label in [(pa, ca, "NATIVE_TASK_A"), (pb, cb, "NATIVE_TASK_B"), (pc, cc, "NATIVE_TASK_C")]:
         tool = json.loads((pi_root / (label + ".tool.json")).read_text())
         assert pathlib.Path("/sys/fs/cgroup" + tool["cgroup"]).parent == path / "tools"
@@ -670,16 +741,17 @@ try:
         assert decode_inspection(pi_command("inspect", item["id"]))["running"]
     pi_command("steer", "-p", pa["id"], "Native steering before cancellation")
     pi_command("kill", pa["id"])
-    for item, path in [(pa, ca), (pb, cb)]:
-        gone(path)
-        gone(pathlib.Path(f"/proc/{item['pid']}"))
-    assert pathlib.Path(f"/proc/{pc['pid']}").exists() and cc.exists()
-    # SIGKILL may prevent best-effort Pi registry removal; the saved UUID still
-    # supports safe cleanup after the native ancestor stop has retired B.
-    if rb.exists():
-        pi_command("kill", pb["id"])
+    gone(ca)
+    gone(pathlib.Path(f"/proc/{pa['pid']}"))
+    for item, path in [(pb, cb), (pc, cc)]:
+        assert alive(item["pid"]) and path.exists()
+    pi_command("kill", pb["id"])
+    gone(cb)
+    gone(pathlib.Path(f"/proc/{pb['pid']}"))
     release["NATIVE_TASK_C"].set()
     gone(rc)
+    # Normal consumer completion does not imply Guest task cleanup.
+    subprocess.run([helper, "stop", cc.name.removeprefix("task-")], check=True, timeout=20)
     gone(cc)
     assert "No running subagents" in pi_command("list")
     assert not failures, failures

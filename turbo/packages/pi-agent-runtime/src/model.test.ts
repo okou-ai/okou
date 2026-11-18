@@ -4,7 +4,8 @@ import { zstdDecompressSync } from "node:zlib";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Message, Tool } from "@earendil-works/pi-ai";
-import { normalizeContext, Type } from "@earendil-works/pi-ai";
+import { normalizeContext } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { isRetryableAssistantError } from "@earendil-works/pi-ai/utils/retry";
 import { piModelConfigSchema } from "@okouai/api-contracts/contracts/runners";
 import { materializePiAgentModelConfig } from "./credential";
@@ -161,7 +162,7 @@ async function codexRequestBody(
   return captured;
 }
 
-describe("Pi 0.86.1 Codex wire pinning", () => {
+describe("Pi Codex wire pinning", () => {
   const readTool: Tool = {
     name: "read",
     description: "Read a file",
@@ -169,18 +170,26 @@ describe("Pi 0.86.1 Codex wire pinning", () => {
   };
 
   it("sends no strict field in Codex tool definitions", async () => {
-    // 0.86 resolves an unset `supportsStrictMode` to true for this dialect and
-    // its catalog never sets the field, so resolvePiAgentModel pins it false.
+    // Keep our non-strict policy when the catalog uses mid-conversation tools.
     expect(codexModel().compat?.supportsStrictMode).toBe(false);
 
     const body = await codexRequestBody(
       [{ role: "user", content: "hello", timestamp: 1 }],
       [readTool],
     );
-    const tools = body.tools;
-    expect(Array.isArray(tools)).toBe(true);
+    const input = body.input as Array<Record<string, unknown>>;
+    const tools = input
+      .filter((item) => {
+        return item.type === "additional_tools";
+      })
+      .flatMap((item) => {
+        return item.tools as Array<Record<string, unknown>>;
+      });
+    expect(tools).toContainEqual(
+      expect.objectContaining({ type: "function", name: "read" }),
+    );
     expect(tools).not.toHaveLength(0);
-    for (const tool of tools as Array<Record<string, unknown>>) {
+    for (const tool of tools) {
       expect(tool).not.toHaveProperty("strict");
     }
     expect(JSON.stringify(tools)).not.toContain("strict");

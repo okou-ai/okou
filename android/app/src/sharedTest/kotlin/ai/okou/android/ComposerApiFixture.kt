@@ -1,5 +1,6 @@
 package ai.okou.android
 
+import ai.okou.android.chat.plainDraftDocument
 import java.io.Closeable
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
@@ -34,6 +35,10 @@ class ComposerApiFixture : Closeable {
     @Volatile var beforeSendReturn: () -> Unit = {}
     @Volatile var beforeContextReturn: () -> Unit = {}
     @Volatile var inputDisposition = "queued"
+    val drafts = ConcurrentHashMap<String, JsonObject>()
+    @Volatile var beforeDraftRead: (String) -> Unit = {}
+    @Volatile var beforeDraftWrite: (String) -> Unit = {}
+    @Volatile var draftReadStatus = 200
 
     init {
         chats.flags = {
@@ -42,6 +47,22 @@ class ComposerApiFixture : Closeable {
         chats.commandResponse = { request ->
             val path = request.requestUrl?.encodedPath.orEmpty()
             when {
+                request.method == "GET" && path.endsWith("/draft") -> {
+                    requests += request
+                    val body = drafts[path] ?: plainDraftDocument("")
+                    beforeDraftRead(path)
+                    json(body.toString()).setResponseCode(draftReadStatus)
+                }
+                request.method == "PATCH" &&
+                    (path.startsWith("/api/agents/") && path.endsWith("/draft") ||
+                        path.startsWith("/api/chat-threads/") &&
+                            !path.removePrefix("/api/chat-threads/").contains('/')) -> {
+                    requests += request
+                    val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
+                    beforeDraftWrite(path)
+                    drafts[if (path.endsWith("/draft")) path else "$path/draft"] = body
+                    MockResponse().setResponseCode(204)
+                }
                 path == "/api/onboarding/status" -> {
                     requests += request
                     beforeContextReturn()

@@ -196,7 +196,7 @@ fn run_storage_files_in_context(input: &[u8], runtime_dir: Option<&Path>) -> boo
 
 fn run_manifest_with_files_in_runtime(
     manifest: Manifest,
-    files: Vec<guest_contracts::storage_files::StorageFiles>,
+    files: Vec<guest_contracts::storage_files::StorageFiles<&[u8]>>,
     runtime_dir: Option<&Path>,
 ) -> bool {
     if manifest

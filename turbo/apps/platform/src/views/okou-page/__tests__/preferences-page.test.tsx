@@ -94,7 +94,7 @@ function expectSelected(element: HTMLElement): void {
   expect(selectionAttribute).toBe("true");
 }
 
-test("Theme preferences initialize from the shared cookie", async () => {
+test("Theme preferences initialize from the cookie and save explicit choices to the workspace", async () => {
   const updates = mockPreferences({ theme: null });
   const cookieWrites: string[] = [];
   vi.spyOn(document, "cookie", "set").mockImplementation((value) => {
@@ -113,21 +113,25 @@ test("Theme preferences initialize from the shared cookie", async () => {
   await waitFor(() => {
     expectSelected(getFastRole("button", "Light"));
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
+    expect(getFastRole("button", "Light")).toBeEnabled();
+    expect(updates).toContainEqual({ theme: "light" });
   });
-  expect(updates).not.toContainEqual(
-    expect.objectContaining({ theme: "light" }),
-  );
   expect(cookieWrites).toContain(
     "__Secure-okou-theme=v1.light; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
   );
 
-  await expect(
-    screen.findByText("Your agents will use this time zone during runs"),
-  ).resolves.toBeVisible();
-  expect(getFastRole("button", "Light")).toBeVisible();
+  click(getFastRole("button", "System"));
+  await waitFor(() => {
+    expectSelected(getFastRole("button", "System"));
+    expect(getFastRole("button", "System")).toBeEnabled();
+    expect(updates).toContainEqual({ theme: "system" });
+  });
+  expect(cookieWrites).toContain(
+    "__Secure-okou-theme=v1.system; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
+  );
 });
 
-test("Cookie theme and account-backed color theme are restored and saved", async () => {
+test("Theme choices and color themes save independently while cookie restoration is preserved", async () => {
   const updates = mockPreferences({
     theme: "dark",
     colorTheme: "golden-hour",
@@ -155,10 +159,9 @@ test("Cookie theme and account-backed color theme are restored and saved", async
 
   await waitFor(() => {
     expectSelected(getFastRole("button", "Dark"));
+    expect(getFastRole("button", "Dark")).toBeEnabled();
+    expect(updates).toContainEqual({ theme: "dark" });
   });
-  expect(updates).not.toContainEqual(
-    expect.objectContaining({ theme: "dark" }),
-  );
 
   const selectedAppearance = ["Light", "Dark", "System"].find((name) => {
     return getFastRole("button", name).getAttribute("aria-pressed") === "true";
@@ -186,6 +189,61 @@ test("Cookie theme and account-backed color theme are restored and saved", async
     "__Secure-okou-theme=v1.dark; Domain=.okou.ai; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
   );
   expect(cookieWrites.join("\n")).not.toMatch(/golden-hour|deep-lagoon/u);
+});
+
+test("A failed theme save keeps the local choice and can be retried", async () => {
+  mockPreferences();
+  context.mocks.browser.cookie("__Secure-okou-theme=v1.light");
+  const releaseFailure = context.mocks.deferred<void>();
+  let unavailable = true;
+  let savedUpdate: UpdateUserPreferencesRequest | undefined;
+  context.mocks.api(
+    userPreferencesContract.update,
+    async ({ body, respond, withSignal }) => {
+      if (unavailable) {
+        await withSignal(releaseFailure.promise);
+        return respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Theme preference could not be saved",
+          },
+        });
+      }
+      savedUpdate = body;
+      return respond(200, { ...defaultPreferences(), ...body });
+    },
+  );
+
+  await setupPage({ context, path: "/settings", host: "app.okou.ai" });
+  await screen.findByText("Your preferred color scheme");
+  const dark = getFastRole("button", "Dark");
+  click(dark);
+
+  await waitFor(() => {
+    expectSelected(dark);
+    expect(dark).toBeDisabled();
+    expect(getFastRole("button", "Light")).toBeDisabled();
+    expect(getFastRole("button", "System")).toBeDisabled();
+  });
+  expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+
+  releaseFailure.resolve();
+  await expect(
+    screen.findByText("Theme preference could not be saved"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(dark).toBeEnabled();
+  });
+  expectSelected(dark);
+
+  unavailable = false;
+  click(dark);
+  await waitFor(() => {
+    expect(savedUpdate).toStrictEqual({ theme: "dark" });
+    expect(dark).toBeEnabled();
+  });
+  expectSelected(dark);
+  expect(document.documentElement).toHaveAttribute("data-theme", "dark");
 });
 
 test("A workspace without a saved color theme starts on the default palette", async () => {

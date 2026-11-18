@@ -9,7 +9,7 @@ import { prepareWorkflowAttachmentBundle } from "@okouai/core/workflow-attachmen
 import {
   STAFF_SINGLE_AGENT_ORG_ID as org,
   staffWorkflowCopyId,
-} from "@okouai/core/staff-single-agent-migration";
+} from "@okouai/core/single-agent-migration";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import {
   chatThreadEventSchema,

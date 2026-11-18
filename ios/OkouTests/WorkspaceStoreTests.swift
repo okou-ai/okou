@@ -8,136 +8,6 @@ import XCTest
 
 @MainActor
 final class WorkspaceStoreTests: XCTestCase {
-  func testForegroundConversationPublishesNewMessagesWhileSidebarIndicatorsAreStillPending()
-    async throws
-  {
-    let updated = Mutex(false)
-    let pendingSidebar = Mutex(false)
-    let sidebarStarted = expectation(description: "Sidebar indicators are held")
-    let releaseSidebar = HTTPResponseGate()
-    defer { releaseSidebar.open() }
-    let fixture = ChatHTTPFixture { request in
-      switch request.url?.path {
-      case "/api/chat-threads/snapshot": return threadSnapshot(title: "Priority conversation")
-      case "/api/chat-threads/events":
-        return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
-      case "/api/indicators":
-        if pendingSidebar.withLock({ $0 }) {
-          sidebarStarted.fulfill()
-          await releaseSidebar.wait()
-        }
-        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
-      case "/api/chat-threads/\(storeThreadID)/event-snapshot": return missingHistorySnapshot()
-      case "/api/chat-threads/\(storeThreadID)/event-rows":
-        let after =
-          URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first {
-            $0.name == "sinceSeqId"
-          }?.value.flatMap(Int.init) ?? 0
-        let last = updated.withLock { $0 ? 4 : 2 }
-        let rows = (1...last).filter { $0 > after }.map { sequence in
-          sequence.isMultiple(of: 2)
-            ? historyEvent(sequence: sequence, type: "run.completed")
-            : historyEvent(
-              sequence: sequence, type: "output.message",
-              payload: sequence == 1
-                ? #"{"content":"Cached answer"}"# : #"{"content":"Fresh answer"}"#)
-        }
-        return historyPage(rows: rows, lastSequence: last)
-      case "/api/chat-threads/\(storeThreadID)":
-        return ChatHTTPResponse(body: #"{"cancellationRecoveryPending":false}"#)
-      case "/api/chat-threads/\(storeThreadID)/mark-read":
-        return ChatHTTPResponse(body: #"{"lastReadAt":"2026-10-26T00:00:00Z"}"#)
-      default: throw URLError(.unsupportedURL)
-      }
-    }
-    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
-    defer { store.close() }
-    store.setPhase(.active)
-    await store.list.refresh()
-    store.selectedThreadID = storeThreadID
-    let conversation = try XCTUnwrap(store.selectedConversation)
-    await conversation.refresh()
-    XCTAssertEqual(conversation.messages.map(\.text), ["Cached answer"])
-    updated.withLock { $0 = true }
-    pendingSidebar.withLock { $0 = true }
-    let refresh = Task { await store.refresh() }
-    addTeardownBlock { @MainActor in
-      store.close()
-      refresh.cancel()
-      releaseSidebar.open()
-      await refresh.value
-    }
-    await fulfillment(of: [sidebarStarted], timeout: 3)
-    try await waitForBusinessResult { conversation.messages.contains { $0.text == "Fresh answer" } }
-    releaseSidebar.open()
-    await refresh.value
-    XCTAssertNil(conversation.error)
-  }
-
-  func testHistoryRefreshPreservesTheComposerAndForegroundRecoveryLoadsOtherDeviceChanges()
-    async throws
-  {
-    let remoteDraft = Mutex("First device draft")
-    let fixture = ChatHTTPFixture { request in
-      switch request.url?.path {
-      case "/api/chat-threads/snapshot": return threadSnapshot(title: "Draft recovery")
-      case "/api/chat-threads/events":
-        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
-      case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
-      case "/api/chat-thread-drafts":
-        return ChatHTTPResponse(body: #"{"draftThreadIds":[]}"#)
-      case "/api/agents/\(storeAgentID)/draft":
-        return ChatHTTPResponse(body: "{\"draftUserMessage\":null,\"draftAttachments\":null}")
-      case "/api/chat-threads/\(storeThreadID)/draft":
-        return ChatHTTPResponse(
-          body: """
-            {"draftUserMessage":{"version":1,"parts":[{"type":"text",\
-            "text":"\(remoteDraft.withLock { $0 })"}]},"draftAttachments":null}
-            """)
-      case "/api/chat-threads/\(storeThreadID)/event-snapshot": return missingHistorySnapshot()
-      case "/api/chat-threads/\(storeThreadID)/event-rows":
-        let after = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
-          .queryItems?.first { $0.name == "sinceSeqId" }?.value
-        let rows =
-          after == "0"
-          ? [
-            historyEvent(sequence: 1, type: "output.message", payload: "{\"content\":\"Answer\"}")
-          ] : []
-        return historyPage(rows: rows, lastSequence: 1)
-      case "/api/chat-threads/\(storeThreadID)":
-        return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
-      default: throw URLError(.unsupportedURL)
-      }
-    }
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let storage = ChatDraftStorage(
-      scope: ChatCacheScope(
-        apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace"),
-      directory: directory)
-    let store = WorkspaceStore(
-      client: fixture.client, webURL: fixture.baseURL, draftStorage: storage)
-    defer { store.close() }
-    store.setPhase(.active)
-    await store.refresh()
-    store.selectChat(storeThreadID)
-    let conversation = try XCTUnwrap(store.selectedConversation)
-    await conversation.composer.synchronize()
-    await conversation.refresh()
-    XCTAssertEqual(conversation.draft, "First device draft")
-
-    remoteDraft.withLock { $0 = "Changed on the other device" }
-    await store.refresh()
-    XCTAssertEqual(conversation.messages.map(\.text), ["Answer"])
-    XCTAssertEqual(conversation.draft, "First device draft")
-
-    store.setPhase(.background)
-    store.setPhase(.active)
-    await conversation.composer.synchronize()
-    XCTAssertEqual(conversation.draft, "Changed on the other device")
-    XCTAssertNil(conversation.composer.error)
-  }
 
   func testSidebarDraftMarksComeFromTheAPIAndFromAnOpenChatsComposer() async throws {
     let otherID = "40000000-0000-4000-8000-000000000009"
@@ -277,125 +147,6 @@ final class WorkspaceStoreTests: XCTestCase {
     let before = requests.withLock { $0 }
     await store.refresh()
     XCTAssertEqual(requests.withLock { $0 }, before)
-  }
-
-  func testRefreshDuringOldHistoryReadRendersFinalAnswer() async throws {
-    let oldReadStarted = expectation(description: "The old history response is in flight")
-    let releaseOldResponse = HTTPResponseGate()
-    defer { releaseOldResponse.open() }
-    let historyReads = Mutex(0)
-    let fixture = ChatHTTPFixture { request in
-      switch request.url?.path {
-      case "/api/chat-threads/\(storeThreadID)/event-snapshot":
-        return ChatHTTPResponse(
-          status: 404,
-          body:
-            "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}")
-      case "/api/chat-threads/\(storeThreadID)/event-rows":
-        let cursor = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
-          .queryItems?.first { $0.name == "sinceSeqId" }?.value
-        if cursor == "3" { return historyPage(rows: [], lastSequence: 3) }
-        let firstRead = historyReads.withLock {
-          $0 += 1
-          return $0 == 1
-        }
-        if firstRead {
-          oldReadStarted.fulfill()
-          await releaseOldResponse.wait()
-          return historyPage(
-            rows: [
-              historyEvent(
-                sequence: 1, type: "input.prompt",
-                payload: """
-                  {"userMessage":{"version":1,"parts":[{"type":"text","text":"Hello"}]}}
-                  """)
-            ],
-            lastSequence: 1)
-        }
-        return historyPage(
-          rows: [
-            historyEvent(
-              sequence: 2, type: "output.message", payload: "{\"content\":\"Final answer\"}"),
-            historyEvent(sequence: 3, type: "run.completed")
-          ], lastSequence: 3)
-      case "/api/chat-threads/\(storeThreadID)":
-        return ChatHTTPResponse(body: "{\"lastReadAt\":null,\"cancellationRecoveryPending\":false}")
-      case "/api/chat-threads/snapshot": return threadSnapshot(title: "Existing chat")
-      case "/api/chat-threads/events":
-        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
-      case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
-      default: throw URLError(.unsupportedURL)
-      }
-    }
-    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
-    defer { store.close() }
-    await store.list.refresh()
-    store.selectedThreadID = storeThreadID
-    let initialRead = Task { await store.conversation(for: storeThreadID)?.refresh() }
-    addTeardownBlock {
-      initialRead.cancel()
-      releaseOldResponse.open()
-      _ = await initialRead.value
-    }
-    await fulfillment(of: [oldReadStarted], timeout: 2)
-
-    // A final-result invalidation enters refresh while the detail view's old read is pending.
-    let refresh = Task.immediate { await store.refresh() }
-    addTeardownBlock {
-      refresh.cancel()
-      releaseOldResponse.open()
-      await refresh.value
-    }
-    releaseOldResponse.open()
-    await refresh.value
-    await initialRead.value
-
-    XCTAssertEqual(
-      (store.conversation(for: storeThreadID)?.messages ?? []).map(\.text),
-      ["Hello", "Final answer"])
-    XCTAssertEqual((store.conversation(for: storeThreadID)?.messages ?? []).last?.role, .assistant)
-    XCTAssertEqual(store.conversation(for: storeThreadID)?.history?.executionState, .completed)
-    XCTAssertNil(store.conversation(for: storeThreadID)?.error)
-  }
-
-  func testRefreshDuringOldListReadRendersLatestTitle() async throws {
-    let oldReadStarted = expectation(description: "The old chat list response is in flight")
-    let releaseOldResponse = HTTPResponseGate()
-    defer { releaseOldResponse.open() }
-    let snapshotReads = Mutex(0)
-    let fixture = ChatHTTPFixture { request in
-      switch request.url?.path {
-      case "/api/chat-threads/snapshot":
-        let firstRead = snapshotReads.withLock {
-          $0 += 1
-          return $0 == 1
-        }
-        if firstRead {
-          oldReadStarted.fulfill()
-          await releaseOldResponse.wait()
-          return threadSnapshot(title: "Original title")
-        }
-        return threadSnapshot(title: "Latest title")
-      case "/api/chat-threads/events":
-        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
-      case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
-      default: throw URLError(.unsupportedURL)
-      }
-    }
-    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
-    defer { store.close() }
-    let initialRead = Task { await store.refresh() }
-    await fulfillment(of: [oldReadStarted], timeout: 2)
-
-    await store.refresh()
-    releaseOldResponse.open()
-    await initialRead.value
-
-    XCTAssertEqual(store.list.threads.map(\.id), [storeThreadID])
-    XCTAssertEqual(store.list.threads.map(\.title), ["Latest title"])
-    XCTAssertNil(store.error)
   }
 
   func testHistoryMarksReadOnlyForVisibleForegroundThread() async throws {
@@ -564,92 +315,6 @@ final class WorkspaceStoreTests: XCTestCase {
     }
   }
 
-  func testTargetedInvalidationRefreshesItsConversationWithoutReloadingTheSelectedHistory()
-    async throws
-  {
-    let otherID = "40000000-0000-4000-8000-000000000010"
-    let requests = Mutex<[String]>([])
-    let updated = Mutex(false)
-    let fixture = ChatHTTPFixture { request in
-      let path = request.url?.path ?? ""
-      requests.withLock { $0.append(path) }
-      switch path {
-      case "/api/chat-threads/snapshot":
-        return threadSnapshot(title: "Chat", threadIDs: [storeThreadID, otherID])
-      case "/api/chat-threads/events":
-        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
-      case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
-      default:
-        let id = path.contains(otherID) ? otherID : storeThreadID
-        if path.hasSuffix("/event-snapshot") { return missingHistorySnapshot() }
-        if path.hasSuffix("/event-rows") {
-          let since = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
-            .queryItems?.first { $0.name == "sinceSeqId" }?.value
-          let hasUpdate = id == otherID && updated.withLock { $0 }
-          let last = hasUpdate ? 4 : 2
-          let rows: [String]
-          if since == "0" {
-            rows = [
-              historyEvent(
-                sequence: 1, type: "output.message",
-                payload: "{\"content\":\"Initial \(id)\"}"),
-              historyEvent(sequence: 2, type: "run.completed")
-            ]
-          } else if since == "2", hasUpdate {
-            rows = [
-              historyEvent(
-                sequence: 3, type: "output.message",
-                payload: "{\"content\":\"Latest reply\"}"),
-              historyEvent(sequence: 4, type: "run.completed")
-            ]
-          } else {
-            rows = []
-          }
-          var response = historyPage(rows: rows, lastSequence: last)
-          response.body = response.body.replacingOccurrences(of: storeThreadID, with: id)
-          return response
-        }
-        if path == "/api/chat-threads/\(id)" {
-          return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
-        }
-        throw URLError(.unsupportedURL)
-      }
-    }
-    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
-    defer { store.close() }
-    await store.refresh()
-    store.selectChat(storeThreadID)
-    let selected = try XCTUnwrap(store.selectedConversation)
-    await selected.refresh()
-    let other = try XCTUnwrap(store.conversation(for: otherID))
-    await other.refresh()
-    updated.withLock { $0 = true }
-    requests.withLock { $0.removeAll() }
-
-    let invalidation = try XCTUnwrap(
-      ChatInvalidation(notification: "chatThreadMessageCreated:\(otherID)"))
-    await store.refresh([invalidation])
-
-    XCTAssertEqual(selected.messages.map(\.text), ["Initial \(storeThreadID)"])
-    XCTAssertEqual(other.messages.map(\.text), ["Initial \(otherID)", "Latest reply"])
-    XCTAssertEqual(store.selectedThreadID, storeThreadID)
-    XCTAssertEqual(
-      Set(requests.withLock { $0 }),
-      [
-        "/api/chat-threads/\(otherID)/event-rows", "/api/chat-threads/\(otherID)"
-      ])
-
-    requests.withLock { $0.removeAll() }
-    await store.refresh([.threadList])
-    XCTAssertFalse(requests.withLock { $0.contains { $0.hasSuffix("/event-rows") } })
-    requests.withLock { $0.removeAll() }
-    await store.refresh([.reconnected])
-    XCTAssertTrue(
-      requests.withLock { $0.contains("/api/chat-threads/\(storeThreadID)/event-rows") })
-    XCTAssertTrue(requests.withLock { $0.contains("/api/chat-threads/events") })
-  }
-
   func testMemoryWarningPreservesDraftsAndRestoresReleasedHistoryFromSQLite() async throws {
     let otherID = "40000000-0000-4000-8000-000000000010"
     let cacheDirectory = CacheTestDirectory(owner: self)
@@ -757,6 +422,346 @@ final class WorkspaceStoreTests: XCTestCase {
       await store.refresh()
       XCTAssertEqual(requests.withLock { $0 }, before)
     }
+  }
+
+}
+
+@MainActor
+final class WorkspaceRefreshTests: XCTestCase {
+  func testForegroundConversationPublishesNewMessagesWhileSidebarIndicatorsAreStillPending()
+    async throws
+  {
+    let updated = Mutex(false)
+    let pendingSidebar = Mutex(false)
+    let sidebarStarted = expectation(description: "Sidebar indicators are held")
+    let releaseSidebar = HTTPResponseGate()
+    defer { releaseSidebar.open() }
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/chat-threads/snapshot": return threadSnapshot(title: "Priority conversation")
+      case "/api/chat-threads/events":
+        return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+      case "/api/indicators":
+        if pendingSidebar.withLock({ $0 }) {
+          sidebarStarted.fulfill()
+          await releaseSidebar.wait()
+        }
+        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+      case "/api/chat-threads/\(storeThreadID)/event-snapshot": return missingHistorySnapshot()
+      case "/api/chat-threads/\(storeThreadID)/event-rows":
+        let after =
+          URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first {
+            $0.name == "sinceSeqId"
+          }?.value.flatMap(Int.init) ?? 0
+        let last = updated.withLock { $0 ? 4 : 2 }
+        let rows = (1...last).filter { $0 > after }.map { sequence in
+          sequence.isMultiple(of: 2)
+            ? historyEvent(sequence: sequence, type: "run.completed")
+            : historyEvent(
+              sequence: sequence, type: "output.message",
+              payload: sequence == 1
+                ? #"{"content":"Cached answer"}"# : #"{"content":"Fresh answer"}"#)
+        }
+        return historyPage(rows: rows, lastSequence: last)
+      case "/api/chat-threads/\(storeThreadID)":
+        return ChatHTTPResponse(body: #"{"cancellationRecoveryPending":false}"#)
+      case "/api/chat-threads/\(storeThreadID)/mark-read":
+        return ChatHTTPResponse(body: #"{"lastReadAt":"2026-10-26T00:00:00Z"}"#)
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+    defer { store.close() }
+    store.setPhase(.active)
+    await store.list.refresh()
+    store.selectedThreadID = storeThreadID
+    let conversation = try XCTUnwrap(store.selectedConversation)
+    await conversation.refresh()
+    XCTAssertEqual(conversation.messages.map(\.text), ["Cached answer"])
+    updated.withLock { $0 = true }
+    pendingSidebar.withLock { $0 = true }
+    let refresh = Task { await store.refresh() }
+    addTeardownBlock { @MainActor in
+      store.close()
+      refresh.cancel()
+      releaseSidebar.open()
+      await refresh.value
+    }
+    await fulfillment(of: [sidebarStarted], timeout: 3)
+    try await waitForBusinessResult { conversation.messages.contains { $0.text == "Fresh answer" } }
+    releaseSidebar.open()
+    await refresh.value
+    XCTAssertNil(conversation.error)
+  }
+
+  func testHistoryRefreshPreservesTheComposerAndForegroundRecoveryLoadsOtherDeviceChanges()
+    async throws
+  {
+    let remoteDraft = Mutex("First device draft")
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/chat-threads/snapshot": return threadSnapshot(title: "Draft recovery")
+      case "/api/chat-threads/events":
+        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
+      case "/api/indicators":
+        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+      case "/api/chat-thread-drafts":
+        return ChatHTTPResponse(body: #"{"draftThreadIds":[]}"#)
+      case "/api/agents/\(storeAgentID)/draft":
+        return ChatHTTPResponse(body: "{\"draftUserMessage\":null,\"draftAttachments\":null}")
+      case "/api/chat-threads/\(storeThreadID)/draft":
+        return ChatHTTPResponse(
+          body: """
+            {"draftUserMessage":{"version":1,"parts":[{"type":"text",\
+            "text":"\(remoteDraft.withLock { $0 })"}]},"draftAttachments":null}
+            """)
+      case "/api/chat-threads/\(storeThreadID)/event-snapshot": return missingHistorySnapshot()
+      case "/api/chat-threads/\(storeThreadID)/event-rows":
+        let after = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+          .queryItems?.first { $0.name == "sinceSeqId" }?.value
+        let rows =
+          after == "0"
+          ? [
+            historyEvent(sequence: 1, type: "output.message", payload: "{\"content\":\"Answer\"}")
+          ] : []
+        return historyPage(rows: rows, lastSequence: 1)
+      case "/api/chat-threads/\(storeThreadID)":
+        return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let storage = ChatDraftStorage(
+      scope: ChatCacheScope(
+        apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace"),
+      directory: directory)
+    let store = WorkspaceStore(
+      client: fixture.client, webURL: fixture.baseURL, draftStorage: storage)
+    defer { store.close() }
+    store.setPhase(.active)
+    await store.refresh()
+    store.selectChat(storeThreadID)
+    let conversation = try XCTUnwrap(store.selectedConversation)
+    await conversation.composer.synchronize()
+    await conversation.refresh()
+    XCTAssertEqual(conversation.draft, "First device draft")
+
+    remoteDraft.withLock { $0 = "Changed on the other device" }
+    await store.refresh()
+    XCTAssertEqual(conversation.messages.map(\.text), ["Answer"])
+    XCTAssertEqual(conversation.draft, "First device draft")
+
+    store.setPhase(.background)
+    store.setPhase(.active)
+    await conversation.composer.synchronize()
+    XCTAssertEqual(conversation.draft, "Changed on the other device")
+    XCTAssertNil(conversation.composer.error)
+  }
+
+  func testRefreshDuringOldHistoryReadRendersFinalAnswer() async throws {
+    let oldReadStarted = expectation(description: "The old history response is in flight")
+    let releaseOldResponse = HTTPResponseGate()
+    defer { releaseOldResponse.open() }
+    let historyReads = Mutex(0)
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/chat-threads/\(storeThreadID)/event-snapshot":
+        return ChatHTTPResponse(
+          status: 404,
+          body:
+            "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}")
+      case "/api/chat-threads/\(storeThreadID)/event-rows":
+        let cursor = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+          .queryItems?.first { $0.name == "sinceSeqId" }?.value
+        if cursor == "3" { return historyPage(rows: [], lastSequence: 3) }
+        let firstRead = historyReads.withLock {
+          $0 += 1
+          return $0 == 1
+        }
+        if firstRead {
+          oldReadStarted.fulfill()
+          await releaseOldResponse.wait()
+          return historyPage(
+            rows: [
+              historyEvent(
+                sequence: 1, type: "input.prompt",
+                payload: """
+                  {"userMessage":{"version":1,"parts":[{"type":"text","text":"Hello"}]}}
+                  """)
+            ],
+            lastSequence: 1)
+        }
+        return historyPage(
+          rows: [
+            historyEvent(
+              sequence: 2, type: "output.message", payload: "{\"content\":\"Final answer\"}"),
+            historyEvent(sequence: 3, type: "run.completed")
+          ], lastSequence: 3)
+      case "/api/chat-threads/\(storeThreadID)":
+        return ChatHTTPResponse(body: "{\"lastReadAt\":null,\"cancellationRecoveryPending\":false}")
+      case "/api/chat-threads/snapshot": return threadSnapshot(title: "Existing chat")
+      case "/api/chat-threads/events":
+        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
+      case "/api/indicators":
+        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+    defer { store.close() }
+    await store.list.refresh()
+    store.selectedThreadID = storeThreadID
+    let initialRead = Task { await store.conversation(for: storeThreadID)?.refresh() }
+    addTeardownBlock {
+      initialRead.cancel()
+      releaseOldResponse.open()
+      _ = await initialRead.value
+    }
+    await fulfillment(of: [oldReadStarted], timeout: 2)
+
+    // A final-result invalidation enters refresh while the detail view's old read is pending.
+    let refresh = Task.immediate { await store.refresh() }
+    addTeardownBlock {
+      refresh.cancel()
+      releaseOldResponse.open()
+      await refresh.value
+    }
+    releaseOldResponse.open()
+    await refresh.value
+    await initialRead.value
+
+    XCTAssertEqual(
+      (store.conversation(for: storeThreadID)?.messages ?? []).map(\.text),
+      ["Hello", "Final answer"])
+    XCTAssertEqual((store.conversation(for: storeThreadID)?.messages ?? []).last?.role, .assistant)
+    XCTAssertEqual(store.conversation(for: storeThreadID)?.history?.executionState, .completed)
+    XCTAssertNil(store.conversation(for: storeThreadID)?.error)
+  }
+
+  func testRefreshDuringOldListReadRendersLatestTitle() async throws {
+    let oldReadStarted = expectation(description: "The old chat list response is in flight")
+    let releaseOldResponse = HTTPResponseGate()
+    defer { releaseOldResponse.open() }
+    let snapshotReads = Mutex(0)
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/chat-threads/snapshot":
+        let firstRead = snapshotReads.withLock {
+          $0 += 1
+          return $0 == 1
+        }
+        if firstRead {
+          oldReadStarted.fulfill()
+          await releaseOldResponse.wait()
+          return threadSnapshot(title: "Original title")
+        }
+        return threadSnapshot(title: "Latest title")
+      case "/api/chat-threads/events":
+        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
+      case "/api/indicators":
+        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+    defer { store.close() }
+    let initialRead = Task { await store.refresh() }
+    await fulfillment(of: [oldReadStarted], timeout: 2)
+
+    await store.refresh()
+    releaseOldResponse.open()
+    await initialRead.value
+
+    XCTAssertEqual(store.list.threads.map(\.id), [storeThreadID])
+    XCTAssertEqual(store.list.threads.map(\.title), ["Latest title"])
+    XCTAssertNil(store.error)
+  }
+
+  func testTargetedInvalidationRefreshesItsConversationWithoutReloadingTheSelectedHistory()
+    async throws
+  {
+    let otherID = "40000000-0000-4000-8000-000000000010"
+    let requests = Mutex<[String]>([])
+    let updated = Mutex(false)
+    let fixture = ChatHTTPFixture { request in
+      let path = request.url?.path ?? ""
+      requests.withLock { $0.append(path) }
+      switch path {
+      case "/api/chat-threads/snapshot":
+        return threadSnapshot(title: "Chat", threadIDs: [storeThreadID, otherID])
+      case "/api/chat-threads/events":
+        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
+      case "/api/indicators":
+        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+      default:
+        let id = path.contains(otherID) ? otherID : storeThreadID
+        if path.hasSuffix("/event-snapshot") { return missingHistorySnapshot() }
+        if path.hasSuffix("/event-rows") {
+          let since = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+            .queryItems?.first { $0.name == "sinceSeqId" }?.value
+          let hasUpdate = id == otherID && updated.withLock { $0 }
+          let last = hasUpdate ? 4 : 2
+          let rows: [String]
+          if since == "0" {
+            rows = [
+              historyEvent(
+                sequence: 1, type: "output.message",
+                payload: "{\"content\":\"Initial \(id)\"}"),
+              historyEvent(sequence: 2, type: "run.completed")
+            ]
+          } else if since == "2", hasUpdate {
+            rows = [
+              historyEvent(
+                sequence: 3, type: "output.message",
+                payload: "{\"content\":\"Latest reply\"}"),
+              historyEvent(sequence: 4, type: "run.completed")
+            ]
+          } else {
+            rows = []
+          }
+          var response = historyPage(rows: rows, lastSequence: last)
+          response.body = response.body.replacingOccurrences(of: storeThreadID, with: id)
+          return response
+        }
+        if path == "/api/chat-threads/\(id)" {
+          return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
+        }
+        throw URLError(.unsupportedURL)
+      }
+    }
+    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+    defer { store.close() }
+    await store.refresh()
+    store.selectChat(storeThreadID)
+    let selected = try XCTUnwrap(store.selectedConversation)
+    await selected.refresh()
+    let other = try XCTUnwrap(store.conversation(for: otherID))
+    await other.refresh()
+    updated.withLock { $0 = true }
+    requests.withLock { $0.removeAll() }
+
+    let invalidation = try XCTUnwrap(
+      ChatInvalidation(notification: "chatThreadMessageCreated:\(otherID)"))
+    await store.refresh([invalidation])
+
+    XCTAssertEqual(selected.messages.map(\.text), ["Initial \(storeThreadID)"])
+    XCTAssertEqual(other.messages.map(\.text), ["Initial \(otherID)", "Latest reply"])
+    XCTAssertEqual(store.selectedThreadID, storeThreadID)
+    XCTAssertEqual(
+      Set(requests.withLock { $0 }),
+      [
+        "/api/chat-threads/\(otherID)/event-rows", "/api/chat-threads/\(otherID)"
+      ])
+
+    requests.withLock { $0.removeAll() }
+    await store.refresh([.threadList])
+    XCTAssertFalse(requests.withLock { $0.contains { $0.hasSuffix("/event-rows") } })
+    requests.withLock { $0.removeAll() }
+    await store.refresh([.reconnected])
+    XCTAssertTrue(
+      requests.withLock { $0.contains("/api/chat-threads/\(storeThreadID)/event-rows") })
+    XCTAssertTrue(requests.withLock { $0.contains("/api/chat-threads/events") })
   }
 
 }

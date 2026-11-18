@@ -2,6 +2,8 @@ import {
   mergeRunPromptAndSkills,
   renderRunPrompts,
   type SkillVolume,
+  type SeedSkillVolume,
+  type TemplateSkillVolume,
   type SystemPromptVariables,
 } from "../run-prompt-and-skills";
 import { createPhoneUsePrompt } from "./phone-use";
@@ -35,6 +37,9 @@ export interface PromptAndSkillVolumes {
   readonly appendedSystemPrompt: string;
   readonly userPrompt: string;
   readonly skillVolumes: readonly SkillVolume[];
+  readonly seedSkillVolumes: readonly SeedSkillVolume[];
+  readonly templateSkillVolumes: readonly TemplateSkillVolume[];
+  readonly userTimezone: string | undefined;
 }
 
 export class PromptAndSkillVolumesError extends Error {
@@ -45,6 +50,17 @@ export class PromptAndSkillVolumesError extends Error {
     super(message);
     this.name = "PromptAndSkillVolumesError";
   }
+}
+
+function unavailablePromptContext(
+  contextType?: PickedThreadInputEvent["contextType"],
+) {
+  return new PromptAndSkillVolumesError(
+    contextType === "discord" ? "DISCORD_ACCESS_REVOKED" : "CONFLICT",
+    contextType === "discord"
+      ? "This Discord conversation is no longer available."
+      : "This conversation is no longer available.",
+  );
 }
 
 function createIntegrationPrompts(
@@ -243,13 +259,11 @@ export function createPromptAndSkillVolumesSignals(
   );
 
   return computed(async (get): Promise<PromptAndSkillVolumes> => {
-    const contextType = (await get(pickedEvent$))?.contextType;
-    if (!contextType) {
-      throw new PromptAndSkillVolumesError(
-        "CONFLICT",
-        "This conversation is no longer available.",
-      );
+    const event = await get(pickedEvent$);
+    if (!event?.contextType) {
+      throw unavailablePromptContext();
     }
+    const contextType = event.contextType;
     const automation = contextType === "automation";
     const [
       integration,
@@ -277,12 +291,7 @@ export function createPromptAndSkillVolumesSignals(
       get(suggestionsPrompt$),
     ]);
     if (!integration) {
-      throw new PromptAndSkillVolumesError(
-        contextType === "discord" ? "DISCORD_ACCESS_REVOKED" : "CONFLICT",
-        contextType === "discord"
-          ? "This Discord conversation is no longer available."
-          : "This conversation is no longer available.",
-      );
+      throw unavailablePromptContext(contextType);
     }
     if (templates && "error" in templates) {
       throw new PromptAndSkillVolumesError(
@@ -309,6 +318,11 @@ export function createPromptAndSkillVolumesSignals(
       appendedSystemPrompt: prompts.systemPrompt,
       userPrompt: prompts.userPrompt,
       skillVolumes: combined.skillVolumes,
+      seedSkillVolumes: systemSkills.skillVolumes,
+      templateSkillVolumes: templates?.skillVolumes ?? [],
+      // createUserPrompt already consumed this memoized member observation.
+      userTimezone:
+        (await get(memberMetadata$)).preferences?.timezone ?? undefined,
     };
   });
 }

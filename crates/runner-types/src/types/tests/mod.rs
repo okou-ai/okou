@@ -41,6 +41,7 @@ fn execution_context_deserializes_pi_sandbox_resources() {
         "runId": "11111111-1111-4111-8111-111111111111",
         "prompt": "hello",
         "sandboxToken": "tok",
+        "firewallToken": "host-firewall",
         "cliAgentType": "pi",
         "piSessionId": "22222222-2222-4222-8222-222222222222",
         "piLaunchConfig": { "schemaVersion": 2 },
@@ -65,6 +66,8 @@ fn execution_context_deserializes_pi_sandbox_resources() {
     let context: ExecutionContext = serde_json::from_value(json).unwrap();
 
     assert_eq!(context.is_first_run, None);
+    assert_eq!(context.firewall_token.as_deref(), Some("host-firewall"));
+    assert_eq!(context.sandbox_token, "tok");
 
     assert_eq!(
         context.pi_session_id.as_deref(),

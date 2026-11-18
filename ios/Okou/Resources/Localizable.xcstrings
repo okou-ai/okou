@@ -1,6 +1,34 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Chat archived": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "聊天已归档" }
+        }
+      }
+    },
+    "Chat unarchived": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "聊天已取消归档" }
+        }
+      }
+    },
+    "Undo": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "撤销" }
+        }
+      }
+    },
+    "Restores the chat and returns to it.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "恢复聊天并返回该会话。" }
+        }
+      }
+    },
       "Delivery hasn’t been confirmed. Closing this sheet won’t cancel the message.": {
         "localizations": {
           "zh-Hans": {

@@ -112,24 +112,24 @@ pub fn split_input(mut input: &[u8]) -> io::Result<(&[u8], &[u8])> {
 
 /// One regular file with the metadata supported by the direct path.
 #[derive(Debug, PartialEq, Eq)]
-pub struct StorageFile {
+pub struct StorageFile<Content = Vec<u8>> {
     /// Normalized relative path below the selected storage target.
     pub path: String,
     /// Unix permission bits; special mode bits are not admitted.
     pub mode: u32,
     /// Modification time in whole Unix seconds.
     pub mtime: u64,
-    /// Final file content.
-    pub content: Vec<u8>,
+    /// Final file content: owned by the Host cache or borrowed from Guest input.
+    pub content: Content,
 }
 
 /// Decoded files belonging to exactly one manifest mount.
 #[derive(Debug, PartialEq, Eq)]
-pub struct StorageFiles {
+pub struct StorageFiles<Content = Vec<u8>> {
     /// Exact logical mount path in the manifest.
     pub mount_path: String,
     /// Ordered files; unique and non-overlapping within this storage.
-    pub files: Vec<StorageFile>,
+    pub files: Vec<StorageFile<Content>>,
 }
 
 fn invalid() -> io::Error {
@@ -226,7 +226,10 @@ fn validate_mount(mount: &str) -> io::Result<()> {
 }
 
 /// Decode and validate all groups before any Guest filesystem changes.
-pub fn decode(mut input: &[u8]) -> io::Result<Vec<StorageFiles>> {
+///
+/// File content borrows the complete input through application. Host cache
+/// entries retain their owned content; the binary representation is unchanged.
+pub fn decode(mut input: &[u8]) -> io::Result<Vec<StorageFiles<&[u8]>>> {
     if input.len() > MAX_PAYLOAD_BYTES {
         return Err(invalid());
     }
@@ -266,13 +269,13 @@ pub fn decode(mut input: &[u8]) -> io::Result<Vec<StorageFiles>> {
             if content_bytes > MAX_STORAGE_BYTES {
                 return Err(invalid());
             }
-            // Enforce each group's allocation envelope before copying borrowed
-            // wire bytes. The final validation still owns all semantic checks.
+            // Enforce each group's content envelope before retaining wire
+            // slices. The final validation still owns all semantic checks.
             files.push(StorageFile {
                 path: String::from_utf8(path.to_vec()).map_err(|_| invalid())?,
                 mode,
                 mtime,
-                content: content.to_vec(),
+                content,
             });
         }
         validate_files(&files)?;

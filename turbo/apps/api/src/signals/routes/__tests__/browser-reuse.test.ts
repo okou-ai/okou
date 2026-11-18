@@ -121,6 +121,40 @@ test("recovers a window lost during the provider await through a fresh binding r
   });
 });
 
+test.each(["run", "chat"] as const)(
+  "opens a new %s window without probing an unrelated live sibling",
+  async (entry) => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const a = await f.start();
+      const b = await f.start();
+      const sibling = await open(a);
+      if (!sibling.window) {
+        throw new Error("Expected the sibling's native window");
+      }
+      f.provider.native.nativeWindowErrors.set(
+        sibling.window.primaryWindowId,
+        "Sibling health unavailable",
+      );
+      const commands = f.provider.native.commands.length;
+      const created = await accept(request(b, entry), [200]);
+      expect(created.body.browser.window?.instanceId).toBe(
+        sibling.window.instanceId,
+      );
+      expect(created.body.browser.window?.primaryWindowId).not.toBe(
+        sibling.window.primaryWindowId,
+      );
+      expect(
+        f.provider.native.commands.slice(commands).filter(({ method }) => {
+          return method === "Browser.getWindowBounds";
+        }),
+      ).toHaveLength(0);
+      expect((await view(a)).window).toStrictEqual(sibling.window);
+      expect(f.provider.sessionRequests).toHaveLength(1);
+    });
+  },
+);
+
 test("recovers a confirmed stopped provider without reusing its old instance", async () => {
   const f = await fixture();
   await f.owned.run(async () => {

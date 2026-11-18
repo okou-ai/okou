@@ -36,6 +36,8 @@ export interface AgentRunRequestAgent {
 
 export interface ResolvedModelProviderEnvironment {
   readonly credentialOwner: "builtin" | "member";
+  /** Canonical account identity from the same source snapshot as the environment. */
+  readonly accountIdentity: string | null;
   readonly authMethod?: string | null;
   readonly piModelConfig?: PiModelConfig;
   readonly id: string | null;

@@ -30,6 +30,50 @@ async fn codex_app_server_classifies_supported_structured_errors()
     let original_directory = std::env::current_dir()?;
     let cases = [
         StructuredErrorCase {
+            scenario: "runtime-turn-failed-bad-request",
+            expected_reason: Some(FailureReason::ProviderBadRequest),
+        },
+        StructuredErrorCase {
+            scenario: "runtime-turn-failed-remote-compaction-bad-request",
+            expected_reason: Some(FailureReason::ProviderBadRequest),
+        },
+        StructuredErrorCase {
+            scenario: "runtime-turn-failed-stream-idle-timeout",
+            expected_reason: Some(FailureReason::ProviderStreamTimeout),
+        },
+        StructuredErrorCase {
+            scenario: "runtime-turn-failed-remote-compaction-stream-idle-timeout",
+            expected_reason: Some(FailureReason::ProviderStreamTimeout),
+        },
+        StructuredErrorCase {
+            scenario: "runtime-turn-failed-request-timeout",
+            expected_reason: Some(FailureReason::ProviderRequestTimeout),
+        },
+        StructuredErrorCase {
+            scenario: "runtime-turn-failed-remote-compaction-request-timeout",
+            expected_reason: Some(FailureReason::ProviderRequestTimeout),
+        },
+        StructuredErrorCase {
+            scenario: "runtime-turn-failed-content-filter",
+            expected_reason: Some(FailureReason::SafetyPolicyRefusal),
+        },
+        StructuredErrorCase {
+            scenario: "runtime-turn-failed-remote-compaction-content-filter",
+            expected_reason: Some(FailureReason::SafetyPolicyRefusal),
+        },
+        StructuredErrorCase {
+            scenario: "runtime-turn-failed-short-biological-risk",
+            expected_reason: Some(FailureReason::SafetyPolicyRefusal),
+        },
+        StructuredErrorCase {
+            scenario: "runtime-turn-failed-remote-compaction-short-biological-risk",
+            expected_reason: Some(FailureReason::SafetyPolicyRefusal),
+        },
+        StructuredErrorCase {
+            scenario: "runtime-turn-failed-remote-compaction-invalid-request-format",
+            expected_reason: Some(FailureReason::ProviderBadRequest),
+        },
+        StructuredErrorCase {
             scenario: "runtime-turn-failed-output-token-limit",
             expected_reason: Some(FailureReason::OutputTokenLimit),
         },
@@ -95,7 +139,7 @@ async fn codex_app_server_classifies_supported_structured_errors()
         },
         StructuredErrorCase {
             scenario: "runtime-turn-failed-invalid-request-format",
-            expected_reason: None,
+            expected_reason: Some(FailureReason::ProviderBadRequest),
         },
     ];
 

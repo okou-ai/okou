@@ -6,41 +6,48 @@ import { workflowAttachmentMetadata } from "./workflow-attachment-bundle";
 
 export const STAFF_SINGLE_AGENT_ORG_ID = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
 export const STAFF_WORKFLOW_COPY_NAMESPACE = "staff-single-agent-workflow-v1:";
+const INACTIVE_BATCH_WORKFLOW_COPY_NAMESPACE = "inactive-batch-workflow-v1:";
 
-/** Must match the staff Drizzle migration's stable source-to-copy identity. */
-export function staffWorkflowCopyId(sourceId: string): string {
+/** Must match the Drizzle migrations and delete_workflow_rows. */
+function workflowCopyId(namespace: string, sourceId: string): string {
   const digest = createHash("md5")
-    .update(`${STAFF_WORKFLOW_COPY_NAMESPACE}${sourceId}`)
+    .update(`${namespace}${sourceId}`)
     .digest("hex");
   const hash = `${digest.slice(0, 12)}5${digest.slice(13, 16)}8${digest.slice(17)}`;
   return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-${hash.slice(12, 16)}-${hash.slice(16, 20)}-${hash.slice(20)}`;
 }
 
+export function staffWorkflowCopyId(sourceId: string): string {
+  return workflowCopyId(STAFF_WORKFLOW_COPY_NAMESPACE, sourceId);
+}
+
 /**
- * Temporary reader for staff copies whose attachment package belongs to the
- * retained source. Only the immutable complete bundle is shared; never adopt or
- * delete the source's independently owned attachment upload. Retire after every
- * copied Workflow has a canonical owned package and old Runs have drained.
+ * Only the deterministic same-workspace copy can share immutable content.
+ * The attachment upload remains independently owned by its source Workflow.
+ * Retire after copied Workflows own their descriptors and old Runs have drained.
  */
-export function isStaffCopiedAttachment(input: {
+export function isMigratedWorkflowAttachment(input: {
   readonly orgId: string;
   readonly workflowId: string;
   readonly objectKey: string;
 }): boolean {
-  const match =
-    /^workflow-attachments\/([^/]+)\/([a-f0-9-]{36})\/[a-f0-9-]{36}\/archive\.tar\.gz$/u.exec(
+  const [, orgId, sourceId] =
+    /^workflow-attachments\/([^/]+)\/([a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})\/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\/archive\.tar\.gz$/u.exec(
       input.objectKey,
-    );
+    ) ?? [];
+  const namespace =
+    input.orgId === STAFF_SINGLE_AGENT_ORG_ID
+      ? STAFF_WORKFLOW_COPY_NAMESPACE
+      : INACTIVE_BATCH_WORKFLOW_COPY_NAMESPACE;
   return (
-    input.orgId === STAFF_SINGLE_AGENT_ORG_ID &&
-    match?.[1] === input.orgId &&
-    match[2] !== undefined &&
-    input.workflowId === staffWorkflowCopyId(match[2])
+    orgId === input.orgId &&
+    sourceId !== undefined &&
+    input.workflowId === workflowCopyId(namespace, sourceId)
   );
 }
 
 /** Preserve binary bytes and executable modes when an inherited copy is edited. */
-export function readStaffCopiedAttachments(
+export function readMigratedWorkflowAttachments(
   archive: Buffer,
   reference: ContentBundle,
   attachments: Extract<WorkflowAttachments, { kind: "bundle" }>,

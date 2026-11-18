@@ -5,9 +5,7 @@ use std::process::Output;
 use std::time::Duration;
 
 use guest_contracts::home_cache_history::TerminalHomeCachePreparationReport;
-use guest_contracts::reuse_preparation::{
-    REUSE_PREPARATION_EXIT_CLEANUP_FAILED, ReusePreparationReport, ReusePreparationRequest,
-};
+use guest_contracts::reuse_preparation::{ReusePreparationReport, ReusePreparationRequest};
 use guest_contracts::session_history_identity::{
     SessionHistoryFramework, SessionHistoryIdentity, SessionHistoryRefKind, SessionHistorySourceRef,
 };
@@ -102,13 +100,12 @@ test "$(cat "$OKOU_HOME/.npm/_npx/tool/index.js")" = installed
 test "$(cat "$OKOU_HOME/.cache/ms-playwright/browser")" = browser
 test "$(cat "$OKOU_HOME/workspace/installed/module.py")" = package
 if [ "$OKOU_PRESSURE" = unsafe ]; then
-    test "$status" -eq 4
-    test -s "$OKOU_HOME/.npm/_cacache/payload"
-    exit "$status"
+    test -L "$OKOU_HOME/.cache/pip"
 fi
 test "$status" -eq 0
 case "$OKOU_PRESSURE" in
     healthy|runtime) test -f "$OKOU_HOME/.npm/_cacache/payload" ;;
+    inodes) : ;; # Enough free inodes need not empty the entire cache.
     *) test ! -e "$OKOU_HOME/.npm/_cacache/payload" ;;
 esac
 if [ "$OKOU_PREPARATION" = prepare-for-reuse ]; then
@@ -312,16 +309,113 @@ async fn insufficient_reclamation_reports_unusable_home_and_retains_outputs() ->
 
 #[tokio::test]
 #[ignore = "requires mount namespaces; selected by guest-home-cleanup-test CI"]
-async fn unsafe_pressure_cleanup_rejects_preparation_without_widening_deletion() -> TestResult {
+async fn sufficient_cache_reclamation_does_not_visit_an_unsafe_later_candidate() -> TestResult {
     for terminal in [false, true] {
         let output = run_preparation("unsafe", terminal).await?;
         assert_eq!(
-            output.status.code(),
-            Some(REUSE_PREPARATION_EXIT_CLEANUP_FAILED),
-            "{}",
+            report(&output, terminal, true)?
+                .home
+                .home_rejection_reason(),
+            None
+        );
+    }
+    Ok(())
+}
+
+const RECOVER_ROOTFS_ON_TMPFS: &str = r#"
+set -eu
+mount -t tmpfs -o size=128m,nr_inodes=4096 tmpfs "$OKOU_FIXTURE_ROOT"
+root="$OKOU_FIXTURE_ROOT"
+mkdir -p "$root/home/user/workspace" "$root/tmp/nested"
+chmod 1777 "$root/tmp"
+printf keep > "$root/home/user/workspace/keep"
+printf hidden > "$root/tmp/.hidden"
+ln -s "$root/home/user" "$root/tmp/home-link"
+case "$OKOU_CASE" in
+    caches)
+        mkdir -p "$root/var/cache/apt/archives"
+        dd if=/dev/zero of="$root/var/cache/apt/archives/payload" bs=1M count=96 2>/dev/null
+        ;;
+    unsafe-tmp)
+        rm "$root/tmp/home-link" "$root/tmp/.hidden"
+        rmdir "$root/tmp/nested" "$root/tmp"
+        ln -s "$root/home/user/workspace" "$root/tmp"
+        dd if=/dev/zero of="$root/home/user/workspace/payload" bs=1M count=96 2>/dev/null
+        ;;
+    *)
+        dd if=/dev/zero of="$root/tmp/nested/payload" bs=1M count=96 2>/dev/null
+        if [ "$OKOU_CASE" = unsafe-cache ]; then
+            mkdir "$root/var"
+            ln -s "$root/home/user" "$root/var/cache"
+        fi
+        ;;
+esac
+before=$(stat -c '%d:%i:%a' "$root/tmp")
+"$OKOU_HELPER" recover-disk-space rootfs
+test "$(stat -c '%d:%i:%a' "$root/tmp")" = "$before"
+test "$(cat "$root/home/user/workspace/keep")" = keep
+case "$OKOU_CASE" in
+    caches)
+        test ! -e "$root/var/cache/apt/archives/payload"
+        test "$(cat "$root/tmp/.hidden")" = hidden
+        test -L "$root/tmp/home-link"
+        ;;
+    unsafe-tmp) test -s "$root/tmp/payload" ;;
+    *) test ! -e "$root/tmp/nested/payload" ;;
+esac
+"#;
+
+#[tokio::test]
+#[ignore = "requires mount namespaces; selected by guest-home-cleanup-test CI"]
+async fn rootfs_recovery_stops_at_reserve_and_isolates_unsafe_candidates() -> TestResult {
+    use guest_contracts::disk_cleanup::{DiskCleanupFilesystem, DiskCleanupReport};
+
+    for case in ["tmp", "caches", "unsafe-cache", "unsafe-tmp"] {
+        let root = tempfile::tempdir()?;
+        let mounted = root.path().join("fs");
+        std::fs::create_dir(&mounted)?;
+        let containment = ContainmentFixture::new()?;
+        let mut command = Command::new("/usr/bin/unshare");
+        command
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .env("OKOU_FIXTURE_ROOT", &mounted)
+            .env("OKOU_TEST_DISK_CLEANUP_ROOT", &mounted)
+            .env("OKOU_HELPER", env!("CARGO_BIN_EXE_guest-agent"))
+            .env("OKOU_CASE", case)
+            .env("OKOU_TEST_PROCESS_CONTAINMENT_ROOT", &containment.root)
+            .env(
+                "OKOU_TEST_PROCESS_CONTAINMENT_CURRENT_GROUP",
+                "/vm0-exec/exec-current/workload",
+            )
+            .args([
+                "--user",
+                "--map-root-user",
+                "--mount",
+                "/bin/sh",
+                "-c",
+                RECOVER_ROOTFS_ON_TMPFS,
+            ]);
+        let output = common::command_output_with_stdin_timeout(
+            &mut command,
+            &[],
+            Duration::from_secs(30),
+            "private rootfs recovery exceeded its budget",
+        )
+        .await?;
+        assert!(
+            output.status.success(),
+            "{case}: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-        assert!(output.stdout.is_empty());
+        let report: DiskCleanupReport = serde_json::from_slice(&output.stdout)?;
+        assert_eq!(report.filesystem, DiskCleanupFilesystem::Rootfs);
+        assert!(report.available_bytes_before < 64 * 1024 * 1024, "{case}");
+        assert_eq!(
+            report.permits_retry(),
+            case != "unsafe-tmp",
+            "{case}: {report:?}"
+        );
     }
     Ok(())
 }

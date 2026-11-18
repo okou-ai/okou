@@ -6,7 +6,7 @@ import {
   chatEventTerminalPredicate,
 } from "@okouai/db/schema/chat-event";
 
-/** Exact, user-owned unread conversations, independent of the sidebar's display limits. */
+/** Exact, user-owned unread reminders, independent of the sidebar's display limits. */
 export function unreadIosNotificationThreadCondition(
   userId: string,
   badgeClearedAt: Date | null = null,
@@ -39,6 +39,7 @@ export function unreadIosNotificationThreadCondition(
     isNotNull(chatThreads.agentId),
     eq(chatThreads.hidden, false),
     eq(chatThreads.muted, false),
+    eq(chatThreads.archived, false),
     exists(unreadTerminal),
   );
 }

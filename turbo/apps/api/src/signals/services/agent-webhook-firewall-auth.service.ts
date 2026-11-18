@@ -101,7 +101,7 @@ import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import { command } from "ccstate";
 import { pgNullDecoder, pgTextDecoder } from "../../lib/db-structured-result";
-import { optionalEnv } from "../../lib/env";
+import { env, optionalEnv } from "../../lib/env";
 import { badRequestMessage, insufficientCredits } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
@@ -168,7 +168,7 @@ const ACTIVE_FIREWALL_AUTH_RUN_STATUSES = ["pending", "running"] as const;
 
 interface FirewallAuthBody {
   readonly networkIntent?: CustomConnectorNetworkIntent;
-  readonly encryptedSecrets: string;
+  readonly encryptedSecrets?: string;
   readonly authHeaders: Record<string, string>;
   readonly authBase?: string;
   readonly authQuery?: Record<string, string>;
@@ -4456,9 +4456,18 @@ const prepareNonCustomFirewallSecrets$ = command(
       auth.userId,
       featureSwitchContextRows0,
     );
-    const secrets = await tapError(
-      decryptPersistentSecretsMap(body.encryptedSecrets, featureSwitchContext),
-    );
+    // Legacy writers and active Runs still send an envelope. Omission only
+    // removes that namespace; server-owned sources keep their own authority.
+    // Retire the envelope reader after the deployment/Run drain in #48077.
+    const secrets =
+      body.encryptedSecrets === undefined
+        ? {}
+        : await tapError(
+            decryptPersistentSecretsMap(
+              body.encryptedSecrets,
+              featureSwitchContext,
+            ),
+          );
     if (!secrets) {
       return {
         ok: false,
@@ -4502,6 +4511,21 @@ const prepareNonCustomFirewallSecrets$ = command(
         return { ok: false, response: connectorNotConfigured() };
       }
       secrets[managedSecretName] = key.apiKey;
+    }
+    if (referenced.secrets.has("OKOU_DATA_TOKEN")) {
+      delete secrets.OKOU_DATA_TOKEN;
+      if (
+        body.matchedFirewall === undefined &&
+        !Object.hasOwn(body.secretConnectorMap ?? {}, "OKOU_DATA_TOKEN") &&
+        !Object.hasOwn(body.secretConnectorMetadataMap ?? {}, "OKOU_DATA_TOKEN")
+      ) {
+        const url = env("OKOU_DATA_ROUTER_URL");
+        const token = env("OKOU_DATA_TOKEN");
+        if (!url || !token) {
+          return { ok: false, response: connectorNotConfigured() };
+        }
+        secrets.OKOU_DATA_TOKEN = token;
+      }
     }
     return {
       ok: true,

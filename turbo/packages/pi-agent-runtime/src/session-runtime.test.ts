@@ -255,7 +255,7 @@ async function startResponsesProvider(
 }
 
 describe("official Pi AgentSession runtime", () => {
-  it("resumes pre-migration OpenRouter Chat JSONL through full-context Responses", async () => {
+  it("resumes pre-migration OpenRouter Chat JSONL with visible context and tool results", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "pi-openrouter-history-"));
     onTestFinished(async () => {
       await rm(cwd, { recursive: true, force: true });
@@ -364,7 +364,6 @@ describe("official Pi AgentSession runtime", () => {
       const requestJson = JSON.stringify(provider.requests[0]?.body);
       for (const marker of [
         "legacy user context",
-        "legacy reasoning context",
         "legacy answer context",
         "legacy tool output",
         "legacy tool conclusion",
@@ -378,6 +377,8 @@ describe("official Pi AgentSession runtime", () => {
         stopReason: "stop",
       });
       const sessionJsonl = await readFile(sessionFile, "utf8");
+      // Pi omits cross-model thinking from requests, while preserving history.
+      expect(sessionJsonl).toContain("legacy reasoning context");
       expect(inspectPiSessionJsonl(sessionJsonl)).toMatchObject({
         messageCount: 7,
         hasPendingToolCalls: false,

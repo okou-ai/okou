@@ -703,7 +703,7 @@ export function SharedThreadPage({
       ref={mountRef}
       className="flex h-full min-h-0 flex-col bg-background text-foreground md:bg-sidebar"
     >
-      <WorkspaceInset beside="nothing">
+      <WorkspaceInset surface="standalone">
         <SharedThreadHeader
           brandName={BRAND_NAME}
           homeUrl={homeUrl}

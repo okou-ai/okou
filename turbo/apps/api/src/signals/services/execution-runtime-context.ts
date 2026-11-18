@@ -1,40 +1,22 @@
-import { getFrameworkForType } from "@okouai/api-contracts/contracts/model-providers";
 import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
 import {
   preparedExecutionContextSchema,
   type PreparedExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
-import { AUTO_RUN_PROVIDER } from "@okouai/core/auto-run-model";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { agentRuns } from "@okouai/db/runtime/agent-run";
-import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
-import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import { computed, type Computed } from "ccstate";
-import { and, eq } from "drizzle-orm";
 import { previewAutomationBypassSecret } from "../../lib/preview-automation-bypass";
-import { db$ } from "../external/db";
 import { billableFirewallsForPermissions } from "./built-in-route-pricing";
 import { createExecutionConnectorSources } from "./agent-run-context.signals";
-import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { NATIVE_CONTEXT_RECOVERY_PROMPT } from "./chat-session-continuity.service";
 import type { ConnectorServerFirewallMetadataCatalog } from "./connector-server-firewall-catalog.service";
 import { createConnectorSkillVolumes } from "./connectors-context.service";
 import { dataRouterEnvironment } from "./data-router-environment";
-import { createExecutionSeedSkills } from "./execution-global-model-context.service";
 import { createAcceptedExecutionStorageObjects } from "./execution-storage.service";
 import { createUserFeatureSwitchContext } from "./feature-switches.service";
-import {
-  createRunModelSources,
-  managedSourceFromSnapshot,
-  memberAccountSourceFromSnapshot,
-} from "./model-source-context.service";
-import {
-  prepareManagedModelEnvironment,
-  prepareSubscriptionModelEnvironment,
-} from "./model-provider.service";
-import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 import type { ModelFirstPin } from "./model-selection.service";
 import {
   emptyEnvironment,
@@ -45,14 +27,12 @@ import {
   mergeRunSkillVolumes,
   resolveRunSkillVolumes,
 } from "./run-prompt-and-skills";
-import { createRunTemplatePackages } from "./run-templates.service";
 import { storedMountFromPrepared } from "./run-storage-manifest.service";
 import {
   DEFAULT_DISALLOWED_TOOLS,
   runPlatformEnvironment,
 } from "./run-execution-defaults";
 import { normalizeMountOverlay } from "./storage-mount-overlay";
-import { createSystemSkillsContext } from "./system-skills-context.service";
 import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import { createExecutionConnectedAccounts } from "./thread-connected-accounts.signals";
 import { createConnectorEnvironmentSignals } from "./thread-connector-environment.signals";
@@ -100,7 +80,6 @@ type ExecutionInput = {
 };
 
 type ExecutionInput$ = Computed<Promise<ExecutionInput>>;
-type ExecutionRun$ = Computed<Promise<ExecutionContextRun>>;
 type ExecutionIdentities = ReturnType<typeof createExecutionIdentities>;
 type ExecutionSources = ReturnType<typeof createExecutionConnectorSources>;
 type ExecutionModel$ = ReturnType<typeof createExecutionModel>;
@@ -108,10 +87,10 @@ type ExecutionModel =
   ExecutionModel$ extends Computed<infer T> ? Awaited<T> : never;
 type DisabledTools$ = Computed<Promise<readonly PaidToolId[]>>;
 
-/** Assemble and validate runtime input from this Run's authoritative sources. */
+/** Assemble accepted contributions with this Run's required current sources. */
 export function createExecutionRuntimeContext(input$: ExecutionInput$) {
   const identities = createExecutionIdentities(input$);
-  const { run$, identity$, features$ } = identities;
+  const { identity$, features$ } = identities;
   const sources = createExecutionConnectorSources(identity$, features$);
   const networkPolicyInputs$ = computed(
     async (get): Promise<ExecutionNetworkPolicyInputs> => {
@@ -128,8 +107,6 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
       };
     },
   );
-  const seedSkills$ = createExecutionSeedSkills();
-  const preferences$ = createExecutionPreferences(run$);
   const disabledTools$ = computed(async (get) => {
     return (await get(input$)).facts.disabledPaidTools;
   });
@@ -150,10 +127,7 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
     }),
   );
   const storage$ = createExecutionStorage(input$);
-  const packages$ = createExecutionPackages(input$, disabledTools$, sources, {
-    seedSkills$,
-    storage$,
-  });
+  const packages$ = createExecutionPackages(input$, sources, storage$);
   const platform$ = createExecutionPlatform(input$, model$, disabledTools$);
   const environment$ = createExecutionEnvironment(
     input$,
@@ -163,7 +137,6 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
   );
   const prepared$ = createExecutionPreparedContext(input$, {
     model$,
-    preferences$,
     packages$,
     environment$,
     storage$,
@@ -244,22 +217,6 @@ function createExecutionIdentities(input$: ExecutionInput$) {
   return { run$, identity$, features$ };
 }
 
-function createExecutionPreferences(run$: ExecutionRun$) {
-  return computed(async (get) => {
-    const run = await get(run$);
-    const [row] = await get(db$)
-      .select({ timezone: orgMembersMetadata.timezone })
-      .from(orgMembersMetadata)
-      .where(
-        and(
-          eq(orgMembersMetadata.orgId, run.orgId),
-          eq(orgMembersMetadata.userId, run.userId),
-        ),
-      );
-    return { timezone: row?.timezone ?? undefined };
-  });
-}
-
 function createExecutionConnectorContext(
   input$: ExecutionInput$,
   identities: ExecutionIdentities,
@@ -305,121 +262,20 @@ function createExecutionConnectorContext(
 }
 
 function createExecutionModel(input$: ExecutionInput$) {
-  const memberIdentity$ = computed(async (get) => {
-    const { run } = await get(input$);
-    return {
-      orgId: run.orgId,
-      userId: run.userId,
-      runId: run.id,
-      accountId: run.modelProviderId,
-    };
-  });
-  const memberModels$ = createRunModelSources(memberIdentity$);
   return computed(async (get) => {
-    const { run, facts } = await get(input$);
-    if (
-      !run.selectedModel ||
-      !run.modelRuntimeModel ||
-      !run.modelRuntimeProvider
-    ) {
-      throw new Error("Admitted Run is missing its pinned model route");
-    }
-    const piExecution = run.framework === "pi";
-    let provider: ResolvedModelProviderEnvironment | null;
-    if (run.modelProvider === "built-in") {
-      if (
-        !run.builtInModelKeyId ||
-        run.modelRuntimeProvider !== AUTO_RUN_PROVIDER ||
-        run.modelUsageProvider === null ||
-        run.modelLongContextMinTotalInputTokens === null
-      ) {
-        throw new Error("Admitted managed model route is unavailable");
-      }
-      const [key] = await get(db$)
-        .select({
-          id: builtInModelKeys.id,
-          vendor: builtInModelKeys.vendor,
-        })
-        .from(builtInModelKeys)
-        .where(eq(builtInModelKeys.id, run.builtInModelKeyId));
-      const source = managedSourceFromSnapshot(key);
-      if (!source) {
-        throw new Error("Run execution sources are unavailable");
-      }
-      provider = prepareManagedModelEnvironment(source, {
-        framework: getFrameworkForType(AUTO_RUN_PROVIDER),
-        selectedModel: run.selectedModel,
-        builtInModelRuntimeRoute: {
-          selectedModel: run.selectedModel,
-          providerType: AUTO_RUN_PROVIDER,
-          upstreamModel: run.modelRuntimeModel,
-          modelKeyId: run.builtInModelKeyId,
-        },
-      });
-    } else {
-      const members = await get(memberModels$);
-      const account = members.accounts.find((candidate) => {
-        return candidate.id === run.modelProviderId;
-      });
-      if (
-        !account ||
-        account.type !== run.modelProvider ||
-        (run.modelProviderAccountIdentity !== null &&
-          personalSubscriptionAccountIdentity(account) !==
-            run.modelProviderAccountIdentity)
-      ) {
-        throw new Error("Run execution sources are unavailable");
-      }
-      const source = memberAccountSourceFromSnapshot(members, account.id);
-      if (!source) {
-        throw new Error("Run execution sources are unavailable");
-      }
-      provider = prepareSubscriptionModelEnvironment(
-        source,
-        run.selectedModel,
-        {
-          userId: run.userId,
-          sourceId: account.id,
-          piExecution,
-          upstreamModel: run.modelRuntimeModel,
-        },
-      );
-    }
-    if (!provider) {
-      throw new Error("Run execution sources are unavailable");
-    }
-    const piModelConfig = facts.piModelConfig;
+    const { modelProvider } = (await get(input$)).facts;
     return {
-      provider: { ...provider, piModelConfig },
-      piModelConfig,
+      provider: modelProvider,
+      piModelConfig: modelProvider.piModelConfig,
     };
   });
 }
 
 function createExecutionPackages(
   input$: ExecutionInput$,
-  disabledTools$: DisabledTools$,
   sources: ExecutionSources,
-  {
-    seedSkills$,
-    storage$,
-  }: {
-    readonly seedSkills$: ReturnType<typeof createExecutionSeedSkills>;
-    readonly storage$: ReturnType<typeof createExecutionStorage>;
-  },
+  storage$: ReturnType<typeof createExecutionStorage>,
 ) {
-  const templateInput$ = computed(async (get) => {
-    const { templateInput } = (await get(input$)).facts;
-    return templateInput.userMessage ? templateInput : null;
-  });
-  const templates$ = createRunTemplatePackages(
-    templateInput$,
-    computed(async (get) => {
-      return (await get(input$)).run.orgId;
-    }),
-    disabledTools$,
-  );
-  const seeds$ = createSystemSkillsContext(disabledTools$, seedSkills$);
   const connectorSkills$ = createConnectorSkillVolumes(
     sources.signals.authorizedConnectors$,
   );
@@ -432,23 +288,18 @@ function createExecutionPackages(
         : framework === "codex"
           ? "/home/user/.codex/skills"
           : "/home/user/.claude/skills";
-    const [seedSkills, connectors, templates] = await Promise.all([
-      get(seeds$),
+    const [connectors, storage] = await Promise.all([
       get(connectorSkills$),
-      get(templates$),
+      get(storage$),
     ]);
-    if ("error" in templates) {
-      throw new Error("Run execution sources are unavailable");
-    }
     const volumes = resolveRunSkillVolumes(
       mergeRunSkillVolumes([
         connectors,
-        seedSkills.skillVolumes,
-        templates.skillVolumes,
+        facts.seedSkillVolumes,
+        facts.templateSkillVolumes,
       ]),
       skillRoot,
     );
-    const storage = await get(storage$);
     const winners = normalizeMountOverlay([
       ...volumes,
       ...storage.storageMounts,
@@ -592,7 +443,6 @@ function createExecutionPreparedContext(
   input$: ExecutionInput$,
   dependencies: {
     readonly model$: ExecutionModel$;
-    readonly preferences$: ReturnType<typeof createExecutionPreferences>;
     readonly packages$: ReturnType<typeof createExecutionPackages>;
     readonly environment$: ReturnType<typeof createExecutionEnvironment>;
     readonly storage$: ReturnType<typeof createExecutionStorage>;
@@ -606,15 +456,12 @@ function createExecutionPreparedContext(
 ) {
   return computed(async (get) => {
     const { run, facts } = await get(input$);
-    const [model, preferences, packages, resolved, storage] = await Promise.all(
-      [
-        get(dependencies.model$),
-        get(dependencies.preferences$),
-        get(dependencies.packages$),
-        get(dependencies.environment$),
-        get(dependencies.storage$),
-      ],
-    );
+    const [model, packages, resolved, storage] = await Promise.all([
+      get(dependencies.model$),
+      get(dependencies.packages$),
+      get(dependencies.environment$),
+      get(dependencies.storage$),
+    ]);
     const { environment, untrustedEnvironment, secretKeys } = resolved;
     const prepared: PreparedExecutionContext = {
       ...executionModelConfiguration(run, model),
@@ -649,7 +496,7 @@ function createExecutionPreparedContext(
         permissions: environmentPermissionManifest(environment),
       }),
       disallowedTools: [...DEFAULT_DISALLOWED_TOOLS],
-      userTimezone: preferences.timezone,
+      userTimezone: facts.userTimezone,
       captureNetworkBodies: facts.captureNetworkBodies ? true : undefined,
       seedSkillBundles: packages.seedSkillBundles,
       officialWorkflowBundles: packages.officialWorkflowBundles,

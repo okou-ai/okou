@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.25.28](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.27...runner-supervisor-v0.25.28) (2026-11-18)
+
+
+### Bug Fixes
+
+* classify codex terminal failures and agent oom ([#48521](https://github.com/okou-ai/okou/issues/48521)) ([00075f2](https://github.com/okou-ai/okou/commit/00075f2f8a0d64e6aa8c3cecc8dc7bdc6cccde5f))
+
+## [0.25.27](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.26...runner-supervisor-v0.25.27) (2026-11-18)
+
+## [0.25.26](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.25...runner-supervisor-v0.25.26) (2026-11-18)
+
+## [0.25.25](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.24...runner-supervisor-v0.25.25) (2026-11-18)
+
 ## [0.25.24](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.23...runner-supervisor-v0.25.24) (2026-11-17)
 
 

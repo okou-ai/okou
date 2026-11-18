@@ -10,153 +10,6 @@ import XCTest
 
 @MainActor
 final class ComposerVoiceInputTests: XCTestCase {
-  func testStartingVoiceInputPreservesExistingEditorFocus() async throws {
-    for initiallyFocused in [false, true] {
-      let fixture = VoiceComposerFixture()
-      let root = temporaryRoot()
-      defer { try? FileManager.default.removeItem(at: root) }
-      let capture = VoiceCaptureFixture()
-      let composer = fixture.composer(root: root, capture: capture)
-      defer { composer.close() }
-      composer.text = "Keep these notes"
-      let voice = try XCTUnwrap(composer.voice)
-      let recordingPresented = expectation(description: "Composer observed recording")
-      let host = UIHostingController(
-        rootView: VoiceFocusHarness(composer: composer, recordingPresented: recordingPresented))
-      let window = try await mountMentionHost(host)
-      defer { unmount(window) }
-      let input = try XCTUnwrap(mentionInputs(in: host.view).first)
-      if initiallyFocused { try await focusMentionInput(input) }
-      XCTAssertEqual(input.isFirstResponder, initiallyFocused)
-
-      await voice.start()
-      await fulfillment(of: [recordingPresented], timeout: 3)
-
-      XCTAssertEqual(input.isFirstResponder, initiallyFocused)
-      XCTAssertEqual(composer.text, "Keep these notes")
-      await voice.discard()
-    }
-  }
-
-  func testConfirmedSilenceLeavesDraftUnchangedWithoutVoiceRequests() async throws {
-    let fixture = VoiceComposerFixture()
-    let root = temporaryRoot()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let capture = VoiceCaptureFixture()
-    let composer = fixture.composer(root: root, capture: capture)
-    defer { composer.close() }
-    composer.text = "Keep these notes"
-    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    let voice = try XCTUnwrap(composer.voice)
-    await voice.start()
-    // Nonzero microphone offset exercises the system classifier, rather than only
-    // the exact-digital-silence shortcut.
-    // The duration also leaves an incomplete final classifier window.
-    capture.record(Data(repeating: 1, count: 35_200))
-    await voice.finish()
-    XCTAssertEqual(voice.duration, 1.1, accuracy: 0.0001)
-    XCTAssertEqual(composer.text, "Keep these notes")
-    XCTAssertEqual(voice.phase, .idle)
-    XCTAssertEqual(fixture.state.value.withLock { $0.audioUploads }, 0)
-    XCTAssertEqual(fixture.state.value.withLock { $0.polishRequests }, 0)
-  }
-
-  func testSilentTailSkipsEarlierSpeechOverlapAndSurvivesPolishRetry() async throws {
-    let fixture = VoiceComposerFixture()
-    let root = temporaryRoot()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let capture = VoiceCaptureFixture()
-    let composer = fixture.composer(root: root, capture: capture)
-    defer { composer.close() }
-    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    let uploaded = expectation(description: "Full speech segment uploaded")
-    fixture.state.value.withLock {
-      $0.transcriptionRequested = uploaded
-      $0.failPolish = true
-    }
-    let voice = try XCTUnwrap(composer.voice)
-    await voice.start()
-    capture.speak(seconds: 15)
-    await fulfillment(of: [uploaded], timeout: 3)
-    capture.record(Data(repeating: 0, count: 32_000))
-    await voice.finish()
-    XCTAssertEqual(composer.text, "")
-    XCTAssertEqual(fixture.state.value.withLock { $0.audioUploads }, 1)
-    composer.close()
-    unmount(window)
-
-    fixture.state.value.withLock { $0.failPolish = false }
-    let restored = fixture.composer(root: root, capture: VoiceCaptureFixture())
-    defer { restored.close() }
-    let restoredHost = UIHostingController(rootView: MentionComposerHarness(state: restored))
-    let restoredWindow = try await mountMentionHost(restoredHost)
-    defer { unmount(restoredWindow) }
-    await restored.voice?.finish()
-    XCTAssertEqual(restored.text, "spoken words")
-    XCTAssertEqual(fixture.state.value.withLock { $0.audioUploads }, 1)
-  }
-
-  func testShortNonzeroAudioIsPreservedForRecognition() async throws {
-    let fixture = VoiceComposerFixture()
-    let root = temporaryRoot()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let capture = VoiceCaptureFixture()
-    let composer = fixture.composer(root: root, capture: capture)
-    defer { composer.close() }
-    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    let voice = try XCTUnwrap(composer.voice)
-    await voice.start()
-    capture.record(Data(repeating: 1, count: 200))
-    await voice.finish()
-    XCTAssertEqual(composer.text, "spoken words")
-    XCTAssertEqual(fixture.state.value.withLock { $0.uploadedAudioBytes }, [200])
-  }
-
-  func testQuietRecordedSpeechIsPreservedForRecognition() async throws {
-    let fixture = VoiceComposerFixture()
-    let root = temporaryRoot()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let capture = VoiceCaptureFixture()
-    let composer = fixture.composer(root: root, capture: capture)
-    defer { composer.close() }
-    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    let voice = try XCTUnwrap(composer.voice)
-    await voice.start()
-    // Reduce the recorded voice by 24 dB, preserving its waveform and duration.
-    capture.speak(seconds: 1, attenuation: 16)
-    let started = ContinuousClock.now
-    await voice.finish()
-    print("SoundAnalysis quiet speech finish: \(started.duration(to: .now))")
-    XCTAssertEqual(composer.text, "spoken words")
-    XCTAssertEqual(fixture.state.value.withLock { $0.uploadedAudioBytes }, [32_000])
-  }
-
-  func testQuietWordInTheIncompleteFinalWindowIsPreserved() async throws {
-    let fixture = VoiceComposerFixture()
-    let root = temporaryRoot()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let capture = VoiceCaptureFixture()
-    let composer = fixture.composer(root: root, capture: capture)
-    defer { composer.close() }
-    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    let voice = try XCTUnwrap(composer.voice)
-    await voice.start()
-    capture.record(Data(repeating: 0, count: 64_000))
-    capture.speak(seconds: 1, attenuation: 16, sampleLimit: 4_000)
-    await voice.finish()
-    XCTAssertEqual(composer.text, "spoken words")
-    XCTAssertEqual(fixture.state.value.withLock { $0.uploadedAudioBytes }, [72_000])
-  }
 
   func testVoiceReplacesSelectionPreservesReferencesAndSupportsUndoWithoutSending() async throws {
     let fixture = VoiceComposerFixture()
@@ -272,47 +125,6 @@ final class ComposerVoiceInputTests: XCTestCase {
     XCTAssertEqual(restored.voice?.phase, .saved)
   }
 
-  func testMicrophoneConversionPreservesDurationAndAudibleSamples() throws {
-    let format = try XCTUnwrap(
-      AVAudioFormat(
-        commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 2, interleaved: false))
-    let input = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 48_000))
-    input.frameLength = 48_000
-    let channels = try XCTUnwrap(input.floatChannelData)
-    for index in 0..<48_000 {
-      let value = Float(sin(Double(index) * 2 * .pi * 440 / 48_000)) * 0.3
-      channels[0][index] = value
-      channels[1][index] = value
-    }
-    let encoder = try VoicePCMEncoder(format: format)
-    let body = try encoder.convert(input)
-    let tail = try encoder.convert(nil)
-    let bytes = body.pcm.count + tail.pcm.count
-    XCTAssertEqual(Double(bytes) / 32_000, 1, accuracy: 0.02)
-    XCTAssertGreaterThan(body.level, 0.1)
-  }
-
-  func testSuspensionDrainsFinalAudioBeforeTheSavedRecordingCanBeUsed() async throws {
-    let fixture = VoiceComposerFixture()
-    let root = temporaryRoot()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let capture = VoiceCaptureFixture()
-    capture.finalSeconds = 1
-    let composer = fixture.composer(root: root, capture: capture)
-    defer { composer.close() }
-    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    let voice = try XCTUnwrap(composer.voice)
-    await voice.start()
-    capture.speak(seconds: 1)
-    voice.suspend()
-    try await waitForBusinessResult { voice.phase == .saved }
-    XCTAssertEqual(voice.duration, 2)
-    await voice.finish()
-    XCTAssertEqual(composer.text, "spoken words")
-  }
-
   func testChangedDraftRetainsReadyTextForExplicitInsertionAtTheNewCursor() async throws {
     let fixture = VoiceComposerFixture()
     let root = temporaryRoot()
@@ -347,21 +159,6 @@ final class ComposerVoiceInputTests: XCTestCase {
     XCTAssertEqual(composer.text, "Before spoken words after new notes")
     XCTAssertEqual(fixture.state.value.withLock { $0.audioUploads }, 1)
     XCTAssertEqual(fixture.state.value.withLock { $0.polishRequests }, 1)
-  }
-
-  private func temporaryRoot() -> URL {
-    FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-  }
-
-  private func temporaryRootWithTeardown() -> URL {
-    let root = temporaryRoot()
-    // XCTest runs this after the async teardown blocks registered by the caller.
-    addTeardownBlock {
-      if FileManager.default.fileExists(atPath: root.path) {
-        try FileManager.default.removeItem(at: root)
-      }
-    }
-    return root
   }
 
   func testVoiceQuotaUpgradeResponseReachesTheOwningCaller() async throws {
@@ -652,5 +449,216 @@ final class ComposerVoiceInputTests: XCTestCase {
     defer { reopened.close() }
     XCTAssertEqual(reopened.text, "Original notes")
     XCTAssertEqual(reopened.voice?.phase, .idle)
+  }
+}
+
+@MainActor
+final class VoiceAudioCaptureTests: XCTestCase {
+  func testStartingVoiceInputPreservesExistingEditorFocus() async throws {
+    for initiallyFocused in [false, true] {
+      let fixture = VoiceComposerFixture()
+      let root = temporaryRoot()
+      defer { try? FileManager.default.removeItem(at: root) }
+      let capture = VoiceCaptureFixture()
+      let composer = fixture.composer(root: root, capture: capture)
+      defer { composer.close() }
+      composer.text = "Keep these notes"
+      let voice = try XCTUnwrap(composer.voice)
+      let recordingPresented = expectation(description: "Composer observed recording")
+      let host = UIHostingController(
+        rootView: VoiceFocusHarness(composer: composer, recordingPresented: recordingPresented))
+      let window = try await mountMentionHost(host)
+      defer { unmount(window) }
+      let input = try XCTUnwrap(mentionInputs(in: host.view).first)
+      if initiallyFocused { try await focusMentionInput(input) }
+      XCTAssertEqual(input.isFirstResponder, initiallyFocused)
+
+      await voice.start()
+      await fulfillment(of: [recordingPresented], timeout: 3)
+
+      XCTAssertEqual(input.isFirstResponder, initiallyFocused)
+      XCTAssertEqual(composer.text, "Keep these notes")
+      await voice.discard()
+    }
+  }
+
+  func testConfirmedSilenceLeavesDraftUnchangedWithoutVoiceRequests() async throws {
+    let fixture = VoiceComposerFixture()
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let capture = VoiceCaptureFixture()
+    let composer = fixture.composer(root: root, capture: capture)
+    defer { composer.close() }
+    composer.text = "Keep these notes"
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let voice = try XCTUnwrap(composer.voice)
+    await voice.start()
+    // Nonzero microphone offset exercises the system classifier, rather than only
+    // the exact-digital-silence shortcut.
+    // The duration also leaves an incomplete final classifier window.
+    capture.record(Data(repeating: 1, count: 35_200))
+    await voice.finish()
+    XCTAssertEqual(voice.duration, 1.1, accuracy: 0.0001)
+    XCTAssertEqual(composer.text, "Keep these notes")
+    XCTAssertEqual(voice.phase, .idle)
+    XCTAssertEqual(fixture.state.value.withLock { $0.audioUploads }, 0)
+    XCTAssertEqual(fixture.state.value.withLock { $0.polishRequests }, 0)
+  }
+
+  func testSilentTailSkipsEarlierSpeechOverlapAndSurvivesPolishRetry() async throws {
+    let fixture = VoiceComposerFixture()
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let capture = VoiceCaptureFixture()
+    let composer = fixture.composer(root: root, capture: capture)
+    defer { composer.close() }
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let uploaded = expectation(description: "Full speech segment uploaded")
+    fixture.state.value.withLock {
+      $0.transcriptionRequested = uploaded
+      $0.failPolish = true
+    }
+    let voice = try XCTUnwrap(composer.voice)
+    await voice.start()
+    capture.speak(seconds: 15)
+    await fulfillment(of: [uploaded], timeout: 3)
+    capture.record(Data(repeating: 0, count: 32_000))
+    await voice.finish()
+    XCTAssertEqual(composer.text, "")
+    XCTAssertEqual(fixture.state.value.withLock { $0.audioUploads }, 1)
+    composer.close()
+    unmount(window)
+
+    fixture.state.value.withLock { $0.failPolish = false }
+    let restored = fixture.composer(root: root, capture: VoiceCaptureFixture())
+    defer { restored.close() }
+    let restoredHost = UIHostingController(rootView: MentionComposerHarness(state: restored))
+    let restoredWindow = try await mountMentionHost(restoredHost)
+    defer { unmount(restoredWindow) }
+    await restored.voice?.finish()
+    XCTAssertEqual(restored.text, "spoken words")
+    XCTAssertEqual(fixture.state.value.withLock { $0.audioUploads }, 1)
+  }
+
+  func testShortNonzeroAudioIsPreservedForRecognition() async throws {
+    let fixture = VoiceComposerFixture()
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let capture = VoiceCaptureFixture()
+    let composer = fixture.composer(root: root, capture: capture)
+    defer { composer.close() }
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let voice = try XCTUnwrap(composer.voice)
+    await voice.start()
+    capture.record(Data(repeating: 1, count: 200))
+    await voice.finish()
+    XCTAssertEqual(composer.text, "spoken words")
+    XCTAssertEqual(fixture.state.value.withLock { $0.uploadedAudioBytes }, [200])
+  }
+
+  func testQuietRecordedSpeechIsPreservedForRecognition() async throws {
+    let fixture = VoiceComposerFixture()
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let capture = VoiceCaptureFixture()
+    let composer = fixture.composer(root: root, capture: capture)
+    defer { composer.close() }
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let voice = try XCTUnwrap(composer.voice)
+    await voice.start()
+    // Reduce the recorded voice by 24 dB, preserving its waveform and duration.
+    capture.speak(seconds: 1, attenuation: 16)
+    let started = ContinuousClock.now
+    await voice.finish()
+    print("SoundAnalysis quiet speech finish: \(started.duration(to: .now))")
+    XCTAssertEqual(composer.text, "spoken words")
+    XCTAssertEqual(fixture.state.value.withLock { $0.uploadedAudioBytes }, [32_000])
+  }
+
+  func testQuietWordInTheIncompleteFinalWindowIsPreserved() async throws {
+    let fixture = VoiceComposerFixture()
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let capture = VoiceCaptureFixture()
+    let composer = fixture.composer(root: root, capture: capture)
+    defer { composer.close() }
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let voice = try XCTUnwrap(composer.voice)
+    await voice.start()
+    capture.record(Data(repeating: 0, count: 64_000))
+    capture.speak(seconds: 1, attenuation: 16, sampleLimit: 4_000)
+    await voice.finish()
+    XCTAssertEqual(composer.text, "spoken words")
+    XCTAssertEqual(fixture.state.value.withLock { $0.uploadedAudioBytes }, [72_000])
+  }
+
+  func testMicrophoneConversionPreservesDurationAndAudibleSamples() throws {
+    let format = try XCTUnwrap(
+      AVAudioFormat(
+        commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 2, interleaved: false))
+    let input = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 48_000))
+    input.frameLength = 48_000
+    let channels = try XCTUnwrap(input.floatChannelData)
+    for index in 0..<48_000 {
+      let value = Float(sin(Double(index) * 2 * .pi * 440 / 48_000)) * 0.3
+      channels[0][index] = value
+      channels[1][index] = value
+    }
+    let encoder = try VoicePCMEncoder(format: format)
+    let body = try encoder.convert(input)
+    let tail = try encoder.convert(nil)
+    let bytes = body.pcm.count + tail.pcm.count
+    XCTAssertEqual(Double(bytes) / 32_000, 1, accuracy: 0.02)
+    XCTAssertGreaterThan(body.level, 0.1)
+  }
+
+  func testSuspensionDrainsFinalAudioBeforeTheSavedRecordingCanBeUsed() async throws {
+    let fixture = VoiceComposerFixture()
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let capture = VoiceCaptureFixture()
+    capture.finalSeconds = 1
+    let composer = fixture.composer(root: root, capture: capture)
+    defer { composer.close() }
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let voice = try XCTUnwrap(composer.voice)
+    await voice.start()
+    capture.speak(seconds: 1)
+    voice.suspend()
+    try await waitForBusinessResult { voice.phase == .saved }
+    XCTAssertEqual(voice.duration, 2)
+    await voice.finish()
+    XCTAssertEqual(composer.text, "spoken words")
+  }
+}
+
+@MainActor
+extension XCTestCase {
+
+  fileprivate func temporaryRoot() -> URL {
+    FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  }
+
+  fileprivate func temporaryRootWithTeardown() -> URL {
+    let root = temporaryRoot()
+    // XCTest runs this after the async teardown blocks registered by the caller.
+    addTeardownBlock {
+      if FileManager.default.fileExists(atPath: root.path) {
+        try FileManager.default.removeItem(at: root)
+      }
+    }
+    return root
   }
 }

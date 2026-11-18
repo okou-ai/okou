@@ -30,6 +30,7 @@ import {
   createConnectorPermissionsSignals,
   type ConnectorPermissionsTarget,
 } from "./settings/connector-permissions.ts";
+import { createChatConnectorAccountManagerSignals } from "./chat-connector-account-manager.ts";
 import { pageSignal$ } from "../page-signal.ts";
 
 interface PendingChatConnectorOverride {
@@ -364,6 +365,7 @@ export function createChatConnectorAccessSignals(threadId?: string) {
   );
   return {
     overview$,
+    accountManager: createChatConnectorAccountManagerSignals(),
     notifications$: cache.notifications$,
     active$,
     list,

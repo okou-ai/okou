@@ -11,6 +11,8 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
+import { publicChatActor } from "./helpers/public-chat-actor";
 
 const context = testContext();
 beforeEach(() => {
@@ -147,6 +149,77 @@ const untitledCases = Object.freeze([
 ]);
 
 describe("auxiliary generation outcomes", () => {
+  it("titles a contextual Slack request using the native thread conversation", async () => {
+    const owner = await publicChatActor(context);
+    const integrations = createBddIntegrationApi(context);
+    integrations.configureSlackAppMocks();
+    const slackUserId = "U_TITLE_REQUESTER";
+    const { teamId, botUserId } = await owner.run(() => {
+      return integrations.installSlackWorkspace(owner.actor, {
+        installerSlackUserId: slackUserId,
+      });
+    });
+    const nativeTopic = "The Atlas invoice export duplicates payment rows.";
+    const nativeHistory = `${"Investigation notes. ".repeat(30)}${nativeTopic}`;
+    const currentRequest = "Please fix this";
+    context.mocks.slack.conversations.replies.mockResolvedValue({
+      ok: true,
+      messages: [
+        { ts: "2900.000100", user: slackUserId, text: nativeHistory },
+        {
+          ts: "2900.000200",
+          user: slackUserId,
+          text: `<@${botUserId}> ${currentRequest}`,
+        },
+      ],
+    });
+    const titleRequests: string[] = [];
+    const expectedTitle = "Fix duplicate payments in Atlas invoice exports";
+    mockGoogleText();
+    createChatCallbacksApi(context).mockVertexCompletions((body) => {
+      if (
+        body.messages[0]?.content.includes(
+          "Generate a short, descriptive title",
+        )
+      ) {
+        const content = body.messages[1]?.content ?? "";
+        titleRequests.push(content);
+        return content.includes(nativeTopic) ? expectedTitle : "Fix this";
+      }
+      return "Thinking";
+    });
+
+    await owner.run(() => {
+      return integrations.postSlackEvent(teamId, {
+        type: "app_mention",
+        user: slackUserId,
+        text: `<@${botUserId}> ${currentRequest}`,
+        channel: "C_TITLE_CONTEXT",
+        thread_ts: "2900.000100",
+        ts: "2900.000200",
+      });
+    });
+    await flushWaitUntilForTest();
+
+    const listed = await accept(
+      createChatFilesBddApi(context).requestThreadEvents(
+        owner.actor,
+        {},
+        [200],
+      ),
+      [200],
+    );
+    expect(listed.body.events).toContainEqual(
+      expect.objectContaining({ kind: "renamed", title: expectedTitle }),
+    );
+    expect(titleRequests).toHaveLength(1);
+    expect(titleRequests[0]).toContain(nativeHistory);
+    expect(titleRequests[0]).toContain(
+      "You are currently running inside: Slack",
+    );
+    expect(titleRequests[0]).toContain(currentRequest);
+  });
+
   it("titles the thread from a usable completion", async () => {
     const title = await prepareChatTitle();
     mockGoogleText();

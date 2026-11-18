@@ -435,10 +435,10 @@ class AssistantRecoveryModelTest {
             f.composer.recover(target, RecoveryApiFixture.FAILURE, true)
             f.composer.uiState.first { it.entry(target).recovery?.reset != null }
             f.owners.clear()
-            val saved = f.journal.load(f.api.identity).journal.entries.getValue(target.key)
-            assertEquals(before, saved.recovery)
-            assertEquals("Keep the unsent draft", saved.text)
-            assertNull(saved.pending)
+            val saved = f.journal.load(f.api.identity).journal
+            assertEquals(before, saved.entries.getValue(target.key).recovery)
+            assertEquals("Keep the unsent draft", saved.drafts.getValue(target.key).text)
+            assertNull(saved.entries.getValue(target.key).pending)
             assertTrue(f.remote.resets.isEmpty())
             assertTrue(f.remote.inputs.isEmpty())
         }
@@ -504,12 +504,12 @@ class AssistantRecoveryModelTest {
                     .await()
             }
         ) { f ->
-            assertEquals(1, f.journal.load(f.api.identity).journal.format)
+            assertEquals(3, f.journal.load(f.api.identity).journal.format)
             f.composer.recover(target, RecoveryApiFixture.FAILURE)
             f.idle()
             val saved = f.journal.load(f.api.identity).journal
-            assertEquals(2, saved.format)
-            assertEquals("Old draft", saved.entries[target.key]!!.text)
+            assertEquals(3, saved.format)
+            assertEquals("Old draft", saved.drafts[target.key]!!.text)
         }
         withRecovery(directory = temporary.newFile()) { f ->
             f.composer.recover(target, RecoveryApiFixture.FAILURE, true)

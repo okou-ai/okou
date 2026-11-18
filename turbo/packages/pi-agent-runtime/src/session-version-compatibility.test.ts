@@ -2,11 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import {
-  createFauxCore,
-  fauxAssistantMessage,
-  Type,
-} from "@earendil-works/pi-ai";
+import { createFauxCore, fauxAssistantMessage } from "@earendil-works/pi-ai";
 import {
   createAgentSession,
   ModelRuntime,
@@ -15,6 +11,7 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { expect, it, onTestFinished } from "vitest";
+import { Type } from "typebox";
 
 import { inspectPiSessionJsonl } from "./api";
 import { MemoryPiSession } from "./session-memory";

@@ -615,6 +615,9 @@ export const rustTypeBindings = [
           guest_home_filesystem_full: [
             "The sandbox home filesystem ran out of free blocks or inodes.",
           ],
+          guest_memory_oom_killed: [
+            "The sandbox OOM killer terminated the agent runtime.",
+          ],
           execution_timeout: ["The run reached its execution time limit."],
           insufficient_credits: ["The vm0 workspace lacks credits."],
           provider_insufficient_credits: [
@@ -637,6 +640,7 @@ export const rustTypeBindings = [
           provider_rate_limited: ["The provider rate limited the request."],
           provider_overloaded: ["The provider reported overload."],
           provider_stream_timeout: ["The provider stream timed out."],
+          provider_request_timeout: ["The model request transport timed out."],
           provider_queue_timeout: [
             "The provider expired the request before processing started.",
           ],
@@ -645,7 +649,7 @@ export const rustTypeBindings = [
             "Local firewall authentication resolution failed.",
           ],
           provider_bad_request: [
-            "Codex returned an opaque HTTP 400 with no more specific cause.",
+            "Codex reported a bad request without a more specific cause.",
           ],
           response_connection_lost: ["The response connection was lost."],
           safety_policy_refusal: ["The provider refused for safety policy."],

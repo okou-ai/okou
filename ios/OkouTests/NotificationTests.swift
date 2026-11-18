@@ -45,45 +45,6 @@ final class NotificationTests: XCTestCase {
     XCTAssertGreaterThan(bodies[1].revision, bodies[0].revision)
   }
 
-  func testForegroundRefreshRebindsWhenAWidgetPushTokenAppearsOrChanges() async throws {
-    let writes = Mutex<[Data]>([])
-    let registered = expectation(description: "The OS device token is registered first")
-    let fixture = ConversationHistoryFixture(additional: { request in
-      if request.url?.path == "/api/ios-push-registrations" {
-        let count = writes.withLock {
-          $0.append(chatRequestBody(request))
-          return $0.count
-        }
-        if count == 1 { registered.fulfill() }
-        return ChatHTTPResponse(body: #"{"success":true}"#)
-      }
-      throw URLError(.unsupportedURL)
-    })
-    let system = NotificationSystemFixture()
-    system.status = .authorized
-    let service = notifications(system: system)
-    await service.update(workspace: workspace(fixture))
-    service.didRegister(deviceToken: Data(repeating: 0xab, count: 32))
-    await fulfillment(of: [registered], timeout: 3)
-    // No widget yet: an unchanged binding is not rewritten.
-    await service.refreshRegistration()
-    system.widgetToken = String(repeating: "cd", count: 32)
-    await service.refreshRegistration()
-    await service.refreshRegistration()
-    system.widgetToken = String(repeating: "ef", count: 32)
-    await service.refreshRegistration()
-
-    let bodies = try writes.withLock { $0 }.map {
-      try JSONDecoder().decode(Registration.self, from: $0)
-    }
-    XCTAssertEqual(
-      bodies.map(\.widgetPushToken),
-      [nil, String(repeating: "cd", count: 32), String(repeating: "ef", count: 32)])
-    XCTAssertEqual(Set(bodies.map(\.deviceToken)), [String(repeating: "ab", count: 32)])
-    XCTAssertEqual(bodies.map(\.revision), bodies.map(\.revision).sorted())
-    XCTAssertEqual(Set(bodies.map(\.revision)).count, 3)
-  }
-
   func testPushRegistrationRecoversThroughTheExplicitNotificationSetupAction() async throws {
     for initialStatus in [503, 401, 426] {
       let status = Mutex(initialStatus)
@@ -495,30 +456,11 @@ final class NotificationTests: XCTestCase {
     XCTAssertEqual(authentication.activeWorkspaceID, "org_two")
   }
 
-  private func notifications(system: NotificationSystemFixture = NotificationSystemFixture())
-    -> NotificationService
-  {
-    let suite = "notification-tests-" + UUID().uuidString
-    let defaults = UserDefaults(suiteName: suite)!
-    addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
-    return NotificationService(system: system, defaults: defaults)
-  }
-
   private func directory() -> URL {
     let directory = FileManager.default.temporaryDirectory.appending(
       path: "notification-tests-" + UUID().uuidString)
     addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
     return directory
-  }
-
-  private func workspace(_ fixture: ConversationHistoryFixture) -> NotificationWorkspace {
-    let scope = ChatCacheScope(
-      apiBaseURL: fixture.http.baseURL, userID: "user_push", workspaceID: "org_push")
-    return NotificationWorkspace(
-      scopeID: "session_push", userID: "user_push", workspaceID: "org_push",
-      client: fixture.http.client,
-      sync: ChatSync(
-        client: fixture.http.client, cache: CacheTestDirectory(owner: self).cache(scope: scope)))
   }
 
   private func payload(
@@ -534,12 +476,76 @@ final class NotificationTests: XCTestCase {
     ]
   }
 
-  private struct Registration: Decodable {
+  fileprivate struct Registration: Decodable {
     let installationId: String
     let revision: Int
     let deviceToken: String?
     let environment: String?
     let widgetPushToken: String?
+  }
+}
+
+@MainActor
+final class NotificationWidgetTokenTests: XCTestCase {
+  func testForegroundRefreshRebindsWhenAWidgetPushTokenAppearsOrChanges() async throws {
+    let writes = Mutex<[Data]>([])
+    let registered = expectation(description: "The OS device token is registered first")
+    let fixture = ConversationHistoryFixture(additional: { request in
+      if request.url?.path == "/api/ios-push-registrations" {
+        let count = writes.withLock {
+          $0.append(chatRequestBody(request))
+          return $0.count
+        }
+        if count == 1 { registered.fulfill() }
+        return ChatHTTPResponse(body: #"{"success":true}"#)
+      }
+      throw URLError(.unsupportedURL)
+    })
+    let system = NotificationSystemFixture()
+    system.status = .authorized
+    let service = notifications(system: system)
+    await service.update(workspace: workspace(fixture))
+    service.didRegister(deviceToken: Data(repeating: 0xab, count: 32))
+    await fulfillment(of: [registered], timeout: 3)
+    // No widget yet: an unchanged binding is not rewritten.
+    await service.refreshRegistration()
+    system.widgetToken = String(repeating: "cd", count: 32)
+    await service.refreshRegistration()
+    await service.refreshRegistration()
+    system.widgetToken = String(repeating: "ef", count: 32)
+    await service.refreshRegistration()
+
+    let bodies = try writes.withLock { $0 }.map {
+      try JSONDecoder().decode(NotificationTests.Registration.self, from: $0)
+    }
+    XCTAssertEqual(
+      bodies.map(\.widgetPushToken),
+      [nil, String(repeating: "cd", count: 32), String(repeating: "ef", count: 32)])
+    XCTAssertEqual(Set(bodies.map(\.deviceToken)), [String(repeating: "ab", count: 32)])
+    XCTAssertEqual(bodies.map(\.revision), bodies.map(\.revision).sorted())
+    XCTAssertEqual(Set(bodies.map(\.revision)).count, 3)
+  }
+}
+
+@MainActor
+extension XCTestCase {
+  fileprivate func notifications(system: NotificationSystemFixture = NotificationSystemFixture())
+    -> NotificationService
+  {
+    let suite = "notification-tests-" + UUID().uuidString
+    let defaults = UserDefaults(suiteName: suite)!
+    addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+    return NotificationService(system: system, defaults: defaults)
+  }
+
+  fileprivate func workspace(_ fixture: ConversationHistoryFixture) -> NotificationWorkspace {
+    let scope = ChatCacheScope(
+      apiBaseURL: fixture.http.baseURL, userID: "user_push", workspaceID: "org_push")
+    return NotificationWorkspace(
+      scopeID: "session_push", userID: "user_push", workspaceID: "org_push",
+      client: fixture.http.client,
+      sync: ChatSync(
+        client: fixture.http.client, cache: CacheTestDirectory(owner: self).cache(scope: scope)))
   }
 }
 

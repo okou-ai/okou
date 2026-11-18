@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.83](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.82...guest-home-mount-v0.2.83) (2026-11-18)
+
+## [0.2.82](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.81...guest-home-mount-v0.2.82) (2026-11-18)
+
+## [0.2.81](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.80...guest-home-mount-v0.2.81) (2026-11-18)
+
+
+### Refactoring
+
+* delegate file opens to owned descriptor apis ([#48437](https://github.com/okou-ai/okou/issues/48437)) ([5ef5cab](https://github.com/okou-ai/okou/commit/5ef5cab9bc706528c66d21a9315fd76ed8e1ea10))
+
 ## [0.2.80](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.79...guest-home-mount-v0.2.80) (2026-11-17)
 
 ## [0.2.79](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.78...guest-home-mount-v0.2.79) (2026-11-17)

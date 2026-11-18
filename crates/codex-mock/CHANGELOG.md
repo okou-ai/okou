@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.12.80](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.79...codex-mock-v0.12.80) (2026-11-18)
+
+
+### Bug Fixes
+
+* classify codex terminal failures and agent oom ([#48521](https://github.com/okou-ai/okou/issues/48521)) ([00075f2](https://github.com/okou-ai/okou/commit/00075f2f8a0d64e6aa8c3cecc8dc7bdc6cccde5f))
+
+## [0.12.79](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.78...codex-mock-v0.12.79) (2026-11-18)
+
+## [0.12.78](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.77...codex-mock-v0.12.78) (2026-11-18)
+
+
+### Refactoring
+
+* delegate file opens to owned descriptor apis ([#48437](https://github.com/okou-ai/okou/issues/48437)) ([5ef5cab](https://github.com/okou-ai/okou/commit/5ef5cab9bc706528c66d21a9315fd76ed8e1ea10))
+
 ## [0.12.77](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.76...codex-mock-v0.12.77) (2026-11-17)
 
 

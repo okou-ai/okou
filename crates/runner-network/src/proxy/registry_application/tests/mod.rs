@@ -286,6 +286,7 @@ async fn real_python_registry_owner_accepts_rust_writer_source_bound_inline_buil
         run_id: "run-source-bound-inline-builtin",
         cli_agent_type: "claude-code",
         sandbox_token: "synthetic-token",
+        firewall_token: None,
         network_log_path: Path::new("/tmp/network-source-bound-inline-builtin.jsonl"),
         proxy_log_path: Path::new("/tmp/proxy-source-bound-inline-builtin.jsonl"),
         firewalls: Some(&firewalls),

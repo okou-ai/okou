@@ -12,6 +12,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogDescription,
@@ -70,11 +71,35 @@ function projectDialogFocusTarget(dialog: ProjectDialog) {
   return target ?? document.querySelector<HTMLElement>("[data-project-create]");
 }
 
+function ProjectNameField() {
+  const { t } = useTranslation();
+  const name = useGet(projectEditorName$);
+  const setName = useSet(setProjectEditorName$);
+  return (
+    <label htmlFor="project-name" className="flex flex-col gap-1.5">
+      <span className="text-sm font-medium">
+        {t(($) => {
+          return $.projects.name;
+        })}
+      </span>
+      <Input
+        id="project-name"
+        value={name}
+        maxLength={120}
+        onChange={(event) => {
+          setName(event.target.value);
+        }}
+        autoFocus
+        required
+      />
+    </label>
+  );
+}
+
 type EditorDialog = Extract<ProjectDialog, { kind: "editor" }>;
 function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
   const { t } = useTranslation();
   const name = useGet(projectEditorName$);
-  const setName = useSet(setProjectEditorName$);
   const close = useSet(closeProjectDialog$);
   const completeClose = useSet(completeProjectDialogClose$);
   const hasSuccessor = useSet(projectDialogHasSuccessor$);
@@ -139,7 +164,7 @@ function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
           </DialogDescription>
         </DialogHeader>
         <form
-          className="flex flex-col gap-3"
+          className="flex flex-col gap-5"
           onKeyDown={(event) => {
             if (
               event.key === "Enter" &&
@@ -154,37 +179,25 @@ function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
             detach(submit(), Reason.DomCallback);
           }}
         >
-          <label htmlFor="project-name">
-            {t(($) => {
-              return $.projects.name;
-            })}
-          </label>
-          <Input
-            id="project-name"
-            value={name}
-            maxLength={120}
-            onChange={(event) => {
-              setName(event.target.value);
-            }}
-            autoFocus
-            required
-          />
+          <ProjectNameField />
           {error && (
-            <p role="alert">
+            <p role="alert" className="text-sm text-destructive">
               {t(($) => {
                 return $.projects.saveError;
               })}
             </p>
           )}
-          <Button type="submit" disabled={pending || !name.trim()}>
-            {pending
-              ? t(($) => {
-                  return $.projects.saving;
-                })
-              : t(($) => {
-                  return $.projects.save;
-                })}
-          </Button>
+          <DialogFooter>
+            <Button type="submit" disabled={pending || !name.trim()}>
+              {pending
+                ? t(($) => {
+                    return $.projects.saving;
+                  })
+                : t(($) => {
+                    return $.projects.save;
+                  })}
+            </Button>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

@@ -11,37 +11,6 @@ private typealias FixtureData = ConnectorHTTPFixtures
 
 @MainActor
 final class ConnectorActionTests: XCTestCase {
-  private func descriptor(
-    _ fixture: ChatHTTPFixture, reconnect: Bool = false, custom: Bool = false,
-    callbackQuery: String = "Continue"
-  ) throws -> ChatConnectorAction {
-    let path =
-      reconnect
-      ? "/connectors/slack/reconnect/\(FixtureData.accountID)"
-      : "/connectors/\(custom ? "_internal" : "slack")/connect"
-    return try XCTUnwrap(
-      ChatConnectorAction.parse(
-        path
-          + "?agentId=\(FixtureData.agentID)&threadId=\(FixtureData.threadID)&callbackPrompt=\(callbackQuery)",
-        webURL: fixture.baseURL, agentID: FixtureData.agentID, threadID: FixtureData.threadID))
-  }
-  private func store(
-    _ fixture: ChatHTTPFixture,
-    pollSleep: @escaping @Sendable (Duration) async throws -> Void = {
-      try await Task.sleep(for: $0)
-    }
-  ) -> ConnectorActionStore {
-    let sync = ChatSync(client: fixture.client)
-    let commands = ChatCommands(client: fixture.client, sync: sync)
-    let thread = ChatThread(
-      id: FixtureData.threadID, agentID: FixtureData.agentID, title: "Connector test",
-      selectedModel: nil,
-      createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast, pinnedAt: nil,
-      pinOrder: nil, modelSettings: [:], serviceTier: nil, indicator: nil)
-    return ConnectorActionStore(
-      service: commands.connectorActions, commands: commands, thread: thread, didContinue: {},
-      didFail: { _ in }, pollSleep: pollSleep)
-  }
   func testNoAuthConnectionVerifiesServerStateAndContinuesWithoutClearingSelection() async throws {
     let linked = Mutex(false)
     let prompts = Mutex<[String]>([])
@@ -149,6 +118,50 @@ final class ConnectorActionTests: XCTestCase {
     XCTAssertEqual(eventIDs.withLock { Set($0).count }, 1)
     XCTAssertEqual(eventIDs.withLock { $0.count }, 2)
   }
+  func testAccountConfirmationUsesPUTAndPreservesTheSelectionWhileContinuing() async throws {
+    let selected = Mutex(false)
+    let callbacks = Mutex(0)
+    let fixture = ChatHTTPFixture { request in
+      if request.url!.path.hasSuffix("/connector-selections") {
+        if request.httpMethod == "PUT" {
+          XCTAssertTrue(
+            try XCTUnwrap(String(data: chatRequestBody(request), encoding: .utf8)).contains(
+              FixtureData.accountID))
+          selected.withLock { $0 = true }
+          return ChatHTTPResponse(body: "{}")
+        }
+        XCTAssertEqual(request.httpMethod, "GET")
+        let selection =
+          "{\"connectionId\":\"\(FixtureData.accountID)\",\"target\":{\"kind\":\"builtin\",\"connectorSlug\":\"slack\"}}"
+        return ChatHTTPResponse(
+          body: "{\"selections\":\(selected.withLock { $0 } ? "[\(selection)]" : "[]")}")
+      }
+      if request.url!.path == "/api/chat/events" {
+        XCTAssertTrue(selected.withLock { $0 })
+        callbacks.withLock { $0 += 1 }
+      }
+      return try XCTUnwrap(FixtureData.response(request))
+    }
+    let store = store(fixture)
+    defer { store.close() }
+    let action = try XCTUnwrap(
+      ChatConnectorAction.parse(
+        "/agents/\(FixtureData.agentID)/connector-accounts/\(FixtureData.accountID)/select?kind=builtin&connectorSlug=slack&threadId=\(FixtureData.threadID)&callbackPrompt=Continue",
+        webURL: fixture.baseURL, agentID: FixtureData.agentID, threadID: FixtureData.threadID))
+    store.activate(action)
+    try await waitForBusinessResult { store.active != nil }
+    store.submit()
+    try await waitForBusinessResult { store.active == nil }
+    XCTAssertEqual(callbacks.withLock { $0 }, 1)
+    let loaded = try await store.resources.read(action).load()
+    let status = try XCTUnwrap(loaded)
+    XCTAssertTrue(status.selected)
+  }
+
+}
+
+@MainActor
+final class ConnectorAuthorizationSessionTests: XCTestCase {
   func testOAuthBrowserCancellationDoesNotContinueAndCanRestart() async throws {
     let scheduled = expectation(description: "OAuth completion polling was scheduled")
     let clock = ConnectorPollingClock(didSchedule: { _ in scheduled.fulfill() })
@@ -429,45 +442,6 @@ final class ConnectorActionTests: XCTestCase {
       XCTAssertEqual(callbacks.withLock { $0 }, 1)
     }
   }
-  func testAccountConfirmationUsesPUTAndPreservesTheSelectionWhileContinuing() async throws {
-    let selected = Mutex(false)
-    let callbacks = Mutex(0)
-    let fixture = ChatHTTPFixture { request in
-      if request.url!.path.hasSuffix("/connector-selections") {
-        if request.httpMethod == "PUT" {
-          XCTAssertTrue(
-            try XCTUnwrap(String(data: chatRequestBody(request), encoding: .utf8)).contains(
-              FixtureData.accountID))
-          selected.withLock { $0 = true }
-          return ChatHTTPResponse(body: "{}")
-        }
-        XCTAssertEqual(request.httpMethod, "GET")
-        let selection =
-          "{\"connectionId\":\"\(FixtureData.accountID)\",\"target\":{\"kind\":\"builtin\",\"connectorSlug\":\"slack\"}}"
-        return ChatHTTPResponse(
-          body: "{\"selections\":\(selected.withLock { $0 } ? "[\(selection)]" : "[]")}")
-      }
-      if request.url!.path == "/api/chat/events" {
-        XCTAssertTrue(selected.withLock { $0 })
-        callbacks.withLock { $0 += 1 }
-      }
-      return try XCTUnwrap(FixtureData.response(request))
-    }
-    let store = store(fixture)
-    defer { store.close() }
-    let action = try XCTUnwrap(
-      ChatConnectorAction.parse(
-        "/agents/\(FixtureData.agentID)/connector-accounts/\(FixtureData.accountID)/select?kind=builtin&connectorSlug=slack&threadId=\(FixtureData.threadID)&callbackPrompt=Continue",
-        webURL: fixture.baseURL, agentID: FixtureData.agentID, threadID: FixtureData.threadID))
-    store.activate(action)
-    try await waitForBusinessResult { store.active != nil }
-    store.submit()
-    try await waitForBusinessResult { store.active == nil }
-    XCTAssertEqual(callbacks.withLock { $0 }, 1)
-    let loaded = try await store.resources.read(action).load()
-    let status = try XCTUnwrap(loaded)
-    XCTAssertTrue(status.selected)
-  }
 
   func testDevicePollingHonorsTheUpdatedIntervalAndScopeClosureCancelsItsWait() async throws {
     let firstPoll = expectation(description: "The initial device poll was scheduled")
@@ -522,6 +496,11 @@ final class ConnectorActionTests: XCTestCase {
     } catch { XCTAssertTrue(error is CancellationError) }
     XCTAssertEqual(polls.withLock { $0 }, 1)
   }
+
+}
+
+@MainActor
+final class ConnectorStatusReadTests: XCTestCase {
 
   func testEquivalentActionReadsShareHTTPAndCancellingOneWaiterKeepsTheOtherReadAlive()
     async throws
@@ -753,4 +732,39 @@ final class ConnectorActionTests: XCTestCase {
     XCTAssertNil(store.active)
   }
 
+}
+
+@MainActor
+extension XCTestCase {
+  fileprivate func descriptor(
+    _ fixture: ChatHTTPFixture, reconnect: Bool = false, custom: Bool = false,
+    callbackQuery: String = "Continue"
+  ) throws -> ChatConnectorAction {
+    let path =
+      reconnect
+      ? "/connectors/slack/reconnect/\(FixtureData.accountID)"
+      : "/connectors/\(custom ? "_internal" : "slack")/connect"
+    return try XCTUnwrap(
+      ChatConnectorAction.parse(
+        path
+          + "?agentId=\(FixtureData.agentID)&threadId=\(FixtureData.threadID)&callbackPrompt=\(callbackQuery)",
+        webURL: fixture.baseURL, agentID: FixtureData.agentID, threadID: FixtureData.threadID))
+  }
+  fileprivate func store(
+    _ fixture: ChatHTTPFixture,
+    pollSleep: @escaping @Sendable (Duration) async throws -> Void = {
+      try await Task.sleep(for: $0)
+    }
+  ) -> ConnectorActionStore {
+    let sync = ChatSync(client: fixture.client)
+    let commands = ChatCommands(client: fixture.client, sync: sync)
+    let thread = ChatThread(
+      id: FixtureData.threadID, agentID: FixtureData.agentID, title: "Connector test",
+      selectedModel: nil,
+      createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast, pinnedAt: nil,
+      pinOrder: nil, modelSettings: [:], serviceTier: nil, indicator: nil)
+    return ConnectorActionStore(
+      service: commands.connectorActions, commands: commands, thread: thread, didContinue: {},
+      didFail: { _ in }, pollSleep: pollSleep)
+  }
 }

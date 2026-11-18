@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.249.47](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.46...runner-rs-v0.249.47) (2026-11-18)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.46](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.45...runner-rs-v0.249.46) (2026-11-18)
+
+
+### Bug Fixes
+
+* **subagent:** flatten run ownership and compact streaming logs ([#48558](https://github.com/okou-ai/okou/issues/48558)) ([66b812c](https://github.com/okou-ai/okou/commit/66b812c94ae58b4d8a75aa26a5c4f3f90a1ebd40))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.45](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.44...runner-rs-v0.249.45) (2026-11-18)
+
+
+### Performance Improvements
+
+* **runner:** pool python auth connections and retire reset generations ([#48526](https://github.com/okou-ai/okou/issues/48526)) ([e269355](https://github.com/okou-ai/okou/commit/e269355d7d6dc8bd36b133de434420a1626ff9ce))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.44](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.43...runner-rs-v0.249.44) (2026-11-18)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.43](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.42...runner-rs-v0.249.43) (2026-11-18)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.42](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.41...runner-rs-v0.249.42) (2026-11-18)
+
+
+### Refactoring
+
+* **python:** centralize symbolic path segment encoding ([#48441](https://github.com/okou-ai/okou/issues/48441)) ([ae62349](https://github.com/okou-ai/okou/commit/ae6234943088eea66e3105a3d203683c334851ec))
+
 ## [0.249.41](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.40...runner-rs-v0.249.41) (2026-11-17)
 
 

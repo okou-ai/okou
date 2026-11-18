@@ -4,7 +4,7 @@ import zlib
 from dataclasses import dataclass
 from typing import Literal
 
-from zlib_input import ZlibInputCursor
+from compressed_input import CompressedInputCursor
 
 ZlibDecodeStatus = Literal[
     "complete",
@@ -54,7 +54,7 @@ def decode_zlib_bounded(
     if max_members is not None and max_members <= 0:
         raise ValueError("max_members must be positive")
 
-    input_cursor = ZlibInputCursor(data)
+    input_cursor = CompressedInputCursor(data)
     if not input_cursor:
         return ZlibDecodeResult(b"", "complete", 0)
 

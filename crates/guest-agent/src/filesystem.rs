@@ -2,7 +2,6 @@
 use serde::Serialize;
 use std::ffi::CStr;
 use std::fs::{File, OpenOptions};
-use std::os::fd::AsRawFd;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 
@@ -56,14 +55,10 @@ fn open_child(parent: &File, name: &CStr) -> Option<File> {
 }
 
 fn sample(directory: &File) -> Option<FilesystemObservation> {
-    let mut stat = std::mem::MaybeUninit::<libc::statvfs>::uninit();
-    if unsafe { libc::fstatvfs(directory.as_raw_fd(), stat.as_mut_ptr()) } != 0 {
-        return None;
-    }
-    from_stat(&unsafe { stat.assume_init() })
+    from_stat(&rustix::fs::fstatvfs(directory).ok()?)
 }
 
-fn from_stat(stat: &libc::statvfs) -> Option<FilesystemObservation> {
+fn from_stat(stat: &rustix::fs::StatVfs) -> Option<FilesystemObservation> {
     if stat.f_frsize == 0
         || stat.f_bfree > stat.f_blocks
         || stat.f_bavail > stat.f_bfree

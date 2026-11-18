@@ -61,6 +61,8 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
       self.presentation = presentation
       chat = WorkspaceChatHostingController(presentation: presentation)
       requestedSidebarOpen = sidebar.isOpen
+      // The chat's keyboard must not move the sidebar's list or footer during navigation.
+      list.safeAreaRegions = .container
     }
 
     func install(on navigation: WorkspaceNavigationController) {

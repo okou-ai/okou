@@ -65,6 +65,10 @@ pub struct ExecutionContext {
     #[serde(default)]
     pub vars: Option<HashMap<String, String>>,
     pub sandbox_token: String,
+    /// Host-only firewall resolver authority; never forward into Guest input.
+    /// Absent on launches from an older API during the rollout in #48077.
+    #[serde(default)]
+    pub firewall_token: Option<String>,
     #[serde(default)]
     pub storage_manifest: Option<StorageManifest>,
     #[serde(default)]

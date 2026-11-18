@@ -3,13 +3,13 @@ import { resolveSkillRef } from "@okouai/core/github-url";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { contentBundleSchema } from "@okouai/api-contracts/contracts/content-bundle";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
-import type { RunPromptAndSkills, SkillVolume } from "./run-prompt-and-skills";
+import type { SeedSkillVolume } from "./run-prompt-and-skills";
 
 export function createSystemSkillsContext(
   disabledPaidTools$: Computed<Promise<readonly string[]>>,
   seedSkills$: AgentRunContextSignals["seedSkills$"],
-): Computed<Promise<RunPromptAndSkills>> {
-  return computed(async (get): Promise<RunPromptAndSkills> => {
+) {
+  return computed(async (get) => {
     const [disabledPaidTools, published] = await Promise.all([
       get(disabledPaidTools$),
       get(seedSkills$),
@@ -24,23 +24,25 @@ export function createSystemSkillsContext(
         return [skill.url, skill];
       }),
     );
-    const skillVolumes = skills.flatMap((skillName): readonly SkillVolume[] => {
-      // Only a usable bundle matters; the run keeps this pointer whatever the
-      // catalog's source version is when the Runner starts.
-      const contentBundle = byUrl.get(
-        resolveSkillRef(skillName),
-      )?.contentBundle;
-      if (!contentBundle) {
-        throw new Error(`Seed Skill bundle is not prepared: ${skillName}`);
-      }
-      return [
-        {
-          skillName,
-          source: "system_skill",
-          contentBundle: contentBundleSchema.parse(contentBundle),
-        },
-      ];
-    });
+    const skillVolumes = skills.flatMap(
+      (skillName): readonly SeedSkillVolume[] => {
+        // Only a usable bundle matters; the run keeps this pointer whatever the
+        // catalog's source version is when the Runner starts.
+        const contentBundle = byUrl.get(
+          resolveSkillRef(skillName),
+        )?.contentBundle;
+        if (!contentBundle) {
+          throw new Error(`Seed Skill bundle is not prepared: ${skillName}`);
+        }
+        return [
+          {
+            skillName,
+            source: "system_skill",
+            contentBundle: contentBundleSchema.parse(contentBundle),
+          },
+        ];
+      },
+    );
     return {
       systemPromptVariables: {},
       userPromptVariables: {},

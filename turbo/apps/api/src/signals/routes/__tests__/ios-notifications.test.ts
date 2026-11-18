@@ -14,6 +14,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   authenticateIosSession,
+  createApnsFixture,
   reconcileIosNotifications,
   registerIosPush,
 } from "./helpers/ios-push";
@@ -86,6 +87,103 @@ function reconcile(
 }
 
 describe("iOS notification read-state reconciliation", () => {
+  it("dismisses archived reminders across clients without changing reading state", async () => {
+    await prepareRuntime();
+    const actor = bdd.user();
+    const unread = await unreadConversation(actor);
+    const read = await unreadConversation(actor);
+    await chat.markThreadRead(actor, read.threadId);
+    const beforeUnread = (await chat.readThread(actor, unread.threadId))
+      .lastReadAt;
+    const beforeRead = (await chat.readThread(actor, read.threadId)).lastReadAt;
+    const apns = await createApnsFixture(context);
+    const phone = await registerIosPush(context, {
+      ...actor,
+      orgId: actor.orgId!,
+    });
+    const notifications = [
+      { identifier: "unread", threadId: unread.threadId, runId: unread.runId },
+    ];
+    expect((await reconcile(actor, notifications)).body).toStrictEqual({
+      unreadCount: 1,
+      removeIdentifiers: [],
+    });
+
+    await chat.requestSetThreadArchived(actor, unread.threadId, true, [204]);
+    await chat.requestSetThreadArchived(actor, read.threadId, true, [204]);
+    await flushWaitUntilForTest();
+    expect(apns.requests.at(-1)?.payload).toStrictEqual({ aps: { badge: 0 } });
+    expect((await reconcile(actor, notifications)).body).toStrictEqual({
+      unreadCount: 0,
+      removeIdentifiers: ["unread"],
+    });
+    const archivedIndicators = await chat.listIndicators(actor);
+    expect(archivedIndicators.agents[unread.agentId]).toBeUndefined();
+    expect(archivedIndicators.threads[unread.threadId]).toBe("unread");
+    expect(archivedIndicators.unreadAt[unread.threadId]).toBeDefined();
+    await expect(
+      chat.readThread(actor, unread.threadId),
+    ).resolves.toMatchObject({
+      lastReadAt: beforeUnread,
+    });
+    await expect(chat.readThread(actor, read.threadId)).resolves.toMatchObject({
+      lastReadAt: beforeRead,
+    });
+
+    await chat.requestSetThreadArchived(actor, unread.threadId, false, [204]);
+    await chat.requestSetThreadArchived(actor, read.threadId, false, [204]);
+    await flushWaitUntilForTest();
+    expect(apns.requests.at(-1)?.payload).toStrictEqual({ aps: { badge: 1 } });
+    expect(
+      (
+        await reconcileIosNotifications(
+          context,
+          { ...actor, orgId: actor.orgId! },
+          phone,
+        )
+      ).body.unreadCount,
+    ).toBe(1);
+    expect((await chat.listIndicators(actor)).agents[unread.agentId]).toBe(
+      "unread",
+    );
+    await expect(
+      chat.readThread(actor, unread.threadId),
+    ).resolves.toMatchObject({
+      lastReadAt: beforeUnread,
+    });
+    await expect(chat.readThread(actor, read.threadId)).resolves.toMatchObject({
+      lastReadAt: beforeRead,
+    });
+  });
+
+  it("restores reminders when an unmuted archived chat receives a new result", async () => {
+    await prepareRuntime();
+    const actor = bdd.user();
+    const previous = await unreadConversation(actor);
+    const sent = await chat.sendAndLaunch(actor, {
+      agentId: previous.agentId,
+      threadId: previous.threadId,
+      prompt: "A new result after archiving",
+    });
+    const input = await runs.executionInput(sent.runId);
+    await chat.requestSetThreadArchived(actor, sent.threadId, true, [204]);
+    await webhooks.requestAgentComplete(
+      { runId: sent.runId, exitCode: 1, error: "Run failed" },
+      { authorization: `Bearer ${input.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    await expect(
+      chat.readThreadMetadata(actor, sent.threadId),
+    ).resolves.toMatchObject({
+      archived: false,
+    });
+    expect((await chat.listIndicators(actor)).agents[previous.agentId]).toBe(
+      "unread",
+    );
+    expect((await reconcile(actor, [])).body.unreadCount).toBe(1);
+  });
+
   it("acknowledges only this installation's badge while preserving unread chats across workspaces", async () => {
     await prepareRuntime();
     const actor = bdd.user();

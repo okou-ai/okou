@@ -11,7 +11,13 @@ import threading
 import time
 from dataclasses import asdict, dataclass
 
-from file_residency import credentials, metadata, require, task_identity
+from file_residency import (
+    credentials,
+    metadata,
+    metadata_from_stat,
+    require,
+    task_identity,
+)
 
 FAN_OPEN_PERM = 0x10000
 FAN_ONDIR = 0x40000000
@@ -29,16 +35,9 @@ def original_metadata(fd, *, directory=False):
         return metadata(fd)
     value = os.fstat(fd)
     require(stat.S_ISDIR(value.st_mode), "original must be a directory")
-    return {
-        "device": value.st_dev,
-        "inode": value.st_ino,
-        "uid": value.st_uid,
-        "size": value.st_size,
-        "links": value.st_nlink,
-        "mtime_ns": value.st_mtime_ns,
-        "ctime_ns": value.st_ctime_ns,
-        "file_type": stat.S_IFMT(value.st_mode),
-    }
+    result = metadata_from_stat(value)
+    result["file_type"] = stat.S_IFMT(value.st_mode)
+    return result
 
 
 @dataclass(frozen=True, slots=True)

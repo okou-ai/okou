@@ -301,6 +301,8 @@ jobs:
             .github/scripts/checks/crates-coverage-needed.sh \
             .github/scripts/tests/crates-coverage-workflow-test.sh \
             .github/scripts/runner/start-stripe-listener.sh \
+            .github/scripts/runner/stage-native-test-binary.sh \
+            .github/scripts/tests/stage-native-test-binary-test.sh \
             .github/scripts/checks/detect-native-only.sh \
             .github/scripts/tests/native-only-ci-test.sh \
             .github/scripts/tests/native-only-gates-test.sh \

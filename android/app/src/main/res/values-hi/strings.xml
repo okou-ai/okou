@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="composer_sync_loading">सहेजा गया ड्राफ़्ट लोड हो रहा है…</string>
+    <string name="composer_sync_saving">ड्राफ़्ट सिंक हो रहा है…</string>
+    <string name="composer_sync_failed">ड्राफ़्ट सिंक नहीं हुआ। आपका लिखा पाठ इस डिवाइस पर सुरक्षित है।</string>
+    <string name="composer_sync_unsupported">इस ड्राफ़्ट को Web पर संपादित करना जारी रखें। आपका लिखा पाठ इस डिवाइस पर सुरक्षित है; अपने आप सिंक होना रुका हुआ है।</string>
+    <string name="composer_sync_retry">ड्राफ़्ट सिंक फिर आज़माएँ</string>
+    <string name="composer_restore_draft">सुरक्षित ड्राफ़्ट वापस लाएँ</string>
     <string name="controls_storage_failed">लंबित नियंत्रण अनुरोध सहेजे नहीं जा सकते।</string>
     <string name="controls_stop">चल रहा काम रोकें</string>
     <string name="controls_queued_automation">कतार में ऑटोमेशन</string>
