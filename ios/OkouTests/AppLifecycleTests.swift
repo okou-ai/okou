@@ -13,10 +13,12 @@ final class AppLifecycleTests: XCTestCase {
     let identity = try AuthenticationHTTPFixture()
     addTeardownBlock { await identity.close() }
     let authentication = try await identity.authentication()
-    await authentication.refresh()
     let fixture = LifecycleHTTPFixture()
     let lifecycle = try lifecycle(authentication, fixture)
-    await lifecycle.setPhase(.active)?.value
+    let startupClientReads = try await identity.clientRequests {
+      await lifecycle.setPhase(.active)?.value
+    }
+    XCTAssertEqual(startupClientReads, 1)
     await lifecycle.updateScope()
     let workspace = try XCTUnwrap(lifecycle.workspace)
     await workspace.start()
@@ -287,10 +289,13 @@ final class AppLifecycleTests: XCTestCase {
       authentication: authentication, configuration: configuration,
       session: fixture.history.http.session,
       notifications: NotificationService(system: NotificationSystemFixture(), defaults: defaults))
-    let scopes = try authentication.workspaces.map {
+    let workspaceIDs = Set(
+      authentication.workspaces.map(\.id)
+        + [authentication.presentationWorkspaceID].compactMap { $0 })
+    let scopes = try workspaceIDs.map {
       ChatCacheScope(
         apiBaseURL: configuration.apiURL, userID: try XCTUnwrap(authentication.userID),
-        workspaceID: $0.id)
+        workspaceID: $0)
     }
     let caches = LifecycleFixtureCaches()
     caches.add(lifecycle.workspace?.data.cache)
