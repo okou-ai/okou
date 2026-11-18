@@ -1,8 +1,7 @@
 import type { ReactNode } from "react";
 import type { Computed } from "ccstate";
 import { useGet, useLastLoadable } from "ccstate-react";
-import { Skeleton, cn } from "@okouai/ui";
-import { useTranslation } from "react-i18next";
+import { cn } from "@okouai/ui";
 
 import { artifactPreviewDeletionScope } from "../../signals/artifact-deletion.ts";
 import { unresolvedArtifactPreviewAction$ } from "../../signals/artifact-preview-actions.ts";
@@ -54,7 +53,6 @@ function ReadyArtifactPreviewActions({
   surface,
   url,
 }: Omit<ArtifactPreviewActionGroupProps, "enabled">) {
-  const { t } = useTranslation();
   const deletion = artifactPreviewDeletionScope(surface);
   const deletionSession = useGet(deletion.session$);
   const ownershipPending = usePreviewActionPending(
@@ -83,24 +81,13 @@ function ReadyArtifactPreviewActions({
     (artifactId !== undefined && ownershipPending) ||
     sharingPending;
 
+  // Mounted controls own their requests even while the group is hidden.
   return (
-    <>
-      {pending && (
-        <Skeleton
-          role="status"
-          aria-label={t(($) => {
-            return $.artifacts.catalog.loading;
-          })}
-          className="h-6 w-28 rounded-md"
-        />
-      )}
-      {/* Mounted controls own their requests even while the group is hidden. */}
-      <div
-        hidden={pending}
-        className={cn("flex items-center gap-1", pending && "hidden")}
-      >
-        {children}
-      </div>
-    </>
+    <div
+      hidden={pending}
+      className={cn("flex items-center gap-1", pending && "hidden")}
+    >
+      {children}
+    </div>
   );
 }

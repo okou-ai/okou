@@ -307,7 +307,11 @@ test("replacing the sidebar from another chat waits for that chat's metadata", a
 
   click(await findNamedLink(rightName));
   const preview = await screen.findByTestId("artifact-sidebar");
-  await within(preview).findByRole("status", { name: "Loading artifacts" });
+  await expect(
+    within(preview).findByText("Right content"),
+  ).resolves.toBeInTheDocument();
+  expect(within(preview).queryByRole("status")).not.toBeInTheDocument();
+  expect(within(preview).getByLabelText("Download artifact")).not.toBeVisible();
   expect(buttonNamed("Close artifact", preview)).toBeEnabled();
   metadata.resolve();
   await readyDownload(preview, "sidebar");
@@ -337,9 +341,6 @@ test.each([
       contentReady: firstReady.promise,
     });
     const preview = await openPreview(surface);
-    const skeleton = await within(preview).findByRole("status", {
-      name: "Loading artifacts",
-    });
     expect(
       buttonNamed(surface === "sidebar" ? "Close artifact" : "Close", preview),
     ).toBeEnabled();
@@ -347,7 +348,7 @@ test.each([
     await expect(
       within(preview).findByText("Action group content"),
     ).resolves.toBeInTheDocument();
-    expect(skeleton).toBeInTheDocument();
+    expect(within(preview).queryByRole("status")).not.toBeInTheDocument();
     expect(
       within(preview).getByLabelText(downloadLabel(surface)),
     ).not.toBeVisible();
@@ -369,9 +370,10 @@ test.each(["dialog", "sidebar"] as const)(
     await expect(
       within(preview).findByText("Action group content"),
     ).resolves.toBeInTheDocument();
+    expect(within(preview).queryByRole("status")).not.toBeInTheDocument();
     expect(
-      within(preview).getByRole("status", { name: "Loading artifacts" }),
-    ).toBeInTheDocument();
+      within(preview).getByLabelText(downloadLabel(surface)),
+    ).not.toBeVisible();
     metadata.resolve();
     await readyDownload(preview, surface);
     expect(buttonNamed("More artifact actions", preview)).toBeVisible();
@@ -385,8 +387,12 @@ test.each(["dialog", "sidebar"] as const)(
     mockPreview({ ownershipReady: ownership.promise });
     const preview = await openPreview(surface);
     await expect(
-      within(preview).findByRole("status", { name: "Loading artifacts" }),
+      within(preview).findByText("Action group content"),
     ).resolves.toBeInTheDocument();
+    expect(within(preview).queryByRole("status")).not.toBeInTheDocument();
+    expect(
+      within(preview).getByLabelText(downloadLabel(surface)),
+    ).not.toBeVisible();
     click(
       buttonNamed(surface === "sidebar" ? "Close artifact" : "Close", preview),
     );
