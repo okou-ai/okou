@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.109.102](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.101...guest-agent-v0.109.102) (2026-11-18)
+
+
+### Refactoring
+
+* delegate file opens to owned descriptor apis ([#48437](https://github.com/okou-ai/okou/issues/48437)) ([5ef5cab](https://github.com/okou-ai/okou/commit/5ef5cab9bc706528c66d21a9315fd76ed8e1ea10))
+
 ## [0.109.101](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.100...guest-agent-v0.109.101) (2026-11-17)
 
 ## [0.109.100](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.99...guest-agent-v0.109.100) (2026-11-17)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.249.42](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.41...runner-rs-v0.249.42) (2026-11-18)
+
+
+### Refactoring
+
+* **python:** centralize symbolic path segment encoding ([#48441](https://github.com/okou-ai/okou/issues/48441)) ([ae62349](https://github.com/okou-ai/okou/commit/ae6234943088eea66e3105a3d203683c334851ec))
+
 ## [0.249.41](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.40...runner-rs-v0.249.41) (2026-11-17)
 
 
