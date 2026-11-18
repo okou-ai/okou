@@ -8,44 +8,25 @@ import {
   type OfficialWorkflowCandidate,
   type OfficialWorkflowObservation,
 } from "./official-workflow-run.service";
-import type { RunWorkflowRef } from "./workflow-data.service";
 
 export function createOfficialWorkflowObservation(
-  workflows$: Computed<Promise<readonly RunWorkflowRef[]>>,
+  officialTarget$: Computed<Promise<OfficialWorkflowCandidate | undefined>>,
   officialWorkflows$: Computed<Promise<OfficialWorkflowContextFacts>>,
 ): Computed<Promise<OfficialWorkflowObservation | undefined>> {
   return computed(
     async (get): Promise<OfficialWorkflowObservation | undefined> => {
-      const selected = await get(workflows$);
-      for (const workflow of selected) {
-        if (
-          workflow.officialDefinitionName !== null &&
-          SEED_SKILLS.includes(workflow.name)
-        ) {
-          throw new OfficialWorkflowRunAdmissionError();
-        }
-      }
-      const candidates = selected.flatMap(
-        (workflow): readonly OfficialWorkflowCandidate[] => {
-          return workflow.officialDefinitionName === null
-            ? []
-            : [
-                {
-                  workflowId: workflow.workflowId,
-                  workflowName: workflow.name,
-                  definitionName: workflow.officialDefinitionName,
-                },
-              ];
-        },
-      );
-      if (candidates.length === 0) {
+      const target = await get(officialTarget$);
+      if (!target) {
         return undefined;
+      }
+      if (SEED_SKILLS.includes(target.workflowName)) {
+        throw new OfficialWorkflowRunAdmissionError();
       }
       const facts = await get(officialWorkflows$);
       if (!facts) {
         throw new OfficialWorkflowRunAdmissionError();
       }
-      const accepted = acceptedWorkflowCandidates(facts.catalog, candidates);
+      const accepted = acceptedWorkflowCandidates(facts.catalog, [target]);
       const revisions = accepted.map(({ accepted: definition }) => {
         return (
           facts.revisions.get(

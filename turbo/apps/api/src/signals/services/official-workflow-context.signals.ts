@@ -1,13 +1,12 @@
 import { computed, type Computed } from "ccstate";
 import type { OfficialWorkflowAcceptedRevision } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-import { and, asc, eq, or } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   officialWorkflowCatalogState,
   officialWorkflowCatalogReleases,
   officialWorkflowDefinitionRevisions,
 } from "@okouai/db/schema/official-workflow-catalog";
 import { db$ } from "../external/db";
-import type { SelectedAgentWorkflow } from "./execution-agent-workflows.service";
 import {
   acceptedRevisionFromRow,
   acceptedOfficialWorkflowCatalogReadPlan,
@@ -17,6 +16,7 @@ import {
 import {
   acceptedDefinitionForName,
   OfficialWorkflowRunAdmissionError,
+  type OfficialWorkflowCandidate,
 } from "./official-workflow-run.service";
 
 export function createOfficialWorkflowCatalog() {
@@ -34,37 +34,25 @@ export function createOfficialWorkflowCatalog() {
 
 /** Catalog and exact published revisions are independent of model routing/mount paths. */
 export function createOfficialWorkflowFacts(
-  workflows$: Computed<Promise<readonly SelectedAgentWorkflow[]>>,
+  officialTarget$: Computed<Promise<OfficialWorkflowCandidate | undefined>>,
   catalog$: ReturnType<typeof createOfficialWorkflowCatalog>,
 ) {
   return computed(async (get) => {
-    const workflows = await get(workflows$);
-    const names = [
-      ...new Set(
-        workflows.flatMap((workflow) => {
-          return workflow.officialDefinitionName === null
-            ? []
-            : [workflow.officialDefinitionName];
-        }),
-      ),
-    ].sort();
-    if (names.length === 0) {
+    const target = await get(officialTarget$);
+    if (!target) {
       return null;
     }
     const catalog = await get(catalog$);
     if (!catalog) {
       throw new OfficialWorkflowRunAdmissionError();
     }
-    const definitions = names.map((name) => {
-      const definition = acceptedDefinitionForName(
-        catalog.payload.definitions,
-        name,
-      );
-      if (!definition) {
-        throw new OfficialWorkflowRunAdmissionError();
-      }
-      return definition;
-    });
+    const definition = acceptedDefinitionForName(
+      catalog.payload.definitions,
+      target.definitionName,
+    );
+    if (!definition) {
+      throw new OfficialWorkflowRunAdmissionError();
+    }
     const rows = await get(db$)
       .select({
         definitionName: officialWorkflowDefinitionRevisions.definitionName,
@@ -74,24 +62,13 @@ export function createOfficialWorkflowFacts(
       })
       .from(officialWorkflowDefinitionRevisions)
       .where(
-        or(
-          ...definitions.map((definition) => {
-            return and(
-              eq(
-                officialWorkflowDefinitionRevisions.definitionName,
-                definition.name,
-              ),
-              eq(
-                officialWorkflowDefinitionRevisions.revision,
-                definition.revision,
-              ),
-            );
-          }),
+        and(
+          eq(
+            officialWorkflowDefinitionRevisions.definitionName,
+            definition.name,
+          ),
+          eq(officialWorkflowDefinitionRevisions.revision, definition.revision),
         ),
-      )
-      .orderBy(
-        asc(officialWorkflowDefinitionRevisions.definitionName),
-        asc(officialWorkflowDefinitionRevisions.revision),
       );
     return {
       catalog,

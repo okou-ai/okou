@@ -216,7 +216,6 @@ export function createThreadContext(
     discordContext$,
     automationContext$: integrations.automationContext$,
     automationTarget$: integrations.automationTarget$,
-    workflows$: workflowContext.workflows$,
     officialWorkflows$: workflowContext.officialWorkflows$,
     officialWorkflowObservation$: workflowContext.officialWorkflowObservation$,
     templateSources$: templates.sources$,

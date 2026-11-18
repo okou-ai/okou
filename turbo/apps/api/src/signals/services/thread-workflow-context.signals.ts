@@ -13,11 +13,13 @@ import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE } from "./official-workflow-constants";
 import { createOfficialWorkflowFacts } from "./official-workflow-context.signals";
 import { createOfficialWorkflowObservation } from "./official-workflow-observation.service";
-import { OfficialWorkflowRunAdmissionError } from "./official-workflow-run.service";
+import {
+  OfficialWorkflowRunAdmissionError,
+  type OfficialWorkflowCandidate,
+} from "./official-workflow-run.service";
 import type { createThreadAutomationContext } from "./thread-automation-context.service";
 import type { ThreadAutomationTarget } from "./thread-context.signals";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
-import type { RunWorkflowRef } from "./workflow-data.service";
 
 function createProactiveTargetEligibility(
   bootstrap: AgentRunContextSignals,
@@ -99,13 +101,13 @@ function createOfficialWorkflowTarget(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   automationContext$: ReturnType<typeof createThreadAutomationContext>,
   automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>,
-) {
+): Computed<Promise<OfficialWorkflowCandidate | undefined>> {
   const proactiveEligibility$ = createProactiveTargetEligibility(
     bootstrap,
     automationContext$,
     automationTarget$,
   );
-  return computed(async (get): Promise<RunWorkflowRef | undefined> => {
+  return computed(async (get) => {
     const event = await get(pickedEvent$);
     if (event?.contextType !== "automation") {
       return undefined;
@@ -147,8 +149,8 @@ function createOfficialWorkflowTarget(
     }
     return {
       workflowId: workflow.id,
-      name: workflow.name,
-      officialDefinitionName: workflow.officialDefinitionName,
+      workflowName: workflow.name,
+      definitionName: workflow.officialDefinitionName,
     };
   });
 }
@@ -166,35 +168,19 @@ export function createThreadWorkflowContext(
     automationContext$,
     automationTarget$,
   );
-  const workflows$ = computed(async (get) => {
-    const [ordinary, official] = await Promise.all([
-      get(bootstrap.workflows$),
-      get(officialTarget$),
-    ]);
-    // The exact official target outranks the ordinary Private/Public winner.
-    return official
-      ? [
-          official,
-          ...ordinary.filter((workflow) => {
-            return workflow.name !== official.name;
-          }),
-        ]
-      : ordinary;
-  });
   // The global catalog is shared by every context of this bootstrap.
   const officialCatalog$ = computed((get) => {
     return get(bootstrap.officialCatalog$);
   });
   const officialWorkflows$ = createOfficialWorkflowFacts(
-    workflows$,
+    officialTarget$,
     officialCatalog$,
   );
   const officialWorkflowObservation$ = createOfficialWorkflowObservation(
-    workflows$,
+    officialTarget$,
     officialWorkflows$,
   );
   return {
-    workflows$,
     officialWorkflows$,
     officialWorkflowObservation$,
   };
