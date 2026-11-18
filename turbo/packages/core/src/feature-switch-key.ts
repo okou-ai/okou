@@ -9,6 +9,7 @@ export enum FeatureSwitchKey {
   CustomConnectorCloudflareAccess = "customConnectorCloudflareAccess",
   EmailIntegration = "emailIntegration",
   PresentationOutputFormat = "presentationOutputFormat",
+  MarkdownFirstOutput = "markdownFirstOutput",
   SingleAgent = "singleAgent",
   ProjectTitleReveal = "projectTitleReveal",
   OkouAnimatedAvatar = "okouAnimatedAvatar",

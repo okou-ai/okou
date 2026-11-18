@@ -48,6 +48,7 @@ export async function generateMessagePdfBlob(
   contents: readonly string[],
   imageUrls: ReadonlyMap<string, string>,
   signal: AbortSignal,
+  baseUrl = location.href,
 ): Promise<Blob> {
   signal.throwIfAborted();
   // Reference labels belong to each message, not the combined document.
@@ -110,7 +111,7 @@ export async function generateMessagePdfBlob(
     { once: true },
   );
   const request: PdfWorkerRequest = {
-    baseUrl: location.href,
+    baseUrl,
     tree,
     assets,
     regularFont,

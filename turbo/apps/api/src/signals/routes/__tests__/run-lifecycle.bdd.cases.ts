@@ -1026,6 +1026,31 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(appendSystemPrompt).toContain(
           "including its page-rendering and publish steps",
         );
+        expect(appendSystemPrompt).toContain("No format has default priority");
+        expect(appendSystemPrompt).not.toContain(
+          "prefer Markdown as the primary deliverable",
+        );
+      });
+
+      it("enables Markdown-first output guidance for staff runs", async () => {
+        const api = createRunsApi(context);
+        const { actor, agentId, runnerGroup } = await entitledRunActor({
+          orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+        });
+        const run = await api.createThreadRun(actor, {
+          agentId,
+          prompt: "write a project update",
+        });
+        await api.heartbeatRunner(runnerGroup);
+        const execution = await api.executionInput(run.runId);
+        const appendSystemPrompt = execution.appendSystemPrompt ?? "";
+        expect(appendSystemPrompt).toContain(
+          "for text-focused documents and reports, prefer Markdown",
+        );
+        expect(appendSystemPrompt).toContain(
+          "Keep Markdown as the source of truth and let the user export DOCX or PDF",
+        );
+        await api.requestCancelRun(actor, run.runId, [200]);
       });
 
       it("advertises the installed Okou CLI in execution input", async () => {

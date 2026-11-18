@@ -20,6 +20,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  FileType2,
   Loader2,
   RotateCcw,
   Share2,
@@ -53,6 +54,10 @@ import { captureArtifactAction } from "../../lib/posthog.ts";
 import { artifactDownloadType } from "../../lib/artifact-download-type.ts";
 import type { PlatformConnectorAccountMutationIntent } from "../../signals/connector-domain.ts";
 import { downloadAttachment$ } from "../../signals/attachment-download.ts";
+import {
+  generateMarkdownArtifactExport$,
+  type MarkdownArtifactExportResult,
+} from "../../signals/chat-page/markdown-artifact-export.ts";
 import { artifactPaywallLocked$ } from "../../signals/okou-page/artifact-paywall.ts";
 import { ProBadge } from "./components/model-provider-picker.tsx";
 import {
@@ -812,6 +817,144 @@ function useArtifactDriveMenu({
   );
 }
 
+type MarkdownArtifactExportFormat = "pdf" | "docx";
+type MarkdownArtifactExportLoadable =
+  | { readonly state: "idle" }
+  | { readonly state: "loading" }
+  | {
+      readonly state: "hasData";
+      readonly data: MarkdownArtifactExportResult;
+    }
+  | { readonly state: "hasError"; readonly error: unknown };
+
+function MarkdownArtifactExportItem({
+  format,
+  onExport,
+  operation,
+}: {
+  readonly format: MarkdownArtifactExportFormat;
+  readonly onExport: () => void;
+  readonly operation: MarkdownArtifactExportLoadable;
+}): ReactElement {
+  const { t } = useTranslation();
+  const exportLabel =
+    format === "pdf"
+      ? t(($) => {
+          return $.artifacts.actions.exportMarkdownPdf;
+        })
+      : t(($) => {
+          return $.artifacts.actions.exportMarkdownDocx;
+        });
+  const generatingLabel =
+    format === "pdf"
+      ? t(($) => {
+          return $.artifacts.actions.generatingMarkdownPdf;
+        })
+      : t(($) => {
+          return $.artifacts.actions.generatingMarkdownDocx;
+        });
+  const downloadLabel =
+    format === "pdf"
+      ? t(($) => {
+          return $.artifacts.actions.downloadMarkdownPdf;
+        })
+      : t(($) => {
+          return $.artifacts.actions.downloadMarkdownDocx;
+        });
+  if (operation.state === "hasData") {
+    return (
+      <DropdownMenuItem
+        render={
+          <a
+            href={operation.data.href}
+            download={operation.data.filename}
+            aria-label={downloadLabel}
+          />
+        }
+      >
+        <Download size={14} />
+        {downloadLabel}
+      </DropdownMenuItem>
+    );
+  }
+  const generating = operation.state === "loading";
+  return (
+    <>
+      <DropdownMenuItem disabled={generating} onClick={onExport}>
+        {generating ? (
+          <Loader2 size={14} className="animate-spin" />
+        ) : (
+          <FileType2 size={14} />
+        )}
+        {generating ? generatingLabel : exportLabel}
+      </DropdownMenuItem>
+      {operation.state === "hasError" && (
+        <div role="alert" className="px-2 py-1 text-xs text-destructive">
+          {t(($) => {
+            return $.artifacts.actions.markdownExportFailed;
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
+function MarkdownArtifactExportItems({
+  docxOperation,
+  onExportDocx,
+  onExportPdf,
+  pdfOperation,
+}: {
+  readonly docxOperation: MarkdownArtifactExportLoadable;
+  readonly onExportDocx: () => void;
+  readonly onExportPdf: () => void;
+  readonly pdfOperation: MarkdownArtifactExportLoadable;
+}): ReactElement {
+  return (
+    <>
+      <MarkdownArtifactExportItem
+        format="pdf"
+        operation={pdfOperation}
+        onExport={onExportPdf}
+      />
+      <MarkdownArtifactExportItem
+        format="docx"
+        operation={docxOperation}
+        onExport={onExportDocx}
+      />
+    </>
+  );
+}
+
+function ArtifactDownloadMenuItem({
+  onDownload,
+  pending,
+  paywallLocked,
+}: {
+  readonly onDownload: () => void;
+  readonly pending: boolean;
+  readonly paywallLocked: boolean;
+}): ReactElement {
+  const { t } = useTranslation();
+  return (
+    <DropdownMenuItem disabled={pending} onClick={onDownload}>
+      {pending ? (
+        <Loader2 size={14} className="animate-spin" />
+      ) : (
+        <Download size={14} />
+      )}
+      {t(($) => {
+        return $.artifacts.actions.download;
+      })}
+      {paywallLocked && (
+        <span className="ml-auto">
+          <ProBadge />
+        </span>
+      )}
+    </DropdownMenuItem>
+  );
+}
+
 export function ArtifactDownloadMenu({
   align = "end",
   ariaLabel,
@@ -835,7 +978,23 @@ export function ArtifactDownloadMenu({
     });
   const [downloadLoadable, downloadAttachment] =
     useLoadableSet(downloadAttachment$);
+  const [pdfExportLoadable, exportMarkdownPdf] = useLoadableSet(
+    generateMarkdownArtifactExport$,
+  );
+  const [docxExportLoadable, exportMarkdownDocx] = useLoadableSet(
+    generateMarkdownArtifactExport$,
+  );
   const pageSignal = useGet(pageSignal$);
+  const lightbox = useGet(lightboxUrl$);
+  const featureSwitches = useGet(featureSwitch$);
+  const markdownExportEnabled =
+    previewKind === "markdown" &&
+    featureSwitches[FeatureSwitchKey.MarkdownFirstOutput] === true;
+  const markdownExportSignal =
+    surface === "dialog" ? (lightbox?.ownerSignal ?? pageSignal) : pageSignal;
+  const markdownExportPending =
+    pdfExportLoadable.state === "loading" ||
+    docxExportLoadable.state === "loading";
   const paywallLocked = useLastResolved(artifactPaywallLocked$) === true;
   const downloadPending = downloadLoadable.state === "loading";
   const downloadName = artifactDownloadFilename(artifactKind, filename, url);
@@ -845,12 +1004,41 @@ export function ArtifactDownloadMenu({
     syncTarget,
     surface,
   });
+  const startMarkdownExport = (format: MarkdownArtifactExportFormat) => {
+    captureArtifactAction({ action: "markdown_export", surface, format });
+    const exportArtifact =
+      format === "pdf" ? exportMarkdownPdf : exportMarkdownDocx;
+    detach(
+      exportArtifact({ filename, url, format }, markdownExportSignal),
+      Reason.DomCallback,
+      `markdown artifact ${format} export`,
+    );
+  };
+  const startDownload = () => {
+    captureArtifactAction({
+      action: "download",
+      surface,
+      artifact_type: artifactDownloadType({
+        filename: downloadName,
+        contentType,
+        artifactKind,
+        previewKind,
+      }),
+    });
+    detach(
+      downloadAttachment({ filename: downloadName, url }, pageSignal),
+      Reason.DomCallback,
+      "artifact download",
+    );
+  };
   return (
     <DropdownMenu>
       <ArtifactActionTooltip label={label}>
         <DropdownMenuTrigger
           aria-label={label}
-          aria-busy={downloadPending ? "true" : undefined}
+          aria-busy={
+            downloadPending || markdownExportPending ? "true" : undefined
+          }
           disabled={downloadPending}
           render={
             <Button
@@ -864,7 +1052,7 @@ export function ArtifactDownloadMenu({
             />
           }
         >
-          {downloadPending ? (
+          {downloadPending || markdownExportPending ? (
             <Loader2 size={iconSize} className="animate-spin" />
           ) : (
             <Download size={iconSize} />
@@ -872,40 +1060,23 @@ export function ArtifactDownloadMenu({
         </DropdownMenuTrigger>
       </ArtifactActionTooltip>
       <DropdownMenuContent align={align} sideOffset={6} className="w-56">
-        <DropdownMenuItem
-          disabled={downloadPending}
-          onClick={() => {
-            captureArtifactAction({
-              action: "download",
-              surface,
-              artifact_type: artifactDownloadType({
-                filename: downloadName,
-                contentType,
-                artifactKind,
-                previewKind,
-              }),
-            });
-            detach(
-              downloadAttachment({ filename: downloadName, url }, pageSignal),
-              Reason.DomCallback,
-              "artifact download",
-            );
-          }}
-        >
-          {downloadPending ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            <Download size={14} />
-          )}
-          {t(($) => {
-            return $.artifacts.actions.download;
-          })}
-          {paywallLocked && (
-            <span className="ml-auto">
-              <ProBadge />
-            </span>
-          )}
-        </DropdownMenuItem>
+        <ArtifactDownloadMenuItem
+          onDownload={startDownload}
+          pending={downloadPending}
+          paywallLocked={paywallLocked}
+        />
+        {markdownExportEnabled && (
+          <MarkdownArtifactExportItems
+            docxOperation={docxExportLoadable}
+            onExportDocx={() => {
+              startMarkdownExport("docx");
+            }}
+            onExportPdf={() => {
+              startMarkdownExport("pdf");
+            }}
+            pdfOperation={pdfExportLoadable}
+          />
+        )}
         {drive}
       </DropdownMenuContent>
     </DropdownMenu>

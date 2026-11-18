@@ -63,6 +63,7 @@
     "bs58": "6.0.0",
     "ccstate": "^6.1.0",
     "ccstate-react": "^6.1.0",
+    "docx": "^9.15.4",
     "fflate": "^0.8.3",
     "hast-util-to-jsx-runtime": "^2.3.6",
     "i18next": "^26.5.11",

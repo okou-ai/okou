@@ -88,6 +88,12 @@ function relatedArtifactRow(dialog: HTMLElement, url: string): HTMLElement {
   return rows[0]!;
 }
 
+function menuItemNamed(name: string): HTMLElement | undefined {
+  return queryAllByRoleFast("menuitem").find((item) => {
+    return item.textContent?.replace(/\s+/gu, " ").trim() === name;
+  });
+}
+
 async function openRelatedArtifacts(): Promise<HTMLElement> {
   click(await screen.findByTestId("chat-run-related-artifacts-trigger"));
   return screen.findByTestId("chat-run-related-artifacts-dialog");
@@ -96,6 +102,7 @@ async function openRelatedArtifacts(): Promise<HTMLElement> {
 async function setupArtifactRun(
   outputEvents: ReturnType<typeof assistantEvent>[],
   sidebarPreviews = false,
+  markdownFirstOutput = false,
 ): Promise<void> {
   installRunChat({
     chatEvents: [
@@ -117,12 +124,109 @@ async function setupArtifactRun(
   await setupPage({
     context,
     path: RUN_PATH,
+    ...(markdownFirstOutput
+      ? {
+          auth: {
+            user: { id: "test-user-123", fullName: "Test User" },
+            organization: {
+              activeOrg: {
+                id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+                name: "Okou",
+              },
+              memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
+            },
+          },
+        }
+      : {}),
     featureSwitches: {
       [FeatureSwitchKey.ArtifactSidebarPreview]: sidebarPreviews,
+      [FeatureSwitchKey.MarkdownFirstOutput]: markdownFirstOutput,
     },
   });
   await readyChat();
 }
+
+test("Offer PDF and Word export actions on a generated Markdown artifact row", async () => {
+  const markdownUrl = artifactUrl("generated-report", "summary.md");
+  await setupArtifactRun(
+    [
+      assistantEvent({
+        id: "markdown-output-artifact",
+        runId: RUN_ID,
+        seqId: 2,
+        text: `[summary.md](${markdownUrl})`,
+      }),
+      assistantEvent({
+        id: "markdown-output-main",
+        runId: RUN_ID,
+        seqId: 3,
+        text: "Final Markdown summary",
+      }),
+    ],
+    false,
+    true,
+  );
+
+  const dialog = await openRelatedArtifacts();
+  const row = relatedArtifactRow(dialog, markdownUrl);
+  const actions = row.parentElement?.parentElement;
+  if (!actions) {
+    throw new Error("Expected the generated Markdown artifact actions");
+  }
+  const exportButton = queryAllByRoleFast("button", actions).find((button) => {
+    return button.getAttribute("aria-label") === "Download options";
+  });
+  if (!exportButton) {
+    throw new Error("Expected Markdown export options on the artifact row");
+  }
+  click(exportButton);
+  await waitFor(() => {
+    expect(menuItemNamed("Export Markdown as PDF")).toBeDefined();
+  });
+  expect(menuItemNamed("Export Markdown as PDF")).toBeDefined();
+  expect(menuItemNamed("Export Markdown as Word")).toBeDefined();
+});
+
+test("Offer PDF and Word export actions in the Markdown artifact preview", async () => {
+  const markdownUrl = artifactUrl("generated-preview", "summary.md");
+  context.mocks.http.get(markdownUrl, () => {
+    return HttpResponse.text("# Summary");
+  });
+  await setupArtifactRun(
+    [
+      assistantEvent({
+        id: "markdown-preview-artifact",
+        runId: RUN_ID,
+        seqId: 2,
+        text: `[summary.md](${markdownUrl})`,
+      }),
+      assistantEvent({
+        id: "markdown-preview-main",
+        runId: RUN_ID,
+        seqId: 3,
+        text: "Final Markdown preview summary",
+      }),
+    ],
+    false,
+    true,
+  );
+
+  const dialog = await openRelatedArtifacts();
+  click(relatedArtifactRow(dialog, markdownUrl));
+  const preview = await screen.findByTestId("attachment-lightbox");
+  const exportButton = queryAllByRoleFast("button", preview).find((button) => {
+    return button.getAttribute("aria-label") === "Download options";
+  });
+  if (!exportButton) {
+    throw new Error("Expected Markdown export options in the artifact preview");
+  }
+  click(exportButton);
+  await waitFor(() => {
+    expect(menuItemNamed("Export Markdown as PDF")).toBeDefined();
+  });
+  expect(menuItemNamed("Export Markdown as PDF")).toBeDefined();
+  expect(menuItemNamed("Export Markdown as Word")).toBeDefined();
+});
 
 test("Expose an artifact referenced only by history from the main result actions", async () => {
   const reportUrl = artifactUrl("supporting-report", "supporting-report.pdf");
