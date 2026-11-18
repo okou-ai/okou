@@ -1105,30 +1105,13 @@ interface CanonicalWebInputOwner {
   readonly orgId: string;
 }
 
-/** Validate the existing private ownership record without changing its identity. */
-export function canonicalPrivateWebInputPlan(
-  args: CanonicalWebInputOwner & {
-    readonly file: ChatEventAttachFileMetadata;
-    readonly owned:
-      | Pick<
-          typeof runUploadedFiles.$inferSelect,
-          "userId" | "orgId" | "storageKey" | "metadata"
-        >
-      | undefined;
-  },
-) {
-  const { file, owned } = args;
-  if (!owned || owned.metadata.storage === undefined) {
-    throw new Error("Private attachment storage record is missing");
-  }
-  artifactStorageBucket(owned.metadata);
-  if (
-    owned.userId !== args.userId ||
-    owned.orgId !== args.orgId ||
-    owned.storageKey !== file.objectKey
-  ) {
-    throw new Error("Private attachment belongs to another owner");
-  }
+/** Plan the registration of an already authorized private upload. */
+export function canonicalPrivateWebInputPlan(args: {
+  readonly chatThreadId: string;
+  readonly file: ChatEventAttachFileMetadata;
+  readonly metadata: RunUploadedFileMetadata;
+}) {
+  const { file, metadata } = args;
   return {
     values: {
       chatThreadId: args.chatThreadId,
@@ -1137,7 +1120,7 @@ export function canonicalPrivateWebInputPlan(
       materializationStatus: "ready",
       contentType: file.contentType,
       sizeBytes: file.size,
-      url: privateArtifactUrl(file.id, file.filename, owned.metadata),
+      url: privateArtifactUrl(file.id, file.filename, metadata),
       idempotencyScope: "web-input",
       idempotencyKey: file.id,
     } satisfies Partial<typeof runUploadedFiles.$inferInsert>,

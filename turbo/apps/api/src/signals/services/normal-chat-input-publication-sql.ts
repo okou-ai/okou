@@ -108,7 +108,7 @@ export function normalChatInputUpdateSet<T extends PgTable>(
   );
 }
 
-/** Preserve canonical/generated identities while checking the current asset row. */
+/** Keep the current column values when the conditional update does not apply. */
 export function normalChatInputConditionalValues<T extends PgTable>(
   table: T,
   values: NormalInputWriteValues<T>,
