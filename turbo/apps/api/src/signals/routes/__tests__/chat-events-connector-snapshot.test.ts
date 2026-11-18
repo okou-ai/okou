@@ -9,6 +9,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { buildArtifactKeyV2 } from "../../../lib/file-url";
 import { mockNow, now } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { chatConnectorAccessRoutes } from "../chat-connector-access";
 import { chatThreadRoutes } from "../chat-threads";
@@ -244,6 +245,8 @@ describe("accepted Connector preparation", () => {
         await sending;
       });
       await held.entered;
+      // Attachment IO proves preload started, not that its database reads finished.
+      await flushWaitUntilForTest();
       await selectAccount(nextAccount.id);
       held.release();
       const sent = await sending;
@@ -325,6 +328,7 @@ describe("accepted Connector preparation", () => {
         await sending;
       });
       await held.entered;
+      await flushWaitUntilForTest();
       await owned.run(async () => {
         if (change === "deletion") {
           await connectors.deleteCustomConnector(actor, connector.id);
