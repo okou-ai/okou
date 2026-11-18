@@ -200,14 +200,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Share audience descriptions",
     description:
       "Describe each Who can access option in the share menu with one line, and anchor Copy link as a full-width footer under a divider.",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.HostedSiteShareRows]: {
     maintainer: "ming@okou.ai",
     displayName: "Website share rows",
     description:
       "Lay out the website Share menu's banner and Customize URL as menu rows under the access options, with the current address and a chevron on Customize URL and a full-width Copy link.",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.FreePlanArtifactPaywall]: {
     maintainer: "ming@okou.ai",
