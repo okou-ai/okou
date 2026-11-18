@@ -236,15 +236,12 @@ final class WorkspaceChatActions {
         selectChat(id)
         workspace.sidebarInteraction.setOpen(false)
       }
-      let message =
-        archived
-        ? (thread.isMuted
-          ? "Chat archived. It will stay archived while muted."
-          : "Chat archived. A new reply will bring it back.")
-        : "Chat unarchived."
       threadFeedback = ChatThreadFeedback(
-        threadID: id, message: message,
-        actionTitle: restore ? String(localized: "Undo and return to chat") : "Undo",
+        threadID: id,
+        message: archived
+          ? String(localized: "Chat archived") : String(localized: "Chat unarchived"),
+        actionTitle: String(localized: "Undo"),
+        actionHint: restore ? String(localized: "Restores the chat and returns to it.") : "",
         requiresNavigation: restore
       ) { [weak self] in
         guard let self else { return }

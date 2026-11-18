@@ -482,7 +482,8 @@ final class ChatThreadArchiveTests: XCTestCase {
     XCTAssertFalse(store.sidebarInteraction.isOpen)
     XCTAssertNil(store.selectedThreadID)
     XCTAssertEqual(store.newChatDraft, "Continue a different task")
-    XCTAssertEqual(store.threadFeedback?.actionTitle, "Undo and return to chat")
+    XCTAssertEqual(store.threadFeedback?.message, "Chat archived")
+    XCTAssertEqual(store.threadFeedback?.actionTitle, "Undo")
     XCTAssertTrue(store.threadFeedback?.isWorking == false)
     await (try XCTUnwrap(store.threadFeedback)).action()
     XCTAssertFalse(store.sidebarInteraction.isOpen)
@@ -537,7 +538,9 @@ final class ChatThreadArchiveTests: XCTestCase {
     XCTAssertEqual(
       fixture.writes.filter { $0.action == "archive" }.map(\.eventID),
       Array(repeating: try XCTUnwrap(fixture.writes.first?.eventID), count: 2))
-    XCTAssertTrue(store.threadFeedback?.message.contains("stay archived while muted") == true)
+    XCTAssertEqual(store.threadFeedback?.message, "Chat archived")
+    XCTAssertEqual(store.threadFeedback?.actionTitle, "Undo")
+    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isMuted)
     fixture.state.value.withLock { $0.failNext["unarchive"] = 503 }
     await (try XCTUnwrap(store.threadFeedback)).action()
     XCTAssertNil(store.selectedThreadID)
