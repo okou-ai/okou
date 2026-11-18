@@ -44,6 +44,63 @@ def _resolved_firewall_auth() -> auth_client.FirewallAuthSuccess:
     )
 
 
+@pytest.mark.parametrize("requestheaders_first", [False, True])
+async def test_reference_auth_without_envelope_reaches_resolver_and_reuses_cache(
+    tmp_path, real_flow, mitm_ctx, requestheaders_first
+):
+    reg_path = _write_registry(
+        tmp_path,
+        sandbox_info=_single_firewall_sandbox(
+            tmp_path,
+            api_entry={
+                "base": "https://api.github.com",
+                "auth": {"headers": {"Authorization": "Bearer ${{ secrets.GITHUB_TOKEN }}"}},
+                "permissions": [{"name": "repo-read", "rules": ["GET /repos"]}],
+            },
+            network_policy={
+                "allow": ["repo-read"],
+                "deny": [],
+                "ask": [],
+                "unknownPolicy": "deny",
+            },
+            include_encrypted_secrets=False,
+        ),
+    )
+    endpoint = FakeAuthEndpoint()
+    endpoint.queue_json_response(
+        firewall_auth_success_response({"Authorization": "Bearer current-account"})
+    )
+    flows = [
+        real_flow(
+            with_response=False,
+            client_ip="10.200.0.5",
+            host="api.github.com",
+            path="/repos",
+        )
+        for _ in range(2)
+    ]
+    with endpoint.run(), mitm_ctx(registry_path=str(reg_path), api_url=endpoint.api_url):
+        for flow in flows:
+            if requestheaders_first:
+                result = mitm_addon.requestheaders(flow)
+                if result is not None:
+                    await await_requestheaders_result(result)
+            await mitm_addon.request(flow)
+
+    for flow in flows:
+        assert flow.response is None
+        assert flow.request.headers["Authorization"] == "Bearer current-account"
+    assert endpoint.request_count == 1
+    request = endpoint.requests[0]
+    assert request.method == "POST"
+    assert request.headers["authorization"] == "Bearer tok-conn"
+    assert request.json_body()["authHeaders"] == {
+        "Authorization": "Bearer ${{ secrets.GITHUB_TOKEN }}"
+    }
+    assert "encryptedSecrets" not in request.json_body()
+    assert flows[1].metadata[metadata_keys.AUTH_CACHE_HIT] is True
+
+
 async def test_repeated_firewall_requests_reuse_snapshot_auth_identity(
     tmp_path, real_flow, mitm_ctx
 ):

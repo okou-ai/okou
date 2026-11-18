@@ -54,24 +54,21 @@ describe("Runner built-in and personal dispatch", () => {
       const sandboxHeaders = {
         authorization: `Bearer ${input.sandboxToken}`,
       };
-      const resolved = await firewall.requestFirewallAuth(
-        sandboxHeaders,
-        {
-          encryptedSecrets: input.encryptedSecrets,
-          authHeaders,
-          firewallBillable: true,
-        },
-        [200],
-      );
-      expect(resolved.body).toMatchObject({
-        headers: { Authorization: `Bearer ${MANAGED_KEY}` },
-        resolvedSecrets: ["OPENROUTER_API_KEY"],
-        expiresAt: expect.any(Number),
-      });
+      for (const encryptedSecrets of [undefined, input.encryptedSecrets]) {
+        const resolved = await firewall.requestFirewallAuth(
+          sandboxHeaders,
+          { encryptedSecrets, authHeaders, firewallBillable: true },
+          [200],
+        );
+        expect(resolved.body).toMatchObject({
+          headers: { Authorization: `Bearer ${MANAGED_KEY}` },
+          resolvedSecrets: ["OPENROUTER_API_KEY"],
+          expiresAt: expect.any(Number),
+        });
+      }
       const mapped = await firewall.requestFirewallAuth(
         sandboxHeaders,
         {
-          encryptedSecrets: input.encryptedSecrets,
           authHeaders,
           secretConnectorMap: { OPENROUTER_API_KEY: "codex-oauth-token" },
           secretConnectorMetadataMap: {
@@ -91,7 +88,6 @@ describe("Runner built-in and personal dispatch", () => {
       const unpairedMetadata = await firewall.requestFirewallAuth(
         sandboxHeaders,
         {
-          encryptedSecrets: input.encryptedSecrets,
           authHeaders,
           secretConnectorMetadataMap: {
             OPENROUTER_API_KEY: {
@@ -118,7 +114,7 @@ describe("Runner built-in and personal dispatch", () => {
       await api.requestCancelRun(owned.actor, run.runId, [200]);
       await firewall.requestFirewallAuth(
         sandboxHeaders,
-        { encryptedSecrets: input.encryptedSecrets, authHeaders },
+        { authHeaders },
         [403],
       );
     });
@@ -182,19 +178,12 @@ describe("Runner built-in and personal dispatch", () => {
         status: "running",
         source: { providerType: "codex-oauth-token", model: "gpt-6-luna" },
       });
-      if (
-        !input.encryptedSecrets ||
-        !input.secretConnectorMap ||
-        !input.secretConnectorMetadataMap
-      ) {
-        throw new Error(
-          "Expected the personal model's envelope and account references",
-        );
+      if (!input.secretConnectorMap || !input.secretConnectorMetadataMap) {
+        throw new Error("Expected the personal model's account references");
       }
       const personal = await firewall.requestFirewallAuth(
         { authorization: `Bearer ${input.sandboxToken}` },
         {
-          encryptedSecrets: input.encryptedSecrets,
           authHeaders: {
             Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
           },
@@ -212,7 +201,6 @@ describe("Runner built-in and personal dispatch", () => {
       const unavailable = await firewall.requestFirewallAuth(
         { authorization: `Bearer ${input.sandboxToken}` },
         {
-          encryptedSecrets: input.encryptedSecrets,
           authHeaders: {
             Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
           },

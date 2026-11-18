@@ -170,8 +170,6 @@ describe("builtin Automatic firewall credential destinations", () => {
     const refreshed = await firewall.requestFirewallAuth(
       { authorization: `Bearer ${execution.sandboxToken}` },
       {
-        encryptedSecrets:
-          execution.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
         authHeaders: catalog.firewallAuthHeaders,
         forceRefresh: true,
         matchedFirewall: {

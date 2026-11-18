@@ -125,7 +125,7 @@ describe("Data Router accounting when a run ends", () => {
     };
     const resolved = await firewall.requestFirewallAuth(
       run.headers,
-      { encryptedSecrets, authHeaders, firewallBillable: true },
+      { authHeaders, firewallBillable: true },
       [200],
     );
     expect(resolved.body).toMatchObject({
@@ -148,7 +148,6 @@ describe("Data Router accounting when a run ends", () => {
       const mapped = await firewall.requestFirewallAuth(
         run.headers,
         {
-          encryptedSecrets,
           authHeaders,
           secretConnectorMap,
           secretConnectorMetadataMap: { OKOU_DATA_TOKEN: personalSource },
@@ -205,7 +204,7 @@ describe("Data Router accounting when a run ends", () => {
     await expect(credits(run.actor)).resolves.toBe(before - 7);
     await firewall.requestFirewallAuth(
       run.headers,
-      { encryptedSecrets, authHeaders, firewallBillable: true },
+      { authHeaders, firewallBillable: true },
       [403],
     );
     await finish(run);

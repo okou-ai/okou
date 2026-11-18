@@ -256,26 +256,9 @@ export const agentRuns = pgTable("agent_runs", migrationColumns, (table) => {
                   ${table.launchSnapshot} -
                   'schemaVersion' -
                   'framework' -
-                  'runnerProfile' -
-                  'executionAuthorization'
+                  'runnerProfile'
                 ) = '{}'::jsonb AND
-                ${table.launchSnapshot} -> 'schemaVersion' IN ('3'::jsonb, '5'::jsonb) AND
-                (
-                  NOT (${table.launchSnapshot} ? 'executionAuthorization') OR (
-                    ${table.launchSnapshot} -> 'schemaVersion' = '5'::jsonb AND
-                    jsonb_typeof(${table.launchSnapshot} -> 'executionAuthorization') = 'object' AND
-                    (${table.launchSnapshot} -> 'executionAuthorization') ?& ARRAY[
-                      'schemaVersion', 'okouTokenClaims', 'previewBypassAuthorized'
-                    ] AND
-                    (
-                      (${table.launchSnapshot} -> 'executionAuthorization') -
-                      'schemaVersion' - 'okouTokenClaims' - 'previewBypassAuthorized'
-                    ) = '{}'::jsonb AND
-                    ${table.launchSnapshot} -> 'executionAuthorization' -> 'schemaVersion' = '1'::jsonb AND
-                    jsonb_typeof(${table.launchSnapshot} -> 'executionAuthorization' -> 'okouTokenClaims') = 'object' AND
-                    jsonb_typeof(${table.launchSnapshot} -> 'executionAuthorization' -> 'previewBypassAuthorized') = 'boolean'
-                  )
-                )
+                ${table.launchSnapshot} -> 'schemaVersion' IN ('3'::jsonb, '5'::jsonb)
               )
             )
             ) OR (

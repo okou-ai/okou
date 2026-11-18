@@ -190,7 +190,6 @@ async function setupCustomOAuthFirewall(
     return fw.requestFirewallAuth(
       headers,
       {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
         authHeaders: networkAdmission
           ? {}
           : { Authorization: `Bearer ${secretTemplate(secretKey)}` },

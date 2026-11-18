@@ -20,7 +20,6 @@ import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { createThreadContext } from "./thread-context.signals";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
-import type { RunExecutionAuthorization } from "@okouai/api-contracts/contracts/run-execution-authorization";
 import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-queue-revocation.service";
 import {
   createOkouTokenInputSignals,
@@ -222,7 +221,7 @@ import type { SupportedFramework } from "@okouai/core/frameworks";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
 import { isStaffOrg } from "@okouai/core/staff-org";
 import type {
-  AgentRunLaunchSnapshotV5,
+  AgentRunFullLaunchSnapshot,
   AgentRunLaunchSnapshot,
   AgentRunOfficialWorkflowProvenance,
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
@@ -3165,12 +3164,12 @@ export function createThreadClaimRunObjects(
       }
       const tokenInput = await get(okouTokenInput$);
       signal.throwIfAborted();
-      const authorization = set(prepareOkouToken$, tokenInput, signal);
+      const okouToken = set(prepareOkouToken$, tokenInput, signal);
       const disabledPaidTools = await get(bootstrap.disabledPaidTools$);
       signal.throwIfAborted();
       return prepareRunnerLaunch({
         args,
-        authorization,
+        okouToken,
         disabledPaidTools,
         previewBypassAuthorized: !!get(previewAutomationBypass$),
       });
@@ -3985,7 +3984,6 @@ interface PersistedAtomicLaunchRows {
 }
 
 interface PreparedRunnerLaunch {
-  readonly executionAuthorization: RunExecutionAuthorization;
   readonly runnerGroup: string;
   readonly profile: string;
   readonly reuseKey: string;
@@ -4048,7 +4046,7 @@ interface ThreadRunPersistenceArgs {
 interface ThreadRunPersistenceContext {
   readonly content: ThreadRunContent;
   readonly selectedImageModel: ImageModel;
-  readonly launchSnapshot: AgentRunLaunchSnapshotV5;
+  readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
   readonly officialWorkflowFacts: OfficialWorkflowContextFacts;
   readonly resolved: {
@@ -4238,10 +4236,7 @@ function preparedLaunchRowsArgs(
     agentRunMetadata: commit.createArgs.agentRunMetadata,
     apiStartTime: commit.createArgs.apiStartTime,
     runnerGroup: commit.launch.runnerGroup,
-    launchSnapshot: {
-      ...commit.context.launchSnapshot,
-      executionAuthorization: commit.launch.executionAuthorization,
-    },
+    launchSnapshot: commit.context.launchSnapshot,
     officialWorkflowProvenance: commit.context.officialWorkflowRun?.provenance,
   };
 }
@@ -4536,10 +4531,7 @@ interface ThreadRunnerFacts {
 /** Capture selectors and request receipts; admitted preparation assembles runtime input. */
 function prepareRunnerLaunch(input: {
   readonly args: ThreadRunnerFacts;
-  readonly authorization: {
-    readonly token: string;
-    readonly claims: RunExecutionAuthorization["okouTokenClaims"];
-  };
+  readonly okouToken: string;
   readonly disabledPaidTools: readonly PaidToolId[];
   readonly previewBypassAuthorized: boolean;
 }): Omit<PreparedRunnerLaunch, "runStorageMounts"> {
@@ -4555,7 +4547,7 @@ function prepareRunnerLaunch(input: {
         : { automationId: args.workflowAutomationId }),
       protectedMountPaths: [...args.protectedMountPaths],
     },
-    okouToken: input.authorization.token,
+    okouToken: input.okouToken,
     disabledPaidTools: input.disabledPaidTools,
     realAgentInPreview: args.realAgentInPreview || undefined,
     apiStartTime: args.apiStartTime,
@@ -4575,11 +4567,6 @@ function prepareRunnerLaunch(input: {
     },
   };
   return {
-    executionAuthorization: {
-      schemaVersion: 1,
-      okouTokenClaims: input.authorization.claims,
-      previewBypassAuthorized: input.previewBypassAuthorized,
-    },
     runnerGroup: preparedRunnerGroup(),
     profile: args.profile,
     reuseKey: runnerReuseKey(args.chatThreadId),

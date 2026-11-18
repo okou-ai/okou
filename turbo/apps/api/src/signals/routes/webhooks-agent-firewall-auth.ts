@@ -35,9 +35,7 @@ const invalidTokenResponse = Object.freeze({
   }),
 });
 
-const invalidBodyResponse = badRequestMessage(
-  "encryptedSecrets and authHeaders are required",
-);
+const invalidBodyResponse = badRequestMessage("Invalid firewall auth body");
 
 const firewallAuthRoute$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -102,9 +100,6 @@ const firewallAuthRoute$ = command(
         signal,
       );
     }
-    if (!bodyResult.data.encryptedSecrets) {
-      return invalidBodyResponse;
-    }
     const billableCacheExpiry = await set(
       resolveBillableFirewallCacheExpiry$,
       { auth, firewallBillable: bodyResult.data.firewallBillable },
@@ -113,10 +108,7 @@ const firewallAuthRoute$ = command(
     const prepared = await set(
       prepareFirewallAuthResponse$,
       auth,
-      {
-        ...bodyResult.data,
-        encryptedSecrets: bodyResult.data.encryptedSecrets,
-      },
+      bodyResult.data,
       billableCacheExpiry,
       signal,
     );

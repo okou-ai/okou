@@ -3445,13 +3445,6 @@
       "when": 1794927104281,
       "tag": "1570_backfill_project_sort_order",
       "breakpoints": true
-    },
-    {
-      "idx": 1571,
-      "version": "7",
-      "when": 1794967836302,
-      "tag": "1571_run_execution_authorization",
-      "breakpoints": true
     }
   ]
 }

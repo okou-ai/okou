@@ -290,11 +290,10 @@ class TestHandleFirewallRequest:
 
     @pytest.mark.parametrize("hook_phase", ["request", "requestheaders"])
     @pytest.mark.parametrize(
-        ("method", "scheme", "include_encrypted_secrets", "status", "error_code"),
+        ("method", "scheme", "status", "error_code"),
         [
-            pytest.param("TRACE", "https", True, 403, "unsafe_auth_method", id="unsafe-method"),
-            pytest.param("GET", "http", True, 403, "insecure_transport", id="insecure-transport"),
-            pytest.param("GET", "https", False, 502, "auth_unavailable", id="missing-secret"),
+            pytest.param("TRACE", "https", 403, "unsafe_auth_method", id="unsafe-method"),
+            pytest.param("GET", "http", 403, "insecure_transport", id="insecure-transport"),
         ],
     )
     async def test_policy_failures_have_phase_specific_effects(
@@ -305,7 +304,6 @@ class TestHandleFirewallRequest:
         hook_phase: HookPhase,
         method: str,
         scheme: str,
-        include_encrypted_secrets: bool,
         status: int,
         error_code: str,
     ):
@@ -325,10 +323,7 @@ class TestHandleFirewallRequest:
         original_url = flow.request.url
         original_headers = flow.request.headers.fields
         api_entry = _api_entry()
-        sandbox_info = _sandbox_info(
-            tmp_path,
-            include_encrypted_secrets=include_encrypted_secrets,
-        )
+        sandbox_info = _sandbox_info(tmp_path)
         allow = _allow(api_entry)
         get_firewall_headers = AsyncMock()
 
@@ -1807,36 +1802,6 @@ class TestHandleFirewallRequest:
         assert body["error"] == "connector_not_configured"
         assert body["connectors"] == ["htmlcsstoimage"]
         assert body["base"] == "https://hcti.io"
-
-    async def test_missing_encrypted_secrets_returns_502(self, real_flow, mitm_ctx):
-        """When encryptedSecrets is missing from sandbox_info, return 502."""
-        flow = _firewall_flow(real_flow)
-        api_entry = _api_entry(
-            auth_config={"headers": {"Authorization": "Bearer ${{ secrets.GITHUB_TOKEN }}"}}
-        )
-        sandbox_info = _sandbox_info(network_log_path="", include_encrypted_secrets=False)
-        allow = _allow(api_entry)
-        admission = auth_base_forwarder.reserve_forward_request_admission(42)
-        auth_base_forwarder.attach_forward_request_admission_to_flow(flow, admission)
-
-        with mitm_ctx():
-            result = await handle_firewall_request_without_upstream_admission(
-                flow, allow, sandbox_info
-            )
-
-        assert result is auth.FirewallAuthHandlingResult.LOCAL_RESPONSE
-        assert flow.response is not None
-        assert flow.response.status_code == 502
-        assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "ALLOW"
-        assert flow.metadata[metadata_keys.FIREWALL_ERROR] == "auth_unavailable"
-        body = json.loads(flow.response.content)
-        assert body["error"] == "auth_unavailable"
-        assert body["message"] == "Auth secrets not configured"
-        assert body["permission"] == "github"
-        assert body["base"] == "https://api.github.com"
-        assert "connectors" not in body
-        assert metadata_keys.AUTH_BASE_FORWARD_ADMISSION not in flow.metadata
-        assert auth_base_forwarder.forward_request_admission_state_for_tests() == (0, 0)
 
     async def test_cancelled_auth_resolution_releases_forward_admission(
         self, real_flow, mitm_ctx, tmp_path
