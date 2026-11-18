@@ -1,3 +1,5 @@
+import { LARK_OFFICIAL_SKILL_MARKDOWN } from "./lark-official-skill";
+import { LARK_OFFICIAL_OAUTH_SCOPES } from "@okouai/api-contracts/validators/lark-official";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { orgCustomConnectorSkillBundles } from "@okouai/db/runtime/org-custom-connector-skill-bundle";
@@ -78,6 +80,7 @@ interface EnsureFeishuCustomConnectorArgs {
 }
 
 interface FeishuConnectorInstallation {
+  readonly installationType: "custom" | "official";
   readonly platform: FeishuPlatform;
   readonly orgId: string;
   readonly customConnectorId: string | null;
@@ -169,11 +172,15 @@ function feishuCustomConnectorDisplayName(
   return botName ? `${name}-${botName}` : name;
 }
 
-function feishuSkillMarkdown(platform: FeishuPlatform): string {
-  return FEISHU_SKILL_MARKDOWN.replaceAll(
-    "Feishu",
-    FEISHU_PLATFORMS[platform].name,
-  )
+function feishuSkillMarkdown(
+  platform: FeishuPlatform,
+  official = false,
+): string {
+  const markdown = official
+    ? LARK_OFFICIAL_SKILL_MARKDOWN
+    : FEISHU_SKILL_MARKDOWN;
+  return markdown
+    .replaceAll("Feishu", FEISHU_PLATFORMS[platform].name)
     .replaceAll("https://open.feishu.cn", FEISHU_PLATFORMS[platform].apiOrigin)
     .replaceAll("okou feishu ", `okou ${platform} `);
 }
@@ -198,7 +205,10 @@ function desiredConnectorDefinition(installation: FeishuConnectorInstallation) {
     authMode: "oauth" as const,
     enabled: true,
     permissionBundleRef: null,
-    skillMarkdown: feishuSkillMarkdown(installation.platform),
+    skillMarkdown: feishuSkillMarkdown(
+      installation.platform,
+      installation.installationType === "official",
+    ),
   };
 }
 
@@ -212,7 +222,11 @@ function desiredOAuthConfig(installation: FeishuConnectorInstallation) {
     tokenUrl: `${FEISHU_PLATFORMS[installation.platform].apiOrigin}/open-apis/authen/v2/oauth/token`,
     tokenEndpointAuthMethod: "client_secret_post" as const,
     pkceMethod: "none" as const,
-    scopes: [...FEISHU_OAUTH_SCOPES],
+    scopes: [
+      ...(installation.installationType === "official"
+        ? LARK_OFFICIAL_OAUTH_SCOPES
+        : FEISHU_OAUTH_SCOPES),
+    ],
     authorizationParams: {},
   };
 }
@@ -256,7 +270,7 @@ function oauthConfigMatches(
     config.tokenUrl === desiredOAuthConfig(installation).tokenUrl &&
     config.tokenEndpointAuthMethod === "client_secret_post" &&
     config.pkceMethod === "none" &&
-    isDeepStrictEqual(config.scopes, FEISHU_OAUTH_SCOPES) &&
+    isDeepStrictEqual(config.scopes, desiredOAuthConfig(installation).scopes) &&
     isDeepStrictEqual(config.authorizationParams, {})
   );
 }
@@ -335,13 +349,14 @@ function feishuSkillBundleArgs(
   args: EnsureFeishuCustomConnectorArgs,
   connectorId: string,
   platform: FeishuPlatform,
+  official: boolean,
 ) {
   return {
     orgId: args.orgId,
     connectorId,
     connectorSlug: getFeishuCustomConnectorSlug(args.installationId, platform),
     displayName: FEISHU_PLATFORMS[platform].name,
-    skillMarkdown: feishuSkillMarkdown(platform),
+    skillMarkdown: feishuSkillMarkdown(platform, official),
     skillName: platform,
     skillDescription:
       FEISHU_CUSTOM_CONNECTOR_SKILL_METADATA.description.replaceAll(
@@ -359,6 +374,8 @@ function feishuReconciliationReadPlan(args: EnsureFeishuCustomConnectorArgs) {
       ownerUserId: feishuOrgInstallations.ownerUserId,
       appId: feishuOrgInstallations.appId,
       platform: feishuOrgInstallations.platform,
+      setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
+      installationType: feishuOrgInstallations.installationType,
       encryptedAppSecret: feishuOrgInstallations.encryptedAppSecret,
       botName: feishuOrgInstallations.botName,
     },
@@ -871,7 +888,12 @@ export const ensureManagedFeishuConnector$ = command(
     while (connectorId) {
       const skill = await set(
         prepareCustomConnectorSkillBundle$,
-        feishuSkillBundleArgs(args, connectorId, installation.platform),
+        feishuSkillBundleArgs(
+          args,
+          connectorId,
+          installation.platform,
+          installation.installationType === "official",
+        ),
         signal,
       );
       signal.throwIfAborted();

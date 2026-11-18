@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { teamsAccountOwnerCondition } from "./teams-workspace-identity.service";
 import { computed, type Computed } from "ccstate";
 import { and, eq, exists, inArray, isNull, ne, or, sql } from "drizzle-orm";
@@ -414,6 +415,8 @@ function createFeishuStoredContext(
         chatType: chatFeishuContext.chatType,
         tenantKey: feishuOrgInstallations.feishuTenantKey,
         platform: feishuOrgInstallations.platform,
+        installationType: feishuOrgInstallations.installationType,
+        setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
         ownerUserId: feishuOrgInstallations.ownerUserId,
         chatId: chatFeishuContext.chatId,
         messageId: chatFeishuContext.messageId,
@@ -492,17 +495,21 @@ export function createFeishuThreadContext(
     if (!row || !pickedEvent) {
       return false;
     }
-    if (row.platform === "feishu") {
+    if (row.installationType === "official" && !row.setupCompletedAt) {
+      return false;
+    }
+    const switchKey =
+      row.installationType === "official"
+        ? FeatureSwitchKey.LarkOfficialBot
+        : FEISHU_PLATFORMS.lark.featureSwitch;
+    if (row.platform === "feishu" && row.installationType !== "official") {
       return true;
     }
     if (!row.ownerUserId) {
       return false;
     }
     if (row.ownerUserId === pickedEvent.userId) {
-      return isFeatureEnabled(
-        FEISHU_PLATFORMS.lark.featureSwitch,
-        await get(featureSwitches$),
-      );
+      return isFeatureEnabled(switchKey, await get(featureSwitches$));
     }
     const overrides = await get(db$)
       .select({
@@ -519,7 +526,7 @@ export function createFeishuThreadContext(
           ]),
         ),
       );
-    return isFeatureEnabled(FEISHU_PLATFORMS.lark.featureSwitch, {
+    return isFeatureEnabled(switchKey, {
       orgId,
       userId: row.ownerUserId,
       overrides: userFeatureSwitchOverridesFromRows(overrides, row.ownerUserId),

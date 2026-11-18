@@ -14,6 +14,11 @@ CLERK_WEBHOOK_SIGNING_SECRET=op://Development/clerk/CLERK_WEBHOOK_SIGNING_SECRET
 # Required: API, web, and app URLs
 OKOU_API_BACKEND_URL=https://api.vm7.ai:8443
 FEISHU_CALLBACK_BASE_URL=https://api.vm7.ai:8443
+# Optional, separate Lark store application. Never reuse a custom bot identity.
+# LARK_OFFICIAL_APP_ID=
+# LARK_OFFICIAL_APP_SECRET=
+# LARK_OFFICIAL_VERIFICATION_TOKEN=
+# LARK_OFFICIAL_ENCRYPT_KEY=
 OKOU_WEB_URL=https://www.vm7.ai:8443
 APP_URL=https://app.vm7.ai:8443
 

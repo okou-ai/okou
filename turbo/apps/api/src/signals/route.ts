@@ -1,3 +1,6 @@
+import { larkOfficialReadRoutes } from "./routes/lark-official-read";
+import { larkOfficialEventsRoutes } from "./routes/lark-official-events";
+import { larkOfficialRoutes } from "./routes/lark-official";
 import { phoneUseRoutes } from "./routes/phone-use";
 import { integrationsEmailRoutes } from "./routes/integrations-email";
 import { integrationsEmailUploadCompleteRoutes } from "./routes/integrations-email-upload-complete";
@@ -472,7 +475,10 @@ export const ROUTES: readonly RouteEntry[] = [
   ...discordGatewayRoutes,
   ...slackInteractiveRoutes,
   ...feishuBrowserConnectRoutes,
+  ...larkOfficialReadRoutes,
+  ...larkOfficialRoutes,
   ...feishuConnectRoutes,
+  ...larkOfficialEventsRoutes,
   ...feishuEventsRoutes,
   ...feishuOauthRoutes,
   ...teamsBrowserConnectRoutes,

@@ -18,7 +18,7 @@ import {
   feishuTokenUpdateValues,
   parseFeishuSentMessage,
   readFeishuResponseJson,
-  resolveFeishuRequestCredentials,
+  resolveFeishuRequestCredentials$,
   replyWithFeishuMessage$,
 } from "../external/feishu-client";
 import { db$, writeDb$ } from "../external/db";
@@ -160,7 +160,8 @@ const sendFeishuCallbackResponse$ = command(
           ) {
             throw new FeishuApiError("Lark integration is not enabled", 403);
           }
-          const credentials = await resolveFeishuRequestCredentials(
+          const credentials = await set(
+            resolveFeishuRequestCredentials$,
             installation,
             sendSignal,
           );

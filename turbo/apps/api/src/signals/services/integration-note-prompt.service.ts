@@ -201,9 +201,14 @@ export function resolveIntegrationNotePrompt(args: {
       FeatureSwitchKey.WhatsappIntegration,
       args.featureSwitchContext,
     ),
-    larkEnabled: isFeatureEnabled(
-      FeatureSwitchKey.LarkIntegration,
-      args.featureSwitchContext,
-    ),
+    larkEnabled:
+      isFeatureEnabled(
+        FeatureSwitchKey.LarkIntegration,
+        args.featureSwitchContext,
+      ) ||
+      isFeatureEnabled(
+        FeatureSwitchKey.LarkOfficialBot,
+        args.featureSwitchContext,
+      ),
   });
 }

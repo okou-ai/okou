@@ -30,6 +30,7 @@ export enum FeatureSwitchKey {
   RealAgentInPreview = "_realAgentInPreview",
   ArtifactSidebarPreview = "artifactSidebarPreview",
   ArtifactPreviewActionGroup = "artifactPreviewActionGroup",
+  LarkOfficialBot = "larkOfficialBot",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "larkIntegration",
   WechatIntegration = "wechatIntegration",

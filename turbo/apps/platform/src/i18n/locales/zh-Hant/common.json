@@ -3717,6 +3717,10 @@
         "manage": "管理",
         "manageDialogTitle": "管理 Lark 機器人",
         "moreOptions": "{{bot}}的更多選項",
+        "official": {
+          "name": "Okou",
+          "popupBlocked": "請允許彈出視窗以連接 Lark 帳號。"
+        },
         "pageDescription": "管理此工作區的機器人路由",
         "permissions": {
           "description": "在 Lark 開發者後臺開啟「權限管理」，選擇「批次匯入/匯出 > 匯入」，貼上下方的 JSON。其中包含機器人的應用身份權限，以及你所連線帳號的使用者身份權限。",

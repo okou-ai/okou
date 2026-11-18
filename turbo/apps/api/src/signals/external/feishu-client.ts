@@ -1,3 +1,6 @@
+import { feishuHistoryMessageSchema } from "@okouai/api-contracts/validators/feishu-history";
+import { fetchOfficialLarkTenantToken$ } from "./lark-official";
+import { larkOfficialApp } from "../../lib/lark-official-app";
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { settle } from "../utils";
 import {
@@ -91,31 +94,6 @@ const feishuFileResponseSchema = feishuResponseSchema.extend({
 
 const feishuReactionResponseSchema = feishuResponseSchema.extend({
   data: object({ reaction_id: string().optional() }).optional(),
-});
-
-const feishuHistoryMessageSchema = object({
-  message_id: string(),
-  root_id: string().optional(),
-  parent_id: string().optional(),
-  thread_id: string().optional(),
-  msg_type: string(),
-  create_time: string().optional(),
-  deleted: boolean().optional(),
-  chat_id: string().optional(),
-  sender: object({
-    id: string().optional(),
-    id_type: string().optional(),
-    sender_type: string().optional(),
-    sender_name: string().optional(),
-  }).optional(),
-  body: object({ content: string().optional() }).optional(),
-  mentions: array(
-    object({
-      key: string().optional(),
-      id: string().optional(),
-      name: string().optional(),
-    }),
-  ).optional(),
 });
 
 const feishuMessageHistoryResponseSchema = feishuResponseSchema.extend({
@@ -442,51 +420,103 @@ interface FeishuRequestCredentials {
   };
 }
 
-export async function resolveFeishuRequestCredentials(
+function requireOfficialTenantKey(
   installation: typeof feishuOrgInstallations.$inferSelect,
-  signal: AbortSignal,
-): Promise<FeishuRequestCredentials> {
-  const context = { orgId: installation.orgId };
-  const platform = FEISHU_PLATFORMS[installation.platform];
+): string {
   if (
-    installation.encryptedTenantAccessToken &&
-    tokenIsFresh(installation.tenantAccessTokenExpiresAt)
+    !installation.feishuTenantKey ||
+    installation.appId !== larkOfficialApp()?.appId ||
+    !installation.setupCompletedAt
   ) {
+    throw new FeishuApiError(
+      "Okou Official Lark bot is not connected to this tenant",
+      403,
+    );
+  }
+  return installation.feishuTenantKey;
+}
+
+export const resolveFeishuRequestCredentials$ = command(
+  async (
+    { get, set },
+    installation: typeof feishuOrgInstallations.$inferSelect,
+    signal: AbortSignal,
+  ): Promise<FeishuRequestCredentials> => {
+    if (installation.installationType === "official") {
+      requireOfficialTenantKey(installation);
+      const plan = feishuInstallationAvailabilityReadPlan(installation);
+      const enabled =
+        plan.kind === "resolved"
+          ? plan.enabled
+          : feishuInstallationEnabledFromRows(
+              plan.scope,
+              await get(db$)
+                .select(plan.columns)
+                .from(userFeatureSwitches)
+                .where(plan.condition),
+            );
+      signal.throwIfAborted();
+      if (!enabled) {
+        throw new FeishuApiError("Okou Official Lark bot is not enabled", 403);
+      }
+    }
+    const context = { orgId: installation.orgId };
+    const platform = FEISHU_PLATFORMS[installation.platform];
+    if (
+      installation.encryptedTenantAccessToken &&
+      tokenIsFresh(installation.tenantAccessTokenExpiresAt)
+    ) {
+      const cachedToken = await decryptPersistentSecretValue(
+        installation.encryptedTenantAccessToken,
+        context,
+      );
+      signal.throwIfAborted();
+      return {
+        context: {
+          token: cachedToken,
+          apiOrigin: platform.apiOrigin,
+          providerName: platform.name,
+        },
+      };
+    }
+    const appSecret = await decryptPersistentSecretValue(
+      installation.encryptedAppSecret,
+      context,
+    );
+    signal.throwIfAborted();
+    const token =
+      installation.installationType === "official"
+        ? await set(
+            fetchOfficialLarkTenantToken$,
+            requireOfficialTenantKey(installation),
+            signal,
+          )
+        : await fetchFeishuTenantAccessToken(
+            {
+              appId: installation.appId,
+              platform: installation.platform,
+              appSecret,
+            },
+            signal,
+          );
+    const encryptedToken = await encryptPersistentSecretValue(
+      token.token,
+      context,
+    );
+    signal.throwIfAborted();
     return {
       context: {
-        token: await decryptPersistentSecretValue(
-          installation.encryptedTenantAccessToken,
-          context,
-        ),
+        token: token.token,
         apiOrigin: platform.apiOrigin,
         providerName: platform.name,
       },
+      refreshedToken: {
+        encryptedTenantAccessToken: encryptedToken,
+        expiresInSeconds: token.expiresInSeconds,
+      },
     };
-  }
-  const appSecret = await decryptPersistentSecretValue(
-    installation.encryptedAppSecret,
-    context,
-  );
-  const token = await fetchFeishuTenantAccessToken(
-    { appId: installation.appId, platform: installation.platform, appSecret },
-    signal,
-  );
-  const encryptedToken = await encryptPersistentSecretValue(
-    token.token,
-    context,
-  );
-  return {
-    context: {
-      token: token.token,
-      apiOrigin: platform.apiOrigin,
-      providerName: platform.name,
-    },
-    refreshedToken: {
-      encryptedTenantAccessToken: encryptedToken,
-      expiresInSeconds: token.expiresInSeconds,
-    },
-  };
-}
+  },
+);
 
 export function feishuTokenUpdateValues(
   token: NonNullable<FeishuRequestCredentials["refreshedToken"]>,
@@ -535,7 +565,8 @@ export const downloadFeishuMessageResource$ = command(
         throw new FeishuApiError("Lark integration is not enabled", 403);
       }
     }
-    const credentials = await resolveFeishuRequestCredentials(
+    const credentials = await set(
+      resolveFeishuRequestCredentials$,
       installation,
       signal,
     );
@@ -705,7 +736,8 @@ export const replyWithFeishuMessage$ = command(
       ) {
         throw new FeishuApiError("Lark integration is not enabled", 403);
       }
-      const credentials = await resolveFeishuRequestCredentials(
+      const credentials = await set(
+        resolveFeishuRequestCredentials$,
         installation,
         replyContextSignal,
       );

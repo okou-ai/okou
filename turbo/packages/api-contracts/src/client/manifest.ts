@@ -495,6 +495,14 @@ export const clientDescriptorManifest = [
     contracts: ["iosPushRegistrationsContract"],
   },
   {
+    module: "lark-official-read",
+    contracts: ["larkOfficialReadContract"],
+  },
+  {
+    module: "lark-official",
+    contracts: ["larkOfficialContract", "larkOfficialEventsContract"],
+  },
+  {
     module: "link-approval-workflow",
     contracts: ["linkApprovalWorkflowContract"],
   },

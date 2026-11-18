@@ -19,7 +19,7 @@ import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installatio
 import { db$, writeDb$ } from "../external/db";
 import {
   FeishuApiError,
-  resolveFeishuRequestCredentials,
+  resolveFeishuRequestCredentials$,
   feishuTokenUpdateValues,
 } from "../external/feishu-client";
 import { settle } from "../utils";
@@ -35,8 +35,10 @@ function parseAccessData<T>(schema: ZodType<T>, data: unknown): T {
   return parsed.data;
 }
 
+export class FeishuConversationAccessDeniedError extends FeishuApiError {}
+
 function denied(): never {
-  throw new FeishuApiError(
+  throw new FeishuConversationAccessDeniedError(
     "This conversation is unavailable to your connected account and Okou.",
     403,
   );
@@ -234,6 +236,33 @@ async function requireFeishuChatPosting(
   return denied();
 }
 
+async function requireFeishuChatBotMembership(
+  args: {
+    token: string;
+    base: string;
+    chat: zInfer<typeof chatSchema>;
+    groupOnly?: boolean;
+  },
+  signal: AbortSignal,
+): Promise<void> {
+  if (args.groupOnly && args.chat.chat_mode === "p2p") {
+    return denied();
+  }
+  // Reading chat metadata with a tenant token does not prove the bot joined.
+  if (args.chat.chat_mode !== "p2p") {
+    const present = parseAccessData(
+      object({ is_in_chat: boolean() }),
+      await readAccessData(
+        { token: args.token, url: new URL(`${args.base}/members/is_in_chat`) },
+        signal,
+      ),
+    );
+    if (!present.is_in_chat) {
+      return denied();
+    }
+  }
+}
+
 /** Group access and private reads require the caller; outbound DMs may target others. */
 export const requireFeishuConversationAccess$ = command(
   async (
@@ -246,6 +275,7 @@ export const requireFeishuConversationAccess$ = command(
       chat?: string;
       messageId?: string;
       write: boolean;
+      groupOnly?: boolean;
     },
     signal: AbortSignal,
   ): Promise<string | undefined> => {
@@ -288,7 +318,8 @@ export const requireFeishuConversationAccess$ = command(
     if (!installation) {
       return denied();
     }
-    const credentials = await resolveFeishuRequestCredentials(
+    const credentials = await set(
+      resolveFeishuRequestCredentials$,
       installation,
       signal,
     );
@@ -335,21 +366,12 @@ export const requireFeishuConversationAccess$ = command(
       chatSchema,
       await readAccessData({ token, url: infoUrl }, signal),
     );
+    await requireFeishuChatBotMembership(
+      { token, base, chat, groupOnly: args.groupOnly },
+      signal,
+    );
     if (args.write && chat.chat_mode === "p2p") {
       return;
-    }
-    // Reading chat metadata with a tenant token does not prove the bot joined.
-    if (chat.chat_mode !== "p2p") {
-      const present = parseAccessData(
-        object({ is_in_chat: boolean() }),
-        await readAccessData(
-          { token, url: new URL(`${base}/members/is_in_chat`) },
-          signal,
-        ),
-      );
-      if (!present.is_in_chat) {
-        return denied();
-      }
     }
     await requireFeishuChatMember(
       { token, base, openId: binding.openId },
