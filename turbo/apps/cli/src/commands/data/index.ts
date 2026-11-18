@@ -287,7 +287,7 @@ export function createDataCommand(): Command {
             .map(({ seq, savedAt, tool, status, bytes, file, input }) => {
               return { seq, savedAt, tool, status, bytes, file, input };
             });
-          printJson({ dir: savedResponsesDir(), calls }, options.json);
+          printJson({ dir: await savedResponsesDir(), calls }, options.json);
         },
       ),
     );

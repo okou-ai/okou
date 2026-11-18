@@ -102,7 +102,7 @@ class OutlineWriter {
     }
     const kinds = [...new Set(sample.map(kindName))];
     this.add(
-      `${path}[]: ${kinds.join(" | ")}, first ${scalarPreview(sample[0])}`,
+      `${path}[]: ${kinds.join(" | ")}, first ${containerLabel(sample[0]) ?? scalarPreview(sample[0])}`,
     );
   }
 }
