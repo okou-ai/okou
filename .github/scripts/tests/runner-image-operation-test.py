@@ -213,11 +213,13 @@ class ImageOperationTest(unittest.TestCase):
         self.assertFalse(self.result.exists())
         self.assertTrue(self.records("stops"))
         for record in self.records("executions"):
-            self.wait_for(
-                lambda: not Path(f"/proc/{record['pid']}").exists()
-                or Path(f"/proc/{record['pid']}/stat").read_text().split(")", 1)[1].split()[0]
-                == "Z"
-            )
+            # Reaping between the existence check and read also proves exit.
+            with contextlib.suppress(FileNotFoundError, ProcessLookupError):
+                self.wait_for(
+                    lambda: not Path(f"/proc/{record['pid']}").exists()
+                    or Path(f"/proc/{record['pid']}/stat").read_text().split(")", 1)[1].split()[0]
+                    == "Z"
+                )
 
     def test_new_owner_stops_old_work_and_old_owner_cannot_launch(self):
         process = self.start_blocked()
