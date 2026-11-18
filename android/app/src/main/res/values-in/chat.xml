@@ -17,7 +17,6 @@
     <string name="chat_unread">Belum dibaca</string>
     <string name="chat_archived">Diarsipkan</string>
     <string name="chat_muted">Dibisukan</string>
-    <string name="chat_outside_projects">Chat di luar Proyek</string>
     <string name="chat_project_empty">Belum ada chat dalam Proyek ini.</string>
     <string name="chat_empty">Tidak ada chat dalam tampilan ini.</string>
     <string name="chat_untitled">Chat tanpa judul</string>

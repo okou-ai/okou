@@ -17,7 +17,6 @@
     <string name="chat_unread">未読</string>
     <string name="chat_archived">アーカイブ済み</string>
     <string name="chat_muted">ミュート中</string>
-    <string name="chat_outside_projects">プロジェクト外のチャット</string>
     <string name="chat_project_empty">このプロジェクトにチャットはありません。</string>
     <string name="chat_empty">このビューにチャットはありません。</string>
     <string name="chat_untitled">無題のチャット</string>

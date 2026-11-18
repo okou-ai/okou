@@ -102,10 +102,9 @@ class NativeChatListTest {
             gate.countDown()
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             text(app.getString(R.string.chat_status_observed))
-            revealText("Research Okou")
+            revealText("Project chat")
             scenario.recreate()
-            revealText("Research Okou")
-            assertNotNull(device.findObject(By.text("Project chat")))
+            revealText("Project chat")
             clickText("Project chat")
             text(app.getString(R.string.history_completed))
             assertTrue(

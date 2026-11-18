@@ -17,7 +17,6 @@
     <string name="chat_unread">अपठित</string>
     <string name="chat_archived">संग्रहीत</string>
     <string name="chat_muted">म्यूट</string>
-    <string name="chat_outside_projects">प्रोजेक्ट के बाहर की चैट</string>
     <string name="chat_project_empty">इस प्रोजेक्ट में कोई चैट नहीं है।</string>
     <string name="chat_empty">इस दृश्य में कोई चैट नहीं है।</string>
     <string name="chat_untitled">बिना शीर्षक की चैट</string>

@@ -17,7 +17,6 @@
     <string name="chat_unread">Non lette</string>
     <string name="chat_archived">Archiviate</string>
     <string name="chat_muted">Silenziate</string>
-    <string name="chat_outside_projects">Chat fuori dai progetti</string>
     <string name="chat_project_empty">Nessuna chat in questo progetto.</string>
     <string name="chat_empty">Nessuna chat in questa vista.</string>
     <string name="chat_untitled">Chat senza titolo</string>
