@@ -428,6 +428,34 @@ async fn test_write_files() {
     h.finish();
 }
 
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn large_ordinary_batch_writes_complete_sealed_input() {
+    let h = Harness::new().await;
+    let first = h.dir.join("large.bin");
+    let second = h.dir.join("nested/small.bin");
+    let large = vec![0xa5; 4 * 1024 * 1024];
+    let small = b"nested\0content\n";
+
+    h.host()
+        .write_files(&[
+            WriteFileEntry {
+                path: first.to_str().unwrap(),
+                content: &large,
+            },
+            WriteFileEntry {
+                path: second.to_str().unwrap(),
+                content: small,
+            },
+        ])
+        .await
+        .expect("write large ordinary batch");
+
+    assert_eq!(fs::read(first).unwrap(), large);
+    assert_eq!(fs::read(second).unwrap(), small);
+    h.finish();
+}
+
 #[tokio::test]
 async fn test_write_file_special_characters() {
     let h = Harness::new().await;

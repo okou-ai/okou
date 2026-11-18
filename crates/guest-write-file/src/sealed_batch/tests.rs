@@ -1,27 +1,20 @@
 use std::fs::File;
-use std::os::fd::{AsRawFd, FromRawFd};
 
 use guest_control_proto::{WriteFileBatchEntry, encode_write_files};
+use rustix::fs::{MemfdFlags, fcntl_add_seals, memfd_create};
 
 use super::*;
 
 fn input(bytes: &[u8]) -> File {
-    // SAFETY: The static name and flags are valid for memfd_create.
-    let fd = unsafe { libc::memfd_create(c"batch-test".as_ptr(), libc::MFD_ALLOW_SEALING) };
-    assert!(fd >= 0, "{}", io::Error::last_os_error());
-    // SAFETY: memfd_create returned ownership of this descriptor.
-    let mut file = unsafe { File::from_raw_fd(fd) };
+    let fd = memfd_create(c"batch-test", MemfdFlags::ALLOW_SEALING).unwrap();
+    let mut file = File::from(fd);
     file.write_all(bytes).unwrap();
     file
 }
 
 fn seal(file: &File) {
-    let seals = libc::F_SEAL_WRITE | libc::F_SEAL_SHRINK | libc::F_SEAL_GROW;
-    // SAFETY: The descriptor is open and F_ADD_SEALS takes an integer mask.
-    assert_eq!(
-        unsafe { libc::fcntl(file.as_raw_fd(), libc::F_ADD_SEALS, seals) },
-        0
-    );
+    let seals = SealFlags::WRITE | SealFlags::SHRINK | SealFlags::GROW;
+    fcntl_add_seals(file, seals).unwrap();
 }
 
 #[test]

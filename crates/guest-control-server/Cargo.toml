@@ -17,6 +17,9 @@ uuid = { workspace = true, features = ["std", "v4"] }
 shell-quote.workspace = true
 guest-control-proto.workspace = true
 
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { workspace = true, features = ["fs"] }
+
 [features]
 # Enables local integration-test hooks. Do not enable for production guest binaries.
 test-support = []

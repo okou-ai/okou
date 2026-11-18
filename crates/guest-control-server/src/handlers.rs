@@ -139,9 +139,10 @@ fn handle_sealed_batch(
     connection_cancel: &AtomicBool,
     progress: &FileWriteRequestProgress,
 ) -> (bool, String) {
-    use std::os::fd::{AsRawFd, FromRawFd};
     use std::sync::atomic::Ordering;
     use std::time::{Duration, Instant};
+
+    use rustix::fs::{MemfdFlags, SealFlags, fcntl_add_seals, memfd_create};
 
     let deadline = Instant::now() + Duration::from_millis(u64::from(WRITE_FILE_HELPER_TIMEOUT_MS));
     let check = || {
@@ -156,25 +157,14 @@ fn handle_sealed_batch(
     if let Err(error) = check() {
         return (false, error.to_string());
     }
-    // SAFETY: The name lives for the call and these flags create a non-executable,
-    // close-on-exec file that can be sealed.
-    let fd = unsafe {
-        libc::memfd_create(
-            c"guest-write-files".as_ptr(),
-            libc::MFD_CLOEXEC | libc::MFD_ALLOW_SEALING | libc::MFD_NOEXEC_SEAL,
-        )
+    let flags = MemfdFlags::CLOEXEC | MemfdFlags::ALLOW_SEALING | MemfdFlags::NOEXEC_SEAL;
+    let mut file = match memfd_create(c"guest-write-files", flags) {
+        Ok(fd) => File::from(fd),
+        Err(error) => {
+            let error = io::Error::from(error);
+            return (false, format!("Failed to create batch input: {error}"));
+        }
     };
-    if fd < 0 {
-        return (
-            false,
-            format!(
-                "Failed to create batch input: {}",
-                io::Error::last_os_error()
-            ),
-        );
-    }
-    // SAFETY: A successful memfd_create returns a new owned descriptor.
-    let mut file = unsafe { File::from_raw_fd(fd) };
     for chunk in payload.chunks(256 * 1024) {
         if let Err(error) = check() {
             return (false, error.to_string());
@@ -183,13 +173,10 @@ fn handle_sealed_batch(
             return (false, format!("Failed to fill batch input: {error}"));
         }
     }
-    let seals = libc::F_SEAL_WRITE | libc::F_SEAL_SHRINK | libc::F_SEAL_GROW | libc::F_SEAL_SEAL;
-    // SAFETY: F_ADD_SEALS expects an integer seal mask and file owns the descriptor.
-    if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_ADD_SEALS, seals) } < 0 {
-        return (
-            false,
-            format!("Failed to seal batch input: {}", io::Error::last_os_error()),
-        );
+    let seals = SealFlags::WRITE | SealFlags::SHRINK | SealFlags::GROW | SealFlags::SEAL;
+    if let Err(error) = fcntl_add_seals(&file, seals) {
+        let error = io::Error::from(error);
+        return (false, format!("Failed to seal batch input: {error}"));
     }
     if let Err(error) = check() {
         return (false, error.to_string());
