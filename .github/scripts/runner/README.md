@@ -104,6 +104,11 @@ queued or delayed services, even when launch is not yet visible to cleanup.
 A same-owner claim cannot recreate a retired marker; a new workflow
 generation is required. The namespace owner records the host-resolved lifecycle
 lock and resource directory paths. No application/database schema changes.
+Closed-PR cleanup records GitHub's latest closure time in the existing lock
+file before removing resources. A new claim compares that cutoff with the
+workflow run's GitHub creation time while holding the lock. Reopening a PR can
+admit a fresh run created after closure. Rerunning an older run keeps its
+original creation time. The cutoff lasts for the life of the host lock file.
 Owner state transitions from `claiming` to `ready` only after the marker and
 admission record are committed under the lifecycle lock; cancellation sets
 `cancelled`. A claim interrupted before that commit remains incomplete and

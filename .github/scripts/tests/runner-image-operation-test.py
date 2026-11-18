@@ -47,6 +47,7 @@ class ImageOperationTest(unittest.TestCase):
             ).hexdigest(),
             GITHUB_RUN_ID="1234",
             GITHUB_RUN_ATTEMPT="1",
+            RUNNER_IMAGE_RUN_CREATED_AT="2026-10-01T00:00:00Z",
             R2_ACCESS_KEY_ID="fixture-access-key",
             R2_SECRET_ACCESS_KEY="fixture-secret-key",
         )
@@ -127,7 +128,7 @@ class ImageOperationTest(unittest.TestCase):
         return json.loads(line)
 
     def clean_namespace(self, cleanup):
-        cleanup.stdin.write('{"operation":"cleanup","numbers":[123]}\n')
+        cleanup.stdin.write('{"operation":"cleanup","closedAt":{"123":"2026-10-02T00:00:00Z"}}\n')
         cleanup.stdin.flush()
         return self.cleanup_reply(cleanup)["results"]["123"]
 
@@ -200,7 +201,9 @@ class ImageOperationTest(unittest.TestCase):
         self.assertFalse(directory.exists(), "late admission must not recreate the namespace")
         self.environment.pop("IMAGE_FAULT")
         self.assertNotEqual(self.invoke("claim", check=False).returncode, 0)
-        self.environment["GITHUB_RUN_ATTEMPT"] = "2"
+        self.environment.update(
+            GITHUB_RUN_ID="1235", RUNNER_IMAGE_RUN_CREATED_AT="2026-10-03T00:00:00Z"
+        )
         self.invoke("claim")
         self.invoke("guard", "touch", str(directory / "successor"), input_text="")
         self.assertTrue((directory / "successor").exists())
@@ -213,10 +216,46 @@ class ImageOperationTest(unittest.TestCase):
             self.assertEqual(self.clean_namespace(cleanup)["outcome"], "cleaned")
         self.assertNotEqual(self.invoke("claim", check=False).returncode, 0)
         self.assertFalse((self.root / "var/lib/vm0-runner/bin/pr-123").exists())
-        self.environment["GITHUB_RUN_ATTEMPT"] = "2"
+        self.environment.update(
+            GITHUB_RUN_ID="1235", RUNNER_IMAGE_RUN_CREATED_AT="2026-10-03T00:00:00Z"
+        )
         self.invoke("claim")
         self.invoke("run", "build", str(self.result))
         self.assert_one_build()
+
+    def test_claim_waiting_on_cleanup_cannot_recreate_namespace(self):
+        self.invoke("claim")
+        self.environment["GITHUB_RUN_ATTEMPT"] = "2"
+        directory = self.root / "var/lib/vm0-runner/bin/pr-123"
+        with self.cleanup_session() as cleanup:
+            self.assertEqual(self.cleanup_reply(cleanup), {"ready": [123]})
+            claim = subprocess.Popen(
+                ["python3", str(COMMAND), "claim", "dev-11"],
+                env=self.environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.addCleanup(lambda: claim.poll() is None and claim.kill())
+            owner = next(self.root.glob("vm0-runner-image-*/pr-123/owner.json"))
+            self.wait_for(lambda: json.loads(owner.read_text())["state"] == "claiming")
+            self.assertEqual(self.clean_namespace(cleanup)["outcome"], "cleaned")
+            self.assertFalse(directory.exists())
+        out, error = claim.communicate(timeout=10)
+        self.assertNotEqual(claim.returncode, 0, out + error)
+        self.assertIn(b"image workflow predates PR closure", error)
+        self.assertFalse(directory.exists())
+        # A request first delivered after cleanup still carries its original
+        # GitHub timestamp. Equal-second ordering cannot establish freshness.
+        self.environment.update(
+            GITHUB_RUN_ID="1235", RUNNER_IMAGE_RUN_CREATED_AT="2026-10-02T00:00:00Z"
+        )
+        self.assertNotEqual(self.invoke("claim", check=False).returncode, 0)
+        self.assertFalse(directory.exists())
+        self.environment.update(
+            GITHUB_RUN_ID="1236", RUNNER_IMAGE_RUN_CREATED_AT="2026-10-03T00:00:00Z"
+        )
+        self.invoke("claim")
+        self.assertTrue(directory.exists())
 
     def start_blocked(self, fault=""):
         self.environment["IMAGE_FAULT"] = fault

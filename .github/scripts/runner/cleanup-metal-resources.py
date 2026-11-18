@@ -16,10 +16,12 @@ import queue
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import threading
 import time
+from datetime import datetime
 from pathlib import Path, PurePosixPath
 
 UNIT = re.compile(
@@ -421,13 +423,30 @@ class Host:
         watchdog.start()
         try:
             with contextlib.ExitStack() as locks:
+                handles = {}
                 directory = self.path("/var/lock")
                 directory.mkdir(parents=True, exist_ok=True)
                 deadline = time.monotonic() + 60
                 for number in numbers:
+                    path = directory / f"vm0-runner-lifecycle-pr-{number}.lock"
                     handle = locks.enter_context(
-                        (directory / f"vm0-runner-lifecycle-pr-{number}.lock").open("a")
+                        os.fdopen(
+                            os.open(
+                                path,
+                                os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK,
+                                0o644,
+                            ),
+                            "r+b",
+                        )
                     )
+                    info = os.fstat(handle.fileno())
+                    if (
+                        not stat.S_ISREG(info.st_mode)
+                        or info.st_uid != os.geteuid()
+                        or info.st_nlink != 1
+                    ):
+                        raise RuntimeError("invalid lifecycle lock")
+                    handles[str(number)] = handle
                     while True:
                         try:
                             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -446,19 +465,35 @@ class Host:
                         break
                     if message["operation"] != "cleanup":
                         raise RuntimeError("invalid reconciliation operation")
-                    selected = message["numbers"]
-                    if not selected or any(
-                        type(number) is not int or number not in numbers
-                        for number in selected
+                    closed = message["closedAt"]
+                    if (
+                        not isinstance(closed, dict)
+                        or not closed
+                        or not closed.keys() <= handles.keys()
                     ):
                         raise RuntimeError(
                             "cleanup selection is outside the locked namespaces"
                         )
+                    records = {}
+                    for number, cutoff in closed.items():
+                        value = datetime.strptime(cutoff, "%Y-%m-%dT%H:%M:%SZ")
+                        records[number] = value.strftime("%Y-%m-%dT%H:%M:%SZ\n").encode(
+                            "ascii"
+                        )
+                    # Keep the lock inode stable and record closure before deletion.
+                    for number, record in records.items():
+                        handle = handles[number]
+                        handle.seek(0)
+                        if handle.read(22) < record:
+                            handle.seek(0)
+                            handle.write(record)
+                            handle.truncate()
+                            handle.flush()
                     # Covers the shared stop budget plus inventory and teardown.
                     # The controller's response/batch deadlines must outlive it.
                     signal.alarm(480)
                     try:
-                        result = self.cleanup(selected)
+                        result = self.cleanup([int(number) for number in closed])
                     finally:
                         signal.alarm(0)
                     print(

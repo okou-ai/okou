@@ -234,7 +234,14 @@ class CleanupTests(unittest.TestCase):
                         {"ready": sorted(numbers)},
                     )
                     process.stdin.write(
-                        json.dumps({"operation": "cleanup", "numbers": list(numbers)})
+                        json.dumps(
+                            {
+                                "operation": "cleanup",
+                                "closedAt": dict.fromkeys(
+                                    numbers, "2026-10-02T00:00:00Z"
+                                ),
+                            }
+                        )
                         + "\n"
                     )
                     process.stdin.flush()
@@ -1023,7 +1030,13 @@ class CleanupTests(unittest.TestCase):
                     json.loads(process.stdout.readline()), {"ready": [41, 42]}
                 )
                 process.stdin.write(
-                    json.dumps({"operation": "cleanup", "numbers": [41, 42]}) + "\n"
+                    json.dumps(
+                        {
+                            "operation": "cleanup",
+                            "closedAt": dict.fromkeys([41, 42], "2026-10-02T00:00:00Z"),
+                        }
+                    )
+                    + "\n"
                 )
                 process.stdin.flush()
                 readable, _, _ = select.select([descriptor], [], [], 5)
@@ -1071,7 +1084,13 @@ class CleanupTests(unittest.TestCase):
                     json.loads(process.stdout.readline()), {"ready": [41, 42]}
                 )
                 process.stdin.write(
-                    json.dumps({"operation": "cleanup", "numbers": [41, 42]}) + "\n"
+                    json.dumps(
+                        {
+                            "operation": "cleanup",
+                            "closedAt": dict.fromkeys([41, 42], "2026-10-02T00:00:00Z"),
+                        }
+                    )
+                    + "\n"
                 )
                 process.stdin.flush()
                 self.assertTrue(select.select([descriptor], [], [], 5)[0])

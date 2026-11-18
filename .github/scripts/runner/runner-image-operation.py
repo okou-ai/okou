@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 
 WORK_SECONDS = 570  # Reserve reconciliation/termination inside the existing 600s call.
@@ -109,7 +110,7 @@ def lifecycle(owner):
                 if time.monotonic() >= deadline:
                     raise RuntimeError("image lifecycle lock deadline exceeded") from None
                 time.sleep(0.1)
-        yield
+        yield fd
     finally:
         os.close(fd)
 
@@ -124,12 +125,19 @@ def require_resource(owner):
         raise RuntimeError("image namespace retired; a new workflow attempt is required")
 
 
-def claim_resource(namespace, owner):
+def claim_resource(namespace, owner, run_created_at):
     lock = "/var/lock/vm0-runner-lifecycle-" + namespace.name + ".lock"
     owner["lifecycleLock"] = system(
         "python3", "-c", LOCK_BOOTSTRAP, "image-lifecycle-lock", lock
     ).strip()
-    with lifecycle(owner):
+    with lifecycle(owner) as lock_fd:
+        if namespace.name.startswith("pr-"):
+            created = datetime.strptime(run_created_at, "%Y-%m-%dT%H:%M:%SZ")
+            cutoff = os.read(lock_fd, 22)
+            if cutoff and created <= datetime.strptime(
+                cutoff.decode("ascii"), "%Y-%m-%dT%H:%M:%SZ\n"
+            ):
+                raise RuntimeError("image workflow predates PR closure; a fresh run is required")
         directory = "/var/lib/vm0-runner/bin/" + namespace.name
         system("install", "-d", "-m", "755", directory)
         owner["resourceRoot"] = system("realpath", "-e", directory).strip()
@@ -382,10 +390,9 @@ def remote(request):
                     retire(operation)
                     shutil.rmtree(operation)
                 # Record admission intent before creating managed resources.
-                # A lost, uncommitted claim cannot recreate a cleaned namespace.
                 claimed = dict(owner, operations=[], state="claiming")
                 atomic_json(owner_path, claimed)
-                claim_resource(namespace, claimed)
+                claim_resource(namespace, claimed, request.get("runCreatedAt"))
             elif not owner_admitted(previous, owner):
                 raise RuntimeError(
                     "image workflow claim incomplete or cancelled; a new attempt is required"
@@ -739,6 +746,8 @@ def main():
     if action == "validate":
         return 0
     request = {"action": action, "inputs": inputs, "source": source}
+    if action == "claim" and inputs["jobRef"].startswith("pr-"):
+        request["runCreatedAt"] = os.environ["RUNNER_IMAGE_RUN_CREATED_AT"]
     remote_host = user + "@" + host
     if action not in ("run", "guard"):
         reconnect(request, remote_host, 30)

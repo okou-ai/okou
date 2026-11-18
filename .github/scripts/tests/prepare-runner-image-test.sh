@@ -513,6 +513,7 @@ run_remote_case() {
     JOB_REF=pr-123 \
     HEAD_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
     GITHUB_RUN_ID=123 \
+    RUNNER_IMAGE_RUN_CREATED_AT="2026-10-01T00:00:00Z" \
     GITHUB_RUN_ATTEMPT=1 \
     METAL_HOSTS=dev-arm-1 \
     METAL_USER=ci \
