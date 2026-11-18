@@ -84,6 +84,19 @@ private final class PublicationAnalysis {
     self.helpers = helpers
   }
 
+  private func forLoop(_ loop: ForStmtSyntax, flow initial: Flow, locals: Set<String>) -> Flow {
+    var flow = initial
+    inspect(loop.sequence, flow: &flow, locals: locals)
+    var iteration = flow
+    iteration.suspended = iteration.suspended || loop.awaitKeyword != nil
+    var names = locals
+    if let name = loop.pattern.as(IdentifierPatternSyntax.self)?.identifier.text {
+      names.insert(name)
+    }
+    let body = block(loop.body.statements, flow: iteration, locals: names)
+    return merge([flow, body])
+  }
+
   func block(
     _ statements: CodeBlockItemListSyntax, flow initial: Flow, locals initialNames: Set<String>
   )
@@ -130,15 +143,7 @@ private final class PublicationAnalysis {
         }
         flow = merge(paths)
       } else if let loop = item.item.as(ForStmtSyntax.self) {
-        inspect(loop.sequence, flow: &flow, locals: locals)
-        var iteration = flow
-        iteration.suspended = iteration.suspended || loop.awaitKeyword != nil
-        var names = locals
-        if let name = loop.pattern.as(IdentifierPatternSyntax.self)?.identifier.text {
-          names.insert(name)
-        }
-        let body = block(loop.body.statements, flow: iteration, locals: names)
-        flow = merge([flow, body])
+        flow = forLoop(loop, flow: flow, locals: locals)
       } else if let loop = item.item.as(WhileStmtSyntax.self) {
         inspect(loop.conditions, flow: &flow, locals: locals)
         var iteration = flow

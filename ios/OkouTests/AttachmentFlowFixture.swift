@@ -47,28 +47,17 @@ final class AttachmentFlowFixture: Sendable {
       if path.hasPrefix("/api/agents/") && path.hasSuffix("/draft") {
         return try Self.agentDraftResponse(request, path: path, state: state)
       }
+      if let response = Self.supportResponse(path: path) { return response }
       switch path {
       case "/api/voice-io/quota", "/api/voice-io/transcribe/segment",
         "/api/voice-io/polish/segments":
         guard let voiceInput else { throw URLError(.unsupportedURL) }
         return try await voiceInput(request)
       case "/api/chat-threads/snapshot", "/api/chat-threads/events", "/api/indicators":
-        if let threadList { return try await threadList(request) }
-        switch path {
-        case "/api/chat-threads/snapshot":
-          return ChatHTTPResponse(
-            body: #"{"chatThreads":[],"latestEventId":null,"latestSeqId":null}"#)
-        case "/api/chat-threads/events":
-          return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
-        default:
-          return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
-        }
-      case "/api/chat-thread-drafts":
-        return ChatHTTPResponse(body: #"{"draftThreadIds":[]}"#)
+        return try await Self.navigationResponse(request, path: path, threadList: threadList)
       case "/api/workflows/for-composer":
         guard let workflows else { throw URLError(.unsupportedURL) }
         return try await workflows(request)
-      case "/api/web/file-url": return ChatHTTPResponse(body: "{}")
       case "/api/chat-threads/\(Self.threadID)/draft":
         await draftRead()
         return try ChatHTTPResponse(
@@ -86,15 +75,6 @@ final class AttachmentFlowFixture: Sendable {
         }
         return ChatHTTPResponse(status: failUpload && count == 1 ? 500 : 200, body: "")
       case "/api/uploads/complete": return ChatHTTPResponse(body: metadata)
-      case "/api/agents":
-        return ChatHTTPResponse(
-          body:
-            "[{\"agentId\":\"\(Self.agentID)\",\"displayName\":\"Okou\",\"isDefaultAgent\":true}]")
-
-      case "/api/feature-switches": return ChatHTTPResponse(body: #"{"effectiveSwitches":{}}"#)
-      case "/api/user-model-preference": return ChatHTTPResponse(body: "{}")
-      case "/api/run-models", "/api/model-catalog":
-        return ChatHTTPResponse(body: "{\"models\":[],\"routes\":[]}")
       case "/api/chat-threads":
         if let creationResponse { return try await creationResponse(request) }
         guard await creation() else {
@@ -103,13 +83,6 @@ final class AttachmentFlowFixture: Sendable {
         }
         return ChatHTTPResponse(
           status: 201, body: "{\"id\":\"\(Self.threadID)\",\"createdAt\":\"2026-10-19T10:00:00Z\"}")
-      case let path where path.hasSuffix("/connector-selections"):
-        return ChatHTTPResponse(body: "{\"selections\":[]}")
-      case let path where path.hasSuffix("/metadata"):
-        return ChatHTTPResponse(
-          body:
-            "{\"id\":\"\(Self.threadID)\",\"agentId\":\"\(Self.agentID)\",\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
-        )
       case let path where path.hasSuffix("/event-snapshot"):
         return ChatHTTPResponse(
           status: 404,
@@ -130,6 +103,47 @@ final class AttachmentFlowFixture: Sendable {
           acceptBeforeFailure: acceptBeforeFailure, sending: sending)
       default: throw URLError(.unsupportedURL)
       }
+    }
+  }
+
+  private static func navigationResponse(
+    _ request: URLRequest, path: String, threadList: ChatHTTPFixture.Handler?
+  ) async throws -> ChatHTTPResponse {
+    if let threadList { return try await threadList(request) }
+    switch path {
+    case "/api/chat-threads/snapshot":
+      return ChatHTTPResponse(
+        body: #"{"chatThreads":[],"latestEventId":null,"latestSeqId":null}"#)
+    case "/api/chat-threads/events":
+      return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+    default:
+      return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+    }
+  }
+
+  /// Shared navigation/metadata responses, independent of uploads, drafts and delivery.
+  private static func supportResponse(path: String) -> ChatHTTPResponse? {
+    switch path {
+    case "/api/chat-thread-drafts":
+      return ChatHTTPResponse(body: #"{"draftThreadIds":[]}"#)
+    case "/api/web/file-url": return ChatHTTPResponse(body: "{}")
+    case "/api/agents":
+      return ChatHTTPResponse(
+        body:
+          "[{\"agentId\":\"\(Self.agentID)\",\"displayName\":\"Okou\",\"isDefaultAgent\":true}]")
+
+    case "/api/feature-switches": return ChatHTTPResponse(body: #"{"effectiveSwitches":{}}"#)
+    case "/api/user-model-preference": return ChatHTTPResponse(body: "{}")
+    case "/api/run-models", "/api/model-catalog":
+      return ChatHTTPResponse(body: "{\"models\":[],\"routes\":[]}")
+    case let path where path.hasSuffix("/connector-selections"):
+      return ChatHTTPResponse(body: "{\"selections\":[]}")
+    case let path where path.hasSuffix("/metadata"):
+      return ChatHTTPResponse(
+        body:
+          "{\"id\":\"\(Self.threadID)\",\"agentId\":\"\(Self.agentID)\",\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
+      )
+    default: return nil
     }
   }
 

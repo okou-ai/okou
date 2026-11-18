@@ -97,10 +97,6 @@ enum OkouAvatarRig {
     let a = t * .pi * 2
     p.y = -1.3 + sin(a / 4) * 1.3
     switch mood {
-    case .idle:
-      applyIdlePose(&p, angle: a)
-    case .happy:
-      applyHappyPose(&p, angle: a)
     case .nod:
       applyNodPose(&p, at: t)
     case .shake:
@@ -109,38 +105,41 @@ enum OkouAvatarRig {
       applySleepyPose(&p, at: t, angle: a)
     case .surprise:
       applySurprisePose(&p, at: t)
-    case .think:
-      applyThinkPose(&p, angle: a)
-    case .shy:
-      applyShyPose(&p, angle: a)
     case .laugh:
       applyLaughPose(&p, at: t, angle: a)
     case .wink:
       applyWinkPose(&p, at: t, angle: a)
-    case .angry:
-      applyAngryPose(&p, angle: a)
     case .cry:
       applyCryPose(&p, at: t, angle: a)
-    case .pout:
-      applyPoutPose(&p, angle: a)
-    case .confused:
-      applyConfusedPose(&p, angle: a)
-    case .sweat:
-      applySweatPose(&p, angle: a)
     case .party:
       applyPartyPose(&p, at: t)
-    case .cool:
-      applyCoolPose(&p, angle: a)
-    case .please:
-      applyPleasePose(&p, angle: a)
-    case .kiss:
-      applyKissPose(&p, angle: a)
-    case .dizzy:
-      applyDizzyPose(&p, angle: a)
-    case .focus:
-      applyFocusPose(&p, angle: a)
+    case .idle, .happy, .think, .shy, .angry, .pout, .confused, .sweat, .cool, .please, .kiss,
+      .dizzy, .focus:
+      applyPhasePose(mood, to: &p, angle: a)
     }
     return p
+  }
+
+  /// Phase-driven poses share an angle; elapsed-time choreography stays in pose(_:at:).
+  private static func applyPhasePose(_ mood: OkouAvatarMood, to p: inout Pose, angle a: Double) {
+    switch mood {
+    case .idle: applyIdlePose(&p, angle: a)
+    case .happy: applyHappyPose(&p, angle: a)
+    case .think: applyThinkPose(&p, angle: a)
+    case .shy: applyShyPose(&p, angle: a)
+    case .angry: applyAngryPose(&p, angle: a)
+    case .pout: applyPoutPose(&p, angle: a)
+    case .confused: applyConfusedPose(&p, angle: a)
+    case .sweat: applySweatPose(&p, angle: a)
+    case .cool: applyCoolPose(&p, angle: a)
+    case .please: applyPleasePose(&p, angle: a)
+    case .kiss: applyKissPose(&p, angle: a)
+    case .dizzy: applyDizzyPose(&p, angle: a)
+    case .focus: applyFocusPose(&p, angle: a)
+    case .nod, .shake, .sleepy, .surprise, .laugh, .wink, .cry, .party:
+      // The exhaustive caller routes these moods before this private helper.
+      preconditionFailure("Elapsed-time poses must be applied by pose(_:at:)")
+    }
   }
 
   private static func applyIdlePose(_ p: inout Pose, angle a: Double) {

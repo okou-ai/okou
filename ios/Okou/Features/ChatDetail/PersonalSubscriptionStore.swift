@@ -152,18 +152,7 @@ final class PersonalSubscriptionStore {
       case .activate(let id): try await service.activate(id: id)
       case .disconnect(let id): try await service.disconnect(id: id)
       case .reset(let id):
-        let outcome: String
-        if let prior = resetOutcomes[id] {
-          outcome = prior
-        } else {
-          let key = resetKeys[id] ?? UUID().uuidString
-          resetKeys[id] = key
-          outcome = try await service.reset(id: id, idempotencyKey: key)
-          guard ["reset", "alreadyRedeemed", "nothingToReset", "noCredit"].contains(outcome)
-          else { throw APIClientError.invalidResponse }
-          resetOutcomes[id] = outcome
-          resetKeys[id] = nil
-        }
+        let outcome = try await resetUsage(id: id)
         switch outcome {
         case "reset", "alreadyRedeemed": message = String(localized: "Usage reset.")
         case "nothingToReset": message = String(localized: "No usage needs resetting.")
@@ -189,6 +178,23 @@ final class PersonalSubscriptionStore {
       if !confirmed, case .reconnect = input {} else if !confirmed { didFail(error) }
     }
     return false
+  }
+
+  /// Keeps an uncertain reset's idempotency key and a confirmed outcome for readback.
+  private func resetUsage(id: String) async throws -> String {
+    let outcome: String
+    if let prior = resetOutcomes[id] {
+      outcome = prior
+    } else {
+      let key = resetKeys[id] ?? UUID().uuidString
+      resetKeys[id] = key
+      outcome = try await service.reset(id: id, idempotencyKey: key)
+      guard ["reset", "alreadyRedeemed", "nothingToReset", "noCredit"].contains(outcome)
+      else { throw APIClientError.invalidResponse }
+      resetOutcomes[id] = outcome
+      resetKeys[id] = nil
+    }
+    return outcome
   }
 
   /// Owned by the workspace, so dismissal cannot cancel confirmed-write reconciliation.

@@ -257,6 +257,43 @@ public final class ConnectorAccessHTTPFixture: Sendable {
       body: "{\"id\":\"\(id)\",\"createdAt\":\"2026-11-03T00:00:00Z\",\"selectedModel\":null}")
   }
 
+  private static func threadResponse(
+    _ request: URLRequest, parts: [String], method: String, queriedTarget: Target,
+    state: inout State
+  ) throws -> ChatHTTPResponse? {
+    let id = parts[2]
+    if parts[3] == "metadata" {
+      return ChatHTTPResponse(
+        body: FixtureData.metadata.replacingOccurrences(of: FixtureData.threadID, with: id))
+    }
+    if parts[3] == "remote-access" { return ChatHTTPResponse(body: "{\"ssh\":[],\"vnc\":[]}") }
+    if parts[3] == "connector-access" {
+      return try connectorAccessResponse(
+        request, method: method, queriedTarget: queriedTarget, parts: parts, id: id, state: &state
+      )
+    }
+    if parts[3] == "connector-current" || parts[3] == "connector-account-approval" {
+      return try currentAccountResponse(request, parts: parts, id: id, state: &state)
+    }
+    return nil
+  }
+
+  private static func catalogResponse(path: String) -> ChatHTTPResponse? {
+    if path == "/api/connector-catalog/slack" {
+      return ChatHTTPResponse(body: FixtureData.catalog())
+    }
+    if path == "/api/custom-connectors/\(FixtureData.customID)" {
+      return ChatHTTPResponse(body: FixtureData.custom())
+    }
+    if path == "/api/connector-catalog/slack/permissions" {
+      return ChatHTTPResponse(
+        body:
+          "{\"permissions\":{\"connectorSlug\":\"slack\",\"label\":\"Slack\",\"permissions\":[{\"name\":\"read\",\"description\":\"Read messages\"},{\"name\":\"write\",\"description\":\"Send messages\"}],\"defaultPolicy\":{\"permissionDefault\":\"ask\",\"permissionOverrides\":null,\"unknownPolicy\":\"ask\"},\"categories\":null}}"
+      )
+    }
+    return nil
+  }
+
   private static func respond(
     _ request: URLRequest, state: inout State
   ) throws -> ChatHTTPResponse {
@@ -288,18 +325,7 @@ public final class ConnectorAccessHTTPFixture: Sendable {
           "{\"computerUseHosts\":[],\"cloudBrowserAvailable\":true,\"cloudBrowserEnabledByDefault\":false,\"sshHosts\":[],\"vncHosts\":[]}"
       )
     }
-    if path == "/api/connector-catalog/slack" {
-      return ChatHTTPResponse(body: FixtureData.catalog())
-    }
-    if path == "/api/custom-connectors/\(FixtureData.customID)" {
-      return ChatHTTPResponse(body: FixtureData.custom())
-    }
-    if path == "/api/connector-catalog/slack/permissions" {
-      return ChatHTTPResponse(
-        body:
-          "{\"permissions\":{\"connectorSlug\":\"slack\",\"label\":\"Slack\",\"permissions\":[{\"name\":\"read\",\"description\":\"Read messages\"},{\"name\":\"write\",\"description\":\"Send messages\"}],\"defaultPolicy\":{\"permissionDefault\":\"ask\",\"permissionOverrides\":null,\"unknownPolicy\":\"ask\"},\"categories\":null}}"
-      )
-    }
+    if let response = catalogResponse(path: path) { return response }
     if path == "/api/connector-accounts/connections" {
       return connectionsResponse(query: query, queriedTarget: queriedTarget, state: state)
     }
@@ -333,19 +359,10 @@ public final class ConnectorAccessHTTPFixture: Sendable {
       return try createThreadResponse(request, state: &state)
     }
     if parts.count >= 4, parts[1] == "chat-threads" {
-      let id = parts[2]
-      if parts[3] == "metadata" {
-        return ChatHTTPResponse(
-          body: FixtureData.metadata.replacingOccurrences(of: FixtureData.threadID, with: id))
-      }
-      if parts[3] == "remote-access" { return ChatHTTPResponse(body: "{\"ssh\":[],\"vnc\":[]}") }
-      if parts[3] == "connector-access" {
-        return try connectorAccessResponse(
-          request, method: method, queriedTarget: queriedTarget, parts: parts, id: id, state: &state
-        )
-      }
-      if parts[3] == "connector-current" || parts[3] == "connector-account-approval" {
-        return try currentAccountResponse(request, parts: parts, id: id, state: &state)
+      if let response = try threadResponse(
+        request, parts: parts, method: method, queriedTarget: queriedTarget, state: &state)
+      {
+        return response
       }
     }
     if path == "/api/chat/events" {

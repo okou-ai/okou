@@ -67,37 +67,13 @@ final class ConversationHistoryFixture: Sendable {
       if let artifactResources, artifactRequest {
         return try await artifactResources(request)
       }
+      if let response = try await Self.navigationResponse(
+        request, path: path, threadSnapshot: threadSnapshot,
+        indicators: indicators, additional: additional)
+      {
+        return response
+      }
       switch request.url?.path {
-      case "/api/indicators":
-        if let indicators { return try await indicators(request) }
-        if let additional { return try await additional(request) }
-        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
-      case "/api/chat-threads/snapshot":
-        if let threadSnapshot { return try await threadSnapshot(request) }
-        return Self.threadSnapshotResponse()
-      case "/api/chat-threads/events":
-        let since =
-          URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
-          .first { $0.name == "sinceSeqId" }?.value.flatMap(Int.init) ?? 0
-        let event = """
-          {"id":"60000000-0000-4000-8000-000000000090","seqId":1,"kind":"created","chatThreadId":"\(Self.threadID)","agentId":"\(Self.agentID)","title":"History","createdAt":"2026-10-20T00:00:00Z"}
-          """
-        return ChatHTTPResponse(body: "{\"events\":[\(since == 0 ? event : "")],\"hasMore\":false}")
-      case "/api/ios-notifications/prefetch":
-        return ChatHTTPResponse(body: #"{"success":true}"#)
-      case path + "/activity-summary":
-        let body = try JSONDecoder().decode([String: String].self, from: chatRequestBody(request))
-        let data = try JSONSerialization.data(withJSONObject: [
-          "runId": body["runId"] ?? "", "status": "ineligible", "messages": []
-        ])
-        return ChatHTTPResponse(body: String(data: data, encoding: .utf8)!)
-      case "/api/connector-catalog/slack":
-        return ChatHTTPResponse(body: ConnectorHTTPFixtures.catalog())
-      case "/api/connector-accounts/connections":
-        return ChatHTTPResponse(
-          body: #"{"connections":[],"nextCursor":null,"defaultConnection":null}"#)
-      case "/api/agents/\(Self.agentID)/user-connectors":
-        return ChatHTTPResponse(body: #"{"enabledConnectorSlugs":[]}"#)
       case path + "/usage":
         guard let usage else { throw URLError(.unsupportedURL) }
         return try await usage(request)
@@ -127,12 +103,6 @@ final class ConversationHistoryFixture: Sendable {
         return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
       case path + "/mark-read":
         return ChatHTTPResponse(body: "{\"lastReadAt\":\"2026-10-20T00:00:00Z\"}")
-      case path + "/connector-selections": return ChatHTTPResponse(body: "{\"selections\":[]}")
-      case path + "/metadata":
-        return ChatHTTPResponse(
-          body:
-            "{\"id\":\"\(Self.threadID)\",\"agentId\":\"\(Self.agentID)\",\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
-        )
       case "/api/chat/events":
         requests.sentMessages.withLock { $0.append(chatRequestBody(request)) }
         if let send { return try await send(request) }
@@ -142,6 +112,51 @@ final class ConversationHistoryFixture: Sendable {
         if let additional { return try await additional(request) }
         throw URLError(.unsupportedURL)
       }
+    }
+  }
+
+  private static func navigationResponse(
+    _ request: URLRequest, path: String, threadSnapshot: ChatHTTPFixture.Handler?,
+    indicators: ChatHTTPFixture.Handler?, additional: ChatHTTPFixture.Handler?
+  ) async throws -> ChatHTTPResponse? {
+    switch request.url?.path {
+    case "/api/indicators":
+      if let indicators { return try await indicators(request) }
+      if let additional { return try await additional(request) }
+      return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+    case "/api/chat-threads/snapshot":
+      if let threadSnapshot { return try await threadSnapshot(request) }
+      return Self.threadSnapshotResponse()
+    case "/api/chat-threads/events":
+      let since =
+        URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
+        .first { $0.name == "sinceSeqId" }?.value.flatMap(Int.init) ?? 0
+      let event = """
+        {"id":"60000000-0000-4000-8000-000000000090","seqId":1,"kind":"created","chatThreadId":"\(Self.threadID)","agentId":"\(Self.agentID)","title":"History","createdAt":"2026-10-20T00:00:00Z"}
+        """
+      return ChatHTTPResponse(body: "{\"events\":[\(since == 0 ? event : "")],\"hasMore\":false}")
+    case "/api/ios-notifications/prefetch":
+      return ChatHTTPResponse(body: #"{"success":true}"#)
+    case path + "/activity-summary":
+      let body = try JSONDecoder().decode([String: String].self, from: chatRequestBody(request))
+      let data = try JSONSerialization.data(withJSONObject: [
+        "runId": body["runId"] ?? "", "status": "ineligible", "messages": []
+      ])
+      return ChatHTTPResponse(body: String(data: data, encoding: .utf8)!)
+    case "/api/connector-catalog/slack":
+      return ChatHTTPResponse(body: ConnectorHTTPFixtures.catalog())
+    case "/api/connector-accounts/connections":
+      return ChatHTTPResponse(
+        body: #"{"connections":[],"nextCursor":null,"defaultConnection":null}"#)
+    case "/api/agents/\(Self.agentID)/user-connectors":
+      return ChatHTTPResponse(body: #"{"enabledConnectorSlugs":[]}"#)
+    case path + "/connector-selections": return ChatHTTPResponse(body: "{\"selections\":[]}")
+    case path + "/metadata":
+      return ChatHTTPResponse(
+        body:
+          "{\"id\":\"\(Self.threadID)\",\"agentId\":\"\(Self.agentID)\",\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
+      )
+    default: return nil
     }
   }
 

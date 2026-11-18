@@ -307,6 +307,44 @@ final class ComposerDraftStore {
     }
   }
 
+  /// Reconciles a confirmed read without replacing concurrent local edits or imports.
+  private func reconcileRemote(_ remote: ComposerDraft, startedRevision: Int) -> Bool {
+    if dirty {
+      // The API has no conditional writes. Refuse a known changed snapshot on reconnect;
+      // overlapping writes after this read still follow the API's last-writer semantics.
+      let changedElsewhere = baseline.map { $0 != remote } ?? (remote != ComposerDraft())
+      if changedElsewhere && remote != value
+        && (baseline != nil || startedRevision == revision)
+      {
+        conflictingRemote = remote
+        syncError = "This draft changed on another device. Choose which draft to keep."
+        persist()
+        return false
+      }
+    } else if startedRevision == revision {
+      if cleared && remote != value {
+        conflictingRemote = remote
+        syncError =
+          "A draft appeared after this device cleared it. Choose which draft to keep."
+        persist()
+        return false
+      }
+      // Providers can still be preparing their file. Preserve that action
+      // through the same conflict path as interrupted local attachments.
+      if revision == 0 && attachments.importingCount == 0
+        && !attachments.savedItems.contains(where: { $0.uploaded == nil })
+      {
+        if remote != value { apply(remote) }
+      } else if remote != baseline && remote != value {
+        conflictingRemote = remote
+        syncError = "This draft changed on another device. Choose which draft to keep."
+        persist()
+        return false
+      }
+    }
+    return true
+  }
+
   func synchronize() async {
     guard !closed, isForeground, !Task.isCancelled, !localReadFailed, let repository else { return }
     if let syncTask {
@@ -329,39 +367,7 @@ final class ComposerDraftStore {
           syncWarning = nil
           try Task.checkCancellation()
           guard !closed else { return }
-          if dirty {
-            // The API has no conditional writes. Refuse a known changed snapshot on reconnect;
-            // overlapping writes after this read still follow the API's last-writer semantics.
-            let changedElsewhere = baseline.map { $0 != remote } ?? (remote != ComposerDraft())
-            if changedElsewhere && remote != value
-              && (baseline != nil || startedRevision == revision)
-            {
-              conflictingRemote = remote
-              syncError = "This draft changed on another device. Choose which draft to keep."
-              persist()
-              return
-            }
-          } else if startedRevision == revision {
-            if cleared && remote != value {
-              conflictingRemote = remote
-              syncError =
-                "A draft appeared after this device cleared it. Choose which draft to keep."
-              persist()
-              return
-            }
-            // Providers can still be preparing their file. Preserve that action
-            // through the same conflict path as interrupted local attachments.
-            if revision == 0 && attachments.importingCount == 0
-              && !attachments.savedItems.contains(where: { $0.uploaded == nil })
-            {
-              if remote != value { apply(remote) }
-            } else if remote != baseline && remote != value {
-              conflictingRemote = remote
-              syncError = "This draft changed on another device. Choose which draft to keep."
-              persist()
-              return
-            }
-          }
+          guard reconcileRemote(remote, startedRevision: startedRevision) else { return }
           baseline = remote
           guard document.isSupported else {
             syncError = "This draft contains content this app cannot edit. Open it on the web."

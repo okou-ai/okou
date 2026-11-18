@@ -200,16 +200,7 @@ final class NativeLifetimeTrace {
       return switchStatement(statement, path: path)
     }
     if let statement = node.as(ReturnStmtSyntax.self) {
-      if let expression = statement.expression {
-        let returned = value(expression, path: &path)
-        if !teardown, returned != .unknown { path.transferred = true }
-        if kind.isTask, teardown, returned == .completion {
-          // A returned cleanup Task transfers an explicit drain to its caller.
-          path.released = true
-        }
-      }
-      path.exit = .returned
-      return [path]
+      return [returnPath(statement, path: path)]
     }
     if node.is(ThrowStmtSyntax.self) {
       path.exit = .thrown
@@ -258,6 +249,22 @@ final class NativeLifetimeTrace {
       return [path, failure]
     }
     return [path]
+  }
+
+  private func returnPath(
+    _ statement: ReturnStmtSyntax, path initial: NativeLifetimePath
+  ) -> NativeLifetimePath {
+    var path = initial
+    if let expression = statement.expression {
+      let returned = value(expression, path: &path)
+      if !teardown, returned != .unknown { path.transferred = true }
+      if kind.isTask, teardown, returned == .completion {
+        // A returned cleanup Task transfers an explicit drain to its caller.
+        path.released = true
+      }
+    }
+    path.exit = .returned
+    return path
   }
 
   private func declare(_ variable: VariableDeclSyntax, path: inout NativeLifetimePath) {
