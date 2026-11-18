@@ -276,6 +276,15 @@ impl StorageCacheBackgroundFillCoordinator {
         // Already accepted same-key promotions above keep ownership even when
         // they exceed this class cap; no entry is evicted to make room.
         let missing = action.is_missing();
+        // Maintenance can use its reserved positions once a missing-archive
+        // burst has expanded the shared queue.
+        let reserve_for_maintenance =
+            !missing && state.pending.len() > BACKGROUND_FILL_QUEUE_CAPACITY;
+        let queue_capacity = if (missing && expand_queue) || reserve_for_maintenance {
+            inner.queue_capacity
+        } else {
+            inner.queue_capacity.min(BACKGROUND_FILL_QUEUE_CAPACITY)
+        };
         let same_class = state
             .entries
             .values()
@@ -284,15 +293,6 @@ impl StorageCacheBackgroundFillCoordinator {
                     && entry.action.is_missing() == missing
             })
             .count();
-        // Maintenance can use the reserved positions when slow archive
-        // admission has already queued more than a normal wave of misses.
-        let reserve_for_maintenance =
-            !missing && state.pending.len() - same_class > BACKGROUND_FILL_MAINTENANCE_QUEUE_LIMIT;
-        let queue_capacity = if expand_queue || reserve_for_maintenance {
-            inner.queue_capacity
-        } else {
-            inner.queue_capacity.min(BACKGROUND_FILL_QUEUE_CAPACITY)
-        };
         let reserved = inner.active_limit.min(queue_capacity / 2);
         let mut class_capacity = queue_capacity - reserved;
         if !missing {
@@ -326,7 +326,6 @@ impl StorageCacheBackgroundFillCoordinator {
         groups: Vec<(CacheTargetGroup, BackgroundFillAction)>,
         home: HomePaths,
         reporter: SandboxOpReporter,
-        expand_queue: bool,
     ) -> Result<(), Vec<(CacheTargetGroup, BackgroundFillAction)>> {
         let Some((_, BackgroundFillAction::WarmDecoded(cache))) = groups.first() else {
             return Err(groups);
@@ -378,7 +377,7 @@ impl StorageCacheBackgroundFillCoordinator {
                     home.clone(),
                     reporter.clone(),
                     action,
-                    expand_queue,
+                    false,
                 );
                 record_background_admission(admission, &mut accepted, &mut records);
             }
@@ -822,12 +821,7 @@ impl DeferredBackgroundFill {
                         batch.push(next);
                     }
                 }
-                match coordinator.try_classify_warming(
-                    batch,
-                    self.home.clone(),
-                    reporter.clone(),
-                    self.expand_queue,
-                ) {
+                match coordinator.try_classify_warming(batch, self.home.clone(), reporter.clone()) {
                     Ok(()) => continue,
                     Err(batch) => batch,
                 }

@@ -3975,7 +3975,18 @@ async fn background_fill_only_expands_the_waiting_limit_with_slow_delivery() {
         let body = tarball_bytes();
         let server = gated_archive_server(body.clone(), accepted).await;
         let coordinator = StorageCacheBackgroundFillCoordinator::new().unwrap();
+        let cache = decoded::DecodedCache::new(home.clone());
         let mut telemetry = new_telemetry();
+        let mut maintenance = Vec::new();
+        for index in 0..5 {
+            let name = format!("maintenance-{index}");
+            write_cached_archive(&home, &name, "v1", &body);
+            write_storage_lock(&home, &name, "v1");
+            cache.warm_from_archive(&name, "v1").await.unwrap();
+            let group =
+                background_fill_group(server.url.clone(), &name, "v1", Some(body.len() as u64));
+            maintenance.push((group, BackgroundFillAction::RetireArchive(cache.clone())));
+        }
         let groups = (0..64)
             .map(|index| {
                 let group = background_fill_group(
@@ -3995,11 +4006,33 @@ async fn background_fill_only_expands_the_waiting_limit_with_slow_delivery() {
         }
         .start(&coordinator, &mut telemetry);
 
+        let mut maintenance_telemetry = new_telemetry();
+        DeferredBackgroundFill {
+            groups: maintenance,
+            home: home.clone(),
+            selected_at: Instant::now(),
+            expand_queue: false,
+        }
+        .start(&coordinator, &mut maintenance_telemetry);
+        let ops = maintenance_telemetry.pending_ops_snapshot();
+        assert_op(
+            &ops,
+            "storage_cache_background_fill_scheduled_count_3_4",
+            true,
+        );
+        assert_eq!(
+            ops.iter()
+                .filter(|(op, _, _)| op == STORAGE_CACHE_BACKGROUND_FILL_QUEUE_SATURATED)
+                .count(),
+            1,
+        );
+
         server.release.add_permits(accepted);
         tokio::time::timeout(Duration::from_secs(5), coordinator.wait_idle_for_test())
             .await
             .expect("accepted archives should be published");
         coordinator.shutdown().await;
+        cache.shutdown().await;
         join_raw_http_task(server.task, "released background archive requests")
             .await
             .unwrap();
