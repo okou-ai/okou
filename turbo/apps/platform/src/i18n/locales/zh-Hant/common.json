@@ -1182,6 +1182,7 @@
       },
       "highlights": {
         "addOnConcurrency": "隨時擴充任務容量",
+        "advancedTools": "內建數十種進階工具",
         "appPermissions": "依操作和期限授權",
         "browserAndComputer": "瀏覽器與電腦操作",
         "concurrentAgents": "同時執行 {{slots}} 項工作",
@@ -1189,7 +1190,6 @@
         "create": "簡報、文件、圖片、網站和圖表",
         "everythingInBuiltForTeams": "包含 {{plan}} 的全部功能，支援團隊協作",
         "exports": "PDF、Excel、Google Docs 和 Sheets",
-        "included": "已包含",
         "memberManagement": "成員角色與用量方案",
         "proDetails": "語音：每天 {{requests}} 次、{{minutes}} 分鐘 · 電子郵件支援",
         "projectContext": "跨對話共用專案脈絡",

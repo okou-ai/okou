@@ -950,7 +950,7 @@ function planHighlightsLabel(tier: UsagePackPlanTier): string {
         { plan: planName("pro") },
       )
     : i18n.t(($) => {
-        return $.billing.plans.highlights.included;
+        return $.billing.plans.highlights.advancedTools;
       });
 }
 

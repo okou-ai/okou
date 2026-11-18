@@ -1186,6 +1186,7 @@
       },
       "highlights": {
         "addOnConcurrency": "Mehr Kapazität hinzufügen",
+        "advancedTools": "Dutzende integrierte Profi-Tools",
         "appPermissions": "Gezielte, zeitlich begrenzte App-Zugriffe",
         "browserAndComputer": "Browser- und Computernutzung",
         "concurrentAgents": "{{slots}} Aufgaben gleichzeitig",
@@ -1193,7 +1194,6 @@
         "create": "Folien, Dokumente, Bilder, Websites & Diagramme",
         "everythingInBuiltForTeams": "Alles aus {{plan}}, für die Zusammenarbeit im Team",
         "exports": "PDF, Excel, Google Docs & Sheets",
-        "included": "Enthalten",
         "memberManagement": "Mitgliederrollen & Nutzungspakete",
         "proDetails": "Sprache: {{requests}} Anfragen, {{minutes}} Min./Tag · E-Mail-Support",
         "projectContext": "Projektkontext über Chats hinweg",

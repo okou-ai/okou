@@ -1182,6 +1182,7 @@
       },
       "highlights": {
         "addOnConcurrency": "随时扩充任务容量",
+        "advancedTools": "内置数十种高级工具",
         "appPermissions": "按操作和时限授权",
         "browserAndComputer": "浏览器与电脑操作",
         "concurrentAgents": "同时运行 {{slots}} 项工作",
@@ -1189,7 +1190,6 @@
         "create": "演示、文档、图片、网站和图表",
         "everythingInBuiltForTeams": "包含 {{plan}} 的全部功能，支持团队协作",
         "exports": "PDF、Excel、Google Docs 和 Sheets",
-        "included": "已包含",
         "memberManagement": "成员角色与用量包",
         "proDetails": "语音：每天 {{requests}} 次、{{minutes}} 分钟 · 邮件支持",
         "projectContext": "跨对话共享项目上下文",

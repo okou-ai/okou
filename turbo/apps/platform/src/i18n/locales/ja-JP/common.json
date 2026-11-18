@@ -1182,6 +1182,7 @@
       },
       "highlights": {
         "addOnConcurrency": "処理容量を追加",
+        "advancedTools": "数十種類の高度なツールを内蔵",
         "appPermissions": "操作と期限を指定したアプリ権限",
         "browserAndComputer": "ブラウザとパソコンの操作",
         "concurrentAgents": "{{slots}} 件のタスクを同時実行",
@@ -1189,7 +1190,6 @@
         "create": "スライド、文書、画像、サイト、グラフ",
         "everythingInBuiltForTeams": "{{plan}} の全機能に、チームでの活用を",
         "exports": "PDF、Excel、Google Docs、Sheets",
-        "included": "含まれるもの",
         "memberManagement": "メンバー権限と利用パッケージ",
         "proDetails": "音声：1日 {{requests}} 回、{{minutes}} 分 · メールサポート",
         "projectContext": "チャット間でプロジェクトの文脈を共有",

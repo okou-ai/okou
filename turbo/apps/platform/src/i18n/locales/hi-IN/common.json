@@ -1186,6 +1186,7 @@
       },
       "highlights": {
         "addOnConcurrency": "अधिक क्षमता जोड़ें",
+        "advancedTools": "दर्जनों उन्नत टूल, पहले से शामिल",
         "appPermissions": "सीमित दायरे और अवधि वाली ऐप पहुँच",
         "browserAndComputer": "ब्राउज़र और कंप्यूटर का उपयोग",
         "concurrentAgents": "एक साथ {{slots}} काम",
@@ -1193,7 +1194,6 @@
         "create": "प्रस्तुतियाँ, दस्तावेज़, चित्र, वेबसाइट और चार्ट",
         "everythingInBuiltForTeams": "{{plan}} की सभी सुविधाएं, टीमवर्क के लिए",
         "exports": "PDF, Excel, Google Docs और Sheets",
-        "included": "शामिल",
         "memberManagement": "सदस्यों की भूमिकाएँ और उपयोग पैकेज",
         "proDetails": "वॉइस: {{requests}} अनुरोध, {{minutes}} मिनट/दिन · ईमेल सहायता",
         "projectContext": "चैट में साझा प्रोजेक्ट संदर्भ",

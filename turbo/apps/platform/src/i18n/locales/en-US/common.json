@@ -1186,6 +1186,7 @@
       },
       "highlights": {
         "addOnConcurrency": "Add more capacity",
+        "advancedTools": "Dozens of advanced tools, built in",
         "appPermissions": "Scoped, time-limited app access",
         "browserAndComputer": "Browser & computer use",
         "concurrentAgents": "{{slots}} tasks running at once",
@@ -1193,7 +1194,6 @@
         "create": "Slides, docs, images, sites & charts",
         "everythingInBuiltForTeams": "Everything in {{plan}}, built for teamwork",
         "exports": "PDF, Excel, Google Docs & Sheets",
-        "included": "Included",
         "memberManagement": "Member roles & usage packages",
         "proDetails": "Voice: {{requests}} requests, {{minutes}} min/day · Email support",
         "projectContext": "Project context across chats",

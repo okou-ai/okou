@@ -1182,6 +1182,7 @@
       },
       "highlights": {
         "addOnConcurrency": "처리 용량 추가",
+        "advancedTools": "수십 가지 고급 도구 내장",
         "appPermissions": "범위와 기한을 지정한 앱 접근",
         "browserAndComputer": "브라우저 및 컴퓨터 사용",
         "concurrentAgents": "{{slots}}개 작업 동시 실행",
@@ -1189,7 +1190,6 @@
         "create": "발표 자료, 문서, 이미지, 웹사이트, 차트",
         "everythingInBuiltForTeams": "{{plan}}의 모든 기능으로 팀과 함께 작업",
         "exports": "PDF, Excel, Google Docs, Sheets",
-        "included": "포함 사항",
         "memberManagement": "멤버 역할 및 사용량 패키지",
         "proDetails": "음성: 하루 {{requests}}회, {{minutes}}분 · 이메일 지원",
         "projectContext": "채팅 간 프로젝트 맥락 공유",

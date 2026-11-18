@@ -1210,6 +1210,7 @@
       },
       "highlights": {
         "addOnConcurrency": "Aggiungi capacità",
+        "advancedTools": "Decine di strumenti avanzati integrati",
         "appPermissions": "Accessi alle app mirati e temporanei",
         "browserAndComputer": "Uso del browser e del computer",
         "concurrentAgents": "{{slots}} attività contemporaneamente",
@@ -1217,7 +1218,6 @@
         "create": "Presentazioni, documenti, immagini, siti e grafici",
         "everythingInBuiltForTeams": "Tutto ciò che include {{plan}}, pensato per il lavoro di squadra",
         "exports": "PDF, Excel, Google Docs e Sheets",
-        "included": "Incluso",
         "memberManagement": "Ruoli e pacchetti di utilizzo",
         "proDetails": "Voce: {{requests}} richieste, {{minutes}} min/giorno · Supporto email",
         "projectContext": "Contesto del progetto tra le chat",

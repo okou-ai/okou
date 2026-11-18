@@ -1182,6 +1182,7 @@
       },
       "highlights": {
         "addOnConcurrency": "Tambah kapasitas",
+        "advancedTools": "Puluhan alat canggih bawaan",
         "appPermissions": "Akses aplikasi spesifik dan berbatas waktu",
         "browserAndComputer": "Penggunaan browser dan komputer",
         "concurrentAgents": "{{slots}} tugas berjalan sekaligus",
@@ -1189,7 +1190,6 @@
         "create": "Presentasi, dokumen, gambar, situs dan grafik",
         "everythingInBuiltForTeams": "Semua fitur {{plan}}, dirancang untuk kerja tim",
         "exports": "PDF, Excel, Google Docs dan Sheets",
-        "included": "Termasuk",
         "memberManagement": "Peran anggota dan paket penggunaan",
         "proDetails": "Suara: {{requests}} permintaan, {{minutes}} menit/hari · Dukungan email",
         "projectContext": "Konteks proyek lintas chat",
