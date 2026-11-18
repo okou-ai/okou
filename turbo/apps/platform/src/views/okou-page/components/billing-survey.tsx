@@ -3,7 +3,7 @@ import { MessageSquare } from "lucide-react";
 import { useLastResolved, useSet, useGet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Button, cn } from "@okouai/ui";
+import { Button } from "@okouai/ui";
 import {
   Dialog,
   DialogClose,
@@ -83,12 +83,7 @@ function SurveyOptions<Answer extends string>({
           return (
             <label
               key={answer}
-              className={cn(
-                "flex min-h-10 cursor-default items-center gap-3 rounded-lg px-3 py-2 text-sm leading-5 text-foreground transition-colors has-data-disabled:cursor-not-allowed",
-                !disabled &&
-                  "[&:hover]:bg-state-hover-overlay [&:active]:bg-state-pressed-overlay",
-                selected === answer && "bg-nested-fill",
-              )}
+              className="flex min-h-10 cursor-default items-center gap-3 px-3 py-2 text-sm leading-5 text-foreground has-data-disabled:cursor-not-allowed"
             >
               <Radio value={answer} />
               <span className="min-w-0 break-words">{label(answer)}</span>
