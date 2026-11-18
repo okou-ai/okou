@@ -13,7 +13,7 @@ Validates a current-run runner image manifest and emits GitHub output values.
 Required env:
   MANIFEST_PATH, HEAD_SHA, JOB_REF, TARGET, PROFILE, METAL_HOSTS
 Optional env:
-  SELECTED_HOST
+  SELECTED_HOST, PRODUCER_RUN_ID (required for run-scoped binary directories)
 USAGE
 }
 
@@ -72,7 +72,15 @@ validate() {
   bin_dir=$(json_get '.binDir')
   runner_dir=$(json_get '.runnerDir')
   runner_sha=$(json_get '.runnerSha256')
-  [ -n "$bin_dir" ] || { echo "manifest missing binDir" >&2; exit 1; }
+  runner_image_bin_dir_matches "$JOB_REF" "$bin_dir" || {
+    echo "manifest binDir does not match the image namespace" >&2
+    exit 1
+  }
+  if [ "$bin_dir" != "/var/lib/vm0-runner/bin/${JOB_REF}" ] &&
+    [ "$bin_dir" != "/var/lib/vm0-runner/bin/${JOB_REF}-image-${PRODUCER_RUN_ID:-}" ]; then
+    echo "manifest binDir does not match producer run" >&2
+    exit 1
+  fi
   [ -n "$runner_dir" ] || { echo "manifest missing runnerDir" >&2; exit 1; }
   [ -n "$runner_sha" ] || { echo "manifest missing runnerSha256" >&2; exit 1; }
 

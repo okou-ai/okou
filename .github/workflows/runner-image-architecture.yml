@@ -370,6 +370,16 @@ jobs:
           grafana-cloud-api-key: ${{ secrets.GRAFANA_CLOUD_API_KEY }}
           env-label: dev
 
+      - name: Resolve PR image run creation time
+        if: startsWith(inputs.job-ref, 'pr-')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          created_at=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" |
+            jq -er '.created_at | strings | select(test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))')
+          printf 'RUNNER_IMAGE_RUN_CREATED_AT=%s\n' "$created_at" >> "$GITHUB_ENV"
+
       - name: Build runner image on all metal hosts
         env:
           EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.binary-input.outputs.binary-input-digest }}
@@ -390,6 +400,7 @@ jobs:
       - name: Validate manifest
         env:
           MANIFEST_PATH: runner-image-manifest/manifest.json
+          PRODUCER_RUN_ID: ${{ github.run_id }}
           HEAD_SHA: ${{ inputs.head-sha }}
           JOB_REF: ${{ inputs.job-ref }}
           TARGET: ${{ env.TARGET_TRIPLE }}

@@ -39,6 +39,10 @@ if [ "$1" = "api" ]; then
   request="$2"
   artifact_name="${request#*name=}"
   artifact_name="${artifact_name%%&*}"
+  producer=42
+  if [[ "$artifact_name" == *x86_64* && "${FAKE_X86_MISMATCH:-}" = 1 ]]; then
+    producer=43
+  fi
   printf 'HTTP/2.0 200 OK\r\n\r\n'
   cat <<JSON
 {
@@ -47,7 +51,7 @@ if [ "$1" = "api" ]; then
       "name": "$artifact_name",
       "expired": false,
       "workflow_run": {
-        "id": 42,
+        "id": $producer,
         "head_sha": "$HEAD_SHA"
       }
     }
@@ -116,7 +120,7 @@ make_manifest() {
 
   jq -n \
     --arg head_sha "head-sha" \
-    --arg job_ref "job-ref" \
+    --arg job_ref "pr-123" \
     --arg profile "debug" \
     --arg target "$target" \
     --arg bin_dir "$bin_dir" \
@@ -152,7 +156,7 @@ make_manifest() {
 make_manifest \
   "$MANIFEST_DIR/arm64.json" \
   "aarch64-unknown-linux-musl" \
-  "/var/lib/vm0-runner/bin/job-ref" \
+  "/var/lib/vm0-runner/bin/pr-123-image-42" \
   "/var/lib/vm0-runner/runners/job-ref" \
   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
   '{
@@ -163,7 +167,7 @@ make_manifest \
 make_manifest \
   "$MANIFEST_DIR/x86_64.json" \
   "x86_64-unknown-linux-musl" \
-  "/var/lib/vm0-runner/bin/job-ref" \
+  "/var/lib/vm0-runner/bin/pr-123-image-42" \
   "/var/lib/vm0-runner/runners/job-ref" \
   "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
   '{"x86-1": {"rootfsHash": "rootfs-x86-1", "snapshotHash": "snapshot-x86-1"}}'
@@ -171,7 +175,7 @@ make_manifest \
 make_manifest \
   "$MANIFEST_DIR/x86_64-mismatch.json" \
   "x86_64-unknown-linux-musl" \
-  "/var/lib/vm0-runner/bin/other-job-ref" \
+  "/var/lib/vm0-runner/bin/pr-123-image-43" \
   "/var/lib/vm0-runner/runners/job-ref" \
   "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
   '{"x86-1": {"rootfsHash": "rootfs-x86-1", "snapshotHash": "snapshot-x86-1"}}'
@@ -184,7 +188,7 @@ run_wait_groups() {
     AWS_METAL_RUNNER_HOSTS="arm-1,arm-2,x86-1" \
     METAL_USER="ci" \
     HEAD_SHA="head-sha" \
-    JOB_REF="job-ref" \
+    JOB_REF="pr-123" \
     LOOKUP_SHA="head-sha" \
     PROFILE="debug" \
     REPO="okou-ai/okou" \
@@ -207,7 +211,7 @@ assert_output_contains() {
 output_file="$TEST_DIR/output"
 run_wait_groups "$output_file"
 
-assert_output_contains "$output_file" 'bin-dir=/var/lib/vm0-runner/bin/job-ref'
+assert_output_contains "$output_file" 'bin-dir=/var/lib/vm0-runner/bin/pr-123-image-42'
 assert_output_contains "$output_file" 'runner-dir=/var/lib/vm0-runner/runners/job-ref'
 assert_output_contains "$output_file" 'runner-sha-map={"aarch64-unknown-linux-musl":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","x86_64-unknown-linux-musl":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}'
 assert_output_contains "$output_file" '"arm-1":"rootfs-arm-1"'
@@ -215,6 +219,21 @@ assert_output_contains "$output_file" '"arm-2":"rootfs-arm-2"'
 assert_output_contains "$output_file" '"x86-1":"rootfs-x86-1"'
 assert_output_contains "$output_file" '"arm-1":"snapshot-arm-1"'
 assert_output_contains "$output_file" '"x86-1":"snapshot-x86-1"'
+
+mkdir -p "$TEST_DIR/incorrect-provenance"
+cp "$MANIFEST_DIR/arm64.json" "$MANIFEST_DIR/x86_64.json" "$TEST_DIR/incorrect-provenance/"
+if (
+  MANIFEST_DIR="$TEST_DIR/incorrect-provenance"
+  for manifest in "$MANIFEST_DIR"/*.json; do
+    jq '.binDir = "/var/lib/vm0-runner/bin/pr-123-image-43"' "$manifest" >"$manifest.tmp"
+    mv "$manifest.tmp" "$manifest"
+  done
+  run_wait_groups "$TEST_DIR/incorrect-provenance.out"
+) 2>"$TEST_DIR/incorrect-provenance.err"; then
+  echo "expected matching paths that name the wrong producer to fail" >&2
+  exit 1
+fi
+grep -Fq 'manifest binDir does not match producer run' "$TEST_DIR/incorrect-provenance.err"
 
 mismatch_output="$TEST_DIR/mismatch-output"
 if FAKE_X86_MISMATCH=1 run_wait_groups "$mismatch_output" 2>"$TEST_DIR/mismatch.err"; then

@@ -24,6 +24,15 @@ cat >"${tmp_dir}/bin/ssh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ "$1" = -n ]; then
+  shift
+  printf '%s\n' "$1" >>"${MOCK_ROOT}/queries"
+  query=${2#sudo }
+  query=${query//"/run/vm0-runner-lifecycle-receipts"/"${MOCK_ROOT}/receipts"}
+  flock --exclusive --nonblock "${MOCK_ROOT}/holder.lock" true
+  exec sh -c "$query"
+fi
+
 if [ "$MOCK_MODE" = acquire-error ]; then
   printf '%09000d\n' 0 >&2
   printf '::error::CF_ACCESS_CLIENT_SECRET=test-secret Authorization: Bearer test-bearer\n' >&2
@@ -34,14 +43,30 @@ fi
 # transport, remote privilege escalation and host-local filesystem location.
 local_command=${2#sudo }
 local_command=${local_command//"/var/lock/vm0-runner-lifecycle-${JOB_REF}.lock"/"${MOCK_ROOT}/holder.lock"}
+local_command=${local_command//"/run/vm0-runner-lifecycle-receipts"/"${MOCK_ROOT}/receipts"}
 case "$MOCK_MODE" in
   release-error)
     bash -c "$local_command"
     exit 255
     ;;
+  lost-release-ack|wrong-receipt)
+    bash -c "$local_command" 2>"${MOCK_ROOT}/remote.err"
+    if [ "$MOCK_MODE" = wrong-receipt ]; then
+      printf '%s\n' 'a different lifecycle operation' >"${MOCK_ROOT}/receipts/${JOB_REF}"
+    fi
+    exit 255
+    ;;
+  lost-release-request)
+    sed '/^VM0_RUNNER_LIFECYCLE_LOCK_RELEASE$/d' | bash -c "$local_command"
+    exit 255
+    ;;
   missing-confirmation)
     bash -c "$local_command" 2>"${MOCK_ROOT}/remote.err"
-    sed '/^VM0_RUNNER_LIFECYCLE_LOCK_RELEASED$/d' "${MOCK_ROOT}/remote.err" >&2
+    sed '/^VM0_RUNNER_LIFECYCLE_LOCK_RELEASED$/d; /^VM0_RUNNER_LIFECYCLE_LOCK_RELEASED_AFTER_REQUEST$/d' "${MOCK_ROOT}/remote.err" >&2
+    ;;
+  receipt-write-error)
+    touch "${MOCK_ROOT}/receipts"
+    exec sh -c "$local_command"
     ;;
   early-eof)
     # End the remote input only after the protected command has started. The
@@ -79,7 +104,7 @@ export JOB_REF=pr-42 METAL_HOSTS=metal.example.test METAL_USER=runner
 export RUNNER_LIFECYCLE_LOCK_TIMEOUT_SECONDS=5 RUNNER_LIFECYCLE_LOCK_LEASE_SECONDS=5
 export MOCK_ROOT MOCK_MODE
 
-for scenario in acquire-error release-error missing-confirmation command-error early-eof; do
+for scenario in acquire-error release-error lost-release-ack wrong-receipt lost-release-request missing-confirmation receipt-write-error command-error early-eof; do
   MOCK_ROOT="${tmp_dir}/${scenario}"
   MOCK_MODE=$scenario
   mkdir -p "$MOCK_ROOT"
@@ -95,6 +120,9 @@ for scenario in acquire-error release-error missing-confirmation command-error e
   status=0
   timeout 15 "$lock_script" "${command[@]}" >"${MOCK_ROOT}/out" 2>"${MOCK_ROOT}/err" || status=$?
   expected_status=1
+  case "$scenario" in
+    release-error|lost-release-ack|receipt-write-error) expected_status=0 ;;
+  esac
   [ "$scenario" != command-error ] || expected_status=37
   [ "$status" -eq "$expected_status" ] || {
     sed 's/^/  /' "${MOCK_ROOT}/err" >&2
@@ -109,9 +137,25 @@ for scenario in acquire-error release-error missing-confirmation command-error e
       grep -Fq 'CF_ACCESS_CLIENT_SECRET=[redacted]' "${MOCK_ROOT}/err" || fail "missing sanitized evidence"
       [ "$(wc -c <"${MOCK_ROOT}/err")" -lt 8700 ] || fail "unbounded holder diagnostics"
       ;;
-    release-error|command-error)
+    release-error)
       grep -q 'phase=release local_exit=255 remote_release=confirmed' "${MOCK_ROOT}/err" ||
         fail "release confirmation hid the transport failure"
+      grep -q 'remote_release=reconciled' "${MOCK_ROOT}/err"
+      ;;
+    lost-release-ack)
+      grep -q 'phase=release local_exit=255 remote_release=unconfirmed' "${MOCK_ROOT}/err"
+      grep -q 'remote_release=reconciled' "${MOCK_ROOT}/err"
+      ;;
+    wrong-receipt|lost-release-request)
+      [ -e "${MOCK_ROOT}/queries" ] || fail "missing exact release lookup"
+      ! grep -q 'remote_release=reconciled' "${MOCK_ROOT}/err" || fail "accepted unproven release"
+      ;;
+    command-error)
+      [ ! -e "${MOCK_ROOT}/queries" ] || fail "command failure must not query for recovery"
+      ;;
+    receipt-write-error)
+      grep -q 'VM0_RUNNER_LIFECYCLE_LOCK_RECEIPT_UNAVAILABLE' "${MOCK_ROOT}/err"
+      [ ! -e "${MOCK_ROOT}/queries" ] || fail "direct acknowledgement must not need a lookup"
       ;;
     missing-confirmation)
       grep -q 'phase=release local_exit=0 remote_release=unconfirmed' "${MOCK_ROOT}/err" ||

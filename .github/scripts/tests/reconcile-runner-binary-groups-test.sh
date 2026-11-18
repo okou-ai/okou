@@ -53,7 +53,11 @@ fi
 if [ "${1:-}" = "bash" ] && [ "${2:-}" = "-s" ] && [ "${3:-}" = "--" ]; then
   shift 3
   case "$#" in
-    1)
+    2)
+      if [ "$1" != "$2" ] && [ -e "${host_root}/generation-retired" ]; then
+        echo "Runner image generation was retired" >&2
+        exit 1
+      fi
       runner_path="${host_root}/runner"
       if [ ! -x "$runner_path" ]; then
         echo missing
@@ -205,6 +209,13 @@ grep -q 'validated runner transport does not match image manifest' "${TMP_DIR}/m
   fail "manifest mismatch must report the validation boundary"
 [ ! -s "$INSTALL_LOG" ] || fail "manifest mismatch must not install a runner binary"
 RUNNER_SHA_MAP=$GOOD_SHA_MAP
+
+touch "${REMOTE_ROOT}/x86-1/generation-retired"
+if TEST_BIN_DIR=/var/lib/vm0-runner/bin/pr-42-image-1234 run_reconcile restore >"${TMP_DIR}/retired.out" 2>"${TMP_DIR}/retired.err"; then
+  fail "restore must reject a retired generation"
+fi
+grep -qF 'Runner image generation was retired' "${TMP_DIR}/retired.err"
+[ ! -s "$INSTALL_LOG" ] || fail "restore must not recreate a retired generation"
 
 if TEST_BIN_DIR=/var/lib/vm0-runner/bin/pr-99 run_reconcile check >/dev/null 2>&1; then
   fail "runner binary path outside the manifest job ref must fail closed"

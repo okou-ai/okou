@@ -279,6 +279,7 @@ jobs:
             .github/scripts/runner/start-stripe-listener.sh \
             .github/scripts/runner/stage-native-test-binary.sh \
             .github/scripts/tests/stage-native-test-binary-test.sh \
+            .github/scripts/tests/runner-image-operation-test.sh \
             .github/scripts/checks/detect-native-only.sh \
             .github/scripts/tests/native-only-ci-test.sh \
             .github/scripts/tests/native-only-gates-test.sh \
@@ -290,8 +291,6 @@ jobs:
             .github/scripts/release/pass-release-pr-ci-gates.sh \
             .github/scripts/release/publish-okou-app-assets.sh \
             .github/scripts/runner/reconcile-and-start-runner-groups.sh \
-            .github/scripts/runner/prune-runner-idle.sh \
-            .github/scripts/runner/reconcile-runner-binary-groups.sh \
             .github/actions/report-memory-peak/report.sh \
             .github/scripts/report-sccache-stats.sh \
             .github/scripts/release/resolve-desktop-version-change.sh \
@@ -389,6 +388,8 @@ jobs:
             .github/scripts/runner/runner-binary-transport.sh \
             .github/scripts/tests/runner-binary-publication-test.sh
           shellcheck -x -P .github/scripts:.github/scripts/runner .github/scripts/runner/runner-image-architecture.sh .github/scripts/tests/runner-image-architecture-test.sh
+          shellcheck -x -P .github/scripts:.github/scripts/runner .github/scripts/runner/prepare-runner-image.sh .github/scripts/tests/prepare-runner-image-test.sh
+          shellcheck -x -P .github/scripts/runner .github/scripts/runner/prune-runner-idle.sh .github/scripts/runner/reconcile-runner-binary-groups.sh
           shellcheck -x -P .github/scripts/runner .github/scripts/runner/wait-runner-image.sh
           shellcheck -x -P crates/runner/tests/behavior/exec crates/runner/tests/behavior/exec/*.sh
           # actionlint assumes Bash when shell is omitted and does not model the

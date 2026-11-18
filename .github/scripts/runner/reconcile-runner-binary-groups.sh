@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "${SCRIPT_DIR}/runner-image-target.sh"
 CACHE="${SCRIPT_DIR}/runner-binary-cache.sh"
 DIGEST="${SCRIPT_DIR}/runner-binary-build/digest.sh"
 
@@ -58,15 +59,15 @@ if [ -n "${GITHUB_RUN_ID:-}" ] && [[ ! "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ ]]; the
   echo "invalid GITHUB_RUN_ID: ${GITHUB_RUN_ID}" >&2
   exit 2
 fi
-if [[ ! "$JOB_REF" =~ ^(pr-[1-9][0-9]*|staging-[0-9a-f]{7,40})$ ]]; then
+if [[ ! "${JOB_REF:?}" =~ ^(pr-[1-9][0-9]*|staging-[0-9a-f]{7,40})$ ]]; then
   echo "invalid runner image job ref: ${JOB_REF}" >&2
   exit 2
 fi
-expected_bin_dir="/var/lib/vm0-runner/bin/${JOB_REF}"
-if [ "$BIN_DIR" != "$expected_bin_dir" ]; then
-  echo "runner binary directory mismatch: ${BIN_DIR} != ${expected_bin_dir}" >&2
+if ! runner_image_bin_dir_matches "$JOB_REF" "$BIN_DIR"; then
+  echo "runner binary directory mismatch for ${JOB_REF}: ${BIN_DIR}" >&2
   exit 2
 fi
+legacy_bin_dir="/var/lib/vm0-runner/bin/${JOB_REF}"
 if ! jq -e '
   type == "object" and length > 0 and
   all(to_entries[];
@@ -98,11 +99,15 @@ remote_runner_sha() {
   local host=$1
   local remote="${METAL_USER}@${host}"
   local observed
-  if ! observed=$(ssh "$remote" bash -s -- "$BIN_DIR" <<'REMOTE_SCRIPT'
+  if ! observed=$(ssh "$remote" bash -s -- "$BIN_DIR" "$legacy_bin_dir" <<'REMOTE_SCRIPT'
 set -euo pipefail
 BIN_DIR=$1
 RUNNER_PATH="${BIN_DIR}/runner"
 
+if [ "$BIN_DIR" != "$2" ] && ! sudo test -d "$BIN_DIR"; then
+  echo "Runner image generation was retired" >&2
+  exit 1
+fi
 if ! sudo test -x "$RUNNER_PATH"; then
   echo missing
   exit 0
@@ -150,7 +155,9 @@ install_runner() {
   local tmp_runner="${BIN_DIR}/runner.recovery.${recovery_id}.${host_index}.tmp"
 
   echo "Restoring validated ${target} runner binary on ${host}"
-  ssh "$remote" sudo mkdir -p -- "$BIN_DIR"
+  if [ "$BIN_DIR" = "$legacy_bin_dir" ]; then
+    ssh "$remote" sudo mkdir -p -- "$BIN_DIR"
+  fi
   ssh "$remote" sudo install -m 755 /dev/stdin "$tmp_runner" < "$runner_path"
   ssh "$remote" bash -s -- "$tmp_runner" "${BIN_DIR}/runner" "$expected_sha" <<'REMOTE_SCRIPT'
 set -euo pipefail

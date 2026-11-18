@@ -16,15 +16,20 @@ import queue
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import threading
 import time
+from datetime import datetime
 from pathlib import Path, PurePosixPath
 
 UNIT = re.compile(
-    r"^(?:vm0-runner-pr-([1-9][0-9]*)(?:-[a-z0-9][a-z0-9.-]*)?|vm0-stripe-listener-pr-([1-9][0-9]*))\.service$"
+    r"^(?:vm0-runner-pr-([1-9][0-9]*)(?:-[a-z0-9][a-z0-9.-]*)?"
+    r"|vm0-stripe-listener-pr-([1-9][0-9]*)"
+    r"|vm0-ci-image-pr-([1-9][0-9]*)-[a-f0-9]{64})\.service$"
 )
+IMAGE_UNIT = re.compile(r"^vm0-ci-image-([a-f0-9]{64})\.service$")
 NAMESPACE = re.compile(r"(?:^|-)pr-([1-9][0-9]*)(?:-|$)")
 PROPERTIES = (
     "Id",
@@ -44,6 +49,22 @@ DATA_ROOTS = (
 )
 # Runner units allow 300s for graceful stop. Leave time for job/cgroup retirement.
 STOP_TIMEOUT = 330
+
+
+@contextlib.contextmanager
+def lifecycle_descriptor(path):
+    fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK, 0o644)
+    try:
+        info = os.fstat(fd)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_uid != os.geteuid()
+            or info.st_nlink != 1
+        ):
+            raise RuntimeError("invalid lifecycle lock")
+        yield fd
+    finally:
+        os.close(fd)
 
 
 def command(*args, allow_failure=False):
@@ -146,16 +167,20 @@ class Host:
     def inventory(self, selected=None):
         selected = None if selected is None else set(selected)
         units = {}
+        legacy_images = set()
         directories = {}
 
         def wanted(pr):
             return selected is None or pr in selected
 
         def add_unit(name, file=None):
+            if IMAGE_UNIT.fullmatch(name):
+                legacy_images.add(name)
+                return
             match = UNIT.fullmatch(name)
             if not match:
                 return
-            pr = int(match[1] or match[2])
+            pr = int(next(number for number in match.groups() if number is not None))
             if wanted(pr):
                 units.setdefault(name, {"pr": pr, "paths": []})
                 if file is not None:
@@ -174,6 +199,7 @@ class Host:
                 )
             ]
         )
+        patterns.append("vm0-ci-image-*.service")
         loaded = command(
             "systemctl",
             "list-units",
@@ -200,6 +226,10 @@ class Host:
                         )
                     for link in entry.iterdir():
                         add_unit(link.name, link)
+
+        for name, state in self.states(legacy_images).items():
+            if state["busy"]:
+                raise RuntimeError(f"image unit ownership unavailable: {name}")
 
         for root in DATA_ROOTS:
             for entry in self.entries(root):
@@ -409,16 +439,17 @@ class Host:
         watchdog.start()
         try:
             with contextlib.ExitStack() as locks:
+                descriptors = {}
                 directory = self.path("/var/lock")
                 directory.mkdir(parents=True, exist_ok=True)
                 deadline = time.monotonic() + 60
                 for number in numbers:
-                    handle = locks.enter_context(
-                        (directory / f"vm0-runner-lifecycle-pr-{number}.lock").open("a")
-                    )
+                    path = directory / f"vm0-runner-lifecycle-pr-{number}.lock"
+                    fd = locks.enter_context(lifecycle_descriptor(path))
+                    descriptors[str(number)] = fd
                     while True:
                         try:
-                            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                             break
                         except BlockingIOError:
                             if time.monotonic() >= deadline:
@@ -434,19 +465,33 @@ class Host:
                         break
                     if message["operation"] != "cleanup":
                         raise RuntimeError("invalid reconciliation operation")
-                    selected = message["numbers"]
-                    if not selected or any(
-                        type(number) is not int or number not in numbers
-                        for number in selected
+                    closed = message["closedAt"]
+                    if (
+                        not isinstance(closed, dict)
+                        or not closed
+                        or not closed.keys() <= descriptors.keys()
                     ):
                         raise RuntimeError(
                             "cleanup selection is outside the locked namespaces"
                         )
+                    records = {}
+                    for number, cutoff in closed.items():
+                        value = datetime.strptime(cutoff, "%Y-%m-%dT%H:%M:%SZ")
+                        records[number] = value.strftime("%Y-%m-%dT%H:%M:%SZ\n").encode(
+                            "ascii"
+                        )
+                    # Keep the lock inode stable and record closure before deletion.
+                    for number, record in records.items():
+                        fd = descriptors[number]
+                        if os.pread(fd, 22, 0) < record:
+                            if os.pwrite(fd, record, 0) != len(record):
+                                raise RuntimeError("incomplete PR closure record")
+                            os.ftruncate(fd, len(record))
                     # Covers the shared stop budget plus inventory and teardown.
                     # The controller's response/batch deadlines must outlive it.
                     signal.alarm(480)
                     try:
-                        result = self.cleanup(selected)
+                        result = self.cleanup([int(number) for number in closed])
                     finally:
                         signal.alarm(0)
                     print(
