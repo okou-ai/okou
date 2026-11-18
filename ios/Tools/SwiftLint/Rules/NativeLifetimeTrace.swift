@@ -170,8 +170,8 @@ final class NativeLifetimeTrace {
       return conditional(branch, path: path)
     }
     if let statement = node.as(GuardStmtSyntax.self) {
-      let (yes, no, _) = conditions(statement.conditions, path: path)
-      return yes + no.flatMap { block(statement.body.statements, states: [$0]) }
+      let branch = conditions(statement.conditions, path: path)
+      return branch.yes + branch.no.flatMap { block(statement.body.statements, states: [$0]) }
     }
     if let statement = node.as(DoStmtSyntax.self) {
       return doStatement(statement, path: path)
@@ -180,9 +180,9 @@ final class NativeLifetimeTrace {
       return forLoop(loop, path: path)
     }
     if let loop = node.as(WhileStmtSyntax.self) {
-      let (yes, no, _) = conditions(loop.conditions, path: path)
-      return no
-        + block(loop.body.statements, states: yes).map {
+      let branch = conditions(loop.conditions, path: path)
+      return branch.no
+        + block(loop.body.statements, states: branch.yes).map {
           var result = $0
           if result.exit == .breakLoop || result.exit == .continueLoop { result.exit = .normal }
           return result
@@ -367,18 +367,18 @@ final class NativeLifetimeTrace {
   }
 
   private func conditional(_ node: IfExprSyntax, path: NativeLifetimePath) -> [NativeLifetimePath] {
-    let (yes, no, bindings) = conditions(node.conditions, path: path)
-    var results = block(node.body.statements, states: yes)
+    let branch = conditions(node.conditions, path: path)
+    var results = block(node.body.statements, states: branch.yes)
     if let body = node.elseBody?.as(CodeBlockSyntax.self) {
-      results += block(body.statements, states: no)
+      results += block(body.statements, states: branch.no)
     } else if let nested = node.elseBody?.as(IfExprSyntax.self) {
-      results += no.flatMap { conditional(nested, path: $0) }
+      results += branch.no.flatMap { conditional(nested, path: $0) }
     } else {
-      results += no
+      results += branch.no
     }
     return results.map {
       var result = $0
-      for name in bindings {
+      for name in branch.bindings {
         result.values[name] = path.values[name]
         if !path.locals.contains(name) { result.locals.remove(name) }
         if path.immutable.contains(name) {
@@ -391,9 +391,15 @@ final class NativeLifetimeTrace {
     }
   }
 
+  private struct ConditionPaths {
+    let yes: [NativeLifetimePath]
+    let no: [NativeLifetimePath]
+    let bindings: Set<String>
+  }
+
   private func conditions(
     _ conditions: ConditionElementListSyntax, path initial: NativeLifetimePath
-  ) -> ([NativeLifetimePath], [NativeLifetimePath], Set<String>) {
+  ) -> ConditionPaths {
     var yes = initial
     var no = initial
     var bindings: Set<String> = []
@@ -417,11 +423,13 @@ final class NativeLifetimeTrace {
       } else if let expression = element.condition.as(ExprSyntax.self) {
         constrain(expression, count: conditions.count, initial: initial, yes: &yes, no: &no)
         if conditions.count == 1, let literal = expression.as(BooleanLiteralExprSyntax.self) {
-          return literal.literal.text == "true" ? ([yes], [], bindings) : ([], [no], bindings)
+          return literal.literal.text == "true"
+            ? ConditionPaths(yes: [yes], no: [], bindings: bindings)
+            : ConditionPaths(yes: [], no: [no], bindings: bindings)
         }
       }
     }
-    return ([yes], [no], bindings)
+    return ConditionPaths(yes: [yes], no: [no], bindings: bindings)
   }
 
   private func constrain(

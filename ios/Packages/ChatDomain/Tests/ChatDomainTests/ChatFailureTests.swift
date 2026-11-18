@@ -36,28 +36,42 @@ final class ChatFailureTests: XCTestCase {
   }
 
   func testStructuredReasonsOwnRunRecovery() {
-    let cases: [(String, ChatFailure.Kind, Bool)] = [
-      ("session_history_limit", .newChat, false), ("context_window_exceeded", .newChat, false),
-      ("guest_root_filesystem_full", .retryable, true),
-      ("guest_home_filesystem_full", .retryable, true),
-      ("execution_timeout", .timeout, true), ("insufficient_credits", .billing, false),
-      ("provider_insufficient_credits", .settings, false), ("invalid_api_key", .settings, false),
-      ("invalid_credentials", .settings, false), ("reconnect_required", .settings, false),
-      ("terms_acceptance_required", .terms, false), ("input_too_large", .inputTooLarge, false),
-      ("provider_image_too_large", .inputTooLarge, false),
-      ("output_token_limit", .outputLimit, true),
-      ("provider_rate_limited", .retryable, true), ("provider_overloaded", .capacity, true),
-      ("provider_stream_timeout", .retryable, true), ("provider_queue_timeout", .retryable, true),
-      ("provider_server_error", .retryable, true), ("response_connection_lost", .retryable, true),
-      ("codex_access_program_unavailable", .retryable, true),
-      ("safety_policy_refusal", .safety, true),
-      ("unsupported_model", .unavailable, true), ("usage_limit", .usage, true)
+    struct RecoveryCase {
+      let reason: String
+      let kind: ChatFailure.Kind
+      let canRetry: Bool
+    }
+    let cases = [
+      RecoveryCase(reason: "session_history_limit", kind: .newChat, canRetry: false),
+      RecoveryCase(reason: "context_window_exceeded", kind: .newChat, canRetry: false),
+      RecoveryCase(reason: "guest_root_filesystem_full", kind: .retryable, canRetry: true),
+      RecoveryCase(reason: "guest_home_filesystem_full", kind: .retryable, canRetry: true),
+      RecoveryCase(reason: "execution_timeout", kind: .timeout, canRetry: true),
+      RecoveryCase(reason: "insufficient_credits", kind: .billing, canRetry: false),
+      RecoveryCase(reason: "provider_insufficient_credits", kind: .settings, canRetry: false),
+      RecoveryCase(reason: "invalid_api_key", kind: .settings, canRetry: false),
+      RecoveryCase(reason: "invalid_credentials", kind: .settings, canRetry: false),
+      RecoveryCase(reason: "reconnect_required", kind: .settings, canRetry: false),
+      RecoveryCase(reason: "terms_acceptance_required", kind: .terms, canRetry: false),
+      RecoveryCase(reason: "input_too_large", kind: .inputTooLarge, canRetry: false),
+      RecoveryCase(reason: "provider_image_too_large", kind: .inputTooLarge, canRetry: false),
+      RecoveryCase(reason: "output_token_limit", kind: .outputLimit, canRetry: true),
+      RecoveryCase(reason: "provider_rate_limited", kind: .retryable, canRetry: true),
+      RecoveryCase(reason: "provider_overloaded", kind: .capacity, canRetry: true),
+      RecoveryCase(reason: "provider_stream_timeout", kind: .retryable, canRetry: true),
+      RecoveryCase(reason: "provider_queue_timeout", kind: .retryable, canRetry: true),
+      RecoveryCase(reason: "provider_server_error", kind: .retryable, canRetry: true),
+      RecoveryCase(reason: "response_connection_lost", kind: .retryable, canRetry: true),
+      RecoveryCase(reason: "codex_access_program_unavailable", kind: .retryable, canRetry: true),
+      RecoveryCase(reason: "safety_policy_refusal", kind: .safety, canRetry: true),
+      RecoveryCase(reason: "unsupported_model", kind: .unavailable, canRetry: true),
+      RecoveryCase(reason: "usage_limit", kind: .usage, canRetry: true)
     ]
-    for (reason, kind, retry) in cases {
-      let recovery = failure(reason).recovery(
+    for testCase in cases {
+      let recovery = failure(testCase.reason).recovery(
         personalFramework: .codex)
-      XCTAssertEqual(recovery.kind, kind, reason)
-      XCTAssertEqual(recovery.canRetry, retry, reason)
+      XCTAssertEqual(recovery.kind, testCase.kind, testCase.reason)
+      XCTAssertEqual(recovery.canRetry, testCase.canRetry, testCase.reason)
     }
   }
 

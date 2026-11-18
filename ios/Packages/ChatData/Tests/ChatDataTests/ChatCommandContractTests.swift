@@ -9,7 +9,12 @@ import XCTest
 @MainActor
 final class ChatCommandContractTests: XCTestCase {
   func testNativeThreadActionsUseCanonicalEndpoints() async throws {
-    let requests = Mutex<[(String, String, String)]>([])
+    struct Request {
+      let method: String
+      let path: String
+      let body: String
+    }
+    let requests = Mutex<[Request]>([])
     let queries = Mutex<[[URLQueryItem]]>([])
     let pinEventID = UUID().uuidString
     let unpinEventID = UUID().uuidString
@@ -24,10 +29,9 @@ final class ChatCommandContractTests: XCTestCase {
       }
       try requests.withLock {
         $0.append(
-          (
-            request.httpMethod ?? "", request.url?.path ?? "",
-            try XCTUnwrap(String(data: chatRequestBody(request), encoding: .utf8))
-          ))
+          Request(
+            method: request.httpMethod ?? "", path: request.url?.path ?? "",
+            body: try XCTUnwrap(String(data: chatRequestBody(request), encoding: .utf8))))
       }
       return ChatHTTPResponse(status: 204, body: "")
     }
@@ -41,9 +45,9 @@ final class ChatCommandContractTests: XCTestCase {
     try await service.setMuted(threadID: fixtureThread, muted: false, eventID: unmuteEventID)
     try await service.rename(threadID: fixtureThread, title: "Renamed", eventID: renameEventID)
 
-    XCTAssertEqual(requests.withLock { $0.map(\.0) }, Array(repeating: "POST", count: 7))
+    XCTAssertEqual(requests.withLock { $0.map(\.method) }, Array(repeating: "POST", count: 7))
     XCTAssertEqual(
-      requests.withLock { $0.map(\.1) },
+      requests.withLock { $0.map(\.path) },
       [
         "/api/chat-threads/\(fixtureThread)/pin",
         "/api/chat-threads/\(fixtureThread)/unpin",
@@ -53,7 +57,7 @@ final class ChatCommandContractTests: XCTestCase {
         "/api/chat-threads/\(fixtureThread)/unmute",
         "/api/chat-threads/\(fixtureThread)/rename"
       ])
-    let renameBody = try XCTUnwrap(requests.withLock { $0.last?.2 })
+    let renameBody = try XCTUnwrap(requests.withLock { $0.last?.body })
     XCTAssertEqual(
       try JSONDecoder().decode([String: String].self, from: Data(renameBody.utf8)),
       ["title": "Renamed", "eventId": renameEventID])
@@ -251,14 +255,28 @@ final class ChatCommandContractTests: XCTestCase {
       let serviceTier: String?
       let reasoningEffort: String?
     }
-    let cases:
-      [(availability: String, offeredTier: String?, savedTier: String, expectedTier: String?)] = [
-        ("available", "priority", "priority", "priority"),
-        ("reconnect_required", "priority", "priority", "priority"),
-        ("plan_restricted", "priority", "priority", "priority"),
-        ("available", nil, "priority", nil),
-        ("available", "priority", "unsupported", nil)
-      ]
+    struct Selection {
+      let availability: String
+      let offeredTier: String?
+      let savedTier: String
+      let expectedTier: String?
+    }
+    let cases = [
+      Selection(
+        availability: "available", offeredTier: "priority", savedTier: "priority",
+        expectedTier: "priority"),
+      Selection(
+        availability: "reconnect_required", offeredTier: "priority", savedTier: "priority",
+        expectedTier: "priority"),
+      Selection(
+        availability: "plan_restricted", offeredTier: "priority", savedTier: "priority",
+        expectedTier: "priority"),
+      Selection(
+        availability: "available", offeredTier: nil, savedTier: "priority", expectedTier: nil),
+      Selection(
+        availability: "available", offeredTier: "priority", savedTier: "unsupported",
+        expectedTier: nil)
+    ]
     for selection in cases {
       let createdRequests = Mutex<[CreatedRequest]>([])
       let fixture = ChatHTTPFixture { request in

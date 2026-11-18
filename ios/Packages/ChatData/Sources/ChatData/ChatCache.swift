@@ -685,17 +685,27 @@ extension SQLiteDatabase {
         try execute("INSERT INTO thread_list SELECT * FROM legacy.thread_list")
         try execute("INSERT INTO thread_events SELECT * FROM legacy.thread_events")
       }
-      let histories: [(String, Int, Int)] = try {
+      struct LegacyHistory {
+        let id: String
+        let sequence: Int
+        let schema: Int
+      }
+      let histories: [LegacyHistory] = try {
         let query = try prepare(
           "SELECT thread_id, cursor_seq_id, schema_version FROM legacy.histories")
-        var rows: [(String, Int, Int)] = []
+        var rows: [LegacyHistory] = []
         while try query.step() {
           guard let id = query.optionalText(at: 0) else { throw ChatCacheError.corrupt }
-          rows.append((id, try query.integer(at: 1), try query.integer(at: 2)))
+          rows.append(
+            LegacyHistory(
+              id: id, sequence: try query.integer(at: 1), schema: try query.integer(at: 2)))
         }
         return rows
       }()
-      for (id, sequence, schema) in histories {
+      for history in histories {
+        let id = history.id
+        let sequence = history.sequence
+        let schema = history.schema
         let shouldCopy: Bool = try {
           let query = try prepare(
             "SELECT cursor_seq_id, schema_version FROM histories WHERE thread_id = ?")

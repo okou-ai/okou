@@ -53,15 +53,28 @@ final class ChatThreadReplayTests: XCTestCase {
   }
 
   func testPinOrderKeysMatchPWAFractionalIndexing() throws {
-    let cases: [(String?, String?, String)] = [
-      (nil, nil, "a0"), (nil, "a0", "Zz"), ("a0", nil, "a1"), ("a0", "a1", "a0V"),
-      ("a1", "a2", "a1V"), ("a0V", "a1", "a0l"), ("Zz", "a0", "ZzV"), ("Zz", "a1", "a0"),
-      ("bzz", nil, "c000"), ("a0", "a0V", "a0G"), ("b125", "b129", "b127")
+    struct PinOrderCase {
+      let lower: String?
+      let upper: String?
+      let expected: String
+    }
+    let cases = [
+      PinOrderCase(lower: nil, upper: nil, expected: "a0"),
+      PinOrderCase(lower: nil, upper: "a0", expected: "Zz"),
+      PinOrderCase(lower: "a0", upper: nil, expected: "a1"),
+      PinOrderCase(lower: "a0", upper: "a1", expected: "a0V"),
+      PinOrderCase(lower: "a1", upper: "a2", expected: "a1V"),
+      PinOrderCase(lower: "a0V", upper: "a1", expected: "a0l"),
+      PinOrderCase(lower: "Zz", upper: "a0", expected: "ZzV"),
+      PinOrderCase(lower: "Zz", upper: "a1", expected: "a0"),
+      PinOrderCase(lower: "bzz", upper: nil, expected: "c000"),
+      PinOrderCase(lower: "a0", upper: "a0V", expected: "a0G"),
+      PinOrderCase(lower: "b125", upper: "b129", expected: "b127")
     ]
-    for (lower, upper, expected) in cases {
+    for testCase in cases {
       XCTAssertEqual(
-        try ChatPinOrder.key(between: lower, and: upper), expected,
-        "\(lower ?? "-") \(upper ?? "-")")
+        try ChatPinOrder.key(between: testCase.lower, and: testCase.upper), testCase.expected,
+        "\(testCase.lower ?? "-") \(testCase.upper ?? "-")")
     }
     XCTAssertEqual(
       try ChatPinOrder.keys(between: "a0", and: "a1", count: 5),

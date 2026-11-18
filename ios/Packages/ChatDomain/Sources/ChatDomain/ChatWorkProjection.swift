@@ -6,9 +6,13 @@ enum ChatWorkProjection {
     var events: [ChatEvent]
   }
 
-  static func build(rows: [ChatEvent], messages: [ChatMessage])
-    -> (messages: [ChatMessage], sections: [ChatWorkSection], usageAnchors: [String: String])
-  {
+  struct Result {
+    let messages: [ChatMessage]
+    let sections: [ChatWorkSection]
+    let usageAnchors: [String: String]
+  }
+
+  static func build(rows: [ChatEvent], messages: [ChatMessage]) -> Result {
     let byID = Dictionary(uniqueKeysWithValues: messages.map { ($0.id, $0) })
     let revoked = Set(rows.compactMap(\.revokesEventId))
     var inputTimes: [String: Date] = [:]
@@ -97,7 +101,7 @@ enum ChatWorkProjection {
       guard let runID = phase.runID, let anchor = assistant.last else { continue }
       usageAnchors[runID] = anchor.id
     }
-    return (visibleMessages, sections, usageAnchors)
+    return Result(messages: visibleMessages, sections: sections, usageAnchors: usageAnchors)
   }
 
   private static func isInput(_ type: ChatEventType) -> Bool {
