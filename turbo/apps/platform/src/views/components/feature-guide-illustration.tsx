@@ -202,7 +202,7 @@ function InstructionsIllustration({
                     <span className="-ml-[3px] rounded-[2px] bg-[#FFDD9E] px-[3px] py-0.5">
                       {line}
                     </span>
-                    <span className="ml-px inline-block h-5 border-r-[1.5px] border-[#FFA500] align-[-3px] @max-[600px]:h-[18px]" />
+                    <span className="ml-px inline-block h-5 border-r-(length:--border-width-emphasis) border-[#FFA500] align-[-3px] @max-[600px]:h-[18px]" />
                   </>
                 ) : (
                   line
