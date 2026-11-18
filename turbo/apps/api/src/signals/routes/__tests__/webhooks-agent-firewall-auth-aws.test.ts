@@ -48,7 +48,7 @@ async function setupAwsFirewall(publicFixture: PublicFirewallFixture) {
   await runs.heartbeatRunner(runnerGroup);
   const execution = await runs.executionInput(run.runId);
   publicFixture.registerExecution(run.runId, execution.sandboxToken);
-  const headers = { authorization: `Bearer ${execution.sandboxToken}` };
+  const headers = { authorization: `Bearer ${execution.firewallToken}` };
   mockAwsExternalCodeProvider();
   const ownedAccountIds = publicFixture.registerBuiltinConnector("aws");
 
@@ -74,7 +74,6 @@ async function setupAwsFirewall(publicFixture: PublicFirewallFixture) {
     return fw.requestFirewallAuth(
       headers,
       {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
         authHeaders: {},
         authAwsSigv4: {
           accessKeyId: secretTemplate("AWS_ACCESS_KEY_ID"),

@@ -414,7 +414,6 @@ async function defaultCustomConnectorAccountId(
 
 function customConnectorRuntimeAuthBody(
   runtime: AvailableCustomConnectorRuntime,
-  encryptedSecrets: string,
 ) {
   const api = runtime.firewall.firewall.apis[0];
   if (!api) {
@@ -423,7 +422,6 @@ function customConnectorRuntimeAuthBody(
   return {
     api,
     body: {
-      encryptedSecrets,
       authHeaders: api.auth.headers ?? {},
       ...(api.auth.base ? { authBase: api.auth.base } : {}),
       ...(api.auth.query ? { authQuery: api.auth.query } : {}),
@@ -4444,10 +4442,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           expect(initialAvailable.firewall).toStrictEqual(customFirewall);
           const { api: initialApi, body: currentAuthBody } =
-            customConnectorRuntimeAuthBody(
-              initialAvailable,
-              fw.encryptedSecretsBody({}),
-            );
+            customConnectorRuntimeAuthBody(initialAvailable);
           expect(initialApi.id).toBe(`${internalName}:0`);
           expect(initialApi.base).toBe(
             "http://acme.internal.example.com:8080/api/",
@@ -4456,7 +4451,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect(initialAvailable.networkPolicy.unknownPolicy).toBe("allow");
           const initialCurrentAuth = await own(() => {
             return fw.requestFirewallAuth(
-              { authorization: `Bearer ${execution.sandboxToken}` },
+              { authorization: `Bearer ${execution.firewallToken}` },
               currentAuthBody,
               [200],
             );
@@ -4485,7 +4480,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           const missingSourceAuth = await own(() => {
             return fw.requestFirewallAuth(
-              { authorization: `Bearer ${execution.sandboxToken}` },
+              { authorization: `Bearer ${execution.firewallToken}` },
               {
                 ...currentAuthBody,
                 matchedFirewall: {
@@ -4519,7 +4514,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           const missingExactAuth = await own(() => {
             return fw.requestFirewallAuth(
-              { authorization: `Bearer ${execution.sandboxToken}` },
+              { authorization: `Bearer ${execution.firewallToken}` },
               {
                 ...currentAuthBody,
                 matchedFirewall: {
@@ -4548,7 +4543,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           const currentUpdatedAuth = await own(() => {
             return fw.requestFirewallAuth(
-              { authorization: `Bearer ${execution.sandboxToken}` },
+              { authorization: `Bearer ${execution.firewallToken}` },
               currentAuthBody,
               [200],
             );
@@ -4566,7 +4561,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }
           const unknownAliasAuth = await own(() => {
             return fw.requestFirewallAuth(
-              { authorization: `Bearer ${execution.sandboxToken}` },
+              { authorization: `Bearer ${execution.firewallToken}` },
               {
                 ...currentAuthBody,
                 authHeaders: {
@@ -4593,7 +4588,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           const recoveredAuth = await own(() => {
             return fw.requestFirewallAuth(
-              { authorization: `Bearer ${execution.sandboxToken}` },
+              { authorization: `Bearer ${execution.firewallToken}` },
               currentAuthBody,
               [200],
             );
@@ -4612,13 +4607,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const updatedAvailable =
             availableCustomConnectorRuntime(updatedRuntime);
           expect(updatedAvailable.firewall.customConnectorId).toBe(custom.id);
-          const { body: updatedAuthBody } = customConnectorRuntimeAuthBody(
-            updatedAvailable,
-            fw.encryptedSecretsBody({}),
-          );
+          const { body: updatedAuthBody } =
+            customConnectorRuntimeAuthBody(updatedAvailable);
           const updatedCurrentAuth = await own(() => {
             return fw.requestFirewallAuth(
-              { authorization: `Bearer ${execution.sandboxToken}` },
+              { authorization: `Bearer ${execution.firewallToken}` },
               updatedAuthBody,
               [200],
             );
@@ -4644,7 +4637,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           const restoredCredentialsAuth = await own(() => {
             return fw.requestFirewallAuth(
-              { authorization: `Bearer ${execution.sandboxToken}` },
+              { authorization: `Bearer ${execution.firewallToken}` },
               updatedAuthBody,
               [200],
             );
@@ -4753,7 +4746,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           const lastKnownGoodAuth = await own(() => {
             return fw.requestFirewallAuth(
-              { authorization: `Bearer ${execution.sandboxToken}` },
+              { authorization: `Bearer ${execution.firewallToken}` },
               currentAuthBody,
               [200],
             );
@@ -4786,7 +4779,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           const orphanedFieldAuth = await own(() => {
             return fw.requestFirewallAuth(
-              { authorization: `Bearer ${execution.sandboxToken}` },
+              { authorization: `Bearer ${execution.firewallToken}` },
               currentAuthBody,
               [424],
             );
@@ -4987,12 +4980,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           ask: [],
           unknownPolicy: "allow",
         });
-        const { body: initialAuthBody } = customConnectorRuntimeAuthBody(
-          initialRuntime,
-          fw.encryptedSecretsBody({}),
-        );
+        const { body: initialAuthBody } =
+          customConnectorRuntimeAuthBody(initialRuntime);
         const initialAuth = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${execution.sandboxToken}` },
+          { authorization: `Bearer ${execution.firewallToken}` },
           initialAuthBody,
           [200],
         );
@@ -5107,7 +5098,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           reason: "connector-unavailable",
         });
         const disconnectedAuth = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${execution.sandboxToken}` },
+          { authorization: `Bearer ${execution.firewallToken}` },
           initialAuthBody,
           [424],
         );
@@ -5191,7 +5182,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           const { body: originalAuth } = customConnectorRuntimeAuthBody(
             availableCustomConnectorRuntime(initial),
-            fw.encryptedSecretsBody({}),
           );
           await connectors.deleteCustomConnectorAccount(
             actor,
@@ -5225,7 +5215,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             reason: "connector-unavailable",
           });
           const rejected = await fw.requestFirewallAuth(
-            { authorization: `Bearer ${execution.sandboxToken}` },
+            { authorization: `Bearer ${execution.firewallToken}` },
             originalAuth,
             [424],
           );
@@ -5626,12 +5616,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         ).toStrictEqual([
           `https://${hostname}.tenant-${suffix}.example.test/api/`,
         ]);
-        const { body: authBody } = customConnectorRuntimeAuthBody(
-          runtime,
-          fw.encryptedSecretsBody({}),
-        );
+        const { body: authBody } = customConnectorRuntimeAuthBody(runtime);
         const auth = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${execution.sandboxToken}` },
+          { authorization: `Bearer ${execution.firewallToken}` },
           authBody,
           [200],
         );
@@ -5925,12 +5912,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           },
         );
         const runtime = availableCustomConnectorRuntime(runtimeResult);
-        const { body: authBody } = customConnectorRuntimeAuthBody(
-          runtime,
-          fw.encryptedSecretsBody({}),
-        );
+        const { body: authBody } = customConnectorRuntimeAuthBody(runtime);
         const reconnectRequired = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${expiredExecution.sandboxToken}` },
+          { authorization: `Bearer ${expiredExecution.firewallToken}` },
           authBody,
           [502],
         );
@@ -6084,13 +6068,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
         });
         const runtime = availableCustomConnectorRuntime(runtimeResult);
-        const { body: currentAuthBody } = customConnectorRuntimeAuthBody(
-          runtime,
-          fw.encryptedSecretsBody({}),
-        );
+        const { body: currentAuthBody } =
+          customConnectorRuntimeAuthBody(runtime);
         const missingExactOAuth = await own(() => {
           return fw.requestFirewallAuth(
-            { authorization: `Bearer ${execution.sandboxToken}` },
+            { authorization: `Bearer ${execution.firewallToken}` },
             {
               ...currentAuthBody,
               forceRefresh: true,
@@ -6112,7 +6094,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const revoked = await own(() => {
           return fw.requestFirewallAuth(
-            { authorization: `Bearer ${execution.sandboxToken}` },
+            { authorization: `Bearer ${execution.firewallToken}` },
             { ...currentAuthBody, forceRefresh: true },
             [502],
           );
@@ -6146,7 +6128,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         const recovered = await own(() => {
           return fw.requestFirewallAuth(
-            { authorization: `Bearer ${execution.sandboxToken}` },
+            { authorization: `Bearer ${execution.firewallToken}` },
             currentAuthBody,
             [200],
           );
@@ -6191,7 +6173,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const currentResolved = await own(() => {
           return fw.requestFirewallAuth(
-            { authorization: `Bearer ${execution.sandboxToken}` },
+            { authorization: `Bearer ${execution.firewallToken}` },
             currentAuthBody,
             [200],
           );
@@ -6210,7 +6192,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         mockNow(forceRefreshAt);
         const forceResolved = await own(() => {
           return fw.requestFirewallAuth(
-            { authorization: `Bearer ${execution.sandboxToken}` },
+            { authorization: `Bearer ${execution.firewallToken}` },
             { ...currentAuthBody, forceRefresh: true },
             [200],
           );
@@ -6250,7 +6232,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const failedRefresh = await own(() => {
           return fw.requestFirewallAuth(
-            { authorization: `Bearer ${execution.sandboxToken}` },
+            { authorization: `Bearer ${execution.firewallToken}` },
             { ...currentAuthBody, forceRefresh: true },
             [502],
           );
@@ -6354,16 +6336,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           targets: [customConnectorRuntimeRegistration(execution, custom.id)],
         });
         const runtime = availableCustomConnectorRuntime(runtimeResult);
-        const { body: currentAuthBody } = customConnectorRuntimeAuthBody(
-          runtime,
-          fw.encryptedSecretsBody({}),
-        );
+        const { body: currentAuthBody } =
+          customConnectorRuntimeAuthBody(runtime);
         mockNow(now() + 2 * 3_600_000);
         onTestFinished(() => {
           clearMockNow();
         });
         const reconnectRequired = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${execution.sandboxToken}` },
+          { authorization: `Bearer ${execution.firewallToken}` },
           currentAuthBody,
           [502],
         );
@@ -6433,12 +6413,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         const secondRuntime =
           availableCustomConnectorRuntime(secondRuntimeResult);
-        const { body: secondAuthBody } = customConnectorRuntimeAuthBody(
-          secondRuntime,
-          fw.encryptedSecretsBody({}),
-        );
+        const { body: secondAuthBody } =
+          customConnectorRuntimeAuthBody(secondRuntime);
         const retriedReconnectRequired = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${secondExecution.sandboxToken}` },
+          { authorization: `Bearer ${secondExecution.firewallToken}` },
           secondAuthBody,
           [502],
         );
@@ -6499,7 +6477,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }),
         );
         const recovered = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${secondExecution.sandboxToken}` },
+          { authorization: `Bearer ${secondExecution.firewallToken}` },
           { ...secondAuthBody, forceRefresh: true },
           [200],
         );
@@ -6586,12 +6564,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           targets: [runtimeTarget],
         });
         const runtime = availableCustomConnectorRuntime(runtimeResult);
-        const { body: authBody } = customConnectorRuntimeAuthBody(
-          runtime,
-          fw.encryptedSecretsBody({}),
-        );
+        const { body: authBody } = customConnectorRuntimeAuthBody(runtime);
         const resolved = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${execution.sandboxToken}` },
+          { authorization: `Bearer ${execution.firewallToken}` },
           authBody,
           [200],
         );
@@ -6665,10 +6640,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           connector: { credentialResolution: "none" },
         });
         const staleOAuth = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${execution.sandboxToken}` },
+          { authorization: `Bearer ${execution.firewallToken}` },
           {
-            encryptedSecrets:
-              execution.encryptedSecrets ?? fw.encryptedSecretsBody({}),
             authHeaders: {
               Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
             },
@@ -6689,10 +6662,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         expect(provider.tokenBodies).toHaveLength(1);
         const resolved = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${execution.sandboxToken}` },
+          { authorization: `Bearer ${execution.firewallToken}` },
           {
-            encryptedSecrets:
-              execution.encryptedSecrets ?? fw.encryptedSecretsBody({}),
             authHeaders: catalog.firewallAuthHeaders,
             forceRefresh: true,
             matchedFirewall: {
@@ -6756,10 +6727,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         await api.heartbeatRunner(runnerGroup);
         const execution = await api.executionInput(run.runId);
-        const headers = { authorization: `Bearer ${execution.sandboxToken}` };
+        const headers = { authorization: `Bearer ${execution.firewallToken}` };
         const body = {
-          encryptedSecrets:
-            execution.encryptedSecrets ?? fw.encryptedSecretsBody({}),
           authHeaders: catalog.firewallAuthHeaders,
           matchedFirewall: {
             name: catalog.slug,
@@ -6872,8 +6841,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.heartbeatRunner(runnerGroup);
         const execution = await api.executionInput(run.runId);
         const body = {
-          encryptedSecrets:
-            execution.encryptedSecrets ?? fw.encryptedSecretsBody({}),
           authHeaders: catalog.firewallAuthHeaders,
           matchedFirewall: {
             name: catalog.slug,
@@ -6885,7 +6852,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           },
         };
         const auth = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${execution.sandboxToken}` },
+          { authorization: `Bearer ${execution.firewallToken}` },
           body,
           [200],
         );
@@ -6899,7 +6866,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         mockNow(connectedAt + 120_000);
         const expired = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${execution.sandboxToken}` },
+          { authorization: `Bearer ${execution.firewallToken}` },
           body,
           [502],
         );
@@ -6993,13 +6960,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
         });
         const runtime = availableCustomConnectorRuntime(runtimeResult);
-        const { body: authBody } = customConnectorRuntimeAuthBody(
-          runtime,
-          fw.encryptedSecretsBody({}),
-        );
+        const { body: authBody } = customConnectorRuntimeAuthBody(runtime);
         const resolved = await own(() => {
           return fw.requestFirewallAuth(
-            { authorization: `Bearer ${execution.sandboxToken}` },
+            { authorization: `Bearer ${execution.firewallToken}` },
             authBody,
             [200],
           );
@@ -7217,7 +7181,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const authBody = {
-          encryptedSecrets: fw.encryptedSecretsBody({}),
           authHeaders: {
             Authorization: `Bearer \${{ secrets.${secretKey} }}`,
           },
@@ -7234,7 +7197,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           },
         };
         const resolved = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${execution.sandboxToken}` },
+          { authorization: `Bearer ${execution.firewallToken}` },
           authBody,
           [200],
         );
@@ -7283,7 +7246,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           `https://xn--mnich-kva.${rand}.test/v1/`,
         );
         const updatedAuth = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${execution.sandboxToken}` },
+          { authorization: `Bearer ${execution.firewallToken}` },
           authBody,
           [200],
         );
@@ -7411,7 +7374,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         const runtime = availableCustomConnectorRuntime(runtimeResult);
         const { api: runtimeApi, body: runtimeAuthBody } =
-          customConnectorRuntimeAuthBody(runtime, fw.encryptedSecretsBody({}));
+          customConnectorRuntimeAuthBody(runtime);
         expect(runtimeApi.auth.headers).toStrictEqual({
           Authorization:
             `Bearer \${{ secrets.${secretKey} }}:` +
@@ -7421,7 +7384,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           tenant: `\${{ secrets.${tenantVarKey} }}`,
         });
         const missingHeaderAuth = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${execution.sandboxToken}` },
+          { authorization: `Bearer ${execution.firewallToken}` },
           runtimeAuthBody,
           [424],
         );
@@ -7452,7 +7415,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           },
         );
         const restoredAuth = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${execution.sandboxToken}` },
+          { authorization: `Bearer ${execution.firewallToken}` },
           runtimeAuthBody,
           [200],
         );
@@ -7992,7 +7955,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const runtime = availableCustomConnectorRuntime(runtimeResult);
         expect(runtime.firewall.customConnectorId).toBe(saved.connector.id);
         const { api: runtimeApi, body: runtimeAuthBody } =
-          customConnectorRuntimeAuthBody(runtime, fw.encryptedSecretsBody({}));
+          customConnectorRuntimeAuthBody(runtime);
         expect(runtimeApi.auth.headers).toStrictEqual({
           Authorization: `Bearer \${{ secrets.${secretKey} }}`,
         });
@@ -8000,7 +7963,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           tenant: `\${{ secrets.${tenantVarKey} }}`,
         });
         const missingQueryAuth = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${execution.sandboxToken}` },
+          { authorization: `Bearer ${execution.firewallToken}` },
           runtimeAuthBody,
           [424],
         );
@@ -8031,7 +7994,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           },
         );
         const restoredAuth = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${execution.sandboxToken}` },
+          { authorization: `Bearer ${execution.firewallToken}` },
           runtimeAuthBody,
           [200],
         );

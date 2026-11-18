@@ -1034,7 +1034,6 @@ describe("Google Forms Pub/Sub webhook", () => {
       );
       const fw = createFirewallApi(context);
       const body = {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("GOOGLE_FORMS_TOKEN")}`,
         },
@@ -1050,7 +1049,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       // while only the application's OAuth expiry clock advances below.
       const googleIdToken = signedGoogleIdToken();
       mockNow(startedAt + 2 * 60 * 60 * 1000);
-      const headers = { authorization: `Bearer ${execution.sandboxToken}` };
+      const headers = { authorization: `Bearer ${execution.firewallToken}` };
       const refreshedForms = configureFormsApi(["forms-refresh-success"]);
       let preparedSuccess = false;
       server.use(

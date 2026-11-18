@@ -3121,7 +3121,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       return firewall.requestFirewallAuth(
         { authorization: `Bearer ${execution.firewallToken}` },
         {
-          encryptedSecrets: firewall.encryptedSecretsBody({}),
           authHeaders: api.auth.headers ?? {},
           matchedFirewall: {
             name: entry.firewall.name,
@@ -5329,7 +5328,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         return firewall.requestFirewallAuth(
           { authorization: `Bearer ${execution.firewallToken}` },
           {
-            encryptedSecrets: firewall.encryptedSecretsBody({}),
             authHeaders: api.auth.headers ?? {},
             matchedFirewall: {
               name: entry.firewall.name,
@@ -5494,7 +5492,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         throw new Error("Expected the claimed custom API identity");
       }
       const authBody = {
-        encryptedSecrets: firewall.encryptedSecretsBody({}),
         authHeaders: api.auth.headers ?? {},
         matchedFirewall: {
           name: entry.firewall.name,
@@ -5709,7 +5706,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
           return firewall.requestFirewallAuth(
             { authorization: `Bearer ${execution.firewallToken}` },
             {
-              encryptedSecrets: firewall.encryptedSecretsBody({}),
               authHeaders: api.auth.headers ?? {},
               authQuery: api.auth.query,
               matchedFirewall: {
@@ -5823,7 +5819,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         throw new Error("Expected the claimed custom runtime target");
       }
       const authBody = {
-        encryptedSecrets: firewall.encryptedSecretsBody({}),
         authHeaders: api.auth.headers ?? {},
         matchedFirewall: {
           name: entry.firewall.name,

@@ -82,11 +82,8 @@ async function expectCustomConnectorRegion(
     throw new Error("Expected the selected custom runtime target");
   }
   const auth = await firewall.requestFirewallAuth(
-    execution.sandboxHeaders,
+    { authorization: `Bearer ${execution.execution.firewallToken}` },
     {
-      encryptedSecrets:
-        execution.execution.encryptedSecrets ||
-        firewall.encryptedSecretsBody({}),
       authHeaders: api.auth.headers ?? {},
       authQuery: api.auth.query,
       matchedFirewall: {

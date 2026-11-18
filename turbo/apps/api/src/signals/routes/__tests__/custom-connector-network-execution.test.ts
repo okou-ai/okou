@@ -44,7 +44,9 @@ async function expectInitialConnector(
   boundIntent: CustomConnectorNetworkIntent,
 ) {
   const { connector, bound, sourceId, secret, url } = selected;
-  const sandboxHeaders = { authorization: `Bearer ${execution.sandboxToken}` };
+  const firewallHeaders = {
+    authorization: `Bearer ${execution.firewallToken}`,
+  };
   const entry = execution.firewalls?.find((candidate) => {
     return (
       candidate.kind === "inline" &&
@@ -67,8 +69,6 @@ async function expectInitialConnector(
     baseUrlVars: {},
   });
   const authBody = {
-    encryptedSecrets:
-      execution.encryptedSecrets || firewall.encryptedSecretsBody({}),
     secretConnectorMap: execution.secretConnectorMap ?? undefined,
     secretConnectorMetadataMap:
       execution.secretConnectorMetadataMap ?? undefined,
@@ -82,7 +82,7 @@ async function expectInitialConnector(
     },
   };
   const auth = await firewall.requestFirewallAuth(
-    sandboxHeaders,
+    firewallHeaders,
     { ...authBody, networkIntent: api.networkIntent },
     [200],
   );
@@ -100,7 +100,7 @@ async function expectInitialConnector(
       },
     ] satisfies (CustomConnectorNetworkIntent | undefined)[]) {
       const denied = await firewall.requestFirewallAuth(
-        sandboxHeaders,
+        firewallHeaders,
         {
           ...authBody,
           networkIntent: wrongIntent,
@@ -112,14 +112,13 @@ async function expectInitialConnector(
       });
     }
     const networkBody = {
-      encryptedSecrets: authBody.encryptedSecrets,
       authHeaders: {},
       matchedFirewall: authBody.matchedFirewall,
       networkAdmission: true as const,
       networkRequest: { method: "GET", url, intent },
     };
     const admitted = await firewall.requestFirewallAuth(
-      sandboxHeaders,
+      firewallHeaders,
       networkBody,
       [200],
     );
@@ -248,8 +247,8 @@ test.each(["legacy Agent", "Chat account"] as const)(
       await runs.heartbeatRunner(runnerGroup);
       const execution = await runs.executionInput(run.runId);
       fixture.registerExecution(run.runId, execution.sandboxToken);
-      const sandboxHeaders = {
-        authorization: `Bearer ${execution.sandboxToken}`,
+      const firewallHeaders = {
+        authorization: `Bearer ${execution.firewallToken}`,
       };
       const networkRequests = [];
       for (const selectedConnector of selected) {
@@ -326,7 +325,7 @@ test.each(["legacy Agent", "Chat account"] as const)(
       }
       for (const networkBody of networkRequests) {
         const refreshed = await firewall.requestFirewallAuth(
-          sandboxHeaders,
+          firewallHeaders,
           networkBody,
           [200],
         );
@@ -350,7 +349,7 @@ test.each(["legacy Agent", "Chat account"] as const)(
           exitCode: 1,
           error: "Finished network execution checks",
         },
-        sandboxHeaders,
+        { authorization: `Bearer ${execution.sandboxToken}` },
         [200],
       );
       await connectors.updateFeatureSwitches(actor, {

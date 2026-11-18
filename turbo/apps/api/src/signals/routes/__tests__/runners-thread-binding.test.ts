@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { mockEnv } from "../../../lib/env";
-import { closeS3Clients } from "../../../lib/s3-client";
+import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { describe, expect, it, onTestFinished } from "vitest";
-import { createDeferredPromise } from "../../utils";
+import { describe, expect, it } from "vitest";
+import { holdDownloadSigning } from "./helpers/hold-download-signing";
 
 import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -41,30 +41,12 @@ describe("Runner first-start Thread binding", () => {
   it("preserves native context when cancellation wins during execution preparation", async () => {
     const { owned, first } = await initializedPredecessor();
     await owned.run(async () => {
-      const preparing = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      onTestFinished(() => {
-        if (!release.settled()) {
-          release.resolve();
-        }
-      });
-      // A fresh external signer configuration makes preparation genuinely cold.
-      closeS3Clients();
-      mockEnv("R2_SECRET_ACCESS_KEY", `binding-prepare-${randomUUID()}`);
-      const sign = context.mocks.s3.getSignedUrl.getMockImplementation();
-      if (!sign) {
-        throw new Error("Expected the external presigner fixture");
-      }
-      onTestFinished(() => {
-        context.mocks.s3.getSignedUrl.mockImplementation(sign);
-      });
-      context.mocks.s3.getSignedUrl.mockImplementationOnce(async (...args) => {
-        if (!preparing.settled()) {
-          preparing.resolve();
-        }
-        await release.promise;
-        return await sign(...args);
-      });
+      await createBddApi(context).updateAgentInstructions(
+        owned.actor,
+        owned.agentId,
+        `Continuation ${randomUUID()}`,
+      );
+      const signing = holdDownloadSigning(context);
       const chat = createChatFilesBddApi(context);
       const clientEventId = randomUUID();
       await chat.requestSendEvent(
@@ -77,7 +59,7 @@ describe("Runner first-start Thread binding", () => {
         },
         [201],
       );
-      await preparing.promise;
+      await signing.entered;
       const page = await chat.listThreadEvents(owned.actor, first.threadId);
       const pending = page.events.find((event) => {
         return event.revokesEventId === clientEventId;
@@ -89,7 +71,7 @@ describe("Runner first-start Thread binding", () => {
         api.readRun(owned.actor, pending.runId),
       ).resolves.toMatchObject({ status: "pending" });
       await api.requestCancelRun(owned.actor, pending.runId, [200]);
-      release.resolve();
+      signing.release();
       await flushWaitUntilForTest();
       const cancelled = await api.readRun(owned.actor, pending.runId);
       expect(cancelled.status).toBe("cancelled");
@@ -102,7 +84,6 @@ describe("Runner first-start Thread binding", () => {
       ).resolves.toMatchObject({
         cancellationRecoveryPending: false,
       });
-      context.mocks.s3.getSignedUrl.mockImplementation(sign);
       const next = await api.createThreadRun(owned.actor, {
         agentId: owned.agentId,
         threadId: first.threadId,

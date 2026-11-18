@@ -803,12 +803,6 @@ describe("MCP OAuth foundations", () => {
       );
       await flushWaitUntilForTest();
     });
-    const sandboxToken = input.sandboxToken;
-    if (!sandboxToken) {
-      throw new Error(
-        "Expected the actual Runner execution sandbox credential",
-      );
-    }
     await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
       status: "running",
     });
@@ -817,9 +811,8 @@ describe("MCP OAuth foundations", () => {
     const internalName = `custom_connector_${connector.id.replaceAll("-", "")}`;
     const secretKey = `CUSTOM_${connector.id.replaceAll("-", "")}_S___OAUTH_ACCESS_TOKEN`;
     const response = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${sandboxToken}` },
+      { authorization: `Bearer ${input.firewallToken}` },
       {
-        encryptedSecrets: firewall.encryptedSecretsBody({}),
         authHeaders: { Authorization: `Bearer ${secretTemplate(secretKey)}` },
         matchedFirewall: {
           name: internalName,

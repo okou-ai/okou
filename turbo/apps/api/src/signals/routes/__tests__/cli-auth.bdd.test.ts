@@ -464,9 +464,8 @@ describe("Codex auth.json through the personal model-provider API", () => {
     const firewall = createFirewallApi(context);
     const cacheExpiry = async (sourceId: string) => {
       const response = await firewall.requestFirewallAuth(
-        { authorization: `Bearer ${run.execution.sandboxToken}` },
+        { authorization: `Bearer ${run.execution.firewallToken}` },
         {
-          encryptedSecrets: firewall.encryptedSecretsBody({}),
           authHeaders: {
             Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
           },

@@ -641,9 +641,6 @@ describe("CHAT-02: thread connector account selection", () => {
       const auth = await firewall.requestFirewallAuth(
         { authorization: `Bearer ${execution.execution.firewallToken}` },
         {
-          encryptedSecrets:
-            execution.execution.encryptedSecrets ||
-            firewall.encryptedSecretsBody({}),
           authHeaders: api.auth.headers ?? {},
           matchedFirewall: {
             name: entry.firewall.name,

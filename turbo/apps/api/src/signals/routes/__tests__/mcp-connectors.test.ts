@@ -640,9 +640,8 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       const firewallName = `custom_connector_${connectorKey}`;
       const useAccount = async () => {
         const refreshed = await firewall.requestFirewallAuth(
-          { authorization: `Bearer ${execution.sandboxToken}` },
+          { authorization: `Bearer ${execution.firewallToken}` },
           {
-            encryptedSecrets: firewall.encryptedSecretsBody({}),
             authHeaders: {
               Authorization: `Bearer ${secretTemplate(`CUSTOM_${connectorKey}_S___OAUTH_ACCESS_TOKEN`)}`,
             },

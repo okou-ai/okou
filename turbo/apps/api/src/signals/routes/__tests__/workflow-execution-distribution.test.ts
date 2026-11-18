@@ -22,7 +22,7 @@ import {
   requireOrgId,
 } from "./helpers/chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { holdCurrentSecretKms } from "./helpers/hold-secret-kms";
+import { holdDownloadSigning } from "./helpers/hold-download-signing";
 import { publicRunOwner } from "./helpers/public-run-owner";
 
 const context = testContext();
@@ -299,9 +299,9 @@ test.each(["sharing withdrawal", "rename", "deletion"] as const)(
       const author = bdd.user({ orgId: actor.orgId });
       const workflow = await createWorkflow(author, agent.agentId, {
         visibility: "public",
-        instruction: "Content whose sharing can be withdrawn by its author",
+        instruction: `Content whose sharing can be withdrawn by its author.\n${randomUUID()}`,
       });
-      const kms = holdCurrentSecretKms(context.signal);
+      const signing = holdDownloadSigning(context);
       const renamed = `${workflow.name}-renamed`;
       const clientEventId = randomUUID();
       const sent = await chatFixture.chat.requestSendEvent(
@@ -317,7 +317,7 @@ test.each(["sharing withdrawal", "rename", "deletion"] as const)(
         throw new Error("Expected the workflow user's prompt to be accepted");
       }
       const revocation = await settleIncludingAbort(async () => {
-        await kms.entered;
+        await signing.entered;
         const request = {
           headers: await headers(author),
           params: { workflowId: workflow.id },
@@ -349,7 +349,7 @@ test.each(["sharing withdrawal", "rename", "deletion"] as const)(
           await accept(detailClient().delete(request), [204]);
         }
       });
-      kms.release();
+      signing.release();
       if (!revocation.ok) {
         throw revocation.error;
       }
