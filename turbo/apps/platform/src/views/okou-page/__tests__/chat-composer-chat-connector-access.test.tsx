@@ -765,7 +765,7 @@ test.each([
 ])(
   "Transfer the $label account manager between Chat panes with one dialog and the correct focus return",
   async ({ label, custom }) => {
-    const user = userEvent.setup({ delay: null });
+    const user = userEvent.setup({ delay: null, skipHover: true });
     installAccess({ custom, secondPane: true });
     await setup(`/chats/${SCOUT_THREAD_ID}?sidebar=${OTHER_THREAD_ID}`);
     for (const threadId of [
