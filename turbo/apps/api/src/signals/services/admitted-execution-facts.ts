@@ -6,9 +6,11 @@ import type {
 } from "@okouai/api-contracts/contracts/runners";
 import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
 import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type { ChatEventUserMessage } from "@okouai/db/schema/chat-event";
 import type { PermissionManifest } from "./agent-run-contracts";
-import type { SeedSkillVolume } from "./run-prompt-and-skills";
+import type {
+  SeedSkillVolume,
+  TemplateSkillVolume,
+} from "./run-prompt-and-skills";
 
 /** Process-local admission facts; this receipt itself is never serialized. */
 export interface AdmittedExecutionFacts {
@@ -32,10 +34,8 @@ export interface AdmittedExecutionFacts {
   readonly realAgentInPreview: boolean | undefined;
   readonly apiStartTime: number | undefined;
   readonly connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[];
-  readonly templateInput: {
-    readonly userId: string;
-    readonly userMessage: ChatEventUserMessage | null;
-  };
+  /** First accepted template snapshot; later edits apply to subsequent Runs. */
+  readonly templateSkillVolumes: readonly TemplateSkillVolume[];
   readonly integration: string | undefined;
   readonly captureNetworkBodies: boolean;
   readonly piModelConfig: PiModelConfig | undefined;
