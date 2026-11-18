@@ -1,6 +1,6 @@
 import { getStartedContract } from "@okouai/api-contracts/contracts/get-started";
 import { marketingRewardSettlementContract } from "@okouai/api-contracts/contracts/marketing-reward-settlement";
-import { marketingRewardProjectionContract } from "@okouai/api-contracts/contracts/marketing-reward-projection";
+import { marketingRewardNotificationContract } from "@okouai/api-contracts/contracts/marketing-reward-notification";
 import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
 import { randomUUID } from "node:crypto";
 import { expect, test } from "vitest";
@@ -12,7 +12,7 @@ import { mockNow } from "../../../lib/time";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { getStartedRoutes } from "../get-started";
 import { marketingRewardSettlementRoutes } from "../marketing-reward-settlement";
-import { marketingRewardProjectionRoutes } from "../marketing-reward-projection";
+import { marketingRewardNotificationRoutes } from "../marketing-reward-notification";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   campaignRequest,
@@ -139,12 +139,17 @@ test("recovers the original check-in day and financial receipt across UTC rollov
   mockEnv("MARKETING_REWARDS_PROJECTION_SECRET", projectionSecret);
   const projection = setupApp({
     context,
-    routes: marketingRewardProjectionRoutes,
-  })(marketingRewardProjectionContract);
+    routes: marketingRewardNotificationRoutes,
+  })(marketingRewardNotificationContract);
   const refresh = () => {
     return accept(
       projection.notify({
-        body: { version: 1, intent, receipt: original.receipt },
+        body: {
+          kind: "settlement",
+          version: 1,
+          intent,
+          receipt: original.receipt,
+        },
         headers: { authorization: `Bearer ${projectionSecret}` },
       }),
       [200],

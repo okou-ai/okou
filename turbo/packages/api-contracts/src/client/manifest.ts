@@ -515,8 +515,8 @@ export const clientDescriptorManifest = [
     contracts: ["marketingHandoffsContract"],
   },
   {
-    module: "marketing-reward-projection",
-    contracts: ["marketingRewardProjectionContract"],
+    module: "marketing-reward-notification",
+    contracts: ["marketingRewardNotificationContract"],
   },
   {
     module: "marketing-reward-settlement",
