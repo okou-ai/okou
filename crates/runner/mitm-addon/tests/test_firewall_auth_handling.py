@@ -19,6 +19,7 @@ import firewall_auth_client as auth_client
 import flow_metadata_keys as metadata_keys
 import matching
 import platform_api
+import platform_http_transport as transport
 from request_authority import get_trusted_authority
 from tests.auth_endpoint_helpers import FakeAuthEndpoint, firewall_auth_success_response
 from tests.auth_state_helpers import cached_headers
@@ -1106,7 +1107,7 @@ class TestHandleFirewallRequest:
             ),
             (
                 auth_client.FirewallAuthDeadlineExceededError(
-                    auth_client.FirewallAuthFetchPhase.RESPONSE_HEADERS
+                    transport.RequestPhase.RESPONSE_HEADERS
                 ),
                 "Firewall auth fetch deadline exceeded during response_headers",
                 {"kind": "deadline_exceeded", "phase": "response_headers"},
@@ -1145,7 +1146,7 @@ class TestHandleFirewallRequest:
         }
         with (
             patch.dict(os.environ, proxy_environment),
-            patch.object(auth_client, "_dns_resolver", FailingResolver()),
+            patch.object(transport, "_dns_resolver", FailingResolver()),
             mitm_ctx(api_url="http://auth-endpoint.invalid"),
         ):
             await handle_firewall_request_without_upstream_admission(flow, allow, sandbox_info)
@@ -1476,8 +1477,8 @@ class TestHandleFirewallRequest:
         with (
             endpoint.run(),
             patch.object(
-                auth_client,
-                "MAX_FIREWALL_AUTH_RESPONSE_BODY_BYTES",
+                transport,
+                "MAX_RESPONSE_BODY_BYTES",
                 len(response_body) - 1,
             ),
             mitm_ctx(api_url=endpoint.api_url),

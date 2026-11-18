@@ -19,6 +19,7 @@ from mitmproxy.proxy import commands, events
 from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook, HttpRequestHook
 from mitmproxy.test import taddons
 
+import data_router
 import firewall_auth_cache
 import firewall_auth_client
 import flow_metadata_keys as metadata_keys
@@ -101,7 +102,7 @@ async def test_each_router_response_registers_its_own_id_after_upstream(
                 )
             ),
         ) as auth_fetch,
-        patch.object(firewall_auth_client, "post_platform_json", registration),
+        patch.object(data_router, "post_registration", registration),
     ):
         for flow, request_id in zip(flows, ids, strict=True):
             assert mitm_addon.requestheaders(flow) is None
@@ -144,7 +145,7 @@ async def test_terminal_completion_waits_for_registration_including_provider_err
     with (
         mitm_ctx(registry_path=str(path), api_url="https://api.okou.ai"),
         fake_firewall_headers(headers={"Authorization": "Bearer service-token"}),
-        patch.object(firewall_auth_client, "post_platform_json", register),
+        patch.object(data_router, "post_registration", register),
     ):
         await mitm_addon.request(flow)
         flow.response = http.Response.make(
@@ -180,7 +181,7 @@ async def test_failed_terminal_registration_is_reported_without_retrying(
     with (
         mitm_ctx(registry_path=str(path), api_url="https://api.okou.ai"),
         fake_firewall_headers(headers={"Authorization": "Bearer service-token"}),
-        patch.object(firewall_auth_client, "post_platform_json", registration),
+        patch.object(data_router, "post_registration", registration),
     ):
         await mitm_addon.request(flow)
         registration.assert_not_awaited()
@@ -281,7 +282,7 @@ async def test_connection_error_does_not_repeat_successful_terminal_registration
     with (
         mitm_ctx(registry_path=str(path), api_url="https://api.okou.ai"),
         fake_firewall_headers(headers={"Authorization": "Bearer service-token"}),
-        patch.object(firewall_auth_client, "post_platform_json", registration),
+        patch.object(data_router, "post_registration", registration),
     ):
         await mitm_addon.request(flow)
         flow.response = http.Response.make(
@@ -308,7 +309,7 @@ async def test_connection_error_after_response_headers_registers_router_identity
     with (
         mitm_ctx(registry_path=str(path), api_url="https://api.okou.ai"),
         fake_firewall_headers(headers={"Authorization": "Bearer service-token"}),
-        patch.object(firewall_auth_client, "post_platform_json", registration),
+        patch.object(data_router, "post_registration", registration),
     ):
         await mitm_addon.request(flow)
         flow.response = http.Response.make(200, b"", {"X-Okou-Data-Request-Id": request_id})
@@ -341,7 +342,7 @@ async def test_connection_error_without_router_identity_does_not_register(
     with (
         mitm_ctx(registry_path=str(path), api_url="https://api.okou.ai"),
         fake_firewall_headers(headers={"Authorization": "Bearer service-token"}),
-        patch.object(firewall_auth_client, "post_platform_json", registration),
+        patch.object(data_router, "post_registration", registration),
     ):
         await mitm_addon.request(flow)
         if with_response:
@@ -367,7 +368,7 @@ async def test_control_responses_without_identity_are_not_registered(
     with (
         mitm_ctx(registry_path=str(path), api_url="https://api.okou.ai"),
         fake_firewall_headers(headers={"Authorization": "Bearer service-token"}),
-        patch.object(firewall_auth_client, "post_platform_json", registration),
+        patch.object(data_router, "post_registration", registration),
     ):
         await mitm_addon.request(flow)
         assert "X-Okou-Data-Request-Id" not in flow.request.headers
@@ -388,7 +389,7 @@ async def test_another_provider_cannot_register_a_router_response_id(
     with (
         mitm_ctx(registry_path=str(path), api_url="https://api.okou.ai"),
         fake_firewall_headers(headers={"Authorization": "Bearer service-token"}),
-        patch.object(firewall_auth_client, "post_platform_json", registration),
+        patch.object(data_router, "post_registration", registration),
     ):
         await mitm_addon.request(flow)
         flow.response = http.Response.make(
@@ -519,7 +520,7 @@ async def test_native_http1_discards_request_ids_without_value_conversion(
         patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
         taddons.context(Proxyserver(), mitm_addon) as addon_context,
         fake_firewall_headers(headers={"Authorization": "Bearer service-token"}) as auth_fetch,
-        patch.object(firewall_auth_client, "post_platform_json", registration),
+        patch.object(data_router, "post_registration", registration),
     ):
         addon_context.options.update(
             okou_api_url="https://api.okou.ai", okou_proxy_registry_path=str(registry_path)
@@ -588,7 +589,7 @@ async def test_body_limit_rejects_before_native_buffering_or_registration(
         patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
         taddons.context(Proxyserver(), mitm_addon) as addon_context,
         fake_firewall_headers() as auth_fetch,
-        patch.object(firewall_auth_client, "post_platform_json", registration),
+        patch.object(data_router, "post_registration", registration),
     ):
         addon_context.options.update(
             okou_api_url="https://api.okou.ai", okou_proxy_registry_path=str(registry_path)
@@ -650,7 +651,7 @@ async def test_native_body_at_inclusive_limit_registers_router_response(
         patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
         taddons.context(Proxyserver(), mitm_addon) as addon_context,
         fake_firewall_headers(headers={"Authorization": "Bearer service-token"}) as auth_fetch,
-        patch.object(firewall_auth_client, "post_platform_json", registration),
+        patch.object(data_router, "post_registration", registration),
     ):
         addon_context.options.update(
             okou_api_url="https://api.okou.ai", okou_proxy_registry_path=str(registry_path)
@@ -705,7 +706,7 @@ async def test_native_headers_only_requests_do_not_need_a_body_length(
         patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
         taddons.context(Proxyserver(), mitm_addon) as addon_context,
         fake_firewall_headers(headers={"Authorization": "Bearer service-token"}),
-        patch.object(firewall_auth_client, "post_platform_json", registration),
+        patch.object(data_router, "post_registration", registration),
     ):
         addon_context.options.update(
             okou_api_url="https://api.okou.ai", okou_proxy_registry_path=str(registry_path)
