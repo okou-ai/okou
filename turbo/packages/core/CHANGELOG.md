@@ -1,5 +1,14 @@
 # Changelog
 
+## [8.852.2](https://github.com/okou-ai/okou/compare/core-v8.852.1...core-v8.852.2) (2026-11-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.86.2
+
 ## [8.852.1](https://github.com/okou-ai/okou/compare/core-v8.852.0...core-v8.852.1) (2026-11-18)
 
 

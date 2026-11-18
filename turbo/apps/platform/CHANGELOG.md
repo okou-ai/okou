@@ -13,6 +13,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1147.2](https://github.com/okou-ai/okou/compare/app-v0.1147.1...app-v0.1147.2) (2026-11-18)
+
+
+### Bug Fixes
+
+* **app:** authorize connectors directly for default Okou ([#48625](https://github.com/okou-ai/okou/issues/48625)) ([5d91b9b](https://github.com/okou-ai/okou/commit/5d91b9b7fc1c8b7f0218368d4acc1f5cf54f3c91))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.86.2
+    * @okouai/core bumped to 8.852.2
+    * @okouai/ui bumped to 1.21.53
+
 ## [0.1147.1](https://github.com/okou-ai/okou/compare/app-v0.1147.0...app-v0.1147.1) (2026-11-18)
 
 
