@@ -15,7 +15,8 @@ final class AssistantRunFailureCopyTests: XCTestCase {
       let copy = AssistantFailureCopy.content(failureState(reason))
       XCTAssertEqual(copy.title, title, reason)
       XCTAssertFalse(copy.description.isEmpty, reason)
-      XCTAssertNotEqual(copy.description, AssistantFailureCopy.content(failureState(nil)).description)
+      XCTAssertNotEqual(
+        copy.description, AssistantFailureCopy.content(failureState(nil)).description)
     }
   }
 

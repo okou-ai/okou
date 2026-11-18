@@ -34,4 +34,141 @@ public enum KnownRunFailureReason: String, CaseIterable, Sendable {
   case unsupportedModel = "unsupported_model"
   case providerModelRestricted = "provider_model_restricted"
   case usageLimit = "usage_limit"
+
+  /// A complete mapping: adding a known case requires another initializer argument.
+  public struct Values<Value: Sendable>: Sendable {
+    private let unknown: Value
+    private let sessionHistoryLimit: Value
+    private let guestRootFilesystemFull: Value
+    private let guestHomeFilesystemFull: Value
+    private let guestMemoryOomKilled: Value
+    private let executionTimeout: Value
+    private let insufficientCredits: Value
+    private let providerInsufficientCredits: Value
+    private let invalidApiKey: Value
+    private let invalidCredentials: Value
+    private let termsAcceptanceRequired: Value
+    private let accountVerificationRequired: Value
+    private let contextWindowExceeded: Value
+    private let inputTooLarge: Value
+    private let providerImageTooLarge: Value
+    private let outputTokenLimit: Value
+    private let providerRateLimited: Value
+    private let providerOverloaded: Value
+    private let providerStreamTimeout: Value
+    private let providerRequestTimeout: Value
+    private let providerQueueTimeout: Value
+    private let providerServerError: Value
+    private let firewallAuthFailed: Value
+    private let providerBadRequest: Value
+    private let responseConnectionLost: Value
+    private let safetyPolicyRefusal: Value
+    private let reconnectRequired: Value
+    private let codexAccessProgramUnavailable: Value
+    private let unsupportedModel: Value
+    private let providerModelRestricted: Value
+    private let usageLimit: Value
+
+    public init(
+      unknown: Value,
+      sessionHistoryLimit: Value,
+      guestRootFilesystemFull: Value,
+      guestHomeFilesystemFull: Value,
+      guestMemoryOomKilled: Value,
+      executionTimeout: Value,
+      insufficientCredits: Value,
+      providerInsufficientCredits: Value,
+      invalidApiKey: Value,
+      invalidCredentials: Value,
+      termsAcceptanceRequired: Value,
+      accountVerificationRequired: Value,
+      contextWindowExceeded: Value,
+      inputTooLarge: Value,
+      providerImageTooLarge: Value,
+      outputTokenLimit: Value,
+      providerRateLimited: Value,
+      providerOverloaded: Value,
+      providerStreamTimeout: Value,
+      providerRequestTimeout: Value,
+      providerQueueTimeout: Value,
+      providerServerError: Value,
+      firewallAuthFailed: Value,
+      providerBadRequest: Value,
+      responseConnectionLost: Value,
+      safetyPolicyRefusal: Value,
+      reconnectRequired: Value,
+      codexAccessProgramUnavailable: Value,
+      unsupportedModel: Value,
+      providerModelRestricted: Value,
+      usageLimit: Value
+    ) {
+      self.unknown = unknown
+      self.sessionHistoryLimit = sessionHistoryLimit
+      self.guestRootFilesystemFull = guestRootFilesystemFull
+      self.guestHomeFilesystemFull = guestHomeFilesystemFull
+      self.guestMemoryOomKilled = guestMemoryOomKilled
+      self.executionTimeout = executionTimeout
+      self.insufficientCredits = insufficientCredits
+      self.providerInsufficientCredits = providerInsufficientCredits
+      self.invalidApiKey = invalidApiKey
+      self.invalidCredentials = invalidCredentials
+      self.termsAcceptanceRequired = termsAcceptanceRequired
+      self.accountVerificationRequired = accountVerificationRequired
+      self.contextWindowExceeded = contextWindowExceeded
+      self.inputTooLarge = inputTooLarge
+      self.providerImageTooLarge = providerImageTooLarge
+      self.outputTokenLimit = outputTokenLimit
+      self.providerRateLimited = providerRateLimited
+      self.providerOverloaded = providerOverloaded
+      self.providerStreamTimeout = providerStreamTimeout
+      self.providerRequestTimeout = providerRequestTimeout
+      self.providerQueueTimeout = providerQueueTimeout
+      self.providerServerError = providerServerError
+      self.firewallAuthFailed = firewallAuthFailed
+      self.providerBadRequest = providerBadRequest
+      self.responseConnectionLost = responseConnectionLost
+      self.safetyPolicyRefusal = safetyPolicyRefusal
+      self.reconnectRequired = reconnectRequired
+      self.codexAccessProgramUnavailable = codexAccessProgramUnavailable
+      self.unsupportedModel = unsupportedModel
+      self.providerModelRestricted = providerModelRestricted
+      self.usageLimit = usageLimit
+    }
+
+    public subscript(reason: KnownRunFailureReason) -> Value {
+      switch reason {
+      case .unknown: unknown
+      case .sessionHistoryLimit: sessionHistoryLimit
+      case .guestRootFilesystemFull: guestRootFilesystemFull
+      case .guestHomeFilesystemFull: guestHomeFilesystemFull
+      case .guestMemoryOomKilled: guestMemoryOomKilled
+      case .executionTimeout: executionTimeout
+      case .insufficientCredits: insufficientCredits
+      case .providerInsufficientCredits: providerInsufficientCredits
+      case .invalidApiKey: invalidApiKey
+      case .invalidCredentials: invalidCredentials
+      case .termsAcceptanceRequired: termsAcceptanceRequired
+      case .accountVerificationRequired: accountVerificationRequired
+      case .contextWindowExceeded: contextWindowExceeded
+      case .inputTooLarge: inputTooLarge
+      case .providerImageTooLarge: providerImageTooLarge
+      case .outputTokenLimit: outputTokenLimit
+      case .providerRateLimited: providerRateLimited
+      case .providerOverloaded: providerOverloaded
+      case .providerStreamTimeout: providerStreamTimeout
+      case .providerRequestTimeout: providerRequestTimeout
+      case .providerQueueTimeout: providerQueueTimeout
+      case .providerServerError: providerServerError
+      case .firewallAuthFailed: firewallAuthFailed
+      case .providerBadRequest: providerBadRequest
+      case .responseConnectionLost: responseConnectionLost
+      case .safetyPolicyRefusal: safetyPolicyRefusal
+      case .reconnectRequired: reconnectRequired
+      case .codexAccessProgramUnavailable: codexAccessProgramUnavailable
+      case .unsupportedModel: unsupportedModel
+      case .providerModelRestricted: providerModelRestricted
+      case .usageLimit: usageLimit
+      }
+    }
+  }
 }

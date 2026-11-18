@@ -247,11 +247,12 @@ not establish the system pasteboard's image delivery. Keep data representations
 in this CI case so that a file-only fixture cannot hide an importer compatibility
 failure.
 
-Run-failure copy and recovery use exhaustive switches over `KnownRunFailureReason`,
-generated into ChatDomain from the public schema with
+Run-failure copy uses the complete generated `KnownRunFailureReason.Values` table;
+recovery switches exhaustively over the enum. Both are generated into ChatDomain with
 `cd turbo && pnpm -F @okouai/api-contracts generate:swift`. Update the native
-title, description and recovery mappings when adding a known case. Shared generator
-tests reject stale cases; Swift compilation rejects missing switch branches.
+title, description and recovery mappings when adding a known case. Copy lives in
+`RunFailures.xcstrings`. Shared generator tests reject stale cases; Swift compilation
+rejects missing table arguments or switch branches.
 Transport/cache values remain raw strings so future server reasons still display
 generic guidance without breaking historical decoding or inventing retry actions.
 
