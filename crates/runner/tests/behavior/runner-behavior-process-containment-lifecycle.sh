@@ -334,6 +334,58 @@ done
 verify_live_identity user 14
 verify_live_identity root 15
 
+# Leave separately admitted creator/nested tasks live for the existing outer
+# operation teardown. The next reuse turn verifies process identities and that
+# the complete old operation hierarchy is gone, not just one task runtime.
+python3 - "$marker" <<'MANAGED_LEAK_PY'
+import json, os, pathlib, select, subprocess, sys
+marker = pathlib.Path(sys.argv[1])
+identity = r'''
+import json, os, pathlib, signal
+marker = pathlib.Path(os.environ["TASK_LEAK_MARKER"])
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+fields = pathlib.Path("/proc/self/stat").read_text().rsplit(")", 1)[1].split()
+(marker / (name + ".identity")).write_text(f"{os.getpid()} {fields[19]}\n")
+relative = pathlib.Path("/proc/self/cgroup").read_text().strip()[3:]
+'''
+launch_source = r'''
+def launch(program):
+    r, w = os.pipe()
+    child = subprocess.Popen(["/usr/local/bin/guest-task-exec", "--report-fd", str(w),
+                              "--", "python3", "-u", "-c", program], pass_fds=(w,),
+                             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True)
+    os.close(w)
+    assert select.select([r], [], [], 10)[0], "task report timed out"
+    with os.fdopen(r) as report:
+        task = json.loads(report.readline())
+    assert select.select([child.stdout], [], [], 10)[0], "task readiness timed out"
+    return child, task, json.loads(child.stdout.readline())
+'''
+os.environ["TASK_LEAK_MARKER"] = str(marker)
+nested = 'name = "managed-nested"\n' + identity + r'''
+print(json.dumps({"runtime": relative}), flush=True)
+while True:
+    signal.pause()
+'''
+os.environ["TASK_LEAK_NESTED"] = nested
+creator = 'name = "managed-creator"\n' + identity + r'''
+import select, subprocess
+''' + launch_source + r'''
+child, task, ready = launch(os.environ["TASK_LEAK_NESTED"])
+print(json.dumps({"runtime": relative, "child": task, "child_runtime": ready["runtime"]}), flush=True)
+while True:
+    signal.pause()
+'''
+exec(launch_source)
+child, task, ready = launch(creator)
+assert pathlib.Path(ready["runtime"]).parent.parent == pathlib.Path(ready["child_runtime"]).parent.parent
+(marker / "managed-tasks.json").write_text(json.dumps({"creator": task, **ready}))
+for name in ("managed-creator", "managed-nested"):
+    pid, start = (marker / (name + ".identity")).read_text().split()
+    fields = pathlib.Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+    assert fields[0] not in ("Z", "X", "x") and fields[19] == start
+MANAGED_LEAK_PY
+
 # Persist adversarial login profiles for the next reuse turn. Production
 # Guest Agent bootstrap executes the fixed binary directly and uses SCM_RIGHTS,
 # so no profile can run before the trusted binary or retain a placement
@@ -403,7 +455,7 @@ fi
 rm -f "$HOME/.profile" "$HOME/.bash_profile" \
   "$HOME/.pam_environment" "$HOME/.vm0-bootstrap-env"
 
-for identity in "$marker/user.identity" "$marker/root.identity"; do
+for identity in "$marker"/*.identity; do
   read -r pid start_time < "$identity"
   if current_identity=$(awk '{sub(/^.*\) /, ""); print $1, $20}' "/proc/$pid/stat" 2>/dev/null); then
     current_state=${current_identity%% *}

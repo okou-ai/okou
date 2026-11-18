@@ -19,9 +19,13 @@ bash crates/runner/tests/behavior/runner-behavior-exec.sh
 ```
 
 `runner-behavior-process-containment.sh` owns one shared Runner fixture and runs
-three scenario programs: native managed tasks and their CLI/Pi consumers,
-detached-descendant/bootstrap reuse with live CPU and mixed-identity cleanup,
-and independently threaded memory/PID pressure. Keep each pressure/reuse pair
+three scenario programs: native operation-owned managed tasks and their CLI/Pi
+consumers, detached-descendant/bootstrap reuse with live CPU and mixed-identity
+cleanup, and independently threaded memory/PID pressure. Managed task coverage
+keeps nested-created tasks alive across creator normal exit, OOM and explicit
+stop, permits same-operation sibling stop, and rejects a same-UID peer in a
+foreign cgroup domain. Reuse coverage leaves creator/nested tasks live and proves
+that outer operation teardown removes all their processes and cgroups. Keep each pressure/reuse pair
 and the complete leak/reuse/CPU lifecycle together. The lifecycle program owns
 its active pressure submit; the coordinator stops the Runner after success or a
 scenario failure. Support programs are checksum-verified before durable execution.
@@ -36,7 +40,7 @@ The coordinator emits bounded invocation/run-scoped failure diagnostics before
 bounded transient-service cleanup and retains state if inactivity is unconfirmed.
 
 Parallel-tool and nested-task OOM scenarios share one 15-second deadline across
-preparation, resident-worker readiness, OOM exit and retirement. Nested Python
+preparation, resident-worker readiness, OOM exit and explicit task cleanup. Nested Python
 processes inherit the absolute Guest `CLOCK_MONOTONIC` deadline, so controller
 startup also consumes the budget. Readiness markers and worker reports gate
 injection; there is no separate five-second allocation-speed requirement or new
@@ -63,7 +67,7 @@ through an owned pipe after touching their allocation, and remain in the nested
 task runtime. Only after all reports and cgroup/priority checks does the mock
 request a kernel global OOM through the disposable Guest's SysRq interface.
 The kernel still chooses the victim. The test requires group kill, main/sibling
-survival, task-family retirement, reclaimed charge, contained-tool attribution
+survival, explicit cleanup of each independent task, reclaimed charge, contained-tool attribution
 and a successful same-sandbox follow-up. Guest-only injection does not measure
 physical-exhaustion or reclaim latency.
 

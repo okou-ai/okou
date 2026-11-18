@@ -703,6 +703,7 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
         TOOL_OOM_OFFENDER_CGROUP,
         TOOL_OOM_SURVIVOR_RELEASE,
         oom_fixture::STARTUP,
+        oom_fixture::ALLOCATOR_STARTUP,
         oom_fixture::RELEASE,
         oom_fixture::READY,
         oom_fixture::TOOL_ARMED,
@@ -937,7 +938,7 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
     while if mode.managed_tasks() {
         oom_fixture::root_path(&tools_relative)?
             .try_exists()
-            .map_err(|error| format!("observe task retirement: {error}"))?
+            .map_err(|error| format!("observe explicit task cleanup: {error}"))?
     } else {
         read_cgroup_events(&offender_path.join("cgroup.events"))?.get("populated") != Some(&0)
     } {
@@ -957,7 +958,7 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
         let reclaimed = peak.saturating_sub(current);
         if reclaimed < 64 * 1024 * 1024 {
             return Err(format!(
-                "task retirement did not reclaim pressure charge: {reclaimed}"
+                "explicit task cleanup did not reclaim pressure charge: {reclaimed}"
             ));
         }
         reclaimed
@@ -1102,7 +1103,7 @@ impl ParallelToolOomFixture {
 impl Drop for ParallelToolOomFixture {
     fn drop(&mut self) {
         if self.managed_tasks {
-            oom_fixture::stop_family();
+            oom_fixture::stop_tasks();
         }
         let tools_relative = unified_cgroup_path(std::process::id())
             .ok()
