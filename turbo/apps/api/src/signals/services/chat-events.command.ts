@@ -2692,6 +2692,7 @@ const prepareNormalSendContext$ = command(
       args.body.agentId,
       {
         inputId,
+        chatThreadId: args.body.threadId?.toLowerCase(),
         presentationIds: selectedUserPresentationTemplateIds(templates),
         userTemplateIds: selectedUserTemplateIds(templates),
       },

@@ -1,9 +1,4 @@
 import { computed, type Computed } from "ccstate";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { memberConnectorSelectionQueries } from "./member-connector-selection";
 import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
@@ -14,8 +9,6 @@ import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-con
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import { workflows } from "@okouai/db/schema/workflow";
 import { array, object, string, unknown as zUnknown } from "zod";
-import { db$ } from "../external/db";
-import { nowDate } from "../../lib/time";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import {
   contextJsonProjection,
@@ -159,47 +152,42 @@ function agentWorkflowQuery(scope: AgentConnectorSelectionScope) {
     );
 }
 
+/** These related selections are included in the first account/environment statement. */
+export function agentSelectionColumns(
+  scope: AgentConnectorSelectionScope,
+  at: Date,
+  chatAccounts: boolean,
+) {
+  const { builtin, custom, permissions } = agentSelectionQueries(
+    scope,
+    at,
+    chatAccounts,
+  );
+  return {
+    builtin: contextJsonRows(builtin).mapWith(
+      zodDriverValueDecoder(zUnknown()),
+    ),
+    custom: contextJsonRows(custom).mapWith(zodDriverValueDecoder(zUnknown())),
+    permissions: contextJsonRows(permissions).mapWith(
+      zodDriverValueDecoder(zUnknown()),
+    ),
+    workflows: contextJsonRows(agentWorkflowQuery(scope)).mapWith(
+      zodDriverValueDecoder(zUnknown()),
+    ),
+  };
+}
+
 export function createAgentSelectionContext(
   scope$: Computed<Promise<AgentConnectorSelectionScope>>,
-  featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
-  projection: "admission" | "execution",
+  raw$: Computed<
+    Promise<{
+      readonly builtin: unknown;
+      readonly custom: unknown;
+      readonly permissions: unknown;
+      readonly workflows: unknown;
+    }>
+  >,
 ) {
-  const raw$ = computed(async (get) => {
-    const scope = await get(scope$);
-    const chatAccounts = isFeatureEnabled(
-      FeatureSwitchKey.ConnectorChatAccountAccess,
-      await get(featureSwitches$),
-    );
-    const { builtin, custom, permissions } = agentSelectionQueries(
-      scope,
-      nowDate(),
-      chatAccounts,
-    );
-    const [row] = await get(db$)
-      .select({
-        builtin: contextJsonRows(builtin).mapWith(
-          zodDriverValueDecoder(zUnknown()),
-        ),
-        custom: contextJsonRows(custom).mapWith(
-          zodDriverValueDecoder(zUnknown()),
-        ),
-        permissions: contextJsonRows(permissions).mapWith(
-          zodDriverValueDecoder(zUnknown()),
-        ),
-        ...(projection === "admission"
-          ? {
-              workflows: contextJsonRows(agentWorkflowQuery(scope)).mapWith(
-                zodDriverValueDecoder(zUnknown()),
-              ),
-            }
-          : {}),
-      })
-      .from(sql`(values (1)) as context_seed(value)`);
-    if (!row) {
-      throw new Error("Agent selection context query returned no row");
-    }
-    return row;
-  });
   const connectorSelection$ = computed(async (get) => {
     const row = await get(raw$);
     const builtin = array(contextProjectionSchema(builtinColumns)).parse(

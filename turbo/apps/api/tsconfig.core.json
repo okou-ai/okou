@@ -201,6 +201,7 @@
     "src/signals/services/agent-data.service.ts",
     "src/signals/services/agent-run-context.signals.ts",
     "src/signals/services/run-template-sources.service.ts",
+    "src/signals/services/thread-connector-sources.service.ts",
     "src/signals/services/agent-run-contracts.ts",
     "src/signals/services/agent-storage-context.service.ts",
     "src/signals/services/member-memory.ts",
