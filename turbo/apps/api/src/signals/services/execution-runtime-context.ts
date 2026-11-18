@@ -3,23 +3,19 @@ import {
   preparedExecutionContextSchema,
   type PreparedExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { agentRuns } from "@okouai/db/runtime/agent-run";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import { computed, type Computed } from "ccstate";
 import { previewAutomationBypassSecret } from "../../lib/preview-automation-bypass";
 import { billableFirewallsForPermissions } from "./built-in-route-pricing";
-import { createExecutionConnectorSources } from "./agent-run-context.signals";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { NATIVE_CONTEXT_RECOVERY_PROMPT } from "./chat-session-continuity.service";
-import type { ConnectorServerFirewallMetadataCatalog } from "./connector-server-firewall-catalog.service";
-import { createConnectorSkillVolumes } from "./connectors-context.service";
 import { dataRouterEnvironment } from "./data-router-environment";
 import { createAcceptedExecutionStorageObjects } from "./execution-storage.service";
-import { createUserFeatureSwitchContext } from "./feature-switches.service";
 import type { ModelFirstPin } from "./model-selection.service";
 import {
   emptyEnvironment,
+  type Environment,
   environmentPermissionManifest,
   mergeEnvironments,
 } from "./run-environment";
@@ -33,14 +29,10 @@ import {
   runPlatformEnvironment,
 } from "./run-execution-defaults";
 import { normalizeMountOverlay } from "./storage-mount-overlay";
-import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
-import { createExecutionConnectedAccounts } from "./thread-connected-accounts.signals";
-import { createConnectorEnvironmentSignals } from "./thread-connector-environment.signals";
 import {
   createModelProviderEnvironmentSignals,
   paidToolPlatformEnvironment,
 } from "./thread-environment.signals";
-import type { ResolvedPermissionGrant } from "./user-permission-grants.service";
 
 /** Captured inputs for one admitted Thread Run. */
 export type ExecutionContextRun = Pick<
@@ -68,70 +60,49 @@ export type ExecutionContextRun = Pick<
   readonly storageMounts: readonly PersistedStorageMount[];
 };
 
-/** Internal to one execution; never part of its persisted or Runner context. */
-export interface ExecutionNetworkPolicyInputs {
-  readonly catalog: ConnectorServerFirewallMetadataCatalog;
-  readonly grants: readonly ResolvedPermissionGrant[];
-}
-
 type ExecutionInput = {
   readonly run: ExecutionContextRun;
   readonly facts: AdmittedExecutionFacts;
 };
 
 type ExecutionInput$ = Computed<Promise<ExecutionInput>>;
-type ExecutionIdentities = ReturnType<typeof createExecutionIdentities>;
-type ExecutionSources = ReturnType<typeof createExecutionConnectorSources>;
 type ExecutionModel$ = ReturnType<typeof createExecutionModel>;
 type ExecutionModel =
   ExecutionModel$ extends Computed<infer T> ? Awaited<T> : never;
 type DisabledTools$ = Computed<Promise<readonly PaidToolId[]>>;
 
-/** Assemble accepted contributions with this Run's required current sources. */
+/** Assemble accepted source contributions with this Run's execution operations. */
 export function createExecutionRuntimeContext(input$: ExecutionInput$) {
-  const identities = createExecutionIdentities(input$);
-  const { identity$, features$ } = identities;
-  const sources = createExecutionConnectorSources(identity$, features$);
-  const networkPolicyInputs$ = computed(
-    async (get): Promise<ExecutionNetworkPolicyInputs> => {
-      const [catalog, grants] = await Promise.all([
-        get(sources.signals.catalog$),
-        get(sources.signals.permissionGrants$),
-      ]);
-      if (!catalog) {
-        throw new Error("Execution builtin targets require a scoped catalog");
-      }
-      return {
-        catalog: catalog.serverFirewalls,
-        grants,
-      };
-    },
-  );
   const disabledTools$ = computed(async (get) => {
     return (await get(input$)).facts.disabledPaidTools;
   });
-  const connectors = createExecutionConnectorContext(
-    input$,
-    identities,
-    sources,
-  );
+  const runVariables$ = computed(async (get) => {
+    return (await get(input$)).run.vars;
+  });
+  const connectorEnvironment$ = computed(async (get) => {
+    const { facts } = await get(input$);
+    return {
+      ...facts.connectorEnvironment,
+      runtimeTargets: facts.connectorRuntimeTargets,
+    };
+  });
   const model$ = createExecutionModel(input$);
   const modelRoute$ = computed(async (get) => {
     return (await get(model$)).provider;
   });
   const modelEnvironment$ = createModelProviderEnvironmentSignals(
-    connectors.runVariables$,
+    runVariables$,
     modelRoute$,
     computed(async (get) => {
       return (await get(input$)).facts.modelProviderPermissions;
     }),
   );
   const storage$ = createExecutionStorage(input$);
-  const packages$ = createExecutionPackages(input$, sources, storage$);
+  const packages$ = createExecutionPackages(input$, storage$);
   const platform$ = createExecutionPlatform(input$, model$, disabledTools$);
   const environment$ = createExecutionEnvironment(
     input$,
-    connectors.connectorEnvironment$,
+    connectorEnvironment$,
     modelEnvironment$,
     platform$,
   );
@@ -140,8 +111,6 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
     packages$,
     environment$,
     storage$,
-    connectorTiming$: connectors.timing$,
-    networkPolicyInputs$,
   });
   return { prepared$, packageContext$: packages$ };
 }
@@ -181,86 +150,6 @@ function createExecutionStorage(input$: ExecutionInput$) {
   });
 }
 
-function createExecutionIdentities(input$: ExecutionInput$) {
-  const run$ = computed(async (get) => {
-    return (await get(input$)).run;
-  });
-  const memberIdentity$ = computed(async (get) => {
-    const { orgId, userId } = await get(run$);
-    return { orgId, userId };
-  });
-  const identity$ = computed(async (get) => {
-    const run = await get(run$);
-    return { orgId: run.orgId, userId: run.userId, agentId: run.agentId };
-  });
-  const currentFeatures$ = createUserFeatureSwitchContext(memberIdentity$);
-  const features$ = computed(async (get) => {
-    const { run, facts } = await get(input$);
-    // Only custom connector network bindings consume unpinned overrides.
-    const currentOverrides = facts.connectorRuntimeTargets.some((target) => {
-      return target.kind === "custom";
-    })
-      ? (await get(currentFeatures$)).overrides
-      : undefined;
-    return {
-      userId: run.userId,
-      orgId: run.orgId,
-      overrides: {
-        ...currentOverrides,
-        [FeatureSwitchKey.SingleAgent]:
-          facts.featureFlags[FeatureSwitchKey.SingleAgent],
-        [FeatureSwitchKey.ConnectorChatAccountAccess]:
-          facts.featureFlags[FeatureSwitchKey.ConnectorChatAccountAccess],
-      },
-    };
-  });
-  return { run$, identity$, features$ };
-}
-
-function createExecutionConnectorContext(
-  input$: ExecutionInput$,
-  identities: ExecutionIdentities,
-  sources: ExecutionSources,
-) {
-  const { run$, identity$, features$ } = identities;
-  const targets$ = computed(async (get) => {
-    return (await get(input$)).facts.connectorRuntimeTargets;
-  });
-  const connectorIdentity$ = computed(async (get) => {
-    const [identity, run] = await Promise.all([get(identity$), get(run$)]);
-    return { ...identity, chatThreadId: run.chatThreadId };
-  });
-  const timing$ = computed(() => {
-    return new ApiDispatchTimingCollector();
-  });
-  const connected = createExecutionConnectedAccounts({
-    identity$: connectorIdentity$,
-    targets$,
-    scope$: sources.signals.connectorScope$,
-    catalog$: sources.signals.catalog$,
-    definitions$: sources.signals.customConnectorDefinitions$,
-    connectors$: sources.signals.connectors$,
-    policies$: sources.signals.permissionPolicies$,
-    features$,
-    timing$,
-  });
-  const runVariables$ = computed(async (get) => {
-    return (await get(input$)).run.vars;
-  });
-  const connectorEnvironment$ = createConnectorEnvironmentSignals(
-    {
-      runVariables$,
-      permissionPolicies$: sources.signals.permissionPolicies$,
-    },
-    {
-      connectorSelection$: connected.connectorSelection$,
-      connectorSnapshot$: connected.connectorSnapshot$,
-      dispatchTiming$: timing$,
-    },
-  );
-  return { runVariables$, connectorEnvironment$, timing$ };
-}
-
 function createExecutionModel(input$: ExecutionInput$) {
   return computed(async (get) => {
     const { modelProvider } = (await get(input$)).facts;
@@ -273,12 +162,8 @@ function createExecutionModel(input$: ExecutionInput$) {
 
 function createExecutionPackages(
   input$: ExecutionInput$,
-  sources: ExecutionSources,
   storage$: ReturnType<typeof createExecutionStorage>,
 ) {
-  const connectorSkills$ = createConnectorSkillVolumes(
-    sources.signals.authorizedConnectors$,
-  );
   return computed(async (get) => {
     const { run, facts } = await get(input$);
     const framework = run.framework;
@@ -288,13 +173,10 @@ function createExecutionPackages(
         : framework === "codex"
           ? "/home/user/.codex/skills"
           : "/home/user/.claude/skills";
-    const [connectors, storage] = await Promise.all([
-      get(connectorSkills$),
-      get(storage$),
-    ]);
+    const storage = await get(storage$);
     const volumes = resolveRunSkillVolumes(
       mergeRunSkillVolumes([
-        connectors,
+        facts.connectorSkillVolumes,
         facts.seedSkillVolumes,
         facts.templateSkillVolumes,
       ]),
@@ -374,9 +256,7 @@ function createExecutionPlatform(
 
 function createExecutionEnvironment(
   input$: ExecutionInput$,
-  connectorEnvironment$: ReturnType<
-    typeof createExecutionConnectorContext
-  >["connectorEnvironment$"],
+  connectorEnvironment$: Computed<Promise<Environment>>,
   modelEnvironment$: ReturnType<typeof createModelProviderEnvironmentSignals>,
   platform$: ReturnType<typeof createExecutionPlatform>,
 ) {
@@ -388,9 +268,6 @@ function createExecutionEnvironment(
         get(platform$),
         get(connectorEnvironment$),
       ]);
-    if ("status" in connectorEnvironment) {
-      throw new Error("Run execution sources are unavailable");
-    }
     const data = dataRouterEnvironment();
     const token = facts.okouToken;
     const tokenEnvironment = {
@@ -446,12 +323,6 @@ function createExecutionPreparedContext(
     readonly packages$: ReturnType<typeof createExecutionPackages>;
     readonly environment$: ReturnType<typeof createExecutionEnvironment>;
     readonly storage$: ReturnType<typeof createExecutionStorage>;
-    readonly connectorTiming$: ReturnType<
-      typeof createExecutionConnectorContext
-    >["timing$"];
-    readonly networkPolicyInputs$: Computed<
-      Promise<ExecutionNetworkPolicyInputs>
-    >;
   },
 ) {
   return computed(async (get) => {
@@ -502,22 +373,11 @@ function createExecutionPreparedContext(
       officialWorkflowBundles: packages.officialWorkflowBundles,
       templateGuidanceBundles: packages.templateGuidanceBundles,
     };
-    const connectorOperationTimings = get(
-      dependencies.connectorTiming$,
-    ).snapshot();
-    const networkPolicyInputs = prepared.connectorRuntimeTargets.some(
-      (target) => {
-        return target.kind === "builtin";
-      },
-    )
-      ? await get(dependencies.networkPolicyInputs$)
-      : null;
     return {
       context: preparedExecutionContextSchema.parse(prepared),
       secrets: environment.secrets ?? null,
       storageCacheWrites: storage.cacheWrites,
-      connectorOperationTimings,
-      networkPolicyInputs,
+      networkPolicyInputs: facts.connectorNetworkPolicyInputs,
     };
   });
 }

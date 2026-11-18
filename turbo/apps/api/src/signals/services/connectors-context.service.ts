@@ -4,14 +4,6 @@ import type { RunPromptAndSkills, SkillVolume } from "./run-prompt-and-skills";
 
 const MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT = 20;
 
-export function createConnectorSkillVolumes(
-  authorizedConnectors$: Computed<Promise<AuthorizedConnectors>>,
-) {
-  return computed(async (get) => {
-    return connectorSkillVolumes(await get(authorizedConnectors$));
-  });
-}
-
 function connectorSkillVolumes(
   connectors: AuthorizedConnectors,
 ): readonly SkillVolume[] {

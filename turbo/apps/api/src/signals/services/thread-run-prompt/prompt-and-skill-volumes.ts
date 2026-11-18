@@ -38,6 +38,7 @@ export interface PromptAndSkillVolumes {
   readonly userPrompt: string;
   readonly skillVolumes: readonly SkillVolume[];
   readonly seedSkillVolumes: readonly SeedSkillVolume[];
+  readonly connectorSkillVolumes: readonly SkillVolume[];
   readonly templateSkillVolumes: readonly TemplateSkillVolume[];
   readonly userTimezone: string | undefined;
 }
@@ -319,6 +320,7 @@ export function createPromptAndSkillVolumesSignals(
       userPrompt: prompts.userPrompt,
       skillVolumes: combined.skillVolumes,
       seedSkillVolumes: systemSkills.skillVolumes,
+      connectorSkillVolumes: connectors.skillVolumes,
       templateSkillVolumes: templates?.skillVolumes ?? [],
       // createUserPrompt already consumed this memoized member observation.
       userTimezone:

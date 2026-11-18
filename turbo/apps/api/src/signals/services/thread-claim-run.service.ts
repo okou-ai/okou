@@ -1316,7 +1316,7 @@ export function createThreadClaimRunObjects(
     // Request feature/member facts are already warm. Cold background picks
     // retain demand loading rather than expanding optional sources on rejection.
     if (requestFacts) {
-      await get(threadContext.threadAccessOverrides$);
+      await get(threadContext.threadConnectorSources$);
     }
   });
   const okouTokenInput$ = createOkouTokenInputSignals(
@@ -2619,7 +2619,9 @@ export function createThreadClaimRunObjects(
     return {
       framework: modelProviderFramework(modelProvider),
       modelProvider,
-      connectorRuntimeTargets: connector.runtimeTargets,
+      connectorRuntimeTargets: connector.environment.runtimeTargets,
+      connectorEnvironment: connector.environment,
+      connectorNetworkPolicyInputs: connector.networkPolicyInputs,
       modelProviderPermissions: providerPermissions.ok,
     };
   });
@@ -2676,6 +2678,9 @@ export function createThreadClaimRunObjects(
       piSandbox,
       modelProvider,
       connectorRuntimeTargets: runtimeContext.connectorRuntimeTargets,
+      connectorEnvironment: runtimeContext.connectorEnvironment,
+      connectorNetworkPolicyInputs: runtimeContext.connectorNetworkPolicyInputs,
+      connectorSkillVolumes: promptAndSkills.connectorSkillVolumes,
       modelProviderPermissions: runtimeContext.modelProviderPermissions,
       seedSkillVolumes: promptAndSkills.seedSkillVolumes,
       templateSkillVolumes: promptAndSkills.templateSkillVolumes,
@@ -3113,6 +3118,9 @@ export function createThreadClaimRunObjects(
               piModelConfig: context.piSandbox,
             },
             modelProviderPermissions: context.modelProviderPermissions,
+            connectorEnvironment: context.connectorEnvironment,
+            connectorNetworkPolicyInputs: context.connectorNetworkPolicyInputs,
+            connectorSkillVolumes: context.connectorSkillVolumes,
             seedSkillVolumes: context.seedSkillVolumes,
             userTimezone: context.userTimezone,
           },
@@ -4547,6 +4555,9 @@ interface ThreadRunnerFacts {
     | "captureNetworkBodies"
     | "modelProvider"
     | "modelProviderPermissions"
+    | "connectorEnvironment"
+    | "connectorNetworkPolicyInputs"
+    | "connectorSkillVolumes"
     | "seedSkillVolumes"
     | "userTimezone"
   >;

@@ -31,7 +31,6 @@ import {
   persistStoragePresignedUrls$,
   type StoragePresignedUrlCacheWrite,
 } from "./system-storage-presigned-url-cache.service";
-import { recordExecutionPreparationTimings } from "./api-dispatch-timing.service";
 import {
   executionWorkflowSchema,
   executionWorkflowInput,
@@ -141,12 +140,6 @@ export const prepareDirectRun$ = command(
       signal,
     );
     signal.throwIfAborted();
-    recordExecutionPreparationTimings({
-      runId: input.run.id,
-      runnerGroup: input.runnerGroup,
-      profile: input.profile,
-      records: prepared.connectorOperationTimings,
-    });
     return {
       cacheWrites: [...prepared.storageCacheWrites, ...publication.cacheWrites],
       executionContext: publication.executionContext,

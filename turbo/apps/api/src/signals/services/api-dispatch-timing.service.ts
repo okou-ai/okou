@@ -394,36 +394,6 @@ export class ApiDispatchTimingCollector {
   }
 }
 
-/** Publish actual preparation intervals for direct dispatch. */
-export function recordExecutionPreparationTimings(args: {
-  readonly runId: string;
-  readonly runnerGroup: string;
-  readonly profile: string;
-  readonly records: readonly ApiDispatchTimingRecord[];
-}): void {
-  const apiCommitSha = normalizeBuildCommitSha(env("GIT_COMMIT_SHA"));
-  recordSandboxOperations(
-    args.records.map((record) => {
-      return {
-        sandboxType: "runner",
-        actionType: record.actionType,
-        durationMs: record.durationMs,
-        success: true,
-        runId: args.runId,
-        timestamp: record.timestamp,
-        dimensions: {
-          ...record.dimensions,
-          runner_group: args.runnerGroup,
-          profile: args.profile,
-          preparation_phase: "dispatch",
-          span_kind: record.spanKind,
-          ...(apiCommitSha ? { api_commit_sha: apiCommitSha } : {}),
-        },
-      };
-    }),
-  );
-}
-
 export async function measureApiDispatchTiming<T>(
   collector: ApiDispatchTimingCollector | undefined,
   actionType: ApiDispatchTimingActionType,
