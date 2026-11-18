@@ -31,4 +31,10 @@
     <string name="chat_mark_unread">Marcar como no leído</string>
     <string name="chat_read_action_pending">Actualizando el estado de lectura…</string>
     <string name="chat_read_action_failed">No se pudo actualizar el estado de lectura.</string>
+    <string name="chat_mute">Silenciar chat</string>
+    <string name="chat_unmute">Dejar de silenciar chat</string>
+    <string name="chat_archive">Archivar chat</string>
+    <string name="chat_unarchive">Desarchivar chat</string>
+    <string name="chat_row_action_pending">Actualizando el chat…</string>
+    <string name="chat_row_action_failed">No se pudo confirmar el cambio en el chat.</string>
 </resources>

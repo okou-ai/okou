@@ -31,4 +31,10 @@
     <string name="chat_mark_unread">Tandai belum dibaca</string>
     <string name="chat_read_action_pending">Memperbarui status baca…</string>
     <string name="chat_read_action_failed">Status baca tidak dapat diperbarui.</string>
+    <string name="chat_mute">Bisukan chat</string>
+    <string name="chat_unmute">Aktifkan notifikasi chat</string>
+    <string name="chat_archive">Arsipkan chat</string>
+    <string name="chat_unarchive">Batalkan pengarsipan</string>
+    <string name="chat_row_action_pending">Memperbarui chat…</string>
+    <string name="chat_row_action_failed">Perubahan chat tidak dapat dikonfirmasi.</string>
 </resources>

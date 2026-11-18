@@ -254,6 +254,20 @@ class ApiClient(
 
     suspend fun markUnread(threadId: String) = execute { api.markUnread(it, threadId) }
 
+    suspend fun setMuted(threadId: String, muted: Boolean, eventId: String) {
+        executeResponse(204) {
+            if (muted) api.muteThread(it, threadId, eventId)
+            else api.unmuteThread(it, threadId, eventId)
+        }
+    }
+
+    suspend fun setArchived(threadId: String, archived: Boolean, eventId: String) {
+        executeResponse(204) {
+            if (archived) api.archiveThread(it, threadId, eventId)
+            else api.unarchiveThread(it, threadId, eventId)
+        }
+    }
+
     suspend fun preferences(): UserPreferences = execute { reads.preferences(it) }
 
     suspend fun initializePreferences(body: InitializePreferencesRequest): UserPreferences =

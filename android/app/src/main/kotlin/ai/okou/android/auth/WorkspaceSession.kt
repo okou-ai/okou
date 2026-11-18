@@ -253,6 +253,12 @@ class CanonicalWorkspaceSession(
 
     override suspend fun markUnread(threadId: String) = api.markUnread(threadId)
 
+    override suspend fun setMuted(threadId: String, muted: Boolean, eventId: String) =
+        api.setMuted(threadId, muted, eventId)
+
+    override suspend fun setArchived(threadId: String, archived: Boolean, eventId: String) =
+        api.setArchived(threadId, archived, eventId)
+
     override suspend fun historyRows(threadId: String, cursor: HistoryCursor): HistoryPage =
         withContext(Dispatchers.Default) {
             val page = api.historyRows(threadId, cursor)
