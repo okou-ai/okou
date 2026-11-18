@@ -2,6 +2,7 @@
 """Validate native terminal receipts and correlate their real P1 sample windows."""
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -9,6 +10,17 @@ import pathlib
 import re
 import stat
 import uuid
+
+
+@contextmanager
+def open_original_stream(path):
+    """Lend a binary stream while retaining the original evidence descriptor."""
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        with os.fdopen(fd, "rb", closefd=False) as stream:
+            yield stream
+    finally:
+        os.close(fd)
 
 
 def regular(
@@ -19,15 +31,10 @@ def regular(
     oversize_message="original evidence exceeded its bound",
 ):
     """Read bounded original evidence without following links or blocking on a special file."""
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    try:
-        # Stream construction can fail before taking ownership of the descriptor.
-        with os.fdopen(fd, "rb", closefd=False) as stream:
-            if not stat.S_ISREG(os.fstat(fd).st_mode):
-                raise ValueError(nonregular_message)
-            raw = stream.read(limit + 1)
-    finally:
-        os.close(fd)
+    with open_original_stream(path) as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            raise ValueError(nonregular_message)
+        raw = stream.read(limit + 1)
     if len(raw) > limit:
         raise ValueError(oversize_message)
     return raw

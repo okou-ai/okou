@@ -270,8 +270,7 @@ def validate(directory, contract):
     # fstat and the full superblock bind the original regular retained image.
     import os
     import stat
-    fd = os.open(image,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
-    with os.fdopen(fd,"rb") as stream:
+    with report.open_original_stream(image) as stream:
         if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode) or os.fstat(stream.fileno()).st_size != home["bytes"]:
             raise ValueError("fixed retained original image is not complete")
         stream.seek(1024); block=stream.read(1024)
