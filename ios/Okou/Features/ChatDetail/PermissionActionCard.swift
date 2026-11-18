@@ -28,7 +28,8 @@ private struct PermissionActionCardContent: View {
 
   private var isLoading: Bool { phase.state == .loading }
   private var snapshot: ChatPermissionSnapshot? {
-    phase.data ?? (isLoading ? store.snapshot : nil)
+    if store.isBusy, let snapshot = store.snapshot { return snapshot }
+    return phase.data ?? (isLoading ? store.snapshot : nil)
   }
   private var review: PermissionActionReview {
     PermissionActionReview(action: store.action, snapshot: snapshot)
@@ -43,7 +44,10 @@ private struct PermissionActionCardContent: View {
       ? String(localized: "Other endpoints") : store.action.permission
   }
   private var status: String {
-    if store.isSaving { return String(localized: "Saving permission…") }
+    if store.isSaving {
+      return store.isContinuing
+        ? String(localized: "Continuing chat…") : String(localized: "Saving permission…")
+    }
     if isLoading || (snapshot == nil && error == nil) {
       return String(localized: "Checking permission…")
     }
@@ -151,11 +155,11 @@ private struct PermissionActionDetailsContent: View {
   @Bindable var store: PermissionActionStore
   let phase: Loadable<ChatPermissionSnapshot>
   @Environment(\.dismiss) private var dismiss
-  @State private var confirmingContinuation = false
 
   private var isLoading: Bool { phase.state == .loading }
   private var snapshot: ChatPermissionSnapshot? {
-    phase.data ?? (isLoading ? store.snapshot : nil)
+    if store.isBusy, let snapshot = store.snapshot { return snapshot }
+    return phase.data ?? (isLoading ? store.snapshot : nil)
   }
   private var review: PermissionActionReview {
     PermissionActionReview(action: store.action, snapshot: snapshot)
@@ -263,7 +267,7 @@ private struct PermissionActionDetailsContent: View {
     }
     if review.hasPermission && (!review.applied || needsContinuation || store.isSaving) {
       if store.action.action == .allow
-        && (store.isSaving ? !confirmingContinuation : !needsContinuation)
+        && (store.isSaving ? !store.isContinuing : !needsContinuation)
       {
         HStack {
           Text("Allow for")
@@ -285,7 +289,6 @@ private struct PermissionActionDetailsContent: View {
       }
       VStack(spacing: OkouSpace.ten) {
         Button {
-          confirmingContinuation = needsContinuation
           Task { [snapshot] in await store.confirm(reviewing: snapshot) }
         } label: {
           ChatSettingsActionLabel(title: confirmationTitle, isBusy: store.isSaving)
@@ -303,7 +306,7 @@ private struct PermissionActionDetailsContent: View {
 
   private var confirmationTitle: LocalizedStringKey {
     if store.isSaving {
-      return confirmingContinuation ? "Continuing chat…" : "Saving permission…"
+      return store.isContinuing ? "Continuing chat…" : "Saving permission…"
     }
     if needsContinuation { return "Continue chat" }
     return store.action.action == .allow ? "Allow permission" : "Deny permission"

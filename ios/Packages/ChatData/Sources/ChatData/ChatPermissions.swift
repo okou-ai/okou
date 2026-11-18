@@ -101,37 +101,43 @@ public struct ChatPermissions: Sendable {
       let agentId: String
       let displayName: String?
     }
-    let agent: Agent = try await client.request("/api/agents/\(action.agentID)")
+    async let agentRequest: Agent = client.request("/api/agents/\(action.agentID)")
+    async let metadataRequest = metadata(slug: action.connectorSlug)
+    async let sharedRequest = ChatComposerAccess(client: client).chatAccountAccessEnabled()
+    let shared = try await sharedRequest
+    let rules: [ChatPermissionRule]
+    if shared {
+      let result: MemberConnectorPermissions = try await client.request(
+        "/api/connector-permissions", query: ChatConnectorTarget.builtin(action.connectorSlug).query)
+      rules = try result.rules(slug: action.connectorSlug)
+    } else {
+      rules = try await grants(action).map(\.rule)
+    }
+    let agent = try await agentRequest
     guard UUID(uuidString: agent.agentId) == UUID(uuidString: action.agentID) else {
       throw APIClientError.invalidResponse
     }
-    if try await ChatComposerAccess(client: client).chatAccountAccessEnabled() {
-      let snapshot = try await connectorPermissions(slug: action.connectorSlug)
-      return ChatPermissionSnapshot(
-        agentName: agent.displayName, metadata: snapshot.metadata, grants: snapshot.grants,
-        connectorScoped: true)
-    }
-    let grants = try await grants(action)
-    let metadata = try await self.metadata(slug: action.connectorSlug)
     return ChatPermissionSnapshot(
-      agentName: agent.displayName, metadata: metadata, grants: grants.map(\.rule),
-      connectorScoped: false)
+      agentName: agent.displayName, metadata: try await metadataRequest, grants: rules,
+      connectorScoped: shared)
   }
 
-  public func apply(_ action: ChatPermissionAction, duration: ChatPermissionAction.Duration)
-    async throws -> ChatPermissionRule
-  {
+  public func apply(
+    _ action: ChatPermissionAction, duration: ChatPermissionAction.Duration,
+    reviewing current: ChatPermissionSnapshot
+  ) async throws -> ChatPermissionSnapshot {
     // Revalidate before writing: the thread may have moved to another Agent while the sheet was open.
     try await validateContext(action)
-    let current = try await load(action)
-    guard let metadata = current.metadata, metadata.contains(action.permission) else {
+    guard let metadata = current.metadata, metadata.connectorSlug == action.connectorSlug,
+      metadata.contains(action.permission)
+    else {
       throw ChatError.invalidContract("This permission is no longer available.")
     }
-    if let existing = current.grants.last(where: {
+    if current.grants.contains(where: {
       $0.connectorSlug == action.connectorSlug && $0.permission == action.permission
         && $0.action == action.action && $0.isActive(at: .now)
     }) {
-      return existing
+      return current
     }
     if current.connectorScoped {
       let result = try await applyConnectorPermissions(
@@ -142,11 +148,12 @@ public struct ChatPermissions: Sendable {
             expiresIn: action.action == .allow ? duration.rawValue : nil)
         ])
       guard
-        let grant = result.first(where: {
+        result.contains(where: {
           $0.permission == action.permission && $0.action == action.action && $0.isActive(at: .now)
         })
       else { throw APIClientError.invalidResponse }
-      return grant
+      return ChatPermissionSnapshot(
+        agentName: current.agentName, metadata: metadata, grants: result, connectorScoped: true)
     }
     struct Grant: Encodable {
       let permission: String
@@ -173,7 +180,11 @@ public struct ChatPermissions: Sendable {
       grant.connectorSlug == action.connectorSlug, grant.permission == action.permission,
       grant.action == action.action, grant.isActive(at: .now)
     else { throw APIClientError.invalidResponse }
-    return grant.rule
+    return ChatPermissionSnapshot(
+      agentName: current.agentName, metadata: metadata,
+      grants: current.grants.filter {
+        $0.connectorSlug != action.connectorSlug || $0.permission != action.permission
+      } + [grant.rule], connectorScoped: false)
   }
 
   func connectorPermissions(slug: String) async throws -> ChatPermissionSnapshot {
