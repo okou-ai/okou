@@ -13,6 +13,18 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1148.1](https://github.com/okou-ai/okou/compare/app-v0.1148.0...app-v0.1148.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* **app:** anchor variable-height dialogs to the top ([#48771](https://github.com/okou-ai/okou/issues/48771)) ([312092f](https://github.com/okou-ai/okou/commit/312092f8a3da89890bc8f7a8d6de0ca80b12ac01))
+
+
+### Performance Improvements
+
+* **test:** reuse account manager title matches ([#48777](https://github.com/okou-ai/okou/issues/48777)) ([1cb70ce](https://github.com/okou-ai/okou/commit/1cb70ce79ff71bfea7e88899a60e1131847d2cb3))
+
 ## [0.1148.0](https://github.com/okou-ai/okou/compare/app-v0.1147.5...app-v0.1148.0) (2026-11-18)
 
 

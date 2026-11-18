@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.249.55](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.54...runner-rs-v0.249.55) (2026-11-18)
+
+
+### Refactoring
+
+* **python:** unify metadata match pattern analysis ([#48788](https://github.com/okou-ai/okou/issues/48788)) ([2787e00](https://github.com/okou-ai/okou/commit/2787e00171be56c603d19b3412af022d84e91ce0))
+* **runner:** share canonical uuid checks in native reports ([#48779](https://github.com/okou-ai/okou/issues/48779)) ([447d84d](https://github.com/okou-ai/okou/commit/447d84dc01de62b238b698e77b2470bafd60b663))
+
 ## [0.249.54](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.53...runner-rs-v0.249.54) (2026-11-18)
 
 
