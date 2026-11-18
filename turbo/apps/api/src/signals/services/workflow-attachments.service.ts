@@ -5,9 +5,9 @@ import {
   type ContentBundleFile,
 } from "@okouai/core/content-bundle";
 import {
-  isStaffCopiedAttachment,
-  readStaffCopiedAttachments,
-} from "@okouai/core/staff-single-agent-migration";
+  isMigratedWorkflowAttachment,
+  readMigratedWorkflowAttachments,
+} from "@okouai/core/single-agent-migration";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import { command, computed } from "ccstate";
 import {
@@ -71,7 +71,10 @@ export function workflowAttachmentFiles(input: {
       return [];
     }
     if (
-      isStaffCopiedAttachment({ ...input, objectKey: descriptor.objectKey })
+      isMigratedWorkflowAttachment({
+        ...input,
+        objectKey: descriptor.objectKey,
+      })
     ) {
       if (!input.contentBundle) {
         throw new Error("Copied Workflow has no immutable content");
@@ -82,7 +85,7 @@ export function workflowAttachmentFiles(input: {
           contentBundleKey(input.contentBundle.sha256),
         ),
       );
-      const files = readStaffCopiedAttachments(
+      const files = readMigratedWorkflowAttachments(
         archive,
         input.contentBundle,
         descriptor,
@@ -289,7 +292,7 @@ export const publishWorkflowContentBundle$ = command(
     } else if (input.attachments.kind === "empty") {
       files = [];
     } else if (
-      isStaffCopiedAttachment({
+      isMigratedWorkflowAttachment({
         ...input,
         objectKey: input.attachments.objectKey,
       })
@@ -306,7 +309,7 @@ export const publishWorkflowContentBundle$ = command(
         },
         signal,
       );
-      files = readStaffCopiedAttachments(
+      files = readMigratedWorkflowAttachments(
         archive,
         input.contentBundle,
         input.attachments,

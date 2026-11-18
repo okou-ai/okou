@@ -1,44 +1,70 @@
 import { describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
-import { uuid } from "zod";
 import { prepareContentBundle, readContentBundle } from "../content-bundle";
 import { prepareWorkflowAttachmentBundle } from "../workflow-attachment-bundle";
 import {
   STAFF_SINGLE_AGENT_ORG_ID,
-  isStaffCopiedAttachment,
-  readStaffCopiedAttachments,
+  isMigratedWorkflowAttachment,
+  readMigratedWorkflowAttachments,
   staffWorkflowCopyId,
-} from "../staff-single-agent-migration";
+} from "../single-agent-migration";
 
-describe("temporary staff Workflow copies", () => {
-  it("recognizes only the exact staff source-to-copy attachment relationship", async () => {
-    const source = randomUUID();
-    const upload = await prepareWorkflowAttachmentBundle(
-      STAFF_SINGLE_AGENT_ORG_ID,
-      source,
-      [{ path: "reference.txt", content: Buffer.from("reference") }],
-    );
-    expect(upload.descriptor.kind).toBe("bundle");
-    if (upload.descriptor.kind !== "bundle") throw new Error("Bundle required");
-    const input = {
-      orgId: STAFF_SINGLE_AGENT_ORG_ID,
-      workflowId: uuid().parse(staffWorkflowCopyId(source)),
-      objectKey: upload.descriptor.objectKey,
-    };
-    expect(isStaffCopiedAttachment(input)).toBe(true);
-    expect(isStaffCopiedAttachment({ ...input, workflowId: source })).toBe(
-      false,
-    );
+describe("Single Agent Workflow attachment inheritance", () => {
+  const sourceId = "81234567-49ab-4ef0-b234-56789abcdef0";
+  const uploadId = "80f955fb-ccbd-4a4f-b6f7-69c48246bda9";
+  const staffCopyId = "8565fb4c-0d18-541d-89fb-d8a2cfb8f633";
+  const inactiveCopyId = "1cf8de92-33c5-5a65-841e-5abfa45c3b6d";
+
+  it("recognizes the staff and inactive migration IDs in their own workspaces", () => {
+    expect(staffWorkflowCopyId(sourceId)).toBe(staffCopyId);
     expect(
-      isStaffCopiedAttachment({ ...input, workflowId: randomUUID() }),
-    ).toBe(false);
-    expect(isStaffCopiedAttachment({ ...input, orgId: "foreign" })).toBe(false);
-    expect(
-      isStaffCopiedAttachment({
-        ...input,
-        objectKey: input.objectKey.replace(source, randomUUID()),
+      isMigratedWorkflowAttachment({
+        orgId: STAFF_SINGLE_AGENT_ORG_ID,
+        workflowId: staffCopyId,
+        objectKey: `workflow-attachments/${STAFF_SINGLE_AGENT_ORG_ID}/${sourceId}/${uploadId}/archive.tar.gz`,
       }),
-    ).toBe(false);
+    ).toBe(true);
+    expect(
+      isMigratedWorkflowAttachment({
+        orgId: "org_inactive",
+        workflowId: inactiveCopyId,
+        objectKey: `workflow-attachments/org_inactive/${sourceId}/${uploadId}/archive.tar.gz`,
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects unrelated IDs, foreign workspaces, and malformed attachment keys", () => {
+    const inactive = {
+      orgId: "org_inactive",
+      workflowId: inactiveCopyId,
+      objectKey: `workflow-attachments/org_inactive/${sourceId}/${uploadId}/archive.tar.gz`,
+    };
+    const staffKey = inactive.objectKey.replace(
+      inactive.orgId,
+      STAFF_SINGLE_AGENT_ORG_ID,
+    );
+    const cases = [
+      { ...inactive, workflowId: sourceId },
+      { ...inactive, workflowId: staffCopyId },
+      { ...inactive, orgId: "org_other" },
+      { ...inactive, objectKey: staffKey },
+      {
+        ...inactive,
+        objectKey: inactive.objectKey.replace(sourceId, uploadId),
+      },
+      {
+        ...inactive,
+        objectKey: inactive.objectKey.replace(uploadId, "0".repeat(36)),
+      },
+      {
+        ...inactive,
+        orgId: STAFF_SINGLE_AGENT_ORG_ID,
+        objectKey: staffKey,
+      },
+    ];
+    for (const candidate of cases) {
+      expect(isMigratedWorkflowAttachment(candidate)).toBe(false);
+    }
   });
 
   it("republishes binary attachments and executable modes without touching the source archive", async () => {
@@ -63,7 +89,7 @@ describe("temporary staff Workflow copies", () => {
       ...files,
     ]);
     const before = Buffer.from(original.archive);
-    const inherited = readStaffCopiedAttachments(
+    const inherited = readMigratedWorkflowAttachments(
       original.archive,
       original.descriptor,
       descriptor,
@@ -93,7 +119,7 @@ describe("temporary staff Workflow copies", () => {
     ).toBe(0o755);
     expect(original.archive).toEqual(before);
     expect(() => {
-      return readStaffCopiedAttachments(
+      return readMigratedWorkflowAttachments(
         changed.archive,
         original.descriptor,
         descriptor,
@@ -101,7 +127,7 @@ describe("temporary staff Workflow copies", () => {
     }).toThrow("integrity");
     const wrongMetadata = { ...descriptor, files: [] };
     expect(() => {
-      return readStaffCopiedAttachments(
+      return readMigratedWorkflowAttachments(
         original.archive,
         original.descriptor,
         wrongMetadata,

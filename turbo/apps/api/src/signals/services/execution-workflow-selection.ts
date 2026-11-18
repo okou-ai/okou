@@ -25,7 +25,7 @@ import { contentBundleAvailableCondition } from "./execution-content-bundle";
 import {
   STAFF_SINGLE_AGENT_ORG_ID,
   STAFF_WORKFLOW_COPY_NAMESPACE,
-} from "@okouai/core/staff-single-agent-migration";
+} from "@okouai/core/single-agent-migration";
 
 export const executionWorkflowSchema = zObject({
   id: zUuid(),

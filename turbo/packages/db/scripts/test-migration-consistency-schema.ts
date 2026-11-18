@@ -56,6 +56,7 @@ import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-r
 import { validateOfficialWorkflowStorageRetirement } from "./test-official-workflow-storage-retirement";
 import { validateWorkflowPublicationContraction } from "./test-workflow-publication-contraction";
 import { validateStaffWorkflowAttachmentDeletion } from "./test-staff-workflow-attachment-deletion";
+import { validateInactiveWorkflowAttachmentDeletion } from "./test-inactive-workflow-attachment-deletion";
 import { validateSeedSkillBundleSchema } from "./test-seed-skill-bundle-schema";
 import { validateConnectorSkillBundleSchema } from "./test-connector-skill-bundle-schema";
 import { validateChatConnectorAccessSchema } from "./test-chat-connector-access-schema";
@@ -1455,7 +1456,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "f2e5f682ff62b79b2310e58ce21e4d39",
+    bodyHash: "276d29ce4338e19f10fae30624787723",
   },
   {
     schemaName: "public",
@@ -3177,6 +3178,7 @@ async function main(): Promise<void> {
     await validateOfficialWorkflowStorageRetirement(dbUrl1);
     await validateWorkflowPublicationContraction(dbUrl1);
     await validateStaffWorkflowAttachmentDeletion(dbUrl1);
+    await validateInactiveWorkflowAttachmentDeletion(dbUrl1);
     await validateSeedSkillBundleSchema(dbUrl1);
     await validateConnectorSkillBundleSchema(dbUrl1);
     await validateChatConnectorAccessSchema(dbUrl1);
@@ -3237,6 +3239,7 @@ async function main(): Promise<void> {
     await validateConnectorSkillBundleSchema(dbUrl2);
     await validateChatConnectorAccessSchema(dbUrl2);
     await validatePermanentWorkflowNameScopes(dbUrl2);
+    await validateInactiveWorkflowAttachmentDeletion(dbUrl2);
     await validateOfficialAutomationBindingSchema(dbUrl2);
     await validateConnectorAutomaticOAuthConstraints(dbUrl2);
 
