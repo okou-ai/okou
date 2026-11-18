@@ -81,7 +81,7 @@ test("resolves the Run's original capabilities despite another genuine envelope 
     if (!resolvedHeader?.startsWith("Bearer ")) {
       throw new Error("Expected the resolved bearer credential");
     }
-    expect(claimsFromIssuedToken(resolvedHeader.slice(7))).toEqual(
+    expect(claimsFromIssuedToken(resolvedHeader.slice(7))).toStrictEqual(
       claimsFromIssuedToken(originalToken),
     );
     expect(resolved.body).toMatchObject({
@@ -163,7 +163,9 @@ test("caps the auth lease at the original expiry and refuses a fresh token lifet
     if (!authorization?.startsWith("Bearer ")) {
       throw new Error("Expected the resolved bearer credential");
     }
-    expect(claimsFromIssuedToken(authorization.slice(7))).toEqual(original);
+    expect(claimsFromIssuedToken(authorization.slice(7))).toStrictEqual(
+      original,
+    );
     mockNow(original.exp * 1000);
     const expired = await firewall.requestFirewallAuth(headers, body, [403]);
     expect(expired.body).toMatchObject({
