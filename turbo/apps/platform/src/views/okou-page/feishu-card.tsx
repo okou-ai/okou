@@ -1496,13 +1496,66 @@ function FeishuBotsCard({
   );
 }
 
+function FeishuOfficialMenu({ title }: { title: string }) {
+  const { t } = useTranslation();
+  const signal = useGet(pageSignal$);
+  const [disconnectLoadable, disconnect] = useLoadableSet(
+    disconnectFeishuOfficial$,
+  );
+  const disconnecting = disconnectLoadable.state === "loading";
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={
+          <Button
+            showTooltip
+            type="button"
+            disabled={disconnecting}
+            variant="quiet"
+            size="icon-sm"
+            className="shrink-0"
+            aria-label={t(
+              ($) => {
+                return $.connectors.providerSettings.feishu.moreOptions;
+              },
+              { bot: title },
+            )}
+          >
+            <EllipsisVertical size={16} />
+          </Button>
+        }
+      />
+      <PopoverContent align="end" className="flex w-40 flex-col gap-0.5 p-2">
+        <button
+          type="button"
+          disabled={disconnecting}
+          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-state-hover hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
+          onClick={() => {
+            detach(disconnect(signal), Reason.DomCallback);
+          }}
+        >
+          {disconnecting
+            ? t(($) => {
+                return $.connectors.actions.disconnecting;
+              })
+            : t(($) => {
+                return $.connectors.actions.disconnect;
+              })}
+        </button>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function FeishuOfficialRow() {
   const { t } = useTranslation();
+  const title = t(($) => {
+    return $.connectors.providerSettings.feishu.official.name;
+  });
   const enabled = useGet(feishuOfficialEnabled$);
   const data = useLastLoadable(feishuOfficialData$);
   const signal = useGet(pageSignal$);
   const [connecting, connect] = useLoadableSet(connectFeishuOfficial$);
-  const [disconnecting, disconnect] = useLoadableSet(disconnectFeishuOfficial$);
   if (!enabled) {
     return null;
   }
@@ -1529,14 +1582,9 @@ function FeishuOfficialRow() {
   if (!status) {
     return null;
   }
-  const pending =
-    connecting.state === "loading" || disconnecting.state === "loading";
+  const pending = connecting.state === "loading";
   return (
-    <section
-      aria-label={t(($) => {
-        return $.connectors.providerSettings.feishu.official.name;
-      })}
-    >
+    <section aria-label={title}>
       <div className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:px-5">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[10px]">
@@ -1548,11 +1596,7 @@ function FeishuOfficialRow() {
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-sm font-medium text-foreground">
-                {t(($) => {
-                  return $.connectors.providerSettings.feishu.official.name;
-                })}
-              </h3>
+              <h3 className="text-sm font-medium text-foreground">{title}</h3>
               {status.isConnected ? (
                 <span className="inline-flex min-w-0 items-center gap-1.5 rounded-lg border border-border bg-background px-2 py-1 text-xs font-medium text-secondary-foreground">
                   <CircleCheck className="h-3.5 w-3.5 text-green-600" />
@@ -1565,26 +1609,27 @@ function FeishuOfficialRow() {
             </div>
           </div>
         </div>
-        <Button
-          type="button"
-          variant="neutral"
-          size="sm"
-          className="h-9 justify-center"
-          disabled={pending || (!status.isConnected && !status.isConfigured)}
-          onClick={() => {
-            detach(
-              status.isConnected ? disconnect(signal) : connect(signal),
-              Reason.DomCallback,
-            );
-          }}
-        >
-          {pending ? <Loader2 size={14} className="animate-spin" /> : null}
-          {t(($) => {
-            return status.isConnected
-              ? $.connectors.actions.disconnect
-              : $.connectors.actions.connect;
-          })}
-        </Button>
+        {status.isConnected ? (
+          <div className="flex items-center justify-end">
+            <FeishuOfficialMenu title={title} />
+          </div>
+        ) : (
+          <Button
+            type="button"
+            variant="neutral"
+            size="sm"
+            className="h-9 justify-center"
+            disabled={pending || !status.isConfigured}
+            onClick={() => {
+              detach(connect(signal), Reason.DomCallback);
+            }}
+          >
+            {pending ? <Loader2 size={14} className="animate-spin" /> : null}
+            {t(($) => {
+              return $.connectors.actions.connect;
+            })}
+          </Button>
+        )}
       </div>
       {connecting.state === "hasError" &&
       connecting.error instanceof FeishuOfficialPopupBlockedError ? (

@@ -86,7 +86,7 @@ describe("official Feishu connection", () => {
     expect(screen.queryByLabelText("App secret")).toBeNull();
   });
 
-  it("disconnects the current Official account and preserves custom setup", async () => {
+  it("disconnects the current Official account through its options menu", async () => {
     let connected = true;
     context.mocks.api(feishuOfficialContract.getStatus, ({ respond }) => {
       return respond(200, {
@@ -105,7 +105,9 @@ describe("official Feishu connection", () => {
       name: "Okou",
     });
     expect(within(official).getByText("Official User")).toBeInTheDocument();
-    click(getAction("button", "Disconnect", official));
+    click(getAction("button", "More options for Okou", official));
+    const disconnect = await findAction("button", "Disconnect");
+    click(disconnect);
     await expect(
       findAction("button", "Connect", official),
     ).resolves.toBeEnabled();
