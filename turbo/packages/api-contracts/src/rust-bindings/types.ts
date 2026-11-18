@@ -422,7 +422,12 @@ export const rustTypeBindings = [
                   ? {
                       priority: ["Public Responses priority service tier."],
                     }
-                  : { fast: ["Native Codex Responses fast service tier."] },
+                  : {
+                      fast: ["Native Codex Responses fast service tier."],
+                      ultrafast: [
+                        "Native Codex Responses ultrafast service tier.",
+                      ],
+                    },
             },
             {
               rustTypeName: `PiModelConfigV3${dialect}CredentialBinding`,

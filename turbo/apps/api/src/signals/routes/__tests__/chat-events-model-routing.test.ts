@@ -719,11 +719,11 @@ describe("CHAT-02: model-first routing", () => {
       },
       [200, 201],
     );
-    const findAstra = async () => {
+    const findSol = async () => {
       const { models } = await misc.listRunModels(actor);
-      return models.find((entry) => entry.model === "gpt-6-astra");
+      return models.find((entry) => entry.model === "gpt-6.1-sol");
     };
-    expect((await findAstra())?.subscriptionOptions).not.toHaveProperty(
+    expect((await findSol())?.subscriptionOptions).not.toHaveProperty(
       "ultrafastAvailable",
     );
     await updateFeatureSwitchesForUser(
@@ -738,20 +738,22 @@ describe("CHAT-02: model-first routing", () => {
         return HttpResponse.json({ models: [] });
       }),
     );
-    expect((await findAstra())?.subscriptionOptions).toMatchObject({
+    expect((await findSol())?.subscriptionOptions).toMatchObject({
       serviceTier: "priority",
       ultrafastAvailable: true,
     });
+    mockPiResourceArchiveDownloads(true);
+    mockPiObjectStore();
     const run = await sendChatRun(actor, {
       agentId,
-      model: "gpt-6-astra",
+      model: "gpt-6.1-sol",
       prompt: "Use Ultrafast",
       runOptions: { codexServiceTier: "ultrafast" },
     });
     const { execution, sandboxHeaders } = await runExecution(run.runId);
-    expect(execution.cliAgentType).toBe("codex");
-    expect(executionEnvironment(execution)).toMatchObject({
-      OKOU_CODEX_SERVICE_TIER: "ultrafast",
+    expect(execution.cliAgentType).toBe("pi");
+    expect(execution.piModelConfig).toMatchObject({
+      serviceTier: "ultrafast",
     });
     expect(catalogRequests).toBe(0);
     await cancelChatRun(actor, run.runId, sandboxHeaders);

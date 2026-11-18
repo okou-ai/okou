@@ -121,7 +121,7 @@ function resolveCodexSubscriptionPiModelConfig(
     return null;
   }
   const config = {
-    ...(codexServiceTier === "fast"
+    ...(codexServiceTier !== undefined
       ? {
           schemaVersion: PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
           serviceTier: codexServiceTier,
@@ -155,7 +155,7 @@ function resolveCodexSubscriptionPiModelConfig(
     dialect: config.dialect,
     transport: config.transport,
     thinkingLevel: config.thinkingLevel,
-    serviceTier: codexServiceTier === "fast" ? "fast" : undefined,
+    serviceTier: codexServiceTier,
   })
     ? config
     : null;

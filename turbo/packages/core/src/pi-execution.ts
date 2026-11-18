@@ -129,9 +129,10 @@ export function isPiAdmittedRoute(args: PiExecutionRouteArgs): boolean {
     (args.runtimeProviderType == null ||
       args.runtimeProviderType === "codex-oauth-token") &&
     subscription !== undefined &&
-    args.codexServiceTier !== "ultrafast" &&
     (args.codexServiceTier === undefined ||
-      subscription.serviceTiers.includes("priority"))
+      subscription.serviceTiers.includes(
+        args.codexServiceTier === "fast" ? "priority" : args.codexServiceTier,
+      ))
   );
 }
 

@@ -302,6 +302,9 @@ pub mod runners {
             /// Native Codex Responses fast service tier.
             #[serde(rename = "fast")]
             Fast,
+            /// Native Codex Responses ultrafast service tier.
+            #[serde(rename = "ultrafast")]
+            Ultrafast,
         }
 
         /// One non-secret execution-edge credential binding.

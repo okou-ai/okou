@@ -690,7 +690,7 @@ describe("Pi agent model adapter", () => {
     },
   );
 
-  it.each([undefined, "fast"] as const)(
+  it.each([undefined, "fast", "ultrafast"] as const)(
     "normalizes native config tier %s with exact credentials and no retry over SSE",
     async (serviceTier) => {
       const provider = await retryableCodexProvider();
@@ -725,8 +725,9 @@ describe("Pi agent model adapter", () => {
         if (serviceTier === undefined) {
           expect(request?.body).not.toHaveProperty("service_tier");
         } else {
-          expect(config.serviceTier).toBe("fast");
-          expect(request?.body).toMatchObject({ service_tier: "priority" });
+          expect(request?.body).toMatchObject({
+            service_tier: serviceTier === "fast" ? "priority" : serviceTier,
+          });
         }
         expect(request?.body).toMatchObject({
           model: "gpt-6-luna",
