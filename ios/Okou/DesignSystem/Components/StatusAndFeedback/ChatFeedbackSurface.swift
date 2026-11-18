@@ -57,7 +57,7 @@ struct ChatFeedbackSurface: View {
     .contentShape(RoundedRectangle(cornerRadius: OkouRadius.card, style: .continuous))
     .offset(x: reduceMotion ? 0 : dismissOffset)
     .animation(reduceMotion ? nil : OkouMotion.press, value: isTouching)
-    .simultaneousGesture(ChatFeedbackTouchObservation(isTouching: $isTouching))
+    .gesture(ChatFeedbackTouchObservation(isTouching: $isTouching))
     .simultaneousGesture(
       DragGesture(minimumDistance: OkouSpace.md)
         .updating($dismissOffset) { value, offset, _ in
