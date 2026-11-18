@@ -5124,6 +5124,11 @@ const STRUCTURED_FAILURE_TITLES = Object.freeze({
       return $.chat.errors.recovery.providerStreamTimeoutTitle;
     });
   },
+  provider_request_timeout: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.providerStreamTimeoutTitle;
+    });
+  },
   provider_queue_timeout: () => {
     return i18n.t(($) => {
       return $.chat.errors.recovery.providerQueueTimeoutTitle;
@@ -5289,6 +5294,7 @@ const STRUCTURED_FAILURE_DESCRIPTIONS = Object.freeze({
   provider_rate_limited: FAILURE_DESCRIPTIONS.capacity,
   provider_overloaded: FAILURE_DESCRIPTIONS.capacity,
   provider_stream_timeout: FAILURE_DESCRIPTIONS.capacity,
+  provider_request_timeout: FAILURE_DESCRIPTIONS.capacity,
   provider_queue_timeout: FAILURE_DESCRIPTIONS.capacity,
   codex_access_program_unavailable: FAILURE_DESCRIPTIONS.accessProgram,
   provider_server_error: FAILURE_DESCRIPTIONS.capacity,
@@ -5327,6 +5333,7 @@ function structuredFailureIcon(reason: KnownRunFailureReason): LucideIcon {
     reason === "output_token_limit" ||
     reason === "provider_rate_limited" ||
     reason === "provider_stream_timeout" ||
+    reason === "provider_request_timeout" ||
     reason === "provider_queue_timeout" ||
     reason === "usage_limit"
   ) {

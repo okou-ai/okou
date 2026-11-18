@@ -744,6 +744,7 @@ const STRUCTURED_RUN_ERROR_BEHAVIOR: Record<
   provider_rate_limited: "generic",
   provider_overloaded: "overloaded",
   provider_stream_timeout: "generic",
+  provider_request_timeout: "generic",
   provider_queue_timeout: "generic",
   provider_server_error: "generic",
   firewall_auth_failed: "generic",

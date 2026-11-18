@@ -52,6 +52,7 @@ const KNOWN_FAILURE_LOG_POLICY = Object.freeze({
   provider_rate_limited: "suppress-caller-owned",
   provider_overloaded: "suppress-caller-owned",
   provider_stream_timeout: "suppress-caller-owned",
+  provider_request_timeout: "suppress-caller-owned",
   provider_queue_timeout: "suppress-caller-owned",
   provider_server_error: "suppress-caller-owned",
   firewall_auth_failed: "retain",

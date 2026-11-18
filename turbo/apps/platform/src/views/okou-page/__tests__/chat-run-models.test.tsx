@@ -277,6 +277,11 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
     action: "Try again",
     picker: true,
   },
+  provider_request_timeout: {
+    title: "The model response timed out",
+    action: "Try again",
+    picker: true,
+  },
   provider_queue_timeout: {
     title: "The model didn't start in time",
     action: "Try again",

@@ -65,6 +65,7 @@ fn generated_completion_failure_reason_tokens_preserve_the_wire_contract() {
         "provider_rate_limited",
         "provider_overloaded",
         "provider_stream_timeout",
+        "provider_request_timeout",
         "provider_server_error",
         "response_connection_lost",
         "safety_policy_refusal",

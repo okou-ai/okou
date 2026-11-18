@@ -279,6 +279,7 @@ const STRUCTURED_RECOVERY_KIND = Object.freeze({
   provider_rate_limited: "provider-retryable",
   provider_overloaded: "model-capacity",
   provider_stream_timeout: "provider-retryable",
+  provider_request_timeout: "provider-retryable",
   provider_queue_timeout: "provider-retryable",
   codex_access_program_unavailable: "provider-retryable",
   provider_server_error: "provider-retryable",

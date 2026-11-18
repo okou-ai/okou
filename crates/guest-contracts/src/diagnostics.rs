@@ -768,6 +768,8 @@ pub enum FailureReason {
     ProviderOverloaded,
     /// The provider stream timed out.
     ProviderStreamTimeout,
+    /// The model request transport timed out, independently of the run deadline.
+    ProviderRequestTimeout,
     /// The provider explicitly expired a request before processing started.
     ProviderQueueTimeout,
     /// The provider returned a server error.
@@ -815,6 +817,7 @@ impl FailureReason {
             Self::ProviderRateLimited => "provider_rate_limited",
             Self::ProviderOverloaded => "provider_overloaded",
             Self::ProviderStreamTimeout => "provider_stream_timeout",
+            Self::ProviderRequestTimeout => "provider_request_timeout",
             Self::ProviderQueueTimeout => "provider_queue_timeout",
             Self::ProviderServerError => "provider_server_error",
             Self::FirewallAuthFailed => "firewall_auth_failed",
@@ -853,6 +856,7 @@ impl From<FailureReason>
             FailureReason::ProviderRateLimited => Self::ProviderRateLimited,
             FailureReason::ProviderOverloaded => Self::ProviderOverloaded,
             FailureReason::ProviderStreamTimeout => Self::ProviderStreamTimeout,
+            FailureReason::ProviderRequestTimeout => Self::ProviderRequestTimeout,
             FailureReason::ProviderQueueTimeout => Self::ProviderQueueTimeout,
             FailureReason::ProviderServerError => Self::ProviderServerError,
             FailureReason::FirewallAuthFailed => Self::FirewallAuthFailed,

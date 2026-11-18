@@ -579,6 +579,7 @@ describe("agent completion failure reasons", () => {
       "provider_rate_limited",
       "provider_overloaded",
       "provider_stream_timeout",
+      "provider_request_timeout",
       "provider_queue_timeout",
       "provider_server_error",
       "firewall_auth_failed",

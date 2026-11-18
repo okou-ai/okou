@@ -3530,6 +3530,9 @@ pub mod webhooks {
                 /// The provider stream timed out.
                 #[serde(rename = "provider_stream_timeout")]
                 ProviderStreamTimeout,
+                /// The model request transport timed out.
+                #[serde(rename = "provider_request_timeout")]
+                ProviderRequestTimeout,
                 /// The provider expired the request before processing started.
                 #[serde(rename = "provider_queue_timeout")]
                 ProviderQueueTimeout,

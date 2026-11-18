@@ -702,6 +702,31 @@ fn turn_failure_message(failure: TurnFailure) -> &'static str {
         TurnFailure::RemoteCompactionBadRequest => {
             r#"Error running remote compact task: {"detail":"Bad Request"}"#
         }
+        TurnFailure::StreamIdleTimeout => {
+            "stream disconnected before completion: idle timeout waiting for SSE"
+        }
+        TurnFailure::RemoteCompactionStreamIdleTimeout => {
+            "Error running remote compact task: stream disconnected before completion: idle timeout waiting for SSE"
+        }
+        TurnFailure::RequestTimeout => "request timed out",
+        TurnFailure::RemoteCompactionRequestTimeout => {
+            "Error running remote compact task: request timed out"
+        }
+        TurnFailure::ContentFilter => {
+            "stream disconnected before completion: Incomplete response returned, reason: content_filter"
+        }
+        TurnFailure::RemoteCompactionContentFilter => {
+            "Error running remote compact task: stream disconnected before completion: Incomplete response returned, reason: content_filter"
+        }
+        TurnFailure::ShortBiologicalRisk => {
+            "This content was flagged for possible biological risk."
+        }
+        TurnFailure::RemoteCompactionShortBiologicalRisk => {
+            "Error running remote compact task: This content was flagged for possible biological risk."
+        }
+        TurnFailure::RemoteCompactionInvalidRequestFormat => {
+            r#"Error running remote compact task: {"error":{"message":"Invalid Format","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}"#
+        }
         TurnFailure::AccessProgram => {
             include_str!("fixtures/access-program-http-body.json").trim_end()
         }
@@ -723,14 +748,22 @@ fn turn_failure_message(failure: TurnFailure) -> &'static str {
 
 fn turn_failure_error_info(failure: TurnFailure) -> Option<Value> {
     match failure {
-        TurnFailure::Generic
-        | TurnFailure::ContentPolicyRejection
-        | TurnFailure::InvalidRequestFormat => None,
+        TurnFailure::Generic | TurnFailure::ContentPolicyRejection => None,
         TurnFailure::BiologicalRiskRejection
         | TurnFailure::OutputTokenLimit
         | TurnFailure::AccessProgram
         | TurnFailure::BadRequest
         | TurnFailure::RemoteCompactionBadRequest
+        | TurnFailure::StreamIdleTimeout
+        | TurnFailure::RemoteCompactionStreamIdleTimeout
+        | TurnFailure::RequestTimeout
+        | TurnFailure::RemoteCompactionRequestTimeout
+        | TurnFailure::ContentFilter
+        | TurnFailure::RemoteCompactionContentFilter
+        | TurnFailure::ShortBiologicalRisk
+        | TurnFailure::RemoteCompactionShortBiologicalRisk
+        | TurnFailure::InvalidRequestFormat
+        | TurnFailure::RemoteCompactionInvalidRequestFormat
         | TurnFailure::ProviderStreamServerError
         | TurnFailure::RemoteCompactionServerError
         | TurnFailure::RequestSend

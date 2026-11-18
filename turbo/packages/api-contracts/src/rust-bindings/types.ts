@@ -640,6 +640,7 @@ export const rustTypeBindings = [
           provider_rate_limited: ["The provider rate limited the request."],
           provider_overloaded: ["The provider reported overload."],
           provider_stream_timeout: ["The provider stream timed out."],
+          provider_request_timeout: ["The model request transport timed out."],
           provider_queue_timeout: [
             "The provider expired the request before processing started.",
           ],

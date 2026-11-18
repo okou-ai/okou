@@ -10645,6 +10645,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "provider_rate_limited",
           "provider_overloaded",
           "provider_stream_timeout",
+          "provider_request_timeout",
           "provider_server_error",
           "firewall_auth_failed",
           "response_connection_lost",
