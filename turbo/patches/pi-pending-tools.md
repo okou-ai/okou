@@ -20,6 +20,11 @@ Before-settle handlers may queue input or call the non-waiting `ctx.abort()`.
 The owner drains accepted input or persists it once on cancellation, then closes
 admission and releases ownership. Duplicate RPC aborts join this work.
 
+A thrown execution or post-run exception is terminal; it must not retry a retained
+queue without the session's retry policy. Close admission and preserve accepted
+input through events without another model/tool continuation. If that persistence
+also fails, propagate the error and release the native owner in `finally`.
+
 Ordinary `agent_settled` retains upstream's final notification-only semantics:
 handlers observe idle/no native signal, and requested prompts or custom turns
 are deferred until notification dispatch finishes. Direct steering/follow-up
@@ -34,7 +39,9 @@ assistant in history, so terminal assertions select the last assistant.
 RPC children, provider-boundary MSW and IPC barriers. Its transcript includes
 the initial tool-call assistant; the shared Guest JSON fixtures cover the
 terminal suffix only. The explicit Pi RPC step in `test-other` gates this file
-without adding the entire runtime suite. The subprocess kill deadline and
+alongside `prompt-settlement-failure.test.ts`, which covers terminal failure and
+queue-persistence errors through the public SDK. Neither adds the entire runtime
+suite. The subprocess kill deadline and
 Guest's ten-second abort deadline remain unchanged.
 
 ## 1.1.0 rebase

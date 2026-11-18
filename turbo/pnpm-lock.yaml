@@ -31,7 +31,7 @@ patchedDependencies:
     hash: d42895527c59749f3f45c3d6629493f134abfa3b5afe045ad93ca025466841c6
     path: patches/@base-ui__react@1.7.0.patch
   '@earendil-works/pi-agent-core@1.5.2':
-    hash: b95f26375e9fb082769918cbeeac22f69066c5bb4dd0947a552ef35374394300
+    hash: 7622b938f95988e7dd5859a1fd1f186e2c7b957f9a69e64b9da30dca76b6ec2a
     path: patches/@earendil-works__pi-agent-core@1.5.2.patch
   '@earendil-works/pi-ai@1.5.2':
     hash: 810ae443252ac34eb064988e80742a338ddc74ef51ac8f7c9ae7f9acb51b07f1
@@ -10563,7 +10563,7 @@ snapshots:
 
   '@drizzle-team/brocli@0.10.2': {}
 
-  '@earendil-works/pi-agent-core@1.5.2(patch_hash=b95f26375e9fb082769918cbeeac22f69066c5bb4dd0947a552ef35374394300)(@aws-sdk/credential-provider-node@3.972.97)(@smithy/signature-v4@5.7.5)(bufferutil@4.1.0)(undici@8.12.3)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.6.7)':
+  '@earendil-works/pi-agent-core@1.5.2(patch_hash=7622b938f95988e7dd5859a1fd1f186e2c7b957f9a69e64b9da30dca76b6ec2a)(@aws-sdk/credential-provider-node@3.972.97)(@smithy/signature-v4@5.7.5)(bufferutil@4.1.0)(undici@8.12.3)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.6.7)':
     dependencies:
       '@earendil-works/pi-ai': 1.5.2(patch_hash=810ae443252ac34eb064988e80742a338ddc74ef51ac8f7c9ae7f9acb51b07f1)(@aws-sdk/credential-provider-node@3.972.97)(@smithy/signature-v4@5.7.5)(bufferutil@4.1.0)(undici@8.12.3)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.6.7)
       '@earendil-works/pi-schema': 1.5.2
@@ -10611,7 +10611,7 @@ snapshots:
 
   '@earendil-works/pi-coding-agent@1.5.2(patch_hash=dc0afdd7c78d910f90d057026cbe06aa24f64da193184925bc261ef774757b3c)(@aws-sdk/credential-provider-node@3.972.97)(@smithy/signature-v4@5.7.5)(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.6.7)':
     dependencies:
-      '@earendil-works/pi-agent-core': 1.5.2(patch_hash=b95f26375e9fb082769918cbeeac22f69066c5bb4dd0947a552ef35374394300)(@aws-sdk/credential-provider-node@3.972.97)(@smithy/signature-v4@5.7.5)(bufferutil@4.1.0)(undici@8.12.3)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.6.7)
+      '@earendil-works/pi-agent-core': 1.5.2(patch_hash=7622b938f95988e7dd5859a1fd1f186e2c7b957f9a69e64b9da30dca76b6ec2a)(@aws-sdk/credential-provider-node@3.972.97)(@smithy/signature-v4@5.7.5)(bufferutil@4.1.0)(undici@8.12.3)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.6.7)
       '@earendil-works/pi-ai': 1.5.2(patch_hash=810ae443252ac34eb064988e80742a338ddc74ef51ac8f7c9ae7f9acb51b07f1)(@aws-sdk/credential-provider-node@3.972.97)(@smithy/signature-v4@5.7.5)(bufferutil@4.1.0)(undici@8.12.3)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.6.7)
       '@earendil-works/pi-codemode': 1.5.2
       '@earendil-works/pi-mcp': 1.5.2

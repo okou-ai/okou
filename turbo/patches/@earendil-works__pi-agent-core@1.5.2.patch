@@ -274,7 +274,7 @@ index 48f56a252dacdc19f55df9d97bc034932dce21a4..d748345e2aa61410750fe1cd490cc78a
              result: createErrorToolResult(error instanceof Error ? error.message : String(error)),
              isError: true,
 diff --git a/dist/agent.d.ts b/dist/agent.d.ts
-index 0147d05470d36019e0db0bf236fa0046f384a9a3..ea1b80396284575a791ebcbc3aa2a9a6ae4c44a0 100644
+index 0147d05470d36019e0db0bf236fa0046f384a9a3..c945842fd653fe67e545f890959005a31c294b56 100644
 --- a/dist/agent.d.ts
 +++ b/dist/agent.d.ts
 @@ -3,6 +3,13 @@ import type { AfterToolCallContext, AfterToolCallResult, AgentEvent, AgentLoopTu
@@ -313,12 +313,12 @@ index 0147d05470d36019e0db0bf236fa0046f384a9a3..ea1b80396284575a791ebcbc3aa2a9a6
 +    continuePendingTools(options?: AgentSettlement): Promise<void>;
 +    private handlePostRun;
 +    private runPendingContinuation;
-+    private persistCancelledQueue;
++    private persistQueuedInput;
      private normalizePromptInput;
      private runPromptMessages;
      private runContinuation;
 diff --git a/dist/agent.js b/dist/agent.js
-index e34d91afe7aa539ffff9f886352b02f23a1a51ea..679977d1ea38d15c9e85740216982daacef92f07 100644
+index e34d91afe7aa539ffff9f886352b02f23a1a51ea..6ec018c2106e38258bbda8954ddc2a501d3e6db1 100644
 --- a/dist/agent.js
 +++ b/dist/agent.js
 @@ -1,5 +1,5 @@
@@ -420,9 +420,9 @@ index e34d91afe7aa539ffff9f886352b02f23a1a51ea..679977d1ea38d15c9e85740216982daa
 +            await runAgentLoopContinue(this.createContextSnapshot(), this.createLoopConfig(), (event) => this.processEvents(event), signal, this.streamFunction);
 +        }
 +    }
-+    async persistCancelledQueue() {
-+        // Admission is closed. Preserve accepted input through native events,
-+        // without starting another turn, tool, provider, retry or compaction.
++    async persistQueuedInput() {
++        // Admission is closed after cancellation or a thrown execution failure.
++        // Preserve accepted input without another turn, tool, provider or retry.
 +        while (this.hasQueuedMessages()) {
 +            const steering = this.steeringQueue.drain();
 +            const messages = steering.length > 0 ? steering : this.followUpQueue.drain();
@@ -467,7 +467,7 @@ index e34d91afe7aa539ffff9f886352b02f23a1a51ea..679977d1ea38d15c9e85740216982daa
          if (this.activeRun) {
              throw new Error("Agent is already processing.");
          }
-@@ -351,18 +410,50 @@ export class Agent {
+@@ -351,18 +410,53 @@ export class Agent {
          const promise = new Promise((resolve) => {
              resolvePromise = resolve;
          });
@@ -476,11 +476,13 @@ index e34d91afe7aa539ffff9f886352b02f23a1a51ea..679977d1ea38d15c9e85740216982daa
          this._state.isStreaming = true;
          this._state.streamingMessage = undefined;
          this._state.errorMessage = undefined;
++        let failed = false;
          try {
              await executor(abortController.signal);
 +            if (settlement) await this.handlePostRun(abortController.signal, settlement.afterRun);
          }
          catch (error) {
++            failed = true;
              await this.handleRunFailure(error, abortController.signal.aborted);
          }
          finally {
@@ -490,11 +492,11 @@ index e34d91afe7aa539ffff9f886352b02f23a1a51ea..679977d1ea38d15c9e85740216982daa
 +                    // Extension preparation runs once, even if it accepts more input.
 +                    await settlement.beforeSettled?.();
 +                    for (;;) {
-+                        if (abortController.signal.aborted) {
++                        if (abortController.signal.aborted || failed) {
 +                            this.activeRun.acceptingMessages = false;
-+                            await this.persistCancelledQueue();
++                            await this.persistQueuedInput();
 +                            const assistant = this._state.messages.findLast((message) => message.role === "assistant");
-+                            if (assistant?.stopReason !== "aborted") {
++                            if (abortController.signal.aborted && assistant?.stopReason !== "aborted") {
 +                                await this.handleRunFailure(abortController.signal.reason, true);
 +                            }
 +                            break;
@@ -505,6 +507,7 @@ index e34d91afe7aa539ffff9f886352b02f23a1a51ea..679977d1ea38d15c9e85740216982daa
 +                            await this.handlePostRun(abortController.signal, settlement.afterRun);
 +                        }
 +                        catch (error) {
++                            failed = true;
 +                            await this.handleRunFailure(error, abortController.signal.aborted);
 +                        }
 +                    }
@@ -520,7 +523,7 @@ index e34d91afe7aa539ffff9f886352b02f23a1a51ea..679977d1ea38d15c9e85740216982daa
          }
      }
      async handleRunFailure(error, aborted) {
-@@ -407,6 +498,8 @@ export class Agent {
+@@ -407,6 +501,8 @@ export class Agent {
              case "message_end":
                  this._state.streamingMessage = undefined;
                  this._state.messages.push(event.message);
