@@ -86,7 +86,8 @@
     "test:single-agent-default-rollout": "node --import tsx scripts/test-single-agent-default-rollout.ts",
     "single-agent:production": "tsx scripts/migrations/030-single-agent/production.ts",
     "single-agent:package": "tsx scripts/migrations/030-single-agent/production-package-cli.ts",
-    "test:inactive-single-agent-pilot": "node --import tsx scripts/test-inactive-single-agent-pilot.ts"
+    "test:inactive-single-agent-pilot": "node --import tsx scripts/test-inactive-single-agent-pilot.ts",
+    "test:inactive-single-agent-batch": "node --import tsx scripts/test-inactive-single-agent-batch.ts"
   },
   "dependencies": {
     "@okouai/api-contracts": "workspace:*",
