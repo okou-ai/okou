@@ -108,7 +108,8 @@ public struct ChatPermissions: Sendable {
     let rules: [ChatPermissionRule]
     if shared {
       let result: MemberConnectorPermissions = try await client.request(
-        "/api/connector-permissions", query: ChatConnectorTarget.builtin(action.connectorSlug).query)
+        "/api/connector-permissions", query: ChatConnectorTarget.builtin(action.connectorSlug).query
+      )
       rules = try result.rules(slug: action.connectorSlug)
     } else {
       rules = try await grants(action).map(\.rule)

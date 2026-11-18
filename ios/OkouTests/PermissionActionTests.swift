@@ -99,9 +99,10 @@ final class PermissionActionTests: XCTestCase {
     let requests = fixture.state.withLock { Array($0.requests.dropFirst(firstRequest)) }
     let write = try XCTUnwrap(requests.firstIndex { $0.httpMethod == "PUT" })
     // The reviewed grant reaches its canonical write after only the thread ownership check.
-    XCTAssertEqual(requests[..<write].map { $0.url!.path }, [
-      "/api/chat-threads/\(PermissionHTTPFixture.threadID)/metadata"
-    ])
+    XCTAssertEqual(
+      requests[..<write].map { $0.url!.path }, [
+        "/api/chat-threads/\(PermissionHTTPFixture.threadID)/metadata"
+      ])
     let saved = try await ChatPermissions(client: fixture.http.client).load(card.action)
     XCTAssertEqual(saved.grants.first?.action, .allow)
     XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permission" })
