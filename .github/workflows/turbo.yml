@@ -828,6 +828,11 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres@postgres:5432/postgres
         run: pnpm test:inactive-single-agent-pilot
+      - name: Test Inactive Single Agent Batch
+        working-directory: turbo/packages/db
+        env:
+          DATABASE_URL: postgresql://postgres@postgres:5432/postgres
+        run: pnpm test:inactive-single-agent-batch
       - name: Test Single Agent Default Rollout
         working-directory: turbo/packages/db
         env:
