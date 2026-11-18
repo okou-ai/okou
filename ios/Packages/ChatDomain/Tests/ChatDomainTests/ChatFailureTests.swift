@@ -46,6 +46,7 @@ final class ChatFailureTests: XCTestCase {
       RecoveryCase(reason: "context_window_exceeded", kind: .newChat, canRetry: false),
       RecoveryCase(reason: "guest_root_filesystem_full", kind: .retryable, canRetry: true),
       RecoveryCase(reason: "guest_home_filesystem_full", kind: .retryable, canRetry: true),
+      RecoveryCase(reason: "guest_memory_oom_killed", kind: .retryable, canRetry: true),
       RecoveryCase(reason: "execution_timeout", kind: .timeout, canRetry: true),
       RecoveryCase(reason: "insufficient_credits", kind: .billing, canRetry: false),
       RecoveryCase(reason: "provider_insufficient_credits", kind: .settings, canRetry: false),
@@ -60,10 +61,15 @@ final class ChatFailureTests: XCTestCase {
       RecoveryCase(reason: "provider_overloaded", kind: .capacity, canRetry: true),
       RecoveryCase(reason: "provider_stream_timeout", kind: .retryable, canRetry: true),
       RecoveryCase(reason: "provider_queue_timeout", kind: .retryable, canRetry: true),
+      RecoveryCase(reason: "provider_request_timeout", kind: .retryable, canRetry: true),
+      RecoveryCase(reason: "provider_bad_request", kind: .retryable, canRetry: true),
       RecoveryCase(reason: "provider_server_error", kind: .retryable, canRetry: true),
       RecoveryCase(reason: "response_connection_lost", kind: .retryable, canRetry: true),
       RecoveryCase(reason: "codex_access_program_unavailable", kind: .retryable, canRetry: true),
       RecoveryCase(reason: "safety_policy_refusal", kind: .safety, canRetry: true),
+      RecoveryCase(reason: "account_verification_required", kind: .unknown, canRetry: false),
+      RecoveryCase(reason: "firewall_auth_failed", kind: .unknown, canRetry: false),
+      RecoveryCase(reason: "provider_model_restricted", kind: .unavailable, canRetry: true),
       RecoveryCase(reason: "unsupported_model", kind: .unavailable, canRetry: true),
       RecoveryCase(reason: "usage_limit", kind: .usage, canRetry: true)
     ]

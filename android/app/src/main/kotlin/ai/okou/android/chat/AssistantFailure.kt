@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.api.generated.KnownRunFailureReason
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -108,34 +109,41 @@ private fun classifyRunFailure(
     reason: String?,
     personal: RecoveryFramework?,
 ): FailureClassification =
-    when (reason) {
-        "session_history_limit",
-        "context_window_exceeded" -> FailureClassification(FailureKind.NewChat)
-        "guest_root_filesystem_full",
-        "guest_home_filesystem_full",
-        "provider_rate_limited",
-        "provider_stream_timeout",
-        "provider_queue_timeout",
-        "provider_server_error",
-        "response_connection_lost",
-        "codex_access_program_unavailable",
-        "provider_bad_request" -> FailureClassification(FailureKind.Retryable)
-        "execution_timeout" -> FailureClassification(FailureKind.Timeout)
-        "insufficient_credits" -> FailureClassification(FailureKind.Billing)
-        "provider_insufficient_credits",
-        "invalid_api_key",
-        "invalid_credentials",
-        "reconnect_required" -> FailureClassification(FailureKind.Settings)
-        "terms_acceptance_required" -> FailureClassification(FailureKind.Terms)
-        "input_too_large",
-        "provider_image_too_large" -> FailureClassification(FailureKind.InputTooLarge)
-        "output_token_limit" -> FailureClassification(FailureKind.OutputLimit)
-        "provider_overloaded" -> FailureClassification(FailureKind.Capacity)
-        "safety_policy_refusal" -> FailureClassification(FailureKind.Safety)
-        "unsupported_model",
-        "provider_model_restricted" -> FailureClassification(FailureKind.Unavailable)
-        "usage_limit" -> FailureClassification(FailureKind.Usage, personal, RecoveryLimit.Unknown)
-        else -> FailureClassification(FailureKind.Unknown)
+    when (KnownRunFailureReason.fromWireValue(reason) ?: KnownRunFailureReason.UNKNOWN) {
+        KnownRunFailureReason.SESSION_HISTORY_LIMIT,
+        KnownRunFailureReason.CONTEXT_WINDOW_EXCEEDED -> FailureClassification(FailureKind.NewChat)
+        KnownRunFailureReason.GUEST_ROOT_FILESYSTEM_FULL,
+        KnownRunFailureReason.GUEST_HOME_FILESYSTEM_FULL,
+        KnownRunFailureReason.GUEST_MEMORY_OOM_KILLED,
+        KnownRunFailureReason.PROVIDER_RATE_LIMITED,
+        KnownRunFailureReason.PROVIDER_STREAM_TIMEOUT,
+        KnownRunFailureReason.PROVIDER_REQUEST_TIMEOUT,
+        KnownRunFailureReason.PROVIDER_QUEUE_TIMEOUT,
+        KnownRunFailureReason.PROVIDER_SERVER_ERROR,
+        KnownRunFailureReason.RESPONSE_CONNECTION_LOST,
+        KnownRunFailureReason.CODEX_ACCESS_PROGRAM_UNAVAILABLE,
+        KnownRunFailureReason.PROVIDER_BAD_REQUEST -> FailureClassification(FailureKind.Retryable)
+        KnownRunFailureReason.EXECUTION_TIMEOUT -> FailureClassification(FailureKind.Timeout)
+        KnownRunFailureReason.INSUFFICIENT_CREDITS -> FailureClassification(FailureKind.Billing)
+        KnownRunFailureReason.PROVIDER_INSUFFICIENT_CREDITS,
+        KnownRunFailureReason.INVALID_API_KEY,
+        KnownRunFailureReason.INVALID_CREDENTIALS,
+        KnownRunFailureReason.RECONNECT_REQUIRED -> FailureClassification(FailureKind.Settings)
+        KnownRunFailureReason.TERMS_ACCEPTANCE_REQUIRED -> FailureClassification(FailureKind.Terms)
+        KnownRunFailureReason.INPUT_TOO_LARGE,
+        KnownRunFailureReason.PROVIDER_IMAGE_TOO_LARGE ->
+            FailureClassification(FailureKind.InputTooLarge)
+        KnownRunFailureReason.OUTPUT_TOKEN_LIMIT -> FailureClassification(FailureKind.OutputLimit)
+        KnownRunFailureReason.PROVIDER_OVERLOADED -> FailureClassification(FailureKind.Capacity)
+        KnownRunFailureReason.SAFETY_POLICY_REFUSAL -> FailureClassification(FailureKind.Safety)
+        KnownRunFailureReason.UNSUPPORTED_MODEL,
+        KnownRunFailureReason.PROVIDER_MODEL_RESTRICTED ->
+            FailureClassification(FailureKind.Unavailable)
+        KnownRunFailureReason.USAGE_LIMIT ->
+            FailureClassification(FailureKind.Usage, personal, RecoveryLimit.Unknown)
+        KnownRunFailureReason.UNKNOWN,
+        KnownRunFailureReason.ACCOUNT_VERIFICATION_REQUIRED,
+        KnownRunFailureReason.FIREWALL_AUTH_FAILED -> FailureClassification(FailureKind.Unknown)
     }
 
 private fun classifyOutputFailure(
