@@ -97,6 +97,8 @@ deployment and closed-PR cleanup. Its root-owned file keeps the same inode and
 is readable by workers so Linux can lock a read-only descriptor without running
 the worker as root. The private image gate is acquired first; cleanup never
 acquires that gate, and cancellation retires image units before waiting for it.
+Lifecycle contention shares the existing claim or worker deadline. The
+controller retains its 30-second claim and 600-second run/guard budgets.
 A claim places an exact-owner admission marker in the managed binary directory;
 preparation preserves only its current marker. After taking the lifecycle lock,
 every worker checks that marker again. Removing the namespace therefore fences

@@ -19,6 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 WORK_SECONDS = 570  # Reserve reconciliation/termination inside the existing 600s call.
+CLAIM_SECONDS = 30
 LOG_BYTES = 1024 * 1024
 R2_NAMES = (
     "R2_ACCOUNT_ID",
@@ -96,19 +97,18 @@ def system(*arguments):
 
 
 @contextlib.contextmanager
-def lifecycle(owner):
+def lifecycle(owner, deadline):
     # Linux flock permits LOCK_EX on a read-only FD. The existing root-owned
     # lock stays on the same inode; workers do not need to run Python as root.
     fd = os.open(owner["lifecycleLock"], os.O_RDONLY | os.O_NOFOLLOW)
     try:
-        deadline = time.monotonic() + 15
         while True:
+            if time.monotonic() >= deadline:
+                raise RuntimeError("image lifecycle lock deadline exceeded")
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
             except BlockingIOError:
-                if time.monotonic() >= deadline:
-                    raise RuntimeError("image lifecycle lock deadline exceeded") from None
                 time.sleep(0.1)
         yield fd
     finally:
@@ -125,12 +125,12 @@ def require_resource(owner):
         raise RuntimeError("image namespace retired; a new workflow attempt is required")
 
 
-def claim_resource(namespace, owner, run_created_at):
+def claim_resource(namespace, owner, run_created_at, deadline):
     lock = "/var/lock/vm0-runner-lifecycle-" + namespace.name + ".lock"
     owner["lifecycleLock"] = system(
         "python3", "-c", LOCK_BOOTSTRAP, "image-lifecycle-lock", lock
     ).strip()
-    with lifecycle(owner) as lock_fd:
+    with lifecycle(owner, deadline) as lock_fd:
         if namespace.name.startswith("pr-"):
             created = datetime.strptime(run_created_at, "%Y-%m-%dT%H:%M:%SZ")
             cutoff = os.read(lock_fd, 22)
@@ -317,6 +317,9 @@ def emit(value):
 
 
 def remote(request):
+    # A healthy peer can hold the shared lifecycle lock longer than the
+    # short admission gate. Spend the claim budget, reserving time for reply.
+    claim_deadline = time.monotonic() + CLAIM_SECONDS - 5
     os.umask(0o077)
     inputs = request["inputs"]
     validate_inputs(inputs)
@@ -392,13 +395,13 @@ def remote(request):
                 # Record admission intent before creating managed resources.
                 claimed = dict(owner, operations=[], state="claiming")
                 atomic_json(owner_path, claimed)
-                claim_resource(namespace, claimed, request.get("runCreatedAt"))
+                claim_resource(namespace, claimed, request.get("runCreatedAt"), claim_deadline)
             elif not owner_admitted(previous, owner):
                 raise RuntimeError(
                     "image workflow claim incomplete or cancelled; a new attempt is required"
                 )
             else:
-                with lifecycle(previous):
+                with lifecycle(previous, claim_deadline):
                     require_resource(previous)
             emit({"claimed": owner["identity"]})
             return
@@ -532,7 +535,7 @@ def worker(operation):
         owner = json.loads((operation.parent / "owner.json").read_text())
         if not owner_admitted(owner, owner_for(inputs)):
             raise RuntimeError("image operation owner superseded or cancelled")
-        with lifecycle(owner):
+        with lifecycle(owner, intent["deadline"]):
             # Cleanup may have run while this service was queued. Admission
             # belongs to the managed namespace, not merely to a live unit.
             require_resource(owner)
@@ -750,7 +753,7 @@ def main():
         request["runCreatedAt"] = os.environ["RUNNER_IMAGE_RUN_CREATED_AT"]
     remote_host = user + "@" + host
     if action not in ("run", "guard"):
-        reconnect(request, remote_host, 30)
+        reconnect(request, remote_host, CLAIM_SECONDS if action == "claim" else 30)
         return 0
     if action == "guard":
         if len(sys.argv) < 4:
