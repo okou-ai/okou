@@ -8,12 +8,17 @@ struct ConversationMeasurementInput<Content: View> {
   let defersHostedMeasurement: Bool
 }
 
+struct ConversationMeasurementLayout {
+  let width: CGFloat
+  let category: UIContentSizeCategory
+  let environment: ConversationHeightDiskCache.Layout
+}
+
 @MainActor
 final class ConversationRowMeasurer<Content: View> {
   func prepareMissingRows(
     _ missing: [ConversationCollectionRow], source: ConversationCollectionView<Content>,
-    rows: [ConversationCollectionRow], width: CGFloat, category: UIContentSizeCategory,
-    environment: ConversationHeightDiskCache.Layout,
+    layout: ConversationMeasurementLayout,
     preparedMeasurements initial: [String: ConversationMeasurementCache.Measurement],
     isCurrent: @escaping @MainActor () -> Bool
   ) async -> (
@@ -22,6 +27,9 @@ final class ConversationRowMeasurer<Content: View> {
   )? {
     typealias Measurement = ConversationMeasurementCache.Measurement
     typealias Measurer = ConversationRowMeasurer<Content>
+    let width = layout.width
+    let category = layout.category
+    let environment = layout.environment
     guard let traits = input()?.controller.traitCollection else { return nil }
     var preparedMeasurements = initial
     let disk = ConversationHeightDiskCache.shared

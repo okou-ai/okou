@@ -295,24 +295,24 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       applyPreparedRows()
       return
     }
+    let layout = ConversationMeasurementLayout(
+      width: width, category: category, environment: environment)
     preparation = Task { [weak self] in
       guard let self else { return }
       await prepareMissingRows(
-        missing, rows: rows, width: width, category: category, environment: environment,
-        generation: generation, preparedMeasurements: preparedMeasurements)
+        missing, rows: rows, layout: layout, generation: generation,
+        preparedMeasurements: preparedMeasurements)
     }
   }
 
   private func prepareMissingRows(
     _ missing: [ConversationCollectionRow], rows: [ConversationCollectionRow],
-    width: CGFloat, category: UIContentSizeCategory,
-    environment: ConversationHeightDiskCache.Layout, generation: UUID,
+    layout: ConversationMeasurementLayout, generation: UUID,
     preparedMeasurements initial: [String: Measurement]
   ) async {
     guard
       let result = await measurer.prepareMissingRows(
-        missing, source: source, rows: rows, width: width, category: category,
-        environment: environment, preparedMeasurements: initial,
+        missing, source: source, layout: layout, preparedMeasurements: initial,
         isCurrent: { [weak self] in self?.preparationID == generation && self?.stopped == false })
     else { return }
     guard !Task.isCancelled, preparationID == generation, !stopped else { return }

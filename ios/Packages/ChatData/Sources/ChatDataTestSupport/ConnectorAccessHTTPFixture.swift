@@ -229,9 +229,10 @@ public final class ConnectorAccessHTTPFixture: Sendable {
   }
 
   private static func connectorAccessResponse(
-    _ request: URLRequest, method: String, queriedTarget: Target, parts: [String], id: String,
+    _ request: URLRequest, method: String, queriedTarget: Target, parts: [String],
     state: inout State
   ) throws -> ChatHTTPResponse {
+    let id = parts[2]
     if method == "GET", queriedTarget != target(state) { return error(403, "Wrong connector") }
     if method == "PUT", parts.count == 5 {
       let body = try JSONDecoder().decode(Choice.self, from: chatRequestBody(request))
@@ -269,7 +270,7 @@ public final class ConnectorAccessHTTPFixture: Sendable {
     if parts[3] == "remote-access" { return ChatHTTPResponse(body: "{\"ssh\":[],\"vnc\":[]}") }
     if parts[3] == "connector-access" {
       return try connectorAccessResponse(
-        request, method: method, queriedTarget: queriedTarget, parts: parts, id: id, state: &state
+        request, method: method, queriedTarget: queriedTarget, parts: parts, state: &state
       )
     }
     if parts[3] == "connector-current" || parts[3] == "connector-account-approval" {

@@ -264,8 +264,10 @@ struct ChatDetailView: View {
         VStack(alignment: .leading, spacing: OkouSpace.sm) {
           ForEach(Array(group.messages.enumerated()), id: \.element.id) { index, message in
             messageRow(
-              message, showsAvatar: index == 0, pendingRetry: nil, isSending: false,
-              isWorkHistory: false, showsActions: false, loadsAttachments: anchor != nil)
+              message, pendingRetry: nil, isSending: false,
+              presentation: MessageRowPresentation(
+                showsAvatar: index == 0, isWorkHistory: false, showsActions: false,
+                loadsAttachments: anchor != nil))
           }
         }
       }
@@ -308,8 +310,10 @@ struct ChatDetailView: View {
       let message, let showsAvatar, let topSpacing, let pendingRetry, let isSending,
       let isWorkHistory, let showsActions):
       messageRow(
-        message, showsAvatar: showsAvatar, pendingRetry: pendingRetry, isSending: isSending,
-        isWorkHistory: isWorkHistory, showsActions: showsActions, loadsAttachments: anchor != nil
+        message, pendingRetry: pendingRetry, isSending: isSending,
+        presentation: MessageRowPresentation(
+          showsAvatar: showsAvatar, isWorkHistory: isWorkHistory, showsActions: showsActions,
+          loadsAttachments: anchor != nil)
       )
       .background {
         if let anchor { ConversationRowAnchor(messageID: message.id, anchor: anchor) }
@@ -346,9 +350,16 @@ struct ChatDetailView: View {
     }
   }
 
+  private struct MessageRowPresentation {
+    let showsAvatar: Bool
+    let isWorkHistory: Bool
+    let showsActions: Bool
+    let loadsAttachments: Bool
+  }
+
   private func messageRow(
-    _ message: ChatMessage, showsAvatar: Bool, pendingRetry: Bool?, isSending: Bool,
-    isWorkHistory: Bool, showsActions: Bool, loadsAttachments: Bool
+    _ message: ChatMessage, pendingRetry: Bool?, isSending: Bool,
+    presentation: MessageRowPresentation
   ) -> some View {
     Group {
       if message.role == .user {
@@ -358,21 +369,21 @@ struct ChatDetailView: View {
           }
           UserMessageView(
             message: message, webURL: conversation.webURL,
-            viewer: conversation.attachmentViewer, loadsAttachments: loadsAttachments,
-            sendTransition: loadsAttachments ? scrolling.sendTransition : nil)
+            viewer: conversation.attachmentViewer, loadsAttachments: presentation.loadsAttachments,
+            sendTransition: presentation.loadsAttachments ? scrolling.sendTransition : nil)
           deliveryStatus(message, pendingRetry: pendingRetry, isSending: isSending)
         }
       } else {
         messageContent(
-          message, showsAvatar: showsAvatar, pendingRetry: pendingRetry, isSending: isSending,
-          isWorkHistory: isWorkHistory, showsActions: showsActions,
-          loadsAttachments: loadsAttachments
+          message, pendingRetry: pendingRetry, isSending: isSending, presentation: presentation
         )
-        .textual.fontScale(isWorkHistory ? 0.9 : 1)
-        .foregroundStyle(isWorkHistory ? OkouColor.mutedForeground : OkouColor.foreground)
-        .padding(.leading, isWorkHistory ? 28 : 0)
+        .textual.fontScale(presentation.isWorkHistory ? 0.9 : 1)
+        .foregroundStyle(
+          presentation.isWorkHistory ? OkouColor.mutedForeground : OkouColor.foreground
+        )
+        .padding(.leading, presentation.isWorkHistory ? 28 : 0)
         .overlay(alignment: .leading) {
-          if isWorkHistory {
+          if presentation.isWorkHistory {
             Rectangle().fill(OkouColor.divider).frame(width: 1).padding(
               .leading, 14)
           }
@@ -388,11 +399,11 @@ struct ChatDetailView: View {
   }
 
   private func messageContent(
-    _ message: ChatMessage, showsAvatar: Bool, pendingRetry: Bool?, isSending: Bool,
-    isWorkHistory: Bool = false, showsActions: Bool = false, loadsAttachments: Bool = false
+    _ message: ChatMessage, pendingRetry: Bool?, isSending: Bool,
+    presentation: MessageRowPresentation
   ) -> some View {
     VStack(alignment: .leading, spacing: OkouSpace.sm) {
-      if message.role == .assistant && showsAvatar {
+      if message.role == .assistant && presentation.showsAvatar {
         assistantAvatar
           .padding(
             .leading, conversation.sharing.isSelecting ? OkouAvatarSize.message + OkouSpace.sm : 0)
@@ -413,10 +424,12 @@ struct ChatDetailView: View {
           approvals: message.role == .assistant ? conversation.approvals : nil,
           artifacts: message.role == .assistant ? conversation.artifacts : nil,
           artifactImageSources: conversation.artifactImageSources(for: message.id),
-          loadsActions: loadsAttachments, loadsDiagrams: loadsAttachments
+          loadsActions: presentation.loadsAttachments, loadsDiagrams: presentation.loadsAttachments
         )
         .equatable()
-        .foregroundStyle(isWorkHistory ? OkouColor.mutedForeground : OkouColor.foreground)
+        .foregroundStyle(
+          presentation.isWorkHistory ? OkouColor.mutedForeground : OkouColor.foreground
+        )
         .padding(
           .leading, message.role == .assistant ? ConversationCollectionRow.assistantLeadingInset : 0
         )
@@ -424,10 +437,10 @@ struct ChatDetailView: View {
       ForEach(Array(message.attachments.enumerated()), id: \.offset) { _, attachment in
         MessageAttachmentView(
           attachment: attachment, viewer: conversation.attachmentViewer,
-          loadsThumbnail: loadsAttachments)
+          loadsThumbnail: presentation.loadsAttachments)
       }
       deliveryStatus(message, pendingRetry: pendingRetry, isSending: isSending)
-      if showsActions {
+      if presentation.showsActions {
         MessageActionBar(
           text: message.copyText,
           chatURL: conversation.webURL.appending(path: "chats/\(thread.id)"),

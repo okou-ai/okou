@@ -1,6 +1,5 @@
 # Inherit upstream defaults; adopt metric and naming policy separately.
 disabled_rules:
-  - function_parameter_count
   - identifier_name
   - large_tuple
   - line_length
