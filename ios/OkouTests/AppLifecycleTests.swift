@@ -1,6 +1,5 @@
 import ChatData
 import ChatDataTestSupport
-import ClerkKit
 import CryptoKit
 import Foundation
 import Synchronization
@@ -111,19 +110,7 @@ final class AppLifecycleTests: XCTestCase {
   func testForegroundCatchUpAndMemoryPressurePreserveTheSelectedChatAndDraft() async throws {
     let identity = try AuthenticationHTTPFixture()
     addTeardownBlock { await identity.close() }
-    let clientReads = Mutex(0)
-    identity.identityOverride.withLock {
-      $0 = { request in
-        if request.httpMethod == "GET", request.url?.path == "/v1/client",
-          request.value(forHTTPHeaderField: LifecycleRequestScope.header) == "1"
-        {
-          clientReads.withLock { $0 += 1 }
-        }
-        return nil
-      }
-    }
-    let authentication = try await identity.authentication(
-      middleware: .init(request: [LifecycleRequestMiddleware()]))
+    let authentication = try await identity.authentication()
     await authentication.refresh()
     let fixture = LifecycleHTTPFixture()
     let lifecycle = try lifecycle(authentication, fixture)
@@ -142,22 +129,22 @@ final class AppLifecycleTests: XCTestCase {
     fixture.history.appendMessage()
     identity.state.withLock { $0.workspaceIDs = ["org_one", "org_two"] }
     lifecycle.setPhase(.inactive)
-    await LifecycleRequestScope.$observed.withValue(true) {
+    let clientReads = try await identity.clientRequests {
       await lifecycle.setPhase(.active)?.value
     }
     XCTAssertEqual(conversation.messages.count, 3)
     XCTAssertEqual(authentication.workspaces.map(\.id), ["org_one", "org_two"])
-    XCTAssertEqual(clientReads.withLock { $0 }, 0)
+    XCTAssertEqual(clientReads, 0)
     await lifecycle.reduceMemory()
 
     XCTAssertEqual(workspace.store.selectedThreadID, ConversationHistoryFixture.threadID)
     XCTAssertTrue(conversation.messages.last?.text.contains("Message 3") == true)
     XCTAssertEqual(conversation.draft, "Unsent draft survives lifecycle changes")
 
-    await LifecycleRequestScope.$observed.withValue(true) {
+    let manualClientReads = try await identity.clientRequests {
       await authentication.refresh()
     }
-    XCTAssertEqual(clientReads.withLock { $0 }, 1)
+    XCTAssertEqual(manualClientReads, 1)
   }
 
   func testWorkspaceReplacementFencesHeldStartupAndKeepsTheNewWorkspaceUsable() async throws {
@@ -353,19 +340,6 @@ final class AppLifecycleTests: XCTestCase {
           // The test directory is already absent.
         }
       }
-    }
-  }
-}
-
-private enum LifecycleRequestScope {
-  @TaskLocal static var observed = false
-  static let header = "X-Okou-Lifecycle-Test"
-}
-
-private struct LifecycleRequestMiddleware: ClerkRequestMiddleware {
-  func prepare(_ request: inout URLRequest) async throws {
-    if LifecycleRequestScope.observed {
-      request.setValue("1", forHTTPHeaderField: LifecycleRequestScope.header)
     }
   }
 }

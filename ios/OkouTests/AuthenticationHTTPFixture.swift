@@ -26,6 +26,7 @@ final class AuthenticationHTTPFixture: Sendable {
   let identityOverride = Mutex<(@Sendable (URLRequest) throws -> ChatHTTPResponse?)?>(nil)
   let pendingRequestDisconnected = Mutex<(@Sendable (URLRequest) -> Void)?>(nil)
   let state = Mutex(State())
+  private let scopedClientRequests = Mutex<[String: Int]>([:])
   let memberships = AuthenticationRequestGate()
   let activation = AuthenticationRequestGate()
   let clientReads = AuthenticationRequestGate()
@@ -73,10 +74,9 @@ final class AuthenticationHTTPFixture: Sendable {
   }
 
   @MainActor
-  func authentication(
-    resetPersistedIdentity: Bool = false, restoredAccessGroup: String? = nil,
-    middleware: Clerk.Options.MiddlewareConfig = .init()
-  ) async throws -> AuthenticationService {
+  func authentication(resetPersistedIdentity: Bool = false, restoredAccessGroup: String? = nil)
+    async throws -> AuthenticationService
+  {
     let url = try await withCheckedThrowingContinuation { continuation in
       startup.withLock { $0 = continuation }
       listener.stateUpdateHandler = { [weak self] state in
@@ -103,7 +103,7 @@ final class AuthenticationHTTPFixture: Sendable {
     }
     let options = Clerk.Options(
       telemetryEnabled: false, keychainConfig: .init(service: "ai.okou.tests." + host),
-      proxyUrl: url.absoluteString, middleware: middleware)
+      proxyUrl: url.absoluteString)
     let snapshot = state.withLock { value in
       let snapshot = value
       value.failActivation = false
@@ -123,13 +123,23 @@ final class AuthenticationHTTPFixture: Sendable {
     let restoredOptions = Clerk.Options(
       telemetryEnabled: false,
       keychainConfig: .init(service: "ai.okou.tests." + host, accessGroup: restoredAccessGroup),
-      proxyUrl: url.absoluteString, middleware: middleware)
+      proxyUrl: url.absoluteString,
+      middleware: .init(request: [AuthenticationRequestMiddleware()]))
     let restored = Clerk.configure(publishableKey: publishableKey, options: restoredOptions)
     configuredClerk = restored
     XCTAssertEqual(
       restored.session?.id, snapshot.signedOut ? nil : snapshot.sessionID,
       "The SDK must restore the committed session in its configured access group")
     return AuthenticationService(clerk: restored)
+  }
+
+  @MainActor
+  func clientRequests(during operation: @MainActor () async -> Void) async throws -> Int {
+    let id = UUID().uuidString
+    scopedClientRequests.withLock { $0[id] = 0 }
+    defer { scopedClientRequests.withLock { $0[id] = nil } }
+    await AuthenticationRequestScope.$id.withValue(id) { await operation() }
+    return try scopedClientRequests.withLock { try XCTUnwrap($0[id]) }
   }
 
   private func finish(_ result: Result<URL, Error>) {
@@ -254,6 +264,13 @@ final class AuthenticationHTTPFixture: Sendable {
   }
 
   func response(_ request: URLRequest) async throws -> ChatHTTPResponse {
+    if request.httpMethod == "GET", request.url?.path == "/v1/client",
+      let id = request.value(forHTTPHeaderField: AuthenticationRequestScope.header)
+    {
+      scopedClientRequests.withLock {
+        if let count = $0[id] { $0[id] = count + 1 }
+      }
+    }
     if let override = identityOverride.withLock({ $0 }), let response = try override(request) {
       return response
     }
@@ -375,6 +392,19 @@ final class AuthenticationHTTPFixture: Sendable {
   private struct MembershipEnvelope: Encodable {
     let data: [OrganizationMembership]
     let totalCount: Int
+  }
+}
+
+private enum AuthenticationRequestScope {
+  @TaskLocal static var id: String?
+  static let header = "X-Okou-Lifecycle-Test"
+}
+
+private struct AuthenticationRequestMiddleware: ClerkRequestMiddleware {
+  func prepare(_ request: inout URLRequest) async throws {
+    if let id = AuthenticationRequestScope.id {
+      request.setValue(id, forHTTPHeaderField: AuthenticationRequestScope.header)
+    }
   }
 }
 
