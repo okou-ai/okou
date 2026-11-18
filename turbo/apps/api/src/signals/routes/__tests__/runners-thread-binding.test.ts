@@ -1,9 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mockEnv } from "../../../lib/env";
-import {
-  getSecretKmsClient,
-  setSecretKmsClientForTests,
-} from "../../../lib/secret-kms-client";
+import { closeS3Clients } from "../../../lib/s3-client";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { createDeferredPromise } from "../../utils";
@@ -51,19 +48,22 @@ describe("Runner first-start Thread binding", () => {
           release.resolve();
         }
       });
-      const kms = getSecretKmsClient();
+      // A fresh external signer configuration makes preparation genuinely cold.
+      closeS3Clients();
+      mockEnv("R2_SECRET_ACCESS_KEY", `binding-prepare-${randomUUID()}`);
+      const sign = context.mocks.s3.getSignedUrl.getMockImplementation();
+      if (!sign) {
+        throw new Error("Expected the external presigner fixture");
+      }
       onTestFinished(() => {
-        setSecretKmsClientForTests(kms);
+        context.mocks.s3.getSignedUrl.mockImplementation(sign);
       });
-      setSecretKmsClientForTests({
-        ...kms,
-        async generateDataKey(request, signal) {
-          if (!preparing.settled()) {
-            preparing.resolve();
-          }
-          await release.promise;
-          return await kms.generateDataKey(request, signal);
-        },
+      context.mocks.s3.getSignedUrl.mockImplementationOnce(async (...args) => {
+        if (!preparing.settled()) {
+          preparing.resolve();
+        }
+        await release.promise;
+        return await sign(...args);
       });
       const chat = createChatFilesBddApi(context);
       const clientEventId = randomUUID();
@@ -73,7 +73,7 @@ describe("Runner first-start Thread binding", () => {
           agentId: owned.agentId,
           threadId: first.threadId,
           clientEventId,
-          prompt: "Cancel while execution secrets are being encrypted",
+          prompt: "Cancel while execution content URLs are being signed",
         },
         [201],
       );
@@ -102,7 +102,7 @@ describe("Runner first-start Thread binding", () => {
       ).resolves.toMatchObject({
         cancellationRecoveryPending: false,
       });
-      setSecretKmsClientForTests(kms);
+      context.mocks.s3.getSignedUrl.mockImplementation(sign);
       const next = await api.createThreadRun(owned.actor, {
         agentId: owned.agentId,
         threadId: first.threadId,

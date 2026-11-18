@@ -26,7 +26,6 @@ import {
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createRouteMocks } from "./helpers/route-test";
-import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -330,11 +329,7 @@ describe.each([false, true])(
       },
     );
 
-    it.each([
-      "active",
-      "expired-before-preparation",
-      "expired-during-preparation",
-    ] as const)(
+    it.each(["active", "expired-before-preparation"] as const)(
       "evaluates the captured permission source and temporary deadline: %s",
       async (expiry) => {
         const expired = expiry !== "active";
@@ -392,19 +387,9 @@ describe.each([false, true])(
         mockNow(
           expiry === "expired-before-preparation"
             ? expiresAt
-            : expiry === "expired-during-preparation"
-              ? expiresAt - 1
-              : startedAt + 30 * 60 * 1000,
+            : startedAt + 30 * 60 * 1000,
         );
         await runs.registerDirectRunner(runnerGroup);
-        if (expiry === "expired-during-preparation") {
-          // Execution preparation encrypts its resolved secrets. Let the
-          // external KMS response cross the exact temporary-allow boundary.
-          useSecretKmsProbe(() => {
-            mockNow(expiresAt);
-            return undefined;
-          });
-        }
         const run = await queued.launch();
         // Delivered input keeps its permission source after a mode change.
         await connectors.updateFeatureSwitches(actor, {

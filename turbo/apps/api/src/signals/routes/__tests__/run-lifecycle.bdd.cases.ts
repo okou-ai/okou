@@ -1222,43 +1222,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, run.runId, [200]);
       });
 
-      it("fails admitted input when execution encryption fails and accepts a fresh retry", async () => {
-        const api = createRunsApi(context);
-        const { actor, agentId } = await entitledRunActor(
-          {},
-          NATIVE_RUNNER_ROUTE,
-        );
-        let failEncryption = true;
-        useSecretKmsProbe(() => {
-          return failEncryption
-            ? Promise.reject(new Error("Execution encryption unavailable"))
-            : undefined;
-        });
-        const failed = await failedExecutionPreparation(actor, {
-          agentId,
-          prompt: "Fail encryption for this admitted input",
-        });
-        await expect(api.readRun(actor, failed.runId)).resolves.toMatchObject({
-          status: "failed",
-        });
-        expect((await api.readRunQueue(actor)).body.concurrency.active).toBe(0);
-        failEncryption = false;
-        const retry = await api.createThreadRun(actor, {
-          agentId,
-          threadId: failed.threadId,
-          prompt: "Retry execution after encryption recovered",
-        });
-        const input = await api.executionInput(retry.runId);
-        expect(input.environment).toMatchObject({
-          CLAUDE_CODE_OAUTH_TOKEN: expect.any(String),
-        });
-        await expect(api.readRun(actor, retry.runId)).resolves.toMatchObject({
-          status: "running",
-        });
-        await api.requestCancelRun(actor, retry.runId, [200]);
-        await finishCancelledRun(retry.runId, input.sandboxToken);
-      });
-
       it("fails unavailable storage signing and preserves the complete manifest on a fresh retry", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
