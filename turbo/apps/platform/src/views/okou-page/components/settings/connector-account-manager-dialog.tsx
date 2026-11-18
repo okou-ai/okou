@@ -67,6 +67,7 @@ interface ConnectorAccountManagerDialogProps {
   readonly connectorLabel: string;
   readonly icon: ReactNode;
   readonly onClose: () => void;
+  readonly finalFocus?: () => HTMLElement | boolean;
   readonly onAdd?: () => void;
   readonly onReconnect: (account: ConnectorAccountConnection) => void;
   readonly onReviewScopes?: (account: ConnectorAccountConnection) => void;
@@ -839,6 +840,7 @@ function LoadedConnectorAccountManagerDialog({
   onReconnect,
   onReviewScopes,
   defaultsSignals,
+  finalFocus,
 }: ConnectorAccountManagerDialogProps & {
   readonly defaultsSignals: ReturnType<
     typeof createConnectorAccountDefaultSignals
@@ -878,6 +880,7 @@ function LoadedConnectorAccountManagerDialog({
     >
       <DialogContent
         ref={managerRef}
+        finalFocus={finalFocus}
         maxWidth="xl"
         contentClassName="flex flex-col overflow-hidden"
       >
