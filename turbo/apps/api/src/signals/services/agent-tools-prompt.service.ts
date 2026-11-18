@@ -33,7 +33,7 @@ const instructionsAndMemoryGuidance = Object.freeze([
  */
 function buildIntegrationToolsPrompt(): readonly string[] {
   const localFileContext = [
-    "Honor the user's requested delivery format. When none is specified, choose the format that best fits the task, the user's preferences, and how they will use the result. Options include a chat reply, a downloadable file such as Markdown or Word, or a hosted artifact. Decide the format before choosing production and delivery tools.",
+    "Honor the user's requested delivery format. When none is specified, choose whichever supported format best fits the task, the user's preferences, and how they will use the result. Decide the format and delivery channel before choosing production and delivery tools.",
     `Prefer the workspace directory (\`${CANONICAL_WORKING_DIR}\`) for file operations and project work.`,
     "A `[Web file]` block from any integration refers to a file stored by Okou. Use `okou web download-file -h` to download it with its `[ID]`.",
     "Local dev servers are useful for agent-side verification, but they are not by themselves a user-facing deliverable.",

@@ -9108,7 +9108,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(appendSystemPrompt).toContain("# Agent Tools");
         for (const toolHint of [
           "Honor the user's requested delivery format.",
-          "When none is specified, choose the format that best fits the task, the user's preferences, and how they will use the result.",
+          "When none is specified, choose whichever supported format best fits the task, the user's preferences, and how they will use the result.",
+          "Decide the format and delivery channel before choosing production and delivery tools.",
           "okou web download-file -h",
           "Prefer the workspace directory (`/home/user/workspace`) for file operations and project work",
           "Okou Cloud Browser provides rendered-page inspection and interaction",
