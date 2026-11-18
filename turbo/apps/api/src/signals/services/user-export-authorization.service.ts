@@ -13,7 +13,6 @@ import {
 } from "drizzle-orm";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { storages } from "@okouai/db/schema/storage";
 import { memberMemories } from "@okouai/db/schema/member-memory";
 import { workflows } from "@okouai/db/schema/workflow";
 import { userExportEntries } from "@okouai/db/schema/user-export-entry";
@@ -70,12 +69,6 @@ function exportPageResourceIds(rows: Parameters<typeof identifiers>[0]) {
     }),
     "storageId",
   );
-  const storageIds = identifiers(
-    rows.filter((row) => {
-      return row.metadata.sourceKind !== "memory";
-    }),
-    "storageId",
-  );
   const instructionOrgIds = identifiers(
     rows.filter((row) => {
       return row.metadata.sourceKind === "instructions";
@@ -87,7 +80,6 @@ function exportPageResourceIds(rows: Parameters<typeof identifiers>[0]) {
     workflowIds,
     threadIds,
     memoryIds,
-    storageIds,
     instructionOrgIds,
   };
 }
@@ -122,14 +114,15 @@ export const authorizeUserExportPage$ = command(
       .orderBy(asc(userExportEntries.ordinal))
       .limit(100);
     signal.throwIfAborted();
-    const {
-      agentIds,
-      workflowIds,
-      threadIds,
-      memoryIds,
-      storageIds,
-      instructionOrgIds,
-    } = exportPageResourceIds(rows);
+    if (
+      rows.some(({ metadata }) => {
+        return metadata.sourceKind !== "memory" && "storageId" in metadata;
+      })
+    ) {
+      throw new Error("Only Memory export entries may reference a storage ID");
+    }
+    const { agentIds, workflowIds, threadIds, memoryIds, instructionOrgIds } =
+      exportPageResourceIds(rows);
     if (
       agentIds.length > 0 ||
       workflowIds.length > 0 ||
@@ -209,16 +202,6 @@ export const authorizeUserExportPage$ = command(
         .where(memberMemoryExportOwnerCondition(memoryIds, userId));
       signal.throwIfAborted();
       requireAll(owned, memoryIds);
-    }
-    if (storageIds.length > 0) {
-      const owned = await db
-        .select({ id: storages.id })
-        .from(storages)
-        .where(
-          and(inArray(storages.id, storageIds), eq(storages.userId, userId)),
-        );
-      signal.throwIfAborted();
-      requireAll(owned, storageIds);
     }
     return {
       cursor: (rows.at(-1)?.ordinal ?? args.cursor - 1) + 1,
