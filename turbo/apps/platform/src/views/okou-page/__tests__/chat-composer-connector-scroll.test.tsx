@@ -1,4 +1,9 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import {
+  isInaccessible,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -70,7 +75,12 @@ async function openAccountPanel(popup: HTMLElement, label = "Scroll 7") {
   click(await connectorButton(popup, label));
   const submenu = await screen.findByRole("dialog", { name: label });
   const panel = within(submenu).getByRole("group", { name: label });
-  await within(panel).findByRole("switch", { name: "Account 1 access" });
+  await waitFor(() => {
+    const account = within(panel).getByLabelText("Account 1 access", {
+      selector: '[role="switch"]',
+    });
+    expect(isInaccessible(account)).toBeFalsy();
+  });
   return { submenu, panel };
 }
 
