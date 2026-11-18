@@ -18,6 +18,7 @@ import {
   isResponsesModel,
 } from "./model-catalog";
 import { streamWithModelRequestDiagnostics } from "./model-request-diagnostics";
+import { PiImageHistory } from "./image-history";
 import {
   observePiResponseStatus,
   type PiAgentStreamOptions,
@@ -108,8 +109,10 @@ export const piAgentRegisteredStream = (
 /** Apply API-owned per-request policy to Sandbox turns. */
 export function piAgentStreamForConfig(
   config: PiAgentStreamConfig,
+  imageHistory = new PiImageHistory(),
 ): typeof piAgentRegisteredStream {
   return (model, context, options) => {
+    const boundedContext = imageHistory.boundContext(context);
     const configuredOptions = {
       ...options,
       headers: {
@@ -132,7 +135,7 @@ export function piAgentStreamForConfig(
             `Pi Chat Completions route received unexpected ${model.api} model`,
           );
         }
-        return streamSimpleCompletions(model, context, {
+        return streamSimpleCompletions(model, boundedContext, {
           ...responseOptions,
           ...(config.sessionAffinityKey === undefined
             ? {}
@@ -145,7 +148,7 @@ export function piAgentStreamForConfig(
             `Pi public Responses route received unexpected ${model.api} model`,
           );
         }
-        return piAgentStream(model, context, responseOptions);
+        return piAgentStream(model, boundedContext, responseOptions);
       }
       if (!isCodexResponsesModel(model)) {
         throw new Error(
@@ -158,7 +161,7 @@ export function piAgentStreamForConfig(
         throw new Error("Pi Codex Responses requires an explicit account ID");
       return piAgentCodexStream(
         model,
-        context,
+        boundedContext,
         config.accountId,
         responseOptions,
       );
