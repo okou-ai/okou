@@ -1,13 +1,16 @@
-import { useSet, useLoadable } from "ccstate-react";
+import { useGet, useLoadable } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Sun, Moon, Monitor, Palette } from "lucide-react";
 import { surfaceVariants, ToggleButton } from "@okouai/ui";
 
 import {
-  setTheme$,
+  updateThemePreference$,
   themePreference$,
   type ThemePreference,
 } from "../../../../../signals/theme.ts";
+import { pageSignal$ } from "../../../../../signals/page-signal.ts";
+import { detach, Reason } from "../../../../../signals/utils.ts";
 import { TimezoneSettings } from "../timezone-settings.tsx";
 import { EmailSubscriptionSettings } from "../email-subscription-settings.tsx";
 import { SettingsSectionHeading } from "../settings-section-heading.tsx";
@@ -31,10 +34,12 @@ function AppearanceBlock() {
   const prefLoadable = useLoadable(themePreference$);
   const current =
     prefLoadable.state === "hasData" ? prefLoadable.data : "system";
-  const updateTheme = useSet(setTheme$);
+  const [updateLoadable, updateTheme] = useLoadableSet(updateThemePreference$);
+  const pageSignal = useGet(pageSignal$);
+  const saving = updateLoadable.state === "loading";
 
   const handleChange = (value: ThemePreference) => {
-    updateTheme(value);
+    detach(updateTheme(value, pageSignal), Reason.DomCallback);
   };
 
   return (
@@ -68,6 +73,7 @@ function AppearanceBlock() {
                 key={value}
                 type="button"
                 selected={isActive}
+                disabled={saving}
                 onClick={() => {
                   handleChange(value);
                 }}
