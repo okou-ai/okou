@@ -74,9 +74,9 @@ public struct ModelCatalog: Decodable, Sendable {
     public let runOptions: RunOptions?
     public struct RunOptions: Decodable, Sendable {
       public let fast: Fast?
-      public struct Fast: Decodable, Sendable {
-        public let chatGptUsageMultiplier: Double
-      }
+    }
+    public struct Fast: Decodable, Sendable {
+      public let chatGptUsageMultiplier: Double
     }
   }
   public struct Route: Decodable, Sendable {
