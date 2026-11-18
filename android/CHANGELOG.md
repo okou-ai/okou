@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.0](https://github.com/okou-ai/okou/compare/android-v0.23.0...android-v0.24.0) (2026-11-18)
+
+
+### Features
+
+* **android:** refine chat and project list rows ([#48706](https://github.com/okou-ai/okou/issues/48706)) ([0aab5ca](https://github.com/okou-ai/okou/commit/0aab5ca9058da249e600bf628badadda90cf7c65))
+
 ## [0.23.0](https://github.com/okou-ai/okou/compare/android-v0.22.0...android-v0.23.0) (2026-11-18)
 
 

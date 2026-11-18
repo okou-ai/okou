@@ -10,6 +10,24 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.91.3](https://github.com/okou-ai/okou/compare/api-v2.91.2...api-v2.91.3) (2026-11-18)
+
+
+### Performance Improvements
+
+* **api:** remove execution-startup secret encryption ([#48677](https://github.com/okou-ai/okou/issues/48677)) ([ffad11e](https://github.com/okou-ai/okou/commit/ffad11eaaca4de2da2218225794d16f39c2b7796))
+* **api:** remove redundant workflow reads from run startup ([#48693](https://github.com/okou-ai/okou/issues/48693)) ([d9e8999](https://github.com/okou-ai/okou/commit/d9e89992f9a754faccc7d2c88cd39da8ec970339))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.86.4
+    * @okouai/core bumped to 8.853.2
+    * @okouai/db bumped to 2.45.2
+    * @okouai/pi-agent-runtime bumped to 1.51.162
+
 ## [2.91.2](https://github.com/okou-ai/okou/compare/api-v2.91.1...api-v2.91.2) (2026-11-18)
 
 

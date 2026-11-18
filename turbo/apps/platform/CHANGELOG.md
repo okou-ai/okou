@@ -13,6 +13,23 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1147.5](https://github.com/okou-ai/okou/compare/app-v0.1147.4...app-v0.1147.5) (2026-11-18)
+
+
+### Performance Improvements
+
+* **test:** scope fork and forward success toast waits ([#48709](https://github.com/okou-ai/okou/issues/48709)) ([9a8c6c8](https://github.com/okou-ai/okou/commit/9a8c6c8c2ec09c2fc6e8347ea9e07149b41d7ff0))
+* **test:** skip preparatory hover in account manager transfer tests ([#48722](https://github.com/okou-ai/okou/issues/48722)) ([96fbaf5](https://github.com/okou-ai/okou/commit/96fbaf5bc9c8c20fc3cdd6b84a4fead4a85d97af))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.86.4
+    * @okouai/core bumped to 8.853.2
+    * @okouai/ui bumped to 1.21.56
+
 ## [0.1147.4](https://github.com/okou-ai/okou/compare/app-v0.1147.3...app-v0.1147.4) (2026-11-18)
 
 
