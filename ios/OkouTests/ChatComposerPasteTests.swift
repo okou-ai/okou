@@ -91,11 +91,8 @@ final class ChatComposerPasteTests: XCTestCase {
       completion(Data("pasted".utf8), nil)
       return nil
     }
-    for provider in providers { provider.record("paste invoked") }
-    input.paste(itemProviders: providers)
-    for provider in providers { provider.record("paste returned") }
-    try await waitForBusinessResult(
-      message: mixedPasteDiagnostics(conversation, fixture: fixture, providers: providers)
+    try await pasteAndWaitForResult(
+      providers, in: input, conversation: conversation, fixture: fixture
     ) {
       conversation.draft == "Before pasted after"
         && conversation.attachmentDraft.items.count == 2 && conversation.attachmentDraft.isReady
@@ -307,15 +304,18 @@ final class ChatComposerPasteTests: XCTestCase {
     let handle = try FileHandle(forWritingTo: file)
     try handle.truncate(atOffset: UInt64(ChatAttachment.maximumUploadSize + 1))
     try handle.close()
-    let provider = NSItemProvider()
+    let provider = PasteDiagnosticItemProvider()
     provider.registerFileRepresentation(
       forTypeIdentifier: UTType.png.identifier, fileOptions: .openInPlace, visibility: .all
-    ) { callback in
+    ) { [weak provider] callback in
+      provider?.record("open-in-place file requested")
+      defer { provider?.record("open-in-place file completion returned") }
       callback(file, true, nil)
       return Progress(totalUnitCount: 1)
     }
-    input.paste(itemProviders: [provider])
-    try await waitForBusinessResult {
+    try await pasteAndWaitForResult(
+      [provider], in: input, conversation: conversation, fixture: fixture
+    ) {
       conversation.attachmentDraft.error?.contains("512 MB") == true
     }
     XCTAssertEqual(conversation.draft, "Keep selected text")
@@ -438,9 +438,29 @@ final class ChatComposerPasteTests: XCTestCase {
       submit: { await conversation.send() }, refresh: nil)
   }
 
-  private func mixedPasteDiagnostics(
+  private func pasteAndWaitForResult(
+    _ providers: [PasteDiagnosticItemProvider], in input: ComposerTextView,
+    conversation: ConversationStore, fixture: AttachmentFlowFixture,
+    file: StaticString = #filePath, line: UInt = #line,
+    until ready: @escaping @MainActor () -> Bool
+  ) async throws {
+    let pasteStarted = ContinuousClock.now
+    input.paste(itemProviders: providers)
+    let pasteReturned = pasteStarted.duration(to: .now)
+    let importsAtReturn = conversation.attachmentDraft.importingCount
+    let waitCalled = pasteStarted.duration(to: .now)
+    try await waitForBusinessResult(
+      file: file, line: line,
+      message: "Since paste began, paste returned at \(pasteReturned) "
+        + "with importing=\(importsAtReturn), readiness wait called at \(waitCalled).\n"
+        + pasteDiagnostics(
+          conversation, fixture: fixture, providers: providers, since: pasteStarted),
+      ready)
+  }
+
+  private func pasteDiagnostics(
     _ conversation: ConversationStore, fixture: AttachmentFlowFixture,
-    providers: [PasteDiagnosticItemProvider]
+    providers: [PasteDiagnosticItemProvider], since pasteStarted: ContinuousClock.Instant
   ) -> String {
     let uploads = fixture.state.value.withLock { ($0.preparations.count, $0.uploads) }
     let states = conversation.attachmentDraft.items.map { item in
@@ -453,10 +473,10 @@ final class ChatComposerPasteTests: XCTestCase {
       }
     }
     let timelines = providers.enumerated().map { index, provider in
-      "provider[\(index)] since creation: \(provider.timeline)"
+      "provider[\(index)] since paste began: \(provider.timeline(since: pasteStarted))"
     }.joined(separator: "\n")
     // The waiter evaluates this lazily after cancelling and joining its observation.
-    return "Mixed paste not ready (after waiter cleanup): draft=\(conversation.draft), "
+    return "Paste state after waiter cleanup: draft=\(conversation.draft), "
       + "items=\(states), importing=\(conversation.attachmentDraft.importingCount), "
       + "error=\(String(describing: conversation.attachmentDraft.error)), "
       + "preparations=\(uploads.0), transfers=\(uploads.1)\n\(timelines)"
@@ -484,14 +504,16 @@ final class ChatComposerPasteTests: XCTestCase {
 
 // NSItemProvider owns its external thread-safety contract; our additional state is mutex-owned.
 private final class PasteDiagnosticItemProvider: NSItemProvider, @unchecked Sendable {
-  private let started = ContinuousClock.now
-  private let events = Mutex<[String]>([])
+  private let events = Mutex<[(instant: ContinuousClock.Instant, label: String)]>([])
 
-  func record(_ event: String) {
-    events.withLock { $0.append("\(started.duration(to: .now)): \(event)") }
+  func record(_ label: String) {
+    events.withLock { $0.append((.now, label)) }
   }
 
-  var timeline: String { events.withLock { $0.joined(separator: "; ") } }
+  func timeline(since started: ContinuousClock.Instant) -> String {
+    let snapshot = events.withLock { $0 }
+    return snapshot.map { "\(started.duration(to: $0.instant)): \($0.label)" }.joined(separator: "; ")
+  }
 
   override func loadInPlaceFileRepresentation(
     forTypeIdentifier typeIdentifier: String,
