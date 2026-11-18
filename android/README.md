@@ -9,7 +9,9 @@ membership and workspace bootstrap, the application provides a native conversati
 list and history reader. Projects expand in the workspace chat list. Selecting a
 chat opens its conversation, and Back restores the same list position, filter
 and expanded Projects. Settings opens from the current app bar and returns to
-the same list, chat or new-chat draft. Settings provides device-local
+the same list, chat or new-chat draft. Windows at least 840dp wide and 480dp
+tall show the same list alongside the current chat or new-chat entry. Resizing
+keeps the current destination and the list state. Settings provides device-local
 Light/Dark/Follow system appearance. The conversation list remains usable while
 Preferences DataStore loads or reports an IO error;
 Settings exposes loading, saving and retry states. Appearance is confirmed from

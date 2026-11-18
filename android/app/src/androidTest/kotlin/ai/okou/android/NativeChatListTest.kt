@@ -132,6 +132,38 @@ class NativeChatListTest {
             click(UiSelector().description(app.getString(R.string.back)))
             assertTrue(device.wait(Until.gone(By.textContains("Native history")), 10_000))
             text("Project chat")
+            clickText("Project chat")
+            text(app.getString(R.string.history_completed))
+
+            // Resize the actual emulator display around the open destination.
+            val size = device.executeShellCommand("wm size")
+            val density = device.executeShellCommand("wm density")
+            check(size.contains("Physical size:") && density.contains("Physical density:"))
+            val originalSize = Regex("Override size: (\\d+x\\d+)").find(size)?.groupValues?.get(1)
+            val originalDensity =
+                Regex("Override density: (\\d+)").find(density)?.groupValues?.get(1)
+            try {
+                device.executeShellCommand("wm size 1000x1000")
+                device.executeShellCommand("wm density 160")
+                val listTitle = text(app.getString(R.string.chat_list_title))
+                val conversation = text(app.getString(R.string.history_completed))
+                assertTrue(listTitle.visibleBounds.right < conversation.visibleBounds.left)
+                assertTrue(device.wait(Until.gone(By.desc(app.getString(R.string.back))), 10_000))
+                click(UiSelector().description(app.getString(R.string.settings)))
+                text(app.getString(R.string.appearance))
+                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+                text(app.getString(R.string.chat_list_title))
+                text(app.getString(R.string.history_completed))
+            } finally {
+                device.executeShellCommand("wm size ${originalSize ?: "reset"}")
+                device.executeShellCommand("wm density ${originalDensity ?: "reset"}")
+            }
+            assertTrue(
+                device.wait(Until.gone(By.text(app.getString(R.string.chat_list_title))), 10_000)
+            )
+            text(app.getString(R.string.history_completed))
+            click(UiSelector().description(app.getString(R.string.back)))
+            revealText("Project chat")
         } catch (error: Throwable) {
             failures.add(error)
             try {

@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
@@ -29,6 +30,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -46,6 +48,7 @@ internal fun ChatListScreen(
     toggleProject: (String) -> Unit,
     listState: LazyListState,
     newChat: (String?) -> Unit,
+    selectedChatId: String?,
 ) {
     val groups =
         remember(
@@ -76,7 +79,7 @@ internal fun ChatListScreen(
             state.threads.any { it.hidden != true && it.projectId !in knownProjects }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
-            Modifier.widthIn(max = 760.dp).fillMaxWidth().testTag("chat_list"),
+            Modifier.widthIn(max = 720.dp).fillMaxWidth().testTag("chat_list"),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             state = listState,
@@ -176,7 +179,7 @@ internal fun ChatListScreen(
                         }
                         if (group.project?.id !in collapsed)
                             items(group.threads, key = { it.id }) { thread ->
-                                ChatRow(thread, state, { open(thread) })
+                                ChatRow(thread, state, thread.id == selectedChatId) { open(thread) }
                             }
                     }
                 }
@@ -197,10 +200,27 @@ internal fun ChatListScreen(
 }
 
 @Composable
-private fun ChatRow(thread: ConfirmedChat, state: ChatListUiState, open: () -> Unit) {
+private fun ChatRow(
+    thread: ConfirmedChat,
+    state: ChatListUiState,
+    isSelected: Boolean,
+    open: () -> Unit,
+) {
     val agent = state.agents.firstOrNull { it.agentId == thread.agentId }
     val indicator = state.indicators?.threads?.get(thread.id)
-    OutlinedCard(onClick = open, modifier = Modifier.fillMaxWidth().testTag("chat_${thread.id}")) {
+    OutlinedCard(
+        onClick = open,
+        modifier =
+            Modifier.fillMaxWidth().testTag("chat_${thread.id}").semantics {
+                if (isSelected) selected = true
+            },
+        colors =
+            if (isSelected) {
+                CardDefaults.outlinedCardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                )
+            } else CardDefaults.outlinedCardColors(),
+    ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 thread.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),

@@ -24,6 +24,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -258,12 +259,34 @@ class OkouAppTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w900dp-h900dp")
-    fun expandedWindowRetainsAvatarAndConversationDestinations() {
+    fun expandedWindowShowsOneListAndAnUnselectedPaneUntilTheWindowShrinks() {
         render()
+        compose.onNodeWithTag("chat_list").assertExists()
+        compose.onNodeWithTag("workspace_new_chat").assertExists()
+        compose.onNodeWithTag("conversation").assertDoesNotExist()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Follow system").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
-        compose.onNodeWithText("Chats").assertExists()
+        compose.onNodeWithTag("workspace_new_chat").assertExists()
+        compose.runOnIdle {
+            deviceConfiguration.value =
+                Configuration(compose.activity.resources.configuration).apply {
+                    screenHeightDp = 479
+                }
+        }
+        compose.onNodeWithTag("chat_list").assertExists()
+        compose.onNodeWithTag("workspace_new_chat").assertDoesNotExist()
+        compose.runOnIdle { deviceConfiguration.value = null }
+        compose.onNodeWithTag("workspace_new_chat").assertExists()
+    }
+
+    @Test
+    fun wideLayoutUsesTheWindowWidthAndMinimumHeight() {
+        assertEquals(null, workspaceListPaneWidth(839, 900))
+        assertEquals(null, workspaceListPaneWidth(1100, 479))
+        assertEquals(320, workspaceListPaneWidth(840, 480))
+        assertEquals(320, workspaceListPaneWidth(1099, 900))
+        assertEquals(344, workspaceListPaneWidth(1100, 480))
     }
 
     @Test
