@@ -192,7 +192,7 @@ def main():
         return systemd_run(arguments[1:])
     if arguments[0] == "systemctl":
         return systemctl(arguments[1:])
-    os.execvp(arguments[0], arguments)
+    raise RuntimeError("unsupported fixture privileged command")
 
 
 if __name__ == "__main__":
