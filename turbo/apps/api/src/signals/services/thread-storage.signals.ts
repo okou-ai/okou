@@ -10,7 +10,6 @@ import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { storageVersionCacheKeySql } from "./execution-storage-cache-read.service";
 import type { AcceptedMemoryMount } from "./execution-storage.service";
-import { resolvePreparedPiModelConfig } from "./pi-sandbox-config";
 import {
   type AgentRunStorageInput,
   type AgentRunStoragePlan,
@@ -63,37 +62,21 @@ function createStorageInputSignal(
   threadContext: ThreadContext,
 ) {
   return computed(async (get): Promise<AgentRunStorageInput> => {
-    const [event, agent, framework, modelProvider, selection, catalog] =
-      await Promise.all([
-        get(pickedEvent$),
-        get(bootstrap.agent$),
-        get(threadContext.providerFramework$),
-        get(threadContext.modelRoute$),
-        get(threadContext.subscriptionSelection$),
-        get(bootstrap.modelCatalog$),
-      ]);
+    const [event, agent, framework, modelProvider] = await Promise.all([
+      get(pickedEvent$),
+      get(bootstrap.agent$),
+      get(threadContext.providerFramework$),
+      get(threadContext.modelRoute$),
+    ]);
     if (!event || !agent) {
       throw new Error("Run storage requires its picked event and Agent");
     }
-    if (
-      isThreadModelError(framework) ||
-      isThreadModelError(modelProvider) ||
-      isThreadModelError(selection)
-    ) {
+    if (isThreadModelError(framework) || isThreadModelError(modelProvider)) {
       throw new Error("Run storage requires an admitted model selection");
     }
-    const piSandbox = resolvePreparedPiModelConfig({
-      input: {
-        catalog,
-        piExecution: selection.piExecution,
-        codexServiceTier: selection.codexServiceTier,
-        reasoningEffort: selection.reasoningEffort,
-      },
-      modelProvider,
-    });
     const artifacts = memoryArtifactsForRun({
       framework,
-      piSandbox,
+      piSandbox: modelProvider.piModelConfig,
     });
     get(db$);
     return {

@@ -339,7 +339,6 @@ export interface CreateQueuedChatRunInput {
   readonly queuedMessage: QueuedUserMessage;
   readonly selectedModel: string;
   readonly effectiveModelProvider: ModelFirstPin["modelProviderType"];
-  readonly piExecution: boolean;
   readonly codexServiceTier: "fast" | "ultrafast" | undefined;
   readonly reasoningEffort?: ReasoningEffort | null;
   readonly triggerSource: QueuedUserMessageTriggerSource;

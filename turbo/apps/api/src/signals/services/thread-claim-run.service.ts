@@ -170,10 +170,6 @@ import {
 } from "./pending-launch-admission-plan";
 import { pendingLaunchInsertSql } from "./pending-launch-sql";
 import {
-  type PiModelPreparationInput,
-  resolvePreparedPiModelConfig,
-} from "./pi-sandbox-config";
-import {
   checkCatalogRunRoute,
   checkOrgPlanRunAdmission,
   type RunAdmissionInput,
@@ -535,7 +531,6 @@ function queuedPromptRunInput(args: {
     queuedMessage: input.queuedMessage,
     selectedModel: model.pin.selectedModel,
     effectiveModelProvider: model.pin.modelProviderType,
-    piExecution: model.piExecution,
     codexServiceTier: model.codexServiceTier,
     reasoningEffort: model.reasoningEffort,
     triggerSource: launch.triggerSource,
@@ -555,7 +550,6 @@ function threadRunModelFields(model: ThreadModelSelection) {
     modelProvider: model.pin.modelProviderType,
     selectedModel: model.pin.selectedModel,
     codexServiceTier: model.codexServiceTier,
-    piExecution: model.piExecution,
   };
 }
 
@@ -577,7 +571,6 @@ function promptRunCommand(
       threadId: input.threadId,
       eventId: input.queuedMessage.id,
     },
-    piExecution: input.piExecution,
     agentRunMetadata: { autonomyBudget: input.autonomyBudget },
     modelProvider: input.effectiveModelProvider,
     ...(input.realAgentInPreview ? { realAgentInPreview: true } : {}),
@@ -2663,10 +2656,6 @@ export function createThreadClaimRunObjects(
     }
     const { content } = contentContext;
     const { modelProvider, framework } = runtimeContext;
-    const piSandbox = resolvePreparedPiModelConfig({
-      input: piModelPreparationInput(args),
-      modelProvider,
-    });
     const { resolved } = contentContext;
     const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
     if (isRouteError(promptAndSkills)) {
@@ -2676,13 +2665,12 @@ export function createThreadClaimRunObjects(
       skillVolumes: promptAndSkills.skillVolumes,
       officialWorkflow: officialWorkflowRun,
       framework,
-      piSandbox,
+      piSandbox: modelProvider.piModelConfig,
     });
     return {
       content,
       resolved,
       framework,
-      piSandbox,
       modelProvider,
       connectorRuntimeTargets: runtimeContext.connectorRuntimeTargets,
       connectorEnvironment: runtimeContext.connectorEnvironment,
@@ -3038,10 +3026,13 @@ export function createThreadClaimRunObjects(
         return context;
       }
       const args = await get(contextArgs$);
+      const modelProvider = context.modelProvider;
       const launchSnapshot = {
         schemaVersion: 5 as const,
         framework:
-          context.piSandbox === undefined ? context.framework : ("pi" as const),
+          modelProvider.piModelConfig === undefined
+            ? context.framework
+            : ("pi" as const),
         runnerProfile: DEFAULT_PROFILE,
       };
       const { content } = context;
@@ -3076,7 +3067,6 @@ export function createThreadClaimRunObjects(
         }
       }
       const { officialWorkflowRun, selectedImageModel } = context;
-      const modelProvider = context.modelProvider;
       return {
         args,
         integrationContext: context.integrationContext,
@@ -3114,10 +3104,7 @@ export function createThreadClaimRunObjects(
             templateSkillVolumes: context.templateSkillVolumes,
             integration,
             captureNetworkBodies: args.captureNetworkBodies === true,
-            modelProvider: {
-              ...modelProvider,
-              piModelConfig: context.piSandbox,
-            },
+            modelProvider,
             modelProviderPermissions: context.modelProviderPermissions,
             connectorEnvironment: context.connectorEnvironment,
             connectorNetworkPolicyInputs: context.connectorNetworkPolicyInputs,
@@ -4595,24 +4582,7 @@ interface ThreadRunCommand {
   readonly reasoningEffort?: ReasoningEffort | null;
   readonly agentRunMetadata?: AgentRunMetadata;
   readonly queueFirstAssociation: QueueFirstRunAssociation;
-  /** Immutable Pi eligibility captured by the caller's admission snapshot. */
-  readonly piExecution: boolean;
   readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
-}
-
-/** The plain facts of a Thread run that Pi model preparation reads. */
-function piModelPreparationInput(
-  args: Pick<
-    ThreadRunArgs,
-    "catalog" | "piExecution" | "codexServiceTier" | "agentRunMetadata"
-  >,
-): PiModelPreparationInput {
-  return {
-    catalog: args.catalog,
-    piExecution: args.piExecution,
-    codexServiceTier: args.codexServiceTier,
-    reasoningEffort: args.agentRunMetadata.reasoningEffort,
-  };
 }
 
 // --- Thread-private implementation: launch input ---
@@ -4803,7 +4773,6 @@ interface ThreadRunArgs {
   readonly catalog: ModelCatalog;
   readonly orgId: string;
   readonly userId: string;
-  readonly piExecution: boolean;
   readonly codexServiceTier?: "fast" | "ultrafast";
   readonly agentRunMetadata: AgentRunMetadata;
   readonly queueFirstAssociation: QueueFirstRunAssociation;
@@ -4827,7 +4796,6 @@ function buildThreadRunArgs(
   return {
     orgId: command.owner.orgId,
     userId: command.owner.userId,
-    piExecution: command.piExecution,
     codexServiceTier: command.codexServiceTier,
     queueFirstAssociation: command.queueFirstAssociation,
     catalog: args.catalog,
