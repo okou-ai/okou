@@ -77,7 +77,7 @@ function SurveyOptions<Answer extends string>({
             onSelect(answer);
           }
         }}
-        className="flex flex-col gap-1"
+        className="-mx-3 flex flex-col gap-1"
       >
         {answers.map((answer) => {
           return (
