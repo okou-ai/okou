@@ -1,10 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { create } from "tar";
-import { http, HttpResponse } from "msw";
-import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { cronSyncSkillsContract } from "@okouai/api-contracts/contracts/cron";
 import { readContentBundle } from "@okouai/core/content-bundle";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
@@ -12,7 +7,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { cronSyncSkillsRoutes } from "../cron-sync-skills";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
@@ -21,53 +15,10 @@ import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { setPaidToolDisabled } from "./helpers/paid-tools";
+import { githubSource, sourceArchive } from "./helpers/seed-skill-source";
 
 const context = testContext();
 const CRON_SECRET = "seed-bundle-preparation-cron";
-
-async function sourceArchive(revision = "first") {
-  const files = new Map<string, Buffer>();
-  for (const name of [...SEED_SKILLS, "ordinary-skill"]) {
-    files.set(
-      `${name}/SKILL.md`,
-      Buffer.from(
-        `---\nname: ${name}\ndescription: ${name}\n---\n${name === "gen" ? revision : "stable"}\n`,
-      ),
-    );
-  }
-  files.set(
-    "workflow-setup/references/guide.md",
-    Buffer.from("Complete guide\n"),
-  );
-  const root = await mkdtemp(join(tmpdir(), "seed-skills-provider-"));
-  onTestFinished(() => {
-    return rm(root, { recursive: true, force: true });
-  });
-  for (const [path, content] of files) {
-    const target = join(root, "okou-skills-main", path);
-    await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, content);
-  }
-  const archivePath = join(root, "source.tar.gz");
-  await create({ cwd: root, file: archivePath, gzip: true }, [
-    "okou-skills-main",
-  ]);
-  return { archive: await readFile(archivePath), files };
-}
-
-function githubSource(sha: string, archive: Buffer) {
-  server.use(
-    http.get("https://github.com/okou-ai/okou-skills.git/info/refs", () => {
-      return new HttpResponse(`${sha} refs/heads/main\n`);
-    }),
-    http.get(
-      "https://codeload.github.com/okou-ai/okou-skills/tar.gz/refs/heads/main",
-      () => {
-        return new HttpResponse(new Uint8Array(archive));
-      },
-    ),
-  );
-}
 
 function emittedSeedFiles(objects: ReadonlyMap<string, Buffer>) {
   return [...objects.entries()]

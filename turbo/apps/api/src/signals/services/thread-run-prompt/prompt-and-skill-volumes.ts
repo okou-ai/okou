@@ -2,6 +2,7 @@ import {
   mergeRunPromptAndSkills,
   renderRunPrompts,
   type SkillVolume,
+  type SeedSkillVolume,
   type SystemPromptVariables,
 } from "../run-prompt-and-skills";
 import { createPhoneUsePrompt } from "./phone-use";
@@ -35,6 +36,8 @@ export interface PromptAndSkillVolumes {
   readonly appendedSystemPrompt: string;
   readonly userPrompt: string;
   readonly skillVolumes: readonly SkillVolume[];
+  readonly seedSkillVolumes: readonly SeedSkillVolume[];
+  readonly userTimezone: string | undefined;
 }
 
 export class PromptAndSkillVolumesError extends Error {
@@ -309,6 +312,10 @@ export function createPromptAndSkillVolumesSignals(
       appendedSystemPrompt: prompts.systemPrompt,
       userPrompt: prompts.userPrompt,
       skillVolumes: combined.skillVolumes,
+      seedSkillVolumes: systemSkills.skillVolumes,
+      // createUserPrompt already consumed this memoized member observation.
+      userTimezone:
+        (await get(memberMetadata$)).preferences?.timezone ?? undefined,
     };
   });
 }

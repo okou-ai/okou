@@ -2662,6 +2662,8 @@ export function createThreadClaimRunObjects(
       modelProvider,
       connectorRuntimeTargets: runtimeContext.connectorRuntimeTargets,
       modelProviderPermissions: runtimeContext.modelProviderPermissions,
+      seedSkillVolumes: promptAndSkills.seedSkillVolumes,
+      userTimezone: promptAndSkills.userTimezone,
       ...metadata,
       officialWorkflowFacts: await get(officialWorkflowFacts$),
       featureSwitchContext: contentContext.featureSwitchContext,
@@ -3091,6 +3093,8 @@ export function createThreadClaimRunObjects(
             captureNetworkBodies: args.captureNetworkBodies === true,
             piModelConfig: context.piSandbox,
             modelProviderPermissions: context.modelProviderPermissions,
+            seedSkillVolumes: context.seedSkillVolumes,
+            userTimezone: context.userTimezone,
           },
           apiStartTime: await get(runnerApiStartTime$),
           chatThreadId: args.chatThreadId,
@@ -4509,6 +4513,8 @@ interface ThreadRunnerFacts {
     | "captureNetworkBodies"
     | "piModelConfig"
     | "modelProviderPermissions"
+    | "seedSkillVolumes"
+    | "userTimezone"
   >;
   readonly workflowAutomationId: string | null;
   readonly agentId: string;

@@ -49,6 +49,10 @@ export type SkillVolume =
       readonly contentBundle: ContentBundle;
     };
 
+export type SeedSkillVolume = SkillVolume & {
+  readonly source: "system_skill";
+};
+
 /** Prompt text and skill or template guidance packages for one run. */
 export interface RunPromptAndSkills {
   readonly systemPromptVariables: SystemPromptVariables;
