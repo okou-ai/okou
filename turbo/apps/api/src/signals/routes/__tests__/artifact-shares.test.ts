@@ -906,6 +906,7 @@ test("a private file keeps the same short reference through organization sharing
     [404],
   );
   session();
+  context.mocks.s3.send.mockClear();
   const shared = await accept(
     api()(artifactSharesContract).update({
       headers,
@@ -915,6 +916,14 @@ test("a private file keeps the same short reference through organization sharing
   );
   expect(shared.body.shortUrl).toBe(url);
   expect(shared.body.url).toBe(shared.body.shortUrl);
+  expect(
+    context.mocks.s3.send.mock.calls.filter(([cmd]) => {
+      return (
+        cmd instanceof PutObjectCommand &&
+        cmd.input.Key?.startsWith("artifact-references/")
+      );
+    }),
+  ).toHaveLength(0);
   session(recipient);
   const resolved = await accept(
     api()(artifactReferencesContract).resolve({
@@ -1478,6 +1487,7 @@ test("public filename collisions retry without replacing a historical file", asy
   expect(alias).toMatch(/^[a-z0-9]{10}\.pdf$/u);
   expect(collision).not.toBe(`artifact-delivery/files/${alias}.json`);
   expect(objects.get(collision!)).toBe(existing);
+  context.mocks.s3.send.mockClear();
   const repeated = await accept(
     api()(artifactSharesContract).update({
       headers,
@@ -1486,6 +1496,14 @@ test("public filename collisions retry without replacing a historical file", asy
     [200],
   );
   expect(repeated.body.url).toBe(published.body.url);
+  expect(
+    context.mocks.s3.send.mock.calls.filter(([cmd]) => {
+      return (
+        cmd instanceof PutObjectCommand &&
+        cmd.input.Key?.startsWith("artifact-delivery/files/")
+      );
+    }),
+  ).toHaveLength(0);
 });
 
 test("existing 24-character public file links survive updates and revoke normally", async () => {
@@ -1512,6 +1530,9 @@ test("existing 24-character public file links survive updates and revoke normall
     [200],
   );
   expect(updated.body.url).toBe(`https://a.okou.io/${"a".repeat(24)}.pdf`);
+  expect(
+    objects.get(`artifact-delivery/files/${"a".repeat(24)}.pdf.json`),
+  ).toBeDefined();
   await accept(
     api()(artifactSharesContract).update({
       headers,
@@ -1799,7 +1820,7 @@ test("audience changes revoke old public tokens and permit stopping", async () =
   });
 });
 
-test("organization short-reference collisions retry without taking another share's address", async () => {
+test("organization sharing preserves the file reference allocated after a collision", async () => {
   const { objects } = fixture();
   const original = await file();
   const originalShare = await accept(

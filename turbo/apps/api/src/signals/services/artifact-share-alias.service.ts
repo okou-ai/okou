@@ -8,7 +8,10 @@ import { artifactHash } from "../../lib/file-url";
 import { publicSlugCandidate } from "../../lib/hosted-site-slug";
 import { db$ } from "../external/db";
 import { settle } from "../utils";
-import { allocateArtifactReference$ } from "./artifact-reference.service";
+import {
+  allocateArtifactReference$,
+  artifactReferenceRecord$,
+} from "./artifact-reference.service";
 import {
   ArtifactDeliveryAliasConflict,
   registerArtifactDelivery$,
@@ -95,6 +98,7 @@ const registerPublicArtifactFile$ = command(
           {
             alias: `${token}${artifactFilenameExtension(policy.target.filename)}`,
             targetKind: "file",
+            reuseExisting: args.preserveToken,
             record: {
               version: 1,
               kind: "publication",
@@ -128,16 +132,24 @@ export const prepareArtifactShareAliases$ = command(
     args: {
       readonly policy: ArtifactSharePolicy;
       readonly previous: ArtifactSharePolicy | undefined;
+      readonly ownerReference?: string;
     },
     signal: AbortSignal,
   ): Promise<ArtifactSharePolicy> => {
     let organizationReference = args.previous?.organizationReference;
     if (args.policy.audience === "organization") {
-      organizationReference = await set(
-        allocateArtifactReference$,
-        { kind: args.policy.target.kind, id: args.policy.target.id },
-        signal,
-      );
+      const { kind, id } = args.policy.target;
+      const reference = args.ownerReference ?? organizationReference;
+      const existing = reference
+        ? await set(artifactReferenceRecord$, reference, signal)
+        : null;
+      signal.throwIfAborted();
+      organizationReference =
+        existing?.version === 2 &&
+        existing.target.kind === kind &&
+        existing.target.id === id
+          ? reference
+          : await set(allocateArtifactReference$, { kind, id }, signal);
     }
     const next: ArtifactSharePolicy = {
       ...args.policy,

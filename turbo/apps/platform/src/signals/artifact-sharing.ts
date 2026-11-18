@@ -1,4 +1,4 @@
-import { command, computed, state, type Computed, type State } from "ccstate";
+import { command, computed, state } from "ccstate";
 import { artifactReferencesContract } from "@okouai/api-contracts/client/artifact-references";
 import { parseArtifactReference } from "@okouai/api-contracts/validators/artifact-references";
 import { artifactSharesContract } from "@okouai/api-contracts/client/artifact-shares";
@@ -44,6 +44,20 @@ interface ShareSource {
 }
 type Audience = ArtifactShareStatus["audience"];
 
+function ownedShareDetails(
+  target: ArtifactShareTarget,
+  status: ArtifactShareStatus,
+  fragment: string,
+) {
+  const copyUrl = new URL(status.ownerUrl, location.origin);
+  copyUrl.hash = fragment;
+  const audience =
+    status.selectedTarget && status.selectedTarget.id !== target.id
+      ? "private"
+      : status.audience;
+  return { target, status, audience, copyUrl: copyUrl.href } as const;
+}
+
 async function loadShareDetails(client: ApiClientFactory, source: ShareSource) {
   const reference = parseArtifactReference(source.url, location.origin);
   const resolved =
@@ -81,32 +95,41 @@ async function loadShareDetails(client: ApiClientFactory, source: ShareSource) {
     }),
     [200, 404],
   );
-  const status = result.status === 200 ? result.body : null;
-  const copyUrl = new URL(
-    status ? status.ownerUrl : (source.copyUrl ?? source.url),
-    location.origin,
-  );
-  if (status) {
-    copyUrl.hash = reference?.fragment ?? "";
+  if (result.status === 200) {
+    return ownedShareDetails(target, result.body, reference?.fragment ?? "");
   }
-  const audience =
-    status?.selectedTarget && status.selectedTarget.id !== target.id
-      ? "private"
-      : status?.audience;
-  return { target, status, audience, copyUrl: copyUrl.href };
+  return {
+    target,
+    status: null,
+    audience: undefined,
+    copyUrl: new URL(source.copyUrl ?? source.url, location.origin).href,
+  };
 }
 type ShareDetails = Awaited<ReturnType<typeof loadShareDetails>>;
 
-function createAudienceSignals(
-  details$: Computed<Promise<ShareDetails>>,
-  reload$: State<number>,
-) {
+function createAudienceSignals(source: ShareSource) {
+  const initialRead$ = computed((get) => {
+    return loadShareDetails(get(apiClient$), source);
+  });
+  // A saved response belongs to the same source and client as its initial read.
+  const saved$ = state<{
+    readonly initialRead: Promise<ShareDetails>;
+    readonly details: ReturnType<typeof ownedShareDetails>;
+  } | null>(null);
+  const details$ = computed((get) => {
+    const initialRead = get(initialRead$);
+    const saved = get(saved$);
+    return saved?.initialRead === initialRead
+      ? Promise.resolve(saved.details)
+      : initialRead;
+  });
   // Permission selection comes from server details, not submitted arguments.
   const persist$ = command(
     async ({ get, set }, audience: Audience, signal: AbortSignal) => {
+      const initialRead = get(initialRead$);
       const details = await get(details$);
       signal.throwIfAborted();
-      if (!details?.status) {
+      if (!details?.status || get(initialRead$) !== initialRead) {
         return;
       }
       if (
@@ -116,7 +139,7 @@ function createAudienceSignals(
       ) {
         return;
       }
-      await accept(
+      const updated = await accept(
         get(apiClient$)(artifactSharesContract).update({
           body: { target: details.target, audience },
           fetchOptions: { signal },
@@ -125,11 +148,14 @@ function createAudienceSignals(
         signal,
       );
       signal.throwIfAborted();
-      set(reload$, (value) => {
-        return value + 1;
+      set(saved$, {
+        initialRead,
+        details: ownedShareDetails(
+          details.target,
+          updated.body,
+          new URL(details.copyUrl).hash,
+        ),
       });
-      await get(details$);
-      signal.throwIfAborted();
       toast.success(
         i18n.t(($) => {
           return $.artifacts.sharing.permissionsUpdated;
@@ -137,17 +163,13 @@ function createAudienceSignals(
       );
     },
   );
-  return { change$: persist$ };
+  return { details$, change$: persist$ };
 }
 
 function createArtifactShareSession(source: ShareSource) {
   // The mount owner installs its live signal after this graph is constructed.
   const signal$ = state<AbortSignal | null>(null);
-  const reload$ = state(0);
-  const details$ = computed((get) => {
-    get(reload$);
-    return loadShareDetails(get(apiClient$), source);
-  });
+  const { details$, change$: persist$ } = createAudienceSignals(source);
   const open$ = state(false);
   const resetOpenSignal$ = resetSignal();
   const linkCopy = createShareLinkCopy();
@@ -175,11 +197,10 @@ function createArtifactShareSession(source: ShareSource) {
       await set(linkCopy.copy$, details.copyUrl, signal);
     }
   });
-  const audience = createAudienceSignals(details$, reload$);
   const change$ = throttleCommand(
     command(({ set }, choice: Audience, signal: AbortSignal) => {
       set(linkCopy.clear$);
-      return set(audience.change$, choice, signal);
+      return set(persist$, choice, signal);
     }),
     0,
   );
