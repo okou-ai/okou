@@ -403,28 +403,18 @@ fn sync_directory_blocking(path: &Path) -> LifecycleResult<()> {
 
 /// Linux cache publication cannot replace even an orphan of the same UUID.
 pub(super) fn move_noreplace(src: &Path, dst: &Path) -> std::io::Result<()> {
+    use rustix::fs::{CWD, RenameFlags, renameat_with};
+
     let src = std::ffi::CString::new(src.as_os_str().as_bytes())?;
     let dst = std::ffi::CString::new(dst.as_os_str().as_bytes())?;
-    // Call the Linux syscall directly: supported musl toolchains need not
-    // export the renameat2 libc wrapper. Preserve atomic NOREPLACE semantics
-    // and errno, including EXDEV; never fall back to a replacing rename.
-    // SAFETY: both paths are live NUL-terminated strings, the directory
-    // selectors are AT_FDCWD, and the flags contain only RENAME_NOREPLACE.
-    let rc = unsafe {
-        libc::syscall(
-            libc::SYS_renameat2,
-            libc::AT_FDCWD,
-            src.as_ptr(),
-            libc::AT_FDCWD,
-            dst.as_ptr(),
-            libc::RENAME_NOREPLACE,
-        )
-    };
-    if rc == 0 {
-        Ok(())
-    } else {
-        Err(std::io::Error::last_os_error())
-    }
+    renameat_with(
+        CWD,
+        src.as_c_str(),
+        CWD,
+        dst.as_c_str(),
+        RenameFlags::NOREPLACE,
+    )
+    .map_err(Into::into)
 }
 
 /// Cross-device copy reads the pinned descriptor, not a mutable tenant pathname.
