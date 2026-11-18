@@ -2,15 +2,17 @@ import type { Ref } from "react";
 import { cn } from "@okouai/ui";
 
 /**
- * A focusable 12px pointer target on the edge between two resizable panes.
- * The caller positions it and leaves the resting line to the panes' own
- * border. Hover waits 150ms before showing a 2px line, so a pointer passing
- * over the edge does not flash it; drag and keyboard focus
- * use the same brand-colour feedback.
+ * A focusable divider on the boundary between two resizable panes, shaped
+ * like shadcn's `ResizableHandle`: the element itself has no width, an
+ * `::after` layer widens the pointer target to 12px across the boundary, and
+ * a `::before` line takes the brand colour for hover (after 150ms, so a
+ * pointer passing over the edge does not flash it), drag and keyboard focus.
+ * Only the line's colour changes, so the divider never shifts either pane.
  *
- * The primitive does not assign a z-index. The owning layout places it after
- * overlapping panes where possible and owns any shell-level paint priority
- * needed to keep both halves of the target reachable.
+ * The caller places it and owns the resting line: either the divider's own
+ * border, in flow between the panes, or the pane border it is positioned on.
+ * The primitive does not assign a z-index. The owning layout decides whether
+ * the target must paint above a later pane to keep both halves reachable.
  */
 export function ResizeSeam({
   ref,
@@ -19,7 +21,6 @@ export function ResizeSeam({
   valueMax,
   valueNow,
   resizing,
-  line,
   widthKey,
   className,
 }: {
@@ -29,8 +30,6 @@ export function ResizeSeam({
   readonly valueMax?: number;
   readonly valueNow: number | null;
   readonly resizing: boolean;
-  /** Where the edge falls in the target: its middle, or its trailing side. */
-  readonly line: "center" | "end";
   readonly widthKey?: string;
   readonly className?: string;
 }) {
@@ -47,20 +46,14 @@ export function ResizeSeam({
       data-width-key={widthKey}
       data-resizing={resizing ? "" : undefined}
       className={cn(
-        "group w-3 cursor-col-resize touch-none outline-none",
+        "relative w-0 shrink-0 cursor-col-resize touch-none outline-none",
+        "after:absolute after:inset-y-0 after:left-1/2 after:w-3 after:-translate-x-1/2",
+        "before:pointer-events-none before:absolute before:inset-y-0 before:left-1/2 before:w-0.5 before:-translate-x-1/2 before:transition-colors before:delay-0 before:duration-150",
+        "hover:before:bg-primary hover:before:delay-150",
+        "focus-visible:before:bg-primary focus-visible:before:delay-0",
+        "data-[resizing]:before:bg-primary data-[resizing]:before:delay-0",
         className,
       )}
-    >
-      <span
-        aria-hidden="true"
-        className={cn(
-          "pointer-events-none absolute inset-y-0 w-px transition-[width,background-color] delay-0 duration-150",
-          line === "center" ? "left-1/2 -translate-x-1/2" : "right-0",
-          "group-hover:w-0.5 group-hover:bg-primary group-hover:delay-150",
-          "group-focus-visible:w-0.5 group-focus-visible:bg-primary group-focus-visible:delay-0",
-          "group-data-[resizing]:w-0.5 group-data-[resizing]:bg-primary group-data-[resizing]:delay-0",
-        )}
-      />
-    </div>
+    />
   );
 }

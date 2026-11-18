@@ -274,6 +274,37 @@ const startChatListResize$ = command(
   },
 );
 
+/**
+ * The width a separator key moves the chat list to, or null for other keys.
+ * A collapsed list reports zero, the separator's minimum: keys toward it keep
+ * the list collapsed (zero), and ArrowRight reopens it at its remembered
+ * width, as the toggle does.
+ */
+function chatListKeyWidth(
+  key: string,
+  width: number,
+  step: number,
+  hidden: boolean,
+): number | null {
+  switch (key) {
+    case "ArrowLeft": {
+      return hidden ? 0 : width - step;
+    }
+    case "ArrowRight": {
+      return hidden ? width : width + step;
+    }
+    case "Home": {
+      return hidden ? 0 : CHAT_LIST_MIN_WIDTH;
+    }
+    case "End": {
+      return CHAT_LIST_MAX_WIDTH;
+    }
+    default: {
+      return null;
+    }
+  }
+}
+
 export const chatListResizeHandleRef$ = onRef(
   command(({ get, set }, handle: HTMLDivElement, mountSignal: AbortSignal) => {
     handle.addEventListener(
@@ -312,18 +343,13 @@ export const chatListResizeHandleRef$ = onRef(
       "keydown",
       onDomEventFn<KeyboardEvent>((event) => {
         const signal = AbortSignal.any([mountSignal, get(pageSignal$)]);
-        const width = get(chatListWidth$);
         const step = event.shiftKey ? KEYBOARD_LARGE_STEP : KEYBOARD_STEP;
-        const next =
-          event.key === "ArrowLeft"
-            ? width - step
-            : event.key === "ArrowRight"
-              ? width + step
-              : event.key === "Home"
-                ? CHAT_LIST_MIN_WIDTH
-                : event.key === "End"
-                  ? CHAT_LIST_MAX_WIDTH
-                  : null;
+        const next = chatListKeyWidth(
+          event.key,
+          get(chatListWidth$),
+          step,
+          get(storedChatListHidden$),
+        );
         if (event.key === "Enter") {
           // The focused separator owns Enter as "restore the default width".
           event.preventDefault();
@@ -334,6 +360,9 @@ export const chatListResizeHandleRef$ = onRef(
         }
         // Arrow, Home and End keys resize instead of scrolling the list.
         event.preventDefault();
+        if (next === 0) {
+          return;
+        }
         set(setStoredChatListHidden$, false, signal);
         return set(setChatListWidth$, next, signal);
       }),
