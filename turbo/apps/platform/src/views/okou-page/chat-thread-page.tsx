@@ -5746,8 +5746,15 @@ function AssistantErrorContent({
   failureReason: string | undefined;
   thread: ChatPanelSignals;
 }) {
+  // A paused run has no asynchronous description or actions to reserve space for.
+  const paused =
+    failureReason === undefined &&
+    error.trim().toLowerCase() === "run cancelled";
   return (
-    <ChatNoticeCard data-testid="assistant-error-card-shell">
+    <ChatNoticeCard
+      data-testid="assistant-error-card-shell"
+      className={paused ? "h-auto @[640px]:h-auto" : undefined}
+    >
       <AssistantErrorState
         error={error}
         eventId={eventId}
