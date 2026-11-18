@@ -10,6 +10,38 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.92.0](https://github.com/okou-ai/okou/compare/api-v2.91.3...api-v2.92.0) (2026-11-18)
+
+
+### Features
+
+* add ultrafast for codex subscriptions ([#48736](https://github.com/okou-ai/okou/issues/48736)) ([c352dad](https://github.com/okou-ai/okou/commit/c352dadadbbec10cea8cf77adccfac8462ecdb94))
+
+
+### Refactoring
+
+* **api:** remove legacy storage export authorization ([#48732](https://github.com/okou-ai/okou/issues/48732)) ([ad521c5](https://github.com/okou-ai/okou/commit/ad521c515f25954f1cc271eceab18da4f2bb2789))
+* **api:** separate verified firewall and sandbox authority ([#48761](https://github.com/okou-ai/okou/issues/48761)) ([f642984](https://github.com/okou-ai/okou/commit/f64298411819eea46a8dc3ff7d570f3794f43214))
+* **firewall:** retire legacy resolver and envelope compatibility ([#48739](https://github.com/okou-ai/okou/issues/48739)) ([7dcd7ca](https://github.com/okou-ai/okou/commit/7dcd7cac45f2b26e253703533fc7f1097609c0f6))
+
+
+### Performance Improvements
+
+* **api:** prefetch chat attachment metadata once ([#48725](https://github.com/okou-ai/okou/issues/48725)) ([f688f4a](https://github.com/okou-ai/okou/commit/f688f4aa48b0d85c248529a701c82492b618a041))
+* **api:** prefetch execution packages from picked sources ([#48743](https://github.com/okou-ai/okou/issues/48743)) ([ed12b4c](https://github.com/okou-ai/okou/commit/ed12b4c17134868df08762d0c64142a4c4eb9a8f))
+* **api:** reuse accepted memory metadata in direct dispatch ([#48735](https://github.com/okou-ai/okou/issues/48735)) ([c3ceff1](https://github.com/okou-ai/okou/commit/c3ceff1935ba73b29a0b6962ceb69562295f3802))
+* **api:** reuse resolved pi config during run startup ([#48752](https://github.com/okou-ai/okou/issues/48752)) ([c4acfaa](https://github.com/okou-ai/okou/commit/c4acfaaf5f34d3df2dd4d1bf72fbd46f70170d4d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.87.0
+    * @okouai/core bumped to 8.854.0
+    * @okouai/db bumped to 2.46.0
+    * @okouai/pi-agent-runtime bumped to 1.52.0
+
 ## [2.91.3](https://github.com/okou-ai/okou/compare/api-v2.91.2...api-v2.91.3) (2026-11-18)
 
 

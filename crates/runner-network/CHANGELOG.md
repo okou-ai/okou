@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.29](https://github.com/okou-ai/okou/compare/runner-network-v0.6.28...runner-network-v0.6.29) (2026-11-18)
+
+
+### Refactoring
+
+* **firewall:** retire legacy resolver and envelope compatibility ([#48739](https://github.com/okou-ai/okou/issues/48739)) ([7dcd7ca](https://github.com/okou-ai/okou/commit/7dcd7cac45f2b26e253703533fc7f1097609c0f6))
+
 ## [0.6.28](https://github.com/okou-ai/okou/compare/runner-network-v0.6.27...runner-network-v0.6.28) (2026-11-18)
 
 ## [0.6.27](https://github.com/okou-ai/okou/compare/runner-network-v0.6.26...runner-network-v0.6.27) (2026-11-18)

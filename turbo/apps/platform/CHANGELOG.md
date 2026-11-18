@@ -13,6 +13,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1148.0](https://github.com/okou-ai/okou/compare/app-v0.1147.5...app-v0.1148.0) (2026-11-18)
+
+
+### Features
+
+* add ultrafast for codex subscriptions ([#48736](https://github.com/okou-ai/okou/issues/48736)) ([c352dad](https://github.com/okou-ai/okou/commit/c352dadadbbec10cea8cf77adccfac8462ecdb94))
+
+
+### Performance Improvements
+
+* **test:** narrow connector account readiness queries ([#48747](https://github.com/okou-ai/okou/issues/48747)) ([c596d5d](https://github.com/okou-ai/okou/commit/c596d5d82c02fab6155681fd86153ce4311b113a))
+* **test:** scope subscription reset tooltip text checks ([#48757](https://github.com/okou-ai/okou/issues/48757)) ([9e11c62](https://github.com/okou-ai/okou/commit/9e11c62ea74263555197b0d23515b9282f19584b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.87.0
+    * @okouai/core bumped to 8.854.0
+    * @okouai/ui bumped to 1.21.57
+
 ## [0.1147.5](https://github.com/okou-ai/okou/compare/app-v0.1147.4...app-v0.1147.5) (2026-11-18)
 
 
