@@ -54,6 +54,7 @@ def context(event='push', run_id='100'):
         'github.event.pull_request.number': 42,
         'github.event.pull_request.head.repo.full_name': 'test/repo',
         'needs.detect-release.outputs.skip': 'false',
+        'needs.detect-release.outputs.lookup-failed': '',
         'needs.detect-turbo-ts-checks.outputs.ios-only': 'false',
         'needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed': 'true',
         'needs.prepare.outputs.job-ref': 'staging' if event == 'push' else 'pr-42',

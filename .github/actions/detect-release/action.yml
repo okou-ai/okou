@@ -1,0 +1,52 @@
+name: Detect release-please
+description: Classify PR, main push, and merge-queue events for CI exemptions. Requires Bash, gh, contents read, and pull-requests read.
+outputs:
+  skip:
+    description: Whether this is a release-please event; callers retain required release builds and publication.
+    value: ${{ steps.check.outputs.skip }}
+  lookup-failed:
+    description: True when MQ lookup was unavailable; release-specific validators may independently resolve applicability.
+    value: ${{ steps.check.outputs.lookup-failed }}
+runs:
+  using: composite
+  steps:
+    - id: check
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        HEAD_REF: ${{ github.head_ref || '' }}
+        COMMIT_MSG: ${{ github.event.head_commit.message || '' }}
+        EVENT_NAME: ${{ github.event_name }}
+        MQ_HEAD_REF: ${{ github.event.merge_group.head_ref || '' }}
+        REPO: ${{ github.repository }}
+      run: |
+        set -euo pipefail
+        if [[ "$HEAD_REF" == release-please--branches--* ]]; then
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+          echo "Release-please PR detected (branch: $HEAD_REF)"
+          exit 0
+        fi
+        if [[ "$EVENT_NAME" == push && "$COMMIT_MSG" == chore:\ release* ]]; then
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+          echo 'Release-please push detected'
+          exit 0
+        fi
+        if [[ "$EVENT_NAME" == merge_group ]]; then
+          if [[ ! "$MQ_HEAD_REF" =~ /pr-([0-9]+)- ]]; then
+            echo '::error::Cannot identify the merge-queue PR' >&2
+            exit 1
+          fi
+          PR_NUM=${BASH_REMATCH[1]}
+          if PR_BRANCH=$(gh pr view "$PR_NUM" --repo "$REPO" --json headRefName --jq .headRefName 2>/dev/null); then
+            if [[ "$PR_BRANCH" == release-please--branches--* ]]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "Release-please merge queue entry detected (PR #$PR_NUM, branch: $PR_BRANCH)"
+              exit 0
+            fi
+          else
+            echo 'lookup-failed=true' >> "$GITHUB_OUTPUT"
+            echo 'Merge-queue PR lookup unavailable; running ordinary CI.'
+          fi
+        fi
+        echo "skip=false" >> "$GITHUB_OUTPUT"
+        echo 'Not a release-please context'

@@ -45,10 +45,12 @@ for output, suffix in [('android_version', 'version'), ('android_tag', 'tag_name
     assert release['outputs'][output] == "${{ steps.release.outputs['android--" + suffix + "'] }}"
 assert 'publish-android' in jobs['update-rollback-dashboard']['needs']
 
-# Execute Android's release classification and aggregate gate as Actions does.
+# Execute the shared release action and Android's aggregate gate as Actions does.
 android = json.loads(subprocess.check_output(
     ['yq', '-o=json', '.', str(root / '.github/workflows/android.yml')], text=True))['jobs']
-classify = android['detect-release']['steps'][0]['run']
+action = json.loads(subprocess.check_output(
+    ['yq', '-o=json', '.', str(root / '.github/actions/detect-release/action.yml')], text=True))
+classify = action['runs']['steps'][0]['run']
 gate = android['ci-gate-android']['steps'][0]['run']
 assert android['detect-release']['permissions']['pull-requests'] == 'read'
 assert android['detect']['needs'] == ['detect-release']
@@ -97,8 +99,12 @@ print(os.environ['QUEUED_BRANCH'])
         assert decision == 'skip=' + expected, (event, decision)
         condition = android['detect']['if'].replace('needs.detect-release.outputs.skip', repr(expected))
         assert eval(condition, {'__builtins__': {}}, {}) is (expected == 'false')
+    Path(env['GITHUB_OUTPUT']).write_text('')
     failed = execute(classify, {'EVENT_NAME': 'merge_group', 'MQ_HEAD_REF': queued, 'FAIL_LOOKUP': 'true'})
-    assert failed.returncode == 23, failed.stderr
+    assert failed.returncode == 0, failed.stderr
+    assert Path(env['GITHUB_OUTPUT']).read_text().splitlines() == ['lookup-failed=true', 'skip=false']
+    failed = execute(classify, {'EVENT_NAME': 'merge_group', 'MQ_HEAD_REF': 'unexpected-ref'})
+    assert failed.returncode != 0, failed.stderr
 
     gate_env = dict(RELEASE_DETECT='success', IS_RELEASE='false', DETECT='success',
                     NEEDED='true', BUILD='success', INSTRUMENTATION='success')
