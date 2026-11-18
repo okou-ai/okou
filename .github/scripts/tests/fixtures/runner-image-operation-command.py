@@ -288,7 +288,7 @@ def main():
         if (
             status == 0
             and arguments[:4] == ["install", "-m", "600", "/dev/null"]
-            and MODE == "claim-commit-loss"
+            and MODE in ("claim-commit-loss", "pause-claim-commit")
             and not (ROOT / "claim-cut").exists()
         ):
             (ROOT / "claim-resource-created").touch()

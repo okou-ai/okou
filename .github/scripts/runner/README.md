@@ -108,12 +108,14 @@ deployment and closed-PR cleanup. Its root-owned file keeps the same inode and
 is readable by workers so Linux can lock a read-only descriptor without running
 the worker as root. The private image gate is acquired first; cleanup never
 acquires that gate, and cancellation retires image units before waiting for it.
-An image claim waits for the lifecycle flock outside the private gate. When
-the lock becomes available, it releases that observation lock and retries
-admission in the original lock order. PR claim uses a 180-second end-to-end
-budget covering the default 150-second deployment lease and admission. The
-owner and closure cutoff are checked again under both locks. The healthy path
-uses one SSH request. Run and guard retain their 600-second budgets.
+An image claim waits for the lifecycle flock outside the private gate. The
+waiter observes cancellation and retires older workers that take the gate
+during the wait. When the lock becomes available, it releases the observation
+lock and retries admission in the original lock order. PR claim uses a
+180-second end-to-end budget covering the default 150-second deployment lease
+and admission. The owner and closure cutoff are checked again under both locks.
+The healthy path uses one SSH request. Run and guard retain their 600-second
+budgets.
 A claim places an exact-owner admission marker in the managed binary directory;
 preparation preserves only its current marker. After taking the lifecycle lock,
 every worker checks that marker again. Removing the namespace therefore fences

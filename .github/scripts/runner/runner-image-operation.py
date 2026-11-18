@@ -66,7 +66,7 @@ def private_dir(path, create=True):
 
 
 @contextlib.contextmanager
-def gate(namespace, while_waiting=None, observe_intent=None):
+def gate(namespace, while_waiting=None, observe_intent=None, *, wait=True):
     fd = os.open(namespace / "gate", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     try:
         deadline = time.monotonic() + 15
@@ -75,9 +75,9 @@ def gate(namespace, while_waiting=None, observe_intent=None):
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
             except BlockingIOError:
-                if observe_intent is not None and observe_intent.exists():
-                    # Reattachment is read-only once the original launch
-                    # publishes intent; it must not wait behind its worker.
+                if not wait or (observe_intent is not None and observe_intent.exists()):
+                    # Probes and observers of a submitted operation can
+                    # proceed without acquiring the gate.
                     yield False
                     return
                 if time.monotonic() >= deadline:
@@ -105,7 +105,7 @@ def system(*arguments, deadline=None):
 
 
 @contextlib.contextmanager
-def lifecycle(path, deadline, *, wait=True):
+def lifecycle(path, deadline, *, wait=True, while_waiting=None):
     # Linux flock permits LOCK_EX on a read-only FD. The existing root-owned
     # lock stays on the same inode; workers do not need to run Python as root.
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
@@ -120,6 +120,8 @@ def lifecycle(path, deadline, *, wait=True):
                 if not wait:
                     yield None
                     return
+                if while_waiting is not None:
+                    while_waiting()
                 time.sleep(0.1)
         yield fd
     finally:
@@ -340,24 +342,37 @@ def claim(request, namespace, owner, retire_matching, deadline):
     lock_path = system(
         "python3", "-c", LOCK_BOOTSTRAP, "image-lifecycle-lock", lock, deadline=deadline
     ).strip()
-    while True:
-        with gate(namespace, while_waiting=retire_matching):
-            previous = json.loads(owner_path.read_text()) if owner_path.exists() else None
-            existing = owner_matches(previous, owner)
-            if existing:
-                if not owner_admitted(previous, owner):
-                    raise RuntimeError(
-                        "image workflow claim incomplete or cancelled; a new attempt is required"
-                    )
-            elif previous and admission_floor(previous) >= owner["generation"]:
-                raise RuntimeError("image owner superseded, cancelled or input identity conflicts")
 
-            retired = [] if existing else list(operation_paths(namespace))
+    def current_claim():
+        previous = json.loads(owner_path.read_text()) if owner_path.exists() else None
+        if owner_matches(previous, owner):
+            if previous["state"] == "cancelled":
+                raise RuntimeError("image workflow owner cancelled; a new attempt is required")
+            return previous
+        if previous and admission_floor(previous) >= owner["generation"]:
+            raise RuntimeError("image owner superseded, cancelled or input identity conflicts")
+        return None
+
+    def check_waiting_claim():
+        # A prior owner can start more work after we release the gate. Its
+        # worker holds the gate while waiting for or holding the lifecycle lock.
+        with gate(namespace, wait=False) as available:
+            current_claim()
+        if not available:
+            retire_matching()
+
+    while True:
+        with gate(namespace, while_waiting=check_waiting_claim):
+            previous = current_claim()
+            # Until we own the gate, a same-owner claim may still be committing.
+            if previous is not None and not owner_admitted(previous, owner):
+                raise RuntimeError("image workflow claim incomplete; a new attempt is required")
+            retired = [] if previous is not None else list(operation_paths(namespace))
             for operation in retired:
                 retire(operation)
             with lifecycle(lock_path, deadline, wait=False) as lock_fd:
                 if lock_fd is not None:
-                    if existing:
+                    if previous is not None:
                         require_resource(previous)
                     else:
                         check_closure(namespace, lock_fd, request.get("runCreatedAt"))
@@ -373,7 +388,7 @@ def claim(request, namespace, owner, retire_matching, deadline):
                     return
         # This acquisition only observes availability. Release it before
         # entering the private gate and recheck the owner on the next pass.
-        with lifecycle(lock_path, deadline):
+        with lifecycle(lock_path, deadline, while_waiting=check_waiting_claim):
             pass
 
 
