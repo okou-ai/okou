@@ -6876,7 +6876,12 @@ DO $$ BEGIN
       LEFT JOIN inactive_copy_workflows s ON s.id=w.id
       WHERE w.xmin::text || ':' || w.ctid::text IS DISTINCT FROM s.source_row_version)
     OR EXISTS (SELECT 1 FROM inactive_copy_workflows s LEFT JOIN workflows w ON w.id=s.id WHERE w.id IS NULL)
-    OR EXISTS (SELECT 1 FROM chat_threads c JOIN inactive_copy_agents a ON a.id=c.agent_id)
+    OR EXISTS (
+      -- The Chat index starts with user_id. Collect Agent IDs in one pass
+      -- to avoid a separate index scan for every legacy Agent.
+      WITH chat_agents AS MATERIALIZED (SELECT DISTINCT agent_id FROM chat_threads)
+      SELECT 1 FROM chat_agents c JOIN inactive_copy_agents a ON a.id=c.agent_id
+    )
     OR EXISTS (SELECT 1 FROM workflow_automations a JOIN inactive_copy_workflows s ON s.id=a.workflow_id)
     OR EXISTS (SELECT 1 FROM workflow_user_automation_threads b JOIN inactive_copy_workflows s ON s.id=b.workflow_id)
     OR EXISTS (SELECT 1 FROM inactive_copy_target t
