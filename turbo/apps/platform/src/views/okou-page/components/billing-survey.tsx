@@ -3,14 +3,16 @@ import { MessageSquare } from "lucide-react";
 import { useLastResolved, useSet, useGet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Button, cn } from "@okouai/ui";
+import { Button } from "@okouai/ui";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@okouai/ui/components/ui/dialog";
 import { Input } from "@okouai/ui/components/ui/input";
 import { Radio, RadioGroup } from "@okouai/ui/components/ui/radio";
@@ -35,10 +37,10 @@ import {
 } from "../../../signals/billing-survey.ts";
 import { pageSignal$ } from "../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../signals/utils.ts";
-import { ChatCardDetails } from "./chat-card-details.tsx";
 
 interface SurveyOptionsProps<Answer extends string> {
   readonly name: string;
+  readonly question: string;
   readonly answers: readonly Answer[];
   readonly selected: Answer | null;
   readonly detail: string;
@@ -50,6 +52,7 @@ interface SurveyOptionsProps<Answer extends string> {
 
 function SurveyOptions<Answer extends string>({
   name,
+  question,
   answers,
   selected,
   detail,
@@ -63,6 +66,7 @@ function SurveyOptions<Answer extends string>({
     <div className="flex flex-col gap-2">
       <RadioGroup
         name={name}
+        aria-label={question}
         value={selected ?? ""}
         disabled={disabled}
         onValueChange={(value) => {
@@ -73,13 +77,13 @@ function SurveyOptions<Answer extends string>({
             onSelect(answer);
           }
         }}
-        className="flex flex-col gap-1"
+        className="-mx-3 flex flex-col gap-1"
       >
         {answers.map((answer) => {
           return (
             <label
               key={answer}
-              className="flex min-h-8 items-center gap-2.5 rounded-md px-1 text-sm text-foreground"
+              className="flex min-h-10 cursor-default items-center gap-3 px-3 py-2 text-sm leading-5 text-foreground has-data-disabled:cursor-not-allowed"
             >
               <Radio value={answer} />
               <span className="min-w-0 break-words">{label(answer)}</span>
@@ -123,23 +127,30 @@ export function CreditsExhaustedSurvey({
     return $.billing.survey.creditsExhausted.question;
   });
   return (
-    <ChatCardDetails
-      title={title}
-      trigger={
-        <Button
-          type="button"
-          variant="outline"
-          size="icon-sm"
-          aria-label={title}
-          title={title}
-          className="shrink-0"
-        >
-          <MessageSquare size={16} />
-        </Button>
-      }
-    >
-      <CreditsExhaustedSurveyContent />
-    </ChatCardDetails>
+    <Dialog>
+      <DialogTrigger
+        render={
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            aria-label={title}
+            title={title}
+            className="shrink-0"
+          >
+            <MessageSquare size={16} />
+          </Button>
+        }
+      />
+      <DialogContent
+        maxWidth="md"
+        closeLabel={t(($) => {
+          return $.settings.shared.close;
+        })}
+      >
+        <CreditsExhaustedSurveyContent />
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -154,24 +165,36 @@ function CreditsExhaustedSurveyContent() {
   );
   const pageSignal = useGet(pageSignal$);
   const submitting = submitLoadable.state === "loading";
+  const question = t(($) => {
+    return $.billing.survey.creditsExhausted.question;
+  });
 
   if (thanks) {
     return (
-      <p
-        role="status"
-        className="border-t border-border px-3 py-2.5 text-sm leading-5 text-muted-foreground"
-      >
-        {thanks.rewardCredits > 0
-          ? t(
-              ($) => {
-                return $.billing.survey.creditsExhausted.thanksWithCredits;
-              },
-              { credits: formatLocalizedNumber(thanks.rewardCredits) },
-            )
-          : t(($) => {
-              return $.billing.survey.thanks;
+      <>
+        <DialogHeader className="pr-8 text-left">
+          <DialogTitle className="leading-snug">{question}</DialogTitle>
+          <DialogDescription role="status">
+            {thanks.rewardCredits > 0
+              ? t(
+                  ($) => {
+                    return $.billing.survey.creditsExhausted.thanksWithCredits;
+                  },
+                  { credits: formatLocalizedNumber(thanks.rewardCredits) },
+                )
+              : t(($) => {
+                  return $.billing.survey.thanks;
+                })}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <DialogClose render={<Button type="button" variant="outline" />}>
+            {t(($) => {
+              return $.settings.shared.close;
             })}
-      </p>
+          </DialogClose>
+        </DialogFooter>
+      </>
     );
   }
   if (reward === undefined || reward === null) {
@@ -187,30 +210,25 @@ function CreditsExhaustedSurveyContent() {
   return (
     <form
       onSubmit={handleSubmit}
-      aria-label={t(($) => {
-        return $.billing.survey.creditsExhausted.question;
-      })}
-      className="flex flex-col gap-2 border-t border-border p-3"
+      aria-label={question}
+      className="flex flex-col gap-5"
     >
-      <div className="min-w-0">
-        <p className="text-sm font-medium text-foreground">
-          {t(($) => {
-            return $.billing.survey.creditsExhausted.question;
-          })}
-        </p>
+      <DialogHeader className="pr-8 text-left">
+        <DialogTitle className="leading-snug">{question}</DialogTitle>
         {reward > 0 ? (
-          <p className="mt-0.5 text-sm leading-5 text-muted-foreground">
+          <DialogDescription>
             {t(
               ($) => {
                 return $.billing.survey.creditsExhausted.reward;
               },
               { credits: formatLocalizedNumber(reward) },
             )}
-          </p>
+          </DialogDescription>
         ) : null}
-      </div>
+      </DialogHeader>
       <SurveyOptions<CreditsExhaustedSurveyAnswer>
         name="credits-exhausted-survey"
+        question={question}
         answers={CREDITS_EXHAUSTED_SURVEY_ANSWERS}
         selected={draft.answer}
         detail={draft.detail}
@@ -234,19 +252,26 @@ function CreditsExhaustedSurveyContent() {
           })}
         </p>
       ) : null}
-      <div className="flex justify-end">
+      <DialogFooter>
+        <DialogClose
+          render={
+            <Button type="button" variant="outline" disabled={submitting} />
+          }
+        >
+          {t(($) => {
+            return $.billing.survey.notNow;
+          })}
+        </DialogClose>
         <Button
           type="submit"
-          size="sm"
-          variant="outline"
-          disabled={draft.answer === null || submitting}
-          className={cn("disabled:opacity-60")}
+          pending={submitting}
+          disabled={draft.answer === null}
         >
           {t(($) => {
             return $.billing.survey.submit;
           })}
         </Button>
-      </div>
+      </DialogFooter>
     </form>
   );
 }
@@ -296,10 +321,15 @@ export function CheckoutAbandonedSurveyDialog() {
         }
       }}
     >
-      <DialogContent maxWidth="md">
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <DialogHeader>
-            <DialogTitle>
+      <DialogContent
+        maxWidth="md"
+        closeLabel={t(($) => {
+          return $.settings.shared.close;
+        })}
+      >
+        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+          <DialogHeader className="pr-8 text-left">
+            <DialogTitle className="leading-snug">
               {t(($) => {
                 return $.billing.survey.checkoutAbandoned.question;
               })}
@@ -312,6 +342,9 @@ export function CheckoutAbandonedSurveyDialog() {
           </DialogHeader>
           <SurveyOptions<CheckoutAbandonedSurveyAnswer>
             name="checkout-abandoned-survey"
+            question={t(($) => {
+              return $.billing.survey.checkoutAbandoned.question;
+            })}
             answers={CHECKOUT_ABANDONED_SURVEY_ANSWERS}
             selected={draft.answer}
             detail={draft.detail}
@@ -339,7 +372,8 @@ export function CheckoutAbandonedSurveyDialog() {
           <DialogFooter>
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
+              pending={dismissLoadable.state === "loading"}
               disabled={submitting}
               onClick={() => {
                 detach(
@@ -354,6 +388,7 @@ export function CheckoutAbandonedSurveyDialog() {
             </Button>
             <Button
               type="submit"
+              pending={submitLoadable.state === "loading"}
               disabled={draft.answer === null || submitting}
             >
               {t(($) => {
