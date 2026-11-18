@@ -6,9 +6,16 @@ import { toJSONSchema, type ZodType } from "zod";
 import { type SwiftConstantBinding, swiftConstantBindings } from "./constants";
 import { type SwiftRouteBinding, swiftRouteBindings } from "./routes";
 import { type SwiftTypeBinding, swiftTypeBindings } from "./types";
+import { renderSwiftRunFailureReasons } from "./run-failure-reasons";
 
 export const generatedSwiftDirectory = fileURLToPath(
   new URL("../../../../../desktop/Okou/Core/Generated/", import.meta.url),
+);
+export const generatedSwiftDomainDirectory = fileURLToPath(
+  new URL(
+    "../../../../../ios/Packages/ChatDomain/Sources/ChatDomain/",
+    import.meta.url,
+  ),
 );
 
 type JsonObject = Readonly<Record<string, unknown>>;
@@ -1245,6 +1252,7 @@ export function renderSwiftRoutes(
 
 export async function generateSwiftBindings(
   outputDirectory = generatedSwiftDirectory,
+  domainDirectory = generatedSwiftDomainDirectory,
 ): Promise<void> {
   await mkdir(outputDirectory, { recursive: true });
   await writeFile(
@@ -1256,6 +1264,11 @@ export async function generateSwiftBindings(
     renderSwiftRoutes(),
   );
   await writeFile(join(outputDirectory, "ApiTypes.swift"), renderSwiftTypes());
+  await mkdir(domainDirectory, { recursive: true });
+  await writeFile(
+    join(domainDirectory, "KnownRunFailureReason.generated.swift"),
+    renderSwiftRunFailureReasons(),
+  );
 }
 
 function isMainModule(): boolean {

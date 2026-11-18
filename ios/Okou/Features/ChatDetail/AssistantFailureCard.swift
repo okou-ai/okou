@@ -284,13 +284,9 @@ enum AssistantFailureCopy {
     {
       return ("Run paused — resume anytime.", "")
     }
-    if let reason = state.failure.reason, state.failure.isRunFailure,
-      let copy = structured[reason]
-    {
-      return copy
-    }
-    if state.failure.isRunFailure, recovery.kind == .unknown {
-      return ("This run couldn't finish", "Open the chat on the Okou website for details.")
+    if state.failure.isRunFailure {
+      let reason = state.failure.reason.flatMap(KnownRunFailureReason.init(rawValue:)) ?? .unknown
+      return structured(reason)
     }
     switch recovery.kind {
     case .timeout: return ("Time limit reached", "You can continue from where this run stopped.")
@@ -328,89 +324,4 @@ enum AssistantFailureCopy {
       )
     }
   }
-
-  private static let structured: [String: (title: String, description: String)] = [
-    "session_history_limit": (
-      "This chat has reached its limit",
-      "Start a new chat and include any important details you want to carry over."
-    ),
-    "guest_root_filesystem_full": (
-      "This run ran out of space", "This run couldn't save more files. Try again to continue."
-    ),
-    "guest_home_filesystem_full": (
-      "This run ran out of space", "This run couldn't save more files. Try again to continue."
-    ),
-    "execution_timeout": ("Time limit reached", "You can continue from where this run stopped."),
-    "provider_insufficient_credits": (
-      "Your subscription account needs more credit",
-      "Check your subscription account's usage or credit balance, then try again."
-    ),
-    "invalid_api_key": (
-      "Your subscription sign-in needs updating",
-      "Open Settings > Models to reconnect or update your account, then try again."
-    ),
-    "invalid_credentials": (
-      "Your model connection needs attention",
-      "Open Settings > Models to reconnect or update your account, then try again."
-    ),
-    "terms_acceptance_required": (
-      "Claude terms need acceptance", "Accept Claude's latest terms, then come back and try again."
-    ),
-    "context_window_exceeded": (
-      "This chat is too long",
-      "Start a new chat and include any important details you want to carry over."
-    ),
-    "input_too_large": ("Your message is too large", "Shorten your message and send it again."),
-    "provider_image_too_large": (
-      "Your message is too large", "Shorten your message and send it again."
-    ),
-    "output_token_limit": (
-      "The response reached its length limit",
-      "The response stopped before it finished. Continue to pick up from there."
-    ),
-    "provider_rate_limited": (
-      "Too many model requests right now",
-      "Try again in a moment, or choose another model to keep working."
-    ),
-    "provider_overloaded": (
-      "This model is busy right now",
-      "Try again in a moment, or choose another model to keep working."
-    ),
-    "provider_stream_timeout": (
-      "The model response timed out",
-      "Try again in a moment, or choose another model to keep working."
-    ),
-    "provider_queue_timeout": (
-      "The model didn't start in time",
-      "Try again in a moment, or choose another model to keep working."
-    ),
-    "codex_access_program_unavailable": (
-      "Codex access is temporarily unavailable",
-      "Try again in a little while. You can keep this chat open."
-    ),
-    "provider_server_error": (
-      "The model provider had a temporary error",
-      "Try again in a moment, or choose another model to keep working."
-    ),
-    "response_connection_lost": (
-      "The response was interrupted",
-      "Try again in a moment, or choose another model to keep working."
-    ),
-    "safety_policy_refusal": (
-      "The model couldn't help with this request",
-      "This request didn't pass the model's safety checks. Try rephrasing it or choosing another model."
-    ),
-    "reconnect_required": (
-      "Reconnect your model account",
-      "Open Settings > Models to reconnect or update your account, then try again."
-    ),
-    "unsupported_model": (
-      "Selected model isn't available",
-      "Choose a different model that works with your provider account."
-    ),
-    "usage_limit": (
-      "Model provider limit reached",
-      "You can continue when your usage limit resets, or switch models now."
-    )
-  ]
 }

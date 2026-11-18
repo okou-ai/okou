@@ -2,11 +2,41 @@ package ai.okou.android.chat
 
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.HISTORY_RUN
+import ai.okou.android.RecoveryApiFixture
 import ai.okou.android.historyEventWire
 import org.junit.Assert.*
 import org.junit.Test
 
 class HistoryProjectionTest {
+    @Test
+    fun runFailureReasonsIncludingFutureTokensSurviveHistory() {
+        for (reason in
+            listOf(
+                "provider_request_timeout",
+                "provider_bad_request",
+                "account_verification_required",
+                "provider_model_restricted",
+                "guest_memory_oom_killed",
+                "future_reason",
+            )) {
+            val row = HistoryEvent.decode(RecoveryApiFixture.failure(reason))
+            val message = transcript(row).messages.single()
+            assertEquals(reason, message.failureReason)
+        }
+    }
+
+    @Test
+    fun oomAndRequestTimeoutRetryWithoutInventingAccountOrResetHints() {
+        for (reason in listOf("guest_memory_oom_killed", "provider_request_timeout")) {
+            val failure = AssistantFailure.Run("failed", reason)
+            val recovery = classifyFailure(failure, RecoveryFramework.Codex)
+            assertEquals(FailureKind.Retryable, recovery.kind)
+            assertTrue(recovery.canContinue)
+            assertNull(recovery.framework)
+            assertNull(recovery.limit)
+        }
+    }
+
     @Test
     fun runFailuresIgnoreRetainedDiagnosticsWhileOutputErrorsRemainVisible() {
         for (payload in

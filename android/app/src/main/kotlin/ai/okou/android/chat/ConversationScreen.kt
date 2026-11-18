@@ -162,7 +162,7 @@ fun ConversationRoute(
 }
 
 @Composable
-private fun HistoryMessageCard(message: HistoryMessage) {
+internal fun HistoryMessageCard(message: HistoryMessage) {
     OutlinedCard(Modifier.fillMaxWidth().testTag("message_${message.id}")) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
@@ -178,15 +178,21 @@ private fun HistoryMessageCard(message: HistoryMessage) {
             if (message.queued) Text(stringResource(R.string.history_queued))
             if (message.rejected) Text(stringResource(R.string.history_rejected))
             message.status?.let { status ->
-                Text(
-                    stringResource(
-                        when (status) {
-                            "run.completed" -> R.string.history_completed
-                            "run.cancelled" -> R.string.history_cancelled
-                            else -> R.string.history_run_failed
-                        }
+                if (status == "run.failed") {
+                    val copy = assistantRunFailureCopy(message.failureReason)
+                    Text(stringResource(copy.title))
+                    Text(stringResource(copy.description))
+                } else {
+                    Text(
+                        stringResource(
+                            when (status) {
+                                "run.completed" -> R.string.history_completed
+                                "run.cancelled" -> R.string.history_cancelled
+                                else -> R.string.history_run_failed
+                            }
+                        )
                     )
-                )
+                }
             }
             for (block in message.blocks) {
                 if (block.kind == HistoryBlockKind.Unsupported)
