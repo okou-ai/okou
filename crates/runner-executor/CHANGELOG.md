@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.55](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.54...runner-executor-v0.21.55) (2026-11-18)
+
+
+### Refactoring
+
+* **firewall:** separate host resolver authority from guest identity ([#48459](https://github.com/okou-ai/okou/issues/48459)) ([949de84](https://github.com/okou-ai/okou/commit/949de843f47dd8152058c7d7e2ca8a418305f0fc))
+
 ## [0.21.54](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.53...runner-executor-v0.21.54) (2026-11-18)
 
 

@@ -10,6 +10,30 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.90.1](https://github.com/okou-ai/okou/compare/api-v2.90.0...api-v2.90.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* **api:** include integration context in chat title generation ([#48616](https://github.com/okou-ai/okou/issues/48616)) ([9a33655](https://github.com/okou-ai/okou/commit/9a33655d9402d053fa0c9828bd7375b1a4429c81))
+* **api:** support attachments on inactive single agent workflow copies ([#48624](https://github.com/okou-ai/okou/issues/48624)) ([f41a05a](https://github.com/okou-ai/okou/commit/f41a05a04f254ecc6e4e614db921fef94b44ace1))
+* **chat:** dismiss archived reminders without marking chats read ([#48560](https://github.com/okou-ai/okou/issues/48560)) ([d3d69ae](https://github.com/okou-ai/okou/commit/d3d69ae2e7738d8b0b02450dde04399c91641a54))
+
+
+### Refactoring
+
+* **firewall:** separate host resolver authority from guest identity ([#48459](https://github.com/okou-ai/okou/issues/48459)) ([949de84](https://github.com/okou-ai/okou/commit/949de843f47dd8152058c7d7e2ca8a418305f0fc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.86.1
+    * @okouai/core bumped to 8.852.1
+    * @okouai/db bumped to 2.44.7
+    * @okouai/pi-agent-runtime bumped to 1.51.158
+
 ## [2.90.0](https://github.com/okou-ai/okou/compare/api-v2.89.1...api-v2.90.0) (2026-11-18)
 
 
