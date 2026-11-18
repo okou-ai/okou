@@ -144,7 +144,6 @@ function connectorEnvironmentFromSnapshot(
       environmentSecretPlaceholders: builtin.environmentSecretPlaceholders,
     }),
     platformEnvironment: undefined,
-    secrets: undefined,
     secretConnectorMap: builtin.secretConnectorMap,
     secretConnectorMetadataMap: builtin.secretConnectorMetadataMap,
     firewalls: manifest?.firewalls ?? [],

@@ -14,12 +14,12 @@ export function holdSubscriptionKmsBatch(signal: AbortSignal) {
     active++;
     peak = Math.max(peak, active);
     const held = async () => {
-      if (call === 2) {
+      if (call === 1) {
         await first.promise;
         if (firstFailure) {
           throw firstFailure;
         }
-      } else if (call === 3) {
+      } else if (call === 2) {
         entered.resolve(undefined);
         await second.promise;
         if (secondFailure) {
@@ -36,9 +36,7 @@ export function holdSubscriptionKmsBatch(signal: AbortSignal) {
     return result.value;
   };
   const probe = useSecretKmsProbe(undefined, (_request, call) => {
-    // Firewall auth first opens its captured KMS envelope. Hold only the
-    // subsequent stored-credential bundle, not that independent envelope.
-    return call === 1 ? undefined : decrypt(call);
+    return decrypt(call);
   });
   return {
     entered: entered.promise,

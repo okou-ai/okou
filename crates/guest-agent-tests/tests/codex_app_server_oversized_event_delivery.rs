@@ -167,7 +167,6 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
     runtime.http = guest_agent::http::HttpClient::with_api_config(
         &server.base_url,
         "test-token",
-        "",
         RUN_ID,
         Duration::ZERO,
     )?;

@@ -115,7 +115,6 @@ async fn claude_code_drains_healthy_backlog_in_bounded_fifo_batches()
     runtime.http = guest_agent::http::HttpClient::with_api_config(
         &server.base_url,
         "test-token",
-        "",
         &run_id,
         Duration::ZERO,
     )?;

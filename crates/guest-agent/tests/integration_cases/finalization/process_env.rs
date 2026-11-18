@@ -29,7 +29,6 @@ async fn success_finalization_uses_captured_startup_environment() {
         when.method(POST)
             .path("/api/webhooks/agent/complete")
             .header("authorization", "Bearer startup-token")
-            .header("x-vercel-protection-bypass", "startup-bypass")
             .json_body_includes(r#"{"runId":"startup-run"}"#)
             .json_body_includes(r#"{"completion":{"cliAgentType":"claude-code"}}"#)
             .json_body_includes(r#"{"completion":{"cliAgentSessionId":"startup-session"}}"#);
@@ -50,10 +49,6 @@ async fn success_finalization_uses_captured_startup_environment() {
         .env(
             guest_contracts::env::CANONICAL_API_TOKEN_ENV,
             "startup-token",
-        )
-        .env(
-            guest_contracts::env::VERCEL_PROTECTION_BYPASS_ENV,
-            "startup-bypass",
         )
         .env(guest_contracts::env::CLI_AGENT_TYPE_ENV, "claude-code")
         .env(

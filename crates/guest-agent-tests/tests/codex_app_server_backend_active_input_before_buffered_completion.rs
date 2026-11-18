@@ -46,7 +46,7 @@ async fn codex_app_server_backend_preserves_completion_when_queued_input_is_reje
     let active_input = ActiveInputRuntime::new_enabled(
         &runtime.config.run_id,
         &runtime.config.prompt,
-        HttpClient::with_api_config(server.base_url(), "test-token", "", RUN_ID, Duration::ZERO)?,
+        HttpClient::with_api_config(server.base_url(), "test-token", RUN_ID, Duration::ZERO)?,
     );
     let payload = guest_contracts::active_input::encode_active_input(
         EVENT_ID,

@@ -151,7 +151,6 @@ async fn sender_preserves_normal_bytes_and_accounts_for_exact_request_envelopes(
     let http = HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "test-session",
         Duration::ZERO,
     )
@@ -236,7 +235,6 @@ async fn collaboration_fallback_preserves_structure_beyond_content_discovery_lim
     let http = HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "test-session",
         Duration::ZERO,
     )
@@ -347,7 +345,6 @@ async fn irreducible_events_are_skipped_and_later_uploads_advance_across_gaps() 
     let http = HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "test-session",
         Duration::ZERO,
     )
@@ -451,7 +448,6 @@ async fn reduced_http_failure_still_breaks_acknowledgement_and_retries_identical
     let http = HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "test-session",
         Duration::ZERO,
     )
@@ -504,7 +500,6 @@ async fn delivery_request_log_names_the_delivered_record_type() {
         let http = HttpClient::with_api_config(
             server.base_url(),
             "test-token",
-            "",
             "test-session",
             Duration::ZERO,
         )

@@ -19,16 +19,10 @@ async function resolveExecutionAuth(
   firewall: ReturnType<typeof createFirewallApi>,
   body: ConnectorRuntimeAuthBody,
 ) {
-  if (!execution.encryptedSecrets) {
-    throw new Error(
-      "Expected encrypted secrets from the real Runner execution",
-    );
-  }
   const response = await firewall.requestFirewallAuth(
-    { authorization: `Bearer ${execution.sandboxToken}` },
+    { authorization: `Bearer ${execution.firewallToken}` },
     {
       ...body,
-      encryptedSecrets: execution.encryptedSecrets,
       secretConnectorMap: execution.secretConnectorMap ?? undefined,
       secretConnectorMetadataMap:
         execution.secretConnectorMetadataMap ?? undefined,

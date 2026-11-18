@@ -287,7 +287,6 @@ pub unsafe fn clear_guest_agent_bootstrap_env_for_test() {
         guest_contracts::env::RUN_ID_ENV,
         guest_contracts::env::CANONICAL_API_TOKEN_ENV,
         guest_contracts::env::CANONICAL_SANDBOX_ID_ENV,
-        guest_contracts::env::VERCEL_PROTECTION_BYPASS_ENV,
         guest_contracts::env::CANONICAL_RESUME_SESSION_ID_ENV,
         guest_contracts::env::CANONICAL_API_START_TIME_ENV,
         guest_contracts::env::CANONICAL_AGENT_EXECUTION_TIMEOUT_SECS_ENV,

@@ -87,29 +87,23 @@ describe("official connector runtime placeholders", () => {
           sourceId: account.id,
         });
       }
-      if (!execution.encryptedSecrets) {
-        throw new Error("Expected the retained global credential envelope");
-      }
 
-      // The retained envelope serves other sources; it must not carry this
-      // official connector's value as an alternative to its account reference.
-      const envelopeOnly = await firewall.requestFirewallAuth(
-        sandboxHeaders,
+      // Host authority still requires the admitted connector account reference.
+      const withoutSource = await firewall.requestFirewallAuth(
+        { authorization: `Bearer ${execution.firewallToken}` },
         {
-          encryptedSecrets: execution.encryptedSecrets,
           authHeaders: {
             Authorization: `Bearer ${secretTemplate("GITHUB_TOKEN")}`,
           },
         },
         [424],
       );
-      expect(envelopeOnly.body).toMatchObject({
+      expect(withoutSource.body).toMatchObject({
         error: { code: "CONNECTOR_NOT_CONFIGURED" },
       });
       const resolved = await firewall.requestFirewallAuth(
-        sandboxHeaders,
+        { authorization: `Bearer ${execution.firewallToken}` },
         {
-          encryptedSecrets: execution.encryptedSecrets,
           secretConnectorMap: execution.secretConnectorMap ?? undefined,
           secretConnectorMetadataMap:
             execution.secretConnectorMetadataMap ?? undefined,

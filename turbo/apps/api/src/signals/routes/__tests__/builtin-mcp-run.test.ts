@@ -186,7 +186,7 @@ describe("builtin MCP Run admission", () => {
       }),
     ).toBeFalsy();
     const token = execution.platformEnvironment.OKOU_TOKEN;
-    if (!token || !execution.encryptedSecrets) {
+    if (!token) {
       throw new Error("Expected the admitted Run authentication context");
     }
     const discovery = await accept(
@@ -212,7 +212,6 @@ describe("builtin MCP Run admission", () => {
       ]),
     );
     const authBody = {
-      encryptedSecrets: execution.encryptedSecrets,
       authHeaders: { Authorization: `Bearer ${secretTemplate("MCP_API_KEY")}` },
       secretConnectorMap: execution.secretConnectorMap ?? undefined,
       secretConnectorMetadataMap:
@@ -228,7 +227,7 @@ describe("builtin MCP Run admission", () => {
     const authorizationTime = now();
     mockNow(authorizationTime);
     const auth = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${execution.sandboxToken}` },
+      { authorization: `Bearer ${execution.firewallToken}` },
       authBody,
       [200],
     );
@@ -238,7 +237,7 @@ describe("builtin MCP Run admission", () => {
     });
 
     const collidingAliasAuth = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${execution.sandboxToken}` },
+      { authorization: `Bearer ${execution.firewallToken}` },
       {
         ...authBody,
         encryptedSecrets: firewall.encryptedSecretsBody({
@@ -259,7 +258,7 @@ describe("builtin MCP Run admission", () => {
       admittedAccount.id,
     );
     const missingAccountAuth = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${execution.sandboxToken}` },
+      { authorization: `Bearer ${execution.firewallToken}` },
       authBody,
       [424],
     );

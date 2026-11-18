@@ -347,11 +347,9 @@ describe("CHAT-02: run-level model overrides", () => {
       expect(JSON.stringify(execution)).not.toContain(externalAccountId);
       expect(JSON.stringify(execution)).not.toContain(refreshToken);
 
-      const encryptedSecrets = string().parse(execution.encryptedSecrets);
       const sandboxCredential = await firewall.requestFirewallAuth(
-        sandboxHeaders,
+        { authorization: `Bearer ${execution.firewallToken}` },
         {
-          encryptedSecrets,
           authHeaders: {
             Authorization: `Bearer \${{ secrets.CHATGPT_ACCESS_TOKEN }}`,
             "ChatGPT-Account-ID": `\${{ secrets.CHATGPT_ACCOUNT_ID }}`,
@@ -368,7 +366,7 @@ describe("CHAT-02: run-level model overrides", () => {
       expect(sandboxCredential.body.headers["ChatGPT-Account-ID"]).toBe(
         externalAccountId,
       );
-      // The expired access token is refreshed once for the Sandbox request.
+      // The expired access token is refreshed once for the host resolver request.
       expect(oauth.oauthToken).toHaveLength(2);
       expect(oauth.oauthToken[1]?.get("grant_type")).toBe("refresh_token");
       const refreshedAccessToken = string().parse(

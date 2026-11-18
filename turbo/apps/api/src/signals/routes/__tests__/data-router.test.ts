@@ -19,7 +19,6 @@ import { webhooksAgentDataRequestRoutes } from "../webhooks-agent-data-request";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
-import { decryptSecretForTests } from "./helpers/encrypt-secret";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -110,21 +109,14 @@ describe("Data Router accounting when a run ends", () => {
         run.execution.platformEnvironment,
       ]),
     ).not.toContain("router-test-service-token");
-    const encryptedSecrets = run.execution.encryptedSecrets;
-    if (!encryptedSecrets) {
-      throw new Error("Expected the remaining global secret envelope");
-    }
     expect(JSON.stringify(run.execution)).not.toContain(
-      "router-test-service-token",
-    );
-    expect(decryptSecretForTests(encryptedSecrets)).not.toContain(
       "router-test-service-token",
     );
     const authHeaders = {
       Authorization: `Bearer ${secretTemplate("OKOU_DATA_TOKEN")}`,
     };
     const resolved = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${run.execution.firewallToken!}` },
+      { authorization: `Bearer ${run.execution.firewallToken}` },
       { authHeaders, firewallBillable: true },
       [200],
     );
@@ -146,7 +138,7 @@ describe("Data Router accounting when a run ends", () => {
       undefined,
     ]) {
       const mapped = await firewall.requestFirewallAuth(
-        { authorization: `Bearer ${run.execution.firewallToken!}` },
+        { authorization: `Bearer ${run.execution.firewallToken}` },
         {
           authHeaders,
           secretConnectorMap,
@@ -203,7 +195,7 @@ describe("Data Router accounting when a run ends", () => {
     await finish(run);
     await expect(credits(run.actor)).resolves.toBe(before - 7);
     await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${run.execution.firewallToken!}` },
+      { authorization: `Bearer ${run.execution.firewallToken}` },
       { authHeaders, firewallBillable: true },
       [403],
     );
@@ -215,14 +207,9 @@ describe("Data Router accounting when a run ends", () => {
     mockEnv("OKOU_DATA_TOKEN", undefined);
     const run = await createRun();
     expect(run.execution.billableFirewalls).not.toContain("data-router");
-    const encryptedSecrets = run.execution.encryptedSecrets;
-    if (!encryptedSecrets) {
-      throw new Error("Expected the remaining global secret envelope");
-    }
     const unavailable = await firewall.requestFirewallAuth(
-      run.headers,
+      { authorization: `Bearer ${run.execution.firewallToken}` },
       {
-        encryptedSecrets,
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("OKOU_DATA_TOKEN")}`,
         },

@@ -46,7 +46,6 @@ async fn run_retry_case(recover_before_eviction: bool) -> Result<(), Box<dyn std
     runtime.http = guest_agent::http::HttpClient::with_api_config(
         &server.base_url,
         "test-token",
-        "",
         RUN_ID,
         Duration::ZERO,
     )?;

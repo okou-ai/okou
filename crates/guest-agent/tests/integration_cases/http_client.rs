@@ -191,7 +191,6 @@ async fn for_config_uses_config_api_url_for_webhook_routes()
         when.method(POST)
             .path("/api/webhooks/agent/events")
             .header("Authorization", "Bearer test-token-abc123")
-            .header("x-vercel-protection-bypass", "test-bypass-value")
             .json_body_includes(r#"{"runId": "test-run-001"}"#)
             .body_includes(r#""sequenceNumber":7"#);
         then.status(200);
@@ -321,7 +320,6 @@ async fn post_json_rejects_declared_response_over_success_body_limit() {
     let client = guest_agent::http::HttpClient::with_api_config(
         &server.base_url,
         "authorization-secret",
-        "",
         "response-limit-run",
         Duration::ZERO,
     )
@@ -358,7 +356,6 @@ async fn post_json_rejects_chunked_response_over_success_body_limit() {
     let client = guest_agent::http::HttpClient::with_api_config(
         &server.base_url,
         "test-token",
-        "",
         "response-limit-run",
         Duration::ZERO,
     )
@@ -391,7 +388,6 @@ async fn post_json_rejects_no_length_response_over_success_body_limit() {
     let client = guest_agent::http::HttpClient::with_api_config(
         &server.base_url,
         "test-token",
-        "",
         "response-limit-run",
         Duration::ZERO,
     )
@@ -504,7 +500,6 @@ async fn post_json_rejects_declared_error_body_over_limit_with_safe_diagnostic()
     let client = guest_agent::http::HttpClient::with_api_config(
         &server.base_url,
         "authorization-secret",
-        "",
         "response-limit-run",
         Duration::ZERO,
     )
@@ -568,25 +563,6 @@ async fn post_json_sends_bearer_token() {
 }
 
 #[tokio::test]
-async fn post_json_sends_vercel_bypass_header() {
-    let api = SharedApiMock::new().await;
-    let server = api.server();
-
-    let mock = server.mock(|when, then| {
-        when.method(POST)
-            .path("/test/bypass")
-            .header("x-vercel-protection-bypass", "test-bypass-value");
-        then.status(200);
-    });
-
-    let url = api.url("/test/bypass");
-    let result = http_client!().post_json(&url, &json!({}), 1).await;
-
-    mock.assert_calls_async(1).await;
-    assert!(result.is_ok());
-}
-
-#[tokio::test]
 async fn post_json_sends_client_headers() {
     let api = SharedApiMock::new().await;
     let server = api.server();
@@ -641,7 +617,6 @@ fn with_api_config_rejects_invalid_client_session_header() {
     let result = guest_agent::http::HttpClient::with_api_config(
         "http://127.0.0.1",
         "test-token",
-        "",
         "bad\nrun",
         Duration::ZERO,
     );
@@ -659,7 +634,6 @@ async fn post_json_uses_explicit_api_config_without_env_api_url() {
     let http = guest_agent::http::HttpClient::with_api_config(
         server.base_url(),
         "explicit-token",
-        "explicit-bypass",
         "explicit-run",
         Duration::ZERO,
     )
@@ -668,8 +642,7 @@ async fn post_json_uses_explicit_api_config_without_env_api_url() {
     let mock = server.mock(|when, then| {
         when.method(POST)
             .path("/api/webhooks/agent/events")
-            .header("Authorization", "Bearer explicit-token")
-            .header("x-vercel-protection-bypass", "explicit-bypass");
+            .header("Authorization", "Bearer explicit-token");
         then.status(200).json_body(json!({}));
     });
 
@@ -688,7 +661,6 @@ async fn steered_input_declaration_posts_once_to_the_event_route() {
     let client = guest_agent::http::HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "steered-run",
         Duration::ZERO,
     )
@@ -716,7 +688,6 @@ async fn steered_input_conflict_is_returned_without_a_retry() {
     let client = guest_agent::http::HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "steered-run",
         Duration::ZERO,
     )
@@ -815,7 +786,6 @@ async fn private_http_warnings_wait_until_telemetry_releases_its_sink() {
     let client = guest_agent::http::HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "steered-run",
         Duration::ZERO,
     )
@@ -834,7 +804,6 @@ async fn private_http_warnings_wait_until_telemetry_releases_its_sink() {
     let client = guest_agent::http::HttpClient::with_api_config(
         &server.base_url,
         "test-token",
-        "",
         "response-limit-run",
         Duration::ZERO,
     )
@@ -873,19 +842,12 @@ async fn send_event_uses_explicit_api_config_route_instead_of_env_route()
             .path("/api/webhooks/agent/events")
             .header("Authorization", "Bearer explicit-token")
             .body_includes(r#""sequenceNumber":3"#);
-        then.respond_with(|req| {
-            if request_header_absent(req, "x-vercel-protection-bypass") {
-                http_status(200)
-            } else {
-                http_status(400)
-            }
-        });
+        then.status(200);
     });
 
     let http = guest_agent::http::HttpClient::with_api_config(
         explicit_server.base_url(),
         "explicit-token",
-        "",
         "explicit-run",
         Duration::ZERO,
     )?;

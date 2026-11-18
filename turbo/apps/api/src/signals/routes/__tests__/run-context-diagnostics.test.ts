@@ -1,10 +1,13 @@
+import { randomUUID } from "node:crypto";
 import { expect, onTestFinished, test } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 
 const context = testContext();
 
@@ -47,11 +50,34 @@ async function diagnosticFixture() {
     return Promise.resolve(snapshot ? [snapshot] : []);
   });
 
-  async function launch() {
-    const run = await api.createThreadRun(actor, {
-      agentId,
-      prompt: "Business prompt retained independently of diagnostics",
-    });
+  async function launch(previewBypass?: string) {
+    const prompt = "Business prompt retained independently of diagnostics";
+    let run: { readonly runId: string; readonly threadId: string };
+    if (previewBypass) {
+      const chat = createChatFilesBddApi(context);
+      const clientEventId = randomUUID();
+      const sent = await chat.requestSendEvent(
+        actor,
+        { agentId, prompt, clientEventId, model: "claude-fable-5-1" },
+        [201],
+        { extraHeaders: { "x-vercel-protection-bypass": previewBypass } },
+      );
+      if (sent.status !== 201) {
+        throw new Error("Expected the authorized Preview send to be accepted");
+      }
+      await flushWaitUntilForTest();
+      mockEnv("ENV", "development");
+      const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
+      const runId = events.find((event) => {
+        return event.revokesEventId === clientEventId;
+      })?.runId;
+      if (!runId) {
+        throw new Error("Expected the authorized Preview send to launch a Run");
+      }
+      run = { runId, threadId: sent.body.threadId };
+    } else {
+      run = await api.createThreadRun(actor, { agentId, prompt });
+    }
     onTestFinished(async () => {
       await api.requestCancelRun(actor, run.runId, [200]);
     });
@@ -61,34 +87,45 @@ async function diagnosticFixture() {
   return { api, bdd, actor, agentId, snapshots, launch };
 }
 
-test("round-trips original launch variables and real secret names through diagnostic capture", async () => {
-  const f = await diagnosticFixture();
-  // This service credential stays at the API. Give it the same value as an
-  // admitted variable to exercise masking without a Runner secret-value index.
-  const knownSecret = f.agentId;
-  mockEnv("OKOU_DATA_ROUTER_URL", "https://data-router.example.test");
-  mockEnv("OKOU_DATA_TOKEN", knownSecret);
-  const run = await f.launch();
-  const execution = await f.api.executionInput(run.runId);
-  const response = await f.api.requestRunContext(f.actor, run.runId, [200]);
-  if (response.status !== 200) {
-    throw new Error("Expected captured run context");
-  }
+test.each(["data router", "Preview"])(
+  "masks API-only %s credentials in captured diagnostics",
+  async (source) => {
+    const f = await diagnosticFixture();
+    // This service credential stays at the API. Give it the same value as an
+    // admitted variable to exercise masking without a Runner secret-value index.
+    const knownSecret = f.agentId;
+    const secretName =
+      source === "data router"
+        ? "OKOU_DATA_TOKEN"
+        : "VERCEL_AUTOMATION_BYPASS_SECRET";
+    if (source === "data router") {
+      mockEnv("OKOU_DATA_ROUTER_URL", "https://data-router.example.test");
+    } else {
+      mockEnv("ENV", "preview");
+    }
+    mockEnv(secretName, knownSecret);
+    const run = await f.launch(source === "Preview" ? knownSecret : undefined);
+    const execution = await f.api.executionInput(run.runId);
+    const response = await f.api.requestRunContext(f.actor, run.runId, [200]);
+    if (response.status !== 200) {
+      throw new Error("Expected captured run context");
+    }
 
-  expect(response.body).toMatchObject({
-    prompt: execution.prompt,
-    appendSystemPrompt: execution.appendSystemPrompt,
-    vars: { OKOU_AGENT_ID: "***" },
-    secretNames: expect.arrayContaining(["OKOU_TOKEN", "OKOU_DATA_TOKEN"]),
-  });
-  expect(execution.vars).toMatchObject({
-    OKOU_AGENT_ID: f.agentId,
-  });
-  expect(JSON.stringify(response.body.vars)).not.toContain(knownSecret);
-  expect(JSON.stringify(response.body)).not.toContain(
-    execution.platformEnvironment.OKOU_TOKEN,
-  );
-});
+    expect(response.body).toMatchObject({
+      prompt: execution.prompt,
+      appendSystemPrompt: execution.appendSystemPrompt,
+      vars: { OKOU_AGENT_ID: "***" },
+      secretNames: expect.arrayContaining(["OKOU_TOKEN", secretName]),
+    });
+    expect(execution.vars).toMatchObject({
+      OKOU_AGENT_ID: f.agentId,
+    });
+    expect(JSON.stringify(response.body.vars)).not.toContain(knownSecret);
+    expect(JSON.stringify(response.body)).not.toContain(
+      execution.platformEnvironment.OKOU_TOKEN,
+    );
+  },
+);
 
 test("reads captured diagnostics through uppercase Run UUID paths", async () => {
   const f = await diagnosticFixture();

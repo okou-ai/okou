@@ -76,6 +76,8 @@ owning surface.
 - [Fallbacks](fallback.md): legitimate exceptions, declarations, and removal gates.
 - [Deployment compatibility](deployment-compatibility.md): independent releases,
   persisted state, schema transitions, drain, and rollback requirements.
+- [Credential trust boundary](credential-trust-boundary.md): sandbox-visible
+  token authority, trusted-host credentials and HTTP-time resolution.
 - [Testing](testing.md): strategy, [external behavior](testing.md#external-behavior),
   [shared patterns](testing.md#shared-patterns), [anti-patterns](testing.md#anti-patterns),
   and routes to each affected surface.

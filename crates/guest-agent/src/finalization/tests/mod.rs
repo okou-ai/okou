@@ -33,7 +33,6 @@ async fn finalization_reports_native_identity_for_success_and_recovery() {
     let http = HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "native-finalization",
         Duration::ZERO,
     )
@@ -83,7 +82,6 @@ async fn finalization_missing_mount_fails_before_final_completion() {
     let http = HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "test-run-001",
         Duration::ZERO,
     )
@@ -139,7 +137,6 @@ async fn ordinary_recovery_finalization_still_snapshots_changed_artifacts() {
     let http = HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "ordinary-recovery-run",
         Duration::ZERO,
     )

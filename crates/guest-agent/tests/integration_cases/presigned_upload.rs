@@ -64,7 +64,6 @@ async fn put_presigned_does_not_send_api_headers() {
         when.method(PUT).path("/test/put-no-api-headers");
         then.respond_with(|req| {
             if request_header_absent(req, "authorization")
-                && request_header_absent(req, "x-vercel-protection-bypass")
                 && request_header_absent(req, CLIENT_VERSION_HEADER)
                 && request_header_absent(req, CLIENT_TYPE_HEADER)
                 && request_header_absent(req, CLIENT_SESSION_ID_HEADER)

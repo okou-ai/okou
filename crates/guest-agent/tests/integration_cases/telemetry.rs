@@ -244,7 +244,6 @@ async fn ordinary_telemetry_uses_its_ingest_derived_request_deadline() {
     let http = guest_agent::http::HttpClient::with_api_config(
         format!("http://{}", listener.local_addr().unwrap()),
         "test-token",
-        "",
         "test-session",
         Duration::ZERO,
     )
@@ -345,7 +344,6 @@ async fn assert_cancelled_telemetry_owner_finishes_upload(
     let http = guest_agent::http::HttpClient::with_api_config(
         format!("http://{}", listener.local_addr()?),
         "test-token",
-        "",
         "test-session",
         Duration::ZERO,
     )?;
@@ -1278,7 +1276,6 @@ async fn urgent_oom_arrives_while_normal_http_response_is_held_open() {
     let http = guest_agent::http::HttpClient::with_api_config(
         format!("http://{}", listener.local_addr().unwrap()),
         "test-token",
-        "",
         "test-session",
         Duration::ZERO,
     )
@@ -1357,7 +1354,6 @@ async fn urgent_oom_stalled_http_has_two_bounded_attempts_and_retains_evidence()
     let http = guest_agent::http::HttpClient::with_api_config(
         format!("http://{}", listener.local_addr().unwrap()),
         "test-token",
-        "",
         "test-session",
         Duration::ZERO,
     )

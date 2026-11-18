@@ -282,13 +282,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
           },
         });
       }
-      if (!execution.encryptedSecrets) {
-        throw new Error(
-          "Expected encrypted secrets from the authenticated Runner execution",
-        );
-      }
       const authBody = {
-        encryptedSecrets: execution.encryptedSecrets,
         authHeaders: catalog.firewallAuthHeaders,
         matchedFirewall: {
           name: catalog.slug,
@@ -300,7 +294,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         },
       };
       const resolved = await fw.requestFirewallAuth(
-        { authorization: `Bearer ${execution.sandboxToken}` },
+        { authorization: `Bearer ${execution.firewallToken}` },
         authBody,
         [200],
       );
@@ -335,7 +329,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         });
         expect(updated).not.toHaveProperty("firewall");
         const mismatched = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${execution.sandboxToken}` },
+          { authorization: `Bearer ${execution.firewallToken}` },
           authBody,
           [424],
         );

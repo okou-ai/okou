@@ -202,15 +202,11 @@ async function fixture(type: SubscriptionType, withUpstreamIdentity = true) {
 }
 
 function authBody(execution: ExecutionInput, type: SubscriptionType) {
-  if (!execution.encryptedSecrets) {
-    throw new Error("Expected runtime credential envelope");
-  }
   const accessKey =
     type === "codex-oauth-token"
       ? "CHATGPT_ACCESS_TOKEN"
       : "CLAUDE_CODE_OAUTH_TOKEN";
   return {
-    encryptedSecrets: execution.encryptedSecrets,
     authHeaders: {
       Authorization: `Bearer ${secretTemplate(accessKey)}`,
       ...(type === "codex-oauth-token"
@@ -225,7 +221,7 @@ function authBody(execution: ExecutionInput, type: SubscriptionType) {
 
 async function resolve(execution: ExecutionInput, type: SubscriptionType) {
   const response = await firewall.requestFirewallAuth(
-    { authorization: `Bearer ${execution.sandboxToken}` },
+    { authorization: `Bearer ${execution.firewallToken}` },
     authBody(execution, type),
     [200],
   );
@@ -931,10 +927,10 @@ describe("personal subscription run identity", () => {
       });
       await webhooks.requestClerkWebhook("{}", {}, [200]);
       await flushWaitUntilForTest();
-      // Observe with the already-issued sandbox credential: terminal Run
+      // Observe with the already-issued host credential: terminal Run
       // refusal does not require erasing the captured account or its token.
       const denied = await firewall.requestFirewallAuth(
-        { authorization: `Bearer ${execution.sandboxToken}` },
+        { authorization: `Bearer ${execution.firewallToken}` },
         authBody(execution, f.type),
         [400, 401, 403, 424],
       );
@@ -993,7 +989,7 @@ describe("personal subscription run identity", () => {
             Authorization: `Bearer ${f.connected.token}`,
           });
           const denied = await firewall.requestFirewallAuth(
-            { authorization: `Bearer ${nextExecution.sandboxToken}` },
+            { authorization: `Bearer ${nextExecution.firewallToken}` },
             authBody(execution, type),
             [424],
           );
@@ -1046,7 +1042,7 @@ describe("personal subscription run identity", () => {
       });
     });
     const refreshing = firewall.requestFirewallAuth(
-      { authorization: `Bearer ${execution.sandboxToken}` },
+      { authorization: `Bearer ${execution.firewallToken}` },
       authBody(execution, f.type),
       [200, 403],
     );
@@ -1070,7 +1066,7 @@ describe("personal subscription run identity", () => {
     await Promise.all([refreshing, cancelling]);
     expect((await runs.readRun(f.actor, runId)).status).toBe("cancelled");
     const denied = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${execution.sandboxToken}` },
+      { authorization: `Bearer ${execution.firewallToken}` },
       authBody(execution, f.type),
       [400, 403, 424],
     );
@@ -1337,7 +1333,7 @@ describe("subscription bundle decryption ownership", () => {
         }
       });
       const reading = firewall.requestFirewallAuth(
-        { authorization: `Bearer ${execution.sandboxToken}` },
+        { authorization: `Bearer ${execution.firewallToken}` },
         authBody(execution, f.type),
         [200, 400, 403, 424],
       );
@@ -1376,7 +1372,7 @@ describe("subscription bundle decryption ownership", () => {
       }
       if (mutation === "membership" || mutation === "final-cancel") {
         const denied = await firewall.requestFirewallAuth(
-          { authorization: `Bearer ${execution.sandboxToken}` },
+          { authorization: `Bearer ${execution.firewallToken}` },
           authBody(execution, f.type),
           [400, 401, 403, 424],
         );
@@ -1430,12 +1426,15 @@ describe("personal priority credential and session boundaries", () => {
     });
     expect(kms.decryptCalls).toBe(0);
     const denied = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${execution.sandboxToken}` },
+      { authorization: `Bearer ${execution.firewallToken}` },
       authBody(execution, f.type),
-      [400],
+      [502],
     );
     expect(denied.body).toMatchObject({
-      error: { message: "Failed to decrypt secrets" },
+      error: {
+        code: "TOKEN_ACCESS_RESOLUTION_FAILED",
+        connectors: [f.type],
+      },
     });
     expect(kms.decryptCalls).toBeGreaterThan(0);
     expect(execution.billableFirewalls).toStrictEqual([]);

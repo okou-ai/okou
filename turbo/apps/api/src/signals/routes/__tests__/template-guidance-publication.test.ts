@@ -12,10 +12,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
 import { mockEnv } from "../../../lib/env";
-import {
-  getSecretKmsClient,
-  setSecretKmsClientForTests,
-} from "../../../lib/secret-kms-client";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { userTemplatesRoutes } from "../user-templates";
@@ -203,6 +199,7 @@ test.each([
 ] as const)(
   "keeps the accepted $kind snapshot after $change during startup",
   async ({ kind, change }) => {
+    const acceptedRevision = `accepted-${randomUUID()}`;
     const owner = await publicChatActor(context);
     // Revocation must exercise a member's access, not the template owner's
     // continuing access to their own private template.
@@ -217,7 +214,11 @@ test.each([
       mocks.clerk.session(publisher.userId, publisher.orgId, publisher.orgRole);
       return await publish(
         kind,
-        await uploadInputs(publisher, fixture, tarGz(guidance("accepted"))),
+        await uploadInputs(
+          publisher,
+          fixture,
+          tarGz(guidance(acceptedRevision)),
+        ),
       );
     });
     if (published.status !== 200) {
@@ -229,74 +230,74 @@ test.each([
         return setTemplateSharing(kind, id, true);
       });
     }
-    const kms = getSecretKmsClient();
+    let restorePresigner: (() => void) | undefined;
     onTestFinished(() => {
-      setSecretKmsClientForTests(kms);
+      restorePresigner?.();
     });
-    let changeStarted = false;
     let changed = false;
     await owner.run(() => {
-      setSecretKmsClientForTests({
-        ...kms,
-        async generateDataKey(request, signal) {
-          // Run encryption follows package preparation. Later source changes
-          // must leave this startup on its accepted Prompt and package snapshot.
-          if (!changeStarted) {
-            changeStarted = true;
-            if (change === "delete") {
-              await remove(kind, id);
-            } else if (change === "replace") {
-              const packageFileId = await uploadTemplateFile(
-                context,
-                owner.actor,
-                fixture,
-                {
-                  filename: "replacement.tar.gz",
-                  contentType: "application/gzip",
-                },
-                tarGz(guidance("replacement")),
-              );
-              await accept(
-                userClient().replacePackage({
-                  headers: authHeaders(),
-                  params: { templateId: id },
-                  body: { packageFileId },
-                }),
-                [200],
-              );
-            } else if (change === "revoke") {
-              mocks.clerk.session(
-                publisher.userId,
-                publisher.orgId,
-                publisher.orgRole,
-              );
-              const revoked = await settleIncludingAbort(() => {
-                return setTemplateSharing(kind, id, false);
-              });
-              mocks.clerk.session(
-                owner.actor.userId,
-                owner.actor.orgId,
-                owner.actor.orgRole,
-              );
-              if (!revoked.ok) {
-                throw revoked.error;
-              }
-            } else {
-              const args = {
-                headers: authHeaders(),
-                params: { templateId: id },
-                body: { title: "Renamed during encryption" },
-              };
-              if (kind === "user-template") {
-                await accept(userClient().update(args), [200]);
-              } else {
-                await accept(presentationClient().update(args), [200]);
-              }
-            }
-            changed = true;
+      const sign = context.mocks.s3.getSignedUrl.getMockImplementation();
+      if (!sign) {
+        throw new Error("Expected the external presigner fixture");
+      }
+      restorePresigner = () => {
+        context.mocks.s3.getSignedUrl.mockImplementation(sign);
+      };
+      context.mocks.s3.getSignedUrl.mockImplementationOnce(async (...args) => {
+        // Signing follows accepted package preparation. Later source changes
+        // must not replace this startup's accepted Prompt/package snapshot.
+        if (change === "delete") {
+          await remove(kind, id);
+        } else if (change === "replace") {
+          const packageFileId = await uploadTemplateFile(
+            context,
+            owner.actor,
+            fixture,
+            {
+              filename: "replacement.tar.gz",
+              contentType: "application/gzip",
+            },
+            tarGz(guidance("replacement")),
+          );
+          await accept(
+            userClient().replacePackage({
+              headers: authHeaders(),
+              params: { templateId: id },
+              body: { packageFileId },
+            }),
+            [200],
+          );
+        } else if (change === "revoke") {
+          mocks.clerk.session(
+            publisher.userId,
+            publisher.orgId,
+            publisher.orgRole,
+          );
+          const revoked = await settleIncludingAbort(() => {
+            return setTemplateSharing(kind, id, false);
+          });
+          mocks.clerk.session(
+            owner.actor.userId,
+            owner.actor.orgId,
+            owner.actor.orgRole,
+          );
+          if (!revoked.ok) {
+            throw revoked.error;
           }
-          return await kms.generateDataKey(request, signal);
-        },
+        } else {
+          const args = {
+            headers: authHeaders(),
+            params: { templateId: id },
+            body: { title: "Renamed during publication" },
+          };
+          if (kind === "user-template") {
+            await accept(userClient().update(args), [200]);
+          } else {
+            await accept(presentationClient().update(args), [200]);
+          }
+        }
+        changed = true;
+        return await sign(...args);
       });
       return Promise.resolve();
     });
@@ -305,7 +306,7 @@ test.each([
       prompt: "Use the accepted template",
       template: selection(kind, id),
     });
-    setSecretKmsClientForTests(kms);
+    restorePresigner?.();
     expect(changed).toBeTruthy();
     const state = await owner.run(() => {
       return chat.api.readRun(owner.actor, run.runId);
@@ -314,7 +315,7 @@ test.each([
     const dispatched = await owner.runExecution(run.runId);
     expect(
       executionFiles(fixture, dispatched.execution, kind, id),
-    ).toStrictEqual(guidance("accepted"));
+    ).toStrictEqual(guidance(acceptedRevision));
   },
 );
 

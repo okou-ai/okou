@@ -1,37 +1,8 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { object, string } from "zod";
+import { createCipheriv, randomBytes } from "node:crypto";
 
 const TEST_KMS_KEY_ID = "alias/okou-secrets-test";
 const TEST_DATA_KEY = Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
 const STORED_SECRET_ENVELOPE_PREFIX = "vm0secret:v1:";
-
-/** Decode a captured external envelope with the API fixture's fake KMS key. */
-export function decryptSecretForTests(encrypted: string): string {
-  if (!encrypted.startsWith(STORED_SECRET_ENVELOPE_PREFIX)) {
-    throw new Error("Expected a stored-secret envelope");
-  }
-  const { kms } = object({
-    kms: object({ iv: string(), authTag: string(), ciphertext: string() }),
-  }).parse(
-    JSON.parse(
-      Buffer.from(
-        encrypted.slice(STORED_SECRET_ENVELOPE_PREFIX.length),
-        "base64url",
-      ).toString("utf8"),
-    ),
-  );
-  const decipher = createDecipheriv(
-    "aes-256-gcm",
-    TEST_DATA_KEY,
-    Buffer.from(kms.iv, "base64"),
-    { authTagLength: 16 },
-  );
-  decipher.setAuthTag(Buffer.from(kms.authTag, "base64"));
-  return Buffer.concat([
-    decipher.update(Buffer.from(kms.ciphertext, "base64")),
-    decipher.final(),
-  ]).toString("utf8");
-}
 
 export function encryptSecretForTests(plaintext: string): string {
   const iv = randomBytes(12);

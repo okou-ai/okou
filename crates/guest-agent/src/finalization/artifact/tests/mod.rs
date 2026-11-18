@@ -94,7 +94,6 @@ async fn artifact_snapshot_preflight_error(mount: &std::path::Path) -> String {
     let http = HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "test-run-001",
         Duration::ZERO,
     )
@@ -255,7 +254,6 @@ async fn artifact_snapshot_missing_mount_fails_before_storage_api_calls() {
     let http = HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "test-run-001",
         Duration::ZERO,
     )
@@ -348,7 +346,6 @@ async fn artifact_snapshot_enforces_manifest_boundaries_before_storage_api_calls
     let http = HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "test-run-001",
         Duration::ZERO,
     )
@@ -514,7 +511,6 @@ async fn artifact_snapshot_explicit_fail_policy_missing_mount_fails() {
     let http = HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "test-run-001",
         Duration::ZERO,
     )
@@ -559,7 +555,6 @@ async fn artifact_snapshot_later_missing_mount_fails_before_any_storage_api_call
     let http = HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "test-run-001",
         Duration::ZERO,
     )
@@ -626,9 +621,8 @@ async fn artifact_snapshot_pipelines_overlap_and_preserve_result_order() {
         },
     ];
     let (base_url, server) = start_artifact_finalization_test_server(entries.len()).await;
-    let http =
-        HttpClient::with_api_config(base_url, "test-token", "", "test-run-001", Duration::ZERO)
-            .unwrap();
+    let http = HttpClient::with_api_config(base_url, "test-token", "test-run-001", Duration::ZERO)
+        .unwrap();
 
     let snapshots = tokio::time::timeout(
         REQUEST_OVERLAP_TIMEOUT,
@@ -679,7 +673,6 @@ async fn artifact_snapshot_preserve_policy_missing_mount_preserves_parent_versio
     let http = HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "test-run-001",
         Duration::ZERO,
     )
@@ -732,7 +725,6 @@ async fn artifact_snapshot_policy_still_fails_on_non_not_found_root_error() {
     let http = HttpClient::with_api_config(
         server.base_url(),
         "test-token",
-        "",
         "test-run-001",
         Duration::ZERO,
     )

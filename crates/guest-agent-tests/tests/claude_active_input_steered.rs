@@ -41,7 +41,7 @@ async fn claude_delivers_duplicate_follow_up_and_declares_steered_once()
             .json_body(json!({ "outcome": "steered" }));
     });
     let steer_http =
-        HttpClient::with_api_config(server.base_url(), "test-token", "", run_id, Duration::ZERO)?;
+        HttpClient::with_api_config(server.base_url(), "test-token", run_id, Duration::ZERO)?;
     let active_input = ActiveInputRuntime::new_enabled(run_id, &runtime.config.prompt, steer_http);
     let controller = active_input.controller();
     let payload = guest_contracts::active_input::encode_active_input(EVENT_ID, "follow-up prompt")?;

@@ -6,7 +6,6 @@ import {
 import type { agentRuns } from "@okouai/db/runtime/agent-run";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import { computed, type Computed } from "ccstate";
-import { previewAutomationBypassSecret } from "../../lib/preview-automation-bypass";
 import { billableFirewallsForPermissions } from "./built-in-route-pricing";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { NATIVE_CONTEXT_RECOVERY_PROMPT } from "./chat-session-continuity.service";
@@ -222,12 +221,8 @@ function createExecutionPlatform(
     ]);
     const framework = run.framework;
     const integration = facts.integration;
-    const bypass = facts.previewBypassAuthorized
-      ? previewAutomationBypassSecret()
-      : undefined;
     return {
       ...emptyEnvironment(),
-      secrets: bypass ? { VERCEL_AUTOMATION_BYPASS_SECRET: bypass } : undefined,
       platformEnvironment: {
         ...runPlatformEnvironment(run),
         ...paidToolPlatformEnvironment({
@@ -243,7 +238,6 @@ function createExecutionPlatform(
         ...(run.codexServiceTier
           ? { OKOU_CODEX_SERVICE_TIER: run.codexServiceTier }
           : {}),
-        ...(bypass ? { VERCEL_AUTOMATION_BYPASS_SECRET: bypass } : {}),
       },
     };
   });
@@ -268,7 +262,7 @@ function createExecutionEnvironment(
     const tokenEnvironment = {
       ...emptyEnvironment(),
       platformEnvironment: { OKOU_TOKEN: token },
-      secrets: { OKOU_TOKEN: token },
+      reservedSecretAliases: ["OKOU_TOKEN"],
     };
     const environment = mergeEnvironments(
       [
@@ -291,23 +285,7 @@ function createExecutionEnvironment(
         return !key.startsWith("OKOU_") && !key.startsWith("ZERO_");
       }),
     );
-    const effective = {
-      ...untrustedEnvironment,
-      ...environment.platformEnvironment,
-    };
-    const keys = new Map<string, string>();
-    for (const [key, value] of Object.entries(effective)) {
-      if (!keys.has(value)) {
-        keys.set(value, key);
-      }
-    }
-    const secretKeys = environment.secrets
-      ? Object.values(environment.secrets).flatMap((value) => {
-          const key = keys.get(value);
-          return key === undefined ? [] : [key];
-        })
-      : null;
-    return { environment, untrustedEnvironment, secretKeys };
+    return { environment, untrustedEnvironment };
   });
 }
 
@@ -328,7 +306,7 @@ function createExecutionPreparedContext(
       get(dependencies.environment$),
       get(dependencies.storage$),
     ]);
-    const { environment, untrustedEnvironment, secretKeys } = resolved;
+    const { environment, untrustedEnvironment } = resolved;
     const prepared: PreparedExecutionContext = {
       ...executionModelConfiguration(run, model),
       customWorkflowSelection: facts.customWorkflowSelection,
@@ -348,7 +326,6 @@ function createExecutionPreparedContext(
           ? null
           : untrustedEnvironment,
       platformEnvironment: environment.platformEnvironment ?? {},
-      secretValueEnvironmentKeys: secretKeys,
       encryptedSecrets: null,
       vars: environment.vars ?? null,
       firewalls: [...environment.firewalls],
@@ -370,7 +347,6 @@ function createExecutionPreparedContext(
     };
     return {
       context: preparedExecutionContextSchema.parse(prepared),
-      secrets: environment.secrets ?? null,
       storageCacheWrites: storage.cacheWrites,
       networkPolicyInputs: facts.connectorNetworkPolicyInputs,
     };

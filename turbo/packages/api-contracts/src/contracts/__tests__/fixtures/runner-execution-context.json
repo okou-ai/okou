@@ -7,6 +7,7 @@
     "FIXTURE_REGION": "test-region"
   },
   "sandboxToken": "fixture-sandbox-token-not-real",
+  "firewallToken": "fixture-host-firewall-token-not-real",
   "contentBundles": {
     "format": "tar-gzip-v1",
     "instructions": {

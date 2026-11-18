@@ -187,9 +187,8 @@ describe("Chat connector execution", () => {
       }),
     );
     const resolved = await createFirewallApi(context).requestFirewallAuth(
-      { authorization: `Bearer ${run.execution.sandboxToken}` },
+      { authorization: `Bearer ${run.execution.firewallToken}` },
       {
-        encryptedSecrets: run.execution.encryptedSecrets ?? undefined,
         secretConnectorMap: run.execution.secretConnectorMap ?? undefined,
         secretConnectorMetadataMap:
           run.execution.secretConnectorMetadataMap ?? undefined,
@@ -307,10 +306,8 @@ describe("Chat connector execution", () => {
       ),
     );
     const auth = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${run.execution.sandboxToken}` },
+      { authorization: `Bearer ${run.execution.firewallToken}` },
       {
-        encryptedSecrets:
-          run.execution.encryptedSecrets || firewall.encryptedSecretsBody({}),
         secretConnectorMap: run.execution.secretConnectorMap ?? undefined,
         secretConnectorMetadataMap: metadata,
         authHeaders: {
@@ -631,10 +628,8 @@ describe("Chat connector execution", () => {
       }
       const firewall = createFirewallApi(context);
       const authenticated = await firewall.requestFirewallAuth(
-        { authorization: `Bearer ${run.execution.sandboxToken}` },
+        { authorization: `Bearer ${run.execution.firewallToken}` },
         {
-          encryptedSecrets:
-            run.execution.encryptedSecrets || firewall.encryptedSecretsBody({}),
           authHeaders: api.auth.headers ?? {},
           matchedFirewall: {
             name: published.firewall.firewall.name,
