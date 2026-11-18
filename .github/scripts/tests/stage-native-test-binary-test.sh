@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 helper="$repo_root/.github/scripts/runner/stage-native-test-binary.sh"
+system_timeout=$(command -v timeout)
 test_root=$(mktemp -d)
 destination="/tmp/okou-native-stage-test-$$"
 cleanup() {
@@ -24,6 +25,8 @@ chmod +x "$test_root/test binary"
 cat >"$test_root/bin/ssh" <<'SSH'
 #!/usr/bin/env bash
 set -euo pipefail
+# The guarded transport's probe must leave the transfer's stdin untouched.
+if [ "${!#}" = true ]; then exit 0; fi
 [ "$1" = metal@host.vm3.ai ]
 count=0
 if [ -f "$CASE_DIR/count" ]; then count=$(cat "$CASE_DIR/count"); fi
@@ -37,6 +40,13 @@ case "$SCENARIO" in
     trap 'exit 143' TERM
     echo ready > "$CASE_DIR/ready"
     read -r _ < "$CASE_DIR/hold"
+    ;;
+  guarded-timeout)
+    if [ "$count" -eq 1 ]; then
+      echo "$$" > "$CASE_DIR/ssh.pid"
+      trap 'exit 143' TERM
+      read -r _ < "$CASE_DIR/hold"
+    fi
     ;;
   corrupt)
     head -c 3 | sh -c "$2"
@@ -124,6 +134,44 @@ for scenario in success partial timeout pipe lost-ack late-writer corrupt perman
   fi
   rm -f "$case_dir/writer.pid"
 done
+
+# Exercise the real guarded SSH caller, including its cancellation cleanup.
+# Shorten only the external upload deadline; retain GNU timeout and the real
+# kill-after intervals so a forced kill cannot masquerade as retryable timeout.
+case_dir="$test_root/guarded-timeout"
+mkdir -p "$case_dir/state" "$test_root/guard-bin" "$test_root/clock-bin"
+mkfifo "$case_dir/hold"
+ln -s "$repo_root/.github/scripts/runner/cloudflare-ssh-command.sh" "$test_root/guard-bin/ssh"
+cat >"$test_root/clock-bin/timeout" <<'TIMEOUT'
+#!/usr/bin/env bash
+set -euo pipefail
+arguments=("$@")
+index=0
+while [[ "${arguments[$index]}" == --* ]]; do index=$((index + 1)); done
+if [ "${arguments[$((index + 1))]:-}" = ssh ]; then arguments[$index]=3s; fi
+exec "$STAGE_TEST_REAL_TIMEOUT" "${arguments[@]}"
+TIMEOUT
+chmod +x "$test_root/clock-bin/timeout"
+rm -f -- "$destination"
+status=0
+PATH="$test_root/clock-bin:$test_root/guard-bin:$PATH" \
+  CASE_DIR="$case_dir" SCENARIO=guarded-timeout STAGE_TEST_REAL_TIMEOUT="$system_timeout" \
+  OKOU_CLOUDFLARE_SSH_REAL_SSH="$test_root/bin/ssh" \
+  OKOU_CLOUDFLARE_SSH_STATE_DIR="$case_dir/state" \
+  OKOU_CLOUDFLARE_SSH_SCRIPTS_DIR="$repo_root/.github/scripts/runner" RUNNER_TEMP="$case_dir" \
+  bash "$helper" "$test_root/test binary" metal@host.vm3.ai "$destination" \
+  >"$case_dir/out" 2>&1 || status=$?
+if [ "$status" -ne 0 ]; then
+  cat "$case_dir/out" >&2
+  echo "guarded transfer deadline did not recover: $status" >&2
+  exit 1
+fi
+test "$(cat "$case_dir/count")" -eq 2
+cmp "$test_root/test binary" "$destination"
+if kill -0 "$(cat "$case_dir/ssh.pid")" 2>/dev/null; then
+  echo 'timed-out guarded upload retained its SSH child' >&2
+  exit 1
+fi
 
 # Cancellation retires the external transfer rather than submitting again.
 case_dir="$test_root/cancelled"

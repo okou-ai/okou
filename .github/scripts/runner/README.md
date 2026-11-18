@@ -62,6 +62,9 @@ Guest RPC. It streams into a unique remote temporary sibling, verifies SHA-256,
 then publishes executable bytes by atomic rename. Only transport exits
 124/141/255 permit another staging attempt, with at most three 120-second calls
 inside a 400-second total deadline (plus a ten-second cancellation grace).
+Each attempt allows ten seconds for termination so the guarded SSH caller's
+five-second cancellation cleanup can finish before forced KILL. The transfer
+deadline stays 120 seconds; the overall deadline also contains this cleanup.
 Integrity/remote command failures propagate.
 A lost acknowledgement can publish the same verified bytes again; a late partial
 writer cannot become the executable. Remote EXIT cleans its own temporary file;

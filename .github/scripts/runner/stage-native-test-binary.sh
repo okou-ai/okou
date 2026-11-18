@@ -85,7 +85,9 @@ trap 'exit 129' HUP
 for attempt in 1 2 3; do
   status=0
   echo "Native binary staging: host=${remote#*@} attempt=${attempt}/3" >&2
-  timeout --verbose --kill-after=5s 120s \
+  # Guarded SSH spends five seconds retiring its caller after TERM. Let it
+  # finish before forced KILL changes a retryable deadline into exit 137.
+  timeout --verbose --kill-after=10s 120s \
     ssh "$remote" "$remote_command" <"$source_file" &
   child=$!
   wait "$child" || status=$?
