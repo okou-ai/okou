@@ -2,6 +2,7 @@ package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
 import android.os.Looper
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -11,9 +12,12 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import java.util.concurrent.CountDownLatch
@@ -311,6 +315,29 @@ class ChatListRootTest {
         awaitListAndNames()
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("No chats in this view."))
         compose.onNodeWithText("No chats in this view.").assertExists()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun pullingBelowTheEmptyFilteredListRefreshesChats() {
+        val app = compose.activity.application as ChatListApplication
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithContentDescription("Filter").performClick()
+        compose.onNodeWithText("Archived").performClick()
+        compose.onNodeWithText("No chats in this view.").assertExists()
+
+        app.fixture.events = { okhttp3.mockwebserver.MockResponse().setResponseCode(503) }
+        compose.onRoot().performTouchInput {
+            swipe(Offset(centerX, height * 0.6f), Offset(centerX, height * 0.9f))
+        }
+
+        val failure = app.getString(R.string.chat_refresh_failed)
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText(failure).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("Archived").assertExists()
+        compose.onNodeWithText(app.getString(R.string.retry)).assertExists()
     }
 
     private fun awaitListAndNames() {

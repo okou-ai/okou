@@ -121,7 +121,7 @@ internal fun ChatListScreen(
         contentAlignment = Alignment.TopCenter,
     ) {
         LazyColumn(
-            Modifier.widthIn(max = 720.dp).fillMaxWidth().testTag("chat_list").semantics {
+            Modifier.widthIn(max = 720.dp).fillMaxSize().testTag("chat_list").semantics {
                 if (state.listPhase != ChatReadPhase.Loading) {
                     customActions =
                         listOf(

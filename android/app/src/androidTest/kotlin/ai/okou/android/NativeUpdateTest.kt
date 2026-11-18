@@ -17,6 +17,8 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -77,7 +79,8 @@ class NativeUpdateTest {
                 device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000)
             assertNotNull(text(app.getString(R.string.chat_list_title)))
             gate.complete(Unit)
-            assertNotNull(text(app.getString(R.string.updates_view)))
+            val updateAction = app.getString(R.string.updates_view)
+            assertNotNull(text(updateAction))
             assertTrue(
                 device.wait(Until.gone(By.desc(app.getString(R.string.chat_filter))), 10_000)
             )
@@ -88,11 +91,15 @@ class NativeUpdateTest {
                         10_000,
                     )
                 )
+            assertEquals(1, device.findObjects(By.pkg(app.packageName).text(updateAction)).size)
+            assertFalse(
+                device.hasObject(By.pkg(app.packageName).desc(app.getString(R.string.settings)))
+            )
             more.click()
             assertNotNull(text(app.getString(R.string.chat_filter)))
             assertNotNull(text(app.getString(R.string.settings)))
             assertTrue(device.pressBack())
-            requireNotNull(text(app.getString(R.string.updates_view))).click()
+            requireNotNull(text(updateAction)).click()
             assertNotNull(text(app.getString(R.string.updates_target, "99.0.0")))
             takeScreenshot().writeToTestStorage("android-update-optional.png")
             owner.requireUpdate(RequiredUpdate("99.0.0"))
