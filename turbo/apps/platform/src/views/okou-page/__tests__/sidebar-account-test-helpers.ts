@@ -164,8 +164,8 @@ export function mockBrowserTimeZone(timeZone: string): void {
   });
 }
 
-export function expectVisibleText(text: string): void {
-  const matches = screen.getAllByText(text);
+export function expectVisibleText(text: string, selector = "*"): void {
+  const matches = screen.getAllByText(text, { selector });
   const visibleMatch = matches.find((element) => {
     try {
       expect(element).toBeVisible();
