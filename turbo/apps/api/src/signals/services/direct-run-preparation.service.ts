@@ -11,6 +11,7 @@ import { nowDate } from "../../lib/time";
 import { rawSqlReadDb$ } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
+import type { AcceptedMemoryMount } from "./execution-storage.service";
 import { agentInstructionsSelectionSql } from "./execution-instructions-selection";
 import { createExecutionRuntimeContext } from "./execution-runtime-context";
 import { contentBundleAvailableCondition } from "./execution-content-bundle";
@@ -40,6 +41,7 @@ import {
 /** Receipt from durable Thread Run admission, before first-run classification. */
 export interface AdmittedRunLaunch {
   readonly run: Omit<ExecutionPublicationRun, "isFirstRun">;
+  readonly memoryMounts: readonly AcceptedMemoryMount[];
   readonly facts: AdmittedExecutionFacts;
   readonly runnerGroup: string;
   readonly profile: string;
