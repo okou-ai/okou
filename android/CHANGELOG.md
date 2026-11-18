@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/okou-ai/okou/compare/android-v0.22.0...android-v0.23.0) (2026-11-18)
+
+
+### Features
+
+* **android:** adapt workspace to wide windows ([#48685](https://github.com/okou-ai/okou/issues/48685)) ([95b66b3](https://github.com/okou-ai/okou/commit/95b66b38c36968c65dcdd0e9156d0487bf4bf4f4))
+
 ## [0.22.0](https://github.com/okou-ai/okou/compare/android-v0.21.1...android-v0.22.0) (2026-11-18)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.249.52](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.51...runner-rs-v0.249.52) (2026-11-18)
+
+
+### Refactoring
+
+* **runner:** share the bounded snapshot evidence reader ([#48695](https://github.com/okou-ai/okou/issues/48695)) ([3851f07](https://github.com/okou-ai/okou/commit/3851f07037bd46cb7ab0bf98f8726048d3666168))
+
 ## [0.249.51](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.50...runner-rs-v0.249.51) (2026-11-18)
 
 
