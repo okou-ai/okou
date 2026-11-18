@@ -819,7 +819,9 @@ test.each(["event", "snapshot"] as const)(
       }),
     );
     commit.resolve();
-    await screen.findAllByText("Browser disabled");
+    await waitFor(() => {
+      expect(screen.queryAllByText("Browser disabled")[0]).toBeInTheDocument();
+    });
     await within(sidebar).findByText(
       "Cloud browser is not enabled for this chat",
     );
@@ -837,7 +839,11 @@ test.each(["event", "snapshot"] as const)(
     );
     stream.setEvents(events);
     context.mocks.ably.trigger("threadListChanged");
-    await screen.findAllByText("Browser enabled again");
+    await waitFor(() => {
+      expect(
+        screen.queryAllByText("Browser enabled again")[0],
+      ).toBeInTheDocument();
+    });
     expect(
       within(sidebar).queryByLabelText("Remote browser input"),
     ).not.toBeInTheDocument();
