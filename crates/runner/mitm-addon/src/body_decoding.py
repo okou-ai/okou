@@ -24,9 +24,9 @@ from body_limits import (
     STREAM_DECODE_EXPANSION_GRACE,
     STREAM_DECODE_MAX_EXPANSION_RATIO,
 )
+from compressed_input import CompressedInputCursor
 from stream_capture import CapturedStreamBody
 from zlib_decoding import decode_zlib_bounded
-from zlib_input import ZlibInputCursor
 
 # Brotli 1.2's output_buffer_limit is a soft allocation threshold, not a hard
 # returned-byte cap. Keep small compressed inputs on tiny chunks as a second
@@ -129,7 +129,7 @@ def _create_zlib_stream_decode_session(
         if chunk:
             saw_input = True
             compressed_bytes_seen += len(chunk)
-        input_cursor = ZlibInputCursor(chunk)
+        input_cursor = CompressedInputCursor(chunk)
         # Input slicing can make zlib return partial parser chunks. Coalesce
         # only within this callback and member so existing delivery boundaries
         # and the max_decoded_chunk contract remain intact.
@@ -455,7 +455,7 @@ def _decode_single_zlib_stream_for_network_log_capture(
         return b""
 
     obj = zlib.decompressobj(wbits)
-    input_cursor = ZlibInputCursor(data)
+    input_cursor = CompressedInputCursor(data)
     out = bytearray()
     while input_cursor and len(out) < max_output:
         try:
@@ -574,7 +574,7 @@ def _decompress_zlib_best_effort_bounded(
         return b""
 
     wbits = 16 + zlib.MAX_WBITS if encoding == "gzip" else zlib.MAX_WBITS
-    input_cursor = ZlibInputCursor(data)
+    input_cursor = CompressedInputCursor(data)
     out = bytearray()
     # A full-input zlib call exposes no partial output when that member raises.
     # Commit each member only at EOF so bounded slicing preserves that policy.
@@ -691,21 +691,17 @@ def _decode_zstd_prefix(data: bytes, max_output: int) -> tuple[bytes, str | None
     another chunk. A complete frame needs a fresh decoder in this public API;
     all consumers bound those constructions, including best-effort capture.
     """
-    source = memoryview(data)
-    offset = 0
-    pending = b""
+    input_cursor = CompressedInputCursor(data, chunk_size=_ZSTD_PREFIX_INPUT_CHUNK_SIZE)
     output = bytearray()
     decoder = zstd.ZstdDecompressor()
     frames = 1
     while len(output) < max_output:
-        if pending:
-            chunk = pending
-            pending = b""
+        if input_cursor.has_pending:
+            chunk = input_cursor.take()
         elif decoder.needs_input:
-            if offset == len(source):
+            if not input_cursor:
                 break
-            chunk = source[offset : offset + _ZSTD_PREFIX_INPUT_CHUNK_SIZE]
-            offset += len(chunk)
+            chunk = input_cursor.take()
         else:
             chunk = b""
         output.extend(
@@ -716,8 +712,8 @@ def _decode_zstd_prefix(data: bytes, max_output: int) -> tuple[bytes, str | None
         if len(output) >= max_output:
             break
         if decoder.eof:
-            pending = decoder.unused_data
-            if not pending and offset == len(source):
+            input_cursor.carry(decoder.unused_data)
+            if not input_cursor:
                 break
             if frames >= _ZSTD_MAX_FRAMES:
                 return bytes(output), COMPRESSED_FRAME_LIMIT_EXCEEDED
@@ -732,26 +728,17 @@ def _validate_complete_zstd_frames(data: bytes, max_output: int) -> str | None:
     if max_output <= 0:
         return DECODED_BODY_LIMIT_EXCEEDED if data else None
 
-    source = memoryview(data)
-    source_offset = 0
-    pending_input = b""
+    input_cursor = CompressedInputCursor(data, chunk_size=_ZSTD_VALIDATE_INPUT_CHUNK_SIZE)
     decoded_size = 0
     validated_frames = 0
-    while source_offset < len(source) or pending_input:
+    while input_cursor:
         if validated_frames >= _ZSTD_MAX_FRAMES:
             return COMPRESSED_FRAME_LIMIT_EXCEEDED
         validated_frames += 1
         obj = zstd.ZstdDecompressor()
 
-        while source_offset < len(source) or pending_input or not obj.needs_input:
-            if pending_input:
-                chunk = pending_input
-                pending_input = b""
-            elif obj.needs_input:
-                chunk = source[source_offset : source_offset + _ZSTD_VALIDATE_INPUT_CHUNK_SIZE]
-                source_offset += len(chunk)
-            else:
-                chunk = b""
+        while input_cursor or not obj.needs_input:
+            chunk = input_cursor.take() if input_cursor.has_pending or obj.needs_input else b""
             try:
                 decoded = obj.decompress(
                     chunk,
@@ -764,7 +751,7 @@ def _validate_complete_zstd_frames(data: bytes, max_output: int) -> str | None:
             if decoded_size > max_output:
                 return DECODED_BODY_LIMIT_EXCEEDED
             if obj.eof:
-                pending_input = obj.unused_data
+                input_cursor.carry(obj.unused_data)
                 break
         else:
             return INCOMPLETE_COMPRESSED_BODY
