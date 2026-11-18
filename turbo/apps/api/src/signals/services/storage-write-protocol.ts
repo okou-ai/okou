@@ -6,7 +6,7 @@ import type {
   memberMemoryVersionRecord,
 } from "./member-memory-records";
 
-// DTOs for the retained callback protocol; independent of either publication owner.
+// DTOs for the retained callback protocol; backed by member Memory.
 export interface CommitStorageUploadInput {
   readonly versionId: string;
   readonly files: readonly FileEntryWithHash[];
@@ -17,7 +17,7 @@ export interface CommitStorageUploadInput {
 
 export interface CommitStorageForStorageInput extends CommitStorageUploadInput {
   readonly storageId: string;
-  readonly sandboxAuth?: SandboxAuth;
+  readonly sandboxAuth: SandboxAuth;
 }
 
 export type StorageRow = ReturnType<typeof memberMemoryStorageRecord>;
