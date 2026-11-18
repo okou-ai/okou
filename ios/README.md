@@ -269,7 +269,7 @@ separately from compilation, automated tests, and release publication.
 ## SwiftLint
 
 SwiftLint 0.65.1 includes the repository's [native rules](../docs/ios/ios-lint.md)
-through its SwiftLintExtraRules extension. It enables 96 upstream default checks,
+through its SwiftLintExtraRules extension. It enables 97 upstream default checks,
 including `file_length` at 800 warning / 1,000 error lines. Strict lint makes 800
 total lines, including comments and blank lines, the enforced limit for production
 and tests. `function_body_length` enforces 100 lines for functions and initializers,
@@ -279,7 +279,10 @@ excluding blank and comment-only lines, with both warning and error set to 500.
 The upstream rule does not count extensions or protocols.
 `cyclomatic_complexity` enforces a score of 20 for functions and initializers,
 including `switch` cases, with both warning and error set to 20.
-Four other metric checks and `identifier_name` remain disabled.
+`function_parameter_count` uses the upstream warning threshold of 5 and error
+threshold of 8. Strict lint rejects functions with more than 5 parameters after
+excluding those with default values. Initializers and overrides are outside the rule.
+Three other metric checks and `identifier_name` remain disabled.
 The existing opt-in and native rules remain enabled. `swift-format` owns
 formatting; multiline braces remain compatible with its layout, and
 `ios/.swift-format` aligns collection commas with SwiftLint's default rule.

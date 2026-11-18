@@ -281,6 +281,38 @@ for path in "${file_length_paths[@]}"; do
   rm "$fixture/$path/ComplexityBoundary.swift"
 done
 
+# Strict lint rejects a sixth required parameter, while default arguments are ignored.
+for path in "${file_length_paths[@]}"; do
+  cat > "$fixture/$path/ParameterCountBoundary.swift" <<'SWIFT'
+func parameterBoundary(
+  first: Int, second: Int, third: Int, fourth: Int, fifth: Int, sixth: Int = 0
+) -> Int {
+  first + second + third + fourth + fifth + sixth
+}
+SWIFT
+done
+if ! run_lint; then
+  cat "$test_root/lint.log" >&2
+  exit 1
+fi
+for path in "${file_length_paths[@]}"; do
+  python3 - "$fixture/$path/ParameterCountBoundary.swift" <<'PYTHON'
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+source.write_text(source.read_text().replace("sixth: Int = 0", "sixth: Int"))
+PYTHON
+done
+if run_lint; then
+  echo 'A function with six required parameters passed strict lint.' >&2
+  exit 1
+fi
+for path in "${file_length_paths[@]}"; do
+  grep -F "$path/ParameterCountBoundary.swift" "$test_root/lint.log" | grep -F '(function_parameter_count)' >/dev/null
+  rm "$fixture/$path/ParameterCountBoundary.swift"
+done
+
 # The production-only state rule must be enabled by the real root config.
 for path in "${production_paths[@]}"; do
   printf 'var sharedState = 0\n' > "$fixture/$path/GlobalState.swift"

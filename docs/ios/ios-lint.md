@@ -11,8 +11,8 @@ underlying ownership contracts. Setup commands belong in the
 ## Upstream Defaults
 
 The root configuration inherits upstream defaults and explicitly defers the
-four metric checks and `identifier_name` in `disabled_rules`.
-The other 96 defaults remain enabled, including `file_length` configured with
+three metric checks and `identifier_name` in `disabled_rules`.
+The other 97 defaults remain enabled, including `file_length` configured with
 800 warning / 1,000 error lines. The shared `--strict` entry point enforces an
 800-line limit in production and tests, including comments and blank lines.
 `function_body_length` has a 100-line warning and error threshold for functions,
@@ -27,6 +27,10 @@ evade the limit. Test splits must retain every original method and assertion.
 initializer bodies in production, tests and native lint implementations. Keep the
 upstream `switch`-case counting enabled. Extract coherent stages without weakening
 error, identity, cancellation or test-coverage boundaries.
+`function_parameter_count` uses the upstream warning threshold of 5 and error
+threshold of 8. Strict lint allows up to 5 parameters without default values.
+Initializers and overrides are outside the rule. Group related inputs into
+values that represent a single concept.
 It uses `opt_in_rules`
 for the three additional upstream checks and the native rules, rather than
 maintaining a second copy of the default set. Test overrides relax only force
