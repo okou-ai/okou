@@ -42,7 +42,7 @@ Proxy CONNECT response headers and h11 incomplete events are bounded at 64 KiB. 
 body is bounded at ``MAX_RESPONSE_BODY_BYTES`` (256 KiB). One monotonic
 ``REQUEST_DEADLINE_SECONDS`` deadline (10 seconds by default) covers DNS, connection
 racing, proxy CONNECT, TLS, request writing, response headers, and the bounded response body.
-Deadline errors retain the active phase from that closed transport vocabulary.
+The caller can read the active phase from ``RequestProgress`` when handling a deadline.
 """
 
 import asyncio
@@ -183,22 +183,19 @@ def _get_connection_pools() -> platform_http_pool.ConnectionPools:
 def _get_dns_resolver() -> _AddressResolver:
     global _dns_resolver
 
-    resolver = _dns_resolver
-    if resolver is None:
-        resolver = mitmproxy_rs.dns.DnsResolver()
-        _dns_resolver = resolver
-    return resolver
+    if _dns_resolver is None:
+        _dns_resolver = mitmproxy_rs.dns.DnsResolver()
+    return _dns_resolver
 
 
 def _get_https_context() -> ssl.SSLContext:
     global _https_context
 
-    context = _https_context
-    if context is None:
+    if _https_context is None:
         context = ssl.create_default_context()
         context.set_alpn_protocols(["http/1.1"])
         _https_context = context
-    return context
+    return _https_context
 
 
 def _format_authority(host: str, port: int, *, include_port: bool) -> str:
