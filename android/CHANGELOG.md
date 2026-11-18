@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/okou-ai/okou/compare/android-v0.20.0...android-v0.21.0) (2026-11-18)
+
+
+### Features
+
+* **android:** sync composer drafts with web ([#48409](https://github.com/okou-ai/okou/issues/48409)) ([9c4533e](https://github.com/okou-ai/okou/commit/9c4533e1759c94add85742779eb169793038a1a9))
+
 ## [0.20.0](https://github.com/okou-ai/okou/compare/android-v0.19.1...android-v0.20.0) (2026-11-17)
 
 

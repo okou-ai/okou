@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.21](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.20...guest-storage-apply-v0.32.21) (2026-11-18)
+
+
+### Performance Improvements
+
+* **runner:** borrow decoded file contents during guest apply ([#48426](https://github.com/okou-ai/okou/issues/48426)) ([cb7d9e7](https://github.com/okou-ai/okou/commit/cb7d9e73ee9bf10be6ce4466526c8c39414011cb))
+
 ## [0.32.20](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.19...guest-storage-apply-v0.32.20) (2026-11-18)
 
 
