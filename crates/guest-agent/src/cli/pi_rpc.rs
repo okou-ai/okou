@@ -55,8 +55,10 @@
 //! with the `steer` command. The command ID is the source chat-event UUID, and
 //! the matching successful response is required before
 //! `mark_backend_accepted_without_replay` records acceptance and queues the
-//! steered declaration. A failed or interrupted command marks the input failed
-//! and enters the abort/error path.
+//! steered declaration. A failed or interrupted command marks the input failed.
+//! If stdout reported settlement before explicitly rejecting a steer, the writer
+//! closes stdin normally and leaves that source input pending for a later run.
+//! Earlier rejections still enter the error path.
 //!
 //! The stdout projection records successful steer ACK observation for the
 //! matching writer-owned frame before processing a following `agent_settled`.
@@ -64,8 +66,8 @@
 //! when the writer consumes it. The writer retains acceptance and declaration
 //! ownership; queued or unacknowledged frames still block closure.
 //!
-//! Normal response waits reject an unexpected ID, unexpected command,
-//! unsuccessful response, or a closed response channel. Abort is different in
+//! Response waits validate the matching ID, command and success flag. A closed
+//! response channel is an error. Abort is different in
 //! one respect: it ignores unrelated response IDs while waiting for its own
 //! acknowledgement. It writes ID `<run-id>:pi:abort`, requires the matching
 //! successful `abort` response, and has a ten-second timeout covering the write
@@ -230,6 +232,7 @@ const MAX_STREAM_CONTENT_INDEX: usize = 1024;
 
 pub(super) struct PiRpcResponse {
     value: Value,
+    after_settlement: bool,
     _retained_bytes: OwnedSemaphorePermit,
 }
 
@@ -250,7 +253,12 @@ pub(super) fn response_channel() -> (PiRpcResponseSender, mpsc::Receiver<PiRpcRe
 }
 
 impl PiRpcResponseSender {
-    fn try_send(&self, value: Value, record_bytes: usize) -> Result<(), AgentError> {
+    fn try_send(
+        &self,
+        value: Value,
+        record_bytes: usize,
+        after_settlement: bool,
+    ) -> Result<(), AgentError> {
         let available_bytes = self.retained_bytes.available_permits();
         let retained_bytes = Arc::clone(&self.retained_bytes)
             .try_acquire_many_owned(record_bytes as u32)
@@ -261,6 +269,7 @@ impl PiRpcResponseSender {
             })?;
         let response = PiRpcResponse {
             value,
+            after_settlement,
             _retained_bytes: retained_bytes,
         };
         match self.tx.try_send(response) {
@@ -511,6 +520,7 @@ pub(super) struct PiRpcProjection<'a> {
     assistant_stream: Option<PiAssistantStream<'a>>,
     pending_retry: Option<PiRetryAttempt>,
     terminal_error: bool,
+    settled: bool,
     active_input: Option<ActiveInputController>,
 }
 
@@ -526,6 +536,7 @@ impl<'a> PiRpcProjection<'a> {
             assistant_stream: None,
             pending_retry: None,
             terminal_error: false,
+            settled: false,
             active_input: None,
         }
     }
@@ -645,7 +656,7 @@ impl<'a> PiRpcProjection<'a> {
         .then(|| response.get("id").and_then(Value::as_str))
         .flatten()
         .map(str::to_owned);
-        responses.try_send(response, record_bytes)?;
+        responses.try_send(response, record_bytes, self.settled)?;
         if let Some(controller) = &self.active_input
             && let Some(id) = steer_ack
         {
@@ -834,6 +845,7 @@ impl<'a> PiRpcProjection<'a> {
     }
 
     fn project_agent_settled(&mut self) -> Value {
+        self.settled = true;
         let assistant = self.assistant_terminal.take().unwrap_or_default();
         self.pending_retry = None;
         let mut result = serde_json::Map::from_iter([
@@ -1020,13 +1032,20 @@ async fn write_command_with_cancellation(
     }
 }
 
+enum MessageOutcome {
+    Accepted,
+    Cancelled,
+    RejectedAfterSettlement,
+}
+
 async fn wait_for_response(
     responses: &mut mpsc::Receiver<PiRpcResponse>,
     expected_id: &str,
     expected_command: &str,
     allow_unmatched: bool,
-) -> Result<(), AgentError> {
+) -> Result<MessageOutcome, AgentError> {
     while let Some(response) = responses.recv().await {
+        let after_settlement = response.after_settlement;
         let response = &response.value;
         let response_id = response.get("id").and_then(Value::as_str);
         if response_id != Some(expected_id) {
@@ -1042,7 +1061,13 @@ async fn wait_for_response(
                 "Pi RPC response {expected_id} named an unexpected command"
             )));
         }
-        if response.get("success").and_then(Value::as_bool) != Some(true) {
+        let success = response.get("success").and_then(Value::as_bool);
+        if expected_command == "steer" && after_settlement && success == Some(false) {
+            // The terminal event preceded this rejection on stdout. Leave the
+            // source queued for another run without failing the completed one.
+            return Ok(MessageOutcome::RejectedAfterSettlement);
+        }
+        if success != Some(true) {
             let message = response
                 .get("error")
                 .and_then(Value::as_str)
@@ -1051,7 +1076,7 @@ async fn wait_for_response(
                 "Pi RPC {expected_command} failed: {message}"
             )));
         }
-        return Ok(());
+        return Ok(MessageOutcome::Accepted);
     }
     Err(AgentError::Execution(
         "Pi RPC stdout closed before the command was acknowledged".to_string(),
@@ -1066,7 +1091,9 @@ async fn abort(
     let id = format!("{run_id}:pi:abort");
     tokio::time::timeout(PI_RPC_ABORT_TIMEOUT, async {
         write_command(stdin, &json!({ "id": id, "type": "abort" })).await?;
-        wait_for_response(responses, &id, "abort", true).await
+        wait_for_response(responses, &id, "abort", true)
+            .await
+            .map(|_| ())
     })
     .await
     .map_err(|_| AgentError::Execution("Pi RPC abort timed out".to_string()))?
@@ -1079,7 +1106,7 @@ async fn request_message(
     id: &str,
     message: &str,
     cancellation: &CancellationToken,
-) -> Result<bool, AgentError> {
+) -> Result<MessageOutcome, AgentError> {
     write_command_with_cancellation(
         stdin,
         &json!({
@@ -1092,11 +1119,8 @@ async fn request_message(
     .await?;
     tokio::select! {
         biased;
-        () = cancellation.cancelled() => Ok(false),
-        response = wait_for_response(responses, id, command, false) => {
-            response?;
-            Ok(true)
-        }
+        () = cancellation.cancelled() => Ok(MessageOutcome::Cancelled),
+        response = wait_for_response(responses, id, command, false) => response,
     }
 }
 
@@ -1106,7 +1130,7 @@ async fn deliver_active_input(
     active_input: &ActiveInputWriter,
     frame: &ActiveInputFrame,
     cancellation: &CancellationToken,
-) -> Result<bool, AgentError> {
+) -> Result<MessageOutcome, AgentError> {
     active_input.mark_writing(&frame.uuid);
     let request = request_message(
         stdin,
@@ -1118,13 +1142,13 @@ async fn deliver_active_input(
     )
     .await;
     match request {
-        Ok(true) => {
+        Ok(MessageOutcome::Accepted) => {
             active_input.mark_backend_accepted_without_replay(frame)?;
-            Ok(true)
+            Ok(MessageOutcome::Accepted)
         }
-        Ok(false) => {
+        Ok(outcome) => {
             active_input.mark_backend_failed(frame);
-            Ok(false)
+            Ok(outcome)
         }
         Err(error) => {
             active_input.mark_backend_failed(frame);
@@ -1173,16 +1197,18 @@ pub(super) async fn write_commands(
     }
 
     let prompt_id = format!("{run_id}:pi:initial-prompt");
-    if !request_message(
-        &mut stdin,
-        &mut responses,
-        "prompt",
-        &prompt_id,
-        prompt,
-        &cancellation,
-    )
-    .await?
-    {
+    if matches!(
+        request_message(
+            &mut stdin,
+            &mut responses,
+            "prompt",
+            &prompt_id,
+            prompt,
+            &cancellation,
+        )
+        .await?,
+        MessageOutcome::Cancelled
+    ) {
         abort(&mut stdin, &mut responses, run_id).await?;
         return Ok(());
     }
@@ -1198,15 +1224,22 @@ pub(super) async fn write_commands(
                 let Some(frame) = frame else {
                     return Ok(());
                 };
-                if !deliver_active_input(
+                match deliver_active_input(
                     &mut stdin,
                     &mut responses,
                     &active_input,
                     &frame,
                     &cancellation,
                 ).await? {
-                    abort(&mut stdin, &mut responses, run_id).await?;
-                    return Ok(());
+                    MessageOutcome::Accepted => {}
+                    MessageOutcome::Cancelled => {
+                        abort(&mut stdin, &mut responses, run_id).await?;
+                        return Ok(());
+                    }
+                    MessageOutcome::RejectedAfterSettlement => {
+                        active_input.close_terminal();
+                        return Ok(());
+                    }
                 }
             }
         }
