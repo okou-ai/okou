@@ -116,13 +116,15 @@ final class ChatPermissionTests: XCTestCase {
 
   func testDescriptorRejectsMismatchedContextAndPreservesLegacyRefAndDeny() throws {
     let source = PermissionHTTPFixture.actionURL(action: "deny").replacingOccurrences(
-      of: "connectorSlug=", with: "ref=")
+      of: "connectorSlug=", with: "ref="
+    ).replacingOccurrences(of: "Continue%20after%20permission", with: "Continue+after%2Bpermission")
     let url = try XCTUnwrap(URL(string: source, relativeTo: URL(string: "https://app.okou.ai")!))
     let parsed = try XCTUnwrap(
       ChatPermissionAction(
         url: url, agentID: PermissionHTTPFixture.agentID, threadID: PermissionHTTPFixture.threadID))
     XCTAssertEqual(parsed.action, .deny)
     XCTAssertEqual(parsed.connectorSlug, "gmail")
+    XCTAssertEqual(parsed.callbackPrompt, "Continue after+permission")
     XCTAssertNil(
       ChatPermissionAction(url: url, agentID: UUID().uuidString, threadID: parsed.threadID))
     XCTAssertNil(
