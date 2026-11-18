@@ -41,7 +41,7 @@ function mockOfficial(isConfigured: boolean, isConnected = false) {
 describe("official Feishu connection", () => {
   it("keeps the Official entry hidden until the feature is enabled", async () => {
     await setup(false);
-    expect(screen.queryByRole("region", { name: "Okou Official" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Okou" })).toBeNull();
     await expect(findAction("link", "Add bot")).resolves.toBeInTheDocument();
   });
 
@@ -49,7 +49,7 @@ describe("official Feishu connection", () => {
     mockOfficial(false);
     await setup();
     const official = await screen.findByRole("region", {
-      name: "Okou Official",
+      name: "Okou",
     });
     expect(getAction("button", "Connect", official)).toBeDisabled();
     expect(queryAllByRoleFast("link", official)).toHaveLength(0);
@@ -73,7 +73,7 @@ describe("official Feishu connection", () => {
     });
     await setup();
     const official = await screen.findByRole("region", {
-      name: "Okou Official",
+      name: "Okou",
     });
     click(getAction("button", "Connect", official));
     await waitFor(() => {
@@ -102,7 +102,7 @@ describe("official Feishu connection", () => {
     });
     await setup();
     const official = await screen.findByRole("region", {
-      name: "Okou Official",
+      name: "Okou",
     });
     expect(within(official).getByText("Official User")).toBeInTheDocument();
     click(getAction("button", "Disconnect", official));
@@ -122,7 +122,7 @@ describe("official Feishu connection", () => {
       },
     });
     const official = await screen.findByRole("region", {
-      name: "Okou Official",
+      name: "Okou",
     });
     expect(getAction("button", "Connect", official)).toBeEnabled();
     expect(queryAction("link", "Add bot")).toBeNull();
@@ -132,7 +132,7 @@ describe("official Feishu connection", () => {
     context.mocks.browser.open(null);
     await setup();
     const official = await screen.findByRole("region", {
-      name: "Okou Official",
+      name: "Okou",
     });
     click(getAction("button", "Connect", official));
     await expect(

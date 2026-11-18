@@ -3585,10 +3585,8 @@
         "manageDialogTitle": "Kelola bot Feishu",
         "moreOptions": "Opsi lainnya untuk {{bot}}",
         "official": {
-          "description": "Hubungkan akun Feishu Anda ke bot resmi Okou.",
-          "name": "Okou Official",
-          "popupBlocked": "Izinkan pop-up untuk menghubungkan akun Feishu Anda.",
-          "unavailable": "Bot resmi belum tersedia."
+          "name": "Okou",
+          "popupBlocked": "Izinkan pop-up untuk menghubungkan akun Feishu Anda."
         },
         "pageDescription": "Kelola perutean bot untuk ruang kerja ini",
         "permissions": {

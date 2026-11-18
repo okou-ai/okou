@@ -3656,10 +3656,8 @@
         "manageDialogTitle": "Gérer le bot Feishu",
         "moreOptions": "Plus d'options pour {{bot}}",
         "official": {
-          "description": "Connectez votre compte Feishu au bot officiel Okou.",
-          "name": "Okou Official",
-          "popupBlocked": "Autorisez les fenêtres contextuelles pour connecter votre compte Feishu.",
-          "unavailable": "Le bot officiel n’est pas encore disponible."
+          "name": "Okou",
+          "popupBlocked": "Autorisez les fenêtres contextuelles pour connecter votre compte Feishu."
         },
         "pageDescription": "Gérer le routage du bot pour cet espace de travail",
         "permissions": {

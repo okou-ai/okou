@@ -1563,13 +1563,6 @@ function FeishuOfficialRow() {
                 </span>
               ) : null}
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {t(($) => {
-                return status.isConfigured
-                  ? $.connectors.providerSettings.feishu.official.description
-                  : $.connectors.providerSettings.feishu.official.unavailable;
-              })}
-            </p>
           </div>
         </div>
         <Button

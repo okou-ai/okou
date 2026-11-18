@@ -3585,10 +3585,8 @@
         "manageDialogTitle": "管理飛書機器人",
         "moreOptions": "{{bot}}的更多選項",
         "official": {
-          "description": "連接你的飛書帳號，使用 Okou 官方機器人。",
-          "name": "Okou Official",
-          "popupBlocked": "請允許彈出視窗以連接飛書帳號。",
-          "unavailable": "官方機器人暫未開放。"
+          "name": "Okou",
+          "popupBlocked": "請允許彈出視窗以連接飛書帳號。"
         },
         "pageDescription": "管理此工作區的機器人路由",
         "permissions": {

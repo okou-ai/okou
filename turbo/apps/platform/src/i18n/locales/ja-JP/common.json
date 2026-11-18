@@ -3585,10 +3585,8 @@
         "manageDialogTitle": "Feishu ボットを管理する",
         "moreOptions": "{{bot}} のその他のオプション",
         "official": {
-          "description": "飛書アカウントを Okou 公式ボットに接続します。",
-          "name": "Okou Official",
-          "popupBlocked": "飛書アカウントを接続するには、ポップアップを許可してください。",
-          "unavailable": "公式ボットはまだ利用できません。"
+          "name": "Okou",
+          "popupBlocked": "飛書アカウントを接続するには、ポップアップを許可してください。"
         },
         "pageDescription": "このワークスペースのボット ルーティングを管理する",
         "permissions": {
