@@ -21,7 +21,6 @@ import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { userTemplatesRoutes } from "../user-templates";
 import { presentationTemplatesRoutes } from "../presentation-templates";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
@@ -202,7 +201,7 @@ test.each([
   { kind: "user-template", change: "metadata" },
   { kind: "presentation-template", change: "metadata" },
 ] as const)(
-  "checks $kind $change during external encryption before dispatch",
+  "keeps the accepted $kind snapshot after $change during startup",
   async ({ kind, change }) => {
     const owner = await publicChatActor(context);
     // Revocation must exercise a member's access, not the template owner's
@@ -240,8 +239,8 @@ test.each([
       setSecretKmsClientForTests({
         ...kms,
         async generateDataKey(request, signal) {
-          // Run encryption follows package preparation; the ownership statement
-          // must still authorize these accepted bytes after external IO returns.
+          // Run encryption follows package preparation. Later source changes
+          // must leave this startup on its accepted Prompt and package snapshot.
           if (!changeStarted) {
             changeStarted = true;
             if (change === "delete") {
@@ -311,22 +310,11 @@ test.each([
     const state = await owner.run(() => {
       return chat.api.readRun(owner.actor, run.runId);
     });
-    if (change === "metadata") {
-      expect(state.status).toBe("running");
-      const dispatched = await owner.runExecution(run.runId);
-      expect(
-        executionFiles(fixture, dispatched.execution, kind, id),
-      ).toStrictEqual(guidance("accepted"));
-    } else {
-      expect(state.status).toBe("failed");
-      expect(
-        createRunsApi(context)
-          .receivedDispatches(owner.runnerGroup)
-          .some((dispatch) => {
-            return dispatch.executionContext.runId === run.runId;
-          }),
-      ).toBeFalsy();
-    }
+    expect(state.status).toBe("running");
+    const dispatched = await owner.runExecution(run.runId);
+    expect(
+      executionFiles(fixture, dispatched.execution, kind, id),
+    ).toStrictEqual(guidance("accepted"));
   },
 );
 

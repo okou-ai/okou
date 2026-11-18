@@ -4,10 +4,7 @@ import {
   type StoredTemplateGuidanceBundle,
   type TemplateGuidanceBundle,
 } from "@okouai/api-contracts/contracts/template-guidance-bundle";
-import {
-  USER_TEMPLATE_KINDS,
-  type UserTemplateKind,
-} from "@okouai/api-contracts/contracts/user-templates";
+import { USER_TEMPLATE_KINDS } from "@okouai/api-contracts/contracts/user-templates";
 import { computed, type Computed } from "ccstate";
 import { enum as zEnum } from "zod";
 import {
@@ -233,13 +230,10 @@ function buildRunTemplateGuidance(args: {
   if (guidance.status === "invalid") {
     return { error: { code: "BAD_REQUEST", message: guidance.message } };
   }
-  const references: (StoredTemplateGuidanceBundle & {
-    readonly templateKind: UserTemplateKind;
-  })[] = [
+  const references: StoredTemplateGuidanceBundle[] = [
     ...presentations.map((row) => {
       return {
         ownerKind: "presentation-template" as const,
-        templateKind: "presentation" as const,
         templateId: row.templateId,
         beforeMountPaths: [],
         ...row.guidanceBundle,
@@ -248,7 +242,6 @@ function buildRunTemplateGuidance(args: {
     ...mounted.map((row) => {
       return {
         ownerKind: "user-template" as const,
-        templateKind: row.kind,
         templateId: row.templateId,
         beforeMountPaths: [],
         ...row.guidanceBundle,
@@ -258,12 +251,11 @@ function buildRunTemplateGuidance(args: {
   return {
     templateUsageIdentities: templateUsageIdentities(templates, mounted),
     renderPrompt: guidance.render,
-    skillVolumes: references.map(({ templateKind, ...reference }) => {
+    skillVolumes: references.map((reference) => {
       return {
         source: "request_additional_volume" as const,
         mountPath: templateGuidanceMountPath(reference),
         templateGuidanceBundle: reference,
-        templateKind,
       };
     }),
   };

@@ -1,6 +1,5 @@
 import type { StoredTemplateGuidanceBundle } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
-import type { UserTemplateKind } from "@okouai/api-contracts/contracts/user-templates";
 
 export interface SystemPromptVariables {
   readonly agentIdentity?: string;
@@ -36,14 +35,15 @@ type BundleSkillSource = Extract<
   "system_skill" | "connector_skill" | "custom_connector_skill"
 >;
 
-interface TemplateBundleVolume {
+/** Accepted template package shared by this Run's Prompt and mount preparation. */
+export interface TemplateSkillVolume {
   readonly source: "request_additional_volume";
   readonly mountPath: string;
   readonly templateGuidanceBundle: StoredTemplateGuidanceBundle;
 }
 
 export type SkillVolume =
-  | TemplateBundleVolume
+  | TemplateSkillVolume
   | {
       readonly source: BundleSkillSource;
       readonly skillName: string;
@@ -52,11 +52,6 @@ export type SkillVolume =
 
 export type SeedSkillVolume = SkillVolume & {
   readonly source: "system_skill";
-};
-
-/** Accepted template package; kind participates in current source validation. */
-export type TemplateSkillVolume = TemplateBundleVolume & {
-  readonly templateKind: UserTemplateKind;
 };
 
 /** Prompt text and skill or template guidance packages for one run. */
@@ -117,7 +112,7 @@ export function mergeRunSkillVolumes(
 }
 
 type ResolvedSkillVolume =
-  | TemplateBundleVolume
+  | TemplateSkillVolume
   | {
       readonly source: BundleSkillSource;
       readonly contentBundle: ContentBundle;

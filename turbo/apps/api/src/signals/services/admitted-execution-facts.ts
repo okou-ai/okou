@@ -34,9 +34,8 @@ export interface AdmittedExecutionFacts {
   readonly realAgentInPreview: boolean | undefined;
   readonly apiStartTime: number | undefined;
   readonly connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[];
-  /** Accepted template contributions; current authority is checked before publication. */
+  /** First accepted template snapshot; later edits apply to subsequent Runs. */
   readonly templateSkillVolumes: readonly TemplateSkillVolume[];
-  readonly templateUserId: string;
   readonly integration: string | undefined;
   readonly captureNetworkBodies: boolean;
   readonly piModelConfig: PiModelConfig | undefined;

@@ -2664,7 +2664,6 @@ export function createThreadClaimRunObjects(
       modelProviderPermissions: runtimeContext.modelProviderPermissions,
       seedSkillVolumes: promptAndSkills.seedSkillVolumes,
       templateSkillVolumes: promptAndSkills.templateSkillVolumes,
-      templateUserId: promptAndSkills.templateUserId,
       userTimezone: promptAndSkills.userTimezone,
       ...metadata,
       officialWorkflowFacts: await get(officialWorkflowFacts$),
@@ -3088,7 +3087,6 @@ export function createThreadClaimRunObjects(
           connectorRuntimeTargets: context.connectorRuntimeTargets,
           facts: {
             templateSkillVolumes: context.templateSkillVolumes,
-            templateUserId: context.templateUserId,
             integration,
             captureNetworkBodies: args.captureNetworkBodies === true,
             piModelConfig: context.piSandbox,
@@ -4509,7 +4507,6 @@ interface ThreadRunnerFacts {
   readonly facts: Pick<
     AdmittedExecutionFacts,
     | "templateSkillVolumes"
-    | "templateUserId"
     | "integration"
     | "captureNetworkBodies"
     | "piModelConfig"
