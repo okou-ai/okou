@@ -186,7 +186,7 @@ import {
 } from "./workflow-reward-source-publication";
 import { env } from "../../lib/env";
 import type { ModelCatalog } from "./model-catalog.service";
-import { isCatalogFastServiceTierSupported } from "./model-route-capabilities.service";
+import { isCatalogCodexServiceTierSupported } from "./model-route-capabilities.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { selectedUserPresentationTemplateIds } from "./presentation-template-data.service";
 import { selectedUserTemplateIds } from "./user-template-data.service";
@@ -984,11 +984,13 @@ function requestedThreadRunSettings(
   }
   const requestedTier = body.runOptions?.codexServiceTier;
   if (
-    requestedTier === "fast" &&
-    !isCatalogFastServiceTierSupported(catalog, selectedModel)
+    requestedTier !== undefined &&
+    !isCatalogCodexServiceTierSupported(catalog, selectedModel, requestedTier)
   ) {
     return badRequestMessage(
-      "Codex fast mode is only available for GPT 5.6 runs",
+      requestedTier === "fast"
+        ? "Codex fast mode is only available for GPT 5.6 runs"
+        : "Ultrafast is unavailable for this model route",
     );
   }
   // A model or run-option selection carries its tier; an effort-only change
@@ -1395,9 +1397,9 @@ function userModelPreferencePlan(
   }
   // The captured selection: a replaced model is stored as its successor.
   const selectedModel = runSettings.selectedModel;
-  const serviceTier = chatThreadServiceTierFromCodex(
-    runSettings.codexServiceTier,
-  );
+  // Ultrafast is scoped to this conversation.
+  const serviceTier =
+    runSettings.codexServiceTier === "fast" ? "priority" : null;
   const patch = runSettings.modelSettingsPatch;
   const nowValue = nowDate();
   return {

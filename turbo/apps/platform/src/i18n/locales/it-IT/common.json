@@ -2536,9 +2536,11 @@
       "relatedArtifactCount_other": "{{formattedCount}} artefatti",
       "relatedArtifacts": "Artefatti correlati",
       "selectedModelAppliesAfterCurrentRun": "Il modello {{model}} selezionato entrerà in vigore dopo questa esecuzione",
+      "speedChangedTo": "Velocità impostata su {{speed}}",
       "thinking": {
         "default": "Sto pensando..."
       },
+      "ultrafastModelName": "{{model}} · Ultrafast",
       "viewActivityLogs": "Visualizza i registri delle attività",
       "viewLogs": "Visualizza i registri di esecuzione",
       "waitingIn": "In attesa",
@@ -5583,7 +5585,10 @@
         "models": "Modelli",
         "noConfiguredModels": "Nessun modello configurato",
         "pro": "Pro",
-        "standard": "Norma"
+        "speed": "Velocità",
+        "standard": "Norma",
+        "ultrafast": "Ultrafast",
+        "ultrafastUsage": "Consuma una quota maggiore del tuo piano Codex."
       },
       "reset": {
         "confirmDescription": "Usa un ripristino Codex per reimpostare le finestre di utilizzo correnti. Te ne restano {{remaining}}.",

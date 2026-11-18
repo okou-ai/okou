@@ -95,7 +95,7 @@ export const modelRoutes = pgTable(
       check("chk_model_routes_priority", sql`${table.priority} >= 0`),
       check(
         "chk_model_routes_service_tiers",
-        sql`${table.serviceTiers} <@ ARRAY['priority']::text[] AND (${table.defaultServiceTier} IS NULL OR ${table.defaultServiceTier} = ANY(${table.serviceTiers}))`,
+        sql`${table.serviceTiers} <@ CASE WHEN ${table.subscriptionType} = 'codex-oauth-token' THEN ARRAY['priority', 'ultrafast']::text[] ELSE ARRAY['priority']::text[] END AND (${table.defaultServiceTier} IS NULL OR ${table.defaultServiceTier} = ANY(${table.serviceTiers}))`,
       ),
       check(
         "chk_model_routes_efforts",

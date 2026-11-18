@@ -1,3 +1,6 @@
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { createUserFeatureSwitchContext } from "./feature-switches.service";
 import { command, type Computed } from "ccstate";
 import type {
   AvailableRunModel,
@@ -17,6 +20,7 @@ import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
 export function listAvailableRunModels(
   identity$: Computed<MemberModelRouteIdentity>,
 ) {
+  const switchContext$ = createUserFeatureSwitchContext(identity$);
   const member$ = memberModelRouteContext(identity$);
   const subscriptions$ = memberSubscriptionModels(member$);
   return command(
@@ -33,6 +37,13 @@ export function listAvailableRunModels(
         subscriptions.length > 0
           ? await set(loadOrgPlanCapabilities$, params.orgId)
           : null;
+      signal.throwIfAborted();
+      const ultrafastEnabled =
+        subscriptions.some((entry) => entry.ultrafastAvailable) &&
+        isFeatureEnabled(
+          FeatureSwitchKey.CodexSubscriptionUltrafast,
+          await get(switchContext$),
+        );
       signal.throwIfAborted();
       // A suspended entitlement still blocks execution and must be shown as such.
       const personalPlanRestricted = capabilities?.status !== "active";
@@ -61,6 +72,9 @@ export function listAvailableRunModels(
                 efforts: [...entry.efforts],
                 serviceTier:
                   entry.serviceTier === "priority" ? "priority" : null,
+                ...(ultrafastEnabled && entry.ultrafastAvailable
+                  ? { ultrafastAvailable: true }
+                  : {}),
               },
               memberEffective: {
                 providerType: entry.providerType,

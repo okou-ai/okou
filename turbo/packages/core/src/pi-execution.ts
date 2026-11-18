@@ -101,7 +101,7 @@ export interface PiRouteArgs {
 }
 
 export interface PiExecutionRouteArgs extends PiRouteArgs {
-  readonly codexServiceTier: "fast" | undefined;
+  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
   /** Only personal Codex subscriptions may opt into the native Codex harness. */
   readonly codexExecution?: boolean;
 }
@@ -129,6 +129,7 @@ export function isPiAdmittedRoute(args: PiExecutionRouteArgs): boolean {
     (args.runtimeProviderType == null ||
       args.runtimeProviderType === "codex-oauth-token") &&
     subscription !== undefined &&
+    args.codexServiceTier !== "ultrafast" &&
     (args.codexServiceTier === undefined ||
       subscription.serviceTiers.includes("priority"))
   );

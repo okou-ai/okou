@@ -1,20 +1,20 @@
-import { object, string, type infer as zInfer } from "zod";
+import { object, string, enum as zEnum, type infer as zInfer } from "zod";
 
 import { initContract, authHeadersSchema } from "./base";
 import { apiErrorSchema } from "./errors";
 import { imageModelIdSchema } from "./image-models";
 import { runModelIdSchema } from "./run-model-id";
-import { chatThreadServiceTierSchema } from "./chat-threads";
 import {
   modelSettingsPatchSchema,
   modelSettingsSchema,
 } from "./model-reasoning-effort";
 
 const c = initContract();
+const defaultServiceTierSchema = zEnum(["priority"]).nullable();
 
 export const userModelPreferenceResponseSchema = object({
   selectedModel: runModelIdSchema.nullable(),
-  serviceTier: chatThreadServiceTierSchema.nullable(),
+  serviceTier: defaultServiceTierSchema,
   modelSettings: modelSettingsSchema.default({}),
   selectedImageModel: imageModelIdSchema.nullable(),
   updatedAt: string().nullable(),
@@ -26,7 +26,7 @@ export type UserModelPreferenceResponse = zInfer<
 
 export const updateUserModelPreferenceRequestSchema = object({
   selectedModel: runModelIdSchema.nullable(),
-  serviceTier: chatThreadServiceTierSchema.nullable(),
+  serviceTier: defaultServiceTierSchema,
   /** Patch only the named model; omitted preserves every stored model setting. */
   modelSettingsPatch: modelSettingsPatchSchema.optional(),
   /**

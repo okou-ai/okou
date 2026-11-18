@@ -132,9 +132,10 @@ export function advancePendingLaunchAdmission(
     throw new Error("Queued user message is missing its context type");
   }
   const pin = args.createArgs.modelSelection;
-  const serviceTier = args.createArgs.codexServiceTier
-    ? ("priority" as const)
-    : undefined;
+  const serviceTier =
+    args.createArgs.codexServiceTier === "fast"
+      ? ("priority" as const)
+      : args.createArgs.codexServiceTier;
   const prepared = prepareChatEventReplacement(row, {
     id: args.identity.runId,
     chatThreadId: association.threadId,

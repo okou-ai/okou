@@ -22,6 +22,7 @@ export type MemberSubscriptionModel = Readonly<{
   displayName: string;
   efforts: readonly ReasoningEffort[];
   serviceTier: string | null;
+  ultrafastAvailable?: boolean;
   providerType: "claude-code-oauth-token" | "codex-oauth-token";
   providerId: string | null;
   needsReconnect: boolean;
@@ -139,6 +140,9 @@ export function memberSubscriptionModels(
             return reasoningEffortSchema.parse(effort);
           }),
           serviceTier,
+          ultrafastAvailable:
+            subscription.type === "codex-oauth-token" &&
+            row.serviceTiers.includes("ultrafast"),
           providerType: subscription.type,
           providerId: subscription.providerId,
           needsReconnect: subscription.needsReconnect,

@@ -6323,7 +6323,7 @@ function ComposerModelScopeCard({
   label: string;
   model: string;
   updating: boolean;
-  onUseForFutureChats: () => void;
+  onUseForFutureChats: (() => void) | undefined;
 }) {
   const { t } = useTranslation();
   return (
@@ -6336,28 +6336,32 @@ function ComposerModelScopeCard({
         </span>{" "}
         <span>{model}</span>
       </span>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="ml-auto shrink-0 text-xs font-medium text-foreground"
-        disabled={updating}
-        aria-busy={updating}
-        onClick={onUseForFutureChats}
-      >
-        {updating && <Loader2 className="animate-spin" aria-hidden="true" />}
-        {t(($) => {
-          return $.chat.composer.useForFutureChats;
-        })}
-      </Button>
+      {onUseForFutureChats && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="ml-auto shrink-0 text-xs font-medium text-foreground"
+          disabled={updating}
+          aria-busy={updating}
+          onClick={onUseForFutureChats}
+        >
+          {updating && <Loader2 className="animate-spin" aria-hidden="true" />}
+          {t(($) => {
+            return $.chat.composer.useForFutureChats;
+          })}
+        </Button>
+      )}
     </ComposerNoticeTray>
   );
 }
 
 function runServiceTier(
   selection: ModelProviderSelection | null | undefined,
-): "priority" | null {
-  return selection?.codexServiceTier === "fast" ? "priority" : null;
+): "priority" | "ultrafast" | null {
+  return selection?.codexServiceTier === "fast"
+    ? "priority"
+    : (selection?.codexServiceTier ?? null);
 }
 
 function ComposerTemporaryModelNotice({
@@ -6401,6 +6405,9 @@ function ComposerTemporaryModelNotice({
   const updating = updateLoadable.state === "loading";
   const modelName = selectedModelDisplayName(catalog, selection.selectedModel);
   const runSpeedLabel = t(($) => {
+    if (selectionServiceTier === "ultrafast") {
+      return $.settings.models.picker.ultrafast;
+    }
     return selectionServiceTier === "priority"
       ? $.settings.models.picker.fast
       : $.settings.models.picker.standard;
@@ -6415,7 +6422,7 @@ function ComposerTemporaryModelNotice({
     .filter(Boolean)
     .join(" · ");
   const useForFutureChats = () => {
-    if (updating) {
+    if (updating || selectionServiceTier === "ultrafast") {
       return;
     }
     const { selectedModel } = selection;
@@ -6445,7 +6452,9 @@ function ComposerTemporaryModelNotice({
       })}
       model={scopedModelLabel}
       updating={updating}
-      onUseForFutureChats={useForFutureChats}
+      onUseForFutureChats={
+        selectionServiceTier === "ultrafast" ? undefined : useForFutureChats
+      }
     />,
   );
 }

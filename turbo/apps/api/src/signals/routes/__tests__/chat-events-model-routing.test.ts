@@ -1,3 +1,7 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { http, HttpResponse } from "msw";
+import { server } from "../../../mocks/server";
 import { mockEnv } from "../../../lib/env";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { randomUUID } from "node:crypto";
@@ -13,6 +17,7 @@ import {
   CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
   type PromptMessage,
   executionEnvironment,
+  requireOrgId,
   userMessages,
 } from "./helpers/chat-events-fixture";
 
@@ -701,6 +706,87 @@ describe("CHAT-02: model-first routing", () => {
       }).length,
     ).toBeLessThanOrEqual(1);
     await cancelAndCompleteChatRun(actor, followUp.runId);
+  }, 90_000);
+
+  it("checks Ultrafast for the captured Codex subscription before launching", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    await misc.upsertPersonalModelProvider(
+      actor,
+      {
+        type: "codex-oauth-token",
+        authMethod: "auth_json",
+        secrets: { CODEX_AUTH_JSON: codexAuthJson() },
+      },
+      [200, 201],
+    );
+    const findAstra = async () => {
+      const { models } = await misc.listRunModels(actor);
+      return models.find((entry) => entry.model === "gpt-6-astra");
+    };
+    expect((await findAstra())?.subscriptionOptions).not.toHaveProperty(
+      "ultrafastAvailable",
+    );
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: requireOrgId(actor) },
+      { [FeatureSwitchKey.CodexSubscriptionUltrafast]: true },
+    );
+    const accounts: (string | null)[] = [];
+    let offersUltrafast = false;
+    server.use(
+      http.get(
+        "https://chatgpt.com/backend-api/codex/models",
+        ({ request }) => {
+          accounts.push(request.headers.get("chatgpt-account-id"));
+          return HttpResponse.json({
+            models: [
+              {
+                slug: "gpt-6-astra",
+                service_tiers: offersUltrafast ? [{ id: "ultrafast" }] : [],
+              },
+              { slug: "gpt-6.1-sol", service_tiers: [{ id: "ultrafast" }] },
+            ],
+          });
+        },
+      ),
+    );
+    expect((await findAstra())?.subscriptionOptions).toMatchObject({
+      serviceTier: "priority",
+      ultrafastAvailable: true,
+    });
+    expect(accounts).toStrictEqual([]);
+    const clientEventId = randomUUID();
+    const options = {
+      agentId,
+      model: "gpt-6-astra",
+      prompt: "Use Ultrafast",
+      runOptions: { codexServiceTier: "ultrafast" as const },
+    };
+    const rejected = await chat.requestSendEvent(
+      actor,
+      { ...options, clientEventId },
+      [201],
+    );
+    const { picked } = await waitForPickedInput(
+      actor,
+      rejected.body.threadId,
+      clientEventId,
+    );
+    expect(picked.eventType).toBe("input.rejected");
+    expect(picked.runId).toBeUndefined();
+
+    offersUltrafast = true;
+    const run = await sendChatRun(actor, options);
+    const { execution, sandboxHeaders } = await runExecution(run.runId);
+    expect(execution.cliAgentType).toBe("codex");
+    expect(executionEnvironment(execution)).toMatchObject({
+      OKOU_CODEX_SERVICE_TIER: "ultrafast",
+    });
+    expect(accounts).toStrictEqual([
+      "ws_acct_bdd_fast_mode_id_token",
+      "ws_acct_bdd_fast_mode_id_token",
+    ]);
+    await cancelChatRun(actor, run.runId, sandboxHeaders);
   }, 90_000);
 
   it("passes Fast only on a supported personal Codex route", async () => {

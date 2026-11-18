@@ -153,7 +153,8 @@ enum class ChatEventsEventsItemVariant1ReasoningEffort {
 
 @Serializable
 enum class ChatEventsEventsItemVariant1ServiceTier {
-    @SerialName("priority") PRIORITY
+    @SerialName("priority") PRIORITY,
+    @SerialName("ultrafast") ULTRAFAST,
 }
 
 @Serializable
@@ -233,7 +234,8 @@ enum class ChatEventsEventsItemVariant2ReasoningEffort {
 
 @Serializable
 enum class ChatEventsEventsItemVariant2ServiceTier {
-    @SerialName("priority") PRIORITY
+    @SerialName("priority") PRIORITY,
+    @SerialName("ultrafast") ULTRAFAST,
 }
 
 @Serializable

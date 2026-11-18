@@ -501,6 +501,7 @@ export const availableRunModelSchema = object({
       ]),
     ),
     serviceTier: zEnum(["priority"]).nullable(),
+    ultrafastAvailable: boolean().optional(),
   }).optional(),
   // Caller-specific, response-only routing. A candidate has not captured a
   // concrete subscription account for a run.

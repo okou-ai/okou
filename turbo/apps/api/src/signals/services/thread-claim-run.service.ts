@@ -19,6 +19,7 @@ import {
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { createThreadContext } from "./thread-context.signals";
+import { validateCodexUltrafast$ } from "./codex-ultrafast-admission.service";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-queue-revocation.service";
 import {
@@ -3320,7 +3321,7 @@ export function createThreadClaimRunObjects(
         }
         return model;
       }
-      return await set(
+      const rejection = await set(
         checkRunAdmission$,
         {
           catalog: await get(claimCatalog$),
@@ -3329,6 +3330,23 @@ export function createThreadClaimRunObjects(
           modelProviderType: model.type,
           selectedModel: model.selectedModel,
           enforceBuiltInCredits: isBuiltInModelProviderType(model.type),
+        },
+        signal,
+      );
+      if (rejection || input.command.codexServiceTier !== "ultrafast") {
+        return rejection;
+      }
+      const context = await get(contentContext$);
+      if (isRouteError(context)) {
+        return context;
+      }
+      return await set(
+        validateCodexUltrafast$,
+        {
+          orgId: claim.orgId,
+          userId: input.command.owner.userId,
+          featureSwitchContext: context.featureSwitchContext,
+          provider: model,
         },
         signal,
       );
@@ -4127,7 +4145,7 @@ interface ThreadRunPersistenceArgs {
   readonly chatThreadId: string;
   readonly agentRunMetadata: AgentRunMetadata;
   readonly modelSelection: ModelFirstPin;
-  readonly codexServiceTier?: "fast";
+  readonly codexServiceTier?: "fast" | "ultrafast";
   readonly queueFirstAssociation: QueueFirstRunAssociation;
   readonly timingDimensions: ApiDispatchTimingDimensions;
   readonly threadContinuation: PendingThreadContinuation;
@@ -4785,7 +4803,7 @@ interface ThreadRunArgs {
   readonly orgId: string;
   readonly userId: string;
   readonly piExecution: boolean;
-  readonly codexServiceTier?: "fast";
+  readonly codexServiceTier?: "fast" | "ultrafast";
   readonly agentRunMetadata: AgentRunMetadata;
   readonly queueFirstAssociation: QueueFirstRunAssociation;
   readonly prompt: string;

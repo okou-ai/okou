@@ -123,7 +123,7 @@ import {
   createComposerConnectorSignals,
   type ComposerConnectorSignals,
 } from "../okou-page/connectors.ts";
-import { isCodexFastModeAvailableForSelection } from "../okou-page/model-default-selection.ts";
+import { isServiceTierAvailableForSelection } from "../okou-page/model-default-selection.ts";
 import { createPersonalModelProviderAuthSignals } from "../okou-page/personal-model-provider-auth.ts";
 import { reloadMountedComposerWorkflows$ } from "../okou-page/tiptap-workflow-composer.ts";
 import { createBrowserPresenceSignals } from "./browser-presence.ts";
@@ -446,20 +446,19 @@ function createModelSelection(
     },
   );
 
-  const codexFastModeActive$ = computed(async (get): Promise<boolean> => {
+  const codexServiceTier$ = computed(async (get) => {
     const [models, selectedModel] = await Promise.all([
       get(availableRunModels$),
       get(effectiveSelectedModel$),
     ]);
+    const tier = get(threadMeta$)?.serviceTier;
     if (
-      !isCodexFastModeAvailableForSelection({
-        models,
-        selectedModel,
-      })
+      !tier ||
+      !isServiceTierAvailableForSelection({ models, selectedModel, tier })
     ) {
-      return false;
+      return undefined;
     }
-    return get(threadMeta$)?.serviceTier === "priority";
+    return tier === "priority" ? ("fast" as const) : tier;
   });
 
   const {
@@ -470,7 +469,7 @@ function createModelSelection(
   return {
     selectedModel$,
     effectiveSelectedModel$,
-    codexFastModeActive$,
+    codexServiceTier$,
     modelSettings$,
     selectedModelOauthAvailable$,
     configureSelectedModel$,
@@ -485,12 +484,12 @@ interface ModelSelectionForSend {
 function createModelSelectionForSend({
   selectedModel$,
   effectiveSelectedModel$,
-  codexFastModeActive$,
+  codexServiceTier$,
   setModelSelection$,
 }: {
   selectedModel$: Computed<string | null>;
   effectiveSelectedModel$: Computed<Promise<string | null>>;
-  codexFastModeActive$: Computed<Promise<boolean>>;
+  codexServiceTier$: Computed<Promise<"fast" | "ultrafast" | undefined>>;
   setModelSelection$: Command<
     Promise<void>,
     [ModelProviderSelection | null, AbortSignal]
@@ -501,9 +500,9 @@ function createModelSelectionForSend({
       { get, set },
       signal: AbortSignal,
     ): Promise<ModelSelectionForSend> => {
-      const [selectedModel, codexFastModeActive] = await Promise.all([
+      const [selectedModel, codexServiceTier] = await Promise.all([
         get(effectiveSelectedModel$),
-        get(codexFastModeActive$),
+        get(codexServiceTier$),
       ]);
       signal.throwIfAborted();
       // A pin without an offered route is shown as Auto. Switch the thread to
@@ -517,9 +516,7 @@ function createModelSelectionForSend({
         signal.throwIfAborted();
       }
       return {
-        selection: codexFastModeActive
-          ? { selectedModel, codexServiceTier: "fast" }
-          : { selectedModel },
+        selection: { selectedModel, codexServiceTier },
       };
     },
   );
@@ -3760,9 +3757,7 @@ function createChatThreadComposerSignals(
       const modelSettings = get(modelSelection.modelSettings$);
       return {
         selectedModel,
-        ...((await get(modelSelection.codexFastModeActive$))
-          ? { codexServiceTier: "fast" as const }
-          : {}),
+        codexServiceTier: await get(modelSelection.codexServiceTier$),
         modelSettings,
       };
     },

@@ -3,7 +3,7 @@ import { object, enum as zEnum, type infer as zInfer } from "zod";
 import { reasoningEffortSchema } from "./model-reasoning-effort";
 import { runModelIdSchema } from "./run-model-id";
 
-export const codexServiceTierSchema = zEnum(["fast"]);
+export const codexServiceTierSchema = zEnum(["fast", "ultrafast"]);
 
 export const selectedModelRequestSchema = runModelIdSchema;
 
