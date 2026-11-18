@@ -954,6 +954,121 @@ test.each([false, true])(
   },
 );
 
+test.each([
+  { sidebar: false, refreshFails: false },
+  { sidebar: true, refreshFails: false },
+  { sidebar: false, refreshFails: true },
+  { sidebar: true, refreshFails: true },
+])(
+  "grouped Share stays available during a permission preview refresh (sidebar: $sidebar, failure: $refreshFails)",
+  async ({ sidebar, refreshFails }) => {
+    const requested = createDeferredPromise<void>(context.signal);
+    const response = createDeferredPromise<void>(context.signal);
+    const clipboard = context.mocks.browser.clipboardWriteText();
+    let status: SiteVisibilityStatus = {
+      siteId,
+      visibility: "private",
+      revision: null,
+    };
+    const temporary = `https://pv-${"c".repeat(48)}.okou.app/`;
+    context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+      return respond(200, status);
+    });
+    context.mocks.api(
+      hostContract.updateSiteVisibility,
+      ({ body, respond }) => {
+        status = {
+          siteId,
+          visibility: body.visibility,
+          revision: crypto.randomUUID(),
+        };
+        return respond(200, status);
+      },
+    );
+    context.mocks.api(hostContract.sitePreview, async ({ respond }) => {
+      if (status.revision !== null) {
+        requested.resolve();
+        await response.promise;
+        if (refreshFails) {
+          return respond(500, {
+            error: {
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Website preview unavailable",
+            },
+          });
+        }
+        return respond(200, { url: site.url, expiresAt: null });
+      }
+      return respond(200, {
+        url: temporary,
+        expiresAt: "2099-01-01T00:00:00Z",
+      });
+    });
+    await openSite({ sidebar, groupedActions: true });
+    const label = sidebar ? "Share artifact" : "Share";
+    await openShare(label);
+    await expectPermission("Only me");
+    const preview = screen.getByTestId(
+      sidebar ? "artifact-sidebar" : "artifact-dialog-site-frame",
+    );
+    await waitFor(() => {
+      expect(preview.querySelector("iframe")).toHaveAttribute("src", temporary);
+    });
+    const menu = screen.getByRole("dialog", { name: label });
+    click(permission("Anyone with the link"));
+    await requested.promise;
+    try {
+      await expectPermission("Anyone with the link");
+      expect(getButtonByName(label)).toBeVisible();
+      expect(getButtonByName(label)).toHaveAttribute("aria-expanded", "true");
+      expect(getButtonByName("Copy link", menu)).toBeEnabled();
+      expect(menu).toBeVisible();
+    } finally {
+      response.resolve();
+    }
+    await waitFor(() => {
+      const result = refreshFails
+        ? screen.getByText("This website is temporarily unavailable")
+            .textContent
+        : preview.querySelector("iframe")?.getAttribute("src");
+      expect(result).toBe(
+        refreshFails ? "This website is temporarily unavailable" : site.url,
+      );
+    });
+    expect(getButtonByName(label)).toBeVisible();
+    click(getButtonByName("Copy link", menu));
+    await waitFor(() => {
+      expect(clipboard.writes).toStrictEqual([site.url]);
+    });
+  },
+);
+
+test.each([false, true])(
+  "the grouped toolbar waits for website permissions before revealing Share (sidebar: %s)",
+  async (sidebar) => {
+    const requested = createDeferredPromise<void>(context.signal);
+    const response = createDeferredPromise<void>(context.signal);
+    context.mocks.api(hostContract.siteVisibility, async ({ respond }) => {
+      requested.resolve();
+      await response.promise;
+      return respond(200, { siteId, visibility: "private", revision: null });
+    });
+    await openSite({ sidebar, groupedActions: true });
+    await requested.promise;
+    const label = sidebar ? "Share artifact" : "Share";
+    try {
+      expect(screen.getByLabelText(label)).not.toBeVisible();
+    } finally {
+      response.resolve();
+    }
+    await waitFor(() => {
+      expect(getButtonByName(label)).toBeVisible();
+    });
+    await openShare(label);
+    await expectPermission("Only me");
+  },
+);
+
 test("permissions preload without claiming public access while their read is pending", async () => {
   mockSiteAlias();
   const requested = createDeferredPromise<void>(context.signal);

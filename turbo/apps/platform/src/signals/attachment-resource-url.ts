@@ -119,6 +119,14 @@ function createWebFilePresignedToken$(
   });
 }
 
+function isEditableHostedSiteUrl(source: URL): boolean {
+  const domain = resolveEditableHostedSiteDomain();
+  const label = source.hostname.endsWith(`.${domain}`)
+    ? source.hostname.slice(0, -domain.length - 1)
+    : "";
+  return /^[a-z0-9][a-z0-9-]*$/u.test(label) && !/^(?:pv|ps|sh)-/u.test(label);
+}
+
 function createAttachmentPresignedToken$(
   url: string,
 ): Computed<Promise<AttachmentPresignedToken | null>> {
@@ -131,11 +139,7 @@ function createAttachmentPresignedToken$(
   }
   if (URL.canParse(url)) {
     const source = new URL(url);
-    const domain = resolveEditableHostedSiteDomain();
-    const label = source.hostname.endsWith(`.${domain}`)
-      ? source.hostname.slice(0, -domain.length - 1)
-      : "";
-    if (/^[a-z0-9][a-z0-9-]*$/u.test(label) && !/^(?:pv|ps|sh)-/u.test(label)) {
+    if (isEditableHostedSiteUrl(source)) {
       const currentSource$ = computed((get) => {
         return currentHostedSiteUrl(url, get(hostedSiteUrlChanges$));
       });
@@ -210,6 +214,14 @@ export function createAttachmentPreviewSignals(
     );
   });
   const shareUrl$ = computed(async (get) => {
+    // A canonical share address does not depend on a temporary preview grant.
+    if (
+      !resolvedToken &&
+      URL.canParse(url) &&
+      isEditableHostedSiteUrl(new URL(url))
+    ) {
+      return currentHostedSiteUrl(url, get(hostedSiteUrlChanges$));
+    }
     const token = await get(presignedToken$);
     return token === null
       ? currentHostedSiteUrl(url, get(hostedSiteUrlChanges$))
