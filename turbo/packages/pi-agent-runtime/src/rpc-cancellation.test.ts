@@ -77,6 +77,20 @@ export default function (pi) {
     });
   });
   let notifying = true;
+  if (process.argv[3] === "wire-notification") pi.on("input", async (event) => {
+    if (event.text !== "delayed input across completion") return;
+    await new Promise((resolve) => {
+      const release = (message) => {
+        if (message === "release-delayed-input") {
+          process.off("message", release);
+          resolve();
+        }
+      };
+      process.on("message", release);
+      process.send({ type: "input-held" });
+    });
+    return { action: "continue" };
+  });
   if (process.argv[3] === "wire-notification") pi.on("agent_settled", async (_event, ctx) => {
     if (!notifying) return;
     notifying = false;
@@ -502,6 +516,12 @@ describe("official sandbox RPC cancellation", () => {
     rpc.send({ id: "startup", type: "prompt", message: "run the tool" });
     expect(await rpc.response("startup")).toMatchObject({ success: true });
     await rpc.notification("tool-start");
+    rpc.send({
+      id: "delayed-input",
+      type: "steer",
+      message: "delayed input across completion",
+    });
+    await rpc.notification("input-held");
     rpc.child.send("release-tool");
     expect(await rpc.notification("notifying")).toMatchObject({
       idle: true,
@@ -522,6 +542,11 @@ describe("official sandbox RPC cancellation", () => {
         error: expect.stringContaining("settling"),
       });
     }
+    rpc.child.send("release-delayed-input");
+    expect(await rpc.response("delayed-input")).toMatchObject({
+      success: false,
+      error: expect.stringContaining("settling"),
+    });
     expect(assistantEnds(rpc.records)).toHaveLength(2);
     expect(
       rpc.records.some((record) => {

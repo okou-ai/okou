@@ -23,8 +23,9 @@ admission and releases ownership. Duplicate RPC aborts join this work.
 Ordinary `agent_settled` retains upstream's final notification-only semantics:
 handlers observe idle/no native signal, and requested prompts or custom turns
 are deferred until notification dispatch finishes. Direct steering/follow-up
-admission during notification is explicitly rejected, because the completed
-native owner cannot persist that input. Existing pending-tool callers retain
+admission during notification is explicitly rejected, with admission checked
+again after awaited input extensions, because the completed native owner cannot
+persist that input. Existing pending-tool callers retain
 their separate legacy preparation/commit callbacks; those semantics must not be
 imposed on ordinary prompts. Accepted cancelled input may follow the aborted
 assistant in history, so terminal assertions select the last assistant.

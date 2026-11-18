@@ -1,5 +1,5 @@
 diff --git a/dist/core/agent-session.d.ts b/dist/core/agent-session.d.ts
-index 8b6a58430eea2cbb463e2b51773a8bc6e4914505..c5053c45edccac4dfd74a45ee8564e16e3b32bb5 100644
+index 8b6a58430eea2cbb463e2b51773a8bc6e4914505..1880829b93dbacea72e90b092dbb9dc2d0a46e51 100644
 --- a/dist/core/agent-session.d.ts
 +++ b/dist/core/agent-session.d.ts
 @@ -505,6 +505,8 @@ export declare class AgentSession {
@@ -12,7 +12,7 @@ index 8b6a58430eea2cbb463e2b51773a8bc6e4914505..c5053c45edccac4dfd74a45ee8564e16
       * Apply a prompt and tool loadout for the next request. Sets the executable tools and
       * returns a system message patching the prompt sections the model currently has (replayed
 diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
-index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..21cb5680c33bf6a8e5b295d6bd5517fc5ad44173 100644
+index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..10f83064a0c37cbf0bbc3809585538e2651f0384 100644
 --- a/dist/core/agent-session.js
 +++ b/dist/core/agent-session.js
 @@ -1478,6 +1478,48 @@ export class AgentSession {
@@ -95,7 +95,7 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..21cb5680c33bf6a8e5b295d6bd5517fc
          }
          finally {
              if (this._agentRunAbortRequested)
-@@ -1834,6 +1872,9 @@ export class AgentSession {
+@@ -1834,12 +1872,19 @@ export class AgentSession {
          }
      }
      async _queueUserInput(text, images, behavior, source) {
@@ -105,7 +105,17 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..21cb5680c33bf6a8e5b295d6bd5517fc
          if (text.startsWith("/")) {
              this._throwIfExtensionCommand(text);
          }
-@@ -1877,8 +1918,6 @@ export class AgentSession {
+         const processedInput = await this._runInputHandlers(text, images, source, this.isStreaming ? behavior : undefined);
+         if (!processedInput)
+             return "handled";
++        // An input extension can yield across the native completion boundary.
++        if (this._isEmittingAgentSettled) {
++            throw new Error("Agent is settling; send a new prompt after notification dispatch.");
++        }
+         let expandedText = this._expandSkillCommand(processedInput.text);
+         expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
+         if (behavior === "steer") {
+@@ -1877,8 +1922,6 @@ export class AgentSession {
       * Internal: Queue a steering message (already expanded, no extension command check).
       */
      async _queueSteer(text, images) {
@@ -114,7 +124,7 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..21cb5680c33bf6a8e5b295d6bd5517fc
          const content = [{ type: "text", text }];
          if (images) {
              content.push(...images);
-@@ -1887,13 +1926,13 @@ export class AgentSession {
+@@ -1887,13 +1930,13 @@ export class AgentSession {
          if (images?.length)
              this._queuedMessagesWithImages.add(message);
          this.agent.steer(message);
@@ -130,7 +140,7 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..21cb5680c33bf6a8e5b295d6bd5517fc
          const content = [{ type: "text", text }];
          if (images) {
              content.push(...images);
-@@ -1902,6 +1941,8 @@ export class AgentSession {
+@@ -1902,6 +1945,8 @@ export class AgentSession {
          if (images?.length)
              this._queuedMessagesWithImages.add(message);
          this.agent.followUp(message);
@@ -139,7 +149,7 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..21cb5680c33bf6a8e5b295d6bd5517fc
      }
      /** Replace a queued user message's images in place with normalized ones, appending hints to its text. */
      async _normalizeQueuedMessageImages(message) {
-@@ -2083,10 +2124,10 @@ export class AgentSession {
+@@ -2083,10 +2128,10 @@ export class AgentSession {
          await this.waitForIdle();
      }
      async waitForIdle() {
@@ -153,7 +163,7 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..21cb5680c33bf6a8e5b295d6bd5517fc
      }
      // =========================================================================
      // Model Management
-@@ -2488,6 +2529,11 @@ export class AgentSession {
+@@ -2488,6 +2533,11 @@ export class AgentSession {
          const settings = this.settingsManager.getCompactionSettings(this.model);
          if (!settings.enabled)
              return false;
@@ -166,7 +176,7 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..21cb5680c33bf6a8e5b295d6bd5517fc
          if (skipAbortedCheck && assistantMessage.stopReason === "aborted")
              return false;
 diff --git a/dist/core/session-manager.js b/dist/core/session-manager.js
-index 7ee05014e13c6434040bfdd7b39b455a6731a7d6..a182ce261b4ad84690231d0412065bed2545deb7 100644
+index 7ee05014e13c6434040bfdd7b39b455a6731a7d6..3f2d5ef412244a340c98eb7c098544881001e8a8 100644
 --- a/dist/core/session-manager.js
 +++ b/dist/core/session-manager.js
 @@ -981,7 +981,12 @@ export class SessionManager {
@@ -626,7 +636,7 @@ index 640d2259a2c6ffb78e67e389e4819b5785637eaf..c7629c97d239d676a9742b90ae18716f
      }
  }
 diff --git a/dist/index.d.ts b/dist/index.d.ts
-index bb8acdb1b034f89e8fcb86a5933fa513d49a8ef3..2255122249eaa0aef78e0065fb2a08992576cb67 100644
+index bb8acdb1b034f89e8fcb86a5933fa513d49a8ef3..c6a61e5c9759e3600f071114eb3edd7be6497194 100644
 --- a/dist/index.d.ts
 +++ b/dist/index.d.ts
 @@ -1,4 +1,5 @@
@@ -636,7 +646,7 @@ index bb8acdb1b034f89e8fcb86a5933fa513d49a8ef3..2255122249eaa0aef78e0065fb2a0899
  export { AgentSession, type AgentSessionConfig, type AgentSessionEvent, type AgentSessionEventListener, type ModelCycleResult, type ParsedSkillBlock, type PromptOptions, parseSkillBlock, type SessionStats, } from "./core/agent-session.ts";
  export { readStoredCredential } from "./core/auth-storage.ts";
 diff --git a/dist/index.js b/dist/index.js
-index ab5cfccc3a90939e533b9118122189507a7af326..e93b4ac26549445e2f487d0d6459a9f1396cdc94 100644
+index ab5cfccc3a90939e533b9118122189507a7af326..ec3f57f907f447cf5207f55892526114b03c06dc 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -1,4 +1,5 @@
