@@ -40,8 +40,7 @@ class TestReleaseResponseStreamState:
             "path",
             "response_content_type",
             "metadata",
-            "finish_key",
-            "reports_on_interruption",
+            "terminal_state_key",
         ),
         [
             pytest.param(
@@ -53,7 +52,6 @@ class TestReleaseResponseStreamState:
                     metadata_keys.FIREWALL_BILLABLE: False,
                 },
                 "model_json_usage_finish",
-                False,
                 id="model-json",
             ),
             pytest.param(
@@ -67,7 +65,6 @@ class TestReleaseResponseStreamState:
                     metadata_keys.MODEL_USAGE_PROVIDER: "gpt-5.5",
                 },
                 "model_sse_usage_finish",
-                False,
                 id="model-sse",
             ),
             pytest.param(
@@ -79,8 +76,7 @@ class TestReleaseResponseStreamState:
                     metadata_keys.FIREWALL_BILLABLE: True,
                     metadata_keys.ORIGINAL_URL: "https://api.x.com/2/tweets",
                 },
-                "connector_response_finish",
-                False,
+                "_connector_response_finalizer",
                 id="x-json",
             ),
             pytest.param(
@@ -92,21 +88,19 @@ class TestReleaseResponseStreamState:
                     metadata_keys.FIREWALL_BILLABLE: True,
                     metadata_keys.ORIGINAL_URL: "https://api.x.com/2/tweets/search/stream",
                 },
-                "connector_response_finish",
-                True,
+                "_connector_response_finalizer",
                 id="x-ndjson",
             ),
         ],
     )
-    def test_removes_unfinalized_parser_finish_callback(
+    def test_removes_unfinalized_parser_state(
         self,
         real_flow,
         host,
         path,
         response_content_type,
         metadata,
-        finish_key,
-        reports_on_interruption,
+        terminal_state_key,
     ):
         flow = real_flow(with_response=False, host=host, path=path)
         flow.metadata.update(metadata)
@@ -116,15 +110,12 @@ class TestReleaseResponseStreamState:
         )
 
         mitm_addon.responseheaders(flow)
-        assert finish_key in flow.metadata
-        assert (
-            "connector_response_report_on_interruption" in flow.metadata
-        ) is reports_on_interruption
+        assert terminal_state_key in flow.metadata
 
         response_streaming.release_response_stream_state(flow)
 
-        assert finish_key not in flow.metadata
-        assert "connector_response_report_on_interruption" not in flow.metadata
+        assert terminal_state_key not in flow.metadata
+        assert not response_streaming.finalize_interrupted_connector_response_state(flow)
         assert metadata_keys.RESPONSE_STREAM_STATE not in flow.metadata
         assert stream_capture.captured_response_stream_body(flow) is None
         assert flow.response.stream is False
