@@ -18,6 +18,7 @@
   int appearance_light;
   int appearance_system;
   int auth_welcome;
+  int back;
   int chat_list_title;
   int chat_loading;
   int chat_status_observed;
@@ -32,7 +33,6 @@
   int controls_stop;
   int controls_unknown;
   int history_completed;
-  int history_sidebar;
   int instructions_conflict;
   int instructions_current;
   int instructions_refresh;

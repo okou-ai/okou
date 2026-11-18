@@ -4,7 +4,6 @@ import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListModel
-import ai.okou.android.chat.ChatListRoute
 import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.preferences.MemberPreferencesModel
 import ai.okou.android.preferences.MemberPreferencesSettings
@@ -160,14 +159,14 @@ class OkouAppTest {
                     val color = MaterialTheme.colorScheme.background
                     SideEffect { background = color }
                     OkouApp(
+                        models.first.first,
+                        models.first.second,
+                        controls,
                         state,
                         models.second::selectMode,
                         models.second::retry,
                         workspacePreferences = {
                             models.third?.let { MemberPreferencesSettings(it) }
-                        },
-                        homeContent = {
-                            ChatListRoute(models.first.first, models.first.second, controls)
                         },
                     )
                 }
@@ -189,7 +188,7 @@ class OkouAppTest {
     }
 
     @Test
-    fun chatFilterSurvivesAvatarNavigationAndBack() {
+    fun chatFilterSurvivesSettingsAndBack() {
         render()
         compose.onNodeWithText("Chats").assertExists()
         compose.onNodeWithText("Archived").performClick()

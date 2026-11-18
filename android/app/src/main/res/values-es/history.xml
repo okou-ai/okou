@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="history_sidebar">Conversaciones</string>
     <string name="history_loading">Cargando conversación…</string>
     <string name="history_failed">No se pudo actualizar la conversación. Inténtalo de nuevo.</string>
     <string name="history_missing">Esta conversación se eliminó o no está disponible.</string>

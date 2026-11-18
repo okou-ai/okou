@@ -6,9 +6,10 @@ database, API service, account credentials, or local Web server is needed.
 
 Signed-out launches open the native Clerk login page. After authoritative
 membership and workspace bootstrap, the application provides a native conversation
-list and history reader. Projects expand directly in the conversation sidebar;
-selecting a conversation opens its history, Back returns to the retained list
-position, and the avatar opens Settings. Settings provides device-local
+list and history reader. Projects expand in the workspace chat list. Selecting a
+chat opens its conversation, and Back restores the same list position, filter
+and expanded Projects. Settings opens from the current app bar and returns to
+the same list, chat or new-chat draft. Settings provides device-local
 Light/Dark/Follow system appearance. The conversation list remains usable while
 Preferences DataStore loads or reports an IO error;
 Settings exposes loading, saving and retry states. Appearance is confirmed from

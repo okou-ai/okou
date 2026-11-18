@@ -83,11 +83,11 @@ class SavedUiStateTest {
         restoration.setContent {
             val histories = rememberConversationUiState()
             collapsed = rememberCollapsedProjects()
-            var selected by rememberUiTargetId()
+            var navigation by rememberWorkspaceNavigation()
             fun open(id: Int) {
                 val target = "00000000-0000-4000-8000-${id.toString().padStart(12, '0')}"
                 histories.open(target)
-                selected = target
+                navigation = WorkspaceNavigation(WorkspaceTarget.Chat(target))
             }
             OkouTheme(false) {
                 Column {
@@ -97,7 +97,7 @@ class SavedUiStateTest {
                     Button(onClick = { open(SavedStatePolicy.CONVERSATION_STATES) }) {
                         Text("Recent conversation")
                     }
-                    selected?.let { id ->
+                    (navigation.target as? WorkspaceTarget.Chat)?.id?.let { id ->
                         histories.Content(id) {
                             val position = rememberLazyListState()
                             LazyColumn(

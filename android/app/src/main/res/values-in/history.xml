@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="history_sidebar">Percakapan</string>
     <string name="history_loading">Memuat percakapan…</string>
     <string name="history_failed">Percakapan tidak dapat diperbarui. Coba lagi.</string>
     <string name="history_missing">Percakapan ini telah dihapus atau tidak tersedia.</string>
