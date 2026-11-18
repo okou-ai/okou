@@ -10020,6 +10020,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           await api.requestCancelRun(actor, run.runId, [200]);
           const cancelled = await api.readRun(actor, run.runId);
           expect(cancelled.status).toBe("cancelled");
+          // Cancellation commits before its background Runner notification.
+          await flushWaitUntilForTest();
           expect(context.mocks.ably.publish).toHaveBeenCalledWith("cancel", {
             runId: run.runId,
             mode: "cooperative",
