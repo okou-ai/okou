@@ -1,7 +1,5 @@
-import {
-  ArtifactDeleteButton,
-  ArtifactPreviewMoreMenu,
-} from "./artifact-deletion.tsx";
+import { ArtifactDeleteButton } from "./artifact-deletion.tsx";
+import { ArtifactPreviewActionGroup } from "./artifact-preview-action-group.tsx";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
@@ -1383,6 +1381,7 @@ function ArtifactPreviewDialogThreadResolver({
   // images in its message.
   return (
     <ArtifactPreviewDialogContent
+      actionsPending={loadable.state === "loading"}
       artifact={preview.artifact}
       imageNavigation={{
         onNext: imageNavigationAction("next", hasNextImage),
@@ -1394,10 +1393,12 @@ function ArtifactPreviewDialogThreadResolver({
 }
 
 function ArtifactPreviewDialogActions({
+  actionsPending,
   artifact,
   fullscreen,
   preview,
 }: {
+  actionsPending: boolean;
   artifact: AttachmentArtifactMetadata | undefined;
   fullscreen: boolean;
   preview: AttachmentLightboxState;
@@ -1409,12 +1410,13 @@ function ArtifactPreviewDialogActions({
   const toggleLightboxDialogFullscreen = useSet(
     toggleLightboxDialogFullscreen$,
   );
+  const share = useLoadable(preview.shareUrl$);
   const shareUrl = useLastResolved(preview.shareUrl$);
   const downloadMetadata = artifact ?? preview;
   const filename = artifact?.filename ?? artifactDialogFilename(preview);
   const showShare = preview.shareAvailable !== false;
-  const refinedToolbar =
-    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactPreviewToolbar];
+  const groupedActions =
+    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactPreviewActionGroup];
   const showSplitView = preview.splitViewAvailable !== false;
   const annotateLightboxImage = useSet(annotateLightboxImage$);
   const annotationTarget =
@@ -1425,41 +1427,52 @@ function ArtifactPreviewDialogActions({
   };
   return (
     <div className="flex shrink-0 items-center gap-1">
-      {annotationTarget && (
-        <Button
-          showTooltip
-          type="button"
-          variant="quiet"
-          size="icon-sm"
-          data-testid="artifact-dialog-annotate"
-          aria-label={t(($) => {
-            return $.artifacts.annotation.open;
-          })}
-          onClick={() => {
-            annotateLightboxImage();
-          }}
-        >
-          <Pencil size={18} />
-        </Button>
-      )}
-      {showShare && (
-        <ArtifactShareButton
-          artifactShareIdentity$={preview.artifactShareIdentity$}
+      <ArtifactPreviewActionGroup
+        key={preview.url}
+        enabled={groupedActions}
+        artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
+        metadataPending={actionsPending}
+        shareAvailable={showShare}
+        sharePending={share.state === "loading"}
+        shareUrl={shareUrl}
+        surface="dialog"
+        url={preview.url}
+      >
+        {annotationTarget && (
+          <Button
+            showTooltip
+            type="button"
+            variant="quiet"
+            size="icon-sm"
+            data-testid="artifact-dialog-annotate"
+            aria-label={t(($) => {
+              return $.artifacts.annotation.open;
+            })}
+            onClick={() => {
+              annotateLightboxImage();
+            }}
+          >
+            <Pencil size={18} />
+          </Button>
+        )}
+        {showShare && (
+          <ArtifactShareButton
+            artifactShareIdentity$={preview.artifactShareIdentity$}
+            surface="dialog"
+            shareUrl={shareUrl}
+            ariaLabel={t(($) => {
+              return $.artifacts.actions.share;
+            })}
+            iconSize={18}
+            url={preview.url}
+          />
+        )}
+        <ArtifactDownloadMenu
           surface="dialog"
-          shareUrl={shareUrl}
+          key={`${preview.url}:${filename}`}
           ariaLabel={t(($) => {
-            return $.artifacts.actions.share;
+            return $.artifacts.actions.downloadOptions;
           })}
-          iconSize={18}
-          url={preview.url}
-        />
-      )}
-      {refinedToolbar ? (
-        <ArtifactPreviewMoreMenu
-          key={preview.url}
-          surface="dialog"
-          artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
-          origin={{ kind: "preview-dialog" }}
           artifactKind={downloadMetadata.artifactKind}
           contentType={downloadMetadata.contentType}
           previewKind={preview.kind}
@@ -1468,50 +1481,37 @@ function ArtifactPreviewDialogActions({
           syncTarget={artifactDialogSyncTarget(artifact)}
           url={preview.url}
         />
-      ) : (
-        <>
-          <ArtifactDownloadMenu
-            surface="dialog"
-            key={`${preview.url}:${filename}`}
-            ariaLabel={t(($) => {
-              return $.artifacts.actions.downloadOptions;
-            })}
-            artifactKind={downloadMetadata.artifactKind}
-            contentType={downloadMetadata.contentType}
-            previewKind={preview.kind}
-            filename={filename}
-            iconSize={18}
-            syncTarget={artifactDialogSyncTarget(artifact)}
-            url={preview.url}
-          />
-          <ArtifactDeleteButton
-            artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
-            origin={{ kind: "preview-dialog" }}
-            iconSize={18}
-          />
-        </>
-      )}
-      <ArtifactActionSeparator />
-      {showSplitView && (
-        <ArtifactDialogSplitViewButton onClick={openInSplitView} />
-      )}
-      {artifactSupportsFullscreen(preview.kind) && (
-        <ArtifactDialogFullscreenButton
-          fullscreen={fullscreen}
-          onClick={() => {
-            toggleLightboxDialogFullscreen();
-          }}
+        <ArtifactDeleteButton
+          artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
+          origin={{ kind: "preview-dialog" }}
+          iconSize={18}
+          menu={groupedActions}
         />
-      )}
+        {!groupedActions && <ArtifactActionSeparator />}
+        {showSplitView && (
+          <ArtifactDialogSplitViewButton onClick={openInSplitView} />
+        )}
+        {artifactSupportsFullscreen(preview.kind) && (
+          <ArtifactDialogFullscreenButton
+            fullscreen={fullscreen}
+            onClick={() => {
+              toggleLightboxDialogFullscreen();
+            }}
+          />
+        )}
+      </ArtifactPreviewActionGroup>
+      {groupedActions && <ArtifactActionSeparator />}
       <ArtifactPreviewCloseButton />
     </div>
   );
 }
 
 function ArtifactPreviewDialogHeaderActions({
+  actionsPending,
   artifact,
   preview,
 }: {
+  actionsPending: boolean;
   artifact: AttachmentArtifactMetadata | undefined;
   preview: AttachmentLightboxState;
 }) {
@@ -1519,6 +1519,7 @@ function ArtifactPreviewDialogHeaderActions({
 
   return (
     <ArtifactPreviewDialogActions
+      actionsPending={actionsPending}
       artifact={artifact}
       fullscreen={fullscreen}
       preview={preview}
@@ -1549,10 +1550,12 @@ function ArtifactPreviewDialogBody({
 }
 
 function ArtifactPreviewDialogContent({
+  actionsPending = false,
   artifact,
   imageNavigation,
   preview,
 }: {
+  actionsPending?: boolean;
   artifact: AttachmentArtifactMetadata | undefined;
   imageNavigation?: ArtifactImageNavigationActions;
   preview: AttachmentLightboxState;
@@ -1587,6 +1590,7 @@ function ArtifactPreviewDialogContent({
             </div>
           </div>
           <ArtifactPreviewDialogHeaderActions
+            actionsPending={actionsPending}
             artifact={artifact}
             preview={preview}
           />

@@ -34,11 +34,9 @@ type Visibility = zInfer<typeof hostedSiteVisibilitySchema>;
 function createSiteVisibilitySignals(
   sourceUrl: string,
   site$: Computed<Promise<SiteUrl | null>>,
-  retryRevision$: State<number>,
 ) {
   const reload$ = state(0);
   const details$ = computed(async (get) => {
-    get(retryRevision$);
     const site = await get(site$);
     if (
       !site ||
@@ -231,7 +229,7 @@ function createSiteUrlEditorSignals(
   };
 }
 
-function createSiteUrlSignals(sourceUrl: string, reload$: State<number>) {
+function createSiteUrlSignals(sourceUrl: string) {
   const saved$ = state<SiteUrl | null>(null);
   const currentUrl$ = computed((get) => {
     return currentHostedSiteUrl(
@@ -249,7 +247,6 @@ function createSiteUrlSignals(sourceUrl: string, reload$: State<number>) {
         publicSlug: new URL(currentUrl).hostname.split(".")[0]!,
       };
     }
-    get(reload$);
     const url = new URL(currentUrl);
     const result = await accept(
       get(apiClient$)(hostContract).siteUrl({
@@ -272,14 +269,10 @@ function createSiteUrlSignals(sourceUrl: string, reload$: State<number>) {
 
 function createHostedSiteShareSession(sourceUrl: string) {
   const signal$ = state<AbortSignal | null>(null);
-  const reload$ = state(0);
-  const { saved$, details$, copyUrl$ } = createSiteUrlSignals(
-    sourceUrl,
-    reload$,
-  );
+  const { saved$, details$, copyUrl$ } = createSiteUrlSignals(sourceUrl);
   const open$ = state(false);
   const editor = createSiteUrlEditorSignals(details$, saved$);
-  const visibility = createSiteVisibilitySignals(sourceUrl, details$, reload$);
+  const visibility = createSiteVisibilitySignals(sourceUrl, details$);
   const banner = createHostedSiteBannerSignals(visibility.visibility$);
   const hasSettings$ = computed(async (get) => {
     const [details, permissions] = await Promise.all([
@@ -339,11 +332,6 @@ function createHostedSiteShareSession(sourceUrl: string) {
   return {
     sourceUrl,
     signal$,
-    retry$: command(({ set }) => {
-      set(reload$, (revision) => {
-        return revision + 1;
-      });
-    }),
     details$,
     copyUrl$,
     hasSettings$,
@@ -400,23 +388,6 @@ function createHostedSiteShareScope() {
   return {
     session$,
     mountRef$,
-    settings$: computed(async (get) => {
-      const session = get(session$);
-      if (!session) {
-        return null;
-      }
-      const [settings] = await Promise.all([
-        get(session.hasSettings$),
-        get(session.banner$),
-      ]);
-      return settings;
-    }),
-    retry$: command(({ get, set }) => {
-      const session = get(session$);
-      if (session) {
-        set(session.retry$);
-      }
-    }),
   };
 }
 

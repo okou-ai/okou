@@ -1,8 +1,6 @@
 import type { ArtifactDeletionOrigin } from "../../signals/artifact-deletion-origin.ts";
-import {
-  ArtifactDeleteButton,
-  ArtifactPreviewMoreMenu,
-} from "./artifact-deletion.tsx";
+import { ArtifactDeleteButton } from "./artifact-deletion.tsx";
+import { ArtifactPreviewActionGroup } from "./artifact-preview-action-group.tsx";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
@@ -112,6 +110,7 @@ type ArtifactSidebarItem = {
 };
 
 type ArtifactSidebarContentProps = {
+  actionsPending?: boolean;
   artifactId?: string;
   agentId?: string | null;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
@@ -171,6 +170,7 @@ export function ArtifactSidebar({
   return (
     <>
       <ArtifactSidebarContent
+        actionsPending={loadable.state === "loading"}
         agentId={agentId}
         artifactRef={artifactRef}
         fullscreenState={fullscreenState}
@@ -209,6 +209,7 @@ function artifactSidebarSyncTargetForItem({
 }
 
 export function ArtifactSidebarContent({
+  actionsPending = false,
   artifactId,
   agentId,
   artifactKind,
@@ -234,9 +235,10 @@ export function ArtifactSidebarContent({
       : artifactRef.resourceUrl$,
   );
   const resourceUrl = resource.state === "hasData" ? resource.data : null;
+  const share = useLoadable(artifactRef.shareUrl$);
   const shareUrl = useLastResolved(artifactRef.shareUrl$);
-  const refinedToolbar =
-    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactPreviewToolbar];
+  const groupedActions =
+    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactPreviewActionGroup];
   const resolvedDisplay = resolveArtifactDisplay(artifactRef, item);
   const display = {
     ...resolvedDisplay,
@@ -261,28 +263,18 @@ export function ArtifactSidebarContent({
 
   return (
     <ArtifactSidebarResolvedContent
+      actionsPending={actionsPending}
+      artifactId={artifactId ?? syncTarget?.artifactId}
       managementAction={
-        refinedToolbar ? (
-          <ArtifactPreviewMoreMenu
-            key={display.url}
-            artifactId={artifactId ?? syncTarget?.artifactId}
-            origin={deletionOrigin}
-            artifactKind={display.artifactKind}
-            contentType={display.contentType}
-            previewKind={display.kind}
-            filename={display.filename}
-            syncTarget={syncTarget}
-            url={display.url}
-          />
-        ) : (
-          <ArtifactDeleteButton
-            artifactId={artifactId ?? syncTarget?.artifactId}
-            origin={deletionOrigin}
-          />
-        )
+        <ArtifactDeleteButton
+          artifactId={artifactId ?? syncTarget?.artifactId}
+          origin={deletionOrigin}
+          menu={groupedActions}
+        />
       }
       recovery={recovery}
       resourceUrl={resourceUrl}
+      sharePending={share.state === "loading"}
       shareUrl={shareUrl}
       closePreview={onClose}
       display={display}
@@ -299,6 +291,9 @@ export function ArtifactSidebarContent({
 }
 
 type ArtifactSidebarResolvedContentProps = {
+  readonly actionsPending: boolean;
+  readonly artifactId?: string;
+  readonly sharePending: boolean;
   readonly managementAction: ReactNode;
   readonly recovery: ReactNode;
   readonly resourceUrl: string | null;
@@ -316,6 +311,9 @@ type ArtifactSidebarResolvedContentProps = {
 };
 
 function ArtifactSidebarResolvedContent({
+  actionsPending,
+  artifactId,
+  sharePending,
   managementAction,
   recovery,
   resourceUrl,
@@ -348,6 +346,9 @@ function ArtifactSidebarResolvedContent({
       }
     >
       <ArtifactSidebarHeader
+        actionsPending={actionsPending}
+        artifactId={artifactId}
+        sharePending={sharePending}
         managementAction={managementAction}
         shareUrl={shareUrl}
         title={display.title}
@@ -500,6 +501,9 @@ function resolveArtifactDisplay(
 }
 
 function ArtifactSidebarHeader({
+  actionsPending,
+  artifactId,
+  sharePending,
   managementAction,
   shareUrl,
   title,
@@ -517,6 +521,9 @@ function ArtifactSidebarHeader({
   onToggleFullscreen,
   onClose,
 }: {
+  actionsPending: boolean;
+  artifactId?: string;
+  sharePending: boolean;
   managementAction: ReactNode;
   shareUrl?: string | null;
   title: string;
@@ -528,7 +535,7 @@ function ArtifactSidebarHeader({
   titleLink: ArtifactTitleLink | null;
   shareAvailable: boolean;
   syncTarget?: ArtifactDownloadSyncTarget;
-  url?: string;
+  url: string;
   fullscreen: boolean;
   onBack?: () => void;
   onToggleFullscreen: () => void;
@@ -570,6 +577,9 @@ function ArtifactSidebarHeader({
         )}
       </div>
       <ArtifactSidebarActions
+        actionsPending={actionsPending}
+        artifactId={artifactId}
+        sharePending={sharePending}
         managementAction={managementAction}
         shareUrl={shareUrl}
         compactActions={compactActions}
@@ -589,6 +599,9 @@ function ArtifactSidebarHeader({
 }
 
 function ArtifactSidebarActions({
+  actionsPending,
+  artifactId,
+  sharePending,
   managementAction,
   shareUrl,
   artifactKind,
@@ -603,6 +616,9 @@ function ArtifactSidebarActions({
   filename,
   url,
 }: {
+  actionsPending: boolean;
+  artifactId?: string;
+  sharePending: boolean;
   managementAction: ReactNode;
   shareUrl?: string | null;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
@@ -615,30 +631,44 @@ function ArtifactSidebarActions({
   shareAvailable: boolean;
   syncTarget?: ArtifactDownloadSyncTarget;
   filename: string;
-  url?: string;
+  url: string;
 }) {
-  const refinedToolbar =
-    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactPreviewToolbar];
+  const groupedActions =
+    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactPreviewActionGroup];
   return (
     <div className="flex shrink-0 items-center gap-1">
-      {url && (
-        <ArtifactSidebarPreviewActions
-          managementAction={managementAction}
-          shareUrl={shareUrl}
-          artifactKind={artifactKind}
-          contentType={contentType}
-          kind={kind}
-          shareAvailable={shareAvailable}
-          syncTarget={syncTarget}
-          filename={filename}
-          url={url}
+      <ArtifactPreviewActionGroup
+        key={url}
+        enabled={groupedActions}
+        artifactId={artifactId}
+        metadataPending={actionsPending}
+        shareAvailable={shareAvailable}
+        sharePending={sharePending}
+        shareUrl={shareUrl}
+        surface="sidebar"
+        url={url}
+      >
+        {url && (
+          <ArtifactSidebarPreviewActions
+            managementAction={managementAction}
+            shareUrl={shareUrl}
+            artifactKind={artifactKind}
+            contentType={contentType}
+            kind={kind}
+            shareAvailable={shareAvailable}
+            showSeparator={!groupedActions}
+            syncTarget={syncTarget}
+            filename={filename}
+            url={url}
+          />
+        )}
+        <ArtifactFullscreenAction
+          fullscreen={fullscreen}
+          onToggleFullscreen={onToggleFullscreen}
         />
-      )}
-      <ArtifactFullscreenAction
-        fullscreen={fullscreen}
-        onToggleFullscreen={onToggleFullscreen}
-      />
-      {compactActions && !refinedToolbar ? (
+      </ArtifactPreviewActionGroup>
+      {groupedActions && <ArtifactActionSeparator />}
+      {compactActions && !groupedActions ? (
         <ArtifactMoreActions onClose={onClose} />
       ) : (
         <ArtifactCloseAction onClose={onClose} />
@@ -654,6 +684,7 @@ function ArtifactSidebarPreviewActions({
   contentType,
   kind,
   shareAvailable,
+  showSeparator,
   syncTarget,
   filename,
   url,
@@ -664,13 +695,12 @@ function ArtifactSidebarPreviewActions({
   contentType?: string | undefined;
   kind?: ArtifactKindForBody;
   shareAvailable: boolean;
+  showSeparator: boolean;
   syncTarget?: ArtifactDownloadSyncTarget;
   filename: string;
   url: string;
 }) {
   const { t } = useTranslation();
-  const refinedToolbar =
-    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactPreviewToolbar];
   return (
     <>
       {kind === "html" && <ArtifactOpenExternalAction url={url} />}
@@ -684,22 +714,20 @@ function ArtifactSidebarPreviewActions({
           url={url}
         />
       )}
-      {!refinedToolbar && (
-        <ArtifactDownloadMenu
-          key={`${url}:${filename}`}
-          ariaLabel={t(($) => {
-            return $.artifacts.actions.downloadArtifact;
-          })}
-          artifactKind={artifactKind}
-          contentType={contentType}
-          previewKind={kind}
-          filename={filename}
-          syncTarget={syncTarget}
-          url={url}
-        />
-      )}
+      <ArtifactDownloadMenu
+        key={`${url}:${filename}`}
+        ariaLabel={t(($) => {
+          return $.artifacts.actions.downloadArtifact;
+        })}
+        artifactKind={artifactKind}
+        contentType={contentType}
+        previewKind={kind}
+        filename={filename}
+        syncTarget={syncTarget}
+        url={url}
+      />
       {managementAction}
-      <ArtifactActionSeparator />
+      {showSeparator && <ArtifactActionSeparator />}
     </>
   );
 }
