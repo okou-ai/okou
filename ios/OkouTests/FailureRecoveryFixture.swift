@@ -137,23 +137,29 @@ final class FailureRecoveryFixture: Sendable {
         }
       default:
         if path.hasSuffix("/subscription-reset") {
-          let body = try XCTUnwrap(
-            JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: String])
-          let (gate, requested) = state.value.withLock { value in
-            value.resetKeys.append(body["idempotencyKey"]!)
-            return (value.resetGate, value.resetRequested)
-          }
-          requested?()
-          if let gate { await gate.wait() }
-          return state.value.withLock { value in
-            if let status = value.accountStatusAfterReset { value.accountStatus = status }
-            return value.resetOutcome == "failure"
-              ? ChatHTTPResponse(status: 503, body: #"{"error":{"message":"Reset unavailable"}}"#)
-              : ChatHTTPResponse(body: "{\"outcome\":\"\(value.resetOutcome)\"}")
-          }
+          return try await Self.resetResponse(request, state: state)
         }
         return try XCTUnwrap(ModelHTTPFixtures.response(path), "Unhandled request: \(path)")
       }
+    }
+  }
+
+  private static func resetResponse(
+    _ request: URLRequest, state: FailureRecoveryState
+  ) async throws -> ChatHTTPResponse {
+    let body = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: String])
+    let (gate, requested) = state.value.withLock { value in
+      value.resetKeys.append(body["idempotencyKey"]!)
+      return (value.resetGate, value.resetRequested)
+    }
+    requested?()
+    if let gate { await gate.wait() }
+    return state.value.withLock { value in
+      if let status = value.accountStatusAfterReset { value.accountStatus = status }
+      return value.resetOutcome == "failure"
+        ? ChatHTTPResponse(status: 503, body: #"{"error":{"message":"Reset unavailable"}}"#)
+        : ChatHTTPResponse(body: "{\"outcome\":\"\(value.resetOutcome)\"}")
     }
   }
 

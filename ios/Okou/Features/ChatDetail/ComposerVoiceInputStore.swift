@@ -131,30 +131,7 @@ final class ComposerVoiceInputStore {
       levels = []
       transcriptionFailed = false
       captureTask?.cancel()
-      captureTask = Task { [weak self] in
-        do {
-          for try await chunk in stream {
-            let duration = try await session.append(chunk.pcm, recordingID: id)
-            guard let self else { return }
-            self.duration = duration
-            levels = Array((levels + [chunk.level]).suffix(32))
-            if phase == .recording { transcribeAvailable(id: id, owner: owner) }
-          }
-          if let self, generation == owner, phase == .recording {
-            phase = .saved
-            error = "Recording paused. Use the saved recording when you're ready."
-          }
-        } catch {
-          if let self {
-            capture.stop()
-            if generation == owner {
-              phase = .saved
-              self.error = error.localizedDescription
-            }
-          }
-          throw error
-        }
-      }
+      captureTask = captureStream(stream, session: session, id: id, owner: owner)
       if generation == owner {
         phase = .recording
         composer.editor.dismissMentions()
@@ -192,6 +169,37 @@ final class ComposerVoiceInputStore {
       captureTask = nil
       phase = .saved
       reportQuotaFailure(error)
+    }
+  }
+
+  /// Returns the original stream Task to the draft owner for cancellation and draining.
+  private func captureStream(
+    _ stream: AsyncThrowingStream<VoiceAudioChunk, Error>, session: VoiceDraftSession,
+    id: UUID, owner: UUID
+  ) -> Task<Void, Error> {
+    return Task { [weak self] in
+      do {
+        for try await chunk in stream {
+          let duration = try await session.append(chunk.pcm, recordingID: id)
+          guard let self else { return }
+          self.duration = duration
+          levels = Array((levels + [chunk.level]).suffix(32))
+          if phase == .recording { transcribeAvailable(id: id, owner: owner) }
+        }
+        if let self, generation == owner, phase == .recording {
+          phase = .saved
+          error = "Recording paused. Use the saved recording when you're ready."
+        }
+      } catch {
+        if let self {
+          capture.stop()
+          if generation == owner {
+            phase = .saved
+            self.error = error.localizedDescription
+          }
+        }
+        throw error
+      }
     }
   }
 

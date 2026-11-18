@@ -740,7 +740,6 @@ class NativeRuleTests(unittest.TestCase):
         self.assertEqual(
             {name for name, value in defaults.items() if value == "no"},
             {
-                "cyclomatic_complexity",
                 "function_parameter_count",
                 "identifier_name",
                 "large_tuple",
@@ -748,7 +747,7 @@ class NativeRuleTests(unittest.TestCase):
                 "nesting",
             },
         )
-        self.assertEqual(sum(value == "yes" for value in defaults.values()), 95)
+        self.assertEqual(sum(value == "yes" for value in defaults.values()), 96)
 
     def lint(self, root, source, rule, filename="Screen.swift"):
         path = root / filename

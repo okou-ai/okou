@@ -1,6 +1,5 @@
 # Inherit upstream defaults; adopt metric and naming policy separately.
 disabled_rules:
-  - cyclomatic_complexity
   - function_parameter_count
   - identifier_name
   - large_tuple
@@ -49,6 +48,11 @@ function_body_length:
 type_body_length:
   warning: 500
   error: 500
+
+# Keep decision paths bounded, including switch cases.
+cyclomatic_complexity:
+  warning: 20
+  error: 20
 
 included:
   - Okou

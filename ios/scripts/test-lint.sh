@@ -232,6 +232,55 @@ for path in "${file_length_paths[@]}"; do
   done
 done
 
+# Complexity counts decisions in functions, initializers and switch dispatch.
+# Verify both the hard threshold and the upstream switch-case policy.
+for path in "${file_length_paths[@]}"; do
+  python3 - "$fixture/$path/ComplexityBoundary.swift" <<'PY'
+import sys
+from pathlib import Path
+
+decisions = "".join(f"  if value == {index} {{ _ = value }}\n" for index in range(20))
+cases = "".join(f"  case {index}: return {index}\n" for index in range(19))
+Path(sys.argv[1]).write_text(
+    "func decisionBoundary(_ value: Int) {\n" + decisions + "}\n"
+    + "final class DecisionBoundary {\n  init(_ value: Int) {\n" + decisions + "  }\n}\n"
+    + "func switchBoundary(_ value: Int) -> Int {\n  switch value {\n"
+    + cases + "  default: return -1\n  }\n}\n"
+)
+PY
+done
+if ! run_lint; then
+  cat "$test_root/lint.log" >&2
+  exit 1
+fi
+for path in "${file_length_paths[@]}"; do
+  python3 - "$fixture/$path/ComplexityBoundary.swift" <<'PY'
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+source.write_text(
+    source.read_text()
+    .replace("  if value == 19 { _ = value }\n", "  if value == 19 { _ = value }\n  if value == 20 { _ = value }\n")
+    .replace("  default: return -1", "  case 19: return 19\n  default: return -1")
+)
+PY
+done
+if run_lint; then
+  echo 'A function, initializer or switch above complexity 20 passed strict lint.' >&2
+  exit 1
+fi
+for path in "${file_length_paths[@]}"; do
+  # Every fixture contains three independent declarations above the limit.
+  findings=$(grep -F "$path/ComplexityBoundary.swift" "$test_root/lint.log" | grep -c '(cyclomatic_complexity)')
+  if [[ "$findings" -ne 3 ]]; then
+    cat "$test_root/lint.log" >&2
+    echo "Expected three complexity failures in $path, found $findings." >&2
+    exit 1
+  fi
+  rm "$fixture/$path/ComplexityBoundary.swift"
+done
+
 # The production-only state rule must be enabled by the real root config.
 for path in "${production_paths[@]}"; do
   printf 'var sharedState = 0\n' > "$fixture/$path/GlobalState.swift"
