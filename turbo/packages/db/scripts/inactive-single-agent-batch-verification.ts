@@ -3,6 +3,8 @@ import type postgres from "postgres";
 
 // Release-infrastructure verification shared by local fixtures and the disposable
 // Neon rehearsal. Raw authored rows remain in session-local temporary tables.
+// In an isolated copy, xmin/ctid detects every rewrite of untouched rows without
+// fetching large TOAST bodies. Do not VACUUM FULL/CLUSTER between these checks.
 const unchanged = [
   ["agents", "id"],
   ["org_metadata", "org_id"],
@@ -42,7 +44,7 @@ export async function captureInactiveBatch(
       CREATE TEMP TABLE batch_sources AS SELECT * FROM inactive_copy_agents;
       CREATE TEMP TABLE batch_workflows AS SELECT * FROM inactive_copy_workflows;
       CREATE TEMP TABLE batch_routes AS SELECT * FROM inactive_copy_chat_routes;
-      CREATE TEMP TABLE batch_personal AS SELECT org_id,user_id,md5(to_jsonb(i)::text) AS fingerprint FROM instructions i;
+      CREATE TEMP TABLE batch_personal AS SELECT org_id,user_id,i.xmin::text || ':' || i.ctid::text AS fingerprint FROM instructions i;
       CREATE TEMP TABLE batch_flags AS SELECT * FROM user_feature_switches;
       CREATE TEMP TABLE batch_automations AS SELECT id,workflow_id,md5((to_jsonb(a)-'workflow_id')::text) AS fingerprint FROM workflow_automations a;
       CREATE TEMP TABLE batch_bindings AS SELECT id,workflow_id,md5((to_jsonb(b)-'workflow_id')::text) AS fingerprint FROM workflow_user_automation_threads b;
@@ -54,16 +56,17 @@ export async function captureInactiveBatch(
     `);
   await sql`INSERT INTO batch_metadata VALUES(${pendingMigrations.includes("1570_backfill_project_sort_order")})`;
   await sql.unsafe(`CREATE TEMP TABLE batch_runs AS
-      SELECT r.id,md5(to_jsonb(r)::text) AS fingerprint FROM agent_runs r JOIN batch_scope s USING(org_id)`);
+      SELECT r.id,r.xmin::text || ':' || r.ctid::text AS fingerprint FROM agent_runs r JOIN batch_scope s USING(org_id)`);
   await sql.unsafe(`CREATE TEMP TABLE batch_chats AS
       SELECT c.id,c.agent_id,c.project_id,c.user_id,c.pin_order,c.last_message_at,
-        md5(to_jsonb(c)::text) AS full_fingerprint,
-        md5((to_jsonb(c)-'agent_id'-'project_id'-'updated_at')::text) AS fingerprint FROM chat_threads c`);
+        c.xmin::text || ':' || c.ctid::text AS full_fingerprint,
+        CASE WHEN EXISTS(SELECT 1 FROM batch_routes r WHERE r.id=c.id)
+          THEN md5((to_jsonb(c)-'agent_id'-'project_id'-'updated_at')::text) END AS fingerprint FROM chat_threads c`);
   await sql.unsafe(`CREATE TEMP TABLE batch_chat_events AS
       SELECT e.id,md5(to_jsonb(e)::text) AS fingerprint FROM chat_thread_events e JOIN batch_scope s USING(org_id)`);
   for (const [table, key] of unchanged) {
     await sql.unsafe(
-      `CREATE TEMP TABLE batch_original_${table} AS SELECT (${key})::text AS key,md5(to_jsonb(t)::text) AS fingerprint FROM ${table} t`,
+      `CREATE TEMP TABLE batch_original_${table} AS SELECT (${key})::text AS key,t.xmin::text || ':' || t.ctid::text AS fingerprint FROM ${table} t`,
     );
   }
   await sql.unsafe(`DROP TABLE pg_temp.inactive_copy_chat_routes,pg_temp.inactive_copy_workflows,
@@ -113,19 +116,19 @@ export async function verifyInactiveBatch(sql: postgres.Sql) {
     await check(
       `retained_${table}`,
       `SELECT count(*)::int AS n FROM batch_original_${table} b
-      ${table === "workflows" ? "LEFT" : "FULL"} JOIN (SELECT (${key})::text AS key,md5(to_jsonb(t)::text) AS fingerprint FROM ${table} t) a USING(key)
+      ${table === "workflows" ? "LEFT" : "FULL"} JOIN (SELECT (${key})::text AS key,t.xmin::text || ':' || t.ctid::text AS fingerprint FROM ${table} t) a USING(key)
       WHERE a.fingerprint IS DISTINCT FROM b.fingerprint`,
     );
   }
   await check(
     "retained_runs",
     `SELECT count(*)::int AS n FROM batch_runs b FULL JOIN
-    (SELECT r.id,md5(to_jsonb(r)::text) AS fingerprint FROM agent_runs r JOIN batch_scope s USING(org_id)) a USING(id)
+    (SELECT r.id,r.xmin::text || ':' || r.ctid::text AS fingerprint FROM agent_runs r JOIN batch_scope s USING(org_id)) a USING(id)
     WHERE b.fingerprint IS DISTINCT FROM a.fingerprint`,
   );
   await check(
     "retained_personal",
-    `SELECT count(*)::int AS n FROM batch_personal b LEFT JOIN instructions i USING(org_id,user_id) WHERE b.fingerprint IS DISTINCT FROM md5(to_jsonb(i)::text)`,
+    `SELECT count(*)::int AS n FROM batch_personal b LEFT JOIN instructions i USING(org_id,user_id) WHERE b.fingerprint IS DISTINCT FROM i.xmin::text || ':' || i.ctid::text`,
   );
   await check(
     "initialized_personal",
@@ -186,7 +189,7 @@ export async function verifyInactiveBatch(sql: postgres.Sql) {
   );
   await check(
     "chat_payload",
-    `SELECT count(*)::int AS n FROM batch_chats b LEFT JOIN chat_threads c USING(id)
+    `SELECT count(*)::int AS n FROM batch_chats b JOIN batch_routes r USING(id) LEFT JOIN chat_threads c USING(id)
     WHERE b.fingerprint IS DISTINCT FROM md5((to_jsonb(c)-'agent_id'-'project_id'-'updated_at')::text)`,
   );
   await check(
@@ -197,7 +200,7 @@ export async function verifyInactiveBatch(sql: postgres.Sql) {
   await check(
     "other_chats",
     `SELECT count(*)::int AS n FROM batch_chats b LEFT JOIN chat_threads c USING(id)
-    LEFT JOIN batch_routes r USING(id) WHERE r.id IS NULL AND b.full_fingerprint IS DISTINCT FROM md5(to_jsonb(c)::text)`,
+    LEFT JOIN batch_routes r USING(id) WHERE r.id IS NULL AND b.full_fingerprint IS DISTINCT FROM c.xmin::text || ':' || c.ctid::text`,
   );
   await check(
     "chat_row_delta",

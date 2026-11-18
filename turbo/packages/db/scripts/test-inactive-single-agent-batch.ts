@@ -504,8 +504,22 @@ try {
     (SELECT count(*) FROM project_events)::int AS projects_events,(SELECT count(*) FROM chat_thread_events)::int AS chat_events`,
     after,
   );
+  // A payload-only rewrite must be detected even though all history IDs and
+  // routing references remain the same and no large Run body is fetched.
+  const [retainedRun] = await sql<
+    { id: string }[]
+  >`SELECT id FROM agent_runs ORDER BY id LIMIT 1`;
+  assert.ok(retainedRun);
+  await sql`UPDATE agent_runs SET prompt=${"changed payload".repeat(4096)} WHERE id=${retainedRun.id}`;
+  const changed = await verifyInactiveBatch(sql);
+  assert.equal(changed.retained_runs, 1);
+  assert.ok(
+    Object.entries(changed).every(([name, count]) => {
+      return name === "retained_runs" || count === 0;
+    }),
+  );
   console.log(
-    `Inactive batch migration: ${cases.length} real-database cases passed, including atomic rollback and journal retry`,
+    `Inactive batch migration: ${cases.length} real-database cases passed, including atomic rollback, journal retry and payload-only corruption detection`,
   );
 } finally {
   await sql.end();
