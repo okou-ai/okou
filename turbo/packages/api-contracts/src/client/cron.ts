@@ -13,7 +13,6 @@ import type {
   cronConnectorOauthStateCleanupContract as OriginalCronConnectorOauthStateCleanupContract,
   cronDrainEmailOutboxContract as OriginalCronDrainEmailOutboxContract,
   cronExecuteWorkflowAutomationsContract as OriginalCronExecuteWorkflowAutomationsContract,
-  cronMaterializePiResourceIndexesContract as OriginalCronMaterializePiResourceIndexesContract,
   cronMonitorChatEventQueueContract as OriginalCronMonitorChatEventQueueContract,
   cronOfficialWorkflowCatalogContract as OriginalCronOfficialWorkflowCatalogContract,
   cronProcessBackgroundJobsContract as OriginalCronProcessBackgroundJobsContract,
@@ -173,19 +172,6 @@ export const cronExecuteWorkflowAutomationsContract: ClientDescriptor<
   execute: {
     method: "GET",
     path: "/api/cron/execute-workflow-automations",
-    statuses: {
-      200: true,
-      401: true,
-    },
-  },
-};
-
-export const cronMaterializePiResourceIndexesContract: ClientDescriptor<
-  typeof OriginalCronMaterializePiResourceIndexesContract
-> = {
-  materialize: {
-    method: "GET",
-    path: "/api/cron/materialize-pi-resource-indexes",
     statuses: {
       200: true,
       401: true,

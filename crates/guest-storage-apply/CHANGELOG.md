@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.19](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.18...guest-storage-apply-v0.32.19) (2026-11-17)
+
+
+### Refactoring
+
+* use typed fifo creation in native fixtures ([#48355](https://github.com/okou-ai/okou/issues/48355)) ([05bf56d](https://github.com/okou-ai/okou/commit/05bf56dbc4876786786c0379dfce0776e09b4519))
+
 ## [0.32.18](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.17...guest-storage-apply-v0.32.18) (2026-11-17)
 
 

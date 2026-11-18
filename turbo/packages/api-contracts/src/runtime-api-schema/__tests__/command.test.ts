@@ -159,7 +159,7 @@ describe("runtime API schema CLI lint", () => {
     "blocks a newly declared %s response status %s without a proof",
     async (client, status) => {
       await expect(
-        lintAddedStatus(client, status, await floors("1.0.0", "1.0.0", client)),
+        lintAddedStatus(client, status, await floors("0.1.0", "0.1.0", client)),
       ).resolves.toBe(1);
 
       expect(
@@ -184,9 +184,10 @@ describe("runtime API schema CLI lint", () => {
     async (client) => {
       await expect(
         lintAddedStatus(client, "202", [
-          ...(await floors("1.0.1", "1.0.0", client)),
+          // Synthetic floors stay below real bounded response transforms.
+          ...(await floors("0.1.1", "0.1.0", client)),
           `--${client}-published-version`,
-          "1.0.1",
+          "0.1.1",
         ]),
       ).resolves.toBe(0);
 
@@ -210,7 +211,7 @@ describe("runtime API schema CLI lint", () => {
         await writeJson("current.json", current),
         "--block-owner",
         "ios",
-        ...(await floors("1.0.0", "1.0.0", "ios")),
+        ...(await floors("0.1.0", "0.1.0", "ios")),
       ]),
     ).resolves.toBe(0);
   });

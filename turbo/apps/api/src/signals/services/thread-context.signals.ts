@@ -24,9 +24,12 @@ import { createRunTemplates } from "./run-templates.service";
 import {
   type ConnectedAccounts,
   createConnectedAccountsSignals,
+  createThreadAccountAccessOverrides,
 } from "./thread-connected-accounts.signals";
 import { createThreadAutomationContext } from "./thread-automation-context.service";
 import { createThreadModelSignals } from "./thread-model.signals";
+import { createThreadProjectContext } from "./thread-project-context.service";
+import { createIncompletePrompt } from "./thread-run-prompt/incomplete";
 import {
   createAgentPhoneThreadContext,
   createFeishuThreadContext,
@@ -58,8 +61,15 @@ export interface ThreadAutomationTarget {
 
 type ThreadModels = ReturnType<typeof createThreadModelSignals>;
 
-/** Read-only facts for one picked event, shared by admission and prompting. */
+/** Read-only facts for one claimed Thread and its eventual picked event. */
 export interface ThreadContext extends ThreadWorkflowContext {
+  readonly threadAccessOverrides$: ReturnType<
+    typeof createThreadAccountAccessOverrides
+  >;
+  /** Background source acquisition; consumers join the individual nodes below. */
+  readonly inputResources$: Computed<Promise<void>>;
+  readonly projectContext$: ReturnType<typeof createThreadProjectContext>;
+  readonly incompleteContext$: ReturnType<typeof createIncompletePrompt>;
   readonly phoneUseGrant$: Computed<
     Promise<{ readonly deviceId: string; readonly grantId: string } | null>
   >;
@@ -83,7 +93,9 @@ export interface ThreadContext extends ThreadWorkflowContext {
   readonly discordContext$: ReturnType<typeof createDiscordThreadContext>;
   readonly automationContext$: ReturnType<typeof createThreadAutomationContext>;
   readonly automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>;
-  readonly templates$: ReturnType<typeof createRunTemplates>;
+  /** Event-resolved raw rows, independent of guidance/paid-tool assembly. */
+  readonly templateSources$: ReturnType<typeof createRunTemplates>["sources$"];
+  readonly templates$: ReturnType<typeof createRunTemplates>["templates$"];
   readonly queuedModel$: ThreadModels["queuedModel$"];
   readonly modelSelection$: ThreadModels["modelSelection$"];
   readonly subscriptionSelection$: ThreadModels["subscriptionSelection$"];
@@ -99,23 +111,235 @@ export interface ThreadContext extends ThreadWorkflowContext {
   readonly connectorSelection$: ConnectedAccounts["connectorSelection$"];
   readonly connectorSnapshot$: ConnectedAccounts["connectorSnapshot$"];
   readonly connectorThreadSelections$: ConnectedAccounts["threadSelections$"];
-  readonly selectedConnectorSources$: ConnectedAccounts["selectedStoredConnectorSources$"];
 }
 
 export function createThreadContext(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+  chatThreadId: string,
 ): ThreadContext {
   const orgId = bootstrap.orgId;
   const sourceSettings = createThreadSourceSettings(bootstrap);
+  const threadIdentity$ = computed(() => {
+    return Promise.resolve({ chatThreadId });
+  });
+  const threadAccessOverrides$ = createThreadAccountAccessOverrides(
+    threadIdentity$,
+    sourceSettings.featureSwitches$,
+  );
   const thread$ = computed(async (get) => {
     return (await get(pickedEvent$))?.thread ?? null;
   });
+  const integrations = createThreadIntegrationContexts(
+    pickedEvent$,
+    orgId,
+    sourceSettings.featureSwitches$,
+  );
+  const model = createThreadModelContext(
+    bootstrap,
+    pickedEvent$,
+    integrations.automationTarget$,
+  );
+  const discordContext$ = createDiscordThreadContext(
+    pickedEvent$,
+    orgId,
+    model.dispatchTiming$,
+  );
+  const workflowContext = createThreadWorkflowContext(
+    bootstrap,
+    pickedEvent$,
+    integrations.automationContext$,
+    integrations.automationTarget$,
+  );
+  const templateOrgId$ = createThreadOrgId(orgId);
+  const templates = createRunTemplates(
+    pickedEvent$,
+    templateOrgId$,
+    sourceSettings.disabledPaidTools$,
+    bootstrap,
+  );
+  const computerUseHostGrant$ = createThreadHostGrant(bootstrap, thread$);
+  const phoneUseGrant$ = createThreadPhoneUseGrant(bootstrap, thread$);
+  const runIds$ = createRunIds();
+  const threadContinuation$ = createThreadContinuation(
+    pickedEvent$,
+    model.subscriptionSelection$,
+    integrations.automationTarget$,
+    runIds$,
+  );
+  const connectorSourceId$ = createConnectorSourceId(
+    pickedEvent$,
+    integrations.automationContext$,
+    integrations.feishuContext$,
+  );
+  const connectedAccounts = createConnectedAccountsSignals(
+    bootstrap,
+    pickedEvent$,
+    connectorSourceId$,
+    model.dispatchTiming$,
+    threadAccessOverrides$,
+  );
+  const emailMailboxConnections$ = createEmailMailboxConnections(
+    pickedEvent$,
+    connectedAccounts.selectedStoredConnectorSources$,
+    orgId,
+  );
+  const inputSources = {
+    connectorSelection$: connectedAccounts.connectorSelection$,
+    templateSources$: templates.sources$,
+    computerUseHostGrant$,
+    phoneUseGrant$,
+    modelRoute$: model.modelRoute$,
+    threadContinuation$,
+    discordContext$,
+    emailMailboxConnections$,
+  };
+  const resources = createThreadInputResources(
+    pickedEvent$,
+    sourceSettings.featureSwitches$,
+    integrations,
+    inputSources,
+  );
+  return {
+    threadAccessOverrides$,
+    inputResources$: resources.inputResources$,
+    projectContext$: resources.projectContext$,
+    incompleteContext$: resources.incompleteContext$,
+    threadContinuation$,
+    computerUseHostGrant$,
+    phoneUseGrant$,
+    slackContext$: integrations.slackContext$,
+    feishuContext$: integrations.feishuContext$,
+    teamsContext$: integrations.teamsContext$,
+    telegramContext$: integrations.telegramContext$,
+    emailContext$: integrations.emailContext$,
+    emailMailboxConnections$,
+    agentPhoneContext$: integrations.agentPhoneContext$,
+    wechatContext$: integrations.wechatContext$,
+    discordContext$,
+    automationContext$: integrations.automationContext$,
+    automationTarget$: integrations.automationTarget$,
+    workflows$: workflowContext.workflows$,
+    officialWorkflows$: workflowContext.officialWorkflows$,
+    officialWorkflowObservation$: workflowContext.officialWorkflowObservation$,
+    templateSources$: templates.sources$,
+    templates$: templates.templates$,
+    queuedModel$: model.queuedModel$,
+    modelSelection$: model.modelSelection$,
+    subscriptionSelection$: model.subscriptionSelection$,
+    requestedFramework$: model.requestedFramework$,
+    modelRoute$: model.modelRoute$,
+    providerFramework$: model.providerFramework$,
+    dispatchTiming$: model.dispatchTiming$,
+    runIds$,
+    connectorSelection$: connectedAccounts.connectorSelection$,
+    connectorSnapshot$: connectedAccounts.connectorSnapshot$,
+    connectorThreadSelections$: connectedAccounts.threadSelections$,
+  };
+}
+
+function createThreadModelContext(
+  bootstrap: AgentRunContextSignals,
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+  automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>,
+) {
+  const modelInput$ = createThreadModelInput(pickedEvent$, automationTarget$);
+  const creditsWaived$ = createOfficialWorkflowCreditWaiver(
+    pickedEvent$,
+    automationTarget$,
+  );
+  return createThreadModelSignals(bootstrap, modelInput$, creditsWaived$);
+}
+
+function createThreadInputResources(
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+  featureSwitches$: AgentRunContextSignals["featureSwitches$"],
+  integrations: ReturnType<typeof createThreadIntegrationContexts>,
+  context: Pick<
+    ThreadContext,
+    | "connectorSelection$"
+    | "templateSources$"
+    | "computerUseHostGrant$"
+    | "phoneUseGrant$"
+    | "modelRoute$"
+    | "threadContinuation$"
+    | "discordContext$"
+    | "emailMailboxConnections$"
+  >,
+) {
+  const projectContext$ = createThreadProjectContext(
+    pickedEvent$,
+    featureSwitches$,
+  );
+  const incompleteContext$ = createIncompletePrompt(pickedEvent$);
+  const emailResources$ = computed(async (get) => {
+    await Promise.allSettled([
+      get(integrations.emailContext$),
+      get(context.emailMailboxConnections$),
+    ]);
+  });
+  const integrationSources: Readonly<
+    Record<
+      NonNullable<PickedThreadInputEvent["contextType"]>,
+      Computed<Promise<unknown>>
+    >
+  > = {
+    web: projectContext$,
+    agent_run: projectContext$,
+    slack: integrations.slackContext$,
+    feishu: integrations.feishuContext$,
+    teams: integrations.teamsContext$,
+    telegram: integrations.telegramContext$,
+    email: emailResources$,
+    agentphone: integrations.agentPhoneContext$,
+    wechat: integrations.wechatContext$,
+    discord: context.discordContext$,
+    automation: integrations.automationContext$,
+  };
+  const inputResources$ = computed(async (get) => {
+    const event = await get(pickedEvent$);
+    // The entry starts this only after it owns a pickable head and capacity.
+    // Automation retains its target/budget admission before resource reads.
+    if (!event?.contextType || event.contextType === "automation") {
+      return;
+    }
+    // Declare acquisition at the source owner, independently of Prompt/model
+    // consumer traversal. No consumer awaits this aggregate. Cached failures
+    // surface at their original joins; all started branches remain owned.
+    await Promise.allSettled([
+      get(context.connectorSelection$),
+      get(context.templateSources$),
+      get(context.computerUseHostGrant$),
+      get(context.phoneUseGrant$),
+      get(incompleteContext$),
+      get(integrationSources[event.contextType]),
+      get(context.modelRoute$),
+      get(context.threadContinuation$),
+    ]);
+  });
+  return { inputResources$, projectContext$, incompleteContext$ };
+}
+
+function createThreadSourceSettings(bootstrap: AgentRunContextSignals) {
+  const featureSwitches$ = computed((get) => {
+    return get(bootstrap.featureSwitches$);
+  });
+  const disabledPaidTools$ = computed((get) => {
+    return get(bootstrap.disabledPaidTools$);
+  });
+  return { featureSwitches$, disabledPaidTools$ };
+}
+
+function createThreadIntegrationContexts(
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+  orgId: string,
+  featureSwitches$: AgentRunContextSignals["featureSwitches$"],
+) {
   const slackContext$ = createSlackThreadContext(pickedEvent$, orgId);
   const feishuContext$ = createFeishuThreadContext(
     pickedEvent$,
     orgId,
-    sourceSettings.featureSwitches$,
+    featureSwitches$,
   );
   const teamsContext$ = createTeamsThreadContext(pickedEvent$, orgId);
   const telegramContext$ = createTelegramThreadContext(pickedEvent$, orgId);
@@ -124,11 +348,28 @@ export function createThreadContext(
   const wechatContext$ = createWechatThreadContext(
     pickedEvent$,
     orgId,
-    sourceSettings.featureSwitches$,
+    featureSwitches$,
   );
   const automationContext$ = createThreadAutomationContext(pickedEvent$);
   const automationTarget$ = createAutomationTarget(automationContext$);
-  const modelInput$ = computed(async (get) => {
+  return {
+    slackContext$,
+    feishuContext$,
+    teamsContext$,
+    telegramContext$,
+    emailContext$,
+    agentPhoneContext$,
+    wechatContext$,
+    automationContext$,
+    automationTarget$,
+  };
+}
+
+function createThreadModelInput(
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+  automationTarget$: ThreadContext["automationTarget$"],
+) {
+  return computed(async (get) => {
     const [event, target] = await Promise.all([
       get(pickedEvent$),
       get(automationTarget$),
@@ -145,100 +386,6 @@ export function createThreadContext(
         }
       : event;
   });
-  const creditsWaived$ = createOfficialWorkflowCreditWaiver(
-    pickedEvent$,
-    automationTarget$,
-  );
-  const model = createThreadModelSignals(
-    bootstrap,
-    modelInput$,
-    creditsWaived$,
-  );
-  const discordContext$ = createDiscordThreadContext(
-    pickedEvent$,
-    orgId,
-    model.dispatchTiming$,
-  );
-  const workflowContext = createThreadWorkflowContext(
-    bootstrap,
-    pickedEvent$,
-    automationContext$,
-    automationTarget$,
-  );
-  const templateOrgId$ = createThreadOrgId(orgId);
-  const templates$ = createRunTemplates(
-    pickedEvent$,
-    templateOrgId$,
-    sourceSettings.disabledPaidTools$,
-  );
-  const computerUseHostGrant$ = createThreadHostGrant(bootstrap, thread$);
-  const phoneUseGrant$ = createThreadPhoneUseGrant(bootstrap, thread$);
-  const runIds$ = createRunIds();
-  const threadContinuation$ = createThreadContinuation(
-    pickedEvent$,
-    model.subscriptionSelection$,
-    automationTarget$,
-    runIds$,
-  );
-  const connectorSourceId$ = createConnectorSourceId(
-    pickedEvent$,
-    automationContext$,
-    feishuContext$,
-  );
-  const connectedAccounts = createConnectedAccountsSignals(
-    bootstrap,
-    pickedEvent$,
-    connectorSourceId$,
-    model.dispatchTiming$,
-  );
-  const emailMailboxConnections$ = createEmailMailboxConnections(
-    pickedEvent$,
-    connectedAccounts.selectedStoredConnectorSources$,
-    orgId,
-  );
-  return {
-    threadContinuation$,
-    computerUseHostGrant$,
-    phoneUseGrant$,
-    slackContext$,
-    feishuContext$,
-    teamsContext$,
-    telegramContext$,
-    emailContext$,
-    emailMailboxConnections$,
-    agentPhoneContext$,
-    wechatContext$,
-    discordContext$,
-    automationContext$,
-    automationTarget$,
-    workflows$: workflowContext.workflows$,
-    officialWorkflows$: workflowContext.officialWorkflows$,
-    officialWorkflowObservation$: workflowContext.officialWorkflowObservation$,
-    templates$,
-    queuedModel$: model.queuedModel$,
-    modelSelection$: model.modelSelection$,
-    subscriptionSelection$: model.subscriptionSelection$,
-    requestedFramework$: model.requestedFramework$,
-    modelRoute$: model.modelRoute$,
-    providerFramework$: model.providerFramework$,
-    dispatchTiming$: model.dispatchTiming$,
-    runIds$,
-    connectorSelection$: connectedAccounts.connectorSelection$,
-    connectorSnapshot$: connectedAccounts.connectorSnapshot$,
-    connectorThreadSelections$: connectedAccounts.threadSelections$,
-    selectedConnectorSources$:
-      connectedAccounts.selectedStoredConnectorSources$,
-  };
-}
-
-function createThreadSourceSettings(bootstrap: AgentRunContextSignals) {
-  const featureSwitches$ = computed((get) => {
-    return get(bootstrap.featureSwitches$);
-  });
-  const disabledPaidTools$ = computed((get) => {
-    return get(bootstrap.disabledPaidTools$);
-  });
-  return { featureSwitches$, disabledPaidTools$ };
 }
 
 /** Routing candidate only; exact accepted artifacts and installation ownership

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.303](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.302...guest-write-file-v0.1.303) (2026-11-17)
+
+
+### Refactoring
+
+* use typed fifo creation in native fixtures ([#48355](https://github.com/okou-ai/okou/issues/48355)) ([05bf56d](https://github.com/okou-ai/okou/commit/05bf56dbc4876786786c0379dfce0776e09b4519))
+
 ## [0.1.302](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.301...guest-write-file-v0.1.302) (2026-11-17)
 
 ## [0.1.301](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.300...guest-write-file-v0.1.301) (2026-11-17)

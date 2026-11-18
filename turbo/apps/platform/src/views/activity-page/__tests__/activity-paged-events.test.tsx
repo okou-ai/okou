@@ -31,7 +31,6 @@ function makeLogDetail(overrides: Partial<LogDetail>): LogDetail {
     status: "running",
     prompt: "Hello",
     appendSystemPrompt: null,
-    error: null,
     createdAt: "2026-03-10T14:56:00Z",
     startedAt: "2026-03-10T14:56:01Z",
     completedAt: null,

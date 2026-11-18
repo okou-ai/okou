@@ -36,7 +36,7 @@ function makeLogDetail(
     status,
     prompt: "",
     appendSystemPrompt: null,
-    error: status === "failed" ? "Run failed" : null,
+    failureReason: status === "failed" ? "unknown" : undefined,
     createdAt: CREATED_AT,
     startedAt: CREATED_AT,
     completedAt: status === "running" ? null : "2026-06-26T02:31:30Z",
@@ -111,9 +111,7 @@ test.each([
   "Failed activities accept old and new responses without displaying diagnostics: $expected",
   async ({ expected, ...fields }) => {
     context.mocks.api(logsByIdContract.getById, ({ respond }) => {
-      const detail = makeLogDetail("failed");
-      delete detail.error;
-      return respond(200, { ...detail, ...fields });
+      return respond(200, { ...makeLogDetail("failed"), ...fields });
     });
     context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
       return respond(200, {

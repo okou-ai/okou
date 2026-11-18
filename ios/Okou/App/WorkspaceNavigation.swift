@@ -14,7 +14,9 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
     let navigation = WorkspaceNavigationController()
     navigation.setNavigationBarHidden(true, animated: false)
     coordinator.list.rootView = AnyView(list().environment(\.self, context.environment))
-    coordinator.chat.rootView = AnyView(chat().environment(\.self, context.environment))
+    coordinator.chat.rootView = AnyView(
+      chat().environment(\.self, context.environment)
+        .environment(\.workspaceChatPresentation, coordinator.presentation))
     navigation.setViewControllers(
       sidebar.isOpen ? [coordinator.list] : [coordinator.list, coordinator.chat], animated: false)
     coordinator.install(on: navigation)
@@ -24,7 +26,9 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
   func updateUIViewController(_ navigation: WorkspaceNavigationController, context: Context) {
     let coordinator = context.coordinator
     coordinator.list.rootView = AnyView(list().environment(\.self, context.environment))
-    coordinator.chat.rootView = AnyView(chat().environment(\.self, context.environment))
+    coordinator.chat.rootView = AnyView(
+      chat().environment(\.self, context.environment)
+        .environment(\.workspaceChatPresentation, coordinator.presentation))
     coordinator.requestedSidebarOpen = sidebar.isOpen
     // Reconcile in UIKit's layout lifecycle, outside SwiftUI's update transaction.
     navigation.view.setNeedsLayout()
@@ -44,14 +48,18 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
     let sidebar: SidebarInteraction
     // Retain both hosts across a pop so drafts, list position and transcript state survive.
     let list = UIHostingController(rootView: AnyView(EmptyView()))
-    let chat = UIHostingController(rootView: AnyView(EmptyView()))
+    let presentation: WorkspaceChatPresentation
+    let chat: WorkspaceChatHostingController
     var requestedSidebarOpen: Bool
     private weak var navigation: UINavigationController?
     private var transitionTarget: Bool?
     private var popGestures: [WorkspacePopGestureDelegate] = []
 
     init(sidebar: SidebarInteraction) {
+      let presentation = WorkspaceChatPresentation()
       self.sidebar = sidebar
+      self.presentation = presentation
+      chat = WorkspaceChatHostingController(presentation: presentation)
       requestedSidebarOpen = sidebar.isOpen
     }
 
@@ -80,7 +88,6 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
         navigation.transitionCoordinator == nil,
         (navigation.topViewController === list) != requestedSidebarOpen
       else { return }
-      navigation.view.endEditing(true)
       if requestedSidebarOpen {
         navigation.popToRootViewController(animated: true)
       } else {
@@ -95,11 +102,15 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
       let showsSidebar = viewController === list
       transitionTarget = showsSidebar
       sidebar.setTransitioning(true)
+      presentation.beginTransition(showsChat: !showsSidebar)
+      let transition = navigationController.transitionCoordinator
+      transition?.notifyWhenInteractionChanges { [weak self] context in
+        if showsSidebar && context.isCancelled { self?.presentation.cancelDeparture() }
+      }
       // A native pop (including accessibility return) starts outside the SwiftUI selection.
       if requestedSidebarOpen != showsSidebar {
         requestedSidebarOpen = showsSidebar
         sidebar.setOpen(showsSidebar)
-        navigationController.view.endEditing(true)
       }
     }
 
@@ -114,6 +125,8 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
         sidebar.setOpen(showsSidebar)
       }
       transitionTarget = nil
+      // UIKit reports the actual surviving page, including cancelled and unanimated transitions.
+      presentation.finishTransition(showsChat: !showsSidebar)
       sidebar.setTransitioning(false)
       navigationController.view.setNeedsLayout()
     }

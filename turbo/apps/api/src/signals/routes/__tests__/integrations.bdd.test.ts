@@ -5583,7 +5583,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await flushWaitUntilAndAssert(() => {
       expect(context.mocks.slack.chat.postMessage).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          text: "Cannot continue session from history",
+          text: "Oops, something went wrong. Please try again later.",
         }),
       );
     });

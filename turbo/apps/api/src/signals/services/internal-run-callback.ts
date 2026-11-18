@@ -27,17 +27,9 @@ interface InternalRunCallbackEnvelopeBase {
   readonly payload: unknown;
 }
 
-export type InternalRunCallbackEnvelope = InternalRunCallbackEnvelopeBase &
-  (
-    | {
-        readonly status: "failed";
-        readonly error: string;
-      }
-    | {
-        readonly status: Exclude<InternalRunCallbackStatus, "failed">;
-        readonly error?: string;
-      }
-  );
+export type InternalRunCallbackEnvelope = InternalRunCallbackEnvelopeBase & {
+  readonly status: InternalRunCallbackStatus;
+};
 
 interface InternalRunCallbackRecord {
   readonly internalKind: string | null;

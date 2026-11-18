@@ -96,7 +96,6 @@ test("French uses local number formatting", async () => {
       status: "completed",
       prompt: "Read two files",
       appendSystemPrompt: null,
-      error: null,
       createdAt: "2026-01-01T12:00:00.000Z",
       startedAt: "2026-01-01T12:00:00.000Z",
       completedAt: "2026-01-01T12:00:01.200Z",

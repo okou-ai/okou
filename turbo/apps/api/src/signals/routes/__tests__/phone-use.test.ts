@@ -421,6 +421,8 @@ test(
   "binds real Run tokens to a replaceable chat grant and validates every native commit",
   { timeout: 30_000 },
   async () => {
+    // Future-clock Runner registrations prune the fleet across groups.
+    await setupApp({ context, routes: phoneUseRoutes, isolatePg: true });
     const orgId = `org_${randomUUID()}`;
     const scenario = createPublicComputerUseScenario(context);
     const actor = scenario.user({ orgId });

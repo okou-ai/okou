@@ -119,27 +119,6 @@ function codexAccountCredentialReferences(
   return deferredCredentialReferences(own);
 }
 
-function managedCredentialValues(
-  source: ModelSourceSnapshot,
-): ModelCredentialValues | null {
-  const values: Record<string, string> = {};
-  for (const credential of source.credentials) {
-    if (credential.kind === "managed-key") {
-      if (
-        source.identity.kind !== "built-in" ||
-        credential.modelKeyId !== source.identity.modelKeyId
-      ) {
-        throw new Error("Managed key identity mismatch");
-      }
-      if (!credential.apiKey) {
-        return null;
-      }
-      values[credential.name] = credential.apiKey;
-    }
-  }
-  return values;
-}
-
 /** Exact subscription account source → secret references → runtime. */
 export function prepareSubscriptionModelEnvironment(
   source: ModelSourceSnapshot,
@@ -184,7 +163,7 @@ export function prepareSubscriptionModelEnvironment(
     selection: { kind: "subscription", selectedModel, upstreamModel },
     credentials,
   });
-  const names = Object.keys(compiled.secrets);
+  const names = compiled.secretNames;
   const sourceUserId = userId;
   const environment = { ...compiled.environment };
   // Pi owns account routing through its explicit source binding rather
@@ -203,7 +182,6 @@ export function prepareSubscriptionModelEnvironment(
     type,
     credentialOwner: "member",
     environment,
-    secrets: {},
     selectedModel: compiled.selectedModel,
     upstreamModel: compiled.upstreamModel,
     ...(source.configuration.authMethod
@@ -238,7 +216,7 @@ interface ManagedModelEnvironmentInput {
   readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute;
 }
 
-/** Exact managed-key source → explicit key resolution → managed runtime. */
+/** Exact managed-key reference → managed runtime placeholders. */
 export function prepareManagedModelEnvironment(
   source: ModelSourceSnapshot,
   args: ManagedModelEnvironmentInput,
@@ -255,10 +233,6 @@ export function prepareManagedModelEnvironment(
   ) {
     return null;
   }
-  const credentials = managedCredentialValues(source);
-  if (!credentials) {
-    return null;
-  }
   const compiled = compileModelRuntime({
     source,
     selection: {
@@ -268,7 +242,7 @@ export function prepareManagedModelEnvironment(
       upstreamModel: route.upstreamModel,
       modelKeyId: route.modelKeyId,
     },
-    credentials,
+    credentials: {},
   });
   const environment = { ...compiled.environment };
   const codexRuntimeConfig = resolveModelProviderCodexRuntimeConfig({
@@ -283,7 +257,6 @@ export function prepareManagedModelEnvironment(
     credentialOwner: "builtin",
     concreteType: route.providerType,
     environment,
-    secrets: { ...compiled.secrets },
     selectedModel: compiled.selectedModel,
     builtInModelRuntimeRoute: route,
     upstreamModel: compiled.upstreamModel,

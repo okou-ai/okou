@@ -294,12 +294,10 @@ function createExecutionConnectorContext(
     {
       runVariables$,
       permissionPolicies$: sources.signals.permissionPolicies$,
-      featureSwitches$: features$,
     },
     {
       connectorSelection$: connected.connectorSelection$,
       connectorSnapshot$: connected.connectorSnapshot$,
-      selectedConnectorSources$: connected.selectedStoredConnectorSources$,
       dispatchTiming$: timing$,
     },
   );
@@ -341,7 +339,6 @@ function createExecutionModel(input$: ExecutionInput$) {
         .select({
           id: builtInModelKeys.id,
           vendor: builtInModelKeys.vendor,
-          apiKey: builtInModelKeys.apiKey,
         })
         .from(builtInModelKeys)
         .where(eq(builtInModelKeys.id, run.builtInModelKeyId));

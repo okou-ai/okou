@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.109.101](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.100...guest-agent-v0.109.101) (2026-11-17)
+
+## [0.109.100](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.99...guest-agent-v0.109.100) (2026-11-17)
+
+
+### Refactoring
+
+* use typed fifo creation in native fixtures ([#48355](https://github.com/okou-ai/okou/issues/48355)) ([05bf56d](https://github.com/okou-ai/okou/commit/05bf56dbc4876786786c0379dfce0776e09b4519))
+
 ## [0.109.99](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.98...guest-agent-v0.109.99) (2026-11-17)
 
 

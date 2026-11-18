@@ -461,8 +461,6 @@ private struct WorkspaceRootView: View {
   }
 
   private func openSidebar() {
-    UIApplication.shared.sendAction(
-      #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     sidebar.setOpen(true)
   }
 

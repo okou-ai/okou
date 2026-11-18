@@ -23,14 +23,16 @@ const OUTPUT_ICONS = Object.freeze({
 });
 
 export function OnboardingOutputFormats({
-  output,
+  outputs,
+  multiple = false,
   onSelect,
   isTooLong,
   disabled,
 }: {
-  readonly output: OnboardingOutputFormat | null;
+  readonly outputs: readonly OnboardingOutputFormat[];
+  readonly multiple?: boolean;
   readonly onSelect: (
-    format: OnboardingOutputFormat | null,
+    formats: OnboardingOutputFormat[],
     instruction: string,
   ) => void;
   readonly isTooLong?: (instruction: string) => boolean;
@@ -62,7 +64,7 @@ export function OnboardingOutputFormats({
         >
           {copy.title}
         </h3>
-        {output ? (
+        {outputs.length ? (
           <Button
             type="button"
             variant="quiet"
@@ -70,7 +72,7 @@ export function OnboardingOutputFormats({
             className="shrink-0 max-sm:min-h-11"
             disabled={disabled}
             onClick={() => {
-              onSelect(null, "");
+              onSelect([], "");
             }}
           >
             {copy.clear}
@@ -79,13 +81,14 @@ export function OnboardingOutputFormats({
       </div>
       <ToggleGroup<OnboardingOutputFormat>
         aria-labelledby="onboarding-output-formats-title"
-        value={output ? [output] : []}
+        value={[...outputs]}
+        multiple={multiple}
         disabled={disabled}
         className="grid grid-cols-1 items-stretch gap-2 @min-[18rem]:grid-cols-2"
         onValueChange={(values) => {
           const format = values[0];
-          if (format) {
-            onSelect(format, copy.options[format].instruction);
+          if (multiple || format) {
+            onSelect(values, format ? copy.options[format].instruction : "");
           }
         }}
       >

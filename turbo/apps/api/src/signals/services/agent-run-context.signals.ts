@@ -24,7 +24,6 @@ import {
   pgInt8ToBigIntDecoder,
   zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
-import { mapConcurrent } from "../../lib/map-concurrent";
 import { waitUntil } from "../context/wait-until";
 import { safeSync, settle } from "../utils";
 import type { BootstrapAgent } from "./agent-data.service";
@@ -33,7 +32,6 @@ import {
   type MemberMemoryContext,
 } from "./agent-storage-context.service";
 import { memberMemoryReadPlan } from "./member-memory";
-import { decryptStoredSecretValue } from "./crypto.utils";
 import {
   connectorSourceSnapshotsFromRows,
   type ConnectorSourceIdentity,
@@ -111,6 +109,7 @@ import {
   cappedBaseConcurrencyLimit,
   totalConcurrencyLimit,
 } from "./org-concurrency-entitlements.service";
+import { createRunTemplateSources } from "./run-template-sources.service";
 
 export interface BootstrapFeatureSwitchContext {
   readonly userId: string;
@@ -148,6 +147,9 @@ export interface AgentRunContextSignals {
   readonly modelPricing$: ReturnType<typeof createModelPricing>;
   readonly memberMetadata$: Computed<Promise<ExecutionMemberMetadata>>;
   readonly selectedImageModel$: Computed<Promise<ImageModel>>;
+  /** Request candidate rows are consumed only by this exact picked input. */
+  readonly requestTemplateInputId$: Computed<Promise<string | undefined>>;
+  readonly requestTemplateSources$: ReturnType<typeof createRunTemplateSources>;
   readonly connectorSelection$: Computed<Promise<AgentConnectorSelection>>;
   /** Connectors the Agent may use, derived from its connector selection. */
   readonly connectorScope$: Computed<Promise<AgentConnectorScopeSnapshot>>;
@@ -270,8 +272,19 @@ export function createAgentRunContextSignals(
   userId: string,
   orgId: string,
   agentId: string,
+  requestTemplates?: {
+    readonly inputId: string;
+    readonly presentationIds: readonly string[];
+    readonly userTemplateIds: readonly string[];
+  },
 ): AgentRunContextSignals {
-  return createIdentityContext(userId, orgId, agentId);
+  return createIdentityContext(
+    userId,
+    orgId,
+    agentId,
+    undefined,
+    requestTemplates,
+  );
 }
 
 /** Reuse by each group's authority key before wiring dependent computeds. */
@@ -492,8 +505,19 @@ function createIdentityContext(
   orgId: string,
   agentId: string,
   supplied?: AgentRunContextSignals,
+  requestTemplates?: Parameters<typeof createAgentRunContextSignals>[3],
 ): OwnedAgentRunContext {
   const scope = { userId, orgId, agentId };
+  const requestTemplateInputId$ = computed(() => {
+    return Promise.resolve(requestTemplates?.inputId);
+  });
+  const requestTemplateSources$ = createRunTemplateSources(
+    computed(() => {
+      return Promise.resolve(
+        requestTemplates ? { ...scope, ...requestTemplates } : null,
+      );
+    }),
+  );
   const {
     memberContext,
     orgRows$,
@@ -584,6 +608,8 @@ function createIdentityContext(
     memberModels$,
     ...modelSources,
     memberMetadata$,
+    requestTemplateInputId$,
+    requestTemplateSources$,
     selectedImageModel$:
       sharedMember?.selectedImageModel$ ??
       createSelectedImageModel(memberMetadata$),
@@ -611,6 +637,7 @@ export const preloadAgentRunContext$ = command(
       signals.catalog$,
       signals.authorizedConnectors$,
       signals.connectors$,
+      signals.requestTemplateSources$,
       signals.memory$,
       signals.agent$,
       signals.orgRows$,
@@ -707,66 +734,6 @@ function bootstrapConnectorSnapshot(
     ...result,
     observation: "ok" in observation ? observation.ok : undefined,
   };
-}
-
-export interface EagerConnectorCredentialObservation {
-  readonly builtinResolve: ConnectorContextDuration | undefined;
-  readonly builtinDecrypt: ConnectorContextDuration | undefined;
-  /** Selected credential attempts, including settled failures; not total Run KMS. */
-  readonly builtinDecryptCount: number;
-}
-
-export interface EagerConnectorCredentialContext {
-  readonly credentials$: Computed<
-    Promise<{
-      readonly credentials: ReadonlyMap<
-        string,
-        Awaited<ReturnType<typeof settle<string>>>
-      >;
-      readonly observation: EagerConnectorCredentialObservation | undefined;
-    }>
-  >;
-}
-
-/** Connect the lazy credential read while constructing its owning graph. */
-export function createEagerConnectorCredentialContext(
-  input$: Computed<
-    Promise<{
-      readonly credentials: readonly {
-        readonly id: string;
-        readonly encryptedValue: string;
-      }[];
-      readonly resolveStartedAt: number;
-    }>
-  >,
-): EagerConnectorCredentialContext {
-  const credentials$ = computed(async (get) => {
-    const { credentials, resolveStartedAt } = await get(input$);
-    const decryptStartedAt = performance.now();
-    const decrypted = await mapConcurrent(
-      credentials,
-      4,
-      async (credential) => {
-        return [
-          credential.id,
-          await settle(decryptStoredSecretValue(credential.encryptedValue)),
-        ] as const;
-      },
-    );
-    const result = new Map(decrypted);
-    const observation = safeSync((): EagerConnectorCredentialObservation => {
-      return {
-        builtinDecrypt: connectorContextDuration(decryptStartedAt),
-        builtinResolve: connectorContextDuration(resolveStartedAt),
-        builtinDecryptCount: result.size,
-      };
-    });
-    return {
-      credentials: result,
-      observation: "ok" in observation ? observation.ok : undefined,
-    };
-  });
-  return { credentials$ };
 }
 
 const bootstrapVariablesDecoder = zodDriverValueDecoder(

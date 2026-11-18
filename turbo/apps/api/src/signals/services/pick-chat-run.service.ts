@@ -41,6 +41,7 @@ import {
   createThreadClaimRunObjects,
   type ThreadClaim,
 } from "./thread-claim-run.service";
+import { joinAllInOrder, settle } from "../utils";
 
 export interface OrgPickCursor {
   readonly queuedAt: Date;
@@ -422,11 +423,15 @@ function createPickObjects() {
       }
       const claimed = await get(captured);
       signal.throwIfAborted();
-      const [threadHasActiveRun, hasCapacity, hasInput] = await Promise.all([
+      const availability = Promise.all([
         get(claimed.threadHasActiveRun$),
         get(claimed.orgHasCapacity$),
         get(claimed.hasFirstPickableChatEvent$),
       ]);
+      // Issue critical availability reads first. This bounded Thread source
+      // can overlap them; each later consumer still joins its own node.
+      waitUntil(settle(get(claimed.threadResources$)));
+      const [threadHasActiveRun, hasCapacity, hasInput] = await availability;
       signal.throwIfAborted();
       // Publication can wait for a launch whose active row was not visible in
       // its earlier snapshot. Reobserve before reporting full/deleting empty
@@ -452,6 +457,7 @@ function createPickObjects() {
       }
       // Load the run context only when this claim has work and capacity.
       set(preloadAgentRunContext$, claimed.context, signal);
+      waitUntil(settle(get(claimed.inputResources$)));
       signal.throwIfAborted();
       const pending = await set(claimed.admitRun$, signal);
       // Admission can append a claim or a public rejection. This pick owns
@@ -485,8 +491,13 @@ function createPickObjects() {
       }
       // Activation is outside the admission-failure boundary. Slot scheduling
       // precedes terminal callbacks so they cannot delay the next queued input.
-      await set(claimed.publishPendingRun$, pending, signal);
-      const preparation = await set(claimed.prepareDispatch$, signal);
+      const [, preparation] = await joinAllInOrder(
+        [
+          set(claimed.publishPendingRun$, pending, signal),
+          set(claimed.prepareDispatch$, signal),
+        ],
+        signal,
+      );
       let dispatched: DirectRunDispatchResult;
       if (preparation.kind === "failed") {
         dispatched = preparation.result;

@@ -5,6 +5,10 @@ import {
 import type { RunnerCancellationMode } from "@okouai/api-contracts/contracts/runners";
 import { captureBillingRunTerminalSql } from "@okouai/db/operations/billing-run-lifecycle";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import {
+  normalizeRunFailureReason,
+  type RunFailureReasonToken,
+} from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
@@ -150,6 +154,7 @@ function cancellationTerminalValues(
 ) {
   return {
     status: "cancelled" as const,
+    failureReason: null,
     completedAt: new Date(apiStartTime),
     runnerCancellationMode: sql`CASE WHEN ${isNull(cancellationLockedRows.cancellationRecoveryCompleted)} THEN 'hard' ELSE ${mode} END`,
   };
@@ -437,14 +442,14 @@ interface UnacceptedRunFailure {
   readonly userId: string;
   readonly orgId: string;
   readonly owner: UnacceptedRunOwner | null;
-  readonly error: string;
+  readonly failureReason?: RunFailureReasonToken;
 }
 
 function unacceptedRunValues(args: UnacceptedRunFailure, completedAt: Date) {
   return {
     status: sql`CASE WHEN ${agentRuns.status} = 'cancelled' THEN 'cancelled' ELSE 'failed' END`,
     completedAt: sql`COALESCE(${agentRuns.completedAt},${sql.param(completedAt, agentRuns.completedAt)})`,
-    error: sql`CASE WHEN ${agentRuns.status} = 'cancelled' THEN ${agentRuns.error} ELSE ${args.error} END`,
+    failureReason: sql`CASE WHEN ${agentRuns.status} = 'cancelled' THEN NULL ELSE ${normalizeRunFailureReason(args.failureReason)} END`,
     // A preselected but definitely unaccepted process has no finalizer.
     cancellationRecoveryCompleted: true,
   };
@@ -507,7 +512,7 @@ export const failUnacceptedRun$ = command(
         .returning({
           ...unacceptedTerminalFields,
           status: agentRuns.status,
-          error: agentRuns.error,
+          failureReason: agentRuns.failureReason,
         }),
     );
     // The two disjoint outcomes preserve a concurrent user cancellation.
@@ -592,7 +597,7 @@ export const failUnacceptedRun$ = command(
         orgId: terminal.orgId,
         userId: terminal.userId,
         status: terminal.status,
-        error: terminal.error,
+        failureReason: terminal.failureReason,
         releasedOrgId: released.orgId,
       })
       .from(terminal)
@@ -660,6 +665,7 @@ export const commitClerkDeletedOwnerRuns$ = command(
         .set({
           status: "cancelled",
           completedAt,
+          failureReason: null,
           runnerCancellationMode: "hard",
         })
         .where(and(runScope, inArray(agentRuns.status, ["pending", "running"])))
@@ -768,6 +774,7 @@ export const cancelClerkBannedUserRuns$ = command(
         .set({
           status: "cancelled",
           completedAt,
+          failureReason: null,
           runnerCancellationMode: "hard",
         })
         .where(
@@ -1099,12 +1106,12 @@ const timeoutTerminalFields = {
   modelProviderId: agentRuns.modelProviderId,
 } as const;
 
-function timeoutTerminalValues(completedAt: Date, timeoutReason: string) {
+function timeoutTerminalValues(completedAt: Date) {
   return {
     status: "timeout" as const,
     runnerCancellationMode: "hard" as const,
     completedAt,
-    error: timeoutReason,
+    failureReason: "unknown",
   };
 }
 
@@ -1113,7 +1120,6 @@ export const commitStaleRunTimeout$ = command(
     { set },
     run: StaleRunTimeoutCandidate,
     cutoff: Date,
-    timeoutReason: string,
     signal: AbortSignal,
   ): Promise<StaleRunTimeoutResult | undefined> => {
     const db = set(writeDb$);
@@ -1130,7 +1136,7 @@ export const commitStaleRunTimeout$ = command(
       const terminal = db.$with("timeout_terminal_runs").as(
         db
           .update(agentRuns)
-          .set(timeoutTerminalValues(completedAt, timeoutReason))
+          .set(timeoutTerminalValues(completedAt))
           .from(locked)
           .where(timeoutTransitionCondition(cutoff))
           .returning({ ...timeoutTerminalFields }),

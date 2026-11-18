@@ -258,7 +258,6 @@ export function cancelledEvent(args: {
     role: "assistant",
     content: null,
     runId: args.runId,
-    error: "Run cancelled",
     runLifecycleEvent: "cancelled",
     seqId: args.seqId,
     createdAt: `2026-08-01T10:00:${String(args.seqId).padStart(2, "0")}.000Z`,

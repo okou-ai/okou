@@ -11,10 +11,13 @@ underlying ownership contracts. Setup commands belong in the
 ## Upstream Defaults
 
 The root configuration inherits upstream defaults and explicitly defers the
-seven metric checks and `identifier_name` in `disabled_rules`.
-The other 93 defaults remain enabled, including `file_length` configured with
+six metric checks and `identifier_name` in `disabled_rules`.
+The other 94 defaults remain enabled, including `file_length` configured with
 800 warning / 1,000 error lines. The shared `--strict` entry point enforces an
 800-line limit in production and tests, including comments and blank lines.
+`function_body_length` has a 100-line warning and error threshold for functions,
+initializers, deinitializers and subscript bodies. Its upstream counter excludes
+blank and comment-only lines. The same limit applies to production and tests.
 It uses `opt_in_rules`
 for the three additional upstream checks and the native rules, rather than
 maintaining a second copy of the default set. Test overrides relax only force

@@ -1,6 +1,7 @@
 import ChatData
 import ChatDataTestSupport
 import ChatDomain
+import Foundation
 import Synchronization
 import XCTest
 
@@ -105,147 +106,159 @@ final class ThreadActionsFixture: Sendable {
         )
       }
       if request.httpMethod == "POST" {
-        XCTAssertEqual(
-          request.value(forHTTPHeaderField: "Authorization"), "Bearer local-test-session")
-        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Client-Type"), "iOS")
-        let action = String(path.split(separator: "/").last ?? "")
-        let renameBody =
-          action == "rename"
-          ? try JSONDecoder().decode([String: String].self, from: chatRequestBody(request)) : [:]
-        let queryEventID = URLComponents(
-          url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.queryItems?.first {
-            $0.name == "eventId"
-          }?.value
-        let eventID = renameBody["eventId"] ?? queryEventID
-        let title = renameBody["title"]
-        let (gate, status, requested) = state.value.withLock { state in
-          state.writes.append(Write(action: action, eventID: eventID, title: title))
-          let gate = state.nextGate
-          let requested = state.nextWriteRequested
-          state.nextGate = nil
-          state.nextWriteRequested = nil
-          return (gate, state.failNext.removeValue(forKey: action) ?? 204, requested)
-        }
-        requested?()
-        await gate?.wait()
-        try Task.checkCancellation()
-        if status != 204 {
-          return ChatHTTPResponse(
-            status: status, body: "{\"error\":{\"message\":\"\(action) unavailable\"}}")
-        }
-        if action == "mark-read" {
-          state.value.withLock { $0.unread = false }
-          return ChatHTTPResponse(body: "{\"lastReadAt\":\"2026-10-21T01:00:00Z\"}")
-        }
-        state.value.withLock { state in
-          let kind: String
-          var extra = ""
-          switch action {
-          case "mute", "unmute":
-            kind = "sort_touched"
-            state.muted = action == "mute"
-            extra = ",\"muted\":\(state.muted)"
-          case "archive": kind = "archived"
-          case "unarchive": kind = "unarchived"
-          case "rename":
-            kind = "renamed"
-            state.title = title ?? ""
-            let encoded = try? JSONEncoder().encodeString(state.title)
-            extra = ",\"title\":\(encoded ?? "null")"
-          default:
-            XCTFail("Unexpected mutation: \(path)")
-            return
-          }
-          state.events.append(
-            Self.event(
-              kind: kind, id: eventID ?? UUID().uuidString, seq: state.events.count + 1,
-              extra: extra))
-        }
-        return ChatHTTPResponse(status: 204, body: "")
+        return try await Self.mutate(request, path: path, state: state)
       }
-      switch path {
-      case "/api/user-model-preference":
-        return ChatHTTPResponse(
-          body:
-            "{\"selectedModel\":null,\"serviceTier\":null,\"modelSettings\":{},\"selectedImageModel\":null,\"updatedAt\":null}"
-        )
-      case "/api/run-models": return runModelsResponse()
-      case "/api/model-catalog": return modelCatalogResponse()
-      case "/api/chat-threads/\(Self.thread)/metadata":
-        return ChatHTTPResponse(
-          body:
-            "{\"id\":\"\(Self.thread)\",\"agentId\":\"\(Self.agent)\",\"selectedModel\":null,\"modelSettings\":{},\"serviceTier\":null,\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
-        )
-      case "/api/chat-threads/\(Self.thread)/event-snapshot":
-        return ChatHTTPResponse(
-          status: 404,
-          body:
-            "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}")
-      case "/api/chat-threads/\(Self.thread)/event-rows":
-        let since =
-          Int(
-            URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first {
-              $0.name == "sinceSeqId"
-            }?.value ?? "0") ?? 0
-        let rows =
-          since == 0
-          ? [
-            Self.message(
-              1, type: "input.prompt",
-              payload:
-                "{\"userMessage\":{\"version\":1,\"parts\":[{\"type\":\"text\",\"text\":\"Help me make room for focused work this week.\"}]}}"
-            ),
-            Self.message(
-              2, type: "output.message",
-              payload:
-                "{\"content\":\"Start with the two things that matter most.\\n\\n- Reserve a quiet morning for the main project.\\n- Keep a short list of follow-ups for tomorrow.\\n\\nYou can keep this conversation close by or mute it while you focus.\"}"
-            )
-          ].joined(separator: ",") : ""
-        return ChatHTTPResponse(
-          body:
-            "{\"rows\":[\(rows)],\"cursor\":{\"lastEventId\":\"\(Self.messageID(2))\",\"lastSeqId\":2},\"hasMore\":false}"
-        )
-      case "/api/chat-threads/\(Self.thread)":
-        return ChatHTTPResponse(body: "{\"lastReadAt\":null,\"cancellationRecoveryPending\":false}")
-      case "/api/chat-threads/\(Self.thread)/connector-selections":
-        return ChatHTTPResponse(body: "{\"selections\":[]}")
-      case "/api/agents":
-        return ChatHTTPResponse(
-          body:
-            "[{\"agentId\":\"\(Self.agent)\",\"isDefaultAgent\":true,\"displayName\":\"Okou\"},{\"agentId\":\"\(Self.otherAgent)\",\"isDefaultAgent\":false,\"displayName\":\"Research\"}]"
-        )
+      return try Self.read(request, path: path, state: state, muted: muted)
+    }
+  }
 
-      case "/api/feature-switches":
-        return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
-      case "/api/chat-threads/snapshot":
-        return ChatHTTPResponse(
-          body:
-            "{\"chatThreads\":[{\"id\":\"\(Self.thread)\",\"agentId\":\"\(Self.agent)\",\"title\":\"Planning a useful week\",\"muted\":\(muted),\"createdAt\":\"\(Self.date)\",\"updatedAt\":\"\(Self.date)\",\"sortAt\":\"\(Self.date)\"}],\"latestEventId\":null,\"latestSeqId\":null}"
-        )
-      case "/api/chat-threads/events":
-        if let status = state.value.withLock({ $0.failNext.removeValue(forKey: "events") }) {
-          return ChatHTTPResponse(
-            status: status, body: #"{"error":{"message":"List refresh unavailable"}}"#)
-        }
-        let since =
-          Int(
-            URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first {
-              $0.name == "sinceSeqId"
-            }?.value ?? "0") ?? 0
-        return ChatHTTPResponse(
-          body:
-            "{\"events\":[\(state.value.withLock { $0.events.dropFirst(since).joined(separator: ",") })],\"hasMore\":false}"
-        )
-      case "/api/indicators":
-        let unread = state.value.withLock { $0.unread }
-        let indicator = unread ? "{\"\(Self.thread)\":\"unread\"}" : "{}"
-        let unreadAt = unread ? "{\"\(Self.thread)\":\"\(Self.date)\"}" : "{}"
-        let agents =
-          state.value.withLock { $0.unread && !$0.muted } ? "{\"\(Self.agent)\":\"unread\"}" : "{}"
-        return ChatHTTPResponse(
-          body: "{\"agents\":\(agents),\"threads\":\(indicator),\"unreadAt\":\(unreadAt)}")
-      default: throw URLError(.unsupportedURL)
+  private static func mutate(
+    _ request: URLRequest, path: String, state: StateBox
+  ) async throws -> ChatHTTPResponse {
+    XCTAssertEqual(
+      request.value(forHTTPHeaderField: "Authorization"), "Bearer local-test-session")
+    XCTAssertEqual(request.value(forHTTPHeaderField: "X-Client-Type"), "iOS")
+    let action = String(path.split(separator: "/").last ?? "")
+    let renameBody =
+      action == "rename"
+      ? try JSONDecoder().decode([String: String].self, from: chatRequestBody(request)) : [:]
+    let queryEventID = URLComponents(
+      url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.queryItems?.first {
+        $0.name == "eventId"
+      }?.value
+    let eventID = renameBody["eventId"] ?? queryEventID
+    let title = renameBody["title"]
+    let (gate, status, requested) = state.value.withLock { state in
+      state.writes.append(Write(action: action, eventID: eventID, title: title))
+      let gate = state.nextGate
+      let requested = state.nextWriteRequested
+      state.nextGate = nil
+      state.nextWriteRequested = nil
+      return (gate, state.failNext.removeValue(forKey: action) ?? 204, requested)
+    }
+    requested?()
+    await gate?.wait()
+    try Task.checkCancellation()
+    if status != 204 {
+      return ChatHTTPResponse(
+        status: status, body: "{\"error\":{\"message\":\"\(action) unavailable\"}}")
+    }
+    if action == "mark-read" {
+      state.value.withLock { $0.unread = false }
+      return ChatHTTPResponse(body: "{\"lastReadAt\":\"2026-10-21T01:00:00Z\"}")
+    }
+    state.value.withLock { state in
+      let kind: String
+      var extra = ""
+      switch action {
+      case "mute", "unmute":
+        kind = "sort_touched"
+        state.muted = action == "mute"
+        extra = ",\"muted\":\(state.muted)"
+      case "archive": kind = "archived"
+      case "unarchive": kind = "unarchived"
+      case "rename":
+        kind = "renamed"
+        state.title = title ?? ""
+        let encoded = try? JSONEncoder().encodeString(state.title)
+        extra = ",\"title\":\(encoded ?? "null")"
+      default:
+        XCTFail("Unexpected mutation: \(path)")
+        return
       }
+      state.events.append(
+        Self.event(
+          kind: kind, id: eventID ?? UUID().uuidString, seq: state.events.count + 1,
+          extra: extra))
+    }
+    return ChatHTTPResponse(status: 204, body: "")
+  }
+
+  private static func read(
+    _ request: URLRequest, path: String, state: StateBox, muted: Bool
+  ) throws -> ChatHTTPResponse {
+    switch path {
+    case "/api/user-model-preference":
+      return ChatHTTPResponse(
+        body:
+          "{\"selectedModel\":null,\"serviceTier\":null,\"modelSettings\":{},\"selectedImageModel\":null,\"updatedAt\":null}"
+      )
+    case "/api/run-models": return runModelsResponse()
+    case "/api/model-catalog": return modelCatalogResponse()
+    case "/api/chat-threads/\(Self.thread)/metadata":
+      return ChatHTTPResponse(
+        body:
+          "{\"id\":\"\(Self.thread)\",\"agentId\":\"\(Self.agent)\",\"selectedModel\":null,\"modelSettings\":{},\"serviceTier\":null,\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
+      )
+    case "/api/chat-threads/\(Self.thread)/event-snapshot":
+      return ChatHTTPResponse(
+        status: 404,
+        body:
+          "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}")
+    case "/api/chat-threads/\(Self.thread)/event-rows":
+      let since =
+        Int(
+          URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first {
+            $0.name == "sinceSeqId"
+          }?.value ?? "0") ?? 0
+      let rows =
+        since == 0
+        ? [
+          Self.message(
+            1, type: "input.prompt",
+            payload:
+              "{\"userMessage\":{\"version\":1,\"parts\":[{\"type\":\"text\",\"text\":\"Help me make room for focused work this week.\"}]}}"
+          ),
+          Self.message(
+            2, type: "output.message",
+            payload:
+              "{\"content\":\"Start with the two things that matter most.\\n\\n- Reserve a quiet morning for the main project.\\n- Keep a short list of follow-ups for tomorrow.\\n\\nYou can keep this conversation close by or mute it while you focus.\"}"
+          )
+        ].joined(separator: ",") : ""
+      return ChatHTTPResponse(
+        body:
+          "{\"rows\":[\(rows)],\"cursor\":{\"lastEventId\":\"\(Self.messageID(2))\",\"lastSeqId\":2},\"hasMore\":false}"
+      )
+    case "/api/chat-threads/\(Self.thread)":
+      return ChatHTTPResponse(body: "{\"lastReadAt\":null,\"cancellationRecoveryPending\":false}")
+    case "/api/chat-threads/\(Self.thread)/connector-selections":
+      return ChatHTTPResponse(body: "{\"selections\":[]}")
+    case "/api/agents":
+      return ChatHTTPResponse(
+        body:
+          "[{\"agentId\":\"\(Self.agent)\",\"isDefaultAgent\":true,\"displayName\":\"Okou\"},{\"agentId\":\"\(Self.otherAgent)\",\"isDefaultAgent\":false,\"displayName\":\"Research\"}]"
+      )
+
+    case "/api/feature-switches":
+      return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
+    case "/api/chat-threads/snapshot":
+      return ChatHTTPResponse(
+        body:
+          "{\"chatThreads\":[{\"id\":\"\(Self.thread)\",\"agentId\":\"\(Self.agent)\",\"title\":\"Planning a useful week\",\"muted\":\(muted),\"createdAt\":\"\(Self.date)\",\"updatedAt\":\"\(Self.date)\",\"sortAt\":\"\(Self.date)\"}],\"latestEventId\":null,\"latestSeqId\":null}"
+      )
+    case "/api/chat-threads/events":
+      if let status = state.value.withLock({ $0.failNext.removeValue(forKey: "events") }) {
+        return ChatHTTPResponse(
+          status: status, body: #"{"error":{"message":"List refresh unavailable"}}"#)
+      }
+      let since =
+        Int(
+          URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first {
+            $0.name == "sinceSeqId"
+          }?.value ?? "0") ?? 0
+      return ChatHTTPResponse(
+        body:
+          "{\"events\":[\(state.value.withLock { $0.events.dropFirst(since).joined(separator: ",") })],\"hasMore\":false}"
+      )
+    case "/api/indicators":
+      let unread = state.value.withLock { $0.unread }
+      let indicator = unread ? "{\"\(Self.thread)\":\"unread\"}" : "{}"
+      let unreadAt = unread ? "{\"\(Self.thread)\":\"\(Self.date)\"}" : "{}"
+      let agents =
+        state.value.withLock { $0.unread && !$0.muted } ? "{\"\(Self.agent)\":\"unread\"}" : "{}"
+      return ChatHTTPResponse(
+        body: "{\"agents\":\(agents),\"threads\":\(indicator),\"unreadAt\":\(unreadAt)}")
+    default: throw URLError(.unsupportedURL)
     }
   }
 

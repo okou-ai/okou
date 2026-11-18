@@ -656,7 +656,6 @@ export const clientContractImportManifest = [
       "cronConnectorOauthStateCleanupContract",
       "cronDrainEmailOutboxContract",
       "cronExecuteWorkflowAutomationsContract",
-      "cronMaterializePiResourceIndexesContract",
       "cronMonitorChatEventQueueContract",
       "cronOfficialWorkflowCatalogContract",
       "cronProcessBackgroundJobsContract",
@@ -1182,6 +1181,11 @@ export const clientContractImportManifest = [
     module: "logs",
     contracts: ["logsByIdContract", "logsListContract"],
     bindings: [
+      {
+        name: "logDetailSchema",
+        source: "validators/logs",
+        imported: "activityDetailSchema",
+      },
       {
         name: "logStatusSchema",
         source: "validators/logs",

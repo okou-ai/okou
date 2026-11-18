@@ -9,11 +9,6 @@ export type RequiredTerminalChatCallbackResult =
   | { readonly success: true }
   | { readonly success: false; readonly error: string };
 
-interface RequiredTerminalChatCallbackInput {
-  readonly status: "completed" | "failed";
-  readonly error?: string;
-}
-
 function createUndeliveredChatCallbackId(runId: string) {
   return computed(async (get): Promise<string | undefined> => {
     const [callback] = await get(db$)
@@ -39,7 +34,6 @@ export function createRequiredTerminalChatCallback(runId: string) {
   const dispatch$ = command(
     async (
       { get, set },
-      input: RequiredTerminalChatCallbackInput,
       signal: AbortSignal,
     ): Promise<RequiredTerminalChatCallbackResult> => {
       const chatCallbackId = await get(beforeDispatch$);
@@ -52,8 +46,6 @@ export function createRequiredTerminalChatCallback(runId: string) {
         dispatchRunCallbacks$,
         {
           runId,
-          status: input.status,
-          error: input.error,
           redriveChatCallbackId: chatCallbackId,
         },
         signal,

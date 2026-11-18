@@ -208,9 +208,16 @@ try {
         (await sql`SELECT count(*)::int AS n FROM projects`)[0]?.n,
         excluded ? 0 : 3,
       );
-      assert.equal(
-        (await sql`SELECT count(*)::int AS n FROM project_events`)[0]?.n,
-        excluded ? 0 : 3,
+      assert.deepEqual(
+        Array.from(
+          await sql`SELECT kind, count(*)::int AS n FROM project_events GROUP BY kind ORDER BY kind::text`,
+        ),
+        excluded
+          ? []
+          : [
+              { kind: "created", n: 3 },
+              { kind: "sort_updated", n: 3 },
+            ],
       );
       assert.equal(
         (await sql`SELECT count(*)::int AS n FROM chat_thread_events`)[0]?.n,

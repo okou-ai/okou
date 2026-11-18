@@ -174,70 +174,10 @@ final class NativeLifetimeTrace {
       return yes + no.flatMap { block(statement.body.statements, states: [$0]) }
     }
     if let statement = node.as(DoStmtSyntax.self) {
-      return block(statement.body.statements, states: [path]).flatMap { result in
-        guard result.exit == .thrown, !statement.catchClauses.isEmpty else { return [result] }
-        var failures = statement.catchClauses.flatMap { handler in
-          var failure = result
-          failure.exit = .normal
-          for item in handler.catchItems {
-            if let binding = item.pattern?.as(ValueBindingPatternSyntax.self),
-              let name = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text
-            {
-              failure.locals.insert(name)
-              failure.values[name] = .unknown
-            }
-          }
-          return block(handler.body.statements, states: [failure])
-        }
-        if !statement.catchClauses.contains(where: { $0.catchItems.isEmpty }) {
-          failures.append(result)
-        }
-        return failures
-      }
+      return doStatement(statement, path: path)
     }
     if let loop = node.as(ForStmtSyntax.self) {
-      let sequence = value(loop.sequence, path: &path)
-      var iteration = path
-      let bindings = nativeLifetimeBindings(loop.pattern)
-      iteration.locals.formUnion(bindings)
-      iteration.immutable.formUnion(bindings)
-      for name in bindings { iteration.values[name] = .unknown }
-      if let name = loop.pattern.as(IdentifierPatternSyntax.self)?.identifier.text {
-        iteration.locals.insert(name)
-        iteration.immutable.insert(name)
-        iteration.values[name] =
-          sequence == .collection
-          ? .handle
-          : sequence == .completionCollection ? .completion : .unknown
-      }
-      let entering: [NativeLifetimePath]
-      if let filter = loop.whereClause {
-        var matching = iteration
-        var skipped = iteration
-        constrain(filter.condition, count: 1, initial: iteration, yes: &matching, no: &skipped)
-        entering = [matching]
-      } else {
-        entering = [iteration]
-      }
-      let results = block(loop.body.statements, states: entering)
-      if [.collection, .completionCollection].contains(sequence), loop.whereClause == nil,
-        results.allSatisfy({ $0.released && ($0.exit == .normal || $0.exit == .continueLoop) })
-      {
-        path.released = true
-      }
-      // Unknown iteration cannot establish unconditional cleanup.
-      return [path]
-        + results.map { result in
-          var result = result
-          if result.exit == .breakLoop || result.exit == .continueLoop { result.exit = .normal }
-          result.values = path.values.merging(
-            result.values.filter { $0.key.hasPrefix("self.") }
-          ) { _, new in new
-          }
-          result.locals = path.locals
-          result.immutable = path.immutable
-          return result
-        }
+      return forLoop(loop, path: path)
     }
     if let loop = node.as(WhileStmtSyntax.self) {
       let (yes, no, _) = conditions(loop.conditions, path: path)
@@ -257,11 +197,7 @@ final class NativeLifetimeTrace {
       }
     }
     if let statement = expression?.as(SwitchExprSyntax.self) {
-      _ = value(statement.subject, path: &path)
-      return statement.cases.flatMap { entry -> [NativeLifetimePath] in
-        guard let branch = entry.as(SwitchCaseSyntax.self) else { return [path] }
-        return block(branch.statements, states: [path])
-      }
+      return switchStatement(statement, path: path)
     }
     if let statement = node.as(ReturnStmtSyntax.self) {
       if let expression = statement.expression {
@@ -288,18 +224,7 @@ final class NativeLifetimeTrace {
       return [path]
     }
     if let variable = node.as(VariableDeclSyntax.self) {
-      for binding in variable.bindings {
-        let source = binding.initializer.map { value($0.value, path: &path) } ?? .unknown
-        if let name = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text {
-          path.locals.insert(name)
-          if variable.bindingSpecifier.text == "let" {
-            path.immutable.insert(name)
-          } else {
-            path.immutable.remove(name)
-          }
-          path.values[name] = source
-        }
-      }
+      declare(variable, path: &path)
     } else if let expression {
       _ = value(expression, path: &path)
     }
@@ -333,6 +258,105 @@ final class NativeLifetimeTrace {
       return [path, failure]
     }
     return [path]
+  }
+
+  private func declare(_ variable: VariableDeclSyntax, path: inout NativeLifetimePath) {
+    for binding in variable.bindings {
+      let source = binding.initializer.map { value($0.value, path: &path) } ?? .unknown
+      if let name = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text {
+        path.locals.insert(name)
+        if variable.bindingSpecifier.text == "let" {
+          path.immutable.insert(name)
+        } else {
+          path.immutable.remove(name)
+        }
+        path.values[name] = source
+      }
+    }
+  }
+
+  private func doStatement(
+    _ statement: DoStmtSyntax, path: NativeLifetimePath
+  ) -> [NativeLifetimePath] {
+    return block(statement.body.statements, states: [path]).flatMap { result in
+      guard result.exit == .thrown, !statement.catchClauses.isEmpty else { return [result] }
+      var failures = statement.catchClauses.flatMap { handler in
+        var failure = result
+        failure.exit = .normal
+        for item in handler.catchItems {
+          if let binding = item.pattern?.as(ValueBindingPatternSyntax.self),
+            let name = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text
+          {
+            failure.locals.insert(name)
+            failure.values[name] = .unknown
+          }
+        }
+        return block(handler.body.statements, states: [failure])
+      }
+      if !statement.catchClauses.contains(where: { $0.catchItems.isEmpty }) {
+        failures.append(result)
+      }
+      return failures
+    }
+  }
+
+  private func forLoop(
+    _ loop: ForStmtSyntax, path initial: NativeLifetimePath
+  ) -> [NativeLifetimePath] {
+    var path = initial
+    let sequence = value(loop.sequence, path: &path)
+    var iteration = path
+    let bindings = nativeLifetimeBindings(loop.pattern)
+    iteration.locals.formUnion(bindings)
+    iteration.immutable.formUnion(bindings)
+    for name in bindings { iteration.values[name] = .unknown }
+    if let name = loop.pattern.as(IdentifierPatternSyntax.self)?.identifier.text {
+      iteration.locals.insert(name)
+      iteration.immutable.insert(name)
+      iteration.values[name] =
+        sequence == .collection
+        ? .handle
+        : sequence == .completionCollection ? .completion : .unknown
+    }
+    let entering: [NativeLifetimePath]
+    if let filter = loop.whereClause {
+      var matching = iteration
+      var skipped = iteration
+      constrain(filter.condition, count: 1, initial: iteration, yes: &matching, no: &skipped)
+      entering = [matching]
+    } else {
+      entering = [iteration]
+    }
+    let results = block(loop.body.statements, states: entering)
+    if [.collection, .completionCollection].contains(sequence), loop.whereClause == nil,
+      results.allSatisfy({ $0.released && ($0.exit == .normal || $0.exit == .continueLoop) })
+    {
+      path.released = true
+    }
+    // Unknown iteration cannot establish unconditional cleanup.
+    return [path]
+      + results.map { result in
+        var result = result
+        if result.exit == .breakLoop || result.exit == .continueLoop { result.exit = .normal }
+        result.values = path.values.merging(
+          result.values.filter { $0.key.hasPrefix("self.") }
+        ) { _, new in new
+        }
+        result.locals = path.locals
+        result.immutable = path.immutable
+        return result
+      }
+  }
+
+  private func switchStatement(
+    _ statement: SwitchExprSyntax, path initial: NativeLifetimePath
+  ) -> [NativeLifetimePath] {
+    var path = initial
+    _ = value(statement.subject, path: &path)
+    return statement.cases.flatMap { entry -> [NativeLifetimePath] in
+      guard let branch = entry.as(SwitchCaseSyntax.self) else { return [path] }
+      return block(branch.statements, states: [path])
+    }
   }
 
   private func conditional(_ node: IfExprSyntax, path: NativeLifetimePath) -> [NativeLifetimePath] {

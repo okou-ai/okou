@@ -1,5 +1,5 @@
 {
-  "id": "a8ffcc4c-31d6-4589-b61b-92aa9130026e",
+  "id": "a7df6ae6-9acd-4818-b7c1-4c120d163424",
   "prevId": "20dfaf4d-0955-44a9-9600-a39e77e287fa",
   "version": "7",
   "dialect": "postgresql",
@@ -19938,18 +19938,6 @@
           "notNull": true,
           "default": true
         },
-        "widget_push_token": {
-          "name": "widget_push_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "widget_pushed_at": {
-          "name": "widget_pushed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp",
@@ -26112,6 +26100,24 @@
           "primaryKey": false,
           "notNull": false
         },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reorder_target_id": {
+          "name": "reorder_target_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reorder_side": {
+          "name": "reorder_side",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "from_thread_id": {
           "name": "from_thread_id",
           "type": "uuid",
@@ -26276,6 +26282,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -39182,7 +39194,8 @@
       "values": [
         "created",
         "renamed",
-        "deleted"
+        "deleted",
+        "sort_updated"
       ]
     }
   },

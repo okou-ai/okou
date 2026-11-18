@@ -176,22 +176,19 @@ fn initialize_created(parent: &File, name: &std::ffi::OsStr, group: Gid) -> io::
 fn reject_acl(file: &File, access: bool) -> io::Result<()> {
     #[cfg(target_os = "linux")]
     {
-        use std::os::fd::AsRawFd;
         for name in [c"system.posix_acl_default", c"system.posix_acl_access"] {
             if !access && name == c"system.posix_acl_access" {
                 continue;
             }
-            // The names are static C strings; the kernel only reports size.
-            let size = unsafe {
-                libc::fgetxattr(file.as_raw_fd(), name.as_ptr(), std::ptr::null_mut(), 0)
+            let error = match rustix::fs::fgetxattr_query(file, name) {
+                Ok(_) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "ingress ACLs are not allowed",
+                    ));
+                }
+                Err(error) => io::Error::from(error),
             };
-            if size >= 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    "ingress ACLs are not allowed",
-                ));
-            }
-            let error = io::Error::last_os_error();
             if !matches!(error.raw_os_error(), Some(libc::ENODATA | libc::ENOTSUP)) {
                 return Err(error);
             }

@@ -5,15 +5,8 @@ import {
   type TemplateGuidanceBundle,
 } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import { USER_TEMPLATE_KINDS } from "@okouai/api-contracts/contracts/user-templates";
-import { presentationTemplates } from "@okouai/db/schema/presentation-template";
-import { userTemplates } from "@okouai/db/schema/user-template";
 import { computed, type Computed } from "ccstate";
-import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { enum as zEnum } from "zod";
-import {
-  nullableDriverValueDecoder,
-  pgTextDecoder,
-} from "../../lib/db-structured-result";
 import {
   resolveGenerationTemplatesGuidance,
   type LiveGenerationTemplate,
@@ -22,7 +15,6 @@ import {
   templateUsageIdentities,
   type TemplateUsageIdentity,
 } from "../../lib/template-usage-identity";
-import { db$ } from "../external/db";
 import { projectUserMessage } from "./chat-user-message.service";
 import { selectedUserPresentationTemplateIds } from "./presentation-template-data.service";
 import type { RunPromptAndSkills } from "./run-prompt-and-skills";
@@ -31,11 +23,15 @@ import {
   selectedUserTemplateIds,
   type MountedUserTemplate,
 } from "./user-template-data.service";
+import { createRunTemplateSources } from "./run-template-sources.service";
+import type { AgentRunContextSignals } from "./agent-run-context.signals";
 
 const templateKindSchema = zEnum(USER_TEMPLATE_KINDS);
-const templateKind = sql`${userTemplates.manifest}->>'kind'`.mapWith(
-  nullableDriverValueDecoder(pgTextDecoder),
-);
+
+type PrefetchedTemplates = Pick<
+  AgentRunContextSignals,
+  "requestTemplateInputId$" | "requestTemplateSources$"
+>;
 
 export type RunTemplatesResult =
   | (RunPromptAndSkills & {
@@ -59,26 +55,29 @@ export function createRunTemplates(
   event$: Parameters<typeof createRunTemplateGuidance>[0],
   orgId$: Parameters<typeof createRunTemplateGuidance>[1],
   disabledPaidTools$: Parameters<typeof createRunTemplateGuidance>[2],
-): Computed<Promise<RunTemplatesResult>> {
-  const guidance$ = createRunTemplateGuidance(
+  prefetched?: PrefetchedTemplates,
+) {
+  const guidance = createRunTemplateGuidance(
     event$,
     orgId$,
     disabledPaidTools$,
+    prefetched,
   );
-  return computed(async (get): Promise<RunTemplatesResult> => {
-    const guidance = await get(guidance$);
-    if ("error" in guidance) {
-      return guidance;
+  const templates$ = computed(async (get): Promise<RunTemplatesResult> => {
+    const prepared = await get(guidance.guidance$);
+    if ("error" in prepared) {
+      return prepared;
     }
     return {
-      templateUsageIdentities: guidance.templateUsageIdentities,
-      skillVolumes: guidance.skillVolumes,
+      templateUsageIdentities: prepared.templateUsageIdentities,
+      skillVolumes: prepared.skillVolumes,
       systemPromptVariables: {
-        generationTemplatePrompt: guidance.renderPrompt(),
+        generationTemplatePrompt: prepared.renderPrompt(),
       },
       userPromptVariables: {},
     };
   });
+  return { sources$: guidance.sources$, templates$ };
 }
 
 /** Current ACLs, selection validation and bundles, without discarded prompt text. */
@@ -87,26 +86,32 @@ export function createRunTemplatePackages(
   orgId$: Parameters<typeof createRunTemplateGuidance>[1],
   disabledPaidTools$: Parameters<typeof createRunTemplateGuidance>[2],
 ) {
-  const guidance$ = createRunTemplateGuidance(
+  const guidance = createRunTemplateGuidance(
     event$,
     orgId$,
     disabledPaidTools$,
   );
   return computed(async (get) => {
-    const guidance = await get(guidance$);
-    return "error" in guidance
-      ? guidance
-      : { skillVolumes: guidance.skillVolumes };
+    const prepared = await get(guidance.guidance$);
+    return "error" in prepared
+      ? prepared
+      : { skillVolumes: prepared.skillVolumes };
   });
 }
 
 function createRunTemplateGuidance(
   event$: Computed<
-    Promise<Pick<PickedThreadInputEvent, "userId" | "userMessage"> | null>
+    Promise<
+      | (Pick<PickedThreadInputEvent, "userId" | "userMessage"> & {
+          readonly id?: string;
+        })
+      | null
+    >
   >,
   orgId$: Computed<Promise<string>>,
   disabledPaidTools$: Computed<Promise<readonly string[]>>,
-): Computed<Promise<RunTemplateGuidanceResult>> {
+  prefetched?: PrefetchedTemplates,
+) {
   const selection$ = computed(async (get) => {
     const event = await get(event$);
     if (!event) {
@@ -120,32 +125,37 @@ function createRunTemplateGuidance(
       templates: projectUserMessage(event.userMessage).templates,
     };
   });
-  const presentations$ = computed(async (get) => {
-    const orgId = await get(orgId$);
-    const selection = await get(selection$);
-    if (!selection) {
-      return [];
-    }
-    const ids = selectedUserPresentationTemplateIds(selection.templates);
-    if (!ids.length) {
-      return [];
-    }
-    const rows = await get(db$)
-      .select({
-        id: presentationTemplates.id,
-        guidanceBundle: presentationTemplates.guidanceBundle,
-      })
-      .from(presentationTemplates)
-      .where(
-        and(
-          inArray(presentationTemplates.id, [...ids]),
-          eq(presentationTemplates.orgId, orgId),
-          or(
-            eq(presentationTemplates.ownerUserId, selection.userId),
-            eq(presentationTemplates.visibility, "public"),
+  const sourceInput$ = computed(async (get) => {
+    const [selection, orgId] = await Promise.all([
+      get(selection$),
+      get(orgId$),
+    ]);
+    return selection
+      ? {
+          userId: selection.userId,
+          orgId,
+          presentationIds: selectedUserPresentationTemplateIds(
+            selection.templates,
           ),
-        ),
-      );
+          userTemplateIds: selectedUserTemplateIds(selection.templates),
+        }
+      : null;
+  });
+  const currentSources$ = createRunTemplateSources(sourceInput$);
+  const sources$ = computed(async (get) => {
+    const event = await get(event$);
+    return prefetched &&
+      event?.id !== undefined &&
+      event.id === (await get(prefetched.requestTemplateInputId$))
+      ? await get(prefetched.requestTemplateSources$)
+      : await get(currentSources$);
+  });
+  const presentations$ = computed(async (get) => {
+    const [selection, { presentations: rows }] = await Promise.all([
+      get(selection$),
+      get(sources$),
+    ]);
+    const ids = selectedUserPresentationTemplateIds(selection?.templates ?? []);
     const accessible = new Map(
       rows.map((row) => {
         return [row.id, row];
@@ -166,32 +176,11 @@ function createRunTemplateGuidance(
     });
   });
   const mounted$ = computed(async (get) => {
-    const orgId = await get(orgId$);
-    const selection = await get(selection$);
-    if (!selection) {
-      return [];
-    }
-    const ids = selectedUserTemplateIds(selection.templates);
-    if (!ids.length) {
-      return [];
-    }
-    const rows = await get(db$)
-      .select({
-        id: userTemplates.id,
-        kind: templateKind,
-        guidanceBundle: userTemplates.guidanceBundle,
-      })
-      .from(userTemplates)
-      .where(
-        and(
-          inArray(userTemplates.id, [...ids]),
-          eq(userTemplates.orgId, orgId),
-          or(
-            eq(userTemplates.ownerUserId, selection.userId),
-            eq(userTemplates.visibility, "organization"),
-          ),
-        ),
-      );
+    const [selection, { mounted: rows }] = await Promise.all([
+      get(selection$),
+      get(sources$),
+    ]);
+    const ids = selectedUserTemplateIds(selection?.templates ?? []);
     const kinds = new Map(
       rows.map((row) => {
         return [row.id, row];
@@ -212,21 +201,24 @@ function createRunTemplateGuidance(
           ];
     });
   });
-  return computed(async (get): Promise<RunTemplateGuidanceResult> => {
-    const [selection, presentations, mounted, disabledPaidTools] =
-      await Promise.all([
-        get(selection$),
-        get(presentations$),
-        get(mounted$),
-        get(disabledPaidTools$),
-      ]);
-    return buildRunTemplateGuidance({
-      templates: selection?.templates ?? [],
-      presentations,
-      mounted,
-      disabledPaidTools,
-    });
-  });
+  const guidance$ = computed(
+    async (get): Promise<RunTemplateGuidanceResult> => {
+      const [selection, presentations, mounted, disabledPaidTools] =
+        await Promise.all([
+          get(selection$),
+          get(presentations$),
+          get(mounted$),
+          get(disabledPaidTools$),
+        ]);
+      return buildRunTemplateGuidance({
+        templates: selection?.templates ?? [],
+        presentations,
+        mounted,
+        disabledPaidTools,
+      });
+    },
+  );
+  return { sources$, guidance$ };
 }
 
 function buildRunTemplateGuidance(args: {

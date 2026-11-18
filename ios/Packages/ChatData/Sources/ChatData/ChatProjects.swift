@@ -5,6 +5,31 @@ public struct ChatProject: Codable, Equatable, Identifiable, Sendable {
   public let name: String
   public let createdAt: Date
   public let updatedAt: Date
+  public let sortOrder: String?
+
+  init(id: String, name: String, createdAt: Date, updatedAt: Date, sortOrder: String? = nil) {
+    self.id = id
+    self.name = name
+    self.createdAt = createdAt
+    self.updatedAt = updatedAt
+    self.sortOrder = sortOrder
+  }
+
+  /// Match the server's byte ordering, including unranked historical snapshots.
+  public static func isOrderedBefore(_ lhs: ChatProject, _ rhs: ChatProject) -> Bool {
+    let left = lhs.effectiveSortOrder
+    let right = rhs.effectiveSortOrder
+    return left.utf8.elementsEqual(right.utf8)
+      ? lhs.id.utf8.lexicographicallyPrecedes(rhs.id.utf8)
+      : left.utf8.lexicographicallyPrecedes(right.utf8)
+  }
+
+  private var effectiveSortOrder: String {
+    if let sortOrder { return sortOrder }
+    let milliseconds = String(Int64((createdAt.timeIntervalSince1970 * 1000).rounded(.down)))
+    return "a0" + String(repeating: "0", count: max(0, 17 - milliseconds.count)) + milliseconds
+      + "1"
+  }
 }
 
 /// Canonical Project operations share the authenticated workspace transport.

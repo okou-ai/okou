@@ -1149,6 +1149,9 @@ interface RejectedQueueHead {
 
 /** The Thread child's public surface: input readiness and run start. */
 export interface ThreadClaimRunObjects {
+  readonly threadResources$: Computed<Promise<void>>;
+  /** Entry-owned early reads; consumers retain their individual dependencies. */
+  readonly inputResources$: Computed<Promise<void>>;
   readonly threadHasActiveRun$: Computed<Promise<boolean>>;
   readonly hasFirstPickableChatEvent$: Computed<Promise<boolean>>;
   readonly orgHasCapacity$: Computed<Promise<boolean>>;
@@ -1289,7 +1292,19 @@ export function createThreadClaimRunObjects(
   const pickedEvent$ = computed(async (get) => {
     return (await get(preparation$)).pickedEvent;
   });
-  const threadContext = createThreadContext(bootstrap, pickedEvent$);
+  const chatThreadId = claim.chatThreadId;
+  const threadContext = createThreadContext(
+    bootstrap,
+    pickedEvent$,
+    chatThreadId,
+  );
+  const threadResources$ = computed(async (get) => {
+    // Request feature/member facts are already warm. Cold background picks
+    // retain demand loading rather than expanding optional sources on rejection.
+    if (requestFacts) {
+      await get(threadContext.threadAccessOverrides$);
+    }
+  });
   const okouTokenInput$ = createOkouTokenInputSignals(
     bootstrap,
     pickedEvent$,
@@ -3791,7 +3806,6 @@ export function createThreadClaimRunObjects(
                 runId: terminal.runId,
                 orgId: terminal.orgId,
                 status: "failed",
-                ...(terminal.error === null ? {} : { error: terminal.error }),
               }
             : {
                 kind: "cancellation-recovery",
@@ -3932,6 +3946,8 @@ export function createThreadClaimRunObjects(
   );
   return {
     threadHasActiveRun$,
+    threadResources$,
+    inputResources$: threadContext.inputResources$,
     hasFirstPickableChatEvent$,
     orgHasCapacity$,
     admittedLaunch$,
@@ -4110,7 +4126,6 @@ function launchRunValues(
     launchSnapshot: args.launchSnapshot,
     officialWorkflowProvenance: args.officialWorkflowProvenance ?? null,
     completedAt: null,
-    error: null,
     ...metadata,
   };
 }

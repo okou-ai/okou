@@ -1,5 +1,6 @@
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { agents } from "@okouai/db/schema/agent";
 import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -40,6 +41,7 @@ import { chatEventTypeIn } from "./chat-event-type.service";
 import {
   canonicalChatEventContent,
   canonicalChatEventError,
+  canonicalChatEventRunFailureId,
 } from "./canonical-chat-event-read.service";
 
 const L = logger("InternalCallbacksAgentPhoneChat");
@@ -58,12 +60,18 @@ const formatAgentPhoneMessageContent$ = command(
       readonly content: string;
       readonly error: string | null;
       readonly chatEventId: string;
+      readonly runFailureId: string | null;
+      readonly failureReason: RunFailureReasonToken | null;
     },
     signal: AbortSignal,
   ): Promise<string> => {
     const content = await set(formatIntegrationChatMessage$, args, signal);
+    const insufficientCredits =
+      args.runFailureId !== null
+        ? args.failureReason === "insufficient_credits"
+        : args.error === "insufficient_credits";
     // Workspace identity and account-management instructions belong in a DM.
-    if (args.isGroup || args.error !== "insufficient_credits") {
+    if (args.isGroup || !insufficientCredits) {
       return markdownToImessagePlain(content);
     }
 
@@ -246,6 +254,8 @@ const loadAgentPhoneChatDeliveryContext$ = command(
       .select({
         content: canonicalChatEventContent(),
         error: canonicalChatEventError(),
+        runFailureId: canonicalChatEventRunFailureId(),
+        failureReason: chatEvents.failureReason,
       })
       .from(chatEvents)
       .where(
@@ -281,6 +291,8 @@ const loadAgentPhoneChatDeliveryContext$ = command(
       run: runContext,
       messageContent: event.content,
       messageError: event.error,
+      runFailureId: event.runFailureId,
+      failureReason: event.failureReason,
       binding,
     };
   },
@@ -443,11 +455,15 @@ const deliverClaimedAgentPhoneChatCallback$ = command(
     },
     signal: AbortSignal,
   ): Promise<"delivered" | "skipped_revoked"> => {
-    const { payload, run, messageContent, messageError, binding } = await set(
-      loadAgentPhoneChatDeliveryContext$,
-      args,
-      signal,
-    );
+    const {
+      payload,
+      run,
+      messageContent,
+      messageError,
+      runFailureId,
+      failureReason,
+      binding,
+    } = await set(loadAgentPhoneChatDeliveryContext$, args, signal);
     if (!binding) {
       return "skipped_revoked";
     }
@@ -459,6 +475,8 @@ const deliverClaimedAgentPhoneChatCallback$ = command(
         isGroup: payload.isGroup,
         content: messageContent,
         error: messageError,
+        runFailureId,
+        failureReason,
         chatEventId: payload.chatEventId,
       },
       signal,
@@ -682,6 +700,8 @@ export const deliverAgentPhoneChatAdmissionFailure$ = command(
         isGroup: args.target.isGroup,
         content: event.content,
         error: event.error,
+        runFailureId: null,
+        failureReason: null,
         chatEventId: args.chatEventId,
       },
       signal,

@@ -28,6 +28,7 @@ import { chatEventTypeIn } from "./chat-event-type.service";
 import {
   canonicalChatEventContent,
   canonicalChatEventError,
+  canonicalChatEventRunFailureId,
 } from "./canonical-chat-event-read.service";
 import {
   teamsChatCallbackPayloadSchema,
@@ -94,6 +95,7 @@ const loadTeamsChatDeliveryContext$ = command(
       .select({
         content: canonicalChatEventContent(),
         error: canonicalChatEventError(),
+        runFailureId: canonicalChatEventRunFailureId(),
       })
       .from(chatEvents)
       .where(
@@ -151,6 +153,7 @@ const loadTeamsChatDeliveryContext$ = command(
       run,
       messageContent: event.content,
       messageError: event.error,
+      runFailureId: event.runFailureId,
       binding,
     };
   },
@@ -258,11 +261,14 @@ const deliverClaimedTeamsChatCallback$ = command(
     signal: AbortSignal,
   ): Promise<"delivered" | "skipped_revoked"> => {
     const db = get(db$);
-    const { payload, run, messageContent, messageError, binding } = await set(
-      loadTeamsChatDeliveryContext$,
-      args,
-      signal,
-    );
+    const {
+      payload,
+      run,
+      messageContent,
+      messageError,
+      runFailureId,
+      binding,
+    } = await set(loadTeamsChatDeliveryContext$, args, signal);
     if (!binding) {
       return "skipped_revoked";
     }
@@ -327,12 +333,18 @@ const deliverClaimedTeamsChatCallback$ = command(
         userId: run.userId,
         content: messageContent,
         error: messageError,
+        runFailureId,
       },
       signal,
     );
     const recovery = await set(
       integrationModelRecoveryForDelivery$,
-      { ...run, eventId: payload.chatEventId, error: messageError },
+      {
+        ...run,
+        eventId: payload.chatEventId,
+        runFailureId,
+        error: messageError,
+      },
       signal,
     );
     const result = await sendTeamsMessageReply(
@@ -686,7 +698,7 @@ export const deliverTeamsChatAdmissionFailure$ = command(
     }
     const recovery = await set(
       integrationModelRecoveryForDelivery$,
-      { ...args, eventId: args.chatEventId, error: "admission_error" },
+      { ...args, eventId: args.chatEventId, admissionFailure: true },
       signal,
     );
     const result = await sendTeamsMessageReply(

@@ -35,6 +35,7 @@ import { chatEventTypeIn } from "./chat-event-type.service";
 import {
   canonicalChatEventContent,
   canonicalChatEventError,
+  canonicalChatEventRunFailureId,
 } from "./canonical-chat-event-read.service";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { createSlackClient } from "../external/slack-message-client";
@@ -150,6 +151,7 @@ const loadSlackChatDeliveryContext$ = command(
       .select({
         content: canonicalChatEventContent(),
         error: canonicalChatEventError(),
+        runFailureId: canonicalChatEventRunFailureId(),
       })
       .from(chatEvents)
       .where(
@@ -206,7 +208,14 @@ const loadSlackChatDeliveryContext$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    return { payload, run, messageContent, messageError: event.error, binding };
+    return {
+      payload,
+      run,
+      messageContent,
+      messageError: event.error,
+      runFailureId: event.runFailureId,
+      binding,
+    };
   },
 );
 
@@ -344,11 +353,14 @@ const deliverClaimedSlackChatCallback$ = command(
     signal: AbortSignal,
   ): Promise<"delivered" | "skipped_revoked"> => {
     const db = get(db$);
-    const { payload, run, messageContent, messageError, binding } = await set(
-      loadSlackChatDeliveryContext$,
-      args,
-      signal,
-    );
+    const {
+      payload,
+      run,
+      messageContent,
+      messageError,
+      runFailureId,
+      binding,
+    } = await set(loadSlackChatDeliveryContext$, args, signal);
     if (!binding) {
       return "skipped_revoked";
     }
@@ -404,12 +416,18 @@ const deliverClaimedSlackChatCallback$ = command(
         userId: run.userId,
         content: messageContent,
         error: messageError,
+        runFailureId,
       },
       signal,
     );
     const recovery = await set(
       integrationModelRecoveryForDelivery$,
-      { ...run, eventId: payload.chatEventId, error: messageError },
+      {
+        ...run,
+        eventId: payload.chatEventId,
+        runFailureId,
+        error: messageError,
+      },
       signal,
     );
     return await set(postSlackChatMessage$, {
@@ -629,7 +647,7 @@ export const deliverSlackChatAdmissionFailure$ = command(
     signal.throwIfAborted();
     const recovery = await set(
       integrationModelRecoveryForDelivery$,
-      { ...args, eventId: args.chatEventId, error: "admission_error" },
+      { ...args, eventId: args.chatEventId, admissionFailure: true },
       signal,
     );
     await set(postSlackChatMessage$, {

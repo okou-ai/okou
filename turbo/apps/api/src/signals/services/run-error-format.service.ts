@@ -1,6 +1,6 @@
 import { command, computed, type Computed } from "ccstate";
 import {
-  formatRunErrorForExternalSurface,
+  formatRunFailureForExternalSurface,
   formatPersonalSubscriptionUsageLimitForExternalSurface,
 } from "@okouai/api-contracts/contracts/errors";
 import {
@@ -22,10 +22,8 @@ import {
   type ModelCatalog,
 } from "./model-catalog.service";
 
-const INSUFFICIENT_CREDITS_MARKER = "insufficient_credits";
-const PRO_REQUIRED_MARKER = "pro_required";
-
 interface RunErrorProviderContext {
+  readonly status: string;
   readonly modelProviderType: ModelProviderType | null;
   readonly failureReason: RunFailureReasonToken | null;
   readonly framework: ModelProviderFramework | null;
@@ -35,7 +33,6 @@ interface RunErrorProviderContext {
 interface FormatRunErrorLikeWebMessageParams {
   readonly chatThreadId?: string | null;
   readonly runId: string;
-  readonly errorMessage: string;
   readonly failureReason?: RunFailureReasonToken;
   readonly framework?: ModelProviderFramework | null;
   readonly modelProviderType?: ModelProviderType | null;
@@ -45,22 +42,6 @@ interface FormatRunErrorLikeWebMessageParams {
 function buildModelProvidersUrl(): string {
   const appUrl = env("APP_URL");
   return `${appUrl}/?settings=model`;
-}
-
-function isProRequiredRunError(message: string): boolean {
-  return message.toLowerCase().includes(PRO_REQUIRED_MARKER);
-}
-
-function isInsufficientCreditsRunError(message: string): boolean {
-  const normalized = message.toLowerCase();
-  return (
-    normalized === "insufficient_credits" ||
-    normalized.startsWith("insufficient_credits: insufficient credits.") ||
-    normalized.startsWith("insufficient credits. add credits or ") ||
-    normalized.startsWith(
-      "api error: 402 insufficient credits. add credits or ",
-    )
-  );
 }
 
 function formatLatestSessionProviderType(
@@ -79,6 +60,7 @@ function runErrorProviderContext(
   return computed(async (get): Promise<RunErrorProviderContext | undefined> => {
     const [run] = await get(db$)
       .select({
+        status: agentRuns.status,
         modelProviderType: agentRuns.modelProvider,
         modelRuntimeProviderType: agentRuns.modelRuntimeProvider,
         failureReason: agentRuns.failureReason,
@@ -101,6 +83,7 @@ function runErrorProviderContext(
     const frameworkProviderType = modelRuntimeProviderType ?? modelProviderType;
 
     return {
+      status: run.status,
       modelProviderType,
       failureReason: run.failureReason,
       framework:
@@ -130,16 +113,6 @@ function formatRunErrorLikeWebMessage(
   params: FormatRunErrorLikeWebMessageParams,
 ): Computed<Promise<string>> {
   return computed(async (get): Promise<string> => {
-    const errorMessage = params.errorMessage.trim() || "Run failed";
-    if (params.failureReason === undefined) {
-      if (isProRequiredRunError(errorMessage)) {
-        return PRO_REQUIRED_MARKER;
-      }
-      if (isInsufficientCreditsRunError(errorMessage)) {
-        return INSUFFICIENT_CREDITS_MARKER;
-      }
-    }
-
     const providerContext =
       params.modelProviderType !== undefined &&
       params.selectedModel !== undefined
@@ -163,9 +136,7 @@ function formatRunErrorLikeWebMessage(
         selectedModel,
       );
     }
-    return formatRunErrorForExternalSurface({
-      code: "INTERNAL_SERVER_ERROR",
-      message: errorMessage,
+    return formatRunFailureForExternalSurface({
       failureReason: params.failureReason,
       framework: params.framework,
       selectedModelLabel,
@@ -189,6 +160,12 @@ export const formatRunErrorForRunOwner$ = command(
   ): Promise<string> => {
     const providerContext = await get(runErrorProviderContext(params.runId));
     signal.throwIfAborted();
+    if (providerContext?.status === "cancelled") {
+      return "Run cancelled";
+    }
+    if (providerContext?.status === "timeout") {
+      return "Run timed out";
+    }
 
     const message = await get(
       formatRunErrorLikeWebMessage({
@@ -207,7 +184,6 @@ export const formatRunErrorForRunOwner$ = command(
       formatPersonalSubscriptionUsageLimitForExternalSurface({
         failureReason: providerContext?.failureReason,
         modelProviderType: providerContext?.modelProviderType,
-        message,
         modelProvidersUrl: buildModelProvidersUrl(),
       }) ?? message
     );

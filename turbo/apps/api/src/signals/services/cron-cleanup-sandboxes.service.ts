@@ -103,22 +103,6 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function terminalError(candidate: ThreadlessRunCandidate): string | undefined {
-  if (candidate.status === "completed") {
-    return undefined;
-  }
-  if (candidate.error) {
-    return candidate.error;
-  }
-  if (candidate.status === "cancelled") {
-    return "Run cancelled";
-  }
-  if (candidate.status === "timeout") {
-    return "Run timed out";
-  }
-  return "Run failed";
-}
-
 function threadlessRunCandidateReadPlan() {
   const forwardCutoff = new Date(THREADLESS_RUN_FORWARD_CUTOFF_ISO);
   return {
@@ -127,7 +111,6 @@ function threadlessRunCandidateReadPlan() {
       orgId: agentRuns.orgId,
       userId: agentRuns.userId,
       status: agentRuns.status,
-      error: agentRuns.error,
       completedAt: agentRuns.completedAt,
       cancellationRecoveryCompleted: agentRuns.cancellationRecoveryCompleted,
     },
@@ -207,7 +190,6 @@ interface CleanupCutoffs {
 interface MaintenanceTerminalSideEffectsInput {
   readonly runId: string;
   readonly orgId: string;
-  readonly error: string;
   readonly deliveryNotification?: {
     readonly userId: string;
     readonly chatThreadId: string;
@@ -242,7 +224,6 @@ const dispatchMaintenanceTerminalSideEffects$ = command(
         runId: input.runId,
         orgId: input.orgId,
         status: "failed",
-        error: input.error,
         ...(input.deliveryNotification
           ? { deliveryNotification: input.deliveryNotification }
           : {}),
@@ -265,13 +246,7 @@ const cleanupSingleRun$ = command(
         ? "Run timed out while pending (never started)"
         : "Run timed out (no heartbeat)";
     const cutoff = staleRunCutoff(run, cutoffs);
-    const committed = await set(
-      commitStaleRunTimeout$,
-      run,
-      cutoff,
-      timeoutReason,
-      signal,
-    );
+    const committed = await set(commitStaleRunTimeout$, run, cutoff, signal);
     signal.throwIfAborted();
 
     if (!committed) {
@@ -310,7 +285,6 @@ const cleanupSingleRun$ = command(
       {
         runId: run.id,
         orgId: committed.orgId,
-        error: timeoutReason,
         ...(committed.chatThreadId !== null
           ? {
               deliveryNotification: {
@@ -409,7 +383,6 @@ const redriveTerminalLifecycle$ = command(
       }
     }
 
-    const error = terminalError(candidate);
     await set(
       dispatchCompleteSideEffects$,
       {
@@ -418,7 +391,6 @@ const redriveTerminalLifecycle$ = command(
         runId: candidate.runId,
         orgId: candidate.orgId,
         status: candidate.status === "completed" ? "completed" : "failed",
-        ...(error === undefined ? {} : { error }),
       },
       signal,
     );

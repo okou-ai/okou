@@ -13,6 +13,59 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1145.0](https://github.com/okou-ai/okou/compare/app-v0.1144.0...app-v0.1145.0) (2026-11-17)
+
+
+### Features
+
+* **app:** preselect multiple output formats from onboarding links ([#48433](https://github.com/okou-ai/okou/issues/48433)) ([293ff03](https://github.com/okou-ai/okou/commit/293ff03824b50f184a72b666db25a44725229eca))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.850.0
+    * @okouai/ui bumped to 1.21.46
+
+## [0.1144.0](https://github.com/okou-ai/okou/compare/app-v0.1143.1...app-v0.1144.0) (2026-11-17)
+
+
+### Features
+
+* add independent project sorting ([#48352](https://github.com/okou-ai/okou/issues/48352)) ([5ace277](https://github.com/okou-ai/okou/commit/5ace277384c9a3e0da65abdbf87a89fea3311d85))
+
+
+### Refactoring
+
+* activate structured run failures with retained storage ([#47844](https://github.com/okou-ai/okou/issues/47844)) ([fdb91d8](https://github.com/okou-ai/okou/commit/fdb91d8fea44a0be90036ebd9d6c25210eb5baa2))
+
+
+### Performance Improvements
+
+* **app:** keep vnc subscriptions with vnc controls ([#48343](https://github.com/okou-ai/okou/issues/48343)) ([e4282cd](https://github.com/okou-ai/okou/commit/e4282cd8fa2ea61022cd83761695fc14a555a018))
+* **app:** translate only consumed visualization labels ([#48424](https://github.com/okou-ai/okou/issues/48424)) ([2b07447](https://github.com/okou-ai/okou/commit/2b074478b4c7dc647afa68188a223b8bda600af2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.84.0
+    * @okouai/core bumped to 8.849.0
+    * @okouai/ui bumped to 1.21.45
+
+## [0.1143.1](https://github.com/okou-ai/okou/compare/app-v0.1143.0...app-v0.1143.1) (2026-11-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.83.1
+    * @okouai/core bumped to 8.848.1
+    * @okouai/ui bumped to 1.21.44
+
 ## [0.1143.0](https://github.com/okou-ai/okou/compare/app-v0.1142.1...app-v0.1143.0) (2026-11-17)
 
 

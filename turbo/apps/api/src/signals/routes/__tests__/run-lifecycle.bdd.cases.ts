@@ -14,6 +14,7 @@ import {
 } from "./helpers/public-runner-memory";
 
 import { usageMembersContract } from "@okouai/api-contracts/contracts/usage";
+import { CHAT_RUN_TRANSIENT_ERROR_MESSAGE } from "@okouai/api-contracts/contracts/errors";
 import { usageMembersRoutes } from "../usage-members";
 import { mockClerkUsers } from "./helpers/clerk-users";
 import { VERTEX_VOICE_URL, vertexVoiceResponse } from "./helpers/google-voice";
@@ -10622,7 +10623,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           const settled = await api.readRun(actor, created.runId);
           expect(settled.status).toBe("completed");
-          expect(settled.error ?? null).toBeNull();
+          expect(settled.failureReason).toBeUndefined();
         });
       });
     });
@@ -10653,6 +10654,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         async function completePublicFailure(args: {
           readonly failureReason: RunFailureReasonToken;
           readonly modelProvider?: "claude-code-oauth-token";
+          readonly expectedFailureReason?: KnownRunFailureReason;
+          readonly legacyError?: string;
         }) {
           const api = createRunsApi(context);
           const chat = createChatFilesBddApi(context);
@@ -10667,10 +10670,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           await api.heartbeatRunner(runnerGroup);
           const execution = await api.executionInput(run.runId);
+          const expectedFailureReason =
+            args.expectedFailureReason ?? args.failureReason;
           const error =
-            args.failureReason === "unknown"
+            args.legacyError ??
+            (args.failureReason === "unknown"
               ? undefined
-              : `provider failure for ${run.runId}`;
+              : `provider failure for ${run.runId}`);
           const completed = await webhooks.requestAgentComplete(
             {
               runId: run.runId,
@@ -10688,7 +10694,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           await flushWaitUntilForTest();
           await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
             status: "failed",
-            ...(error === undefined ? {} : { error }),
+            failureReason: expectedFailureReason,
             source: {
               providerType: modelProvider,
               model: selectedModel,
@@ -10703,7 +10709,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               return event.runId === run.runId;
             });
           expect(failures).toHaveLength(1);
-          expect(failures[0]?.failureReason).toBe(args.failureReason);
+          expect(failures[0]?.failureReason).toBe(expectedFailureReason);
           const raw = await chat.listThreadEventRows(actor, run.threadId);
           const rawFailures = raw.filter((event) => {
             return (
@@ -10711,7 +10717,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             );
           });
           expect(rawFailures).toHaveLength(1);
-          expect(rawFailures[0]?.failureReason).toBe(args.failureReason);
+          expect(rawFailures[0]?.failureReason).toBe(expectedFailureReason);
           return { failures };
         }
 
@@ -10724,6 +10730,16 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             expect(failures[0]?.failureReason).toBe(failureReason);
           },
         );
+
+        it("normalizes a future reason and ignores contradictory legacy cancellation diagnostics", async () => {
+          const { failures } = await completePublicFailure({
+            failureReason: "future_reason",
+            expectedFailureReason: "unknown",
+            legacyError:
+              "Run cancelled; You've hit your usage limit. https://private.invalid/token",
+          });
+          expect(failures[0]?.content).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
+        });
 
         it.each(["claude-code-oauth-token"] as const)(
           "preserves failed completion when sandbox root storage fills on %s",
@@ -10949,7 +10965,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect(runnerDuplicate.body).toStrictEqual(completed.body);
           const stillSettled = await api.readRun(actor, run.runId);
           expect(stillSettled.result).toStrictEqual(settled.result);
-          expect(stillSettled.error ?? null).toBeNull();
+          expect(stillSettled.failureReason).toBeUndefined();
 
           const continued = await api.createThreadRun(actor, {
             agentId,
@@ -11104,7 +11120,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         const failed = await api.readRun(actor, run.runId);
         expect(failed.status).toBe("failed");
-        expect(failed.error).toBe("runner job timed out");
+        expect(failed.failureReason).toBe("unknown");
         const runner = await api.requestRunRunner(actor, run.runId, [200]);
         expect(runner.body).toStrictEqual({
           sandboxStartupPath: null,
@@ -11191,9 +11207,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           const failed = await api.readRun(actor, source.runId);
           expect(failed.status).toBe("failed");
-          expect(failed.error).toBe(
-            "Agent execution timed out after 7200 seconds",
-          );
+          expect(failed.failureReason).toBe("unknown");
 
           await webhooks.requestAgentRunOutputs(
             {
@@ -11274,7 +11288,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           const failed = await api.readRun(actor, run.runId);
           expect(failed.status).toBe("failed");
-          expect(failed.error).toBe("Run completion outputs were not provided");
+          expect(failed.failureReason).toBe("unknown");
           const runner = await api.requestRunRunner(actor, run.runId, [200]);
           expect(runner.body).toStrictEqual(selected);
         });

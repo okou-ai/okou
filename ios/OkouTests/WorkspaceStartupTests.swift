@@ -85,16 +85,7 @@ final class WorkspaceStartupTests: XCTestCase {
     let cacheDirectory = CacheTestDirectory(owner: self)
     let archivedID = "40000000-0000-4000-8000-000000000004"
     let projectID = "30000000-0000-4000-8000-000000000071"
-    let snapshot = ChatHTTPResponse(
-      body: """
-        {"chatThreads":[
-          {"id":"\(storeThreadID)","agentId":"\(storeAgentID)","projectId":"\(projectID)",\
-        "title":"Recent cached chat",\
-        "sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","archived":false},
-          {"id":"\(archivedID)","agentId":"\(storeAgentID)","title":"Archived cached chat",\
-        "sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","archived":true}
-        ],"latestEventId":null,"latestSeqId":null}
-        """)
+    let snapshot = Self.cachedSnapshot(archivedID: archivedID, projectID: projectID)
     let navigationStarted = expectation(description: "Navigation is being loaded")
     let holdNavigation = Mutex(false)
     let releaseNavigation = HTTPResponseGate()
@@ -170,14 +161,7 @@ final class WorkspaceStartupTests: XCTestCase {
       await closing.value
     }
     await fulfillment(of: [navigationStarted], timeout: 2)
-    let cached = try store.sidebar.stateStore.get(store.sidebar.presentation)
-    XCTAssertEqual(cached.projects.map(\.project.name), ["Cached Project"])
-    XCTAssertEqual(cached.projects.first?.section.rows.map(\.title), ["Recent cached chat"])
-    XCTAssertTrue(store.projects.isExpanded(projectID))
-    XCTAssertTrue(cached.chats.isEmpty)
-    XCTAssertEqual(
-      store.list.threads(agentID: storeAgentID, archived: false).map(\.title),
-      ["Recent cached chat"])
+    try assertCachedProjectSidebar(store, projectID: projectID)
 
     releaseNavigation.open()
     await fulfillment(of: [catchUpStarted], timeout: 2)
@@ -192,6 +176,30 @@ final class WorkspaceStartupTests: XCTestCase {
       store.list.threads(agentID: storeAgentID, archived: true).map(\.title),
       ["Archived cached chat"])
     XCTAssertNil(store.list.error)
+  }
+
+  private static func cachedSnapshot(archivedID: String, projectID: String) -> ChatHTTPResponse {
+    ChatHTTPResponse(
+      body: """
+        {"chatThreads":[
+          {"id":"\(storeThreadID)","agentId":"\(storeAgentID)","projectId":"\(projectID)",\
+        "title":"Recent cached chat",\
+        "sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","archived":false},
+          {"id":"\(archivedID)","agentId":"\(storeAgentID)","title":"Archived cached chat",\
+        "sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","archived":true}
+        ],"latestEventId":null,"latestSeqId":null}
+        """)
+  }
+
+  private func assertCachedProjectSidebar(_ store: WorkspaceStore, projectID: String) throws {
+    let cached = try store.sidebar.stateStore.get(store.sidebar.presentation)
+    XCTAssertEqual(cached.projects.map(\.project.name), ["Cached Project"])
+    XCTAssertEqual(cached.projects.first?.section.rows.map(\.title), ["Recent cached chat"])
+    XCTAssertTrue(store.projects.isExpanded(projectID))
+    XCTAssertTrue(cached.chats.isEmpty)
+    XCTAssertEqual(
+      store.list.threads(agentID: storeAgentID, archived: false).map(\.title),
+      ["Recent cached chat"])
   }
 
   func testRepeatedListRestoreFindsASeparateWritersNewerCommittedCacheWhileOffline() async throws {

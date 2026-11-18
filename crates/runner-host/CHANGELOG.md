@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.11.20](https://github.com/okou-ai/okou/compare/runner-host-v0.11.19...runner-host-v0.11.20) (2026-11-17)
+
+
+### Refactoring
+
+* use typed extended attribute operations ([#48421](https://github.com/okou-ai/okou/issues/48421)) ([6b3377e](https://github.com/okou-ai/okou/commit/6b3377e7ac70cd97e7aed16fabffe3df20778bd6))
+
+## [0.11.19](https://github.com/okou-ai/okou/compare/runner-host-v0.11.18...runner-host-v0.11.19) (2026-11-17)
+
+
+### Refactoring
+
+* use typed fifo creation in native fixtures ([#48355](https://github.com/okou-ai/okou/issues/48355)) ([05bf56d](https://github.com/okou-ai/okou/commit/05bf56dbc4876786786c0379dfce0776e09b4519))
+
 ## [0.11.18](https://github.com/okou-ai/okou/compare/runner-host-v0.11.17...runner-host-v0.11.18) (2026-11-17)
 
 

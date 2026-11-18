@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.48.0](https://github.com/okou-ai/okou/compare/ios-v0.47.4...ios-v0.48.0) (2026-11-17)
+
+
+### Features
+
+* add independent project sorting ([#48352](https://github.com/okou-ai/okou/issues/48352)) ([5ace277](https://github.com/okou-ai/okou/commit/5ace277384c9a3e0da65abdbf87a89fea3311d85))
+
+
+### Bug Fixes
+
+* **ios:** coordinate chat navigation and keyboard focus ([#48346](https://github.com/okou-ai/okou/issues/48346)) ([2bd7aa3](https://github.com/okou-ai/okou/commit/2bd7aa378d14fdb0d96b39f3ac9216bd0e8e60ca))
+
+## [0.47.4](https://github.com/okou-ai/okou/compare/ios-v0.47.3...ios-v0.47.4) (2026-11-17)
+
+
+### Refactoring
+
+* **ios:** enforce an 800-line file limit ([#48345](https://github.com/okou-ai/okou/issues/48345)) ([8b97e92](https://github.com/okou-ai/okou/commit/8b97e92fb58d517478fd9e5dcccbb43ec3738c37))
+
 ## [0.47.3](https://github.com/okou-ai/okou/compare/ios-v0.47.2...ios-v0.47.3) (2026-11-17)
 
 

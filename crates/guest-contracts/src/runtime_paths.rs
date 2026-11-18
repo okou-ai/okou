@@ -15,9 +15,13 @@ use std::path::Component;
 use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
+use nix::fcntl::OFlag;
+#[cfg(unix)]
+use nix::sys::stat::Mode;
+#[cfg(unix)]
 use std::ffi::{CString, OsStr};
 #[cfg(unix)]
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::fd::{AsRawFd, OwnedFd};
 #[cfg(unix)]
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use uuid::Uuid;
@@ -275,21 +279,17 @@ fn open_dir_root(path: &Path) -> io::Result<OwnedFd> {
             format!("invalid runtime directory root: {error}"),
         )
     })?;
-    // SAFETY: `root` is NUL-terminated and points to a static path string.
-    let fd = unsafe {
-        libc::open(
-            root.as_ptr(),
-            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC,
+    nix::fcntl::open(
+        root.as_c_str(),
+        OFlag::from_bits_retain(libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC),
+        Mode::empty(),
+    )
+    .map_err(|error| {
+        wrap_io_error(
+            error.into(),
+            format!("open runtime directory root for {}", path.display()),
         )
-    };
-    if fd < 0 {
-        return Err(wrap_last_os_error(format!(
-            "open runtime directory root for {}",
-            path.display()
-        )));
-    }
-    // SAFETY: `fd` is a fresh descriptor returned by `open`.
-    Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+    })
 }
 
 #[cfg(unix)]
@@ -360,25 +360,24 @@ fn chmod_created_dir_component(
 ) -> io::Result<()> {
     // `mkdirat` applies the process umask. Open the directory with O_PATH first
     // so a restrictive umask cannot prevent us from correcting the mode.
-    // SAFETY: `name_c` is NUL-terminated and `parent` owns a live directory fd.
-    let fd = unsafe {
-        libc::openat(
-            parent.as_raw_fd(),
-            name_c.as_ptr(),
+    let fd = nix::fcntl::openat(
+        parent,
+        name_c.as_c_str(),
+        OFlag::from_bits_retain(
             libc::O_PATH | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-        )
-    };
-    if fd < 0 {
-        return Err(dir_component_error(
+        ),
+        Mode::empty(),
+    )
+    .map_err(|error| {
+        dir_component_error(
             "open newly-created",
             parent,
             name,
             name_c,
             full_path,
-        ));
-    }
-    // SAFETY: `fd` is a fresh descriptor returned by `openat`.
-    let fd = unsafe { OwnedFd::from_raw_fd(fd) };
+            error.into(),
+        )
+    })?;
     let empty_path = b"\0";
     // SAFETY: `fd` owns a live O_PATH directory descriptor and empty_path is
     // NUL-terminated for AT_EMPTY_PATH.
@@ -456,8 +455,8 @@ fn dir_component_error(
     name: &OsStr,
     name_c: &CString,
     full_path: &Path,
+    error: io::Error,
 ) -> io::Error {
-    let error = io::Error::last_os_error();
     match error.raw_os_error() {
         Some(code) if code == libc::ELOOP => permission_denied(format!(
             "{} contains symlink component {}; refusing to use it as runtime directory",
@@ -514,10 +513,14 @@ fn open_or_create_dir_component(
 ) -> io::Result<OwnedFd> {
     let name_c = component_cstring(name, full_path)?;
     let path = component_path(parent_path, name);
-    // SAFETY: `name_c` is NUL-terminated and `parent` owns a live directory fd.
-    let mut fd = unsafe { libc::openat(parent.as_raw_fd(), name_c.as_ptr(), dir_open_flags()) };
+    let mut fd = nix::fcntl::openat(
+        parent,
+        name_c.as_c_str(),
+        OFlag::from_bits_retain(dir_open_flags()),
+        Mode::empty(),
+    );
     let mut created = false;
-    if fd < 0 && io::Error::last_os_error().raw_os_error() == Some(libc::ENOENT) {
+    if matches!(fd, Err(nix::errno::Errno::ENOENT)) {
         // SAFETY: `name_c` is NUL-terminated and `parent` owns a live directory fd.
         let mkdir_result =
             unsafe { libc::mkdirat(parent.as_raw_fd(), name_c.as_ptr(), PRIVATE_DIR_MODE) };
@@ -532,17 +535,16 @@ fn open_or_create_dir_component(
             created = true;
             chmod_created_dir_component(parent, name, &name_c, full_path)?;
         }
-        // SAFETY: `name_c` is NUL-terminated and `parent` owns a live directory fd.
-        fd = unsafe { libc::openat(parent.as_raw_fd(), name_c.as_ptr(), dir_open_flags()) };
+        fd = nix::fcntl::openat(
+            parent,
+            name_c.as_c_str(),
+            OFlag::from_bits_retain(dir_open_flags()),
+            Mode::empty(),
+        );
     }
-    if fd < 0 {
-        return Err(dir_component_error(
-            "open", parent, name, &name_c, full_path,
-        ));
-    }
-
-    // SAFETY: `fd` is a fresh descriptor returned by `openat`.
-    let fd = unsafe { OwnedFd::from_raw_fd(fd) };
+    let fd = fd.map_err(|error| {
+        dir_component_error("open", parent, name, &name_c, full_path, error.into())
+    })?;
     validate_dir_fd(&fd, &path)?;
     if is_final || created {
         chmod_dir_fd(&fd, &path)?;
@@ -767,29 +769,24 @@ fn open_private_file(path: &Path, append: bool, create_new: bool) -> io::Result<
         flags |= libc::O_EXCL;
     }
 
-    // SAFETY: `name_c` is NUL-terminated and `parent` owns a verified directory fd.
-    let fd = unsafe {
-        libc::openat(
-            parent.as_raw_fd(),
-            name_c.as_ptr(),
-            flags,
-            PRIVATE_FILE_MODE,
-        )
-    };
-    if fd < 0 {
-        let error = io::Error::last_os_error();
-        let error = if error.raw_os_error() == Some(libc::ELOOP) {
+    let fd = nix::fcntl::openat(
+        &parent,
+        name_c.as_c_str(),
+        OFlag::from_bits_retain(flags),
+        Mode::from_bits_retain(PRIVATE_FILE_MODE),
+    )
+    .map_err(|error| {
+        let error = io::Error::from(error);
+        if error.raw_os_error() == Some(libc::ELOOP) {
             permission_denied(format!(
                 "{} is a symlink; refusing to use it as runtime file",
                 path.display()
             ))
         } else {
             wrap_io_error(error, format!("open runtime file {}", path.display()))
-        };
-        return Err(error);
-    }
-    // SAFETY: `fd` is a fresh descriptor returned by `openat`.
-    let file = unsafe { File::from_raw_fd(fd) };
+        }
+    })?;
+    let file = File::from(fd);
     secure_regular_private_file(&file, path)?;
     Ok(file)
 }
@@ -860,30 +857,31 @@ fn open_existing_private_file(path: &Path, max_bytes: u64) -> io::Result<Option<
     let parent = open_or_create_private_dir(parent_dir(path)?)?;
     // O_NONBLOCK prevents a hostile special file from blocking before fstat
     // rejects it. O_NOFOLLOW keeps the final component descriptor-bound.
-    // SAFETY: `name_c` is NUL-terminated and `parent` owns a verified directory fd.
-    let fd = unsafe {
-        libc::openat(
-            parent.as_raw_fd(),
-            name_c.as_ptr(),
+    let fd = match nix::fcntl::openat(
+        &parent,
+        name_c.as_c_str(),
+        OFlag::from_bits_retain(
             libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK,
-        )
+        ),
+        Mode::empty(),
+    ) {
+        Ok(fd) => fd,
+        Err(error) => {
+            let error = io::Error::from(error);
+            return match error.raw_os_error() {
+                Some(libc::ENOENT) => Ok(None),
+                Some(libc::ELOOP) => Err(permission_denied(format!(
+                    "{} is a symlink; refusing to read it as a private runtime file",
+                    path.display()
+                ))),
+                _ => Err(wrap_io_error(
+                    error,
+                    format!("open private runtime file {}", path.display()),
+                )),
+            };
+        }
     };
-    if fd < 0 {
-        let error = io::Error::last_os_error();
-        return match error.raw_os_error() {
-            Some(libc::ENOENT) => Ok(None),
-            Some(libc::ELOOP) => Err(permission_denied(format!(
-                "{} is a symlink; refusing to read it as a private runtime file",
-                path.display()
-            ))),
-            _ => Err(wrap_io_error(
-                error,
-                format!("open private runtime file {}", path.display()),
-            )),
-        };
-    }
-    // SAFETY: `fd` is a fresh descriptor returned by `openat`.
-    let file = unsafe { File::from_raw_fd(fd) };
+    let file = File::from(fd);
     validate_existing_private_file(&file, path, max_bytes)?;
     Ok(Some(file))
 }
@@ -961,30 +959,31 @@ pub enum PrivateFileReplacementTarget {
 #[cfg(unix)]
 fn validate_replace_target(parent: &OwnedFd, name: &OsStr, path: &Path) -> io::Result<()> {
     let name_c = component_cstring(name, path)?;
-    // SAFETY: `name_c` is NUL-terminated and `parent` owns a verified directory fd.
-    let fd = unsafe {
-        libc::openat(
-            parent.as_raw_fd(),
-            name_c.as_ptr(),
+    let fd = match nix::fcntl::openat(
+        parent,
+        name_c.as_c_str(),
+        OFlag::from_bits_retain(
             libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK,
-        )
+        ),
+        Mode::empty(),
+    ) {
+        Ok(fd) => fd,
+        Err(error) => {
+            let error = io::Error::from(error);
+            return match error.raw_os_error() {
+                Some(libc::ENOENT) => Ok(()),
+                Some(libc::ELOOP) => Err(permission_denied(format!(
+                    "{} is a symlink; refusing to replace it as a private runtime file",
+                    path.display()
+                ))),
+                _ => Err(wrap_io_error(
+                    error,
+                    format!("open private runtime replacement target {}", path.display()),
+                )),
+            };
+        }
     };
-    if fd < 0 {
-        let error = io::Error::last_os_error();
-        return match error.raw_os_error() {
-            Some(libc::ENOENT) => Ok(()),
-            Some(libc::ELOOP) => Err(permission_denied(format!(
-                "{} is a symlink; refusing to replace it as a private runtime file",
-                path.display()
-            ))),
-            _ => Err(wrap_io_error(
-                error,
-                format!("open private runtime replacement target {}", path.display()),
-            )),
-        };
-    }
-    // SAFETY: `fd` is a fresh descriptor returned by `openat`.
-    let file = unsafe { File::from_raw_fd(fd) };
+    let file = File::from(fd);
     validate_existing_private_file(&file, path, u64::MAX)
 }
 
@@ -1017,23 +1016,21 @@ fn replace_private_atomic_unix(
 
     let temp_name = replacement_name();
     let temp_name_c = component_cstring(&temp_name, path)?;
-    // SAFETY: `temp_name_c` is NUL-terminated and `parent` owns a verified directory fd.
-    let fd = unsafe {
-        libc::openat(
-            parent.as_raw_fd(),
-            temp_name_c.as_ptr(),
+    let fd = nix::fcntl::openat(
+        &parent,
+        temp_name_c.as_c_str(),
+        OFlag::from_bits_retain(
             libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-            PRIVATE_FILE_MODE,
+        ),
+        Mode::from_bits_retain(PRIVATE_FILE_MODE),
+    )
+    .map_err(|error| {
+        wrap_io_error(
+            error.into(),
+            format!("create atomic private replacement for {}", path.display()),
         )
-    };
-    if fd < 0 {
-        return Err(wrap_last_os_error(format!(
-            "create atomic private replacement for {}",
-            path.display()
-        )));
-    }
-    // SAFETY: `fd` is a fresh descriptor returned by `openat`.
-    let mut file = unsafe { File::from_raw_fd(fd) };
+    })?;
+    let mut file = File::from(fd);
     let operation = (|| {
         set_file_private(&file)?;
         file.write_all(bytes)?;

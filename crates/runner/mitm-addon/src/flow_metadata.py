@@ -66,6 +66,10 @@ def firewall_permission(meta: Mapping[str, object]) -> str:
     return _metadata_str(meta, metadata_keys.FIREWALL_PERMISSION)
 
 
+def firewall_rule_match(meta: Mapping[str, object]) -> str:
+    return _metadata_str(meta, metadata_keys.FIREWALL_RULE_MATCH)
+
+
 def firewall_action(meta: Mapping[str, object], default: str = "ALLOW") -> str:
     return _metadata_str(meta, metadata_keys.FIREWALL_ACTION, default)
 
@@ -83,6 +87,18 @@ def connector_route_candidates(meta: Mapping[str, object]) -> list[str]:
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         return []
     return list(value)
+
+
+def connector_diagnostic_slug(meta: Mapping[str, object]) -> str | None:
+    return _metadata_optional_str(meta, metadata_keys.CONNECTOR_DIAGNOSTIC_SLUG)
+
+
+def connector_diagnostic_reason(meta: Mapping[str, object]) -> str | None:
+    return _metadata_optional_str(meta, metadata_keys.CONNECTOR_DIAGNOSTIC_REASON)
+
+
+def connector_diagnostic_base(meta: Mapping[str, object]) -> str | None:
+    return _metadata_optional_str(meta, metadata_keys.CONNECTOR_DIAGNOSTIC_BASE)
 
 
 def is_firewall_billable(meta: Mapping[str, object]) -> bool:

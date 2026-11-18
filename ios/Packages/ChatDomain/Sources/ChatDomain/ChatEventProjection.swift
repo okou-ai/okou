@@ -32,6 +32,47 @@ public enum ChatEventProjection {
       return left.id < right.id
     }.map(\.id)
 
+    let messages = try makeMessages(rows: rows, revoked: revoked, queuedInputs: queuedInputs)
+
+    let state: ChatExecutionState
+    if recovering {
+      state = .recovering
+    } else if !activeRuns.isDisjoint(with: interrupted) {
+      state = .stopping
+    } else if !activeRuns.isEmpty {
+      state = .running
+    } else if !queuedInputs.isEmpty {
+      state = .queued
+    } else {
+      switch rows.last(where: { $0.eventType.isTerminal })?.eventType {
+      case .runCompleted: state = .completed
+      case .runFailed: state = .failed
+      case .runCancelled: state = .cancelled
+      default: state = .idle
+      }
+    }
+    let work = ChatWorkProjection.build(rows: rows, messages: messages)
+    var usageEventIDs: [String: String] = [:]
+    for row in rows where row.eventType == .usageRecorded {
+      if let runID = row.runId { usageEventIDs[runID] = row.id }
+    }
+    return ChatHistory(
+      messages: work.messages, executionState: state,
+      activeRunIDs: activeRuns.subtracting(interrupted).sorted(),
+      activityRunID: state == .running ? orderedRuns.last : nil, queuedEventIDs: queuedInputs,
+      persistedEventIDs: Set(rows.map(\.id)), workSections: work.sections,
+      latestRunFinishAt: rows.filter { $0.eventType.isTerminal }.map(\.createdAt).max(),
+      latestFailureID: latestFailure(
+        rows: rows, messages: messages, revoked: revoked,
+        hasQueuedInput: !queuedInputs.isEmpty),
+      recommendedFollowups: ChatFollowupProjection.source(
+        rows: rows, active: state.isActive),
+      usageEventIDs: usageEventIDs, runUsageAnchors: work.usageAnchors)
+  }
+
+  private static func makeMessages(
+    rows: [ChatEvent], revoked: Set<String>, queuedInputs: [String]
+  ) throws -> [ChatMessage] {
     var messages: [ChatMessage] = []
     var previousRun: String?
     var previousModel: ChatUserMessage.Model?
@@ -109,41 +150,7 @@ public enum ChatEventProjection {
           modelChange: modelChange,
           failure: failure))
     }
-
-    let state: ChatExecutionState
-    if recovering {
-      state = .recovering
-    } else if !activeRuns.isDisjoint(with: interrupted) {
-      state = .stopping
-    } else if !activeRuns.isEmpty {
-      state = .running
-    } else if !queuedInputs.isEmpty {
-      state = .queued
-    } else {
-      switch rows.last(where: { $0.eventType.isTerminal })?.eventType {
-      case .runCompleted: state = .completed
-      case .runFailed: state = .failed
-      case .runCancelled: state = .cancelled
-      default: state = .idle
-      }
-    }
-    let work = ChatWorkProjection.build(rows: rows, messages: messages)
-    var usageEventIDs: [String: String] = [:]
-    for row in rows where row.eventType == .usageRecorded {
-      if let runID = row.runId { usageEventIDs[runID] = row.id }
-    }
-    return ChatHistory(
-      messages: work.messages, executionState: state,
-      activeRunIDs: activeRuns.subtracting(interrupted).sorted(),
-      activityRunID: state == .running ? orderedRuns.last : nil, queuedEventIDs: queuedInputs,
-      persistedEventIDs: Set(rows.map(\.id)), workSections: work.sections,
-      latestRunFinishAt: rows.filter { $0.eventType.isTerminal }.map(\.createdAt).max(),
-      latestFailureID: latestFailure(
-        rows: rows, messages: messages, revoked: revoked,
-        hasQueuedInput: !queuedInputs.isEmpty),
-      recommendedFollowups: ChatFollowupProjection.source(
-        rows: rows, active: state.isActive),
-      usageEventIDs: usageEventIDs, runUsageAnchors: work.usageAnchors)
+    return messages
   }
 
   /// PWA orders a run's events at its first occurrence and places queued inputs last.

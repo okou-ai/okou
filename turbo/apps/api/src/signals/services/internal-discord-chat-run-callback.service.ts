@@ -21,6 +21,7 @@ import { settle } from "../utils";
 import {
   canonicalChatEventContent,
   canonicalChatEventError,
+  canonicalChatEventRunFailureId,
 } from "./canonical-chat-event-read.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { requireDiscordOutputAccess$ } from "./discord-output-destination.service";
@@ -206,11 +207,26 @@ const readDiscordResponsePresentation$ = command(
       readonly orgId: string;
       readonly agentId: string;
       readonly runId: string | null;
-      readonly replyToMention?: string;
+      readonly channelId: string;
+      readonly discordUserId: string;
     },
     signal: AbortSignal,
   ) => {
     const db = get(db$);
+    const [mentionerCount] = await db
+      .select({ count: countDistinct(discordChatThreadRoutes.userId) })
+      .from(discordChatThreadRoutes)
+      .innerJoin(
+        discordOrgConnections,
+        eq(discordOrgConnections.id, discordChatThreadRoutes.connectionId),
+      )
+      .where(eq(discordChatThreadRoutes.destinationChannelId, args.channelId));
+    signal.throwIfAborted();
+    if (!mentionerCount) {
+      throw new Error("Discord reply mentioner count is unavailable");
+    }
+    const replyToMention =
+      mentionerCount.count > 1 ? `<@${args.discordUserId}>` : undefined;
     const agentLabel = await (async () => {
       const [org] = await db
         .select({ defaultAgentId: orgMetadata.defaultAgentId })
@@ -234,12 +250,12 @@ const readDiscordResponsePresentation$ = command(
     if (args.runId === null) {
       return integrationAdmissionFailurePresentation({
         agentLabel,
-        replyToMention: args.replyToMention,
+        replyToMention,
       });
     }
     return integrationAgentResponsePresentation({
       agentLabel,
-      replyToMention: args.replyToMention,
+      replyToMention,
     });
   },
 );
@@ -262,6 +278,7 @@ export const sendDiscordChatReply$ = command(
           .select({
             content: canonicalChatEventContent(),
             error: canonicalChatEventError(),
+            runFailureId: canonicalChatEventRunFailureId(),
             runId: chatEvents.runId,
             agentId: agents.id,
           })
@@ -302,35 +319,14 @@ export const sendDiscordChatReply$ = command(
           return;
         }
         const binding = access.binding;
-        const [mentionerCount] = await db
-          .select({ count: countDistinct(discordChatThreadRoutes.userId) })
-          .from(discordChatThreadRoutes)
-          .innerJoin(
-            discordOrgConnections,
-            eq(discordOrgConnections.id, discordChatThreadRoutes.connectionId),
-          )
-          .where(
-            and(
-              eq(
-                discordChatThreadRoutes.destinationChannelId,
-                request.target.channelId,
-              ),
-            ),
-          );
-        signal.throwIfAborted();
-        if (!mentionerCount) {
-          throw new Error("Discord reply mentioner count is unavailable");
-        }
         const presentation = await set(
           readDiscordResponsePresentation$,
           {
             orgId: request.orgId,
             agentId: event.agentId,
             runId: event.runId,
-            replyToMention:
-              mentionerCount.count > 1
-                ? `<@${binding.discordUserId}>`
-                : undefined,
+            channelId: request.target.channelId,
+            discordUserId: binding.discordUserId,
           },
           signal,
         );
@@ -342,6 +338,7 @@ export const sendDiscordChatReply$ = command(
             userId: request.userId,
             content: event.content,
             error: event.error,
+            runFailureId: event.runFailureId,
           },
           signal,
         );
@@ -350,7 +347,12 @@ export const sendDiscordChatReply$ = command(
           : message;
         const recovery = await set(
           integrationModelRecoveryForDelivery$,
-          { ...request, eventId: request.chatEventId, error: event.error },
+          {
+            ...request,
+            eventId: request.chatEventId,
+            runFailureId: event.runFailureId,
+            error: event.error,
+          },
           signal,
         );
         await postParts(

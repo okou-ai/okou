@@ -30,6 +30,7 @@ import {
   zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { db$ } from "../external/db";
+import { joinAll } from "../utils";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import {
   canonicalChatEventUserMessage,
@@ -175,7 +176,7 @@ function buildPreparationSelections(
     );
 }
 
-/** One statement snapshot, owned by an actual successful queue-claim receipt. */
+/** One head/capacity statement joined with the claim's owned Thread facts. */
 export function createChatRunPreparationSnapshot(
   claim: { readonly orgId: string; readonly chatThreadId: string },
   bootstrap: AgentRunContextSignals,
@@ -199,7 +200,7 @@ export function createChatRunPreparationSnapshot(
       .limit(1);
     return row ?? null;
   });
-  const snapshot$ = computed(async (get) => {
+  const availability$ = computed(async (get) => {
     const database = get(db$);
     // The limit belongs to the identity context; occupancy is sampled here.
     const capacity = await get(bootstrap.concurrencyCapacity$);
@@ -214,34 +215,32 @@ export function createChatRunPreparationSnapshot(
       agentId: bootstrap.agentId,
       orgId: claim.orgId,
     });
-    const [thread, [row]] = await Promise.all([
-      get(threadRow$),
-      database
-        .with(occupancy, head)
-        .select({
-          hasCapacity: sql`${hasCapacity}`.mapWith(pgBooleanDecoder),
-          threadHasActiveRun: exists(
-            new QueryBuilder()
-              .select({ runId: activeAgentRuns.runId })
-              .from(activeAgentRuns)
-              .where(eq(activeAgentRuns.chatThreadId, claim.chatThreadId)),
-          ).mapWith(pgBooleanDecoder),
-          head: {
-            id: head.id,
-            chatThreadId: head.chatThreadId,
-            createdAt: head.createdAt,
-            seqId: head.seqId,
-            eventType: head.eventType,
-            contextType: head.contextType,
-            contextId: head.contextId,
-            userMessage: head.userMessage,
-            requiredOfficialWorkflowIds: head.requiredOfficialWorkflowIds,
-            modelSelection: head.modelSelection,
-            sourceAutonomyBudget: head.sourceAutonomyBudget,
-          },
-          // No head/full queues do not inspect policy or selections; automation
-          // inputs bypass the prompt-only Official thread policy as before.
-          isOfficialWorkflowThread: sql`CASE WHEN ${not(hasCapacity)} THEN false
+    const [row] = await database
+      .with(occupancy, head)
+      .select({
+        hasCapacity: sql`${hasCapacity}`.mapWith(pgBooleanDecoder),
+        threadHasActiveRun: exists(
+          new QueryBuilder()
+            .select({ runId: activeAgentRuns.runId })
+            .from(activeAgentRuns)
+            .where(eq(activeAgentRuns.chatThreadId, claim.chatThreadId)),
+        ).mapWith(pgBooleanDecoder),
+        head: {
+          id: head.id,
+          chatThreadId: head.chatThreadId,
+          createdAt: head.createdAt,
+          seqId: head.seqId,
+          eventType: head.eventType,
+          contextType: head.contextType,
+          contextId: head.contextId,
+          userMessage: head.userMessage,
+          requiredOfficialWorkflowIds: head.requiredOfficialWorkflowIds,
+          modelSelection: head.modelSelection,
+          sourceAutonomyBudget: head.sourceAutonomyBudget,
+        },
+        // No head/full queues do not inspect policy or selections; automation
+        // inputs bypass the prompt-only Official thread policy as before.
+        isOfficialWorkflowThread: sql`CASE WHEN ${not(hasCapacity)} THEN false
             WHEN ${eq(head.eventType, "input.prompt")} THEN ${officialWorkflowThreadCondition(
               {
                 threadId: claim.chatThreadId,
@@ -249,17 +248,20 @@ export function createChatRunPreparationSnapshot(
                 userId: bootstrap.userId,
               },
             )} ELSE false END`.mapWith(pgBooleanDecoder),
-          threadConnectorSelections:
-            sql`CASE WHEN ${not(hasCapacity)} THEN '[]'::jsonb
+        threadConnectorSelections:
+          sql`CASE WHEN ${not(hasCapacity)} THEN '[]'::jsonb
             WHEN ${isNotNull(head.id)} THEN (${selections})
             ELSE '[]'::jsonb END`.mapWith(threadSelectionRowsDecoder),
-        })
-        .from(occupancy)
-        .leftJoin(head, sql`true`),
-    ]);
+      })
+      .from(occupancy)
+      .leftJoin(head, sql`true`);
     if (!row) {
       throw new Error("Chat preparation occupancy returned no row");
     }
+    return row;
+  });
+  const snapshot$ = computed(async (get) => {
+    const [thread, row] = await joinAll([get(threadRow$), get(availability$)]);
     const picked = row.head;
     if (!thread || !picked) {
       return {

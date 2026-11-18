@@ -45,14 +45,7 @@ final class AttachmentFlowFixture: Sendable {
           url: "artifact://\(Self.fileID)")
       let metadata = try JSONEncoder().encodeString(file)
       if path.hasPrefix("/api/agents/") && path.hasSuffix("/draft") {
-        if request.httpMethod == "PATCH" {
-          let draft = try JSONDecoder().decode(ComposerDraft.self, from: chatRequestBody(request))
-          state.value.withLock { $0.agentDrafts[path] = draft }
-          return ChatHTTPResponse(status: 204, body: "")
-        }
-        let draft = state.value.withLock { $0.agentDrafts[path] ?? ComposerDraft() }
-        return try ChatHTTPResponse(
-          json: draft)
+        return try Self.agentDraftResponse(request, path: path, state: state)
       }
       switch path {
       case "/api/voice-io/quota", "/api/voice-io/transcribe/segment",
@@ -123,25 +116,7 @@ final class AttachmentFlowFixture: Sendable {
           body:
             "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}")
       case let path where path.hasSuffix("/event-rows"):
-        if let accepted = state.value.withLock({ $0.accepted }) {
-          let message = try JSONDecoder().decode(PersistedMessage.self, from: accepted)
-          let after =
-            URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
-            .queryItems?.first { $0.name == "sinceSeqId" }?.value.flatMap(Int.init) ?? 0
-          if after >= 1 {
-            return ChatHTTPResponse(
-              body:
-                "{\"rows\":[],\"cursor\":{\"lastEventId\":\"\(message.clientEventId)\",\"lastSeqId\":1},\"hasMore\":false}"
-            )
-          }
-          let document = try JSONEncoder().encodeString(message.userMessage)
-          return ChatHTTPResponse(
-            body:
-              "{\"rows\":[{\"id\":\"\(message.clientEventId)\",\"chatThreadId\":\"\(Self.threadID)\",\"seqId\":1,\"eventType\":\"input.prompt\",\"createdAt\":\"2026-10-19T10:00:00Z\",\"payload\":{\"userMessage\":\(document)}}],\"cursor\":{\"lastEventId\":\"\(message.clientEventId)\",\"lastSeqId\":1},\"hasMore\":false}"
-          )
-        }
-        return ChatHTTPResponse(
-          body: "{\"rows\":[],\"cursor\":{\"lastEventId\":null,\"lastSeqId\":0},\"hasMore\":false}")
+        return try Self.historyResponse(request, state: state)
       case "/api/chat-threads/\(Self.threadID)":
         if request.httpMethod == "PATCH" {
           let draft = try JSONDecoder().decode(ComposerDraft.self, from: chatRequestBody(request))
@@ -150,24 +125,70 @@ final class AttachmentFlowFixture: Sendable {
         }
         return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
       case "/api/chat/events":
-        await sending()
-        let failed = state.value.withLock {
-          $0.messages.append(chatRequestBody(request))
-          if failSend && $0.messages.count == 1 {
-            if acceptBeforeFailure { $0.accepted = chatRequestBody(request) }
-            return true
-          }
-          $0.accepted = chatRequestBody(request)
-          return false
-        }
-        return ChatHTTPResponse(
-          status: failed ? 503 : 201,
-          body: failed
-            ? "{\"error\":{\"message\":\"Unknown delivery\"}}"
-            : "{\"threadId\":\"\(Self.threadID)\"}")
+        return await Self.sendResponse(
+          request, state: state, failSend: failSend,
+          acceptBeforeFailure: acceptBeforeFailure, sending: sending)
       default: throw URLError(.unsupportedURL)
       }
     }
+  }
+
+  private static func agentDraftResponse(
+    _ request: URLRequest, path: String, state: AttachmentFlowState
+  ) throws -> ChatHTTPResponse {
+    if request.httpMethod == "PATCH" {
+      let draft = try JSONDecoder().decode(ComposerDraft.self, from: chatRequestBody(request))
+      state.value.withLock { $0.agentDrafts[path] = draft }
+      return ChatHTTPResponse(status: 204, body: "")
+    }
+    let draft = state.value.withLock { $0.agentDrafts[path] ?? ComposerDraft() }
+    return try ChatHTTPResponse(
+      json: draft)
+  }
+
+  private static func historyResponse(
+    _ request: URLRequest, state: AttachmentFlowState
+  ) throws -> ChatHTTPResponse {
+    if let accepted = state.value.withLock({ $0.accepted }) {
+      let message = try JSONDecoder().decode(PersistedMessage.self, from: accepted)
+      let after =
+        URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+        .queryItems?.first { $0.name == "sinceSeqId" }?.value.flatMap(Int.init) ?? 0
+      if after >= 1 {
+        return ChatHTTPResponse(
+          body:
+            "{\"rows\":[],\"cursor\":{\"lastEventId\":\"\(message.clientEventId)\",\"lastSeqId\":1},\"hasMore\":false}"
+        )
+      }
+      let document = try JSONEncoder().encodeString(message.userMessage)
+      return ChatHTTPResponse(
+        body:
+          "{\"rows\":[{\"id\":\"\(message.clientEventId)\",\"chatThreadId\":\"\(Self.threadID)\",\"seqId\":1,\"eventType\":\"input.prompt\",\"createdAt\":\"2026-10-19T10:00:00Z\",\"payload\":{\"userMessage\":\(document)}}],\"cursor\":{\"lastEventId\":\"\(message.clientEventId)\",\"lastSeqId\":1},\"hasMore\":false}"
+      )
+    }
+    return ChatHTTPResponse(
+      body: "{\"rows\":[],\"cursor\":{\"lastEventId\":null,\"lastSeqId\":0},\"hasMore\":false}")
+  }
+
+  private static func sendResponse(
+    _ request: URLRequest, state: AttachmentFlowState, failSend: Bool,
+    acceptBeforeFailure: Bool, sending: @Sendable () async -> Void
+  ) async -> ChatHTTPResponse {
+    await sending()
+    let failed = state.value.withLock {
+      $0.messages.append(chatRequestBody(request))
+      if failSend && $0.messages.count == 1 {
+        if acceptBeforeFailure { $0.accepted = chatRequestBody(request) }
+        return true
+      }
+      $0.accepted = chatRequestBody(request)
+      return false
+    }
+    return ChatHTTPResponse(
+      status: failed ? 503 : 201,
+      body: failed
+        ? "{\"error\":{\"message\":\"Unknown delivery\"}}"
+        : "{\"threadId\":\"\(Self.threadID)\"}")
   }
 
   @MainActor func conversation(

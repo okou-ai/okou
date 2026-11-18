@@ -1,6 +1,6 @@
 [package]
 name = "guest-agent"
-version = "0.109.99"
+version = "0.109.101"
 edition.workspace = true
 
 [features]
@@ -50,8 +50,11 @@ guest-control-proto.workspace = true
 name = "integration"
 path = "tests/integration.rs"
 
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["fs"] }
+
 [target.'cfg(unix)'.dev-dependencies]
-nix = { workspace = true, features = ["fs", "resource"] }
+nix = { workspace = true, features = ["resource"] }
 
 [lints]
 workspace = true

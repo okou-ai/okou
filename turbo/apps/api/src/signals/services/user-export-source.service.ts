@@ -62,7 +62,7 @@ import { clerk$, createClerkReadContext } from "../external/clerk";
 import { listAllUserOrganizationMemberships } from "../external/clerk-organization-lists";
 import { db$ } from "../external/db";
 import { readUserExportAgentInstructions$ } from "./user-export-agent-instructions.service";
-import { chatEventRowFromDbRow } from "./chat-event-row-read.service";
+import { rawChatEventRowFromDbRow } from "./chat-event-row-read.service";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import {
   readAcceptedOfficialWorkflowCatalog$,
@@ -449,7 +449,7 @@ function messageSourceStep(
   head: SnapshotHead | undefined,
   window: ReturnType<typeof messageSourceWindow>,
   page: {
-    readonly rows: readonly Parameters<typeof chatEventRowFromDbRow>[0][];
+    readonly rows: readonly Parameters<typeof rawChatEventRowFromDbRow>[0][];
     readonly hasMore: boolean;
   },
 ) {
@@ -471,7 +471,7 @@ function messageSourceStep(
       content: Buffer.from(
         rows
           .map((row) => {
-            return JSON.stringify(chatEventRowFromDbRow(row));
+            return JSON.stringify(rawChatEventRowFromDbRow(row));
           })
           .join("\n") + "\n",
       ),
@@ -588,7 +588,7 @@ type MessageCapture = {
     readonly seqId: number;
     readonly payloadBytes: number;
   } | null;
-  readonly row: Parameters<typeof chatEventRowFromDbRow>[0] | null;
+  readonly row: Parameters<typeof rawChatEventRowFromDbRow>[0] | null;
 };
 
 function messageCapturedSourceStep(

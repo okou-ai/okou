@@ -22,11 +22,12 @@ import {
 export interface OnboardingDraft {
   readonly prompt: string;
   readonly files: MarketingHandoffFile[];
-  readonly output: OnboardingOutputFormat | null;
+  readonly outputs: readonly OnboardingOutputFormat[];
+  readonly multipleOutputs: boolean;
 }
 
 function emptyOnboardingDraft(): OnboardingDraft {
-  return { prompt: "", output: null, files: [] };
+  return { prompt: "", outputs: [], multipleOutputs: false, files: [] };
 }
 
 const internalOnboardingDraft$ = state<OnboardingDraft>(emptyOnboardingDraft());
@@ -35,25 +36,25 @@ export const onboardingDraft$ = computed((get) => {
   return get(internalOnboardingDraft$);
 });
 
-export const onboardingPromptOutput$ = computed(
-  (get): StartingPromptOutput | null => {
+export const onboardingPromptOutputs$ = computed(
+  (get): readonly StartingPromptOutput[] => {
     get(locale$);
-    const { output } = get(onboardingDraft$);
-    if (!output) {
-      return null;
-    }
-    const instruction = i18n.t(($) => {
-      return $.onboarding.sourcesFirst.outputFormats.options[output]
-        .instruction;
+    return get(onboardingDraft$).outputs.map((format) => {
+      const instruction = i18n.t(($) => {
+        return $.onboarding.sourcesFirst.outputFormats.options[format]
+          .instruction;
+      });
+      return { format, suffix: `\n\n${instruction}` };
     });
-    return { format: output, suffix: `\n\n${instruction}` };
   },
 );
 
 export const onboardingPromptCharacterCount$ = computed((get) => {
   return (
     get(onboardingDraft$).prompt.length +
-    onboardingOutputSuffix(get(onboardingPromptOutput$)).length
+    get(onboardingPromptOutputs$).reduce((total, output) => {
+      return total + onboardingOutputSuffix(output).length;
+    }, 0)
   );
 });
 
@@ -224,9 +225,9 @@ export const editOnboardingPrompt$ = command(({ set }, prompt: string) => {
 });
 
 export const selectOnboardingPromptOutput$ = command(
-  ({ set }, output: OnboardingOutputFormat | null): void => {
+  ({ set }, outputs: readonly OnboardingOutputFormat[]): void => {
     set(internalOnboardingDraft$, (current) => {
-      return { ...current, output };
+      return { ...current, outputs };
     });
   },
 );
@@ -246,7 +247,8 @@ export const hydrateOnboardingRoute$ = command(
   (
     { set },
     searchParams: URLSearchParams,
-    handoff?: { prompt: string; files: MarketingHandoffFile[] },
+    handoff: { prompt: string; files: MarketingHandoffFile[] } | undefined,
+    allowMultipleOutputs: boolean,
   ) => {
     set(resetOnboardingDraft$);
     const prompt = handoff?.prompt ?? searchParams.get("prompt");
@@ -259,25 +261,42 @@ export const hydrateOnboardingRoute$ = command(
       },
       { returnObjects: true },
     );
-    // Shared prompts can already include one of our output instructions.
-    // Keep it in the format selection so submission includes it only once.
-    const existingFormat = ONBOARDING_OUTPUT_FORMATS.find((format) => {
-      return prompt.endsWith(`\n\n${copy.options[format].instruction}`);
-    });
-    if (existingFormat) {
-      set(internalOnboardingDraft$, {
-        prompt: prompt.slice(
-          0,
-          -copy.options[existingFormat].instruction.length - 2,
-        ),
-        output: existingFormat,
-        files: handoff?.files ?? [],
+    // Strip known trailing instructions so a shared request submits each once.
+    let task = prompt;
+    const embedded: OnboardingOutputFormat[] = [];
+    for (;;) {
+      const format = ONBOARDING_OUTPUT_FORMATS.find((candidate) => {
+        return task.endsWith(`\n\n${copy.options[candidate].instruction}`);
       });
-      return;
+      if (!format) {
+        break;
+      }
+      task = task.slice(0, -copy.options[format].instruction.length - 2);
+      if (!embedded.includes(format)) {
+        embedded.unshift(format);
+      }
+      if (!allowMultipleOutputs) {
+        break;
+      }
     }
+    const requested = (searchParams.get("outputFormats") ?? "").split(",");
+    const explicit = ONBOARDING_OUTPUT_FORMATS.filter((format) => {
+      return requested.includes(format);
+    });
+    const preferred =
+      allowMultipleOutputs && explicit.length ? explicit : embedded;
+    const defaultFormat = task.trim()
+      ? defaultOnboardingOutputFormat(task)
+      : null;
+    const outputs = preferred.length
+      ? preferred
+      : defaultFormat
+        ? [defaultFormat]
+        : [];
     set(internalOnboardingDraft$, {
-      prompt,
-      output: prompt.trim() ? defaultOnboardingOutputFormat(prompt) : null,
+      prompt: task,
+      outputs: allowMultipleOutputs ? outputs : outputs.slice(0, 1),
+      multipleOutputs: allowMultipleOutputs && preferred.length > 1,
       files: handoff?.files ?? [],
     });
   },

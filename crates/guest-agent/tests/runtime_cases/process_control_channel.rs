@@ -9,7 +9,6 @@ use crate::common;
 
 use std::fs::File;
 use std::io::{self, Write};
-use std::os::fd::FromRawFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -77,19 +76,13 @@ impl MockGates {
 
         // Keep both ends open until the guest exits, including when release
         // precedes the reader opening the FIFO during error cleanup.
-        // SAFETY: c_fifo remains valid for the call and ownership of the
-        // returned descriptor transfers to File below.
-        let fd = unsafe {
-            libc::open(
-                c_fifo.as_ptr(),
-                libc::O_RDWR | libc::O_NONBLOCK | libc::O_CLOEXEC,
-            )
-        };
-        if fd < 0 {
-            return Err(io::Error::last_os_error().into());
-        }
-        // SAFETY: fd is a freshly opened descriptor owned by this function.
-        Ok(unsafe { File::from_raw_fd(fd) })
+        let fd = nix::fcntl::open(
+            c_fifo.as_c_str(),
+            nix::fcntl::OFlag::from_bits_retain(libc::O_RDWR | libc::O_NONBLOCK | libc::O_CLOEXEC),
+            nix::sys::stat::Mode::empty(),
+        )
+        .map_err(io::Error::from)?;
+        Ok(File::from(fd))
     }
 
     fn release_start(&mut self) -> io::Result<()> {

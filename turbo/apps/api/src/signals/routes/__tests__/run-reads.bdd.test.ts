@@ -2972,7 +2972,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       expect(failedDetail.body).toMatchObject({
         id: failedRun.runId,
         status: "failed",
-        error: "bdd failure",
+        failureReason: "unknown",
       });
     });
   });

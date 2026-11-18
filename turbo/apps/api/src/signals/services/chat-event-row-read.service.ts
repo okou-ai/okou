@@ -2,6 +2,7 @@ import {
   chatEventRowSchema,
   type ChatEventRow,
 } from "@okouai/api-contracts/contracts/chat-event-rows";
+import { projectRunFailureRow } from "@okouai/api-contracts/contracts/chat-event-row-projection";
 import {
   CURRENT_CHAT_EVENT_SCHEMA_VERSION,
   type ChatEventCursor,
@@ -185,7 +186,8 @@ export function isLegacyChatEventSnapshotObjectKey(objectKey: string): boolean {
   return new RegExp(LEGACY_ARCHIVE_OBJECT_KEY_PATTERN, "u").test(objectKey);
 }
 
-export function chatEventRowFromDbRow(
+/** Preserve canonical storage when archiving or exporting retained history. */
+export function rawChatEventRowFromDbRow(
   row: Pick<typeof chatEvents.$inferSelect, keyof typeof chatEventRowSelection>,
 ): ChatEventRow {
   return chatEventRowSchema.parse({
@@ -203,6 +205,12 @@ export function chatEventRowFromDbRow(
     seqId: row.seqId,
     createdAt: row.createdAt.toISOString(),
   });
+}
+
+export function chatEventRowFromDbRow(
+  row: Parameters<typeof rawChatEventRowFromDbRow>[0],
+): ChatEventRow {
+  return projectRunFailureRow(rawChatEventRowFromDbRow(row));
 }
 
 type ChatEventRowsPage =

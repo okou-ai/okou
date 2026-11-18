@@ -871,7 +871,7 @@ function formatStructuredRunError(params: {
   }
 }
 
-/** Client presentation accepts structured facts, never retained diagnostics. */
+/** Run presentation accepts structured facts, never provider diagnostic text. */
 export function formatRunFailureForExternalSurface(params: {
   readonly failureReason?: RunFailureReasonToken | null;
   readonly framework?: ModelProviderFramework | null;
@@ -885,7 +885,7 @@ export function formatRunFailureForExternalSurface(params: {
   });
 }
 
-/** Public event causes already mask platform-owned provider balance failures. */
+/** Public event reasons already omit platform-owned provider balance failures. */
 export function formatChatRunFailure(
   failureReason: RunFailureReasonToken | null | undefined,
 ): string {
@@ -895,7 +895,8 @@ export function formatChatRunFailure(
 }
 
 /**
- * Existing API/integration formatting is retained until the separate cutover.
+ * Pre-Run integration errors retain their separate text contract.
+ * Run failures use formatRunFailureForExternalSurface instead.
  * Web may wrap generic failures with its report-link affordance after this
  * shared classification step.
  */
@@ -993,37 +994,10 @@ export function formatRunErrorForExternalSurface(params: {
     : CHAT_RUN_TRANSIENT_ERROR_MESSAGE;
 }
 
-function nativePersonalSubscriptionUsageLimit(message: string): boolean {
-  return (
-    /^you(?:'|’)ve hit your (?:usage|session|weekly|5[- ]hour|five[- ]hour|opus(?:\s+[\w.-]+)?|sonnet(?:\s+[\w.-]+)?|haiku(?:\s+[\w.-]+)?) limit\b/iu.test(
-      message.trim(),
-    ) || isClaudeCodeLimitError(message)
-  );
-}
-
-export function isPersonalSubscriptionUsageLimitFailure(params: {
-  readonly failureReason?: RunFailureReasonToken | null;
-  readonly modelProviderType: string | null | undefined;
-  readonly message: string;
-}): boolean {
-  if (
-    params.modelProviderType !== "codex-oauth-token" &&
-    params.modelProviderType !== "claude-code-oauth-token"
-  ) {
-    return false;
-  }
-  return (
-    params.failureReason === "usage_limit" ||
-    ((params.failureReason === undefined || params.failureReason === null) &&
-      nativePersonalSubscriptionUsageLimit(params.message))
-  );
-}
-
 /** Subscription limits belong to the captured personal account, not Okou billing. */
 export function formatPersonalSubscriptionUsageLimitForExternalSurface(params: {
   readonly failureReason?: RunFailureReasonToken | null;
   readonly modelProviderType: ModelProviderType | null | undefined;
-  readonly message: string;
   readonly modelProvidersUrl: string;
 }): string | undefined {
   const subscription =
@@ -1035,26 +1009,13 @@ export function formatPersonalSubscriptionUsageLimitForExternalSurface(params: {
   if (subscription === undefined) {
     return undefined;
   }
-  if (!isPersonalSubscriptionUsageLimitFailure(params)) {
+  if (params.failureReason !== "usage_limit") {
     return undefined;
   }
-  const nativeLimit = nativePersonalSubscriptionUsageLimit(params.message);
-  const hasQuotaDetails =
-    nativeLimit ||
-    /\b(?:usage[_ -]limit|(?:session|weekly|5[- ]hour|five[- ]hour) limit)\b/iu.test(
-      params.message,
-    );
-
-  const parts = [
+  return [
     `Your ${subscription} subscription has reached its usage limit.`,
-  ];
-  if (hasQuotaDetails && params.message !== CHAT_RUN_USAGE_LIMIT_MESSAGE) {
-    parts.push(params.message);
-  }
-  parts.push(
     "Wait for your subscription allowance to reset, or switch to an available subscription account.",
     `Manage subscriptions: ${params.modelProvidersUrl}`,
     'Switching accounts automatically continues this conversation. If you wait for the allowance to reset, reply "continue" here.',
-  );
-  return parts.join("\n\n");
+  ].join("\n\n");
 }

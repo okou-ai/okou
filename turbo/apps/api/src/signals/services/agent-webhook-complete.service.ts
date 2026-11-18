@@ -5,7 +5,10 @@ import {
   projectCommittedChatThreadSearch$,
 } from "./chat-event-publication.service";
 import { env } from "../../lib/env";
-import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
+import {
+  normalizeRunFailureReason,
+  type RunFailureReasonToken,
+} from "@okouai/api-contracts/contracts/run-failure-reasons";
 import {
   runStatusSchema,
   type RunResult,
@@ -58,7 +61,6 @@ export interface TerminalSideEffectsInput {
   readonly runId: string;
   readonly orgId: string;
   readonly status: TerminalStatus;
-  readonly error?: string;
   readonly deliveryNotification?: {
     readonly userId: string;
     readonly chatThreadId: string;
@@ -112,7 +114,7 @@ type CompletionResponse =
 interface RunRecord extends AgentRunFailureLogSnapshot {
   readonly id: string;
   readonly cancellationRecoveryCompleted: boolean | null;
-  readonly error: string | null;
+  readonly failureReason: RunFailureReasonToken | null;
   readonly orgId: string;
   readonly status: RunStatus;
   readonly userId: string;
@@ -124,7 +126,6 @@ interface RunRecord extends AgentRunFailureLogSnapshot {
 interface PreparedCompletion {
   readonly status: TerminalStatus;
   readonly result?: RunResult;
-  readonly error?: string;
   readonly failureReason?: RunFailureReasonToken;
   readonly failureKind?: "missing-outputs" | "reported";
 }
@@ -139,7 +140,6 @@ interface CompletionCommit {
   readonly run: RunRecord;
   readonly transitioned: boolean;
   readonly responseStatus: TerminalStatus;
-  readonly transitionError?: string;
   readonly transitionFailureKind?: PreparedCompletion["failureKind"];
   readonly transitionFailureReason?: RunFailureReasonToken;
   readonly finalization: ActiveInputFinalization;
@@ -163,14 +163,13 @@ function logAgentRunCompletionOutcome(
   if (commit.transitionFailureKind === "missing-outputs") {
     L.warn("Run failed because completion outputs were not provided", {
       runId: input.body.runId,
-      error: commit.transitionError,
+      failureReason: commit.transitionFailureReason,
     });
     return;
   }
   logAgentRunFailure({
     runId: input.body.runId,
     exitCode: input.body.exitCode,
-    error: commit.transitionError,
     failureReason: commit.transitionFailureReason,
     run: commit.run,
   });
@@ -182,7 +181,7 @@ function createInitialCompletionRun(runId: string, userId: string) {
     const [run] = await db
       .select({
         id: agentRuns.id,
-        error: agentRuns.error,
+        failureReason: agentRuns.failureReason,
         orgId: agentRuns.orgId,
         status: agentRuns.status,
         userId: agentRuns.userId,
@@ -214,15 +213,14 @@ function prepareCompletion(
     return {
       status: "failed",
       result,
-      error: input.body.error?.trim() || "Run failed without error message",
-      failureReason: input.body.failureReason,
+      failureReason: normalizeRunFailureReason(input.body.failureReason),
       failureKind: "reported",
     };
   }
   if (!result) {
     return {
       status: "failed",
-      error: "Run completion outputs were not provided",
+      failureReason: "unknown",
       failureKind: "missing-outputs",
     };
   }
@@ -233,17 +231,6 @@ function noActiveInputFinalization(): ActiveInputFinalization {
   return {
     finalized: false,
     chatEventsAppended: false,
-  };
-}
-
-function persistedTerminalError(
-  run: RunRecord,
-): { readonly transitionError: string } | Record<string, never> {
-  if (run.status !== "failed") {
-    return {};
-  }
-  return {
-    transitionError: run.error?.trim() || "Run failed without error message",
   };
 }
 
@@ -291,11 +278,10 @@ function completionPublicationCommit(
       prepared?.status ?? (run.status === "completed" ? "completed" : "failed"),
     ...(prepared
       ? {
-          transitionError: prepared.error,
           transitionFailureKind: prepared.failureKind,
           transitionFailureReason: prepared.failureReason,
         }
-      : persistedTerminalError(run)),
+      : { transitionFailureReason: run.failureReason ?? undefined }),
     finalization: noActiveInputFinalization(),
     releasedSlots,
   };
@@ -314,9 +300,6 @@ function completionResponse(
       runId,
       orgId: commit.run.orgId,
       status: commit.responseStatus,
-      ...(commit.transitionError !== undefined
-        ? { error: commit.transitionError }
-        : {}),
       ...(commit.run.chatThreadId !== null
         ? {
             deliveryNotification: {
@@ -404,15 +387,11 @@ const dispatchTerminalCompleteSideEffects$ = command(
       );
       signal.throwIfAborted();
     }
-    const callbackStatus =
-      input.status === "completed" ? "completed" : "failed";
     await tapError(
       set(
         dispatchRunCallbacks$,
         {
           runId: input.runId,
-          status: callbackStatus,
-          error: input.error,
           skipChatCallback: input.skipChatCallback,
         },
         signal,

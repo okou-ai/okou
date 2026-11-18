@@ -4,7 +4,6 @@ import { normalizeRunFailureReason } from "./run-failure-reasons";
 import type { ChatEventType } from "./chat-events";
 import type {
   ChatEvent,
-  ClientChatEvent,
   ChatEventUsagePayload,
   UserMessageDocument,
 } from "./chat-threads";
@@ -20,8 +19,50 @@ function requiredRowField<T>(
   return value;
 }
 
-function chatEventBase(row: ChatEventRow, content: string | null) {
+/** Generate terminal presentation without mutating a retained archive row. */
+export function projectRunFailureRow(row: ChatEventRow): ChatEventRow {
+  if (row.eventType !== "run.failed" && row.eventType !== "run.cancelled") {
+    return row;
+  }
+  const userMessage = row.payload?.userMessage;
+  const usage = row.payload?.usage;
+  const retainedPayload = {
+    ...(userMessage === undefined ? {} : { userMessage }),
+    ...(usage === undefined ? {} : { usage }),
+  };
+  if (row.eventType === "run.failed") {
+    const failureReason = normalizeRunFailureReason(row.failureReason);
+    const message = formatChatRunFailure(failureReason);
+    return {
+      ...row,
+      failureReason,
+      payload: {
+        ...retainedPayload,
+        content: message,
+      },
+    };
+  }
   return {
+    ...row,
+    failureReason: undefined,
+    payload: {
+      ...retainedPayload,
+      content: "Run cancelled",
+    },
+  };
+}
+
+/**
+ * Project a decoded row into the public ChatEvent shape. Message documents stay
+ * intact; Run terminal copy comes from structured facts. Writers validate the
+ * documents, and snapshot publication checks this projection with chatEventResponse.
+ * A control.interrupt target becomes interruptsRunId, never Run ownership.
+ */
+export function chatEventFromRow(source: ChatEventRow): ChatEvent {
+  const row = projectRunFailureRow(source);
+  const payload = row.payload;
+  const content = payload?.content ?? null;
+  const base = {
     id: row.id,
     threadId: row.chatThreadId,
     content,
@@ -35,50 +76,6 @@ function chatEventBase(row: ChatEventRow, content: string | null) {
     sequenceNumber: row.runEventSequenceNumber,
     createdAt: row.createdAt,
   };
-}
-
-/** Kept separate from the server's wire projection until #47704 activates it. */
-export function chatEventFromRowForDisplay(row: ChatEventRow): ClientChatEvent {
-  if (row.eventType !== "run.failed" && row.eventType !== "run.cancelled") {
-    return chatEventFromRow(row);
-  }
-  const failureReason = normalizeRunFailureReason(row.failureReason);
-  const base = chatEventBase(
-    row,
-    row.eventType === "run.failed"
-      ? formatChatRunFailure(failureReason)
-      : "Run cancelled",
-  );
-  const runId = requiredRowField(row.runId, row.eventType, "runId");
-  return row.eventType === "run.failed"
-    ? {
-        ...base,
-        eventType: "run.failed",
-        runId,
-        failureReason,
-        runLifecycleEvent: "failed",
-      }
-    : {
-        ...base,
-        eventType: "run.cancelled",
-        runId,
-        runLifecycleEvent: "cancelled",
-      };
-}
-
-/**
- * Projects one decoded canonical row into the public ChatEvent response shape
- * without rewriting its text or re-validating its payload documents. The API
- * validates user-message and usage documents when it writes them, and snapshot
- * publication additionally checks projected rows with `chatEventResponse`.
- * Callers that need a validated public event apply that check themselves. A
- * control.interrupt target is emitted as interruptsRunId, never as run
- * ownership.
- */
-export function chatEventFromRow(row: ChatEventRow): ChatEvent {
-  const payload = row.payload;
-  const content = payload?.content ?? null;
-  const base = chatEventBase(row, content);
   const userMessage = (): UserMessageDocument => {
     return requiredRowField(
       payload?.userMessage ?? null,
@@ -155,7 +152,6 @@ export function chatEventFromRow(row: ChatEventRow): ChatEvent {
         ...base,
         eventType: "run.failed",
         runId: requiredRowField(row.runId, row.eventType, "runId"),
-        error: payload?.error ?? undefined,
         ...(row.failureReason === undefined
           ? {}
           : { failureReason: row.failureReason }),
@@ -167,7 +163,6 @@ export function chatEventFromRow(row: ChatEventRow): ChatEvent {
         ...base,
         eventType: "run.cancelled",
         runId: requiredRowField(row.runId, row.eventType, "runId"),
-        error: payload?.error ?? undefined,
         runLifecycleEvent: "cancelled",
       };
     },

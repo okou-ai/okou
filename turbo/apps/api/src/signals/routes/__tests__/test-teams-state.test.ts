@@ -195,7 +195,6 @@ describe("Teams message launch context", () => {
         status: "running",
         triggerSource: "teams",
         agentId: owned.defaultAgentId,
-        error: null,
         prompt: "hello from teams diagnostics",
       });
       const execution = await createRunsApi(context).executionInput(

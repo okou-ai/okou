@@ -5,6 +5,34 @@ import XCTest
 
 @MainActor
 final class ChatComposerFocusTests: XCTestCase {
+  func testCancelledNavigationRestoresDraftSelectionWithoutFocusingTheHiddenPage() async throws {
+    let fixture = AttachmentFlowFixture()
+    let conversation = fixture.conversation()
+    defer { conversation.close() }
+    conversation.draft = "Before 🌷 after"
+    let presentation = WorkspaceChatPresentation()
+    let host = UIHostingController(
+      rootView: MentionComposerHarness(state: conversation.composer)
+        .environment(\.workspaceChatPresentation, presentation))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let input = try XCTUnwrap(mentionInputs(in: host.view).first)
+
+    // Attachment alone must not let the retained page steal the keyboard.
+    input.prepareFocus(true)
+    XCTAssertFalse(input.isFirstResponder)
+    presentation.appear()
+    try await eventually { input.isFirstResponder }
+    input.selectedRange = NSRange(location: 7, length: 2)
+
+    presentation.beginTransition(showsChat: false)
+    input.resignFirstResponder()
+    presentation.finishTransition(showsChat: true)
+    try await eventually { input.isFirstResponder }
+    input.insertText("continued")
+    XCTAssertEqual(conversation.draft, "Before continued after")
+  }
+
   func testCompactActivationAppendsAtEndAndExpandedEditingKeepsNativeSelection() async throws {
     let fixture = AttachmentFlowFixture()
     let conversation = fixture.conversation()

@@ -138,7 +138,7 @@ async function current(
 }
 
 describe("Chat connector execution", () => {
-  it("delivers the Chat's selected native credentials alongside a registered MCP account", async () => {
+  it("resolves the Chat's selected native credentials alongside a registered MCP account", async () => {
     const value = await owner();
     const nativeTarget = {
       kind: "builtin",
@@ -173,8 +173,9 @@ describe("Chat connector execution", () => {
 
     const run = await start(value);
     expect(run.execution.environment).toMatchObject({
-      RUNTIME_API_KEY: "selected-native-key",
+      RUNTIME_API_KEY: expect.stringMatching(/.+/),
     });
+    expect(JSON.stringify(run.execution)).not.toContain("selected-native-key");
     expect(
       run.execution.secretConnectorMetadataMap?.RUNTIME_API_KEY,
     ).toMatchObject({ sourceId: native.id });
@@ -185,6 +186,22 @@ describe("Chat connector execution", () => {
         sourceId: registered.id,
       }),
     );
+    const resolved = await createFirewallApi(context).requestFirewallAuth(
+      { authorization: `Bearer ${run.execution.sandboxToken}` },
+      {
+        encryptedSecrets: run.execution.encryptedSecrets ?? undefined,
+        secretConnectorMap: run.execution.secretConnectorMap ?? undefined,
+        secretConnectorMetadataMap:
+          run.execution.secretConnectorMetadataMap ?? undefined,
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("RUNTIME_API_KEY")}`,
+        },
+      },
+      [200],
+    );
+    expect(resolved.body).toMatchObject({
+      headers: { Authorization: "Bearer selected-native-key" },
+    });
   });
 
   it("retains Agent-gated startup and hides the new approval and switch APIs when disabled", async () => {
@@ -359,6 +376,40 @@ describe("Chat connector execution", () => {
         sourceId: a.id,
       }),
     );
+  });
+
+  it("applies a Chat access revocation after startup to the running Run", async () => {
+    const value = await owner();
+    const account = await addAccount(value.actor, "Revocable");
+    const run = await start(value);
+    expect(run.execution.connectorRuntimeTargets).toContainEqual(
+      expect.objectContaining({ sourceId: account.id }),
+    );
+
+    session(value.actor);
+    await accept(
+      access().setThreadOverride({
+        headers: sessionHeaders,
+        params: { threadId: value.threadId, connectionId: account.id },
+        body: { target: builtin, enabled: false },
+      }),
+      [200],
+    );
+    await expect(
+      runs.syncConnectorRuntime(run.runId, {
+        targets: [
+          {
+            kind: "builtin",
+            connectorSlug: "manual-mcp",
+            sourceId: account.id,
+          },
+        ],
+      }),
+    ).resolves.toContainEqual({
+      target: builtin,
+      state: "absent",
+      reason: "connector-unavailable",
+    });
   });
 
   it("shows denied accounts, rejects self-grants and foreign ownership, and accepts exact owner confirmation only in that Chat", async () => {

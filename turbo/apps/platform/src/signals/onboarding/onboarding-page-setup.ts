@@ -1,3 +1,5 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import { loadMarketingHandoff$ } from "../prompt-page/marketing-handoff.ts";
 import { command } from "ccstate";
 import { createElement } from "react";
@@ -68,7 +70,14 @@ export const setupOnboardingPromptPage$ = command(
     if (set(claimSourcesFirstStartEvent$)) {
       set(sendEvent$, "onboarding-start");
     }
-    set(hydrateOnboardingRoute$, searchParams, handoff?.manifest);
+    const features = await get(featureSwitch$);
+    signal.throwIfAborted();
+    set(
+      hydrateOnboardingRoute$,
+      searchParams,
+      handoff?.manifest,
+      features[FeatureSwitchKey.OnboardingMultipleOutputs],
+    );
     signal.addEventListener(
       "abort",
       () => {

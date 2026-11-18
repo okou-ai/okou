@@ -16,6 +16,9 @@ import { sql } from "drizzle-orm";
 
 const migrationColumns = {
   ...agentRunColumns(),
+  // Retain historical diagnostics without exposing this column to application
+  // INSERT, SELECT or RETURNING projections.
+  error: text("error"),
   // Diagnostic data lives in Axiom. Retain physical storage without exposing
   // these columns to application INSERT, SELECT or RETURNING projections.
   appendSystemPrompt: text("append_system_prompt"),

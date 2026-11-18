@@ -88,23 +88,7 @@ public final class PermissionHTTPFixture: Sendable {
         }
         if path == "/api/user-permission-grants" { return ChatHTTPResponse(body: value.grants) }
         if path == "/api/user-permission-grants/apply" {
-          if value.failApplyOnce {
-            value.failApplyOnce = false
-            return Self.error(503, "Please retry permission")
-          }
-          let body =
-            try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
-          let grant = (body?["grants"] as? [[String: Any]])?.first ?? [:]
-          let action = grant["action"] as? String ?? "allow"
-          value.grants = Self.grant(
-            action: action, permission: grant["permission"] as? String ?? "mail.send",
-            expiration: action == "deny" || grant["expiresIn"] as? String == "always"
-              ? nil : "2099-01-01T00:00:00Z")
-          if value.loseApplyResponseOnce {
-            value.loseApplyResponseOnce = false
-            return Self.error(503, "Permission response lost")
-          }
-          return ChatHTTPResponse(body: value.grants)
+          return try Self.applyPermission(request, state: &value)
         }
         if path == threadPath + "/connector-selections" {
           return ChatHTTPResponse(body: "{\"selections\":[]}")
@@ -156,6 +140,28 @@ public final class PermissionHTTPFixture: Sendable {
         throw URLError(.unsupportedURL)
       }
     }
+  }
+
+  private static func applyPermission(_ request: URLRequest, state value: inout State) throws
+    -> ChatHTTPResponse
+  {
+    if value.failApplyOnce {
+      value.failApplyOnce = false
+      return Self.error(503, "Please retry permission")
+    }
+    let body =
+      try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
+    let grant = (body?["grants"] as? [[String: Any]])?.first ?? [:]
+    let action = grant["action"] as? String ?? "allow"
+    value.grants = Self.grant(
+      action: action, permission: grant["permission"] as? String ?? "mail.send",
+      expiration: action == "deny" || grant["expiresIn"] as? String == "always"
+        ? nil : "2099-01-01T00:00:00Z")
+    if value.loseApplyResponseOnce {
+      value.loseApplyResponseOnce = false
+      return Self.error(503, "Permission response lost")
+    }
+    return ChatHTTPResponse(body: value.grants)
   }
 
   public static func grant(

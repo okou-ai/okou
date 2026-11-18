@@ -1,10 +1,11 @@
-"""HTTP network-log targets, row projection and observed byte sizes."""
+"""HTTP network-log targets, row publication and observed byte sizes."""
 
 import urllib.parse
 from typing import cast
 
 from mitmproxy import http
 
+import body_capture
 import codex_model_catalog_cache
 import content_length
 import flow_metadata
@@ -12,7 +13,11 @@ import flow_metadata_keys as metadata_keys
 import request_streaming
 import response_streaming
 import upstream_admission
-from logging_utils import NETWORK_LOG_MAX_SAFE_SIZE, add_firewall_metadata
+from logging_utils import (
+    NETWORK_LOG_MAX_SAFE_SIZE,
+    add_firewall_metadata,
+    log_http_network_entry,
+)
 
 _HTTP_DEFAULT_PORT = 80
 _HTTPS_DEFAULT_PORT = 443
@@ -122,6 +127,36 @@ def build_entry(
         add_firewall_metadata(flow, entry)
     codex_model_catalog_cache.add_network_log_fields(flow, entry)
     return entry, url
+
+
+def write_entry(
+    flow: http.HTTPFlow,
+    *,
+    log_path: str,
+    action: str,
+    status_code: int,
+    latency_ms: int,
+    request_size: int,
+    response_size: int,
+    error: str | None = None,
+) -> None:
+    """Publish a row with optional capture through the bounded HTTP writer.
+
+    The caller owns log-path gating, sampled values and error projection.
+    """
+    log_entry, raw_url = build_entry(
+        flow,
+        action=action,
+        status_code=status_code,
+        latency_ms=latency_ms,
+        request_size=request_size,
+        response_size=response_size,
+    )
+    if error is not None:
+        log_entry["error"] = error
+    if flow_metadata.should_capture_body(flow.metadata):
+        body_capture.add_capture_fields(flow, log_entry, response_incomplete=error is not None)
+    log_http_network_entry(log_path, log_entry, raw_url)
 
 
 def response_size(flow: http.HTTPFlow) -> int:

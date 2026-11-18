@@ -48,6 +48,7 @@ struct ChatComposerView: View {
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.newChatActivation) private var newChatActivation
+  @Environment(\.workspaceChatPresentation) private var presentation
   private let actionSize = OkouControl.minimumTarget
 
   private var hasText: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -63,11 +64,20 @@ struct ChatComposerView: View {
       && (showsStop || modelSelection?.canSend != false)
   }
   private var canSendFromKeyboard: Bool { hasContent && canPerformPrimaryAction }
+  private var showsEditingLayout: Bool {
+    isFocused || draftState?.focusRequest != nil || presentation?.keepsComposerExpanded == true
+  }
+  private var focusAnimation: Animation? {
+    guard !reduceMotion, presentation?.isTransitioning != true,
+      presentation?.allowsFocus != false
+    else { return nil }
+    return sendTransition?.composerAnimation ?? .easeInOut(duration: 0.22)
+  }
   /// A draft keeps the open layout after the keyboard closes; collapsing it cut the text to
   /// one truncated line under the controls. Voice input opens it too, and the model sheet
   /// keeps it open while the keyboard is down under the sheet.
   private var expandsInput: Bool {
-    isFocused || hasText || draftState?.document.hasFeedback == true
+    showsEditingLayout || hasText || draftState?.document.hasFeedback == true
       || draftState?.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
       || voiceActive || showsModels
   }
@@ -176,6 +186,7 @@ struct ChatComposerView: View {
                 state: state, inputID: inputID, isFocused: $isFocused,
                 acceptsImages: !isBusy && !needsUpgrade, placeholder: resolvedPlaceholder,
                 showsTrailingParagraph: showsTrailingFeedbackInput,
+                expanded: showsEditingLayout,
                 returnKeyPreference: returnKeyPreference,
                 canSendFromKeyboard: canSendFromKeyboard, submitFromKeyboard: sendFromKeyboard
               )
@@ -189,6 +200,7 @@ struct ChatComposerView: View {
                 isCurrent: { attachments.inputID == inputID },
                 pasteImages: attachments.importPastedImages,
                 placeholder: resolvedPlaceholder,
+                expanded: showsEditingLayout,
                 returnKeyPreference: returnKeyPreference,
                 canSendFromKeyboard: canSendFromKeyboard, submitFromKeyboard: sendFromKeyboard
               )
@@ -287,10 +299,7 @@ struct ChatComposerView: View {
             bounds: bounds, content: content, isDisabled: isBusy || needsUpgrade)
         }
       }
-      .animation(
-        reduceMotion ? nil : sendTransition?.composerAnimation ?? .easeInOut(duration: 0.22),
-        value: isFocused
-      )
+      .animation(focusAnimation, value: isFocused)
       .animation(
         !reduceMotion && sendTransition?.hidesBubbleID != nil
           ? sendTransition?.composerAnimation : nil,
@@ -299,7 +308,7 @@ struct ChatComposerView: View {
     .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: voiceActive)
     .padding(.horizontal, OkouControl.pageInset)
     .padding(.top, OkouSpace.sm)
-    .padding(.bottom, isFocused ? OkouSpace.sm : OkouSpace.six)
+    .padding(.bottom, showsEditingLayout ? OkouSpace.sm : OkouSpace.six)
     .fixedSize(horizontal: false, vertical: true)
     .sensoryFeedback(.impact(weight: .light), trigger: sendFeedback)
     .sensoryFeedback(.impact(weight: .medium), trigger: stopFeedback)
