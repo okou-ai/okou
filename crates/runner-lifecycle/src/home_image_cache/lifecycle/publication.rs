@@ -393,6 +393,12 @@ impl HomeImageCache {
                 return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
             }
             if own_commit {
+                let timing = HomePhaseTimer::new(
+                    self,
+                    input.run_id,
+                    input.cache_key,
+                    HomePhase::DurableCommit,
+                );
                 let expected = progress
                     .metadata
                     .as_ref()
@@ -423,6 +429,7 @@ impl HomeImageCache {
                     })?
                     .validate_path(&paths.metadata())?;
                 sync_directory(paths.entry_dir()).await?;
+                timing.finish(HomeObservationOutcome::Completed);
             } else {
                 let image = match &mut progress.image {
                     Some(image) => image,

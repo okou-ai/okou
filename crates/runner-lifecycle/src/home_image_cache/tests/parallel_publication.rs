@@ -1,6 +1,7 @@
 use super::super::*;
 use super::support::*;
 use crate::storage_fingerprints::StorageFingerprints;
+use runner_host::home_observation::HomeObservationOutcome;
 use std::future::{Future as _, poll_fn};
 use std::os::unix::fs::MetadataExt;
 use std::sync::Arc;
@@ -215,9 +216,11 @@ async fn required_retry_resumes_moved_candidate_and_uncertain_metadata_phases() 
         PublicationFault::BeforeMetadataRename,
         PublicationFault::AfterMetadataRename,
     ] {
-        let f = Fixture::new().await;
+        let mut f = Fixture::new().await;
         let old = f.commit("retry", b"old", "2026-10-16T10:00:00Z").await;
         let old_bytes = tokio::fs::read(f.image("retry", &old)).await.unwrap();
+        let recorded = runner_storage::operation_test_support::RecordedHomeObservations::default();
+        f.cache = f.cache.with_telemetry(recorded.handle());
         let owned = context(&f, "retry").await;
         let active = f.paths.active_home_image(&owned.sandbox_id());
         let expected = tokio::fs::read(&active).await.unwrap();
@@ -237,6 +240,24 @@ async fn required_retry_resumes_moved_candidate_and_uncertain_metadata_phases() 
         assert_eq!(
             owned.promote().await.unwrap(),
             HomeImagePromotionOutcome::Promoted
+        );
+        let commits: Vec<_> = recorded
+            .timings()
+            .into_iter()
+            .filter_map(|record| {
+                let home = record.home?;
+                (home.reason.as_deref() == Some("durable_commit"))
+                    .then_some((home.outcome, record.success))
+            })
+            .collect();
+        assert_eq!(
+            commits,
+            [
+                (HomeObservationOutcome::Incomplete, false),
+                (HomeObservationOutcome::Completed, true),
+            ],
+            "both the failed commit and its successful retry must be observed: fault {}",
+            fault as usize
         );
         drop(owned);
         published_bytes(&f, "retry", &expected).await;
