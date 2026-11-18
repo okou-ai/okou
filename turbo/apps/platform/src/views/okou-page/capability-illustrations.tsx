@@ -38,6 +38,7 @@ function capabilityAsset(file: string): string {
   );
 }
 
+/** Every file the cards draw from; each is one request to the static host. */
 const ASSETS = {
   card: capabilityAsset("card-c7bc481949c3.webp"),
   page: capabilityAsset("page-6ea66047359d.webp"),
