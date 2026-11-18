@@ -5,6 +5,7 @@ import hashlib
 import json
 import threading
 import time
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -40,27 +41,16 @@ def data(directory, method="delivery.status"):
     return result_data(response)
 
 
-def wait_state(directory, predicate):
-    deadline = time.monotonic() + 3
-    while True:
-        state = data(directory)
-        if predicate(state):
-            return state
-        assert time.monotonic() < deadline, state
-        time.sleep(0.01)
-
-
 @pytest.fixture
 async def control(tmp_path):
     owner = registry_control.RegistryControl(
         asyncio.get_running_loop(), str(tmp_path / "registry.json")
     )
-    server = runner_control.ControlServer(
-        tmp_path, "generation-1", owner, runner_flush_lifecycle.DeliveryControl()
-    )
+    delivery = runner_flush_lifecycle.DeliveryControl()
+    server = runner_control.ControlServer(tmp_path, "generation-1", owner, delivery)
     server.start()
     try:
-        yield server
+        yield delivery
     finally:
         owner.close()
         server.stop()
@@ -148,25 +138,34 @@ async def test_drain_overload_deadline_and_disconnect_leave_http_delivery_owned(
 ):
     install_recording_usage_timer()
     release = threading.Event()
+    loop = asyncio.get_running_loop()
+    drain_expired = asyncio.Event()
+    drain = control.drain
+
+    async def observe_drain():
+        receipt = await drain()
+        if receipt is not None and receipt["state"] == "deadline":
+            loop.call_soon_threadsafe(drain_expired.set)
+        return receipt
+
     api = UsageWebhookServer()
     api.queue_response(204, release_event=release)
-    with api.run():
+    with api.run(), patch.object(control, "drain", observe_drain):
         try:
             buffer(api, tmp_path)
             with control_connection(tmp_path) as disconnected:
                 disconnected.sendall(frame(json.dumps(request("delivery.drain")).encode()))
                 assert api.wait_for_request_count(1)
-                wait_state(tmp_path, lambda state: state["drainActive"])
+                assert data(tmp_path)["drainActive"]
                 assert exchange(tmp_path, request("delivery.drain"))["code"] == "busy"
             # The request socket is gone; actual HTTP ownership remains intact.
             assert data(tmp_path)["reports"] == 1
             assert exchange(tmp_path)["type"] == "result"
-            # Wait past the production four-second observation deadline.
-            deadline = time.monotonic() + 6
-            while data(tmp_path)["drainActive"]:
-                assert time.monotonic() < deadline
-                await asyncio.sleep(0.02)
-            assert data(tmp_path)["reports"] == 1
+            # The original drain retires even after its caller disconnects.
+            await asyncio.wait_for(drain_expired.wait(), timeout=6)
+            state = data(tmp_path)
+            assert state["drainActive"] is False
+            assert state["reports"] == 1
             assert api.request_count == 1
         finally:
             release.set()
@@ -212,8 +211,10 @@ async def test_coalesced_wake_delivers_second_batch_before_shutdown(
             assert api.request_count == 1
 
             release.set()
-            # Status only observes: drain, another flush, timers or done() could rescue a lost wake.
-            state = wait_state(tmp_path, lambda state: not state["workerActive"])
+            # Observe without triggering a drain or another wake that could rescue a lost wake.
+            runner_flush_lifecycle.wait_for_runner_usage_flush_worker_to_stop_for_tests(timeout=3)
+            state = data(tmp_path)
+            assert state["workerActive"] is False
             assert api.request_count == 2
             assert api.json_bodies() == [
                 {"runId": "run-1", "events": [first_event]},
@@ -231,7 +232,7 @@ async def test_coalesced_wake_delivers_second_batch_before_shutdown(
             assert state["flushFailures"] == 0
         finally:
             release.set()
-            wait_state(tmp_path, lambda state: not state["workerActive"])
+            runner_flush_lifecycle.wait_for_runner_usage_flush_worker_to_stop_for_tests(timeout=3)
 
 
 @pytest.mark.shard_cost(4)
@@ -263,7 +264,10 @@ async def test_blocked_flush_owner_coalesces_wakes_and_hands_off_to_shutdown(
             assert receipt["snapshot"]["workerActive"]
             done.start()
             done_started = True
-            wait_state(tmp_path, lambda state: state["closed"])
+            deadline = time.monotonic() + 3
+            while not (state := data(tmp_path))["closed"]:
+                assert time.monotonic() < deadline, state
+                await asyncio.sleep(0.01)
             assert done.is_alive()
             assert exchange(tmp_path, request("delivery.flush"))["code"] == "not_ready"
             assert api.request_count == 1
@@ -335,7 +339,9 @@ async def test_worker_failure_after_admission_preserves_work_and_allows_later_de
             assert data(tmp_path)["workerActive"]
         finally:
             release.set()
-        state = wait_state(tmp_path, lambda state: not state["workerActive"])
+        runner_flush_lifecycle.wait_for_runner_usage_flush_worker_to_stop_for_tests(timeout=3)
+        state = data(tmp_path)
+        assert state["workerActive"] is False
         assert state["flushFailures"] == 1
         assert state["buffered"] == 1
         assert state["reports"] == 0
