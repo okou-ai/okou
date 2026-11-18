@@ -38,6 +38,8 @@ internal fun rememberRunningWaveFrame(
     LaunchedEffect(listState, lifecycle) {
         val motion = coroutineContext[MotionDurationScale]
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            // Android starts its scale observer on first access, before snapshotFlow can read it.
+            motion?.scaleFactor
             snapshotFlow {
                     val active = keys.value
                     motion?.scaleFactor != 0f &&

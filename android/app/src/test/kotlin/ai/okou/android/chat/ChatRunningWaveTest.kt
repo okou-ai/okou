@@ -31,11 +31,20 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = TestOkouApplication::class)
 class ChatRunningWaveTest {
-    private val scale = mutableFloatStateOf(1f)
+    private val scale = mutableFloatStateOf(0f)
     private val motion =
         object : MotionDurationScale {
+            private var observing = false
+
             override val scaleFactor: Float
-                get() = scale.floatValue
+                get() {
+                    if (!observing) {
+                        // Android's first read publishes the initial system value.
+                        scale.floatValue = 1f
+                        observing = true
+                    }
+                    return scale.floatValue
+                }
         }
 
     @get:Rule val compose = createComposeRule(effectContext = motion)
