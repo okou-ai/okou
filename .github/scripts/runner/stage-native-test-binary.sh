@@ -53,14 +53,27 @@ printf -v remote_command "bash -c '%s' native-test-stage '%s' '%s'" \
 child=""
 cleanup() {
   local status=$?
+  local pid
+  local -a children=()
   trap - EXIT
   trap '' INT TERM HUP
   if [ -n "$child" ]; then
-    kill -TERM -- "-$child" 2>/dev/null || kill -TERM "$child" 2>/dev/null || true
+    children+=("$child")
+  fi
+  # Include a child launched immediately before a signal, before $! was saved.
+  for pid in $(jobs -pr); do
+    children+=("$pid")
+  done
+  if [ "${#children[@]}" -gt 0 ]; then
+    for pid in "${children[@]}"; do
+      kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+    done
     # A guarded SSH caller may need its own five-second cancellation cleanup.
     sleep 5
-    kill -KILL -- "-$child" 2>/dev/null || kill -KILL "$child" 2>/dev/null || true
-    wait "$child" 2>/dev/null || true
+    for pid in "${children[@]}"; do
+      kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+    done
   fi
   exit "$status"
 }
