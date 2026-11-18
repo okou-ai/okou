@@ -2,7 +2,10 @@ import { HeadObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
-import { buildArtifactKeyV2 } from "../../../lib/file-url";
+import {
+  buildArtifactKeyV2,
+  buildArtifactPrefixV2,
+} from "../../../lib/file-url";
 import { createDeferredPromise } from "../../utils";
 import {
   createChatEventsFixture,
@@ -100,12 +103,14 @@ describe("chat attachment lookup ownership", () => {
     await cancelChatRun(actor, sent.runId);
   });
 
-  it("resolves different filename hints independently and retains both snapshots", async () => {
+  it("shares storage reads across different filename hints and retains their snapshots", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
     const fileId = randomUUID();
     const storedFilename = "current.png";
     const storedKey = buildArtifactKeyV2(fileId, storedFilename);
+    const prefix = buildArtifactPrefixV2(fileId);
     const heads: string[] = [];
+    let lists = 0;
     context.mocks.s3.send.mockImplementation(
       (request: unknown): Promise<unknown> => {
         if (request instanceof HeadObjectCommand && request.input.Key) {
@@ -126,6 +131,12 @@ describe("chat attachment lookup ownership", () => {
             Object.assign(new Error("Stale extension"), { name: "NotFound" }),
           );
         }
+        if (
+          request instanceof ListObjectsV2Command &&
+          request.input.Prefix === prefix
+        ) {
+          lists += 1;
+        }
         return Promise.resolve(
           request instanceof ListObjectsV2Command
             ? {
@@ -141,27 +152,32 @@ describe("chat attachment lookup ownership", () => {
         );
       },
     );
-    const parts = ["stale.txt", storedFilename].map((filenameSnapshot) => {
-      return {
-        type: "file" as const,
-        fileId,
-        filenameSnapshot,
-        contentType: "image/png",
-      };
-    });
+    const parts = ["stale.txt", "archived.jpg", storedFilename].map(
+      (filenameSnapshot) => {
+        return {
+          type: "file" as const,
+          fileId,
+          filenameSnapshot,
+          contentType: "image/png",
+        };
+      },
+    );
     const sent = await sendChatRun(actor, {
       agentId,
-      prompt: "keep both filename snapshots",
+      prompt: "keep the filename snapshots",
       userMessage: { version: 1, parts },
     });
     expect(heads).toContain(buildArtifactKeyV2(fileId, "stale.txt"));
+    expect(heads).toContain(buildArtifactKeyV2(fileId, "archived.jpg"));
     expect(
       heads.filter((key) => {
         return key === buildArtifactKeyV2(fileId, storedFilename);
       }),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
+    expect(lists).toBe(1);
     const run = await api.readRun(actor, sent.runId);
     expect(run.prompt).toContain("[Web file] stale.txt (image/png)");
+    expect(run.prompt).toContain("[Web file] archived.jpg (image/png)");
     expect(run.prompt).toContain("[Web file] current.png (image/png)");
     await cancelChatRun(actor, sent.runId);
   });

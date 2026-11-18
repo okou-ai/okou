@@ -1754,7 +1754,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(events.body.events).toStrictEqual([]);
   }, 60_000);
 
-  it("rejects an unknown thread before looking up attachments", async () => {
+  it("rejects an unknown thread before accessing attachment storage", async () => {
     const { actor, agentId } = await entitledChatActor();
     const fileId = randomUUID();
     const filename = "unknown-thread.txt";
@@ -2051,19 +2051,17 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(created.prompt).toContain(`[Web file] ${filenameSnapshot}`);
   }, 60_000);
 
-  it("falls back to v2 listing when the exact head lacks size", async () => {
+  it("uses the v2 listing size with one head of the attachment", async () => {
     const { actor, agentId } = await entitledChatActor();
     const fileId = randomUUID();
     const filename = "incomplete-head.txt";
     const key = buildArtifactKeyV2(fileId, filename);
     const prefix = buildArtifactPrefixV2(fileId);
     const operations: string[] = [];
-    let headRequests = 0;
     context.mocks.s3.send.mockImplementation(
       (command: unknown): Promise<unknown> => {
         if (command instanceof HeadObjectCommand && command.input.Key === key) {
-          headRequests += 1;
-          operations.push(headRequests === 1 ? "head:exact" : "head:listed");
+          operations.push("head");
           return Promise.resolve({
             ContentType: "text/plain",
             LastModified: new Date("2026-08-24T00:00:00.000Z"),
@@ -2110,7 +2108,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       },
     });
 
-    expect(operations).toStrictEqual(["head:exact", "list:v2", "head:listed"]);
+    expect(operations).toStrictEqual(["head", "list:v2"]);
     // A size the exact head never returned is what the listing recovers, and an
     // attachment whose size stays unresolved blocks the send outright, so the
     // created run and its rendered file block are the observable result.

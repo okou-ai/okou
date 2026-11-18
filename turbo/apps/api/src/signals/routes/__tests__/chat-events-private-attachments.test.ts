@@ -12,6 +12,7 @@ import { artifactCatalogRoutes } from "../artifact-catalog";
 import { integrationsGithubUploadInitRoutes } from "../integrations-github-upload-init";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsMultipartRoutes } from "../uploads-multipart";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createRouteMocks } from "./helpers/route-test";
 import { createDeferredPromise } from "../../utils";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
@@ -436,10 +437,11 @@ describe("private attachments through normal chat send", () => {
     await cancelChatRun(actor, sent.runId);
   });
 
-  it.each(["before send", "during preparation"] as const)(
-    "rejects a completed attachment deleted %s without publishing input",
+  it.each(["before selection", "after selection"] as const)(
+    "handles private attachment withdrawal %s",
     async (when) => {
       const { actor, agentId } = await entitledChatActor();
+      await api.updateUserModelPreference(actor, "claude-fable-5-1");
       const storage = installS3Fixture(context);
       const file = {
         filename: "deleted.txt",
@@ -474,21 +476,26 @@ describe("private attachments through normal chat send", () => {
         throw new Error("Expected a pending single-part upload");
       }
       storage.put(pending.uploadUrl, Buffer.from("held"), "text/plain");
-      const started = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      const original = context.mocks.s3.send.getMockImplementation()!;
-      context.mocks.s3.send.mockImplementation(async (command) => {
-        if (
-          when === "during preparation" &&
-          command instanceof HeadObjectCommand &&
-          command.input.Key === `private-artifacts/${pending.id}/held.txt`
-        ) {
-          started.resolve(undefined);
-          await release.promise;
-        }
-        return await original(command);
-      });
-      if (when === "before send") {
+      const held =
+        when === "after selection"
+          ? {
+              started: createDeferredPromise<void>(context.signal),
+              release: createDeferredPromise<void>(context.signal),
+            }
+          : undefined;
+      if (held) {
+        const original = context.mocks.s3.send.getMockImplementation()!;
+        context.mocks.s3.send.mockImplementation(async (command) => {
+          if (
+            command instanceof HeadObjectCommand &&
+            command.input.Key === `private-artifacts/${pending.id}/held.txt`
+          ) {
+            held.started.resolve(undefined);
+            await held.release.promise;
+          }
+          return await original(command);
+        });
+      } else {
         await accept(
           catalog.delete({ headers, params: { artifactId } }),
           [200],
@@ -498,7 +505,7 @@ describe("private attachments through normal chat send", () => {
       const sending = requestSendEventRaw(actor, {
         agentId,
         threadId: thread.id,
-        prompt: "reject the withdrawn attachment",
+        prompt: "read the accepted attachments",
         userMessage: {
           version: 1,
           parts: [
@@ -519,24 +526,42 @@ describe("private attachments through normal chat send", () => {
         hasTextContent: true,
       });
       onTestFinished(async () => {
-        if (!release.settled()) {
-          release.resolve(undefined);
+        if (held && !held.release.settled()) {
+          held.release.resolve(undefined);
         }
         await sending;
       });
-      if (when === "during preparation") {
-        await started.promise;
+      if (held) {
+        await held.started.promise;
         createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
         await accept(
           catalog.delete({ headers, params: { artifactId } }),
           [200],
         );
-        release.resolve(undefined);
+        held.release.resolve(undefined);
       }
-      expect((await sending).status).toBe(500);
+      expect((await sending).status).toBe(held ? 201 : 500);
+      await flushWaitUntilForTest();
+      const messages = userMessages(
+        (await chat.listThreadEvents(actor, thread.id)).events,
+      );
+      if (held) {
+        const runId = messages.find((message) => {
+          return message.runId;
+        })?.runId;
+        if (!runId) {
+          throw new Error("Expected a Run for the accepted attachments");
+        }
+        const run = await api.readRun(actor, runId);
+        expect(run.prompt).toContain(`[ID] ${prepared.id}`);
+        expect(run.prompt).toContain(`[ID] ${pending.id}`);
+        await cancelChatRun(actor, runId);
+      } else {
+        expect(messages).toStrictEqual([]);
+      }
       expect(
-        userMessages((await chat.listThreadEvents(actor, thread.id)).events),
-      ).toStrictEqual([]);
+        (await chat.requestWebFileUrl(actor, prepared.id, [404])).status,
+      ).toBe(404);
     },
   );
 
