@@ -795,6 +795,8 @@ feature; the catalog shows each one.
   return and Reduce Motion adaptation. Retain both page hosts across navigation
   so drafts and scroll state survive. Forward the SwiftUI environment to both
   hosts, including appearance, scene phase and scoped link/system-entry actions.
+  The sidebar host uses only container safe areas, so the chat's keyboard never
+  lifts its list or footer during navigation.
   Automatic composer focus waits for the chat host's native appearance, not just
   window attachment. Prepare new-message input expanded before entry; retain its
   expanded layout through departure. Return actions request navigation while the
