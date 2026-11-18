@@ -3,12 +3,10 @@ import type {
   OfficialWorkflowAcceptedRevision,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import type {
-  AgentRunOfficialWorkflowDefinitionProvenance,
   AgentRunOfficialWorkflowBundleDefinitionProvenance,
   AgentRunOfficialWorkflowProvenance,
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 import type { PersistedStorageMount } from "@okouai/db/types";
-import type { AcceptedOfficialWorkflowCatalog } from "./official-workflow-catalog-read.service";
 
 export const OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE =
   "Official Workflow execution state is not current; retry";
@@ -23,12 +21,6 @@ export class OfficialWorkflowRunAdmissionError extends Error {
   }
 }
 
-export interface OfficialWorkflowCandidate {
-  readonly workflowId: string;
-  readonly workflowName: string;
-  readonly definitionName: string;
-}
-
 interface OfficialWorkflowRunBlueprintIdentity {
   readonly key: string;
   readonly fingerprint: string;
@@ -38,11 +30,9 @@ type ResolvedOfficialWorkflowDefinition =
   AgentRunOfficialWorkflowBundleDefinitionProvenance & {
     readonly workflowId: string;
     readonly workflowName: string;
-    readonly blueprints: readonly OfficialWorkflowRunBlueprintIdentity[];
   };
 
 export interface OfficialWorkflowObservation {
-  readonly releaseId: string;
   readonly definitions: readonly ResolvedOfficialWorkflowDefinition[];
   readonly provenance: Extract<
     AgentRunOfficialWorkflowProvenance,
@@ -69,18 +59,7 @@ function acceptedDeliveryMatches(
   );
 }
 
-export function observedDeliveryMatches(
-  observed: AgentRunOfficialWorkflowDefinitionProvenance,
-  definition: OfficialWorkflowAcceptedDefinition,
-): boolean {
-  return (
-    observed.contentBundle?.sha256 === definition.contentBundle.sha256 &&
-    observed.contentBundle.archiveBytes ===
-      definition.contentBundle.archiveBytes
-  );
-}
-
-export function blueprintIdentities(
+function blueprintIdentities(
   definition: OfficialWorkflowAcceptedDefinition,
 ): readonly OfficialWorkflowRunBlueprintIdentity[] {
   return definition.blueprints.map((blueprint) => {
@@ -88,7 +67,7 @@ export function blueprintIdentities(
   });
 }
 
-export function blueprintIdentitiesMatch(
+function blueprintIdentitiesMatch(
   left: readonly OfficialWorkflowRunBlueprintIdentity[],
   right: readonly OfficialWorkflowRunBlueprintIdentity[],
 ): boolean {
@@ -122,20 +101,6 @@ function acceptedRevisionMatchesDefinition(
   );
 }
 
-export function acceptedRevisionsMatchDefinitions(
-  definitions: readonly OfficialWorkflowAcceptedDefinition[],
-  revisions: readonly (OfficialWorkflowAcceptedRevision | null)[],
-): boolean {
-  return definitions.every((definition, index) => {
-    const revision = revisions[index];
-    return (
-      revision !== null &&
-      revision !== undefined &&
-      acceptedRevisionMatchesDefinition(definition, revision)
-    );
-  });
-}
-
 export function acceptedDefinitionForName(
   definitions: readonly OfficialWorkflowAcceptedDefinition[],
   name: string,
@@ -146,82 +111,22 @@ export function acceptedDefinitionForName(
   return matches.length === 1 ? (matches[0] ?? null) : null;
 }
 
-interface AcceptedWorkflowCandidate {
-  readonly candidate: OfficialWorkflowCandidate;
-  readonly accepted: OfficialWorkflowAcceptedDefinition;
-}
-
-export function acceptedWorkflowCandidates(
-  catalog: AcceptedOfficialWorkflowCatalog,
-  candidates: readonly OfficialWorkflowCandidate[],
-): readonly AcceptedWorkflowCandidate[] {
-  const orderedCandidates = [...candidates].sort((left, right) => {
-    return (
-      left.definitionName.localeCompare(right.definitionName) ||
-      left.workflowId.localeCompare(right.workflowId)
-    );
-  });
-  const definitionNames = new Set<string>();
-  const workflowIds = new Set<string>();
-  const workflowNames = new Set<string>();
-  return orderedCandidates.map((candidate) => {
-    if (
-      definitionNames.has(candidate.definitionName) ||
-      workflowIds.has(candidate.workflowId) ||
-      workflowNames.has(candidate.workflowName)
-    ) {
-      throw new OfficialWorkflowRunAdmissionError();
-    }
-    definitionNames.add(candidate.definitionName);
-    workflowIds.add(candidate.workflowId);
-    workflowNames.add(candidate.workflowName);
-
-    const accepted = acceptedDefinitionForName(
-      catalog.payload.definitions,
-      candidate.definitionName,
-    );
-    if (!accepted) {
-      throw new OfficialWorkflowRunAdmissionError();
-    }
-    return { candidate, accepted };
-  });
-}
-
 export function assembleWorkflowObservation(
-  catalog: AcceptedOfficialWorkflowCatalog,
-  acceptedCandidates: readonly AcceptedWorkflowCandidate[],
-  revisions: readonly (OfficialWorkflowAcceptedRevision | null)[],
+  workflow: { readonly workflowId: string; readonly workflowName: string },
+  definition: OfficialWorkflowAcceptedDefinition,
+  revision: OfficialWorkflowAcceptedRevision,
 ): OfficialWorkflowObservation {
-  const definitions = acceptedCandidates.map(
-    ({ candidate, accepted }, index): ResolvedOfficialWorkflowDefinition => {
-      const revision = revisions[index];
-      if (!revision || !acceptedRevisionMatchesDefinition(accepted, revision)) {
-        throw new OfficialWorkflowRunAdmissionError();
-      }
-      return {
-        workflowId: candidate.workflowId,
-        workflowName: candidate.workflowName,
-        name: accepted.name,
-        revision: accepted.revision,
-        contentBundle: accepted.contentBundle,
-        blueprints: blueprintIdentities(accepted),
-      };
-    },
-  );
-
+  if (!acceptedRevisionMatchesDefinition(definition, revision)) {
+    throw new OfficialWorkflowRunAdmissionError();
+  }
+  const source = {
+    name: definition.name,
+    revision: definition.revision,
+    contentBundle: definition.contentBundle,
+  };
   return {
-    releaseId: catalog.releaseId,
-    definitions,
-    provenance: {
-      schemaVersion: 2,
-      definitions: definitions.map((definition) => {
-        return {
-          name: definition.name,
-          revision: definition.revision,
-          contentBundle: definition.contentBundle,
-        };
-      }),
-    },
+    definitions: [{ ...workflow, ...source }],
+    provenance: { schemaVersion: 2, definitions: [source] },
   };
 }
 

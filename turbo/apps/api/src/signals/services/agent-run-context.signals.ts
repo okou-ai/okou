@@ -50,7 +50,6 @@ import {
   createManagedModelKeys,
   createModelPricing,
 } from "./model-source-context.service";
-import { createOfficialWorkflowCatalog } from "./official-workflow-context.signals";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import {
   storageBaseIndexFromRows,
@@ -84,7 +83,6 @@ import {
   agentSelectionColumns,
   createAgentSelectionContext,
 } from "./execution-agent-selection-context.service";
-import type { SelectedAgentWorkflow } from "./execution-agent-workflows.service";
 import type { ConnectorPermissionGrant } from "./execution-connector-permissions.service";
 import {
   contextJsonProjection,
@@ -172,9 +170,6 @@ export interface AgentRunContextSignals {
   readonly permissionGrants$: Computed<
     Promise<readonly ConnectorPermissionGrant[]>
   >;
-  readonly workflows$: Computed<Promise<readonly SelectedAgentWorkflow[]>>;
-  /** The accepted global Official Workflow catalog, shared across contexts. */
-  readonly officialCatalog$: ReturnType<typeof createOfficialWorkflowCatalog>;
   /** Seed Skill rows read with the model catalog; shared across contexts. */
   readonly seedSkills$: ReturnType<
     typeof createGlobalModelContext
@@ -315,10 +310,6 @@ export function matchAgentRunContextSignals(
     return supplied;
   }
   return createIdentityContext(userId, orgId, agentId, supplied);
-}
-
-function reusedOfficialCatalog(supplied: AgentRunContextSignals | undefined) {
-  return supplied?.officialCatalog$ ?? createOfficialWorkflowCatalog();
 }
 
 function contextAgentSelection() {
@@ -648,7 +639,6 @@ function createIdentityContext(
       sharedMember?.selectedImageModel$ ??
       createSelectedImageModel(memberMetadata$),
     ...connectorContext.signals,
-    officialCatalog$: reusedOfficialCatalog(supplied),
     seedSkills$: globalReferences.seedSkills$,
     memory$,
     featureSwitches$: featureSwitchContext$,
@@ -688,7 +678,6 @@ export const preloadAgentRunContext$ = command(
       signals.selectedImageModel$,
       signals.connectorSelection$,
       signals.permissionGrants$,
-      signals.workflows$,
       signals.featureSwitches$,
       signals.disabledPaidTools$,
       signals.environment$,
@@ -967,7 +956,6 @@ function createAgentEnvironment(
       builtin: first.builtin,
       custom: first.custom,
       permissions: first.permissions,
-      workflows: first.workflows,
       observation: bootstrapEnvironmentObservation({
         query,
         materialize,
@@ -1092,7 +1080,6 @@ function createConnectorContextGroups(
     environmentSnapshot$: sources.environmentSnapshot$,
     signals: {
       ...sources.signals,
-      workflows$: sources.workflows$,
       runVariables$,
     },
   };
@@ -1106,8 +1093,8 @@ function createConnectorSources(
     identity$,
     featureSwitches$,
   );
-  const { connectorSelection$, permissionGrants$, workflows$ } =
-    createAgentSelectionContext(identity$, environmentSnapshot$);
+  const { connectorSelection$, permissionGrants$ } =
+    createAgentSelectionContext(environmentSnapshot$);
   const customConnectorDefinitions$ = computed(async (get) => {
     return (await get(connectorSelection$)).customConnectorDefinitions;
   });
@@ -1185,7 +1172,6 @@ function createConnectorSources(
   });
   return {
     environmentSnapshot$,
-    workflows$,
     signals: {
       connectorSelection$,
       connectorScope$,

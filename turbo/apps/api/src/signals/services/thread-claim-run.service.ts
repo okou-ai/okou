@@ -29,7 +29,7 @@ import { createConnectorAdmissionSignals } from "./thread-connector-environment.
 import { modelProviderPermissionManifest } from "./permission-manifest.service";
 import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-types";
 import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
-import { createOfficialWorkflowSignals } from "./thread-official-workflow.signals";
+import { createOfficialWorkflowSignal } from "./thread-official-workflow.signals";
 import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
 import { OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE } from "./official-workflow-constants";
 import type {
@@ -157,6 +157,7 @@ import { morningBriefScheduleClaimBound$ } from "./morning-brief-schedule-claim.
 import {
   OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
   OfficialWorkflowRunAdmissionError,
+  exactMountsMatch,
   type OfficialWorkflowRunObservation,
 } from "./official-workflow-run.service";
 import { pendingLaunchBillingAttributionSql } from "./pending-launch-billing-plan";
@@ -165,7 +166,6 @@ import {
   pendingLaunchClaimFenceSql,
   pendingLaunchClaimProducerStatements,
 } from "./pending-launch-claim-plan";
-import { pendingOfficialAdmissionGuardSql } from "./pending-launch-official-plan";
 import {
   pendingAdmissionRecordSchema as admissionRow,
   advancePendingLaunchAdmission,
@@ -287,7 +287,6 @@ import { OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE } from "./official-workflow-
 import { billingRunAttributionWrite } from "./managed-usage-attribution";
 import { isPersonalSubscriptionProviderType } from "./model-provider-account.service";
 import type { ModelFirstPin } from "./model-selection.service";
-import type { OfficialWorkflowContextFacts } from "./official-workflow-context.signals";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
 import { teamsDeliveryTargetSchema } from "./teams-chat-callback-payload";
@@ -809,7 +808,6 @@ function isDirectSendContext(contextType: string | null): boolean {
 interface RunPlan {
   readonly args: ThreadRunArgs;
   readonly integrationContext?: string;
-  readonly enforceBuiltInCredits: boolean;
   readonly runner: ThreadRunnerFacts;
   readonly persisted: ThreadRunPersistenceContext;
 }
@@ -858,7 +856,6 @@ export interface ThreadRunContext {
   readonly planCapabilities: OrgPlanCapabilities | null;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly input: {
-    readonly enforceBuiltInCredits: boolean;
     readonly context: ThreadRunPersistenceContext;
     readonly args: ThreadRunPersistenceArgs;
   };
@@ -922,7 +919,6 @@ function finalizeClaimRunContext(
     ...context,
     persistence: prepareAtomicLaunchPersistence({
       createArgs: context.input.args,
-      enforceBuiltInCredits: context.input.enforceBuiltInCredits,
       context: context.input.context,
       identity: context.identity,
       callbackRows: context.callbackRows,
@@ -1058,7 +1054,6 @@ function withEmailSystemPrompt(
 function claimCommitInput(input: RunPlan): ThreadRunContext["input"] {
   return {
     args: claimCommitArguments(input.args),
-    enforceBuiltInCredits: input.enforceBuiltInCredits,
     context: input.persisted,
   };
 }
@@ -2522,8 +2517,10 @@ export function createThreadClaimRunObjects(
     bootstrap,
     threadContext,
   );
-  const { officialWorkflow$, officialWorkflowFacts$ } =
-    createOfficialWorkflowSignals(pickedEvent$, threadContext);
+  const officialWorkflow$ = createOfficialWorkflowSignal(
+    pickedEvent$,
+    threadContext,
+  );
   const storage$ = createStorageSignals(bootstrap, pickedEvent$, threadContext);
   const contextArgs$ = computed(async (get) => {
     const selected = await get(runArgs$);
@@ -2700,7 +2697,6 @@ export function createThreadClaimRunObjects(
         promptAndSkills.systemPromptVariables.integrationContext,
       userTimezone: promptAndSkills.userTimezone,
       ...metadata,
-      officialWorkflowFacts: await get(officialWorkflowFacts$),
       featureSwitchContext: contentContext.featureSwitchContext,
       selectedImageModel,
     };
@@ -3081,22 +3077,16 @@ export function createThreadClaimRunObjects(
           integration = event.contextType ?? undefined;
         }
       }
-      const { officialWorkflowRun, officialWorkflowFacts, selectedImageModel } =
-        context;
+      const { officialWorkflowRun, selectedImageModel } = context;
       const modelProvider = context.modelProvider;
       return {
         args,
         integrationContext: context.integrationContext,
-        enforceBuiltInCredits:
-          !(
-            officialWorkflowRun && args.agentRunMetadata.workflowAutomationId
-          ) && isBuiltInModelProviderType(modelProvider.type),
         persisted: {
           content,
           selectedImageModel,
           launchSnapshot,
           officialWorkflowRun,
-          officialWorkflowFacts,
           resolved: {
             agentId: context.resolved.agentId,
           },
@@ -3225,7 +3215,10 @@ export function createThreadClaimRunObjects(
               selection: {
                 skillRoot: args.skillRoot,
                 selection: {
-                  ...customWorkflowSelection,
+                  agentId: customWorkflowSelection.agentId,
+                  ...(!args.officialWorkflowRun && args.workflowAutomationId
+                    ? { automationId: args.workflowAutomationId }
+                    : {}),
                   protectedMountPaths: [
                     ...customWorkflowSelection.protectedMountPaths,
                     ...officialMountPaths,
@@ -3779,7 +3772,6 @@ export function createThreadClaimRunObjects(
       const { input, identity, callbackRows, launch } = context;
       const commit: ThreadLaunchCommitInput = {
         createArgs: input.args,
-        enforceBuiltInCredits: input.enforceBuiltInCredits,
         context: input.context,
         identity,
         callbackRows,
@@ -4147,7 +4139,6 @@ interface ThreadRunPersistenceContext {
   readonly selectedImageModel: ImageModel;
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
-  readonly officialWorkflowFacts: OfficialWorkflowContextFacts;
   readonly resolved: {
     readonly agentId: string;
   };
@@ -4165,7 +4156,6 @@ interface ThreadRunPersistenceContext {
 
 interface ThreadLaunchCommitInput {
   readonly createArgs: ThreadRunPersistenceArgs;
-  readonly enforceBuiltInCredits: boolean;
   readonly context: ThreadRunPersistenceContext;
   readonly identity: LaunchRunIdentity;
   readonly callbackRows: readonly AgentRunCallbackInsert[];
@@ -4459,6 +4449,14 @@ function buildAtomicLaunchCteContext(args: AtomicLaunchRowsPlanArgs) {
     validatedThreadSession: args.validatedThreadSession,
   });
   ctes.push(updatedThread);
+  const automationId = metadata.workflowAutomationId;
+  // A deleted source has the same nullable history link as ON DELETE SET NULL.
+  // The key-share lock protects only the foreign key while publishing the Run.
+  const workflowAutomationId =
+    rowsArgs.officialWorkflowProvenance && automationId
+      ? sql`(SELECT ${workflowAutomations.id} FROM ${workflowAutomations}
+          WHERE ${eq(workflowAutomations.id, automationId)} FOR KEY SHARE)`
+      : automationId;
   const insertedRun = new QueryBuilder()
     .$with("inserted_launch_run", {
       id: agentRuns.id,
@@ -4471,9 +4469,10 @@ function buildAtomicLaunchCteContext(args: AtomicLaunchRowsPlanArgs) {
           ...launchRunValues(rowsArgs, createdAt, metadata),
           id: pendingLaunchGuardedRunId(args, updatedThread),
           modelProviderAccountIdentity: args.validatedAccountIdentity,
+          workflowAutomationId,
         },
         ["id", "createdAt"],
-        pendingLaunchRunEligibility(),
+        sql`EXISTS (SELECT 1 FROM inserted)`,
       ),
     );
   ctes.push(insertedRun);
@@ -5029,8 +5028,6 @@ const pendingLaunchRowSchema = discriminatedUnion("kind", [
     billingAttributionId: string().nullable(),
     marketingRewardEventId: uuid().nullable(),
   }),
-  object({ kind: literal("official") }),
-  object({ kind: literal("plan") }),
   object({ kind: literal("claim-lost") }),
 ]);
 
@@ -5038,20 +5035,9 @@ function pendingAtomicLaunchResult(
   args: PreparedThreadLaunchCommit,
   context: AtomicLaunchCteContext,
   row: zInfer<typeof pendingLaunchRowSchema> | undefined,
-):
-  | PersistedAtomicLaunchRows
-  | ReturnType<typeof conflict>
-  | QueueFirstRunClaimLost {
+): PersistedAtomicLaunchRows | QueueFirstRunClaimLost {
   if (!row) {
     throw new Error("Atomic pending launch persistence returned no row");
-  }
-  if (row.kind === "official") {
-    return conflict(OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE);
-  }
-  if (row.kind === "plan") {
-    throw new Error(
-      `Missing org plan entitlement for ${args.createArgs.orgId}`,
-    );
   }
   if (row.kind === "claim-lost") {
     return { kind: "queue-first-claim-lost" };
@@ -5147,7 +5133,6 @@ function pendingAtomicLaunchPlan(
     ${sql.join([...planned, ...producerCtes], sql`, `)},
     launch_active AS (${active})
     SELECT CASE
-      WHEN reason <> 'ready' THEN reason
       WHEN EXISTS (SELECT 1 FROM ${context.insertedRun}) THEN 'pending'
       ELSE 'claim-lost' END AS kind,
       (SELECT ${attribution.runId} FROM ${attribution}) AS "billingAttributionId",
@@ -5155,7 +5140,7 @@ function pendingAtomicLaunchPlan(
       (SELECT ${returnedCteColumn(context.insertedRun, "id")} FROM ${context.insertedRun}) AS "runId",
       (SELECT ${returnedCteColumn(context.insertedRun, "created_at")} FROM ${context.insertedRun})::text AS "createdAt",
       ${returnedCteId(context.updatedThread)} AS "boundThreadId"
-    FROM launch_official_guard WHERE (SELECT ${count()} FROM launch_active) >= 0`;
+    WHERE (SELECT ${count()} FROM launch_active) >= 0`;
 }
 
 function returnedCteColumn(cte: WithSubquery, name: string): SQL {
@@ -5202,11 +5187,9 @@ function pendingLaunchBarrier(names: readonly string[]): SQL {
 
 function pendingLaunchPublicationCtes(args: AtomicLaunchRowsPlanArgs): SQL {
   const { claim, queueFirst } = args.publication;
-  const official = sql`launch_official_guard AS MATERIALIZED (${pendingOfficialAdmissionGuardSql(args.commit)})`;
-  const ready = sql`(SELECT reason FROM launch_official_guard) = 'ready'`;
-  const claimCtes = sql`, ${canonicalChatEventInputCtes(
+  const claimCtes = sql`${canonicalChatEventInputCtes(
     [queueFirst.input],
-    sql`${ready} AND EXISTS (
+    sql`EXISTS (
         SELECT 1 FROM (${queueFirst.headSql}) AS current_head WHERE current_head.id = ${queueFirst.input.revokesEventId}::uuid)`,
   )},
       inserted AS (${canonicalChatEventInsertSql("any")}),
@@ -5224,7 +5207,7 @@ function pendingLaunchPublicationCtes(args: AtomicLaunchRowsPlanArgs): SQL {
     sql`EXISTS (SELECT 1 FROM inserted)
               AND (SELECT ${count()} FROM launch_claim_relations) >= 0`,
   )})`;
-  return sql`${official}${claimCtes}${released}`;
+  return sql`${claimCtes}${released}`;
 }
 
 function pendingLaunchGuardedRunId(
@@ -5238,11 +5221,6 @@ function pendingLaunchGuardedRunId(
   const guard = sql`CASE ${sql.join(guards, sql` `)} ELSE '0' END`;
   return sql`CASE WHEN (${guard})::integer = 0
     THEN ${args.commit.identity.runId}::uuid ELSE NULL END`;
-}
-
-function pendingLaunchRunEligibility(): SQL {
-  return sql`(SELECT reason FROM launch_official_guard) = 'ready'
-    AND EXISTS (SELECT 1 FROM inserted)`;
 }
 
 function pendingLaunchActivePublication(
@@ -5304,6 +5282,10 @@ const commitThreadLaunch$ = command(
     signal: AbortSignal,
   ): Promise<AtomicLaunchCommitAttempt> => {
     signal.throwIfAborted();
+    const official = args.context.officialWorkflowRun;
+    if (official && !exactMountsMatch(official, args.launch.runStorageMounts)) {
+      return conflict(OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE);
+    }
     const db = set(writeDb$);
     const { admissionTiming, timing } = args;
     admissionTiming.transactionStarted();

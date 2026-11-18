@@ -8,9 +8,15 @@ import { createWechatThreadContext } from "./wechat-context.service";
 import { randomUUID } from "node:crypto";
 import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { workflows } from "@okouai/db/schema/workflow";
+import {
+  officialWorkflowCatalogState,
+  officialWorkflowCatalogReleases,
+  officialWorkflowDefinitionRevisions,
+} from "@okouai/db/schema/official-workflow-catalog";
+import { officialWorkflowSourcePlan } from "./official-workflow-context.signals";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { computed, type Computed } from "ccstate";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
@@ -46,6 +52,20 @@ import {
 export interface ThreadAutomationTarget {
   readonly automation: typeof workflowAutomations.$inferSelect;
   readonly agentId: string;
+  readonly officialCatalog:
+    | (Pick<
+        typeof officialWorkflowCatalogReleases.$inferSelect,
+        "payload" | "hiddenThreadDefinitionNames"
+      > & { readonly releaseId: string })
+    | null;
+  readonly officialRevision: Pick<
+    typeof officialWorkflowDefinitionRevisions.$inferSelect,
+    "definitionName" | "revision" | "payload" | "contentBundle"
+  > | null;
+  readonly proactivePreferences: {
+    readonly suggestionsEnabled: boolean | null;
+    readonly learningEnabled: boolean | null;
+  } | null;
   readonly workflow: Pick<
     typeof workflows.$inferSelect,
     | "id"
@@ -129,7 +149,7 @@ export function createThreadContext(
   });
   const integrations = createThreadIntegrationContexts(
     pickedEvent$,
-    orgId,
+    bootstrap,
     sourceSettings.featureSwitches$,
   );
   const model = createThreadModelContext(
@@ -216,8 +236,6 @@ export function createThreadContext(
     discordContext$,
     automationContext$: integrations.automationContext$,
     automationTarget$: integrations.automationTarget$,
-    workflows$: workflowContext.workflows$,
-    officialWorkflows$: workflowContext.officialWorkflows$,
     officialWorkflowObservation$: workflowContext.officialWorkflowObservation$,
     templateSources$: templates.sources$,
     templates$: templates.templates$,
@@ -360,9 +378,10 @@ function createThreadSourceSettings(bootstrap: AgentRunContextSignals) {
 
 function createThreadIntegrationContexts(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  orgId: string,
+  bootstrap: AgentRunContextSignals,
   featureSwitches$: AgentRunContextSignals["featureSwitches$"],
 ) {
+  const orgId = bootstrap.orgId;
   const slackContext$ = createSlackThreadContext(pickedEvent$, orgId);
   const feishuContext$ = createFeishuThreadContext(
     pickedEvent$,
@@ -379,7 +398,10 @@ function createThreadIntegrationContexts(
     featureSwitches$,
   );
   const automationContext$ = createThreadAutomationContext(pickedEvent$);
-  const automationTarget$ = createAutomationTarget(automationContext$);
+  const automationTarget$ = createAutomationTarget(
+    automationContext$,
+    bootstrap,
+  );
   return {
     slackContext$,
     feishuContext$,
@@ -439,14 +461,17 @@ function createOfficialWorkflowCreditWaiver(
 
 function createAutomationTarget(
   automationContext$: ReturnType<typeof createThreadAutomationContext>,
+  bootstrap: AgentRunContextSignals,
 ) {
   return computed(async (get): Promise<ThreadAutomationTarget | null> => {
     const event = await get(automationContext$);
     if (!event) {
       return null;
     }
+    const source = officialWorkflowSourcePlan(bootstrap);
     const [row] = await get(db$)
       .select({
+        ...source.columns,
         automation: workflowAutomationColumns(),
         agentId: workflows.agentId,
         workflow: {
@@ -462,6 +487,10 @@ function createAutomationTarget(
       })
       .from(workflowAutomations)
       .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
+      .leftJoin(officialWorkflowCatalogState, source.catalogCondition)
+      .leftJoin(officialWorkflowCatalogReleases, source.releaseJoin)
+      .leftJoin(officialWorkflowDefinitionRevisions, source.revisionJoin)
+      .leftJoinLateral(source.preferences, sql`true`)
       .where(eq(workflowAutomations.id, event.automationId))
       .limit(1);
     return row ?? null;
