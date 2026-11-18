@@ -32,6 +32,7 @@ import {
   AgentAuth,
   CliAuth,
   ComposeJobAuth,
+  FirewallAuth,
   SandboxAuth,
   SkillImportAuth,
 } from "../../types/auth";
@@ -91,15 +92,18 @@ const jwtBaseSchema = object({
   exp: number(),
 });
 
-const sandboxTokenPayloadSchema = jwtBaseSchema.extend({
-  scope: literal("sandbox"),
+const runIdentityPayloadSchema = jwtBaseSchema.extend({
   runId: string().min(1),
   orgId: string().min(1),
 });
 
+const sandboxTokenPayloadSchema = runIdentityPayloadSchema.extend({
+  scope: literal("sandbox"),
+});
+
 // Only the host firewall resolver accepts this scope. Guest identities must
 // never authorize retrieval of reusable upstream credentials on their own.
-const firewallTokenPayloadSchema = sandboxTokenPayloadSchema.extend({
+const firewallTokenPayloadSchema = runIdentityPayloadSchema.extend({
   scope: literal("firewall"),
 });
 
@@ -327,13 +331,14 @@ export function verifySandboxToken(token: string): SandboxAuth | null {
   }
 
   return {
+    scope: parsed.data.scope,
     userId: parsed.data.userId,
     runId: parsed.data.runId,
     orgId: parsed.data.orgId,
   };
 }
 
-export function verifyFirewallToken(token: string): SandboxAuth | null {
+export function verifyFirewallToken(token: string): FirewallAuth | null {
   const parsed = firewallTokenPayloadSchema.safeParse(
     verifyPrefixedToken(token, FIREWALL_TOKEN_PREFIX),
   );
@@ -341,6 +346,7 @@ export function verifyFirewallToken(token: string): SandboxAuth | null {
     return null;
   }
   return {
+    scope: parsed.data.scope,
     userId: parsed.data.userId,
     runId: parsed.data.runId,
     orgId: parsed.data.orgId,

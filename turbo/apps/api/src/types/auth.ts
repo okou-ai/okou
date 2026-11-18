@@ -90,10 +90,18 @@ export interface CliTokenRecord {
   readonly orgId: string;
 }
 
-export interface SandboxAuth {
+interface RunIdentity {
   readonly userId: string;
   readonly runId: string;
   readonly orgId: string;
+}
+
+export interface SandboxAuth extends RunIdentity {
+  readonly scope: "sandbox";
+}
+
+export interface FirewallAuth extends RunIdentity {
+  readonly scope: "firewall";
 }
 
 export interface AgentAuth extends SingleAgentRuntimeContext {
