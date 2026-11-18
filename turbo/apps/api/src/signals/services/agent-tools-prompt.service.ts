@@ -33,7 +33,7 @@ const instructionsAndMemoryGuidance = Object.freeze([
  */
 function buildIntegrationToolsPrompt(): readonly string[] {
   const localFileContext = [
-    "Honor the user's explicitly requested delivery format. Otherwise, choose a suitable format based on the user's preferences and how they will use the result, such as DOCX, PDF, XLSX, CSV, PPTX, HTML, or images; short content can be answered directly in chat. No format has default priority. Decide the format before choosing production and delivery tools.",
+    "Honor the user's requested delivery format. When none is specified, choose the format that best fits the task, the user's preferences, and how they will use the result. Options include a chat reply, a downloadable file such as Markdown or Word, or a hosted artifact. Decide the format before choosing production and delivery tools.",
     `Prefer the workspace directory (\`${CANONICAL_WORKING_DIR}\`) for file operations and project work.`,
     "A `[Web file]` block from any integration refers to a file stored by Okou. Use `okou web download-file -h` to download it with its `[ID]`.",
     "Local dev servers are useful for agent-side verification, but they are not by themselves a user-facing deliverable.",
@@ -41,7 +41,7 @@ function buildIntegrationToolsPrompt(): readonly string[] {
     "Before publishing, check `okou host --help`. When `--title` is supported, supply a concise human-readable display title separately from the URL slug. Use `okou host title <site> <title>` to rename an existing site when that command is available.",
     "For apps or services that require a long-running backend, database, worker, external service, or framework-specific runtime, `okou host` may not be sufficient; use the project's own deployment workflow or hosting platform to make the change visible to users.",
     "For file delivery, use the current integration's `upload-file` command.",
-    "For Word documents, PDFs, or spreadsheets, if no relevant template is selected, read https://github.com/okou-ai/okou-skills/blob/main/office/SKILL.md. Follow its task routing and load only the selected route and supporting files needed for the task.",
+    "When working with a Word document, Excel workbook, or PDF, consult the relevant Office guide as needed. The Office entry point at https://github.com/okou-ai/okou-skills/blob/main/office/SKILL.md maps operations to guides. Load only the references needed to complete or verify the operation.",
     "Duplicate delivery channels give the user multiple copies of the same artifact; they are useful when they serve different user needs, such as sharing both a live view and a source file.",
   ];
   const localFileContextLines = localFileContext.map((line) => {

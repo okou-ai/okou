@@ -9107,14 +9107,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         expect(appendSystemPrompt).toContain("# Agent Tools");
         for (const toolHint of [
+          "Honor the user's requested delivery format.",
+          "When none is specified, choose the format that best fits the task, the user's preferences, and how they will use the result.",
           "okou web download-file -h",
           "Prefer the workspace directory (`/home/user/workspace`) for file operations and project work",
           "Okou Cloud Browser provides rendered-page inspection and interaction",
           "For one known public URL when you only need page content, check `okou data tools` for a page extraction tool first",
           "use Okou Cloud Browser when you need browser state, authentication, JavaScript, screenshots, or interaction",
           "Local dev servers are useful for agent-side verification",
-          "For Word documents, PDFs, or spreadsheets, if no relevant template is selected, read https://github.com/okou-ai/okou-skills/blob/main/office/SKILL.md.",
-          "Follow its task routing and load only the selected route and supporting files needed for the task",
+          "When working with a Word document, Excel workbook, or PDF, consult the relevant Office guide as needed.",
+          "https://github.com/okou-ai/okou-skills/blob/main/office/SKILL.md",
+          "Load only the references needed to complete or verify the operation",
           "For static web artifacts, Okou provides `okou host <dir> --site <slug> [--spa]` to publish a directory containing `index.html` to a public URL that users can open. For HTML presentations, include `--artifact-kind presentation-html`",
           "For apps or services that require a long-running backend, database, worker, external service, or framework-specific runtime",
           "for HTML presentations, include `--artifact-kind presentation-html`; run `okou host --help`",
