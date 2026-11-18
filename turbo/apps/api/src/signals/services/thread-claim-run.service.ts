@@ -89,13 +89,10 @@ import {
   tapError,
 } from "../utils";
 import type { DirectRunDispatchResult } from "./direct-run-dispatch.service";
-import {
-  captureExecutionPackages$,
-  type AdmittedRunLaunch,
-} from "./direct-run-preparation.service";
+import type { AdmittedRunLaunch } from "./direct-run-preparation.service";
 import {
   executionSkillRoot,
-  type ExecutionWorkflowInput,
+  selectExecutionPackages,
 } from "./execution-workflow-selection";
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
 import {
@@ -3209,37 +3206,39 @@ export function createThreadClaimRunObjects(
         args.officialWorkflowRun?.provenance.definitions.map((definition) => {
           return `${args.skillRoot}/${definition.name}`;
         }) ?? [];
-      const [tokenInput, executionPackages, disabledPaidTools] =
-        await Promise.all([
-          get(okouTokenInput$),
-          set(
-            captureExecutionPackages$,
-            {
-              orgId: bootstrap.orgId,
-              userId: bootstrap.userId,
-              selection: {
-                skillRoot: args.skillRoot,
-                selection: {
-                  agentId: customWorkflowSelection.agentId,
-                  ...(!args.officialWorkflowRun && args.workflowAutomationId
-                    ? { automationId: args.workflowAutomationId }
-                    : {}),
-                  protectedMountPaths: [
-                    ...customWorkflowSelection.protectedMountPaths,
-                    ...officialMountPaths,
-                  ],
-                },
-              },
-              singleAgent: isFeatureEnabled(
-                FeatureSwitchKey.SingleAgent,
-                args.featureSwitchContext,
-              ),
-            },
-            signal,
-          ),
-          get(bootstrap.disabledPaidTools$),
-        ]);
+      const timing = get(threadContext.dispatchTiming$);
+      const [
+        tokenInput,
+        packageSources,
+        ordinaryAutomation,
+        disabledPaidTools,
+      ] = await Promise.all([
+        get(okouTokenInput$),
+        timing.measure(
+          "api_dispatch_prepare_execution_package_wait",
+          "nested",
+          () => {
+            return get(threadContext.executionPackageSources$);
+          },
+        ),
+        args.workflowAutomationId && !args.officialWorkflowRun
+          ? get(automationTarget$)
+          : null,
+        get(bootstrap.disabledPaidTools$),
+      ]);
       signal.throwIfAborted();
+      const executionPackages = selectExecutionPackages(packageSources, {
+        skillRoot: args.skillRoot,
+        protectedMountPaths: [
+          ...args.protectedMountPaths,
+          ...officialMountPaths,
+        ],
+        singleAgent: isFeatureEnabled(
+          FeatureSwitchKey.SingleAgent,
+          args.featureSwitchContext,
+        ),
+        ordinaryAutomation,
+      });
       if (!executionPackages) {
         return conflict("Run packages or source authorization are unavailable");
       }
@@ -3539,8 +3538,6 @@ export function createThreadClaimRunObjects(
         const launch = await set(prepareAutomationLaunch$, head, signal);
         signal.throwIfAborted();
         if (launch.kind === "rejected") {
-          // The automation input was rejected from its captured reads;
-          // no launch read can change that, so none starts.
           return { kind: "rejected" as const, assembly: launch.assembly };
         }
         rewardArgs = await set(prepareAutomationRun$, launch.args, signal);
@@ -4475,11 +4472,10 @@ function buildAtomicLaunchCteContext(args: AtomicLaunchRowsPlanArgs) {
   const automationId = metadata.workflowAutomationId;
   // A deleted source has the same nullable history link as ON DELETE SET NULL.
   // The key-share lock protects only the foreign key while publishing the Run.
-  const workflowAutomationId =
-    rowsArgs.officialWorkflowProvenance && automationId
-      ? sql`(SELECT ${workflowAutomations.id} FROM ${workflowAutomations}
-          WHERE ${eq(workflowAutomations.id, automationId)} FOR KEY SHARE)`
-      : automationId;
+  const workflowAutomationId = automationId
+    ? sql`(SELECT ${workflowAutomations.id} FROM ${workflowAutomations}
+        WHERE ${eq(workflowAutomations.id, automationId)} FOR KEY SHARE)`
+    : null;
   const insertedRun = new QueryBuilder()
     .$with("inserted_launch_run", {
       id: agentRuns.id,
@@ -4658,7 +4654,7 @@ interface ThreadRunnerFacts {
 /** Capture selectors and request receipts; admitted preparation assembles runtime input. */
 function prepareRunnerLaunch(input: {
   readonly args: ThreadRunnerFacts;
-  readonly customWorkflowSelection: ExecutionWorkflowInput["selection"];
+  readonly customWorkflowSelection: AdmittedExecutionFacts["customWorkflowSelection"];
   readonly executionPackages: AdmittedExecutionFacts["executionPackages"];
   readonly okouToken: string;
   readonly disabledPaidTools: readonly PaidToolId[];

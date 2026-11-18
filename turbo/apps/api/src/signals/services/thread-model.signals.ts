@@ -22,7 +22,7 @@ import { now } from "../../lib/time";
 import { safeSync, settle } from "../utils";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
-import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
+import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import {
   type BuiltInModelRuntimeRoute,
   builtInModelRuntimeRouteFromSnapshot,
@@ -105,7 +105,6 @@ export interface ThreadModelSelection {
 }
 
 export interface ThreadModelSignals {
-  readonly dispatchTiming$: Computed<ApiDispatchTimingCollector>;
   readonly queuedModel$: Computed<Promise<QueuedModelContext>>;
   /** The admitted model selection before any personal subscription account. */
   readonly modelSelection$: ThreadModelSelectionSignal;
@@ -132,10 +131,8 @@ export function createThreadModelSignals(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   creditsWaived$: Computed<Promise<boolean>>,
+  dispatchTiming$: Computed<ApiDispatchTimingCollector>,
 ): ThreadModelSignals {
-  const dispatchTiming$ = computed(() => {
-    return new ApiDispatchTimingCollector();
-  });
   const queuedModel$ = createQueuedModel(
     bootstrap,
     pickedEvent$,
@@ -171,7 +168,6 @@ export function createThreadModelSignals(
     },
   );
   return {
-    dispatchTiming$,
     queuedModel$,
     modelSelection$: selection$,
     subscriptionSelection$,
@@ -447,7 +443,7 @@ function createModelSelection(
 function createSubscriptionSelection(
   bootstrap: AgentRunContextSignals,
   selection$: ThreadModelSelectionSignal,
-  dispatchTiming$: ThreadModelSignals["dispatchTiming$"],
+  dispatchTiming$: Computed<ApiDispatchTimingCollector>,
 ) {
   const subscriptionSelection$ = computed(
     async (get): Promise<ThreadModelSelection | ThreadModelError> => {
@@ -497,7 +493,7 @@ function createSubscriptionSelection(
 function createProviderContext(
   bootstrap: AgentRunContextSignals,
   subscriptionSelection$: ThreadModelSignals["subscriptionSelection$"],
-  dispatchTiming$: ThreadModelSignals["dispatchTiming$"],
+  dispatchTiming$: Computed<ApiDispatchTimingCollector>,
 ) {
   const providerContext$ = computed(async (get) => {
     const selection = await get(subscriptionSelection$);
