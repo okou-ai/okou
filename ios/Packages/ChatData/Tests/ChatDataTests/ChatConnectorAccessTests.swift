@@ -185,7 +185,7 @@ final class ChatConnectorAccessTests: XCTestCase {
           })
         let body = try XCTUnwrap(
           JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any])
-        XCTAssertEqual(body["authorizeAgent"] as? Bool, false)
+        XCTAssertNil(body["authorizeAgent"])
         XCTAssertNil(body["agentId"])
       }
       let defaults = try await ChatComposerAccess(client: fixture.http.client).accountDefaults(
