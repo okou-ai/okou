@@ -87,7 +87,7 @@ jobs:
       - name: Install Android SDK
         run: bash android/scripts/setup-sdk.sh --accept-licenses
       - name: Test native state and application, lint, and assemble
-        run: bash android/scripts/check.sh
+        run: bash android/scripts/check.sh --stacktrace
       - name: Assemble optimized release
         run: |
           export ANDROID_HOME="${ANDROID_HOME:-$HOME/.local/share/android-sdk}"
