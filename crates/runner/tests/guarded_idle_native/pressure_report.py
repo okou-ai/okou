@@ -26,6 +26,11 @@ def integer(value, minimum=0):
     return type(value) is int and minimum <= value <= 2**64 - 1
 
 
+def has_policy_shape(policy):
+    return (isinstance(policy, dict) and set(policy) == POLICY_FIELDS
+            and all(integer(value, 1) for value in policy.values()))
+
+
 def sustained_ready_samples(samples, end, policy, after=0):
     """Replay validated reads, returning fresh high-watermark evidence for Ready.
 
@@ -90,8 +95,7 @@ def validate(directory):
             result["artifacts"]["policy_sha256"]:
         raise ValueError("native pressure raw policy/hash mismatch")
     policy = json.loads(raw_policy, object_pairs_hook=report.unique_object)
-    if not isinstance(policy, dict) or set(policy) != POLICY_FIELDS or any(
-            not integer(value, 1) for value in policy.values()):
+    if not has_policy_shape(policy):
         raise ValueError("invalid native pressure policy")
     protected = policy["operating_floor_bytes"] + policy["cleanup_reserve_bytes"]
     if (protected >= policy["host_total_bytes"]
