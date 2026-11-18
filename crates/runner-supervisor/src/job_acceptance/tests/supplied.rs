@@ -45,7 +45,7 @@ async fn existing_run_registration_guards_supplied_work_without_http_history() {
         blank_pool_diagnostics: &diagnostics,
     };
     let context = serde_json::from_value(serde_json::json!({
-        "runId": run_id, "sandboxToken": "run-token", "prompt": "hello",
+        "runId": run_id, "sandboxToken": "run-token", "firewallToken": "firewall-token", "prompt": "hello",
         "cliAgentType": "", "platformEnvironment": {}, "connectorRuntimeTargets": []
     }))
     .unwrap();

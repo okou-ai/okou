@@ -11,7 +11,7 @@ type RunnerExecutionInput = Awaited<
 >;
 type ConnectorRuntimeAuthBody = Omit<
   Parameters<ReturnType<typeof createFirewallApi>["requestFirewallAuth"]>[1],
-  "encryptedSecrets" | "secretConnectorMap" | "secretConnectorMetadataMap"
+  "secretConnectorMap" | "secretConnectorMetadataMap"
 >;
 
 async function resolveExecutionAuth(

@@ -148,7 +148,7 @@ def _candidate_precedence_sandbox(tmp_path: Path, *, custom_available: bool) -> 
         "sandboxToken": "candidate-precedence-token",
         "networkLogPath": str(tmp_path / "net.jsonl"),
         "proxyLogPath": str(tmp_path / "proxy.jsonl"),
-        "encryptedSecrets": "iv:tag:data",
+        "firewallToken": "host-firewall-token",
         "connectorRuntimeTargets": [
             {"kind": "builtin", "connectorSlug": _CANDIDATE_BUILTIN_NAME},
             {"kind": "custom", "customConnectorId": _CUSTOM_CONNECTOR_ID},

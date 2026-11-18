@@ -477,7 +477,6 @@ async fn run_sandbox(
         firewalls: None,
         network_policies: None,
         connector_runtime_targets: None,
-        encrypted_secrets: None,
         secret_connector_map: None,
         secret_connector_metadata_map: None,
         vars: None,

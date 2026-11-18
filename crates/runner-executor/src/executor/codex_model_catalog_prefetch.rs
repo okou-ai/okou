@@ -355,10 +355,7 @@ pub(super) fn is_eligible(context: &ExecutionContext, reuse_result: SandboxReuse
     reuse_result != SandboxReuseResult::Reused
         && effective_cli_framework(&context.cli_agent_type) == EffectiveCliFramework::Codex
         && context.codex_runtime_config.is_none()
-        && context
-            .encrypted_secrets
-            .as_deref()
-            .is_some_and(|encrypted| !encrypted.is_empty())
+        && context.firewall_token.is_some()
         && has_codex_oauth_firewall(context)
 }
 

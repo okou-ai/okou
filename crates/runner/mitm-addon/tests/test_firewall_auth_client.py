@@ -644,7 +644,6 @@ class TestFetchFirewallHeaders:
         uuid.UUID(request.headers["x-client-request-id"])
         assert "x-vercel-protection-bypass" not in request.headers
         assert request.json_body() == {
-            "encryptedSecrets": "iv:tag:data",
             "authHeaders": {"Authorization": "Bearer ${{ secrets.TOKEN }}"},
         }
 
@@ -1056,7 +1055,6 @@ class TestFetchFirewallHeaders:
             )
 
         body = endpoint.requests[0].json_body()
-        assert body["encryptedSecrets"] == "iv:tag:data"
         assert body["authHeaders"] == {}
         assert body["secretConnectorMap"] == {"TOKEN": "notion"}
         assert body["secretConnectorMetadataMap"] == {"TOKEN": {"kind": "oauth"}}
@@ -1098,7 +1096,6 @@ class TestFetchFirewallHeaders:
             )
 
         assert endpoint.requests[0].json_body() == {
-            "encryptedSecrets": "iv:tag:data",
             "authHeaders": {},
             "authAwsSigv4": {
                 "accessKeyId": "${{ secrets.AWS_ACCESS_KEY_ID }}",
@@ -1128,20 +1125,17 @@ class TestFetchFirewallHeaders:
             )
 
         assert endpoint.requests[0].json_body() == {
-            "encryptedSecrets": "iv:tag:data",
             "authHeaders": {},
         }
 
     def test_request_repr_omits_sensitive_values(self):
         request = firewall_auth_request(
-            encrypted_secrets="secret-encrypted-payload",
-            sandbox_auth="secret-sandbox-token",
+            host_authority="secret-host-firewall-token",
         )
 
         rendered = repr(request)
 
-        assert "secret-encrypted-payload" not in rendered
-        assert "secret-sandbox-token" not in rendered
+        assert "secret-host-firewall-token" not in rendered
 
     async def test_includes_vercel_bypass_header(self, mitm_ctx):
         endpoint = FakeAuthEndpoint()
@@ -1465,9 +1459,8 @@ class TestFetchFirewallHeaders:
         ):
             result = await auth_client.fetch_firewall_headers(
                 firewall_auth_request(
-                    encrypted_secrets="enc",
                     auth_headers={"Auth": "${{ secrets.TOKEN }}"},
-                    sandbox_auth="sandbox-tok",
+                    host_authority="host-firewall-token",
                 )
             )
 
@@ -2297,8 +2290,7 @@ class TestFirewallAuthAsyncTransport:
             ):
                 await auth_client.fetch_firewall_headers(
                     firewall_auth_request(
-                        encrypted_secrets="sensitive-encrypted-secrets",
-                        sandbox_auth="sensitive-sandbox-token",
+                        host_authority="sensitive-host-firewall-token",
                     )
                 )
 
@@ -2307,8 +2299,7 @@ class TestFirewallAuthAsyncTransport:
 
         assert exc_info.value.phase is auth_client.FirewallAuthFetchPhase.RESPONSE_BODY
         assert str(exc_info.value) == ("Firewall auth fetch deadline exceeded during response_body")
-        assert "sensitive-encrypted-secrets" not in str(exc_info.value)
-        assert "sensitive-sandbox-token" not in str(exc_info.value)
+        assert "sensitive-host-firewall-token" not in str(exc_info.value)
 
     async def test_total_deadline_attributes_a_stalled_response_header_wait(self, mitm_ctx):
         request_received = asyncio.Event()
@@ -2932,7 +2923,6 @@ class TestFirewallAuthAsyncTransport:
         assert origin_requests[0].headers["host"] == origin_authority
         assert origin_requests[0].headers["authorization"] == "Bearer tok-xyz"
         assert json.loads(origin_requests[0].body) == {
-            "encryptedSecrets": "iv:tag:data",
             "authHeaders": {"Authorization": "Bearer ${{ secrets.TOKEN }}"},
         }
         assert "proxy-authorization" not in origin_requests[0].headers

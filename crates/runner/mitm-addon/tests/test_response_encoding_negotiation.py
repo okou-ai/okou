@@ -454,7 +454,6 @@ def _connector_registry(
     path: str,
     billable: bool,
     capture_network_bodies: bool = False,
-    include_encrypted_secrets: bool = True,
 ) -> Path:
     sandbox_fields: dict[str, object] = {}
     if capture_network_bodies:
@@ -477,7 +476,6 @@ def _connector_registry(
                 "unknownPolicy": "deny",
             },
             billable_firewalls=[firewall_name] if billable else None,
-            include_encrypted_secrets=include_encrypted_secrets,
             sandbox_fields=sandbox_fields,
         ),
     )
@@ -800,7 +798,6 @@ async def test_header_phase_auth_fallback_restores_encoding_negotiation(
         path=_X_PATH,
         billable=True,
         capture_network_bodies=True,
-        include_encrypted_secrets=False,
     )
     original_accept_encoding = "gzip, zstd, br"
     flow = _request_flow(
@@ -852,7 +849,6 @@ async def test_header_phase_websocket_auth_fallback_restores_upgrade_marker(
                 "unknownPolicy": "deny",
             },
             billable_firewalls=[_X_FIREWALL_NAME],
-            include_encrypted_secrets=False,
             sandbox_fields={"captureNetworkBodies": True},
         ),
     )

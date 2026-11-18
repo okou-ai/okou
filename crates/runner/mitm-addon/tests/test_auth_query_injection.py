@@ -43,7 +43,7 @@ def make_query_inputs(
     sandbox_info = {
         "runId": "run-1",
         "sandboxToken": "tok",
-        "encryptedSecrets": "iv:tag:data",
+        "firewallToken": "host-firewall-token",
         "billableFirewalls": [],
     }
     allow_kwargs = {
@@ -389,7 +389,7 @@ class TestAuthQueryInjection:
         sandbox_info = {
             "runId": "run-1",
             "sandboxToken": "tok",
-            "encryptedSecrets": "iv:tag:data",
+            "firewallToken": "host-firewall-token",
             "billableFirewalls": [],
         }
         allow = make_allow(

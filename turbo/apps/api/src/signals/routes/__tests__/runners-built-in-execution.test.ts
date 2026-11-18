@@ -57,7 +57,6 @@ describe("Runner built-in and personal dispatch", () => {
       expect(kms.generateDataKeyCalls).toBe(0);
       expect(kms.decryptCalls).toBe(0);
       setSecretKmsClientForTests(originalKms);
-      expect(input.encryptedSecrets).toBeNull();
       expect(JSON.stringify(input)).not.toContain(MANAGED_KEY);
       expect(input.secretValues).toContain(
         input.platformEnvironment.OKOU_TOKEN,
@@ -85,7 +84,7 @@ describe("Runner built-in and personal dispatch", () => {
       await firewall.requestFirewallAuth(
         { authorization: `Bearer ${input.sandboxToken}` },
         { authHeaders },
-        [400],
+        [401],
       );
       await firewall.requestFirewallAuth(
         {
@@ -222,7 +221,7 @@ describe("Runner built-in and personal dispatch", () => {
         throw new Error("Expected the personal model's account references");
       }
       const personal = await firewall.requestFirewallAuth(
-        { authorization: `Bearer ${input.firewallToken!}` },
+        { authorization: `Bearer ${input.firewallToken}` },
         {
           authHeaders: {
             Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
@@ -239,7 +238,7 @@ describe("Runner built-in and personal dispatch", () => {
         resolvedSecrets: ["CHATGPT_ACCESS_TOKEN"],
       });
       const unavailable = await firewall.requestFirewallAuth(
-        { authorization: `Bearer ${input.firewallToken!}` },
+        { authorization: `Bearer ${input.firewallToken}` },
         {
           authHeaders: {
             Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,

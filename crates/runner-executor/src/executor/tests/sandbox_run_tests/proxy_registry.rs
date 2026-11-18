@@ -165,7 +165,7 @@ async fn proxy_registration_exports_only_fixed_content_free_operations() {
     })
     .unwrap();
     let mut context = minimal_context();
-    context.encrypted_secrets = Some("private-encrypted-payload".into());
+    context.firewall_token = Some("host-only-firewall-authority".into());
     context.vars = Some(HashMap::from([(
         "PRIVATE_VAR".into(),
         "private-variable-value".into(),
@@ -218,7 +218,7 @@ async fn proxy_registration_exports_only_fixed_content_free_operations() {
     assert_eq!(operations[8]["duration_ms"], 0);
     let body = payload["sandboxOperations"].to_string();
     for private in [
-        "private-encrypted-payload",
+        context.firewall_token.as_deref().unwrap(),
         "private-variable-value",
         "PRIVATE_VAR",
         "10.200.0.3",

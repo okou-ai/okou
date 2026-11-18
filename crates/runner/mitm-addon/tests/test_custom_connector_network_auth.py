@@ -41,7 +41,6 @@ async def test_network_admission_uses_trusted_authority_for_transparent_ip_desti
         tmp_path,
         custom_connector_id=_CUSTOM_ID,
         firewall_name="custom_network",
-        include_encrypted_secrets=application_auth,
         api_entry={
             "id": "custom_network:0",
             "base": "https://custom.example.test/api/",
@@ -122,7 +121,6 @@ async def test_network_cache_reuses_success_and_rechecks_rejection_without_refre
         tmp_path,
         custom_connector_id=_CUSTOM_ID,
         firewall_name="custom_network",
-        include_encrypted_secrets=application_auth,
         api_entry={
             "id": "custom_network:0",
             "base": "https://custom.example.test/api/",
@@ -186,7 +184,6 @@ async def test_network_cache_reuses_success_and_rechecks_rejection_without_refre
     network = [body for body in bodies if body.get("networkAdmission")]
     expected_network_queries = 2 if upstream_status in (401, 403) else 1
     assert len(network) == expected_network_queries
-    assert all("encryptedSecrets" not in body for body in network)
     assert all(body["authHeaders"] == {} for body in network)
     for body in network:
         request_target = body["networkRequest"]
@@ -256,7 +253,6 @@ async def test_network_only_credentials_require_a_current_public_tls_peer(
         tmp_path,
         custom_connector_id=_CUSTOM_ID,
         firewall_name="custom_network",
-        include_encrypted_secrets=False,
         api_entry={
             "id": "custom_network:0",
             "base": "https://custom.example.test/api/",
@@ -295,7 +291,6 @@ def _cached_sandbox(
         run_id=run_id,
         custom_connector_id=_CUSTOM_ID,
         firewall_name="custom_network",
-        include_encrypted_secrets=application_auth,
         api_entry={
             "id": "custom_network:0",
             "base": "https://custom.example.test/api/",
