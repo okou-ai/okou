@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.48.2](https://github.com/okou-ai/okou/compare/ios-v0.48.1...ios-v0.48.2) (2026-11-18)
+
+
+### Bug Fixes
+
+* **ios:** avoid blocking add-to-chat presentation ([#48439](https://github.com/okou-ai/okou/issues/48439)) ([a5131e5](https://github.com/okou-ai/okou/commit/a5131e5e12dc709e41e837aa7cb3fbac96da3742))
+* **ios:** simplify archive feedback and dismiss it horizontally ([#48530](https://github.com/okou-ai/okou/issues/48530)) ([39057be](https://github.com/okou-ai/okou/commit/39057be2e26d8dae7551e5b459d88a12ee7ad624))
+
+
+### Refactoring
+
+* **ios:** enforce 500-line type bodies ([#48529](https://github.com/okou-ai/okou/issues/48529)) ([381066e](https://github.com/okou-ai/okou/commit/381066e04464453b0688fb896abb842d533e0527))
+
+
+### Performance Improvements
+
+* **ios:** avoid redundant foreground client refresh ([#48456](https://github.com/okou-ai/okou/issues/48456)) ([d82f94e](https://github.com/okou-ai/okou/commit/d82f94e60008d47c5c008016be21b3c3902f6403))
+
 ## [0.48.1](https://github.com/okou-ai/okou/compare/ios-v0.48.0...ios-v0.48.1) (2026-11-18)
 
 

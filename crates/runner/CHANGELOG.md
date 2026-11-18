@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.45](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.44...runner-rs-v0.249.45) (2026-11-18)
+
+
+### Performance Improvements
+
+* **runner:** pool python auth connections and retire reset generations ([#48526](https://github.com/okou-ai/okou/issues/48526)) ([e269355](https://github.com/okou-ai/okou/commit/e269355d7d6dc8bd36b133de434420a1626ff9ce))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.44](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.43...runner-rs-v0.249.44) (2026-11-18)
 
 ### Release Dependencies

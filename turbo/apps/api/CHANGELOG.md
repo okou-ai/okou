@@ -10,6 +10,33 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.89.0](https://github.com/okou-ai/okou/compare/api-v2.88.0...api-v2.89.0) (2026-11-18)
+
+
+### Features
+
+* **core:** enable presentation output format for staff ([#48524](https://github.com/okou-ai/okou/issues/48524)) ([af156ca](https://github.com/okou-ai/okou/commit/af156ca8c7dea3483e14ae37a058890dd57581d0))
+
+
+### Refactoring
+
+* **api:** retire marketing reward read callbacks ([#48553](https://github.com/okou-ai/okou/issues/48553)) ([0e0b6a9](https://github.com/okou-ai/okou/commit/0e0b6a982616cf1641df58b3412c3dc7b87331e2))
+
+
+### Performance Improvements
+
+* **api:** reuse browser health connections within bounded sweeps ([#48474](https://github.com/okou-ai/okou/issues/48474)) ([5110f7e](https://github.com/okou-ai/okou/commit/5110f7ef309c5df996cb35b517bdaf89f2a2d887))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.85.1
+    * @okouai/core bumped to 8.851.0
+    * @okouai/db bumped to 2.44.4
+    * @okouai/pi-agent-runtime bumped to 1.51.155
+
 ## [2.88.0](https://github.com/okou-ai/okou/compare/api-v2.87.2...api-v2.88.0) (2026-11-18)
 
 
