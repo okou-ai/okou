@@ -55,6 +55,9 @@ def ssh(arguments):
     record("requests", {"action": request["action"], "phase": request.get("phase")})
     if MODE == "ssh-error":
         return 7
+    if MODE == "slow-claim-retirement" and request["action"] == "claim":
+        # Model a reconciliation request arriving with two seconds for host work.
+        request["claimBudget"] = 7
     # Map the remote tmpfs into this endpoint's isolated filesystem.
     state_root = ROOT / "missing" if MODE == "missing-state-root" else ROOT
     arguments = ["TMPDIR=" + str(state_root) if a == "TMPDIR=/dev/shm" else a for a in arguments]
@@ -184,6 +187,8 @@ def systemctl(arguments):
                 print(name + " loaded active running Image fixture")
         return 0
     if arguments[0] == "show":
+        if MODE == "slow-claim-retirement" and once():
+            time.sleep(2)
         for unit in (a for a in arguments[1:] if a.endswith(".service")):
             path = ROOT / "units" / (unit + ".json")
             info = json.loads(path.read_text()) if path.exists() else {}

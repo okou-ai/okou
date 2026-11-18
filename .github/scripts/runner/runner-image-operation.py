@@ -334,11 +334,7 @@ def emit(value):
     print(json.dumps(value, separators=(",", ":")), flush=True)
 
 
-def claim(request, namespace, owner, retire_matching):
-    budget = request["claimBudget"]
-    if type(budget) is not int or not 5 < budget <= PR_CLAIM_SECONDS:
-        raise ValueError("invalid remaining image claim budget")
-    deadline = time.monotonic() + budget - 5
+def claim(request, namespace, owner, retire_matching, deadline):
     owner_path = namespace / "owner.json"
     lock = "/var/lock/vm0-runner-lifecycle-" + namespace.name + ".lock"
     lock_path = system(
@@ -382,6 +378,11 @@ def claim(request, namespace, owner, retire_matching):
 
 
 def remote(request):
+    if request["action"] == "claim":
+        budget = request["claimBudget"]
+        if type(budget) is not int or not 5 < budget <= PR_CLAIM_SECONDS:
+            raise ValueError("invalid remaining image claim budget")
+        claim_deadline = time.monotonic() + budget - 5
     os.umask(0o077)
     inputs = request["inputs"]
     validate_inputs(inputs)
@@ -436,7 +437,7 @@ def remote(request):
     if retiring:
         retire_matching()
     if request["action"] == "claim":
-        claim(request, namespace, owner, retire_matching)
+        claim(request, namespace, owner, retire_matching, claim_deadline)
         return
     if (
         request["action"] == "cancel"

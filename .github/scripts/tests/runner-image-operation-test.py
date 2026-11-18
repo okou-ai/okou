@@ -294,6 +294,17 @@ class ImageOperationTest(unittest.TestCase):
         self.assertIn("cancelled", error)
         self.assertFalse(directory.exists())
 
+    def test_claim_budget_includes_prior_worker_retirement(self):
+        self.invoke("claim")
+        self.invoke("run", "warm", str(self.result))
+        self.environment.update(GITHUB_RUN_ID="1235", IMAGE_FAULT="slow-claim-retirement")
+        outcome = self.invoke("claim", check=False)
+        self.assertNotEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr)
+        self.assertIn("image claim work deadline exceeded", outcome.stderr)
+        binary_root = self.root / "var/lib/vm0-runner/bin"
+        self.assertTrue((binary_root / "pr-123-image-1234").is_dir())
+        self.assertFalse((binary_root / "pr-123-image-1235").exists())
+
     def start_blocked(self, fault=""):
         self.environment["IMAGE_FAULT"] = fault
         self.invoke("claim")
