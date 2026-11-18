@@ -1,13 +1,15 @@
 //! Closing a sibling cannot strand an already-established, receive-only TCP.
 use super::*;
 
-async fn close_before_first_response(checking: bool, other_port: u16) {
+async fn close_before_first_response(checking: bool, other_port: u16, partial_write: bool) {
     let mut h = Harness::new().await;
     if checking {
         h.run.enable_checks(&h.runtime, &["vnc:write"]).await;
     }
     let api = Api::secure(None).await;
-    let home = Server::secure().await;
+    // Closing the sibling may invalidate a partially encoded DERP frame. The
+    // relay must reconnect while the original peer and private TCP stay alive.
+    let home = Server::secure_reconnecting().await;
     let key = NodeKeyPair::random();
     let mut value: Value = serde_json::from_slice(&map(&home)).unwrap();
     let mut peer = node(2, "peer.synthetic.ts.net.", 2, &key);
@@ -25,9 +27,11 @@ async fn close_before_first_response(checking: bool, other_port: u16) {
         hyper::StatusCode::OK,
         br#"{"NodeKeyExpired":true}"#.to_vec(),
     );
+    let relay_gate = WriteGate::new();
+    let descriptors = Arc::new(Mutex::new(Vec::new()));
     *h.runtime.native_services.lock().unwrap() = Some(control.test_services(
         api.secure.as_ref().unwrap().clone(),
-        Relay::new(&home, WriteGate::new(), Arc::new(Mutex::new(Vec::new()))),
+        Relay::new(&home, Arc::clone(&relay_gate), Arc::clone(&descriptors)),
     ));
     let id = uuid::Uuid::new_v4();
     let first_resolve = h.resolve_response(credential(&h, id, false)).await;
@@ -68,11 +72,29 @@ async fn close_before_first_response(checking: bool, other_port: u16) {
                         )
                         .await
                         .session();
+                    if partial_write {
+                        // Force the retirement fence while the first TCP still
+                        // awaits its first RFB byte, rather than rely on timing.
+                        relay_gate.pause_after(12);
+                        let sent = h
+                            .run
+                            .request(
+                                "vnc.input",
+                                json!({"sessionId":session,"input":{"type":"key_chord","keys":["Enter"]}}),
+                            )
+                            .await;
+                        assert_eq!(sent.result()["outcome"], "sent");
+                        relay_gate.pending().await;
+                    }
                     let closed = h
                         .run
                         .request("vnc.session.close", json!({"sessionId":session}))
                         .await;
                     assert_eq!(closed.result()["outcome"], "closed");
+                    if partial_write {
+                        relay_gate.destroyed().await;
+                        relay_gate.resume();
+                    }
                     Some(session)
                 };
                 gate.release.add_permits(1);
@@ -104,6 +126,9 @@ async fn close_before_first_response(checking: bool, other_port: u16) {
         (first.session(), second, peers, proxies)
     };
     let accepted = gate.accepted.lock().unwrap().clone();
+    if partial_write {
+        assert!(descriptors.lock().unwrap().len() >= 2, "DERP was replaced");
+    }
     assert_eq!(accepted.len(), 2);
     assert_eq!(accepted[0].ip(), accepted[1].ip());
     assert_ne!(accepted[0].port(), accepted[1].port(), "private TCP tuples");
@@ -140,15 +165,20 @@ async fn close_before_first_response(checking: bool, other_port: u16) {
 
 #[tokio::test]
 async fn same_endpoint_check_close_preserves_waiting_native_start() {
-    close_before_first_response(true, 5900).await;
+    close_before_first_response(true, 5900, false).await;
 }
 
 #[tokio::test]
 async fn different_port_check_close_preserves_waiting_native_start() {
-    close_before_first_response(true, 5901).await;
+    close_before_first_response(true, 5901, false).await;
 }
 
 #[tokio::test]
 async fn ordinary_close_without_diagnostics_preserves_waiting_native_start() {
-    close_before_first_response(false, 5900).await;
+    close_before_first_response(false, 5900, false).await;
+}
+
+#[tokio::test]
+async fn ordinary_close_during_partial_relay_write_preserves_waiting_native_start() {
+    close_before_first_response(false, 5900, true).await;
 }

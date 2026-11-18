@@ -366,10 +366,6 @@ import {
 } from "./feishu-official";
 import { friendReferralsContract as OriginalFriendReferralsContract } from "../contracts/friend-referrals";
 import { friendReferralsContract } from "./friend-referrals";
-import { getStartedHistoryContract as OriginalGetStartedHistoryContract } from "../contracts/get-started-history";
-import { getStartedHistoryContract } from "./get-started-history";
-import { getStartedReceiptContract as OriginalGetStartedReceiptContract } from "../contracts/get-started-receipt";
-import { getStartedReceiptContract } from "./get-started-receipt";
 import {
   cronGetStartedContract as OriginalCronGetStartedContract,
   getStartedContract as OriginalGetStartedContract,
@@ -524,8 +520,6 @@ import { marketingEventsContract as OriginalMarketingEventsContract } from "../c
 import { marketingEventsContract } from "./marketing-events";
 import { marketingHandoffsContract as OriginalMarketingHandoffsContract } from "../contracts/marketing-handoffs";
 import { marketingHandoffsContract } from "./marketing-handoffs";
-import { marketingInvitationSourceContract as OriginalMarketingInvitationSourceContract } from "../contracts/marketing-invitation-source";
-import { marketingInvitationSourceContract } from "./marketing-invitation-source";
 import { marketingRewardProjectionContract as OriginalMarketingRewardProjectionContract } from "../contracts/marketing-reward-projection";
 import { marketingRewardProjectionContract } from "./marketing-reward-projection";
 import { marketingRewardSettlementContract as OriginalMarketingRewardSettlementContract } from "../contracts/marketing-reward-settlement";
@@ -1076,8 +1070,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [feishuOfficialContract, OriginalFeishuOfficialContract],
   [feishuOfficialEventsContract, OriginalFeishuOfficialEventsContract],
   [friendReferralsContract, OriginalFriendReferralsContract],
-  [getStartedHistoryContract, OriginalGetStartedHistoryContract],
-  [getStartedReceiptContract, OriginalGetStartedReceiptContract],
   [cronGetStartedContract, OriginalCronGetStartedContract],
   [getStartedContract, OriginalGetStartedContract],
   [githubAppSetupCallbackContract, OriginalGithubAppSetupCallbackContract],
@@ -1246,10 +1238,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [mailContract, OriginalMailContract],
   [marketingEventsContract, OriginalMarketingEventsContract],
   [marketingHandoffsContract, OriginalMarketingHandoffsContract],
-  [
-    marketingInvitationSourceContract,
-    OriginalMarketingInvitationSourceContract,
-  ],
   [
     marketingRewardProjectionContract,
     OriginalMarketingRewardProjectionContract,

@@ -116,6 +116,7 @@ function automaticRewardTerms(
     }
     case "invitation.attributed":
     case "invitation.revoked":
+    case "invitation.status-observed":
     case "workflow.input-queued":
     case "workflow.run-created": {
       return null;

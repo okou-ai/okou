@@ -376,6 +376,7 @@
     "src/signals/services/chat-event-visibility.service.ts",
     "src/signals/services/cron-project-chat-event-search.service.ts",
     "src/signals/services/marketing-reward-event-delivery.service.ts",
+    "src/signals/services/marketing-invitation-observation.service.ts",
     "src/lib/chat-search-bigram.ts",
     "src/signals/services/chat-user-message.service.ts",
     "src/lib/generation-template-prompt.ts",

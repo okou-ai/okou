@@ -215,6 +215,7 @@ export const cronProcessBackgroundJobsContract: ClientDescriptor<
     statuses: {
       200: true,
       401: true,
+      503: true,
     },
   },
 };

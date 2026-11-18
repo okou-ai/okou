@@ -368,14 +368,6 @@ export const clientDescriptorManifest = [
     contracts: ["friendReferralsContract"],
   },
   {
-    module: "get-started-history",
-    contracts: ["getStartedHistoryContract"],
-  },
-  {
-    module: "get-started-receipt",
-    contracts: ["getStartedReceiptContract"],
-  },
-  {
     module: "get-started",
     contracts: ["cronGetStartedContract", "getStartedContract"],
   },
@@ -529,10 +521,6 @@ export const clientDescriptorManifest = [
   {
     module: "marketing-handoffs",
     contracts: ["marketingHandoffsContract"],
-  },
-  {
-    module: "marketing-invitation-source",
-    contracts: ["marketingInvitationSourceContract"],
   },
   {
     module: "marketing-reward-projection",

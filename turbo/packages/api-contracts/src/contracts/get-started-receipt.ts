@@ -1,45 +1,31 @@
-import { literal, object, uuid, enum as zEnum } from "zod";
-import { authHeadersSchema, initContract } from "./base";
-import { apiErrorSchema } from "./errors";
-import { getStartedHistoryRecordSchema } from "./get-started-history";
+import { iso, number, object, string, uuid, enum as zEnum } from "zod";
+import { getStartedClaimStatusSchema } from "./get-started";
 
-export const getStartedReceiptSchema = getStartedHistoryRecordSchema.pick({
-  id: true,
-  orgId: true,
-  actorUserId: true,
-  beneficiaryUserId: true,
-  questKey: true,
-  sourceKey: true,
-  rewardKey: true,
-  rewardSlot: true,
-  rewardTarget: true,
-  rewardAmount: true,
-  status: true,
-  memberCreditGrantId: true,
-  orgCreditRecordId: true,
-  grantedAt: true,
-  expiresAt: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const getStartedReceiptContract = initContract().router({
-  get: {
-    method: "GET",
-    path: "/api/internal/marketing/get-started/receipts/:claimId",
-    headers: authHeadersSchema,
-    pathParams: object({ claimId: uuid() }),
-    responses: {
-      200: object({
-        version: literal(1),
-        environment: zEnum(["production", "preview", "development"]),
-        receipt: getStartedReceiptSchema,
-      }),
-      401: apiErrorSchema,
-      404: apiErrorSchema,
-      503: apiErrorSchema,
-    },
-    summary:
-      "Read one persisted reward receipt with a dedicated service credential",
-  },
+/** Financial settlement evidence remains App-owned after campaign queries move. */
+export const getStartedReceiptSchema = object({
+  id: uuid(),
+  orgId: string().min(1),
+  actorUserId: string().min(1),
+  beneficiaryUserId: string().nullable(),
+  questKey: zEnum([
+    "connector",
+    "slack",
+    "imessage",
+    "workflow",
+    "invite",
+    "checkin",
+    "share",
+  ]),
+  sourceKey: string().min(1),
+  rewardKey: string().nullable(),
+  rewardSlot: number().int().nullable(),
+  rewardTarget: zEnum(["user", "org"]),
+  rewardAmount: number().int().nonnegative(),
+  status: getStartedClaimStatusSchema,
+  memberCreditGrantId: uuid().nullable(),
+  orgCreditRecordId: uuid().nullable(),
+  grantedAt: iso.datetime().nullable(),
+  expiresAt: iso.datetime().nullable(),
+  createdAt: iso.datetime(),
+  updatedAt: iso.datetime(),
 });

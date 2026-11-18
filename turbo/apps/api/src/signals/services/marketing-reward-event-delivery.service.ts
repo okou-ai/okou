@@ -7,6 +7,7 @@ import {
   type MarketingRewardSourceEvent,
 } from "../../lib/marketing-reward-events";
 import { nowDate } from "../../lib/time";
+import { captureMarketingInvitationAuthority$ } from "./marketing-invitation-observation.service";
 import { settle } from "../utils";
 import {
   claimBackgroundJob$,
@@ -19,6 +20,7 @@ import {
   MARKETING_REWARD_INVITATION_EVENT_HANDLER_VERSION,
   MARKETING_REWARD_WORKFLOW_EVENT_HANDLER_VERSION,
   MARKETING_REWARD_CHECKIN_EVENT_HANDLER_VERSION,
+  MARKETING_REWARD_INVITATION_AUTHORITY_HANDLER_VERSION,
 } from "./marketing-reward-event-publication";
 
 const requestEventReceipt$ = command(
@@ -72,13 +74,14 @@ const deliverEventVersion$ = command(
     args: {
       readonly origin: string;
       readonly secret: string;
-      readonly handlerVersion: 1 | 2 | 3 | 4 | 5;
+      readonly handlerVersion: 1 | 2 | 3 | 4 | 5 | 6;
       readonly jobId?: string;
+      readonly maxJobs?: number;
     },
     signal: AbortSignal,
   ): Promise<{ readonly processed: number }> => {
     let processed = 0;
-    while (processed < 10) {
+    while (processed < (args.maxJobs ?? 10)) {
       const job = await set(
         claimBackgroundJob$,
         {
@@ -143,8 +146,45 @@ const deliverEventVersion$ = command(
         signal,
       );
       signal.throwIfAborted();
+      if (args.jobId && event.type === "invitation.attributed") {
+        await set(
+          captureAndDeliverInvitation$,
+          { claimId: event.claimId, origin: args.origin, secret: args.secret },
+          signal,
+        );
+      }
     }
     return { processed };
+  },
+);
+
+const captureAndDeliverInvitation$ = command(
+  async (
+    { set },
+    args: {
+      readonly claimId: string;
+      readonly origin: string;
+      readonly secret: string;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const observed = await set(
+      captureMarketingInvitationAuthority$,
+      { claimId: args.claimId },
+      signal,
+    );
+    for (const jobId of observed.eventIds) {
+      await set(
+        deliverEventVersion$,
+        {
+          origin: args.origin,
+          secret: args.secret,
+          handlerVersion: MARKETING_REWARD_INVITATION_AUTHORITY_HANDLER_VERSION,
+          jobId,
+        },
+        signal,
+      );
+    }
   },
 );
 
@@ -154,7 +194,8 @@ export const deliverMarketingRewardEvents$ = command(
     { set },
     args: {
       readonly jobId?: string;
-      readonly handlerVersion?: 1 | 2 | 3 | 4 | 5;
+      readonly handlerVersion?: 1 | 2 | 3 | 4 | 5 | 6;
+      readonly maxJobs?: number;
     },
     signal: AbortSignal,
   ): Promise<{ readonly processed: number }> => {
@@ -168,6 +209,10 @@ export const deliverMarketingRewardEvents$ = command(
         "Marketing reward event delivery is partially configured",
       );
     }
+    const maxJobs = args.maxJobs ?? 10;
+    if (!Number.isInteger(maxJobs) || maxJobs < 1 || maxJobs > 100) {
+      throw new Error("Reward delivery batch must be between 1 and 100");
+    }
     const results = await Promise.all(
       (
         [
@@ -176,6 +221,7 @@ export const deliverMarketingRewardEvents$ = command(
           MARKETING_REWARD_INVITATION_EVENT_HANDLER_VERSION,
           MARKETING_REWARD_WORKFLOW_EVENT_HANDLER_VERSION,
           MARKETING_REWARD_CHECKIN_EVENT_HANDLER_VERSION,
+          MARKETING_REWARD_INVITATION_AUTHORITY_HANDLER_VERSION,
         ] as const
       )
         .filter((handlerVersion) => {
@@ -187,7 +233,7 @@ export const deliverMarketingRewardEvents$ = command(
         .map((handlerVersion) => {
           return set(
             deliverEventVersion$,
-            { origin, secret, handlerVersion, jobId: args.jobId },
+            { origin, secret, handlerVersion, jobId: args.jobId, maxJobs },
             signal,
           );
         }),

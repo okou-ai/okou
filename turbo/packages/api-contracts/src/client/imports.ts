@@ -996,16 +996,6 @@ export const clientContractImportManifest = [
     ],
   },
   {
-    module: "get-started-history",
-    contracts: ["getStartedHistoryContract"],
-    bindings: [],
-  },
-  {
-    module: "get-started-receipt",
-    contracts: ["getStartedReceiptContract"],
-    bindings: [],
-  },
-  {
     module: "github-oauth",
     contracts: ["githubOauthContract"],
     bindings: [],
@@ -1238,11 +1228,6 @@ export const clientContractImportManifest = [
         imported: "MARKETING_HANDOFF_PROMPT_MAX_CHARS",
       },
     ],
-  },
-  {
-    module: "marketing-invitation-source",
-    contracts: ["marketingInvitationSourceContract"],
-    bindings: [],
   },
   {
     module: "marketing-reward-projection",
