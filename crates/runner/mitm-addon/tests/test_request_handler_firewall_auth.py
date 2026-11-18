@@ -45,8 +45,9 @@ def _resolved_firewall_auth() -> auth_client.FirewallAuthSuccess:
 
 
 @pytest.mark.parametrize("requestheaders_first", [False, True])
-async def test_reference_auth_without_envelope_reaches_resolver_and_reuses_cache(
-    tmp_path, real_flow, mitm_ctx, requestheaders_first
+@pytest.mark.parametrize("include_encrypted_secrets", [False, True])
+async def test_host_firewall_auth_reaches_resolver_and_reuses_cache(
+    tmp_path, real_flow, mitm_ctx, requestheaders_first, include_encrypted_secrets
 ):
     reg_path = _write_registry(
         tmp_path,
@@ -63,7 +64,7 @@ async def test_reference_auth_without_envelope_reaches_resolver_and_reuses_cache
                 "ask": [],
                 "unknownPolicy": "deny",
             },
-            include_encrypted_secrets=False,
+            include_encrypted_secrets=include_encrypted_secrets,
             sandbox_fields={"firewallToken": "host-only-firewall"},
         ),
     )
@@ -98,7 +99,10 @@ async def test_reference_auth_without_envelope_reaches_resolver_and_reuses_cache
     assert request.json_body()["authHeaders"] == {
         "Authorization": "Bearer ${{ secrets.GITHUB_TOKEN }}"
     }
-    assert "encryptedSecrets" not in request.json_body()
+    if include_encrypted_secrets:
+        assert request.json_body()["encryptedSecrets"] == "iv:tag:data"
+    else:
+        assert "encryptedSecrets" not in request.json_body()
     assert flows[1].metadata[metadata_keys.AUTH_CACHE_HIT] is True
 
 

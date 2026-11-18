@@ -82,11 +82,16 @@ describe("Runner built-in and personal dispatch", () => {
         { authHeaders },
         [401],
       );
-      for (const encryptedSecrets of [undefined, input.encryptedSecrets]) {
+      for (const { headers, encryptedSecrets } of [
+        { headers: firewallHeaders, encryptedSecrets: undefined },
+        { headers: firewallHeaders, encryptedSecrets: input.encryptedSecrets },
+        {
+          headers: { authorization: `Bearer ${input.sandboxToken}` },
+          encryptedSecrets: input.encryptedSecrets,
+        },
+      ]) {
         const resolved = await firewall.requestFirewallAuth(
-          encryptedSecrets
-            ? { authorization: `Bearer ${input.sandboxToken}` }
-            : firewallHeaders,
+          headers,
           { encryptedSecrets, authHeaders, firewallBillable: true },
           [200],
         );
