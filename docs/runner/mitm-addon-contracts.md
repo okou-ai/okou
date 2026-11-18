@@ -40,6 +40,24 @@ its own interception CA for sandbox clients. Upstream verification uses the
 pinned standalone's bundled certifi roots; the runtime owns public trust updates.
 The optional `emudhra` and `emudhra_old` signing modes remain disabled.
 
+## Platform HTTP connection ownership
+
+Firewall-auth resolution and Data Router response registration share bounded
+HTTP/1 connection reuse. Origin, selected proxy route and proxy credentials,
+and TLS trust context define connection identity; request paths, bodies and
+application credentials remain request-local. Only fully consumed persistent
+responses with valid framing return to idle. Idle retention is bounded to four
+connections for at most 60 seconds; the existing request admissions and network
+deadlines still govern active work.
+
+A connection reset retires its current pool generation for future dispatch.
+Idle sockets close immediately; active requests keep their old generation and
+complete response consumption before closing. Old-generation completions and
+late failures cannot repopulate or retire a newer pool. Shutdown fences new
+dispatch and closes idle sockets without aborting active exchanges. Connection
+retirement does not replay requests: OAuth refresh and Data Router registration
+keep their existing execution and uncertain-delivery contracts.
+
 ## Cooperative response inspection
 
 Model HTTP JSON inspectors, SSE scanners and opted-in connector parsers use

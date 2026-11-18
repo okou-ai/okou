@@ -37,8 +37,10 @@ attempt starts immediately; later attempts are staggered by 0.25 seconds and at 
 are active at once. Among completed successes, the lowest original address index is the
 deterministic winner. Failed, cancelled, losing, and still-pending attempts are aborted. The winning
 socket is handed to the stream wrapper, which owns it together with the stream writer through proxy
-CONNECT and TLS, request writing, and response parsing. Normal completion closes the writer and raw
-socket. Exceptions and cancellation abort both transports.
+CONNECT and TLS, request writing, and response parsing. Complete persistent responses return their
+connection to a bounded idle pool. A reset retires that pool for future requests; active exchanges
+retain their connections until completion. Exceptions and cancellation discard the owned stream.
+Pool retirement does not replay an ambiguous request or extend its deadline.
 
 Proxy CONNECT response headers and h11 incomplete events are bounded at 64 KiB. The origin response
 body is bounded at ``MAX_FIREWALL_AUTH_RESPONSE_BODY_BYTES`` (256 KiB). One monotonic
@@ -69,7 +71,9 @@ import h11
 import mitmproxy_rs
 
 import platform_api
+import platform_http_pool
 from aws_sigv4 import AwsSigV4Credentials
+from platform_http_pool import ConnectedStream as _ConnectedStream
 
 MAX_FIREWALL_AUTH_RESPONSE_BODY_BYTES = 256 * 1024
 _MAX_CLOUDFLARE_TOKEN_LENGTH = 4096
@@ -99,6 +103,8 @@ _STRUCTURED_FIREWALL_AUTH_ERROR_CODES = frozenset(
 _FIREWALL_AUTH_FAILURE_REASONS = frozenset({"upstream_provider", "reconnect_required"})
 _dns_resolver: _AddressResolver | None = None
 _https_context: ssl.SSLContext | None = None
+_connection_pools: platform_http_pool.ConnectionPools | None = None
+_transport_closed = False
 
 
 class ConnectorNotConfiguredError(Exception):
@@ -171,12 +177,6 @@ class _ResolvedAddress(NamedTuple):
     family: socket.AddressFamily
     host: str
     port: int
-
-
-class _ConnectedStream(NamedTuple):
-    reader: asyncio.StreamReader
-    writer: asyncio.StreamWriter
-    socket: socket.socket
 
 
 @dataclass
@@ -299,9 +299,31 @@ def reset_transport_state_for_tests() -> None:
     """Reset lazily created network state between event-loop tests."""
     global _dns_resolver
     global _https_context
+    global _connection_pools
+    global _transport_closed
 
+    close_transport()
     _dns_resolver = None
     _https_context = None
+    _connection_pools = None
+    _transport_closed = False
+
+
+def close_transport() -> None:
+    """Fence new dispatch and close idle sockets without aborting active exchanges."""
+    global _transport_closed
+    _transport_closed = True
+    if _connection_pools is not None:
+        _connection_pools.close()
+
+
+def _get_connection_pools() -> platform_http_pool.ConnectionPools:
+    global _connection_pools
+    if _transport_closed:
+        raise RuntimeError("Platform HTTP transport is closed")
+    if _connection_pools is None:
+        _connection_pools = platform_http_pool.ConnectionPools()
+    return _connection_pools
 
 
 def _get_dns_resolver() -> _AddressResolver:
@@ -570,13 +592,6 @@ async def _open_connected_socket(
     raise last_error[1]
 
 
-def _abort_stream(stream: _ConnectedStream) -> None:
-    try:
-        stream.writer.transport.abort()
-    finally:
-        _abort_socket(stream.socket)
-
-
 async def _read_proxy_connect_status(sock: socket.socket) -> tuple[int, bool]:
     loop = asyncio.get_running_loop()
     buffer = bytearray()
@@ -643,6 +658,7 @@ async def _establish_proxy_tunnel(
 async def _open_stream(
     plan: _ConnectionPlan,
     progress: _FirewallAuthFetchProgress,
+    tls_context: ssl.SSLContext | None,
 ) -> _ConnectedStream:
     progress.phase = FirewallAuthFetchPhase.DNS
     addresses = await _resolve_addresses(plan.connect_host, plan.connect_port)
@@ -657,7 +673,7 @@ async def _open_stream(
             reader, writer = await asyncio.open_connection(
                 sock=sock,
                 limit=_MAX_FIREWALL_AUTH_RESPONSE_HEADER_BYTES,
-                ssl=_get_https_context(),
+                ssl=tls_context,
                 server_hostname=plan.origin_host,
             )
         else:
@@ -686,7 +702,6 @@ def _request_headers(
         (
             (b"Host", plan.origin_authority.encode("ascii")),
             (b"Content-Length", str(len(body)).encode("ascii")),
-            (b"Connection", b"close"),
         )
     )
     if plan.proxy_authorization is not None and not plan.use_proxy_tunnel:
@@ -756,12 +771,24 @@ async def _perform_http_request(
     body: bytes,
     progress: _FirewallAuthFetchProgress,
 ) -> _HttpResponse:
-    stream = await _open_stream(plan, progress)
-    connection = h11.Connection(
-        h11.CLIENT,
-        max_incomplete_event_size=_MAX_FIREWALL_AUTH_RESPONSE_HEADER_BYTES,
-    )
+    pools = _get_connection_pools()
+    generation = pools.acquire_generation()
+    # Paths and application auth are request-local. Proxy credentials and TLS
+    # trust belong to connection identity and must never cross pooled routes.
+    tls_context = _get_https_context() if plan.origin_scheme == "https" else None
+    key = (replace(plan, request_target=""), tls_context)
+    pooled = generation.take(key)
     try:
+        if pooled is None:
+            stream = await _open_stream(plan, progress, tls_context)
+            pooled = platform_http_pool.HttpConnection(
+                stream,
+                h11.Connection(
+                    h11.CLIENT,
+                    max_incomplete_event_size=_MAX_FIREWALL_AUTH_RESPONSE_HEADER_BYTES,
+                ),
+            )
+        stream, connection = pooled.stream, pooled.protocol
         progress.phase = FirewallAuthFetchPhase.REQUEST_WRITE
         stream.writer.write(
             connection.send(
@@ -776,13 +803,19 @@ async def _perform_http_request(
         stream.writer.write(connection.send(h11.EndOfMessage()))
         await stream.writer.drain()
         response = await _read_http_response(stream.reader, connection, progress)
-        stream.writer.close()
-        with suppress(OSError):
-            await stream.writer.wait_closed()
-        stream.socket.close()
+        if not generation.release(key, pooled):
+            stream.writer.close()
+            with suppress(OSError):
+                await stream.writer.wait_closed()
+            stream.socket.close()
         return response
-    except BaseException:
-        _abort_stream(stream)
+    except BaseException as exc:
+        if isinstance(exc, ConnectionResetError) or (
+            isinstance(exc, OSError) and exc.errno == errno.ECONNRESET
+        ):
+            pools.retire(generation)
+        if pooled is not None:
+            pooled.close(generation.loop)
         raise
 
 

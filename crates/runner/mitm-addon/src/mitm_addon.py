@@ -56,6 +56,7 @@ import connector_diagnostics
 import connector_intent
 import custom_http
 import data_router
+import firewall_auth_client
 import firewall_auth_config
 import flow_metadata
 import flow_metadata_keys as metadata_keys
@@ -2267,6 +2268,7 @@ def done():
 
 
 def _drain_addon_workers() -> None:
+    firewall_auth_client.close_transport()
     managed_upload.close_all()
     try:
         runner_flush_lifecycle.drain_and_close()
