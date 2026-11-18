@@ -64,6 +64,8 @@ def ssh(arguments):
         stdout=subprocess.PIPE,
         start_new_session=True,
     )
+    if request["action"] == "claim":
+        record("claim-servers", process.pid)
     detached = False
     try:
         process.stdin.write(json.dumps(request).encode())

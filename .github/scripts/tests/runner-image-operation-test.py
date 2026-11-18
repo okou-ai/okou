@@ -132,6 +132,14 @@ class ImageOperationTest(unittest.TestCase):
         cleanup.stdin.flush()
         return self.cleanup_reply(cleanup)["results"]["123"]
 
+    def claim_waiter_opened(self, lock):
+        for pid in reversed(self.records("claim-servers")):
+            descriptors = Path(f"/proc/{pid}/fd")
+            with contextlib.suppress(FileNotFoundError, ProcessLookupError):
+                if any(descriptor.resolve() == lock for descriptor in descriptors.iterdir()):
+                    return True
+        return False
+
     def test_running_image_excludes_cleanup_until_completion(self):
         process = self.start_blocked()
         lock = self.root / "var/lock/vm0-runner-lifecycle-pr-123.lock"
@@ -242,8 +250,8 @@ class ImageOperationTest(unittest.TestCase):
                 stderr=subprocess.PIPE,
             )
             self.addCleanup(lambda: claim.poll() is None and claim.kill())
-            owner = next(self.root.glob("vm0-runner-image-*/pr-123/owner.json"))
-            self.wait_for(lambda: json.loads(owner.read_text())["state"] == "claiming")
+            lock = self.root / "var/lock/vm0-runner-lifecycle-pr-123.lock"
+            self.wait_for(lambda: self.claim_waiter_opened(lock))
             self.assertEqual(self.clean_namespace(cleanup)["outcome"], "cleaned")
             self.assertFalse(directory.exists())
         out, error = claim.communicate(timeout=10)
@@ -262,6 +270,29 @@ class ImageOperationTest(unittest.TestCase):
         )
         self.invoke("claim")
         self.assertTrue(directory.with_name("pr-123-image-1236").exists())
+
+    def test_cancellation_can_fence_a_claim_waiting_for_preview(self):
+        lock = self.root / "var/lock/vm0-runner-lifecycle-pr-123.lock"
+        lock.parent.mkdir(parents=True)
+        directory = self.root / "var/lib/vm0-runner/bin/pr-123-image-1234"
+        with lock.open("a") as holder:
+            fcntl.flock(holder, fcntl.LOCK_EX)
+            claim = subprocess.Popen(
+                [sys.executable, str(COMMAND), "claim", "dev-11"],
+                env=self.environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            self.addCleanup(lambda: claim.poll() is None and claim.kill())
+            self.wait_for(lambda: self.claim_waiter_opened(lock))
+            self.assertFalse(directory.exists())
+            self.invoke("cancel")
+            self.assertFalse(directory.exists())
+        output, error = claim.communicate(timeout=10)
+        self.assertNotEqual(claim.returncode, 0, output + error)
+        self.assertIn("cancelled", error)
+        self.assertFalse(directory.exists())
 
     def start_blocked(self, fault=""):
         self.environment["IMAGE_FAULT"] = fault
