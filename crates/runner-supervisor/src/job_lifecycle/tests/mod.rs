@@ -81,18 +81,46 @@ fn completion_reason_does_not_infer_rootfs_exhaustion_from_error_text() {
         completion_failure_reason(1, false, Some(&failure)),
         Some(RequestFailureReason::Unknown)
     );
-    for kind in [
-        executor::ResourceFailureKind::GuestMemoryOomKilled,
-        executor::ResourceFailureKind::HostMemoryOomKilled,
+    let failure = executor::ExecutionFailure::new(1, "Agent process killed", None)
+        .with_resource_diagnostics(Some(
+            executor::ResourceFailureDiagnostics::from_failure_kind(
+                executor::ResourceFailureKind::HostMemoryOomKilled,
+            ),
+        ));
+    assert_eq!(
+        completion_failure_reason(1, false, Some(&failure)),
+        Some(RequestFailureReason::Unknown)
+    );
+}
+
+#[test]
+fn completion_reason_reports_proven_guest_oom_and_preserves_known_causes() {
+    for (diagnostic, expected) in [
+        (None, RequestFailureReason::GuestMemoryOomKilled),
+        (
+            Some(
+                FailureDiagnostic::new(
+                    FailureClass::CliNonzero,
+                    AgentFramework::Pi,
+                    PromptMetadata::from_prompt("plain prompt"),
+                )
+                .with_failure_reason(FailureReason::ProviderOverloaded),
+            ),
+            RequestFailureReason::ProviderOverloaded,
+        ),
     ] {
-        let failure = executor::ExecutionFailure::new(1, "Agent process killed", None)
+        let failure = executor::ExecutionFailure::new(137, "Agent process killed", diagnostic)
             .with_resource_diagnostics(Some(
-                executor::ResourceFailureDiagnostics::from_failure_kind(kind),
+                executor::ResourceFailureDiagnostics::from_failure_kind(
+                    executor::ResourceFailureKind::GuestMemoryOomKilled,
+                ),
             ));
         assert_eq!(
-            completion_failure_reason(1, false, Some(&failure)),
-            Some(RequestFailureReason::Unknown)
+            completion_failure_reason(137, false, Some(&failure)),
+            Some(expected)
         );
+        assert_eq!(completion_failure_reason(0, false, Some(&failure)), None);
+        assert_eq!(completion_failure_reason(137, true, Some(&failure)), None);
     }
 }
 

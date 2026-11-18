@@ -546,6 +546,10 @@ fn failure_reason_maps_exhaustively_to_the_public_completion_contract() {
             "guest_home_filesystem_full",
         ),
         (FailureReason::ExecutionTimeout, "execution_timeout"),
+        (
+            FailureReason::GuestMemoryOomKilled,
+            "guest_memory_oom_killed",
+        ),
         (FailureReason::InsufficientCredits, "insufficient_credits"),
         (
             FailureReason::ProviderInsufficientCredits,
@@ -576,6 +580,10 @@ fn failure_reason_maps_exhaustively_to_the_public_completion_contract() {
         (
             FailureReason::ProviderStreamTimeout,
             "provider_stream_timeout",
+        ),
+        (
+            FailureReason::ProviderRequestTimeout,
+            "provider_request_timeout",
         ),
         (FailureReason::ProviderServerError, "provider_server_error"),
         (FailureReason::FirewallAuthFailed, "firewall_auth_failed"),

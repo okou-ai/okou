@@ -207,6 +207,14 @@ wrapper's actual exit code remains unchanged. Explicit cancellation, deadline
 and control failures remain authoritative, and normal numeric exit 137 is
 distinct from an observed child signal 9.
 
+For a naturally SIGKILLed CLI or Codex child, Guest combines the observed exit
+with its existing trusted main-domain OOM capture before publishing the first
+completion. Proven kills carry `guest_memory_oom_killed` in the public failure
+reason; Runner's resource-diagnostic fallback emits the same token. Aggregate
+workload counters or an ordinary numeric exit 137 alone do not establish this
+cause. Existing selected causes, initiated termination and heartbeat failures
+retain precedence, and a successful run with a contained tool OOM stays successful.
+
 The task protocol is a separate bounded version-one endpoint derived from the
 existing canonical tool endpoint. Each task request/reply frame uses one overall
 read deadline; partial input cannot renew the budget or hold the task broker

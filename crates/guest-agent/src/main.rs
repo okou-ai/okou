@@ -586,10 +586,10 @@ async fn execute(
             guest_contracts::oom_evidence::CaptureReason::CliError
         };
         let evidence = workload_containment.oom_evidence(reason).await;
-        attribute_codex_child_oom(
+        attribute_cli_oom(
             exit_code,
             &mut error_message,
-            failure_diagnostic.as_ref(),
+            failure_diagnostic.as_mut(),
             evidence.as_ref(),
         );
         if let Some(evidence) = evidence.as_ref() {
@@ -675,18 +675,33 @@ async fn execute(
     .await
 }
 
-fn attribute_codex_child_oom(
+fn attribute_cli_oom(
     exit_code: i32,
     error_message: &mut String,
-    diagnostic: Option<&FailureDiagnostic>,
+    diagnostic: Option<&mut FailureDiagnostic>,
     evidence: Option<&guest_contracts::oom_evidence::OomEvidence>,
 ) {
-    if exit_code == 1
-        && diagnostic.is_some_and(FailureDiagnostic::is_codex_app_server_sigkill)
-        && evidence.is_some_and(guest_contracts::oom_evidence::OomEvidence::agent_domain_oom_kill)
+    let Some(diagnostic) = diagnostic else {
+        return;
+    };
+    if diagnostic.failure_reason.is_some()
+        || diagnostic.cli_termination.is_some()
+        || diagnostic.heartbeat.is_some()
+        || !evidence.is_some_and(guest_contracts::oom_evidence::OomEvidence::agent_domain_oom_kill)
     {
-        *error_message = guest_contracts::diagnostics::GUEST_MEMORY_OOM_KILLED_ERROR.to_string();
+        return;
     }
+    let natural_cli_sigkill = exit_code == 137
+        && diagnostic.failure_class == FailureClass::CliNonzero
+        && diagnostic.cli_exit_code == Some(137)
+        && diagnostic.cli_observed_exit.as_ref().is_some_and(|exit| {
+            exit.is_sigkill() && exit.exit_code.is_none() && exit.mapped_exit_code == 137
+        });
+    if !(natural_cli_sigkill || (exit_code == 1 && diagnostic.is_codex_app_server_sigkill())) {
+        return;
+    }
+    diagnostic.failure_reason = Some(FailureReason::GuestMemoryOomKilled);
+    *error_message = guest_contracts::diagnostics::GUEST_MEMORY_OOM_KILLED_ERROR.to_string();
 }
 
 fn apply_workload_resource_limit(

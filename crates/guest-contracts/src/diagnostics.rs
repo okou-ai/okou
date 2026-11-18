@@ -95,7 +95,10 @@ impl FailureDiagnostic {
                 == Some(SHELL_SIGNAL_EXIT_CODE_OFFSET + UNIX_SIGKILL_SIGNAL_NUMBER)
             && self.cli_termination.is_none()
             && self.heartbeat.is_none()
-            && self.failure_reason.is_none()
+            && matches!(
+                self.failure_reason,
+                None | Some(FailureReason::GuestMemoryOomKilled)
+            )
             && self.cli_observed_exit.as_ref().is_some_and(|exit| {
                 exit.is_sigkill()
                     && exit.exit_code.is_none()
@@ -735,6 +738,8 @@ pub enum FailureReason {
     GuestRootFilesystemFull,
     /// The independently mounted Guest home has exhausted its space or inodes.
     GuestHomeFilesystemFull,
+    /// Trusted sandbox OOM evidence proves that the agent runtime was killed.
+    GuestMemoryOomKilled,
     /// The run reached its execution time limit.
     ExecutionTimeout,
     /// The vm0 workspace has insufficient credits.
@@ -763,13 +768,15 @@ pub enum FailureReason {
     ProviderOverloaded,
     /// The provider stream timed out.
     ProviderStreamTimeout,
+    /// The model request transport timed out, independently of the run deadline.
+    ProviderRequestTimeout,
     /// The provider explicitly expired a request before processing started.
     ProviderQueueTimeout,
     /// The provider returned a server error.
     ProviderServerError,
     /// Local firewall authentication resolution failed.
     FirewallAuthFailed,
-    /// Codex returned an opaque HTTP 400 with no more specific cause.
+    /// Codex reported a bad request without a more specific cause.
     ProviderBadRequest,
     /// The response connection was lost.
     ResponseConnectionLost,
@@ -795,6 +802,7 @@ impl FailureReason {
             Self::SessionHistoryLimit => "session_history_limit",
             Self::GuestRootFilesystemFull => "guest_root_filesystem_full",
             Self::GuestHomeFilesystemFull => "guest_home_filesystem_full",
+            Self::GuestMemoryOomKilled => "guest_memory_oom_killed",
             Self::ExecutionTimeout => "execution_timeout",
             Self::InsufficientCredits => "insufficient_credits",
             Self::ProviderInsufficientCredits => "provider_insufficient_credits",
@@ -809,6 +817,7 @@ impl FailureReason {
             Self::ProviderRateLimited => "provider_rate_limited",
             Self::ProviderOverloaded => "provider_overloaded",
             Self::ProviderStreamTimeout => "provider_stream_timeout",
+            Self::ProviderRequestTimeout => "provider_request_timeout",
             Self::ProviderQueueTimeout => "provider_queue_timeout",
             Self::ProviderServerError => "provider_server_error",
             Self::FirewallAuthFailed => "firewall_auth_failed",
@@ -832,6 +841,7 @@ impl From<FailureReason>
             FailureReason::SessionHistoryLimit => Self::SessionHistoryLimit,
             FailureReason::GuestRootFilesystemFull => Self::GuestRootFilesystemFull,
             FailureReason::GuestHomeFilesystemFull => Self::GuestHomeFilesystemFull,
+            FailureReason::GuestMemoryOomKilled => Self::GuestMemoryOomKilled,
             FailureReason::ExecutionTimeout => Self::ExecutionTimeout,
             FailureReason::InsufficientCredits => Self::InsufficientCredits,
             FailureReason::ProviderInsufficientCredits => Self::ProviderInsufficientCredits,
@@ -846,6 +856,7 @@ impl From<FailureReason>
             FailureReason::ProviderRateLimited => Self::ProviderRateLimited,
             FailureReason::ProviderOverloaded => Self::ProviderOverloaded,
             FailureReason::ProviderStreamTimeout => Self::ProviderStreamTimeout,
+            FailureReason::ProviderRequestTimeout => Self::ProviderRequestTimeout,
             FailureReason::ProviderQueueTimeout => Self::ProviderQueueTimeout,
             FailureReason::ProviderServerError => Self::ProviderServerError,
             FailureReason::FirewallAuthFailed => Self::FirewallAuthFailed,

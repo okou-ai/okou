@@ -10635,6 +10635,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       describe("completion failure reasons", () => {
         const terminalFailureReasons = [
           "unknown",
+          "guest_memory_oom_killed",
+          "provider_bad_request",
           "provider_image_too_large",
           "insufficient_credits",
           "invalid_api_key",
@@ -10646,6 +10648,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "provider_rate_limited",
           "provider_overloaded",
           "provider_stream_timeout",
+          "provider_request_timeout",
           "provider_server_error",
           "firewall_auth_failed",
           "response_connection_lost",

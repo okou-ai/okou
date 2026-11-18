@@ -231,6 +231,257 @@ fn codex_terminal_events_preserve_provider_codes_before_text_projection() {
 }
 
 #[test]
+fn codex_terminal_bad_request_classifies_the_owned_body_without_inventing_status() {
+    use guest_contracts::codex_failure::{CodexFailureStage, CodexNativeFailureKind};
+    for (message, stage) in [
+        (r#"{"detail":"Bad Request"}"#, None),
+        (
+            r#"Error running remote compact task: {"detail":"Bad Request"}"#,
+            Some(CodexFailureStage::RemoteCompaction),
+        ),
+    ] {
+        let error = serde_json::json!({"message":message,"codex_error_info":"other"});
+        for event in [
+            serde_json::json!({"type":"error","message":message,"error":error}),
+            serde_json::json!({"type":"turn.completed","turn":{"status":"failed","error":error}}),
+        ] {
+            let diagnostic =
+                masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw("")).unwrap();
+            assert_eq!(
+                diagnostic.failure_reason,
+                Some(FailureReason::ProviderBadRequest),
+                "message: {message}",
+            );
+            assert_eq!(diagnostic.message, message);
+            let evidence = diagnostic.evidence.unwrap();
+            assert_eq!(evidence.native_kind, Some(CodexNativeFailureKind::Other));
+            assert_eq!(evidence.http_status, None);
+            assert_eq!(evidence.reported_stage, stage);
+        }
+        let stronger = serde_json::json!({"type":"turn.completed","turn":{"status":"failed","error":{
+            "message":message,"codex_error_info":"unauthorized"
+        }}});
+        assert_eq!(
+            masked_codex_failure_diagnostic(&stronger, &SecretMasker::from_raw(""))
+                .unwrap()
+                .failure_reason,
+            Some(FailureReason::InvalidCredentials)
+        );
+        for event in [
+            serde_json::json!({"type":"error","will_retry":true,"message":message,"error":error}),
+            serde_json::json!({"type":"turn.completed","turn":{"status":"completed","error":error}}),
+            serde_json::json!({"type":"item.completed","item":{"type":"command_execution","aggregated_output":message}}),
+            serde_json::json!({"type":"item.completed","item":{"type":"agent_message","text":message}}),
+        ] {
+            assert!(masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw("")).is_none());
+        }
+    }
+    let message = r#"{"detail":"Bad Request"}"#;
+    for error in [
+        serde_json::json!({"message":"Bad Request","codex_error_info":"other"}),
+        serde_json::json!({"message":format!("Tool output: {message}"),"codex_error_info":"other"}),
+        serde_json::json!({"message":"unknown","additional_details":message,"codex_error_info":"other"}),
+        serde_json::json!({"message":message,"codex_error_info":"futureStructuredError"}),
+    ] {
+        let event =
+            serde_json::json!({"type":"turn.completed","turn":{"status":"failed","error":error}});
+        assert_eq!(
+            masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""))
+                .unwrap()
+                .failure_reason,
+            None
+        );
+    }
+}
+
+#[test]
+fn codex_other_terminal_signatures_keep_their_specific_public_causes() {
+    use guest_contracts::codex_failure::{CodexFailureStage, CodexNativeFailureKind};
+    for (message, reason) in [
+        (
+            "stream disconnected before completion: idle timeout waiting for SSE",
+            FailureReason::ProviderStreamTimeout,
+        ),
+        ("request timed out", FailureReason::ProviderRequestTimeout),
+        (
+            "Incomplete response returned, reason: content_filter",
+            FailureReason::SafetyPolicyRefusal,
+        ),
+        (
+            "stream disconnected before completion: Incomplete response returned, reason: content_filter",
+            FailureReason::SafetyPolicyRefusal,
+        ),
+        (
+            "This content was flagged for possible biological risk.",
+            FailureReason::SafetyPolicyRefusal,
+        ),
+    ] {
+        for prefix in ["", "Error running remote compact task: "] {
+            let message = format!("{prefix}{message}");
+            let error = json!({"message":message,"codex_error_info":"other"});
+            for event in [
+                json!({"type":"error","message":message,"error":error}),
+                json!({"type":"turn.completed","turn":{"status":"failed","error":error}}),
+            ] {
+                let diagnostic =
+                    masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""))
+                        .expect("native terminal diagnostic");
+                assert_eq!(diagnostic.failure_reason, Some(reason), "{message}");
+                assert_eq!(diagnostic.message, message);
+                let evidence = diagnostic.evidence.unwrap();
+                assert_eq!(evidence.native_kind, Some(CodexNativeFailureKind::Other));
+                assert_eq!(evidence.http_status, None);
+                assert_eq!(
+                    evidence.reported_stage,
+                    (!prefix.is_empty()).then_some(CodexFailureStage::RemoteCompaction)
+                );
+            }
+            let stronger = json!({"type":"turn.completed","turn":{"status":"failed","error":{
+                "message":message,"codex_error_info":"unauthorized"
+            }}});
+            assert_eq!(
+                masked_codex_failure_diagnostic(&stronger, &SecretMasker::from_raw(""))
+                    .unwrap()
+                    .failure_reason,
+                Some(FailureReason::InvalidCredentials)
+            );
+            for event in [
+                json!({"type":"error","will_retry":true,"message":message,"error":error}),
+                json!({"type":"turn.completed","turn":{"status":"completed","error":error}}),
+                json!({"type":"item.completed","item":{"type":"command_execution","aggregated_output":message}}),
+                json!({"type":"item.completed","item":{"type":"agent_message","text":message}}),
+            ] {
+                assert!(
+                    masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw("")).is_none()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn codex_other_request_envelopes_preserve_more_specific_provider_causes() {
+    for (error, reason) in [
+        (
+            json!({"type":"invalid_request_error","code":"invalid_request_error","message":"Invalid Format"}),
+            FailureReason::ProviderBadRequest,
+        ),
+        (
+            json!({"type":"invalid_request_error","code":"unsupported_parameter","message":"Unsupported parameter","param":"unexpected"}),
+            FailureReason::ProviderBadRequest,
+        ),
+        (
+            json!({"type":"invalid_request_error","code":"invalid_api_key","message":"Invalid API key"}),
+            FailureReason::InvalidApiKey,
+        ),
+        (
+            json!({"type":"invalid_request_error","code":"invalid_api_key","message":"Selected model is at capacity. Please try a different model."}),
+            FailureReason::InvalidApiKey,
+        ),
+        (
+            json!({"type":"invalid_request_error","code":"context_length_exceeded","message":"Too many tokens"}),
+            FailureReason::ContextWindowExceeded,
+        ),
+        (
+            json!({"type":"invalid_request_error","code":"insufficient_quota","message":"No remaining credit"}),
+            FailureReason::ProviderInsufficientCredits,
+        ),
+        (
+            json!({"type":"invalid_request_error","code":"model_not_found","message":"Unsupported model"}),
+            FailureReason::UnsupportedModel,
+        ),
+        (
+            json!({"type":"invalid_request_error","code":"content_policy_violation","message":"Rejected by policy"}),
+            FailureReason::SafetyPolicyRefusal,
+        ),
+        (
+            json!({"type":"invalid_request_error","code":"bio_policy","message":"Rejected by policy"}),
+            FailureReason::SafetyPolicyRefusal,
+        ),
+        (
+            json!({"type":"invalid_request_error","code":"invalid_request_error","message":"Content Exists Risk"}),
+            FailureReason::SafetyPolicyRefusal,
+        ),
+        (
+            json!({"type":"invalid_request_error","code":"server_error","message":"Provider unavailable"}),
+            FailureReason::ProviderServerError,
+        ),
+        (
+            json!({"type":"invalid_request_error","code":"invalid_request_error","message":"Prompt is too long: 1000 tokens > 100 maximum"}),
+            FailureReason::ContextWindowExceeded,
+        ),
+        (
+            json!({"type":"invalid_request_error","message":"The 'gpt-example' model is not supported when using Codex with a ChatGPT account."}),
+            FailureReason::UnsupportedModel,
+        ),
+        (
+            json!({"type":"invalid_request_error","message":"Incomplete response returned, reason: max_output_tokens"}),
+            FailureReason::OutputTokenLimit,
+        ),
+    ] {
+        for body in [
+            json!({"error":error}),
+            json!({"type":"error","status":400,"error":error}),
+            json!({"type":"error","status_code":400,"error":error}),
+        ] {
+            for prefix in ["", "Error running remote compact task: "] {
+                let message = format!("{prefix}{body}");
+                let event = json!({"type":"turn.completed","turn":{"status":"failed","error":{
+                    "message":message,"codex_error_info":"other"
+                }}});
+                assert_eq!(
+                    masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""))
+                        .unwrap()
+                        .failure_reason,
+                    Some(reason),
+                    "{message}",
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn codex_other_classification_requires_owned_terminal_evidence() {
+    for message in [
+        "Tool output: request timed out".to_string(),
+        "request timed out while explaining an earlier failure".to_string(),
+        "idle timeout waiting for SSE".to_string(),
+        "Incomplete response returned, reason: content_filter_extra".to_string(),
+        "This content was flagged for possible biological risk. See tool logs.".to_string(),
+        "spawn failed: child stdout/stderr not captured".to_string(),
+        json!({"type":"error","status":500,"error":{"type":"invalid_request_error","message":"Invalid Format"}}).to_string(),
+        json!({"type":"debug","status":400,"error":{"type":"invalid_request_error","message":"Invalid Format"}}).to_string(),
+    ] {
+        let event = json!({"type":"turn.completed","turn":{"status":"failed","error":{
+            "message":message,"codex_error_info":"other"
+        }}});
+        assert_eq!(masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""))
+            .unwrap().failure_reason, None, "{message}");
+    }
+    for kind in [Value::Null, json!("futureNativeKind")] {
+        let event = json!({"type":"turn.completed","turn":{"status":"failed","error":{
+            "message":"request timed out","codex_error_info":kind
+        }}});
+        assert_eq!(
+            masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""))
+                .unwrap()
+                .failure_reason,
+            None
+        );
+    }
+    let event = json!({"type":"turn.completed","turn":{"status":"failed","error":{
+        "message":"unknown","additional_details":"request timed out","codex_error_info":"other"
+    }}});
+    assert_eq!(
+        masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""))
+            .unwrap()
+            .failure_reason,
+        None
+    );
+}
+
+#[test]
 fn codex_output_limit_preserves_structured_causes_and_native_text() {
     let message = "Incomplete response returned, reason: max_output_tokens";
     for (fields, reason) in [
@@ -384,12 +635,10 @@ fn codex_output_limit_does_not_classify_normal_output_or_similar_errors() {
     for message in [
         "stream disconnected before completion",
         "Incomplete response returned, reason: unknown",
-        "Incomplete response returned, reason: content_filter",
         "Incomplete response returned, reason: max_output_tokens_extra",
         "Incomplete response returned, reason: max_output_tokens (server error)",
         "Tool output: Incomplete response returned, reason: max_output_tokens",
         "stream disconnected before completion: Incomplete response returned, reason: unknown",
-        "stream disconnected before completion: Incomplete response returned, reason: content_filter",
         "stream disconnected before completion: Incomplete response returned, reason: max_output_tokens_extra",
         "stream disconnected before completion: Incomplete response returned, reason: max_output_tokens (server error)",
         "Set max_output_tokens to configure the output budget",
