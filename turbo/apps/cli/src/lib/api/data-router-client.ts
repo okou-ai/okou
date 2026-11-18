@@ -18,6 +18,7 @@ import {
 } from "./core/client-factory";
 
 const envelopeSchema = object({
+  requestId: string().optional(),
   data: object({ status: number().int(), body: zUnknown() }),
 });
 const argumentsSchema = record(string(), json());
@@ -116,17 +117,28 @@ export async function listDataRouterCatalog(): Promise<DataRouterCatalog> {
   return withDataRouter(discoverCatalog);
 }
 
+interface DataRouterCallResult {
+  readonly status: number;
+  readonly body: unknown;
+  /** Router's billing and log identity for this call, when it reports one. */
+  readonly requestId?: string;
+  /** Whether caller-owned request history was added to the arguments. */
+  readonly requestHistory: boolean;
+}
+
 /** MITM injects authentication and records the billing identity returned by Router. */
 export async function callDataRouterTool(
   name: string,
   input: Record<string, unknown>,
-): Promise<{ status: number; body: unknown }> {
+): Promise<DataRouterCallResult> {
   return withDataRouter(async (client, options) => {
     const { tools } = await discoverCatalog(client, options);
     const tool = tools.find((entry) => {
       return entry.name === name;
     });
-    const args = tool?._meta?.["ai.okou/data"]?.requestHistory
+    const requestHistory =
+      tool?._meta?.["ai.okou/data"]?.requestHistory === true;
+    const args = requestHistory
       ? { ...input, requestIds: await ownedRequestIds() }
       : input;
     const result = await client
@@ -144,13 +156,15 @@ export async function callDataRouterTool(
         );
       });
     const parsed = envelopeSchema.safeParse(result.structuredContent);
-    if (!parsed.success && result.isError) return { status: 400, body: result };
+    if (!parsed.success && result.isError)
+      return { status: 400, body: result, requestHistory };
     if (!parsed.success)
       throw new ApiRequestError(
         "Data Router returned an invalid tool response; the request may have executed and incurred a charge. Do not repeat it automatically.",
         "INVALID_DATA_RESPONSE",
         502,
       );
-    return parsed.data.data;
+    const { requestId, data } = parsed.data;
+    return { ...data, ...(requestId ? { requestId } : {}), requestHistory };
   });
 }
