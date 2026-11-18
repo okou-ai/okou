@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.R
+import ai.okou.android.api.generated.IndicatorsThreadsValue
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -30,12 +31,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LongState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -80,6 +81,22 @@ internal fun ChatListScreen(
             chatListGroups(state)
         }
     val indicators = state.indicators?.threads.orEmpty()
+    val sections =
+        remember(groups, collapsed, indicators) { chatListSections(groups, collapsed, indicators) }
+    val runningKeys =
+        remember(indicators, sections) {
+            buildSet {
+                indicators.forEach { (id, indicator) ->
+                    if (indicator == IndicatorsThreadsValue.ACTIVE) add(id)
+                }
+                sections.forEach { section ->
+                    if (section.foldedStatus == ChatRowStatus.Running) {
+                        add(projectRowKey(checkNotNull(section.group.project).id))
+                    }
+                }
+            }
+        }
+    val runningFrame = rememberRunningWaveFrame(listState, runningKeys)
     val metadataPending =
         state.projectsSettingsPhase == ChatReadPhase.Loading ||
             state.agentsPhase == ChatReadPhase.Loading ||
@@ -166,20 +183,22 @@ internal fun ChatListScreen(
                 )
             }
             if (state.confirmedAt != null) {
-                groups.forEach { group ->
+                sections.forEach { section ->
+                    val group = section.group
                     val project = group.project
-                    val isCollapsed = project?.id in collapsed
+                    val foldedStatus = section.foldedStatus
                     if (project != null) {
-                        item(key = "group_${project.id}") {
+                        item(key = projectRowKey(project.id)) {
                             ProjectRow(
                                 project.name,
-                                isCollapsed,
-                                if (isCollapsed) collapsedProjectStatus(group.threads, indicators)
-                                else ChatRowStatus.None,
+                                collapsed = foldedStatus != null,
+                                status = foldedStatus ?: ChatRowStatus.None,
+                                runningFrame = runningFrame,
+                                row = section.firstRow,
                                 toggle = { toggleProject(project.id) },
                             )
                         }
-                        if (!isCollapsed) {
+                        if (foldedStatus == null) {
                             item(key = "project_actions_${project.id}") {
                                 Column(Modifier.padding(start = 24.dp)) {
                                     if (group.threads.isEmpty()) {
@@ -193,7 +212,7 @@ internal fun ChatListScreen(
                             }
                         }
                     }
-                    if (!isCollapsed) {
+                    if (foldedStatus == null) {
                         val pinTail = group.pinnedTailIndex()
                         itemsIndexed(group.threads, key = { _, thread -> thread.id }) {
                             index,
@@ -203,6 +222,8 @@ internal fun ChatListScreen(
                                     thread,
                                     chatRowStatus(indicators[thread.id], thread.muted == true),
                                     thread.id == selectedChatId,
+                                    runningFrame,
+                                    row = section.firstChatRow + index,
                                 ) {
                                     open(thread)
                                 }
@@ -232,11 +253,15 @@ internal fun ChatListScreen(
     }
 }
 
+private fun projectRowKey(id: String) = "group_$id"
+
 @Composable
 private fun ProjectRow(
     name: String,
     collapsed: Boolean,
     status: ChatRowStatus,
+    runningFrame: LongState,
+    row: Int,
     toggle: () -> Unit,
 ) {
     val label = status.label()
@@ -281,7 +306,7 @@ private fun ProjectRow(
         )
         if (status != ChatRowStatus.None) {
             Spacer(Modifier.width(8.dp))
-            ChatStatusGlyph(status)
+            ChatStatusGlyph(status, runningFrame, row)
         }
     }
 }
@@ -291,6 +316,8 @@ private fun ChatRow(
     thread: ConfirmedChat,
     status: ChatRowStatus,
     isSelected: Boolean,
+    runningFrame: LongState,
+    row: Int,
     open: () -> Unit,
 ) {
     val labels =
@@ -328,7 +355,7 @@ private fun ChatRow(
         )
         if (status != ChatRowStatus.None) {
             Spacer(Modifier.width(8.dp))
-            ChatStatusGlyph(status)
+            ChatStatusGlyph(status, runningFrame, row)
         }
     }
 }
@@ -343,7 +370,7 @@ private fun ChatRowStatus.label(): String? =
     }
 
 @Composable
-private fun ChatStatusGlyph(status: ChatRowStatus) {
+private fun ChatStatusGlyph(status: ChatRowStatus, runningFrame: LongState, row: Int) {
     // Web uses sky-600. A lighter blue keeps the mark legible on dark selection fills.
     val color =
         if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF38BDF8)
@@ -352,10 +379,7 @@ private fun ChatStatusGlyph(status: ChatRowStatus) {
         when (status) {
             ChatRowStatus.Unread -> Canvas(Modifier.size(8.dp)) { drawCircle(color) }
             ChatRowStatus.Running ->
-                Canvas(Modifier.size(14.dp)) {
-                    drawCircle(color, radius = 3.dp.toPx())
-                    drawCircle(color, radius = 6.dp.toPx(), style = Stroke(1.dp.toPx()))
-                }
+                Canvas(Modifier.size(14.dp)) { drawRunningWave(color, runningFrame.longValue, row) }
             ChatRowStatus.Muted ->
                 Icon(
                     painterResource(R.drawable.ic_chat_muted),
