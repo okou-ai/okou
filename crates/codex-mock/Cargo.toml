@@ -15,8 +15,10 @@ uuid = { workspace = true, features = ["std", "v7"] }
 cli-test-support = { workspace = true, features = ["test-support"] }
 tempfile = { workspace = true, features = ["getrandom"] }
 
-[target.'cfg(unix)'.dev-dependencies]
+[target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["fs"] }
+
+[target.'cfg(unix)'.dev-dependencies]
 rustix = { workspace = true, features = ["process", "std"] }
 
 [lints]

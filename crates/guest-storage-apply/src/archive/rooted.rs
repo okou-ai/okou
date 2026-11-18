@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::fs::{self, File, FileTimes, OpenOptions, Permissions};
 use std::io::{self, Read, Write};
-use std::os::fd::{AsRawFd, FromRawFd, RawFd};
+use std::os::fd::{AsRawFd, BorrowedFd, RawFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
@@ -240,12 +240,14 @@ fn descriptor_limit(error: &io::Error) -> bool {
 }
 
 fn open_at(parent: RawFd, name: &CStr, flags: libc::c_int, mode: libc::mode_t) -> io::Result<File> {
-    // SAFETY: the caller holds parent open; name is NUL-terminated and mode is
-    // supplied even when flags do not request creation (then it is ignored).
-    let raw = unsafe { libc::openat(parent, name.as_ptr(), flags, mode) };
-    if raw < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: successful openat returns a new owned descriptor, transferred once.
-    Ok(unsafe { File::from_raw_fd(raw) })
+    // SAFETY: callers keep the root or cached parent File alive for this call;
+    // no cache invalidation occurs between obtaining parent and this borrow.
+    let parent = unsafe { BorrowedFd::borrow_raw(parent) };
+    let fd = nix::fcntl::openat(
+        parent,
+        name,
+        nix::fcntl::OFlag::from_bits_retain(flags),
+        nix::sys::stat::Mode::from_bits_retain(mode),
+    )?;
+    Ok(File::from(fd))
 }
