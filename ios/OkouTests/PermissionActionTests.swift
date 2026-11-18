@@ -113,7 +113,13 @@ final class PermissionActionTests: XCTestCase {
     let fixture = PermissionHTTPFixture { request in
       if request.url!.path == "/api/chat/events" {
         synchronize.withLock { $0 = true }
-      } else if request.url!.path.hasSuffix("/event-rows"), synchronize.withLock({ $0 }) {
+      } else if request.url!.path.hasSuffix("/event-rows"),
+        synchronize.withLock({ pending in
+          guard pending else { return false }
+          pending = false
+          return true
+        })
+      {
         started.fulfill()
         await gate.wait()
       }
