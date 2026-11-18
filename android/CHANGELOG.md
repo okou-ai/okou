@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.1](https://github.com/okou-ai/okou/compare/android-v0.21.0...android-v0.21.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* **native:** cover every public run failure reason ([#48612](https://github.com/okou-ai/okou/issues/48612)) ([c1416bf](https://github.com/okou-ai/okou/commit/c1416bf15801f329cb95d836b1b66a722fb6a543))
+
 ## [0.21.0](https://github.com/okou-ai/okou/compare/android-v0.20.0...android-v0.21.0) (2026-11-18)
 
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.852.1](https://github.com/okou-ai/okou/compare/core-v8.852.0...core-v8.852.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* **api:** support attachments on inactive single agent workflow copies ([#48624](https://github.com/okou-ai/okou/issues/48624)) ([f41a05a](https://github.com/okou-ai/okou/commit/f41a05a04f254ecc6e4e614db921fef94b44ace1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.86.1
+
 ## [8.852.0](https://github.com/okou-ai/okou/compare/core-v8.851.1...core-v8.852.0) (2026-11-18)
 
 
