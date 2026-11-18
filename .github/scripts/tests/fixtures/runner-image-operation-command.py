@@ -67,6 +67,26 @@ def ssh(arguments):
         process.stdin.write(json.dumps(request).encode())
         process.stdin.close()
         fault = request["action"] == "run" and request["phase"] == "build"
+        if fault and MODE == "contended-launch":
+            gate = (
+                ROOT
+                / ("vm0-runner-image-" + str(os.getuid()))
+                / request["inputs"]["jobRef"]
+                / "gate"
+            )
+            wait_for(
+                lambda: any(p.resolve() == gate for p in Path(f"/proc/{process.pid}/fd").iterdir())
+            )
+            if once():
+                record("detached-servers", process.pid)
+                detached = True
+                return 255
+            # Both requests have checked for intent and opened the contended
+            # gate. Pause the observer so the original request starts first.
+            os.kill(process.pid, signal.SIGSTOP)
+            (ROOT / "observer-paused").touch()
+            wait_for(lambda: (ROOT / "resume-observer").exists())
+            os.kill(process.pid, signal.SIGCONT)
         if fault and MODE == "pending-launch" and once():
             wait_for(lambda: (ROOT / "launch-pending").exists())
             record("detached-servers", process.pid)

@@ -97,7 +97,9 @@ binary inputs/bytes, target, profile, host, adapter source and workflow run/atte
 Launch intent precedes submission; intent without a result or live unit fails
 unknown only after the launch gate is free and that absence is rechecked. A
 reconnection waits for an in-flight submission without blocking on the worker's
-mutation gate or submitting the command again. Only 124/141/255 can reconnect, at most three requests inside the same
+mutation gate or submitting the command again, including when intent appears
+after the reconnection has started waiting for that gate. Every observation
+rechecks owner admission. Only 124/141/255 can reconnect, at most three requests inside the same
 600-second call budget. Reconnection observes the original operation and never
 restarts it. Service work is limited to 570 seconds with a ten-second control
 group stop grace, leaving room for reconciliation inside the unchanged job budget.

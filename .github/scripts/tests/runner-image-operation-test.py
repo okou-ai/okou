@@ -2,6 +2,7 @@
 """Exercise the public image command with real processes/files and external fixtures."""
 
 import contextlib
+import fcntl
 import hashlib
 import json
 import os
@@ -186,6 +187,44 @@ class ImageOperationTest(unittest.TestCase):
         self.assertEqual(result.returncode, 23, result.stderr)
         self.assertEqual(json.loads(self.result.read_text())["status"], 23)
         self.assert_one_build()
+
+    def test_intent_published_while_reconnection_waits_for_gate(self):
+        self.environment["IMAGE_FAULT"] = "contended-launch"
+        self.invoke("claim")
+        (self.root / "block").touch()
+        gate = next(self.root.glob("vm0-runner-image-*/*/gate"))
+        with gate.open("r+") as lock, (self.root / "client.log").open("w") as output:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            process = subprocess.Popen(
+                ["python3", str(COMMAND), "run", "dev-11", "build", str(self.result)],
+                env=self.environment,
+                stdout=output,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            self.addCleanup(lambda: process.poll() is None and process.kill())
+            try:
+                self.wait_for(lambda: (self.root / "observer-paused").exists())
+                fcntl.flock(lock, fcntl.LOCK_UN)
+                self.wait_for(lambda: bool(self.records("executions")))
+                (self.root / "resume-observer").touch()
+                self.wait_for(
+                    lambda: "image-progress" in (self.root / "client.log").read_text()
+                    or process.poll() is not None
+                )
+                self.assertIn(
+                    "image-progress",
+                    (self.root / "client.log").read_text(),
+                    "reattachment must not wait for the original worker's mutation gate",
+                )
+            finally:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+                (self.root / "resume-observer").touch()
+                (self.root / "release").touch()
+                _output, error = process.communicate(timeout=20)
+        self.assertEqual(process.returncode, 0, error)
+        self.assert_one_build()
+        self.assertEqual(sum(r["action"] == "run" for r in self.records("requests")), 2)
 
     def test_invalid_results_fail_without_replay(self):
         for index, fault in enumerate(

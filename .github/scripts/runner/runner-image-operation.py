@@ -53,7 +53,7 @@ def private_dir(path, create=True):
 
 
 @contextlib.contextmanager
-def gate(namespace, while_waiting=None):
+def gate(namespace, while_waiting=None, observe_intent=None):
     fd = os.open(namespace / "gate", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     try:
         deadline = time.monotonic() + 15
@@ -62,12 +62,17 @@ def gate(namespace, while_waiting=None):
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
             except BlockingIOError:
+                if observe_intent is not None and observe_intent.exists():
+                    # Reattachment is read-only once the original launch
+                    # publishes intent; it must not wait behind its worker.
+                    yield False
+                    return
                 if time.monotonic() >= deadline:
                     raise RuntimeError("image ownership gate deadline exceeded") from None
                 if while_waiting:
                     while_waiting()
                 time.sleep(0.1)
-        yield fd
+        yield True
     finally:
         os.close(fd)
 
@@ -165,6 +170,10 @@ def operation_identity(request):
     return digest(value)
 
 
+def owner_for(inputs):
+    return {"identity": digest(inputs), "generation": [inputs["runId"], inputs["runAttempt"]]}
+
+
 def owner_matches(actual, expected):
     return actual is not None and all(
         actual.get(key) == expected[key] for key in ("identity", "generation")
@@ -204,7 +213,7 @@ def stopped_without_result(operation, inputs):
     # An intent is visible before systemd accepts the launch. A missing unit
     # is not terminal while that submission (or its worker) still owns the gate.
     # A successor may own the same gate, but must not delay the old observer.
-    owner = {"identity": digest(inputs), "generation": [inputs["runId"], inputs["runAttempt"]]}
+    owner = owner_for(inputs)
     if not owner_admitted(json.loads((operation.parent / "owner.json").read_text()), owner):
         raise RuntimeError("image owner superseded or cancelled")
     fd = os.open(operation.parent / "gate", os.O_RDWR | os.O_NOFOLLOW)
@@ -254,7 +263,7 @@ def remote(request):
     private_dir(root)
     namespace = root / inputs["jobRef"]
     private_dir(namespace)
-    owner = {"identity": digest(inputs), "generation": [inputs["runId"], inputs["runAttempt"]]}
+    owner = owner_for(inputs)
     owner_path = namespace / "owner.json"
     entry_owner = json.loads(owner_path.read_text()) if owner_path.exists() else None
     if request["action"] == "claim":
@@ -276,8 +285,6 @@ def remote(request):
         # Reattachment is read-only and must not wait on the worker's mutation
         # gate. In particular, stream loss cannot block observation for 570s.
         if (operation / "intent.json").exists():
-            if not owner_admitted(json.loads(owner_path.read_text()), owner):
-                raise RuntimeError("image owner superseded or cancelled")
             observe(request, operation)
             return
 
@@ -298,7 +305,14 @@ def remote(request):
     if request["action"] == "cancel" and not owner_matches(entry_owner, owner):
         emit({"cancelled": "not-current-owner"})
         return
-    with gate(namespace, retire_matching if retiring else None):
+    with gate(
+        namespace,
+        while_waiting=retire_matching if retiring else None,
+        observe_intent=operation / "intent.json" if request["action"] in ("run", "guard") else None,
+    ) as acquired:
+        if not acquired:
+            observe(request, operation)
+            return
         previous = json.loads(owner_path.read_text()) if owner_path.exists() else None
         if request["action"] == "claim":
             if not owner_matches(previous, owner):
@@ -402,6 +416,10 @@ def observe(request, operation):
         or operation_identity(intent) != intent["identity"]
     ):
         raise RuntimeError("image launch identity mismatch")
+    if not owner_admitted(
+        json.loads((operation.parent / "owner.json").read_text()), owner_for(intent["inputs"])
+    ):
+        raise RuntimeError("image owner superseded or cancelled")
     result_path = operation / "result.json"
     offset = request.get("offset", 0)
     deadline = intent["deadline"]
