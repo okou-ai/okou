@@ -11,6 +11,8 @@ use std::time::Duration;
 use guest_agent::active_input::ActiveInputRuntime;
 use guest_agent::masker::SecretMasker;
 use guest_agent_tests as common;
+use rustix::event::{PollFd, PollFlags, Timespec, poll};
+use rustix::fs::{CWD, Mode, mkfifoat};
 use shell_quote::quote_shell_arg;
 use tokio::io::Interest;
 use tokio::io::unix::AsyncFd;
@@ -18,11 +20,13 @@ use tokio::io::unix::AsyncFd;
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn retain_pipe(pid: u32, descriptor: i32, write: bool) -> io::Result<AsyncFd<File>> {
+    let path = format!("/proc/{pid}/fd/{descriptor}");
     let file = OpenOptions::new()
         .read(!write)
         .write(write)
         .custom_flags(libc::O_NONBLOCK | libc::O_CLOEXEC)
-        .open(format!("/proc/{pid}/fd/{descriptor}"))?;
+        .open(&path)
+        .map_err(|error| io::Error::new(error.kind(), format!("open {path}: {error}")))?;
     if !file.metadata()?.file_type().is_fifo() {
         return Err(io::Error::other("CLI endpoint is not a pipe"));
     }
@@ -68,12 +72,17 @@ async fn dropping_cli_execution_retires_both_stdio_workers()
 -> Result<(), Box<dyn std::error::Error>> {
     let tmp = tempfile::tempdir()?;
     let ready_file = tmp.path().join("cli-ready");
+    let hold_fifo = tmp.path().join("hold-cli");
+    mkfifoat(CWD, &hold_fifo, Mode::RUSR | Mode::WUSR)?;
     let mock = tmp.path().join("owned-stdio-claude");
+    // Opening the FIFO for reading blocks until the execution future kills the
+    // child. Keep stdout connected so EOF cannot close the stdin worker early.
     std::fs::write(
         &mock,
         format!(
-            "#!/bin/sh\nset -eu\nIFS= read -r initial\nprintf '%s\\n' \"$$\" > {}\nexec cat >/dev/null\n",
+            "#!/bin/sh\nset -eu\nIFS= read -r initial\nprintf '%s\\n' \"$$\" > {}\nexec 3<{}\n",
             quote_shell_arg(&ready_file.to_string_lossy()),
+            quote_shell_arg(&hold_fifo.to_string_lossy()),
         ),
     )?;
     let mut permissions = std::fs::metadata(&mock)?.permissions();
@@ -107,6 +116,18 @@ async fn dropping_cli_execution_retires_both_stdio_workers()
     // descriptor without spawning another process or changing child cleanup.
     let stdin = retain_pipe(pid, libc::STDIN_FILENO, false)?;
     let stderr = retain_pipe(pid, libc::STDERR_FILENO, true)?;
+    // poll also reports hangups and errors without requesting those flags.
+    let mut endpoints = [
+        PollFd::new(stdin.get_ref(), PollFlags::IN),
+        PollFd::new(stderr.get_ref(), PollFlags::empty()),
+    ];
+    assert_eq!(
+        poll(&mut endpoints, Some(&Timespec::default()))?,
+        0,
+        "stdio workers must own their pipes before cancellation: stdin={:?}, stderr={:?}",
+        endpoints[0].revents(),
+        endpoints[1].revents(),
+    );
     drop(execution);
 
     let (stdin_retired, stderr_retired) = tokio::join!(
