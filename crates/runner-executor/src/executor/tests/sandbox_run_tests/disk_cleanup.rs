@@ -377,6 +377,40 @@ async fn insufficient_capacity_replaces_the_sandbox_before_starting_one_agent() 
 }
 
 #[tokio::test]
+async fn already_restored_capacity_retries_bootstrap_without_vm_replacement() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_executor_config(dir.path()).await;
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    overrides.push_private_write_files_result(Err(sandbox_write_file_error(
+        "No space left on device (os error 28)",
+    )));
+    full_filesystem(&overrides, DiskCleanupFilesystem::Rootfs);
+    overrides.add_exec_matcher(sandbox_mock::ExecMatcher {
+        pattern: "recover-disk-space rootfs".into(),
+        exit_code: 0,
+        stdout: serde_json::to_vec(&DiskCleanupReport {
+            filesystem: DiskCleanupFilesystem::Rootfs,
+            available_bytes_before: 256 * 1024 * 1024,
+            available_bytes_after: 256 * 1024 * 1024,
+            available_inodes_before: 2048,
+            available_inodes_after: 2048,
+            removed_entries: 0,
+        })
+        .unwrap(),
+        stderr: Vec::new(),
+    });
+    let factory = retiring_factory(Arc::clone(&overrides));
+    let outcome = run_new_sandbox_outcome(&factory, &minimal_context(), &config, &default_params())
+        .await
+        .unwrap();
+    assert_eq!(outcome.exit_code(), 0);
+    assert_eq!(overrides.create_configs().len(), 1);
+    assert_eq!(overrides.private_write_files_calls().len(), 2);
+    assert_eq!(overrides.start_agent_process_calls().len(), 1);
+    assert_eq!(cleanup_calls(&overrides).len(), 1);
+}
+
+#[tokio::test]
 async fn failed_or_untrusted_cleanup_reports_retire_the_vm_without_in_place_replay() {
     let report = DiskCleanupReport {
         filesystem: DiskCleanupFilesystem::Home,
@@ -389,9 +423,6 @@ async fn failed_or_untrusted_cleanup_reports_retire_the_vm_without_in_place_repl
     let valid_json = serde_json::to_vec(&report).unwrap();
     let mut wrong_filesystem = report.clone();
     wrong_filesystem.filesystem = DiskCleanupFilesystem::Rootfs;
-    let mut unchanged_capacity = report.clone();
-    unchanged_capacity.available_bytes_before = report.available_bytes_after;
-    unchanged_capacity.available_inodes_before = report.available_inodes_after;
     let mut insufficient_inodes = report;
     insufficient_inodes.available_inodes_after = 127;
     let mut truncated_json = valid_json.clone();
@@ -404,11 +435,6 @@ async fn failed_or_untrusted_cleanup_reports_retire_the_vm_without_in_place_repl
             "wrong filesystem",
             0,
             serde_json::to_vec(&wrong_filesystem).unwrap(),
-        ),
-        (
-            "no measured improvement",
-            0,
-            serde_json::to_vec(&unchanged_capacity).unwrap(),
         ),
         (
             "insufficient inodes",

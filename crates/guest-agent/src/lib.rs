@@ -170,16 +170,22 @@
 //! `guest-agent recover-disk-space home|rootfs` runs before ordinary environment
 //! initialization and emits one [`DiskCleanupReport`](guest_contracts::disk_cleanup::DiskCleanupReport)
 //! JSON line. It needs no API credentials, protocol stdin or writable bootstrap
-//! file. Exit 0 means the fixed cache cleanup completed; exit 1 means inspection,
+//! file. Exit 0 means the fixed cleanup completed; exit 1 means inspection,
 //! containment or cleanup failed; exit 2 means the fixed selector is invalid.
 //! A successful helper does not itself establish enough space for startup.
 //!
-//! [`disk_cleanup`] owns the fixed package-cache allowlists and preserves their
-//! roots, installed tools, session state and ordinary work. The helper reuses the
-//! sole-supervised-workload proof and fd-relative mount/symlink protections.
-//! Deletion may be partial on error. Runner retires prefetch before cleanup and
+//! [`disk_cleanup`] owns the fixed disposable-path allowlists. Rootfs recovery
+//! also discards `/tmp` contents, including leftovers from earlier runs, while
+//! preserving the directory itself. Persistent state outside the selected paths
+//! remains untouched. The helper reuses the sole-supervised-workload proof and
+//! fd-relative mount/symlink protections.
+//! Candidates share a two-second cooperative deletion budget. Capacity is checked
+//! in bounded batches; sufficient space or budget exhaustion stops deletion
+//! normally, and optional candidate errors are skipped. A blocked kernel call
+//! still needs the existing outer operation timeout. Deletion may be partial.
+//! Runner retires prefetch before cleanup and
 //! retries only acknowledged ENOSPC failures from deterministic bootstrap-file
-//! replacement, once, after measured improvement leaves the retry reserve. It
+//! replacement, once, when current measured capacity meets the retry reserve. It
 //! never replays process start or user execution. This is guest filesystem
 //! recovery; host/cache-image GC has separate ownership.
 //! Idle and terminal reuse preparation also invoke the same home-cache deletion

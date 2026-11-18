@@ -9,6 +9,9 @@
 //! Recursive removal copies one bounded `getdents64` chunk at a time from the
 //! live directory descriptor. A continuing cursor avoids rescanning removed
 //! slots, and full passes restart from offset zero until one removes nothing.
+//! Optional reclamation can stop cooperatively between filesystem operations;
+//! it retains immediate-child progress on error and leaves unfinished directories
+//! linked. Mandatory cleanup retains its complete-or-error behavior.
 //! Callers still own business error handling. This module owns the no-follow
 //! filesystem primitives and bounded recursive removal needed by those callers.
 
@@ -65,6 +68,18 @@ impl FileIdentity {
 
 #[cfg(target_os = "linux")]
 pub(crate) struct Dir(File);
+
+#[cfg(target_os = "linux")]
+pub(crate) struct RemovalOutcome {
+    pub(crate) removed_entries: u64,
+    pub(crate) error: Option<io::Error>,
+}
+
+#[cfg(target_os = "linux")]
+struct RemovalPolicy<'a> {
+    filesystem: FileIdentity,
+    protected: &'a [FileIdentity],
+}
 
 #[cfg(target_os = "linux")]
 impl Dir {
@@ -197,68 +212,108 @@ impl Dir {
         filesystem: FileIdentity,
         protected: &[FileIdentity],
     ) -> io::Result<u64> {
+        let outcome =
+            self.remove_children_except_while(excluded_names, filesystem, protected, &mut || {
+                Ok(true)
+            });
+        match outcome.error {
+            Some(error) => Err(error),
+            None => Ok(outcome.removed_entries),
+        }
+    }
+
+    /// Stop cooperatively without unlinking an unfinished directory. Progress
+    /// counts immediate children even if a later entry or stop check fails.
+    pub(crate) fn remove_children_except_while(
+        &self,
+        excluded_names: &[OsString],
+        filesystem: FileIdentity,
+        protected: &[FileIdentity],
+        keep_going: &mut impl FnMut() -> io::Result<bool>,
+    ) -> RemovalOutcome {
         let mut raw_dir_buffer = [MaybeUninit::<u8>::uninit(); REMOVE_RAW_DIR_BUFFER_BYTES];
-        self.remove_children(
-            excluded_names,
+        let mut removed_entries = 0;
+        let policy = RemovalPolicy {
             filesystem,
             protected,
+        };
+        let mut stopped = false;
+        let mut continue_removal = || {
+            if stopped {
+                return Ok(false);
+            }
+            let proceed = keep_going()?;
+            stopped = !proceed;
+            Ok(proceed)
+        };
+        let result = self.remove_children(
+            excluded_names,
+            &policy,
             0,
             &mut raw_dir_buffer,
-        )
+            &mut removed_entries,
+            &mut continue_removal,
+        );
+        RemovalOutcome {
+            removed_entries,
+            error: result.err(),
+        }
     }
 
     fn remove_children(
         &self,
         excluded_names: &[OsString],
-        filesystem: FileIdentity,
-        protected: &[FileIdentity],
+        policy: &RemovalPolicy<'_>,
         depth: usize,
         raw_dir_buffer: &mut [MaybeUninit<u8>],
-    ) -> io::Result<u64> {
-        let mut removed = 0u64;
+        removed: &mut u64,
+        keep_going: &mut impl FnMut() -> io::Result<bool>,
+    ) -> io::Result<()> {
         loop {
+            if !keep_going()? {
+                return Ok(());
+            }
             rustix::fs::seek(&self.0, SeekFrom::Start(0))?;
-            let removed_in_pass = self.remove_children_pass(
+            let before = *removed;
+            self.remove_children_pass(
                 excluded_names,
-                filesystem,
-                protected,
+                policy,
                 depth,
                 raw_dir_buffer,
+                removed,
+                keep_going,
             )?;
-            if removed_in_pass == 0 {
-                return Ok(removed);
+            if *removed == before {
+                return Ok(());
             }
-            removed = removed.saturating_add(removed_in_pass);
         }
     }
 
     fn remove_children_pass(
         &self,
         excluded_names: &[OsString],
-        filesystem: FileIdentity,
-        protected: &[FileIdentity],
+        policy: &RemovalPolicy<'_>,
         depth: usize,
         raw_dir_buffer: &mut [MaybeUninit<u8>],
-    ) -> io::Result<u64> {
-        let mut removed = 0u64;
-        while let Some(names) = self.read_child_chunk(excluded_names, raw_dir_buffer)? {
-            removed = removed.saturating_add(self.remove_child_chunk(
-                names,
-                filesystem,
-                protected,
-                depth,
-                raw_dir_buffer,
-            )?);
+        removed: &mut u64,
+        keep_going: &mut impl FnMut() -> io::Result<bool>,
+    ) -> io::Result<()> {
+        while let Some(names) = self.read_child_chunk(excluded_names, raw_dir_buffer, keep_going)? {
+            self.remove_child_chunk(names, policy, depth, raw_dir_buffer, removed, keep_going)?;
         }
-        Ok(removed)
+        Ok(())
     }
 
     fn read_child_chunk(
         &self,
         excluded_names: &[OsString],
         raw_dir_buffer: &mut [MaybeUninit<u8>],
+        keep_going: &mut impl FnMut() -> io::Result<bool>,
     ) -> io::Result<Option<Vec<OsString>>> {
         loop {
+            if !keep_going()? {
+                return Ok(None);
+            }
             let (mut names, reached_end) = {
                 let mut entries = RawDir::new(&self.0, raw_dir_buffer);
                 let mut names = Vec::new();
@@ -305,13 +360,16 @@ impl Dir {
     fn remove_child_chunk(
         &self,
         names: Vec<OsString>,
-        filesystem: FileIdentity,
-        protected: &[FileIdentity],
+        policy: &RemovalPolicy<'_>,
         depth: usize,
         raw_dir_buffer: &mut [MaybeUninit<u8>],
-    ) -> io::Result<u64> {
-        let mut removed = 0u64;
+        removed: &mut u64,
+        keep_going: &mut impl FnMut() -> io::Result<bool>,
+    ) -> io::Result<()> {
         for name in names {
+            if !keep_going()? {
+                return Ok(());
+            }
             match self.open_child_dir(&name) {
                 Ok(child) => {
                     let child_depth = depth
@@ -324,22 +382,27 @@ impl Dir {
                             )
                         })?;
                     let identity = child.identity()?;
-                    identity.ensure_same_mount(filesystem)?;
-                    if protected.contains(&identity) {
+                    identity.ensure_same_mount(policy.filesystem)?;
+                    if policy.protected.contains(&identity) {
                         return Err(io::Error::new(
                             io::ErrorKind::PermissionDenied,
                             "refusing to remove a protected runtime directory",
                         ));
                     }
+                    let mut removed_children = 0;
                     child.remove_children(
                         &[],
-                        filesystem,
-                        protected,
+                        policy,
                         child_depth,
                         raw_dir_buffer,
+                        &mut removed_children,
+                        keep_going,
                     )?;
+                    if !keep_going()? {
+                        return Ok(());
+                    }
                     if unlink_child_if_present(&self.0, &name, libc::AT_REMOVEDIR)? {
-                        removed = removed.saturating_add(1);
+                        *removed = removed.saturating_add(1);
                     }
                 }
                 Err(error)
@@ -348,15 +411,18 @@ impl Dir {
                         Some(libc::ENOTDIR) | Some(libc::ELOOP)
                     ) =>
                 {
+                    if !keep_going()? {
+                        return Ok(());
+                    }
                     if unlink_child_if_present(&self.0, &name, 0)? {
-                        removed = removed.saturating_add(1);
+                        *removed = removed.saturating_add(1);
                     }
                 }
                 Err(error) if error.raw_os_error() == Some(libc::ENOENT) => {}
                 Err(error) => return Err(error),
             }
         }
-        Ok(removed)
+        Ok(())
     }
 }
 
