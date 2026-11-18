@@ -4828,6 +4828,7 @@ dependencies = [
  "async-trait",
  "guest-contracts",
  "libc",
+ "nix 0.32.0",
  "serde",
  "serde_json",
  "thiserror",

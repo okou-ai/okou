@@ -13,6 +13,9 @@ tokio = { workspace = true, features = ["io-util", "rt", "sync", "time"] }
 tokio-util = { workspace = true, features = ["rt"] }
 uuid = { workspace = true, features = ["serde", "std", "v4"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+nix = { workspace = true, features = ["fs"] }
+
 [dev-dependencies]
 serde_json = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["macros", "rt"] }
