@@ -1,5 +1,5 @@
 diff --git a/dist/core/agent-session.d.ts b/dist/core/agent-session.d.ts
-index 8b6a58430eea2cbb463e2b51773a8bc6e4914505..b11e0afd91c798dfbc2b32573da5f9a667c65078 100644
+index 8b6a58430eea2cbb463e2b51773a8bc6e4914505..834a80a90e8d0be7fe9bf2727d71ddcb9621745b 100644
 --- a/dist/core/agent-session.d.ts
 +++ b/dist/core/agent-session.d.ts
 @@ -227,6 +227,7 @@ export declare class AgentSession {
@@ -29,7 +29,7 @@ index 8b6a58430eea2cbb463e2b51773a8bc6e4914505..b11e0afd91c798dfbc2b32573da5f9a6
       * Queue a steering message while the agent is running.
       * Delivered after the current assistant turn finishes executing its tool calls,
 diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
-index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..c30af9f572cb8318a5658f53412acbdde1e5e67a 100644
+index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..fc8661da8e62ee6259eca5b9e37013aa9b11ca88 100644
 --- a/dist/core/agent-session.js
 +++ b/dist/core/agent-session.js
 @@ -112,6 +112,8 @@ export class AgentSession {
@@ -261,7 +261,18 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..c30af9f572cb8318a5658f53412acbdd
      }
      /** Replace a queued user message's images in place with normalized ones, appending hints to its text. */
      async _normalizeQueuedMessageImages(message) {
-@@ -2083,10 +2150,10 @@ export class AgentSession {
+@@ -2074,6 +2141,10 @@ export class AgentSession {
+         if (this._isAgentRunActive) {
+             this._agentRunAbortRequested = true;
+         }
++        else if (this._inputContext) {
++            // A prompt may still be awaiting input/auth before native startup.
++            this._inputContext = { signal: this.agent.abortSignal };
++        }
+         this.abortRetry();
+         this.abortCompaction();
+         this.abortBranchSummary();
+@@ -2083,10 +2154,10 @@ export class AgentSession {
          await this.waitForIdle();
      }
      async waitForIdle() {
@@ -275,7 +286,7 @@ index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..c30af9f572cb8318a5658f53412acbdd
      }
      // =========================================================================
      // Model Management
-@@ -2488,6 +2555,11 @@ export class AgentSession {
+@@ -2488,6 +2559,11 @@ export class AgentSession {
          const settings = this.settingsManager.getCompactionSettings(this.model);
          if (!settings.enabled)
              return false;
@@ -849,6 +860,21 @@ index b2671b8e69be943b5c2918a972082eac84b38948..65d1b28a4edb8ece89f3f93f21272be7
      if (event.type !== "message_update") {
          return event;
      }
+diff --git a/dist/modes/rpc/rpc-mode.js b/dist/modes/rpc/rpc-mode.js
+index 070fda087c367d4e125a0c968cc263c32b5346fa..2c154184dcbe44a8915bb4005f381e15e825be3d 100644
+--- a/dist/modes/rpc/rpc-mode.js
++++ b/dist/modes/rpc/rpc-mode.js
+@@ -307,6 +307,10 @@ export async function runRpcMode(runtimeHost) {
+     // Handle a single command
+     const handleCommand = async (command) => {
+         const id = command.id;
++        // Guest queue commands belong to the current run, not a future prompt.
++        if ((command.type === "steer" || command.type === "follow_up") && !session.isStreaming) {
++            return error(id, command.type, "No active agent run (idle or settling); send a new prompt.");
++        }
+         switch (command.type) {
+             // =================================================================
+             // Prompting
 diff --git a/dist/utils/child-process.d.ts b/dist/utils/child-process.d.ts
 index c75b42d9d43a0ef9000277b4ef5426443eab9a3e..a554d3e4ef12363dc903f366abb0143d68d7c950 100644
 --- a/dist/utils/child-process.d.ts

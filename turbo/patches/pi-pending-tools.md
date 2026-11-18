@@ -27,17 +27,24 @@ also fails, propagate the error and release the native owner in `finally`.
 
 Ordinary `agent_settled` retains upstream's final notification-only semantics:
 handlers observe idle/no native signal, and requested prompts or custom turns
-are deferred until notification dispatch finishes. Input preparation captures a
+are deferred until notification dispatch finishes. RPC `steer` and `follow_up`
+require an active session run at admission: a bounded Guest cannot transfer an
+input into an idle queue awaiting a future prompt. This also closes the transport
+window where Pi has settled but Guest has not read its terminal event yet. Direct
+SDK interactive queuing while idle retains upstream's next-prompt behavior.
+Input preparation captures a
 session-phase context bound to the native run's signal. Steering, follow-ups and
 streaming prompts that still need native work validate that same context after
 input extensions, and a new prompt validates it again after asynchronous preflight.
-An extension that handles an input retains its `handled` acknowledgement. A completed or replaced
-run cannot accept an old operation, including after notifications have finished
+An extension that handles an input retains its `handled` acknowledgement. A
+completed or replaced run cannot accept an old operation, including after notifications have finished
 or another prompt has begun. The native signal also fences the gap between native
 cleanup and session notification dispatch. Preparation establishes a new context
 before native startup; notification completion renews idle admission, and disposal
-invalidates it. Stale commands fail instead of acknowledging input stranded in an
-unowned queue. This does not wait for arbitrary input extensions or add background
+invalidates it. An abort before native startup replaces the idle context so an
+awaiting input/auth preflight cannot start work after cancellation acknowledges.
+The session remains reusable for a fresh prompt. Stale commands fail instead of
+acknowledging input stranded in an unowned queue. This does not wait for arbitrary input extensions or add background
 work to cancellation or run completion. Existing pending-tool callers retain
 their separate legacy preparation/commit callbacks; those semantics must not be
 imposed on ordinary prompts. Accepted cancelled input may follow the aborted
@@ -48,9 +55,11 @@ RPC children, provider-boundary MSW and IPC barriers. Its transcript includes
 the initial tool-call assistant; the shared Guest JSON fixtures cover the
 terminal suffix only. Delayed-input regressions span full completion, a subsequent
 prompt's preparation and its active native owner, through all four RPC input
-forms. The explicit Pi RPC step in `test-other` gates this file
+forms, and cancellation while the initial input preflight is held. The explicit
+Pi RPC step in `test-other` gates this file
 alongside `prompt-settlement-failure.test.ts`, which covers terminal failure and
-queue-persistence errors through the public SDK. Neither adds the entire runtime
+queue-persistence errors plus SDK idle-queue compatibility through the public SDK.
+Neither adds the entire runtime
 suite. The subprocess kill deadline and
 Guest's ten-second abort deadline remain unchanged.
 

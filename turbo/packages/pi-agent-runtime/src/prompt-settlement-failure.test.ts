@@ -154,3 +154,33 @@ describe("ordinary prompt settlement failures", () => {
     expect(failures).toBe(2);
   });
 });
+
+describe("interactive input ownership", () => {
+  it("retains SDK idle queuing for the next prompt independently of bounded RPC admission", async () => {
+    const { session } = await fixture();
+    expect(await session.steer("queued interactive input")).toBe("queued");
+    await session.prompt("fresh prompt");
+    expect(session.pendingMessageCount).toBe(0);
+    const file = session.sessionFile;
+    if (!file) throw new Error("Expected a persisted session");
+    const messages = SessionManager.open(file).buildSessionContext().messages;
+    const users = messages.filter((message) => {
+      return message.role === "user";
+    });
+    expect(users).toHaveLength(2);
+    expect(users).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          content: [{ type: "text", text: "fresh prompt" }],
+        }),
+        expect.objectContaining({
+          content: [{ type: "text", text: "queued interactive input" }],
+        }),
+      ]),
+    );
+    expect(messages.at(-1)).toMatchObject({
+      role: "assistant",
+      stopReason: "stop",
+    });
+  });
+});

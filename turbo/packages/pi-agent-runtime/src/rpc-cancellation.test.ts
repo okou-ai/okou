@@ -529,6 +529,70 @@ function assertSettlement(
 }
 
 describe("official sandbox RPC cancellation", () => {
+  it("rejects new RPC queue commands after settlement instead of orphaning them before the next prompt", async () => {
+    const rpc = await rpcFixture("wire-input-idle");
+    rpc.send({ id: "startup", type: "prompt", message: "initial prompt" });
+    expect(await rpc.response("startup")).toMatchObject({ success: true });
+    await rpc.notification("tool-start");
+    rpc.child.send("release-tool");
+    await rpc.settled();
+    for (const type of ["steer", "follow_up"]) {
+      rpc.send({ id: "late", type, message: "input for the completed run" });
+      expect(await rpc.response("late")).toMatchObject({ success: false });
+    }
+    rpc.send({ id: "next", type: "prompt", message: "fresh prompt" });
+    expect(await rpc.response("next")).toMatchObject({ success: true });
+    await rpc.settled();
+    const memory = await rpc.reopen();
+    expect(
+      memory
+        .buildSessionContext()
+        .messages.filter((message) => {
+          return message.role === "user";
+        })
+        .map((message) => {
+          return message.content;
+        }),
+    ).toEqual([
+      [{ type: "text", text: "initial prompt" }],
+      [{ type: "text", text: "fresh prompt" }],
+    ]);
+  }, 30_000);
+
+  it("cancels input preflight before native startup and accepts a fresh prompt afterward", async () => {
+    const rpc = await rpcFixture("wire-input-preflight");
+    rpc.send({
+      id: "startup",
+      type: "prompt",
+      message: "delayed input across completion",
+    });
+    await rpc.notification("input-held");
+    rpc.send({ id: "abort", type: "abort" });
+    expect(await rpc.response("abort")).toMatchObject({ success: true });
+    rpc.child.send("release-delayed-input");
+    expect(await rpc.response("startup")).toMatchObject({ success: false });
+
+    rpc.send({ id: "next", type: "prompt", message: "fresh prompt" });
+    expect(await rpc.response("next")).toMatchObject({ success: true });
+    await rpc.notification("tool-start");
+    rpc.child.send("release-tool");
+    await rpc.settled();
+    const memory = await rpc.reopen();
+    expect(
+      memory
+        .buildSessionContext()
+        .messages.filter((message) => {
+          return message.role === "user";
+        })
+        .map((message) => {
+          return message.content;
+        }),
+    ).toEqual([[{ type: "text", text: "fresh prompt" }]]);
+    expect(assistantEnds(rpc.records).at(-1)).toMatchObject({
+      message: { stopReason: "stop" },
+    });
+  }, 30_000);
+
   it("accepts an asynchronous input across preparation into the same native run", async () => {
     const rpc = await rpcFixture("wire-input-starting");
     rpc.send({ id: "startup", type: "prompt", message: "initial prompt" });
