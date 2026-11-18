@@ -182,20 +182,10 @@ case "${1:-} ${2:-}" in
     if [[ "$2" == *event=workflow_dispatch* ]]; then
       if [ "${MOCK_IOS_LOOKUP_FAILURE:-false}" = true ]; then exit 1; fi
       printf '[{"workflow_runs":%s}]\n' "${MOCK_EXISTING_IOS_RUNS:-[]}"
-    elif [ "${MOCK_MAIN_IOS_PROOF:-false}" = true ] && [[ "$2" == *"head_sha=${MOCK_MAIN_HEAD}"* ]]; then
-      printf '{"workflow_runs":[{"id":123,"run_attempt":1,"head_sha":"%s","event":"merge_group","path":".github/workflows/ios.yml","head_branch":"gh-readonly-queue/main/pr-1","conclusion":"success","html_url":"https://github.com/okou-ai/okou/actions/runs/123"}]}\n' "$MOCK_MAIN_HEAD"
     else
-      printf '{"workflow_runs":[]}\n'
+      echo "unexpected iOS workflow lookup: $2" >&2
+      exit 1
     fi
-    ;;
-  "api repos/okou-ai/okou/commits"*)
-    printf '[{"sha":"%s"}]\n' "$MOCK_MAIN_HEAD"
-    ;;
-  "api repos/okou-ai/okou/actions/runs/123/attempts/1/jobs"*)
-    printf '[{"jobs":[{"name":"build-test","conclusion":"success","steps":[{"name":"Build app and run isolated simulator tests","conclusion":"success"}]},{"name":"test-packages","conclusion":"success","steps":[{"name":"Run isolated Swift package tests","conclusion":"success"}]}]}]\n'
-    ;;
-  "api repos/okou-ai/okou/actions/runs/123/attempts/1")
-    printf '{"head_sha":"%s","event":"merge_group","path":".github/workflows/ios.yml","head_branch":"gh-readonly-queue/main/pr-1"}\n' "$MOCK_MAIN_HEAD"
     ;;
   "api repos/okou-ai/okou/check-runs")
     printf '%s\n' "$*" >>"$MOCK_GH_LOG"
@@ -292,7 +282,7 @@ for gate in ci-gate-turbo ci-gate-crates ci-gate-security ci-gate-ios; do
     fail "the valid fast path should pass ${gate}"
 done
 
-for ios_input in ios/Okou/App/OkouApp.swift .github/workflows/ios.yml .github/scripts/checks/changed-base-ref.sh $'ios/line\nbreak.swift'; do
+for ios_input in ios/Okou/App/OkouApp.swift .github/workflows/ios.yml .github/actions/detect-release/action.yml .github/scripts/checks/changed-base-ref.sh $'ios/line\nbreak.swift'; do
   git -C "$SEED" switch -q --detach "$VALID_HEAD"
   mkdir -p "${SEED}/$(dirname "$ios_input")"
   if [[ "$ios_input" == *.yml ]]; then
@@ -357,17 +347,13 @@ git -C "$SEED" commit -qm "release ios metadata"
 IOS_METADATA_HEAD=$(git -C "$SEED" rev-parse HEAD)
 git -C "$SEED" push -q origin HEAD:refs/heads/ios-metadata
 : >"$GH_LOG"
-metadata_output=$(MOCK_MAIN_IOS_PROOF=true run_gates "$IOS_METADATA_HEAD" 2>&1) || {
+metadata_output=$(run_gates "$IOS_METADATA_HEAD" 2>&1) || {
   echo "$metadata_output" >&2
   fail "verified release metadata should retain the native fast path"
 }
-grep -Eq 'name=ci-gate-ios .*conclusion=success' "$GH_LOG" || fail "verified metadata should reuse main tests"
-assert_contains "$(cat "$GH_LOG")" "Release metadata verified against main tests"
+grep -Eq 'name=ci-gate-ios .*conclusion=success' "$GH_LOG" || fail "verified metadata should receive an explicit exemption"
+assert_contains "$(cat "$GH_LOG")" "Release metadata validated"
 if grep -Fq 'workflow run' "$GH_LOG"; then fail "verified metadata dispatched native validation"; fi
-
-: >"$GH_LOG"
-run_gates "$IOS_METADATA_HEAD" >/dev/null 2>&1
-grep -Fq 'workflow run ios.yml' "$GH_LOG" || fail "missing main evidence must retain native validation"
 
 for state in in_progress queued success failure cancelled action_required; do
   status=completed
@@ -376,7 +362,7 @@ for state in in_progress queued success failure cancelled action_required; do
   runs=$(jq -nc --arg head "$IOS_METADATA_HEAD" --arg status "$status" --arg conclusion "$conclusion" \
     '[{head_sha:$head,head_branch:"release-valid",status:$status,conclusion:(if $conclusion == "null" then null else $conclusion end),created_at:"2026-11-04T00:00:00Z",html_url:"https://github.com/okou-ai/okou/actions/runs/456"}]')
   : >"$GH_LOG"
-  if MOCK_MAIN_IOS_PROOF=true MOCK_EXISTING_IOS_RUNS="$runs" run_gates "$IOS_METADATA_HEAD" >/dev/null 2>&1; then
+  if MOCK_EXISTING_IOS_RUNS="$runs" run_gates "$IOS_METADATA_HEAD" >/dev/null 2>&1; then
     case "$state" in failure | cancelled | action_required) fail "nonpassing existing validation was accepted" ;; esac
   else
     case "$state" in in_progress | queued | success) fail "existing validation should be retained" ;; esac
@@ -391,13 +377,13 @@ runs=$(jq -nc --arg head "$IOS_METADATA_HEAD" '[
   {id:456,head_sha:$head,head_branch:"release-valid",status:"completed",conclusion:"failure",created_at:"2026-11-04T00:00:00Z",html_url:"https://github.com/okou-ai/okou/actions/runs/456"},
   {id:455,head_sha:$head,head_branch:"release-valid",status:"completed",conclusion:"success",created_at:"2026-11-04T00:00:00Z",html_url:"https://github.com/okou-ai/okou/actions/runs/455"}
 ]')
-if MOCK_EXISTING_IOS_RUNS="$runs" MOCK_MAIN_IOS_PROOF=true run_gates "$IOS_METADATA_HEAD" >/dev/null 2>&1; then
+if MOCK_EXISTING_IOS_RUNS="$runs" run_gates "$IOS_METADATA_HEAD" >/dev/null 2>&1; then
   fail "an older success must not conceal newer failed validation"
 fi
 grep -Eq 'name=ci-gate-ios .*conclusion=failure' "$GH_LOG" || fail "latest validation failure was not retained"
 
 : >"$GH_LOG"
-MOCK_LIVE_HEAD="$VALID_HEAD" MOCK_MAIN_IOS_PROOF=true run_gates "$IOS_METADATA_HEAD" >/dev/null 2>&1
+MOCK_LIVE_HEAD="$VALID_HEAD" run_gates "$IOS_METADATA_HEAD" >/dev/null 2>&1
 [ ! -s "$GH_LOG" ] || fail "a superseded head must not schedule validation or publish checks"
 : >"$GH_LOG"
 if MOCK_IOS_LOOKUP_FAILURE=true run_gates "$IOS_METADATA_HEAD" >/dev/null 2>&1; then fail "an API failure must not be treated as absent validation"; fi

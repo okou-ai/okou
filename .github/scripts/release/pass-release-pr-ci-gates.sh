@@ -75,7 +75,7 @@ git -C "$REPO_ROOT" diff --no-renames --name-only -z "$PR_MERGE_BASE" "$PR_HEAD"
 native_needed=false
 while IFS= read -r -d '' changed_file; do
   case "$changed_file" in
-    ios/* | .github/workflows/ios.yml | .github/workflows/ios-build-cache.yml | .github/actions/setup-ios-build-cache/* | .github/workflows/ios-archive-proof.yml | .github/workflows/release-please.yml | .github/scripts/checks/changed-base-ref.sh | release-please-config.json) native_needed=true ;;
+    ios/* | .github/workflows/ios.yml | .github/workflows/ios-build-cache.yml | .github/actions/setup-ios-build-cache/* | .github/actions/detect-release/* | .github/workflows/ios-archive-proof.yml | .github/workflows/release-please.yml | .github/scripts/checks/changed-base-ref.sh | release-please-config.json) native_needed=true ;;
   esac
 done <"$CHANGED_FILES_FILE"
 git -C "$REPO_ROOT" worktree add --detach "$RELEASE_WORKTREE" "$PR_HEAD"
@@ -108,8 +108,8 @@ if [ "$(jq -er .headRefOid <<<"$current_pr")" != "$PR_HEAD" ]; then
   exit 0
 fi
 
-# Bot updates do not trigger pull_request CI. Metadata can reuse actual tests
-# from a main ancestor; other changes retain native validation on this head.
+# Bot updates do not trigger pull_request CI. Release metadata needs no repeated
+# native tests; other changes retain validation on this head.
 if [ "$native_needed" = true ]; then
   release_branch=$(jq -er '.headRefName | select(type == "string" and length > 0)' <<<"$PR_JSON")
   runs=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ios.yml/runs?head_sha=${PR_HEAD}&event=workflow_dispatch&per_page=100" --paginate --slurp)
@@ -126,10 +126,9 @@ if [ "$native_needed" = true ]; then
     fi
     echo "Retaining existing iOS validation for $PR_HEAD: $run_url"
   else
-    decision=$(cd "$RELEASE_WORKTREE" && python3 "$PROMOTION" release-pr-tests --base "$PR_BASE")
-    if [ "$(jq -er '.reuse | if type == "boolean" then tostring else error("missing reuse decision") end' <<<"$decision")" = true ]; then
-      evidence_url=$(jq -er .runUrl <<<"$decision")
-      create_gate_check ci-gate-ios success "Release metadata verified against main tests" "Native test inputs match successful main validation: ${evidence_url}. The merge queue still verifies its actual toolchain and version-specific archive."
+    decision=$(cd "$RELEASE_WORKTREE" && python3 "$PROMOTION" release-only --base "$PR_MERGE_BASE")
+    if [ "$decision" = true ]; then
+      create_gate_check ci-gate-ios success "Release metadata validated" "Only release metadata changed from main ancestor ${PR_MERGE_BASE}. The merge queue still builds and verifies the version-specific archive."
     else
       current_pr=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json headRefOid)
       if [ "$(jq -er .headRefOid <<<"$current_pr")" != "$PR_HEAD" ]; then

@@ -106,9 +106,10 @@ required for the final archive.
   numbers. The workflow fails rather than guessing if existing build numbers use
   another scheme or reach 9999.
 - Release PR updates made with `GITHUB_TOKEN` do not trigger `pull_request` CI.
-  When iOS inputs change, the release refresh explicitly dispatches the real iOS
-  workflow on the release branch. It does not manufacture a passing iOS check.
-  Merge-group validation continues to run normally.
+  Release refresh validates the whole diff and explicitly exempts recognized
+  release metadata from repeated native tests. Other iOS input changes dispatch
+  the real iOS workflow. The release merge group still builds and verifies the
+  exact version's canonical archive before its gate can pass.
 - Upload completion is not publication completion. The job waits up to 30 minutes
   for the exact app/version/build to finish processing, assigns it only to the
   configured internal group, and reads back both group membership and the
@@ -149,10 +150,12 @@ required for the final archive.
 ## Archive promotion
 
 [Archive promotion](ARCHIVE_PROMOTION.md) defines the exact input fingerprints,
-prior-test evidence, immutable shared artifact storage/readiness, and release-target
-mapping. Ordinary merge groups run simulator tests and build unsigned Release
-archives. Release-only groups omit tests only with verified, matching prior
-merge-group evidence; missing evidence or mixed groups run full tests. The
+test evidence or release exemptions, immutable shared artifact storage/readiness,
+and release-target mapping. Ordinary merge groups run simulator tests and build unsigned Release
+archives. Release-please groups skip repeated tests and retain unsigned archive
+construction and publication. Their explicit exemption is verified against the
+builder's exact GitHub run attempt during production consumption. Other groups
+retain full tests or verified metadata-only App test reuse. The
 production job requires `release-testflight.sh --archive <unsigned.xcarchive>`.
 Its export-only `--verify-archive` mode remains available and never uploads.
 

@@ -87,6 +87,22 @@ ios_path = sys.argv[1].replace('release-please.yml', 'ios.yml')
 ios = json.loads(subprocess.check_output(['yq', '-o=json', '.', ios_path], text=True))
 assert 'publish-archive' in ios['jobs']['ci-gate-ios']['needs']
 assert ios['jobs']['ci-gate-ios']['if'] == 'always()'
+def evaluate_job(name, event, needed, released='false', results=None):
+    values = {
+        'github.event_name': event,
+        'needs.detect.outputs.needed': needed,
+        'needs.detect-release.outputs.skip': released,
+    }
+    values.update({f'needs.{job}.result': 'success' for job in ios['jobs']})
+    if results:
+        values.update({f'needs.{job}.result': result for job, result in results.items()})
+    expression = ios['jobs'][name]['if']
+    import re
+    expression = re.sub(r'(?:needs|github)\.[\w.-]+', lambda m: repr(values[m[0]]), expression)
+    expression = expression.replace('always()', 'True').replace('!cancelled()', 'True')
+    expression = expression.replace('&&', 'and').replace('||', 'or')
+    return bool(eval('(' + expression + ')', {'__builtins__': {}}, {}))
+
 for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
     for needed in ['true', 'false']:
         for name, expected in [
@@ -98,10 +114,17 @@ for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
             ('build-archive', needed == 'true' and event == 'merge_group'),
             ('publish-archive', needed == 'true' and event == 'merge_group'),
         ]:
-            condition = ios['jobs'][name]['if']
-            expression = (condition.replace('needs.detect.outputs.needed', repr(needed))
-                .replace('github.event_name', repr(event)).replace('&&', 'and'))
-            assert eval(expression, {'__builtins__': {}}, {}) is expected
+            assert evaluate_job(name, event, needed) is expected, name
+        for name in ['swiftlint', 'prepare-package-sources', 'test-packages', 'build-test', 'build-preview']:
+            assert evaluate_job(name, event, needed, 'true') is False, name
+        skipped = {job: 'skipped' for job in ['script-checks', 'swiftlint', 'test-packages', 'build-test']}
+        assert evaluate_job('publish-archive', event, needed, 'true', skipped) is (event == 'merge_group' and needed == 'true')
+        assert evaluate_job('build-archive', event, needed, 'true') is (event == 'merge_group' and needed == 'true')
+for job in ['detect-release', 'detect', 'build-archive']:
+    for result in ['failure', 'cancelled', 'skipped']:
+        skipped = {name: 'skipped' for name in ['script-checks', 'swiftlint', 'test-packages', 'build-test']}
+        assert not evaluate_job('publish-archive', 'merge_group', 'true', 'true', skipped | {job: result})
+
 for name in ['swiftlint', 'prepare-package-sources', 'test-packages', 'build-test', 'build-preview', 'build-archive', 'publish-archive']:
     assert 'environment' not in ios['jobs'][name]
     assert 'IOS_DISTRIBUTION' not in json.dumps(ios['jobs'][name])
@@ -130,9 +153,9 @@ for event in ['merge_group', 'pull_request', 'workflow_dispatch']:
 test_job = ios['jobs']['build-test']
 archive_job = ios['jobs']['build-archive']
 package_job = ios['jobs']['test-packages']
-assert test_job['needs'] == ['detect', 'prepare-package-sources']
-assert ios['jobs']['prepare-package-sources']['needs'] == 'detect'
-assert archive_job['needs'] == package_job['needs'] == 'detect'
+assert test_job['needs'] == ['detect', 'detect-release', 'prepare-package-sources']
+assert ios['jobs']['prepare-package-sources']['needs'] == ['detect', 'detect-release']
+assert archive_job['needs'] == package_job['needs'] == ['detect', 'detect-release']
 source_upload = next(step for step in ios['jobs']['prepare-package-sources']['steps'] if step.get('uses', '').startswith('actions/upload-artifact'))['with']
 source_download = next(step for step in native if step.get('uses', '').startswith('actions/download-artifact'))['with']
 for upload_attempt, download_attempt in [(1, 1), (1, 2), (2, 2)]:
@@ -157,7 +180,7 @@ for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
         expected = event == 'workflow_dispatch' and enabled
         assert evaluate(sampling) == ('true' if expected else 'false')
         assert evaluate(upload['if']) is expected
-assert ios['jobs']['publish-archive']['needs'] == ['detect', 'script-checks', 'swiftlint', 'test-packages', 'build-test', 'build-archive']
+assert ios['jobs']['publish-archive']['needs'] == ['detect', 'detect-release', 'script-checks', 'swiftlint', 'test-packages', 'build-test', 'build-archive']
 assert 'script-checks' in ios['jobs']['ci-gate-ios']['needs']
 assert 'swiftlint' in ios['jobs']['ci-gate-ios']['needs']
 assert 'test-packages' in ios['jobs']['ci-gate-ios']['needs']

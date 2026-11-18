@@ -13,7 +13,6 @@ import subprocess
 import tarfile
 import time
 import tomllib
-import urllib.parse
 from pathlib import Path, PurePosixPath
 
 INPUT_PATHS = (
@@ -21,6 +20,7 @@ INPUT_PATHS = (
     ".github/workflows/ios.yml",
     ".github/workflows/ios-build-cache.yml",
     ".github/actions/setup-ios-build-cache",
+    ".github/actions/detect-release",
     ".github/workflows/ios-archive-proof.yml",
     ".github/workflows/release-please.yml",
     ".github/scripts/checks/changed-base-ref.sh",
@@ -35,8 +35,10 @@ VERSION_LINE = re.compile(
 TEST_STEP = "Build app and run isolated simulator tests"
 PACKAGE_STEP = "Run isolated Swift package tests"
 ARCHIVE_STEP = "Build unsigned device Release archive"
+RELEASE_STEP = "Record release-please validation exemption"
 NATIVE_JOBS = {
     ARCHIVE_STEP: "build-archive",
+    RELEASE_STEP: "build-archive",
     TEST_STEP: "build-test",
     PACKAGE_STEP: "test-packages",
 }
@@ -236,111 +238,6 @@ def release_only(base):
     return True
 
 
-def main_input_commits(base):
-    seen = set()
-    for path in INPUT_PATHS:
-        query = urllib.parse.urlencode(
-            {"sha": base, "path": path, "per_page": 32 if path == "ios" else 1}
-        )
-        commits = json.loads(
-            command(
-                "gh", "api", f"repos/{os.environ['GITHUB_REPOSITORY']}/commits?{query}"
-            )
-        )
-        for commit in commits:
-            sha = commit["sha"]
-            if sha not in seen:
-                seen.add(sha)
-                ensure_commit(sha)
-                yield sha
-
-
-def release_pr_tests(base):
-    """Verify prior main tests for release metadata without claiming a new SDK run.
-
-    The merge group still validates its actual toolchain before reusing tests.
-    Search bounded input-changing ancestors, not unrelated main commits.
-    """
-    base = command("git", "merge-base", base, "HEAD")
-    if not release_only(base):
-        return {"reuse": False}
-    target = inputs("HEAD", {})["testInputSha256"]
-    repository = os.environ["GITHUB_REPOSITORY"]
-    for sha in main_input_commits(base):
-        if not git_bytes("ls-tree", sha, "--", "ios/version.txt"):
-            continue
-        unchanged = subprocess.run(
-            [
-                "git",
-                "diff",
-                "--quiet",
-                "--no-ext-diff",
-                "--no-textconv",
-                "--no-renames",
-                sha,
-                "HEAD",
-                "--",
-                *INPUT_PATHS,
-                ":(exclude)ios/CHANGELOG.md",
-                ":(exclude)ios/version.txt",
-                ":(exclude)ios/Config/Shared.xcconfig",
-            ],
-            check=False,
-        )
-        if unchanged.returncode == 1:
-            continue
-        unchanged.check_returncode()
-        if inputs(sha, {})["testInputSha256"] != target:
-            continue
-        runs = json.loads(
-            command(
-                "gh",
-                "api",
-                f"repos/{repository}/actions/workflows/ios.yml/runs"
-                f"?head_sha={sha}&event=merge_group&status=success&per_page=100",
-            )
-        )["workflow_runs"]
-        for run in runs:
-            if (
-                run["head_sha"] != sha
-                or run["event"] != "merge_group"
-                or run["path"] != ".github/workflows/ios.yml"
-                or not run["head_branch"].startswith("gh-readonly-queue/main/")
-                or run["conclusion"] != "success"
-            ):
-                continue
-            record = {
-                "repository": repository,
-                "commitSha": sha,
-                "runId": run["id"],
-                "runAttempt": run["run_attempt"],
-            }
-            route = (
-                f"repos/{repository}/actions/runs/{run['id']}"
-                f"/attempts/{run['run_attempt']}"
-            )
-            # A successful release-only builder can itself have reused App tests.
-            # Keep searching for an ancestor that actually executed both suites.
-            jobs = github_jobs(route, NATIVE_JOBS[TEST_STEP])
-            if any(
-                job["conclusion"] == "skipped"
-                or any(
-                    step["name"] == TEST_STEP and step["conclusion"] == "skipped"
-                    for step in job.get("steps", [])
-                )
-                for job in jobs
-            ):
-                continue
-            github_record(record, TEST_STEP)
-            github_record(record, PACKAGE_STEP)
-            return {
-                "reuse": True,
-                "commitSha": sha,
-                "runUrl": f"{run['html_url']}/attempts/{run['run_attempt']}",
-            }
-    return {"reuse": False}
-
-
 class Store:
     def __init__(self):
         self.bucket = os.environ["R2_BUCKET_NAME"]
@@ -470,12 +367,17 @@ def github_record(record, required_step):
 
 def verify_evidence(evidence, target):
     if (
-        evidence["version"] != 1
+        evidence["version"] not in (1, 2)
         or evidence["testInputSha256"] != target["testInputSha256"]
     ):
         raise ValueError("Test evidence does not match these inputs")
-    github_record(evidence, TEST_STEP)
-    github_record(evidence, PACKAGE_STEP)
+    if evidence["version"] == 2:
+        if evidence["kind"] != "release-please":
+            raise ValueError("Unknown release validation kind")
+        github_record(evidence, RELEASE_STEP)
+    else:
+        github_record(evidence, TEST_STEP)
+        github_record(evidence, PACKAGE_STEP)
     actual = inputs(evidence["commitSha"], target["toolchain"])
     if (
         evidence["toolchain"] != target["toolchain"]
@@ -518,14 +420,9 @@ def resolve_tests(work):
 
 def publish(work):
     target = read_json(work / "inputs.json")
-    if read_json(work / "test-inputs.json") != target:
-        raise ValueError("Native archive and simulator inputs differ")
-    if read_json(work / "package-inputs.json") != target:
-        raise ValueError("Native archive and package test inputs differ")
     if os.environ["GITHUB_EVENT_NAME"] != "merge_group":
         raise ValueError("Only main merge groups can publish canonical archives")
     record = provenance()
-    github_record(record, PACKAGE_STEP)
     if inputs(record["commitSha"], target["toolchain"]) != target:
         raise ValueError("Builder inputs changed")
     github_record(record, ARCHIVE_STEP)
@@ -533,25 +430,42 @@ def publish(work):
     if archive_checksum != file_digest(work / "archive.tar.gz"):
         raise ValueError("Archive transfer checksum mismatch")
     store = Store()
-    evidence_file = work / "test-evidence.json"
-    ran_tests = os.environ["IOS_RAN_TESTS"]
-    if ran_tests not in ("true", "false"):
-        raise ValueError("Expected an explicit simulator test decision")
-    if ran_tests == "false" and not release_only(os.environ["MERGE_GROUP_BASE_SHA"]):
-        raise ValueError("Mixed merge groups must run simulator tests")
-    if ran_tests == "true":
+    is_release = os.environ["IS_RELEASE"]
+    if is_release == "true":
         evidence = record | {
+            "version": 2,
+            "kind": "release-please",
             "testInputSha256": target["testInputSha256"],
             "toolchain": target["toolchain"],
         }
         verify_evidence(evidence, target)
-        write_json(evidence_file, evidence)
-        key = f"okou-ios/tests/{target['testInputSha256']}/evidence.json"
-        if not store.put(key, evidence_file):
-            evidence = required_object(store, key, evidence_file)
+    elif is_release == "false":
+        if read_json(work / "test-inputs.json") != target:
+            raise ValueError("Native archive and simulator inputs differ")
+        if read_json(work / "package-inputs.json") != target:
+            raise ValueError("Native archive and package test inputs differ")
+        github_record(record, PACKAGE_STEP)
+        evidence_file = work / "test-evidence.json"
+        ran_tests = os.environ["IOS_RAN_TESTS"]
+        if ran_tests not in ("true", "false"):
+            raise ValueError("Expected an explicit simulator test decision")
+        if ran_tests == "false" and not release_only(os.environ["MERGE_GROUP_BASE_SHA"]):
+            raise ValueError("Mixed merge groups must run simulator tests")
+        if ran_tests == "true":
+            evidence = record | {
+                "testInputSha256": target["testInputSha256"],
+                "toolchain": target["toolchain"],
+            }
+            verify_evidence(evidence, target)
+            write_json(evidence_file, evidence)
+            key = f"okou-ios/tests/{target['testInputSha256']}/evidence.json"
+            if not store.put(key, evidence_file):
+                evidence = required_object(store, key, evidence_file)
+        else:
+            evidence = read_json(evidence_file)
+        verify_evidence(evidence, target)
     else:
-        evidence = read_json(evidence_file)
-    verify_evidence(evidence, target)
+        raise ValueError("Expected an explicit release classification")
     prefix = (
         f"okou-ios/archives/{target['archiveInputSha256']}/{record['commitSha']}/"
         f"{record['runId']}/{record['runAttempt']}"
@@ -704,8 +618,6 @@ def main():
     capture.add_argument("--output", required=True, type=Path)
     release = sub.add_parser("release-only")
     release.add_argument("--base", required=True)
-    release_pr = sub.add_parser("release-pr-tests")
-    release_pr.add_argument("--base", required=True)
     for operation in ("resolve-tests", "publish", "consume"):
         part = sub.add_parser(operation)
         part.add_argument("work", type=Path)
@@ -723,8 +635,6 @@ def main():
         write_json(args.output, inputs("HEAD", read_json(args.toolchain)))
     elif args.operation == "release-only":
         print(str(release_only(args.base)).lower())
-    elif args.operation == "release-pr-tests":
-        print(json.dumps(release_pr_tests(args.base)))
     elif args.operation == "resolve-tests":
         resolve_tests(args.work)
     elif args.operation == "publish":

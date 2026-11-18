@@ -46,6 +46,13 @@ retained for one day. Non-PR validation does not upload GitHub Actions artifacts
 canonical R2 artifacts and signed release ZIP/DMG publication follow the release
 process below.
 
+The shared `detect-release` action exempts release-please PRs, merge groups, and
+main pushes from repeated native tests and preview packaging. If the Desktop
+version changes in a merge group, `deploy-desktop` still builds and verifies the
+canonical app and matching dSYMs and publishes immutable readiness. It skips only
+the repeated native tests within that job. Production still consumes those exact
+artifacts for signing, notarization, publication, and symbol verification.
+
 ### Error diagnostics
 
 Host heartbeat failures upload a correlated episode to the Desktop Sentry project.

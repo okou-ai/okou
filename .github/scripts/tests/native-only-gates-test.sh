@@ -36,6 +36,7 @@ def context(ios=True, ts=False, event='pull_request', release=False):
         'github.repository': 'test/repo',
         'github.event.pull_request.head.repo.full_name': 'test/repo',
         'needs.detect-release.outputs.skip': str(release).lower(),
+        'needs.detect-release.outputs.lookup-failed': '',
         'needs.detect-turbo-ts-checks.outputs.ios-only': str(ios).lower(),
         'needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed': str(ts).lower(),
         'needs.detect-native-only.outputs.ios-only': str(ios).lower(),
@@ -77,6 +78,15 @@ def gate(jobs, name, values, expected):
         + result.stdout + result.stderr)
 
 native = context()
+fallback = context(ios=False, ts=True, event='merge_group') | {
+    'needs.detect-release.outputs.lookup-failed': 'true',
+}
+assert condition(turbo['validate-release-presence'], fallback)
+assert condition(turbo['test-api'], fallback)
+gate(turbo, 'ci-gate-turbo', fallback, True)
+for result in ['failure', 'cancelled', 'skipped']:
+    gate(turbo, 'ci-gate-turbo', fallback | {'needs.validate-release-presence.result': result}, False)
+
 for event in ['pull_request', 'merge_group', 'push']:
     selected = context(ios=False, ts=True, event=event)
     assert not condition(turbo['cli-e2e-01-serial'], selected, cancelled=True), \

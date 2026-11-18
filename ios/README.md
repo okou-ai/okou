@@ -344,8 +344,12 @@ above, `bash ios/scripts/test-lint.sh`, and
 ## CI
 
 `.github/workflows/ios.yml` runs on pull requests, merge groups, pushes to main,
-and manual dispatch. Lightweight Linux jobs detect changes and test CI contracts
-on every run. Native jobs start after change detection while script checks run
+and manual dispatch. The shared `detect-release` action exempts release-please PRs,
+merge groups, and main pushes from repeated script, lint, package, simulator, and
+preview checks. Release merge groups still build and publish the exact version's
+unsigned archive, and the required gate waits for publication. Ordinary runs use
+lightweight Linux jobs to detect changes and test CI contracts.
+Native jobs start after change detection while script checks run
 in parallel; archive publication and the required gate both require those checks.
 An independent Linux SwiftLint job runs for selected iOS changes on PRs, merge
 groups, main pushes and manual dispatch. Both `ci-gate-ios` and archive
@@ -374,7 +378,7 @@ simulator suite. Both package and App results are required by the gate. App
 build/tests retain a 30-minute limit; package tests and device archive builds
 retain 15-minute limits. Measure the complete required workflow when assessing
 performance.
-Release-only merge groups can reuse App test evidence only when exact input fingerprints match
+Other metadata-only merge groups can reuse App test evidence only when exact input fingerprints match
 the verified prior result; missing evidence and mixed groups run the tests.
 See [archive promotion](ARCHIVE_PROMOTION.md).
 
