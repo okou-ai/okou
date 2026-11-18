@@ -3485,6 +3485,9 @@ pub mod webhooks {
                 /// The sandbox home filesystem ran out of free blocks or inodes.
                 #[serde(rename = "guest_home_filesystem_full")]
                 GuestHomeFilesystemFull,
+                /// The sandbox OOM killer terminated the agent runtime.
+                #[serde(rename = "guest_memory_oom_killed")]
+                GuestMemoryOomKilled,
                 /// The run reached its execution time limit.
                 #[serde(rename = "execution_timeout")]
                 ExecutionTimeout,
@@ -3536,7 +3539,7 @@ pub mod webhooks {
                 /// Local firewall authentication resolution failed.
                 #[serde(rename = "firewall_auth_failed")]
                 FirewallAuthFailed,
-                /// Codex returned an opaque HTTP 400 with no more specific cause.
+                /// Codex reported a bad request without a more specific cause.
                 #[serde(rename = "provider_bad_request")]
                 ProviderBadRequest,
                 /// The response connection was lost.

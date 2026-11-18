@@ -333,7 +333,26 @@ fn codex_error_failure_reason(error: Option<&Value>) -> Option<FailureReason> {
     {
         return Some(FailureReason::UnsupportedModel);
     }
+    if is_codex_bad_request(error) {
+        return Some(FailureReason::ProviderBadRequest);
+    }
     None
+}
+
+fn is_codex_bad_request(error: &Value) -> bool {
+    // InvalidRequest preserves this complete upstream body but exposes only
+    // native `other`. Classify the selected rejection without inventing its
+    // HTTP status or interpreting arbitrary prose/additional details.
+    if error.get("codex_error_info").and_then(Value::as_str) != Some("other") {
+        return false;
+    }
+    let Some(message) = error.get("message").and_then(Value::as_str) else {
+        return false;
+    };
+    let Ok(Value::Object(body)) = serde_json::from_str::<Value>(message) else {
+        return false;
+    };
+    body.len() == 1 && body.get("detail").and_then(Value::as_str) == Some("Bad Request")
 }
 
 fn is_codex_access_program_unavailable(error: &Value) -> bool {

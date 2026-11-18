@@ -1848,6 +1848,17 @@ async fn execute_inner_attributes_nested_codex_sigkill_only_with_main_domain_oom
             false,
         ),
         (
+            "Guest classified OOM before completion",
+            Some(&runtime),
+            Some(
+                native
+                    .clone()
+                    .with_failure_reason(FailureReason::GuestMemoryOomKilled),
+            ),
+            wrapper_exit,
+            true,
+        ),
+        (
             "timeout",
             Some(&kernel),
             Some(native.clone()),

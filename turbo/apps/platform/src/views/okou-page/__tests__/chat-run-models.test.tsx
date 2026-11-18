@@ -223,6 +223,10 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
     action: "Try again",
   },
   execution_timeout: { title: "Time limit reached", action: "Continue" },
+  guest_memory_oom_killed: {
+    title: "This run couldn't finish",
+    action: "Try again",
+  },
   insufficient_credits: {
     title: "Upgrade to Pro to run",
     action: "Upgrade to Pro",

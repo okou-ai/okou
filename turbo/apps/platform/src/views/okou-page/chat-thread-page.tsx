@@ -4748,6 +4748,7 @@ function hasAssistantRecoveryModelPicker(
     (recovery.kind === "provider-retryable" &&
       recovery.failureReason !== "guest_root_filesystem_full" &&
       recovery.failureReason !== "guest_home_filesystem_full" &&
+      recovery.failureReason !== "guest_memory_oom_killed" &&
       recovery.failureReason !== "codex_access_program_unavailable")
   );
 }
@@ -5056,6 +5057,11 @@ const STRUCTURED_FAILURE_TITLES = Object.freeze({
   },
   guest_root_filesystem_full: filesystemFullTitle,
   guest_home_filesystem_full: filesystemFullTitle,
+  guest_memory_oom_killed: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.genericTitle;
+    });
+  },
   execution_timeout: () => {
     return i18n.t(($) => {
       return $.chat.errors.recovery.timeoutTitle;
@@ -5258,6 +5264,11 @@ const STRUCTURED_FAILURE_DESCRIPTIONS = Object.freeze({
   session_history_limit: FAILURE_DESCRIPTIONS.newChat,
   guest_root_filesystem_full: FAILURE_DESCRIPTIONS.filesystemFull,
   guest_home_filesystem_full: FAILURE_DESCRIPTIONS.filesystemFull,
+  guest_memory_oom_killed: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.runErrors.transient;
+    });
+  },
   execution_timeout: FAILURE_DESCRIPTIONS.timeout,
   insufficient_credits: () => {
     return "";

@@ -10632,6 +10632,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       describe("completion failure reasons", () => {
         const terminalFailureReasons = [
           "unknown",
+          "guest_memory_oom_killed",
+          "provider_bad_request",
           "provider_image_too_large",
           "insufficient_credits",
           "invalid_api_key",

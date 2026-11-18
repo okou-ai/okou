@@ -30,6 +30,10 @@ async fn codex_app_server_classifies_supported_structured_errors()
     let original_directory = std::env::current_dir()?;
     let cases = [
         StructuredErrorCase {
+            scenario: "runtime-turn-failed-bad-request",
+            expected_reason: Some(FailureReason::ProviderBadRequest),
+        },
+        StructuredErrorCase {
             scenario: "runtime-turn-failed-output-token-limit",
             expected_reason: Some(FailureReason::OutputTokenLimit),
         },

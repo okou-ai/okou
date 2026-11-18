@@ -564,6 +564,7 @@ describe("agent completion failure reasons", () => {
       "session_history_limit",
       "guest_root_filesystem_full",
       "guest_home_filesystem_full",
+      "guest_memory_oom_killed",
       "execution_timeout",
       "insufficient_credits",
       "provider_insufficient_credits",
