@@ -2,11 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import {
-  fauxAssistantMessage,
-  fauxToolCall,
-  Type,
-} from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import {
   createAgentSession,
   DefaultResourceLoader,
@@ -29,6 +25,7 @@ import {
   onTestFinished,
   vi,
 } from "vitest";
+import { Type } from "typebox";
 
 import { runInIsolatedProcess } from "../../../scripts/run-isolated-test.mjs";
 import { MemoryPiSession } from "./session-memory";
