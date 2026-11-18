@@ -30,7 +30,6 @@ export interface StorageVersionIndexEntry {
 export interface StorageIndexEntry {
   readonly storageId: string;
   readonly headVersionId: string | null;
-  readonly s3Prefix: string;
   readonly headVersion: StorageVersionIndexEntry | null;
   readonly exactVersions: ReadonlyMap<string, StorageVersionIndexEntry>;
   readonly cachedUrls?: ExecutionStorageCacheRows;
@@ -101,7 +100,6 @@ export function storageBaseIndexReadPlan(requests: readonly StorageRequest[]) {
       name: sql`${MEMORY_ARTIFACT_NAME}`.mapWith(memberMemories.userId),
       storageId: memberMemories.id,
       headVersionId: memberMemories.headVersionId,
-      s3Prefix: memberMemories.objectPrefix,
       headId: head.id,
       headS3Key: head.objectPrefix,
       headArchiveSize: head.archiveSize,
@@ -170,7 +168,6 @@ interface StorageBaseIndexRow {
   readonly name: string;
   readonly storageId: string;
   readonly headVersionId: string | null;
-  readonly s3Prefix: string;
   readonly headId: string | null;
   readonly headS3Key: string | null;
   readonly headArchiveSize: number | null;
@@ -214,7 +211,6 @@ export function storageBaseIndexFromRows(
     index.set(storageIndexKey(row.orgId, row.userId, row.name), {
       storageId: row.storageId,
       headVersionId: row.headVersionId,
-      s3Prefix: row.s3Prefix,
       headVersion:
         row.headId &&
         row.headS3Key &&

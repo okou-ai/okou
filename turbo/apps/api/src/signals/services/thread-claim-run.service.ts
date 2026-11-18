@@ -309,7 +309,8 @@ import {
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
 import { prepareRunAdmissionMetadata } from "./run-storage-manifest.service";
-import { createStorageSignals, type Storage } from "./thread-storage.signals";
+import { createStorageSignals } from "./thread-storage.signals";
+import type { AcceptedMemoryMount } from "./execution-storage.service";
 import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
 
 export interface ThreadClaim {
@@ -3154,7 +3155,11 @@ export function createThreadClaimRunObjects(
   // plan; storage runs alongside it and its failure matters only when the plan
   // is ready.
   const preparedStorage$ = computed(
-    async (get): Promise<Storage | CreateRunErrorResult | null> => {
+    async (
+      get,
+    ): Promise<
+      readonly AcceptedMemoryMount[] | CreateRunErrorResult | null
+    > => {
       if (!(await get(resourceAllowed$))) {
         return null;
       }
@@ -3282,7 +3287,10 @@ export function createThreadClaimRunObjects(
       }
       return {
         ...input,
-        runStorageMounts: preparedStorage.metadata.persistedStorageMounts,
+        memoryMounts: preparedStorage,
+        runStorageMounts: preparedStorage.map(({ mount }) => {
+          return mount;
+        }),
       };
     },
   );
@@ -4080,6 +4088,7 @@ interface PreparedRunnerLaunch {
   readonly reuseKey: string;
   readonly facts: Omit<AdmittedExecutionFacts, "connectorRuntimeTargets">;
   readonly runStorageMounts: readonly PersistedStorageMount[];
+  readonly memoryMounts: readonly AcceptedMemoryMount[];
   readonly connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[];
 }
 
@@ -4639,7 +4648,7 @@ function prepareRunnerLaunch(input: {
   readonly executionPackages: AdmittedExecutionFacts["executionPackages"];
   readonly okouToken: string;
   readonly disabledPaidTools: readonly PaidToolId[];
-}): Omit<PreparedRunnerLaunch, "runStorageMounts"> {
+}): Omit<PreparedRunnerLaunch, "runStorageMounts" | "memoryMounts"> {
   const { args } = input;
   const facts = {
     ...args.facts,
@@ -4992,7 +5001,6 @@ function admittedRunLaunch(
       prompt: rows.content.prompt,
       appendSystemPrompt: rows.content.appendSystemPrompt,
       vars: rows.content.vars,
-      storageMounts: args.launch.runStorageMounts,
       modelProvider: rows.modelSelection.modelProviderType,
       modelProviderId: metadata.modelProviderId,
       modelProviderAccountIdentity: admission.validatedAccountIdentity,
@@ -5006,6 +5014,7 @@ function admittedRunLaunch(
       reasoningEffort: metadata.reasoningEffort,
       codexServiceTier: metadata.codexServiceTier,
     },
+    memoryMounts: args.launch.memoryMounts,
     facts: {
       ...args.launch.facts,
       connectorRuntimeTargets:

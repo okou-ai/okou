@@ -9,18 +9,17 @@ import { now } from "../../lib/time";
 import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { storageVersionCacheKeySql } from "./execution-storage-cache-read.service";
+import type { AcceptedMemoryMount } from "./execution-storage.service";
 import { resolvePreparedPiModelConfig } from "./pi-sandbox-config";
 import {
   type AgentRunStorageInput,
   type AgentRunStoragePlan,
   type AgentRunStorageSelection,
-  finalizePreparedStorage,
-  type ResolvedAgentRunStorage,
+  finalizeMemoryMounts,
   prepareRequestStorageResolution,
   memoryArtifactsForRun,
   resolveStorageEntries,
   resolveStorageManifestInputs,
-  storageEntriesMetadata,
   storageIndexKey,
   storageIndexWithPrefixVersions,
   storagePrefixVersionRequests,
@@ -38,9 +37,6 @@ import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 function isThreadModelError(value: unknown): value is ThreadModelError {
   return typeof value === "object" && value !== null && "status" in value;
 }
-
-/** Exact accepted mount intent. Claim owns archive metadata and signed URLs. */
-export type Storage = ResolvedAgentRunStorage;
 
 /**
  * The Run's memory storage from its current Agent and model: resolved
@@ -332,7 +328,7 @@ function createStorageMetadataSignal(
   plan: ReturnType<typeof createStoragePlanSignals>,
 ) {
   const { plan$ } = plan;
-  return computed(async (get): Promise<Storage> => {
+  return computed(async (get): Promise<readonly AcceptedMemoryMount[]> => {
     const plan = await get(plan$);
     if (plan.missingArtifacts.length > 0) {
       throw new Error(
@@ -343,11 +339,6 @@ function createStorageMetadataSignal(
           .join(", ")}`,
       );
     }
-    const entries = storageEntriesMetadata(plan.requested);
-    const metadata = await finalizePreparedStorage({
-      entries,
-      timing: plan.requested.input.timing,
-    });
-    return { metadata, requested: plan.requested };
+    return await finalizeMemoryMounts(plan.requested);
   });
 }

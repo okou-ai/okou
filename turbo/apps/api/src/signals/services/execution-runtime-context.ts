@@ -4,13 +4,15 @@ import {
   type PreparedExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
 import type { agentRuns } from "@okouai/db/runtime/agent-run";
-import type { PersistedStorageMount } from "@okouai/db/types";
 import { computed, type Computed } from "ccstate";
 import { billableFirewallsForPermissions } from "./built-in-route-pricing";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { NATIVE_CONTEXT_RECOVERY_PROMPT } from "./chat-session-continuity.service";
 import { dataRouterEnvironment } from "./data-router-environment";
-import { createAcceptedExecutionStorageObjects } from "./execution-storage.service";
+import {
+  createAcceptedExecutionStorage,
+  type AcceptedMemoryMount,
+} from "./execution-storage.service";
 import { executionSkillRoot } from "./execution-workflow-selection";
 import type { ModelFirstPin } from "./model-selection.service";
 import {
@@ -23,7 +25,6 @@ import {
   mergeRunSkillVolumes,
   resolveRunSkillVolumes,
 } from "./run-prompt-and-skills";
-import { storedMountFromPrepared } from "./run-storage-manifest.service";
 import {
   DEFAULT_DISALLOWED_TOOLS,
   runPlatformEnvironment,
@@ -57,12 +58,12 @@ export type ExecutionContextRun = Pick<
   readonly chatThreadId: string;
   readonly framework: "claude-code" | "codex" | "pi";
   readonly vars: Record<string, string>;
-  readonly storageMounts: readonly PersistedStorageMount[];
 };
 
 type ExecutionInput = {
   readonly run: ExecutionContextRun;
   readonly facts: AdmittedExecutionFacts;
+  readonly memoryMounts: readonly AcceptedMemoryMount[];
 };
 
 type ExecutionInput$ = Computed<Promise<ExecutionInput>>;
@@ -97,7 +98,11 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
       return (await get(input$)).facts.modelProviderPermissions;
     }),
   );
-  const storage$ = createExecutionStorage(input$);
+  const storage$ = createAcceptedExecutionStorage(
+    computed(async (get) => {
+      return (await get(input$)).memoryMounts;
+    }),
+  );
   const packages$ = createExecutionPackages(input$, storage$);
   const platform$ = createExecutionPlatform(input$, model$, disabledTools$);
   const environment$ = createExecutionEnvironment(
@@ -115,41 +120,6 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
   return { prepared$, packageContext$: packages$ };
 }
 
-function createExecutionStorage(input$: ExecutionInput$) {
-  const mounts$ = computed(async (get) => {
-    return (await get(input$)).run.storageMounts;
-  });
-  const objects = createAcceptedExecutionStorageObjects(mounts$);
-  return computed(async (get) => {
-    const [mounts, prepared] = await Promise.all([
-      get(mounts$),
-      get(objects.preparedMounts$),
-    ]);
-    const byPath = new Map(
-      mounts.map((mount) => {
-        return [mount.mountPath, mount];
-      }),
-    );
-    return {
-      storageMounts: prepared.map((mount) => {
-        const accepted = byPath.get(mount.mountPath);
-        if (!accepted) {
-          throw new Error("Prepared Storage mount has no accepted identity");
-        }
-        return storedMountFromPrepared(
-          mount,
-          accepted.missingRootPolicy !== undefined,
-        );
-      }),
-      cacheWrites: prepared.flatMap((mount) => {
-        return "presignedUrlCacheWrite" in mount && mount.presignedUrlCacheWrite
-          ? [mount.presignedUrlCacheWrite]
-          : [];
-      }),
-    };
-  });
-}
-
 function createExecutionModel(input$: ExecutionInput$) {
   return computed(async (get) => {
     const { modelProvider } = (await get(input$)).facts;
@@ -162,7 +132,7 @@ function createExecutionModel(input$: ExecutionInput$) {
 
 function createExecutionPackages(
   input$: ExecutionInput$,
-  storage$: ReturnType<typeof createExecutionStorage>,
+  storage$: ReturnType<typeof createAcceptedExecutionStorage>,
 ) {
   return computed(async (get) => {
     const { run, facts } = await get(input$);
@@ -295,7 +265,7 @@ function createExecutionPreparedContext(
     readonly model$: ExecutionModel$;
     readonly packages$: ReturnType<typeof createExecutionPackages>;
     readonly environment$: ReturnType<typeof createExecutionEnvironment>;
-    readonly storage$: ReturnType<typeof createExecutionStorage>;
+    readonly storage$: ReturnType<typeof createAcceptedExecutionStorage>;
   },
 ) {
   return computed(async (get) => {
