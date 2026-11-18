@@ -238,7 +238,8 @@ final class WorkspaceChatActions {
       }
       threadFeedback = ChatThreadFeedback(
         threadID: id,
-        message: archived ? String(localized: "Chat archived") : String(localized: "Chat unarchived"),
+        message: archived
+          ? String(localized: "Chat archived") : String(localized: "Chat unarchived"),
         actionTitle: String(localized: "Undo"),
         actionHint: restore ? String(localized: "Restores the chat and returns to it.") : "",
         requiresNavigation: restore

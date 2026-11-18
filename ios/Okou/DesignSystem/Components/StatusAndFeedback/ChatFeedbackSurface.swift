@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// The one floating surface for chat feedback — a finished action ("Chat archived · Undo") or a
 /// sync failure with Retry — above the bottom bar: Liquid Glass, a 16 pt Lucide glyph (a
@@ -21,14 +22,10 @@ struct ChatFeedbackSurface: View {
   @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
   @Environment(\.scenePhase) private var scenePhase
   @GestureState private var dismissOffset: CGFloat = 0
-  @GestureState private var isDragging = false
-  @State private var isActionPressed = false
-  @State private var isDismissPressed = false
-
-  private var isInteracting: Bool { isDragging || isActionPressed || isDismissPressed }
+  @State private var isTouching = false
 
   private var canAutoDismiss: Bool {
-    autoDismissAfter != nil && !isInteracting && !voiceOver && scenePhase == .active
+    autoDismissAfter != nil && !isTouching && !voiceOver && scenePhase == .active
   }
 
   var body: some View {
@@ -59,10 +56,10 @@ struct ChatFeedbackSurface: View {
     .glassEffect(.regular, in: RoundedRectangle(cornerRadius: OkouRadius.card, style: .continuous))
     .contentShape(RoundedRectangle(cornerRadius: OkouRadius.card, style: .continuous))
     .offset(x: reduceMotion ? 0 : dismissOffset)
-    .animation(reduceMotion ? nil : OkouMotion.press, value: isDragging)
+    .animation(reduceMotion ? nil : OkouMotion.press, value: isTouching)
+    .simultaneousGesture(ChatFeedbackTouchObservation(isTouching: $isTouching))
     .simultaneousGesture(
       DragGesture(minimumDistance: OkouSpace.md)
-        .updating($isDragging) { _, dragging, _ in dragging = true }
         .updating($dismissOffset) { value, offset, _ in
           if abs(value.translation.width) > max(OkouSpace.md, abs(value.translation.height)) {
             offset = value.translation.width
@@ -78,6 +75,7 @@ struct ChatFeedbackSurface: View {
         }
     )
     // Only the visible feedback owns expiry; overlay handoff starts a fresh idle window.
+    .onDisappear { isTouching = false }
     .task(id: canAutoDismiss) {
       guard canAutoDismiss, let autoDismissAfter else { return }
       do {
@@ -119,7 +117,7 @@ struct ChatFeedbackSurface: View {
       .padding(.horizontal, OkouSpace.six)
       .frame(minWidth: OkouControl.minimumTarget, minHeight: OkouControl.minimumTarget)
       .contentShape(Rectangle())
-      .buttonStyle(ChatFeedbackButtonStyle(isPressed: $isActionPressed))
+      .buttonStyle(.plain)
       .disabled(!actionEnabled || isWorking)
       .accessibilityIdentifier(actionIdentifier)
       .accessibilityHint(Text(actionHint))
@@ -132,19 +130,61 @@ struct ChatFeedbackSurface: View {
         .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
         .contentShape(Rectangle())
     }
-    .buttonStyle(ChatFeedbackButtonStyle(isPressed: $isDismissPressed))
+    .buttonStyle(.plain)
     .accessibilityLabel("Dismiss feedback")
     .accessibilityIdentifier("dismiss-chat-feedback")
   }
 }
 
-private struct ChatFeedbackButtonStyle: ButtonStyle {
-  @Binding var isPressed: Bool
+/// Observe contact without recognizing a gesture or delaying native buttons and scrolling.
+private struct ChatFeedbackTouchObservation: UIGestureRecognizerRepresentable {
+  @Binding var isTouching: Bool
 
-  func makeBody(configuration: Configuration) -> some View {
-    configuration.label
-      .opacity(configuration.isPressed ? 0.5 : 1)
-      .onChange(of: configuration.isPressed) { _, pressed in isPressed = pressed }
-      .onDisappear { isPressed = false }
+  func makeUIGestureRecognizer(context: Context) -> TouchObserver {
+    let observer = TouchObserver()
+    observer.cancelsTouchesInView = false
+    observer.delaysTouchesBegan = false
+    observer.delaysTouchesEnded = false
+    observer.touchChanged = { isTouching = $0 }
+    return observer
+  }
+
+  func updateUIGestureRecognizer(_ recognizer: TouchObserver, context: Context) {
+    recognizer.touchChanged = { isTouching = $0 }
+  }
+
+  func handleUIGestureRecognizerAction(_ recognizer: TouchObserver, context: Context) {
+    // The observer stays possible until contact ends; it never recognizes an action.
+  }
+
+  final class TouchObserver: UIGestureRecognizer {
+    var touchChanged: (Bool) -> Void = { _ in }
+    private var contacts: Set<UITouch> = []
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+      contacts.formUnion(touches)
+      touchChanged(true)
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+      contacts.subtract(touches)
+      if contacts.isEmpty { state = .failed }
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+      state = .failed
+    }
+
+    override func reset() {
+      super.reset()
+      contacts.removeAll()
+      touchChanged(false)
+    }
+
+    override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+
+    override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool {
+      false
+    }
   }
 }

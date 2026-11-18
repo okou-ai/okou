@@ -441,7 +441,7 @@ single floating line, and colour is a small accent for status only.
   the 8 pt gap above the visible surface. A horizontal swipe in either direction dismisses
   it; the close button and VoiceOver escape do too. Do not use a vertical dismissal gesture
   near the bottom-edge system gestures. Finished-action feedback expires after six idle
-  seconds while visible, restarting after a button press, drag, presentation handoff, or
+  seconds while visible, restarting after touch interaction, presentation handoff, or
   foregrounding; it stays available while VoiceOver is enabled. Pending operations and
   errors do not expire.
   The scroll-to-bottom control stays above the feedback. A finished action
