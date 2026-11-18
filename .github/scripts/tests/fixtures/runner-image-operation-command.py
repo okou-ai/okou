@@ -259,31 +259,28 @@ def main():
         path.chmod(0o644)
         print(path)
         return 0
-    if arguments[:2] in (
-        ["mkdir", "-p"],
-        ["realpath", "-e"],
-        ["touch", "--no-dereference"],
+    if arguments[:2] == ["realpath", "-e"] or arguments[:4] in (
+        ["install", "-d", "-m", "755"],
+        ["install", "-m", "600", "/dev/null"],
     ):
-        if len(arguments) != 3:
+        if len(arguments) != (5 if arguments[0] == "install" else 3):
             raise RuntimeError("invalid fixture filesystem command")
-        path = Path(arguments[2])
+        path = Path(arguments[-1])
         if path.is_relative_to("/var/lib/vm0-runner/bin"):
             path = ROOT / str(path).lstrip("/")
         if not path.is_relative_to(ROOT / "var/lib/vm0-runner/bin"):
             raise RuntimeError("fixture filesystem command outside image namespace")
-        if arguments[0] == "mkdir":
-            path.mkdir(parents=True, exist_ok=True)
-        elif arguments[0] == "touch":
-            if path.exists() or path.is_symlink():
-                os.utime(path, follow_symlinks=False)
-            else:
-                path.touch()
-            if MODE == "claim-commit-loss" and not (ROOT / "claim-cut").exists():
-                (ROOT / "claim-resource-created").touch()
-                wait_for(lambda: (ROOT / "release-claim-resource").exists())
-        else:
-            print(path.resolve(strict=True))
-        return 0
+        # Keep coreutils creation/permission semantics real in this namespace.
+        status = subprocess.call([*arguments[:-1], str(path)])
+        if (
+            status == 0
+            and arguments[:4] == ["install", "-m", "600", "/dev/null"]
+            and MODE == "claim-commit-loss"
+            and not (ROOT / "claim-cut").exists()
+        ):
+            (ROOT / "claim-resource-created").touch()
+            wait_for(lambda: (ROOT / "release-claim-resource").exists())
+        return status
     if arguments[0].startswith("--preserve-env="):
         return runner(arguments[1:])
     if arguments[0] == "sha256sum":

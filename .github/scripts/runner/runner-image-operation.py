@@ -131,9 +131,9 @@ def claim_resource(namespace, owner):
     ).strip()
     with lifecycle(owner):
         directory = "/var/lib/vm0-runner/bin/" + namespace.name
-        system("mkdir", "-p", directory)
+        system("install", "-d", "-m", "755", directory)
         owner["resourceRoot"] = system("realpath", "-e", directory).strip()
-        system("touch", "--no-dereference", str(marker_for(owner)))
+        system("install", "-m", "600", "/dev/null", str(marker_for(owner)))
         require_resource(owner)
         owner["state"] = "ready"
         atomic_json(namespace / "owner.json", owner)
