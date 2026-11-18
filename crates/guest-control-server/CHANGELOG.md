@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.125](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.124...guest-control-server-v0.24.125) (2026-11-18)
+
+
+### Refactoring
+
+* **rust:** retain file borrows for descriptor ownership updates ([#48691](https://github.com/okou-ai/okou/issues/48691)) ([b0dbcc9](https://github.com/okou-ai/okou/commit/b0dbcc9eef885f193ae9b69f2db38f9807eaaed2))
+
 ## [0.24.124](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.123...guest-control-server-v0.24.124) (2026-11-18)
 
 ## [0.24.123](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.122...guest-control-server-v0.24.123) (2026-11-18)
