@@ -751,3 +751,15 @@ index 3078895..d67667b 100644
              return photonModule;
          }
          catch {
+diff --git a/dist/index.js b/dist/index.js
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -1,1 +1,2 @@
++export { toJsonEvent } from "./modes/json-event.js";
+ // Core session management
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -1,1 +1,2 @@
++export { toJsonEvent } from "./modes/json-event.js";
+ export { type Args, parseArgs } from "./cli/args.ts";

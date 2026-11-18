@@ -102,6 +102,29 @@ describe("Okou Harness base system prompt", () => {
     expect(prompt).not.toContain("Be concise in your responses");
   });
 
+  it.each(["parent", "child"] as const)(
+    "describes same-Run independent processes for the %s session",
+    (role) => {
+      const prompt = buildOkouHarnessSystemPrompt([BASH_TOOL], role);
+
+      expect(prompt).toContain("with no parent lifecycle");
+      expect(prompt).toContain(
+        "separately spawned subagents continue when the spawning agent stops or exits",
+      );
+      expect(prompt).toContain(
+        "any agent in this Run can stop any numeric subagent ID in the same Run",
+      );
+      expect(prompt).toContain(
+        "Killing it does not stop separately spawned subagents",
+      );
+      expect(prompt).toContain("are not reused within the same Run");
+      expect(prompt).toContain("Stdout and stderr go directly to files");
+      expect(prompt).toContain(
+        "directories are disposable and deleted best effort after completion or kill",
+      );
+    },
+  );
+
   it("leaves the working directory line to the official builder", () => {
     const prompt = buildOkouHarnessSystemPrompt([READ_TOOL]);
 

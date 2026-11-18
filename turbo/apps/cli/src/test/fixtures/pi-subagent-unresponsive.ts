@@ -20,8 +20,6 @@ const tool = spawn(
 );
 tool.once("message", () => {
   console.log(JSON.stringify({ toolPid: tool.pid }));
-  process.send?.({ type: "ready" });
-  process.disconnect?.();
 });
 process.stdin.resume();
 setInterval(() => {}, 1000);

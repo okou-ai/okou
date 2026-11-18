@@ -32,54 +32,42 @@ fn only_proven_retired_handles_have_idempotent_stop() {
         );
     }
     let retired = TaskHandle::generate();
-    tasks
-        .retired
-        .lock()
-        .unwrap()
-        .insert(retired.clone(), PathBuf::from("/retired"));
+    tasks.retired.lock().unwrap().insert(retired.clone());
     tasks
         .stop(&retired, ProcessContainmentCleanupMode::Graceful)
         .unwrap();
 }
 
 #[test]
-fn admission_requires_every_ancestor_to_be_active() {
+fn admission_is_scoped_to_the_calling_task() {
     let tasks = ManagedTasks::new(1000, PathBuf::from("/runtime"), PathBuf::from("/tools"));
-    let parent = TaskHandle::generate();
-    let child = TaskHandle::generate();
+    let caller = TaskHandle::generate();
     let sibling = TaskHandle::generate();
-    for (handle, owner) in [
-        (&parent, None),
-        (&child, Some(parent.clone())),
-        (&sibling, None),
-    ] {
+    for handle in [&caller, &sibling] {
         tasks.scopes().unwrap().insert(
             handle.clone(),
             Arc::new(TaskScope {
                 path: PathBuf::from(format!("/tools/task-{}", handle.as_str())),
-                parent: owner,
-                pidfd: open_pidfd(std::process::id() as libc::pid_t)
-                    .unwrap()
-                    .unwrap(),
                 admitted: AtomicBool::new(true),
                 closing: AtomicBool::new(false),
                 admission: Mutex::new(()),
             }),
         );
     }
-    tasks.require_active_ancestors(&child).unwrap();
-    let scope = tasks.scopes().unwrap().get(&parent).cloned().unwrap();
+    tasks.require_active(&caller).unwrap();
+    let scope = tasks.scopes().unwrap().get(&caller).cloned().unwrap();
     scope.closing.store(true, Ordering::Release);
     assert_eq!(
-        tasks.require_active_ancestors(&child).unwrap_err().kind(),
+        tasks.require_active(&caller).unwrap_err().kind(),
         io::ErrorKind::PermissionDenied
     );
-    tasks.require_active_ancestors(&sibling).unwrap();
+    tasks.require_active(&sibling).unwrap();
     scope.closing.store(false, Ordering::Release);
     scope.admitted.store(false, Ordering::Release);
-    assert!(tasks.require_active_ancestors(&child).is_err());
-    tasks.scopes().unwrap().remove(&parent);
-    assert!(tasks.require_active_ancestors(&child).is_err());
+    assert!(tasks.require_active(&caller).is_err());
+    tasks.scopes().unwrap().remove(&caller);
+    assert!(tasks.require_active(&caller).is_err());
+    tasks.require_active(&sibling).unwrap();
 }
 
 #[test]
@@ -161,10 +149,6 @@ fn failed_cleanup_retains_a_closed_handle_and_is_never_a_successful_stop() {
     let handle = TaskHandle::generate();
     let scope = Arc::new(TaskScope {
         path: directory.path().to_path_buf(),
-        parent: None,
-        pidfd: open_pidfd(std::process::id() as libc::pid_t)
-            .unwrap()
-            .unwrap(),
         admitted: AtomicBool::new(true),
         closing: AtomicBool::new(false),
         admission: Mutex::new(()),
@@ -186,35 +170,6 @@ fn failed_cleanup_retains_a_closed_handle_and_is_never_a_successful_stop() {
             .stop(&handle, ProcessContainmentCleanupMode::Forced)
             .is_err()
     );
-}
-
-#[test]
-fn cancelled_reaper_leaves_tasks_to_bounded_outer_operation_cleanup() {
-    let tasks = ManagedTasks::new(1000, PathBuf::from("/runtime"), PathBuf::from("/tools"));
-    let mut child = std::process::Command::new("/bin/sh")
-        .args(["-c", "read marker"])
-        .stdin(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
-    let pidfd = open_pidfd(child.id() as libc::pid_t).unwrap().unwrap();
-    drop(child.stdin.take());
-    child.wait().unwrap();
-    let handle = TaskHandle::generate();
-    let scope = Arc::new(TaskScope {
-        path: PathBuf::from("/must-not-start-per-task-cleanup-after-cancel"),
-        parent: None,
-        pidfd,
-        admitted: AtomicBool::new(true),
-        closing: AtomicBool::new(false),
-        admission: Mutex::new(()),
-    });
-    tasks
-        .scopes()
-        .unwrap()
-        .insert(handle.clone(), Arc::clone(&scope));
-    tasks.reap_completed(&AtomicBool::new(true));
-    assert!(!scope.closing.load(Ordering::Acquire));
-    assert!(tasks.scopes().unwrap().contains_key(&handle));
 }
 
 #[test]

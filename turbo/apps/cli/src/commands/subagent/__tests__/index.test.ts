@@ -476,7 +476,7 @@ describe("okou subagent", () => {
     await expect(access(dirname(first.stdout))).rejects.toThrow();
   });
 
-  it("permits numeric ID reuse after cleanup without confusing IDs with OS PIDs", async () => {
+  it("keeps IDs unique within a Run after completed directories are removed", async () => {
     entry = fileURLToPath(
       new URL(
         "../../../test/fixtures/pi-subagent-responsive.ts",
@@ -490,7 +490,7 @@ describe("okou subagent", () => {
     const next = inspectionSchema.parse(
       JSON.parse((await run("start", "new task"))[0] ?? ""),
     );
-    expect(next.id).toBe(first.id);
+    expect(next.id).toBe("2");
     expect(next.pid).not.toBe(first.pid);
   });
 
@@ -507,12 +507,20 @@ describe("okou subagent", () => {
     await waitForRemoval(dirname(item.stdout));
   });
 
-  it("allows child Pi sessions to delegate and rejects non-Pi sessions", async () => {
+  it("lets child sessions start and kill by Run-wide ID without stopping other tasks", async () => {
+    const first = inspectionSchema.parse(
+      JSON.parse((await run("start", "first task"))[0] ?? ""),
+    );
     vi.stubEnv("OKOU_PI_SESSION_ROLE", "child");
     const child = inspectionSchema.parse(
-      JSON.parse((await run("start", "nested task"))[0] ?? ""),
+      JSON.parse((await run("start", "independent task"))[0] ?? ""),
     );
-    expect(child.running).toBe(true);
+    await run("kill", first.id);
+    expect(
+      inspectionSchema.parse(
+        JSON.parse((await run("inspect", child.id))[0] ?? ""),
+      ).running,
+    ).toBe(true);
     vi.stubEnv("OKOU_PI_SESSION_ROLE", "");
     await expect(run("list")).rejects.toThrow("Pi session");
   });
@@ -522,7 +530,6 @@ describe("okou subagent", () => {
     "invalid-handle",
     "missing-report",
     "oversized-report",
-    "readiness-failure",
     "publication-failure",
     "missing-helper",
   ])(
@@ -545,22 +552,6 @@ describe("okou subagent", () => {
       }
     },
   );
-
-  it("rejects invalid inherited configuration before reporting a successful start", async () => {
-    vi.stubEnv("OKOU_PI_MODEL_CONFIG", "invalid-json");
-    const exit = vi.spyOn(process, "exit").mockImplementation(() => {
-      throw new Error("command failed");
-    });
-    try {
-      await expect(run("start", "invalid inherited model")).rejects.toThrow(
-        "command failed",
-      );
-      expect((await run("list")).join("\n")).toContain("No running subagents");
-      await expect(access(join(root, "run-one", "1"))).rejects.toThrow();
-    } finally {
-      exit.mockRestore();
-    }
-  });
 
   it("retains the registry when Guest stop fails, then permits a successful retry", async () => {
     const item = inspectionSchema.parse(
@@ -586,50 +577,95 @@ describe("okou subagent", () => {
     await expect(access(dirname(item.stdout))).rejects.toThrow();
   });
 
-  it("retains diagnostic state if startup rollback cannot prove native cleanup", async () => {
-    helper.mode = "readiness-and-stop-failure";
-    const exit = vi.spyOn(process, "exit").mockImplementation(() => {
-      throw new Error("command failed");
+  it("writes bounded streaming JSONL through the real child loop and retains the final message", async () => {
+    const item = inspectionSchema.parse(
+      JSON.parse((await run("start", "stream a large response"))[0] ?? ""),
+    );
+    const request = await nextRequest();
+    // Hold a follow-up request open so completion does not dispose the logs
+    // before they can be inspected through the command's advertised path.
+    await run("steer", "-p", item.id, "wait for the log inspection");
+    await waitForFile(item.stdout, (text) => {
+      return Boolean(text?.includes("wait for the log inspection"));
     });
-    try {
-      await expect(run("start", "failed rollback")).rejects.toThrow(
-        "command failed",
-      );
-      expect(errorLog.mock.calls.flat().join("\n")).toContain(
-        "its directory was retained",
-      );
-      expect(
-        await readFile(join(root, "run-one", "1", "task"), "utf8"),
-      ).toContain('"handle"');
-    } finally {
-      exit.mockRestore();
+    request.response.writeHead(200, {
+      "content-type": "text/event-stream",
+    });
+    const delta = "large streamed content ".repeat(12);
+    const chunk = (content: string, finishReason: string | null = null) => {
+      return `data: ${JSON.stringify({
+        id: "large-stream",
+        object: "chat.completion.chunk",
+        created: 1,
+        model: "deepseek/deepseek-v4.1-flash",
+        choices: [
+          { index: 0, delta: { content }, finish_reason: finishReason },
+        ],
+      })}\n\n`;
+    };
+    for (let index = 0; index < 1000; index++) {
+      request.response.write(chunk(delta));
     }
-  });
-
-  it("preserves a replacement when an ID is reused during native stop", async () => {
-    entry = fileURLToPath(
-      new URL(
-        "../../../test/fixtures/pi-subagent-responsive.ts",
-        import.meta.url,
-      ),
-    );
-    const first = inspectionSchema.parse(
-      JSON.parse((await run("start", "original task"))[0] ?? ""),
-    );
-    const native = await readFile(join(dirname(first.stdout), "task"), "utf8");
-    helper.mode = "replace-on-stop";
-    await run("kill", first.id);
-    helper.mode = "normal";
-    const replacement = inspectionSchema.parse(
-      JSON.parse((await run("inspect", first.id))[0] ?? ""),
-    );
-    expect(replacement.pid).not.toBe(first.pid);
-    expect(replacement.running).toBe(true);
+    request.response.write(chunk("stream-inspection-boundary"));
+    await waitForFile(item.stdout, (text) => {
+      return Boolean(text?.includes("stream-inspection-boundary"));
+    });
+    const streaming = await readFile(item.stdout, "utf8");
+    // Native stringify would repeat two growing snapshots on each of 1000
+    // deltas, producing hundreds of MiB rather than this sub-MiB wire log.
+    expect(Buffer.byteLength(streaming)).toBeLessThan(1024 * 1024);
+    const updateSchema = object({
+      type: string(),
+      assistantMessageEvent: object({
+        type: string(),
+        delta: string().optional(),
+      })
+        .passthrough()
+        .optional(),
+    }).passthrough();
+    const updates = streaming
+      .trimEnd()
+      .split("\n")
+      .map((line) => {
+        return updateSchema.parse(JSON.parse(line));
+      })
+      .filter((event) => {
+        return event.type === "message_update";
+      });
     expect(
-      await readFile(join(dirname(first.stdout), "task"), "utf8"),
-    ).not.toBe(native);
-    await run("kill", replacement.id);
-    await expect(access(dirname(first.stdout))).rejects.toThrow();
+      updates.filter((event) => {
+        return event.assistantMessageEvent?.type === "text_delta";
+      }),
+    ).toHaveLength(1001);
+    for (const event of updates) {
+      expect(event).not.toHaveProperty("message");
+      expect(event.assistantMessageEvent).not.toHaveProperty("partial");
+    }
+    request.response.end(chunk("", "stop") + "data: [DONE]\n\n");
+    const followup = await nextRequest();
+    const completed = await readFile(item.stdout, "utf8");
+    expect(Buffer.byteLength(completed)).toBeLessThan(2 * 1024 * 1024);
+    const finalEvents: unknown[] = completed
+      .trimEnd()
+      .split("\n")
+      .map((line) => {
+        return JSON.parse(line);
+      });
+    expect(finalEvents).toContainEqual({
+      type: "message_end",
+      message: expect.objectContaining({
+        role: "assistant",
+        stopReason: "stop",
+        content: [
+          {
+            type: "text",
+            text: delta.repeat(1000) + "stream-inspection-boundary",
+          },
+        ],
+      }),
+    });
+    completion(followup.response, "inspection complete");
+    await waitForRemoval(dirname(item.stdout));
   });
 
   it("validates prompt exclusivity and path-safe IDs through Commander", async () => {
