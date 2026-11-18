@@ -2,17 +2,17 @@
 // Regenerate: cd turbo && pnpm -F @okouai/api-contracts generate:client
 
 import type {
-  feishuOfficialContract as OriginalFeishuOfficialContract,
-  feishuOfficialEventsContract as OriginalFeishuOfficialEventsContract,
-} from "../contracts/feishu-official";
+  larkOfficialContract as OriginalLarkOfficialContract,
+  larkOfficialEventsContract as OriginalLarkOfficialEventsContract,
+} from "../contracts/lark-official";
 import type { ClientDescriptor } from "./types";
 
-export const feishuOfficialContract: ClientDescriptor<
-  typeof OriginalFeishuOfficialContract
+export const larkOfficialContract: ClientDescriptor<
+  typeof OriginalLarkOfficialContract
 > = {
   getStatus: {
     method: "GET",
-    path: "/api/integrations/feishu/official",
+    path: "/api/integrations/lark/official",
     statuses: {
       200: true,
       401: true,
@@ -21,7 +21,7 @@ export const feishuOfficialContract: ClientDescriptor<
   },
   connect: {
     method: "POST",
-    path: "/api/integrations/feishu/official/connect",
+    path: "/api/integrations/lark/official/connect",
     statuses: {
       200: true,
       401: true,
@@ -32,7 +32,7 @@ export const feishuOfficialContract: ClientDescriptor<
   },
   disconnect: {
     method: "DELETE",
-    path: "/api/integrations/feishu/official/connect",
+    path: "/api/integrations/lark/official/connect",
     statuses: {
       200: true,
       401: true,
@@ -42,12 +42,12 @@ export const feishuOfficialContract: ClientDescriptor<
   },
 };
 
-export const feishuOfficialEventsContract: ClientDescriptor<
-  typeof OriginalFeishuOfficialEventsContract
+export const larkOfficialEventsContract: ClientDescriptor<
+  typeof OriginalLarkOfficialEventsContract
 > = {
   post: {
     method: "POST",
-    path: "/api/webhooks/feishu/official/events",
+    path: "/api/webhooks/lark/official/events",
     statuses: {
       200: true,
       400: true,

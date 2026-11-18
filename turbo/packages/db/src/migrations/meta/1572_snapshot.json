@@ -1,5 +1,5 @@
 {
-  "id": "d8f5f900-5163-44e4-90ca-1a4cae9051e7",
+  "id": "56ab27d7-7959-41ad-8806-5684269d3f9a",
   "prevId": "d2794cc1-1fbd-4a1e-88e2-c9ccd6ba4df8",
   "version": "7",
   "dialect": "postgresql",
@@ -15673,44 +15673,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.feishu_official_app_tickets": {
-      "name": "feishu_official_app_tickets",
-      "schema": "",
-      "columns": {
-        "app_id": {
-          "name": "app_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "encrypted_ticket": {
-          "name": "encrypted_ticket",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "event_timestamp": {
-          "name": "event_timestamp",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.feishu_org_connections": {
       "name": "feishu_org_connections",
       "schema": "",
@@ -16221,7 +16183,7 @@
       "checkConstraints": {
         "chk_feishu_installation_type": {
           "name": "chk_feishu_installation_type",
-          "value": "\"feishu_org_installations\".\"installation_type\" IN ('custom', 'official') AND (\"feishu_org_installations\".\"installation_type\" = 'custom' OR \"feishu_org_installations\".\"platform\" = 'feishu')"
+          "value": "\"feishu_org_installations\".\"installation_type\" IN ('custom', 'official') AND (\"feishu_org_installations\".\"installation_type\" = 'custom' OR \"feishu_org_installations\".\"platform\" = 'lark')"
         }
       },
       "isRLSEnabled": false
@@ -20049,6 +20011,44 @@
           "with": {}
         }
       },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.lark_official_app_tickets": {
+      "name": "lark_official_app_tickets",
+      "schema": "",
+      "columns": {
+        "app_id": {
+          "name": "app_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "encrypted_ticket": {
+          "name": "encrypted_ticket",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_timestamp": {
+          "name": "event_timestamp",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},

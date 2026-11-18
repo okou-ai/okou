@@ -62,7 +62,7 @@ const CONDITIONAL_CAPABILITIES = [
   ["suggestion:write", FeatureSwitchKey.AgentSuggestion],
   ["banking:read", FeatureSwitchKey.Banking],
   ["lark:write", FeatureSwitchKey.LarkIntegration],
-  ["feishu:read", FeatureSwitchKey.FeishuOfficialBot],
+  ["lark:read", FeatureSwitchKey.LarkOfficialBot],
   ["wechat:read", FeatureSwitchKey.WechatIntegration],
   ["wechat:write", FeatureSwitchKey.WechatIntegration],
   ["whatsapp:write", FeatureSwitchKey.WhatsappIntegration],
@@ -200,6 +200,12 @@ function isAgentCapabilityEnabled(
   capability: Capability,
   featureEnabled: FeatureEnabled,
 ): boolean {
+  if (
+    capability === "lark:write" &&
+    featureEnabled(FeatureSwitchKey.LarkOfficialBot)
+  ) {
+    return true;
+  }
   const featureSwitch = featureSwitchForCapability(
     CONDITIONAL_CAPABILITIES,
     capability,

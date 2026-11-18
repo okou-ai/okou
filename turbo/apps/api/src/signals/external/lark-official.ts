@@ -1,8 +1,8 @@
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
 import { number, object, string } from "zod";
-import { feishuOfficialAppTickets } from "@okouai/db/schema/feishu-official-app-ticket";
-import { feishuOfficialApp } from "../../lib/feishu-official-app";
+import { larkOfficialAppTickets } from "@okouai/db/schema/lark-official-app-ticket";
+import { larkOfficialApp } from "../../lib/lark-official-app";
 import { db$ } from "./db";
 import { decryptPersistentSecretValue } from "../services/crypto.utils";
 
@@ -16,22 +16,20 @@ const tenantTokenSchema = object({
   expire: number().positive().optional(),
 });
 
-export const fetchOfficialFeishuTenantToken$ = command(
+export const fetchOfficialLarkTenantToken$ = command(
   async ({ get }, tenantKey: string, signal: AbortSignal) => {
-    const config = feishuOfficialApp();
+    const config = larkOfficialApp();
     if (!config) {
-      throw new Error("Okou Official Feishu bot is not configured");
+      throw new Error("Okou Official Lark bot is not configured");
     }
     const [ticket] = await get(db$)
-      .select({ encryptedTicket: feishuOfficialAppTickets.encryptedTicket })
-      .from(feishuOfficialAppTickets)
-      .where(eq(feishuOfficialAppTickets.appId, config.appId))
+      .select({ encryptedTicket: larkOfficialAppTickets.encryptedTicket })
+      .from(larkOfficialAppTickets)
+      .where(eq(larkOfficialAppTickets.appId, config.appId))
       .limit(1);
     signal.throwIfAborted();
     if (!ticket) {
-      throw new Error(
-        "Okou Official Feishu bot has not received an app_ticket",
-      );
+      throw new Error("Okou Official Lark bot has not received an app_ticket");
     }
     const appTicket = await decryptPersistentSecretValue(
       ticket.encryptedTicket,
@@ -39,7 +37,7 @@ export const fetchOfficialFeishuTenantToken$ = command(
     );
     signal.throwIfAborted();
     const appResponse = await fetch(
-      "https://open.feishu.cn/open-apis/auth/v3/app_access_token",
+      "https://open.larksuite.com/open-apis/auth/v3/app_access_token",
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -52,14 +50,14 @@ export const fetchOfficialFeishuTenantToken$ = command(
       },
     );
     if (!appResponse.ok) {
-      throw new Error("Official Feishu app token request failed");
+      throw new Error("Official Lark app token request failed");
     }
     const appToken = appTokenSchema.parse(await appResponse.json());
     if (appToken.code !== 0 || !appToken.app_access_token) {
-      throw new Error(`Official Feishu app token rejected (${appToken.code})`);
+      throw new Error(`Official Lark app token rejected (${appToken.code})`);
     }
     const response = await fetch(
-      "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token",
+      "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token",
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -71,11 +69,11 @@ export const fetchOfficialFeishuTenantToken$ = command(
       },
     );
     if (!response.ok) {
-      throw new Error("Official Feishu tenant token request failed");
+      throw new Error("Official Lark tenant token request failed");
     }
     const token = tenantTokenSchema.parse(await response.json());
     if (token.code !== 0 || !token.tenant_access_token || !token.expire) {
-      throw new Error(`Official Feishu tenant token rejected (${token.code})`);
+      throw new Error(`Official Lark tenant token rejected (${token.code})`);
     }
     return { token: token.tenant_access_token, expiresInSeconds: token.expire };
   },

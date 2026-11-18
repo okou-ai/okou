@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { feishuOfficialContract } from "@okouai/api-contracts/contracts/feishu-official";
+import { larkOfficialContract } from "@okouai/api-contracts/contracts/lark-official";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
@@ -17,18 +17,18 @@ import {
 
 const context = testContext();
 function setup(enabled = true) {
-  mockFeishu(context, { isAdmin: true });
+  mockFeishu(context, { isAdmin: true }, "lark");
   return setupPage({
     context,
-    path: "/settings/feishu",
+    path: "/settings/lark",
     featureSwitches: {
-      [FeatureSwitchKey.FeishuIntegration]: true,
-      [FeatureSwitchKey.FeishuOfficialBot]: enabled,
+      [FeatureSwitchKey.LarkIntegration]: true,
+      [FeatureSwitchKey.LarkOfficialBot]: enabled,
     },
   });
 }
 function mockOfficial(isConfigured: boolean, isConnected = false) {
-  context.mocks.api(feishuOfficialContract.getStatus, ({ respond }) => {
+  context.mocks.api(larkOfficialContract.getStatus, ({ respond }) => {
     return respond(200, {
       isConfigured,
       isConnected,
@@ -38,7 +38,7 @@ function mockOfficial(isConfigured: boolean, isConnected = false) {
   });
 }
 
-describe("official Feishu connection", () => {
+describe("official Lark connection", () => {
   it("keeps the Official entry hidden until the feature is enabled", async () => {
     await setup(false);
     expect(screen.queryByRole("region", { name: "Okou" })).toBeNull();
@@ -65,7 +65,7 @@ describe("official Feishu connection", () => {
       value: { replace },
     });
     const opened = context.mocks.browser.open(popup);
-    context.mocks.api(feishuOfficialContract.connect, ({ respond }) => {
+    context.mocks.api(larkOfficialContract.connect, ({ respond }) => {
       return respond(200, {
         authorizationUrl:
           "https://api.okou.test/api/feishu/oauth/connect?state=official",
@@ -88,7 +88,7 @@ describe("official Feishu connection", () => {
 
   it("disconnects the current Official account through its options menu", async () => {
     let connected = true;
-    context.mocks.api(feishuOfficialContract.getStatus, ({ respond }) => {
+    context.mocks.api(larkOfficialContract.getStatus, ({ respond }) => {
       return respond(200, {
         isConfigured: true,
         isConnected: connected,
@@ -96,7 +96,7 @@ describe("official Feishu connection", () => {
         installationId: null,
       });
     });
-    context.mocks.api(feishuOfficialContract.disconnect, ({ respond }) => {
+    context.mocks.api(larkOfficialContract.disconnect, ({ respond }) => {
       connected = false;
       return respond(200, { success: true });
     });
@@ -117,10 +117,10 @@ describe("official Feishu connection", () => {
     mockOfficial(true);
     await setupPage({
       context,
-      path: "/settings/feishu",
+      path: "/settings/lark",
       featureSwitches: {
-        [FeatureSwitchKey.FeishuIntegration]: false,
-        [FeatureSwitchKey.FeishuOfficialBot]: true,
+        [FeatureSwitchKey.LarkIntegration]: false,
+        [FeatureSwitchKey.LarkOfficialBot]: true,
       },
     });
     const official = await screen.findByRole("region", {
@@ -139,7 +139,7 @@ describe("official Feishu connection", () => {
     click(getAction("button", "Connect", official));
     await expect(
       within(official).findByText(
-        "Allow pop-ups to connect your Feishu account.",
+        "Allow pop-ups to connect your Lark account.",
       ),
     ).resolves.toBeInTheDocument();
     expect(getAction("button", "Connect", official)).toBeEnabled();

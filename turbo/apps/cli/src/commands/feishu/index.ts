@@ -28,7 +28,7 @@ Examples:
   Upload a file:        okou ${platform} upload-file -f /tmp/report.pdf --to <chat-id>
   Download a file:      okou ${platform} download-file <message-id> <file-key> --type file`,
     );
-  if (platform === "feishu") {
+  if (platform === "lark") {
     command.addCommand(chatCommand);
   }
   return command;

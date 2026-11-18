@@ -7,11 +7,11 @@ import {
   string,
   unknown as zUnknown,
 } from "zod";
-import { feishuOfficialEventsContract } from "@okouai/api-contracts/contracts/feishu-official";
-import { feishuOfficialAppTickets } from "@okouai/db/schema/feishu-official-app-ticket";
+import { larkOfficialEventsContract } from "@okouai/api-contracts/contracts/lark-official";
+import { larkOfficialAppTickets } from "@okouai/db/schema/lark-official-app-ticket";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
-import { feishuOfficialApp } from "../../lib/feishu-official-app";
+import { larkOfficialApp } from "../../lib/lark-official-app";
 import {
   decryptFeishuEventPayload,
   verifyFeishuEventSignature,
@@ -77,7 +77,7 @@ function json(body: unknown, status = 200) {
 const handleOfficialV1Event$ = command(
   async (
     { set },
-    config: NonNullable<ReturnType<typeof feishuOfficialApp>>,
+    config: NonNullable<ReturnType<typeof larkOfficialApp>>,
     payload: unknown,
     signal: AbortSignal,
   ): Promise<Response | null> => {
@@ -88,11 +88,11 @@ const handleOfficialV1Event$ = command(
         ticket.data.token !== config.verificationToken ||
         ticket.data.event.app_id !== config.appId
       ) {
-        return json({ error: "Invalid Feishu token" }, 401);
+        return json({ error: "Invalid Lark token" }, 401);
       }
       const eventTimestamp = Math.floor(Number(ticket.data.ts) * 1000);
       if (!Number.isSafeInteger(eventTimestamp)) {
-        return json({ error: "Invalid Feishu event timestamp" }, 400);
+        return json({ error: "Invalid Lark event timestamp" }, 400);
       }
       const encryptedTicket = await encryptPersistentSecretValue(
         ticket.data.event.app_ticket,
@@ -107,12 +107,12 @@ const handleOfficialV1Event$ = command(
         updatedAt: nowDate(),
       };
       await db
-        .insert(feishuOfficialAppTickets)
+        .insert(larkOfficialAppTickets)
         .values(values)
         .onConflictDoUpdate({
-          target: feishuOfficialAppTickets.appId,
+          target: larkOfficialAppTickets.appId,
           set: values,
-          setWhere: lt(feishuOfficialAppTickets.eventTimestamp, eventTimestamp),
+          setWhere: lt(larkOfficialAppTickets.eventTimestamp, eventTimestamp),
         });
       signal.throwIfAborted();
       return json({});
@@ -124,14 +124,14 @@ const handleOfficialV1Event$ = command(
         lifecycle.data.token !== config.verificationToken ||
         event.app_id !== config.appId
       ) {
-        return json({ error: "Invalid Feishu token" }, 401);
+        return json({ error: "Invalid Lark token" }, 401);
       }
       if (event.type === "app_status_change" && !event.status) {
-        return json({ error: "Missing Feishu application status" }, 400);
+        return json({ error: "Missing Lark application status" }, 400);
       }
       const eventTimestamp = Math.floor(Number(lifecycle.data.ts) * 1000);
       if (!Number.isSafeInteger(eventTimestamp)) {
-        return json({ error: "Invalid Feishu event timestamp" }, 400);
+        return json({ error: "Invalid Lark event timestamp" }, 400);
       }
       const active =
         event.type === "app_open" || event.status === "start_by_tenant";
@@ -162,7 +162,7 @@ const handleOfficialV1Event$ = command(
 const dispatchOfficialEvent$ = command(
   async (
     { set },
-    config: NonNullable<ReturnType<typeof feishuOfficialApp>>,
+    config: NonNullable<ReturnType<typeof larkOfficialApp>>,
     tenantKey: string,
     signal: AbortSignal,
   ): Promise<Response> => {
@@ -173,7 +173,7 @@ const dispatchOfficialEvent$ = command(
       .where(
         and(
           eq(feishuOrgInstallations.installationType, "official"),
-          eq(feishuOrgInstallations.platform, "feishu"),
+          eq(feishuOrgInstallations.platform, "lark"),
           eq(feishuOrgInstallations.appId, config.appId),
           eq(feishuOrgInstallations.feishuTenantKey, tenantKey),
         ),
@@ -213,10 +213,10 @@ const dispatchOfficialEvent$ = command(
 
 const events$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<Response> => {
-    const config = feishuOfficialApp();
+    const config = larkOfficialApp();
     if (!config) {
       return json(
-        { error: "Official Feishu application is not configured" },
+        { error: "Official Lark application is not configured" },
         503,
       );
     }
@@ -234,13 +234,13 @@ const events$ = command(
         })
       : { ok: outer };
     if ("error" in decoded) {
-      return json({ error: "Invalid Feishu payload" }, 400);
+      return json({ error: "Invalid Lark payload" }, 400);
     }
     const challenge = challengeSchema.safeParse(decoded.ok);
     if (challenge.success) {
       return challenge.data.token === config.verificationToken
         ? json({ challenge: challenge.data.challenge })
-        : json({ error: "Invalid Feishu token" }, 401);
+        : json({ error: "Invalid Lark token" }, 401);
     }
     // Official events always require encrypted, signed delivery, including v1 tickets.
     if (
@@ -253,7 +253,7 @@ const events$ = command(
         signature: request.header("x-lark-signature"),
       })
     ) {
-      return json({ error: "Invalid Feishu signature" }, 401);
+      return json({ error: "Invalid Lark signature" }, 401);
     }
     const v1 = await set(handleOfficialV1Event$, config, decoded.ok, signal);
     if (v1) {
@@ -261,13 +261,13 @@ const events$ = command(
     }
     const envelope = envelopeSchema.safeParse(decoded.ok);
     if (!envelope.success) {
-      return json({ error: "Invalid Feishu event" }, 400);
+      return json({ error: "Invalid Lark event" }, 400);
     }
     if (
       envelope.data.header.app_id !== config.appId ||
       envelope.data.header.token !== config.verificationToken
     ) {
-      return json({ error: "Invalid Feishu token" }, 401);
+      return json({ error: "Invalid Lark token" }, 401);
     }
     return set(
       dispatchOfficialEvent$,
@@ -278,6 +278,6 @@ const events$ = command(
   },
 );
 
-export const feishuOfficialEventsRoutes: readonly RouteEntry[] = [
-  { route: feishuOfficialEventsContract.post, handler: events$ },
+export const larkOfficialEventsRoutes: readonly RouteEntry[] = [
+  { route: larkOfficialEventsContract.post, handler: events$ },
 ];

@@ -3584,10 +3584,6 @@
         "manage": "Kelola",
         "manageDialogTitle": "Kelola bot Feishu",
         "moreOptions": "Opsi lainnya untuk {{bot}}",
-        "official": {
-          "name": "Okou",
-          "popupBlocked": "Izinkan pop-up untuk menghubungkan akun Feishu Anda."
-        },
         "pageDescription": "Kelola perutean bot untuk ruang kerja ini",
         "permissions": {
           "description": "Di konsol pengembang Feishu, buka Permissions & Scopes, pilih Batch Import/Export > Import, lalu tempel JSON di bawah. JSON ini mencakup izin identitas aplikasi untuk bot dan izin identitas pengguna untuk akun Anda yang terhubung.",
@@ -3721,6 +3717,10 @@
         "manage": "Kelola",
         "manageDialogTitle": "Kelola bot Lark",
         "moreOptions": "Opsi lainnya untuk {{bot}}",
+        "official": {
+          "name": "Okou",
+          "popupBlocked": "Izinkan pop-up untuk menghubungkan akun Lark Anda."
+        },
         "pageDescription": "Kelola perutean bot untuk ruang kerja ini",
         "permissions": {
           "description": "Di konsol pengembang Lark, buka Permissions & Scopes, pilih Batch Import/Export > Import, lalu tempel JSON di bawah. JSON ini mencakup izin identitas aplikasi untuk bot dan izin identitas pengguna untuk akun Anda yang terhubung.",

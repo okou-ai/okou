@@ -964,16 +964,6 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
-    module: "feishu-official",
-    contracts: ["feishuOfficialContract", "feishuOfficialEventsContract"],
-    bindings: [],
-  },
-  {
-    module: "feishu-official-read",
-    contracts: ["feishuOfficialReadContract"],
-    bindings: [],
-  },
-  {
     module: "friend-referrals",
     contracts: ["friendReferralsContract"],
     bindings: [
@@ -1170,6 +1160,16 @@ export const clientContractImportManifest = [
   {
     module: "ios-push-registrations",
     contracts: ["iosPushRegistrationsContract"],
+    bindings: [],
+  },
+  {
+    module: "lark-official",
+    contracts: ["larkOfficialContract", "larkOfficialEventsContract"],
+    bindings: [],
+  },
+  {
+    module: "lark-official-read",
+    contracts: ["larkOfficialReadContract"],
     bindings: [],
   },
   {

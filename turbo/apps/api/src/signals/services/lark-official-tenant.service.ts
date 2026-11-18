@@ -1,18 +1,18 @@
 import { command } from "ccstate";
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
-import { feishuOfficialApp } from "../../lib/feishu-official-app";
+import { larkOfficialApp } from "../../lib/lark-official-app";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { fetchOfficialFeishuTenantToken$ } from "../external/feishu-official";
+import { fetchOfficialLarkTenantToken$ } from "../external/lark-official";
 import { fetchFeishuBotInfo } from "../external/feishu-client";
 import { encryptPersistentSecretValue } from "./crypto.utils";
 import { settle } from "../utils";
 
-// The tenant comes only from the user's verified Feishu OAuth profile. Neither
+// The tenant comes only from the user's verified Lark OAuth profile. Neither
 // the browser nor the first incoming group message may choose a workspace tenant.
-export const bindOfficialFeishuTenant$ = command(
+export const bindOfficialLarkTenant$ = command(
   async (
     { set },
     args: {
@@ -23,17 +23,17 @@ export const bindOfficialFeishuTenant$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const config = feishuOfficialApp();
+    const config = larkOfficialApp();
     if (!config || config.appId !== args.appId) {
       return false;
     }
     const token = await set(
-      fetchOfficialFeishuTenantToken$,
+      fetchOfficialLarkTenantToken$,
       args.tenantKey,
       signal,
     );
     const bot = await fetchFeishuBotInfo(
-      { tenantAccessToken: token.token, platform: "feishu" },
+      { tenantAccessToken: token.token, platform: "lark" },
       signal,
     );
     const encryptedTenantAccessToken = await encryptPersistentSecretValue(
@@ -61,7 +61,7 @@ export const bindOfficialFeishuTenant$ = command(
             eq(feishuOrgInstallations.id, args.installationId),
             eq(feishuOrgInstallations.orgId, args.orgId),
             eq(feishuOrgInstallations.installationType, "official"),
-            eq(feishuOrgInstallations.platform, "feishu"),
+            eq(feishuOrgInstallations.platform, "lark"),
             eq(feishuOrgInstallations.appId, config.appId),
             isNotNull(feishuOrgInstallations.setupCompletedAt),
             or(

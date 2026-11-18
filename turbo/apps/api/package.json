@@ -29,7 +29,7 @@
     "check-types:bootstrap": "bash scripts/check-types.sh bootstrap",
     "check-types:tests": "bash scripts/check-types.sh tests",
     "check-types:bootstrap-wiring": "bash scripts/check-types.sh bootstrap-wiring",
-    "feishu:official:scopes": "tsx scripts/print-feishu-official-scopes.ts"
+    "lark:official:scopes": "tsx scripts/print-lark-official-scopes.ts"
   },
   "dependencies": {
     "@aws-sdk/client-kms": "^3.1167.0",

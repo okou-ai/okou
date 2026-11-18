@@ -1,5 +1,5 @@
-import { FEISHU_OFFICIAL_SKILL_MARKDOWN } from "./feishu-official-skill";
-import { FEISHU_OFFICIAL_OAUTH_SCOPES } from "@okouai/api-contracts/validators/feishu-official";
+import { LARK_OFFICIAL_SKILL_MARKDOWN } from "./lark-official-skill";
+import { LARK_OFFICIAL_OAUTH_SCOPES } from "@okouai/api-contracts/validators/lark-official";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { orgCustomConnectorSkillBundles } from "@okouai/db/runtime/org-custom-connector-skill-bundle";
@@ -177,7 +177,7 @@ function feishuSkillMarkdown(
   official = false,
 ): string {
   const markdown = official
-    ? FEISHU_OFFICIAL_SKILL_MARKDOWN
+    ? LARK_OFFICIAL_SKILL_MARKDOWN
     : FEISHU_SKILL_MARKDOWN;
   return markdown
     .replaceAll("Feishu", FEISHU_PLATFORMS[platform].name)
@@ -224,7 +224,7 @@ function desiredOAuthConfig(installation: FeishuConnectorInstallation) {
     pkceMethod: "none" as const,
     scopes: [
       ...(installation.installationType === "official"
-        ? FEISHU_OFFICIAL_OAUTH_SCOPES
+        ? LARK_OFFICIAL_OAUTH_SCOPES
         : FEISHU_OAUTH_SCOPES),
     ],
     authorizationParams: {},

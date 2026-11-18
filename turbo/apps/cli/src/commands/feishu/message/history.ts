@@ -1,6 +1,6 @@
 import { Command } from "commander";
-import { feishuMessageHistoryQuerySchema } from "@okouai/api-contracts/contracts/feishu-official-read";
-import { readOfficialFeishuHistory } from "../../../lib/api/domains/feishu-official-read";
+import { larkMessageHistoryQuerySchema } from "@okouai/api-contracts/contracts/lark-official-read";
+import { readOfficialLarkHistory } from "../../../lib/api/domains/lark-official-read";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
 
 export const historyCommand = new Command()
@@ -26,8 +26,8 @@ export const historyCommand = new Command()
         endTime?: string;
         json?: boolean;
       }) => {
-        const result = await readOfficialFeishuHistory(
-          feishuMessageHistoryQuerySchema.parse(options),
+        const result = await readOfficialLarkHistory(
+          larkMessageHistoryQuerySchema.parse(options),
         );
         if (options.json) {
           console.log(JSON.stringify(result, null, 2));

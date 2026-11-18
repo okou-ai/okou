@@ -104,7 +104,7 @@ const checkAppId$ = computed(async (get) => {
     .from(feishuOrgInstallations)
     .where(eq(feishuOrgInstallations.appId, query.appId))
     .limit(1);
-  return installation || query.appId === env("FEISHU_OFFICIAL_APP_ID")
+  return installation || query.appId === env("LARK_OFFICIAL_APP_ID")
     ? appIdInUse(get(feishuPlatformName$))
     : { status: 200 as const, body: { available: true as const } };
 });

@@ -248,6 +248,7 @@ export const requireFeishuConversationAccess$ = command(
       chat?: string;
       messageId?: string;
       write: boolean;
+      groupOnly?: boolean;
     },
     signal: AbortSignal,
   ): Promise<string | undefined> => {
@@ -338,6 +339,9 @@ export const requireFeishuConversationAccess$ = command(
       chatSchema,
       await readAccessData({ token, url: infoUrl }, signal),
     );
+    if (args.groupOnly && chat.chat_mode === "p2p") {
+      return denied();
+    }
     if (args.write && chat.chat_mode === "p2p") {
       return;
     }

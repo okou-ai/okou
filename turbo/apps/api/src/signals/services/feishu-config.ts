@@ -220,7 +220,7 @@ export function feishuInstallationEnabledFromRows(
   const context = featureSwitchContextFromRows(scope.orgId, scope.userId, rows);
   return isFeatureEnabled(
     scope.installationType === "official"
-      ? FeatureSwitchKey.FeishuOfficialBot
+      ? FeatureSwitchKey.LarkOfficialBot
       : FEISHU_PLATFORMS.lark.featureSwitch,
     context,
   );

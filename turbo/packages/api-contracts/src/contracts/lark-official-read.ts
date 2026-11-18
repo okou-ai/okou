@@ -12,17 +12,15 @@ import { apiErrorSchema } from "./errors";
 import { feishuHistoryMessageSchema } from "../validators/feishu-history";
 
 const c = initContract();
-export const feishuChatListQuerySchema = object({
+export const larkChatListQuerySchema = object({
   limit: coerce.number().int().min(1).max(50).default(20),
   cursor: string().min(1).optional(),
 });
-export const feishuMessageHistoryQuerySchema = feishuChatListQuerySchema.extend(
-  {
-    chat: string().min(1),
-    startTime: string().regex(/^\d+$/u).optional(),
-    endTime: string().regex(/^\d+$/u).optional(),
-  },
-);
+export const larkMessageHistoryQuerySchema = larkChatListQuerySchema.extend({
+  chat: string().min(1),
+  startTime: string().regex(/^\d+$/u).optional(),
+  endTime: string().regex(/^\d+$/u).optional(),
+});
 const errors = {
   400: apiErrorSchema,
   401: apiErrorSchema,
@@ -31,12 +29,12 @@ const errors = {
   502: apiErrorSchema,
 };
 
-export const feishuOfficialReadContract = c.router({
+export const larkOfficialReadContract = c.router({
   listChats: {
     method: "GET",
-    path: "/api/integrations/feishu/official/chats",
+    path: "/api/integrations/lark/official/chats",
     headers: authHeadersSchema,
-    query: feishuChatListQuerySchema,
+    query: larkChatListQuerySchema,
     responses: {
       200: object({
         installationId: uuid(),
@@ -49,13 +47,13 @@ export const feishuOfficialReadContract = c.router({
       ...errors,
     },
     summary:
-      "List group chats shared by your account and the Official Feishu bot",
+      "List group chats shared by your account and the Official Lark bot",
   },
   history: {
     method: "GET",
-    path: "/api/integrations/feishu/official/messages",
+    path: "/api/integrations/lark/official/messages",
     headers: authHeadersSchema,
-    query: feishuMessageHistoryQuerySchema,
+    query: larkMessageHistoryQuerySchema,
     responses: {
       200: object({
         installationId: uuid(),
@@ -67,10 +65,10 @@ export const feishuOfficialReadContract = c.router({
       }),
       ...errors,
     },
-    summary: "Read shared group chat history as the Official Feishu bot",
+    summary: "Read shared group chat history as the Official Lark bot",
   },
 });
-export type FeishuChatListQuery = zInfer<typeof feishuChatListQuerySchema>;
-export type FeishuMessageHistoryQuery = zInfer<
-  typeof feishuMessageHistoryQuerySchema
+export type LarkChatListQuery = zInfer<typeof larkChatListQuerySchema>;
+export type LarkMessageHistoryQuery = zInfer<
+  typeof larkMessageHistoryQuerySchema
 >;

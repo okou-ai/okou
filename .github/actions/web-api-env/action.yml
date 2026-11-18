@@ -366,10 +366,10 @@ runs:
           add_doppler_config WECHAT_GATEWAY_URL
           add_doppler_config WECHAT_GATEWAY_SECRET
           add_doppler_config WECHAT_GATEWAY_CONTROL_SECRET
-          add_doppler_config FEISHU_OFFICIAL_APP_ID
-          add_doppler_config FEISHU_OFFICIAL_APP_SECRET
-          add_doppler_config FEISHU_OFFICIAL_VERIFICATION_TOKEN
-          add_doppler_config FEISHU_OFFICIAL_ENCRYPT_KEY
+          add_doppler_config LARK_OFFICIAL_APP_ID
+          add_doppler_config LARK_OFFICIAL_APP_SECRET
+          add_doppler_config LARK_OFFICIAL_VERIFICATION_TOKEN
+          add_doppler_config LARK_OFFICIAL_ENCRYPT_KEY
           add_doppler_config DISCORD_APPLICATION_ID
           add_doppler_config DISCORD_PUBLIC_KEY
           add_doppler_config DISCORD_BOT_TOKEN

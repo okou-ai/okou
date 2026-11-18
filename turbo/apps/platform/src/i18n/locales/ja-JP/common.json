@@ -3584,10 +3584,6 @@
         "manage": "管理",
         "manageDialogTitle": "Feishu ボットを管理する",
         "moreOptions": "{{bot}} のその他のオプション",
-        "official": {
-          "name": "Okou",
-          "popupBlocked": "飛書アカウントを接続するには、ポップアップを許可してください。"
-        },
         "pageDescription": "このワークスペースのボット ルーティングを管理する",
         "permissions": {
           "description": "Feishu 開発者コンソールで Permissions & Scopes を開き、Batch Import/Export > Import を選択して、以下の JSON を貼り付けます。ボット用のアプリ ID 権限と、接続済みアカウント用のユーザー ID 権限が含まれています。",
@@ -3721,6 +3717,10 @@
         "manage": "管理",
         "manageDialogTitle": "Lark ボットを管理する",
         "moreOptions": "{{bot}} のその他のオプション",
+        "official": {
+          "name": "Okou",
+          "popupBlocked": "Lark アカウントを接続するには、ポップアップを許可してください。"
+        },
         "pageDescription": "このワークスペースのボット ルーティングを管理する",
         "permissions": {
           "description": "Lark 開発者コンソールで Permissions & Scopes を開き、Batch Import/Export > Import を選択して、以下の JSON を貼り付けます。ボット用のアプリ ID 権限と、接続済みアカウント用のユーザー ID 権限が含まれています。",

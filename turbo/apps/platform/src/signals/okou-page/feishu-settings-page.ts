@@ -37,7 +37,7 @@ export const setupFeishuSettingsPage$ = command(
       const features = get(featureSwitch$);
       if (
         !features[FEISHU_PLATFORMS[platform].featureSwitch] &&
-        !(platform === "feishu" && features[FeatureSwitchKey.FeishuOfficialBot])
+        !(platform === "lark" && features[FeatureSwitchKey.LarkOfficialBot])
       ) {
         set(detachedNavigateTo$, ROUTES.home, { replace: true });
         return;

@@ -1,4 +1,4 @@
-import * as feishuOfficialAppTicketSchema from "./schema/feishu-official-app-ticket";
+import * as larkOfficialAppTicketSchema from "./schema/lark-official-app-ticket";
 import * as phoneUseSchema from "./schema/phone-use";
 import * as marketingContentGrantSchema from "./schema/marketing-content-grant";
 import * as projectSchema from "./schema/project";
@@ -183,7 +183,7 @@ import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config
 import * as tailscaleConfigSchema from "./schema/tailscale-config";
 
 export const schema = {
-  ...feishuOfficialAppTicketSchema,
+  ...larkOfficialAppTicketSchema,
   ...phoneUseSchema,
   ...marketingContentGrantSchema,
   ...projectSchema,

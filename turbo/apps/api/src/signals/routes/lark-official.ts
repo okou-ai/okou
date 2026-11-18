@@ -1,11 +1,11 @@
 import { command, computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import { feishuOfficialContract } from "@okouai/api-contracts/contracts/feishu-official";
+import { larkOfficialContract } from "@okouai/api-contracts/contracts/lark-official";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { feishuOfficialAppTickets } from "@okouai/db/schema/feishu-official-app-ticket";
+import { larkOfficialAppTickets } from "@okouai/db/schema/lark-official-app-ticket";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
-import { feishuOfficialApp } from "../../lib/feishu-official-app";
+import { larkOfficialApp } from "../../lib/lark-official-app";
 import {
   conflict,
   notConfigured,
@@ -28,19 +28,19 @@ import { buildFeishuOAuthConnectUrl } from "../services/feishu-oauth-state";
 const enabled$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   return isFeatureEnabled(
-    FeatureSwitchKey.FeishuOfficialBot,
+    FeatureSwitchKey.LarkOfficialBot,
     await get(userFeatureSwitchContext(auth.orgId, auth.userId)),
   );
 });
 const configured$ = computed(async (get) => {
-  const config = feishuOfficialApp();
+  const config = larkOfficialApp();
   if (!config) {
     return false;
   }
   const [ticket] = await get(db$)
-    .select({ appId: feishuOfficialAppTickets.appId })
-    .from(feishuOfficialAppTickets)
-    .where(eq(feishuOfficialAppTickets.appId, config.appId))
+    .select({ appId: larkOfficialAppTickets.appId })
+    .from(larkOfficialAppTickets)
+    .where(eq(larkOfficialAppTickets.appId, config.appId))
     .limit(1);
   return Boolean(ticket);
 });
@@ -52,7 +52,7 @@ const installation$ = computed(async (get) => {
     .where(
       and(
         eq(feishuOrgInstallations.orgId, auth.orgId),
-        eq(feishuOrgInstallations.platform, "feishu"),
+        eq(feishuOrgInstallations.platform, "lark"),
         eq(feishuOrgInstallations.installationType, "official"),
       ),
     )
@@ -60,7 +60,7 @@ const installation$ = computed(async (get) => {
   return installation;
 });
 const disabled = () => {
-  return resourceUnavailable("Okou Official Feishu bot is not enabled");
+  return resourceUnavailable("Okou Official Lark bot is not enabled");
 };
 
 const status$ = computed(async (get) => {
@@ -70,6 +70,7 @@ const status$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const status = await get(
     feishuConnectStatus({
+      platform: "lark",
       orgId: auth.orgId,
       userId: auth.userId,
       isAdmin: false,
@@ -85,8 +86,8 @@ const status$ = computed(async (get) => {
         (!installation || Boolean(installation.setupCompletedAt)),
       isConnected:
         status.isConnected && Boolean(installation?.setupCompletedAt),
-      connectedUserName: status.connectedUserName ?? null,
-      installationId: status.installationId ?? null,
+      connectedUserName: status.connectedUserName,
+      installationId: status.installationId,
     },
   };
 });
@@ -95,9 +96,9 @@ const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!(await get(enabled$))) {
     return disabled();
   }
-  const config = feishuOfficialApp();
+  const config = larkOfficialApp();
   if (!config || !(await get(configured$))) {
-    return notConfigured("Okou Official Feishu bot is not configured");
+    return notConfigured("Okou Official Lark bot is not configured");
   }
   const auth = get(organizationAuthContext$);
   const db = set(writeDb$);
@@ -128,7 +129,7 @@ const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
     .values({
       orgId: auth.orgId,
       ownerUserId: auth.userId,
-      platform: "feishu",
+      platform: "lark",
       installationType: "official",
       appId: config.appId,
       botName: "Okou Official",
@@ -152,7 +153,7 @@ const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
     .where(
       and(
         eq(feishuOrgInstallations.orgId, auth.orgId),
-        eq(feishuOrgInstallations.platform, "feishu"),
+        eq(feishuOrgInstallations.platform, "lark"),
         eq(feishuOrgInstallations.installationType, "official"),
       ),
     )
@@ -174,7 +175,7 @@ const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
         installationId: installation.id,
         orgId: auth.orgId,
         userId: auth.userId,
-        platform: "feishu",
+        platform: "lark",
       }),
     },
   };
@@ -186,34 +187,39 @@ const disconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
   const installation = await get(installation$);
   signal.throwIfAborted();
   if (!installation) {
-    return notFound("Okou Official Feishu connection not found");
+    return notFound("Okou Official Lark connection not found");
   }
   const auth = get(organizationAuthContext$);
   await set(
     disconnectFeishuConnection$,
-    { orgId: auth.orgId, userId: auth.userId, installationId: installation.id },
+    {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      installationId: installation.id,
+      platform: "lark",
+    },
     signal,
   );
   return { status: 200 as const, body: { success: true as const } };
 });
 
-export const feishuOfficialRoutes: readonly RouteEntry[] = [
+export const larkOfficialRoutes: readonly RouteEntry[] = [
   {
-    route: feishuOfficialContract.getStatus,
+    route: larkOfficialContract.getStatus,
     handler: authRoute(
       { requireOrganization: true, accept: ["session"] },
       status$,
     ),
   },
   {
-    route: feishuOfficialContract.connect,
+    route: larkOfficialContract.connect,
     handler: authRoute(
       { requireOrganization: true, accept: ["session"] },
       connect$,
     ),
   },
   {
-    route: feishuOfficialContract.disconnect,
+    route: larkOfficialContract.disconnect,
     handler: authRoute(
       { requireOrganization: true, accept: ["session"] },
       disconnect$,

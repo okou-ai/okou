@@ -345,9 +345,9 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.FeishuOfficialBot]: {
+  [FeatureSwitchKey.LarkOfficialBot]: {
     maintainer: "yuma@okou.ai",
-    description: "Connect to the Okou Official Feishu bot.",
+    description: "Connect to the Okou Official Lark bot.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

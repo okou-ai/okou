@@ -1,4 +1,4 @@
-import { bindOfficialFeishuTenant$ } from "../services/feishu-official-tenant.service";
+import { bindOfficialLarkTenant$ } from "../services/lark-official-tenant.service";
 import { deliverMarketingRewardEvents$ } from "../services/marketing-reward-event-delivery.service";
 import { randomUUID } from "node:crypto";
 import {
@@ -422,7 +422,7 @@ type FeishuConnectionCompletionResult =
   | "tenant_mismatch"
   | "bot_unavailable";
 
-const validateOfficialFeishuTenant$ = command(
+const validateOfficialLarkTenant$ = command(
   async (
     { set },
     args: Pick<
@@ -437,7 +437,7 @@ const validateOfficialFeishuTenant$ = command(
       }
       const bound = await tapError(
         set(
-          bindOfficialFeishuTenant$,
+          bindOfficialLarkTenant$,
           {
             installationId: args.state.installationId,
             orgId: args.state.orgId,
@@ -487,11 +487,7 @@ const finishFeishuOAuthConnection$ = command(
     ) {
       return { result: "tenant_mismatch", marketingRewardEventId: null };
     }
-    const officialError = await set(
-      validateOfficialFeishuTenant$,
-      args,
-      signal,
-    );
+    const officialError = await set(validateOfficialLarkTenant$, args, signal);
     if (officialError) {
       return { result: officialError, marketingRewardEventId: null };
     }
@@ -588,7 +584,7 @@ function connectionErrorMessage(
 ): string {
   switch (result) {
     case "bot_unavailable": {
-      return "Could not access the Okou Official bot in your Feishu tenant. Ask your administrator to enable the app, then connect again.";
+      return "Could not access the Okou bot in your Lark tenant. Ask your administrator to enable the app, then connect again.";
     }
     case "account_in_use": {
       return `This ${FEISHU_PLATFORMS[platform].name} account is already connected.`;

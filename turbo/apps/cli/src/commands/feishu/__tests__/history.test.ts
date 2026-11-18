@@ -8,11 +8,11 @@ beforeEach(() => {
   vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
   vi.stubEnv("OKOU_TOKEN", "test-token");
 });
-describe("Official Feishu group reads", () => {
+describe("Official Lark group reads", () => {
   it("preserves an empty shared-chat page's continuation cursor", async () => {
     server.use(
       http.get(
-        "http://localhost:3000/api/integrations/feishu/official/chats",
+        "http://localhost:3000/api/integrations/lark/official/chats",
         ({ request }) => {
           expect(new URL(request.url).searchParams.get("cursor")).toBe(
             "previous",
@@ -26,7 +26,7 @@ describe("Official Feishu group reads", () => {
         },
       ),
     );
-    await createFeishuCommand("feishu").parseAsync([
+    await createFeishuCommand("lark").parseAsync([
       "node",
       "cli",
       "chat",
@@ -42,7 +42,7 @@ describe("Official Feishu group reads", () => {
   it("passes explicit time bounds and the page cursor to shared history", async () => {
     server.use(
       http.get(
-        "http://localhost:3000/api/integrations/feishu/official/messages",
+        "http://localhost:3000/api/integrations/lark/official/messages",
         ({ request }) => {
           const query = new URL(request.url).searchParams;
           expect(query.get("chat")).toBe("oc_shared");
@@ -53,7 +53,7 @@ describe("Official Feishu group reads", () => {
             installationId: "00000000-0000-4000-8000-000000000001",
             chat: "oc_shared",
             chatUrl:
-              "https://applink.feishu.cn/client/chat/open?openChatId=oc_shared",
+              "https://applink.larksuite.com/client/chat/open?openChatId=oc_shared",
             messages: [{ message_id: "om_read", msg_type: "text" }],
             hasMore: false,
             nextCursor: null,
@@ -61,7 +61,7 @@ describe("Official Feishu group reads", () => {
         },
       ),
     );
-    await createFeishuCommand("feishu").parseAsync([
+    await createFeishuCommand("lark").parseAsync([
       "node",
       "cli",
       "message",

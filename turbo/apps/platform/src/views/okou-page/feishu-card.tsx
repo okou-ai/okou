@@ -28,6 +28,7 @@ import {
   buttonVariants,
   cn,
   IconButton,
+  Badge,
 } from "@okouai/ui";
 import {
   Dialog,
@@ -58,12 +59,12 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES, type RoutePath } from "../../signals/route-paths.ts";
 import { writeToClipboard } from "../../signals/okou-page/clipboard.ts";
 import {
-  FeishuOfficialPopupBlockedError,
+  LarkOfficialPopupBlockedError,
   feishuCustomEnabled$,
-  feishuOfficialEnabled$,
-  feishuOfficialData$,
-  connectFeishuOfficial$,
-  disconnectFeishuOfficial$,
+  larkOfficialEnabled$,
+  larkOfficialData$,
+  connectLarkOfficial$,
+  disconnectLarkOfficial$,
   FEISHU_SETUP_STEPS,
   feishuPlatform$,
   feishuRevealedCredentials$,
@@ -1444,7 +1445,7 @@ function FeishuBotsCard({
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
   const customEnabled = useGet(feishuCustomEnabled$);
-  const officialEnabled = useGet(feishuOfficialEnabled$);
+  const officialEnabled = useGet(larkOfficialEnabled$);
   const showCustomBots =
     customEnabled &&
     (!officialEnabled || loading || hasError || bots.length > 0);
@@ -1472,9 +1473,9 @@ function FeishuBotsCard({
           </Link>
         ) : null}
       </div>
-      {officialEnabled ? <FeishuOfficialRow /> : null}
+      {officialEnabled ? <LarkOfficialRow /> : null}
       {officialEnabled && showCustomBots ? (
-        <div className="mx-5 border-b border-border/50" />
+        <div className="mx-5 border-t border-t-gray-400" />
       ) : null}
       {showCustomBots ? (
         hasError ? (
@@ -1496,11 +1497,11 @@ function FeishuBotsCard({
   );
 }
 
-function FeishuOfficialMenu({ title }: { title: string }) {
+function LarkOfficialMenu({ title }: { title: string }) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
   const [disconnectLoadable, disconnect] = useLoadableSet(
-    disconnectFeishuOfficial$,
+    disconnectLarkOfficial$,
   );
   const disconnecting = disconnectLoadable.state === "loading";
   return (
@@ -1547,15 +1548,15 @@ function FeishuOfficialMenu({ title }: { title: string }) {
   );
 }
 
-function FeishuOfficialRow() {
+function LarkOfficialRow() {
   const { t } = useTranslation();
   const title = t(($) => {
-    return $.connectors.providerSettings.feishu.official.name;
+    return $.connectors.providerSettings.lark.official.name;
   });
-  const enabled = useGet(feishuOfficialEnabled$);
-  const data = useLastLoadable(feishuOfficialData$);
+  const enabled = useGet(larkOfficialEnabled$);
+  const data = useLastLoadable(larkOfficialData$);
   const signal = useGet(pageSignal$);
-  const [connecting, connect] = useLoadableSet(connectFeishuOfficial$);
+  const [connecting, connect] = useLoadableSet(connectLarkOfficial$);
   if (!enabled) {
     return null;
   }
@@ -1598,20 +1599,20 @@ function FeishuOfficialRow() {
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-sm font-medium text-foreground">{title}</h3>
               {status.isConnected ? (
-                <span className="inline-flex min-w-0 items-center gap-1.5 rounded-lg border border-border bg-background px-2 py-1 text-xs font-medium text-secondary-foreground">
-                  <CircleCheck className="h-3.5 w-3.5 text-green-600" />
+                <Badge className="min-w-0 text-xs font-medium text-secondary-foreground">
+                  <CircleCheck className="text-green-600" />
                   {status.connectedUserName ??
                     t(($) => {
                       return $.connectors.providerSettings.works.connected;
                     })}
-                </span>
+                </Badge>
               ) : null}
             </div>
           </div>
         </div>
         {status.isConnected ? (
           <div className="flex items-center justify-end">
-            <FeishuOfficialMenu title={title} />
+            <LarkOfficialMenu title={title} />
           </div>
         ) : (
           <Button
@@ -1632,10 +1633,10 @@ function FeishuOfficialRow() {
         )}
       </div>
       {connecting.state === "hasError" &&
-      connecting.error instanceof FeishuOfficialPopupBlockedError ? (
+      connecting.error instanceof LarkOfficialPopupBlockedError ? (
         <p role="alert" className="px-5 pb-4 text-sm text-destructive">
           {t(($) => {
-            return $.connectors.providerSettings.feishu.official.popupBlocked;
+            return $.connectors.providerSettings.lark.official.popupBlocked;
           })}
         </p>
       ) : null}

@@ -1,4 +1,4 @@
-import { feishuOfficialContract } from "@okouai/api-contracts/client/feishu-official";
+import { larkOfficialContract } from "@okouai/api-contracts/client/lark-official";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import {
@@ -546,39 +546,39 @@ export const resetFeishuSettingsUi$ = command(({ set }) => {
   });
 });
 
-export const feishuOfficialEnabled$ = computed((get) => {
+export const larkOfficialEnabled$ = computed((get) => {
   return (
-    get(feishuPlatform$) === "feishu" &&
-    get(featureSwitch$)[FeatureSwitchKey.FeishuOfficialBot]
+    get(feishuPlatform$) === "lark" &&
+    get(featureSwitch$)[FeatureSwitchKey.LarkOfficialBot]
   );
 });
 
-export const feishuOfficialData$ = computed(async (get) => {
+export const larkOfficialData$ = computed(async (get) => {
   get(reload$);
-  if (!get(feishuOfficialEnabled$)) {
+  if (!get(larkOfficialEnabled$)) {
     return null;
   }
-  const client = get(apiClient$)(feishuOfficialContract);
+  const client = get(apiClient$)(larkOfficialContract);
   return (await accept(client.getStatus({}), [200])).body;
 });
 
-export class FeishuOfficialPopupBlockedError extends Error {
+export class LarkOfficialPopupBlockedError extends Error {
   constructor() {
     super(
       i18n.t(($) => {
-        return $.connectors.providerSettings.feishu.official.popupBlocked;
+        return $.connectors.providerSettings.lark.official.popupBlocked;
       }),
     );
-    this.name = "FeishuOfficialPopupBlockedError";
+    this.name = "LarkOfficialPopupBlockedError";
   }
 }
 
-export const connectFeishuOfficial$ = command(
+export const connectLarkOfficial$ = command(
   async ({ get }, signal: AbortSignal) => {
     signal.throwIfAborted();
     const popup = window.open("about:blank", "_blank");
     if (!popup) {
-      throw new FeishuOfficialPopupBlockedError();
+      throw new LarkOfficialPopupBlockedError();
     }
     popup.opener = null;
     const close = () => {
@@ -594,7 +594,7 @@ export const connectFeishuOfficial$ = command(
         }
       },
     };
-    const client = get(apiClient$)(feishuOfficialContract);
+    const client = get(apiClient$)(larkOfficialContract);
     const result = await accept(
       client.connect({ fetchOptions: { signal } }),
       [200],
@@ -606,16 +606,16 @@ export const connectFeishuOfficial$ = command(
   },
 );
 
-export const disconnectFeishuOfficial$ = command(
+export const disconnectLarkOfficial$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const client = get(apiClient$)(feishuOfficialContract);
+    const client = get(apiClient$)(larkOfficialContract);
     await accept(
       client.disconnect({ fetchOptions: { signal } }),
       [200],
       signal,
     );
     set(reloadFeishuInstallations$);
-    await get(feishuOfficialData$);
+    await get(larkOfficialData$);
     signal.throwIfAborted();
   },
 );

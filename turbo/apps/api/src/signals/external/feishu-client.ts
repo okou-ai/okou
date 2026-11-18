@@ -1,6 +1,6 @@
 import { feishuHistoryMessageSchema } from "@okouai/api-contracts/validators/feishu-history";
-import { fetchOfficialFeishuTenantToken$ } from "./feishu-official";
-import { feishuOfficialApp } from "../../lib/feishu-official-app";
+import { fetchOfficialLarkTenantToken$ } from "./lark-official";
+import { larkOfficialApp } from "../../lib/lark-official-app";
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { settle } from "../utils";
 import {
@@ -425,11 +425,11 @@ function requireOfficialTenantKey(
 ): string {
   if (
     !installation.feishuTenantKey ||
-    installation.appId !== feishuOfficialApp()?.appId ||
+    installation.appId !== larkOfficialApp()?.appId ||
     !installation.setupCompletedAt
   ) {
     throw new FeishuApiError(
-      "Okou Official Feishu bot is not connected to this tenant",
+      "Okou Official Lark bot is not connected to this tenant",
       403,
     );
   }
@@ -457,10 +457,7 @@ export const resolveFeishuRequestCredentials$ = command(
             );
       signal.throwIfAborted();
       if (!enabled) {
-        throw new FeishuApiError(
-          "Okou Official Feishu bot is not enabled",
-          403,
-        );
+        throw new FeishuApiError("Okou Official Lark bot is not enabled", 403);
       }
     }
     const context = { orgId: installation.orgId };
@@ -490,7 +487,7 @@ export const resolveFeishuRequestCredentials$ = command(
     const token =
       installation.installationType === "official"
         ? await set(
-            fetchOfficialFeishuTenantToken$,
+            fetchOfficialLarkTenantToken$,
             requireOfficialTenantKey(installation),
             signal,
           )

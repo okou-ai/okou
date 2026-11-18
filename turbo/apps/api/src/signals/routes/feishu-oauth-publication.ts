@@ -102,7 +102,6 @@ function feishuOAuthAdmission(args: TimedFeishuOAuthPublicationInput) {
           ),
         ),
       )
-      .for("update")
       .limit(1),
   );
   const agent = query.$with("oauth_agent").as(

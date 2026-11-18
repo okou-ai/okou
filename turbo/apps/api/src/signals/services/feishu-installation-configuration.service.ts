@@ -389,7 +389,7 @@ export const configureFeishuInstallation$ = command(
     args: ConfigureFeishuArgs,
     signal: AbortSignal,
   ): Promise<ConfigureFeishuResult> => {
-    if (args.appId === env("FEISHU_OFFICIAL_APP_ID")) {
+    if (args.appId === env("LARK_OFFICIAL_APP_ID")) {
       return { kind: "app_in_use" };
     }
     const preflight = await set(resolveFeishuInstallationTarget$, args, signal);

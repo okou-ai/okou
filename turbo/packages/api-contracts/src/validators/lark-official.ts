@@ -1,5 +1,5 @@
 // Store application permissions. Custom Feishu/Lark presets stay independent.
-export const FEISHU_OFFICIAL_TENANT_SCOPES = [
+export const LARK_OFFICIAL_TENANT_SCOPES = [
   "im:chat:read",
   "im:chat.members:read",
   "im:chat.moderation:read",
@@ -12,7 +12,7 @@ export const FEISHU_OFFICIAL_TENANT_SCOPES = [
   "im:resource",
 ] as const;
 
-export const FEISHU_OFFICIAL_OAUTH_SCOPES = [
+export const LARK_OFFICIAL_OAUTH_SCOPES = [
   "offline_access",
   "contact:contact.base:readonly",
   "contact:user.base:readonly",

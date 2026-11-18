@@ -500,7 +500,7 @@ export function createFeishuThreadContext(
     }
     const switchKey =
       row.installationType === "official"
-        ? FeatureSwitchKey.FeishuOfficialBot
+        ? FeatureSwitchKey.LarkOfficialBot
         : FEISHU_PLATFORMS.lark.featureSwitch;
     if (row.platform === "feishu" && row.installationType !== "official") {
       return true;

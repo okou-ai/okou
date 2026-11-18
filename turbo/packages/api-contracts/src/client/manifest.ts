@@ -356,14 +356,6 @@ export const clientDescriptorManifest = [
     contracts: ["feishuOauthContract"],
   },
   {
-    module: "feishu-official-read",
-    contracts: ["feishuOfficialReadContract"],
-  },
-  {
-    module: "feishu-official",
-    contracts: ["feishuOfficialContract", "feishuOfficialEventsContract"],
-  },
-  {
     module: "friend-referrals",
     contracts: ["friendReferralsContract"],
   },
@@ -501,6 +493,14 @@ export const clientDescriptorManifest = [
   {
     module: "ios-push-registrations",
     contracts: ["iosPushRegistrationsContract"],
+  },
+  {
+    module: "lark-official-read",
+    contracts: ["larkOfficialReadContract"],
+  },
+  {
+    module: "lark-official",
+    contracts: ["larkOfficialContract", "larkOfficialEventsContract"],
   },
   {
     module: "link-approval-workflow",

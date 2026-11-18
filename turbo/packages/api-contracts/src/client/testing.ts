@@ -354,16 +354,6 @@ import { feishuEventsContract as OriginalFeishuEventsContract } from "../contrac
 import { feishuEventsContract } from "./feishu-events";
 import { feishuOauthContract as OriginalFeishuOauthContract } from "../contracts/feishu-oauth";
 import { feishuOauthContract } from "./feishu-oauth";
-import { feishuOfficialReadContract as OriginalFeishuOfficialReadContract } from "../contracts/feishu-official-read";
-import { feishuOfficialReadContract } from "./feishu-official-read";
-import {
-  feishuOfficialContract as OriginalFeishuOfficialContract,
-  feishuOfficialEventsContract as OriginalFeishuOfficialEventsContract,
-} from "../contracts/feishu-official";
-import {
-  feishuOfficialContract,
-  feishuOfficialEventsContract,
-} from "./feishu-official";
 import { friendReferralsContract as OriginalFriendReferralsContract } from "../contracts/friend-referrals";
 import { friendReferralsContract } from "./friend-referrals";
 import {
@@ -507,6 +497,16 @@ import { iosNotificationsContract as OriginalIosNotificationsContract } from "..
 import { iosNotificationsContract } from "./ios-notifications";
 import { iosPushRegistrationsContract as OriginalIosPushRegistrationsContract } from "../contracts/ios-push-registrations";
 import { iosPushRegistrationsContract } from "./ios-push-registrations";
+import { larkOfficialReadContract as OriginalLarkOfficialReadContract } from "../contracts/lark-official-read";
+import { larkOfficialReadContract } from "./lark-official-read";
+import {
+  larkOfficialContract as OriginalLarkOfficialContract,
+  larkOfficialEventsContract as OriginalLarkOfficialEventsContract,
+} from "../contracts/lark-official";
+import {
+  larkOfficialContract,
+  larkOfficialEventsContract,
+} from "./lark-official";
 import { linkApprovalWorkflowContract as OriginalLinkApprovalWorkflowContract } from "../contracts/link-approval-workflow";
 import { linkApprovalWorkflowContract } from "./link-approval-workflow";
 import {
@@ -1066,9 +1066,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [larkConnectContract, OriginalLarkConnectContract],
   [feishuEventsContract, OriginalFeishuEventsContract],
   [feishuOauthContract, OriginalFeishuOauthContract],
-  [feishuOfficialReadContract, OriginalFeishuOfficialReadContract],
-  [feishuOfficialContract, OriginalFeishuOfficialContract],
-  [feishuOfficialEventsContract, OriginalFeishuOfficialEventsContract],
   [friendReferralsContract, OriginalFriendReferralsContract],
   [cronGetStartedContract, OriginalCronGetStartedContract],
   [getStartedContract, OriginalGetStartedContract],
@@ -1232,6 +1229,9 @@ export const clientDescriptorContracts: readonly (readonly [
   ],
   [iosNotificationsContract, OriginalIosNotificationsContract],
   [iosPushRegistrationsContract, OriginalIosPushRegistrationsContract],
+  [larkOfficialReadContract, OriginalLarkOfficialReadContract],
+  [larkOfficialContract, OriginalLarkOfficialContract],
+  [larkOfficialEventsContract, OriginalLarkOfficialEventsContract],
   [linkApprovalWorkflowContract, OriginalLinkApprovalWorkflowContract],
   [logsByIdContract, OriginalLogsByIdContract],
   [logsListContract, OriginalLogsListContract],

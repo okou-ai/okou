@@ -1,7 +1,7 @@
 import { command, computed } from "ccstate";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { array, boolean, number, object, string } from "zod";
-import { feishuOfficialReadContract } from "@okouai/api-contracts/contracts/feishu-official-read";
+import { larkOfficialReadContract } from "@okouai/api-contracts/contracts/lark-official-read";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
@@ -42,14 +42,15 @@ const installation$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   if (
     !isFeatureEnabled(
-      FeatureSwitchKey.FeishuOfficialBot,
+      FeatureSwitchKey.LarkOfficialBot,
       await get(userFeatureSwitchContext(auth.orgId, auth.userId)),
     )
   ) {
-    return resourceUnavailable("Okou Official Feishu bot is not enabled");
+    return resourceUnavailable("Okou Official Lark bot is not enabled");
   }
   const status = await get(
     feishuConnectStatus({
+      platform: "lark",
       orgId: auth.orgId,
       userId: auth.userId,
       isAdmin: false,
@@ -58,7 +59,7 @@ const installation$ = computed(async (get) => {
   );
   if (!status.isConnected) {
     return notFound(
-      "Connect your Feishu account to Okou Official in Settings > Feishu before reading group chats.",
+      "Connect your Lark account to Okou Official in Settings > Lark before reading group chats.",
     );
   }
   const [installation] = await get(db$)
@@ -68,12 +69,12 @@ const installation$ = computed(async (get) => {
       and(
         eq(feishuOrgInstallations.orgId, auth.orgId),
         eq(feishuOrgInstallations.installationType, "official"),
-        eq(feishuOrgInstallations.platform, "feishu"),
+        eq(feishuOrgInstallations.platform, "lark"),
         isNotNull(feishuOrgInstallations.setupCompletedAt),
       ),
     )
     .limit(1);
-  return installation ?? notFound("Okou Official Feishu bot is unavailable");
+  return installation ?? notFound("Okou Official Lark bot is unavailable");
 });
 const credentials$ = command(async ({ get, set }, signal: AbortSignal) => {
   const installation = await get(installation$);
@@ -101,7 +102,7 @@ function readError(error: unknown) {
   }
   return {
     status: error.routeStatus,
-    body: { error: { code: "FEISHU_ERROR", message: error.message } },
+    body: { error: { code: "LARK_ERROR", message: error.message } },
   };
 }
 const listChats$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -110,25 +111,31 @@ const listChats$ = command(async ({ get, set }, signal: AbortSignal) => {
     return credentials;
   }
   const auth = get(organizationAuthContext$);
-  const query = get(queryOf(feishuOfficialReadContract.listChats));
-  const url = new URL("https://open.feishu.cn/open-apis/im/v1/chats");
+  const query = get(queryOf(larkOfficialReadContract.listChats));
+  const url = new URL("https://open.larksuite.com/open-apis/im/v1/chats");
   url.searchParams.set("page_size", String(query.limit));
   if (query.cursor) {
     url.searchParams.set("page_token", query.cursor);
   }
-  const body = await readFeishuResponseJson(
-    fetch(url, {
-      headers: { authorization: `Bearer ${credentials.token}` },
-      signal,
-    }),
-    "Feishu",
+  const requested = await settle(
+    readFeishuResponseJson(
+      fetch(url, {
+        headers: { authorization: `Bearer ${credentials.token}` },
+        signal,
+      }),
+      "Lark",
+    ),
+    signal,
   );
-  signal.throwIfAborted();
+  if (!requested.ok) {
+    return readError(requested.error);
+  }
+  const body = requested.value;
   const response = object({ code: number() }).parse(body);
   if (response.code !== 0) {
     return readError(
       new FeishuApiError(
-        "Could not list Feishu group chats. Check the Official bot's permissions.",
+        "Could not list Lark group chats. Check the Official bot's permissions.",
         403,
       ),
     );
@@ -146,6 +153,7 @@ const listChats$ = command(async ({ get, set }, signal: AbortSignal) => {
           installationId: credentials.installationId,
           chat: chat.chat_id,
           write: false,
+          groupOnly: true,
         },
         signal,
       ),
@@ -160,7 +168,7 @@ const listChats$ = command(async ({ get, set }, signal: AbortSignal) => {
     chats.push({
       id: chat.chat_id,
       name: chat.name,
-      chatUrl: buildFeishuChatOpenUrl(chat.chat_id),
+      chatUrl: buildFeishuChatOpenUrl(chat.chat_id, "lark"),
     });
   }
   return {
@@ -179,7 +187,7 @@ const history$ = command(async ({ get, set }, signal: AbortSignal) => {
     return credentials;
   }
   const auth = get(organizationAuthContext$);
-  const query = get(queryOf(feishuOfficialReadContract.history));
+  const query = get(queryOf(larkOfficialReadContract.history));
   const access = await settle(
     set(
       requireFeishuConversationAccess$,
@@ -189,6 +197,7 @@ const history$ = command(async ({ get, set }, signal: AbortSignal) => {
         installationId: credentials.installationId,
         chat: query.chat,
         write: false,
+        groupOnly: true,
       },
       signal,
     ),
@@ -197,7 +206,7 @@ const history$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!access.ok) {
     return readError(access.error);
   }
-  const url = feishuMessageHistoryUrl("https://open.feishu.cn", {
+  const url = feishuMessageHistoryUrl("https://open.larksuite.com", {
     containerType: "chat",
     containerId: query.chat,
     pageSize: query.limit,
@@ -217,21 +226,21 @@ const history$ = command(async ({ get, set }, signal: AbortSignal) => {
         headers: { authorization: `Bearer ${credentials.token}` },
         signal,
       }),
-      "Feishu",
+      "Lark",
     ),
     signal,
   );
   if (!requested.ok) {
     return readError(requested.error);
   }
-  const messages = parseFeishuMessageHistoryResponse(requested.value, "Feishu");
+  const messages = parseFeishuMessageHistoryResponse(requested.value, "Lark");
   const page = pageSchema.parse(requested.value);
   return {
     status: 200 as const,
     body: {
       installationId: credentials.installationId,
       chat: query.chat,
-      chatUrl: buildFeishuChatOpenUrl(query.chat),
+      chatUrl: buildFeishuChatOpenUrl(query.chat, "lark"),
       messages: [...messages],
       hasMore: page.data.has_more,
       nextCursor: page.data.page_token || null,
@@ -241,15 +250,15 @@ const history$ = command(async ({ get, set }, signal: AbortSignal) => {
 const readAuth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
-  requiredCapability: "feishu:read",
+  requiredCapability: "lark:read",
 } as const;
-export const feishuOfficialReadRoutes: readonly RouteEntry[] = [
+export const larkOfficialReadRoutes: readonly RouteEntry[] = [
   {
-    route: feishuOfficialReadContract.listChats,
+    route: larkOfficialReadContract.listChats,
     handler: authRoute(readAuth, listChats$),
   },
   {
-    route: feishuOfficialReadContract.history,
+    route: larkOfficialReadContract.history,
     handler: authRoute(readAuth, history$),
   },
 ];

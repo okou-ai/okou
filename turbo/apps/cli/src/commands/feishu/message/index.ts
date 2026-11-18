@@ -11,7 +11,7 @@ export function createFeishuMessageCommand(platform: FeishuPlatform) {
     .name("message")
     .description(`Send ${FEISHU_PLATFORMS[platform].name} messages`)
     .addCommand(createFeishuSendCommand(platform));
-  if (platform === "feishu") {
+  if (platform === "lark") {
     command.addCommand(historyCommand);
   }
   return command;

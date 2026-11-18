@@ -3655,10 +3655,6 @@
         "manage": "Gestisci",
         "manageDialogTitle": "Gestisci Feishu bot",
         "moreOptions": "Altre opzioni per {{bot}}",
-        "official": {
-          "name": "Okou",
-          "popupBlocked": "Consenti i popup per collegare il tuo account Feishu."
-        },
         "pageDescription": "Gestisci il routing dei bot per questa area di lavoro",
         "permissions": {
           "description": "Nella console sviluppatori di Feishu, apri Permissions & Scopes, scegli Batch Import/Export > Import e incolla il JSON qui sotto. Include le autorizzazioni dell’identità dell’app per il bot e dell’identità utente per il tuo account collegato.",
@@ -3792,6 +3788,10 @@
         "manage": "Gestisci",
         "manageDialogTitle": "Gestisci Lark bot",
         "moreOptions": "Altre opzioni per {{bot}}",
+        "official": {
+          "name": "Okou",
+          "popupBlocked": "Consenti i popup per collegare il tuo account Lark."
+        },
         "pageDescription": "Gestisci il routing dei bot per questa area di lavoro",
         "permissions": {
           "description": "Nella console sviluppatori di Lark, apri Permissions & Scopes, scegli Batch Import/Export > Import e incolla il JSON qui sotto. Include le autorizzazioni dell’identità dell’app per il bot e dell’identità utente per il tuo account collegato.",

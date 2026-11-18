@@ -16,7 +16,7 @@ export const feishuOrgInstallations = pgTable(
     return [
       check(
         "chk_feishu_installation_type",
-        sql`${table.installationType} IN ('custom', 'official') AND (${table.installationType} = 'custom' OR ${table.platform} = 'feishu')`,
+        sql`${table.installationType} IN ('custom', 'official') AND (${table.installationType} = 'custom' OR ${table.platform} = 'lark')`,
       ),
       index("idx_feishu_org_installations_org").on(table.orgId),
       uniqueIndex("idx_feishu_org_installations_org_platform").on(

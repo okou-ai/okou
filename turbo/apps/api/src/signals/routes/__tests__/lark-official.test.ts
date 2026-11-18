@@ -1,4 +1,4 @@
-import { integrationsFeishuMessageContract } from "@okouai/api-contracts/contracts/integrations";
+import { integrationsLarkMessageContract } from "@okouai/api-contracts/contracts/integrations";
 import { integrationsFeishuMessageRoutes } from "../integrations-feishu-message";
 import {
   createCipheriv,
@@ -8,9 +8,9 @@ import {
 } from "node:crypto";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
-import { feishuOfficialContract } from "@okouai/api-contracts/contracts/feishu-official";
-import { feishuOfficialReadContract } from "@okouai/api-contracts/contracts/feishu-official-read";
-import { feishuConnectContract } from "@okouai/api-contracts/contracts/feishu-connect";
+import { larkOfficialContract } from "@okouai/api-contracts/contracts/lark-official";
+import { larkOfficialReadContract } from "@okouai/api-contracts/contracts/lark-official-read";
+import { larkConnectContract } from "@okouai/api-contracts/contracts/feishu-connect";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -19,9 +19,9 @@ import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { feishuOfficialRoutes } from "../feishu-official";
-import { feishuOfficialEventsRoutes } from "../feishu-official-events";
-import { feishuOfficialReadRoutes } from "../feishu-official-read";
+import { larkOfficialRoutes } from "../lark-official";
+import { larkOfficialEventsRoutes } from "../lark-official-events";
+import { larkOfficialReadRoutes } from "../lark-official-read";
 import { feishuOauthRoutes } from "../feishu-oauth";
 import { feishuEventsRoutes } from "../feishu-events";
 import { feishuConnectRoutes } from "../feishu-connect";
@@ -32,25 +32,25 @@ import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 const context = testContext();
 const mocks = createRouteMocks(context);
 const authOrg = createAuthOrgAgentsBddApi(context);
-describe("Okou Official Feishu bot", () => {
+describe("Okou Official Lark bot", () => {
   const headers = { authorization: "Bearer clerk-session" };
-  const APP_ID = "cli_okou_official";
+  let appId: string;
   const ENCRYPT_KEY = "official-event-encryption";
   const VERIFY_TOKEN = "official-verification-token";
-  const ORIGIN = "https://open.feishu.cn/open-apis";
+  const ORIGIN = "https://open.larksuite.com/open-apis";
   const officialClient = () => {
-    return setupApp({ context, routes: feishuOfficialRoutes })(
-      feishuOfficialContract,
+    return setupApp({ context, routes: larkOfficialRoutes })(
+      larkOfficialContract,
     );
   };
   const customClient = () => {
     return setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      larkConnectContract,
     );
   };
   const readClient = () => {
-    return setupApp({ context, routes: feishuOfficialReadRoutes })(
-      feishuOfficialReadContract,
+    return setupApp({ context, routes: larkOfficialReadRoutes })(
+      larkOfficialReadContract,
     );
   };
   let oauthTenant: string;
@@ -61,12 +61,12 @@ describe("Okou Official Feishu bot", () => {
   let userPresent: boolean;
 
   function configureApp() {
-    mockEnv("FEISHU_OFFICIAL_APP_ID", APP_ID);
-    mockEnv("FEISHU_OFFICIAL_APP_SECRET", "official-secret");
-    mockEnv("FEISHU_OFFICIAL_VERIFICATION_TOKEN", VERIFY_TOKEN);
-    mockEnv("FEISHU_OFFICIAL_ENCRYPT_KEY", ENCRYPT_KEY);
+    mockEnv("LARK_OFFICIAL_APP_ID", appId);
+    mockEnv("LARK_OFFICIAL_APP_SECRET", "official-secret");
+    mockEnv("LARK_OFFICIAL_VERIFICATION_TOKEN", VERIFY_TOKEN);
+    mockEnv("LARK_OFFICIAL_ENCRYPT_KEY", ENCRYPT_KEY);
   }
-  async function createActor(enabled = true) {
+  async function createActor(enabled = true, customEnabled = true) {
     const actor = authOrg.user();
     if (!actor.orgId) {
       throw new Error("Expected workspace");
@@ -78,8 +78,8 @@ describe("Okou Official Feishu bot", () => {
       context,
       { ...actor, orgId: actor.orgId },
       {
-        [FeatureSwitchKey.FeishuOfficialBot]: enabled,
-        [FeatureSwitchKey.FeishuIntegration]: true,
+        [FeatureSwitchKey.LarkOfficialBot]: enabled,
+        [FeatureSwitchKey.LarkIntegration]: customEnabled,
       },
     );
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
@@ -103,7 +103,7 @@ describe("Okou Official Feishu bot", () => {
   function postEvent(
     payload: unknown,
     validSignature = true,
-    path = "/api/webhooks/feishu/official/events",
+    path = "/api/webhooks/lark/official/events",
   ) {
     const body = eventBody(payload);
     const timestamp = String(Math.floor(now() / 1000));
@@ -113,7 +113,7 @@ describe("Okou Official Feishu bot", () => {
       .digest("hex");
     return createAppWithRoutes({
       signal: context.signal,
-      routes: [...feishuOfficialEventsRoutes, ...feishuEventsRoutes],
+      routes: [...larkOfficialEventsRoutes, ...feishuEventsRoutes],
     }).request(path, {
       method: "POST",
       body,
@@ -130,7 +130,7 @@ describe("Okou Official Feishu bot", () => {
       ts: String(timestamp),
       token: VERIFY_TOKEN,
       type: "event_callback",
-      event: { type: "app_ticket", app_id: APP_ID, app_ticket: value },
+      event: { type: "app_ticket", app_id: appId, app_ticket: value },
     });
     expect(response.status).toBe(200);
   }
@@ -143,7 +143,7 @@ describe("Okou Official Feishu bot", () => {
     expect(response.status).toBe(307);
     const location = response.headers.get("location");
     if (!location) {
-      throw new Error("Expected Feishu authorization redirect");
+      throw new Error("Expected Lark authorization redirect");
     }
     return new URL(location);
   }
@@ -166,12 +166,13 @@ describe("Okou Official Feishu bot", () => {
     const response = await complete(await authorization());
     expect(response.status).toBe(200);
     await expect(response.clone().json()).resolves.toStrictEqual({
-      redirectUrl: `https://applink.feishu.cn/client/bot/open?appId=${APP_ID}`,
+      redirectUrl: `https://applink.larksuite.com/client/bot/open?appId=${appId}`,
     });
     return response;
   }
 
   beforeEach(() => {
+    appId = `cli_okou_official_${randomUUID()}`;
     configureApp();
     mockEnv("APP_URL", "https://app.okou.ai");
     mockEnv("FEISHU_CALLBACK_BASE_URL", "https://api.okou.ai");
@@ -188,7 +189,7 @@ describe("Okou Official Feishu bot", () => {
           app_secret: string;
           app_ticket: string;
         };
-        if (body.app_id !== APP_ID || body.app_secret !== "official-secret") {
+        if (body.app_id !== appId || body.app_secret !== "official-secret") {
           return HttpResponse.json({ code: 9999 }, { status: 401 });
         }
         capturedTicket = body.app_ticket;
@@ -319,7 +320,7 @@ describe("Okou Official Feishu bot", () => {
     await accept(officialClient().getStatus({ headers }), [403]);
     await accept(officialClient().connect({ headers }), [403]);
     await createActor();
-    mockEnv("FEISHU_OFFICIAL_APP_SECRET", undefined);
+    mockEnv("LARK_OFFICIAL_APP_SECRET", undefined);
     const status = await accept(officialClient().getStatus({ headers }), [200]);
     expect(status.body).toStrictEqual({
       isConfigured: false,
@@ -350,7 +351,11 @@ describe("Okou Official Feishu bot", () => {
     await ticket();
     const url = await authorization();
     const scopes = url.searchParams.get("scope")?.split(" ") ?? [];
-    expect(url.searchParams.get("client_id")).toBe(APP_ID);
+    expect(url.origin).toBe("https://accounts.larksuite.com");
+    expect(url.searchParams.get("redirect_uri")).toBe(
+      "https://app.okou.ai/integrations/lark/callback",
+    );
+    expect(url.searchParams.get("client_id")).toBe(appId);
     expect(scopes).toContain("im:chat:read");
     expect(scopes).toContain("calendar:calendar.event:create");
     expect(scopes).not.toContain("drive:export:readonly");
@@ -392,7 +397,7 @@ describe("Okou Official Feishu bot", () => {
       customClient().setup({
         headers,
         body: {
-          appId: APP_ID,
+          appId,
           appSecret: "try-overwrite",
           verificationToken: "try-overwrite",
           createNew: true,
@@ -417,7 +422,7 @@ describe("Okou Official Feishu bot", () => {
       {
         ts: String(now() / 1000),
         token: VERIFY_TOKEN,
-        event: { type: "app_ticket", app_id: APP_ID, app_ticket: "forged" },
+        event: { type: "app_ticket", app_id: appId, app_ticket: "forged" },
       },
       false,
     );
@@ -427,7 +432,7 @@ describe("Okou Official Feishu bot", () => {
     await expect(
       (await complete(await authorization())).json(),
     ).resolves.toStrictEqual({
-      redirectUrl: `https://applink.feishu.cn/client/bot/open?appId=${APP_ID}`,
+      redirectUrl: `https://applink.larksuite.com/client/bot/open?appId=${appId}`,
     });
     expect(capturedTicket).toBe("new-ticket");
   });
@@ -453,7 +458,7 @@ describe("Okou Official Feishu bot", () => {
     await expect(
       (await complete(await authorization())).json(),
     ).resolves.toStrictEqual({
-      redirectUrl: `https://applink.feishu.cn/client/bot/open?appId=${APP_ID}`,
+      redirectUrl: `https://applink.larksuite.com/client/bot/open?appId=${appId}`,
     });
     expect(
       (await accept(officialClient().getStatus({ headers }), [200])).body
@@ -476,7 +481,7 @@ describe("Okou Official Feishu bot", () => {
   });
 
   it("reads shared groups with the bot token and checks both members before reading", async () => {
-    await createActor();
+    await createActor(true, false);
     await connect();
     const chats = await accept(
       readClient().listChats({ headers, query: { limit: 20 } }),
@@ -524,6 +529,20 @@ describe("Okou Official Feishu bot", () => {
     expect(empty.body.chats).toStrictEqual([]);
     expect(empty.body.nextCursor).toBe("next-page");
     expect(historyCalls).toBe(1);
+    userPresent = true;
+    server.use(
+      http.get(`${ORIGIN}/im/v1/chats/:chat`, () => {
+        return HttpResponse.json({ code: 0, data: { chat_mode: "p2p" } });
+      }),
+    );
+    await accept(
+      readClient().history({
+        headers,
+        query: { chat: "oc_private", limit: 20 },
+      }),
+      [403],
+    );
+    expect(historyCalls).toBe(1);
     await accept(officialClient().disconnect({ headers }), [200]);
     await accept(
       readClient().history({
@@ -532,6 +551,32 @@ describe("Okou Official Feishu bot", () => {
       }),
       [404],
     );
+  });
+
+  it("handles unavailable and empty Lark group lists", async () => {
+    await createActor(true, false);
+    await connect();
+    server.use(
+      http.get(`${ORIGIN}/im/v1/chats`, () => {
+        return new HttpResponse(null, { status: 503 });
+      }),
+    );
+    const response = await accept(
+      readClient().listChats({ headers, query: { limit: 20 } }),
+      [502],
+    );
+    expect(response.body.error.code).toBe("LARK_ERROR");
+    server.use(
+      http.get(`${ORIGIN}/im/v1/chats`, () => {
+        return HttpResponse.json({ code: 0, data: { has_more: false } });
+      }),
+    );
+    const empty = await accept(
+      readClient().listChats({ headers, query: { limit: 20 } }),
+      [200],
+    );
+    expect(empty.body.chats).toStrictEqual([]);
+    expect(empty.body.hasMore).toBeFalsy();
   });
 
   it("stops access after the tenant disables the Official app and ignores older lifecycle events", async () => {
@@ -543,7 +588,7 @@ describe("Okou Official Feishu bot", () => {
       token: VERIFY_TOKEN,
       event: {
         type: "app_status_change",
-        app_id: APP_ID,
+        app_id: appId,
         tenant_key: oauthTenant,
         status: "stop_by_tenant",
       },
@@ -554,7 +599,7 @@ describe("Okou Official Feishu bot", () => {
       token: VERIFY_TOKEN,
       event: {
         type: "app_status_change",
-        app_id: APP_ID,
+        app_id: appId,
         tenant_key: oauthTenant,
         status: "start_by_tenant",
       },
@@ -579,7 +624,7 @@ describe("Okou Official Feishu bot", () => {
       header: {
         event_id: randomUUID(),
         event_type: "unhandled.event",
-        app_id: APP_ID,
+        app_id: appId,
         tenant_key: oauthTenant,
         token: VERIFY_TOKEN,
       },
@@ -641,7 +686,7 @@ describe("Okou Official Feishu bot", () => {
     const messages = setupApp({
       context,
       routes: integrationsFeishuMessageRoutes,
-    })(integrationsFeishuMessageContract);
+    })(integrationsLarkMessageContract);
     // The default retains the custom bot's existing connection requirement.
     await accept(
       messages.sendMessage({
