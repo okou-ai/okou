@@ -163,6 +163,9 @@ class ImageOperationTest(unittest.TestCase):
             )
             self.addCleanup(lambda: process.poll() is None and process.kill())
             self.wait_for(lambda: bool(list((self.root / "units").glob("*.json"))))
+            # Production promotion and rollback enumerate this prefix on the
+            # same host. Image execution must stay outside that selection.
+            self.assertFalse(list((self.root / "units").glob("vm0-runner-*.service.json")))
             outcome = self.clean_namespace(cleanup)
             self.assertEqual(outcome["outcome"], "cleaned", outcome)
             self.assertEqual(outcome["units"], 1)

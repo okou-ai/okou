@@ -189,7 +189,7 @@ def stopped(values):
 
 
 def unit_for(operation):
-    return "vm0-runner-" + operation.parent.name + "-image-" + operation.name + ".service"
+    return f"vm0-ci-image-{operation.parent.name}-{operation.name}.service"
 
 
 def operation_paths(namespace):
@@ -238,10 +238,13 @@ def owner_admitted(actual, expected):
 
 
 def retire(operation):
-    # Retained operations from earlier CI revisions used the second name.
-    # Check both exact identities even if intent is missing; never guess that
-    # an absent record proves either control group has retired.
-    units = (unit_for(operation), "vm0-ci-image-" + operation.name + ".service")
+    # Earlier PR revisions used these two exact names. Check both even if
+    # intent is missing so a successor cannot reuse paths before retirement.
+    units = (
+        unit_for(operation),
+        f"vm0-runner-{operation.parent.name}-image-{operation.name}.service",
+        f"vm0-ci-image-{operation.name}.service",
+    )
     for unit in units:
         if not stopped(unit_state(unit)):
             system("systemctl", "stop", "--no-block", unit)

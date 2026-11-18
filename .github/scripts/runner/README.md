@@ -203,12 +203,15 @@ heartbeat lease expiry stops the remote mutation before its own lock descriptors
 close. The worker source is paired with the controller and requires no persistent
 host installation.
 
-Image worker names use `vm0-runner-JOB_REF-image-DIGEST.service`, so existing
-cleanup revisions also include their jobs/control groups in retirement. This
-matters if a killed worker releases its lock before all descendants exit.
-Cancellation/expiry check both current and original `vm0-ci-image-DIGEST`
-unit identities, including when intent is unavailable. The second identity
-remains needed until retained operations from earlier CI revisions retire.
+Image worker names use `vm0-ci-image-JOB_REF-DIGEST.service`. Closed-PR cleanup
+matches the PR in that name and verifies queued jobs and control groups before
+removing files. The separate prefix keeps image workers outside the production
+Runner promotion and rollback selectors. Cancellation and expiry also check the
+exact unit names used by earlier PR revisions until their retained operations
+retire.
+Cleanup controllers already running from an earlier revision still share the
+lifecycle lock and remove the admission marker. Per-unit retirement of a
+worker with the new name requires the updated controller.
 A running legacy unit without PR attribution makes current
 cleanup inventory unverified and preserves resources. Expiry timers keep their
 separate `vm0-ci-image-DIGEST-expire` names and remain image-owned.

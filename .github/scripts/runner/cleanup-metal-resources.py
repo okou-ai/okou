@@ -23,7 +23,9 @@ import time
 from pathlib import Path, PurePosixPath
 
 UNIT = re.compile(
-    r"^(?:vm0-runner-pr-([1-9][0-9]*)(?:-[a-z0-9][a-z0-9.-]*)?|vm0-stripe-listener-pr-([1-9][0-9]*))\.service$"
+    r"^(?:vm0-runner-pr-([1-9][0-9]*)(?:-[a-z0-9][a-z0-9.-]*)?"
+    r"|vm0-stripe-listener-pr-([1-9][0-9]*)"
+    r"|vm0-ci-image-pr-([1-9][0-9]*)-[a-f0-9]{64})\.service$"
 )
 IMAGE_UNIT = re.compile(r"^vm0-ci-image-([a-f0-9]{64})\.service$")
 NAMESPACE = re.compile(r"(?:^|-)pr-([1-9][0-9]*)(?:-|$)")
@@ -160,7 +162,7 @@ class Host:
             match = UNIT.fullmatch(name)
             if not match:
                 return
-            pr = int(match[1] or match[2])
+            pr = int(next(number for number in match.groups() if number is not None))
             if wanted(pr):
                 units.setdefault(name, {"pr": pr, "paths": []})
                 if file is not None:

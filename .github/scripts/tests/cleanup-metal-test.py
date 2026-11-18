@@ -341,7 +341,7 @@ class CleanupTests(unittest.TestCase):
     def test_image_unit_associates_exact_namespace_and_retires_execution(self):
         for number, digit in ((42, "a"), (420, "b")):
             identity = digit * 64
-            name = f"vm0-runner-pr-{number}-image-{identity}.service"
+            name = f"vm0-ci-image-pr-{number}-{identity}.service"
             self.resource("run/systemd/transient/" + name)
             self.resource(f"var/lib/vm0-runner/bin/pr-{number}/runner")
             self.state(
