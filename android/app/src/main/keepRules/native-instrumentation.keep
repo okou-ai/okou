@@ -19,9 +19,12 @@
   int appearance_system;
   int auth_welcome;
   int back;
+  int chat_archived;
+  int chat_empty;
+  int chat_filter;
   int chat_list_title;
   int chat_loading;
-  int chat_status_observed;
+  int chat_more_actions;
   int composer_accepted;
   int composer_new;
   int composer_saving;
@@ -48,9 +51,10 @@
   int realtime_unavailable;
   int recovery_continue;
   int settings;
-  int updates_available;
   int updates_check;
   int updates_required;
+  int updates_target;
+  int updates_view;
 }
 -keep,allowobfuscation class ai.okou.android.R {
 }

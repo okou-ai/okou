@@ -5,7 +5,6 @@ import ai.okou.android.api.generated.IndicatorsThreadsValue
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,17 +18,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LongState
 import androidx.compose.runtime.remember
@@ -41,9 +39,11 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.collapse
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.expand
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
@@ -55,13 +55,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 internal fun ChatListScreen(
     state: ChatListUiState,
     refresh: () -> Unit,
     retryList: () -> Unit,
     retryMetadata: () -> Unit,
     refreshIndicators: () -> Unit,
-    selectFilter: (ChatListFilter) -> Unit,
     open: (ConfirmedChat) -> Unit,
     collapsed: List<String>,
     toggleProject: (String) -> Unit,
@@ -113,9 +113,25 @@ internal fun ChatListScreen(
         state.agentsPhase == ChatReadPhase.Ready &&
             state.agents.none { it.isDefaultAgent } &&
             state.threads.any { it.hidden != true && it.projectId !in knownProjects }
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+    val refreshLabel = stringResource(R.string.chat_refresh)
+    PullToRefreshBox(
+        isRefreshing = state.confirmedAt != null && state.listPhase == ChatReadPhase.Loading,
+        onRefresh = refresh,
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.TopCenter,
+    ) {
         LazyColumn(
-            Modifier.widthIn(max = 720.dp).fillMaxWidth().testTag("chat_list"),
+            Modifier.widthIn(max = 720.dp).fillMaxWidth().testTag("chat_list").semantics {
+                if (state.listPhase != ChatReadPhase.Loading) {
+                    customActions =
+                        listOf(
+                            CustomAccessibilityAction(refreshLabel) {
+                                refresh()
+                                true
+                            }
+                        )
+                }
+            },
             contentPadding = androidx.compose.foundation.layout.PaddingValues(24.dp),
             state = listState,
         ) {
@@ -125,19 +141,7 @@ internal fun ChatListScreen(
                     style = MaterialTheme.typography.headlineLarge,
                     modifier = Modifier.semantics { heading() },
                 )
-                ChatAction(R.string.chat_refresh, refresh, state.listPhase != ChatReadPhase.Loading)
                 ChatAction(R.string.composer_new, { newChat(null) })
-            }
-            item {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(ChatListFilter.entries) { filter ->
-                        FilterChip(
-                            selected = state.filter == filter,
-                            onClick = { selectFilter(filter) },
-                            label = { Text(stringResource(filter.label())) },
-                        )
-                    }
-                }
             }
             if (state.source == ChatListSource.Cache) item { ChatNotice(R.string.chat_cached) }
             if (state.listPhase == ChatReadPhase.Loading)
@@ -168,19 +172,14 @@ internal fun ChatListScreen(
                     ChatNotice(R.string.chat_metadata_unavailable)
                     ChatAction(R.string.retry, retryMetadata)
                 }
-            item {
-                ChatNotice(
-                    when (state.indicatorsPhase) {
-                        ChatReadPhase.Ready -> R.string.chat_status_observed
-                        ChatReadPhase.Failed -> R.string.chat_status_unavailable
-                        else -> R.string.chat_status_loading
+            when (state.indicatorsPhase) {
+                ChatReadPhase.Loading -> item { ChatNotice(R.string.chat_status_loading) }
+                ChatReadPhase.Failed ->
+                    item {
+                        ChatNotice(R.string.chat_status_unavailable)
+                        ChatAction(R.string.chat_refresh_status, refreshIndicators)
                     }
-                )
-                ChatAction(
-                    R.string.chat_refresh_status,
-                    refreshIndicators,
-                    state.indicatorsPhase != ChatReadPhase.Loading,
-                )
+                else -> Unit
             }
             if (state.confirmedAt != null) {
                 sections.forEach { section ->
@@ -412,9 +411,9 @@ private fun ChatNotice(message: Int) {
     )
 }
 
-private fun ChatListFilter.label() =
+internal fun ChatListFilter.label() =
     when (this) {
-        ChatListFilter.Recent -> R.string.chat_recent
+        ChatListFilter.Recent -> R.string.chat_all
         ChatListFilter.Unread -> R.string.chat_unread
         ChatListFilter.Archived -> R.string.chat_archived
         ChatListFilter.Muted -> R.string.chat_muted

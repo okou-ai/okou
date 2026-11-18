@@ -9,11 +9,13 @@
     <string name="chat_cache_unavailable">Der Offline-Speicher ist nicht verfügbar. Nach einem Neustart sind diese Chats möglicherweise nicht verfügbar.</string>
     <string name="chat_metadata_loading">Okou- und Projektnamen werden geladen…</string>
     <string name="chat_metadata_unavailable">Einige Okou- oder Projektinformationen sind nicht verfügbar.</string>
-    <string name="chat_status_observed">Aktivitäts- und Ungelesen-Status stammen von der letzten Aktualisierung.</string>
     <string name="chat_status_unavailable">Status konnte nicht aktualisiert werden. Frühere Anzeigen können veraltet sein.</string>
     <string name="chat_status_loading">Aktivitäts- und Ungelesen-Status werden geprüft…</string>
     <string name="chat_refresh_status">Status aktualisieren</string>
-    <string name="chat_recent">Zuletzt</string>
+    <string name="chat_all">Alle</string>
+    <string name="chat_filter">Filter</string>
+    <string name="chat_clear_filter">Filter löschen</string>
+    <string name="chat_more_actions">Weitere Aktionen</string>
     <string name="chat_unread">Ungelesen</string>
     <string name="chat_archived">Archiviert</string>
     <string name="chat_muted">Stumm</string>

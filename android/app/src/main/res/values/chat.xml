@@ -9,11 +9,13 @@
     <string name="chat_cache_unavailable">Offline storage is unavailable. These chats may not be available after restarting.</string>
     <string name="chat_metadata_loading">Loading Okou and Project names…</string>
     <string name="chat_metadata_unavailable">Some Okou or Project information is unavailable.</string>
-    <string name="chat_status_observed">Activity and unread status are from the last refresh.</string>
     <string name="chat_status_unavailable">Could not refresh status. Previous indicators may be out of date.</string>
     <string name="chat_status_loading">Checking activity and unread status…</string>
     <string name="chat_refresh_status">Refresh status</string>
-    <string name="chat_recent">Recent</string>
+    <string name="chat_all">All</string>
+    <string name="chat_filter">Filter</string>
+    <string name="chat_clear_filter">Clear filter</string>
+    <string name="chat_more_actions">More actions</string>
     <string name="chat_unread">Unread</string>
     <string name="chat_archived">Archived</string>
     <string name="chat_muted">Muted</string>

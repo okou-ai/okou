@@ -77,7 +77,23 @@ class NativeUpdateTest {
                 device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000)
             assertNotNull(text(app.getString(R.string.chat_list_title)))
             gate.complete(Unit)
-            assertNotNull(text(app.getString(R.string.updates_available, "99.0.0")))
+            assertNotNull(text(app.getString(R.string.updates_view)))
+            assertTrue(
+                device.wait(Until.gone(By.desc(app.getString(R.string.chat_filter))), 10_000)
+            )
+            val more =
+                requireNotNull(
+                    device.wait(
+                        Until.findObject(By.desc(app.getString(R.string.chat_more_actions))),
+                        10_000,
+                    )
+                )
+            more.click()
+            assertNotNull(text(app.getString(R.string.chat_filter)))
+            assertNotNull(text(app.getString(R.string.settings)))
+            assertTrue(device.pressBack())
+            requireNotNull(text(app.getString(R.string.updates_view))).click()
+            assertNotNull(text(app.getString(R.string.updates_target, "99.0.0")))
             takeScreenshot().writeToTestStorage("android-update-optional.png")
             owner.requireUpdate(RequiredUpdate("99.0.0"))
             assertNotNull(text(app.getString(R.string.updates_required)))

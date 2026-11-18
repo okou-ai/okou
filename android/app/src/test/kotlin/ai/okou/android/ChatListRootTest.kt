@@ -5,7 +5,6 @@ import android.os.Looper
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
-import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -282,26 +281,30 @@ class ChatListRootTest {
     fun heldTransportKeepsNavigationAndRestoresTheListWithProjectStatus() {
         compose.onNodeWithText("Chats").assertExists()
         compose.onNodeWithText("Loading chats…").assertExists()
+        compose.onNodeWithContentDescription("Switch workspace").performClick()
+        compose.onNodeWithText("Workspace B").assertExists()
+        compose.onNodeWithText("Back").performClick()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Appearance").assertExists()
         (compose.activity.application as ChatListApplication).responseGate.countDown()
         compose.onNodeWithContentDescription("Back").performClick()
         awaitListAndNames()
+        val unread = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unread")
+        compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Project chat"))
         compose.waitUntil(10_000) {
             compose
-                .onAllNodesWithText(compose.activity.getString(R.string.chat_status_observed))
+                .onAllNodes(hasText("Project chat").and(unread))
                 .fetchSemanticsNodes()
                 .isNotEmpty()
         }
-        val unread = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unread")
-        compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Project chat"))
         compose.onNodeWithText("Project chat").assert(unread)
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Research"))
         compose.onNodeWithText("Research").assert(!unread).performClick()
         compose.onNodeWithText("Research").assert(unread)
         compose.onNodeWithText("Project chat").assertDoesNotExist()
         compose.onNodeWithTag("chat_list").performScrollToIndex(0)
-        compose.onNode(hasText("Archived").and(hasClickAction())).performClick()
+        compose.onNodeWithContentDescription("Filter").performClick()
+        compose.onNodeWithText("Archived").performClick()
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("No chats in this view."))
         compose.onNodeWithText("No chats in this view.").assertExists()
         compose.activityRule.scenario.recreate()
