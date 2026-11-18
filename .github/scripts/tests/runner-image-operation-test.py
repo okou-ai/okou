@@ -148,7 +148,7 @@ class ImageOperationTest(unittest.TestCase):
             self.assertEqual(process.returncode, 0, output + error)
             self.assertEqual(self.cleanup_reply(cleanup), {"ready": [123]})
             self.assertEqual(self.clean_namespace(cleanup)["outcome"], "cleaned")
-        self.assertFalse((self.root / "var/lib/vm0-runner/bin/pr-123").exists())
+        self.assertFalse((self.root / "var/lib/vm0-runner/bin/pr-123-image-1234").exists())
         self.result.unlink()
         retired = self.invoke("run", "build", str(self.result), check=False)
         self.assertNotEqual(retired.returncode, 0, retired.stdout + retired.stderr)
@@ -177,12 +177,12 @@ class ImageOperationTest(unittest.TestCase):
         output, error = process.communicate(timeout=15)
         self.assertNotEqual(process.returncode, 0, output + error)
         self.assertEqual(self.records("executions"), [])
-        self.assertFalse((self.root / "var/lib/vm0-runner/bin/pr-123").exists())
+        self.assertFalse((self.root / "var/lib/vm0-runner/bin/pr-123-image-1234").exists())
 
     def test_cleanup_fences_a_late_service_and_same_owner_reclaim(self):
         self.invoke("claim")
         self.environment["IMAGE_FAULT"] = "pending-launch"
-        directory = self.root / "var/lib/vm0-runner/bin/pr-123"
+        directory = self.root / "var/lib/vm0-runner/bin/pr-123-image-1234"
         command = f"from pathlib import Path; p=Path({str(directory)!r}); p.mkdir(parents=True); (p/'late').touch()"
         process = subprocess.Popen(
             ["python3", str(COMMAND), "guard", "dev-11", "python3", "-c", command],
@@ -209,8 +209,10 @@ class ImageOperationTest(unittest.TestCase):
             GITHUB_RUN_ID="1235", RUNNER_IMAGE_RUN_CREATED_AT="2026-10-03T00:00:00Z"
         )
         self.invoke("claim")
-        self.invoke("guard", "touch", str(directory / "successor"), input_text="")
-        self.assertTrue((directory / "successor").exists())
+        successor = directory.with_name("pr-123-image-1235")
+        self.invoke("guard", "touch", str(successor / "successor"), input_text="")
+        self.assertTrue((successor / "successor").exists())
+        self.assertFalse(directory.exists())
 
     def test_uncommitted_claim_cannot_recreate_a_cleaned_namespace(self):
         self.environment["IMAGE_FAULT"] = "claim-commit-loss"
@@ -219,7 +221,7 @@ class ImageOperationTest(unittest.TestCase):
             self.assertEqual(self.cleanup_reply(cleanup), {"ready": [123]})
             self.assertEqual(self.clean_namespace(cleanup)["outcome"], "cleaned")
         self.assertNotEqual(self.invoke("claim", check=False).returncode, 0)
-        self.assertFalse((self.root / "var/lib/vm0-runner/bin/pr-123").exists())
+        self.assertFalse((self.root / "var/lib/vm0-runner/bin/pr-123-image-1234").exists())
         self.environment.update(
             GITHUB_RUN_ID="1235", RUNNER_IMAGE_RUN_CREATED_AT="2026-10-03T00:00:00Z"
         )
@@ -230,7 +232,7 @@ class ImageOperationTest(unittest.TestCase):
     def test_claim_waiting_on_cleanup_cannot_recreate_namespace(self):
         self.invoke("claim")
         self.environment["GITHUB_RUN_ATTEMPT"] = "2"
-        directory = self.root / "var/lib/vm0-runner/bin/pr-123"
+        directory = self.root / "var/lib/vm0-runner/bin/pr-123-image-1234"
         with self.cleanup_session() as cleanup:
             self.assertEqual(self.cleanup_reply(cleanup), {"ready": [123]})
             claim = subprocess.Popen(
@@ -247,7 +249,7 @@ class ImageOperationTest(unittest.TestCase):
         out, error = claim.communicate(timeout=10)
         self.assertNotEqual(claim.returncode, 0, out + error)
         self.assertIn(b"image workflow predates PR closure", error)
-        self.assertFalse(directory.exists())
+        self.assertFalse(directory.with_name("pr-123-image-1235").exists())
         # A request first delivered after cleanup still carries its original
         # GitHub timestamp. Equal-second ordering cannot establish freshness.
         self.environment.update(
@@ -259,7 +261,7 @@ class ImageOperationTest(unittest.TestCase):
             GITHUB_RUN_ID="1236", RUNNER_IMAGE_RUN_CREATED_AT="2026-10-03T00:00:00Z"
         )
         self.invoke("claim")
-        self.assertTrue(directory.exists())
+        self.assertTrue(directory.with_name("pr-123-image-1236").exists())
 
     def start_blocked(self, fault=""):
         self.environment["IMAGE_FAULT"] = fault
@@ -275,6 +277,23 @@ class ImageOperationTest(unittest.TestCase):
         self.addCleanup(lambda: process.poll() is None and process.kill())
         self.wait_for(lambda: bool(self.records("executions")))
         return process
+
+    def test_successor_keeps_prior_image_until_closed_pr_cleanup(self):
+        self.invoke("claim")
+        binary_root = self.root / "var/lib/vm0-runner/bin"
+        first = binary_root / "pr-123-image-1234"
+        second = binary_root / "pr-123-image-1235"
+        self.invoke("guard", "touch", str(first / "runner"), input_text="")
+        self.environment["GITHUB_RUN_ID"] = "1235"
+        self.invoke("claim")
+        self.invoke("guard", "touch", str(second / "runner"), input_text="")
+        self.assertTrue((first / "runner").is_file())
+        self.assertTrue((second / "runner").is_file())
+        with self.cleanup_session() as cleanup:
+            self.assertEqual(self.cleanup_reply(cleanup), {"ready": [123]})
+            self.assertEqual(self.clean_namespace(cleanup)["outcome"], "cleaned")
+        self.assertFalse(first.exists())
+        self.assertFalse(second.exists())
 
     def assert_one_build(self):
         self.assertEqual([r["phase"] for r in self.records("executions")], ["build"])

@@ -92,6 +92,16 @@ replaced by original-result retrieval, so a known remote failure remains failed.
 Isolated binary upload candidates do not publish outside the guarded
 validation/rename boundary.
 
+PR builds publish the binary at `bin/pr-N-image-RUN_ID/runner` under the
+Runner data root. A rerun of an architecture within that workflow run can
+reuse the same bytes, so the architecture manifests still share a directory.
+Publication rejects a differing binary for an existing generation. The
+manifest carries the exact binary path. Recovery can repair that path while
+the directory exists. Closed-PR cleanup owns directory retirement and removes
+all generations after its active-owner and service checks. Superseded
+generations occupy disk until the PR is cleaned up. Preview service replacement
+and its mutable runtime directories are owned by deployment.
+
 Image writers also hold the existing host-local lifecycle lock used by Runner
 deployment and closed-PR cleanup. Its root-owned file keeps the same inode and
 is readable by workers so Linux can lock a read-only descriptor without running

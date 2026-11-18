@@ -126,6 +126,10 @@ fi
 
 # Validate the complete execution identity before even a read-only SSH probe.
 python3 "$IMAGE_OPERATION" validate "${HOSTS[0]}"
+if [[ "$job_ref" == pr-* ]]; then
+  BIN_DIR+="-image-${GITHUB_RUN_ID:?}"
+  runner_image_bin_dir_matches "$job_ref" "$BIN_DIR" || exit 2
+fi
 
 prepare_host() {
   local host=$1
@@ -147,7 +151,10 @@ prepare_host() {
   # A lost claim response reconciles this identity; it never replays preparation.
   python3 "$IMAGE_OPERATION" claim "$host" || return $?
 
-  if ! python3 "$IMAGE_OPERATION" guard "$host" bash -s -- "${BIN_DIR}" "${RUNNER_DIR}" "${job_ref}" << 'REMOTE_SCRIPT'; then
+  # PR image generations start in separate binary directories. Preview
+  # deployment owns its running services and mutable runtime directory.
+  if [[ "$job_ref" != pr-* ]] &&
+    ! python3 "$IMAGE_OPERATION" guard "$host" bash -s -- "${BIN_DIR}" "${RUNNER_DIR}" "${job_ref}" << 'REMOTE_SCRIPT'; then
 set -euo pipefail
 BIN_DIR=$1
 RUNNER_DIR=$2
@@ -277,11 +284,12 @@ REMOTE_SCRIPT
     sleep 5
   done
 
-  if ! python3 "$IMAGE_OPERATION" guard "$host" bash -s -- "${tmp_runner}" "${BIN_DIR}/runner" "${runner_sha}" << 'REMOTE_SCRIPT'; then
+  if ! python3 "$IMAGE_OPERATION" guard "$host" bash -s -- "${tmp_runner}" "${BIN_DIR}/runner" "${runner_sha}" "${job_ref}" << 'REMOTE_SCRIPT'; then
 set -euo pipefail
 TMP_RUNNER=$1
 FINAL_RUNNER=$2
 EXPECTED_SHA=$3
+JOB_REF=$4
 
 cleanup_tmp() {
   sudo rm -f "${TMP_RUNNER}"
@@ -295,6 +303,13 @@ if [ "${actual_sha}" != "${EXPECTED_SHA}" ]; then
 fi
 
 sudo "${TMP_RUNNER}" --version >/dev/null
+if [[ "$JOB_REF" == pr-* ]] && sudo test -e "$FINAL_RUNNER"; then
+  if [ "$(sudo sha256sum "${FINAL_RUNNER}" | awk '{print $1}')" != "$EXPECTED_SHA" ]; then
+    echo "runner generation already has a different binary" >&2
+    exit 1
+  fi
+  exit 0
+fi
 sudo mv -f "${TMP_RUNNER}" "${FINAL_RUNNER}"
 trap - EXIT
 REMOTE_SCRIPT

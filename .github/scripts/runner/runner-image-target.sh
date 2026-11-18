@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
 
+runner_image_bin_dir_matches() {
+  local namespace=$1 directory=$2
+  local base="/var/lib/vm0-runner/bin/${namespace}" generation
+  [ "$directory" != "$base" ] || return 0
+  [[ "$namespace" == pr-* && "$directory" == "$base"-image-* ]] || return 1
+  generation=${directory#"$base"-image-}
+  [[ "$generation" =~ ^[1-9][0-9]*$ ]]
+}
+
 runner_image_supported_targets_text() {
   printf '%s\n' "aarch64-unknown-linux-musl, x86_64-unknown-linux-musl"
 }

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "${SCRIPT_DIR}/runner-image-target.sh"
 
 # The deployment receipt is the authority. Never replace its generation by
 # reading the current runner_id/heartbeat_generation during cleanup.
@@ -44,7 +46,7 @@ for inventory_host in $(echo "$METAL_HOSTS" | tr ',' ' '); do
     matched=true
   fi
 done
-if ! $matched || [ "$bin_dir" != "/var/lib/vm0-runner/bin/${JOB_REF}" ]; then
+if ! $matched || ! runner_image_bin_dir_matches "$JOB_REF" "$bin_dir"; then
   echo "Deployment receipt does not match this namespace and metal inventory" >&2
   exit 2
 fi

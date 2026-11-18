@@ -139,6 +139,8 @@ def claim_resource(namespace, owner, run_created_at, deadline):
             ):
                 raise RuntimeError("image workflow predates PR closure; a fresh run is required")
         directory = "/var/lib/vm0-runner/bin/" + namespace.name
+        if namespace.name.startswith("pr-"):
+            directory += f"-image-{owner['generation'][0]}"
         system("install", "-d", "-m", "755", directory)
         owner["resourceRoot"] = system("realpath", "-e", directory).strip()
         system("install", "-m", "600", "/dev/null", str(marker_for(owner)))
@@ -550,7 +552,7 @@ def worker(operation):
             credentials_path = operation / "credentials.json"
             credentials = json.loads(credentials_path.read_text())
             credentials_path.unlink()
-            runner = "/var/lib/vm0-runner/bin/" + inputs["jobRef"] + "/runner"
+            runner = str(Path(owner["resourceRoot"]) / "runner")
             checked = system("sha256sum", runner).split()[0]
             if checked != inputs["runnerSha256"]:
                 raise RuntimeError("runner bytes changed before image execution")

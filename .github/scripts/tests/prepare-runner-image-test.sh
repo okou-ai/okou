@@ -352,13 +352,21 @@ set -euo pipefail
 command=$1
 shift
 case "$command" in
+  test)
+    [ "$1" = -e ] && [ "$2" = /var/lib/vm0-runner/bin/pr-123-image-123/runner ]
+    test -e "${SSH_UPLOAD_DIR}/runner"
+    ;;
   sha256sum|mktemp)
+    if [ "$command" = sha256sum ] && [ "$1" = /var/lib/vm0-runner/bin/pr-123-image-123/runner ]; then
+      shift
+      set -- "${SSH_UPLOAD_DIR}/runner" "$@"
+    fi
     exec "$command" "$@"
     ;;
   mv)
     [ "$1" = -f ] || exit 1
     case "$3" in
-      /var/lib/vm0-runner/bin/pr-123/runner)
+      /var/lib/vm0-runner/bin/pr-123-image-123/runner)
         mv -f "$2" "${SSH_UPLOAD_DIR}/runner"
         ;;
       /var/lib/vm0-runner/bin/pr-123/okou-cli/*)
@@ -385,7 +393,7 @@ case "$command" in
       printf ' %s' "$@"
       printf '\n'
     } >> "$SYSTEMCTL_LOG"
-    if [ "$command" = find ] && [ "$1" = /var/lib/vm0-runner/bin/pr-123 ]; then
+    if [ "$command" = find ] && [ "$1" = /var/lib/vm0-runner/bin/staging-aaaaaaaaaaaa ]; then
       shift
       exec find "$SSH_UPLOAD_DIR" "$@"
     fi
@@ -510,7 +518,7 @@ run_remote_case() {
     SYSTEMCTL_LIST_FAILURE="$list_failure" \
     SYSTEMCTL_STOP_FAILURE_UNIT="$stop_failure_unit" \
     SYSTEMCTL_STICKY_UNIT="$sticky_unit" \
-    JOB_REF=pr-123 \
+    JOB_REF="${REMOTE_JOB_REF:-pr-123}" \
     HEAD_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
     GITHUB_RUN_ID=123 \
     RUNNER_IMAGE_RUN_CREATED_AT="2026-10-01T00:00:00Z" \
@@ -623,31 +631,31 @@ wait "$cancel_pid" || fail "expected verified preparation cancellation"
 
 success_case="${TMPDIR}/remote-success"
 prepare_remote_case "$success_case"
-set_unit_state "$success_case" "vm0-runner-pr-123-2.service" active
-set_unit_state "$success_case" "vm0-runner-pr-123-7.service" active
-set_unit_state "$success_case" "vm0-runner-pr-123-exec.service" active
-set_unit_state "$success_case" "vm0-runner-pr-123-keepalive.service" active
-set_unit_state "$success_case" "vm0-runner-pr-123-cancel.service" active
-set_unit_state "$success_case" "vm0-runner-pr-123-9.service" active not-found
-set_unit_state "$success_case" "vm0-runner-pr-123-10.service" active masked
-run_remote_case "$success_case"
+set_unit_state "$success_case" "vm0-runner-staging-aaaaaaaaaaaa-2.service" active
+set_unit_state "$success_case" "vm0-runner-staging-aaaaaaaaaaaa-7.service" active
+set_unit_state "$success_case" "vm0-runner-staging-aaaaaaaaaaaa-exec.service" active
+set_unit_state "$success_case" "vm0-runner-staging-aaaaaaaaaaaa-keepalive.service" active
+set_unit_state "$success_case" "vm0-runner-staging-aaaaaaaaaaaa-cancel.service" active
+set_unit_state "$success_case" "vm0-runner-staging-aaaaaaaaaaaa-9.service" active not-found
+set_unit_state "$success_case" "vm0-runner-staging-aaaaaaaaaaaa-10.service" active masked
+REMOTE_JOB_REF=staging-aaaaaaaaaaaa run_remote_case "$success_case"
 grep -q 'ci@dev-arm-1 uname -m' "${success_case}/ssh.log" || fail "valid supplied runner must reach the SSH boundary"
-grep -Eq '^stop .*vm0-runner-pr-123-2\.service([[:space:]]|$)' "${success_case}/systemctl.log" || fail "expected primary runner suffix 2 to stop"
-grep -Eq '^stop .*vm0-runner-pr-123-7\.service([[:space:]]|$)' "${success_case}/systemctl.log" || fail "expected primary runner suffix 7 to stop"
-if grep '^stop ' "${success_case}/systemctl.log" | grep -Eq 'vm0-runner-pr-123-(exec|keepalive|cancel)\.service'; then
+grep -Eq '^stop .*vm0-runner-staging-aaaaaaaaaaaa-2\.service([[:space:]]|$)' "${success_case}/systemctl.log" || fail "expected primary runner suffix 2 to stop"
+grep -Eq '^stop .*vm0-runner-staging-aaaaaaaaaaaa-7\.service([[:space:]]|$)' "${success_case}/systemctl.log" || fail "expected primary runner suffix 7 to stop"
+if grep '^stop ' "${success_case}/systemctl.log" | grep -Eq 'vm0-runner-staging-aaaaaaaaaaaa-(exec|keepalive|cancel)\.service'; then
   fail "auxiliary runner services must not stop"
 fi
-if grep '^stop ' "${success_case}/systemctl.log" | grep -q 'vm0-runner-pr-123-1\.service'; then
+if grep '^stop ' "${success_case}/systemctl.log" | grep -q 'vm0-runner-staging-aaaaaaaaaaaa-1\.service'; then
   fail "architecture-subset index must not determine the stopped service"
 fi
-if grep -Eq '^(stop|show|reset-failed).*vm0-runner-pr-123-(9|10)\.service' "${success_case}/systemctl.log"; then
+if grep -Eq '^(stop|show|reset-failed).*vm0-runner-staging-aaaaaaaaaaaa-(9|10)\.service' "${success_case}/systemctl.log"; then
   fail "non-loaded primary runner rows must not participate in cleanup"
 fi
-[ "$(< "${success_case}/state/vm0-runner-pr-123-2.service")" = "inactive" ] || fail "expected primary runner suffix 2 to be inactive"
-[ "$(< "${success_case}/state/vm0-runner-pr-123-7.service")" = "inactive" ] || fail "expected primary runner suffix 7 to be inactive"
-[ "$(< "${success_case}/state/vm0-runner-pr-123-exec.service")" = "active" ] || fail "expected auxiliary runner to remain active"
-[ "$(< "${success_case}/state/vm0-runner-pr-123-9.service")" = "active" ] || fail "expected not-found runner row to remain untouched"
-[ "$(< "${success_case}/state/vm0-runner-pr-123-10.service")" = "active" ] || fail "expected masked runner row to remain untouched"
+[ "$(< "${success_case}/state/vm0-runner-staging-aaaaaaaaaaaa-2.service")" = "inactive" ] || fail "expected primary runner suffix 2 to be inactive"
+[ "$(< "${success_case}/state/vm0-runner-staging-aaaaaaaaaaaa-7.service")" = "inactive" ] || fail "expected primary runner suffix 7 to be inactive"
+[ "$(< "${success_case}/state/vm0-runner-staging-aaaaaaaaaaaa-exec.service")" = "active" ] || fail "expected auxiliary runner to remain active"
+[ "$(< "${success_case}/state/vm0-runner-staging-aaaaaaaaaaaa-9.service")" = "active" ] || fail "expected not-found runner row to remain untouched"
+[ "$(< "${success_case}/state/vm0-runner-staging-aaaaaaaaaaaa-10.service")" = "active" ] || fail "expected masked runner row to remain untouched"
 last_show_line=$(grep -n '^show ' "${success_case}/systemctl.log" | tail -n1 | cut -d: -f1)
 first_mutation_line=$(grep -n '^mutate ' "${success_case}/systemctl.log" | head -n1 | cut -d: -f1)
 [ -n "$last_show_line" ] || fail "expected post-stop state verification"
@@ -656,8 +664,8 @@ first_mutation_line=$(grep -n '^mutate ' "${success_case}/systemctl.log" | head 
 
 no_primary_case="${TMPDIR}/remote-no-primary"
 prepare_remote_case "$no_primary_case"
-set_unit_state "$no_primary_case" "vm0-runner-pr-123-exec.service" active
-run_remote_case "$no_primary_case"
+set_unit_state "$no_primary_case" "vm0-runner-staging-aaaaaaaaaaaa-exec.service" active
+REMOTE_JOB_REF=staging-aaaaaaaaaaaa run_remote_case "$no_primary_case"
 if grep -q '^stop ' "${no_primary_case}/systemctl.log"; then
   fail "preparation without a primary runner must not stop auxiliary services"
 fi
@@ -665,8 +673,8 @@ grep -q '^mutate rm ' "${no_primary_case}/systemctl.log" || fail "preparation wi
 
 discovery_failure_case="${TMPDIR}/remote-discovery-failure"
 prepare_remote_case "$discovery_failure_case"
-set_unit_state "$discovery_failure_case" "vm0-runner-pr-123-2.service" active
-run_remote_case "$discovery_failure_case" 1
+set_unit_state "$discovery_failure_case" "vm0-runner-staging-aaaaaaaaaaaa-2.service" active
+REMOTE_JOB_REF=staging-aaaaaaaaaaaa run_remote_case "$discovery_failure_case" 1
 if grep -q '^mutate ' "${discovery_failure_case}/systemctl.log"; then
   fail "discovery failure must prevent shared-path mutation"
 fi
@@ -674,33 +682,33 @@ grep -q 'mock list-units failure' "${discovery_failure_case}/out" || fail "expec
 
 malformed_loaded_case="${TMPDIR}/remote-malformed-loaded"
 prepare_remote_case "$malformed_loaded_case"
-printf '%s\n' "vm0-runner-pr-123-2.service loaded active" >> "${malformed_loaded_case}/extra-list-rows"
-run_remote_case "$malformed_loaded_case"
+printf '%s\n' "vm0-runner-staging-aaaaaaaaaaaa-2.service loaded active" >> "${malformed_loaded_case}/extra-list-rows"
+REMOTE_JOB_REF=staging-aaaaaaaaaaaa run_remote_case "$malformed_loaded_case"
 if grep -q '^mutate ' "${malformed_loaded_case}/systemctl.log"; then
   fail "malformed loaded row must prevent shared-path mutation"
 fi
-grep -q 'malformed loaded runner service row: vm0-runner-pr-123-2.service loaded active' "${malformed_loaded_case}/out" || fail "expected malformed loaded row output"
+grep -q 'malformed loaded runner service row: vm0-runner-staging-aaaaaaaaaaaa-2.service loaded active' "${malformed_loaded_case}/out" || fail "expected malformed loaded row output"
 
 stop_failure_case="${TMPDIR}/remote-stop-failure"
 prepare_remote_case "$stop_failure_case"
-set_unit_state "$stop_failure_case" "vm0-runner-pr-123-2.service" active
-run_remote_case "$stop_failure_case" '' "vm0-runner-pr-123-2.service"
+set_unit_state "$stop_failure_case" "vm0-runner-staging-aaaaaaaaaaaa-2.service" active
+REMOTE_JOB_REF=staging-aaaaaaaaaaaa run_remote_case "$stop_failure_case" '' "vm0-runner-staging-aaaaaaaaaaaa-2.service"
 if grep -q '^mutate ' "${stop_failure_case}/systemctl.log"; then
   fail "stop failure must prevent shared-path mutation"
 fi
-grep -q 'mock stop failure for vm0-runner-pr-123-2.service' "${stop_failure_case}/out" || fail "expected stop failure output"
+grep -q 'mock stop failure for vm0-runner-staging-aaaaaaaaaaaa-2.service' "${stop_failure_case}/out" || fail "expected stop failure output"
 
 verification_failure_case="${TMPDIR}/remote-verification-failure"
 prepare_remote_case "$verification_failure_case"
-set_unit_state "$verification_failure_case" "vm0-runner-pr-123-2.service" active
-run_remote_case "$verification_failure_case" '' '' "vm0-runner-pr-123-2.service"
+set_unit_state "$verification_failure_case" "vm0-runner-staging-aaaaaaaaaaaa-2.service" active
+REMOTE_JOB_REF=staging-aaaaaaaaaaaa run_remote_case "$verification_failure_case" '' '' "vm0-runner-staging-aaaaaaaaaaaa-2.service"
 if grep -q '^mutate ' "${verification_failure_case}/systemctl.log"; then
   fail "verification failure must prevent shared-path mutation"
 fi
-grep -q 'runner service vm0-runner-pr-123-2.service is active after stop' "${verification_failure_case}/out" || fail "expected verification failure output"
+grep -q 'runner service vm0-runner-staging-aaaaaaaaaaaa-2.service is active after stop' "${verification_failure_case}/out" || fail "expected verification failure output"
 
-gc_command='ci@dev-arm-1 sudo /var/lib/vm0-runner/bin/pr-123/runner gc --keep-latest 6'
-setup_command='ci@dev-arm-1 sudo /var/lib/vm0-runner/bin/pr-123/runner setup'
+gc_command='ci@dev-arm-1 sudo /var/lib/vm0-runner/bin/pr-123-image-123/runner gc --keep-latest 6'
+setup_command='ci@dev-arm-1 sudo /var/lib/vm0-runner/bin/pr-123-image-123/runner setup'
 
 gc_success_case="${TMPDIR}/gc-success"
 prepare_remote_case "$gc_success_case"
@@ -738,6 +746,14 @@ cmp "$runner" "${upload_success_case}/uploads/runner" || fail "successful upload
 grep -Fqx -- "$setup_command" "${upload_success_case}/ssh.log" || fail "validated upload must continue to setup"
 grep -Fq 'runner upload completed: host=dev-arm-1 attempt=1/3 elapsed_seconds=' "${upload_success_case}/out" || fail "expected successful upload timing"
 
+generation_conflict_case="${TMPDIR}/generation-conflict"
+prepare_remote_case "$generation_conflict_case"
+printf 'runner from the existing generation\n' > "${generation_conflict_case}/uploads/runner"
+REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 REMOTE_UPLOAD_STATUSES=0 run_remote_case "$generation_conflict_case"
+grep -Fq 'runner generation already has a different binary' "${generation_conflict_case}/out" || fail "expected immutable generation rejection"
+grep -Fxq 'runner from the existing generation' "${generation_conflict_case}/uploads/runner" || fail "a retry must preserve the published binary"
+[ "$(< "${generation_conflict_case}/gc-count")" -eq 0 ] || fail "an incompatible retry must not start GC"
+
 for status in 255 124 141; do
   for statuses in "${status},0" "${status},${status},0"; do
     upload_retry_case="${TMPDIR}/upload-retry-${statuses}"
@@ -751,7 +767,7 @@ for status in 255 124 141; do
     failed_candidate=$(< "${upload_retry_case}/uploads/failed-candidate")
     grep -Fxq 'late stale bytes' "$failed_candidate" || fail "expected a late write to the failed candidate"
     grep -Fqx -- "$setup_command" "${upload_retry_case}/ssh.log" || fail "recovered upload must continue to setup"
-    [ "$(grep -c '^mutate rm -rf /var/lib/vm0-runner/runners/pr-123$' "${upload_retry_case}/systemctl.log")" -eq 1 ] || fail "upload retry must not repeat destructive preparation"
+    [ ! -s "${upload_retry_case}/systemctl.log" ] || fail "PR image preparation must not mutate preview services or runtime directories"
     [ "$(find "${upload_retry_case}/uploads" -name '.image-owner-*' | wc -l)" -eq 1 ] || fail "preparation must preserve current owner admission"
     [ "$(< "${upload_retry_case}/gc-count")" -eq 1 ] || fail "upload retry must not repeat GC"
     grep -Fq "runner upload failed: host=dev-arm-1 attempt=1/3 status=${status} elapsed_seconds=" "${upload_retry_case}/out" || fail "expected original upload status and timing"

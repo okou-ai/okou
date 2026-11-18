@@ -31,7 +31,7 @@ if [ "$*" = "uname -m" ]; then
   echo "$arch"
   exit 0
 fi
-if [ "$*" = "bash -s -- $BIN_DIR" ]; then
+if [ "$*" = "bash -s -- $BIN_DIR $BIN_DIR" ]; then
   cat >/dev/null
   if [ "${MOCK_RECOVERY:-false}" = true ]; then
     if [ -f "${MOCK_REMOTE_ROOT}/${host}/bin/runner" ]; then
@@ -63,7 +63,7 @@ if [ "$*" = "sudo mkdir -p -- $BIN_DIR" ]; then
 fi
 if [[ "$*" == "sudo install -m 755 /dev/stdin ${BIN_DIR}/runner.recovery."* ]]; then
   destination=${*: -1}
-  install -m 755 /dev/stdin "${MOCK_REMOTE_ROOT}/${host}/bin/${destination##*/}"
+  install -m 755 /proc/self/fd/0 "${MOCK_REMOTE_ROOT}/${host}/bin/${destination##*/}"
   exit 0
 fi
 

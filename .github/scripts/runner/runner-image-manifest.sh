@@ -72,7 +72,10 @@ validate() {
   bin_dir=$(json_get '.binDir')
   runner_dir=$(json_get '.runnerDir')
   runner_sha=$(json_get '.runnerSha256')
-  [ -n "$bin_dir" ] || { echo "manifest missing binDir" >&2; exit 1; }
+  runner_image_bin_dir_matches "$JOB_REF" "$bin_dir" || {
+    echo "manifest binDir does not match the image namespace" >&2
+    exit 1
+  }
   [ -n "$runner_dir" ] || { echo "manifest missing runnerDir" >&2; exit 1; }
   [ -n "$runner_sha" ] || { echo "manifest missing runnerSha256" >&2; exit 1; }
 

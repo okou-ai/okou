@@ -116,7 +116,7 @@ make_manifest() {
 
   jq -n \
     --arg head_sha "head-sha" \
-    --arg job_ref "job-ref" \
+    --arg job_ref "pr-123" \
     --arg profile "debug" \
     --arg target "$target" \
     --arg bin_dir "$bin_dir" \
@@ -152,7 +152,7 @@ make_manifest() {
 make_manifest \
   "$MANIFEST_DIR/arm64.json" \
   "aarch64-unknown-linux-musl" \
-  "/var/lib/vm0-runner/bin/job-ref" \
+  "/var/lib/vm0-runner/bin/pr-123-image-1234" \
   "/var/lib/vm0-runner/runners/job-ref" \
   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
   '{
@@ -163,7 +163,7 @@ make_manifest \
 make_manifest \
   "$MANIFEST_DIR/x86_64.json" \
   "x86_64-unknown-linux-musl" \
-  "/var/lib/vm0-runner/bin/job-ref" \
+  "/var/lib/vm0-runner/bin/pr-123-image-1234" \
   "/var/lib/vm0-runner/runners/job-ref" \
   "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
   '{"x86-1": {"rootfsHash": "rootfs-x86-1", "snapshotHash": "snapshot-x86-1"}}'
@@ -171,7 +171,7 @@ make_manifest \
 make_manifest \
   "$MANIFEST_DIR/x86_64-mismatch.json" \
   "x86_64-unknown-linux-musl" \
-  "/var/lib/vm0-runner/bin/other-job-ref" \
+  "/var/lib/vm0-runner/bin/pr-123-image-1235" \
   "/var/lib/vm0-runner/runners/job-ref" \
   "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
   '{"x86-1": {"rootfsHash": "rootfs-x86-1", "snapshotHash": "snapshot-x86-1"}}'
@@ -184,7 +184,7 @@ run_wait_groups() {
     AWS_METAL_RUNNER_HOSTS="arm-1,arm-2,x86-1" \
     METAL_USER="ci" \
     HEAD_SHA="head-sha" \
-    JOB_REF="job-ref" \
+    JOB_REF="pr-123" \
     LOOKUP_SHA="head-sha" \
     PROFILE="debug" \
     REPO="okou-ai/okou" \
@@ -207,7 +207,7 @@ assert_output_contains() {
 output_file="$TEST_DIR/output"
 run_wait_groups "$output_file"
 
-assert_output_contains "$output_file" 'bin-dir=/var/lib/vm0-runner/bin/job-ref'
+assert_output_contains "$output_file" 'bin-dir=/var/lib/vm0-runner/bin/pr-123-image-1234'
 assert_output_contains "$output_file" 'runner-dir=/var/lib/vm0-runner/runners/job-ref'
 assert_output_contains "$output_file" 'runner-sha-map={"aarch64-unknown-linux-musl":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","x86_64-unknown-linux-musl":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}'
 assert_output_contains "$output_file" '"arm-1":"rootfs-arm-1"'
