@@ -3,6 +3,7 @@
 import copy
 import hashlib
 import json
+import os
 import pathlib
 import struct
 import subprocess
@@ -203,6 +204,18 @@ class FixedRestoreReportTests(unittest.TestCase):
         subprocess.run(["/usr/sbin/debugfs","-w","-R","rm "+image_path,str(self.image)],check=True,capture_output=True)
         subprocess.run(["/usr/sbin/debugfs","-w","-R",f"write {source} {image_path}",str(self.image)],check=True,capture_output=True)
         with self.assertRaises(ValueError):fixed.validate(self.root)
+
+    def test_retained_image_directory_does_not_leak_descriptor(self):
+        self.image.unlink()
+        self.image.mkdir()
+        with open(os.devnull, "rb") as marker:
+            available = marker.fileno()
+
+        with self.assertRaises(IsADirectoryError):
+            self.validate()
+
+        with open(os.devnull, "rb") as marker:
+            self.assertEqual(marker.fileno(), available)
 
     def test_failed_wire_result_and_changed_fixed_input_are_rejected_even_with_new_hash(self):
         for value,offset in ((self.request,9),(self.request,13),(self.response,10)):
