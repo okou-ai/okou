@@ -22,6 +22,7 @@ futures-util = { workspace = true, features = ["async-await", "std"] }
 hex = { workspace = true, features = ["std"] }
 libc = { workspace = true, features = ["std"] }
 nix = { workspace = true, features = ["fs", "inotify", "process", "signal", "user"] }
+rustix = { workspace = true, features = ["fs", "std"] }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 sha2 = { workspace = true, features = ["alloc", "oid"] }

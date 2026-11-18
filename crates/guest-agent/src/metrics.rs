@@ -1,7 +1,7 @@
 //! System metrics collection: CPU, memory, disk.
 //!
 //! Reads `/proc/stat` for CPU, `/proc/meminfo` for memory, and uses
-//! descriptor-pinned `libc::fstatvfs` for rootfs/home. Writes JSONL to the metrics log file.
+//! descriptor-pinned filesystem statistics for rootfs/home. Writes JSONL to the metrics log file.
 
 use crate::constants;
 use crate::filesystem;
