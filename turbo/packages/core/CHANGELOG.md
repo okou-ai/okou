@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.850.2](https://github.com/okou-ai/okou/compare/core-v8.850.1...core-v8.850.2) (2026-11-18)
+
+
+### Refactoring
+
+* **core:** simplify default instructions ([#48457](https://github.com/okou-ai/okou/issues/48457)) ([c4bc8b3](https://github.com/okou-ai/okou/commit/c4bc8b3079b8c38c3323e11ecaa445b5cf30837a))
+
 ## [8.850.1](https://github.com/okou-ai/okou/compare/core-v8.850.0...core-v8.850.1) (2026-11-18)
 
 

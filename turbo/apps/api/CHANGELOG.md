@@ -10,6 +10,22 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.88.0](https://github.com/okou-ai/okou/compare/api-v2.87.2...api-v2.88.0) (2026-11-18)
+
+
+### Features
+
+* **cli:** save data responses and reuse identical calls ([#48466](https://github.com/okou-ai/okou/issues/48466)) ([cfd8171](https://github.com/okou-ai/okou/commit/cfd8171f6c0268b617f212d32802cb4ca20cfb74))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.850.2
+    * @okouai/db bumped to 2.44.3
+    * @okouai/pi-agent-runtime bumped to 1.51.154
+
 ## [2.87.2](https://github.com/okou-ai/okou/compare/api-v2.87.1...api-v2.87.2) (2026-11-18)
 
 
