@@ -5,11 +5,19 @@ import {
   string,
   enum as zEnum,
   type infer as zInfer,
+  unknown as zUnknown,
 } from "zod";
 
 import { readBoundedResponseText, safeJsonParse } from "../utils";
 
+const gmailErrorDetailTypeSchema = zEnum([
+  "type.googleapis.com/google.rpc.BadRequest",
+  "type.googleapis.com/google.rpc.ErrorInfo",
+  "type.googleapis.com/google.rpc.PreconditionFailure",
+  "type.googleapis.com/google.rpc.QuotaFailure",
+]);
 const gmailErrorDetailSchema = object({
+  "@type": zUnknown().optional(),
   domain: string().optional(),
   reason: string().optional(),
   location: string().optional(),
@@ -37,13 +45,29 @@ const gmailReconnectResponseSchema = object({
 
 const gmailReasonSchema = zEnum([
   "badRequest",
+  "failedPrecondition",
+  "invalid",
+  "required",
   "authError",
+  "forbidden",
+  "insufficientPermissions",
   "dailyLimitExceeded",
   "domainPolicy",
   "rateLimitExceeded",
   "userRateLimitExceeded",
   "backendError",
   "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
+]);
+
+const gmailErrorStatusSchema = zEnum([
+  "INVALID_ARGUMENT",
+  "FAILED_PRECONDITION",
+  "NOT_FOUND",
+  "UNAUTHENTICATED",
+  "PERMISSION_DENIED",
+  "RESOURCE_EXHAUSTED",
+  "INTERNAL",
+  "UNAVAILABLE",
 ]);
 
 export class GmailAuthorizationError extends Error {
@@ -172,17 +196,38 @@ export async function handleGmailSendError(
     };
   }
 
-  // Provider messages, locations and even unknown reason tokens may contain
-  // private values. Only known codes enter the normal error reporting path.
+  // Only allowlisted upstream values are safe to add to the request error log.
   const reasons = new Set(
     [...(error?.errors ?? []), ...(error?.details ?? [])].map((detail) => {
+      if (!detail.reason) {
+        return "missing";
+      }
       const reason = gmailReasonSchema.safeParse(detail.reason);
       return reason.success ? reason.data : "unrecognized";
     }),
   );
-  throw new Error(
-    `Gmail rejected the draft send (HTTP ${response.status}; reason: ${
-      reasons.size > 0 ? [...reasons].join(", ") : "unavailable"
-    })`,
+  const providerReasons =
+    reasons.size > 0 ? [...reasons] : [error ? "missing" : "unavailable"];
+  const providerErrorCode = gmailErrorStatusSchema.safeParse(error?.status);
+  const providerDetailTypes = [
+    ...new Set(
+      (error?.details ?? []).flatMap((detail) => {
+        const type = gmailErrorDetailTypeSchema.safeParse(detail["@type"]);
+        return type.success ? [type.data] : [];
+      }),
+    ),
+  ];
+  throw Object.assign(
+    new Error(
+      `Gmail rejected the draft send (HTTP ${response.status}; reason: ${providerReasons.join(", ")})`,
+    ),
+    {
+      providerStatus: response.status,
+      providerReasons,
+      ...(providerErrorCode.success
+        ? { providerErrorCode: providerErrorCode.data }
+        : {}),
+      ...(providerDetailTypes.length > 0 ? { providerDetailTypes } : {}),
+    },
   );
 }
