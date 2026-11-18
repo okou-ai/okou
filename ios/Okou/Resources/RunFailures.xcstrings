@@ -661,5 +661,6 @@
         "pt-BR": {"stringUnit":{"state":"translated","value":"O modelo atual não está disponível."}}
       }
     }
-  }
+  },
+  "version": "1.0"
 }
