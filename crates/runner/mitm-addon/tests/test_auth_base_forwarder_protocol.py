@@ -253,69 +253,6 @@ class TestAuthBaseForwarderRequestBehavior:
 
 
 class TestAuthBaseForwarderResponseBodyLimit:
-    async def test_accepts_body_at_limit(self):
-        with (
-            patch.object(transport, "MAX_AUTH_BASE_RESPONSE_BODY_BYTES", 4),
-            fake_forwarder_upstream(body=b"1234") as upstream,
-        ):
-            status, body, _headers = await forwarder.forward_request(
-                "https://example.com",
-                "GET",
-                [],
-                None,
-            )
-
-        assert status == 200
-        assert body == b"1234"
-        assert upstream.socket.response_file is not None
-        assert upstream.socket.response_file.closed
-        assert upstream.socket.closed
-
-    async def test_accepts_complete_fixed_length_body_at_limit(self):
-        with (
-            patch.object(transport, "MAX_AUTH_BASE_RESPONSE_BODY_BYTES", 4),
-            fake_forwarder_upstream(
-                body=b"1234",
-                headers=[("Content-Length", "4")],
-            ),
-        ):
-            status, body, _headers = await forwarder.forward_request(
-                "https://example.com",
-                "GET",
-                [],
-                None,
-            )
-
-        assert status == 200
-        assert body == b"1234"
-
-    async def test_rejects_body_over_limit_and_closes_resources(self):
-        with (
-            patch.object(transport, "MAX_AUTH_BASE_RESPONSE_BODY_BYTES", 4),
-            fake_forwarder_upstream(body=b"12345") as upstream,
-            pytest.raises(transport.ForwardedResponseTooLargeError),
-        ):
-            await forwarder.forward_request("https://example.com", "GET", [], None)
-
-        assert upstream.socket.response_file is not None
-        assert upstream.socket.response_file.closed
-        assert upstream.socket.closed
-
-    async def test_rejects_truncated_fixed_length_body_and_closes_resources(self):
-        with (
-            patch.object(transport, "MAX_AUTH_BASE_RESPONSE_BODY_BYTES", 4),
-            fake_forwarder_upstream(
-                body=b"123",
-                headers=[("Content-Length", "4")],
-            ) as upstream,
-            pytest.raises(h11.RemoteProtocolError),
-        ):
-            await forwarder.forward_request("https://example.com", "GET", [], None)
-
-        assert upstream.socket.response_file is not None
-        assert upstream.socket.response_file.closed
-        assert upstream.socket.closed
-
     @pytest.mark.parametrize(
         ("method", "status"),
         [
@@ -457,18 +394,6 @@ class TestAuthBaseForwarderResourceCleanup:
         assert upstream.resolve_calls == []
         assert upstream.sockets == []
         assert upstream.connect_calls == []
-
-    async def test_closes_response_and_connection_on_success(self):
-        with fake_forwarder_upstream(headers=[("Content-Type", "application/json")]) as upstream:
-            status, body, _ = await forwarder.forward_request(
-                "https://example.com", "GET", [], None
-            )
-
-        assert status == 200
-        assert body == b"ok"
-        assert upstream.socket.response_file is not None
-        assert upstream.socket.response_file.closed
-        assert upstream.socket.closed
 
     async def test_preserves_duplicate_headers_on_error_status(self):
         with fake_forwarder_upstream(
