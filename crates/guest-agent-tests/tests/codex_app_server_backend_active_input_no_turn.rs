@@ -10,17 +10,16 @@ use guest_agent::http::HttpClient;
 use guest_agent::masker::SecretMasker;
 use httpmock::prelude::*;
 use serde_json::json;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const RUN_ID: &str = "codex-app-server-backend-active-input-no-turn-test";
 const EVENT_ID: &str = "34919e72-7fb3-4b8f-b2ad-9a5e2e1ba0a6";
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[tokio::test]
 async fn codex_app_server_backend_fails_visible_when_no_active_turn()
 -> Result<(), Box<dyn std::error::Error>> {
     let mock = common::build_and_locate_mock_codex()?;
     let tmp = tempfile::tempdir()?;
-    let server = MockServer::start();
 
     unsafe {
         common::setup_codex_app_server_env(
@@ -36,7 +35,10 @@ async fn codex_app_server_backend_fails_visible_when_no_active_turn()
     }
     let runtime = common::guest_runtime_from_process_env()?;
     let _run_files = common::RunFilesGuard::new_for_paths(&runtime.paths);
+    let log_path = tmp.path().join("system.log");
+    let _system_log = common::SystemLogOverrideGuard::set(&log_path);
 
+    let server = MockServer::start();
     let steered = server.mock(|when, then| {
         when.method(POST).path(format!(
             "/api/runners/runs/{RUN_ID}/steerable-inputs/{EVENT_ID}/steered"
@@ -60,19 +62,44 @@ async fn codex_app_server_backend_fails_visible_when_no_active_turn()
     );
 
     let masker = SecretMasker::from_raw("");
+    let wall_budget = Duration::from_secs(10);
+    let deadline = Instant::now() + wall_budget;
+    let execution = common::execute_cli_with_active_input_for_runtime(
+        &runtime,
+        &masker,
+        common::spawn_dummy_heartbeat(),
+        active_input.into_writer(),
+    );
+    tokio::pin!(execution);
+    let rejected = format!("input_uuid={EVENT_ID} outcome=not_submitted_inactive_turn");
+    tokio::select! {
+        biased;
+        result = &mut execution => panic!("Codex execution ended before correlation: {result:?}"),
+        ready = common::wait_for_file_contains(&log_path, &rejected, wall_budget) => ready?,
+    }
+
+    // The same execution poll consumes the rejection, logs it, and enters
+    // the completion grace before yielding on the silent app-server pipe.
+    // Advance the clock inline, then let the pipe and child cleanup run.
+    let grace = Duration::from_secs(5);
+    tokio::time::pause();
+    let before = tokio::time::Instant::now();
+    let advance = tokio::time::advance(grace);
+    tokio::pin!(advance);
+    let advanced = futures_util::poll!(&mut advance);
+    let elapsed = before.elapsed();
+    tokio::time::resume();
+    assert_eq!(elapsed, grace);
+    if advanced.is_pending() {
+        advance.await;
+    }
+
     let result = tokio::time::timeout(
-        // Include the backend's bounded completion-correlation grace.
-        Duration::from_secs(10),
-        common::execute_cli_with_active_input_for_runtime(
-            &runtime,
-            &masker,
-            common::spawn_dummy_heartbeat(),
-            active_input.into_writer(),
-        ),
+        deadline.saturating_duration_since(Instant::now()),
+        execution,
     )
     .await
     .expect("execute_cli_with_active_input should return promptly");
-
     let error = result.expect_err("no active turn should fail the app-server backend");
     let message = error.to_string();
     assert!(
