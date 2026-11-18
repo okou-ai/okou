@@ -59,231 +59,6 @@ final class ComposerDraftTests: XCTestCase {
       remote.draftUserMessage?.parts.filter { $0["type"]?.string != "text" })
   }
 
-  func testRetiredEditorCannotOverwriteTheReplacementDraftAfterClearAndRestart() async throws {
-    let server = DraftServer()
-    let storage = server.storage()
-    let composer = server.composer(storage: storage)
-    defer { composer.close() }
-    composer.text = "Original draft"
-    let retired = try XCTUnwrap(composer.editorBlocks.first)
-    composer.clear()
-    composer.editBlock(retired.id, text: "Late native callback")
-    XCTAssertTrue(composer.text.isEmpty)
-    let current = try XCTUnwrap(composer.editorBlocks.first)
-    composer.editBlock(current.id, text: "Replacement draft")
-    await composer.synchronize()
-    let saved = try await ChatDraftRepository(client: server.http.client).load(.agent(draftAgentID))
-    XCTAssertEqual(saved.draftUserMessage?.text, "Replacement draft")
-    composer.close()
-    let reopened = server.composer(storage: storage)
-    defer { reopened.close() }
-    XCTAssertEqual(reopened.text, "Replacement draft")
-  }
-
-  func testNativeInlineEditsAndUndoPreserveRichQuoteAndAttachmentContext() async throws {
-    preserveNativePasteboard(for: self)
-    let remote = try quotedRichDraft()
-    let server = DraftServer(remote: remote)
-    let composer = server.composer()
-    defer { composer.close() }
-    await composer.synchronize()
-    try await waitForBusinessResult { composer.attachments.isReady }
-    let navigation = MentionNavigationFixture()
-    let workspace = try await navigation.workspace()
-    defer { workspace.close() }
-    let source = workspace.mentionTestSource
-    let host = UIHostingController(
-      rootView: MentionComposerHarness(state: composer, source: source))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    let input = try XCTUnwrap(
-      mentionInputs(in: host.view).first { $0.text.hasPrefix("Review this") })
-    try await focusMentionInput(input)
-    input.selectedRange = NSRange(location: 7, length: 0)
-    input.insertText("🌷 new ")
-    try await waitForBusinessResult { composer.text == "Review 🌷 new this " }
-    let note = try XCTUnwrap(
-      mentionInputs(in: host.view).first { $0.accessibilityLabel == "Ask or comment on this quote" }
-    )
-    try await focusMentionInput(note)
-    note.selectedRange = NSRange(location: note.text.utf16.count, length: 0)
-    note.insertText(" @project")
-    let reference = try XCTUnwrap(source.suggestions(for: "project").first)
-    try await waitForBusinessResult { composer.editor.mentionSuggestions.contains(reference) }
-    composer.editor.insertMention(reference)
-    try await waitForBusinessResult {
-      composer.editorBlocks.first(where: \.isFeedback)?.content.parts.contains(reference.part)
-        == true
-    }
-    XCTAssertEqual(composer.document.parts.first, remote.draftUserMessage?.parts.first)
-    XCTAssertEqual(
-      composer.document.parts.first { $0["type"]?.string == "file" },
-      remote.draftUserMessage?.parts.first { $0["type"]?.string == "file" })
-    XCTAssertEqual(
-      composer.document.parts.last?["source"], remote.draftUserMessage?.parts.last?["source"])
-    XCTAssertEqual(
-      composer.document.parts.last?["range"], remote.draftUserMessage?.parts.last?["range"])
-    let saved = composer.value
-    // Let the host consume the reference edit's focus request before changing its target.
-    try await waitForBusinessResult { composer.focusRequest == nil }
-    try await focusMentionInput(input)
-    input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
-    input.cut(nil)
-    try await waitForBusinessResult { composer.text.isEmpty }
-    try await eventually { input.undoManager?.groupingLevel == 0 }
-    input.undoManager?.undo()
-    try await waitForBusinessResult { composer.value == saved }
-  }
-
-  func testRichQuoteAndAttachmentsRoundTripRestartAndRemoteConflictChoice() async throws {
-    let remote = try quotedRichDraft()
-    let server = DraftServer(remote: remote)
-    let storage = server.storage()
-    let composer = server.composer(storage: storage)
-    defer { composer.close() }
-    await composer.synchronize()
-    try await waitForBusinessResult { composer.attachments.isReady }
-    composer.text = "Review 🌷 new this "
-    let note = try XCTUnwrap(composer.editorBlocks.first(where: \.isFeedback))
-    var content = note.content
-    content.parts.append(contentsOf: [
-      .object(["type": .string("text"), "text": .string(" More context")]),
-      .object([
-        "type": .string("chat_thread"), "threadId": .string(MentionNavigationFixture.thread(30)),
-        "titleSnapshot": .string("Project 30")
-      ])
-    ])
-    composer.editBlock(note.id, document: content)
-    await composer.synchronize()
-    let saved = composer.value
-    XCTAssertEqual(server.state.value.withLock { $0.remote }, saved)
-    XCTAssertEqual(saved.draftAttachments, remote.draftAttachments)
-    XCTAssertEqual(saved.draftUserMessage?.parts.first, remote.draftUserMessage?.parts.first)
-    XCTAssertEqual(
-      saved.draftUserMessage?.parts.last?["source"], remote.draftUserMessage?.parts.last?["source"])
-    XCTAssertEqual(
-      saved.draftUserMessage?.parts.last?["range"], remote.draftUserMessage?.parts.last?["range"])
-    composer.close()
-
-    let reopened = server.composer(storage: storage)
-    defer { reopened.close() }
-    XCTAssertEqual(reopened.value, saved)
-    let restored = try XCTUnwrap(reopened.editorBlocks.first(where: \.isFeedback))
-    XCTAssertEqual(restored.content, content)
-    reopened.editBlock(restored.id, text: "Local change")
-    server.state.value.withLock { $0.remote = remote }
-    await reopened.synchronize()
-    XCTAssertNotNil(reopened.conflictingRemote)
-    reopened.useRemote()
-    XCTAssertEqual(reopened.value, remote)
-  }
-
-  func testReopenedNativeQuoteSupportsReferenceUndoAndRemoteEditorReplacement() async throws {
-    let remote = try quotedRichDraft()
-    let server = DraftServer(remote: remote)
-    let storage = server.storage()
-    let composer = server.composer(storage: storage)
-    defer { composer.close() }
-    await composer.synchronize()
-    let note = try XCTUnwrap(composer.editorBlocks.first(where: \.isFeedback))
-    var content = note.content
-    content.parts.append(
-      .object([
-        "type": .string("chat_thread"), "threadId": .string(MentionNavigationFixture.thread(30)),
-        "titleSnapshot": .string("Project 30")
-      ]))
-    composer.editBlock(note.id, document: content)
-    await composer.synchronize()
-    let saved = composer.value
-    composer.close()
-
-    let reopened = server.composer(storage: storage)
-    defer { reopened.close() }
-    let host = UIHostingController(rootView: MentionComposerHarness(state: reopened))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    let restoredNote = try XCTUnwrap(
-      mentionInputs(in: host.view).first {
-        $0.accessibilityLabel == "Ask or comment on this quote"
-      })
-    XCTAssertEqual(restoredNote.text.filter { $0 == "\u{fffc}" }.count, 2)
-    try await focusMentionInput(restoredNote)
-    restoredNote.selectedRange = (restoredNote.text as NSString).range(of: "\u{fffc}")
-    restoredNote.deleteBackward()
-    try await waitForBusinessResult {
-      reopened.editorBlocks.first(where: \.isFeedback)?.content.parts.contains {
-        $0["type"]?.string == "agent"
-      } == false
-    }
-    restoredNote.undoManager?.undo()
-    try await waitForBusinessResult { reopened.value == saved }
-    restoredNote.insertText(" Local")
-    server.state.value.withLock { $0.remote = remote }
-    await reopened.synchronize()
-    XCTAssertNotNil(reopened.conflictingRemote)
-    reopened.useRemote()
-    try await waitForBusinessResult { reopened.value == remote }
-    try await eventually {
-      mentionInputs(in: host.view).contains {
-        $0 !== restoredNote && $0.text == "Compare \u{fffc}now"
-      }
-    }
-    XCTAssertEqual(
-      reopened.document.parts.last?["source"], remote.draftUserMessage?.parts.last?["source"])
-  }
-
-  func testQuotedDraftRoundTripsNotesSourcesOrderAndConflictRecovery() async throws {
-    let remote = try JSONDecoder().decode(
-      ComposerDraft.self,
-      from: Data(
-        #"{"draftUserMessage":{"version":1,"parts":[{"type":"text","text":"Before"},{"type":"feedback","quote":"PWA passage","note":[{"type":"text","text":"First "},{"type":"chat_thread","threadId":"43000000-0000-4000-8000-000000000001","titleSnapshot":"Plan"},{"type":"text","text":"note"}],"eventId":"pwa-event","range":{"start":3,"end":14},"source":{"type":"mail","id":"mail","status":"sent","sentId":"sent"}},{"type":"text","text":"After"}]},"draftAttachments":null}"#
-          .utf8))
-    let server = DraftServer(remote: remote)
-    let storage = server.storage()
-    let composer = server.composer(storage: storage)
-    defer { composer.close() }
-    await composer.synchronize()
-    let quote = try XCTUnwrap(composer.editorBlocks.first(where: \.isFeedback))
-    composer.editBlock(quote.id, text: "First revised note")
-    let source = remote.draftUserMessage?.parts[1]["source"]
-    XCTAssertEqual(composer.document.parts[1]["source"], source)
-    let inline = quote.content.parts[1]
-    guard case .array(let note) = composer.document.parts[1]["note"] else {
-      return XCTFail("Feedback note was lost")
-    }
-    XCTAssertTrue(note.contains(inline))
-    let message = ChatMessage(
-      id: "native-event", role: .assistant, text: "Second 🌷 passage",
-      createdAt: Date(), isQueued: false, isError: false)
-    let selection = try XCTUnwrap(
-      ChatFeedbackSelection(
-        message: message, range: NSRange(location: 0, length: message.text.utf16.count)))
-    let second = try XCTUnwrap(composer.addFeedback(selection))
-    composer.editBlock(second, text: "Independent note")
-    XCTAssertEqual(
-      composer.document.parts.map { $0["type"]?.string }, ["text", "feedback", "text", "feedback"])
-    await composer.synchronize()
-    let saved = server.state.value.withLock { $0.remote }
-    XCTAssertEqual(saved, composer.value)
-    composer.close()
-    composer.editBlock(second, text: "Retired editor")
-    let reopened = server.composer(storage: storage)
-    defer { reopened.close() }
-    XCTAssertEqual(reopened.value, saved)
-    let quotes = reopened.editorBlocks.filter(\.isFeedback)
-    XCTAssertEqual(quotes.map(\.content.text), ["First revised note", "Independent note"])
-    reopened.removeFeedback(quotes[0].id)
-    XCTAssertEqual(reopened.document.text, "Before\nAfter")
-    XCTAssertEqual(
-      reopened.editorBlocks.filter(\.isFeedback).map(\.content.text), ["Independent note"])
-    server.state.value.withLock { $0.remote = remote }
-    await reopened.synchronize()
-    XCTAssertNotNil(reopened.conflictingRemote)
-    reopened.useRemote()
-    XCTAssertEqual(reopened.value, remote)
-    XCTAssertEqual(reopened.editorBlocks.filter(\.isFeedback).first?.content.text, "First note")
-  }
-
   func testCancelledDraftOpeningDoesNotStartRemoteRequests() async {
     let server = DraftServer()
     let composer = server.composer()
@@ -381,78 +156,6 @@ final class ComposerDraftTests: XCTestCase {
       reopened.attachments.items.contains { if case .failed = $0.state { true } else { false } }
     }
     XCTAssertTrue(reopened.attachments.uploaded.isEmpty)
-  }
-
-  func testRecommendationsDoNotMatchAcrossReferencesInsideQuotedNotes() async throws {
-    let remote = try JSONDecoder().decode(
-      ComposerDraft.self,
-      from: Data(
-        #"{"draftUserMessage":{"version":1,"parts":[{"type":"text","text":"Before"},{"type":"feedback","quote":"One","note":[{"type":"text","text":"Existing "},{"type":"chat_thread","threadId":"43000000-0000-4000-8000-000000000001","titleSnapshot":"Plan"},{"type":"text","text":"question"}]},{"type":"feedback","quote":"Two","note":[]}]},"draftAttachments":null}"#
-          .utf8))
-    let server = DraftServer(remote: remote)
-    let composer = server.composer()
-    defer { composer.close() }
-    await composer.synchronize()
-    let notes = composer.editorBlocks.filter(\.isFeedback)
-    let firstNote = composer.document.parts[1]
-    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    composer.editor.selectOrAppendText("Existing question")
-    try await waitForBusinessResult {
-      composer.editorBlocks.first(where: { $0.id == notes[1].id })?.content.text
-        == "Existing question"
-    }
-    XCTAssertEqual(composer.document.parts[1], firstNote)
-    XCTAssertEqual(composer.text, "Before")
-    XCTAssertEqual(
-      composer.editorBlocks.filter(\.isFeedback).map(\.content.text),
-      ["Existing question", "Existing question"])
-  }
-
-  func testRecommendedTextPreservesNativeRichDraftAndAttachments() async throws {
-    let server = DraftServer(remote: try richDraft())
-    let composer = server.composer()
-    defer { composer.close() }
-    await composer.synchronize()
-    try await waitForBusinessResult { composer.attachments.isReady }
-    let parts = composer.document.parts.filter { $0["type"]?.string != "text" }
-    let attachments = composer.attachments.savedItems
-    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    composer.editor.selectOrAppendText("Compare the alternatives")
-    try await waitForBusinessResult { composer.text.hasSuffix("\nCompare the alternatives") }
-    XCTAssertEqual(composer.document.parts.filter { $0["type"]?.string != "text" }, parts)
-    XCTAssertEqual(composer.attachments.savedItems, attachments)
-  }
-
-  func testRichDraftConflictKeepsLocalTextReferencesAndAttachments() async throws {
-    let remote = try richDraft()
-    let server = DraftServer(remote: remote)
-    let storage = server.storage()
-    let composer = server.composer(storage: storage)
-    defer { composer.close() }
-    await composer.synchronize()
-    try await waitForBusinessResult { composer.attachments.isReady }
-    composer.text += "\nCompare the alternatives"
-    let local = composer.value
-    server.state.value.withLock { $0.remote = textDraft("Edited on another device") }
-    await composer.synchronize()
-    XCTAssertNotNil(composer.conflictingRemote)
-    XCTAssertEqual(composer.value, local)
-    composer.keepLocal()
-    await composer.synchronize()
-    XCTAssertNil(composer.conflictingRemote)
-    XCTAssertEqual(server.state.value.withLock { $0.remote }, local)
-    XCTAssertEqual(local.draftAttachments, remote.draftAttachments)
-    XCTAssertEqual(
-      local.draftUserMessage?.parts.filter { $0["type"]?.string != "text" },
-      remote.draftUserMessage?.parts.filter { $0["type"]?.string != "text" })
-    composer.close()
-    let reopened = server.composer(storage: storage)
-    defer { reopened.close() }
-    XCTAssertEqual(reopened.value, local)
   }
 
   func testRestartRestoresTextUploadedFilesAndRichDocumentWithoutCreatingAThread() async throws {
@@ -740,6 +443,307 @@ final class ComposerDraftTests: XCTestCase {
     reopened.keepLocal()
     await reopened.synchronize()
     XCTAssertEqual(server.state.value.withLock { $0.remote }, ComposerDraft())
+  }
+}
+
+@MainActor
+final class ComposerRichDraftTests: XCTestCase {
+
+  func testRetiredEditorCannotOverwriteTheReplacementDraftAfterClearAndRestart() async throws {
+    let server = DraftServer()
+    let storage = server.storage()
+    let composer = server.composer(storage: storage)
+    defer { composer.close() }
+    composer.text = "Original draft"
+    let retired = try XCTUnwrap(composer.editorBlocks.first)
+    composer.clear()
+    composer.editBlock(retired.id, text: "Late native callback")
+    XCTAssertTrue(composer.text.isEmpty)
+    let current = try XCTUnwrap(composer.editorBlocks.first)
+    composer.editBlock(current.id, text: "Replacement draft")
+    await composer.synchronize()
+    let saved = try await ChatDraftRepository(client: server.http.client).load(.agent(draftAgentID))
+    XCTAssertEqual(saved.draftUserMessage?.text, "Replacement draft")
+    composer.close()
+    let reopened = server.composer(storage: storage)
+    defer { reopened.close() }
+    XCTAssertEqual(reopened.text, "Replacement draft")
+  }
+
+  func testNativeInlineEditsAndUndoPreserveRichQuoteAndAttachmentContext() async throws {
+    preserveNativePasteboard(for: self)
+    let remote = try quotedRichDraft()
+    let server = DraftServer(remote: remote)
+    let composer = server.composer()
+    defer { composer.close() }
+    await composer.synchronize()
+    try await waitForBusinessResult { composer.attachments.isReady }
+    let navigation = MentionNavigationFixture()
+    let workspace = try await navigation.workspace()
+    defer { workspace.close() }
+    let source = workspace.mentionTestSource
+    let host = UIHostingController(
+      rootView: MentionComposerHarness(state: composer, source: source))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let input = try XCTUnwrap(
+      mentionInputs(in: host.view).first { $0.text.hasPrefix("Review this") })
+    try await focusMentionInput(input)
+    input.selectedRange = NSRange(location: 7, length: 0)
+    input.insertText("🌷 new ")
+    try await waitForBusinessResult { composer.text == "Review 🌷 new this " }
+    let note = try XCTUnwrap(
+      mentionInputs(in: host.view).first { $0.accessibilityLabel == "Ask or comment on this quote" }
+    )
+    try await focusMentionInput(note)
+    note.selectedRange = NSRange(location: note.text.utf16.count, length: 0)
+    note.insertText(" @project")
+    let reference = try XCTUnwrap(source.suggestions(for: "project").first)
+    try await waitForBusinessResult { composer.editor.mentionSuggestions.contains(reference) }
+    composer.editor.insertMention(reference)
+    try await waitForBusinessResult {
+      composer.editorBlocks.first(where: \.isFeedback)?.content.parts.contains(reference.part)
+        == true
+    }
+    XCTAssertEqual(composer.document.parts.first, remote.draftUserMessage?.parts.first)
+    XCTAssertEqual(
+      composer.document.parts.first { $0["type"]?.string == "file" },
+      remote.draftUserMessage?.parts.first { $0["type"]?.string == "file" })
+    XCTAssertEqual(
+      composer.document.parts.last?["source"], remote.draftUserMessage?.parts.last?["source"])
+    XCTAssertEqual(
+      composer.document.parts.last?["range"], remote.draftUserMessage?.parts.last?["range"])
+    let saved = composer.value
+    // Let the host consume the reference edit's focus request before changing its target.
+    try await waitForBusinessResult { composer.focusRequest == nil }
+    try await focusMentionInput(input)
+    input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
+    input.cut(nil)
+    try await waitForBusinessResult { composer.text.isEmpty }
+    try await eventually { input.undoManager?.groupingLevel == 0 }
+    input.undoManager?.undo()
+    try await waitForBusinessResult { composer.value == saved }
+  }
+
+  func testRichQuoteAndAttachmentsRoundTripRestartAndRemoteConflictChoice() async throws {
+    let remote = try quotedRichDraft()
+    let server = DraftServer(remote: remote)
+    let storage = server.storage()
+    let composer = server.composer(storage: storage)
+    defer { composer.close() }
+    await composer.synchronize()
+    try await waitForBusinessResult { composer.attachments.isReady }
+    composer.text = "Review 🌷 new this "
+    let note = try XCTUnwrap(composer.editorBlocks.first(where: \.isFeedback))
+    var content = note.content
+    content.parts.append(contentsOf: [
+      .object(["type": .string("text"), "text": .string(" More context")]),
+      .object([
+        "type": .string("chat_thread"), "threadId": .string(MentionNavigationFixture.thread(30)),
+        "titleSnapshot": .string("Project 30")
+      ])
+    ])
+    composer.editBlock(note.id, document: content)
+    await composer.synchronize()
+    let saved = composer.value
+    XCTAssertEqual(server.state.value.withLock { $0.remote }, saved)
+    XCTAssertEqual(saved.draftAttachments, remote.draftAttachments)
+    XCTAssertEqual(saved.draftUserMessage?.parts.first, remote.draftUserMessage?.parts.first)
+    XCTAssertEqual(
+      saved.draftUserMessage?.parts.last?["source"], remote.draftUserMessage?.parts.last?["source"])
+    XCTAssertEqual(
+      saved.draftUserMessage?.parts.last?["range"], remote.draftUserMessage?.parts.last?["range"])
+    composer.close()
+
+    let reopened = server.composer(storage: storage)
+    defer { reopened.close() }
+    XCTAssertEqual(reopened.value, saved)
+    let restored = try XCTUnwrap(reopened.editorBlocks.first(where: \.isFeedback))
+    XCTAssertEqual(restored.content, content)
+    reopened.editBlock(restored.id, text: "Local change")
+    server.state.value.withLock { $0.remote = remote }
+    await reopened.synchronize()
+    XCTAssertNotNil(reopened.conflictingRemote)
+    reopened.useRemote()
+    XCTAssertEqual(reopened.value, remote)
+  }
+
+  func testReopenedNativeQuoteSupportsReferenceUndoAndRemoteEditorReplacement() async throws {
+    let remote = try quotedRichDraft()
+    let server = DraftServer(remote: remote)
+    let storage = server.storage()
+    let composer = server.composer(storage: storage)
+    defer { composer.close() }
+    await composer.synchronize()
+    let note = try XCTUnwrap(composer.editorBlocks.first(where: \.isFeedback))
+    var content = note.content
+    content.parts.append(
+      .object([
+        "type": .string("chat_thread"), "threadId": .string(MentionNavigationFixture.thread(30)),
+        "titleSnapshot": .string("Project 30")
+      ]))
+    composer.editBlock(note.id, document: content)
+    await composer.synchronize()
+    let saved = composer.value
+    composer.close()
+
+    let reopened = server.composer(storage: storage)
+    defer { reopened.close() }
+    let host = UIHostingController(rootView: MentionComposerHarness(state: reopened))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let restoredNote = try XCTUnwrap(
+      mentionInputs(in: host.view).first {
+        $0.accessibilityLabel == "Ask or comment on this quote"
+      })
+    XCTAssertEqual(restoredNote.text.filter { $0 == "\u{fffc}" }.count, 2)
+    try await focusMentionInput(restoredNote)
+    restoredNote.selectedRange = (restoredNote.text as NSString).range(of: "\u{fffc}")
+    restoredNote.deleteBackward()
+    try await waitForBusinessResult {
+      reopened.editorBlocks.first(where: \.isFeedback)?.content.parts.contains {
+        $0["type"]?.string == "agent"
+      } == false
+    }
+    restoredNote.undoManager?.undo()
+    try await waitForBusinessResult { reopened.value == saved }
+    restoredNote.insertText(" Local")
+    server.state.value.withLock { $0.remote = remote }
+    await reopened.synchronize()
+    XCTAssertNotNil(reopened.conflictingRemote)
+    reopened.useRemote()
+    try await waitForBusinessResult { reopened.value == remote }
+    try await eventually {
+      mentionInputs(in: host.view).contains {
+        $0 !== restoredNote && $0.text == "Compare \u{fffc}now"
+      }
+    }
+    XCTAssertEqual(
+      reopened.document.parts.last?["source"], remote.draftUserMessage?.parts.last?["source"])
+  }
+
+  func testQuotedDraftRoundTripsNotesSourcesOrderAndConflictRecovery() async throws {
+    let remote = try JSONDecoder().decode(
+      ComposerDraft.self,
+      from: Data(
+        #"{"draftUserMessage":{"version":1,"parts":[{"type":"text","text":"Before"},{"type":"feedback","quote":"PWA passage","note":[{"type":"text","text":"First "},{"type":"chat_thread","threadId":"43000000-0000-4000-8000-000000000001","titleSnapshot":"Plan"},{"type":"text","text":"note"}],"eventId":"pwa-event","range":{"start":3,"end":14},"source":{"type":"mail","id":"mail","status":"sent","sentId":"sent"}},{"type":"text","text":"After"}]},"draftAttachments":null}"#
+          .utf8))
+    let server = DraftServer(remote: remote)
+    let storage = server.storage()
+    let composer = server.composer(storage: storage)
+    defer { composer.close() }
+    await composer.synchronize()
+    let quote = try XCTUnwrap(composer.editorBlocks.first(where: \.isFeedback))
+    composer.editBlock(quote.id, text: "First revised note")
+    let source = remote.draftUserMessage?.parts[1]["source"]
+    XCTAssertEqual(composer.document.parts[1]["source"], source)
+    let inline = quote.content.parts[1]
+    guard case .array(let note) = composer.document.parts[1]["note"] else {
+      return XCTFail("Feedback note was lost")
+    }
+    XCTAssertTrue(note.contains(inline))
+    let message = ChatMessage(
+      id: "native-event", role: .assistant, text: "Second 🌷 passage",
+      createdAt: Date(), isQueued: false, isError: false)
+    let selection = try XCTUnwrap(
+      ChatFeedbackSelection(
+        message: message, range: NSRange(location: 0, length: message.text.utf16.count)))
+    let second = try XCTUnwrap(composer.addFeedback(selection))
+    composer.editBlock(second, text: "Independent note")
+    XCTAssertEqual(
+      composer.document.parts.map { $0["type"]?.string }, ["text", "feedback", "text", "feedback"])
+    await composer.synchronize()
+    let saved = server.state.value.withLock { $0.remote }
+    XCTAssertEqual(saved, composer.value)
+    composer.close()
+    composer.editBlock(second, text: "Retired editor")
+    let reopened = server.composer(storage: storage)
+    defer { reopened.close() }
+    XCTAssertEqual(reopened.value, saved)
+    let quotes = reopened.editorBlocks.filter(\.isFeedback)
+    XCTAssertEqual(quotes.map(\.content.text), ["First revised note", "Independent note"])
+    reopened.removeFeedback(quotes[0].id)
+    XCTAssertEqual(reopened.document.text, "Before\nAfter")
+    XCTAssertEqual(
+      reopened.editorBlocks.filter(\.isFeedback).map(\.content.text), ["Independent note"])
+    server.state.value.withLock { $0.remote = remote }
+    await reopened.synchronize()
+    XCTAssertNotNil(reopened.conflictingRemote)
+    reopened.useRemote()
+    XCTAssertEqual(reopened.value, remote)
+    XCTAssertEqual(reopened.editorBlocks.filter(\.isFeedback).first?.content.text, "First note")
+  }
+
+  func testRecommendationsDoNotMatchAcrossReferencesInsideQuotedNotes() async throws {
+    let remote = try JSONDecoder().decode(
+      ComposerDraft.self,
+      from: Data(
+        #"{"draftUserMessage":{"version":1,"parts":[{"type":"text","text":"Before"},{"type":"feedback","quote":"One","note":[{"type":"text","text":"Existing "},{"type":"chat_thread","threadId":"43000000-0000-4000-8000-000000000001","titleSnapshot":"Plan"},{"type":"text","text":"question"}]},{"type":"feedback","quote":"Two","note":[]}]},"draftAttachments":null}"#
+          .utf8))
+    let server = DraftServer(remote: remote)
+    let composer = server.composer()
+    defer { composer.close() }
+    await composer.synchronize()
+    let notes = composer.editorBlocks.filter(\.isFeedback)
+    let firstNote = composer.document.parts[1]
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    composer.editor.selectOrAppendText("Existing question")
+    try await waitForBusinessResult {
+      composer.editorBlocks.first(where: { $0.id == notes[1].id })?.content.text
+        == "Existing question"
+    }
+    XCTAssertEqual(composer.document.parts[1], firstNote)
+    XCTAssertEqual(composer.text, "Before")
+    XCTAssertEqual(
+      composer.editorBlocks.filter(\.isFeedback).map(\.content.text),
+      ["Existing question", "Existing question"])
+  }
+
+  func testRecommendedTextPreservesNativeRichDraftAndAttachments() async throws {
+    let server = DraftServer(remote: try richDraft())
+    let composer = server.composer()
+    defer { composer.close() }
+    await composer.synchronize()
+    try await waitForBusinessResult { composer.attachments.isReady }
+    let parts = composer.document.parts.filter { $0["type"]?.string != "text" }
+    let attachments = composer.attachments.savedItems
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    composer.editor.selectOrAppendText("Compare the alternatives")
+    try await waitForBusinessResult { composer.text.hasSuffix("\nCompare the alternatives") }
+    XCTAssertEqual(composer.document.parts.filter { $0["type"]?.string != "text" }, parts)
+    XCTAssertEqual(composer.attachments.savedItems, attachments)
+  }
+
+  func testRichDraftConflictKeepsLocalTextReferencesAndAttachments() async throws {
+    let remote = try richDraft()
+    let server = DraftServer(remote: remote)
+    let storage = server.storage()
+    let composer = server.composer(storage: storage)
+    defer { composer.close() }
+    await composer.synchronize()
+    try await waitForBusinessResult { composer.attachments.isReady }
+    composer.text += "\nCompare the alternatives"
+    let local = composer.value
+    server.state.value.withLock { $0.remote = textDraft("Edited on another device") }
+    await composer.synchronize()
+    XCTAssertNotNil(composer.conflictingRemote)
+    XCTAssertEqual(composer.value, local)
+    composer.keepLocal()
+    await composer.synchronize()
+    XCTAssertNil(composer.conflictingRemote)
+    XCTAssertEqual(server.state.value.withLock { $0.remote }, local)
+    XCTAssertEqual(local.draftAttachments, remote.draftAttachments)
+    XCTAssertEqual(
+      local.draftUserMessage?.parts.filter { $0["type"]?.string != "text" },
+      remote.draftUserMessage?.parts.filter { $0["type"]?.string != "text" })
+    composer.close()
+    let reopened = server.composer(storage: storage)
+    defer { reopened.close() }
+    XCTAssertEqual(reopened.value, local)
   }
 }
 

@@ -53,7 +53,8 @@ REMOTE_CLEANUP
 }
 trap cleanup_remote_binary EXIT
 
-scp "$TEST_BIN" "${REMOTE}:${REMOTE_BIN}"
+bash "${SCRIPT_DIR}/../../../../.github/scripts/runner/stage-native-test-binary.sh" \
+  "$TEST_BIN" "$REMOTE" "$REMOTE_BIN"
 
 # The durable worker receives the full run/attempt key as its job reference.
 BIN_DIR=/tmp JOB_REF="$EXECUTION_KEY" \

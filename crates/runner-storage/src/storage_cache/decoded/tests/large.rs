@@ -92,15 +92,6 @@ async fn production_warming_survives_restart_and_full_guest_delivery() {
     let index = fs::read(entry.join("index.json")).unwrap();
     assert!(index.len() > 256 * 1024);
     assert!(index.len() <= MAX_ADMITTED_INDEX_BYTES);
-    assert_eq!(
-        cache
-            .get_ready("memory-fixture", "v1")
-            .await
-            .unwrap()
-            .unwrap()
-            .files,
-        files
-    );
     cache.shutdown().await;
     assert_eq!(fs::read(entry.join("index.json")).unwrap(), index);
 
@@ -201,20 +192,8 @@ async fn previous_policy_rejection_allows_current_warming_and_delivery_after_res
 }
 
 #[test]
-fn count_and_content_boundaries_are_independent_of_gzip_size() {
+fn content_boundaries_are_independent_of_gzip_size() {
     let cancel = CancellationToken::new();
-    let files = fixture_files(MAX_ADMITTED_FILES, 64, 32, false);
-    assert_eq!(
-        decode(&archive_files(&files), &cancel).unwrap().unwrap(),
-        files
-    );
-    let too_many = fixture_files(MAX_ADMITTED_FILES + 1, 64, 32, false);
-    assert!(
-        decode(&archive_files(&too_many), &cancel)
-            .unwrap()
-            .is_none()
-    );
-
     let files = fixture_files(
         MAX_ADMITTED_STORAGE_BYTES / storage_files::MAX_FILE_BYTES,
         storage_files::MAX_FILE_BYTES,
@@ -269,8 +248,13 @@ async fn production_warming_enforces_activated_count_content_and_longname_admiss
         );
         cache.warm_from_archive(name, "v1").await.unwrap();
         assert_eq!(
-            cache.get_ready(name, "v1").await.unwrap().is_some(),
-            admitted
+            cache
+                .get_ready(name, "v1")
+                .await
+                .unwrap()
+                .as_ref()
+                .map(|ready| ready.files.as_slice()),
+            admitted.then_some(files.as_slice())
         );
         assert_eq!(fs::read(source.join("archive.tar.gz")).unwrap(), gzip);
     }

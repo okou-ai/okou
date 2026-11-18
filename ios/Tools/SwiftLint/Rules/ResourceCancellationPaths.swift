@@ -300,14 +300,7 @@ struct ResourceCancellationPaths {
         {
           break
         }
-        for capture in closure.signature?.capture?.items ?? [] where capture.name.text == name {
-          if let source = capture.initializer?.value.trimmedDescription,
-            source != name, !signals.contains(source)
-          {
-            return true
-          }
-        }
-        if closureParameters(closure).contains(name) { return true }
+        if closureShadows(name, in: closure) { return true }
       }
       if signalAlias, let function = parent.as(FunctionDeclSyntax.self) {
         crossedFunction = true
@@ -368,6 +361,17 @@ struct ResourceCancellationPaths {
       }
     }
     return false
+  }
+
+  private func closureShadows(_ name: String, in closure: ClosureExprSyntax) -> Bool {
+    for capture in closure.signature?.capture?.items ?? [] where capture.name.text == name {
+      if let source = capture.initializer?.value.trimmedDescription,
+        source != name, !signals.contains(source)
+      {
+        return true
+      }
+    }
+    return closureParameters(closure).contains(name)
   }
 
   private final class Returns: SyntaxVisitor {

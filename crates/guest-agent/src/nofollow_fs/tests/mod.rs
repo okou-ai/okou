@@ -2,6 +2,60 @@ use super::*;
 use std::os::unix::fs::symlink;
 
 #[test]
+fn cooperative_stop_inside_a_subtree_preserves_partial_progress() {
+    let dir = tempfile::tempdir().unwrap();
+    let nested = dir.path().join("nested");
+    fs::create_dir(&nested).unwrap();
+    fs::write(nested.join("one"), "one").unwrap();
+    fs::write(nested.join("two"), "two").unwrap();
+    let root = Dir::open(dir.path()).unwrap();
+
+    let outcome =
+        root.remove_children_except_while(&[], root.identity().unwrap(), &[], &mut || {
+            Ok(fs::read_dir(&nested)?.count() == 2)
+        });
+
+    assert!(outcome.error.is_none());
+    assert_eq!(outcome.removed_entries, 0);
+    assert_eq!(fs::read_dir(&nested).unwrap().count(), 1);
+    assert!(nested.is_dir());
+}
+
+#[test]
+fn cooperative_removal_keeps_counts_when_a_later_probe_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let leaf = dir.path().join("payload");
+    fs::write(&leaf, "discard").unwrap();
+    let root = Dir::open(dir.path()).unwrap();
+
+    let outcome =
+        root.remove_children_except_while(&[], root.identity().unwrap(), &[], &mut || {
+            if leaf.exists() {
+                Ok(true)
+            } else {
+                Err(io::Error::other("capacity probe unavailable"))
+            }
+        });
+
+    assert!(outcome.error.is_some());
+    assert_eq!(outcome.removed_entries, 1);
+    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn cooperative_stop_before_work_retains_candidates() {
+    let dir = tempfile::tempdir().unwrap();
+    let leaf = dir.path().join("payload");
+    fs::write(&leaf, "keep").unwrap();
+    let root = Dir::open(dir.path()).unwrap();
+    let outcome =
+        root.remove_children_except_while(&[], root.identity().unwrap(), &[], &mut || Ok(false));
+    assert!(outcome.error.is_none());
+    assert_eq!(outcome.removed_entries, 0);
+    assert_eq!(fs::read(&leaf).unwrap(), b"keep");
+}
+
+#[test]
 fn open_rejects_symlinked_root() {
     let dir = tempfile::tempdir().unwrap();
     let real = dir.path().join("real");

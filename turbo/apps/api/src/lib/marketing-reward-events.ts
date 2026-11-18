@@ -147,12 +147,39 @@ export const marketingRewardCheckinEventSchema = object({
   userId: string().min(1).max(256),
 }).strict();
 
+const authorityTimestamp = iso.datetime().transform((value) => {
+  return new Date(value).toISOString();
+});
+
+export const marketingRewardInvitationAuthorityEventSchema = object({
+  version: literal(6),
+  id: uuid(),
+  environment,
+  type: literal("invitation.status-observed"),
+  occurredAt: authorityTimestamp,
+  orgId: string().min(1).max(256),
+  userId: string().min(1).max(256),
+  claimId: uuid(),
+  claimCreatedAt: authorityTimestamp,
+  sourceKey: string().min(1).max(256),
+  invitationId: string().min(1).max(256),
+  observation: discriminatedUnion("kind", [
+    object({ kind: literal("unavailable") }).strict(),
+    object({
+      kind: literal("invitation"),
+      status: zEnum(["pending", "accepted", "revoked", "expired"]),
+      expiresAt: authorityTimestamp,
+    }).strict(),
+  ]),
+}).strict();
+
 export const marketingRewardSourceEventSchema = union([
   marketingRewardOAuthEventSchema,
   marketingRewardLinkEventSchema,
   marketingRewardInvitationEventSchema,
   marketingRewardWorkflowEventSchema,
   marketingRewardCheckinEventSchema,
+  marketingRewardInvitationAuthorityEventSchema,
 ]);
 export type MarketingRewardSourceEvent = zInfer<
   typeof marketingRewardSourceEventSchema

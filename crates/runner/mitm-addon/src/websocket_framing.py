@@ -22,8 +22,8 @@ from wsproto.frame_protocol import CloseReason, FrameDecoder, FrameProtocol, Opc
 
 import deferred_callbacks
 import flow_metadata
+from compressed_input import CompressedInputCursor
 from logging_utils import log_proxy_entry
-from zlib_input import ZlibInputCursor
 
 MAX_DECODED_MESSAGE_BYTES = 256 * 1024 * 1024
 MAX_AGGREGATE_DECODED_BYTES = 1024 * 1024 * 1024
@@ -308,7 +308,7 @@ class _BoundedPerMessageDeflate(Extension):
         limit = self._budget.remaining_bytes
         remaining = limit
         output: bytes | bytearray = b""
-        input_cursor = ZlibInputCursor(data)
+        input_cursor = CompressedInputCursor(data)
         # Empty callbacks still let the current inflater process buffered state.
         while True:
             try:

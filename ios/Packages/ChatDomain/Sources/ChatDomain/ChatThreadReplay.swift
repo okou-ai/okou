@@ -118,25 +118,7 @@ public enum ChatThreadReplay {
       return
     }
 
-    if event.kind == .sortTouched, let hidden = event.hidden {
-      thread.isHidden = hidden
-      threads[event.chatThreadId] = thread
-      return
-    }
-
-    if event.kind == .sortTouched, let muted = event.muted {
-      thread.isMuted = muted
-      threads[event.chatThreadId] = thread
-      return
-    }
-
-    // An explicit rank moves a pinned thread without changing activity or
-    // updated time. Canonical agent reassignment applies to every thread.
-    if event.kind == .sortTouched, let rank = event.pinOrder {
-      thread.agentID = event.reassignedAgentId ?? thread.agentID
-      if thread.pinnedAt != nil {
-        thread.pinOrder = rank
-      }
+    if applySortPatch(event, to: &thread) {
       threads[event.chatThreadId] = thread
       return
     }
@@ -175,6 +157,34 @@ public enum ChatThreadReplay {
 
     thread.updatedAt = event.createdAt
     threads[event.chatThreadId] = thread
+  }
+
+  /// Visibility, mute and explicit pin patches do not advance activity or updated time.
+  private static func applySortPatch(
+    _ event: ChatThreadChange, to thread: inout ChatThread
+  ) -> Bool {
+    guard event.kind == .sortTouched else { return false }
+    if let hidden = event.hidden {
+      thread.isHidden = hidden
+      return true
+    }
+
+    if let muted = event.muted {
+      thread.isMuted = muted
+      return true
+    }
+
+    // An explicit rank moves a pinned thread without changing activity or
+    // updated time. Canonical agent reassignment applies to every thread.
+    if let rank = event.pinOrder {
+      thread.agentID = event.reassignedAgentId ?? thread.agentID
+      if thread.pinnedAt != nil {
+        thread.pinOrder = rank
+      }
+      return true
+    }
+
+    return false
   }
 
   private static func isDeferrable(_ kind: ChatThreadChange.Kind) -> Bool {

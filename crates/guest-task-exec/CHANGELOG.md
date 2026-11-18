@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.85](https://github.com/okou-ai/okou/compare/guest-task-exec-v0.2.84...guest-task-exec-v0.2.85) (2026-11-18)
+
+
+### Refactoring
+
+* delegate unix peer credentials to typed socket api ([#48633](https://github.com/okou-ai/okou/issues/48633)) ([8717b1e](https://github.com/okou-ai/okou/commit/8717b1ec13e94d6a25a68bbe12a2bd8f5030c936))
+
+## [0.2.84](https://github.com/okou-ai/okou/compare/guest-task-exec-v0.2.83...guest-task-exec-v0.2.84) (2026-11-18)
+
+## [0.2.83](https://github.com/okou-ai/okou/compare/guest-task-exec-v0.2.82...guest-task-exec-v0.2.83) (2026-11-18)
+
 ## [0.2.82](https://github.com/okou-ai/okou/compare/guest-task-exec-v0.2.81...guest-task-exec-v0.2.82) (2026-11-18)
 
 ## [0.2.81](https://github.com/okou-ai/okou/compare/guest-task-exec-v0.2.80...guest-task-exec-v0.2.81) (2026-11-18)

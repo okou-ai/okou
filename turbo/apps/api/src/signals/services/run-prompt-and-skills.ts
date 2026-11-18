@@ -35,14 +35,15 @@ type BundleSkillSource = Extract<
   "system_skill" | "connector_skill" | "custom_connector_skill"
 >;
 
-interface TemplateBundleVolume {
+/** Accepted template package shared by this Run's Prompt and mount preparation. */
+export interface TemplateSkillVolume {
   readonly source: "request_additional_volume";
   readonly mountPath: string;
   readonly templateGuidanceBundle: StoredTemplateGuidanceBundle;
 }
 
 export type SkillVolume =
-  | TemplateBundleVolume
+  | TemplateSkillVolume
   | {
       readonly source: BundleSkillSource;
       readonly skillName: string;
@@ -111,7 +112,7 @@ export function mergeRunSkillVolumes(
 }
 
 type ResolvedSkillVolume =
-  | TemplateBundleVolume
+  | TemplateSkillVolume
   | {
       readonly source: BundleSkillSource;
       readonly contentBundle: ContentBundle;

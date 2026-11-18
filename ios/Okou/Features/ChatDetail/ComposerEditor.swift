@@ -52,7 +52,7 @@ final class ComposerEditor {
   }
 
   let workflows = ComposerWorkflowSuggestions()
-  private struct Input {
+  struct Input {
     weak var view: ComposerTextView?
     let blockID: UUID?
     let order: Int
@@ -177,15 +177,9 @@ final class ComposerEditor {
 
   var view: ComposerTextView? { mounted.last(where: \.canAppend)?.view }
 
-  func register(
-    _ view: ComposerTextView, blockID: UUID?, order: Int, canAppend: Bool,
-    isCurrent: @escaping @MainActor () -> Bool,
-    searchableRanges: @escaping @MainActor () -> [NSRange]?,
-    focusRequested: @escaping @MainActor () -> Void
-  ) {
-    inputs[ObjectIdentifier(view)] = Input(
-      view: view, blockID: blockID, order: order, canAppend: canAppend, isCurrent: isCurrent,
-      searchableRanges: searchableRanges, focusRequested: focusRequested)
+  func register(_ input: Input) {
+    guard let view = input.view else { return }
+    inputs[ObjectIdentifier(view)] = input
   }
 
   func unregister(_ view: ComposerTextView) {

@@ -50,7 +50,44 @@ export type FeatureGuideConversation = zInfer<
   typeof featureGuideConversationSchema
 >;
 
+const illustrationTextSchema = string().min(1).max(80);
+const illustrationSceneSchema = discriminatedUnion("type", [
+  object({
+    type: literal("projects"),
+    location: array(illustrationTextSchema).length(2),
+    title: illustrationTextSchema,
+    subtitle: illustrationTextSchema,
+    backTitle: illustrationTextSchema,
+    conversations: array(illustrationTextSchema).length(2),
+  }).strict(),
+  object({
+    type: literal("instructions"),
+    location: array(illustrationTextSchema).length(3),
+    title: illustrationTextSchema,
+    subtitle: illustrationTextSchema,
+    lines: array(illustrationTextSchema).length(3),
+  }).strict(),
+  object({
+    type: literal("workflows"),
+    location: array(illustrationTextSchema).length(1),
+    title: illustrationTextSchema,
+    subtitle: illustrationTextSchema,
+    steps: array(illustrationTextSchema).length(3),
+    command: illustrationTextSchema,
+    privateLabel: illustrationTextSchema,
+    backTitle: illustrationTextSchema,
+    backCommand: illustrationTextSchema,
+    sharedLabel: illustrationTextSchema,
+  }).strict(),
+]);
+
 export const featureGuideMediaSchema = discriminatedUnion("type", [
+  object({
+    type: literal("illustration"),
+    alt: string().min(1).max(500),
+    characterUrl: mediaUrlSchema,
+    scene: illustrationSceneSchema,
+  }).strict(),
   object({
     type: literal("image"),
     url: mediaUrlSchema,
@@ -167,7 +204,10 @@ export const featureGuidesContract = c.router({
     method: "GET",
     path: "/api/feature-guides/current",
     headers: authHeadersSchema,
-    query: object({ preview: literal("1").optional() }).optional(),
+    query: object({
+      preview: literal("1").optional(),
+      edition: editionIdSchema.optional(),
+    }).optional(),
     responses: {
       200: object({
         edition: featureGuideEditionSchema.nullable(),

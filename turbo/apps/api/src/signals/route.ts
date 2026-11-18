@@ -124,12 +124,8 @@ import { feishuConnectRoutes } from "./routes/feishu-connect";
 import { feishuEventsRoutes } from "./routes/feishu-events";
 import { feishuOauthRoutes } from "./routes/feishu-oauth";
 import { getStartedRoutes } from "./routes/get-started";
-import { getStartedHistoryRoutes } from "./routes/get-started-history";
-import { getStartedReceiptRoutes } from "./routes/get-started-receipt";
 import { marketingRewardSettlementRoutes } from "./routes/marketing-reward-settlement";
 import { marketingRewardProjectionRoutes } from "./routes/marketing-reward-projection";
-import { marketingWorkflowSourceRoutes } from "./routes/marketing-workflow-source";
-import { marketingInvitationSourceRoutes } from "./routes/marketing-invitation-source";
 import { friendReferralRoutes } from "./routes/friend-referrals";
 import { githubOauthRoutes } from "./routes/github-oauth";
 import { healthRoutes } from "./routes/health";
@@ -270,12 +266,8 @@ import { workflowsRoutes } from "./routes/workflows";
 export const ROUTES: readonly RouteEntry[] = [
   ...runnersStartupRoutes,
   ...getStartedRoutes,
-  ...getStartedHistoryRoutes,
-  ...getStartedReceiptRoutes,
   ...marketingRewardSettlementRoutes,
   ...marketingRewardProjectionRoutes,
-  ...marketingWorkflowSourceRoutes,
-  ...marketingInvitationSourceRoutes,
   ...friendReferralRoutes,
   ...healthRoutes,
   ...buildInfoRoutes,

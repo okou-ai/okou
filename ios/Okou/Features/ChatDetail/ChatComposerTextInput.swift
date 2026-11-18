@@ -67,16 +67,17 @@ struct ChatComposerTextInput: UIViewRepresentable {
     }
     view.usesStructuredDocument = document != nil
     editor?.register(
-      view, blockID: editorBlockID, order: editorOrder, canAppend: isAppendTarget,
-      isCurrent: { [weak coordinator = context.coordinator] in
-        coordinator?.input.isCurrent() == true
-      },
-      searchableRanges: { [weak coordinator = context.coordinator] in
-        coordinator?.input.searchableRanges?()
-      },
-      focusRequested: { [weak coordinator = context.coordinator] in
-        coordinator?.input.focusRequested?()
-      })
+      .init(
+        view: view, blockID: editorBlockID, order: editorOrder, canAppend: isAppendTarget,
+        isCurrent: { [weak coordinator = context.coordinator] in
+          coordinator?.input.isCurrent() == true
+        },
+        searchableRanges: { [weak coordinator = context.coordinator] in
+          coordinator?.input.searchableRanges?()
+        },
+        focusRequested: { [weak coordinator = context.coordinator] in
+          coordinator?.input.focusRequested?()
+        }))
     // Reassigning text during composition cancels the system's marked range.
     let newDocument = document?.wrappedValue
     if view.markedTextRange == nil,

@@ -1,3 +1,4 @@
+import { ChatConnectorAccountDialogs } from "./chat-connector-account-dialogs.tsx";
 import { findDocumentTemplateItem } from "@okouai/core/document-template-items";
 import { DocumentTemplatePickerPane } from "./document-template-picker-pane.tsx";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -4950,6 +4951,9 @@ function ConnectorsPopoverButton({
   );
   const setPopoverOpen = useSet(signals.connector.setPopoverOpen$);
   const chatPermissions = useGet(signals.connector.chatAccess.permissions$);
+  const accountManagerOpen = useGet(
+    signals.connector.chatAccess.accountManager.managerOpen$,
+  );
   const setTriggerRef = useSet(signals.connector.setTriggerRef$);
   const phoneUseSetupOpen = useGet(signals.connector.phoneUseSetupOpen$);
   const accountMenuOpen = useGet(signals.connector.accounts.menuOpen$);
@@ -5011,7 +5015,8 @@ function ConnectorsPopoverButton({
         finalFocus={
           remoteAccessDialogOpen ||
           phoneUseSetupOpen ||
-          chatPermissions !== null
+          chatPermissions !== null ||
+          accountManagerOpen
             ? false
             : undefined
         }
@@ -6714,6 +6719,7 @@ function ComposerConnectorsSlot({
         actions={actions}
         onOpenAddDialog={openAddConnectorsDialog}
       />
+      <ChatConnectorAccountDialogs signals={signals} />
       {permissions && permissionSignals && (
         <ConnectorPermissionsDialog
           finalFocus={triggerElement}

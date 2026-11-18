@@ -10,12 +10,47 @@ struct ConversationContentInput<Content: View> {
   let itemIDs: @MainActor () -> [String]
   let view: UIView
   let collection: UICollectionView
+  let dataSource: UICollectionViewDiffableDataSource<Int, String>
+  let displayedWidth: CGFloat
+  let displayedCategory: UIContentSizeCategory
+  let traits: UITraitCollection
   let canPrefetch: Bool
 }
 
 /// Bounded rendered trees and their original prefetch Task belong to this native control.
 @MainActor
 final class ConversationCollectionContent<Content: View> {
+  func isPresentedMarker(_ marker: ConversationRowMarker) -> Bool {
+    guard let input = input() else { return false }
+    let collection = input.collection
+    guard input.displayedWidth == collection.bounds.width,
+      input.displayedCategory == input.traits.preferredContentSizeCategory
+    else { return false }
+    guard let index = input.dataSource.indexPath(for: marker.messageID),
+      let cell = collection.cellForItem(at: index)
+    else { return false }
+    return marker.isPresented(in: cell, scale: input.traits.displayScale)
+  }
+
+  func makeDataSource(in collection: UICollectionView) -> UICollectionViewDiffableDataSource<
+    Int, String
+  > {
+    UICollectionViewDiffableDataSource<Int, String>(
+      collectionView: collection
+    ) { [weak self] collection, index, id in
+      guard let self, let input = input() else { return nil }
+      guard
+        let cell = collection.dequeueReusableCell(withReuseIdentifier: "message", for: index)
+          as? MessageSelectionCell
+      else { preconditionFailure("Expected a message cell") }
+      guard let row = input.rows[id], let measurement = input.measurements[id] else {
+        preconditionFailure("Every displayed conversation row must have a measurement")
+      }
+      configure(cell, row: row, measurement: measurement)
+      return cell
+    }
+  }
+
   private typealias Measurement = ConversationMeasurementCache.Measurement
   private let input: @MainActor () -> ConversationContentInput<Content>?
   private let didObserveHeight: @MainActor (CGFloat, Measurement) -> Void

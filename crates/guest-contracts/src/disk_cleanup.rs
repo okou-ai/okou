@@ -7,7 +7,13 @@ pub const MIN_HOME_AVAILABLE_BYTES: u64 = 64 * 1024 * 1024;
 /// Minimum free home inodes needed for bootstrap and reusable home admission.
 pub const MIN_HOME_AVAILABLE_INODES: u64 = 128;
 
-/// Guest filesystem whose disposable caches may be reclaimed.
+/// Whether measured free capacity can support bootstrap or Home reuse.
+#[must_use]
+pub const fn has_recovery_reserve(available_bytes: u64, available_inodes: u64) -> bool {
+    available_bytes >= MIN_HOME_AVAILABLE_BYTES && available_inodes >= MIN_HOME_AVAILABLE_INODES
+}
+
+/// Guest filesystem whose allowlisted disposable contents may be reclaimed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DiskCleanupFilesystem {
@@ -42,17 +48,15 @@ pub struct DiskCleanupReport {
     pub available_inodes_before: u64,
     /// Inodes available after cleanup.
     pub available_inodes_after: u64,
-    /// Immediate cache children removed, excluding descendants; not an allocation estimate.
+    /// Immediate cleanup-root children removed, excluding descendants; not an allocation estimate.
     pub removed_entries: u64,
 }
 
 impl DiskCleanupReport {
-    /// Whether measured improvement leaves a bounded bootstrap retry reserve.
+    /// Whether current measured capacity permits the bounded bootstrap retry.
+    /// Space can already have recovered before this helper starts deleting.
     #[must_use]
     pub const fn permits_retry(&self) -> bool {
-        self.available_bytes_after >= MIN_HOME_AVAILABLE_BYTES
-            && self.available_inodes_after >= MIN_HOME_AVAILABLE_INODES
-            && (self.available_bytes_after > self.available_bytes_before
-                || self.available_inodes_after > self.available_inodes_before)
+        has_recovery_reserve(self.available_bytes_after, self.available_inodes_after)
     }
 }

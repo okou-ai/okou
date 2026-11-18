@@ -49,6 +49,17 @@ pub(super) enum Scenario {
     RuntimeTurnFailedResponseTooManyFailedAttempts,
     RuntimeTurnFailedUnauthorized,
     RuntimeTurnFailedUnknown,
+    RuntimeTurnFailedBadRequest,
+    RuntimeTurnFailedRemoteCompactionBadRequest,
+    RuntimeTurnFailedStreamIdleTimeout,
+    RuntimeTurnFailedRemoteCompactionStreamIdleTimeout,
+    RuntimeTurnFailedRequestTimeout,
+    RuntimeTurnFailedRemoteCompactionRequestTimeout,
+    RuntimeTurnFailedContentFilter,
+    RuntimeTurnFailedRemoteCompactionContentFilter,
+    RuntimeTurnFailedShortBiologicalRisk,
+    RuntimeTurnFailedRemoteCompactionShortBiologicalRisk,
+    RuntimeTurnFailedRemoteCompactionInvalidRequestFormat,
     RuntimeTurnFailedRequestSend,
     RuntimeRequestSendError,
     RuntimeTurnFailedUnsupportedModel,
@@ -230,6 +241,33 @@ impl Scenario {
                 }
                 "runtime-turn-failed-unauthorized" => Ok(Self::RuntimeTurnFailedUnauthorized),
                 "runtime-turn-failed-unknown" => Ok(Self::RuntimeTurnFailedUnknown),
+                "runtime-turn-failed-bad-request" => Ok(Self::RuntimeTurnFailedBadRequest),
+                "runtime-turn-failed-remote-compaction-bad-request" => {
+                    Ok(Self::RuntimeTurnFailedRemoteCompactionBadRequest)
+                }
+                "runtime-turn-failed-stream-idle-timeout" => {
+                    Ok(Self::RuntimeTurnFailedStreamIdleTimeout)
+                }
+                "runtime-turn-failed-remote-compaction-stream-idle-timeout" => {
+                    Ok(Self::RuntimeTurnFailedRemoteCompactionStreamIdleTimeout)
+                }
+                "runtime-turn-failed-request-timeout" => Ok(Self::RuntimeTurnFailedRequestTimeout),
+                "runtime-turn-failed-remote-compaction-request-timeout" => {
+                    Ok(Self::RuntimeTurnFailedRemoteCompactionRequestTimeout)
+                }
+                "runtime-turn-failed-content-filter" => Ok(Self::RuntimeTurnFailedContentFilter),
+                "runtime-turn-failed-remote-compaction-content-filter" => {
+                    Ok(Self::RuntimeTurnFailedRemoteCompactionContentFilter)
+                }
+                "runtime-turn-failed-short-biological-risk" => {
+                    Ok(Self::RuntimeTurnFailedShortBiologicalRisk)
+                }
+                "runtime-turn-failed-remote-compaction-short-biological-risk" => {
+                    Ok(Self::RuntimeTurnFailedRemoteCompactionShortBiologicalRisk)
+                }
+                "runtime-turn-failed-remote-compaction-invalid-request-format" => {
+                    Ok(Self::RuntimeTurnFailedRemoteCompactionInvalidRequestFormat)
+                }
                 "runtime-turn-failed-request-send" => Ok(Self::RuntimeTurnFailedRequestSend),
                 "runtime-turn-failed-unsupported-model" => {
                     Ok(Self::RuntimeTurnFailedUnsupportedModel)
@@ -373,6 +411,29 @@ impl Scenario {
             }
             Self::RuntimeTurnFailedUnauthorized => Some(TurnFailure::Unauthorized),
             Self::RuntimeTurnFailedUnknown => Some(TurnFailure::Unknown),
+            Self::RuntimeTurnFailedBadRequest => Some(TurnFailure::BadRequest),
+            Self::RuntimeTurnFailedRemoteCompactionBadRequest => {
+                Some(TurnFailure::RemoteCompactionBadRequest)
+            }
+            Self::RuntimeTurnFailedStreamIdleTimeout => Some(TurnFailure::StreamIdleTimeout),
+            Self::RuntimeTurnFailedRemoteCompactionStreamIdleTimeout => {
+                Some(TurnFailure::RemoteCompactionStreamIdleTimeout)
+            }
+            Self::RuntimeTurnFailedRequestTimeout => Some(TurnFailure::RequestTimeout),
+            Self::RuntimeTurnFailedRemoteCompactionRequestTimeout => {
+                Some(TurnFailure::RemoteCompactionRequestTimeout)
+            }
+            Self::RuntimeTurnFailedContentFilter => Some(TurnFailure::ContentFilter),
+            Self::RuntimeTurnFailedRemoteCompactionContentFilter => {
+                Some(TurnFailure::RemoteCompactionContentFilter)
+            }
+            Self::RuntimeTurnFailedShortBiologicalRisk => Some(TurnFailure::ShortBiologicalRisk),
+            Self::RuntimeTurnFailedRemoteCompactionShortBiologicalRisk => {
+                Some(TurnFailure::RemoteCompactionShortBiologicalRisk)
+            }
+            Self::RuntimeTurnFailedRemoteCompactionInvalidRequestFormat => {
+                Some(TurnFailure::RemoteCompactionInvalidRequestFormat)
+            }
             Self::RuntimeTurnFailedRequestSend | Self::RuntimeRequestSendError => {
                 Some(TurnFailure::RequestSend)
             }
@@ -420,6 +481,17 @@ pub(super) enum TurnStartRpcError {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum TurnFailure {
+    BadRequest,
+    RemoteCompactionBadRequest,
+    StreamIdleTimeout,
+    RemoteCompactionStreamIdleTimeout,
+    RequestTimeout,
+    RemoteCompactionRequestTimeout,
+    ContentFilter,
+    RemoteCompactionContentFilter,
+    ShortBiologicalRisk,
+    RemoteCompactionShortBiologicalRisk,
+    RemoteCompactionInvalidRequestFormat,
     Generic,
     OutputTokenLimit,
     AccessProgram,
@@ -443,7 +515,7 @@ pub(super) enum TurnFailure {
     /// envelope, with no structured `codexErrorInfo` to classify from.
     ContentPolicyRejection,
     /// Same error type and code as the rejection above, but a genuine
-    /// request-shape complaint that must stay unclassified.
+    /// request-shape complaint rather than a policy refusal.
     InvalidRequestFormat,
     /// Provider refusal text with the generic `other` error discriminator.
     BiologicalRiskRejection,

@@ -8,6 +8,22 @@ final class ConversationCollectionController<Content: View>: UIViewController,
 {
   private typealias Measurement = ConversationMeasurementCache.Measurement
   private typealias Measurer = ConversationRowMeasurer<Content>
+
+  private lazy var scrolling = ConversationCollectionPosition<Content>(
+    input: { [weak self] in
+      guard let self, let collection, let dataSource else { return nil }
+      return ConversationPositionInput(
+        source: source, collection: collection, dataSource: dataSource, layout: layout,
+        displayedRows: displayedRows, displayedWidth: displayedWidth,
+        displayedCategory: displayedCategory, traits: traitCollection, stopped: stopped)
+    }, didEndScrolling: { [weak self] in self?.scrollingEnded() })
+  private lazy var heightObservations = ConversationHeightObservations<Content>(
+    readMeasurements: { [weak self] in self?.measurements ?? [:] },
+    width: { [weak self] in self?.collection?.bounds.width },
+    traits: { [weak self] in self?.traitCollection },
+    isStopped: { [weak self] in self?.stopped != false },
+    didSettle: { [weak self] in self?.applyObservedHeights() })
+
   private var keyboardTap: KeyboardDismissTap?
   private lazy var measurer = Measurer { [weak self] in
     guard let self else { return nil }
@@ -32,12 +48,12 @@ final class ConversationCollectionController<Content: View>: UIViewController,
           $0.representedElementCategory == .cell ? $0.indexPath.item : nil
         }
       }, itemIDs: { dataSource.snapshot().itemIdentifiers },
-      view: view, collection: collection, canPrefetch: canPrefetchContent)
+      view: view, collection: collection, dataSource: dataSource, displayedWidth: displayedWidth,
+      displayedCategory: displayedCategory, traits: traitCollection, canPrefetch: canPrefetchContent
+    )
   }
 
   private typealias PreparedRows = ConversationPreparedRows
-
-  private typealias ObservedHeight = ConversationObservedHeight
 
   private let layout = UICollectionViewFlowLayout()
   private var collection: UICollectionView!
@@ -55,18 +71,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   private var requestedEnvironment: ConversationHeightDiskCache.Layout?
   private var preparedRows: PreparedRows?
   private var appliesRows = false
-  private var pendingScroll: (String, UnitPoint, Bool)?
-  private var sharingTrailingSpace: CGFloat = 0
-  private var lastMetrics: ConversationCollectionMetrics?
-  private var publishesMetrics = false
   private var lastViewportSize = CGSize.zero
-  private var publishesViewport = false
-  private var resizeTasks: [String: Task<Void, Never>] = [:]
-  private var resizeIDs: [String: UUID] = [:]
-  private var observedHeights: [String: ObservedHeight] = [:]
   private var refreshTask: Task<Void, Never>?
   private var stopped = false
-  private var animatesScroll = false
   /// The web's chat skeleton while the first messages load, not a spinner in an empty page.
 
   private lazy var loading = ConversationLoading(
@@ -87,22 +94,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   override func viewDidLoad() {
     super.viewDidLoad()
     view.backgroundColor = .clear
-    layout.minimumLineSpacing = 0
-    layout.minimumInteritemSpacing = 0
-    layout.estimatedItemSize = .zero
-    collection = ConversationAccessibilityCollection(
-      frame: view.bounds, collectionViewLayout: layout)
-    collection.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    collection.backgroundColor = .clear
-    collection.alwaysBounceVertical = true
-    // The top is the system's soft edge, the progressive blur ChatGPT and Manus draw:
-    // strongest at the screen's edge, clearing toward the content, with no colour of its own.
-    // It follows the safe area, so its reach is the status bar band (updateContentInsets).
-    // The bottom has none, as everywhere in the app: messages pass plainly under the
-    // composer's glass.
-    collection.topEdgeEffect.style = .soft
-    collection.bottomEdgeEffect.isHidden = true
-    collection.keyboardDismissMode = .interactive
+    collection = ConversationAccessibilityCollection.configured(frame: view.bounds, layout: layout)
     keyboardTap = KeyboardDismissTap(on: collection)
     collection.selfSizingInvalidation = .disabled
     collection.register(MessageSelectionCell.self, forCellWithReuseIdentifier: "message")
@@ -110,9 +102,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     source.sendTransition?.attach(collection)
     source.sendTransition?.didBegin = { [weak self] in
       guard let self else { return }
-      pendingScroll = nil
+      scrolling.pendingScroll = nil
       collection.stopScrollingAndZooming()
-      animatesScroll = false
+      scrolling.animatesScroll = false
       if let footer = dataSource.indexPath(for: "conversation-bottom"),
         let frame = collection.layoutAttributesForItem(at: footer)?.frame
       {
@@ -132,28 +124,15 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     accessibilityCollection?.beginsAccessibilityScroll = { [weak self] in
       guard let self else { return }
       source.sendTransition?.cancel()
-      pendingScroll = nil
-      animatesScroll = true
+      scrolling.pendingScroll = nil
+      scrolling.animatesScroll = true
       source.phaseChanged(.interacting)
     }
     let refresh = UIRefreshControl()
     refresh.addTarget(self, action: #selector(refreshConversation), for: .valueChanged)
     collection.refreshControl = refresh
     view.addSubview(collection)
-    dataSource = UICollectionViewDiffableDataSource<Int, String>(
-      collectionView: collection
-    ) { [weak self] collection, index, id in
-      guard let self else { return nil }
-      guard
-        let cell = collection.dequeueReusableCell(withReuseIdentifier: "message", for: index)
-          as? MessageSelectionCell
-      else { preconditionFailure("Expected a message cell") }
-      guard let row = self.displayedRows[id], let measurement = self.measurements[id] else {
-        preconditionFailure("Every displayed conversation row must have a measurement")
-      }
-      content.configure(cell, row: row, measurement: measurement)
-      return cell
-    }
+    dataSource = content.makeDataSource(in: collection)
     source.anchor.isPresentedMarker = { [weak self] marker in
       self?.isPresentedMarker(marker) ?? false
     }
@@ -201,16 +180,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   }
 
   private func publishViewportChange() {
-    guard !publishesViewport else { return }
-    publishesViewport = true
-    source.anchor.layoutDidChange()
-    // Preserve intent before a width/font snapshot can replace its geometry.
-    // This callback only updates the non-observable anchor, not SwiftUI state.
-    if !isScrolling { source.anchor.viewportDidChange?() }
-    DispatchQueue.main.async { [weak self] in
-      guard let self, !stopped else { return }
-      publishesViewport = false
-    }
+    scrolling.publishViewportChange()
   }
 
   func update(_ source: ConversationCollectionView<Content>) {
@@ -247,26 +217,14 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     preparation = nil
     refreshTask?.cancel()
     refreshTask = nil
-    for task in resizeTasks.values { task.cancel() }
-    resizeTasks.removeAll()
-    resizeIDs.removeAll()
-    observedHeights.removeAll()
+    heightObservations.close()
     source.scroll.detach(self)
     source.anchor.isPresentedMarker = nil
     collection?.delegate = nil
   }
 
   private func isPresentedMarker(_ marker: ConversationRowMarker) -> Bool {
-    // Marker readiness must honor the same measurement boundary as scroll metrics.
-    guard displayedWidth == collection.bounds.width,
-      displayedCategory == traitCollection.preferredContentSizeCategory
-    else { return false }
-    guard let index = dataSource.indexPath(for: marker.messageID),
-      let cell = collection.cellForItem(at: index)
-    else { return false }
-    // Reconfiguration can retain a previous hosting tree. Only the native
-    // cell for this message and content inside its clipping bounds can anchor it.
-    return marker.isPresented(in: cell, scale: traitCollection.displayScale)
+    content.isPresentedMarker(marker)
   }
 
   private func prepareRowsIfNeeded() {
@@ -306,11 +264,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     }
     let missing = rows.filter { preparedMeasurements[$0.id] == nil }
     let validIDs = Set(rows.map(\.id)).subtracting(missing.map(\.id))
-    for id in resizeTasks.keys where !validIDs.contains(id) {
-      resizeTasks.removeValue(forKey: id)?.cancel()
-      resizeIDs.removeValue(forKey: id)
-    }
-    observedHeights = observedHeights.filter { validIDs.contains($0.key) }
+    heightObservations.prune(validIDs: validIDs)
+
     // Measure the outgoing literal text without mounting temporary SwiftUI trees
     // on the send's first animation frames. Other rows keep their hosted measurement.
     let measuresImmediately =
@@ -340,72 +295,33 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       applyPreparedRows()
       return
     }
+    let layout = ConversationMeasurementLayout(
+      width: width, category: category, environment: environment)
     preparation = Task { [weak self] in
       guard let self else { return }
       await prepareMissingRows(
-        missing, rows: rows, width: width, category: category, environment: environment,
-        generation: generation, preparedMeasurements: preparedMeasurements)
+        missing, rows: rows, layout: layout, generation: generation,
+        preparedMeasurements: preparedMeasurements)
     }
   }
 
   private func prepareMissingRows(
     _ missing: [ConversationCollectionRow], rows: [ConversationCollectionRow],
-    width: CGFloat, category: UIContentSizeCategory,
-    environment: ConversationHeightDiskCache.Layout, generation: UUID,
+    layout: ConversationMeasurementLayout, generation: UUID,
     preparedMeasurements initial: [String: Measurement]
   ) async {
-    var preparedMeasurements = initial
-    let disk = ConversationHeightDiskCache.shared
-    var keys: [String: ConversationHeightDiskCache.Key] = [:]
-    var warmed = Set<String>()
-    if let namespace = source.measurements.namespace, missing.count <= 64 {
-      let layout = Measurer.diskLayout(width: width, traits: traitCollection)
-      for row in missing {
-        guard let message = row.message, message.role == .assistant else { continue }
-        await measurer.prepareMarkdown(row)
-        guard !Task.isCancelled, preparationID == generation else { return }
-        warmed.insert(row.id)
-      }
-      for row in missing {
-        keys[row.id] = Measurer.diskKey(
-          for: row, namespace: namespace, layout: layout, source: source)
-      }
-      if !keys.isEmpty {
-        let heights = await disk.heights(for: keys)
-        guard !Task.isCancelled, preparationID == generation else { return }
-        for row in missing {
-          if let height = heights[row.id] {
-            preparedMeasurements[row.id] = Measurement(
-              row: row, width: width, category: category, environment: environment,
-              height: height, diskKey: keys[row.id])
-          }
-        }
-      }
-    }
-    let unmeasured = missing.filter { preparedMeasurements[$0.id] == nil }
-    var settledHeights: [ConversationHeightDiskCache.Key: Double] = [:]
-    // Four temporary hosts at a time bound retained views even in an expanded history.
-    for start in stride(from: 0, to: unmeasured.count, by: 4) {
-      let batch = Array(unmeasured[start..<min(start + 4, unmeasured.count)])
-      for row in batch where !warmed.contains(row.id) {
-        await measurer.prepareMarkdown(row)
-        guard !Task.isCancelled, preparationID == generation else { return }
-      }
-      let (heights, settled) = await measurer.measure(batch, width: width)
-      guard !Task.isCancelled, preparationID == generation else { return }
-      for (row, height) in zip(batch, heights) {
-        let key = settled ? keys[row.id] : nil
-        if let key { settledHeights[key] = height }
-        preparedMeasurements[row.id] = Measurement(
-          row: row, width: width, category: category, environment: environment,
-          height: height, diskKey: key)
-      }
-    }
+    guard
+      let result = await measurer.prepareMissingRows(
+        missing, source: source, layout: layout, preparedMeasurements: initial,
+        isCurrent: { [weak self] in self?.preparationID == generation && self?.stopped == false })
+    else { return }
     guard !Task.isCancelled, preparationID == generation, !stopped else { return }
     preparation = nil
-    preparedRows = PreparedRows(rows: rows, measurements: preparedMeasurements)
+    preparedRows = PreparedRows(rows: rows, measurements: result.measurements)
     applyPreparedRows()
-    if !settledHeights.isEmpty { await disk.store(settledHeights) }
+    if !result.settledHeights.isEmpty {
+      await ConversationHeightDiskCache.shared.store(result.settledHeights)
+    }
   }
 
   private var needsLoadingIndicator: Bool {
@@ -415,7 +331,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
 
   private var isScrolling: Bool {
     // A send can accept measured updates and retarget its own animation.
-    animatesScroll || collection.isTracking || collection.isDragging || collection.isDecelerating
+    scrolling.animatesScroll || collection.isTracking || collection.isDragging
+      || collection.isDecelerating
   }
 
   private func applyPreparedRows() {
@@ -471,7 +388,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       appliesRows = false
       displayedRows = displayedRows.filter { ids.contains($0.key) }
       measurements = measurements.filter { ids.contains($0.key) }
-      if sharingTrailingSpace > 0, !rows.contains(where: \.isShareSelection) {
+      if scrolling.sharingTrailingSpace > 0, !rows.contains(where: \.isShareSelection) {
         setSharingTrailingSpace(0)
       }
       collection.layoutIfNeeded()
@@ -498,8 +415,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
         }
         source.sendTransition?.presentIfReady(
           in: ids, arrivingView: cell, messageFrame: messageFrame)
-      } else if let pendingScroll {
-        self.pendingScroll = nil
+      } else if let pendingScroll = scrolling.pendingScroll {
+        self.scrolling.pendingScroll = nil
         scrollTo(pendingScroll.0, anchor: pendingScroll.1, animated: pendingScroll.2)
       } else if source.followsBottom {
         source.anchor.followBottom()
@@ -517,96 +434,24 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   }
 
   func captureReadingPosition() -> ConversationReadingPosition? {
-    captureReadingPosition(retaining: nil)
+    return scrolling.captureReadingPosition(retaining: nil)
   }
 
   private func captureReadingPosition(retaining ids: Set<String>?) -> ConversationReadingPosition? {
-    guard isViewLoaded, displayedWidth == collection.bounds.width,
-      displayedCategory == traitCollection.preferredContentSizeCategory
-    else { return nil }
-    let top = collection.bounds.minY + collection.adjustedContentInset.top
-    let bottom = collection.bounds.maxY - collection.adjustedContentInset.bottom
-    let positions: [ConversationReadingPosition] =
-      collection.indexPathsForVisibleItems.compactMap { index in
-        guard let id = dataSource.itemIdentifier(for: index), ids?.contains(id) ?? true,
-          let spacing = displayedRows[id]?.readingContentTopSpacing,
-          let frame = layout.layoutAttributesForItem(at: index)?.frame,
-          frame.maxY > top, frame.minY + spacing < bottom
-        else { return nil }
-        return ConversationReadingPosition(messageID: id, offset: frame.minY + spacing - top)
-      }
-    return positions.min { $0.offset < $1.offset }
+    return scrolling.captureReadingPosition(retaining: ids)
   }
 
   private func restoreReadingPosition(_ position: ConversationReadingPosition) {
-    guard displayedWidth == collection.bounds.width,
-      displayedCategory == traitCollection.preferredContentSizeCategory,
-      let index = dataSource.indexPath(for: position.messageID),
-      let spacing = displayedRows[position.messageID]?.readingContentTopSpacing,
-      let frame = layout.layoutAttributesForItem(at: index)?.frame
-    else { return }
-    let insets = collection.adjustedContentInset
-    let requested = frame.minY + spacing - insets.top - position.offset
-    if displayedRows[position.messageID]?.isShareSelection == true {
-      // Hidden work/usage/follow-up rows can shorten the transcript below the
-      // reader. Retain only the trailing room needed to avoid clamping them away.
-      let maximum = max(
-        -insets.top, collection.contentSize.height - collection.bounds.height + insets.bottom)
-      if requested > maximum {
-        setSharingTrailingSpace(sharingTrailingSpace + requested - maximum)
-      }
-    }
-    let minimum = -insets.top
-    let maximum = max(
-      minimum, collection.contentSize.height - collection.bounds.height + insets.bottom)
-    let y = min(maximum, max(minimum, requested))
-    guard abs(y - collection.contentOffset.y) > 0.5 else { return }
-    collection.setContentOffset(CGPoint(x: collection.contentOffset.x, y: y), animated: false)
+    scrolling.restoreReadingPosition(position)
   }
 
   private func setSharingTrailingSpace(_ height: CGFloat) {
-    sharingTrailingSpace = height
-    // This is scrollable empty content, not an occluding bar or safe area.
-    layout.sectionInset.bottom = height
-    layout.invalidateLayout()
-    collection.layoutIfNeeded()
+    scrolling.setSharingTrailingSpace(height)
   }
 
   func scrollTo(_ id: String, anchor: UnitPoint, animated: Bool) {
     guard source.sendTransition?.isActive != true else { return }
-    let lastShareID = source.rows.last.flatMap { $0.isShareSelection ? $0.id : nil }
-    let targetID = id == "conversation-bottom" ? lastShareID ?? id : id
-    if isViewLoaded, id == "conversation-bottom", sharingTrailingSpace > 0 {
-      setSharingTrailingSpace(0)
-    }
-    guard isViewLoaded, let index = dataSource.indexPath(for: targetID) else {
-      pendingScroll = (id, anchor, animated)
-      return
-    }
-    collection.layoutIfNeeded()
-    guard let attributes = layout.layoutAttributesForItem(at: index) else { return }
-    let insets = collection.adjustedContentInset
-    let minimum = -insets.top
-    let maximum = max(
-      minimum, collection.contentSize.height - collection.bounds.height + insets.bottom)
-    let requested =
-      anchor == .bottom
-      ? attributes.frame.maxY - collection.bounds.height + insets.bottom
-      : attributes.frame.minY - insets.top
-    let y = min(maximum, max(minimum, requested))
-    guard abs(y - collection.contentOffset.y) > 0.5 else {
-      if animatesScroll {
-        collection.setContentOffset(collection.contentOffset, animated: false)
-        scrollingEnded()
-      }
-      publishMetrics()
-      return
-    }
-    let interruptedAnimation = animatesScroll && !animated
-    animatesScroll = animated
-    if animated { source.phaseChanged(.animating) }
-    collection.setContentOffset(CGPoint(x: 0, y: y), animated: animated)
-    if interruptedAnimation { scrollingEnded() } else if !animated { publishMetrics() }
+    scrolling.scrollTo(id, anchor: anchor, animated: animated)
   }
 
   func collectionView(
@@ -621,8 +466,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
     content.cancelPrefetch()
     source.sendTransition?.cancel()
-    pendingScroll = nil
-    animatesScroll = false
+    scrolling.pendingScroll = nil
+    scrolling.animatesScroll = false
     source.phaseChanged(.interacting)
   }
 
@@ -639,7 +484,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) { scrollingEnded() }
 
   private func scrollingEnded() {
-    animatesScroll = false
+    scrolling.animatesScroll = false
     applyPreparedRows()
     applyObservedHeights()
     publishMetrics()
@@ -651,75 +496,15 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   }
 
   private func publishMetrics() {
-    guard !stopped, !publishesMetrics else { return }
-    publishesMetrics = true
-    // Delegate callbacks can also occur during a SwiftUI updateUIViewController pass.
-    DispatchQueue.main.async { [weak self] in
-      guard let self, !stopped else { return }
-      publishesMetrics = false
-      // A width/font transition can change mounted marker geometry before its
-      // measured snapshot commits. Keep the previous reading position until then.
-      guard
-        displayedRows.isEmpty
-          || (displayedWidth == collection.bounds.width
-            && displayedCategory == traitCollection.preferredContentSizeCategory)
-      else { return }
-      let insets = collection.adjustedContentInset
-      let metrics = ConversationCollectionMetrics(
-        height: collection.contentSize.height, offset: collection.contentOffset.y,
-        isNearTop: collection.contentOffset.y + insets.top < 100,
-        isAwayFromBottom: collection.contentSize.height + insets.bottom - collection.bounds.maxY
-          > 20)
-      guard metrics != lastMetrics else { return }
-      lastMetrics = metrics
-      source.metricsChanged(metrics)
-    }
+    scrolling.publishMetrics()
   }
 
   private func observeHeight(
     _ height: CGFloat, row: ConversationCollectionRow, width: CGFloat,
     category: UIContentSizeCategory, environment: ConversationHeightDiskCache.Layout
   ) {
-    guard !stopped, height.isFinite, height > 0, width == collection.bounds.width,
-      let measurement = measurements[row.id], measurement.row == row, measurement.width == width,
-      measurement.category == category, measurement.environment == environment
-    else { return }
-    let renderedHeight = Measurer.pixelHeight(height, scale: traitCollection.displayScale)
-    if abs(measurement.height - renderedHeight) <= 0.5 {
-      observedHeights.removeValue(forKey: row.id)
-      resizeIDs.removeValue(forKey: row.id)
-      resizeTasks.removeValue(forKey: row.id)?.cancel()
-      return
-    }
-    observedHeights[row.id] = ObservedHeight(
-      row: row, width: width, category: measurement.category, height: renderedHeight)
-    guard resizeTasks[row.id] == nil else { return }
-    let generation = UUID()
-    resizeIDs[row.id] = generation
-    resizeTasks[row.id] = Task { [weak self] in
-      guard let self else { return }
-      defer {
-        if resizeIDs[row.id] == generation {
-          resizeTasks[row.id] = nil
-          resizeIDs[row.id] = nil
-        }
-      }
-      var previous: CGFloat?
-      var stableFrames = 0
-      for _ in 0..<30 {
-        await conversationLayoutFrame()
-        guard !Task.isCancelled, !stopped else { return }
-        let current = observedHeights[row.id]?.height
-        stableFrames = current == previous ? stableFrames + 1 : 0
-        previous = current
-        if stableFrames >= 2 { break }
-      }
-      guard resizeIDs[row.id] == generation, measurements[row.id]?.row == row,
-        measurements[row.id]?.width == width
-      else { return }
-      resizeTasks[row.id] = nil
-      applyObservedHeights()
-    }
+    heightObservations.observeHeight(
+      height, row: row, width: width, category: category, environment: environment)
   }
 
   private func applyObservedHeights() {
@@ -728,25 +513,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       source.followsBottom
       || collection.contentSize.height + collection.adjustedContentInset.bottom
         - collection.bounds.maxY <= 20
-    var changed: [String] = []
-    var corrected: [ConversationHeightDiskCache.Key: Double] = [:]
-    for (id, observed) in observedHeights where resizeTasks[id] == nil {
-      if let previous = measurements[id], previous.row == observed.row,
-        previous.width == observed.width, previous.category == observed.category,
-        abs(previous.height - observed.height) > 0.5
-      {
-        measurements[id]?.height = observed.height
-        if let measurement = measurements[id] {
-          source.measurements.store(measurement)
-          if let key = measurement.diskKey,
-            key.layout == Measurer.diskLayout(width: measurement.width, traits: traitCollection)
-          {
-            corrected[key] = measurement.height
-          }
-        }
-        changed.append(id)
-      }
-    }
+    let (changed, corrected) = heightObservations.correct(
+      &measurements, cache: source.measurements, traits: traitCollection)
     guard !changed.isEmpty else { return }
     if !corrected.isEmpty {
       Task { await ConversationHeightDiskCache.shared.store(corrected) }

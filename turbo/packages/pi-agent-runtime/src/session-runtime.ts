@@ -14,8 +14,10 @@ import {
   type CreateAgentSessionFromServicesOptions,
   type SessionManager,
 } from "@earendil-works/pi-coding-agent";
+import { isAutoRunPreset } from "@okouai/core/auto-run-model";
 import { join } from "node:path";
 import { createPiMemoryReader } from "./memory-reader-node";
+import { PiImageHistory } from "./image-history";
 import type { PiPreheatedResourceSnapshot } from "./api-types";
 import { resolvePiAgentModel } from "./model-catalog";
 import {
@@ -148,6 +150,7 @@ export async function createPiAgentSessionForRuntime(
     model,
   } = prepared;
 
+  const imageHistory = new PiImageHistory();
   const modelRuntime = await measurePiPreparation(
     args.onPreparationTiming,
     "model_runtime",
@@ -155,6 +158,7 @@ export async function createPiAgentSessionForRuntime(
       return createPiModelRuntime({
         model,
         config: args.model,
+        imageHistory,
         ...(args.resourceSnapshot
           ? { credentials: new InMemoryCredentialStore() }
           : {}),
@@ -217,6 +221,20 @@ export async function createPiAgentSessionForRuntime(
   // `applyOverrides()` does not reach, so this setter is the effective one; it
   // updates the resolved value without persisting the choice to any disk file.
   services.settingsManager.setCacheWarmingMode("off");
+  if (
+    model.provider === "openrouter" &&
+    isAutoRunPreset(model.id) &&
+    model.contextWindow === 1_000_000
+  ) {
+    // Start compaction near the DeepSeek Harness default for V4.1 Flash.
+    services.settingsManager.applyOverrides({
+      compaction: {
+        modelOverrides: {
+          [`${model.provider}/${model.id}`]: { reserveTokens: 279_000 },
+        },
+      },
+    });
+  }
   let effectiveThinkingLevel = () => {
     return args.model.thinkingLevel;
   };
@@ -270,7 +288,14 @@ export async function createPiAgentSessionForRuntime(
     },
     signal,
   );
-  return { ...created, services, model };
+  return {
+    ...created,
+    services,
+    model,
+    retainImageHistory: () => {
+      return imageHistory.retain(args.sessionManager);
+    },
+  };
 }
 
 function prepareModelAndPrompt(args: PiAgentSessionRuntimeArgs) {

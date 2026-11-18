@@ -488,7 +488,11 @@ export function CustomConnectorGrid({
   );
 }
 
-function CustomAccountDialogs() {
+export function CustomAccountDialogs({
+  finalFocus,
+}: {
+  readonly finalFocus?: () => HTMLElement | boolean;
+}) {
   const managedAccounts = useGet(customAccountManager$);
   const accountConnect = useGet(customAccountConnectDialog$);
   const closeAccountManager = useSet(closeCustomAccountManager$);
@@ -517,6 +521,7 @@ function CustomAccountDialogs() {
       ) : null}
       {managedAccounts ? (
         <ConnectorAccountManagerDialog
+          finalFocus={finalFocus}
           target={{ kind: "custom", customConnectorId: managedAccounts.id }}
           connectorLabel={managedAccounts.displayName}
           icon={

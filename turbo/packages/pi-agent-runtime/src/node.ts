@@ -14,3 +14,4 @@ export type {
 export { runPiOfficialRpcMode } from "./rpc";
 export { MemoryPiSession } from "./session-memory";
 export { runPiSubagent } from "./subagent";
+export { serializePiSubagentEvent } from "./subagent-events";

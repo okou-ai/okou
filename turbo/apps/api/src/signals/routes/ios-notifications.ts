@@ -60,6 +60,7 @@ const reconciliation$ = computed(async (get) => {
             lastReadAt: chatThreads.lastReadAt,
             hidden: chatThreads.hidden,
             muted: chatThreads.muted,
+            archived: chatThreads.archived,
           })
           .from(chatThreads)
           .where(
@@ -99,7 +100,13 @@ const reconciliation$ = computed(async (get) => {
   );
   const removeIdentifiers = receipts.flatMap((receipt) => {
     const thread = owned.get(receipt.threadId);
-    if (!thread || !thread.agentId || thread.hidden || thread.muted) {
+    if (
+      !thread ||
+      !thread.agentId ||
+      thread.hidden ||
+      thread.muted ||
+      thread.archived
+    ) {
       return [receipt.identifier];
     }
     const terminalAt = finished.get(`${receipt.threadId}:${receipt.runId}`);

@@ -1819,9 +1819,9 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     ).toBeNull();
   });
 
-  it("resolves a current connector token missing from the runtime namespace", async () => {
+  it("resolves a current connector token without a runtime envelope", async () => {
     const fw = createFirewallApi(context);
-    const { actor, headers } = await publicConnections.run();
+    const { actor, execution } = await publicConnections.run();
     await publicConnections.testOAuth(actor, {
       accessToken: "db-access",
       refreshToken: "refresh-1",
@@ -1830,9 +1830,8 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
 
     const before = Math.floor(now() / 1000);
     const synced = await fw.requestFirewallAuth(
-      headers,
+      { authorization: `Bearer ${execution.firewallToken!}` },
       {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
         },

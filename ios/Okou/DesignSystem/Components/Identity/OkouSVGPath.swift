@@ -70,8 +70,8 @@ extension Path {
         let sweep = scanner.flag()
         let end = point()
         addSVGArc(
-          from: current, to: end, radii: radii, rotation: rotation, largeArc: largeArc,
-          sweep: sweep)
+          from: current, to: end,
+          arc: SVGArc(radii: radii, rotation: rotation, largeArc: largeArc, sweep: sweep))
         current = end
       case UInt8(ascii: "z"):
         closeSubpath()
@@ -89,19 +89,23 @@ extension Path {
     CGPoint(x: 2 * center.x - point.x, y: 2 * center.y - point.y)
   }
 
+  private struct SVGArc {
+    let radii: CGSize
+    let rotation: CGFloat
+    let largeArc: Bool
+    let sweep: Bool
+  }
+
   /// SVG's endpoint arc, as cubic curves of at most a quarter turn each (SVG 1.1, F.6.5).
-  private mutating func addSVGArc(
-    from start: CGPoint, to end: CGPoint, radii: CGSize, rotation: CGFloat, largeArc: Bool,
-    sweep: Bool
-  ) {
+  private mutating func addSVGArc(from start: CGPoint, to end: CGPoint, arc: SVGArc) {
     guard start != end else { return }
-    var rx = abs(radii.width)
-    var ry = abs(radii.height)
+    var rx = abs(arc.radii.width)
+    var ry = abs(arc.radii.height)
     guard rx > 0, ry > 0 else {
       addLine(to: end)
       return
     }
-    let phi = rotation * .pi / 180
+    let phi = arc.rotation * .pi / 180
     let (cosPhi, sinPhi) = (cos(phi), sin(phi))
     let dx = (start.x - end.x) / 2
     let dy = (start.y - end.y) / 2
@@ -115,7 +119,7 @@ extension Path {
     let numerator = rx * rx * ry * ry - rx * rx * y1 * y1 - ry * ry * x1 * x1
     let denominator = rx * rx * y1 * y1 + ry * ry * x1 * x1
     let coefficient =
-      (largeArc == sweep ? -1 : 1) * max(0, numerator / denominator).squareRoot()
+      (arc.largeArc == arc.sweep ? -1 : 1) * max(0, numerator / denominator).squareRoot()
     let cx1 = coefficient * rx * y1 / ry
     let cy1 = -coefficient * ry * x1 / rx
     let center = CGPoint(
@@ -128,9 +132,9 @@ extension Path {
     let uy = (y1 - cy1) / ry
     let theta = angle(1, 0, ux, uy)
     var delta = angle(ux, uy, (-x1 - cx1) / rx, (-y1 - cy1) / ry)
-    if !sweep, delta > 0 {
+    if !arc.sweep, delta > 0 {
       delta -= 2 * .pi
-    } else if sweep, delta < 0 {
+    } else if arc.sweep, delta < 0 {
       delta += 2 * .pi
     }
     let segments = max(1, Int((abs(delta) / (.pi / 2)).rounded(.up)))

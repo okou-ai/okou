@@ -26,7 +26,7 @@ export interface GuestTaskLaunchOptions {
   readonly stderr: number | "ignore";
   readonly env: NodeJS.ProcessEnv;
   /** Install application listeners synchronously, before native admission. */
-  readonly onSpawn: (child: ChildProcess) => void;
+  readonly onSpawn?: (child: ChildProcess) => void;
 }
 
 function observeClose(child: ChildProcess): Promise<number | null> {
@@ -126,7 +126,9 @@ export async function launchGuestTask(
       stdio:
         typeof output === "number"
           ? ["ignore", output, output, "pipe"]
-          : ["pipe", output.stdout, output.stderr, "pipe", "ipc"],
+          : output.onSpawn
+            ? ["pipe", output.stdout, output.stderr, "pipe", "ipc"]
+            : ["pipe", output.stdout, output.stderr, "pipe"],
     },
   );
   const closed = observeClose(child);
@@ -136,7 +138,7 @@ export async function launchGuestTask(
   });
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    if (typeof output !== "number") output.onSpawn(child);
+    if (typeof output !== "number") output.onSpawn?.(child);
     if (!(report instanceof Readable)) {
       throw new Error(
         "Guest task launcher did not open its private report pipe",
@@ -156,7 +158,6 @@ export async function launchGuestTask(
         try {
           await stopGuestTask(startup.handle);
         } finally {
-          // Runtime exit also triggers the broker's descendant-cleanup owner.
           child.kill("SIGKILL");
           await waitForClose(closed);
         }

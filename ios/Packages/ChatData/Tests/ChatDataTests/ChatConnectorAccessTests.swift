@@ -112,9 +112,11 @@ final class ChatConnectorAccessTests: XCTestCase {
             "https://app.okou.ai/agents/\(FixtureData.agentID)/permissions?connectorSlug=slack&permission=read"
         )!,
         agentID: FixtureData.agentID, threadID: FixtureData.threadID))
-    _ = try await service.apply(action, duration: .day)
+    let reviewed = try await service.load(action)
+    let receipt = try await service.apply(action, duration: .day, reviewing: reviewed)
     let saved = try await service.load(action)
     XCTAssertTrue(saved.connectorScoped)
+    XCTAssertEqual(receipt.grants, saved.grants)
     XCTAssertEqual(saved.metadata?.policy(for: "read", grants: saved.grants, at: .now), .allow)
     let request = try XCTUnwrap(
       fixture.state.withLock {
@@ -185,7 +187,7 @@ final class ChatConnectorAccessTests: XCTestCase {
           })
         let body = try XCTUnwrap(
           JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any])
-        XCTAssertEqual(body["authorizeAgent"] as? Bool, false)
+        XCTAssertNil(body["authorizeAgent"])
         XCTAssertNil(body["agentId"])
       }
       let defaults = try await ChatComposerAccess(client: fixture.http.client).accountDefaults(

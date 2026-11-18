@@ -63,8 +63,11 @@ public struct ChatPermissionAction: Hashable, Sendable {
     guard segments.count == 4, segments[0].isEmpty, segments[1] == "agents",
       segments[3] == "permissions", let claimedAgent = UUID(uuidString: String(segments[2])),
       claimedAgent == UUID(uuidString: agentID), UUID(uuidString: threadID) != nil,
-      let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+      var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
     else { return nil }
+    // Match Web's URLSearchParams without changing an encoded literal plus (%2B).
+    components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(
+      of: "+", with: "%20")
     let query = components.queryItems ?? []
     guard Set(query.map(\.name)).count == query.count else { return nil }
     func value(_ name: String) -> String? { query.first { $0.name == name }?.value }

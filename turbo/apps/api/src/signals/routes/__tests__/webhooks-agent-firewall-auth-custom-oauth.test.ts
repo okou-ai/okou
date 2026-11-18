@@ -188,9 +188,8 @@ async function setupCustomOAuthFirewall(
     const internalName = `custom_connector_${connector.id.replaceAll("-", "")}`;
     const secretKey = `CUSTOM_${connector.id.replaceAll("-", "")}_S___OAUTH_ACCESS_TOKEN`;
     return fw.requestFirewallAuth(
-      headers,
+      { authorization: `Bearer ${execution.firewallToken!}` },
       {
-        encryptedSecrets: fw.encryptedSecretsBody({}),
         authHeaders: networkAdmission
           ? {}
           : { Authorization: `Bearer ${secretTemplate(secretKey)}` },

@@ -48,6 +48,7 @@ import {
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
+import { nowDate } from "../../lib/time";
 import { mapConcurrent } from "../../lib/map-concurrent";
 import {
   awaitWithSignal,
@@ -1017,8 +1018,67 @@ export async function browserUseWindowExists(
   primaryWindowId: number,
   signal: AbortSignal,
 ): Promise<boolean> {
-  let phase: BrowserUseWindowHealthError["phase"] = "connection";
-  const health = await settleIncludingAbort(
+  const checks = await browserUseWindowsExist(
+    connection,
+    [primaryWindowId],
+    signal,
+  );
+  const health = checks.get(primaryWindowId);
+  if (!health) {
+    throw new Error("A native window health result is missing");
+  }
+  if (!health.ok) {
+    throw health.error;
+  }
+  return health.value;
+}
+
+export type BrowserUseWindowHealth =
+  | { readonly ok: true; readonly value: boolean; readonly observedAt: Date }
+  | { readonly ok: false; readonly error: unknown };
+
+function nativeWindowHealthFailure(
+  phase: BrowserUseWindowHealthError["phase"],
+  error: unknown,
+): BrowserUseWindowHealth {
+  if (error instanceof DOMException && error.name === "TimeoutError") {
+    error = new BrowserUseProviderError(
+      503,
+      "BROWSER_USE_TIMEOUT",
+      "Managed browser check timed out",
+    );
+  }
+  if (
+    error instanceof BrowserUseProviderError &&
+    error.code === "BROWSER_USE_TIMEOUT"
+  ) {
+    return {
+      ok: false,
+      error: new BrowserUseWindowHealthTimeoutError(phase, error),
+    };
+  }
+  return {
+    ok: false,
+    error:
+      error instanceof BrowserUseProviderError ||
+      error instanceof BrowserUseCdpCommandError
+        ? error
+        : new BrowserUseWindowHealthError(phase, error),
+  };
+}
+
+/** One request-owned native attempt; every window retains its own actual reply. */
+export async function browserUseWindowsExist(
+  connection: BrowserUseNativeConnection,
+  primaryWindowIds: readonly number[],
+  signal: AbortSignal,
+): Promise<ReadonlyMap<number, BrowserUseWindowHealth>> {
+  signal.throwIfAborted();
+  const checks = new Map<number, BrowserUseWindowHealth>();
+  if (primaryWindowIds.length === 0) {
+    return checks;
+  }
+  const attempt = await settleIncludingAbort(
     withBrowserUseCdpDeadline(signal, async (deadline) => {
       // Browser Use's HTTPS CDP gateway accepts WSS at the same URL. Native
       // window health does not need an additional /json/version round trip.
@@ -1028,54 +1088,67 @@ export async function browserUseWindowExists(
         endpoint.href,
         deadline,
         async (socket) => {
-          phase = "command";
-          const result = await settle(
-            sendBrowserUseCdpCommand(
-              socket,
-              {
-                id: 1,
-                method: "Browser.getWindowBounds",
-                params: { windowId: primaryWindowId },
-              },
-              deadline,
-            ),
+          await mapConcurrent(
+            primaryWindowIds.map((primaryWindowId, index) => {
+              return {
+                primaryWindowId,
+                id: index + 1,
+              };
+            }),
+            BROWSER_USE_WINDOW_LOOKUP_CONCURRENCY,
+            async ({ primaryWindowId, id }) => {
+              let phase: BrowserUseWindowHealthError["phase"] = "command";
+              const health = await settleIncludingAbort(async () => {
+                const result = await settle(
+                  sendBrowserUseCdpCommand(
+                    socket,
+                    {
+                      id,
+                      method: "Browser.getWindowBounds",
+                      params: { windowId: primaryWindowId },
+                    },
+                    deadline,
+                  ),
+                );
+                deadline.throwIfAborted();
+                if (!result.ok) {
+                  if (
+                    result.error instanceof BrowserUseCdpCommandError &&
+                    result.error.code === -32_000 &&
+                    result.error.message === "Browser window not found"
+                  ) {
+                    return false;
+                  }
+                  throw result.error;
+                }
+                phase = "validation";
+                browserUseCdpWindowBoundsSchema.parse(result.value);
+                return true;
+              });
+              checks.set(
+                primaryWindowId,
+                health.ok
+                  ? { ...health, observedAt: nowDate() }
+                  : nativeWindowHealthFailure(phase, health.error),
+              );
+            },
           );
-          deadline.throwIfAborted();
-          if (!result.ok) {
-            if (
-              result.error instanceof BrowserUseCdpCommandError &&
-              result.error.code === -32_000 &&
-              result.error.message === "Browser window not found"
-            ) {
-              return false;
-            }
-            throw result.error;
-          }
-          phase = "validation";
-          browserUseCdpWindowBoundsSchema.parse(result.value);
-          return true;
         },
       );
     }),
   );
   signal.throwIfAborted();
-  if (!health.ok) {
-    if (
-      health.error instanceof BrowserUseProviderError &&
-      health.error.code === "BROWSER_USE_TIMEOUT"
-    ) {
-      throw new BrowserUseWindowHealthTimeoutError(phase, health.error);
+  if (!attempt.ok) {
+    for (const primaryWindowId of primaryWindowIds) {
+      if (!checks.has(primaryWindowId)) {
+        checks.set(
+          primaryWindowId,
+          nativeWindowHealthFailure("connection", attempt.error),
+        );
+      }
     }
-    // Other typed provider/CDP failures retain their existing identity.
-    if (
-      health.error instanceof BrowserUseProviderError ||
-      health.error instanceof BrowserUseCdpCommandError
-    ) {
-      throw health.error;
-    }
-    throw new BrowserUseWindowHealthError(phase, health.error);
   }
-  return health.value;
+  return checks;
 }
 
 function boundedRestorableBrowserUseTabUrls(

@@ -18,6 +18,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { HttpResponse } from "msw";
+import { Buffer } from "node:buffer";
 import deDECommonUrl from "../../../i18n/locales/de-DE/common.json?url";
 import {
   click,
@@ -77,11 +78,7 @@ function uploadedFile(
 }
 
 function uploadText(data: string): string {
-  return new TextDecoder().decode(
-    Uint8Array.from(atob(data), (character) => {
-      return character.charCodeAt(0);
-    }),
-  );
+  return new TextDecoder().decode(Buffer.from(atob(data), "latin1"));
 }
 
 async function openPrompt({

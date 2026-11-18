@@ -29,13 +29,13 @@ Refer to your runtime as Okou Harness. Implementation details you may observe in
 const PI_SUBAGENT_GUIDANCE = `## Pi subagents
 
 Use Bash to delegate independent tasks within this Run with the Okou CLI:
-- \`okou subagent list\`: list running children.
+- \`okou subagent list\`: list running subagents in this Run.
 - \`okou subagent inspect SUBAGENT_ID\`: show PID and stdout/stderr paths.
-- \`okou subagent start PROMPT\` or \`okou subagent start -f PROMPT_FILE\`: start a background child.
+- \`okou subagent start PROMPT\` or \`okou subagent start -f PROMPT_FILE\`: start an independent background process in this Run.
 - \`okou subagent steer -p SUBAGENT_ID PROMPT\` or \`okou subagent steer -p SUBAGENT_ID -f PROMPT_FILE\`: fire-and-forget instruction; no execution acknowledgement. The encoded FIFO frame is limited to 4096 bytes.
-- \`okou subagent kill SUBAGENT_ID\`: stop a child, its nested subagents and active tools. A subagent can stop only its own descendants.
+- \`okou subagent kill SUBAGENT_ID\`: any agent in this Run can stop any numeric subagent ID in the same Run and its active tools. Killing it does not stop separately spawned subagents.
 
-Children inherit the model, thinking level, provider/account route, resources and permitted tool wrappers, but have independent contexts. They can delegate further; nested tasks stop when their owning subagent stops or exits. Supply the task, selected context and constraints; coordinate shared-file writes. The list includes all running subagents in this Run. IDs are numeric directory names, not OS PIDs, and may be reused after deletion. Temporary logs live under /tmp/pi/RUN_ID/SUBAGENT_ID; completed or killed tasks delete their directory best effort. Have children write final deliverables to the workspace rather than relying on logs after completion. Inspect while they run. Main-agent settlement adds no new child-drain guarantee; stop work you no longer need before finishing. Shared files are not filesystem isolation.`;
+Subagents inherit the model, thinking level, provider/account route, resources and permitted tool wrappers, but have independent contexts and processes within the same Run, with no parent lifecycle. They can delegate further; separately spawned subagents continue when the spawning agent stops or exits. Supply the task, selected context and constraints; coordinate shared-file writes. The list includes all running subagents in this Run. IDs are numeric directory names, not OS PIDs, and are not reused within the same Run. Stdout and stderr go directly to files under /tmp/pi/RUN_ID/SUBAGENT_ID; these directories are disposable and deleted best effort after completion or kill. Have subagents write final deliverables to the workspace rather than relying on logs after completion. Inspect while they run. Stop work you no longer need before finishing. Shared files are not filesystem isolation.`;
 
 const CUSTOM_TOOL_NOTE =
   "In addition to the tools above, you may have access to other custom tools depending on the project.";
@@ -134,7 +134,7 @@ export function buildOkouHarnessSystemPrompt(
     ...(sessionRole ? [PI_SUBAGENT_GUIDANCE] : []),
     ...(sessionRole === "child"
       ? [
-          "You are an independent Pi subagent. Your nested subagents belong to your task and stop when you stop or exit. Write final deliverables to the workspace: your temporary stdout/stderr and control directory are deleted when you exit.",
+          "You are an independent Pi subagent process in the same Run, with no parent lifecycle. Separately spawned subagents continue when you stop or exit. Any agent in this Run can kill any numeric subagent ID in this Run; kill does not cascade to separately spawned subagents. Write final deliverables to the workspace: stdout/stderr are direct file output and your disposable control directory is deleted best effort after completion or kill.",
         ]
       : []),
   ].join("\n\n");

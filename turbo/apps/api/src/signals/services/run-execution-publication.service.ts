@@ -9,7 +9,7 @@ import {
 } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import { command } from "ccstate";
 import { nowDate } from "../../lib/time";
-import { generateSandboxToken } from "../auth/tokens";
+import { generateFirewallToken, generateSandboxToken } from "../auth/tokens";
 import type {
   ExecutionContextRun,
   ExecutionNetworkPolicyInputs,
@@ -247,6 +247,7 @@ function executionContextBody(args: {
   readonly refreshedPolicies: RefreshedExecutionPolicies;
   readonly contentBundles: ExecutionContext["contentBundles"];
   readonly sandboxToken: string;
+  readonly firewallToken: string;
 }) {
   const {
     secretValueEnvironmentKeys: _secretValueEnvironmentKeys,
@@ -284,6 +285,7 @@ function executionContextBody(args: {
         }),
     },
     sandboxToken: args.sandboxToken,
+    firewallToken: args.firewallToken,
     secretValues: args.secretValues,
     connectorRuntimeTargets: args.preparedContext.connectorRuntimeTargets,
     networkPolicies: args.refreshedPolicies.networkPolicies,
@@ -321,6 +323,11 @@ export const prepareExecutionPublication$ = command(
         refreshedPolicies,
         contentBundles: signed.contentBundles,
         sandboxToken,
+        firewallToken: generateFirewallToken(
+          args.run.userId,
+          args.run.id,
+          args.run.orgId,
+        ),
       }),
       cacheWrites: signed.cacheWrites,
     };

@@ -124,8 +124,8 @@ describe("Data Router accounting when a run ends", () => {
       Authorization: `Bearer ${secretTemplate("OKOU_DATA_TOKEN")}`,
     };
     const resolved = await firewall.requestFirewallAuth(
-      run.headers,
-      { encryptedSecrets, authHeaders, firewallBillable: true },
+      { authorization: `Bearer ${run.execution.firewallToken!}` },
+      { authHeaders, firewallBillable: true },
       [200],
     );
     expect(resolved.body).toMatchObject({
@@ -146,9 +146,8 @@ describe("Data Router accounting when a run ends", () => {
       undefined,
     ]) {
       const mapped = await firewall.requestFirewallAuth(
-        run.headers,
+        { authorization: `Bearer ${run.execution.firewallToken!}` },
         {
-          encryptedSecrets,
           authHeaders,
           secretConnectorMap,
           secretConnectorMetadataMap: { OKOU_DATA_TOKEN: personalSource },
@@ -204,8 +203,8 @@ describe("Data Router accounting when a run ends", () => {
     await finish(run);
     await expect(credits(run.actor)).resolves.toBe(before - 7);
     await firewall.requestFirewallAuth(
-      run.headers,
-      { encryptedSecrets, authHeaders, firewallBillable: true },
+      { authorization: `Bearer ${run.execution.firewallToken!}` },
+      { authHeaders, firewallBillable: true },
       [403],
     );
     await finish(run);

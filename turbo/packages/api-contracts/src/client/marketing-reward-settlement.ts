@@ -20,17 +20,4 @@ export const marketingRewardSettlementContract: ClientDescriptor<
       503: true,
     },
   },
-  lookup: {
-    method: "POST",
-    path: "/api/internal/marketing/get-started/settlements/lookup",
-    statuses: {
-      200: true,
-      202: true,
-      400: true,
-      401: true,
-      404: true,
-      409: true,
-      503: true,
-    },
-  },
 };

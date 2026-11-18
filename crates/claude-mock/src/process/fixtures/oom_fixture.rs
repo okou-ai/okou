@@ -11,6 +11,7 @@ use guest_contracts::managed_task::{TaskHandle, TaskStartup, is_task_runtime_pat
 use super::{read_trimmed, validate_tool_cgroup};
 
 pub(super) const STARTUP: &str = "/tmp/vm0-task-oom.startup";
+pub(super) const ALLOCATOR_STARTUP: &str = "/tmp/vm0-task-oom-allocator.startup";
 pub(super) const RELEASE: &str = "/tmp/vm0-task-oom.release";
 pub(super) const READY: &str = "/tmp/vm0-task-oom.ready";
 pub(super) const TOOL_ARMED: &str = "/tmp/vm0-tool-oom.armed";
@@ -86,6 +87,8 @@ child.stdin.close()
 task_stage("controller await task runtime exit")
 status = child.wait(timeout=task_remaining("task runtime exit"))
 assert status == 0, "task did not recover from its nested OOM: " + str(status)
+subprocess.run(["/usr/local/bin/guest-task-exec", "stop", startup["handle"]],
+               check=True, timeout=task_remaining("runtime task cleanup"))
 task_stage("controller completed")
 "#;
 
@@ -173,9 +176,12 @@ exec(os.environ["VM0_TEST_TASK_SUPPORT"])
 assert pathlib.Path("/proc/self/oom_score_adj").read_text().strip() == "1000"
 assert sys.stdin.readline() == "ready\n", "task identity was not published"
 child, startup = launch(os.environ["VM0_TEST_TASK_ALLOCATOR"])
+pathlib.Path("/tmp/vm0-task-oom-allocator.startup").write_text(json.dumps(startup))
 task_stage("runtime await nested allocator OOM")
 status = child.wait(timeout=task_remaining("nested allocator OOM exit"))
 assert status == -signal.SIGKILL, "nested task was not OOM-killed: " + str(status)
+subprocess.run(["/usr/local/bin/guest-task-exec", "stop", startup["handle"]],
+               check=True, timeout=task_remaining("allocator task cleanup"))
 task_stage("nested allocator group exited")
 "#;
 
@@ -185,7 +191,7 @@ exec(os.environ["VM0_TEST_TASK_SUPPORT"])
 
 assert pathlib.Path("/proc/self/oom_score_adj").read_text().strip() == "1000"
 relative = pathlib.Path("/proc/self/cgroup").read_text().strip().removeprefix("0::")
-assert relative.endswith("/runtime") and relative.count("/tools/task-") == 2
+assert relative.endswith("/runtime") and relative.count("/tools/task-") == 1
 subprocess.Popen(["setsid", "python3", "-c",
                   "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(3600)"],
                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -266,8 +272,8 @@ pub(super) fn diagnostics_tail(file: &File) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
-fn startup() -> Result<TaskStartup, String> {
-    let raw = read_trimmed(Path::new(STARTUP))?;
+fn startup(path: &str) -> Result<TaskStartup, String> {
+    let raw = read_trimmed(Path::new(path))?;
     let startup: TaskStartup =
         serde_json::from_str(&raw).map_err(|error| format!("task startup metadata: {error}"))?;
     TaskHandle::parse(startup.handle.as_str().to_string())
@@ -276,18 +282,17 @@ fn startup() -> Result<TaskStartup, String> {
 }
 
 pub(super) fn root_path(tools_relative: &str) -> Result<PathBuf, String> {
-    let handle = startup()?.handle;
+    let handle = startup(STARTUP)?.handle;
     Ok(Path::new("/sys/fs/cgroup")
         .join(tools_relative.trim_start_matches('/'))
         .join(format!("task-{}", handle.as_str())))
 }
 
 pub(super) fn validate_runtime(relative: &str, tools_relative: &str) -> Result<(), String> {
-    let handle = startup()?.handle;
-    let prefix = format!("{tools_relative}/task-{}/tools/task-", handle.as_str());
+    let prefix = format!("{tools_relative}/task-");
     if !relative.starts_with(&prefix)
         || !is_task_runtime_path(relative)
-        || relative.matches("/tools/task-").count() != 2
+        || relative.matches("/tools/task-").count() != 1
     {
         return Err(format!("unexpected nested task runtime: {relative}"));
     }
@@ -300,15 +305,17 @@ pub(super) fn validate_runtime(relative: &str, tools_relative: &str) -> Result<(
     Ok(())
 }
 
-pub(super) fn stop_family() {
-    if let Ok(startup) = startup() {
-        // The opaque handle is operation-owned; never stop by a recyclable PID.
-        let _ = Command::new("/usr/local/bin/guest-task-exec")
-            .args(["stop", startup.handle.as_str()])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+pub(super) fn stop_tasks() {
+    for path in [ALLOCATOR_STARTUP, STARTUP] {
+        if let Ok(startup) = startup(path) {
+            // Each opaque handle is operation-owned, not a creator's child.
+            let _ = Command::new("/usr/local/bin/guest-task-exec")
+                .args(["stop", startup.handle.as_str()])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
     }
 }
 

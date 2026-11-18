@@ -56,10 +56,6 @@ overrides:
   # GHSA-xjj6-f33q-929c, GHSA-4qv8-2p9j-2685, GHSA-f72v-6w45-q472).
   "miniflare>sharp": ^0.35.4
   "miniflare>undici": ^7.30.1
-  # @earendil-works/pi-coding-agent pins undici 8.10.2 exactly, which is still
-  # affected by GHSA-xjj6-f33q-929c, GHSA-4qv8-2p9j-2685 and GHSA-f72v-6w45-q472.
-  # Remove when upstream requires a patched undici 8.x release.
-  "@earendil-works/pi-coding-agent>undici": ^8.12.2
   # zod below 4.6.6 can exhaust memory while validating oversized collections
   # (GHSA-mrhx-c7xc-m3w5). Remove when every workspace dependency requires >=4.6.6.
   zod: ^4.6.6
@@ -77,11 +73,10 @@ overrides:
   # credential leaks, including cross-realm sensitiveHeaders handling
   # (GHSA-mrwp-f3q8-3g9p). Remove when axios requires >=1.16.2.
   "axios>follow-redirects": ^1.16.2
-  # readdir-glob and pi-coding-agent require minimatch 10, vulnerable to
-  # globparts amplification (GHSA-g3hv-75wg-m249). Their named APIs are
-  # compatible with v11. Remove when upstream requires >=11.0.1.
+  # readdir-glob requires minimatch 10, vulnerable to globparts amplification
+  # (GHSA-g3hv-75wg-m249). Its named APIs are compatible with v11.
+  # Remove when upstream requires >=11.0.1.
   "readdir-glob>minimatch": ^11.0.3
-  "@earendil-works/pi-coding-agent>minimatch": ^11.0.3
   tar: ">=7.5.21"
   tmp: ">=0.2.6"
   ws: ">=8.21.0"
@@ -94,9 +89,9 @@ patchedDependencies:
   # Remove when Base UI fixes empty trigger refs and preserves the focused
   # composite item index after DOM reordering. Regression: connector account defaults.
   "@base-ui/react@1.7.0": patches/@base-ui__react@1.7.0.patch
-  "@earendil-works/pi-agent-core@1.1.0": patches/@earendil-works__pi-agent-core@1.1.0.patch
-  "@earendil-works/pi-ai@1.1.0": patches/@earendil-works__pi-ai@1.1.0.patch
-  "@earendil-works/pi-coding-agent@1.1.0": patches/@earendil-works__pi-coding-agent@1.1.0.patch
+  "@earendil-works/pi-agent-core@1.5.2": patches/@earendil-works__pi-agent-core@1.5.2.patch
+  "@earendil-works/pi-ai@1.5.2": patches/@earendil-works__pi-ai@1.5.2.patch
+  "@earendil-works/pi-coding-agent@1.5.2": patches/@earendil-works__pi-coding-agent@1.5.2.patch
   # Remove when upstream jest-dom declarations support Vitest 5's Matchers.
   "@testing-library/jest-dom@6.9.1": patches/@testing-library__jest-dom@6.9.1.patch
   # Remove when upstream persists recalculated pan bounds and supports wheel step callbacks.

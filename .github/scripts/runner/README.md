@@ -56,6 +56,21 @@ The shard manifest registers those suites; native/image execution remains in the
 PR pipeline. Follow the [GitHub scripts standard](../../../docs/github-scripts.md)
 when changing callers, copied tools, hashed inputs, selectors or command contracts.
 
+`stage-native-test-binary.sh <local-executable> <user@host> </tmp/path>` owns
+native acceptance executable staging for rootfs-process, host CPU fairness and
+Guest RPC. It streams into a unique remote temporary sibling, verifies SHA-256,
+then publishes executable bytes by atomic rename. Only transport exits
+124/141/255 permit another staging attempt, with at most three 120-second calls
+inside a 400-second total deadline (plus a ten-second cancellation grace).
+Each attempt allows ten seconds for termination so the guarded SSH caller's
+five-second cancellation cleanup can finish before forced KILL. The transfer
+deadline stays 120 seconds; the overall deadline also contains this cleanup.
+Integrity/remote command failures propagate.
+A lost acknowledgement can publish the same verified bytes again; a late partial
+writer cannot become the executable. Remote EXIT cleans its own temporary file;
+an interrupted transport can delay that cleanup. Actual native execution remains
+outside this retry boundary. NBD-COW retains its own isolated-candidate protocol.
+
 ## Closed PR resource reconciliation
 
 `python3 .github/scripts/runner/cleanup-metal-runners.py` is shared by scheduled

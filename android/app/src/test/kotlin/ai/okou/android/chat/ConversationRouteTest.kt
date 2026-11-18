@@ -6,6 +6,7 @@ import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.ChatListApiFixture
 import ai.okou.android.OkouTheme
 import ai.okou.android.R
+import ai.okou.android.RecoveryApiFixture
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.ChatArchive
@@ -58,6 +59,28 @@ class ConversationRouteTest {
     private val fixture = ChatListApiFixture()
     private var cache: ChatCacheStore? = null
     private var ownerJob: Job? = null
+
+    @Test
+    fun historicalFailureShowsReasonAndGuidanceWithoutRecoveryNetworkReads() {
+        fun message(reason: String): HistoryMessage {
+            val row = HistoryEvent.decode(RecoveryApiFixture.failure(reason))
+            return projectHistory(
+                    HistoryCheckpoint(CHAT_PERSONAL, listOf(row), HistoryCursor(row.id, row.seqId))
+                )
+                .messages
+                .single()
+        }
+        val displayed = mutableStateOf(message("provider_request_timeout"))
+        compose.setContent { OkouTheme { HistoryMessageCard(displayed.value) } }
+        compose.onNodeWithText("The model response timed out").assertExists()
+        compose
+            .onNodeWithText("Try again in a moment, or choose another model to keep working.")
+            .assertExists()
+
+        compose.runOnIdle { displayed.value = message("future_reason") }
+        compose.onNodeWithText("This run couldn't finish").assertExists()
+        compose.onNodeWithText("Open the chat on the Okou website for details.").assertExists()
+    }
 
     @After
     fun close() {

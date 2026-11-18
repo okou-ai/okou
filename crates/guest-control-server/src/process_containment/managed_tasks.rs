@@ -1,6 +1,6 @@
 //! Operation-owned task lifetime and scoped tool admission, independent of Pi.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::os::unix::net::{UnixListener, UnixStream};
 
 use guest_contracts::managed_task::{TASK_CGROUP_PREFIX, TaskHandle, TaskStartup};
@@ -13,15 +13,13 @@ pub(super) struct ManagedTasks {
     runtime: PathBuf,
     tools: PathBuf,
     scopes: Mutex<HashMap<TaskHandle, Arc<TaskScope>>>,
-    // Operation-local tombstones make a completion/stop race idempotent without
+    // Operation-local tombstones make repeated stops idempotent without
     // treating unknown handles or failed cleanup as successful stops.
-    retired: Mutex<HashMap<TaskHandle, PathBuf>>,
+    retired: Mutex<HashSet<TaskHandle>>,
 }
 
 struct TaskScope {
     path: PathBuf,
-    parent: Option<TaskHandle>,
-    pidfd: OwnedFd,
     admitted: AtomicBool,
     closing: AtomicBool,
     // Serializes all descriptor handoffs against kill/prove-empty/remove.
@@ -35,7 +33,7 @@ impl ManagedTasks {
             runtime,
             tools,
             scopes: Mutex::new(HashMap::new()),
-            retired: Mutex::new(HashMap::new()),
+            retired: Mutex::new(HashSet::new()),
         }
     }
 
@@ -47,13 +45,13 @@ impl ManagedTasks {
 
     fn caller_scope(&self, stream: &UnixStream) -> io::Result<Option<TaskHandle>> {
         let credentials = peer_credentials(stream)?;
-        if credentials.uid != self.uid {
+        if credentials.uid() != self.uid {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "task caller UID mismatch",
             ));
         }
-        let cgroup = fs::read_to_string(format!("/proc/{}/cgroup", credentials.pid))?;
+        let cgroup = fs::read_to_string(format!("/proc/{}/cgroup", credentials.pid()))?;
         let Some(relative) = cgroup.lines().find_map(|line| line.strip_prefix("0::/")) else {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
@@ -77,27 +75,20 @@ impl ManagedTasks {
                 "task caller is not in an owned runtime/tools domain",
             )
         })?;
-        self.require_active_ancestors(&owner)?;
+        self.require_active(&owner)?;
         Ok(Some(owner))
     }
 
-    fn require_active_ancestors(&self, handle: &TaskHandle) -> io::Result<()> {
+    fn require_active(&self, handle: &TaskHandle) -> io::Result<()> {
         let scopes = self.scopes()?;
-        let mut next = Some(handle);
-        while let Some(handle) = next {
-            let scope = scopes.get(handle).ok_or_else(|| {
-                io::Error::new(io::ErrorKind::PermissionDenied, "task ancestor retired")
-            })?;
-            if !scope.admitted.load(Ordering::Acquire)
-                || scope.closing.load(Ordering::Acquire)
-                || pidfd_exited(&scope.pidfd)?
-            {
-                return Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    "task ancestor is closing",
-                ));
-            }
-            next = scope.parent.as_ref();
+        let scope = scopes
+            .get(handle)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::PermissionDenied, "task retired"))?;
+        if !scope.admitted.load(Ordering::Acquire) || scope.closing.load(Ordering::Acquire) {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "task is closing",
+            ));
         }
         Ok(())
     }
@@ -120,14 +111,14 @@ impl ManagedTasks {
                 .admission
                 .lock()
                 .map_err(|_| io::Error::other("task admission gate unavailable"))?;
-            self.require_active_ancestors(&handle)?;
+            self.require_active(&handle)?;
             return place_tool_peer_in_scope(
                 stream,
                 self.uid,
                 &runtime,
                 &scope.path.join(TOOLS_CGROUP_NAME),
                 tool_id,
-                Some(&|| self.require_active_ancestors(&handle)),
+                Some(&|| self.require_active(&handle)),
             );
         }
         Err(io::Error::new(
@@ -138,7 +129,7 @@ impl ManagedTasks {
 
     fn launch(&self, stream: &UnixStream) -> io::Result<()> {
         let credentials = peer_credentials(stream)?;
-        let pidfd = open_pidfd(credentials.pid)?
+        let pidfd = open_pidfd(credentials.pid())?
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "task launcher exited"))?;
         // A socket PID is not a stable lifetime identity. Recheck after pidfd_open.
         if pidfd_exited(&pidfd)? {
@@ -147,16 +138,16 @@ impl ManagedTasks {
                 "task launcher is not in the owning operation",
             ));
         }
-        let parent = self.caller_scope(stream)?;
-        let parent_scope = parent
+        let caller = self.caller_scope(stream)?;
+        let caller_scope = caller
             .as_ref()
             .map(|handle| {
                 self.scopes()?.get(handle).cloned().ok_or_else(|| {
-                    io::Error::new(io::ErrorKind::PermissionDenied, "task parent retired")
+                    io::Error::new(io::ErrorKind::PermissionDenied, "task caller retired")
                 })
             })
             .transpose()?;
-        let parent_admission = parent_scope
+        let caller_admission = caller_scope
             .as_ref()
             .map(|scope| {
                 scope
@@ -165,15 +156,13 @@ impl ManagedTasks {
                     .map_err(|_| io::Error::other("task admission gate unavailable"))
             })
             .transpose()?;
-        if let Some(parent) = &parent {
-            self.require_active_ancestors(parent)?;
+        if let Some(caller) = &caller {
+            self.require_active(caller)?;
         }
         let handle = TaskHandle::generate();
-        let tools = parent_scope
-            .as_ref()
-            .map(|scope| scope.path.join(TOOLS_CGROUP_NAME))
-            .unwrap_or_else(|| self.tools.clone());
-        let path = tools.join(format!("{TASK_CGROUP_PREFIX}{}", handle.as_str()));
+        let path = self
+            .tools
+            .join(format!("{TASK_CGROUP_PREFIX}{}", handle.as_str()));
         fs::create_dir(&path)?;
         let setup = (|| {
             fs::write(path.join(MEMORY_OOM_GROUP_FILE), WORKLOAD_MEMORY_OOM_GROUP)?;
@@ -206,8 +195,6 @@ impl ManagedTasks {
         };
         let scope = Arc::new(TaskScope {
             path,
-            parent: parent.clone(),
-            pidfd,
             admitted: AtomicBool::new(false),
             closing: AtomicBool::new(false),
             admission: Mutex::new(()),
@@ -219,13 +206,13 @@ impl ManagedTasks {
                 &TaskReply::Ready {
                     task: TaskStartup {
                         handle: handle.clone(),
-                        pid: credentials.pid as u32,
+                        pid: credentials.pid() as u32,
                     },
                 },
             )?;
             process_control_ipc::send_tool_placement(stream, placement.as_fd())?;
             process_control_ipc::read_tool_placement_confirmation(stream)?;
-            if pidfd_exited(&scope.pidfd)?
+            if pidfd_exited(&pidfd)?
                 || !peer_matches(stream, self.uid, &scope.path.join(RUNTIME_CGROUP_NAME))?
             {
                 return Err(io::Error::new(
@@ -233,8 +220,8 @@ impl ManagedTasks {
                     "task launcher did not enter its runtime",
                 ));
             }
-            if let Some(parent) = &parent {
-                self.require_active_ancestors(parent)?;
+            if let Some(caller) = &caller {
+                self.require_active(caller)?;
             }
             // Publish only after confirmed placement, before sending ACK so a
             // fast target cannot race the registry's admission publication.
@@ -242,7 +229,7 @@ impl ManagedTasks {
             process_control_ipc::write_tool_placement_ack(stream)
         })();
         drop(placement);
-        drop(parent_admission);
+        drop(caller_admission);
         if result.is_err() {
             // No target may run before ACK. Remove even descendants of a failed
             // or disconnected launcher; do not tie task lifetime to its socket.
@@ -260,7 +247,7 @@ impl ManagedTasks {
                 .retired
                 .lock()
                 .map_err(|_| io::Error::other("task retirement registry unavailable"))?
-                .contains_key(handle)
+                .contains(handle)
             {
                 return Ok(());
             }
@@ -275,42 +262,26 @@ impl ManagedTasks {
                 "task is already closing",
             ));
         }
-        // Fence first, then await bounded in-flight placement. The handoff path
-        // checks closing again before ACK; no placement FD survives this gate.
-        let family: Vec<_> = self
-            .scopes()?
-            .iter()
-            .filter(|(_, member)| member.path.starts_with(&scope.path))
-            .map(|(handle, member)| (handle.clone(), Arc::clone(member)))
-            .collect();
-        for (_, member) in &family {
-            member.closing.store(true, Ordering::Release);
-        }
-        let _admissions: Vec<_> = family
-            .iter()
-            .map(|(_, member)| {
-                member
-                    .admission
-                    .lock()
-                    .map_err(|_| io::Error::other("task admission gate unavailable"))
-            })
-            .collect::<io::Result<_>>()?;
+        // Fence only this runtime and its ordinary tools, then await bounded
+        // in-flight placement. Separately launched tasks belong to the operation.
+        let _admission = scope
+            .admission
+            .lock()
+            .map_err(|_| io::Error::other("task admission gate unavailable"))?;
         cleanup_cgroup(&scope.path, mode).map_err(io::Error::other)?;
         let mut scopes = self.scopes()?;
         let mut retired = self
             .retired
             .lock()
             .map_err(|_| io::Error::other("task retirement registry unavailable"))?;
-        for (handle, member) in &family {
-            scopes.remove(handle);
-            retired.insert(handle.clone(), member.path.clone());
-        }
+        scopes.remove(handle);
+        retired.insert(handle.clone());
         Ok(())
     }
 
     fn stop_from_caller(&self, stream: &UnixStream, handle: &TaskHandle) -> io::Result<()> {
         let credentials = peer_credentials(stream)?;
-        let caller = open_pidfd(credentials.pid)?.ok_or_else(|| {
+        let caller = open_pidfd(credentials.pid())?.ok_or_else(|| {
             io::Error::new(io::ErrorKind::PermissionDenied, "task stop caller exited")
         })?;
         if pidfd_exited(&caller)? {
@@ -319,74 +290,8 @@ impl ManagedTasks {
                 "task stop caller exited",
             ));
         }
-        if let Some(owner) = self.caller_scope(stream)? {
-            let owner_path = self
-                .scopes()?
-                .get(&owner)
-                .map(|s| s.path.join(TOOLS_CGROUP_NAME))
-                .ok_or_else(|| {
-                    io::Error::new(io::ErrorKind::PermissionDenied, "task caller retired")
-                })?;
-            let target = self.scopes()?.get(handle).map(|s| s.path.clone());
-            let target = match target {
-                Some(target) => target,
-                None => self
-                    .retired
-                    .lock()
-                    .map_err(|_| io::Error::other("task retirement registry unavailable"))?
-                    .get(handle)
-                    .cloned()
-                    .ok_or_else(|| {
-                        io::Error::new(io::ErrorKind::NotFound, "unknown task handle")
-                    })?,
-            };
-            if !target.starts_with(owner_path) {
-                return Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    "task handle belongs outside caller's descendants",
-                ));
-            }
-        }
+        self.caller_scope(stream)?;
         self.stop(handle, ProcessContainmentCleanupMode::Graceful)
-    }
-
-    fn reap_completed(&self, cancel: &AtomicBool) {
-        let scopes = match self.scopes() {
-            Ok(scopes) => scopes
-                .iter()
-                .map(|(handle, scope)| (handle.clone(), Arc::clone(scope)))
-                .collect::<Vec<_>>(),
-            Err(error) => {
-                log("WARN", &format!("task reaper failed: {error}"));
-                return;
-            }
-        };
-        for (handle, scope) in scopes {
-            // Operation shutdown must not await one grace period per retired
-            // task. The outer owner kills the whole hierarchy after workers join.
-            if cancel.load(Ordering::Acquire) {
-                return;
-            }
-            if scope.closing.load(Ordering::Acquire) {
-                continue;
-            }
-            match pidfd_exited(&scope.pidfd) {
-                Ok(false) => continue,
-                Ok(true) => {}
-                Err(error) => log(
-                    "WARN",
-                    &format!("task lifetime observation failed closed: {error}"),
-                ),
-            }
-            if let Err(error) = self.stop(&handle, ProcessContainmentCleanupMode::Graceful) {
-                // Keep failed cleanup closed and registered for outer operation
-                // teardown; never acknowledge it as a successful stop.
-                log(
-                    "WARN",
-                    &format!("task runtime-exit cleanup failed: {error}"),
-                );
-            }
-        }
     }
 
     pub(super) fn serve(
@@ -396,7 +301,6 @@ impl ManagedTasks {
         cancel: Arc<AtomicBool>,
     ) {
         while !cancel.load(Ordering::Acquire) {
-            self.reap_completed(&cancel);
             let stream = match process_control_ipc::accept_with_timeout(
                 &listener,
                 Duration::from_millis(100),

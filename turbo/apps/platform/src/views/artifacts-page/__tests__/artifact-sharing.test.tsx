@@ -9,7 +9,6 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import { screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
   setupPage,
@@ -65,9 +64,7 @@ const canonical = artifactReferencePath(deploymentId, "index.html");
 const organizationUrl = `https://app.okou.ai${artifactReferencePath(shareId, "index.html")}`;
 const publicUrl = `https://${"b".repeat(24)}.okou.app/`;
 
-async function openArtifact(
-  featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>,
-) {
+async function openArtifact() {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
       artifacts: [artifact({ kind: "hosted-site", title: "Private report" })],
@@ -105,7 +102,6 @@ async function openArtifact(
   await setupPage({
     context,
     path: "/artifacts",
-    ...(featureSwitches ? { featureSwitches } : {}),
   });
   click(await findArtifactAction("Private report"));
   await screen.findByTestId("artifact-dialog-site-frame");
@@ -142,11 +138,11 @@ async function openShareMenu() {
   });
 }
 
-test("the share audience switch describes each option beneath its name", async () => {
+test("the share menu describes each audience beneath its name by default", async () => {
   context.mocks.api(artifactSharesContract.status, ({ respond }) => {
     return respond(200, sharingStatus());
   });
-  await openArtifact({ [FeatureSwitchKey.ShareAudienceDescriptions]: true });
+  await openArtifact();
   await openShareMenu();
   await waitFor(() => {
     expect(permission("Only me")).toHaveAttribute("aria-checked", "true");
@@ -189,13 +185,6 @@ test("owners can change three access levels separately from copying the stable a
       return element.getAttribute("aria-label");
     }),
   ).toStrictEqual(["Only me", "Anyone at Acme", "Anyone with the link"]);
-  // Descriptions stay behind `ShareAudienceDescriptions`, which is off here.
-  expect(
-    queryAllByRoleFast("radio").map((element) => {
-      return element.getAttribute("aria-description");
-    }),
-  ).toStrictEqual([null, null, null]);
-  expect(screen.queryByText("Only you can open it")).not.toBeInTheDocument();
   expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
   expect(clipboard.writes).toStrictEqual([]);

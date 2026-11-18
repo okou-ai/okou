@@ -1,21 +1,15 @@
-import { getFrameworkForType } from "@okouai/api-contracts/contracts/model-providers";
 import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
 import {
   preparedExecutionContextSchema,
   type PreparedExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
-import { AUTO_RUN_PROVIDER } from "@okouai/core/auto-run-model";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { agentRuns } from "@okouai/db/runtime/agent-run";
-import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import { computed, type Computed } from "ccstate";
-import { eq } from "drizzle-orm";
 import { previewAutomationBypassSecret } from "../../lib/preview-automation-bypass";
-import { db$ } from "../external/db";
 import { billableFirewallsForPermissions } from "./built-in-route-pricing";
 import { createExecutionConnectorSources } from "./agent-run-context.signals";
-import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { NATIVE_CONTEXT_RECOVERY_PROMPT } from "./chat-session-continuity.service";
 import type { ConnectorServerFirewallMetadataCatalog } from "./connector-server-firewall-catalog.service";
@@ -23,16 +17,6 @@ import { createConnectorSkillVolumes } from "./connectors-context.service";
 import { dataRouterEnvironment } from "./data-router-environment";
 import { createAcceptedExecutionStorageObjects } from "./execution-storage.service";
 import { createUserFeatureSwitchContext } from "./feature-switches.service";
-import {
-  createRunModelSources,
-  managedSourceFromSnapshot,
-  memberAccountSourceFromSnapshot,
-} from "./model-source-context.service";
-import {
-  prepareManagedModelEnvironment,
-  prepareSubscriptionModelEnvironment,
-} from "./model-provider.service";
-import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 import type { ModelFirstPin } from "./model-selection.service";
 import {
   emptyEnvironment,
@@ -43,7 +27,6 @@ import {
   mergeRunSkillVolumes,
   resolveRunSkillVolumes,
 } from "./run-prompt-and-skills";
-import { createRunTemplatePackages } from "./run-templates.service";
 import { storedMountFromPrepared } from "./run-storage-manifest.service";
 import {
   DEFAULT_DISALLOWED_TOOLS,
@@ -144,12 +127,7 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
     }),
   );
   const storage$ = createExecutionStorage(input$);
-  const packages$ = createExecutionPackages(
-    input$,
-    disabledTools$,
-    sources,
-    storage$,
-  );
+  const packages$ = createExecutionPackages(input$, sources, storage$);
   const platform$ = createExecutionPlatform(input$, model$, disabledTools$);
   const environment$ = createExecutionEnvironment(
     input$,
@@ -284,114 +262,20 @@ function createExecutionConnectorContext(
 }
 
 function createExecutionModel(input$: ExecutionInput$) {
-  const memberIdentity$ = computed(async (get) => {
-    const { run } = await get(input$);
-    return {
-      orgId: run.orgId,
-      userId: run.userId,
-      runId: run.id,
-      accountId: run.modelProviderId,
-    };
-  });
-  const memberModels$ = createRunModelSources(memberIdentity$);
   return computed(async (get) => {
-    const { run, facts } = await get(input$);
-    if (
-      !run.selectedModel ||
-      !run.modelRuntimeModel ||
-      !run.modelRuntimeProvider
-    ) {
-      throw new Error("Admitted Run is missing its pinned model route");
-    }
-    const piExecution = run.framework === "pi";
-    let provider: ResolvedModelProviderEnvironment | null;
-    if (run.modelProvider === "built-in") {
-      if (
-        !run.builtInModelKeyId ||
-        run.modelRuntimeProvider !== AUTO_RUN_PROVIDER ||
-        run.modelUsageProvider === null ||
-        run.modelLongContextMinTotalInputTokens === null
-      ) {
-        throw new Error("Admitted managed model route is unavailable");
-      }
-      const [key] = await get(db$)
-        .select({
-          id: builtInModelKeys.id,
-          vendor: builtInModelKeys.vendor,
-        })
-        .from(builtInModelKeys)
-        .where(eq(builtInModelKeys.id, run.builtInModelKeyId));
-      const source = managedSourceFromSnapshot(key);
-      if (!source) {
-        throw new Error("Run execution sources are unavailable");
-      }
-      provider = prepareManagedModelEnvironment(source, {
-        framework: getFrameworkForType(AUTO_RUN_PROVIDER),
-        selectedModel: run.selectedModel,
-        builtInModelRuntimeRoute: {
-          selectedModel: run.selectedModel,
-          providerType: AUTO_RUN_PROVIDER,
-          upstreamModel: run.modelRuntimeModel,
-          modelKeyId: run.builtInModelKeyId,
-        },
-      });
-    } else {
-      const members = await get(memberModels$);
-      const account = members.accounts.find((candidate) => {
-        return candidate.id === run.modelProviderId;
-      });
-      if (
-        !account ||
-        account.type !== run.modelProvider ||
-        (run.modelProviderAccountIdentity !== null &&
-          personalSubscriptionAccountIdentity(account) !==
-            run.modelProviderAccountIdentity)
-      ) {
-        throw new Error("Run execution sources are unavailable");
-      }
-      const source = memberAccountSourceFromSnapshot(members, account.id);
-      if (!source) {
-        throw new Error("Run execution sources are unavailable");
-      }
-      provider = prepareSubscriptionModelEnvironment(
-        source,
-        run.selectedModel,
-        {
-          userId: run.userId,
-          sourceId: account.id,
-          piExecution,
-          upstreamModel: run.modelRuntimeModel,
-        },
-      );
-    }
-    if (!provider) {
-      throw new Error("Run execution sources are unavailable");
-    }
-    const piModelConfig = facts.piModelConfig;
+    const { modelProvider } = (await get(input$)).facts;
     return {
-      provider: { ...provider, piModelConfig },
-      piModelConfig,
+      provider: modelProvider,
+      piModelConfig: modelProvider.piModelConfig,
     };
   });
 }
 
 function createExecutionPackages(
   input$: ExecutionInput$,
-  disabledTools$: DisabledTools$,
   sources: ExecutionSources,
   storage$: ReturnType<typeof createExecutionStorage>,
 ) {
-  const templateInput$ = computed(async (get) => {
-    const { templateInput } = (await get(input$)).facts;
-    return templateInput.userMessage ? templateInput : null;
-  });
-  const templates$ = createRunTemplatePackages(
-    templateInput$,
-    computed(async (get) => {
-      return (await get(input$)).run.orgId;
-    }),
-    disabledTools$,
-  );
   const connectorSkills$ = createConnectorSkillVolumes(
     sources.signals.authorizedConnectors$,
   );
@@ -404,22 +288,18 @@ function createExecutionPackages(
         : framework === "codex"
           ? "/home/user/.codex/skills"
           : "/home/user/.claude/skills";
-    const [connectors, templates] = await Promise.all([
+    const [connectors, storage] = await Promise.all([
       get(connectorSkills$),
-      get(templates$),
+      get(storage$),
     ]);
-    if ("error" in templates) {
-      throw new Error("Run execution sources are unavailable");
-    }
     const volumes = resolveRunSkillVolumes(
       mergeRunSkillVolumes([
         connectors,
         facts.seedSkillVolumes,
-        templates.skillVolumes,
+        facts.templateSkillVolumes,
       ]),
       skillRoot,
     );
-    const storage = await get(storage$);
     const winners = normalizeMountOverlay([
       ...volumes,
       ...storage.storageMounts,

@@ -9,6 +9,4 @@ process.on("SIGTERM", () => {
   return process.exit(0);
 });
 process.stdin.resume();
-process.send?.({ type: "ready" });
-process.disconnect?.();
 setInterval(() => {}, 1000);

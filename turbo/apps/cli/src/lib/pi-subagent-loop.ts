@@ -1,12 +1,14 @@
 import { PI_AGENT_DIR } from "@okouai/api-contracts/contracts/runners";
-import { runPiSubagent } from "@okouai/pi-agent-runtime/node";
+import {
+  runPiSubagent,
+  serializePiSubagentEvent,
+} from "@okouai/pi-agent-runtime/node";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout } from "node:timers/promises";
 import { object, string } from "zod";
 
-import { guestTaskStartupSchema } from "./guest-task";
 import { piSandboxAgentConfigFromEnv } from "./pi-agent-loop";
 import { PI_SESSION_ROLE_ENV } from "./pi-session-env";
 import {
@@ -15,9 +17,6 @@ import {
 } from "./pi-subagents";
 
 const inputSchema = object({ prompt: string().trim().min(1) });
-const bootstrapSchema = inputSchema.extend({
-  handle: guestTaskStartupSchema.shape.handle,
-});
 
 export async function runPiSubagentLoop(
   directory: string,
@@ -36,7 +35,6 @@ export async function runPiSubagentLoop(
   let fifo: Awaited<ReturnType<typeof open>> | undefined;
   let inputTask: Promise<void> | undefined;
   const inputController = new AbortController();
-  let handle: string | undefined;
   try {
     // Keep the FIFO's reader open across individual fire-and-forget writes.
     fifo = await open(
@@ -51,9 +49,7 @@ export async function runPiSubagentLoop(
         throw new Error("Subagent prompt exceeds 1 MiB.");
       }
     }
-    const input = bootstrapSchema.parse(JSON.parse(bootstrap));
-    handle = input.handle;
-    const { prompt } = input;
+    const { prompt } = inputSchema.parse(JSON.parse(bootstrap));
     const config = await piSandboxAgentConfigFromEnv();
     const inputFile = fifo;
     await runPiSubagent(
@@ -65,7 +61,9 @@ export async function runPiSubagentLoop(
         appendSystemPrompt: config.launchPayload.appendSystemPrompt,
         prompt,
         onEvent(event) {
-          process.stdout.write(`${JSON.stringify(event)}\n`);
+          // The launcher redirects stdout directly to a file (synchronous on
+          // Linux), so no pipe consumer or asynchronous log queue is needed.
+          process.stdout.write(serializePiSubagentEvent(event));
           if (
             event.type === "message_end" &&
             event.message.role === "assistant" &&
@@ -90,10 +88,6 @@ export async function runPiSubagentLoop(
               controller.abort();
             }
           });
-          // Configuration and session/tool construction must succeed before
-          // start reports a usable child, not just an open steering FIFO.
-          process.send?.({ type: "ready" });
-          process.disconnect?.();
           return () => {
             return inputController.abort();
           };
@@ -107,7 +101,7 @@ export async function runPiSubagentLoop(
     await fifo?.close();
     process.off("SIGTERM", stop);
     process.off("SIGINT", stop);
-    if (handle) await removeSubagentDirectory(directory, handle);
+    await removeSubagentDirectory(directory);
   }
 }
 

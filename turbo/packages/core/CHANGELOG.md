@@ -1,5 +1,73 @@
 # Changelog
 
+## [8.852.2](https://github.com/okou-ai/okou/compare/core-v8.852.1...core-v8.852.2) (2026-11-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.86.2
+
+## [8.852.1](https://github.com/okou-ai/okou/compare/core-v8.852.0...core-v8.852.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* **api:** support attachments on inactive single agent workflow copies ([#48624](https://github.com/okou-ai/okou/issues/48624)) ([f41a05a](https://github.com/okou-ai/okou/commit/f41a05a04f254ecc6e4e614db921fef94b44ace1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.86.1
+
+## [8.852.0](https://github.com/okou-ai/okou/compare/core-v8.851.1...core-v8.852.0) (2026-11-18)
+
+
+### Features
+
+* **app:** enable feature guides with the my okou redesign ([#47733](https://github.com/okou-ai/okou/issues/47733)) ([0e9387d](https://github.com/okou-ai/okou/commit/0e9387d6ef081ec765f9c1392e1158ac95bc6da0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.86.0
+
+## [8.851.1](https://github.com/okou-ai/okou/compare/core-v8.851.0...core-v8.851.1) (2026-11-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.85.2
+
+## [8.851.0](https://github.com/okou-ai/okou/compare/core-v8.850.2...core-v8.851.0) (2026-11-18)
+
+
+### Features
+
+* **app:** release share audience descriptions and website share rows ([#48544](https://github.com/okou-ai/okou/issues/48544)) ([60461e9](https://github.com/okou-ai/okou/commit/60461e9da15d190d7e34e633ce0e2a61d195026f))
+* **core:** enable presentation output format for staff ([#48524](https://github.com/okou-ai/okou/issues/48524)) ([af156ca](https://github.com/okou-ai/okou/commit/af156ca8c7dea3483e14ae37a058890dd57581d0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.85.1
+
+## [8.850.2](https://github.com/okou-ai/okou/compare/core-v8.850.1...core-v8.850.2) (2026-11-18)
+
+
+### Refactoring
+
+* **core:** simplify default instructions ([#48457](https://github.com/okou-ai/okou/issues/48457)) ([c4bc8b3](https://github.com/okou-ai/okou/commit/c4bc8b3079b8c38c3323e11ecaa445b5cf30837a))
+
 ## [8.850.1](https://github.com/okou-ai/okou/compare/core-v8.850.0...core-v8.850.1) (2026-11-18)
 
 

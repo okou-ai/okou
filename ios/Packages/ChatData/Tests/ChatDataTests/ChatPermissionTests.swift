@@ -49,10 +49,12 @@ final class ChatPermissionTests: XCTestCase {
       let fixture = PermissionHTTPFixture()
       let service = ChatPermissions(client: fixture.http.client)
       let action = try action()
-      _ = try await service.apply(action, duration: duration)
+      let reviewed = try await service.load(action)
+      let receipt = try await service.apply(action, duration: duration, reviewing: reviewed)
       let saved = try await service.load(action)
       XCTAssertEqual(saved.grants.first?.action, .allow)
       XCTAssertEqual(saved.metadata?.label, "Gmail")
+      XCTAssertEqual(receipt.grants, saved.grants)
       let request = try XCTUnwrap(
         fixture.state.withLock { $0.requests.first { $0.httpMethod == "PUT" } })
       let body = try body(request)
@@ -70,8 +72,9 @@ final class ChatPermissionTests: XCTestCase {
     let fixture = PermissionHTTPFixture()
     let service = ChatPermissions(client: fixture.http.client)
     let action = try action("deny")
-    _ = try await service.apply(action, duration: .week)
-    _ = try await service.apply(action, duration: .day)
+    let reviewed = try await service.load(action)
+    let receipt = try await service.apply(action, duration: .week, reviewing: reviewed)
+    _ = try await service.apply(action, duration: .day, reviewing: receipt)
     let requests = fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" } }
     XCTAssertEqual(requests.count, 1)
     let grant = try XCTUnwrap(
@@ -89,8 +92,10 @@ final class ChatPermissionTests: XCTestCase {
       if !missingMetadata { state.threadAgentID = UUID().uuidString }
       let fixture = PermissionHTTPFixture(initial: state)
       do {
-        _ = try await ChatPermissions(client: fixture.http.client).apply(
-          try action(), duration: .hour)
+        let service = ChatPermissions(client: fixture.http.client)
+        let action = try action()
+        let reviewed = try await service.load(action)
+        _ = try await service.apply(action, duration: .hour, reviewing: reviewed)
         XCTFail("Invalid requests must not apply permissions")
       } catch {}
       XCTAssertTrue(fixture.state.withLock { $0.requests.allSatisfy { $0.httpMethod == "GET" } })
@@ -111,13 +116,15 @@ final class ChatPermissionTests: XCTestCase {
 
   func testDescriptorRejectsMismatchedContextAndPreservesLegacyRefAndDeny() throws {
     let source = PermissionHTTPFixture.actionURL(action: "deny").replacingOccurrences(
-      of: "connectorSlug=", with: "ref=")
+      of: "connectorSlug=", with: "ref="
+    ).replacingOccurrences(of: "Continue%20after%20permission", with: "Continue+after%2Bpermission")
     let url = try XCTUnwrap(URL(string: source, relativeTo: URL(string: "https://app.okou.ai")!))
     let parsed = try XCTUnwrap(
       ChatPermissionAction(
         url: url, agentID: PermissionHTTPFixture.agentID, threadID: PermissionHTTPFixture.threadID))
     XCTAssertEqual(parsed.action, .deny)
     XCTAssertEqual(parsed.connectorSlug, "gmail")
+    XCTAssertEqual(parsed.callbackPrompt, "Continue after+permission")
     XCTAssertNil(
       ChatPermissionAction(url: url, agentID: UUID().uuidString, threadID: parsed.threadID))
     XCTAssertNil(

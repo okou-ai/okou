@@ -30,7 +30,7 @@ import type {
   SubscriptionUsageWindowMetadata,
 } from "./model-provider-subscription-usage.types";
 import { personalSubscriptionAccountAccessCondition } from "./model-provider-account.service";
-import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
+import { personalSubscriptionAccountIdentity } from "./execution-model-source.service";
 
 const L = logger("model-provider-subscription-usage.service");
 

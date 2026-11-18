@@ -9,7 +9,7 @@ import {
 import type { RunPromptAndSkills } from "../run-prompt-and-skills";
 import type { PickedThreadInputEvent } from "./types";
 import type { ThreadContext } from "../thread-context.signals";
-import { STAFF_SINGLE_AGENT_ORG_ID } from "@okouai/core/staff-single-agent-migration";
+import { STAFF_SINGLE_AGENT_ORG_ID } from "@okouai/core/single-agent-migration";
 
 export function createAutomationThreadPrompt(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,

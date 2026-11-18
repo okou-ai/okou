@@ -23,7 +23,7 @@ struct AssistantFailureState: Equatable {
       || (recovery.kind == .retryable
         && ![
           "guest_root_filesystem_full", "guest_home_filesystem_full",
-          "codex_access_program_unavailable"
+          "guest_memory_oom_killed", "codex_access_program_unavailable"
         ]
         .contains(failure.reason))
   }

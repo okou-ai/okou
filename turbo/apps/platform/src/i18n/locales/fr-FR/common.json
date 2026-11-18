@@ -1208,21 +1208,25 @@
         "name": "Gratuit"
       },
       "highlights": {
-        "addOnConcurrency": "Ajoutez de la simultanéité quand vous voulez",
-        "agentFanOut": "Okou délègue le travail à une équipe d’assistants IA",
-        "automations": "Automatisations planifiées et sur événement",
-        "builtInResearchData": "Données SEO, leads, web et marché intégrées",
-        "chatIntegrations": "Intégration Slack et Telegram",
-        "computerUse": "Okou contrôle de vraies applications sur votre ordinateur",
+        "addOnConcurrency": "Ajoutez de la capacité",
+        "advancedTools": "Des dizaines d’outils avancés intégrés",
+        "appPermissions": "Accès aux apps ciblé et temporaire",
+        "browserAndComputer": "Utilisation du navigateur et de l’ordinateur",
         "concurrentAgents": "{{slots}} tâches en parallèle",
-        "everythingInBuiltForTeams": "Tout {{plan}}, conçu pour les équipes",
-        "included": "Inclus",
-        "liveBrowser": "Suivez le navigateur d’Okou en direct et prenez la main",
-        "moreConnectorsChannels": "Plus de connecteurs personnalisés et d'intégrations de canaux",
-        "supportEmail": "Assistance par e-mail",
+        "connectedAutomations": "Automatisations d’apps et planifiées",
+        "create": "Présentations, documents, images, sites et graphiques",
+        "everythingInBuiltForTeams": "Tout {{plan}}, pensé pour le travail en équipe",
+        "exports": "PDF, Excel, Google Docs et Sheets",
+        "memberManagement": "Rôles et forfaits d’utilisation",
+        "proDetails": "Voix : {{requests}} requêtes, {{minutes}} min/jour · Assistance par e-mail",
+        "projectContext": "Contexte du projet entre les chats",
+        "research": "Recherche de personnes et d’informations",
+        "sharedWorkflows": "Workflows d’équipe réutilisables",
         "supportPriority": "Assistance prioritaire",
-        "voiceInput": "Saisie vocale : {{requests}} requêtes et {{minutes}} minutes par jour",
-        "webhookAutomations": "Lancez une exécution depuis n'importe quel système par webhook"
+        "teamCompliance": "SOC 2 Type II en cours · Conforme au GDPR et au CCPA/CPRA",
+        "templates": "Modèles prêts à l’emploi ou personnels",
+        "voiceInput": "Voix : {{requests}} requêtes, {{minutes}} min/jour",
+        "webhookAutomations": "Déclenchez des workflows par webhook"
       },
       "legacy": "Historique",
       "loadError": "Impossible de charger le statut de facturation.",
@@ -1232,7 +1236,7 @@
       "perMonth": "/mois",
       "pricePerMonth": "{{price}}/mois",
       "pro": {
-        "description": "Le travail quotidien, facturé par membre.",
+        "description": "Votre travail quotidien, pris en charge.",
         "name": "Pro"
       },
       "renews": "Renouvelle le {{date}}",
@@ -1240,7 +1244,7 @@
       "sectionTitle": "Forfait",
       "selectedPlan": "le forfait sélectionné",
       "team": {
-        "description": "Pour une équipe qui travaille avec Okou toute la journée.",
+        "description": "Plus de capacité et de contrôle d’équipe.",
         "name": "Team"
       },
       "upgrade": "Mettre à niveau",

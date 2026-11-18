@@ -535,6 +535,7 @@ fn is_info_level_job_failure(diagnostic: &FailureDiagnostic, error: &str) -> boo
                         | FailureReason::ProviderRateLimited
                         | FailureReason::ProviderOverloaded
                         | FailureReason::ProviderStreamTimeout
+                        | FailureReason::ProviderRequestTimeout
                         | FailureReason::ProviderQueueTimeout
                         | FailureReason::ProviderServerError
                         | FailureReason::ProviderBadRequest

@@ -16,6 +16,7 @@
 1 cloudflare-ssh-proxy-test.sh
 1 cloudflare-ssh-native-diagnostics-test.sh
 1 cloudflare-ssh-tcp-test.sh
+1 stage-native-test-binary-test.sh
 1 crates-runner-image-waiters-test.sh
 1 embedded-cli-workflow-test.sh
 1 fetch-okou-desktop-artifact-test.sh

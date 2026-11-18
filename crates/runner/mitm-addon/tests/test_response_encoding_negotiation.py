@@ -810,7 +810,10 @@ async def test_header_phase_auth_fallback_restores_encoding_negotiation(
         path=_X_PATH,
         method="GET",
         accept_encoding=original_accept_encoding,
-        extra_headers=(("Content-Length", str(mitm_addon.STREAM_BUFFER_LIMIT + 1)),),
+        extra_headers=(
+            ("Content-Length", str(mitm_addon.STREAM_BUFFER_LIMIT + 1)),
+            ("X-HTTP-Method-Override", "POST"),
+        ),
     )
 
     with (
@@ -866,6 +869,7 @@ async def test_header_phase_websocket_auth_fallback_restores_upgrade_marker(
             ("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ=="),
             ("Sec-WebSocket-Version", "13"),
             ("Content-Length", str(mitm_addon.STREAM_BUFFER_LIMIT + 1)),
+            ("X-HTTP-Method-Override", "POST"),
         ),
     )
 

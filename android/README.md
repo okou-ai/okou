@@ -670,6 +670,12 @@ not provider-live, production synchronization or distribution evidence.
 
 ## Foreground Chat Updates
 
+Run-failure titles and descriptions use exhaustive switches over the generated
+`KnownRunFailureReason` cases from the public contract. History keeps raw reason
+tokens, including unknown future values; only presentation/recovery normalizes
+them. After changing the public enum, run `generate:kotlin` and update both native
+mappings. Generation drift and a missing `when` branch fail CI or compilation.
+
 Assistant failure recovery follows the current canonical failure reason and the
 thread's current model route. The card reads model catalog, personal account,
 usage windows and reset credits independently of conversation history and draft

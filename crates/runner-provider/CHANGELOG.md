@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.20.26](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.25...runner-provider-v0.20.26) (2026-11-18)
+
+
+### Refactoring
+
+* **firewall:** separate host resolver authority from guest identity ([#48459](https://github.com/okou-ai/okou/issues/48459)) ([949de84](https://github.com/okou-ai/okou/commit/949de843f47dd8152058c7d7e2ca8a418305f0fc))
+
+## [0.20.25](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.24...runner-provider-v0.20.25) (2026-11-18)
+
 ## [0.20.24](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.23...runner-provider-v0.20.24) (2026-11-18)
 
 ## [0.20.23](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.22...runner-provider-v0.20.23) (2026-11-18)

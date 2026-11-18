@@ -17,7 +17,10 @@ import {
 } from "../../lib/template-usage-identity";
 import { projectUserMessage } from "./chat-user-message.service";
 import { selectedUserPresentationTemplateIds } from "./presentation-template-data.service";
-import type { RunPromptAndSkills } from "./run-prompt-and-skills";
+import type {
+  RunPromptAndSkills,
+  TemplateSkillVolume,
+} from "./run-prompt-and-skills";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 import {
   selectedUserTemplateIds,
@@ -35,6 +38,7 @@ type PrefetchedTemplates = Pick<
 
 export type RunTemplatesResult =
   | (RunPromptAndSkills & {
+      readonly skillVolumes: readonly TemplateSkillVolume[];
       readonly templateUsageIdentities: readonly TemplateUsageIdentity[];
     })
   | {
@@ -45,10 +49,11 @@ export type RunTemplatesResult =
     };
 
 type RunTemplateGuidanceResult =
-  | (Pick<RunPromptAndSkills, "skillVolumes"> & {
+  | {
+      readonly skillVolumes: readonly TemplateSkillVolume[];
       readonly templateUsageIdentities: readonly TemplateUsageIdentity[];
       readonly renderPrompt: () => string;
-    })
+    }
   | Extract<RunTemplatesResult, { readonly error: unknown }>;
 
 export function createRunTemplates(
@@ -78,25 +83,6 @@ export function createRunTemplates(
     };
   });
   return { sources$: guidance.sources$, templates$ };
-}
-
-/** Current ACLs, selection validation and bundles, without discarded prompt text. */
-export function createRunTemplatePackages(
-  event$: Parameters<typeof createRunTemplateGuidance>[0],
-  orgId$: Parameters<typeof createRunTemplateGuidance>[1],
-  disabledPaidTools$: Parameters<typeof createRunTemplateGuidance>[2],
-) {
-  const guidance = createRunTemplateGuidance(
-    event$,
-    orgId$,
-    disabledPaidTools$,
-  );
-  return computed(async (get) => {
-    const prepared = await get(guidance.guidance$);
-    return "error" in prepared
-      ? prepared
-      : { skillVolumes: prepared.skillVolumes };
-  });
 }
 
 function createRunTemplateGuidance(

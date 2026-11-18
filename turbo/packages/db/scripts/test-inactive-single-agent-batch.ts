@@ -36,7 +36,7 @@ const journal = object({
   ),
 );
 const migration = journal.entries.find((row) => {
-  return row.tag === "1571_copy_inactive_single_agent_batch";
+  return row.tag === "1572_copy_inactive_single_agent_batch";
 });
 assert.ok(migration);
 const text = await readFile(

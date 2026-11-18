@@ -3,8 +3,12 @@ package ai.okou.android
 import ai.okou.android.api.generated.SessionOutputDelta
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ChatChanges
+import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ComposerJournalStore
+import ai.okou.android.chat.ComposerPersistence
+import ai.okou.android.chat.ComposerSync
+import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.RealtimePhase
 import ai.okou.android.chat.RealtimeSnapshot
 import ai.okou.android.chat.RunControlJournalStore
@@ -22,6 +26,7 @@ import androidx.test.core.app.takeScreenshot
 import androidx.test.core.graphics.writeToTestStorage
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.services.storage.TestStorage
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.Direction
@@ -29,6 +34,7 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -83,7 +89,36 @@ class NativeRealtimeTest {
         var composerJob: Job? = null
         var chatJob: Job? = null
         var chats: ChatListModel? = null
+        var composer: ChatComposerModel? = null
         var controls: RunControlsModel? = null
+        val controlPosts = AtomicInteger()
+        val controlResponse = CountDownLatch(1)
+        val target = ComposerTarget(CHAT_PERSONAL, CHAT_AGENT)
+        var step = "Launch native realtime scenario"
+        var stopBounds = "not located"
+        fun diagnostics(): String {
+            val control = controls?.uiState?.value
+            val draft = composer?.uiState?.value
+            val history = chats?.history?.uiState?.value
+            return buildString {
+                appendLine("step=$step")
+                appendLine(
+                    "controlPosts=${controlPosts.get()}; responseHeld=${controlResponse.count}"
+                )
+                appendLine("controlPersistence=${control?.persistence}; phases=${control?.phases}")
+                appendLine(
+                    "pendingControls=${control?.journal?.pending?.map { it.id to it.targetId }}"
+                )
+                appendLine(
+                    "historyPhase=${history?.phase}; liveRuns=${history?.transcript?.liveRunIds}"
+                )
+                appendLine("composerPersistence=${draft?.persistence}; sync=${draft?.sync(target)}")
+                appendLine(
+                    "sendBusy=${draft?.busy?.contains(target.key)}; pendingSend=${draft?.entry(target)?.pending != null}; receipt=${draft?.entry(target)?.receipt?.disposition}"
+                )
+                appendLine("stopBounds=$stopBounds")
+            }
+        }
         val failures = mutableListOf<Throwable>()
         try {
             scenario = ActivityScenario.launch(MainActivity::class.java)
@@ -113,15 +148,34 @@ class NativeRealtimeTest {
                 }
                 text(value)
             }
-            fun condition(check: () -> Boolean) =
-                assertTrue(
+            fun condition(description: String = "Native realtime condition", check: () -> Boolean) {
+                step = description
+                val matched =
                     device.wait(
                         object : Condition<UiDevice, Boolean> {
                             override fun apply(device: UiDevice) = check()
                         },
                         10_000,
                     )
-                )
+                if (!matched) throw AssertionError(diagnostics())
+            }
+            fun clickStop() {
+                step = "Locate enabled Stop button"
+                val button =
+                    checkNotNull(
+                        device.wait(
+                            Until.findObject(
+                                By.pkg(app.packageName)
+                                    .clickable(true)
+                                    .enabled(true)
+                                    .hasDescendant(label(app.getString(R.string.controls_stop)))
+                            ),
+                            10_000,
+                        )
+                    )
+                stopBounds = button.visibleBounds.toString()
+                button.click()
+            }
             fun ime(visible: Boolean) = condition {
                 var shown = false
                 checkNotNull(scenario).onActivity {
@@ -141,6 +195,7 @@ class NativeRealtimeTest {
                 composerJob = ready.composer.viewModelScope.coroutineContext[Job]
                 chatJob = ready.chats.viewModelScope.coroutineContext[Job]
                 chats = ready.chats
+                composer = ready.composer
                 controls = ready.controls
             }
             condition { chats?.uiState?.value?.threads?.any { it.id == CHAT_PERSONAL } == true }
@@ -345,7 +400,6 @@ class NativeRealtimeTest {
             // The real follow-up route accepts a new input; stop keeps that queued input intact.
             val followup = AtomicReference<String?>()
             val interrupted = AtomicReference<JsonObject?>()
-            val controlPosts = AtomicInteger()
             val publishControl = AtomicBoolean()
             val terminal = AtomicBoolean()
             fixture.commandResponse = { request ->
@@ -357,6 +411,7 @@ class NativeRealtimeTest {
                         if ("interruptsRunId" in wire) {
                             controlPosts.incrementAndGet()
                             interrupted.set(wire)
+                            controlResponse.await()
                             // A post-commit failure is uncertain. Recovery must only read back.
                             jsonResponse(
                                     """{"error":{"code":"CONTROL_UNCERTAIN","message":"Result unavailable"}}"""
@@ -460,16 +515,46 @@ class NativeRealtimeTest {
                     device.findObject(By.pkg(app.packageName).clazz("android.widget.EditText"))
                 )
                 .setText("Keep this draft")
-            reveal("Stop running work")
-            text("Stop running work").click()
-            condition {
+            // Fixture receipt/transcript presence do not complete the composer or its layout.
+            condition("Follow-up accepted and next draft durably synchronized") {
+                val state = composer?.uiState?.value ?: return@condition false
+                val entry = state.entry(target)
+                entry.receipt?.eventId == followup.get() &&
+                    entry.pending == null &&
+                    entry.text == "Keep this draft" &&
+                    target.key !in state.busy &&
+                    state.persistence == ComposerPersistence.Durable &&
+                    state.sync(target) == ComposerSync.Saved
+            }
+            condition("Composer saving indicators leave the native layout") {
+                !device.hasObject(label(app.getString(R.string.composer_saving))) &&
+                    !device.hasObject(label(app.getString(R.string.composer_sync_saving))) &&
+                    !device.hasObject(label(app.getString(R.string.composer_unconfirmed)))
+            }
+            reveal(app.getString(R.string.controls_stop))
+            clickStop()
+            condition("Single interrupt reaches transport while the response is held") {
+                controlPosts.get() == 1 &&
+                    interrupted.get()?.getValue("interruptsRunId")?.jsonPrimitive?.content ==
+                        activeRun &&
+                    controls?.uiState?.value?.phases?.values?.singleOrNull() ==
+                        RunControlPhase.Sending
+            }
+            controlResponse.countDown()
+            condition("Ambiguous interrupt response publishes Unknown") {
                 controls?.uiState?.value?.phases?.values?.singleOrNull() == RunControlPhase.Unknown
             }
             assertEquals(
                 activeRun,
                 interrupted.get()!!.getValue("interruptsRunId").jsonPrimitive.content,
             )
-            text("Stop running work").click()
+            // Wait for the new control panel before the duplicate native action.
+            reveal(app.getString(R.string.controls_unknown))
+            clickStop()
+            device.waitForIdle()
+            scenario.onActivity {
+                assertEquals(1, controls?.uiState?.value?.journal?.pending?.size)
+            }
             assertEquals(1, controlPosts.get())
             external.snapshot.value =
                 external.snapshot.value.copy(phase = RealtimePhase.Unavailable)
@@ -484,6 +569,11 @@ class NativeRealtimeTest {
             condition { controls?.uiState?.value?.journal?.pending?.isEmpty() == true }
             reveal("Control recorded in conversation history.")
             assertEquals(1, controlPosts.get())
+            assertTrue(
+                chats?.history?.uiState?.value?.transcript?.messages?.any {
+                    it.id == followup.get() && it.runId == null
+                } == true
+            )
             terminal.set(true)
             external.invalidate(
                 ChatChanges(
@@ -544,11 +634,29 @@ class NativeRealtimeTest {
         } catch (error: Throwable) {
             failures += error
             try {
+                val button =
+                    device.findObject(
+                        By.pkg(app.packageName)
+                            .clickable(true)
+                            .hasDescendant(By.text(app.getString(R.string.controls_stop)))
+                    )
+                val summary =
+                    diagnostics() +
+                        "currentStopEnabled=${button?.isEnabled}; currentStopBounds=${button?.visibleBounds}\n"
+                error.addSuppressed(AssertionError(summary))
+                TestStorage().openOutputFile("native-realtime-state.txt").use {
+                    it.write(summary.toByteArray())
+                }
+            } catch (diagnostic: Throwable) {
+                error.addSuppressed(diagnostic)
+            }
+            try {
                 takeScreenshot().writeToTestStorage("native-realtime-failure.png")
             } catch (diagnostic: Throwable) {
                 error.addSuppressed(diagnostic)
             }
         } finally {
+            controlResponse.countDown()
             for (cleanup in
                 listOf<() -> Unit>(
                     { scenario?.close() },

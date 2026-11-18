@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { DialogFooter } from "@okouai/ui/components/ui/dialog";
 import { IconButton } from "@okouai/ui/components/ui/icon-button";
 import { cn } from "@okouai/ui/lib/utils";
@@ -11,6 +11,7 @@ export function CarouselNavigation({
   previousLabel,
   nextLabel,
   controlsId,
+  appearance = "default",
 }: {
   readonly items: readonly { readonly id: string; readonly label: string }[];
   readonly index: number;
@@ -19,25 +20,39 @@ export function CarouselNavigation({
   readonly previousLabel: string;
   readonly nextLabel: string;
   readonly controlsId?: string;
+  readonly appearance?: "default" | "announcement";
 }) {
   if (items.length < 2) {
     return null;
   }
+  const PreviousIcon = appearance === "announcement" ? ChevronLeft : ArrowLeft;
+  const NextIcon = appearance === "announcement" ? ChevronRight : ArrowRight;
+  const arrowClassName = cn(
+    "size-8 shrink-0",
+    appearance === "announcement"
+      ? "rounded-full border border-border bg-background p-0 shadow-sm hover:bg-state-hover-overlay"
+      : "text-muted-foreground hover:text-foreground",
+  );
   return (
     <DialogFooter
       role="group"
       aria-label={label}
-      className="shrink-0 flex-row items-center justify-between gap-2 border-t border-border pt-3 sm:justify-between"
+      className={cn(
+        "shrink-0 flex-row items-center justify-between gap-2 sm:justify-between",
+        appearance === "announcement"
+          ? "pt-[13px]"
+          : "border-t border-border pt-3",
+      )}
     >
       <IconButton
         aria-label={previousLabel}
         aria-controls={controlsId}
-        className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
+        className={arrowClassName}
         onClick={() => {
           onSelect((index + items.length - 1) % items.length);
         }}
       >
-        <ArrowLeft size={16} aria-hidden="true" />
+        <PreviousIcon size={16} aria-hidden="true" />
       </IconButton>
       <div className="flex min-w-0 flex-wrap items-center justify-center gap-0.5">
         {items.map((item, itemIndex) => {
@@ -57,7 +72,9 @@ export function CarouselNavigation({
                 className={cn(
                   "h-1.5 rounded-full",
                   itemIndex === index
-                    ? "w-4 bg-foreground"
+                    ? appearance === "announcement"
+                      ? "w-4 bg-primary"
+                      : "w-4 bg-foreground"
                     : "w-1.5 bg-gray-300",
                 )}
               />
@@ -68,12 +85,12 @@ export function CarouselNavigation({
       <IconButton
         aria-label={nextLabel}
         aria-controls={controlsId}
-        className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
+        className={arrowClassName}
         onClick={() => {
           onSelect((index + 1) % items.length);
         }}
       >
-        <ArrowRight size={16} aria-hidden="true" />
+        <NextIcon size={16} aria-hidden="true" />
       </IconButton>
     </DialogFooter>
   );

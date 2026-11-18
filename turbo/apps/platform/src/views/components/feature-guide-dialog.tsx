@@ -6,6 +6,7 @@ import { cn } from "@okouai/ui/lib/utils";
 import {
   Dialog,
   DialogContent,
+  DialogBody,
   DialogDescription,
   DialogHeader,
   DialogTitle,
@@ -31,6 +32,7 @@ import { ROUTES } from "../../signals/route-paths.ts";
 import { Link } from "../router/link.tsx";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
 import { FeatureGuideConversationPreview } from "./feature-guide-conversation.tsx";
+import { FeatureGuideIllustration } from "./feature-guide-illustration.tsx";
 import { CarouselNavigation } from "./carousel-navigation.tsx";
 
 const FEATURE_GUIDE_ACTION_ROUTES = {
@@ -49,6 +51,9 @@ function GuideMedia({
   const { t } = useTranslation();
   const stepIndex = useGet(selection.stepIndex$);
   const selectStep = useSet(selection.selectStep$);
+  if (media.type === "illustration") {
+    return <FeatureGuideIllustration media={media} />;
+  }
   if (media.type === "image") {
     return (
       <img
@@ -150,6 +155,7 @@ function FeatureGuideNavigation({
   const items = snapshot.edition.content.items;
   return (
     <CarouselNavigation
+      appearance="announcement"
       items={items.map((item) => {
         return { id: item.featureId, label: item.title };
       })}
@@ -180,7 +186,7 @@ function GuideSlide({
   return (
     <div
       className={cn(
-        "flex flex-col gap-4",
+        "flex flex-col gap-5 sm:gap-6",
         snapshot.edition.content.items.length > 1 &&
           item.media?.type !== "video" &&
           "touch-pan-y touch-pinch-zoom",
@@ -220,14 +226,6 @@ function GuideSlide({
         beginSwipe(null);
       }}
     >
-      <div aria-live="polite">
-        <DialogHeader className="text-left">
-          <DialogTitle className="pr-7 text-2xl leading-snug sm:text-3xl">
-            {item.title}
-          </DialogTitle>
-          <DialogDescription>{item.description}</DialogDescription>
-        </DialogHeader>
-      </div>
       {item.media && (
         <GuideMedia
           key={item.featureId}
@@ -235,6 +233,16 @@ function GuideSlide({
           selection={snapshot.selection}
         />
       )}
+      <div aria-live="polite">
+        <DialogHeader className="gap-3 text-left">
+          <DialogTitle className="text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">
+            {item.title}
+          </DialogTitle>
+          <DialogDescription className="text-sm leading-relaxed sm:text-base">
+            {item.description}
+          </DialogDescription>
+        </DialogHeader>
+      </div>
     </div>
   );
 }
@@ -258,11 +266,15 @@ function GuideContents({
   const prompt = activeItem.prompt;
   return (
     <>
-      <div className="flex items-center gap-2 text-xs font-medium text-brand-text">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 pr-10 text-xs font-medium text-muted-foreground">
         <Sparkles size={14} aria-hidden="true" />
         {t(($) => {
           return $.featureGuide.label;
         })}
+        <span className="ml-1 text-muted-foreground/60" aria-hidden="true">
+          ·
+        </span>
+        <span>{edition.content.title}</span>
         {snapshot.preview && (
           <span className="text-muted-foreground">
             {t(($) => {
@@ -271,43 +283,51 @@ function GuideContents({
           </span>
         )}
       </div>
-      <GuideSlide snapshot={snapshot} item={activeItem} />
-      {activeItem.action ? (
-        <Link
-          pathname={FEATURE_GUIDE_ACTION_ROUTES[activeItem.action.type]}
-          options={
-            snapshot.preview
-              ? {
-                  searchParams: new URLSearchParams({
-                    featureGuidePreview: "1",
-                  }),
-                }
-              : undefined
-          }
-          className="inline-flex min-h-8 w-fit items-center gap-1 text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
-          onClick={(event) => {
-            if (shouldHandleLinkClick(event)) {
-              onClose();
+      <DialogBody
+        key={`${edition.id}:${activeItem.featureId}`}
+        className="flex flex-col gap-4"
+      >
+        <GuideSlide snapshot={snapshot} item={activeItem} />
+        {activeItem.action ? (
+          <Link
+            pathname={FEATURE_GUIDE_ACTION_ROUTES[activeItem.action.type]}
+            options={
+              snapshot.preview
+                ? {
+                    searchParams: new URLSearchParams({
+                      featureGuidePreview: "1",
+                      ...(snapshot.previewEdition
+                        ? { featureGuideEdition: snapshot.previewEdition }
+                        : {}),
+                    }),
+                  }
+                : undefined
             }
-          }}
-        >
-          {activeItem.action.label}
-          <ArrowUpRight size={14} aria-hidden="true" />
-        </Link>
-      ) : prompt ? (
-        <Button
-          variant="link"
-          className="h-auto w-fit px-0 py-1 text-muted-foreground hover:text-foreground"
-          onClick={() => {
-            return onTry(prompt);
-          }}
-        >
-          {t(($) => {
-            return $.featureGuide.tryPrompt;
-          })}
-          <ArrowUpRight aria-hidden="true" />
-        </Button>
-      ) : null}
+            className="inline-flex min-h-8 w-fit items-center gap-1 text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+            onClick={(event) => {
+              if (shouldHandleLinkClick(event)) {
+                onClose();
+              }
+            }}
+          >
+            {activeItem.action.label}
+            <ArrowUpRight size={14} aria-hidden="true" />
+          </Link>
+        ) : prompt ? (
+          <Button
+            variant="link"
+            className="h-auto w-fit px-0 py-1 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              return onTry(prompt);
+            }}
+          >
+            {t(($) => {
+              return $.featureGuide.tryPrompt;
+            })}
+            <ArrowUpRight aria-hidden="true" />
+          </Button>
+        ) : null}
+      </DialogBody>
       <FeatureGuideNavigation snapshot={snapshot} />
     </>
   );
@@ -364,8 +384,9 @@ export function FeatureGuideDialog() {
       }}
     >
       <DialogContent
-        maxWidth="2xl"
-        contentClassName="auto-rows-max grid-cols-1"
+        maxWidth={720}
+        scrollable={false}
+        contentClassName="flex flex-col gap-5 font-(family-name:--font-family-sans) sm:gap-6"
         closeLabel={t(($) => {
           return $.featureGuide.close;
         })}

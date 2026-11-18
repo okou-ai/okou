@@ -1184,21 +1184,25 @@
         "name": "Free"
       },
       "highlights": {
-        "addOnConcurrency": "Add more concurrency any time",
-        "agentFanOut": "Okou delegates work to a team of AI helpers",
-        "automations": "Scheduled and event automations",
-        "builtInResearchData": "Built-in SEO, lead, web, and market data",
-        "chatIntegrations": "Slack and Telegram integration",
-        "computerUse": "Okou controls real apps on your desktop",
+        "addOnConcurrency": "Add more capacity",
+        "advancedTools": "Dozens of advanced tools, built in",
+        "appPermissions": "Scoped, time-limited app access",
+        "browserAndComputer": "Browser & computer use",
         "concurrentAgents": "{{slots}} tasks running at once",
-        "everythingInBuiltForTeams": "Everything in {{plan}}, built for teams",
-        "included": "Included",
-        "liveBrowser": "Watch Okou’s live browser and take the wheel",
-        "moreConnectorsChannels": "More custom connectors & channel integration",
-        "supportEmail": "Email support",
+        "connectedAutomations": "Scheduled & app automations",
+        "create": "Slides, docs, images, sites & charts",
+        "everythingInBuiltForTeams": "Everything in {{plan}}, built for teamwork",
+        "exports": "PDF, Excel, Google Docs & Sheets",
+        "memberManagement": "Member roles & usage packages",
+        "proDetails": "Voice: {{requests}} requests, {{minutes}} min/day · Email support",
+        "projectContext": "Project context across chats",
+        "research": "People search & research",
+        "sharedWorkflows": "Reusable team workflows",
         "supportPriority": "Priority support",
-        "voiceInput": "Voice input, {{requests}} requests and {{minutes}} minutes a day",
-        "webhookAutomations": "Start a run from any system with one webhook"
+        "teamCompliance": "SOC 2 Type II in progress · GDPR & CCPA/CPRA compliant",
+        "templates": "Ready-made & custom templates",
+        "voiceInput": "Voice: {{requests}} requests, {{minutes}} min/day",
+        "webhookAutomations": "Workflow triggers via webhooks"
       },
       "legacy": "Legacy",
       "loadError": "Could not load billing status.",
@@ -1208,7 +1212,7 @@
       "perMonth": "/month",
       "pricePerMonth": "{{price}}/month",
       "pro": {
-        "description": "Everyday work, priced per member.",
+        "description": "Your everyday work, handled.",
         "name": "Pro"
       },
       "renews": "Renews {{date}}",
@@ -1216,7 +1220,7 @@
       "sectionTitle": "Plan",
       "selectedPlan": "the selected plan",
       "team": {
-        "description": "For a team that keeps Okou working all day.",
+        "description": "More capacity and team controls.",
         "name": "Team"
       },
       "upgrade": "Upgrade",

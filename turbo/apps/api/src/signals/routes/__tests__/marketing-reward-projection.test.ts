@@ -314,7 +314,7 @@ async function receiptFixture(slack = false) {
   const result = await accept(
     setupApp({ context, routes: marketingRewardSettlementRoutes })(
       marketingRewardSettlementContract,
-    ).lookup({
+    ).settle({
       body: intent,
       headers: { authorization: `Bearer ${settlementSecret}` },
     }),
@@ -413,7 +413,7 @@ test("cron recovers an acknowledged refresh without caller activity or renewing 
   const financial = await accept(
     setupApp({ context, routes: marketingRewardSettlementRoutes })(
       marketingRewardSettlementContract,
-    ).lookup({
+    ).settle({
       body: fixture.body.intent,
       headers: { authorization: `Bearer ${settlementSecret}` },
     }),

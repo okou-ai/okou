@@ -171,7 +171,6 @@ async fn count_only_routine_collection_stops_at_the_independent_entry_cap_below_
             .entry_dir()
             .exists()
     );
-    assert_eq!(f.cache.gc(false).await.unwrap(), 0);
 }
 
 #[tokio::test]

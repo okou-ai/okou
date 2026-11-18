@@ -93,6 +93,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
   [FeatureSwitchKey.SingleAgent]: {
@@ -140,7 +141,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "yuma@okou.ai",
     displayName: "Feature guides",
     description: "Show published product updates once per user and edition.",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.BatchConnectorPermissions]: {
     maintainer: "ethan@okou.ai",
@@ -199,14 +200,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Share audience descriptions",
     description:
       "Describe each Who can access option in the share menu with one line, and anchor Copy link as a full-width footer under a divider.",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.HostedSiteShareRows]: {
     maintainer: "ming@okou.ai",
     displayName: "Website share rows",
     description:
       "Lay out the website Share menu's banner and Customize URL as menu rows under the access options, with the current address and a chevron on Customize URL and a full-width Copy link.",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.FreePlanArtifactPaywall]: {
     maintainer: "ming@okou.ai",

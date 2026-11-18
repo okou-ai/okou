@@ -4748,6 +4748,7 @@ function hasAssistantRecoveryModelPicker(
     (recovery.kind === "provider-retryable" &&
       recovery.failureReason !== "guest_root_filesystem_full" &&
       recovery.failureReason !== "guest_home_filesystem_full" &&
+      recovery.failureReason !== "guest_memory_oom_killed" &&
       recovery.failureReason !== "codex_access_program_unavailable")
   );
 }
@@ -5056,6 +5057,11 @@ const STRUCTURED_FAILURE_TITLES = Object.freeze({
   },
   guest_root_filesystem_full: filesystemFullTitle,
   guest_home_filesystem_full: filesystemFullTitle,
+  guest_memory_oom_killed: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.genericTitle;
+    });
+  },
   execution_timeout: () => {
     return i18n.t(($) => {
       return $.chat.errors.recovery.timeoutTitle;
@@ -5114,6 +5120,11 @@ const STRUCTURED_FAILURE_TITLES = Object.freeze({
     });
   },
   provider_stream_timeout: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.providerStreamTimeoutTitle;
+    });
+  },
+  provider_request_timeout: () => {
     return i18n.t(($) => {
       return $.chat.errors.recovery.providerStreamTimeoutTitle;
     });
@@ -5258,6 +5269,11 @@ const STRUCTURED_FAILURE_DESCRIPTIONS = Object.freeze({
   session_history_limit: FAILURE_DESCRIPTIONS.newChat,
   guest_root_filesystem_full: FAILURE_DESCRIPTIONS.filesystemFull,
   guest_home_filesystem_full: FAILURE_DESCRIPTIONS.filesystemFull,
+  guest_memory_oom_killed: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.runErrors.transient;
+    });
+  },
   execution_timeout: FAILURE_DESCRIPTIONS.timeout,
   insufficient_credits: () => {
     return "";
@@ -5278,6 +5294,7 @@ const STRUCTURED_FAILURE_DESCRIPTIONS = Object.freeze({
   provider_rate_limited: FAILURE_DESCRIPTIONS.capacity,
   provider_overloaded: FAILURE_DESCRIPTIONS.capacity,
   provider_stream_timeout: FAILURE_DESCRIPTIONS.capacity,
+  provider_request_timeout: FAILURE_DESCRIPTIONS.capacity,
   provider_queue_timeout: FAILURE_DESCRIPTIONS.capacity,
   codex_access_program_unavailable: FAILURE_DESCRIPTIONS.accessProgram,
   provider_server_error: FAILURE_DESCRIPTIONS.capacity,
@@ -5316,6 +5333,7 @@ function structuredFailureIcon(reason: KnownRunFailureReason): LucideIcon {
     reason === "output_token_limit" ||
     reason === "provider_rate_limited" ||
     reason === "provider_stream_timeout" ||
+    reason === "provider_request_timeout" ||
     reason === "provider_queue_timeout" ||
     reason === "usage_limit"
   ) {

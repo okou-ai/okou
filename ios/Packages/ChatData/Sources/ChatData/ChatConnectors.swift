@@ -133,6 +133,21 @@ public struct ChatConnectorService: Sendable {
     } catch let error as APIClientError where error.statusCode == 404 { return nil }
   }
 
+  private func statusAccount(
+    for action: ChatConnectorAction, target: ChatConnectorTarget, exactID: String?,
+    managed: Bool, chatAccountAccess: Bool
+  ) async throws -> ChatConnectorAccount? {
+    if let exactID {
+      return try await self.account(id: exactID, target: target)
+    } else if case .configuration = action.kind {
+      return nil
+    } else if managed {
+      return nil
+    } else {
+      return try await defaultAccount(target: target, chatAccountAccess: chatAccountAccess)
+    }
+  }
+
   private func readStatus(_ action: ChatConnectorAction, chatAccountAccess: Bool) async throws
     -> ChatConnectorStatus?
   {
@@ -172,16 +187,9 @@ public struct ChatConnectorService: Sendable {
       custom = try await client.request("/api/custom-connectors/\(id)")
       guard custom?.id.lowercased() == id.lowercased() else { throw APIClientError.invalidResponse }
     }
-    let account: ChatConnectorAccount?
-    if let exactID {
-      account = try await self.account(id: exactID, target: target)
-    } else if case .configuration = action.kind {
-      account = nil
-    } else if custom?.managed == true {
-      account = nil
-    } else {
-      account = try await defaultAccount(target: target, chatAccountAccess: chatAccountAccess)
-    }
+    let account = try await statusAccount(
+      for: action, target: target, exactID: exactID, managed: custom?.managed == true,
+      chatAccountAccess: chatAccountAccess)
     if case .reconnect = action.kind {
       guard let account,
         builtin?.authMethods.contains(where: {
@@ -367,7 +375,7 @@ public struct ChatConnectorService: Sendable {
     if let slug = status.target.connectorSlug, let method {
       let body = Body(
         account: account, agentId: status.chatAccountAccess ? nil : action.agentID,
-        authorizeAgent: !status.chatAccountAccess, authMethod: method.id,
+        authorizeAgent: status.chatAccountAccess ? nil : true, authMethod: method.id,
         values: method.grantKind == "manual" ? values : nil,
         options: method.grantKind == "device-auth" ? options : nil)
       let data = try JSONEncoder().encode(body)

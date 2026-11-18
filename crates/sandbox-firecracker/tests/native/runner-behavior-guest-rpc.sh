@@ -27,7 +27,8 @@ cleanup_upload() {
   ssh "$REMOTE" sudo rm -f -- "$REMOTE_BIN"
 }
 trap cleanup_upload EXIT
-scp "$TEST_BIN" "${REMOTE}:${REMOTE_BIN}"
+bash "$REPO_ROOT/.github/scripts/runner/stage-native-test-binary.sh" \
+  "$TEST_BIN" "$REMOTE" "$REMOTE_BIN"
 
 ssh "$REMOTE" sudo bash -s -- \
   "$REMOTE_BIN" "$EXECUTION_KEY" "$DEFAULT_ROOTFS_HASH" "$DEFAULT_SNAPSHOT_HASH" \

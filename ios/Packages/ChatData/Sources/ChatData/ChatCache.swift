@@ -211,7 +211,7 @@ public actor ChatCache {
       guard try snapshot.step() else { return nil }
       let cursor = ChatCacheCursor(
         eventID: snapshot.optionalText(at: 1), seqID: try snapshot.integer(at: 2))
-      guard Self.validListCursor(cursor) else { throw ChatCacheError.corrupt }
+      guard ChatCacheValidation.validListCursor(cursor) else { throw ChatCacheError.corrupt }
 
       let query = try database.prepare("SELECT id, seq_id, data FROM thread_events ORDER BY seq_id")
       var events: [ChatCacheEvent] = []
@@ -230,8 +230,8 @@ public actor ChatCache {
   public func replaceThreadList(
     snapshot: Data, cursor: ChatCacheCursor, events: [ChatCacheEvent]
   ) throws {
-    guard Self.validListCursor(cursor) else { throw ChatCacheError.invalidCursor }
-    try Self.validate(events, after: cursor.seqID)
+    guard ChatCacheValidation.validListCursor(cursor) else { throw ChatCacheError.invalidCursor }
+    try ChatCacheValidation.validate(events, after: cursor.seqID)
     try withDatabase { database in
       try database.transaction {
         // Another process may have committed a newer snapshot/tail while this
@@ -261,7 +261,7 @@ public actor ChatCache {
 
   public func appendThreadEvents(_ events: [ChatCacheEvent]) throws {
     guard !events.isEmpty else { return }
-    try Self.validate(events, after: 0)
+    try ChatCacheValidation.validate(events, after: 0)
     try withDatabase { database in
       try database.transaction {
         let base = try database.prepare("SELECT snapshot_seq_id FROM thread_list WHERE id = 1")
@@ -298,7 +298,7 @@ public actor ChatCache {
       guard try query.step() else { return nil }
       let cursor = ChatCacheCursor(
         eventID: query.optionalText(at: 0), seqID: try query.integer(at: 1))
-      guard Self.validHistoryCursor(cursor) else { throw ChatCacheError.corrupt }
+      guard ChatCacheValidation.validHistoryCursor(cursor) else { throw ChatCacheError.corrupt }
       return cursor
     }
   }
@@ -328,7 +328,7 @@ public actor ChatCache {
       let cursor = ChatCacheCursor(
         eventID: history.optionalText(at: 0), seqID: try history.integer(at: 1))
       let schemaVersion = try history.integer(at: 2)
-      guard Self.validHistoryCursor(cursor), schemaVersion > 0 else {
+      guard ChatCacheValidation.validHistoryCursor(cursor), schemaVersion > 0 else {
         throw ChatCacheError.corrupt
       }
 
@@ -356,7 +356,8 @@ public actor ChatCache {
   public func replaceHistory(
     threadID: String, rows: [ChatCacheEvent], cursor: ChatCacheCursor, schemaVersion: Int
   ) throws {
-    try Self.validateHistory(rows: rows, cursor: cursor, schemaVersion: schemaVersion)
+    try ChatCacheValidation.validateHistory(
+      rows: rows, cursor: cursor, schemaVersion: schemaVersion)
     try withDatabase { database in
       try database.transaction {
         let existing = try database.prepare(
@@ -388,7 +389,7 @@ public actor ChatCache {
   public func appendHistory(
     threadID: String, rows: [ChatCacheEvent], cursor: ChatCacheCursor, schemaVersion: Int
   ) throws {
-    try Self.validateHistory(
+    try ChatCacheValidation.validateHistory(
       rows: rows, cursor: cursor, schemaVersion: schemaVersion, allowEmptyPage: true)
     try withDatabase { database in
       try database.transaction {
@@ -505,41 +506,6 @@ public actor ChatCache {
         try FileManager.default.removeItem(at: path)
       }
     }
-  }
-
-  private static func validListCursor(_ cursor: ChatCacheCursor) -> Bool {
-    if cursor.seqID == 0 { return cursor.eventID == nil }
-    return cursor.seqID > 0 && (cursor.eventID == nil || cursor.eventID?.isEmpty == false)
-  }
-
-  private static func validHistoryCursor(_ cursor: ChatCacheCursor) -> Bool {
-    cursor.seqID == 0 ? cursor.eventID == nil : cursor.seqID > 0 && cursor.eventID?.isEmpty == false
-  }
-
-  private static func validate(_ events: [ChatCacheEvent], after: Int) throws {
-    var previous = after
-    var ids = Set<String>()
-    for event in events {
-      guard !event.id.isEmpty, event.seqID > previous, ids.insert(event.id).inserted else {
-        throw ChatCacheError.invalidEventSequence
-      }
-      previous = event.seqID
-    }
-  }
-
-  private static func validateHistory(
-    rows: [ChatCacheEvent], cursor: ChatCacheCursor, schemaVersion: Int,
-    allowEmptyPage: Bool = false
-  ) throws {
-    guard validHistoryCursor(cursor), schemaVersion > 0 else {
-      throw ChatCacheError.invalidCursor
-    }
-    try validate(rows, after: 0)
-    if rows.isEmpty && allowEmptyPage { return }
-    guard
-      (rows.last.map { ChatCacheCursor(eventID: $0.id, seqID: $0.seqID) }
-        ?? ChatCacheCursor(eventID: nil, seqID: 0)) == cursor
-    else { throw ChatCacheError.invalidCursor }
   }
 
   private static func insert(

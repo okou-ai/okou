@@ -1954,10 +1954,10 @@ fn content_policy_rejection_is_consistent_across_terminal_frameworks() {
 }
 
 #[test]
-fn content_policy_rejection_keeps_other_invalid_requests_unclassified() {
+fn content_policy_text_classification_does_not_guess_other_request_causes() {
     for message in [
-        // Real request-shape defects share the `invalid_request_error` type and
-        // must keep their actionable unclassified failure.
+        // Text alone cannot establish the native `other` required for generic
+        // Codex request classification; selected native events own that reason.
         r#"{"error":{"message":"Invalid Format","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}"#,
         r#"{"error":{"message":"Input token length too long","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}"#,
         // Same phrase, different envelope shape or missing fields.

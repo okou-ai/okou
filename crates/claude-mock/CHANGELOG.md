@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.22.121](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.120...claude-mock-v0.22.121) (2026-11-18)
+
+## [0.22.120](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.119...claude-mock-v0.22.120) (2026-11-18)
+
+
+### Bug Fixes
+
+* **subagent:** flatten run ownership and compact streaming logs ([#48558](https://github.com/okou-ai/okou/issues/48558)) ([66b812c](https://github.com/okou-ai/okou/commit/66b812c94ae58b4d8a75aa26a5c4f3f90a1ebd40))
+
 ## [0.22.119](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.118...claude-mock-v0.22.119) (2026-11-18)
 
 ## [0.22.118](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.117...claude-mock-v0.22.118) (2026-11-18)

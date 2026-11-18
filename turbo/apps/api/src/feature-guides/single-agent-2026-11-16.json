@@ -1,0 +1,79 @@
+{
+  "id": "single-agent-2026-11-16",
+  "revisionId": "d6c0c665-16da-42e1-b85d-21fcc845f13b",
+  "content": {
+    "schemaVersion": 1,
+    "title": "My Okou",
+    "description": "One Okou, personal Instructions, reusable Workflows.",
+    "items": [
+      {
+        "featureId": "my-okou",
+        "title": "One Okou. Your subagents, now projects",
+        "description": "Start any task with your own Okou. Your former subagents are now projects, organized in the chat sidebar.",
+        "media": {
+          "type": "illustration",
+          "alt": "Illustrated example: Okou beside Writing and Research project cards in Chat → Projects, with Market overview and Customer insights conversations.",
+          "characterUrl": "https://static.okou.io/platform/feature-guides/my-okou/okou-multitask-356bc36cc3.webp",
+          "scene": {
+            "type": "projects",
+            "location": ["Chat", "Projects"],
+            "title": "Research",
+            "subtitle": "Project",
+            "backTitle": "Writing",
+            "conversations": ["Market overview", "Customer insights"]
+          }
+        },
+        "featureSwitch": "singleAgent"
+      },
+      {
+        "featureId": "personal-instructions",
+        "title": "Your instructions are now in Settings",
+        "description": "Find and edit your Okou's instructions in Settings → Personal → My Okou.",
+        "media": {
+          "type": "illustration",
+          "alt": "Illustrated example: Okou beside the personal instructions editor in Settings → Personal → My Okou, with a selected line and formatting toolbar.",
+          "characterUrl": "https://static.okou.io/platform/feature-guides/my-okou/okou-instructions-3c85f9896b.webp",
+          "scene": {
+            "type": "instructions",
+            "location": ["Settings", "Personal", "My Okou"],
+            "title": "My Okou",
+            "subtitle": "Personal instructions",
+            "lines": [
+              "Keep answers concise.",
+              "Use clear headings.",
+              "End with next steps."
+            ]
+          }
+        },
+        "featureSwitch": "singleAgent"
+      },
+      {
+        "featureId": "workspace-workflows",
+        "title": "Your workflows, in one place",
+        "description": "Keep repeatable task steps in Workflows. Use them yourself or share them with your workspace.",
+        "media": {
+          "type": "illustration",
+          "alt": "Illustrated example: Okou carrying a folder beside a shared Research brief and a private Weekly report workflow with reusable steps.",
+          "characterUrl": "https://static.okou.io/platform/feature-guides/my-okou/okou-workflows-5842643b2b.webp",
+          "scene": {
+            "type": "workflows",
+            "location": ["Workflows"],
+            "title": "Weekly report",
+            "subtitle": "Reusable instructions",
+            "steps": [
+              "Review the week",
+              "Summarize progress",
+              "Outline next steps"
+            ],
+            "command": "/weekly-report",
+            "privateLabel": "Private",
+            "backTitle": "Research brief",
+            "backCommand": "/research-brief",
+            "sharedLabel": "Shared"
+          }
+        },
+        "featureSwitch": "singleAgent"
+      }
+    ]
+  }
+}

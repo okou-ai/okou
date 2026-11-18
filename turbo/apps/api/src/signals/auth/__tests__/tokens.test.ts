@@ -3,6 +3,7 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
+  generateFirewallToken,
   generateOkouToken,
   isPatToken,
   isSandboxToken,
@@ -11,6 +12,7 @@ import {
   verifyCliToken,
   verifyComposeJobToken,
   verifySandboxToken,
+  verifyFirewallToken,
   verifyOkouToken,
 } from "../tokens";
 import { now } from "../../../lib/time";
@@ -52,6 +54,29 @@ function decodeOkouTokenPayloadForTest(token: string): Record<string, unknown> {
 }
 
 describe("auth tokens", () => {
+  it("isolates expiring host firewall authority from Guest identities", () => {
+    const identity = {
+      userId: "firewall-user",
+      orgId: "firewall-org",
+      runId: "firewall-run",
+    };
+    const token = generateFirewallToken(
+      identity.userId,
+      identity.runId,
+      identity.orgId,
+    );
+    expect(verifyFirewallToken(token)).toStrictEqual(identity);
+    expect(verifySandboxToken(token)).toBeNull();
+    expect(verifyOkouToken(token)).toBeNull();
+    const expired = signSandboxJwtForTests({
+      ...identity,
+      scope: "firewall",
+      iat: currentSecond() - 120,
+      exp: currentSecond() - 60,
+    }).replace("vm0_sandbox_", "vm0_firewall_");
+    expect(verifyFirewallToken(expired)).toBeNull();
+  });
+
   it("verifies PAT CLI tokens", () => {
     const nowSeconds = currentSecond();
     const token = signPatJwtForTests({

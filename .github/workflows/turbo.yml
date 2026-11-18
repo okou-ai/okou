@@ -1193,6 +1193,9 @@ jobs:
       - name: Test Other Packages
         working-directory: turbo
         run: pnpm vitest run --project=@okouai/core --project=@okouai/ui --project=@okouai/api-contracts --project=@okouai/db --project=@okouai/browser-extension-client --coverage.enabled --coverage.reporter=json
+      - name: Test Pi image history
+        working-directory: turbo
+        run: pnpm -F @okouai/pi-agent-runtime exec vitest run src/image-history.test.ts --maxWorkers=2
       - name: Test Connectors
         working-directory: turbo
         run: pnpm -F @okouai/connectors exec vitest run --reporter=default

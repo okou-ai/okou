@@ -105,7 +105,12 @@ async function current() {
     .edition;
 }
 
-test("only delivers a published edition when its server-side feature switch is enabled", async () => {
+test("delivers published guides by default and respects a member's opt-out", async () => {
+  await setupApp({
+    context,
+    routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
+    isolatePg: true,
+  });
   mockNow(NOW);
   const viewer = await identity();
   const prepared = await prepare(
@@ -134,13 +139,9 @@ test("only delivers a published edition when its server-side feature switch is e
     }),
   );
   signIn(viewer);
-  await enable();
   await expect(current()).resolves.toBeNull();
   await publish(prepared);
   signIn(viewer);
-  await enable(false);
-  await expect(current()).resolves.toBeNull();
-  await enable();
   await expect(current()).resolves.toMatchObject({
     id: prepared.editionId,
     revisionId: prepared.revisionId,
@@ -706,4 +707,67 @@ test("rejects guide replay in production deployments", async () => {
     [403],
   );
   expect(rejected.status).toBe(403);
+});
+
+test("previews the illustrated My Okou guide without publishing or acknowledging an edition", async () => {
+  mockOptionalEnv("ENV", "preview");
+  await identity();
+  const query = { preview: "1", edition: "single-agent-2026-11-16" } as const;
+  await enable(false);
+  const disabled = await accept(
+    clients().guide.current({ headers, query }),
+    [200],
+  );
+  expect(disabled.body.edition).toBeNull();
+  await enable();
+  const preview = await accept(
+    clients().guide.current({ headers, query }),
+    [200],
+  );
+  expect(preview.body).toMatchObject({
+    preview: true,
+    edition: {
+      id: query.edition,
+      content: {
+        items: [
+          {
+            title: "One Okou. Your subagents, now projects",
+            media: {
+              type: "illustration",
+              characterUrl: expect.stringMatching(/^https:\/\//u),
+              scene: { type: "projects" },
+            },
+          },
+          {
+            title: "Your instructions are now in Settings",
+            media: {
+              type: "illustration",
+              scene: {
+                type: "instructions",
+                location: ["Settings", "Personal", "My Okou"],
+              },
+            },
+          },
+          {
+            title: "Your workflows, in one place",
+            media: { type: "illustration", scene: { type: "workflows" } },
+          },
+        ],
+      },
+    },
+  });
+  const revisionId = preview.body.edition?.revisionId;
+  if (!revisionId) {
+    throw new Error("Expected a preview revision");
+  }
+  await accept(
+    clients().guide.seen({
+      headers,
+      params: { editionId: query.edition },
+      body: { revisionId },
+    }),
+    [404],
+  );
+  mockOptionalEnv("ENV", "production");
+  await accept(clients().guide.current({ headers, query }), [403]);
 });

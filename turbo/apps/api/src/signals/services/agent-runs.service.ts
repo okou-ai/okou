@@ -30,7 +30,7 @@ import {
   totalConcurrencyLimit,
 } from "./org-concurrency-entitlements.service";
 import { orgPlanCapabilities } from "./org-plan-entitlement-read.service";
-import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
+import { personalSubscriptionAccountIdentity } from "./execution-model-source.service";
 
 type RunningTaskItem = QueueResponse["runningTasks"][number];
 type RunSourceRow = Pick<

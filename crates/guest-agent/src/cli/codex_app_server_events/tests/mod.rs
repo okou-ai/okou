@@ -332,7 +332,7 @@ fn failed_turn_completed_classifies_upstream_content_policy_rejection() {
 }
 
 #[test]
-fn failed_turn_completed_keeps_request_format_errors_unclassified() {
+fn failed_turn_without_native_kind_does_not_infer_generic_bad_request() {
     const ENVELOPE: &str = r#"{"error":{"message":"Invalid Format","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}"#;
     let event = mapped_event(
         "turn/completed",
@@ -1061,17 +1061,20 @@ fn codex_access_program_rejection_survives_native_notification_normalization() {
         json!({"type": "error", "status": 400, "error": body["error"]}),
         json!({"type": "error", "status_code": 400, "error": body["error"]}),
     ] {
-        let mut error = captured.clone();
-        error["message"] = json!(envelope.to_string());
-        for event in mapped_terminal_errors(&error) {
-            let diagnostic =
-                events::masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""))
-                    .expect("native terminal diagnostic");
-            assert_eq!(
-                diagnostic.failure_reason,
-                Some(FailureReason::CodexAccessProgramUnavailable)
-            );
-            assert_eq!(diagnostic.message, envelope.to_string());
+        for prefix in ["", "Error running remote compact task: "] {
+            let message = format!("{prefix}{envelope}");
+            let mut error = captured.clone();
+            error["message"] = json!(message);
+            for event in mapped_terminal_errors(&error) {
+                let diagnostic =
+                    events::masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""))
+                        .expect("native terminal diagnostic");
+                assert_eq!(
+                    diagnostic.failure_reason,
+                    Some(FailureReason::CodexAccessProgramUnavailable)
+                );
+                assert_eq!(diagnostic.message, message);
+            }
         }
     }
 }

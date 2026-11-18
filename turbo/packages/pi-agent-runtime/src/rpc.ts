@@ -55,6 +55,7 @@ function createRuntimeFactory(args: {
   readonly appendSystemPrompt: string | null;
   readonly resourceSnapshot?: PiPreheatedResourceSnapshot;
   readonly onPreparationTiming?: PiPreparationObserver;
+  readonly onSessionCreated: (retainImageHistory: () => void) => void;
 }): CreateAgentSessionRuntimeFactory {
   return async ({ cwd, agentDir, sessionManager, sessionStartEvent }) => {
     const created = await createPiAgentSessionForRuntime({
@@ -68,6 +69,7 @@ function createRuntimeFactory(args: {
       onPreparationTiming: args.onPreparationTiming,
       sessionStartEvent,
     });
+    args.onSessionCreated(created.retainImageHistory);
     return { ...created, diagnostics: created.services.diagnostics };
   };
 }
@@ -87,7 +89,13 @@ export async function runPiOfficialRpcMode(args: {
   readonly onFirstTool?: () => void;
   readonly sessionFile: string;
 }): Promise<never> {
-  const createRuntime = createRuntimeFactory(args);
+  let retainImageHistory: () => void;
+  const createRuntime = createRuntimeFactory({
+    ...args,
+    onSessionCreated(retain) {
+      retainImageHistory = retain;
+    },
+  });
   const sessionManager = measurePiPreparationSync(
     args.onPreparationTiming,
     "session_manager",
@@ -106,6 +114,20 @@ export async function runPiOfficialRpcMode(args: {
       });
     },
   );
+  runtime.setBeforeSessionInvalidate(() => {
+    const session = runtime.session;
+    if (session.isStreaming || session.isCompacting || session.isRetrying) {
+      return;
+    }
+    try {
+      retainImageHistory();
+    } catch {
+      // Retention must not fail a completed answer or expose session content.
+      process.stderr.write(
+        `${JSON.stringify({ type: "pi_image_history_retention", outcome: "error" })}\n`,
+      );
+    }
+  });
   let firstTool = true;
   const unsubscribe = runtime.session.subscribe((event) => {
     if (firstTool && event.type === "tool_execution_start") {
