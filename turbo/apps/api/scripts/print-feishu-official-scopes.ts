@@ -4,7 +4,7 @@ import {
 } from "@okouai/api-contracts/validators/feishu-official";
 
 // Import this JSON into the new store app. The custom app preset is independent.
-console.log(
+process.stdout.write(
   JSON.stringify(
     {
       scopes: {
@@ -14,5 +14,5 @@ console.log(
     },
     null,
     2,
-  ),
+  ) + "\n",
 );
