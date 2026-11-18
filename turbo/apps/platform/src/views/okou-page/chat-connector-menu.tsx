@@ -65,31 +65,22 @@ function ChatAccountChoiceRow({
           )}
         </span>
       </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <span className="text-sm text-foreground">
-          {t(($) => {
-            return access.enabled
-              ? $.chat.remoteAccess.on
-              : $.chat.remoteAccess.off;
-          })}
-        </span>
-        <Switch
-          size="compact"
-          aria-label={t(
-            ($) => {
-              return $.connectorChatAccess.accountAccess;
-            },
-            { account: name },
-          )}
-          checked={access.enabled}
-          readOnly={busy}
-          aria-busy={busy || undefined}
-          className="data-checked:bg-foreground data-checked:hover:bg-foreground/90 aria-readonly:opacity-50"
-          onCheckedChange={(enabled) => {
-            detach(onChange(enabled), Reason.DomCallback);
-          }}
-        />
-      </div>
+      <Switch
+        size="compact"
+        aria-label={t(
+          ($) => {
+            return $.connectorChatAccess.accountAccess;
+          },
+          { account: name },
+        )}
+        checked={access.enabled}
+        readOnly={busy}
+        aria-busy={busy || undefined}
+        className="aria-readonly:opacity-50"
+        onCheckedChange={(enabled) => {
+          detach(onChange(enabled), Reason.DomCallback);
+        }}
+      />
     </div>
   );
 }
@@ -308,13 +299,13 @@ function AccountPanelFooter({
       ? { target: target.target, label: target.label }
       : null;
   return (
-    <div className="mt-1 flex shrink-0 flex-col border-t border-border/50 p-1">
+    <div className="flex shrink-0 flex-col border-t border-border/50 p-1">
       {permissionTarget && (
         <PopoverClose
           render={
             <Button
               variant="quiet"
-              className="w-full justify-start px-2 text-foreground"
+              className="w-full justify-start px-2 font-normal text-foreground"
               disabled={!savedAccounts}
               onClick={() => {
                 permissions(permissionTarget);
