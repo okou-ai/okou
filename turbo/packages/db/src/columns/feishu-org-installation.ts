@@ -1,4 +1,4 @@
-import { text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+import { bigint, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
 import type { FeishuPlatform } from "@okouai/api-contracts/contracts/feishu-platform";
 
 /** Feishu/Lark installation fields. */
@@ -11,6 +11,15 @@ export function feishuOrgInstallationColumns() {
     platform: text("platform")
       .$type<FeishuPlatform>()
       .default("feishu")
+      .notNull(),
+    installationType: text("installation_type")
+      .$type<"custom" | "official">()
+      .default("custom")
+      .notNull(),
+    officialEventTimestamp: bigint("official_event_timestamp", {
+      mode: "number",
+    })
+      .default(0)
       .notNull(),
     appId: varchar("app_id", { length: 255 }).notNull(),
     botOpenId: varchar("bot_open_id", { length: 255 }),

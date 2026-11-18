@@ -538,7 +538,7 @@ async def test_native_reader_cancellation_preserves_connection_and_flow_cleanup(
                 assert "_response_stream_callback" not in flow.metadata
                 assert "model_sse_usage_finish" not in flow.metadata
                 assert "model_json_usage_finish" not in flow.metadata
-                assert "connector_response_finish" not in flow.metadata
+                assert "_connector_response_finalizer" not in flow.metadata
                 assert not response_streaming.has_pending_response_inspection(flow)
                 usage.flush_usage_events(trigger="test")
                 assert_pending(tmp_path / "control", flows=0, buffered=0, reports=0)

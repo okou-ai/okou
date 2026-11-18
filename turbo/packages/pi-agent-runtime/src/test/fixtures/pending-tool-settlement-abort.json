@@ -4,6 +4,7 @@
     "message": {
       "role": "assistant",
       "content": [],
+      "durationMs": 0,
       "api": "openai-responses",
       "provider": "openrouter",
       "model": "openai/gpt-6-luna",
@@ -15,14 +16,16 @@
         "reasoning": 0,
         "totalTokens": 7,
         "cost": {
-          "input": 0.000009999999999999999,
-          "output": 0.000024,
+          "input": 5.000000000000001e-7,
+          "output": 0.000001,
           "cacheRead": 0,
           "cacheWrite": 0,
-          "total": 0.000034
+          "total": 0.0000015,
+          "totalFromProvider": false
         }
       },
       "stopReason": "stop",
+      "thinkingLevel": "medium",
       "timestamp": 0,
       "responseId": "response_fixture",
       "rawStopReason": "completed"

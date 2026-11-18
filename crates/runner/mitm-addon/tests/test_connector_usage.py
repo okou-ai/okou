@@ -34,7 +34,7 @@ class TestXStreamPathRouting:
         mitm_addon.responseheaders(flow)
 
         assert metadata_keys.X_NDJSON_STATE in flow.metadata
-        assert "connector_response_finish" in flow.metadata
+        assert "_connector_response_finalizer" in flow.metadata
         assert stream_capture.captured_response_stream_body(flow) is None
 
     def test_absolute_form_request_target_registers_ndjson_parser_from_original_url(
@@ -49,7 +49,7 @@ class TestXStreamPathRouting:
         mitm_addon.responseheaders(flow)
 
         assert metadata_keys.X_NDJSON_STATE in flow.metadata
-        assert "connector_response_finish" in flow.metadata
+        assert "_connector_response_finalizer" in flow.metadata
 
     def test_stream_parser_requires_original_url(self, real_flow):
         flow = self._make_x_response_flow(real_flow, "/2/tweets/search/stream")
@@ -75,7 +75,7 @@ class TestXStreamPathRouting:
         mitm_addon.responseheaders(flow)
 
         assert metadata_keys.X_NDJSON_STATE not in flow.metadata
-        assert "connector_response_finish" in flow.metadata
+        assert "_connector_response_finalizer" in flow.metadata
         assert stream_capture.captured_response_stream_body(flow) is None
 
     def test_stream_error_response_does_not_retain_body_prefix(self, real_flow):
@@ -88,7 +88,7 @@ class TestXStreamPathRouting:
         mitm_addon.responseheaders(flow)
 
         assert metadata_keys.X_NDJSON_STATE not in flow.metadata
-        assert "connector_response_finish" not in flow.metadata
+        assert "_connector_response_finalizer" not in flow.metadata
         callback = response_stream(flow)
         callback(repeat_bytes(b'{"title":"Unauthorized","detail":"', b"x", 200 * 1024, b'"}'))
         assert stream_capture.captured_response_stream_body(flow) is None
@@ -109,7 +109,7 @@ class TestXStreamPathRouting:
 
         response_stream(flow)(b"x" * (65 * 1024))
 
-        assert "connector_response_finish" not in flow.metadata
+        assert "_connector_response_finalizer" not in flow.metadata
         assert metadata_keys.X_NDJSON_STATE not in flow.metadata
         assert stream_capture.captured_response_stream_body(flow) is None
 
@@ -125,7 +125,7 @@ class TestXStreamPathRouting:
 
         assert callable(response_stream(flow))
         assert metadata_keys.X_NDJSON_STATE in flow.metadata
-        assert "connector_response_finish" in flow.metadata
+        assert "_connector_response_finalizer" in flow.metadata
         assert stream_capture.captured_response_stream_body(flow) is None
 
     def test_unregistered_parser_factory_does_not_require_original_url(self, real_flow):
@@ -136,4 +136,4 @@ class TestXStreamPathRouting:
         mitm_addon.responseheaders(flow)
 
         assert metadata_keys.X_NDJSON_STATE not in flow.metadata
-        assert "connector_response_finish" not in flow.metadata
+        assert "_connector_response_finalizer" not in flow.metadata

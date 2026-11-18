@@ -28,6 +28,7 @@ import {
   buttonVariants,
   cn,
   IconButton,
+  Badge,
 } from "@okouai/ui";
 import {
   Dialog,
@@ -58,6 +59,12 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES, type RoutePath } from "../../signals/route-paths.ts";
 import { writeToClipboard } from "../../signals/okou-page/clipboard.ts";
 import {
+  LarkOfficialPopupBlockedError,
+  feishuCustomEnabled$,
+  larkOfficialEnabled$,
+  larkOfficialData$,
+  connectLarkOfficial$,
+  disconnectLarkOfficial$,
   FEISHU_SETUP_STEPS,
   feishuPlatform$,
   feishuRevealedCredentials$,
@@ -1427,12 +1434,21 @@ function FeishuBotList({
 function FeishuBotsCard({
   bots,
   isAdmin,
+  loading,
+  hasError,
 }: {
   bots: FeishuBotInstallation[];
   isAdmin: boolean;
+  loading: boolean;
+  hasError: boolean;
 }) {
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
+  const customEnabled = useGet(feishuCustomEnabled$);
+  const officialEnabled = useGet(larkOfficialEnabled$);
+  const showCustomBots =
+    customEnabled &&
+    (!officialEnabled || loading || hasError || bots.length > 0);
   return (
     <section className={surfaceVariants({ className: "overflow-hidden" })}>
       <div className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3">
@@ -1441,7 +1457,7 @@ function FeishuBotsCard({
             return $.connectors.providerSettings[platform].bots;
           })}
         </h2>
-        {isAdmin && bots.length === 0 ? (
+        {customEnabled && isAdmin && bots.length === 0 ? (
           <Link
             pathname={
               platform === "lark"
@@ -1457,7 +1473,173 @@ function FeishuBotsCard({
           </Link>
         ) : null}
       </div>
-      <FeishuBotList bots={bots} isAdmin={isAdmin} />
+      {officialEnabled ? <LarkOfficialRow /> : null}
+      {officialEnabled && showCustomBots ? (
+        <div className="mx-5 border-t border-t-gray-400" />
+      ) : null}
+      {showCustomBots ? (
+        hasError ? (
+          <p
+            role="alert"
+            className="px-6 py-10 text-center text-sm text-destructive"
+          >
+            {t(($) => {
+              return $.connectors.providerSettings[platform].loadError;
+            })}
+          </p>
+        ) : loading ? (
+          <FeishuBotListSkeleton />
+        ) : (
+          <FeishuBotList bots={bots} isAdmin={isAdmin} />
+        )
+      ) : null}
+    </section>
+  );
+}
+
+function LarkOfficialMenu({ title }: { title: string }) {
+  const { t } = useTranslation();
+  const signal = useGet(pageSignal$);
+  const [disconnectLoadable, disconnect] = useLoadableSet(
+    disconnectLarkOfficial$,
+  );
+  const disconnecting = disconnectLoadable.state === "loading";
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={
+          <Button
+            showTooltip
+            type="button"
+            disabled={disconnecting}
+            variant="quiet"
+            size="icon-sm"
+            className="shrink-0"
+            aria-label={t(
+              ($) => {
+                return $.connectors.providerSettings.lark.moreOptions;
+              },
+              { bot: title },
+            )}
+          >
+            <EllipsisVertical size={16} />
+          </Button>
+        }
+      />
+      <PopoverContent align="end" className="flex w-40 flex-col gap-0.5 p-2">
+        <button
+          type="button"
+          disabled={disconnecting}
+          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-state-hover hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
+          onClick={() => {
+            detach(disconnect(signal), Reason.DomCallback);
+          }}
+        >
+          {disconnecting
+            ? t(($) => {
+                return $.connectors.actions.disconnecting;
+              })
+            : t(($) => {
+                return $.connectors.actions.disconnect;
+              })}
+        </button>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function LarkOfficialRow() {
+  const { t } = useTranslation();
+  const title = t(($) => {
+    return $.connectors.providerSettings.lark.official.name;
+  });
+  const enabled = useGet(larkOfficialEnabled$);
+  const data = useLastLoadable(larkOfficialData$);
+  const signal = useGet(pageSignal$);
+  const [connecting, connect] = useLoadableSet(connectLarkOfficial$);
+  if (!enabled) {
+    return null;
+  }
+  if (data.state === "hasData" && !data.data) {
+    return null;
+  }
+  if (data.state === "hasError") {
+    return (
+      <p role="alert" className="px-4 py-4 text-sm text-destructive sm:px-5">
+        {t(($) => {
+          return $.connectors.providerSettings.lark.loadError;
+        })}
+      </p>
+    );
+  }
+  if (data.state !== "hasData") {
+    return (
+      <div className="px-4 py-4 sm:px-5">
+        <Skeleton className="h-10 w-full" />
+      </div>
+    );
+  }
+  const status = data.data;
+  if (!status) {
+    return null;
+  }
+  const pending = connecting.state === "loading";
+  return (
+    <section aria-label={title}>
+      <div className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:px-5">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[10px]">
+            <img
+              src={platformFeishuAppIconImg}
+              alt=""
+              className="h-10 w-10 rounded-[10px] object-cover"
+            />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-medium text-foreground">{title}</h3>
+              {status.isConnected ? (
+                <Badge className="min-w-0 text-xs font-medium text-secondary-foreground">
+                  <CircleCheck className="text-green-600" />
+                  {status.connectedUserName ??
+                    t(($) => {
+                      return $.connectors.providerSettings.works.connected;
+                    })}
+                </Badge>
+              ) : null}
+            </div>
+          </div>
+        </div>
+        {status.isConnected ? (
+          <div className="flex items-center justify-end">
+            <LarkOfficialMenu title={title} />
+          </div>
+        ) : (
+          <Button
+            type="button"
+            variant="neutral"
+            size="sm"
+            className="h-9 justify-center"
+            disabled={pending || !status.isConfigured}
+            onClick={() => {
+              detach(connect(signal), Reason.DomCallback);
+            }}
+          >
+            {pending ? <Loader2 size={14} className="animate-spin" /> : null}
+            {t(($) => {
+              return $.connectors.actions.connect;
+            })}
+          </Button>
+        )}
+      </div>
+      {connecting.state === "hasError" &&
+      connecting.error instanceof LarkOfficialPopupBlockedError ? (
+        <p role="alert" className="px-5 pb-4 text-sm text-destructive">
+          {t(($) => {
+            return $.connectors.providerSettings.lark.official.popupBlocked;
+          })}
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -1559,16 +1741,9 @@ function FeishuSetupFaq() {
   );
 }
 
-function FeishuSettingsSkeleton() {
+function FeishuBotListSkeleton() {
   return (
-    <section
-      className={surfaceVariants({ className: "overflow-hidden" })}
-      data-testid="feishu-settings-loading"
-    >
-      <div className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3">
-        <Skeleton className="h-4 w-24" />
-        <Skeleton className="h-8 w-[88px] rounded-md" />
-      </div>
+    <div data-testid="feishu-settings-loading">
       {[0, 1, 2].map((index) => {
         return (
           <div key={index}>
@@ -1591,7 +1766,7 @@ function FeishuSettingsSkeleton() {
           </div>
         );
       })}
-    </section>
+    </div>
   );
 }
 
@@ -1881,6 +2056,7 @@ function feishuSettingsHasError(...states: readonly string[]): boolean {
 export function FeishuSettingsPage() {
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
+  const customEnabled = useGet(feishuCustomEnabled$);
   const dataLoadable = useLastLoadable(feishuOrgData$);
   const botsLoadable = useLastLoadable(feishuInstallations$);
   const data = loadableData(dataLoadable) ?? null;
@@ -1912,25 +2088,14 @@ export function FeishuSettingsPage() {
       />
       <main className="flex-1 overflow-auto px-4 pb-safe-or-8 pt-3 sm:px-6">
         <div className="mx-auto flex max-w-[900px] flex-col gap-4">
-          {hasError ? (
-            <div
-              className={surfaceVariants({
-                className: "px-6 py-10 text-center text-sm text-destructive",
-              })}
-            >
-              {t(($) => {
-                return $.connectors.providerSettings[platform].loadError;
-              })}
-            </div>
-          ) : loading ? (
-            <FeishuSettingsSkeleton />
-          ) : (
-            <>
-              <FeishuBotsCard bots={bots} isAdmin={isAdmin} />
-              <FeishuUninstallDialog bots={bots} />
-            </>
-          )}
-          <FeishuSetupFaq />
+          <FeishuBotsCard
+            bots={bots}
+            isAdmin={isAdmin}
+            loading={loading}
+            hasError={hasError}
+          />
+          {customEnabled ? <FeishuUninstallDialog bots={bots} /> : null}
+          {customEnabled ? <FeishuSetupFaq /> : null}
         </div>
       </main>
     </div>

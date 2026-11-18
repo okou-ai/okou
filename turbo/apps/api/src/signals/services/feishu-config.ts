@@ -4,6 +4,7 @@ import {
   type UserFeatureSwitchOverrideRow,
 } from "./feature-switch-scope";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 
 import {
@@ -22,8 +23,11 @@ export interface FeishuInstallationConfig {
   readonly orgId: string;
   readonly ownerUserId: string | null;
   readonly appId: string;
+  readonly installationType: "custom" | "official";
+  readonly setupCompletedAt: Date | null;
   readonly platform: FeishuPlatform;
   readonly botOpenId: string | null;
+  readonly tenantKey: string | null;
   readonly encryptedAppSecret: string;
   readonly appSecret: string;
   readonly verificationToken: string;
@@ -37,8 +41,11 @@ type FeishuInstallationConfigRow = Pick<
   | "orgId"
   | "ownerUserId"
   | "appId"
+  | "installationType"
+  | "setupCompletedAt"
   | "platform"
   | "botOpenId"
+  | "feishuTenantKey"
   | "encryptedAppSecret"
   | "encryptedVerificationToken"
   | "encryptedEncryptKey"
@@ -52,8 +59,11 @@ export function feishuInstallationConfigReadPlan(installationId: string) {
       orgId: feishuOrgInstallations.orgId,
       ownerUserId: feishuOrgInstallations.ownerUserId,
       appId: feishuOrgInstallations.appId,
+      installationType: feishuOrgInstallations.installationType,
+      setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
       platform: feishuOrgInstallations.platform,
       botOpenId: feishuOrgInstallations.botOpenId,
+      feishuTenantKey: feishuOrgInstallations.feishuTenantKey,
       encryptedAppSecret: feishuOrgInstallations.encryptedAppSecret,
       encryptedVerificationToken:
         feishuOrgInstallations.encryptedVerificationToken,
@@ -74,8 +84,11 @@ export function feishuInstallationConfigFromSecrets(
     orgId: installation.orgId,
     ownerUserId: installation.ownerUserId,
     appId: installation.appId,
+    installationType: installation.installationType,
+    setupCompletedAt: installation.setupCompletedAt,
     platform: installation.platform,
     botOpenId: installation.botOpenId,
+    tenantKey: installation.feishuTenantKey,
     encryptedAppSecret: installation.encryptedAppSecret,
     appSecret,
     verificationToken,
@@ -160,8 +173,19 @@ export function feishuInstallationAvailabilityReadPlan(installation: {
   readonly platform: FeishuPlatform;
   readonly orgId: string;
   readonly ownerUserId: string | null;
+  readonly installationType: "custom" | "official";
+  readonly setupCompletedAt: Date | null;
 }) {
-  if (installation.platform === "feishu") {
+  if (
+    installation.installationType === "official" &&
+    !installation.setupCompletedAt
+  ) {
+    return { kind: "resolved", enabled: false } as const;
+  }
+  if (
+    installation.platform === "feishu" &&
+    installation.installationType !== "official"
+  ) {
     return { kind: "resolved", enabled: true } as const;
   }
   if (!installation.ownerUserId) {
@@ -169,7 +193,11 @@ export function feishuInstallationAvailabilityReadPlan(installation: {
   }
   return {
     kind: "read",
-    scope: { orgId: installation.orgId, userId: installation.ownerUserId },
+    scope: {
+      orgId: installation.orgId,
+      userId: installation.ownerUserId,
+      installationType: installation.installationType,
+    },
     columns: {
       userId: userFeatureSwitches.userId,
       switches: userFeatureSwitches.switches,
@@ -182,9 +210,18 @@ export function feishuInstallationAvailabilityReadPlan(installation: {
 }
 
 export function feishuInstallationEnabledFromRows(
-  scope: { readonly orgId: string; readonly userId: string },
+  scope: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly installationType?: "custom" | "official";
+  },
   rows: readonly UserFeatureSwitchOverrideRow[],
 ): boolean {
   const context = featureSwitchContextFromRows(scope.orgId, scope.userId, rows);
-  return isFeatureEnabled(FEISHU_PLATFORMS.lark.featureSwitch, context);
+  return isFeatureEnabled(
+    scope.installationType === "official"
+      ? FeatureSwitchKey.LarkOfficialBot
+      : FEISHU_PLATFORMS.lark.featureSwitch,
+    context,
+  );
 }

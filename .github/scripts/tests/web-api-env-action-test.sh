@@ -471,6 +471,10 @@ assert_github_app_source_keys_absent "$github_app_empty_env_file"
 integration_config_keys='[
   "AGENTPHONE_API_KEY",
   "AGENTPHONE_WEBHOOK_SECRET",
+  "LARK_OFFICIAL_APP_ID",
+  "LARK_OFFICIAL_APP_SECRET",
+  "LARK_OFFICIAL_VERIFICATION_TOKEN",
+  "LARK_OFFICIAL_ENCRYPT_KEY",
   "DISCORD_BOT_TOKEN",
   "DISCORD_GATEWAY_SECRET",
   "FINICITY_APP_KEY",

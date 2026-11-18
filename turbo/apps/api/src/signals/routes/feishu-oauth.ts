@@ -1,3 +1,4 @@
+import { bindOfficialLarkTenant$ } from "../services/lark-official-tenant.service";
 import { deliverMarketingRewardEvents$ } from "../services/marketing-reward-event-delivery.service";
 import { randomUUID } from "node:crypto";
 import {
@@ -103,6 +104,7 @@ interface FeishuConnectionState {
 
 interface FeishuInstallationOAuthRow {
   readonly appId: string;
+  readonly installationType: "custom" | "official";
   readonly platform: FeishuPlatform;
   readonly tenantKey: string | null;
   readonly setupCompletedAt: Date | null;
@@ -322,6 +324,7 @@ const loadInstallationForConnector$ = command(
       .select({
         installationId: feishuOrgInstallations.id,
         appId: feishuOrgInstallations.appId,
+        installationType: feishuOrgInstallations.installationType,
         platform: feishuOrgInstallations.platform,
         tenantKey: feishuOrgInstallations.feishuTenantKey,
         setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
@@ -413,7 +416,48 @@ const persistFeishuOAuthConnection$ = command(
 );
 
 type FeishuConnectionCompletionResult =
-  "account_in_use" | "connected" | "identity_mismatch" | "tenant_mismatch";
+  | "account_in_use"
+  | "connected"
+  | "identity_mismatch"
+  | "tenant_mismatch"
+  | "bot_unavailable";
+
+const validateOfficialLarkTenant$ = command(
+  async (
+    { set },
+    args: Pick<
+      PersistFeishuOAuthConnectionArgs,
+      "state" | "installation" | "userInfo"
+    >,
+    signal: AbortSignal,
+  ): Promise<"tenant_mismatch" | "bot_unavailable" | null> => {
+    if (args.installation.installationType === "official") {
+      if (!args.userInfo.tenantKey) {
+        return "tenant_mismatch";
+      }
+      const bound = await tapError(
+        set(
+          bindOfficialLarkTenant$,
+          {
+            installationId: args.state.installationId,
+            orgId: args.state.orgId,
+            appId: args.installation.appId,
+            tenantKey: args.userInfo.tenantKey,
+          },
+          signal,
+        ),
+      );
+      signal.throwIfAborted();
+      if (bound === undefined) {
+        return "bot_unavailable";
+      }
+      if (!bound) {
+        return "tenant_mismatch";
+      }
+    }
+    return null;
+  },
+);
 
 const finishFeishuOAuthConnection$ = command(
   async (
@@ -442,6 +486,10 @@ const finishFeishuOAuthConnection$ = command(
       args.installation.tenantKey !== args.userInfo.tenantKey
     ) {
       return { result: "tenant_mismatch", marketingRewardEventId: null };
+    }
+    const officialError = await set(validateOfficialLarkTenant$, args, signal);
+    if (officialError) {
+      return { result: officialError, marketingRewardEventId: null };
     }
     const prepared = await prepareFeishuTokens(args);
     signal.throwIfAborted();
@@ -535,6 +583,9 @@ function connectionErrorMessage(
   platform: FeishuPlatform,
 ): string {
   switch (result) {
+    case "bot_unavailable": {
+      return "Could not access the Okou bot in your Lark tenant. Ask your administrator to enable the app, then connect again.";
+    }
     case "account_in_use": {
       return `This ${FEISHU_PLATFORMS[platform].name} account is already connected.`;
     }
@@ -576,6 +627,7 @@ const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
   const [installation] = await db
     .select({
       setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
+      installationType: feishuOrgInstallations.installationType,
       platform: feishuOrgInstallations.platform,
       orgId: feishuOrgInstallations.orgId,
       ownerUserId: feishuOrgInstallations.ownerUserId,
@@ -737,6 +789,8 @@ const readFeishuOAuthInstallationEnabled$ = command(
       readonly platform: FeishuPlatform;
       readonly orgId: string;
       readonly ownerUserId: string | null;
+      readonly installationType: "custom" | "official";
+      readonly setupCompletedAt: Date | null;
     },
     signal: AbortSignal,
   ) => {

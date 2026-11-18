@@ -484,5 +484,5 @@ class TestResponseHeadersSseParser:
         assert metadata_keys.MODEL_PROVIDER_USAGE not in flow.metadata
         assert "model_json_usage_finish" not in flow.metadata
         assert "model_sse_usage_finish" not in flow.metadata
-        assert "connector_response_finish" not in flow.metadata
+        assert "_connector_response_finalizer" not in flow.metadata
         assert metadata_keys.X_NDJSON_STATE not in flow.metadata

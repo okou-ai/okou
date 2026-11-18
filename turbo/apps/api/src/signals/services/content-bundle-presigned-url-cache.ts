@@ -76,15 +76,13 @@ export function contentBundleUrlCacheRequest(
   };
 }
 
-/** Read only the successful claim's selected identities, in its atomic statement. */
+/** Read URLs for the execution's accepted immutable bundle identities. */
 export function contentBundleUrlCacheSnapshotSql(
   context: ContentBundleUrlCacheContext,
-  additionalHashes: readonly string[],
+  hashes: readonly string[],
 ): SQL {
-  const instructionsKey = sql`encode(sha256(convert_to(${context.keyPrefix} || ':' || ("instructionsBundle"->>'sha256'), 'UTF8')), 'hex')`;
-  const workflowKey = sql`encode(sha256(convert_to(${context.keyPrefix} || ':' || ("contentBundle"->>'sha256'), 'UTF8')), 'hex')`;
   // Required-query failures must not expose raw package hashes in parameters.
-  const additionalKeys = [...new Set(additionalHashes)].map((hash) => {
+  const keys = [...new Set(hashes)].map((hash) => {
     return cacheKey(context, hash);
   });
   return sql`(
@@ -94,11 +92,7 @@ export function contentBundleUrlCacheSnapshotSql(
       'expiresAtMs', (EXTRACT(EPOCH FROM ${systemStoragePresignedUrlCache.expiresAt}) * 1000)::double precision
     )), '[]'::jsonb)
     FROM (
-      SELECT ${instructionsKey} AS cache_key FROM selected_agent
-      UNION
-      SELECT ${workflowKey} FROM selected_workflows
-      UNION
-      SELECT jsonb_array_elements_text(${JSON.stringify(additionalKeys)}::jsonb)
+      SELECT jsonb_array_elements_text(${JSON.stringify(keys)}::jsonb) AS cache_key
     ) AS selected_bundles
     INNER JOIN ${systemStoragePresignedUrlCache}
       ON ${eq(systemStoragePresignedUrlCache.cacheKey, sql`selected_bundles.cache_key`)}

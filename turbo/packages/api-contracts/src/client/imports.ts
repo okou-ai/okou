@@ -1163,6 +1163,16 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "lark-official",
+    contracts: ["larkOfficialContract", "larkOfficialEventsContract"],
+    bindings: [],
+  },
+  {
+    module: "lark-official-read",
+    contracts: ["larkOfficialReadContract"],
+    bindings: [],
+  },
+  {
     module: "link-approval-workflow",
     contracts: ["linkApprovalWorkflowContract"],
     bindings: [],
@@ -1220,8 +1230,8 @@ export const clientContractImportManifest = [
     ],
   },
   {
-    module: "marketing-reward-projection",
-    contracts: ["marketingRewardProjectionContract"],
+    module: "marketing-reward-notification",
+    contracts: ["marketingRewardNotificationContract"],
     bindings: [],
   },
   {

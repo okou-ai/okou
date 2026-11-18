@@ -108,7 +108,7 @@ class TestXConnectorResponsePipeline:
         by_category = {event["category"]: event["quantity"] for event in payloads}
         assert len(payloads) == len(by_category)
         assert by_category == {"posts.read": 1, "user.read": 1}
-        assert "connector_response_finish" not in flow.metadata
+        assert "_connector_response_finalizer" not in flow.metadata
         assert metadata_keys.X_NDJSON_STATE not in flow.metadata
 
     async def test_full_response_pipeline_bounds_buffered_x_json_fallback_work(
@@ -203,7 +203,7 @@ class TestXConnectorResponsePipeline:
         with mitm_ctx():
             mitm_addon.responseheaders(flow)
 
-        assert "connector_response_finish" not in flow.metadata
+        assert "_connector_response_finalizer" not in flow.metadata
         assert metadata_keys.X_NDJSON_STATE not in flow.metadata
 
     @pytest.mark.parametrize("encoding_case", ["gzip", "deflate", "br", "zstd"])
@@ -240,7 +240,7 @@ class TestXConnectorResponsePipeline:
         assert entry["level"] == "error"
         assert entry["body_truncated"] is False
         assert entry["parse_error"] == "incomplete compressed body"
-        assert "connector_response_finish" not in flow.metadata
+        assert "_connector_response_finalizer" not in flow.metadata
 
     def test_full_response_pipeline_x_data_object_bills_single_resource(self, tmp_path, real_flow):
         """Selective X JSON extraction must count a top-level data object as one resource."""
@@ -312,7 +312,7 @@ class TestXConnectorResponsePipeline:
             mitm_addon.responseheaders(flow)
             callback = response_stream(flow)
             assert metadata_keys.X_NDJSON_STATE in flow.metadata
-            assert "connector_response_finish" in flow.metadata
+            assert "_connector_response_finalizer" in flow.metadata
 
             # 2. Stream chunks (including keep-alives and a mid-line split)
             chunks = [
@@ -438,7 +438,7 @@ class TestXConnectorResponsePipeline:
         }
         assert all(event["quantity"] == 1 for event in payloads)
         assert len({event["idempotencyKey"] for event in payloads}) == 3
-        assert "connector_response_finish" not in flow.metadata
+        assert "_connector_response_finalizer" not in flow.metadata
 
     def test_full_pipeline_compressed_stream_error_preserves_completed_rows(
         self, tmp_path, real_flow, usage_webhook_api
@@ -485,7 +485,7 @@ class TestXConnectorResponsePipeline:
             mitm_addon.responseheaders(flow)
             callback = response_stream(flow)
             assert metadata_keys.X_NDJSON_STATE in flow.metadata
-            assert "connector_response_finish" in flow.metadata
+            assert "_connector_response_finalizer" in flow.metadata
 
             callback(
                 b'{"data":{"id":"1"},"includes":'
@@ -622,7 +622,7 @@ class TestXConnectorResponsePipeline:
         )
         mitm_addon.responseheaders(flow)
         response_stream(flow)(b'{"data":[{"id":"1"}')
-        assert "connector_response_finish" in flow.metadata
+        assert "_connector_response_finalizer" in flow.metadata
 
         with self._usage_webhook_api() as webhook:
             mitm_addon.response(flow)
@@ -640,7 +640,7 @@ class TestXConnectorResponsePipeline:
         assert entry["body_truncated"] is False
         assert isinstance(entry["parse_error"], str)
         assert entry["parse_error"]
-        assert "connector_response_finish" not in flow.metadata
+        assert "_connector_response_finalizer" not in flow.metadata
 
     async def test_response_logs_x_json_parse_error_after_forensic_buffer_truncates(
         self, tmp_path, real_flow
@@ -678,7 +678,7 @@ class TestXConnectorResponsePipeline:
         assert entry["level"] == "error"
         assert entry["body_truncated"] is False
         assert entry["parse_error"] == "incomplete string"
-        assert "connector_response_finish" not in flow.metadata
+        assert "_connector_response_finalizer" not in flow.metadata
 
     def test_response_uses_request_hints_for_incremental_x_json_parse_error(
         self, tmp_path, real_flow
@@ -693,7 +693,7 @@ class TestXConnectorResponsePipeline:
 
         mitm_addon.responseheaders(flow)
         response_stream(flow)(b'{"data":[{"id":"1"}')
-        assert "connector_response_finish" in flow.metadata
+        assert "_connector_response_finalizer" in flow.metadata
 
         with self._usage_webhook_api() as webhook:
             mitm_addon.response(flow)
@@ -708,7 +708,7 @@ class TestXConnectorResponsePipeline:
         assert all(entry["level"] != "error" for entry in entries)
         assert all("unparseable" not in entry["message"].lower() for entry in entries)
         assert all("parse_error" not in entry for entry in entries)
-        assert "connector_response_finish" not in flow.metadata
+        assert "_connector_response_finalizer" not in flow.metadata
 
 
 class TestXConnectorErrorPipeline:
@@ -734,8 +734,7 @@ class TestXConnectorErrorPipeline:
 
         assert webhook.usage_events() == []
         assert metadata_keys.X_JSON_STATE not in flow.metadata
-        assert "connector_response_finish" not in flow.metadata
-        assert "connector_response_report_on_interruption" not in flow.metadata
+        assert "_connector_response_finalizer" not in flow.metadata
 
     @pytest.mark.parametrize("encoding_case", ["gzip", "deflate"])
     def test_full_pipeline_complete_compressed_stream_error_reports_verified_rows(
@@ -774,8 +773,7 @@ class TestXConnectorErrorPipeline:
         assert any(entry["type"] == "connection_error" for entry in entries)
         assert all("unparseable" not in entry["message"].lower() for entry in entries)
         assert all("parse_error" not in entry for entry in entries)
-        assert "connector_response_finish" not in flow.metadata
-        assert "connector_response_report_on_interruption" not in flow.metadata
+        assert "_connector_response_finalizer" not in flow.metadata
         assert metadata_keys.RESPONSE_STREAM_STATE not in flow.metadata
         assert flow.response.stream is False
 
@@ -817,7 +815,7 @@ class TestXConnectorErrorPipeline:
         }
         assert all(event["quantity"] == 1 for event in payloads)
         assert len({event["idempotencyKey"] for event in payloads}) == 3
-        assert "connector_response_report_on_interruption" not in flow.metadata
+        assert "_connector_response_finalizer" not in flow.metadata
         assert not (tmp_path / "network.jsonl").exists()
 
     def test_full_pipeline_stream_error_counts_complete_final_line_without_newline(
@@ -843,4 +841,4 @@ class TestXConnectorErrorPipeline:
         }
         assert all(event["quantity"] == 1 for event in payloads)
         assert len({event["idempotencyKey"] for event in payloads}) == 3
-        assert "connector_response_finish" not in flow.metadata
+        assert "_connector_response_finalizer" not in flow.metadata

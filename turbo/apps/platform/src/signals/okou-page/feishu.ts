@@ -1,3 +1,6 @@
+import { larkOfficialContract } from "@okouai/api-contracts/client/lark-official";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
@@ -86,9 +89,32 @@ export const FEISHU_SETUP_STEPS = [
   "publish",
 ] as const satisfies readonly FeishuSetupStep[];
 
+export const feishuCustomEnabled$ = computed((get) => {
+  return get(featureSwitch$)[
+    FEISHU_PLATFORMS[get(feishuPlatform$)].featureSwitch
+  ];
+});
+
 export const feishuOrgData$ = computed(
   async (get): Promise<FeishuConnectStatus> => {
     get(reload$);
+    if (!get(feishuCustomEnabled$)) {
+      return {
+        platform: get(feishuPlatform$),
+        isInstalled: false,
+        isConnected: false,
+        isAdmin: false,
+        appId: null,
+        callbackUrl: null,
+        callbackVerified: false,
+        messageReceived: false,
+        tenantKey: null,
+        tenantName: null,
+        defaultAgentId: null,
+        defaultAgentName: null,
+        installations: [],
+      };
+    }
     const client = get(apiClient$)(
       get(feishuPlatform$) === "lark"
         ? larkConnectContract
@@ -519,3 +545,77 @@ export const resetFeishuSettingsUi$ = command(({ set }) => {
     encryptKey: "",
   });
 });
+
+export const larkOfficialEnabled$ = computed((get) => {
+  return (
+    get(feishuPlatform$) === "lark" &&
+    get(featureSwitch$)[FeatureSwitchKey.LarkOfficialBot]
+  );
+});
+
+export const larkOfficialData$ = computed(async (get) => {
+  get(reload$);
+  if (!get(larkOfficialEnabled$)) {
+    return null;
+  }
+  const client = get(apiClient$)(larkOfficialContract);
+  return (await accept(client.getStatus({}), [200])).body;
+});
+
+export class LarkOfficialPopupBlockedError extends Error {
+  constructor() {
+    super(
+      i18n.t(($) => {
+        return $.connectors.providerSettings.lark.official.popupBlocked;
+      }),
+    );
+    this.name = "LarkOfficialPopupBlockedError";
+  }
+}
+
+export const connectLarkOfficial$ = command(
+  async ({ get }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const popup = window.open("about:blank", "_blank");
+    if (!popup) {
+      throw new LarkOfficialPopupBlockedError();
+    }
+    popup.opener = null;
+    const close = () => {
+      popup.close();
+    };
+    signal.addEventListener("abort", close, { once: true });
+    let handedOff = false;
+    using _popup = {
+      [Symbol.dispose]() {
+        signal.removeEventListener("abort", close);
+        if (!handedOff && !popup.closed) {
+          popup.close();
+        }
+      },
+    };
+    const client = get(apiClient$)(larkOfficialContract);
+    const result = await accept(
+      client.connect({ fetchOptions: { signal } }),
+      [200],
+      signal,
+    );
+    signal.throwIfAborted();
+    popup.location.replace(result.body.authorizationUrl);
+    handedOff = true;
+  },
+);
+
+export const disconnectLarkOfficial$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const client = get(apiClient$)(larkOfficialContract);
+    await accept(
+      client.disconnect({ fetchOptions: { signal } }),
+      [200],
+      signal,
+    );
+    set(reloadFeishuInstallations$);
+    await get(larkOfficialData$);
+    signal.throwIfAborted();
+  },
+);

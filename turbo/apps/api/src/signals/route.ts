@@ -1,3 +1,6 @@
+import { larkOfficialReadRoutes } from "./routes/lark-official-read";
+import { larkOfficialEventsRoutes } from "./routes/lark-official-events";
+import { larkOfficialRoutes } from "./routes/lark-official";
 import { phoneUseRoutes } from "./routes/phone-use";
 import { integrationsEmailRoutes } from "./routes/integrations-email";
 import { integrationsEmailUploadCompleteRoutes } from "./routes/integrations-email-upload-complete";
@@ -125,7 +128,7 @@ import { feishuEventsRoutes } from "./routes/feishu-events";
 import { feishuOauthRoutes } from "./routes/feishu-oauth";
 import { getStartedRoutes } from "./routes/get-started";
 import { marketingRewardSettlementRoutes } from "./routes/marketing-reward-settlement";
-import { marketingRewardProjectionRoutes } from "./routes/marketing-reward-projection";
+import { marketingRewardNotificationRoutes } from "./routes/marketing-reward-notification";
 import { friendReferralRoutes } from "./routes/friend-referrals";
 import { githubOauthRoutes } from "./routes/github-oauth";
 import { healthRoutes } from "./routes/health";
@@ -267,7 +270,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...runnersStartupRoutes,
   ...getStartedRoutes,
   ...marketingRewardSettlementRoutes,
-  ...marketingRewardProjectionRoutes,
+  ...marketingRewardNotificationRoutes,
   ...friendReferralRoutes,
   ...healthRoutes,
   ...buildInfoRoutes,
@@ -472,7 +475,10 @@ export const ROUTES: readonly RouteEntry[] = [
   ...discordGatewayRoutes,
   ...slackInteractiveRoutes,
   ...feishuBrowserConnectRoutes,
+  ...larkOfficialReadRoutes,
+  ...larkOfficialRoutes,
   ...feishuConnectRoutes,
+  ...larkOfficialEventsRoutes,
   ...feishuEventsRoutes,
   ...feishuOauthRoutes,
   ...teamsBrowserConnectRoutes,

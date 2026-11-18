@@ -19,6 +19,30 @@ const FIXTURE = fileURLToPath(
 // the fixture tool's cooperative boundary; official commands still use stdin.
 const EXTENSION = `import { writeFile } from "node:fs/promises";
 export default function (pi) {
+  let starting = true;
+  if (process.argv[3] === "wire-starting" || process.argv[3] === "wire-input-starting") pi.on("before_agent_start", async () => {
+    if (!starting) return;
+    starting = false;
+    await new Promise((resolve) => {
+      const release = (message) => {
+        if (message === "release-start") {
+          process.off("message", release);
+          resolve();
+        }
+      };
+      process.on("message", release);
+      process.send({ type: "starting" });
+    });
+  });
+  let continuing = true;
+  if (process.argv[3] === "wire-before-settle") pi.on("agent_before_settle", () => {
+    if (!continuing) return;
+    continuing = false;
+    return {
+      entries: [{ type: "custom_message", customType: "boundary-input", content: "finish the boundary", display: false }],
+      continue: true
+    };
+  });
   if (process.argv[3]?.startsWith("wire-tool-")) pi.on("turn_end", (event) => {
     if (event.toolResults.length > 0) process.send({
       type: "native-tool-details",
@@ -36,7 +60,10 @@ export default function (pi) {
       toolResultBytes: event.toolResults.reduce((bytes, result) => bytes + result.content[0].text.length, 0)
     });
   });
-  if (process.argv[3] !== "http" && !process.argv[3]?.startsWith("wire-")) pi.on("agent_settled", async (_event, ctx) => {
+  let holdingSettlement = true;
+  if (process.argv[3] !== "http" && !process.argv[3]?.startsWith("wire-")) pi.on("agent_before_settle", async (_event, ctx) => {
+    if (!holdingSettlement) return;
+    holdingSettlement = false;
     await new Promise((resolve) => {
       const release = (message) => {
         if (message === "release-settlement" || message === "release-settlement-abort") {
@@ -47,6 +74,56 @@ export default function (pi) {
       };
       process.on("message", release);
       process.send({ type: "settling" });
+    });
+  });
+  let notifying = true;
+  if (process.argv[3] === "wire-notification" || process.argv[3]?.startsWith("wire-input-")) pi.on("input", async (event) => {
+    if (event.text !== "delayed input across completion") return;
+    await new Promise((resolve) => {
+      const release = (message) => {
+        if (message === "release-delayed-input") {
+          process.off("message", release);
+          resolve();
+        }
+      };
+      process.on("message", release);
+      process.send({ type: "input-held" });
+    });
+    return { action: "continue" };
+  });
+  let prompts = 0;
+  let settlements = 0;
+  const holdNextRun = async () => {
+    await new Promise((resolve) => {
+      const release = (message) => {
+        if (message === "release-next-run") {
+          process.off("message", release);
+          resolve();
+        }
+      };
+      process.on("message", release);
+      process.send({ type: "next-run-held" });
+    });
+  };
+  if (process.argv[3] === "wire-input-preparing") pi.on("before_agent_start", async () => {
+    if (++prompts === 2) await holdNextRun();
+  });
+  if (process.argv[3] === "wire-input-running") pi.on("agent_before_settle", async () => {
+    if (++settlements === 2) await holdNextRun();
+  });
+  if (process.argv[3] === "wire-notification") pi.on("agent_settled", async (_event, ctx) => {
+    if (!notifying) return;
+    notifying = false;
+    pi.sendUserMessage("deferred notification follow-up");
+    await new Promise((resolve) => {
+      const release = (message) => {
+        if (message === "release-notification") {
+          process.off("message", release);
+          resolve();
+        }
+      };
+      process.on("message", release);
+      process.send({ type: "notifying", idle: ctx.isIdle(), hasSignal: ctx.signal !== undefined });
     });
   });
   if (process.argv[3] === "cancelled-input") pi.on("message_start", async (event, ctx) => {
@@ -180,12 +257,10 @@ async function rpcFixture(boundary: string) {
       if (record.type === "agent_settled") return;
     }
   };
-  const reopen = async () => {
+  const reopen = async (sessionFile = join(root, "session.jsonl")) => {
     stdin.end();
     expect(await exit, stderr).toEqual([0, null]);
-    return MemoryPiSession.fromJsonl(
-      await readFile(join(root, "session.jsonl"), "utf8"),
-    );
+    return MemoryPiSession.fromJsonl(await readFile(sessionFile, "utf8"));
   };
   return {
     root,
@@ -454,6 +529,412 @@ function assertSettlement(
 }
 
 describe("official sandbox RPC cancellation", () => {
+  it("rejects new RPC queue commands after settlement instead of orphaning them before the next prompt", async () => {
+    const rpc = await rpcFixture("wire-input-idle");
+    rpc.send({ id: "startup", type: "prompt", message: "initial prompt" });
+    expect(await rpc.response("startup")).toMatchObject({ success: true });
+    await rpc.notification("tool-start");
+    rpc.child.send("release-tool");
+    await rpc.settled();
+    for (const type of ["steer", "follow_up"]) {
+      rpc.send({ id: "late", type, message: "input for the completed run" });
+      expect(await rpc.response("late")).toMatchObject({ success: false });
+    }
+    rpc.send({ id: "next", type: "prompt", message: "fresh prompt" });
+    expect(await rpc.response("next")).toMatchObject({ success: true });
+    await rpc.settled();
+    const memory = await rpc.reopen();
+    expect(
+      memory
+        .buildSessionContext()
+        .messages.filter((message) => {
+          return message.role === "user";
+        })
+        .map((message) => {
+          return message.content;
+        }),
+    ).toEqual([
+      [{ type: "text", text: "initial prompt" }],
+      [{ type: "text", text: "fresh prompt" }],
+    ]);
+  }, 30_000);
+
+  it("cancels input preflight before native startup and accepts a fresh prompt afterward", async () => {
+    const rpc = await rpcFixture("wire-input-preflight");
+    rpc.send({
+      id: "startup",
+      type: "prompt",
+      message: "delayed input across completion",
+    });
+    await rpc.notification("input-held");
+    rpc.send({ id: "abort", type: "abort" });
+    expect(await rpc.response("abort")).toMatchObject({ success: true });
+    rpc.child.send("release-delayed-input");
+    expect(await rpc.response("startup")).toMatchObject({ success: false });
+
+    rpc.send({ id: "next", type: "prompt", message: "fresh prompt" });
+    expect(await rpc.response("next")).toMatchObject({ success: true });
+    await rpc.notification("tool-start");
+    rpc.child.send("release-tool");
+    await rpc.settled();
+    const memory = await rpc.reopen();
+    expect(
+      memory
+        .buildSessionContext()
+        .messages.filter((message) => {
+          return message.role === "user";
+        })
+        .map((message) => {
+          return message.content;
+        }),
+    ).toEqual([[{ type: "text", text: "fresh prompt" }]]);
+    expect(assistantEnds(rpc.records).at(-1)).toMatchObject({
+      message: { stopReason: "stop" },
+    });
+  }, 30_000);
+
+  it("accepts an asynchronous input across preparation into the same native run", async () => {
+    const rpc = await rpcFixture("wire-input-starting");
+    rpc.send({ id: "startup", type: "prompt", message: "initial prompt" });
+    await rpc.notification("starting");
+    rpc.send({
+      id: "input",
+      type: "steer",
+      message: "delayed input across completion",
+    });
+    await rpc.notification("input-held");
+    rpc.child.send("release-start");
+    expect(await rpc.response("startup")).toMatchObject({ success: true });
+    await rpc.notification("tool-start");
+    rpc.child.send("release-delayed-input");
+    expect(await rpc.response("input")).toMatchObject({
+      success: true,
+      data: { disposition: "queued" },
+    });
+    rpc.child.send("release-tool");
+    await rpc.settled();
+    const memory = await rpc.reopen();
+    expect(
+      memory
+        .buildSessionContext()
+        .messages.filter((message) => {
+          return message.role === "user";
+        })
+        .map((message) => {
+          return message.content;
+        }),
+    ).toEqual([
+      [{ type: "text", text: "initial prompt" }],
+      [{ type: "text", text: "delayed input across completion" }],
+    ]);
+    expect(assistantEnds(rpc.records).at(-1)).toMatchObject({
+      message: { stopReason: "stop" },
+    });
+  }, 30_000);
+
+  it("rejects input still awaiting an extension when the session is replaced", async () => {
+    const rpc = await rpcFixture("wire-input-replacement");
+    rpc.send({ id: "startup", type: "prompt", message: "initial prompt" });
+    expect(await rpc.response("startup")).toMatchObject({ success: true });
+    await rpc.notification("tool-start");
+    rpc.send({
+      id: "input",
+      type: "steer",
+      message: "delayed input across completion",
+    });
+    await rpc.notification("input-held");
+    rpc.child.send("release-tool");
+    await rpc.settled();
+    rpc.send({ id: "replace", type: "new_session" });
+    expect(await rpc.response("replace")).toMatchObject({ success: true });
+    rpc.child.send("release-delayed-input");
+    expect(await rpc.response("input")).toMatchObject({ success: false });
+    rpc.send({ id: "next", type: "prompt", message: "fresh prompt" });
+    expect(await rpc.response("next")).toMatchObject({ success: true });
+    await rpc.settled();
+    rpc.send({ id: "new-state", type: "get_state" });
+    const state = await rpc.response("new-state");
+    expect(state).toMatchObject({
+      success: true,
+      data: { pendingMessageCount: 0 },
+    });
+    const data = state.data;
+    if (
+      typeof data !== "object" ||
+      data === null ||
+      !("sessionFile" in data) ||
+      typeof data.sessionFile !== "string"
+    )
+      throw new Error("Expected the new session file from RPC state");
+    const memory = await rpc.reopen(data.sessionFile);
+    expect(
+      memory
+        .buildSessionContext()
+        .messages.filter((message) => {
+          return message.role === "user";
+        })
+        .map((message) => {
+          return message.content;
+        }),
+    ).toEqual([[{ type: "text", text: "fresh prompt" }]]);
+  }, 30_000);
+
+  describe.each(["idle", "preparing", "running"])(
+    "input ownership after completion (%s)",
+    (nextState) => {
+      it.each([
+        { type: "steer", streamingBehavior: undefined },
+        { type: "follow_up", streamingBehavior: undefined },
+        { type: "prompt", streamingBehavior: "steer" },
+        { type: "prompt", streamingBehavior: "followUp" },
+      ])(
+        "rejects delayed $type / $streamingBehavior without transferring it to another run",
+        async (command) => {
+          const rpc = await rpcFixture(`wire-input-${nextState}`);
+          rpc.send({
+            id: "startup",
+            type: "prompt",
+            message: "initial prompt",
+          });
+          expect(await rpc.response("startup")).toMatchObject({
+            success: true,
+          });
+          await rpc.notification("tool-start");
+          rpc.send({
+            ...command,
+            id: "delayed-input",
+            message: "delayed input across completion",
+          });
+          await rpc.notification("input-held");
+          rpc.child.send("release-tool");
+          await rpc.settled();
+
+          if (nextState !== "idle") {
+            rpc.send({ id: "next", type: "prompt", message: "fresh prompt" });
+            if (nextState === "running") {
+              expect(await rpc.response("next")).toMatchObject({
+                success: true,
+              });
+            }
+            await rpc.notification("next-run-held");
+          }
+          rpc.child.send("release-delayed-input");
+          expect(await rpc.response("delayed-input")).toMatchObject({
+            success: false,
+            error: expect.stringContaining("settling"),
+          });
+          rpc.send({ id: "queue", type: "get_state" });
+          expect(await rpc.response("queue")).toMatchObject({
+            data: { pendingMessageCount: 0 },
+          });
+
+          if (nextState === "idle") {
+            rpc.send({ id: "next", type: "prompt", message: "fresh prompt" });
+          } else {
+            rpc.child.send("release-next-run");
+          }
+          if (nextState !== "running") {
+            expect(await rpc.response("next")).toMatchObject({ success: true });
+          }
+          await rpc.settled();
+          const memory = await rpc.reopen();
+          expect(
+            memory
+              .buildSessionContext()
+              .messages.filter((message) => {
+                return message.role === "user";
+              })
+              .map((message) => {
+                return message.content;
+              }),
+          ).toEqual([
+            [{ type: "text", text: "initial prompt" }],
+            [{ type: "text", text: "fresh prompt" }],
+          ]);
+          expect(assistantEnds(rpc.records).at(-1)).toMatchObject({
+            message: {
+              stopReason: "stop",
+              content: [{ type: "text", text: "complete" }],
+            },
+          });
+        },
+        30_000,
+      );
+    },
+  );
+
+  it("preserves idle notifications and defers requested prompts until notification dispatch finishes", async () => {
+    const rpc = await rpcFixture("wire-notification");
+    rpc.send({ id: "startup", type: "prompt", message: "run the tool" });
+    expect(await rpc.response("startup")).toMatchObject({ success: true });
+    await rpc.notification("tool-start");
+    rpc.send({
+      id: "delayed-input",
+      type: "steer",
+      message: "delayed input across completion",
+    });
+    await rpc.notification("input-held");
+    rpc.child.send("release-tool");
+    expect(await rpc.notification("notifying")).toMatchObject({
+      idle: true,
+      hasSignal: false,
+    });
+    rpc.send({ id: "idle-notification", type: "get_state" });
+    expect(await rpc.response("idle-notification")).toMatchObject({
+      data: { isStreaming: false, pendingMessageCount: 0 },
+    });
+    for (const type of ["steer", "follow_up"]) {
+      rpc.send({
+        id: "late",
+        type,
+        message: "rejected after native completion",
+      });
+      expect(await rpc.response("late")).toMatchObject({
+        success: false,
+        error: expect.stringContaining("settling"),
+      });
+    }
+    rpc.child.send("release-delayed-input");
+    expect(await rpc.response("delayed-input")).toMatchObject({
+      success: false,
+      error: expect.stringContaining("settling"),
+    });
+    expect(assistantEnds(rpc.records)).toHaveLength(2);
+    expect(
+      rpc.records.some((record) => {
+        return record.type === "agent_settled";
+      }),
+    ).toBe(false);
+    rpc.child.send("release-notification");
+    await rpc.settled();
+    await rpc.settled();
+    const memory = await rpc.reopen();
+    const users = memory.buildSessionContext().messages.filter((message) => {
+      return message.role === "user";
+    });
+    expect(
+      users.map((message) => {
+        return message.content;
+      }),
+    ).toEqual([
+      [{ type: "text", text: "run the tool" }],
+      [{ type: "text", text: "deferred notification follow-up" }],
+    ]);
+    expect(assistantEnds(rpc.records)).toHaveLength(3);
+    const firstSettled = rpc.records.findIndex((record) => {
+      return record.type === "agent_settled";
+    });
+    const followUpStart = rpc.records.findIndex((record) => {
+      return (
+        record.type === "message_start" &&
+        JSON.stringify(record.message).includes(
+          "deferred notification follow-up",
+        )
+      );
+    });
+    expect(firstSettled).toBeLessThan(followUpStart);
+  }, 30_000);
+
+  it("retains before-settle boundary continuation within the prompt owner", async () => {
+    const rpc = await rpcFixture("wire-before-settle");
+    rpc.send({ id: "startup", type: "prompt", message: "run the tool" });
+    expect(await rpc.response("startup")).toMatchObject({ success: true });
+    await rpc.notification("tool-start");
+    rpc.child.send("release-tool");
+    await rpc.settled();
+    rpc.send({ id: "idle", type: "get_state" });
+    expect(await rpc.response("idle")).toMatchObject({
+      data: { isStreaming: false, pendingMessageCount: 0 },
+    });
+    expect(assistantEnds(rpc.records)).toMatchObject([
+      { message: { stopReason: "toolUse" } },
+      { message: { stopReason: "stop" } },
+      { message: { stopReason: "stop" } },
+    ]);
+    const memory = await rpc.reopen();
+    expect(memory.buildSessionContext().messages).toContainEqual(
+      expect.objectContaining({
+        role: "custom",
+        customType: "boundary-input",
+        content: "finish the boundary",
+      }),
+    );
+    expect(memory.buildSessionContext().messages.at(-1)).toMatchObject({
+      role: "assistant",
+      content: [{ type: "text", text: "complete" }],
+      stopReason: "stop",
+    });
+    expect(
+      rpc.records.filter((record) => {
+        return record.type === "agent_settled";
+      }),
+    ).toEqual([{ type: "agent_settled", aborted: false }]);
+  }, 30_000);
+
+  it("retains cancellation during prompt preparation and resets it for the next prompt", async () => {
+    const rpc = await rpcFixture("wire-starting");
+    rpc.send({
+      id: "startup",
+      type: "prompt",
+      message: "cancel before starting",
+    });
+    await rpc.notification("starting");
+    rpc.send({
+      id: "input",
+      type: "steer",
+      message: "accepted before startup",
+    });
+    expect(await rpc.response("input")).toMatchObject({ success: true });
+    rpc.send({ id: "abort", type: "abort" });
+    rpc.send({ id: "duplicate-abort", type: "abort" });
+    rpc.send({ id: "busy", type: "get_state" });
+    expect(await rpc.response("busy")).toMatchObject({
+      data: { isStreaming: true, pendingMessageCount: 1 },
+    });
+    rpc.child.send("release-start");
+    expect(await rpc.response("startup")).toMatchObject({ success: true });
+    expect(await rpc.response("abort")).toMatchObject({ success: true });
+    expect(await rpc.response("duplicate-abort")).toMatchObject({
+      success: true,
+    });
+    expect(assistantEnds(rpc.records)).toMatchObject([
+      { message: { stopReason: "aborted" } },
+    ]);
+
+    rpc.send({
+      id: "next",
+      type: "prompt",
+      message: "complete the next prompt",
+    });
+    expect(await rpc.response("next")).toMatchObject({ success: true });
+    await rpc.notification("tool-start");
+    rpc.child.send("release-tool");
+    await rpc.settled();
+    const memory = await rpc.reopen();
+    const messages = memory.buildSessionContext().messages;
+    expect(
+      messages.filter((message) => {
+        return (
+          message.role === "user" &&
+          JSON.stringify(message.content).includes("accepted before startup")
+        );
+      }),
+    ).toHaveLength(1);
+    expect(messages.at(-1)).toMatchObject({
+      role: "assistant",
+      content: [{ type: "text", text: "complete" }],
+      stopReason: "stop",
+    });
+    expect(
+      rpc.records.filter((record) => {
+        return record.type === "agent_settled";
+      }),
+    ).toEqual([
+      { type: "agent_settled", aborted: true },
+      { type: "agent_settled", aborted: false },
+    ]);
+  }, 30_000);
+
   it("reconciles the first abort and duplicate abort inside successful settlement", async () => {
     const rpc = await heldSettlement();
     rpc.send({ id: "abort", type: "abort" });
@@ -473,13 +954,14 @@ describe("official sandbox RPC cancellation", () => {
       success: true,
     });
     const assistants = assistantEnds(rpc.records);
-    expect(assistants).toHaveLength(2);
-    expect(assistants[0]).toMatchObject({ message: { stopReason: "stop" } });
-    expect(assistants[1]).toMatchObject({ message: { stopReason: "aborted" } });
+    expect(assistants).toHaveLength(3);
+    expect(assistants[0]).toMatchObject({ message: { stopReason: "toolUse" } });
+    expect(assistants[1]).toMatchObject({ message: { stopReason: "stop" } });
+    expect(assistants[2]).toMatchObject({ message: { stopReason: "aborted" } });
     const settledIndex = rpc.records.findIndex((record) => {
       return record.type === "agent_settled";
     });
-    expect(rpc.records.indexOf(assistants[1]!)).toBeLessThan(settledIndex);
+    expect(rpc.records.indexOf(assistants[2]!)).toBeLessThan(settledIndex);
     expect(settledIndex).toBeLessThan(
       rpc.records.findIndex((record) => {
         return record.id === "abort";
@@ -495,11 +977,20 @@ describe("official sandbox RPC cancellation", () => {
       ),
     );
     expect([
-      ...assistants.map((record) => {
+      // The ordinary prompt emits its tool-call assistant before continuation.
+      // Guest's shared fixture describes only the terminal settlement suffix.
+      ...assistants.slice(1).map((record) => {
         const message = record.message;
         if (typeof message !== "object" || message === null)
           throw new Error("Expected assistant");
-        return { type: "message_end", message: { ...message, timestamp: 0 } };
+        return {
+          type: "message_end",
+          message: {
+            ...message,
+            timestamp: 0,
+            ...("durationMs" in message ? { durationMs: 0 } : {}),
+          },
+        };
       }),
       rpc.records[settledIndex],
     ]).toEqual(expected);
@@ -550,7 +1041,7 @@ describe("official sandbox RPC cancellation", () => {
         role: "assistant",
         stopReason: "stop",
       });
-      expect(assistantEnds(rpc.records)).toHaveLength(2);
+      expect(assistantEnds(rpc.records)).toHaveLength(3);
     },
     30_000,
   );
@@ -622,7 +1113,13 @@ describe("official sandbox RPC cancellation", () => {
           );
         }),
       ).toBe(false);
-      expect(messages.at(-1)).toMatchObject({ stopReason: "aborted" });
+      expect(
+        messages
+          .filter((message) => {
+            return message.role === "assistant";
+          })
+          .at(-1),
+      ).toMatchObject({ stopReason: "aborted" });
       expect(
         messages.filter((message) => {
           return (
@@ -634,7 +1131,7 @@ describe("official sandbox RPC cancellation", () => {
     30_000,
   );
 
-  it("drains late steering before follow-ups in native order without repeating settlement hooks", async () => {
+  it("drains late steering before follow-ups in native order before final notification", async () => {
     const rpc = await heldSettlement();
     for (const [type, message] of [
       ["follow_up", "follow-up one"],
@@ -657,7 +1154,7 @@ describe("official sandbox RPC cancellation", () => {
         return message.content;
       }),
     ).toEqual([
-      "execute the controlled tool",
+      [{ type: "text", text: "execute the controlled tool" }],
       [{ type: "text", text: "steering one" }],
       [{ type: "text", text: "steering two" }],
       [{ type: "text", text: "follow-up one" }],
@@ -734,19 +1231,7 @@ describe("official sandbox RPC cancellation", () => {
             return record.id === "abort" || record.type === "agent_settled";
           }),
         ).toBe(false);
-        const settling = once(child, "message");
         child.send("release-tool");
-        expect((await settling)[0]).toMatchObject({ type: "settling" });
-        send({ id: "settlement-held", type: "get_state" });
-        expect(await response("settlement-held")).toMatchObject({
-          data: { isStreaming: true },
-        });
-        expect(
-          records.some((record) => {
-            return record.id === "abort" || record.type === "agent_settled";
-          }),
-        ).toBe(false);
-        child.send("release-settlement");
       }
       expect(await response("abort")).toMatchObject({
         command: "abort",
@@ -775,12 +1260,15 @@ describe("official sandbox RPC cancellation", () => {
           message.role === "assistant"
         );
       });
-      expect(assistants).toHaveLength(1);
+      expect(assistants).toHaveLength(2);
       expect(assistants[0]).toMatchObject({
+        message: { stopReason: "toolUse" },
+      });
+      expect(assistants[1]).toMatchObject({
         message: { stopReason: "aborted" },
       });
       if (boundary === "tool") {
-        const terminal = assistants[0]?.message;
+        const terminal = assistants[1]?.message;
         if (typeof terminal !== "object" || terminal === null)
           throw new Error("Expected native aborted assistant");
         const expected: unknown = JSON.parse(

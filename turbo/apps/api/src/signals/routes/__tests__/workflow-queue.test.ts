@@ -1121,12 +1121,9 @@ describe("workflow queue", () => {
       await expect(
         runsApi.readRun(scenario.actor, admittedRunId),
       ).resolves.toMatchObject({
-        status: "failed",
+        status: "running",
       });
-      expect(runsApi.receivedDispatches(scenario.runnerGroup)).toHaveLength(0);
-      expect(
-        (await runsApi.readRunQueue(scenario.actor)).body.concurrency.active,
-      ).toBe(0);
+      expect(runsApi.receivedDispatches(scenario.runnerGroup)).toHaveLength(1);
       expect(
         (await readInputStatus(threadId, queuedEvent.id)).body,
       ).toMatchObject({
@@ -1144,6 +1141,7 @@ describe("workflow queue", () => {
         }),
       ).toStrictEqual([]);
 
+      await cancelAndCompleteChatRun(scenario.actor, admittedRunId);
       const successor = await createScheduleAutomation(scenario);
       expect(successor.threadId).toBe(threadId);
       await runAutomationNow(successor.automationId);

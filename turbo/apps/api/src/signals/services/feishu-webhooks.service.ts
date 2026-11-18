@@ -1,6 +1,9 @@
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
-import { createDecipheriv, createHash, timingSafeEqual } from "node:crypto";
+import {
+  verifyFeishuEventSignature,
+  decryptFeishuEventPayload,
+} from "../../lib/feishu-event-security";
 
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
@@ -24,12 +27,12 @@ import { waitUntil } from "../context/wait-until";
 import {
   fetchFeishuBotInfo,
   FeishuApiError,
-  resolveFeishuRequestCredentials,
+  resolveFeishuRequestCredentials$,
   feishuTokenUpdateValues,
 } from "../external/feishu-client";
 import { writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
-import { now, nowDate } from "../../lib/time";
+import { nowDate } from "../../lib/time";
 import { safeSync, tapError } from "../utils";
 import { processCanonicalFeishuIngress$ } from "./canonical-feishu-ingress-processor.service";
 import { admitFeishuChatEvent$ } from "./feishu-chat-ingress.service";
@@ -93,7 +96,6 @@ const v2MessageEventSchema = object({
     ).optional(),
   }),
 });
-const FEISHU_REPLAY_WINDOW_SECONDS = 60 * 5;
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -137,52 +139,6 @@ const markCallbackVerified$ = command(
     })();
   },
 );
-
-function verifySignature(args: {
-  readonly rawBody: string;
-  readonly timestamp: string | undefined;
-  readonly nonce: string | undefined;
-  readonly signature: string | undefined;
-  readonly encryptKey: string;
-}): boolean {
-  if (!args.timestamp || !args.nonce || !args.signature) {
-    return false;
-  }
-  const requestTime = Number(args.timestamp);
-  const currentTime = Math.floor(now() / 1000);
-  if (
-    !Number.isSafeInteger(requestTime) ||
-    Math.abs(currentTime - requestTime) > FEISHU_REPLAY_WINDOW_SECONDS
-  ) {
-    return false;
-  }
-  const expected = Buffer.from(
-    createHash("sha256")
-      .update(`${args.timestamp}${args.nonce}${args.encryptKey}${args.rawBody}`)
-      .digest("hex"),
-    "utf8",
-  );
-  const actual = Buffer.from(args.signature, "utf8");
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
-}
-
-function decryptPayload(encrypted: string, encryptKey: string): unknown {
-  const key = createHash("sha256").update(encryptKey).digest();
-  const payload = Buffer.from(encrypted, "base64");
-  if (payload.length <= 16) {
-    throw new Error("Invalid encrypted Feishu payload");
-  }
-  const decipher = createDecipheriv(
-    "aes-256-cbc",
-    key,
-    payload.subarray(0, 16),
-  );
-  const decrypted = Buffer.concat([
-    decipher.update(payload.subarray(16)),
-    decipher.final(),
-  ]).toString("utf8");
-  return JSON.parse(decrypted) as unknown;
-}
 
 function inboundMessage(
   config: FeishuInstallationConfig,
@@ -311,7 +267,8 @@ const ensureInboundBotIdentity$ = command(
           ) {
             throw new FeishuApiError("Lark integration is not enabled", 403);
           }
-          const credentials = await resolveFeishuRequestCredentials(
+          const credentials = await set(
+            resolveFeishuRequestCredentials$,
             installation,
             inboundContextSignal,
           );
@@ -421,7 +378,9 @@ function validatedFeishuEventEnvelope(
   }
   if (
     v2.data.header.app_id !== config.appId ||
-    v2.data.header.token !== config.verificationToken
+    v2.data.header.token !== config.verificationToken ||
+    (config.installationType === "official" &&
+      v2.data.header.tenant_key !== config.tenantKey)
   ) {
     L.warn("Rejected Feishu event with invalid app credentials", {
       installationId: config.id,
@@ -473,19 +432,13 @@ const loadFeishuWebhookConfig$ = command(
   },
 );
 
-export const handleFeishuEvents$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<Response> => {
+export const handleFeishuEventsForConfig$ = command(
+  async (
+    { get, set },
+    config: FeishuInstallationConfig,
+    signal: AbortSignal,
+  ): Promise<Response> => {
     const request = get(request$);
-    const params = get(pathParamsOf(feishuEventsContract.post));
-    const config = await set(
-      loadFeishuWebhookConfig$,
-      params.installationId,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!config) {
-      return jsonResponse({ error: "Feishu installation not found" }, 404);
-    }
     L.debug("Received Feishu callback", {
       installationId: config.id,
     });
@@ -509,7 +462,10 @@ export const handleFeishuEvents$ = command(
     }
     const decryptedBody = encrypted.success
       ? safeSync(() => {
-          return decryptPayload(encrypted.data.encrypt, config.encryptKey);
+          return decryptFeishuEventPayload(
+            encrypted.data.encrypt,
+            config.encryptKey,
+          );
         })
       : { ok: parsedOuterBody.ok };
     if ("error" in decryptedBody) {
@@ -533,7 +489,7 @@ export const handleFeishuEvents$ = command(
 
     if (
       encrypted.success &&
-      !verifySignature({
+      !verifyFeishuEventSignature({
         rawBody,
         timestamp: request.header("x-lark-request-timestamp"),
         nonce: request.header("x-lark-request-nonce"),
@@ -577,5 +533,20 @@ export const handleFeishuEvents$ = command(
       signal.throwIfAborted();
     }
     return textResponse("OK");
+  },
+);
+
+export const handleFeishuEvents$ = command(
+  async ({ get, set }, signal: AbortSignal): Promise<Response> => {
+    const params = get(pathParamsOf(feishuEventsContract.post));
+    const config = await set(
+      loadFeishuWebhookConfig$,
+      params.installationId,
+      signal,
+    );
+    if (!config || config.installationType === "official") {
+      return jsonResponse({ error: "Feishu installation not found" }, 404);
+    }
+    return set(handleFeishuEventsForConfig$, config, signal);
   },
 );

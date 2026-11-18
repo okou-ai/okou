@@ -3731,6 +3731,10 @@
         "manage": "Manage",
         "manageDialogTitle": "Manage Lark bot",
         "moreOptions": "More options for {{bot}}",
+        "official": {
+          "name": "Okou",
+          "popupBlocked": "Allow pop-ups to connect your Lark account."
+        },
         "pageDescription": "Manage bot routing for this workspace",
         "permissions": {
           "description": "In the Lark developer console, open Permissions & Scopes, choose Batch Import/Export > Import, and paste the JSON below. It includes App identity permissions for the bot and User identity permissions for your connected account.",

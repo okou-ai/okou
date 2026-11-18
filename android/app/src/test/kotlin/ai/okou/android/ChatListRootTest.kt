@@ -2,7 +2,6 @@ package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
 import android.os.Looper
-import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -13,7 +12,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
-import androidx.compose.ui.test.performSemanticsAction
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import java.util.concurrent.CountDownLatch
@@ -186,24 +184,8 @@ class ChatListRootTest {
             }
             org.junit.Assert.assertTrue(indicatorReads.get() >= 2)
             indicatorsGate.countDown()
-            compose.onNodeWithText("Conversations").performClick()
-            compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Research"))
-            compose.onNode(hasText("Research") and hasClickAction()).performSemanticsAction(
-                SemanticsActions.OnClick
-            ) {
-                it()
-            }
-            compose.onNodeWithTag("chat_list").assertExists()
-            compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Research"))
-            compose.onNode(hasText("Research") and hasClickAction()).performSemanticsAction(
-                SemanticsActions.OnClick
-            ) {
-                it()
-            }
             compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
-            compose.onNodeWithTag("chat_list").assertDoesNotExist()
-            compose.onNodeWithTag("conversation").assertExists()
-            compose.onNodeWithText("Back").performClick()
+            compose.onNodeWithTag("conversation").assertDoesNotExist()
             compose.onNodeWithTag("chat_list").assertExists()
             compose.onNodeWithText("Project chat").assertExists()
             compose.onNodeWithText("Research").performClick()

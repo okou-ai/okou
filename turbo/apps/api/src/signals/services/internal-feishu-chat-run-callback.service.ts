@@ -20,7 +20,7 @@ import {
   feishuTokenUpdateValues,
   parseFeishuReactionRemovalResponse,
   readFeishuResponseJson,
-  resolveFeishuRequestCredentials,
+  resolveFeishuRequestCredentials$,
   replyWithFeishuMessage$,
   feishuMessagePayload,
   feishuMessageSendBody,
@@ -367,7 +367,8 @@ export const deliverFeishuChatAdmissionFailure$ = command(
         ) {
           throw new FeishuApiError("Lark integration is not enabled", 403);
         }
-        const credentials = await resolveFeishuRequestCredentials(
+        const credentials = await set(
+          resolveFeishuRequestCredentials$,
           installation,
           sendSignal,
         );
@@ -532,7 +533,8 @@ const deliverClaimedFeishuChatCallback$ = command(
         ) {
           throw new FeishuApiError("Lark integration is not enabled", 403);
         }
-        const credentials = await resolveFeishuRequestCredentials(
+        const credentials = await set(
+          resolveFeishuRequestCredentials$,
           installation,
           signal,
         );
@@ -608,7 +610,8 @@ export const removeFeishuThinkingReaction$ = command(
         ) {
           throw new FeishuApiError("Lark integration is not enabled", 403);
         }
-        const credentials = await resolveFeishuRequestCredentials(
+        const credentials = await set(
+          resolveFeishuRequestCredentials$,
           installation,
           signal,
         );

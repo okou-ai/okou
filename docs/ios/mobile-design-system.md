@@ -753,11 +753,11 @@ feature; the catalog shows each one.
     and speed in one write (`ChatModelSelectionStore.apply(_:)`), then closes with a
     selection haptic and the composer's model control shows the result. A failed save keeps
     the sheet and the draft, with the error above Done; ✕ or a swipe drops the draft.
-- **Send / stop / mic** share the composer's trailing slot: the mic alone on an empty
-  draft, mic then send (a solid `.borderedProminent` circle, `primary`; the surface under it is
-  already glass; disabled, it takes the system's gray) once there is content, and stop
-  (`interrupt`) alone while a run is active and the draft is empty. In the open composer
-  the model control comes first.
+- **Send / stop / mic** share the composer's trailing slot. A compact empty composer shows
+  the mic, or stop (`interrupt`) during an active run. The open text composer shows model, mic,
+  and send or stop in that order. Send uses a solid `.borderedProminent` circle (`primary`),
+  with the system's disabled fill for an empty draft. The controls keep their slots and fade
+  as the composer expands or folds.
 - **The composer never truncates a draft.** With text in it the editor keeps its
   open height (up to six lines, then it scrolls), focused or not.
 - **Composer geometry** belongs to `OkouComposerSurface`, shared by the chat and
@@ -805,14 +805,11 @@ feature; the catalog shows each one.
   window attachment. Prepare new-message input expanded before entry; retain its
   expanded layout through departure. Return actions request navigation while the
   editor still owns focus; UIKit coordinates keyboard dismissal with the pop.
-  Cancelled interactive return restores the
-  same editor and selection through UIKit's transition coordinator. Let UIKit's
-  `UIKeyboardLayoutGuide` own keyboard geometry: constrain the hosted
-  content above the guide and set `usesBottomSafeArea` to `false`, so SwiftUI can
-  retain its normal container safe area when the keyboard is hidden. Set the
-  child `UIHostingController.safeAreaRegions` to `.container` to avoid applying
-  keyboard avoidance twice. The live content and editor remain mounted through
-  native transitions; ordinary focus changes use a value-scoped SwiftUI animation.
+  Cancelled interactive return restores the same editor and selection through UIKit's
+  transition coordinator. The chat's `UIHostingController` fills the navigation page so
+  SwiftUI can animate the keyboard safe area with the composer's bottom inset. The live
+  content and editor remain mounted through native transitions; ordinary focus changes
+  use a value-scoped SwiftUI animation.
 - **Sidebar layout**: the workspace switcher top left, and top right one 44 pt glass capsule
   that groups the chat list menu (Lucide `list-filter`) on the left and back to the chat
   (`arrow-right`, toward the page it returns to; "Close sidebar" for VoiceOver) on the right,

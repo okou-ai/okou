@@ -98,6 +98,8 @@ export function feishuQueuedLaunchContextReadPlan(args: {
       chatType: chatFeishuContext.chatType,
       tenantKey: feishuOrgInstallations.feishuTenantKey,
       platform: feishuOrgInstallations.platform,
+      installationType: feishuOrgInstallations.installationType,
+      setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
       ownerUserId: feishuOrgInstallations.ownerUserId,
       chatId: chatFeishuContext.chatId,
       messageId: chatFeishuContext.messageId,

@@ -34,7 +34,7 @@ import {
   feishuTokenUpdateValues,
   readFeishuResponseJson,
   replyWithFeishuMessage$,
-  resolveFeishuRequestCredentials,
+  resolveFeishuRequestCredentials$,
 } from "../external/feishu-client";
 import {
   publishThreadListChangedSafely,
@@ -665,6 +665,8 @@ const loadFeishuIngressDispatchContext$ = command(
           ownerUserId: feishuOrgInstallations.ownerUserId,
           appId: feishuOrgInstallations.appId,
           platform: feishuOrgInstallations.platform,
+          installationType: feishuOrgInstallations.installationType,
+          setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
           defaultAgentId: orgMetadata.defaultAgentId,
           botName: feishuOrgInstallations.botName,
           messageReceivedAt: feishuOrgInstallations.messageReceivedAt,
@@ -800,7 +802,8 @@ const loadFeishuHistory$ = command(
           ) {
             throw new FeishuApiError("Lark integration is not enabled", 403);
           }
-          const credentials = await resolveFeishuRequestCredentials(
+          const credentials = await set(
+            resolveFeishuRequestCredentials$,
             installation,
             historyContextSignal,
           );

@@ -83,6 +83,10 @@ function serviceEnvSchema() {
     // backend origin and other environments fall back to the configured web URL.
     OKOU_API_BACKEND_URL: url().optional(),
     FEISHU_CALLBACK_BASE_URL: url(),
+    LARK_OFFICIAL_APP_ID: string().min(1).optional(),
+    LARK_OFFICIAL_APP_SECRET: string().min(1).optional(),
+    LARK_OFFICIAL_VERIFICATION_TOKEN: string().min(1).optional(),
+    LARK_OFFICIAL_ENCRYPT_KEY: string().min(1).optional(),
     OKOU_WEB_URL: url(),
     APP_URL: url(),
     RESEND_API_KEY: string().min(1).optional(),

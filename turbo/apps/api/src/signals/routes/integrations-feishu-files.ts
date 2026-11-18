@@ -1,3 +1,4 @@
+import { defaultFeishuInstallationFilter } from "../services/feishu-installation-selection";
 import { feishuRequestPlatform$ } from "../context/feishu-platform";
 import {
   FEISHU_PLATFORMS,
@@ -34,7 +35,7 @@ import {
   feishuTokenUpdateValues,
   parseFeishuFileUploadResponse,
   readFeishuResponseJson,
-  resolveFeishuRequestCredentials,
+  resolveFeishuRequestCredentials$,
   type FeishuOutboundMessage,
 } from "../external/feishu-client";
 import { db$, writeDb$ } from "../external/db";
@@ -124,7 +125,12 @@ const resolveInstallation$ = command(
           isNotNull(feishuOrgInstallations.setupCompletedAt),
           ...(args.installationId
             ? [eq(feishuOrgInstallations.id, args.installationId)]
-            : []),
+            : [
+                defaultFeishuInstallationFilter(
+                  args.orgId,
+                  args.platform ?? "feishu",
+                ),
+              ]),
         ),
       )
       .limit(2);
@@ -558,7 +564,8 @@ const uploadFeishuFile$ = command(
         ) {
           throw new FeishuApiError("Lark integration is not enabled", 403);
         }
-        const credentials = await resolveFeishuRequestCredentials(
+        const credentials = await set(
+          resolveFeishuRequestCredentials$,
           installation,
           uploadContextSignal,
         );

@@ -276,7 +276,8 @@
     "src/signals/services/workflow-automation-run-callback.service.ts",
     "src/signals/services/execution-workflow-selection.ts",
     "src/signals/services/unstarted-run-cleanup.ts",
-    "src/signals/services/agent-run-cancellation.service.ts"
+    "src/signals/services/agent-run-cancellation.service.ts",
+    "src/signals/services/lark-official-skill.ts"
   ],
   "references": [
     {

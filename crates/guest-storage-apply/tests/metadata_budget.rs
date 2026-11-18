@@ -53,7 +53,8 @@ fn file_header(size: u64) -> tar::Header {
 }
 
 fn oversized_metadata_archive(kind: tar::EntryType) -> io::Result<Vec<u8>> {
-    let encoder = GzEncoder::new(Vec::new(), Compression::fast());
+    // Keep the oversized metadata fixture small on both gzip backends.
+    let encoder = GzEncoder::new(Vec::new(), Compression::default());
     let mut builder = tar::Builder::new(encoder);
     builder.append_data(&mut file_header(2), "before.txt", &b"ok"[..])?;
     let bytes = 8 * 1024 * 1024;

@@ -3,7 +3,7 @@ import { instructions } from "@okouai/db/schema/instructions";
 import { agents } from "@okouai/db/schema/agent";
 import { SINGLE_AGENT_SEED_INSTRUCTIONS_BUNDLE } from "@okouai/core/seed-instructions";
 
-/** Select the same authorized source from a captured live admission receipt. */
+/** Select the authorized instruction source for the picked Run identity. */
 export function agentInstructionsSelectionSql(singleAgent: SQL): SQL {
   return sql`selected_agent AS MATERIALIZED (
     SELECT CASE WHEN ${singleAgent}

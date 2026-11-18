@@ -18,10 +18,7 @@ import {
 } from "./execution-content-bundle";
 import type { ContentBundleUrlCacheContext } from "./content-bundle-presigned-url-cache";
 import type { StoragePresignedUrlCacheWrite } from "./system-storage-presigned-url-cache.service";
-import type {
-  ExecutionWorkflowInput,
-  ExecutionWorkflow,
-} from "./execution-workflow-selection";
+import type { ExecutionWorkflow } from "./execution-workflow-selection";
 import {
   activeNetworkPolicyRefreshesFromGrants,
   mergeNetworkPolicyRefreshes,
@@ -50,7 +47,7 @@ interface ExecutionPublicationInput {
   readonly preparedContext: PreparedExecutionContext;
   readonly networkPolicyInputs: ExecutionNetworkPolicyInputs | null;
   readonly packages: ExecutionPackageSelection;
-  readonly workflowInput: ExecutionWorkflowInput;
+  readonly skillRoot: string;
   readonly bundleUrlCache: ContentBundleUrlCacheContext;
 }
 
@@ -59,7 +56,7 @@ const signExecutionContentBundles$ = command(
     { set },
     args: Pick<
       ExecutionPublicationInput,
-      "preparedContext" | "packages" | "workflowInput" | "bundleUrlCache"
+      "preparedContext" | "packages" | "skillRoot" | "bundleUrlCache"
     >,
     signal: AbortSignal,
   ): Promise<{
@@ -102,7 +99,7 @@ const signExecutionContentBundles$ = command(
     const instructions = signedInstructions?.bundle;
     const workflowMountPaths = new Set(
       args.packages.workflows.map((workflow) => {
-        return `${args.workflowInput.skillRoot}/${workflow.name}`;
+        return `${args.skillRoot}/${workflow.name}`;
       }),
     );
     const skills = await Promise.all(
@@ -110,7 +107,7 @@ const signExecutionContentBundles$ = command(
         ...args.packages.workflows.map((workflow) => {
           return {
             contentBundle: workflow.contentBundle,
-            mountPath: `${args.workflowInput.skillRoot}/${workflow.name}`,
+            mountPath: `${args.skillRoot}/${workflow.name}`,
           };
         }),
         ...[

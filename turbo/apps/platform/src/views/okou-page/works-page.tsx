@@ -954,7 +954,9 @@ export function WorksPage() {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
   const features = useGet(featureSwitch$);
-  const feishuEnabled = features[FeatureSwitchKey.FeishuIntegration] ?? false;
+  const larkEnabled =
+    (features[FeatureSwitchKey.LarkIntegration] ?? false) ||
+    (features[FeatureSwitchKey.LarkOfficialBot] ?? false);
   const displayNameLoadable = useLoadable(currentChatAgentDisplayName$);
   const displayName =
     displayNameLoadable.state === "hasData"
@@ -990,10 +992,8 @@ export function WorksPage() {
           <TeamsCard displayName={displayName} />
           <DiscordCard />
           <GithubCard />
-          {feishuEnabled ? <FeishuCard /> : null}
-          {features[FeatureSwitchKey.LarkIntegration] ? (
-            <FeishuCard platform="lark" />
-          ) : null}
+          {features[FeatureSwitchKey.FeishuIntegration] ? <FeishuCard /> : null}
+          {larkEnabled ? <FeishuCard platform="lark" /> : null}
           <TelegramCard />
           <AgentPhoneCard />
           {features[FeatureSwitchKey.EmailIntegration] ? <EmailCard /> : null}

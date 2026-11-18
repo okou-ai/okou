@@ -3733,6 +3733,10 @@
         "manage": "Verwalten",
         "manageDialogTitle": "Verwalten Sie den Lark-Bot",
         "moreOptions": "Weitere Optionen für {{bot}}",
+        "official": {
+          "name": "Okou",
+          "popupBlocked": "Erlaube Pop-ups, um dein Lark-Konto zu verbinden."
+        },
         "pageDescription": "Verwalten Sie das Bot-Routing für diesen Arbeitsbereich",
         "permissions": {
           "description": "Öffnen Sie in der Lark-Entwicklerkonsole Permissions & Scopes, wählen Sie Batch Import/Export > Import und fügen Sie das folgende JSON ein. Es enthält App-Identitätsberechtigungen für den Bot und Benutzeridentitätsberechtigungen für Ihr verbundenes Konto.",

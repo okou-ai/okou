@@ -1,5 +1,5 @@
 {
-  "id": "a37f7a6e-b090-41d4-a3d9-ba0df50ce804",
+  "id": "95a3d41f-c1c8-4072-8768-8020c17d60d4",
   "prevId": "d2460445-a8b4-4a8b-a34a-755342124948",
   "version": "7",
   "dialect": "postgresql",
@@ -15935,6 +15935,20 @@
           "notNull": true,
           "default": "'feishu'"
         },
+        "installation_type": {
+          "name": "installation_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'custom'"
+        },
+        "official_event_timestamp": {
+          "name": "official_event_timestamp",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "app_id": {
           "name": "app_id",
           "type": "varchar(255)",
@@ -16064,6 +16078,12 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
+            },
+            {
+              "expression": "installation_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
             }
           ],
           "isUnique": true,
@@ -16097,6 +16117,29 @@
             }
           ],
           "isUnique": true,
+          "where": "\"feishu_org_installations\".\"installation_type\" = 'custom'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_feishu_org_installations_official_tenant": {
+          "name": "idx_feishu_org_installations_official_tenant",
+          "columns": [
+            {
+              "expression": "app_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "feishu_tenant_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"feishu_org_installations\".\"installation_type\" = 'official'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -16137,7 +16180,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "chk_feishu_installation_type": {
+          "name": "chk_feishu_installation_type",
+          "value": "\"feishu_org_installations\".\"installation_type\" IN ('custom', 'official') AND (\"feishu_org_installations\".\"installation_type\" = 'custom' OR \"feishu_org_installations\".\"platform\" = 'lark')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.friend_referral_links": {
@@ -19938,18 +19986,6 @@
           "notNull": true,
           "default": true
         },
-        "widget_push_token": {
-          "name": "widget_push_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "widget_pushed_at": {
-          "name": "widget_pushed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp",
@@ -19975,6 +20011,44 @@
           "with": {}
         }
       },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.lark_official_app_tickets": {
+      "name": "lark_official_app_tickets",
+      "schema": "",
+      "columns": {
+        "app_id": {
+          "name": "app_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "encrypted_ticket": {
+          "name": "encrypted_ticket",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_timestamp": {
+          "name": "event_timestamp",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
