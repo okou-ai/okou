@@ -214,8 +214,13 @@ describe("POST /api/integrations/slack/message", () => {
           context,
           routes: integrationsSlackMessageRoutes,
         })(integrationsSlackMessageContract);
+        // Return to the first actor with a fresh request on the same active Run.
+        const firstExecution = await scenario.launchRun(first);
         for (const [index, request] of requests.entries()) {
-          const execution = await scenario.launchRun(request.actor);
+          const execution =
+            request.actor === first
+              ? firstExecution
+              : await scenario.launchRun(request.actor);
           await flushWaitUntilForTest();
           context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
             {
