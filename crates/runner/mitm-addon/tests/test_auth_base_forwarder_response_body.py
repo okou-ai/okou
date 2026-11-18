@@ -17,29 +17,25 @@ from tests.auth_base_forwarder_helpers import (
 )
 from tests.repeated_bytes_helpers import repeat_bytes
 
-
-def _response(payload: bytes, framing: str) -> bytes:
-    if framing == "chunked":
-        # Join headers and chunk fragments directly into the final response.
-        body_parts = (
-            (f"{len(payload):x}\r\n".encode(), payload, b"\r\n0\r\n\r\n")
-            if payload
-            else (b"0\r\n\r\n",)
-        )
-        return b"".join(
-            (http_response(body=b"", headers=[("Transfer-Encoding", "chunked")]), *body_parts)
-        )
-    headers = [("Content-Length", str(len(payload)))] if framing == "fixed" else []
-    return http_response(body=payload, headers=headers)
+_CHUNKED_RESPONSE_HEADERS = http_response(body=b"", headers=[("Transfer-Encoding", "chunked")])
 
 
 @pytest.mark.parametrize("framing", ["fixed", "chunked", "eof"])
 @pytest.mark.parametrize("size", [0, 32 * 1024 * 1024, 32 * 1024 * 1024 + 1])
 async def test_response_body_bounds_across_read_buffers(framing: str, size: int):
-    slab = bytes(range(256)) * 64
-    blocks, remainder = divmod(size, len(slab))
-    payload = b"".join([slab] * blocks + [slab[:remainder]])
-    raw_response = _response(payload, framing)
+    if framing == "chunked":
+        prefix = _CHUNKED_RESPONSE_HEADERS
+        suffix = b"0\r\n\r\n"
+        if size:
+            prefix += f"{size:x}\r\n".encode()
+            suffix = b"\r\n" + suffix
+    else:
+        headers = [("Content-Length", str(size))] if framing == "fixed" else []
+        prefix = http_response(body=b"", headers=headers)
+        suffix = b""
+    pattern = bytes(range(256))
+    repeats, tail = divmod(size, len(pattern))
+    raw_response = repeat_bytes(prefix, pattern, repeats, pattern[:tail] + suffix)
     with fake_forwarder_upstream(socket_factory=lambda: FakeSocket(raw_response)) as upstream:
         if size > 32 * 1024 * 1024:
             with pytest.raises(transport.ForwardedResponseTooLargeError):
@@ -49,7 +45,11 @@ async def test_response_body_bounds_across_read_buffers(framing: str, size: int)
                 "https://example.com", "GET", [], None
             )
             assert status == 200
-            assert body == payload
+            assert len(body) == size
+            # Compare in place so the expected body does not need its own buffer.
+            assert raw_response.startswith(body, len(prefix), len(prefix) + size), (
+                "forwarded response body differs from the original wire payload"
+            )
 
     assert upstream.socket.response_file is not None
     assert upstream.socket.response_file.closed
@@ -59,21 +59,21 @@ async def test_response_body_bounds_across_read_buffers(framing: str, size: int)
 
 @pytest.mark.parametrize("framing", ["fixed", "missing-last-chunk", "invalid-size", "short-chunk"])
 async def test_rejects_truncated_response_after_multiple_read_buffers(framing: str):
-    payload = b"x" * (128 * 1024 + 7)
+    size = 128 * 1024 + 7
     if framing == "fixed":
-        raw_response = http_response(
-            body=payload, headers=[("Content-Length", str(len(payload) + 3))]
-        )
+        prefix = http_response(body=b"", headers=[("Content-Length", str(size + 3))])
+        suffix = b""
     else:
-        suffix = {
-            "missing-last-chunk": b"",
-            "invalid-size": b"invalid\r\n",
-            "short-chunk": b"5\r\nxy",
-        }[framing]
-        raw_response = http_response(
-            body=f"{len(payload):x}\r\n".encode() + payload + b"\r\n" + suffix,
-            headers=[("Transfer-Encoding", "chunked")],
+        prefix = _CHUNKED_RESPONSE_HEADERS + f"{size:x}\r\n".encode()
+        suffix = (
+            b"\r\n"
+            + {
+                "missing-last-chunk": b"",
+                "invalid-size": b"invalid\r\n",
+                "short-chunk": b"5\r\nxy",
+            }[framing]
         )
+    raw_response = repeat_bytes(prefix, b"x", size, suffix)
 
     with (
         fake_forwarder_upstream(socket_factory=lambda: FakeSocket(raw_response)) as upstream,
@@ -99,11 +99,8 @@ async def test_rejects_truncated_response_after_multiple_read_buffers(framing: s
 async def test_tiny_chunks_keep_peak_allocations_comparable_to_fixed_length(size: int):
     payload = b"x" * size
     responses = {
-        "fixed": _response(payload, "fixed"),
-        "tiny-chunks": http_response(
-            body=repeat_bytes(b"", b"1\r\nx\r\n", size, b"0\r\n\r\n"),
-            headers=[("Transfer-Encoding", "chunked")],
-        ),
+        "fixed": http_response(body=payload, headers=[("Content-Length", str(size))]),
+        "tiny-chunks": repeat_bytes(_CHUNKED_RESPONSE_HEADERS, b"1\r\nx\r\n", size, b"0\r\n\r\n"),
     }
     peaks: dict[str, int] = {}
     for framing, raw_response in responses.items():
@@ -137,11 +134,8 @@ async def test_tiny_chunks_keep_peak_allocations_comparable_to_fixed_length(size
 @pytest.mark.parametrize("body_size", [3, 4])
 async def test_chunked_tail_reads_stay_buffered_near_body_cap(body_size: int):
     payload = b"x" * body_size
-    prefix = http_response(
-        body=f"{body_size:x}\r\n".encode() + payload,
-        headers=[("Transfer-Encoding", "chunked")],
-    )
-    wire = prefix + b"\r\n0\r\nX-Trailer: " + b"y" * 16384 + b"\r\n\r\n"
+    prefix = _CHUNKED_RESPONSE_HEADERS + f"{body_size:x}\r\n".encode() + payload
+    wire = repeat_bytes(prefix + b"\r\n0\r\nX-Trailer: ", b"y", 16_384, b"\r\n\r\n")
 
     class LateTrailerFile(FakeResponseFile):
         def __init__(self) -> None:
