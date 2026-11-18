@@ -638,7 +638,10 @@ function ChatListResizeSeam() {
       // paints one step above it; shared modal/menu portals still paint above
       // the shell. Collapsed, it drops its hairline so the workspace meets the
       // sheet's own edge, which is then the line, and the list can only grow.
-      className="z-1 border-l border-border group-data-[chat-list=collapsed]/workspace-sheet:cursor-e-resize group-data-[chat-list=collapsed]/workspace-sheet:border-l-0"
+      // It then spans only that edge's straight run: inset by the sheet's
+      // corner radius at both ends, its line and target stop where the
+      // corners begin to curve.
+      className="z-1 border-l border-border group-data-[chat-list=collapsed]/workspace-sheet:my-(--radius-2xl) group-data-[chat-list=collapsed]/workspace-sheet:cursor-e-resize group-data-[chat-list=collapsed]/workspace-sheet:border-l-0"
     />
   );
 }
