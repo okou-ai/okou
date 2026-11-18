@@ -616,6 +616,27 @@ class ImageOperationTest(unittest.TestCase):
         self.assertFalse(self.records("executions"))
         self.assertNotEqual(self.invoke("claim", check=False).returncode, 0)
 
+    def test_cancellation_before_first_claim_fences_that_generation(self):
+        for existing_owner in (False, True):
+            with self.subTest(existing_owner=existing_owner):
+                old_run = 1234 + int(existing_owner) * 10
+                cancelled_run = old_run + 1
+                self.environment["GITHUB_RUN_ID"] = str(old_run)
+                if existing_owner:
+                    self.invoke("claim")
+                self.environment["GITHUB_RUN_ID"] = str(cancelled_run)
+                self.invoke("cancel")
+                late = self.invoke("claim", check=False)
+                self.assertNotEqual(late.returncode, 0, late.stderr)
+                self.assertFalse(
+                    (self.root / f"var/lib/vm0-runner/bin/pr-123-image-{cancelled_run}").exists()
+                )
+                if existing_owner:
+                    self.environment["GITHUB_RUN_ID"] = str(old_run)
+                    self.invoke("guard", "true", input_text="")
+                self.environment["GITHUB_RUN_ID"] = str(cancelled_run + 1)
+                self.invoke("claim")
+
     def test_runner_bytes_are_rechecked_before_execution(self):
         self.environment["RUNNER_IMAGE_RUNNER_SHA256"] = "0" * 64
         self.invoke("claim")

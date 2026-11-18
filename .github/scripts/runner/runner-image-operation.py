@@ -247,6 +247,10 @@ def owner_admitted(actual, expected):
     return owner_matches(actual, expected) and actual["state"] == "ready"
 
 
+def admission_floor(owner):
+    return max(owner["generation"], owner.get("cancelledThrough", owner["generation"]))
+
+
 def require_observation_owner(namespace, expected):
     owner = json.loads((namespace / "owner.json").read_text())
     if not owner_admitted(owner, expected):
@@ -350,9 +354,9 @@ def remote(request):
         if (
             entry_owner
             and not owner_matches(entry_owner, owner)
-            and entry_owner["generation"] >= owner["generation"]
+            and admission_floor(entry_owner) >= owner["generation"]
         ):
-            raise RuntimeError("image owner superseded or input identity conflicts")
+            raise RuntimeError("image owner superseded, cancelled or input identity conflicts")
     elif request["action"] in ("run", "guard") and not owner_admitted(entry_owner, owner):
         raise RuntimeError("image owner superseded, cancelled or not claimed")
     if request["action"] in ("run", "guard"):
@@ -380,7 +384,12 @@ def remote(request):
     retiring = request["action"] in ("claim", "cancel")
     if retiring:
         retire_matching()
-    if request["action"] == "cancel" and not owner_matches(entry_owner, owner):
+    if (
+        request["action"] == "cancel"
+        and entry_owner
+        and not owner_matches(entry_owner, owner)
+        and admission_floor(entry_owner) >= owner["generation"]
+    ):
         emit({"cancelled": "not-current-owner"})
         return
     with gate(
@@ -394,8 +403,10 @@ def remote(request):
         previous = json.loads(owner_path.read_text()) if owner_path.exists() else None
         if request["action"] == "claim":
             if not owner_matches(previous, owner):
-                if previous and previous["generation"] >= owner["generation"]:
-                    raise RuntimeError("image owner superseded or input identity conflicts")
+                if previous and admission_floor(previous) >= owner["generation"]:
+                    raise RuntimeError(
+                        "image owner superseded, cancelled or input identity conflicts"
+                    )
                 for operation in operation_paths(namespace):
                     retire(operation)
                     shutil.rmtree(operation)
@@ -414,7 +425,17 @@ def remote(request):
             return
         if not owner_matches(previous, owner):
             if request["action"] == "cancel":
-                emit({"cancelled": "not-current-owner"})
+                # A cancellation may reach the host before its first claim.
+                # Record it without retiring an older, still-admitted owner.
+                if previous is None:
+                    previous = dict(owner, operations=[], state="cancelled")
+                elif admission_floor(previous) < owner["generation"]:
+                    previous["cancelledThrough"] = owner["generation"]
+                else:
+                    emit({"cancelled": "not-current-owner"})
+                    return
+                atomic_json(owner_path, previous)
+                emit({"cancelled": owner["identity"]})
                 return
             raise RuntimeError("image owner superseded or not claimed")
         if request["action"] == "cancel":

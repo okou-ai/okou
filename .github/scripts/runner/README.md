@@ -127,6 +127,9 @@ admission record are committed under the lifecycle lock; cancellation sets
 `cancelled`. A claim interrupted before that commit remains incomplete and
 cannot replay namespace initialization. Losing a committed claim reply still
 reattaches idempotently.
+Cancellation received before a first claim records a generation cutoff in the
+same ledger. An earlier admitted owner can continue, while a delayed first claim
+at or below the cutoff is rejected.
 
 Warm/build run once in transient services. Identity covers the exact source,
 binary inputs/bytes, target, profile, host, adapter source and workflow run/attempt.
