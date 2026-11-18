@@ -672,7 +672,7 @@ describe("chat thread generation template contract", () => {
   });
 });
 
-describe("retired Ultrafast service tier", () => {
+describe("Ultrafast service tier", () => {
   const thread = {
     id: "00000000-0000-4000-8000-000000000001",
     agentId: "00000000-0000-4000-8000-000000000002",
@@ -685,7 +685,7 @@ describe("retired Ultrafast service tier", () => {
     renamedAt: null,
   };
 
-  it("reads a persisted Ultrafast snapshot tier as Standard", () => {
+  it("preserves a persisted Ultrafast snapshot tier", () => {
     const archive = chatThreadSnapshotArchiveSchema.parse({
       chatThreads: [
         { ...thread, serviceTier: "ultrafast" },
@@ -697,10 +697,10 @@ describe("retired Ultrafast service tier", () => {
       archive.chatThreads.map((entry) => {
         return entry.serviceTier;
       }),
-    ).toStrictEqual([null, "priority"]);
+    ).toStrictEqual(["ultrafast", "priority"]);
   });
 
-  it("reads a stored Ultrafast model part as the Standard tier", () => {
+  it("preserves a stored Ultrafast model part", () => {
     const message = userMessageDocumentSchema.parse({
       version: 1,
       parts: [
@@ -716,7 +716,7 @@ describe("retired Ultrafast service tier", () => {
     expect(message.parts[1]).toStrictEqual({
       type: "model",
       selectedModel: "gpt-6-astra",
-      serviceTier: undefined,
+      serviceTier: "ultrafast",
     });
     expect(
       userMessageDocumentSchema.parse({
@@ -737,12 +737,12 @@ describe("retired Ultrafast service tier", () => {
     });
   });
 
-  it("rejects Ultrafast on run option requests", () => {
+  it("accepts Ultrafast on run option requests", () => {
     const body = chatThreadModelSelectionContract.update.body.safeParse({
       model: "gpt-6-astra",
       codexServiceTier: "ultrafast",
     });
 
-    expect(body.success).toBe(false);
+    expect(body.success).toBe(true);
   });
 });

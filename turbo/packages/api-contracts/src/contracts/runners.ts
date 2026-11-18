@@ -615,7 +615,7 @@ const piModelConfigVersionedSchema = object({
     "xhigh",
     "max",
   ]).optional(),
-  serviceTier: zEnum(["priority", "fast"]).optional(),
+  serviceTier: zEnum(["priority", "fast", "ultrafast"]).optional(),
   credentialBindings: array(piModelCredentialBindingSchema).min(1).max(2),
 })
   .strict()
@@ -708,7 +708,7 @@ export const piModelConfigV3Schema = discriminatedUnion("dialect", [
     dialect: literal("openai-codex-responses"),
     transport: zEnum(["sse"]),
     provider: zEnum(["openai-codex"]),
-    serviceTier: zEnum(["fast"]).optional(),
+    serviceTier: zEnum(["fast", "ultrafast"]).optional(),
   }),
 ]).readonly();
 

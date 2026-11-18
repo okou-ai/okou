@@ -42,7 +42,7 @@ import {
   type ComposerTaskSelection,
 } from "../okou-page/composer-task-handoff.ts";
 import {
-  isCodexFastModeAvailableForSelection,
+  isServiceTierAvailableForSelection,
   resolveDefaultModelSelection,
 } from "../okou-page/model-default-selection.ts";
 import { selectedModelAvailable$ } from "../okou-page/model-first-personal-oauth.ts";
@@ -245,10 +245,14 @@ function resolveNewThreadModelSelection(
   },
 ): ModelProviderSelection | null {
   if (modelSelection) {
-    return modelSelection.codexServiceTier === "fast" &&
-      !isCodexFastModeAvailableForSelection({
+    return modelSelection.codexServiceTier !== undefined &&
+      !isServiceTierAvailableForSelection({
         models: args.models,
         selectedModel: modelSelection.selectedModel,
+        tier:
+          modelSelection.codexServiceTier === "fast"
+            ? "priority"
+            : modelSelection.codexServiceTier,
       })
       ? { ...modelSelection, codexServiceTier: undefined }
       : modelSelection;
@@ -363,7 +367,7 @@ const mintOptimisticThreadWithEvent$ = command(
       readonly projectId?: string;
       readonly title?: string;
       readonly selectedModel: string | null;
-      readonly serviceTier: "priority" | null;
+      readonly serviceTier: "priority" | "ultrafast" | null;
       readonly modelSettings: ModelSettings;
       readonly computerUseHostId: string | null;
       readonly cloudBrowserEnabled: boolean;

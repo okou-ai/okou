@@ -1,3 +1,7 @@
+import {
+  androidChatUltrafastTransforms,
+  iosChatUltrafastTransforms,
+} from "@okouai/api-contracts/client-transforms/chat-ultrafast";
 import { chatThreadEventRows } from "../services/chat-event-row-read.service";
 import {
   iosEmailChatRowsTransform,
@@ -391,6 +395,10 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   },
   {
     route: chatThreadsContract.events,
+    responseTransforms: [
+      iosChatUltrafastTransforms.events,
+      androidChatUltrafastTransforms.events,
+    ],
     handler: authRoute(
       {
         requireOrganization: true,

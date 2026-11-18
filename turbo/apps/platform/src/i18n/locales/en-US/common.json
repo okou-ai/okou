@@ -2491,9 +2491,11 @@
       "relatedArtifactCount_other": "{{formattedCount}} artifacts",
       "relatedArtifacts": "Related artifacts",
       "selectedModelAppliesAfterCurrentRun": "Next run will use {{model}}",
+      "speedChangedTo": "Speed changed to {{speed}}",
       "thinking": {
         "default": "Thinking..."
       },
+      "ultrafastModelName": "{{model}} · Ultrafast",
       "viewActivityLogs": "View activity logs",
       "viewLogs": "View run logs",
       "waitingIn": "Waiting in",
@@ -5517,7 +5519,10 @@
         "models": "Models",
         "noConfiguredModels": "No configured models",
         "pro": "Pro",
-        "standard": "Standard"
+        "speed": "Speed",
+        "standard": "Standard",
+        "ultrafast": "Ultrafast",
+        "ultrafastUsage": "Uses more of your Codex allowance."
       },
       "reset": {
         "confirmDescription": "Use one Codex reset to reset your current usage windows. You have {{remaining}}.",

@@ -3328,7 +3328,7 @@ export function createThreadClaimRunObjects(
         }
         return model;
       }
-      return await set(
+      const rejection = await set(
         checkRunAdmission$,
         {
           catalog: await get(claimCatalog$),
@@ -3340,6 +3340,20 @@ export function createThreadClaimRunObjects(
         },
         signal,
       );
+      if (rejection || input.command.codexServiceTier !== "ultrafast") {
+        return rejection;
+      }
+      const context = await get(contentContext$);
+      signal.throwIfAborted();
+      if (isRouteError(context)) {
+        return context;
+      }
+      return isFeatureEnabled(
+        FeatureSwitchKey.CodexSubscriptionUltrafast,
+        context.featureSwitchContext,
+      )
+        ? null
+        : badRequestMessage("Ultrafast is unavailable in this workspace");
     },
   );
   const authorizeIdentity$ = computed(async (get) => {
@@ -4136,7 +4150,7 @@ interface ThreadRunPersistenceArgs {
   readonly chatThreadId: string;
   readonly agentRunMetadata: AgentRunMetadata;
   readonly modelSelection: ModelFirstPin;
-  readonly codexServiceTier?: "fast";
+  readonly codexServiceTier?: "fast" | "ultrafast";
   readonly queueFirstAssociation: QueueFirstRunAssociation;
   readonly timingDimensions: ApiDispatchTimingDimensions;
   readonly threadContinuation: PendingThreadContinuation;
@@ -4794,7 +4808,7 @@ interface ThreadRunArgs {
   readonly orgId: string;
   readonly userId: string;
   readonly piExecution: boolean;
-  readonly codexServiceTier?: "fast";
+  readonly codexServiceTier?: "fast" | "ultrafast";
   readonly agentRunMetadata: AgentRunMetadata;
   readonly queueFirstAssociation: QueueFirstRunAssociation;
   readonly prompt: string;

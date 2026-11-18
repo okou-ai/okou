@@ -106,6 +106,7 @@ fn runtime_for_command_test<'a>(
         codex_runtime_config: None,
         codex_oauth_mode: false,
         codex_fast_mode: false,
+        codex_ultrafast_mode: false,
         reasoning_effort: None,
         disable_builtin_web_search: false,
         agent_execution_deadline: None,
@@ -314,6 +315,19 @@ fn codex_service_tier_preserves_canonical_semantics() {
             expected_fast_mode,
         );
     }
+}
+
+#[test]
+fn codex_ultrafast_reaches_startup_config() {
+    let paths = crate::paths::GuestPaths::from_runtime_dir("/tmp/codex-ultrafast-config-test");
+    let config = guest_config_for_agent_context(HashMap::from([(
+        super::CODEX_SERVICE_TIER_CANONICAL_ENV.to_string(),
+        "ultrafast".to_string(),
+    )]));
+    let runtime = CliRuntimeConfig::from_config(&config, &paths, Instant::now()).unwrap();
+    let overrides = runtime.codex_startup_config_overrides();
+    assert!(overrides.contains(&r#"service_tier="ultrafast""#.to_string()));
+    assert!(!overrides.contains(&r#"service_tier="fast""#.to_string()));
 }
 
 #[test]

@@ -239,10 +239,12 @@ export function resolvePiAgentModel(
   | Model<"openai-completions">
   | Model<"openai-codex-responses">
   | null {
+  const serviceTier = config.serviceTier;
   if (
-    config.serviceTier !== undefined &&
-    config.serviceTier !==
-      (config.dialect === "openai-codex-responses" ? "fast" : "priority")
+    serviceTier !== undefined &&
+    (config.dialect === "openai-codex-responses"
+      ? serviceTier === "priority"
+      : serviceTier !== "priority")
   ) {
     return null;
   }

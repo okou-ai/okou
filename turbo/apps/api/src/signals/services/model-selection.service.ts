@@ -35,7 +35,7 @@ import {
 } from "./model-catalog.service";
 import {
   catalogModelForSelectedId,
-  isCatalogFastServiceTierSupported,
+  isCatalogCodexServiceTierSupported,
 } from "./model-route-capabilities.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
@@ -322,18 +322,23 @@ export function replacementSubscriptionRequired(
 export function validateCodexServiceTier(params: {
   readonly catalog: ModelCatalog;
   readonly pin: ModelFirstPin;
-  readonly codexServiceTier: "fast" | null;
+  readonly codexServiceTier: "fast" | "ultrafast" | null;
 }): ReturnType<typeof badRequestMessage> | undefined {
-  if (params.codexServiceTier !== "fast") {
+  if (params.codexServiceTier === null) {
     return undefined;
   }
-  return isCatalogFastServiceTierSupported(
+  return isCatalogCodexServiceTierSupported(
     params.catalog,
     params.pin.selectedModel,
+    params.codexServiceTier,
     params.pin.modelProviderType,
   )
     ? undefined
-    : badRequestMessage("Fast mode is unavailable for this model route");
+    : badRequestMessage(
+        params.codexServiceTier === "fast"
+          ? "Fast mode is unavailable for this model route"
+          : "Ultrafast is unavailable for this model route",
+      );
 }
 export function resolveQueuedModelSelectionPinFromSnapshot(params: {
   readonly catalog: ModelCatalog;

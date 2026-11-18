@@ -240,7 +240,8 @@ const threads$ = computed(async (get) => {
       updatedAt: t.updatedAt.toISOString(),
       pinnedAt: t.pinnedAt?.toISOString() ?? null,
       renamedAt: t.renamedAt?.toISOString() ?? null,
-      serviceTier: t.codexServiceTier === "fast" ? "priority" : null,
+      serviceTier:
+        t.codexServiceTier === "fast" ? "priority" : t.codexServiceTier,
     });
   });
   return {

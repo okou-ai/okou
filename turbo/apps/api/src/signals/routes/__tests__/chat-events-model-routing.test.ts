@@ -1,3 +1,7 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { http, HttpResponse } from "msw";
+import { server } from "../../../mocks/server";
 import { mockEnv } from "../../../lib/env";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { randomUUID } from "node:crypto";
@@ -13,6 +17,7 @@ import {
   CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
   type PromptMessage,
   executionEnvironment,
+  requireOrgId,
   userMessages,
 } from "./helpers/chat-events-fixture";
 
@@ -701,6 +706,59 @@ describe("CHAT-02: model-first routing", () => {
       }).length,
     ).toBeLessThanOrEqual(1);
     await cancelAndCompleteChatRun(actor, followUp.runId);
+  }, 90_000);
+
+  it("launches Ultrafast without probing the selected Codex subscription", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    await misc.upsertPersonalModelProvider(
+      actor,
+      {
+        type: "codex-oauth-token",
+        authMethod: "auth_json",
+        secrets: { CODEX_AUTH_JSON: codexAuthJson() },
+      },
+      [200, 201],
+    );
+    const findSol = async () => {
+      const { models } = await misc.listRunModels(actor);
+      return models.find((entry) => {
+        return entry.model === "gpt-6.1-sol";
+      });
+    };
+    expect((await findSol())?.subscriptionOptions).not.toHaveProperty(
+      "ultrafastAvailable",
+    );
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: requireOrgId(actor) },
+      { [FeatureSwitchKey.CodexSubscriptionUltrafast]: true },
+    );
+    let catalogRequests = 0;
+    server.use(
+      http.get("https://chatgpt.com/backend-api/codex/models", () => {
+        catalogRequests += 1;
+        return HttpResponse.json({ models: [] });
+      }),
+    );
+    expect((await findSol())?.subscriptionOptions).toMatchObject({
+      serviceTier: "priority",
+      ultrafastAvailable: true,
+    });
+    mockPiResourceArchiveDownloads(true);
+    mockPiObjectStore();
+    const run = await sendChatRun(actor, {
+      agentId,
+      model: "gpt-6.1-sol",
+      prompt: "Use Ultrafast",
+      runOptions: { codexServiceTier: "ultrafast" },
+    });
+    const { execution, sandboxHeaders } = await runExecution(run.runId);
+    expect(execution.cliAgentType).toBe("pi");
+    expect(execution.piModelConfig).toMatchObject({
+      serviceTier: "ultrafast",
+    });
+    expect(catalogRequests).toBe(0);
+    await cancelChatRun(actor, run.runId, sandboxHeaders);
   }, 90_000);
 
   it("passes Fast only on a supported personal Codex route", async () => {

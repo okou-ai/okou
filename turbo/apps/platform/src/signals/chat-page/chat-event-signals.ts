@@ -111,7 +111,7 @@ function createSendInputChatEvent({
               input.selectedModel,
               input.runOptions?.codexServiceTier === "fast"
                 ? "priority"
-                : undefined,
+                : input.runOptions?.codexServiceTier,
             )
           : input.userMessage;
       const optimisticUserMessage = input.source

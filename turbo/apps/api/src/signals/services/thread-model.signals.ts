@@ -84,7 +84,7 @@ export type QueuedModelContext =
       readonly pin: ModelFirstPin;
       readonly admissionError: ThreadModelError | undefined;
       readonly featureSwitchContext: FeatureSwitchContext;
-      readonly runCodexServiceTier: "fast" | undefined;
+      readonly runCodexServiceTier: "fast" | "ultrafast" | undefined;
       readonly reasoningEffort: ReasoningEffort | undefined;
       readonly builtInModelRuntimeRoute:
         BuiltInModelRuntimeRoute | null | undefined;
@@ -96,7 +96,7 @@ export interface ThreadModelSelection {
   readonly owner: { readonly userId: string; readonly orgId: string };
   readonly pin: ModelFirstPin;
   readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
-  readonly codexServiceTier: "fast" | undefined;
+  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
   readonly reasoningEffort: ReasoningEffort | undefined;
   readonly piExecution: boolean;
   /** The CLI runtime the run executes in; Pi when Pi execution applies. */

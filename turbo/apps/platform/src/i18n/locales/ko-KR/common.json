@@ -2481,9 +2481,11 @@
       "relatedArtifactCount_other": "{{formattedCount}}개의 아티팩트",
       "relatedArtifacts": "관련 아티팩트",
       "selectedModelAppliesAfterCurrentRun": "선택한 {{model}} 모델은 이번 실행 후에 적용됩니다",
+      "speedChangedTo": "속도가 {{speed}}(으)로 변경되었습니다",
       "thinking": {
         "default": "생각 중..."
       },
+      "ultrafastModelName": "{{model}} · Ultrafast",
       "viewActivityLogs": "활동 로그 보기",
       "viewLogs": "실행 로그 보기",
       "waitingIn": "대기 중",
@@ -5500,7 +5502,10 @@
         "models": "모델",
         "noConfiguredModels": "구성된 모델 없음",
         "pro": "프로",
-        "standard": "표준"
+        "speed": "속도",
+        "standard": "표준",
+        "ultrafast": "Ultrafast",
+        "ultrafastUsage": "Codex 사용 한도를 더 많이 소모합니다."
       },
       "reset": {
         "confirmDescription": "현재 사용량 창을 재설정하려면 Codex 재설정 1회를 사용하세요. 남은 횟수: {{remaining}}.",
