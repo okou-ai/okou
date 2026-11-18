@@ -558,7 +558,10 @@ function ComposerModelPanelTriggerLabel({
       )}
       {value.codexServiceTier === "ultrafast" && (
         <span className="hidden shrink-0 text-amber-600 composer-wide:inline dark:text-amber-300">
-          · {t(($) => $.settings.models.picker.ultrafast)}
+          ·{" "}
+          {t(($) => {
+            return $.settings.models.picker.ultrafast;
+          })}
         </span>
       )}
       {fast && (
@@ -593,7 +596,9 @@ export function ComposerModelPanel({
     value.codexServiceTier === "fast"
       ? fastLabel
       : value.codexServiceTier === "ultrafast"
-        ? t(($) => $.settings.models.picker.ultrafast)
+        ? t(($) => {
+            return $.settings.models.picker.ultrafast;
+          })
         : undefined,
   ]
     .filter(Boolean)

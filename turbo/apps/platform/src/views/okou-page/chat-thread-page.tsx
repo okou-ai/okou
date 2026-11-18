@@ -439,7 +439,12 @@ function runModelDisplayName(
   const model =
     catalog?.displayName(selection.selectedModel) ?? selection.selectedModel;
   if (selection.serviceTier === "ultrafast") {
-    return t(($) => $.chat.run.ultrafastModelName, { model });
+    return t(
+      ($) => {
+        return $.chat.run.ultrafastModelName;
+      },
+      { model },
+    );
   }
   return fastModeEnabled(selection)
     ? t(
@@ -3050,9 +3055,14 @@ function ChatThreadNextRunModelNotice({
     (selectedRunSelection.serviceTier === "ultrafast" ||
       runningSelection.serviceTier === "ultrafast")
   ) {
-    label = t(($) => $.chat.run.selectedModelAppliesAfterCurrentRun, {
-      model: runModelDisplayName(t, selectedRunSelection, catalog),
-    });
+    label = t(
+      ($) => {
+        return $.chat.run.selectedModelAppliesAfterCurrentRun;
+      },
+      {
+        model: runModelDisplayName(t, selectedRunSelection, catalog),
+      },
+    );
   } else if (
     fastModeEnabled(selectedRunSelection) !== fastModeEnabled(runningSelection)
   ) {
@@ -3299,13 +3309,24 @@ function modelChangeLabel(
   catalog: ModelCatalog | undefined,
 ): string {
   if (change.kind === "speed") {
-    return t(($) => $.chat.run.speedChangedTo, {
-      speed: change.ultrafast
-        ? t(($) => $.settings.models.picker.ultrafast)
-        : change.fast
-          ? t(($) => $.settings.models.picker.fast)
-          : t(($) => $.settings.models.picker.standard),
-    });
+    return t(
+      ($) => {
+        return $.chat.run.speedChangedTo;
+      },
+      {
+        speed: change.ultrafast
+          ? t(($) => {
+              return $.settings.models.picker.ultrafast;
+            })
+          : change.fast
+            ? t(($) => {
+                return $.settings.models.picker.fast;
+              })
+            : t(($) => {
+                return $.settings.models.picker.standard;
+              }),
+      },
+    );
   }
   return change.kind === "model"
     ? t(

@@ -228,7 +228,9 @@ export function ChatSpeedSetting({
   onChange: (selection: ModelProviderSelection) => void;
 }) {
   const { t } = useTranslation();
-  const label = t(($) => $.settings.models.picker.speed);
+  const label = t(($) => {
+    return $.settings.models.picker.speed;
+  });
   const speed = selection.codexServiceTier ?? "standard";
   return (
     <div className="border-t border-divider px-2 py-2">
@@ -249,22 +251,30 @@ export function ChatSpeedSetting({
         }}
       >
         <SegmentControlItem value="standard" className="flex-1">
-          {t(($) => $.settings.models.picker.standard)}
+          {t(($) => {
+            return $.settings.models.picker.standard;
+          })}
         </SegmentControlItem>
         {fastImpact !== null && (
           <SegmentControlItem value="fast" className="flex-1">
-            {t(($) => $.settings.models.picker.fast)}
+            {t(($) => {
+              return $.settings.models.picker.fast;
+            })}
           </SegmentControlItem>
         )}
         <SegmentControlItem value="ultrafast" className="flex-1">
-          {t(($) => $.settings.models.picker.ultrafast)}
+          {t(($) => {
+            return $.settings.models.picker.ultrafast;
+          })}
         </SegmentControlItem>
       </SegmentControl>
       {speed !== "standard" && (
         <div className="mt-1 text-[11px] text-gray-700">
           {speed === "fast"
             ? fastImpact
-            : t(($) => $.settings.models.picker.ultrafastUsage)}
+            : t(($) => {
+                return $.settings.models.picker.ultrafastUsage;
+              })}
         </div>
       )}
     </div>
