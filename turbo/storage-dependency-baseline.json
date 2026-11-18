@@ -31,16 +31,6 @@
       "dependency": "module:turbo/packages/db/src/schema/skill"
     },
     {
-      "file": "turbo/apps/api/src/signals/services/user-export-authorization.service.ts",
-      "uses": 5,
-      "dependency": "module:turbo/packages/db/src/schema/storage"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/user-export-durable.service.ts",
-      "uses": 4,
-      "dependency": "module:turbo/apps/api/src/signals/services/user-export-authorization.service"
-    },
-    {
       "file": "turbo/packages/db/scripts/migrations/025-presentation-template-copy/copy.ts",
       "dependency": "sql:storage_versions",
       "uses": 5
