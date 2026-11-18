@@ -1014,6 +1014,49 @@ describe("Pi 0.86.1 prompt cache warming", () => {
   );
 });
 
+describe("Pi Auto compaction settings", () => {
+  it.each([
+    { auto: true, withSnapshot: true, reserveTokens: 279_000 },
+    { auto: true, withSnapshot: false, reserveTokens: 279_000 },
+    { auto: false, withSnapshot: true, reserveTokens: 16_384 },
+  ])(
+    "resolves compaction with auto=$auto and snapshot=$withSnapshot",
+    async ({ auto, withSnapshot, reserveTokens }) => {
+      const root = await mkdtemp(join(tmpdir(), "pi-auto-compaction-"));
+      onTestFinished(async () => {
+        await rm(root, { recursive: true, force: true });
+      });
+      const created = await createPiAgentSessionForRuntime({
+        cwd: root,
+        agentDir: root,
+        sessionManager: SessionManager.inMemory(root, { id: randomUUID() }),
+        model: auto
+          ? {
+              ...LUNA_MODEL,
+              dialect: "openai-completions",
+              model: "@preset/custom-auto",
+              catalogModel: "auto",
+            }
+          : LUNA_MODEL,
+        appendSystemPrompt: null,
+        ...(withSnapshot ? { resourceSnapshot: EMPTY_RESOURCE_SNAPSHOT } : {}),
+      });
+      try {
+        expect(
+          created.services.settingsManager.getCompactionSettings(
+            created.session.model,
+          ),
+        ).toEqual({ enabled: true, reserveTokens, keepRecentTokens: 20_000 });
+        if (auto) {
+          expect(created.session.model?.contextWindow).toBe(1_000_000);
+        }
+      } finally {
+        created.session.dispose();
+      }
+    },
+  );
+});
+
 describe("Pi session preparation observability", () => {
   const SANDBOX_PHASES = [
     "resources_prompt",
