@@ -236,6 +236,33 @@ async function requireFeishuChatPosting(
   return denied();
 }
 
+async function requireFeishuChatBotMembership(
+  args: {
+    token: string;
+    base: string;
+    chat: zInfer<typeof chatSchema>;
+    groupOnly?: boolean;
+  },
+  signal: AbortSignal,
+): Promise<void> {
+  if (args.groupOnly && args.chat.chat_mode === "p2p") {
+    return denied();
+  }
+  // Reading chat metadata with a tenant token does not prove the bot joined.
+  if (args.chat.chat_mode !== "p2p") {
+    const present = parseAccessData(
+      object({ is_in_chat: boolean() }),
+      await readAccessData(
+        { token: args.token, url: new URL(`${args.base}/members/is_in_chat`) },
+        signal,
+      ),
+    );
+    if (!present.is_in_chat) {
+      return denied();
+    }
+  }
+}
+
 /** Group access and private reads require the caller; outbound DMs may target others. */
 export const requireFeishuConversationAccess$ = command(
   async (
@@ -339,24 +366,12 @@ export const requireFeishuConversationAccess$ = command(
       chatSchema,
       await readAccessData({ token, url: infoUrl }, signal),
     );
-    if (args.groupOnly && chat.chat_mode === "p2p") {
-      return denied();
-    }
+    await requireFeishuChatBotMembership(
+      { token, base, chat, groupOnly: args.groupOnly },
+      signal,
+    );
     if (args.write && chat.chat_mode === "p2p") {
       return;
-    }
-    // Reading chat metadata with a tenant token does not prove the bot joined.
-    if (chat.chat_mode !== "p2p") {
-      const present = parseAccessData(
-        object({ is_in_chat: boolean() }),
-        await readAccessData(
-          { token, url: new URL(`${base}/members/is_in_chat`) },
-          signal,
-        ),
-      );
-      if (!present.is_in_chat) {
-        return denied();
-      }
     }
     await requireFeishuChatMember(
       { token, base, openId: binding.openId },
