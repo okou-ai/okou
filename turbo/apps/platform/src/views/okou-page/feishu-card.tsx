@@ -58,6 +58,7 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES, type RoutePath } from "../../signals/route-paths.ts";
 import { writeToClipboard } from "../../signals/okou-page/clipboard.ts";
 import {
+  FeishuOfficialPopupBlockedError,
   feishuCustomEnabled$,
   feishuOfficialEnabled$,
   feishuOfficialData$,
@@ -1564,6 +1565,14 @@ function FeishuOfficialCard() {
           })}
         </Button>
       </div>
+      {connecting.state === "hasError" &&
+      connecting.error instanceof FeishuOfficialPopupBlockedError ? (
+        <p role="alert" className="px-5 pb-4 text-sm text-destructive">
+          {t(($) => {
+            return $.connectors.providerSettings.feishu.official.popupBlocked;
+          })}
+        </p>
+      ) : null}
     </section>
   );
 }

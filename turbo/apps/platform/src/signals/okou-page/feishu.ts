@@ -562,16 +562,23 @@ export const feishuOfficialData$ = computed(async (get) => {
   return (await accept(client.getStatus({}), [200])).body;
 });
 
+export class FeishuOfficialPopupBlockedError extends Error {
+  constructor() {
+    super(
+      i18n.t(($) => {
+        return $.connectors.providerSettings.feishu.official.popupBlocked;
+      }),
+    );
+    this.name = "FeishuOfficialPopupBlockedError";
+  }
+}
+
 export const connectFeishuOfficial$ = command(
   async ({ get }, signal: AbortSignal) => {
     signal.throwIfAborted();
     const popup = window.open("about:blank", "_blank");
     if (!popup) {
-      throw new Error(
-        i18n.t(($) => {
-          return $.connectors.providerSettings.feishu.official.popupBlocked;
-        }),
-      );
+      throw new FeishuOfficialPopupBlockedError();
     }
     popup.opener = null;
     const close = () => {

@@ -127,4 +127,19 @@ describe("official Feishu connection", () => {
     expect(getAction("button", "Connect", official)).toBeEnabled();
     expect(queryAction("link", "Add bot")).toBeNull();
   });
+  it("explains how to continue when the browser blocks the authorization tab", async () => {
+    mockOfficial(true);
+    context.mocks.browser.open(null);
+    await setup();
+    const official = await screen.findByRole("region", {
+      name: "Okou Official",
+    });
+    click(getAction("button", "Connect", official));
+    await expect(
+      within(official).findByText(
+        "Allow pop-ups to connect your Feishu account.",
+      ),
+    ).resolves.toBeInTheDocument();
+    expect(getAction("button", "Connect", official)).toBeEnabled();
+  });
 });
