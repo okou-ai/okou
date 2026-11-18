@@ -11,15 +11,25 @@ import stat
 import uuid
 
 
-def regular(path, limit):
+def regular(
+    path,
+    limit,
+    *,
+    nonregular_message="original evidence must be a regular file",
+    oversize_message="original evidence exceeded its bound",
+):
     """Read bounded original evidence without following links or blocking on a special file."""
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    with os.fdopen(fd, "rb") as stream:
-        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
-            raise ValueError("original evidence must be a regular file")
-        raw = stream.read(limit+1)
+    try:
+        # Stream construction can fail before taking ownership of the descriptor.
+        with os.fdopen(fd, "rb", closefd=False) as stream:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise ValueError(nonregular_message)
+            raw = stream.read(limit + 1)
+    finally:
+        os.close(fd)
     if len(raw) > limit:
-        raise ValueError("original evidence exceeded its bound")
+        raise ValueError(oversize_message)
     return raw
 
 
@@ -47,14 +57,15 @@ def validate_snapshot_preparation(directory, artifacts):
         return result
 
     try:
-        fd = os.open(directory / "snapshot-preparation.json", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-        with os.fdopen(fd, "rb") as stream:
-            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
-                raise ValueError("snapshot preparation record is not a regular file")
-            raw = stream.read(65537)
+        raw = regular(
+            directory / "snapshot-preparation.json",
+            65536,
+            nonregular_message="snapshot preparation record is not a regular file",
+            oversize_message="snapshot preparation record hash or size mismatch",
+        )
     except OSError as error:
         raise ValueError("snapshot preparation record is unavailable") from error
-    if len(raw) > 65536 or hashlib.sha256(raw).hexdigest() != artifacts["snapshot_preparation_sha256"]:
+    if hashlib.sha256(raw).hexdigest() != artifacts["snapshot_preparation_sha256"]:
         raise ValueError("snapshot preparation record hash or size mismatch")
     record = json.loads(raw, object_pairs_hook=unique_fields)
     if not isinstance(record, dict) or set(record) != {
