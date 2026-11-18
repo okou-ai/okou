@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.109.108](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.107...guest-agent-v0.109.108) (2026-11-18)
+
+
+### Bug Fixes
+
+* **pi:** preserve rpc input ownership through settlement ([#48564](https://github.com/okou-ai/okou/issues/48564)) ([cf45a8a](https://github.com/okou-ai/okou/commit/cf45a8a087521126c8fe79e8e3bae4f39d62eb37))
+
 ## [0.109.107](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.106...guest-agent-v0.109.107) (2026-11-18)
 
 ## [0.109.106](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.105...guest-agent-v0.109.106) (2026-11-18)

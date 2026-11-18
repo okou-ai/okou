@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.48.6](https://github.com/okou-ai/okou/compare/ios-v0.48.5...ios-v0.48.6) (2026-11-18)
+
+
+### Bug Fixes
+
+* **ios:** synchronize composer expansion with the keyboard ([#48650](https://github.com/okou-ai/okou/issues/48650)) ([051df79](https://github.com/okou-ai/okou/commit/051df795abeb15c4ce942e70a4d668f27f8f5600))
+
+
+### Refactoring
+
+* **ios:** limit type nesting to two levels ([#48654](https://github.com/okou-ai/okou/issues/48654)) ([4f801bd](https://github.com/okou-ai/okou/commit/4f801bdddecbe98866fa84819829f991efe924bb))
+
 ## [0.48.5](https://github.com/okou-ai/okou/compare/ios-v0.48.4...ios-v0.48.5) (2026-11-18)
 
 

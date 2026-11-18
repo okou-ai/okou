@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.0](https://github.com/okou-ai/okou/compare/android-v0.21.1...android-v0.22.0) (2026-11-18)
+
+
+### Features
+
+* **android:** unify compact workspace navigation ([#48676](https://github.com/okou-ai/okou/issues/48676)) ([e9d5d0c](https://github.com/okou-ai/okou/commit/e9d5d0c4bae85b380fb7ae37a8ef03b6ef4d466b))
+
 ## [0.21.1](https://github.com/okou-ai/okou/compare/android-v0.21.0...android-v0.21.1) (2026-11-18)
 
 
