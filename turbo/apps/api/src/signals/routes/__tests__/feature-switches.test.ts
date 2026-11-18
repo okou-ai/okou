@@ -63,7 +63,36 @@ describe("/api/feature-switches", () => {
     });
   });
 
-  it("keeps presentation format private to its owner despite a peer's stored opt-in", async () => {
+  it("enables presentation format for staff with personal opt-out overrides", async () => {
+    const clerk = createRouteMocks(context).clerk;
+    const headers = { authorization: "Bearer clerk-session" };
+    const orgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
+    const userId = `user_${randomUUID()}`;
+    const key = FeatureSwitchKey.PresentationOutputFormat;
+
+    clerk.session(userId, orgId, "org:member");
+    const initial = await accept(client().get({ headers }), [200]);
+    expect(initial.body.effectiveSwitches).toMatchObject({ [key]: true });
+
+    const optedOut = await accept(
+      client().update({ headers, body: { switches: { [key]: false } } }),
+      [200],
+    );
+    expect(optedOut.body.effectiveSwitches).toMatchObject({ [key]: false });
+    const retained = await accept(client().get({ headers }), [200]);
+    expect(retained.body.effectiveSwitches).toMatchObject({ [key]: false });
+
+    clerk.session(`user_${randomUUID()}`, orgId, "org:member");
+    const peer = await accept(client().get({ headers }), [200]);
+    expect(peer.body.effectiveSwitches).toMatchObject({ [key]: true });
+
+    clerk.session(userId, orgId, "org:member");
+    await accept(client().delete({ headers }), [200]);
+    const reset = await accept(client().get({ headers }), [200]);
+    expect(reset.body.effectiveSwitches).toMatchObject({ [key]: true });
+  });
+
+  it("keeps presentation format unavailable to external peers despite a stored opt-in", async () => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };
     const orgId = `org_${randomUUID()}`;
