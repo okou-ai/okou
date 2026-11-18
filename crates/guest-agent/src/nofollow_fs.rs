@@ -185,25 +185,11 @@ impl Dir {
     pub(crate) fn rename_child(&self, from: &OsStr, to: &OsStr) -> io::Result<()> {
         let from = child_name_c_string(from)?;
         let to = child_name_c_string(to)?;
-        // SAFETY: both names are validated basenames and the same live parent
-        // descriptor anchors source and destination.
-        let result = unsafe {
-            libc::renameat(
-                self.0.as_raw_fd(),
-                from.as_ptr(),
-                self.0.as_raw_fd(),
-                to.as_ptr(),
-            )
-        };
-        if result == 0 {
-            Ok(())
-        } else {
-            Err(io::Error::last_os_error())
-        }
+        rustix::fs::renameat(&self.0, from.as_c_str(), &self.0, to.as_c_str()).map_err(Into::into)
     }
 
     pub(crate) fn unlink_child_file(&self, name: &OsStr) -> io::Result<()> {
-        unlink_child(&self.0, name, 0)
+        unlink_child(&self.0, name, AtFlags::empty())
     }
 
     pub(crate) fn remove_children_except(
@@ -401,7 +387,7 @@ impl Dir {
                     if !keep_going()? {
                         return Ok(());
                     }
-                    if unlink_child_if_present(&self.0, &name, libc::AT_REMOVEDIR)? {
+                    if unlink_child_if_present(&self.0, &name, AtFlags::REMOVEDIR)? {
                         *removed = removed.saturating_add(1);
                     }
                 }
@@ -414,7 +400,7 @@ impl Dir {
                     if !keep_going()? {
                         return Ok(());
                     }
-                    if unlink_child_if_present(&self.0, &name, 0)? {
+                    if unlink_child_if_present(&self.0, &name, AtFlags::empty())? {
                         *removed = removed.saturating_add(1);
                     }
                 }
@@ -476,27 +462,13 @@ fn child_name_c_string(name: &OsStr) -> io::Result<CString> {
 }
 
 #[cfg(target_os = "linux")]
-fn unlink_child(parent: &File, name: &OsStr, flags: i32) -> io::Result<()> {
-    let bytes = name.as_bytes();
-    if bytes.is_empty() || bytes == b"." || bytes == b".." || bytes.contains(&b'/') {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "child name must be a non-empty basename",
-        ));
-    }
-    let name = CString::new(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-    // SAFETY: the parent is a live directory descriptor, `name` is a
-    // NUL-terminated basename, and `flags` is either zero or AT_REMOVEDIR.
-    let result = unsafe { libc::unlinkat(parent.as_raw_fd(), name.as_ptr(), flags) };
-    if result == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::last_os_error())
-    }
+fn unlink_child(parent: &File, name: &OsStr, flags: AtFlags) -> io::Result<()> {
+    let name = child_name_c_string(name)?;
+    rustix::fs::unlinkat(parent, name.as_c_str(), flags).map_err(Into::into)
 }
 
 #[cfg(target_os = "linux")]
-fn unlink_child_if_present(parent: &File, name: &OsStr, flags: i32) -> io::Result<bool> {
+fn unlink_child_if_present(parent: &File, name: &OsStr, flags: AtFlags) -> io::Result<bool> {
     match unlink_child(parent, name, flags) {
         Ok(()) => Ok(true),
         Err(error) if error.raw_os_error() == Some(libc::ENOENT) => Ok(false),

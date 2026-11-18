@@ -14,8 +14,6 @@ use std::ffi::CString;
 #[cfg(unix)]
 use std::io::Read;
 #[cfg(unix)]
-use std::os::fd::AsRawFd;
-#[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
@@ -470,16 +468,10 @@ impl StoreDir {
 
     fn open_or_create_child_dir(&self, name: &OsStr) -> io::Result<Self> {
         let name = cstring_child_name(name)?;
-        // SAFETY: `self.file` is an open directory fd, `name` is a validated
-        // NUL-terminated basename, and `mkdirat` does not retain pointers.
-        let mkdir_result = unsafe { libc::mkdirat(self.file.as_raw_fd(), name.as_ptr(), 0o700) };
-        if mkdir_result < 0 {
-            let err = io::Error::last_os_error();
-            if err.kind() != io::ErrorKind::AlreadyExists {
-                return Err(err);
-            }
+        match nix::sys::stat::mkdirat(&self.file, name.as_c_str(), nix::sys::stat::Mode::S_IRWXU) {
+            Ok(()) | Err(nix::errno::Errno::EEXIST) => self.open_child_dir_by_cstr(&name),
+            Err(error) => Err(error.into()),
         }
-        self.open_child_dir_by_cstr(&name)
     }
 
     fn open_child_dir_by_cstr(&self, name: &CString) -> io::Result<Self> {
@@ -565,31 +557,18 @@ impl StoreDir {
     fn rename_child(&self, from: &OsStr, to: &OsStr) -> io::Result<()> {
         let from = cstring_child_name(from)?;
         let to = cstring_child_name(to)?;
-        // SAFETY: both directory fds are the same open directory fd, and both
-        // names are validated NUL-terminated child basenames.
-        let result = unsafe {
-            libc::renameat(
-                self.file.as_raw_fd(),
-                from.as_ptr(),
-                self.file.as_raw_fd(),
-                to.as_ptr(),
-            )
-        };
-        if result < 0 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(())
+        nix::fcntl::renameat(&self.file, from.as_c_str(), &self.file, to.as_c_str())
+            .map_err(Into::into)
     }
 
     fn unlink_child_file(&self, name: &OsStr) -> io::Result<()> {
         let name = cstring_child_name(name)?;
-        // SAFETY: `self.file` is an open directory fd and `name` is a validated
-        // NUL-terminated child basename.
-        let result = unsafe { libc::unlinkat(self.file.as_raw_fd(), name.as_ptr(), 0) };
-        if result < 0 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(())
+        nix::unistd::unlinkat(
+            &self.file,
+            name.as_c_str(),
+            nix::unistd::UnlinkatFlags::NoRemoveDir,
+        )
+        .map_err(Into::into)
     }
 }
 
