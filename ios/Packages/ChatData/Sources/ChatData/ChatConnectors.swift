@@ -375,7 +375,7 @@ public struct ChatConnectorService: Sendable {
     if let slug = status.target.connectorSlug, let method {
       let body = Body(
         account: account, agentId: status.chatAccountAccess ? nil : action.agentID,
-        authorizeAgent: !status.chatAccountAccess, authMethod: method.id,
+        authorizeAgent: status.chatAccountAccess ? nil : true, authMethod: method.id,
         values: method.grantKind == "manual" ? values : nil,
         options: method.grantKind == "device-auth" ? options : nil)
       let data = try JSONEncoder().encode(body)
