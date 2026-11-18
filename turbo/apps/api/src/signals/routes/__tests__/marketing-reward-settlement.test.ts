@@ -160,7 +160,7 @@ async function completedWorkflow(
   return { actor, executor, workflowId, intent };
 }
 
-test("authenticates the dedicated financial capability and binds the immutable environment and terms before lookup", async () => {
+test("authenticates the dedicated financial capability and binds the immutable environment and terms before settling", async () => {
   const api = client();
   const body = missingIntent();
   for (const credential of [
@@ -169,16 +169,14 @@ test("authenticates the dedicated financial capability and binds the immutable e
     "read-only-receipt-secret",
     "source-intake-secret",
   ]) {
-    for (const operation of [api.settle, api.lookup]) {
-      const result = await operation({
-        body,
-        headers: { authorization: `Bearer ${credential}` },
-      });
-      expect(result.status).toBe(401);
-      expect(result.headers.get("cache-control")).toBe("no-store");
-    }
+    const result = await api.settle({
+      body,
+      headers: { authorization: `Bearer ${credential}` },
+    });
+    expect(result.status).toBe(401);
+    expect(result.headers.get("cache-control")).toBe("no-store");
   }
-  expect((await api.lookup({ body, headers })).status).toBe(404);
+  expect((await api.settle({ body, headers })).status).toBe(404);
   expect(
     (await api.settle({ body: { ...body, orgId: "forged-org" }, headers }))
       .status,
@@ -225,7 +223,7 @@ test("selects one original creator's writer, fences concurrent legacy review, an
       [200],
     ),
   ]);
-  const first = await accept(api.lookup({ body: intent, headers }), [200]);
+  const first = await accept(api.settle({ body: intent, headers }), [200]);
   expect(first.body.receipt).toMatchObject({
     status: "granted",
     orgId: actor.orgId,
@@ -244,9 +242,6 @@ test("selects one original creator's writer, fences concurrent legacy review, an
   );
   expect(
     (await accept(api.settle({ body: intent, headers }), [200])).body,
-  ).toStrictEqual(first.body);
-  expect(
-    (await accept(api.lookup({ body: intent, headers }), [200])).body,
   ).toStrictEqual(first.body);
   mockEnv("MARKETING_REWARDS_ROUTING", undefined);
   expect((await readGetStartedStatus(context, actor)).quests).toContainEqual(
@@ -287,7 +282,6 @@ test("rejects caller-chosen recipients, sources and amounts even when the caller
       earnedCredits: 0,
     }),
   );
-  expect((await api.lookup({ body: intent, headers })).status).toBe(202);
 });
 
 test("returns a prior OAuth award by the complete request after a lost response without funding the reconnect or extending expiry", async () => {
@@ -327,7 +321,7 @@ test("returns a prior OAuth award by the complete request after a lost response 
     completedAt: fact.occurredAt,
   });
   const api = client();
-  const original = await accept(api.lookup({ body: intent, headers }), [200]);
+  const original = await accept(api.settle({ body: intent, headers }), [200]);
   expect(original.body.receipt).toMatchObject({
     status: "granted",
     rewardAmount: 100,
@@ -419,7 +413,7 @@ test("preserves one user's ten-connector cap when Marketing settles real source 
     });
     const result = await accept(api.settle({ body: intent, headers }), [200]);
     expect(
-      (await accept(api.lookup({ body: intent, headers }), [200])).body,
+      (await accept(api.settle({ body: intent, headers }), [200])).body,
     ).toStrictEqual(result.body);
     outcomes.push(result.body.receipt.status);
   }
@@ -489,7 +483,7 @@ test("recovers the original iMessage and organization Slack receipts without rep
       rewardAmount: slack ? 2000 : 1000,
       completedAt: fact.occurredAt,
     });
-    const original = await accept(api.lookup({ body: intent, headers }), [200]);
+    const original = await accept(api.settle({ body: intent, headers }), [200]);
     expect(original.body.receipt).toMatchObject({
       status: "granted",
       rewardKey,
@@ -571,10 +565,6 @@ test.each(["user", "org"] as const)(
         rewardAmount: slack ? 2000 : 1000,
         completedAt: fact.occurredAt,
       });
-      const lookup = await api.lookup({ body: intent, headers });
-      expect(lookup.status).toBe(
-        rewardTarget === target ? (slack ? 202 : 404) : 200,
-      );
       const granted = await accept(
         api.settle({ body: intent, headers }),
         [200],
@@ -688,7 +678,6 @@ test("captures a signed acceptance without legacy funding and settles the select
     completedAt: fact.occurredAt,
   });
   const api = client();
-  expect((await api.lookup({ body: intent, headers })).status).toBe(202);
   const original = await accept(api.settle({ body: intent, headers }), [200]);
   expect(original.body.receipt).toMatchObject({
     id: claimId,

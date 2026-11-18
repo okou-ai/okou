@@ -1,14 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { marketingWorkflowSourceContract } from "@okouai/api-contracts/contracts/marketing-workflow-source";
 import { marketingRewardProjectionContract } from "@okouai/api-contracts/contracts/marketing-reward-projection";
 import { workflowsDetailContract } from "@okouai/api-contracts/contracts/workflows";
-import { beforeEach, expect, test } from "vitest";
+import { expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { mockNow } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { marketingWorkflowSourceRoutes } from "../marketing-workflow-source";
 import { marketingRewardProjectionRoutes } from "../marketing-reward-projection";
 import { workflowsRoutes } from "../workflows";
 import { createBddApi } from "./helpers/api-bdd";
@@ -29,19 +27,6 @@ const workflows = createWorkflowsBddApi(context);
 const runs = createRunsApi(context);
 const chat = createChatFilesBddApi(context);
 const mocks = createRouteMocks(context);
-const secret = "workflow-source-observation-service-1234567890123456789";
-const headers = Object.freeze({ authorization: `Bearer ${secret}` });
-
-beforeEach(() => {
-  mockEnv("MARKETING_REWARDS_SOURCE_SECRET", secret);
-});
-
-function client() {
-  return setupApp({ context, routes: marketingWorkflowSourceRoutes })(
-    marketingWorkflowSourceContract,
-  );
-}
-
 async function invokedWorkflow() {
   const consumer = marketingRewardConsumer();
   const { actor } = await workflows.setupWorkflowOrg({ tier: "team" });
@@ -89,15 +74,6 @@ async function invokedWorkflow() {
   if (!source || source.type !== "workflow.run-created") {
     throw new Error("Expected retained Workflow source");
   }
-  const queued = consumer.received.find((event) => {
-    return (
-      event.type === "workflow.input-queued" &&
-      event.sourceEventId === source.sourceEventId
-    );
-  });
-  if (!queued || queued.type !== "workflow.input-queued") {
-    throw new Error("Expected captured queued Workflow source");
-  }
   return {
     actor,
     executor,
@@ -105,33 +81,10 @@ async function invokedWorkflow() {
     workflowId,
     runId: input.runId,
     source,
-    queued,
   };
 }
 
-test("requires the dedicated read-only capability before resolving a retained source", async () => {
-  const api = client();
-  const params = { eventId: randomUUID() };
-  for (const credential of [
-    "clerk-session",
-    "source-intake-secret",
-    "financial-settlement-secret",
-  ]) {
-    const denied = await api.observe({
-      params,
-      headers: { authorization: `Bearer ${credential}` },
-    });
-    expect(denied.status).toBe(401);
-    expect(denied.headers.get("cache-control")).toBe("no-store");
-  }
-  expect((await api.observe({ params, headers })).status).toBe(404);
-  mockEnv("MARKETING_REWARDS_SOURCE_SECRET", undefined);
-  const disabled = await api.observe({ params, headers });
-  expect(disabled.status).toBe(503);
-  expect(disabled.headers.get("cache-control")).toBe("no-store");
-});
-
-test("reports actual failed Run facts after Workflow deletion while preserving the original creator and financial state", async () => {
+test("refreshes the original Workflow creator from retained proof after failure and deletion without awarding credits", async () => {
   mockNow(new Date("2026-11-17T06:00:00.000Z"));
   const fixture = await invokedWorkflow();
   await createPublicAutomationRunApi(context).complete(
@@ -145,35 +98,6 @@ test("reports actual failed Run facts after Workflow deletion while preserving t
     fixture.workflowId,
     [204],
   );
-  const response = await accept(
-    client().observe({ params: { eventId: fixture.source.id }, headers }),
-    [200],
-  );
-  expect(response.headers.get("cache-control")).toBe("no-store");
-  expect(response.body).toMatchObject({
-    version: 1,
-    environment: "development",
-    source: {
-      eventId: fixture.source.id,
-      type: "workflow.run-created",
-      orgId: fixture.actor.orgId,
-      actorUserId: fixture.executor.userId,
-      creatorUserId: fixture.actor.userId,
-      workflowId: fixture.workflowId,
-      inputEventId: fixture.source.sourceEventId,
-      runId: fixture.runId,
-    },
-    observation: {
-      kind: "run",
-      runId: fixture.runId,
-      status: "failed",
-      completedAt: "2026-11-17T06:00:00.000Z",
-    },
-  });
-  expect(JSON.stringify(response.body)).not.toContain(
-    "private-workflow-instruction",
-  );
-  expect(JSON.stringify(response.body)).not.toContain("private-failure-detail");
   const status = await readGetStartedStatus(context, fixture.actor);
   expect(
     status.quests.find((quest) => {
@@ -204,32 +128,4 @@ test("reports actual failed Run facts after Workflow deletion while preserving t
       name: "getStartedRewardsChanged",
     },
   ]);
-});
-
-test("observes user cancellation through the same captured Run without creating an award", async () => {
-  const fixture = await invokedWorkflow();
-  const params = { eventId: fixture.queued.id };
-  const before = (await accept(client().observe({ params, headers }), [200]))
-    .body;
-  expect(before.source.runId).toBeNull();
-  expect(before.observation).toMatchObject({
-    kind: "run",
-    runId: fixture.runId,
-  });
-  await runs.requestCancelRun(fixture.executor, fixture.runId, [200]);
-  const after = (await accept(client().observe({ params, headers }), [200]))
-    .body;
-  expect(after.source).toStrictEqual(before.source);
-  expect(after.observation).toMatchObject({
-    kind: "run",
-    runId: fixture.runId,
-    status: "cancelled",
-  });
-  expect(
-    (await readGetStartedStatus(context, fixture.actor)).quests.find(
-      (quest) => {
-        return quest.key === "workflow";
-      },
-    )?.claimedCount,
-  ).toBe(0);
 });

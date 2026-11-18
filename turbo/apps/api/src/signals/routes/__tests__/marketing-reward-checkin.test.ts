@@ -123,7 +123,7 @@ test("recovers the original check-in day and financial receipt across UTC rollov
   const financialHeaders = { authorization: `Bearer ${secret}` };
   const original = (
     await accept(
-      financial.lookup({ body: intent, headers: financialHeaders }),
+      financial.settle({ body: intent, headers: financialHeaders }),
       [200],
     )
   ).body;

@@ -124,13 +124,4 @@ export const marketingRewardSettlementContract = initContract().router({
     summary:
       "Settle a source-proven campaign request with a dedicated service credential",
   },
-  lookup: {
-    method: "POST",
-    path: "/api/internal/marketing/get-started/settlements/lookup",
-    headers: authHeadersSchema,
-    body: marketingRewardIntentSchema,
-    responses,
-    summary:
-      "Recover the original financial outcome of the same immutable campaign request",
-  },
 });
