@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.22.1...runner-executor-v0.22.2) (2026-11-18)
+
+
+### Performance Improvements
+
+* **api:** remove execution-startup secret encryption ([#48677](https://github.com/okou-ai/okou/issues/48677)) ([ffad11e](https://github.com/okou-ai/okou/commit/ffad11eaaca4de2da2218225794d16f39c2b7796))
+
 ## [0.22.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.22.0...runner-executor-v0.22.1) (2026-11-18)
 
 ## [0.22.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.55...runner-executor-v0.22.0) (2026-11-18)
