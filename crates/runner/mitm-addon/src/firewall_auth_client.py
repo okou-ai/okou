@@ -73,7 +73,6 @@ import mitmproxy_rs
 import platform_api
 import platform_http_pool
 from aws_sigv4 import AwsSigV4Credentials
-from platform_http_pool import ConnectedStream as _ConnectedStream
 
 MAX_FIREWALL_AUTH_RESPONSE_BODY_BYTES = 256 * 1024
 _MAX_CLOUDFLARE_TOKEN_LENGTH = 4096
@@ -659,7 +658,7 @@ async def _open_stream(
     plan: _ConnectionPlan,
     progress: _FirewallAuthFetchProgress,
     tls_context: ssl.SSLContext | None,
-) -> _ConnectedStream:
+) -> platform_http_pool.ConnectedStream:
     progress.phase = FirewallAuthFetchPhase.DNS
     addresses = await _resolve_addresses(plan.connect_host, plan.connect_port)
     progress.phase = FirewallAuthFetchPhase.CONNECT
@@ -684,7 +683,7 @@ async def _open_stream(
     except BaseException:
         _abort_socket(sock)
         raise
-    return _ConnectedStream(reader, writer, sock)
+    return platform_http_pool.ConnectedStream(reader, writer, sock)
 
 
 def _request_headers(
@@ -772,12 +771,17 @@ async def _perform_http_request(
     progress: _FirewallAuthFetchProgress,
 ) -> _HttpResponse:
     pools = _get_connection_pools()
-    generation = pools.acquire_generation()
     # Paths and application auth are request-local. Proxy credentials and TLS
     # trust belong to connection identity and must never cross pooled routes.
     tls_context = _get_https_context() if plan.origin_scheme == "https" else None
     key = (replace(plan, request_target=""), tls_context)
-    pooled = generation.take(key)
+    while True:
+        generation = pools.acquire_generation()
+        pooled = await generation.take(key)
+        if not generation.retired:
+            break
+        if pooled is not None:
+            pooled.close(generation.loop)
     try:
         if pooled is None:
             stream = await _open_stream(plan, progress, tls_context)
@@ -810,9 +814,7 @@ async def _perform_http_request(
             stream.socket.close()
         return response
     except BaseException as exc:
-        if isinstance(exc, ConnectionResetError) or (
-            isinstance(exc, OSError) and exc.errno == errno.ECONNRESET
-        ):
+        if platform_http_pool.is_connection_reset(exc):
             pools.retire(generation)
         if pooled is not None:
             pooled.close(generation.loop)

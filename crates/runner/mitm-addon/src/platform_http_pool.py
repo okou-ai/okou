@@ -1,6 +1,7 @@
 """Bounded HTTP/1 idle reuse; active leases outlive a retired generation."""
 
 import asyncio
+import errno
 import socket
 from collections.abc import Hashable
 from contextlib import suppress
@@ -49,7 +50,14 @@ class HttpConnection:
 class _IdleConnection:
     key: Hashable = field(repr=False)
     connection: HttpConnection = field(repr=False)
+    probe: asyncio.Task[bytes] = field(repr=False)
     expiry: asyncio.TimerHandle | None = None
+
+
+def is_connection_reset(error: BaseException | None) -> bool:
+    return isinstance(error, ConnectionResetError) or (
+        isinstance(error, OSError) and error.errno == errno.ECONNRESET
+    )
 
 
 class PoolGeneration:
@@ -59,12 +67,28 @@ class PoolGeneration:
         self._idle: list[_IdleConnection] = []
 
     def _discard(self, idle: _IdleConnection) -> None:
+        # The idle reader and expiry callback may both become ready before
+        # either observes borrowing or retirement.
+        if idle not in self._idle:
+            return
         self._idle.remove(idle)
         if idle.expiry is not None:
             idle.expiry.cancel()
+        if not self.loop.is_closed():
+            idle.probe.cancel()
         idle.connection.close(self.loop)
 
-    def take(self, key: Hashable) -> HttpConnection | None:
+    def _probe_finished(self, idle: _IdleConnection) -> None:
+        error = None if idle.probe.cancelled() else idle.probe.exception()
+        if idle not in self._idle:
+            return
+        if is_connection_reset(error):
+            self.retire()
+        else:
+            # EOF or unsolicited bytes cannot be the next request's response.
+            self._discard(idle)
+
+    async def take(self, key: Hashable) -> HttpConnection | None:
         for idle in reversed(self._idle):
             if idle.key != key:
                 continue
@@ -72,7 +96,25 @@ class PoolGeneration:
             if idle.expiry is not None:
                 idle.expiry.cancel()
             connection = idle.connection
-            if not connection.stream.reader.at_eof() and not connection.stream.writer.is_closing():
+            idle.probe.cancel()
+            try:
+                outcome = (await asyncio.gather(idle.probe, return_exceptions=True))[0]
+            except BaseException:
+                connection.close(self.loop)
+                raise
+            error = connection.stream.reader.exception()
+            if is_connection_reset(error) or (
+                isinstance(outcome, BaseException) and is_connection_reset(outcome)
+            ):
+                connection.close(self.loop)
+                self.retire()
+                return None
+            if (
+                isinstance(outcome, asyncio.CancelledError)
+                and error is None
+                and not connection.stream.reader.at_eof()
+                and not connection.stream.writer.is_closing()
+            ):
                 return connection
             connection.close(self.loop)
         return None
@@ -83,8 +125,10 @@ class PoolGeneration:
         connection.protocol.start_next_cycle()
         if len(self._idle) >= MAX_IDLE_CONNECTIONS:
             self._discard(self._idle[0])
-        idle = _IdleConnection(key, connection)
+        probe = asyncio.create_task(connection.stream.reader.read(1), eager_start=True)
+        idle = _IdleConnection(key, connection, probe)
         self._idle.append(idle)
+        probe.add_done_callback(lambda _task: self._probe_finished(idle))
         idle.expiry = self.loop.call_later(IDLE_LIFETIME_SECONDS, self._discard, idle)
         return True
 
@@ -103,6 +147,8 @@ class ConnectionPools:
     def acquire_generation(self) -> PoolGeneration:
         if self.closed:
             raise RuntimeError("Platform HTTP transport is closed")
+        if self.current.retired:
+            self.current = PoolGeneration(self.loop)
         return self.current
 
     def retire(self, failed: PoolGeneration) -> None:

@@ -130,7 +130,10 @@ async def test_auth_and_registration_reuse_connection_without_sharing_request_au
         await asyncio.wait_for(peer.closed[0].wait(), 2)
 
 
-async def test_reset_retires_idle_siblings_and_drains_headers_body_and_late_failure():
+@pytest.mark.parametrize("tls", [False, True], ids=["http", "https"])
+async def test_reset_retires_idle_siblings_and_drains_headers_body_and_late_failure(
+    tmp_path, monkeypatch, tls: bool
+):
     gates = {path: asyncio.Event() for path in ["/headers", "/body", "/reset", "/late"]}
     body_started = asyncio.Event()
 
@@ -152,8 +155,13 @@ async def test_reset_retires_idle_siblings_and_drains_headers_body_and_late_fail
         return await _reply_success(_identity, request, writer)
 
     peer = _Peer(reply)
-    async with _run_test_server(peer.serve) as port:
-        origin = f"http://127.0.0.1:{port}"
+    context = None
+    if tls:
+        context, ca = _create_tls_server(tmp_path)
+        monkeypatch.setenv("SSL_CERT_FILE", str(ca))
+        monkeypatch.setenv("SSL_CERT_DIR", "")
+    async with _run_test_server(peer.serve, ssl_context=context) as port:
+        origin = f"{'https://localhost' if tls else 'http://127.0.0.1'}:{port}"
         async with asyncio.TaskGroup() as tasks:
             headers = tasks.create_task(_send(origin, "/headers"))
             body = tasks.create_task(_send(origin, "/body"))
@@ -350,3 +358,38 @@ async def test_origin_and_proxy_credentials_partition_connections(monkeypatch):
             second.requests[1][1].headers["proxy-authorization"]
             != second.requests[2][1].headers["proxy-authorization"]
         )
+
+
+@pytest.mark.parametrize("fault", ["reset", "unsolicited-data"])
+async def test_idle_peer_fault_is_observed_before_next_dispatch(fault):
+    release_fault = asyncio.Event()
+
+    async def reply(identity, request, writer):
+        await _reply_success(identity, request, writer)
+        await release_fault.wait()
+        if fault == "reset":
+            _reset(writer)
+            return False
+        writer.write(b"unsolicited-next-response")
+        await writer.drain()
+        return True
+
+    faulty = _Peer(reply)
+    healthy = _Peer()
+    async with _run_test_server(faulty.serve) as a, _run_test_server(healthy.serve) as b:
+        await _send(f"http://127.0.0.1:{a}", "/idle-fault")
+        origin = f"http://127.0.0.1:{b}"
+        await _send(origin, "/idle-sibling")
+        release_fault.set()
+        if fault == "reset":
+            # The idle reset must retire its whole generation even though no
+            # new request is currently reading from the failed connection.
+            await asyncio.wait_for(healthy.closed[0].wait(), 2)
+        else:
+            await asyncio.wait_for(faulty.closed[0].wait(), 2)
+            assert not healthy.closed[0].is_set()
+        await _send(origin, "/after-fault")
+        assert [identity for identity, _ in healthy.requests] == (
+            [0, 1] if fault == "reset" else [0, 0]
+        )
+        assert len(faulty.requests) == 1
