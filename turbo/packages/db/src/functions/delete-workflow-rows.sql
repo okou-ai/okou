@@ -94,14 +94,19 @@ BEGIN
 
   IF locked_workflow.attachments->>'kind' = 'bundle' THEN
     attachment_key := locked_workflow.attachments->>'objectKey';
-    -- Temporary staff copy reader: only the deterministic copy may inherit the
-    -- source's upload. Remove after copies own their descriptors and old Runs
-    -- and incompatible rollback consumers have drained (#46783).
-    inherited_attachment := (locked_workflow.org_id = 'org_3ANttyrbWYJk6JKRSTRLEsbsDLe'
-      AND split_part(attachment_key, '/', 2) = locked_workflow.org_id
-      AND attachment_key ~ '^workflow-attachments/[^/]+/[a-f0-9-]{36}/[a-f0-9-]{36}/archive[.]tar[.]gz$'
-      AND overlay(overlay(md5('staff-single-agent-workflow-v1:' || split_part(attachment_key, '/', 3))
-        placing '5' from 13 for 1) placing '8' from 17 for 1)::uuid = locked_workflow.id) IS TRUE;
+    -- Only the deterministic same-workspace copy shares immutable content.
+    -- The source upload remains independently owned. Match the API reader in
+    -- core/src/single-agent-migration.ts and retire after convergence (#46783).
+    inherited_attachment := (
+      split_part(attachment_key, '/', 2) COLLATE "C" = locked_workflow.org_id COLLATE "C"
+      AND attachment_key COLLATE "C" ~ '^workflow-attachments/[^/]+/[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}/[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}/archive[.]tar[.]gz$'
+      AND overlay(overlay(md5(
+        CASE WHEN locked_workflow.org_id COLLATE "C" = 'org_3ANttyrbWYJk6JKRSTRLEsbsDLe'
+          THEN 'staff-single-agent-workflow-v1:'
+          ELSE 'inactive-batch-workflow-v1:'
+        END || split_part(attachment_key, '/', 3)
+      ) placing '5' from 13 for 1) placing '8' from 17 for 1)::uuid = locked_workflow.id
+    ) IS TRUE;
     IF NOT inherited_attachment THEN
       attachment_prefix := 'workflow-attachments/' || locked_workflow.org_id
         || '/' || locked_workflow.id::text || '/';

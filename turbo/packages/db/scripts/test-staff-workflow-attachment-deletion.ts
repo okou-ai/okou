@@ -6,7 +6,7 @@ import { array, number, object, string } from "zod";
 import {
   STAFF_SINGLE_AGENT_ORG_ID,
   staffWorkflowCopyId,
-} from "@okouai/core/staff-single-agent-migration";
+} from "@okouai/core/single-agent-migration";
 import { prepareWorkflowAttachmentBundle } from "@okouai/core/workflow-attachment-bundle";
 import { applyPendingMigrations } from "./migration-runner";
 
