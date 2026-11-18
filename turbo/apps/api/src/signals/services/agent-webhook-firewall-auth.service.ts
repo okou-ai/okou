@@ -38,7 +38,10 @@ import {
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { SecretConnectorMetadata } from "@okouai/api-contracts/contracts/runners";
-import { runExecutionAuthorizationSchema } from "@okouai/api-contracts/contracts/run-execution-authorization";
+import {
+  runExecutionAuthorizationSchema,
+  type RunExecutionAuthorization,
+} from "@okouai/api-contracts/contracts/run-execution-authorization";
 import { signOkouToken } from "../auth/tokens";
 import {
   refreshConnectorAuthProviderAccessTokenWithMethod,
@@ -4363,7 +4366,12 @@ function missingResolvedSecretsResponse(args: {
   );
 }
 
-type FirewallAuthRun = Pick<typeof agentRuns.$inferSelect, "orgId" | "status">;
+type FirewallAuthRun = Pick<
+  typeof agentRuns.$inferSelect,
+  "orgId" | "status"
+> & {
+  readonly launchSnapshot?: (typeof agentRuns.$inferSelect)["launchSnapshot"];
+};
 
 function firewallAuthRunIsActive(
   status: typeof agentRuns.$inferSelect.status,
@@ -4434,6 +4442,7 @@ const prepareNonCustomFirewallSecrets$ = command(
       readonly orgId: string;
       readonly body: FirewallAuthBody;
       readonly referenced: ReferencedAuthKeys;
+      readonly executionAuthorization: RunExecutionAuthorization | undefined;
     },
   ): Promise<
     | {
@@ -4471,24 +4480,7 @@ const prepareNonCustomFirewallSecrets$ = command(
     }
     let expiresAt: number | null = null;
     if (referenced.secrets.has("OKOU_TOKEN")) {
-      const [run] = await db
-        .select({ launchSnapshot: agentRuns.launchSnapshot })
-        .from(agentRuns)
-        .where(
-          and(
-            eq(agentRuns.id, auth.runId),
-            eq(agentRuns.orgId, auth.orgId),
-            eq(agentRuns.userId, auth.userId),
-          ),
-        )
-        .limit(1);
-      if (!run) {
-        return { ok: false, response: forbiddenTerminalRun() };
-      }
-      const captured =
-        run.launchSnapshot?.schemaVersion === 5
-          ? run.launchSnapshot.executionAuthorization
-          : undefined;
+      const captured = args.executionAuthorization;
       // Receipt-less Runs still use the existing envelope protocol while old
       // API writers/active Runs can exist. Remove with #48077 legacy cleanup
       // after the writer cutover and legacy Run/Runner finalization drain.
@@ -5546,6 +5538,7 @@ const prepareNonCustomFirewallAuth$ = command(
       readonly body: FirewallAuthBody;
       readonly orgId: string;
       readonly referenced: ReferencedAuthKeys;
+      readonly executionAuthorization: RunExecutionAuthorization | undefined;
     },
   ): Promise<
     FirewallAuthPreparation<
@@ -6058,9 +6051,21 @@ const prepareFirewallAuthRequest$ = command(
     const db = get(db$);
     const matchedFirewall = body.matchedFirewall;
     const customConnectorId = matchedFirewall?.customConnectorId;
+    const referenced = collectReferencedKeys(
+      body.authHeaders,
+      body.authBase,
+      body.authQuery,
+      body.authAwsSigv4,
+    );
     const run = await (async (): Promise<FirewallAuthRun | undefined> => {
       const [run] = await db
-        .select({ orgId: agentRuns.orgId, status: agentRuns.status })
+        .select({
+          orgId: agentRuns.orgId,
+          status: agentRuns.status,
+          ...(referenced.secrets.has("OKOU_TOKEN")
+            ? { launchSnapshot: agentRuns.launchSnapshot }
+            : {}),
+        })
         .from(agentRuns)
         .where(
           and(
@@ -6080,12 +6085,6 @@ const prepareFirewallAuthRequest$ = command(
       return { ok: false, response: forbiddenTerminalRun() };
     }
     const orgId = run.orgId;
-    const referenced = collectReferencedKeys(
-      body.authHeaders,
-      body.authBase,
-      body.authQuery,
-      body.authAwsSigv4,
-    );
     if (
       matchedConnectorSourceConflicts({
         body,
@@ -6120,6 +6119,10 @@ const prepareFirewallAuthRequest$ = command(
         body,
         orgId,
         referenced,
+        executionAuthorization:
+          run.launchSnapshot?.schemaVersion === 5
+            ? run.launchSnapshot.executionAuthorization
+            : undefined,
       });
     }
     if (!preparation.ok) {
