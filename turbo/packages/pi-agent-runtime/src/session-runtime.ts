@@ -16,6 +16,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
 import { createPiMemoryReader } from "./memory-reader-node";
+import { PiImageHistory } from "./image-history";
 import type { PiPreheatedResourceSnapshot } from "./api-types";
 import { resolvePiAgentModel } from "./model-catalog";
 import {
@@ -148,6 +149,7 @@ export async function createPiAgentSessionForRuntime(
     model,
   } = prepared;
 
+  const imageHistory = new PiImageHistory();
   const modelRuntime = await measurePiPreparation(
     args.onPreparationTiming,
     "model_runtime",
@@ -155,6 +157,7 @@ export async function createPiAgentSessionForRuntime(
       return createPiModelRuntime({
         model,
         config: args.model,
+        imageHistory,
         ...(args.resourceSnapshot
           ? { credentials: new InMemoryCredentialStore() }
           : {}),
@@ -270,7 +273,14 @@ export async function createPiAgentSessionForRuntime(
     },
     signal,
   );
-  return { ...created, services, model };
+  return {
+    ...created,
+    services,
+    model,
+    retainImageHistory: () => {
+      return imageHistory.retain(args.sessionManager);
+    },
+  };
 }
 
 function prepareModelAndPrompt(args: PiAgentSessionRuntimeArgs) {
