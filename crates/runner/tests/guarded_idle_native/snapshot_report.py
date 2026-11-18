@@ -23,8 +23,7 @@ def original_inputs(metadata, artifacts, prefix):
         raise ValueError("startup raw policy/hash mismatch")
     policy = json.loads(raw_policy, object_pairs_hook=report.unique_object)
     inputs = json.loads(raw_inputs, object_pairs_hook=report.unique_object)
-    if (not isinstance(policy, dict) or set(policy) != pressure_report.POLICY_FIELDS
-            or any(not pressure_report.integer(v, 1) for v in policy.values())
+    if (not pressure_report.has_policy_shape(policy)
             or not policy["operating_floor_bytes"] <= policy["critical_available_bytes"]
             < policy["recovery_available_bytes"] <= policy["host_total_bytes"]
             or not 2 <= policy["max_cleanup_inflight"] <= policy["max_operations"]

@@ -40,8 +40,7 @@ def validate(directory):
     if not isinstance(raw_policy, str) or hashlib.sha256(raw_policy.encode()).hexdigest() != result["artifacts"]["policy_sha256"]:
         raise ValueError("continuation raw policy/hash mismatch")
     policy = json.loads(raw_policy, object_pairs_hook=report.unique_object)
-    if (not isinstance(policy, dict) or set(policy) != pressure_report.POLICY_FIELDS
-            or any(not pressure_report.integer(v, 1) for v in policy.values())):
+    if not pressure_report.has_policy_shape(policy):
         raise ValueError("invalid continuation policy")
     required = (policy["operating_floor_bytes"] + policy["cleanup_reserve_bytes"]
                 + 4096*1024**2 + policy["replacement_preparation_bytes"])
