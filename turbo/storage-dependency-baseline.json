@@ -36,21 +36,6 @@
       "dependency": "module:turbo/packages/db/src/schema/skill"
     },
     {
-      "file": "turbo/apps/api/src/signals/services/execution-runtime-context.ts",
-      "uses": 2,
-      "dependency": "module:turbo/apps/api/src/signals/services/execution-storage.service"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/execution-storage.service.ts",
-      "uses": 24,
-      "dependency": "module:turbo/packages/db/src/schema/storage"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/run-storage-manifest.service.ts",
-      "uses": 2,
-      "dependency": "module:turbo/apps/api/src/signals/services/execution-storage.service"
-    },
-    {
       "file": "turbo/apps/api/src/signals/services/storage-write-conditions.ts",
       "uses": 3,
       "dependency": "module:turbo/packages/db/src/schema/storage"
