@@ -5,7 +5,6 @@ import argparse
 import datetime
 import json
 import pathlib
-import uuid
 
 import progress_report as foreground
 import pressure_report as pressure
@@ -51,7 +50,7 @@ def status(value, sandbox=None, previous=None):
         reuse = entries[0].get("reuse_key")
         prefix = "thread:native-guarded-"
         if (not isinstance(reuse, str) or not reuse.startswith(prefix)
-                or str(uuid.UUID(reuse[len(prefix):])) != reuse[len(prefix):]):
+                or not report.is_canonical_uuid(reuse[len(prefix):])):
             raise ValueError("original status reuse identity changed")
         expected["idle_sandboxes"] = [{"reuse_key": reuse, "sandbox_id": sandbox}]
     if previous is not None and value["started_at"] != previous["started_at"]:

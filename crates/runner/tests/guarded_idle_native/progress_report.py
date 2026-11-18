@@ -1,12 +1,10 @@
 """Shared physical-observation and heartbeat receipts for held native work."""
 
-import uuid
-
 import pressure_report
 import report
 
 def identifier(value):
-    return isinstance(value, str) and str(uuid.UUID(value)) == value
+    return isinstance(value, str) and report.is_canonical_uuid(value)
 
 
 def observer(value, begin, end):

@@ -5,7 +5,6 @@ import argparse
 import hashlib
 import json
 import pathlib
-import uuid
 
 import report
 
@@ -163,7 +162,7 @@ def validate(directory):
             evidence, joined = seen[0]["evidence"], seen[1]["evidence"]
             incoming = evidence.get("incoming_sandbox_id")
             if (set(evidence) != {"incoming_sandbox_id", "admitted"} or evidence["admitted"] is not True
-                    or not isinstance(incoming, str) or str(uuid.UUID(incoming)) != incoming
+                    or not isinstance(incoming, str) or not report.is_canonical_uuid(incoming)
                     or incoming in original_ids or incoming in incoming_ids
                     or joined != {"retirements": 1} or type(joined["retirements"]) is not int):
                 raise ValueError("native logical growth/original join is incomplete")

@@ -94,8 +94,13 @@ def validate_snapshot_preparation(directory, artifacts):
     if record["completed_monotonic_ns"] <= record["started_monotonic_ns"]:
         raise ValueError("unordered snapshot preparation observation clocks")
     boot = record["creator_boot_id"]
-    if not isinstance(boot, str) or str(uuid.UUID(boot)) != boot:
+    if not isinstance(boot, str) or not is_canonical_uuid(boot):
         raise ValueError("invalid snapshot preparation creator boot identity")
+
+
+def is_canonical_uuid(value):
+    """Compare the original spelling, preserving UUID parsing errors."""
+    return str(uuid.UUID(value)) == value
 
 
 def positive_integer(value):
@@ -336,7 +341,7 @@ def _validate_receipts(directory, cases, phases, collector):
             raise ValueError("native phase clocks do not positively order the work")
         identity = (events[1]["sandbox_id"], events[1]["backing_generation"])
         for value in identity:
-            if str(uuid.UUID(value)) != value:
+            if not is_canonical_uuid(value):
                 raise ValueError("native identity is not one canonical original generation")
         if identity[0] in sandbox_ids or identity[1] in backing_generations or any(
                 (e["sandbox_id"], e["backing_generation"]) != identity for e in events[2:]):

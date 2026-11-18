@@ -6,7 +6,6 @@ import hashlib
 import json
 import pathlib
 import re
-import uuid
 
 import pressure_report
 import report
@@ -22,7 +21,7 @@ SEED_HASH = hashlib.sha256(SEED).hexdigest()
 
 
 def canonical(value):
-    if not isinstance(value, str) or str(uuid.UUID(value)) != value:
+    if not isinstance(value, str) or not report.is_canonical_uuid(value):
         raise ValueError("continuation has no canonical original identity")
     return value
 
