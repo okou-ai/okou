@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.33.0](https://github.com/okou-ai/okou/compare/cli-v10.32.0...cli-v10.33.0) (2026-11-18)
+
+
+### Features
+
+* **cli:** read shared conversations with run authentication ([#48543](https://github.com/okou-ai/okou/issues/48543)) ([601fc43](https://github.com/okou-ai/okou/commit/601fc433efb5bb46f3ca6213c3ea140a407bd5b5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.85.1
+    * @okouai/core bumped to 8.851.0
+    * @okouai/pi-agent-runtime bumped to 1.51.155
+
 ## [10.32.0](https://github.com/okou-ai/okou/compare/cli-v10.31.4...cli-v10.32.0) (2026-11-18)
 
 

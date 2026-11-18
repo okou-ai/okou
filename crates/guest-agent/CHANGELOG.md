@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.109.104](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.103...guest-agent-v0.109.104) (2026-11-18)
+
+
+### Refactoring
+
+* delegate filesystem capacity queries to typed apis ([#48537](https://github.com/okou-ai/okou/issues/48537)) ([485baf9](https://github.com/okou-ai/okou/commit/485baf98d0291be3d9b70ca3aa11021d5facfc1a))
+
 ## [0.109.103](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.102...guest-agent-v0.109.103) (2026-11-18)
 
 ## [0.109.102](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.101...guest-agent-v0.109.102) (2026-11-18)

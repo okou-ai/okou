@@ -13,6 +13,30 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1146.0](https://github.com/okou-ai/okou/compare/app-v0.1145.2...app-v0.1146.0) (2026-11-18)
+
+
+### Features
+
+* **app:** release share audience descriptions and website share rows ([#48544](https://github.com/okou-ai/okou/issues/48544)) ([60461e9](https://github.com/okou-ai/okou/commit/60461e9da15d190d7e34e633ce0e2a61d195026f))
+* **core:** enable presentation output format for staff ([#48524](https://github.com/okou-ai/okou/issues/48524)) ([af156ca](https://github.com/okou-ai/okou/commit/af156ca8c7dea3483e14ae37a058890dd57581d0))
+
+
+### Bug Fixes
+
+* **app:** align connector controls and manage accounts in chat ([#48477](https://github.com/okou-ai/okou/issues/48477)) ([ba2b3f1](https://github.com/okou-ai/okou/commit/ba2b3f19374b2ffa88adfcd0fdc66f51e0ee4e27))
+* **app:** hide artifact preview actions without a loading skeleton ([#48540](https://github.com/okou-ai/okou/issues/48540)) ([fd212b3](https://github.com/okou-ai/okou/commit/fd212b3c1fa1705e94e977779e09bf6fca470edd))
+* **app:** refresh pro and team plan capability copy ([#48328](https://github.com/okou-ai/okou/issues/48328)) ([0b43fc2](https://github.com/okou-ai/okou/commit/0b43fc29ddbcbbea8111f6cfacc518df4a1162fa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.85.1
+    * @okouai/core bumped to 8.851.0
+    * @okouai/ui bumped to 1.21.49
+
 ## [0.1145.2](https://github.com/okou-ai/okou/compare/app-v0.1145.1...app-v0.1145.2) (2026-11-18)
 
 

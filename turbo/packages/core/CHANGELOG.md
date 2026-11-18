@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.851.0](https://github.com/okou-ai/okou/compare/core-v8.850.2...core-v8.851.0) (2026-11-18)
+
+
+### Features
+
+* **app:** release share audience descriptions and website share rows ([#48544](https://github.com/okou-ai/okou/issues/48544)) ([60461e9](https://github.com/okou-ai/okou/commit/60461e9da15d190d7e34e633ce0e2a61d195026f))
+* **core:** enable presentation output format for staff ([#48524](https://github.com/okou-ai/okou/issues/48524)) ([af156ca](https://github.com/okou-ai/okou/commit/af156ca8c7dea3483e14ae37a058890dd57581d0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.85.1
+
 ## [8.850.2](https://github.com/okou-ai/okou/compare/core-v8.850.1...core-v8.850.2) (2026-11-18)
 
 

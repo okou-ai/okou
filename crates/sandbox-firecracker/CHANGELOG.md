@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.118](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.117...sandbox-firecracker-v0.53.118) (2026-11-18)
+
+
+### Bug Fixes
+
+* **ci:** recover interrupted native test binary staging ([#48478](https://github.com/okou-ai/okou/issues/48478)) ([4712005](https://github.com/okou-ai/okou/commit/4712005b9080bb58afd6687e1451da08bf223565))
+
 ## [0.53.117](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.116...sandbox-firecracker-v0.53.117) (2026-11-18)
 
 ## [0.53.116](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.115...sandbox-firecracker-v0.53.116) (2026-11-18)

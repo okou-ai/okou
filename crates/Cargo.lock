@@ -2042,7 +2042,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.109.103"
+version = "0.109.104"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2082,7 +2082,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.212"
+version = "0.1.213"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -4104,7 +4104,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.249.44"
+version = "0.249.45"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4178,7 +4178,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.21.52"
+version = "0.21.53"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4251,7 +4251,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.17.122"
+version = "0.17.123"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4505,7 +4505,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.25.26"
+version = "0.25.27"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4838,7 +4838,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.53.117"
+version = "0.53.118"
 dependencies = [
  "api-contracts",
  "async-trait",
