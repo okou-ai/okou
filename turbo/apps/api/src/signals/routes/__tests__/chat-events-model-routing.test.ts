@@ -708,7 +708,7 @@ describe("CHAT-02: model-first routing", () => {
     await cancelAndCompleteChatRun(actor, followUp.runId);
   }, 90_000);
 
-  it("checks Ultrafast for the captured Codex subscription before launching", async () => {
+  it("launches Ultrafast without probing the selected Codex subscription", async () => {
     const { actor, agentId } = await entitledChatActor();
     await misc.upsertPersonalModelProvider(
       actor,
@@ -731,61 +731,29 @@ describe("CHAT-02: model-first routing", () => {
       { ...actor, orgId: requireOrgId(actor) },
       { [FeatureSwitchKey.CodexSubscriptionUltrafast]: true },
     );
-    const accounts: (string | null)[] = [];
-    let offersUltrafast = false;
+    let catalogRequests = 0;
     server.use(
-      http.get(
-        "https://chatgpt.com/backend-api/codex/models",
-        ({ request }) => {
-          accounts.push(request.headers.get("chatgpt-account-id"));
-          return HttpResponse.json({
-            models: [
-              {
-                slug: "gpt-6-astra",
-                service_tiers: offersUltrafast ? [{ id: "ultrafast" }] : [],
-              },
-              { slug: "gpt-6.1-sol", service_tiers: [{ id: "ultrafast" }] },
-            ],
-          });
-        },
-      ),
+      http.get("https://chatgpt.com/backend-api/codex/models", () => {
+        catalogRequests += 1;
+        return HttpResponse.json({ models: [] });
+      }),
     );
     expect((await findAstra())?.subscriptionOptions).toMatchObject({
       serviceTier: "priority",
       ultrafastAvailable: true,
     });
-    expect(accounts).toStrictEqual([]);
-    const clientEventId = randomUUID();
-    const options = {
+    const run = await sendChatRun(actor, {
       agentId,
       model: "gpt-6-astra",
       prompt: "Use Ultrafast",
-      runOptions: { codexServiceTier: "ultrafast" as const },
-    };
-    const rejected = await chat.requestSendEvent(
-      actor,
-      { ...options, clientEventId },
-      [201],
-    );
-    const { picked } = await waitForPickedInput(
-      actor,
-      rejected.body.threadId,
-      clientEventId,
-    );
-    expect(picked.eventType).toBe("input.rejected");
-    expect(picked.runId).toBeUndefined();
-
-    offersUltrafast = true;
-    const run = await sendChatRun(actor, options);
+      runOptions: { codexServiceTier: "ultrafast" },
+    });
     const { execution, sandboxHeaders } = await runExecution(run.runId);
     expect(execution.cliAgentType).toBe("codex");
     expect(executionEnvironment(execution)).toMatchObject({
       OKOU_CODEX_SERVICE_TIER: "ultrafast",
     });
-    expect(accounts).toStrictEqual([
-      "ws_acct_bdd_fast_mode_id_token",
-      "ws_acct_bdd_fast_mode_id_token",
-    ]);
+    expect(catalogRequests).toBe(0);
     await cancelChatRun(actor, run.runId, sandboxHeaders);
   }, 90_000);
 

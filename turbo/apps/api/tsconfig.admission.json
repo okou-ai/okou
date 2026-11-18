@@ -146,7 +146,6 @@
     "src/signals/services/telegram-chat-ingress.service.ts",
     "src/signals/services/telegram-prompt.ts",
     "src/signals/services/telegram-queued-launch-context.service.ts",
-    "src/signals/services/codex-ultrafast-admission.service.ts",
     "src/signals/services/thread-claim-run.service.ts",
     "src/signals/services/thread-context.signals.ts",
     "src/signals/services/thread-connected-accounts.signals.ts",

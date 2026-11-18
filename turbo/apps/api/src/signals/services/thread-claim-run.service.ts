@@ -19,7 +19,6 @@ import {
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { createThreadContext } from "./thread-context.signals";
-import { validateCodexUltrafast$ } from "./codex-ultrafast-admission.service";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-queue-revocation.service";
 import {
@@ -3340,16 +3339,12 @@ export function createThreadClaimRunObjects(
       if (isRouteError(context)) {
         return context;
       }
-      return await set(
-        validateCodexUltrafast$,
-        {
-          orgId: claim.orgId,
-          userId: input.command.owner.userId,
-          featureSwitchContext: context.featureSwitchContext,
-          provider: model,
-        },
-        signal,
-      );
+      return isFeatureEnabled(
+        FeatureSwitchKey.CodexSubscriptionUltrafast,
+        context.featureSwitchContext,
+      )
+        ? null
+        : badRequestMessage("Ultrafast is unavailable in this workspace");
     },
   );
   const authorizeIdentity$ = computed(async (get) => {
