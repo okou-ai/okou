@@ -514,7 +514,6 @@ fn build_env_json_claude_code_gets_only_claude_framework_env() {
         &HostEnv {
             use_mock_claude: Some("true".into()),
             use_mock_codex: Some("1".into()),
-            ..HostEnv::default()
         },
     );
 
@@ -535,7 +534,6 @@ fn build_env_json_codex_gets_only_codex_framework_env() {
         &HostEnv {
             use_mock_claude: Some("true".into()),
             use_mock_codex: Some("1".into()),
-            ..HostEnv::default()
         },
     );
 
@@ -556,7 +554,6 @@ fn build_env_json_unknown_framework_preserves_claude_compatible_env() {
         &HostEnv {
             use_mock_claude: Some("true".into()),
             use_mock_codex: Some("1".into()),
-            ..HostEnv::default()
         },
     );
 
