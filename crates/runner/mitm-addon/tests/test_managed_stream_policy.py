@@ -14,44 +14,33 @@ from tests.upstream_connection_helpers import mark_connected_tls_upstream
 
 @pytest.mark.parametrize("chunk_size", [1, 7, 4096])
 @pytest.mark.parametrize(
-    ("case", "fragment", "accepted"),
+    ("fragment", "accepted"),
     [
-        ("tools", b'"tools":[{"type":"function"},{"type":"function","parameters":{}}]', True),
-        (
-            "escaped-tool",
+        pytest.param(
+            b'"tools":[{"type":"function"},{"type":"function","parameters":{}}]',
+            True,
+            id="tools",
+        ),
+        pytest.param(
             rb'"tools":[{"type":"\u0066\u0075\u006e\u0063\u0074\u0069\u006f\u006e"}]',
             True,
+            id="escaped-tool",
         ),
-        ("opaque-surrogates", rb'"metadata":{"\ud800":1,"\ud801":2}', True),
-        ("surrogate-duplicate", rb'"metadata":{"\ud800":1,"\uD800":2}', False),
-        ("nested-duplicate", rb'"messages":[{"role":"u","\u0072ole":"a"}]', False),
-        ("missing-tool-type", b'"tools":[{}]', False),
-        ("non-object-tool", b'"tools":[null]', False),
-        ("surrogate-tool", rb'"tools":[{"type":"\ud800"}]', False),
-        ("nonfinite", b'"metadata":{"number":1e999}', False),
-        ("number-at-bound", b'"metadata":{"number":-' + b"1" * 4299 + b"}", True),
-        ("number-over-bound", b'"metadata":{"number":' + b"1" * 4301 + b"}", False),
-        ("key-at-bound", b'"metadata":{"' + b"k" * 4096 + b'":0}', True),
-        ("key-over-bound", b'"metadata":{"' + b"k" * 4097 + b'":0}', False),
-    ],
-    ids=[
-        "tools",
-        "escaped-tool",
-        "opaque-surrogates",
-        "surrogate-duplicate",
-        "nested-duplicate",
-        "missing-tool-type",
-        "non-object-tool",
-        "surrogate-tool",
-        "nonfinite",
-        "number-at-bound",
-        "number-over-bound",
-        "key-at-bound",
-        "key-over-bound",
+        pytest.param(rb'"metadata":{"\ud800":1,"\ud801":2}', True, id="opaque-surrogates"),
+        pytest.param(rb'"metadata":{"\ud800":1,"\uD800":2}', False, id="surrogate-duplicate"),
+        pytest.param(rb'"messages":[{"role":"u","\u0072ole":"a"}]', False, id="nested-duplicate"),
+        pytest.param(b'"tools":[{}]', False, id="missing-tool-type"),
+        pytest.param(b'"tools":[null]', False, id="non-object-tool"),
+        pytest.param(rb'"tools":[{"type":"\ud800"}]', False, id="surrogate-tool"),
+        pytest.param(b'"metadata":{"number":1e999}', False, id="nonfinite"),
+        pytest.param(b'"metadata":{"number":-' + b"1" * 4299 + b"}", True, id="number-at-bound"),
+        pytest.param(b'"metadata":{"number":' + b"1" * 4301 + b"}", False, id="number-over-bound"),
+        pytest.param(b'"metadata":{"' + b"k" * 4096 + b'":0}', True, id="key-at-bound"),
+        pytest.param(b'"metadata":{"' + b"k" * 4097 + b'":0}', False, id="key-over-bound"),
     ],
 )
 async def test_full_document_policy_is_chunk_independent(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, chunk_size, case, fragment, accepted
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, chunk_size, fragment, accepted
 ):
     raw = b'{"model":"' + PRESET.encode() + b'",' + fragment + b"}"
     registry = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path))
