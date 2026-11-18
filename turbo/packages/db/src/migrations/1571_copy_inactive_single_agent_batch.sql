@@ -6857,10 +6857,10 @@ CROSS JOIN (VALUES (1),(2)) event(ordinal);
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM inactive_copy_chat_routes r LEFT JOIN chat_threads c ON c.id=r.id
     WHERE c.id IS NULL OR c.user_id<>r.user_id OR c.agent_id<>r.target_agent_id OR c.project_id IS DISTINCT FROM r.project_id)
-    OR EXISTS (SELECT 1 FROM inactive_copy_target t JOIN agent_runs r ON r.org_id=t.org_id
-      WHERE r.created_at >= now()-interval '30 days')
-    OR EXISTS (SELECT 1 FROM inactive_copy_target t JOIN agent_runs r ON r.org_id=t.org_id
-      WHERE r.status IN ('pending','running'))
+    OR EXISTS (SELECT 1 FROM inactive_copy_target t JOIN LATERAL
+      (SELECT 1 FROM agent_runs r WHERE r.org_id=t.org_id AND r.created_at >= now()-interval '30 days' LIMIT 1) busy ON true)
+    OR EXISTS (SELECT 1 FROM inactive_copy_target t JOIN LATERAL
+      (SELECT 1 FROM agent_runs r WHERE r.org_id=t.org_id AND r.status IN ('pending','running') LIMIT 1) busy ON true)
     OR EXISTS (SELECT 1 FROM inactive_copy_target t JOIN queued_chat_threads q ON q.org_id=t.org_id)
     OR EXISTS (SELECT 1 FROM inactive_copy_target t JOIN active_agent_runs a ON a.org_id=t.org_id)
     OR EXISTS (SELECT 1 FROM inactive_copy_target t JOIN workflow_automations a ON a.org_id=t.org_id WHERE a.enabled)
