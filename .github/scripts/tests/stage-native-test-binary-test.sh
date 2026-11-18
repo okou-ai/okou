@@ -181,7 +181,14 @@ PATH="$test_root/bin:$PATH" CASE_DIR="$case_dir" SCENARIO=cancelled \
   bash "$helper" "$test_root/test binary" metal@host.vm3.ai "$destination" \
   >"$case_dir/out" 2>&1 &
 owner=$!
-read -r -t 10 _ <"$case_dir/ready"
+# read -t cannot bound the shell's preceding FIFO open if the child exits early.
+if ! ready_marker=$("$system_timeout" --kill-after=1s 10s head -n 1 "$case_dir/ready") || [ "$ready_marker" != ready ]; then
+  kill -TERM "$owner" 2>/dev/null || true
+  wait "$owner" 2>/dev/null || true
+  cat "$case_dir/out" >&2
+  echo 'upload did not become ready for cancellation' >&2
+  exit 1
+fi
 kill -TERM "$owner"
 status=0
 wait "$owner" || status=$?
