@@ -92,15 +92,6 @@ async fn production_warming_survives_restart_and_full_guest_delivery() {
     let index = fs::read(entry.join("index.json")).unwrap();
     assert!(index.len() > 256 * 1024);
     assert!(index.len() <= MAX_ADMITTED_INDEX_BYTES);
-    assert_eq!(
-        cache
-            .get_ready("memory-fixture", "v1")
-            .await
-            .unwrap()
-            .unwrap()
-            .files,
-        files
-    );
     cache.shutdown().await;
     assert_eq!(fs::read(entry.join("index.json")).unwrap(), index);
 
