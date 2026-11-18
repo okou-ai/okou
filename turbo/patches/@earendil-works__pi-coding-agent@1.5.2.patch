@@ -1,5 +1,5 @@
 diff --git a/dist/core/agent-session.d.ts b/dist/core/agent-session.d.ts
-index 8b6a584..1880829 100644
+index 8b6a58430eea2cbb463e2b51773a8bc6e4914505..1880829b93dbacea72e90b092dbb9dc2d0a46e51 100644
 --- a/dist/core/agent-session.d.ts
 +++ b/dist/core/agent-session.d.ts
 @@ -505,6 +505,8 @@ export declare class AgentSession {
@@ -12,7 +12,7 @@ index 8b6a584..1880829 100644
       * Apply a prompt and tool loadout for the next request. Sets the executable tools and
       * returns a system message patching the prompt sections the model currently has (replayed
 diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
-index d67feeb..923b5e8 100644
+index d67feeb70a00ff60a93583bf4ffb79a3d780fa9b..923b5e832c63b6bd79e87e49a6acf69aaca2406c 100644
 --- a/dist/core/agent-session.js
 +++ b/dist/core/agent-session.js
 @@ -1478,6 +1478,47 @@ export class AgentSession {
@@ -123,8 +123,26 @@ index d67feeb..923b5e8 100644
          // Skip if message was aborted (user cancelled) - unless skipAbortedCheck is false
          if (skipAbortedCheck && assistantMessage.stopReason === "aborted")
              return false;
+diff --git a/dist/core/session-manager.js b/dist/core/session-manager.js
+index 7ee05014e13c6434040bfdd7b39b455a6731a7d6..a182ce261b4ad84690231d0412065bed2545deb7 100644
+--- a/dist/core/session-manager.js
++++ b/dist/core/session-manager.js
+@@ -981,7 +981,12 @@ export class SessionManager {
+         const target = this.byId.get(targetId);
+         if (!target)
+             throw new Error(`Entry ${targetId} not found`);
+-        if (!this.getBranch().some((entry) => entry.id === targetId)) {
++        // Recent retained targets do not require walking all compacted ancestors.
++        let ancestor = this.leafId ? this.byId.get(this.leafId) : undefined;
++        while (ancestor && ancestor.id !== targetId) {
++            ancestor = ancestor.parentId ? this.byId.get(ancestor.parentId) : undefined;
++        }
++        if (!ancestor) {
+             throw new Error(`Entry ${targetId} is not on the active branch`);
+         }
+         const editable = target.type === "custom_message" ||
 diff --git a/dist/core/tools/bash.d.ts b/dist/core/tools/bash.d.ts
-index 27f12ef..1a88389 100644
+index 27f12efdfda5720d774a5939a655663902a268f6..1a8838988cf5633c832fa5e63a236416a199fdd2 100644
 --- a/dist/core/tools/bash.d.ts
 +++ b/dist/core/tools/bash.d.ts
 @@ -43,6 +43,8 @@ export interface BashOperations {
@@ -137,7 +155,7 @@ index 27f12ef..1a88389 100644
          timeout?: number;
          env?: NodeJS.ProcessEnv;
 diff --git a/dist/core/tools/bash.js b/dist/core/tools/bash.js
-index 60e7b06..0cecfa5 100644
+index 60e7b06fee585cad635d91e924ad7c8b2766fa3e..0cecfa51c4eb54b13c945b83963957f41e02edf7 100644
 --- a/dist/core/tools/bash.js
 +++ b/dist/core/tools/bash.js
 @@ -59,7 +59,7 @@ class ShellTimeoutError extends Error {
@@ -407,7 +425,7 @@ index 60e7b06..0cecfa5 100644
          },
          ...createShellRenderers(config.prompt),
 diff --git a/dist/core/tools/output-accumulator.d.ts b/dist/core/tools/output-accumulator.d.ts
-index 2e4ce2f..9f06eb9 100644
+index 2e4ce2fba648d75e5585248e9ff24f20c9073d1c..9f06eb9441df3d63f94ea42faafa31fa74618384 100644
 --- a/dist/core/tools/output-accumulator.d.ts
 +++ b/dist/core/tools/output-accumulator.d.ts
 @@ -3,6 +3,7 @@ export interface OutputAccumulatorOptions {
@@ -440,7 +458,7 @@ index 2e4ce2f..9f06eb9 100644
       * The complete output, for callers that can take more than the display snapshot. Call after
       * `finish()` and `closeTempFile()`. Output longer than `maxBytes` raw bytes keeps its first and
 diff --git a/dist/core/tools/output-accumulator.js b/dist/core/tools/output-accumulator.js
-index 640d225..c7629c9 100644
+index 640d2259a2c6ffb78e67e389e4819b5785637eaf..c7629c97d239d676a9742b90ae18716f6f68e395 100644
 --- a/dist/core/tools/output-accumulator.js
 +++ b/dist/core/tools/output-accumulator.js
 @@ -1,4 +1,5 @@
@@ -566,7 +584,7 @@ index 640d225..c7629c9 100644
      }
  }
 diff --git a/dist/modes/json-event.d.ts b/dist/modes/json-event.d.ts
-index d4f306e..e8efa89 100644
+index d4f306ea3918aa07a981f948c8a3cb4f687f5708..e8efa89bd00f881b1ec9d917a5229fe0d4682d76 100644
 --- a/dist/modes/json-event.d.ts
 +++ b/dist/modes/json-event.d.ts
 @@ -18,15 +18,39 @@ type JsonMessageUpdateEvent = {
@@ -611,7 +629,7 @@ index d4f306e..e8efa89 100644
  export declare function toJsonEvent(event: MessageUpdateEvent): JsonMessageUpdateEvent;
  export declare function toJsonEvent(event: AgentSessionEvent): JsonAgentSessionEvent;
 diff --git a/dist/modes/json-event.js b/dist/modes/json-event.js
-index b2671b8..65d1b28 100644
+index b2671b8e69be943b5c2918a972082eac84b38948..65d1b28a4edb8ece89f3f93f21272be741fb3410 100644
 --- a/dist/modes/json-event.js
 +++ b/dist/modes/json-event.js
 @@ -13,7 +13,32 @@ function toJsonAssistantMessageEvent(event) {
@@ -648,7 +666,7 @@ index b2671b8..65d1b28 100644
          return event;
      }
 diff --git a/dist/utils/child-process.d.ts b/dist/utils/child-process.d.ts
-index c75b42d..a554d3e 100644
+index c75b42d9d43a0ef9000277b4ef5426443eab9a3e..a554d3e4ef12363dc903f366abb0143d68d7c950 100644
 --- a/dist/utils/child-process.d.ts
 +++ b/dist/utils/child-process.d.ts
 @@ -14,5 +14,5 @@ export declare function spawnProcessSync(command: string, args: string[], option
@@ -660,7 +678,7 @@ index c75b42d..a554d3e 100644
  //# sourceMappingURL=child-process.d.ts.map
 \ No newline at end of file
 diff --git a/dist/utils/child-process.js b/dist/utils/child-process.js
-index 48e5724..fcdd8fe 100644
+index 48e5724c50f719449e4ef4e20f3497eed779ae35..fcdd8fef93006ff9cc45ecf653127af203cbbb88 100644
 --- a/dist/utils/child-process.js
 +++ b/dist/utils/child-process.js
 @@ -20,7 +20,7 @@ export function spawnProcessSync(command, args, options) {
@@ -738,7 +756,7 @@ index 48e5724..fcdd8fe 100644
  //# sourceMappingURL=child-process.js.map
 \ No newline at end of file
 diff --git a/dist/utils/photon.js b/dist/utils/photon.js
-index 3078895..d67667b 100644
+index 3078895bedba898ce26c439b6123425834ca2586..d67667b307af07c5a001efd5f1f5849a8cba8e6a 100644
 --- a/dist/utils/photon.js
 +++ b/dist/utils/photon.js
 @@ -105,7 +105,8 @@ export async function loadPhoton() {

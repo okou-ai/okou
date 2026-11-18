@@ -95,13 +95,13 @@ function strings(value: unknown): string[] {
   return [];
 }
 
-async function nativeFile() {
+async function nativeFile(count = 7) {
   const directory = await mkdtemp(join(tmpdir(), "pi-image-history-"));
   onTestFinished(() => {
     return rm(directory, { recursive: true, force: true });
   });
   const memory = MemoryPiSession.create({ cwd: directory, id: SESSION_ID });
-  for (const message of history()) memory.appendMessage(message);
+  for (const message of history(count)) memory.appendMessage(message);
   const sessionFile = join(directory, "session.jsonl");
   await writeFile(sessionFile, memory.toJsonl());
   return { directory, sessionFile };
@@ -280,6 +280,41 @@ describe("Pi image history at provider and native-session boundaries", () => {
     expect(imageCount(reopened.buildSessionContext().messages)).toBe(8);
     reopened.branch(retainedLeaf);
     expect(imageCount(reopened.buildSessionContext().messages)).toBe(3);
+  });
+
+  it("keeps native edits scoped to ancestors of the active branch", async () => {
+    const { sessionFile } = await nativeFile(0);
+    const manager = SessionManager.open(sessionFile);
+    const split = manager.getLeafId();
+    if (!split) throw new Error("Missing branch point");
+    const other = manager.appendMessage({
+      role: "user",
+      content: "other branch",
+      timestamp: 2,
+    });
+    const otherLeaf = manager.appendContextEdit(other, {
+      content: "edited other branch",
+    });
+    manager.branch(split);
+    const active = manager.appendMessage({
+      role: "user",
+      content: "active branch",
+      timestamp: 3,
+    });
+    manager.appendContextEdit(active, { content: "edited active branch" });
+    expect(() => {
+      return manager.appendContextEdit(other, { content: "wrong branch" });
+    }).toThrow("not on the active branch");
+    const reopened = SessionManager.open(sessionFile);
+    expect(reopened.buildSessionContext().messages.at(-1)).toMatchObject({
+      role: "user",
+      content: "edited active branch",
+    });
+    reopened.branch(otherLeaf);
+    expect(reopened.buildSessionContext().messages.at(-1)).toMatchObject({
+      role: "user",
+      content: "edited other branch",
+    });
   });
 
   it("persists tool-image omissions before the official RPC host exits on stdin EOF", async () => {
