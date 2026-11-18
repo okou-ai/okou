@@ -11,6 +11,19 @@ import SwiftUI
 final class WorkspaceStore {
   var navigationActions: WorkspaceChatActions { navigation }
   var residentConversations: WorkspaceConversations { conversations }
+
+  @ObservationIgnored private lazy var synchronization = WorkspaceSynchronization(
+    workspace: self, client: client, resources: resources,
+    list: list, projects: projects, modelStore: modelStore, conversations: conversations,
+    modelBootstrap: modelBootstrap, projectBootstrap: projectBootstrap,
+    indicatorsBootstrap: indicatorsBootstrap, createRealtime: createRealtime,
+    lifecycleTasks: lifecycleTasks, conversationLimit: conversationLimit,
+    prepareDefaultDraft: { [weak self] in self?.prepareDefaultDraft(from: $0) },
+    didRestoreSidebar: { [weak self] in self?.hasRestoredSidebar = true },
+    notificationRevision: { [weak self] in self?.notificationReadRevision ?? 0 },
+    notificationChanged: { [weak self] in self?.notificationReadStateChanged() },
+    didFail: { [weak self] in self?.handle($0) })
+
   private let lifecycleTasks: LifecycleTasks
   @ObservationIgnored private lazy var conversations = WorkspaceConversations(
     sync: sync, limit: conversationLimit, lifecycleTasks: lifecycleTasks, markdown: messageMarkdown,
@@ -86,7 +99,7 @@ final class WorkspaceStore {
   @ObservationIgnored private lazy var sidebarDrafts = SidebarDraftStore(
     resources: resources, lifecycleTasks: lifecycleTasks,
     didFail: { [weak self] in self?.handle($0) })
-  private(set) var connectionStatus = RealtimeConnectionStatus.connecting
+  var connectionStatus: RealtimeConnectionStatus { synchronization.connectionStatus }
 
   var synchronizationState: ChatSynchronizationState? {
     guard !closed else { return nil }
@@ -144,17 +157,16 @@ final class WorkspaceStore {
   @ObservationIgnored lazy var sidebar = ChatSidebarStore(
     store: resources.store, threads: list.threadsValue, agents: list.agentsValue,
     projects: projects.confirmedValue, selectedThread: selectedThread)
-  private var realtime: RealtimeService?
-  private var invalidations: Set<ChatInvalidation> = []
-  private var refreshTask: Task<Void, Never>?
-  private var refreshGeneration = UUID()
-  private var refreshSuspended = false
+  private var realtime: RealtimeService? { synchronization.realtime }
+
+  private var refreshGeneration: UUID { synchronization.refreshGeneration }
+
+  private var refreshSuspended: Bool { synchronization.refreshSuspended }
+
   private var creationTask: Task<ChatThread?, Never>?
-  private var startupHistoryWarmingRequested = false
   private var closed = false
   var isClosed: Bool { closed }
-  private var isForeground = false
-  private var startupGeneration = UUID()
+  private var isForeground: Bool { synchronization.isForeground }
 
   init(
     client: APIClient, webURL: URL, cache: ChatCache? = nil, conversationLimit: Int = 8,
@@ -208,67 +220,11 @@ final class WorkspaceStore {
     newComposer = ComposerDraftStore(
       target: .unassigned, commands: commands, storage: draftStorage,
       didFail: { _ in }, lifecycleTasks: lifecycleTasks)
-    newComposer.setForeground(isForeground)
+    newComposer.setForeground(false)
   }
 
   func start(userID: String, workspaceID: String) async {
-    guard !closed, !Task.isCancelled else { return }
-    let generation = UUID()
-    startupGeneration = generation
-    realtime?.stop()
-    realtime = nil
-    defer {
-      if Task.isCancelled, startupGeneration == generation {
-        realtime?.stop()
-        realtime = nil
-        list.cancelNavigationPublication()
-      }
-    }
-    async let cachedList: Void = list.restoreCached()
-    async let cachedProjects: Void = projects.restore()
-    await cachedList
-    await cachedProjects
-    guard canContinueStartup(generation) else { return }
-    prepareDefaultDraft(from: list.agents)
-    hasRestoredSidebar = true
-    await withTaskCancellationHandler {
-      async let navigation: Void = refreshNavigation()
-      let realtime = RealtimeService(
-        userID: userID, workspaceID: workspaceID,
-        tokenProvider: { [client] in
-          try await client.data("/api/realtime/token", method: "POST", body: Data("{}".utf8)).data
-        },
-        onChange: { [weak self] change in
-          guard let self, !closed, !needsUpgrade else { return }
-          // Manual history refreshes share this invalidation but must not start a global warm.
-          if case .history = change { conversations.noteHistoryChange() }
-          requestRefresh(change)
-        },
-        onConnection: { [weak self] status in
-          self?.connectionStatus = status
-          self?.modelBootstrap?.connectionChanged(status)
-          self?.projectBootstrap?.connectionChanged(status)
-          self?.indicatorsBootstrap?.connectionChanged(status)
-        },
-        createRealtime: createRealtime, lifecycleTasks: lifecycleTasks)
-      self.realtime = realtime
-      realtime.setForeground(isForeground)
-      realtime.start()
-      await refresh([.startup])
-      await navigation
-    } onCancel: {
-      Task { @MainActor [weak self] in
-        guard let self, startupGeneration == generation else { return }
-        realtime?.stop()
-        realtime = nil
-        list.cancelRefresh()
-        list.cancelNavigationPublication()
-      }
-    }
-  }
-
-  private func canContinueStartup(_ generation: UUID) -> Bool {
-    !closed && !needsUpgrade && !Task.isCancelled && startupGeneration == generation
+    await synchronization.start(userID: userID, workspaceID: workspaceID)
   }
 
   private func prepareDefaultDraft(from agents: [AgentRecord]) {
@@ -327,8 +283,7 @@ final class WorkspaceStore {
     sidebarDrafts.close()
     closed = true
     sidebar.close()
-    startupGeneration = UUID()
-    refreshTask?.cancel()
+    synchronization.cancelRefresh()
     creationTask?.cancel()
     newChatSubmission?.close()
     newChatSubmission = nil
@@ -342,8 +297,7 @@ final class WorkspaceStore {
     resources.close()
     search.close()
     searchArtifacts.close()
-    realtime?.stop()
-    realtime = nil
+    synchronization.stopRealtime()
     messageMarkdown.clear()
     agentDraftTask?.cancel()
     newComposer.close()
@@ -357,40 +311,7 @@ final class WorkspaceStore {
   }
 
   func setPhase(_ phase: ScenePhase) {
-    guard !closed else { return }
-    let active = phase == .active
-    // Background suspension survives the intermediate inactive phase on the way back.
-    let resuming = refreshSuspended
-    guard isForeground != active || (phase == .background && !refreshSuspended) else { return }
-    isForeground = active
-    realtime?.setForeground(active)
-    if phase == .background {
-      modelBootstrap?.beginRecovery()
-      projectBootstrap?.beginRecovery()
-      refreshSuspended = true
-      refreshGeneration = UUID()
-      refreshTask?.cancel()
-      refreshTask = nil
-      conversations.suspendWarming()
-      if list.cancelRefresh() { invalidations.insert(.threadList) }
-      for conversation in conversations.values { conversation.cancelRefresh() }
-      // Other resources revalidate on return; list reads retain only unfinished or new work.
-      invalidations.insert(.foregroundResume)
-    } else if active {
-      refreshSuspended = false
-      if resuming, connectionStatus == .connected {
-        _ = modelBootstrap?.subscriptionsReady()
-      }
-      if resuming, realtime?.hasContinuousSubscription == true {
-        projectBootstrap?.resumeContinuously()
-      }
-    }
-    newComposer.setForeground(active)
-    for conversation in conversations.values { conversation.composer.setForeground(active) }
-    selectedConversation?.reconcileVisibility()
-    if active && resuming {
-      (selectedConversation?.composer ?? newComposer).requestSync()
-    }
+    synchronization.setPhase(phase)
   }
 
   private func activateDefaultDraft(agentID: String) {
@@ -415,201 +336,17 @@ final class WorkspaceStore {
   }
 
   func requestRefresh(_ invalidation: ChatInvalidation = .reconnected) {
-    guard !closed, !needsUpgrade else { return }
-    if invalidation == .realtimeResume || invalidation == .realtimeGap {
-      modelBootstrap?.beginRecovery()
-    }
-    if invalidation == .realtimeGap {
-      projectBootstrap?.requireRecoveryRead()
-    } else if invalidation == .realtimeResume {
-      projectBootstrap?.resumeContinuously()
-    }
-    invalidations.insert(invalidation)
-    resumePendingRefresh()
+    synchronization.requestRefresh(invalidation)
   }
 
   @discardableResult
   func resumePendingRefresh() -> Task<Void, Never>? {
-    guard !closed, !needsUpgrade, !refreshSuspended else { return nil }
-    if let refreshTask { return refreshTask }
-    guard !invalidations.isEmpty else { return nil }
-    let generation = refreshGeneration
-    refreshTask = Task { [weak self] in
-      guard let self else { return }
-      defer {
-        if refreshGeneration == generation { refreshTask = nil }
-      }
-      while !invalidations.isEmpty && !closed && !needsUpgrade && !Task.isCancelled
-        && refreshGeneration == generation
-      {
-        let batch = invalidations
-        invalidations.removeAll()
-        await refresh(batch)
-      }
-    }
-    if let refreshTask { lifecycleTasks.track(refreshTask) }
-    return refreshTask
+    return synchronization.resumePendingRefresh()
   }
 
   /// Awaitable refresh boundary used by manual refresh and deterministic HTTP tests.
   func refresh(_ batch: Set<ChatInvalidation> = [.reconnected]) async {
-    guard !closed, !needsUpgrade, !Task.isCancelled else { return }
-    if refreshSuspended {
-      invalidations.formUnion(batch.filter(\.refreshesThreadList))
-      return
-    }
-    let generation = refreshGeneration
-    let full = batch.contains(where: \.requiresFullRefresh)
-    let notificationRevision = notificationReadRevision
-    let selectedBeforeRefresh = selectedThreadID
-    let awaitingSelectedThread = selectedThreadID != nil && selectedConversation == nil
-    async let historyRefresh: Void = refreshConversations(batch, generation: generation)
-    // Model catch-up must stay fresh, but it does not gate the chat list or messages.
-    async let accessRefresh: Void = refreshComputerAuthorizations(batch)
-    async let modelRefresh: Void = refreshModels(batch)
-    async let projectRefresh: Void = refreshProjects(batch)
-    async let indicatorsRefresh: Void = refreshIndicators(batch)
-    guard refreshGeneration == generation, !Task.isCancelled else { return }
-    if batch.contains(where: \.refreshesThreadList) {
-      await list.refresh(includingIndicators: false)
-    }
-    guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
-    await historyRefresh
-    if awaitingSelectedThread, selectedThreadID == selectedBeforeRefresh {
-      await selectedConversation?.refresh(waitForCurrent: true)
-    }
-    await indicatorsRefresh
-    guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
-    if full || batch.contains(.readCursor), selectedThreadID == selectedBeforeRefresh {
-      // Either independent read can finish first. Confirm read state with both
-      // published results, before waiting on unrelated workspace resources.
-      await selectedConversation?.reconcileReadState()
-    }
-    guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
-    await accessRefresh
-    await modelRefresh
-    await projectRefresh
-    guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
-    if modelStore.configuration != nil,
-      full || selectedConversation?.modelSelection?.needsThreadReadback == true
-    {
-      await selectedConversation?.modelSelection?.refresh()
-    }
-    await conversations.trimConversations(limit: conversationLimit)
-    if notificationReadRevision == notificationRevision,
-      batch.contains(.indicators) || batch.contains(.readCursor)
-        || batch.contains(.initialSubscriptions) || batch.contains(.realtimeGap)
-        || batch.contains(.reconnected)
-    {
-      // These signals can affect receipts outside the sidebar or leave unreadAt unchanged.
-      notificationReadStateChanged()
-    }
-    if batch.contains(.startup), !startupHistoryWarmingRequested {
-      startupHistoryWarmingRequested = true
-      conversations.noteHistoryChange()
-    }
-    if conversations.needsWarming { conversations.requestHistoryWarming() }
-  }
-
-  private func refreshComputerAuthorizations(_ batch: Set<ChatInvalidation>) async {
-    guard let conversation = selectedConversation else { return }
-    if batch.contains(.computerAccess) || batch.contains(where: \.requiresFullRefresh)
-      || batch.contains(.detail(threadID: conversation.thread.id))
-      || batch.contains(.history(threadID: conversation.thread.id))
-    {
-      await conversation.approvals.refreshComputers()
-    }
-  }
-
-  private func refreshModels(_ batch: Set<ChatInvalidation>) async {
-    let full = batch.contains(where: \.requiresFullRefresh)
-    if modelStore.active
-      && (full || batch.contains(.runModels) || batch.contains(.modelPreference)
-        || batch.contains(.realtimeResume))
-    {
-      await modelStore.refresh(batch)
-    } else if full || batch.contains(.realtimeResume) {
-      do { try resources.invalidate(batch) } catch { handle(error) }
-    }
-  }
-
-  private func refreshIndicators(_ batch: Set<ChatInvalidation>) async {
-    let immediate =
-      batch.contains(.indicators) || batch.contains(.readCursor)
-      || batch.contains {
-        $0.requiresFullRefresh && $0 != .startup && $0 != .initialSubscriptions
-      }
-    var catchUp = false
-    if batch.contains(.initialSubscriptions) {
-      catchUp = indicatorsBootstrap?.subscriptionsReady() ?? true
-    }
-    if immediate || catchUp || batch.contains(.startup) {
-      await list.refreshIndicators(waitForSubscriptions: !immediate && !catchUp)
-    }
-  }
-
-  private func refreshProjects(_ batch: Set<ChatInvalidation>) async {
-    let generation = refreshGeneration
-    let recovery =
-      batch.contains(.foregroundResume) || batch.contains(.realtimeResume)
-      || batch.contains(.realtimeGap)
-    var reload = batch.contains(.threadList) || batch.contains(.reconnected)
-    if batch.contains(.startup) {
-      reload = (projectBootstrap?.beginStartup() ?? true) || reload
-    }
-    if batch.contains(.initialSubscriptions) {
-      reload = (projectBootstrap?.subscriptionsReady() ?? true) || reload
-    }
-    guard projects.active else { return }
-    if recovery {
-      if let projectBootstrap {
-        do { try await projectBootstrap.wait() } catch is CancellationError {
-          return
-        } catch {
-          handle(error)
-          return
-        }
-        guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
-        reload = projectBootstrap.needsRecoveryRead || reload
-      } else {
-        reload = batch.contains(.foregroundResume) || batch.contains(.realtimeGap) || reload
-      }
-    }
-    if reload {
-      await projects.refresh()
-    } else if recovery || batch.contains(.startup) || batch.contains(.initialSubscriptions) {
-      await projects.activate()
-    }
-  }
-
-  private func refreshConversations(_ batch: Set<ChatInvalidation>, generation: UUID) async {
-    var ids = Set<String>()
-    for invalidation in batch {
-      switch invalidation {
-      case .history(let id), .detail(let id): ids.insert(id)
-      default: break
-      }
-    }
-    if batch.contains(where: \.requiresFullRefresh) || batch.contains(.readCursor),
-      let selectedThreadID
-    {
-      ids.insert(selectedThreadID)
-    }
-    let ordered = ids.sorted { lhs, rhs in
-      if lhs == rhs { return false }
-      if lhs == selectedThreadID { return true }
-      if rhs == selectedThreadID { return false }
-      return lhs < rhs
-    }
-    for id in ordered {
-      guard !Task.isCancelled, refreshGeneration == generation else { return }
-      // Dormant conversations read their durable state when opened.
-      if let conversation = conversations[id] {
-        await conversation.refresh(waitForCurrent: true)
-      } else if selectedThreadID == id {
-        await conversation(for: id)?.refresh(waitForCurrent: true)
-      }
-    }
+    await synchronization.refresh(batch)
   }
 
   private func presentChat(_ thread: ChatThread) {

@@ -250,7 +250,7 @@ final class NativeAuthFlow {
 
   private func finish(sessionID: String?) async throws {
     try requireCurrentOperation()
-    guard let sessionID else { throw AuthenticationService.AuthenticationError.signedOut }
+    guard let sessionID else { throw AuthenticationError.signedOut }
     if clerk.session?.id != sessionID {
       try await clerk.auth.setActive(sessionId: sessionID)
     }

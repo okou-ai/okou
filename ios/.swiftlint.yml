@@ -6,7 +6,6 @@ disabled_rules:
   - large_tuple
   - line_length
   - nesting
-  - type_body_length
 
 opt_in_rules:
   - discarded_notification_center_observer
@@ -45,6 +44,11 @@ file_length:
 function_body_length:
   warning: 100
   error: 100
+
+# Class, struct, enum and actor bodies share a 500-line limit, excluding trivia.
+type_body_length:
+  warning: 500
+  error: 500
 
 included:
   - Okou

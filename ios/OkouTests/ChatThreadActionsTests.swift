@@ -168,6 +168,164 @@ final class ChatThreadActionsTests: XCTestCase {
     XCTAssertEqual(store.selectedConversation?.thread.displayTitle, "Updated from another device")
   }
 
+  func testRenameTrimsSkipsUnchangedTitlesAndKeepsInputForExplicitRetry() async throws {
+    let fixture = ThreadActionsFixture()
+    let store = fixture.workspace()
+    defer { store.close() }
+    await store.refresh()
+    store.selectChat(ThreadActionsFixture.thread)
+    store.list.beginRename(ThreadActionsFixture.thread)
+    store.list.renameTitle = "  \n "
+    await store.list.saveRename()
+    XCTAssertTrue(fixture.writes.isEmpty)
+    store.list.beginRename(ThreadActionsFixture.thread)
+    store.list.renameTitle = "  Planning a useful week \n"
+    await store.list.saveRename()
+    XCTAssertTrue(fixture.writes.isEmpty)
+    fixture.state.value.withLock { $0.failNext["rename"] = 503 }
+    store.list.beginRename(ThreadActionsFixture.thread)
+    store.list.renameTitle = "  A title worth keeping  "
+    await store.list.saveRename()
+    XCTAssertEqual(store.list.renameTitle, "  A title worth keeping  ")
+    XCTAssertNotNil(store.list.renameRequest?.error)
+    XCTAssertEqual(store.selectedConversation?.thread.title, "A title worth keeping")
+    await store.refresh()
+    XCTAssertEqual(store.list.threads.first?.displayTitle, "A title worth keeping")
+    await store.list.saveRename()
+    XCTAssertEqual(store.list.threads.first?.displayTitle, "A title worth keeping")
+    XCTAssertEqual(
+      fixture.writes.filter { $0.action == "rename" }.map(\.title),
+      ["A title worth keeping", "A title worth keeping"])
+    let renameIDs = fixture.writes.filter { $0.action == "rename" }.compactMap(\.eventID)
+    XCTAssertEqual(renameIDs.count, 2)
+    XCTAssertNotNil(UUID(uuidString: try XCTUnwrap(renameIDs.first)))
+    XCTAssertEqual(Set(renameIDs).count, 1)
+    fixture.remote(kind: "renamed", extra: ",\"title\":\"Confirmed elsewhere\"")
+    await store.refresh()
+    XCTAssertEqual(store.selectedConversation?.thread.title, "Confirmed elsewhere")
+  }
+
+  func testUnmuteMarksReadBeforeExposingPastRepliesAndRetriesFailures() async throws {
+    let fixture = ThreadActionsFixture(muted: true)
+    let store = fixture.workspace()
+    defer { store.close() }
+    await store.refreshNavigation()
+    await store.refresh()
+    XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isUnread)
+    fixture.state.value.withLock { $0.failNext["mark-read"] = 503 }
+    XCTAssertTrue(store.list.canMute(ThreadActionsFixture.thread))
+    await store.setMuted(ThreadActionsFixture.thread, muted: false)
+    XCTAssertEqual(fixture.writes.map(\.action), ["mark-read"])
+    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isMuted)
+    XCTAssertEqual(store.threadFeedback?.actionTitle, "Retry")
+    let retry = try XCTUnwrap(store.threadFeedback)
+    await retry.action()
+    XCTAssertEqual(fixture.writes.map(\.action), ["mark-read", "mark-read", "unmute"])
+    let thread = try XCTUnwrap(store.list.threads.first)
+    XCTAssertFalse(thread.isMuted)
+    XCTAssertFalse(thread.isUnread)
+    XCTAssertFalse(store.list.unreadAgentIDs.contains(ThreadActionsFixture.agent))
+    XCTAssertEqual(store.threadFeedback?.actionTitle, "Undo")
+
+    // A new reply after unmuting can become unread normally.
+    fixture.state.value.withLock { $0.unread = true }
+    await store.list.refreshIndicators()
+    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isUnread)
+  }
+
+  func testMuteDenialAndUnmuteFailureKeepRecoverableState() async throws {
+    let fixture = ThreadActionsFixture()
+    let store = fixture.workspace()
+    defer { store.close() }
+    await store.refreshNavigation()
+    await store.refresh()
+    fixture.state.value.withLock { $0.failNext["mute"] = 404 }
+    await store.setMuted(ThreadActionsFixture.thread, muted: true)
+    XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isMuted)
+    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isUnread)
+    await (try XCTUnwrap(store.threadFeedback)).action()
+    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isMuted)
+    // Undo a mute restores the old unread state, without marking read.
+    await (try XCTUnwrap(store.threadFeedback)).action()
+    XCTAssertEqual(fixture.writes.map(\.action), ["mute", "mute", "unmute"])
+    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isUnread)
+    await store.setMuted(ThreadActionsFixture.thread, muted: true)
+    fixture.state.value.withLock { $0.failNext["unmute"] = 403 }
+    await store.setMuted(ThreadActionsFixture.thread, muted: false)
+    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isMuted)
+    XCTAssertEqual(store.threadFeedback?.actionTitle, "Retry")
+    await (try XCTUnwrap(store.threadFeedback)).action()
+    XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isMuted)
+    XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isUnread)
+  }
+
+  func testClosingWorkspaceCancelsMutationsAndDiscardsEditorsFeedbackAndUndo() async throws {
+    for operation in ["archive", "mute", "rename"] {
+      let fixture = ThreadActionsFixture()
+      let store = fixture.workspace()
+      defer { store.close() }
+      await store.refreshNavigation()
+      await store.refresh()
+      store.selectChat(ThreadActionsFixture.thread)
+      let gate = ThreadActionGate()
+      defer { gate.open() }
+      let requested = expectation(description: "Write reached the HTTP boundary")
+      fixture.state.value.withLock {
+        $0.nextGate = gate
+        $0.nextWriteRequested = { requested.fulfill() }
+      }
+      let pending = Task {
+        switch operation {
+        case "archive":
+          await store.setArchived(ThreadActionsFixture.thread, archived: true, leaveDetail: true)
+        case "mute": await store.setMuted(ThreadActionsFixture.thread, muted: true)
+        default:
+          store.list.beginRename(ThreadActionsFixture.thread)
+          store.list.renameTitle = "Old workspace edit"
+          await store.list.saveRename()
+        }
+      }
+      addTeardownBlock { @MainActor in
+        store.close()
+        pending.cancel()
+        gate.open()
+        await pending.value
+      }
+      await fulfillment(of: [requested], timeout: 3)
+      store.close()
+      gate.open()
+      await pending.value
+      XCTAssertNil(store.threadFeedback)
+      XCTAssertNil(store.list.renameRequest)
+      let freshFixture = ThreadActionsFixture()
+      let fresh = freshFixture.workspace()
+      defer { fresh.close() }
+      await fresh.refresh()
+      XCTAssertEqual(fresh.list.threads.first?.title, "Planning a useful week")
+      XCTAssertFalse(try XCTUnwrap(fresh.list.threads.first).isMuted)
+      XCTAssertFalse(try XCTUnwrap(fresh.list.threads.first).isArchived)
+      XCTAssertNil(fresh.threadFeedback)
+    }
+  }
+
+  func testUpgradeFromMenuMutationClosesWorkspaceWithoutRetryOrEditor() async throws {
+    let fixture = ThreadActionsFixture()
+    let store = fixture.workspace()
+    await store.refreshNavigation()
+    await store.refresh()
+    fixture.state.value.withLock { $0.failNext["mute"] = 426 }
+    await store.setMuted(ThreadActionsFixture.thread, muted: true)
+    XCTAssertTrue(store.needsUpgrade)
+    XCTAssertNil(store.threadFeedback)
+    store.list.beginRename(ThreadActionsFixture.thread)
+    XCTAssertNil(store.list.renameRequest)
+  }
+
+}
+
+@MainActor
+final class ChatThreadArchiveTests: XCTestCase {
+
   func testAcceptedArchiveKeepsUndoWhenTheFollowingListRefreshFails() async throws {
     let fixture = ThreadActionsFixture()
     let store = fixture.workspace()
@@ -272,97 +430,6 @@ final class ChatThreadActionsTests: XCTestCase {
     await (try XCTUnwrap(store.threadFeedback)).action()
     XCTAssertFalse(store.sidebarInteraction.isOpen)
     XCTAssertEqual(store.selectedThreadID, ThreadActionsFixture.thread)
-  }
-
-  func testRenameTrimsSkipsUnchangedTitlesAndKeepsInputForExplicitRetry() async throws {
-    let fixture = ThreadActionsFixture()
-    let store = fixture.workspace()
-    defer { store.close() }
-    await store.refresh()
-    store.selectChat(ThreadActionsFixture.thread)
-    store.list.beginRename(ThreadActionsFixture.thread)
-    store.list.renameTitle = "  \n "
-    await store.list.saveRename()
-    XCTAssertTrue(fixture.writes.isEmpty)
-    store.list.beginRename(ThreadActionsFixture.thread)
-    store.list.renameTitle = "  Planning a useful week \n"
-    await store.list.saveRename()
-    XCTAssertTrue(fixture.writes.isEmpty)
-    fixture.state.value.withLock { $0.failNext["rename"] = 503 }
-    store.list.beginRename(ThreadActionsFixture.thread)
-    store.list.renameTitle = "  A title worth keeping  "
-    await store.list.saveRename()
-    XCTAssertEqual(store.list.renameTitle, "  A title worth keeping  ")
-    XCTAssertNotNil(store.list.renameRequest?.error)
-    XCTAssertEqual(store.selectedConversation?.thread.title, "A title worth keeping")
-    await store.refresh()
-    XCTAssertEqual(store.list.threads.first?.displayTitle, "A title worth keeping")
-    await store.list.saveRename()
-    XCTAssertEqual(store.list.threads.first?.displayTitle, "A title worth keeping")
-    XCTAssertEqual(
-      fixture.writes.filter { $0.action == "rename" }.map(\.title),
-      ["A title worth keeping", "A title worth keeping"])
-    let renameIDs = fixture.writes.filter { $0.action == "rename" }.compactMap(\.eventID)
-    XCTAssertEqual(renameIDs.count, 2)
-    XCTAssertNotNil(UUID(uuidString: try XCTUnwrap(renameIDs.first)))
-    XCTAssertEqual(Set(renameIDs).count, 1)
-    fixture.remote(kind: "renamed", extra: ",\"title\":\"Confirmed elsewhere\"")
-    await store.refresh()
-    XCTAssertEqual(store.selectedConversation?.thread.title, "Confirmed elsewhere")
-  }
-
-  func testUnmuteMarksReadBeforeExposingPastRepliesAndRetriesFailures() async throws {
-    let fixture = ThreadActionsFixture(muted: true)
-    let store = fixture.workspace()
-    defer { store.close() }
-    await store.refreshNavigation()
-    await store.refresh()
-    XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isUnread)
-    fixture.state.value.withLock { $0.failNext["mark-read"] = 503 }
-    XCTAssertTrue(store.list.canMute(ThreadActionsFixture.thread))
-    await store.setMuted(ThreadActionsFixture.thread, muted: false)
-    XCTAssertEqual(fixture.writes.map(\.action), ["mark-read"])
-    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isMuted)
-    XCTAssertEqual(store.threadFeedback?.actionTitle, "Retry")
-    let retry = try XCTUnwrap(store.threadFeedback)
-    await retry.action()
-    XCTAssertEqual(fixture.writes.map(\.action), ["mark-read", "mark-read", "unmute"])
-    let thread = try XCTUnwrap(store.list.threads.first)
-    XCTAssertFalse(thread.isMuted)
-    XCTAssertFalse(thread.isUnread)
-    XCTAssertFalse(store.list.unreadAgentIDs.contains(ThreadActionsFixture.agent))
-    XCTAssertEqual(store.threadFeedback?.actionTitle, "Undo")
-
-    // A new reply after unmuting can become unread normally.
-    fixture.state.value.withLock { $0.unread = true }
-    await store.list.refreshIndicators()
-    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isUnread)
-  }
-
-  func testMuteDenialAndUnmuteFailureKeepRecoverableState() async throws {
-    let fixture = ThreadActionsFixture()
-    let store = fixture.workspace()
-    defer { store.close() }
-    await store.refreshNavigation()
-    await store.refresh()
-    fixture.state.value.withLock { $0.failNext["mute"] = 404 }
-    await store.setMuted(ThreadActionsFixture.thread, muted: true)
-    XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isMuted)
-    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isUnread)
-    await (try XCTUnwrap(store.threadFeedback)).action()
-    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isMuted)
-    // Undo a mute restores the old unread state, without marking read.
-    await (try XCTUnwrap(store.threadFeedback)).action()
-    XCTAssertEqual(fixture.writes.map(\.action), ["mute", "mute", "unmute"])
-    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isUnread)
-    await store.setMuted(ThreadActionsFixture.thread, muted: true)
-    fixture.state.value.withLock { $0.failNext["unmute"] = 403 }
-    await store.setMuted(ThreadActionsFixture.thread, muted: false)
-    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isMuted)
-    XCTAssertEqual(store.threadFeedback?.actionTitle, "Retry")
-    await (try XCTUnwrap(store.threadFeedback)).action()
-    XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isMuted)
-    XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isUnread)
   }
 
   func testDetailArchiveSurvivesNavigationAndCallerCancellationAndUndoRestoresChat() async throws {
@@ -514,68 +581,6 @@ final class ChatThreadActionsTests: XCTestCase {
     XCTAssertFalse(store.sidebarInteraction.isOpen)
     XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isUnread)
     XCTAssertEqual(fixture.writes.map(\.action), ["archive", "unarchive", "mark-read"])
-  }
-
-  func testClosingWorkspaceCancelsMutationsAndDiscardsEditorsFeedbackAndUndo() async throws {
-    for operation in ["archive", "mute", "rename"] {
-      let fixture = ThreadActionsFixture()
-      let store = fixture.workspace()
-      defer { store.close() }
-      await store.refreshNavigation()
-      await store.refresh()
-      store.selectChat(ThreadActionsFixture.thread)
-      let gate = ThreadActionGate()
-      defer { gate.open() }
-      let requested = expectation(description: "Write reached the HTTP boundary")
-      fixture.state.value.withLock {
-        $0.nextGate = gate
-        $0.nextWriteRequested = { requested.fulfill() }
-      }
-      let pending = Task {
-        switch operation {
-        case "archive":
-          await store.setArchived(ThreadActionsFixture.thread, archived: true, leaveDetail: true)
-        case "mute": await store.setMuted(ThreadActionsFixture.thread, muted: true)
-        default:
-          store.list.beginRename(ThreadActionsFixture.thread)
-          store.list.renameTitle = "Old workspace edit"
-          await store.list.saveRename()
-        }
-      }
-      addTeardownBlock { @MainActor in
-        store.close()
-        pending.cancel()
-        gate.open()
-        await pending.value
-      }
-      await fulfillment(of: [requested], timeout: 3)
-      store.close()
-      gate.open()
-      await pending.value
-      XCTAssertNil(store.threadFeedback)
-      XCTAssertNil(store.list.renameRequest)
-      let freshFixture = ThreadActionsFixture()
-      let fresh = freshFixture.workspace()
-      defer { fresh.close() }
-      await fresh.refresh()
-      XCTAssertEqual(fresh.list.threads.first?.title, "Planning a useful week")
-      XCTAssertFalse(try XCTUnwrap(fresh.list.threads.first).isMuted)
-      XCTAssertFalse(try XCTUnwrap(fresh.list.threads.first).isArchived)
-      XCTAssertNil(fresh.threadFeedback)
-    }
-  }
-
-  func testUpgradeFromMenuMutationClosesWorkspaceWithoutRetryOrEditor() async throws {
-    let fixture = ThreadActionsFixture()
-    let store = fixture.workspace()
-    await store.refreshNavigation()
-    await store.refresh()
-    fixture.state.value.withLock { $0.failNext["mute"] = 426 }
-    await store.setMuted(ThreadActionsFixture.thread, muted: true)
-    XCTAssertTrue(store.needsUpgrade)
-    XCTAssertNil(store.threadFeedback)
-    store.list.beginRename(ThreadActionsFixture.thread)
-    XCTAssertNil(store.list.renameRequest)
   }
 
 }
