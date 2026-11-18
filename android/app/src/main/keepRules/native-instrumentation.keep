@@ -940,10 +940,12 @@
   public kotlin.text.MatchGroup get(int);
 }
 -keep,allowobfuscation interface kotlin.text.MatchResult {
+  public java.util.List getGroupValues();
   public kotlin.text.MatchGroupCollection getGroups();
 }
 -keep,allowobfuscation class kotlin.text.Regex {
   public <init>(java.lang.String);
+  public static kotlin.text.MatchResult find$default(kotlin.text.Regex, java.lang.CharSequence, int, int, java.lang.Object);
   public static kotlin.sequences.Sequence findAll$default(kotlin.text.Regex, java.lang.CharSequence, int, int, java.lang.Object);
   public boolean matches(java.lang.CharSequence);
 }
