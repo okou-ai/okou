@@ -248,6 +248,52 @@ class ChatReplayTest {
     }
 
     @Test
+    fun waveCountsIdleRowsAndProjectHeadersButSkipsFoldedChildren() {
+        val member = ",\"projectId\":\"$CHAT_PROJECT\""
+        val threads =
+            replay(
+                event(1, "created"),
+                event(2, "created", extra = member, thread = CHAT_IN_PROJECT),
+                event(3, "created", extra = member, thread = "99999999-9999-4999-8999-999999999999"),
+            )
+        val project =
+            ConfirmedProject(
+                CHAT_PROJECT,
+                "Research",
+                "2026-11-13T00:00:00Z",
+                "2026-11-13T00:00:00Z",
+            )
+        val groups =
+            chatListGroups(
+                ChatListUiState(
+                    threads = threads,
+                    agents = agents(),
+                    projectsEnabled = true,
+                    projects = listOf(project),
+                )
+            )
+        val indicators = mapOf(CHAT_IN_PROJECT to IndicatorsThreadsValue.ACTIVE)
+
+        val (open, afterOpen) = chatListSections(groups, emptyList(), indicators)
+        assertEquals(0, open.firstRow)
+        assertEquals(1, open.firstChatRow)
+        assertEquals(3, afterOpen.firstChatRow)
+
+        val (folded, afterFolded) = chatListSections(groups, listOf(project.id), indicators)
+        assertEquals(ChatRowStatus.Running, folded.foldedStatus)
+        assertEquals(1, afterFolded.firstChatRow)
+    }
+
+    @Test
+    fun waveRowsTrailByTwoHundredMillisecondsAndWrapEveryTwelveRows() {
+        val time = 1_100_000_000L
+        assertEquals(runningWavePhase(time, 0), runningWavePhase(time + 200_000_000L, 1), 0f)
+        assertEquals(runningWavePhase(time, 0), runningWavePhase(time, 12), 0f)
+        assertEquals(runningWavePhase(time, 0), runningWavePhase(time + 2_400_000_000L, 0), 0f)
+        assertEquals(11f / 12f, runningWavePhase(0, 1), 0.00001f)
+    }
+
+    @Test
     fun sqlAndOffsetTimesUseUtcAndMillisecondPrecisionForHistoricalPins() {
         assertEquals(chatTime("2026-11-13T00:00:00.123Z"), chatTime("2026-11-13 00:00:00.123456"))
         assertEquals(chatTime("2026-11-13T00:00:00Z"), chatTime("2026-11-13T08:00:00+0800"))

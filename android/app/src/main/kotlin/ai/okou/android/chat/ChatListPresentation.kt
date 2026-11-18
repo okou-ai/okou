@@ -40,6 +40,32 @@ internal fun ChatListGroup.pinnedTailIndex(): Int {
     return if (firstOrdinary > 0) firstOrdinary - 1 else -1
 }
 
+internal data class ChatListSection(
+    val group: ChatListGroup,
+    val firstRow: Int,
+    val foldedStatus: ChatRowStatus?,
+) {
+    val firstChatRow: Int
+        get() = if (group.project == null) firstRow else firstRow + 1
+}
+
+internal fun chatListSections(
+    groups: List<ChatListGroup>,
+    collapsed: List<String>,
+    indicators: Map<String, IndicatorsThreadsValue>,
+): List<ChatListSection> {
+    val foldedIds = collapsed.toSet()
+    var row = 0
+    return groups.map { group ->
+        val foldedStatus =
+            if (group.project?.id in foldedIds) collapsedProjectStatus(group.threads, indicators)
+            else null
+        val section = ChatListSection(group, row, foldedStatus)
+        row = section.firstChatRow + if (foldedStatus == null) group.threads.size else 0
+        section
+    }
+}
+
 /** Known Projects span agents; the inbox outside them uses the actual default agent. */
 fun chatListGroups(state: ChatListUiState): List<ChatListGroup> {
     val visible = state.threads.filter { it.hidden != true }
