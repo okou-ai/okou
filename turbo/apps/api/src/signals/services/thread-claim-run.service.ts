@@ -82,7 +82,13 @@ import {
 } from "../external/realtime";
 
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
-import { onRejection, safeSync, settle, tapError } from "../utils";
+import {
+  joinAllInOrder,
+  onRejection,
+  safeSync,
+  settle,
+  tapError,
+} from "../utils";
 import type { DirectRunDispatchResult } from "./direct-run-dispatch.service";
 import {
   captureExecutionPackages$,
@@ -3494,13 +3500,17 @@ export function createThreadClaimRunObjects(
     async ({ get, set }, signal: AbortSignal) => {
       const original = await get(runPlan$);
       signal.throwIfAborted();
-      const [emailPrompt, launch] = await Promise.all([
-        original && !isRouteError(original)
-          ? set(prepareEmailSystemPrompt$, signal)
-          : null,
-        set(prepareRunnerStorage$, signal),
-      ]);
-      signal.throwIfAborted();
+      // Email enrichment can persist refreshed credentials. Keep it owned by
+      // this preparation even if the Runner inputs fail first.
+      const [emailPrompt, launch] = await joinAllInOrder(
+        [
+          original && !isRouteError(original)
+            ? set(prepareEmailSystemPrompt$, signal)
+            : null,
+          set(prepareRunnerStorage$, signal),
+        ],
+        signal,
+      );
       const plan =
         original && !isRouteError(original)
           ? withEmailSystemPrompt(original, emailPrompt)
