@@ -1,5 +1,8 @@
 name: Reconcile Marketing Reward Sources
 
+env:
+  npm_config_audit: "false"
+
 on:
   workflow_dispatch:
     inputs:
