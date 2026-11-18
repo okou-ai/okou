@@ -45,13 +45,13 @@ impl ManagedTasks {
 
     fn caller_scope(&self, stream: &UnixStream) -> io::Result<Option<TaskHandle>> {
         let credentials = peer_credentials(stream)?;
-        if credentials.uid != self.uid {
+        if credentials.uid() != self.uid {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "task caller UID mismatch",
             ));
         }
-        let cgroup = fs::read_to_string(format!("/proc/{}/cgroup", credentials.pid))?;
+        let cgroup = fs::read_to_string(format!("/proc/{}/cgroup", credentials.pid()))?;
         let Some(relative) = cgroup.lines().find_map(|line| line.strip_prefix("0::/")) else {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
@@ -129,7 +129,7 @@ impl ManagedTasks {
 
     fn launch(&self, stream: &UnixStream) -> io::Result<()> {
         let credentials = peer_credentials(stream)?;
-        let pidfd = open_pidfd(credentials.pid)?
+        let pidfd = open_pidfd(credentials.pid())?
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "task launcher exited"))?;
         // A socket PID is not a stable lifetime identity. Recheck after pidfd_open.
         if pidfd_exited(&pidfd)? {
@@ -206,7 +206,7 @@ impl ManagedTasks {
                 &TaskReply::Ready {
                     task: TaskStartup {
                         handle: handle.clone(),
-                        pid: credentials.pid as u32,
+                        pid: credentials.pid() as u32,
                     },
                 },
             )?;
@@ -281,7 +281,7 @@ impl ManagedTasks {
 
     fn stop_from_caller(&self, stream: &UnixStream, handle: &TaskHandle) -> io::Result<()> {
         let credentials = peer_credentials(stream)?;
-        let caller = open_pidfd(credentials.pid)?.ok_or_else(|| {
+        let caller = open_pidfd(credentials.pid())?.ok_or_else(|| {
             io::Error::new(io::ErrorKind::PermissionDenied, "task stop caller exited")
         })?;
         if pidfd_exited(&caller)? {

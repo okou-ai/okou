@@ -2253,6 +2253,7 @@ version = "0.2.84"
 dependencies = [
  "guest-contracts",
  "libc",
+ "nix 0.32.0",
  "process-control-ipc",
  "serde_json",
 ]
