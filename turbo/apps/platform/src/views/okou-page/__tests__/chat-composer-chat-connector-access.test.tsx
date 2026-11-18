@@ -7,6 +7,7 @@ import {
   type ChatConnectorAccess,
 } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { customConnectorByIdContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
@@ -30,6 +31,7 @@ import {
   noAuthMethod,
   SCOUT_AGENT_ID,
   SCOUT_THREAD_ID,
+  OTHER_THREAD_ID,
   chatConnectorOverviewFixture,
 } from "./chat-composer-connectors-test-helpers.ts";
 import {
@@ -64,6 +66,8 @@ function installAccess(
     rejectSelection?: boolean;
     custom?: boolean;
     noPermissions?: boolean;
+    secondPane?: boolean;
+    outsideDiscovery?: boolean;
     beforeSaveResponse?: (signal: AbortSignal) => Promise<void>;
   } = {},
 ) {
@@ -71,6 +75,24 @@ function installAccess(
     ? { kind: "custom" as const, customConnectorId: ACME_CONNECTOR_ID }
     : target;
   installComposerConnectorFixture({
+    ...(options.secondPane
+      ? {
+          threads: [
+            {
+              id: SCOUT_THREAD_ID,
+              title: "Scout chat",
+              agentId: SCOUT_AGENT_ID,
+            },
+            {
+              id: OTHER_THREAD_ID,
+              title: "Other chat",
+              agentId: SCOUT_AGENT_ID,
+            },
+          ],
+          threadId: SCOUT_THREAD_ID,
+        }
+      : {}),
+    ...(options.outsideDiscovery ? { featuredConnectorSlugs: [] } : {}),
     catalog: options.custom
       ? []
       : [
@@ -94,7 +116,11 @@ function installAccess(
         ]
       : [],
     accounts: [work, personal].map((account) => {
-      return { ...account, target: accessTarget };
+      return {
+        ...account,
+        target: accessTarget,
+        scopeMismatch: Boolean(options.outsideDiscovery),
+      };
     }),
     permissionDetails: new Map([
       [
@@ -732,6 +758,79 @@ function expectRetainedDraft(path: string, composer: HTMLElement) {
   expect(window.location.pathname).toBe(path);
   expect(composer).toHaveTextContent("Use my personal GitHub account");
 }
+
+test.each([
+  { label: "GitHub", custom: false },
+  { label: "Acme", custom: true },
+])(
+  "Transfer the $label account manager between Chat panes with one dialog and the correct focus return",
+  async ({ label, custom }) => {
+    const user = userEvent.setup({ delay: null });
+    installAccess({ custom, secondPane: true });
+    await setup(`/chats/${SCOUT_THREAD_ID}?sidebar=${OTHER_THREAD_ID}`);
+    for (const threadId of [
+      SCOUT_THREAD_ID,
+      OTHER_THREAD_ID,
+      SCOUT_THREAD_ID,
+    ]) {
+      const pane = await waitFor(() => {
+        const element = document.querySelector<HTMLElement>(
+          `[data-chat-thread-container-id="${threadId}"]`,
+        );
+        if (!element) {
+          throw new Error(`Chat pane ${threadId} not found`);
+        }
+        return element;
+      });
+      const trigger = await findFastControl("button", "Connectors", pane);
+      await user.click(trigger);
+      const menu = await screen.findByRole("dialog", { name: "Connectors" });
+      await user.click(await within(menu).findByText(label));
+      await user.click(await findFastControl("button", "Manage accounts"));
+      await screen.findAllByText(`Manage ${label} accounts`);
+      expect(screen.getAllByText(`Manage ${label} accounts`)).toHaveLength(1);
+      const manager = await screen.findByRole("dialog", {
+        name: `Manage ${label} accounts`,
+      });
+      await within(manager).findByText("Work");
+      await user.keyboard("{Escape}");
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).toBeNull();
+        expect(trigger).toHaveFocus();
+      });
+    }
+  },
+);
+
+test("Reconnect the reviewed Chat account when its connector is outside directory discovery", async () => {
+  const user = userEvent.setup({ delay: null });
+  installAccess({ outsideDiscovery: true });
+  context.mocks.api(connectorAccountsContract.scopeDiff, ({ respond }) => {
+    return respond(200, {
+      addedScopes: ["read:user"],
+      removedScopes: [],
+      currentScopes: ["read:user"],
+      storedScopes: [],
+    });
+  });
+  await setup();
+  await user.click(await openMenu());
+  await user.click(await findFastControl("button", "Manage accounts"));
+  const manager = await screen.findByRole("dialog", {
+    name: "Manage GitHub accounts",
+  });
+  const workRow = await within(manager).findByRole("group", { name: "Work" });
+  await user.click(await findFastControl("button", "Account actions", workRow));
+  await user.click(await screen.findByText("Review permissions"));
+  const review = await screen.findByRole("dialog", {
+    name: "GitHub permissions update",
+  });
+  await user.click(await findFastControl("button", "Reconnect", review));
+  const reconnect = await screen.findByRole("dialog", { name: "GitHub" });
+  await expect(
+    findFastControl("button", "Reconnect", reconnect),
+  ).resolves.toBeVisible();
+});
 
 test("Preserve the internally resolved account when enabling several accounts before the first Run", async () => {
   const user = userEvent.setup({ delay: null });

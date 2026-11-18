@@ -10,7 +10,7 @@ import {
   openBuiltinAccountConnectDialog$,
 } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 import {
-  relatedCatalogItems$,
+  builtinConnectorScopeReviewCatalogItem$,
   builtinConnectorScopeReviewSelection$,
   setBuiltinConnectorScopeReviewSelection$,
 } from "../../signals/okou-page/settings/connectors.ts";
@@ -185,8 +185,8 @@ function BuiltinScopeReviewBody() {
     setBuiltinConnectorScopeReviewSelection$,
   );
   const openAccountConnect = useSet(openBuiltinAccountConnectDialog$);
-  const catalog = useLastLoadable(relatedCatalogItems$);
-  const allConnectors = catalog.state === "hasData" ? catalog.data : [];
+  const catalog = useLastLoadable(builtinConnectorScopeReviewCatalogItem$);
+  const connector = catalog.state === "hasData" ? catalog.data : null;
   return scopeReviewSelection ? (
     <ScopeReviewModal
       selection={scopeReviewSelection}
@@ -194,11 +194,8 @@ function BuiltinScopeReviewBody() {
         return setScopeReviewSelection(null);
       }}
       onReconnect={(selection) => {
-        setScopeReviewSelection(null);
-        const connector = allConnectors.find((connector) => {
-          return connector.slug === selection.connectorSlug;
-        });
-        if (connector) {
+        if (connector?.slug === selection.connectorSlug) {
+          setScopeReviewSelection(null);
           openAccountConnect(connector, {
             kind: "reconnect",
             connectionId: selection.connectionId,

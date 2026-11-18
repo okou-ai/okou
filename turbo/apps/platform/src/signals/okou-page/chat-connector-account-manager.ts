@@ -25,6 +25,10 @@ import {
   setBuiltinConnectorScopeReviewSelection$,
 } from "./settings/connectors.ts";
 
+// The account dialogs are shared, so opening from another composer transfers
+// their lifetime and releases the previous composer's dialog host.
+const resetActiveAccountManager$ = resetSignal();
+
 /** Account management stays on the Chat and shares its composer's lifetime. */
 export function createChatConnectorAccountManagerSignals() {
   const active$ = state(false);
@@ -36,7 +40,8 @@ export function createChatConnectorAccountManagerSignals() {
       parentSignal: AbortSignal,
     ) => {
       parentSignal.throwIfAborted();
-      const signal = set(resetOwner$, parentSignal);
+      const ownerSignal = set(resetOwner$, parentSignal);
+      const signal = set(resetActiveAccountManager$, ownerSignal);
       set(resetConnectorAccountDialogs$);
       set(setBuiltinConnectorScopeReviewSelection$, null);
       signal.addEventListener(
