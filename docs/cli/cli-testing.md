@@ -69,14 +69,15 @@ revision and never falls back to the 2025 handshake, so a mock must answer
 
 Mock the external MCP endpoint with MSW and inspect the actual tool name and
 arguments, as in `src/commands/data/__tests__/router.test.ts`. Keep command
-registration, argument validation and MCP transport real. Data commands print
-the complete Router JSON body without validating, projecting, or formatting
-provider result fields. A body over 32 KB is written unchanged to an
-owner-only temporary file, and the call prints its path, size and top-level
-shape instead. Each call returns the Router response; billing totals
-the reported request costs when the Run ends. Test arbitrary JSON results and
-transport failures without automatically resubmitting a potentially paid tool
-call.
+registration, argument validation and MCP transport real. Data commands never
+validate or project provider result fields. Every call writes the Router body
+unchanged to a numbered owner-only file under the OS temporary directory and
+prints its path with a field outline derived from the JSON itself; stub
+`TMPDIR` to a per-test directory. An identical successful call reuses that file
+without a request unless `--refresh` is passed; calls with caller-owned history
+and failed calls are never reused. Billing totals the reported request costs
+when the Run ends. Test arbitrary JSON results and transport failures without
+automatically resubmitting a potentially paid tool call.
 
 ## Command integration pattern
 
