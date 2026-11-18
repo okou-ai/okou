@@ -9,7 +9,7 @@ use std::fs::{self, File};
 use std::io::{self, Write};
 use std::os::fd::{AsFd, AsRawFd};
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{FileTypeExt, MetadataExt};
+use std::os::unix::fs::{FileTypeExt, MetadataExt, fchown};
 use std::path::{Component, Path, PathBuf};
 
 use guest_contracts::home_mount::{HOME_DEVICE, HOME_DIR};
@@ -275,12 +275,9 @@ fn open_child_directory_fd(parent: impl AsFd, name: impl AsRef<[u8]>) -> io::Res
     Ok(File::from(fd))
 }
 
-fn repair_owner(directory: &File, uid: u32, gid: u32) -> io::Result<()> {
-    // SAFETY: directory owns a live descriptor; IDs are account-derived.
-    if unsafe { libc::fchown(directory.as_raw_fd(), uid, gid) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    validate_owner(directory, uid, gid)
+fn repair_owner(file: &File, uid: u32, gid: u32) -> io::Result<()> {
+    fchown(file, Some(uid), Some(gid))?;
+    validate_owner(file, uid, gid)
 }
 
 fn validate_owner(file: &File, uid: u32, gid: u32) -> io::Result<()> {
