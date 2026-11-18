@@ -46,7 +46,7 @@ use runner_host::home_observation::{HomeObservation, HomeObservationKind, HomeOb
 mod handoff;
 mod publication;
 #[cfg(test)]
-mod timing_tests;
+mod tests;
 
 const HOME_IMAGE_PREPARE_LOCK_TIMEOUT: Duration = Duration::from_millis(50);
 // Bound queued publication IO admission while retaining entry and resource
