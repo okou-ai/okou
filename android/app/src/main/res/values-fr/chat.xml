@@ -26,4 +26,9 @@
     <string name="chat_pinned">Épinglée</string>
     <string name="chat_active">Active</string>
     <string name="chat_metadata_cached">Les noms Okou et des projets enregistrés sont affichés.</string>
+    <string name="chat_actions">Actions de la discussion</string>
+    <string name="chat_mark_read">Marquer comme lu</string>
+    <string name="chat_mark_unread">Marquer comme non lu</string>
+    <string name="chat_read_action_pending">Mise à jour du statut de lecture…</string>
+    <string name="chat_read_action_failed">Impossible de mettre à jour le statut de lecture.</string>
 </resources>

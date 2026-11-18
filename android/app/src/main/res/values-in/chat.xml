@@ -26,4 +26,9 @@
     <string name="chat_pinned">Disematkan</string>
     <string name="chat_active">Aktif</string>
     <string name="chat_metadata_cached">Menampilkan nama Okou dan Proyek yang tersimpan.</string>
+    <string name="chat_actions">Tindakan chat</string>
+    <string name="chat_mark_read">Tandai sudah dibaca</string>
+    <string name="chat_mark_unread">Tandai belum dibaca</string>
+    <string name="chat_read_action_pending">Memperbarui status baca…</string>
+    <string name="chat_read_action_failed">Status baca tidak dapat diperbarui.</string>
 </resources>

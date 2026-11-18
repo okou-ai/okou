@@ -242,6 +242,7 @@
   public java.lang.Object historySnapshot(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object indicators(kotlin.coroutines.Continuation);
   public java.lang.Object markRead(java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object markUnread(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object newChatAgent(kotlin.coroutines.Continuation);
   public java.lang.Object observeInput(java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object observeRealtime(kotlinx.coroutines.flow.StateFlow, kotlin.jvm.functions.Function3, kotlin.jvm.functions.Function2, kotlin.coroutines.Continuation);
@@ -304,6 +305,7 @@
   public java.lang.Object historySnapshot(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object indicators(kotlin.coroutines.Continuation);
   public java.lang.Object markRead(java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object markUnread(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object projectArchive(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object projectEvents(long, kotlin.coroutines.Continuation);
   public java.lang.Object projectSnapshot(kotlin.coroutines.Continuation);

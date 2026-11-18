@@ -251,6 +251,8 @@ class CanonicalWorkspaceSession(
 
     override suspend fun markRead(threadId: String) = api.markRead(threadId)
 
+    override suspend fun markUnread(threadId: String) = api.markUnread(threadId)
+
     override suspend fun historyRows(threadId: String, cursor: HistoryCursor): HistoryPage =
         withContext(Dispatchers.Default) {
             val page = api.historyRows(threadId, cursor)

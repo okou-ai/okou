@@ -26,4 +26,9 @@
     <string name="chat_pinned">पिन की गई</string>
     <string name="chat_active">सक्रिय</string>
     <string name="chat_metadata_cached">सहेजे गए Okou और प्रोजेक्ट के नाम दिखाई जा रहे हैं।</string>
+    <string name="chat_actions">चैट की कार्रवाइयाँ</string>
+    <string name="chat_mark_read">पढ़ा हुआ चिह्नित करें</string>
+    <string name="chat_mark_unread">अपठित चिह्नित करें</string>
+    <string name="chat_read_action_pending">पढ़ने की स्थिति अपडेट हो रही है…</string>
+    <string name="chat_read_action_failed">पढ़ने की स्थिति अपडेट नहीं हो सकी।</string>
 </resources>

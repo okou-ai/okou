@@ -5,6 +5,7 @@ import ai.okou.android.api.generated.IndicatorsThreadsValue
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,6 +22,8 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -30,12 +33,21 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LongState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -63,6 +75,7 @@ internal fun ChatListScreen(
     retryMetadata: () -> Unit,
     refreshIndicators: () -> Unit,
     open: (ConfirmedChat) -> Unit,
+    changeReadState: (String, ChatReadAction) -> Unit,
     collapsed: List<String>,
     toggleProject: (String) -> Unit,
     listState: LazyListState,
@@ -223,6 +236,11 @@ internal fun ChatListScreen(
                                     thread.id == selectedChatId,
                                     runningFrame,
                                     row = section.firstChatRow + index,
+                                    readAction = state.readAction(thread),
+                                    readActionPending = thread.id in state.pendingReadActions,
+                                    changeReadState = { action ->
+                                        changeReadState(thread.id, action)
+                                    },
                                 ) {
                                     open(thread)
                                 }
@@ -317,8 +335,14 @@ private fun ChatRow(
     isSelected: Boolean,
     runningFrame: LongState,
     row: Int,
+    readAction: ChatReadAction?,
+    readActionPending: Boolean,
+    changeReadState: (ChatReadAction) -> Unit,
     open: () -> Unit,
 ) {
+    var menuOpen by remember(readAction) { mutableStateOf(false) }
+    val openMenu: (() -> Unit)? =
+        if (readAction != null && !readActionPending) ({ menuOpen = true }) else null
     val labels =
         listOfNotNull(
             status.label(),
@@ -326,35 +350,75 @@ private fun ChatRow(
             if (thread.muted == true && status == ChatRowStatus.Running) {
                 stringResource(R.string.chat_muted)
             } else null,
+            if (readActionPending) stringResource(R.string.chat_read_action_pending) else null,
         )
     val shape = RoundedCornerShape(8.dp)
     val colors = MaterialTheme.colorScheme
-    Row(
-        Modifier.fillMaxWidth()
-            .heightIn(min = 52.dp)
-            .clip(shape)
-            .then(if (isSelected) Modifier.background(colors.secondaryContainer) else Modifier)
-            .clickable(onClick = open)
-            .testTag("chat_${thread.id}")
-            .semantics {
-                if (isSelected) selected = true
-                if (labels.isNotEmpty()) stateDescription = labels.joinToString()
+    Box {
+        Row(
+            Modifier.fillMaxWidth()
+                .heightIn(min = 52.dp)
+                .clip(shape)
+                .then(if (isSelected) Modifier.background(colors.secondaryContainer) else Modifier)
+                .onKeyEvent {
+                    if (
+                        openMenu != null &&
+                            it.type == KeyEventType.KeyUp &&
+                            (it.key == Key.Menu || it.key == Key.F10 && it.isShiftPressed)
+                    ) {
+                        openMenu()
+                        true
+                    } else false
+                }
+                .combinedClickable(
+                    onClick = open,
+                    onLongClick = openMenu,
+                    onLongClickLabel = stringResource(R.string.chat_actions),
+                )
+                .testTag("chat_${thread.id}")
+                .semantics {
+                    if (isSelected) selected = true
+                    if (labels.isNotEmpty()) stateDescription = labels.joinToString()
+                }
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                thread.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
+                Modifier.weight(1f),
+                color = if (isSelected) colors.onSecondaryContainer else colors.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = if (status == ChatRowStatus.Unread) FontWeight.SemiBold else null,
+            )
+            if (status != ChatRowStatus.None) {
+                Spacer(Modifier.width(8.dp))
+                ChatStatusGlyph(status, runningFrame, row)
             }
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            thread.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
-            Modifier.weight(1f),
-            color = if (isSelected) colors.onSecondaryContainer else colors.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = if (status == ChatRowStatus.Unread) FontWeight.SemiBold else null,
-        )
-        if (status != ChatRowStatus.None) {
-            Spacer(Modifier.width(8.dp))
-            ChatStatusGlyph(status, runningFrame, row)
+        }
+        if (readAction != null) {
+            DropdownMenu(
+                expanded = menuOpen && !readActionPending,
+                onDismissRequest = { menuOpen = false },
+            ) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            stringResource(
+                                when (readAction) {
+                                    ChatReadAction.MarkRead -> R.string.chat_mark_read
+                                    ChatReadAction.MarkUnread -> R.string.chat_mark_unread
+                                }
+                            )
+                        )
+                    },
+                    onClick = {
+                        menuOpen = false
+                        changeReadState(readAction)
+                    },
+                )
+            }
         }
     }
 }
