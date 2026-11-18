@@ -82,9 +82,22 @@ import {
 } from "../external/realtime";
 
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
-import { onRejection, safeSync, settle, tapError } from "../utils";
+import {
+  joinAllInOrder,
+  onRejection,
+  safeSync,
+  settle,
+  tapError,
+} from "../utils";
 import type { DirectRunDispatchResult } from "./direct-run-dispatch.service";
-import type { AdmittedRunLaunch } from "./direct-run-preparation.service";
+import {
+  captureExecutionPackages$,
+  type AdmittedRunLaunch,
+} from "./direct-run-preparation.service";
+import {
+  executionSkillRoot,
+  type ExecutionWorkflowInput,
+} from "./execution-workflow-selection";
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
 import {
   prepareRunnerReusePreference$,
@@ -3099,14 +3112,15 @@ export function createThreadClaimRunObjects(
           },
         },
         runner: {
-          workflowAutomationId:
-            args.agentRunMetadata.workflowAutomationId ?? null,
+          skillRoot: executionSkillRoot(launchSnapshot.framework),
+          workflowAutomationId: args.agentRunMetadata.workflowAutomationId,
           agentId: context.resolved.agentId,
+          protectedMountPaths: context.protectedMountPaths,
+          officialWorkflowRun,
           nativeContinuation:
             args.threadContinuation.executionSnapshot.nativeContinuation,
           realAgentInPreview: args.realAgentInPreview,
           profile: launchSnapshot.runnerProfile,
-          protectedMountPaths: context.protectedMountPaths,
           featureSwitchContext: context.featureSwitchContext,
           connectorRuntimeTargets: context.connectorRuntimeTargets,
           facts: {
@@ -3190,13 +3204,53 @@ export function createThreadClaimRunObjects(
       if (!args || isRouteError(args)) {
         return args;
       }
-      const tokenInput = await get(okouTokenInput$);
+      const customWorkflowSelection = {
+        agentId: args.agentId,
+        ...(args.workflowAutomationId === undefined
+          ? {}
+          : { automationId: args.workflowAutomationId }),
+        protectedMountPaths: [...args.protectedMountPaths],
+      };
+      const officialMountPaths =
+        args.officialWorkflowRun?.provenance.definitions.map((definition) => {
+          return `${args.skillRoot}/${definition.name}`;
+        }) ?? [];
+      const [tokenInput, executionPackages, disabledPaidTools] =
+        await Promise.all([
+          get(okouTokenInput$),
+          set(
+            captureExecutionPackages$,
+            {
+              orgId: bootstrap.orgId,
+              userId: bootstrap.userId,
+              selection: {
+                skillRoot: args.skillRoot,
+                selection: {
+                  ...customWorkflowSelection,
+                  protectedMountPaths: [
+                    ...customWorkflowSelection.protectedMountPaths,
+                    ...officialMountPaths,
+                  ],
+                },
+              },
+              singleAgent: isFeatureEnabled(
+                FeatureSwitchKey.SingleAgent,
+                args.featureSwitchContext,
+              ),
+            },
+            signal,
+          ),
+          get(bootstrap.disabledPaidTools$),
+        ]);
       signal.throwIfAborted();
+      if (!executionPackages) {
+        return conflict("Run packages or source authorization are unavailable");
+      }
       const okouToken = set(prepareOkouToken$, tokenInput, signal);
-      const disabledPaidTools = await get(bootstrap.disabledPaidTools$);
-      signal.throwIfAborted();
       return prepareRunnerLaunch({
         args,
+        customWorkflowSelection,
+        executionPackages,
         okouToken,
         disabledPaidTools,
         previewBypassAuthorized: !!get(previewAutomationBypass$),
@@ -3441,20 +3495,26 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  /** Prepare Email context before launch facts and storage. */
+  /** Join Email prompt enrichment and the independent Runner inputs. */
   const prepareRunnerResources$ = command(
     async ({ get, set }, signal: AbortSignal) => {
       const original = await get(runPlan$);
       signal.throwIfAborted();
+      // Email enrichment can persist refreshed credentials. Keep it owned by
+      // this preparation even if the Runner inputs fail first.
+      const [emailPrompt, launch] = await joinAllInOrder(
+        [
+          original && !isRouteError(original)
+            ? set(prepareEmailSystemPrompt$, signal)
+            : null,
+          set(prepareRunnerStorage$, signal),
+        ],
+        signal,
+      );
       const plan =
         original && !isRouteError(original)
-          ? withEmailSystemPrompt(
-              original,
-              await set(prepareEmailSystemPrompt$, signal),
-            )
+          ? withEmailSystemPrompt(original, emailPrompt)
           : original;
-      const launch = await set(prepareRunnerStorage$, signal);
-      signal.throwIfAborted();
       return [plan, launch] as const;
     },
   );
@@ -4548,6 +4608,11 @@ interface ThreadExecution {
 
 /** The Thread facts needed to prepare one Runner launch. */
 interface ThreadRunnerFacts {
+  readonly skillRoot: string;
+  readonly workflowAutomationId: string | undefined;
+  readonly agentId: string;
+  readonly protectedMountPaths: readonly string[];
+  readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
   readonly facts: Pick<
     AdmittedExecutionFacts,
     | "templateSkillVolumes"
@@ -4561,13 +4626,10 @@ interface ThreadRunnerFacts {
     | "seedSkillVolumes"
     | "userTimezone"
   >;
-  readonly workflowAutomationId: string | null;
-  readonly agentId: string;
   readonly nativeContinuation: ChatThreadContinuation["executionSnapshot"]["nativeContinuation"];
   readonly realAgentInPreview?: boolean;
   readonly profile: string;
   readonly apiStartTime: number | undefined;
-  readonly protectedMountPaths: readonly string[];
   readonly chatThreadId: string;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[];
@@ -4576,6 +4638,8 @@ interface ThreadRunnerFacts {
 /** Capture selectors and request receipts; admitted preparation assembles runtime input. */
 function prepareRunnerLaunch(input: {
   readonly args: ThreadRunnerFacts;
+  readonly customWorkflowSelection: ExecutionWorkflowInput["selection"];
+  readonly executionPackages: AdmittedExecutionFacts["executionPackages"];
   readonly okouToken: string;
   readonly disabledPaidTools: readonly PaidToolId[];
   readonly previewBypassAuthorized: boolean;
@@ -4583,15 +4647,10 @@ function prepareRunnerLaunch(input: {
   const { args } = input;
   const facts = {
     ...args.facts,
+    executionPackages: input.executionPackages,
     nativeContinuation: args.nativeContinuation,
     previewBypassAuthorized: input.previewBypassAuthorized,
-    customWorkflowSelection: {
-      agentId: args.agentId,
-      ...(args.workflowAutomationId === null
-        ? {}
-        : { automationId: args.workflowAutomationId }),
-      protectedMountPaths: [...args.protectedMountPaths],
-    },
+    customWorkflowSelection: input.customWorkflowSelection,
     okouToken: input.okouToken,
     disabledPaidTools: input.disabledPaidTools,
     realAgentInPreview: args.realAgentInPreview || undefined,

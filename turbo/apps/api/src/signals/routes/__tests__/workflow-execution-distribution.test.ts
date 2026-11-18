@@ -283,83 +283,149 @@ test("re-evaluates private/public precedence without exposing another member's p
   await finish(run.runId, execution.sandboxToken);
 });
 
-test("withholds a prepared Workflow after its owner withdraws sharing", async () => {
-  const { actor, agent, group } = await fixture();
-  const owner = publicRunOwner(context, actor);
-  await owner.run(async () => {
-    const author = bdd.user({ orgId: actor.orgId });
-    const workflow = await createWorkflow(author, agent.agentId, {
-      visibility: "public",
-      instruction: "Content whose sharing can be withdrawn by its author",
-    });
-    const kms = holdCurrentSecretKms(context.signal);
-    const clientEventId = randomUUID();
-    const sent = await chatFixture.chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: "Use the available workflows",
-        clientEventId,
-      },
-      [201],
-    );
-    if (sent.status !== 201) {
-      throw new Error("Expected the workflow user's prompt to be accepted");
-    }
-    const revocation = await settleIncludingAbort(async () => {
-      await kms.entered;
-      await accept(
-        setupApp({ context, routes: workflowsRoutes })(
-          workflowVisibilityContract,
-        ).demote({
+test.each(["sharing withdrawal", "rename", "deletion"] as const)(
+  "keeps the accepted Workflow after %s during startup",
+  async (change) => {
+    const { actor, agent, s3 } = await fixture();
+    const owner = publicRunOwner(context, actor);
+    await owner.run(async () => {
+      if (change === "rename") {
+        await bdd.updateAgentInstructions(
+          actor,
+          agent.agentId,
+          "Accepted Agent instructions",
+        );
+      }
+      const author = bdd.user({ orgId: actor.orgId });
+      const workflow = await createWorkflow(author, agent.agentId, {
+        visibility: "public",
+        instruction: "Content whose sharing can be withdrawn by its author",
+      });
+      const kms = holdCurrentSecretKms(context.signal);
+      const renamed = `${workflow.name}-renamed`;
+      const clientEventId = randomUUID();
+      const sent = await chatFixture.chat.requestSendEvent(
+        actor,
+        {
+          agentId: agent.agentId,
+          prompt: "Use the available workflows",
+          clientEventId,
+        },
+        [201],
+      );
+      if (sent.status !== 201) {
+        throw new Error("Expected the workflow user's prompt to be accepted");
+      }
+      const revocation = await settleIncludingAbort(async () => {
+        await kms.entered;
+        const request = {
           headers: await headers(author),
           params: { workflowId: workflow.id },
-        }),
-        [200],
+        };
+        if (change === "sharing withdrawal") {
+          await accept(
+            setupApp({ context, routes: workflowsRoutes })(
+              workflowVisibilityContract,
+            ).demote(request),
+            [200],
+          );
+        } else if (change === "rename") {
+          await accept(
+            detailClient().update({
+              ...request,
+              body: {
+                name: renamed,
+                instruction: "Updated Workflow instructions",
+              },
+            }),
+            [200],
+          );
+          await bdd.updateAgentInstructions(
+            actor,
+            agent.agentId,
+            "Updated Agent instructions",
+          );
+        } else {
+          await accept(detailClient().delete(request), [204]);
+        }
+      });
+      kms.release();
+      if (!revocation.ok) {
+        throw revocation.error;
+      }
+      await flushWaitUntilForTest();
+      const { events } = await chatFixture.chat.listThreadEvents(
+        actor,
+        sent.body.threadId,
       );
-      await accept(
-        detailClient().get({
-          headers: await headers(actor),
-          params: { workflowId: workflow.id },
-        }),
-        [404],
-      );
-    });
-    kms.release();
-    if (!revocation.ok) {
-      throw revocation.error;
-    }
-    await flushWaitUntilForTest();
-    const { events } = await chatFixture.chat.listThreadEvents(
-      actor,
-      sent.body.threadId,
-    );
-    const runId = events.find((event) => {
-      return event.revokesEventId === clientEventId;
-    })?.runId;
-    if (!runId) {
-      throw new Error("Expected the admitted prompt to identify its Run");
-    }
-    await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
-      status: "failed",
-    });
-    expect(runs.receivedDispatches(group)).toHaveLength(0);
-    expect((await runs.readRunQueue(actor)).body.concurrency.active).toBe(0);
+      const runId = events.find((event) => {
+        return event.revokesEventId === clientEventId;
+      })?.runId;
+      if (!runId) {
+        throw new Error("Expected the admitted prompt to identify its Run");
+      }
+      const accepted = await owner.executionInput(runId);
+      const mounted = accepted.contentBundles.skills.find((entry) => {
+        return entry.mountPath.endsWith(`/${workflow.name}`);
+      });
+      if (!mounted) {
+        throw new Error("Expected the accepted Workflow mount");
+      }
+      expect(
+        readExecutionContentBundle(s3.objects, mounted)
+          .get("SKILL.md")
+          ?.toString(),
+      ).toContain("Content whose sharing can be withdrawn by its author");
+      if (change === "rename") {
+        const instructions = accepted.contentBundles.instructions;
+        if (!instructions) {
+          throw new Error("Expected the accepted Instructions bundle");
+        }
+        expect(
+          readExecutionContentBundle(s3.objects, instructions)
+            .get("instructions.md")
+            ?.toString(),
+        ).toBe("Accepted Agent instructions");
+      }
+      await finish(runId, accepted.sandboxToken);
 
-    const next = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
-      threadId: sent.body.threadId,
-      prompt: "Continue with the remaining authorized workflows",
+      const next = await runs.createThreadRun(actor, {
+        agentId: agent.agentId,
+        threadId: sent.body.threadId,
+        prompt: "Continue with the remaining authorized workflows",
+      });
+      const execution = await owner.executionInput(next.runId);
+      expect(
+        execution.contentBundles.skills.some((skill) => {
+          return skill.mountPath.endsWith(`/${workflow.name}`);
+        }),
+      ).toBeFalsy();
+      if (change === "rename") {
+        const instructions = execution.contentBundles.instructions;
+        if (!instructions) {
+          throw new Error("Expected the updated Instructions bundle");
+        }
+        expect(
+          readExecutionContentBundle(s3.objects, instructions)
+            .get("instructions.md")
+            ?.toString(),
+        ).toBe("Updated Agent instructions");
+        const nextMount = execution.contentBundles.skills.find((entry) => {
+          return entry.mountPath.endsWith(`/${renamed}`);
+        });
+        if (!nextMount) {
+          throw new Error("Expected the latest Workflow mount");
+        }
+        expect(
+          readExecutionContentBundle(s3.objects, nextMount)
+            .get("SKILL.md")
+            ?.toString(),
+        ).toContain("Updated Workflow instructions");
+      }
+      await finish(next.runId, execution.sandboxToken);
     });
-    const execution = await owner.executionInput(next.runId);
-    expect(
-      execution.contentBundles.skills.some((skill) => {
-        return skill.mountPath.endsWith(`/${workflow.name}`);
-      }),
-    ).toBeFalsy();
-    await finish(next.runId, execution.sandboxToken);
-  });
-});
+  },
+);
 
 test("invokes the caller's Private Workflow when Public and foreign Private Workflows share its slug", async () => {
   const { actor, agent, group, s3 } = await fixture();

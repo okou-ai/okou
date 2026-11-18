@@ -18,6 +18,7 @@ import type {
 import type { Environment } from "./run-environment";
 import type { ConnectorServerFirewallMetadataCatalog } from "./connector-server-firewall-catalog.service";
 import type { ResolvedPermissionGrant } from "./user-permission-grants.service";
+import type { CapturedExecutionPackages } from "./direct-run-preparation.service";
 
 /** Captured policy sources; actual artifact expiry is evaluated at publication. */
 export interface ExecutionNetworkPolicyInputs {
@@ -27,6 +28,7 @@ export interface ExecutionNetworkPolicyInputs {
 
 /** Process-local admission facts; this receipt itself is never serialized. */
 export interface AdmittedExecutionFacts {
+  readonly executionPackages: CapturedExecutionPackages;
   /** Same member observation as the admission Prompt; later edits affect later Runs. */
   readonly userTimezone: string | undefined;
   /** Accepted immutable Seed contributions, before framework paths and overlays. */
