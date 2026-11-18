@@ -1097,13 +1097,33 @@ async fn writer_declares_active_input_only_after_successful_steer_ack() {
 }
 
 #[tokio::test]
-async fn writer_rejects_active_input_after_failed_steer_ack() {
+async fn writer_keeps_stdin_open_when_steer_is_rejected_before_settlement() {
     tokio::time::timeout(
         Duration::from_secs(5),
         assert_steer_ack_outcome(SteerAckCase::Rejected),
     )
     .await
     .expect("rejected steer should finish promptly");
+}
+
+#[tokio::test]
+async fn writer_leaves_input_unconsumed_when_steer_is_rejected_after_settlement() {
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        assert_steer_ack_outcome(SteerAckCase::RejectedAfterSettlement),
+    )
+    .await
+    .expect("late rejected steer should close stdin normally");
+}
+
+#[tokio::test]
+async fn writer_closes_when_settlement_arrives_before_it_consumes_a_rejection() {
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        assert_steer_ack_outcome(SteerAckCase::SettlementBeforeRejectionConsumption),
+    )
+    .await
+    .expect("settlement and rejection should close stdin without a second result");
 }
 
 #[tokio::test]
@@ -1150,6 +1170,8 @@ async fn old_settlement_does_not_close_input_accepted_before_late_ack() {
 enum SteerAckCase {
     Accepted,
     Rejected,
+    RejectedAfterSettlement,
+    SettlementBeforeRejectionConsumption,
     SettledBeforeWriter,
     SettledAfterWriter,
     QueuedFollowUp,
@@ -1166,7 +1188,12 @@ fn project_settlement(projection: &mut PiRpcProjection<'_>, responses: &PiRpcRes
 }
 
 async fn assert_steer_ack_outcome(case: SteerAckCase) {
-    let success = !matches!(case, SteerAckCase::Rejected);
+    let success = !matches!(
+        case,
+        SteerAckCase::Rejected
+            | SteerAckCase::RejectedAfterSettlement
+            | SteerAckCase::SettlementBeforeRejectionConsumption
+    );
     let has_follow_up = matches!(
         case,
         SteerAckCase::QueuedFollowUp | SteerAckCase::InputAfterSettlement
@@ -1275,7 +1302,10 @@ async fn assert_steer_ack_outcome(case: SteerAckCase) {
         // Closing future input makes a writer that bypasses the ACK
         // finish on its next poll.
         controller.close_terminal();
-    } else if matches!(case, SteerAckCase::InputAfterSettlement) {
+    } else if matches!(
+        case,
+        SteerAckCase::InputAfterSettlement | SteerAckCase::RejectedAfterSettlement
+    ) {
         project_settlement(&mut projection, &response_tx);
         assert!(
             !controller.close_for_result_if_idle(),
@@ -1314,10 +1344,21 @@ async fn assert_steer_ack_outcome(case: SteerAckCase) {
         .expect("steer response should route");
 
     if matches!(case, SteerAckCase::Rejected) {
+        assert!(
+            futures_util::poll!(&mut writer).is_pending(),
+            "steer rejection must leave stdin open until the run settles"
+        );
+        project_settlement(&mut projection, &response_tx);
+        assert!(
+            controller.close_for_result_if_idle(),
+            "a rejected input must release its pending frame"
+        );
+    }
+    if matches!(case, SteerAckCase::SettlementBeforeRejectionConsumption) {
         project_settlement(&mut projection, &response_tx);
         assert!(
             !controller.close_for_result_if_idle(),
-            "a failed ACK must not authorize post-result cleanup"
+            "the writer still owns the rejected frame"
         );
     }
     if matches!(case, SteerAckCase::SettledAfterWriter) {
@@ -1354,7 +1395,13 @@ async fn assert_steer_ack_outcome(case: SteerAckCase) {
             "an old result must not close the later input after ACK consumption"
         );
     }
-    if !matches!(case, SteerAckCase::Accepted | SteerAckCase::Rejected) {
+    if !matches!(
+        case,
+        SteerAckCase::Accepted
+            | SteerAckCase::Rejected
+            | SteerAckCase::RejectedAfterSettlement
+            | SteerAckCase::SettlementBeforeRejectionConsumption
+    ) {
         project_settlement(&mut projection, &response_tx);
         assert!(
             controller.close_for_result_if_idle(),
@@ -1362,22 +1409,21 @@ async fn assert_steer_ack_outcome(case: SteerAckCase) {
         );
     }
 
-    let result = writer.await;
-    if success {
-        result.expect("writer should succeed after the matching steer ACK");
-    } else {
-        let error = result.expect_err("a rejected steer must fail the writer");
-        assert_eq!(
-            error.to_string(),
-            format!("execution: Pi RPC steer failed: {rejection}")
-        );
-    }
+    writer
+        .await
+        .expect("writer should close normally after the run settles");
     controller
         .finalize_steered_declarations()
         .await
         .expect("steered declarations should finalize");
     steered.assert_calls(usize::from(success));
     follow_up_steered.assert_calls(usize::from(has_follow_up));
+    if matches!(case, SteerAckCase::RejectedAfterSettlement) {
+        assert!(matches!(
+            controller.handle_control_payload(&follow_up_payload),
+            ActiveInputControlOutcome::Rejected { .. }
+        ));
+    }
     if success {
         assert_eq!(
             controller.handle_control_payload(&payload),

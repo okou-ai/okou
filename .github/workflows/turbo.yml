@@ -1171,6 +1171,9 @@ jobs:
       - name: Test Pi image history
         working-directory: turbo
         run: pnpm -F @okouai/pi-agent-runtime exec vitest run src/image-history.test.ts --maxWorkers=2
+      - name: Test Pi RPC settlement and cancellation
+        working-directory: turbo
+        run: pnpm -F @okouai/pi-agent-runtime exec vitest run src/rpc-cancellation.test.ts src/prompt-settlement-failure.test.ts --maxWorkers=1
       - name: Test Connectors
         working-directory: turbo
         run: pnpm -F @okouai/connectors exec vitest run --reporter=default

@@ -804,6 +804,14 @@ impl ActiveInputController {
         let _ = self.inner.close_tx.send(true);
     }
 
+    fn close_if_result_observed(&self) {
+        let mut state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
+        if state.observed_result {
+            state.lifecycle = Lifecycle::Closed;
+            let _ = self.inner.close_tx.send(true);
+        }
+    }
+
     /// Classifies a CLI stdout user event for replay filtering.
     ///
     /// [`ReplayUserEventAction::External`] means the event is external Claude
@@ -920,6 +928,13 @@ impl ActiveInputWriter {
     /// Mark an active-input sink operation as failed.
     pub fn mark_backend_failed(&self, frame: &ActiveInputFrame) {
         self.controller.mark_backend_failed(frame);
+    }
+
+    /// After an explicit steer rejection, let the current run finish or close
+    /// immediately if its result already reached the controller.
+    pub(super) fn mark_steer_rejected(&self, frame: &ActiveInputFrame) {
+        self.controller.mark_backend_failed(frame);
+        self.controller.close_if_result_observed();
     }
 
     /// Marks a writer-owned frame as actively being delivered by this writer.
