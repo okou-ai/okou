@@ -598,7 +598,7 @@ final class ChatCursorRecoveryTests: XCTestCase {
 @MainActor
 extension XCTestCase {
 
-  nonisolated private static func historySnapshot(generation current: Int) -> ChatHTTPResponse {
+  nonisolated fileprivate static func historySnapshot(generation current: Int) -> ChatHTTPResponse {
     if current == 1 {
       return ChatHTTPResponse(
         body: eventJSON(seq: 1, type: "input.prompt", payload: userPayload("Old question"))

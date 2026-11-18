@@ -699,7 +699,7 @@ extension XCTestCase {
     return (provider, authentication)
   }
 
-  private static func authenticationStep<Value>(
+  fileprivate static func authenticationStep<Value>(
     _ name: String, file: StaticString = #filePath, line: UInt = #line,
     operation: @MainActor () async throws -> Value
   ) async throws -> Value {
