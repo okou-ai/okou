@@ -83,16 +83,23 @@ async fn heartbeat_first_success() {
 #[tokio::test]
 async fn agentphone_typing_refresh_repeats_without_making_failures_fatal() {
     const CONTROL_INTERVAL: Duration = Duration::from_secs(14);
+    const TYPING_REFRESH_SECONDS: u64 = 3;
 
     let api = SharedApiMock::new().await;
     let server = api.server();
+    let logs = tempfile::tempdir().expect("create heartbeat log directory");
+    let system_log = logs.path().join("system.log");
+    let _system_log_guard = SystemLogOverrideGuard::set(&system_log);
     let observer = MockCallObserver::default();
     let observer_for_mock = observer.clone();
 
     let mock = server.mock(|when, then| {
         when.method(POST).path("/api/webhooks/agent/heartbeat");
         then.respond_with(move |_req| match observer_for_mock.record() {
-            1 => json_http_response(200, json!({"ok": true, "typingRefreshIntervalSeconds": 3})),
+            1 => json_http_response(
+                200,
+                json!({"ok": true, "typingRefreshIntervalSeconds": TYPING_REFRESH_SECONDS}),
+            ),
             // Four typing failures exceed the control path's fatal threshold of three.
             2..=5 => json_http_response(401, json!({"error": {"message": "temporary"}})),
             _ => http_status(200),
@@ -110,8 +117,19 @@ async fn agentphone_typing_refresh_repeats_without_making_failures_fatal() {
     tokio::pin!(heartbeat);
     let started_at = Instant::now();
 
-    // The first refresh proves that the initial response was consumed and the
-    // typing timer is armed. Keep real socket work on running time.
+    // The initial success is logged after the client consumes the opt-in
+    // response and arms the typing timer. Use it only to synchronize the clock.
+    tokio::select! {
+        result = &mut heartbeat => panic!("heartbeat stopped before the initial response was accepted: {result:?}"),
+        ready = crate::common::wait_for_file_contains(
+            &system_log,
+            "[sandbox:guest-agent] Heartbeat sent (initial)\n",
+            MOCK_CALL_TIMEOUT,
+        ) => ready.expect("initial heartbeat response should be accepted"),
+    }
+    raw_http_test_support::clock::advance_timer_phase(Duration::from_secs(TYPING_REFRESH_SECONDS))
+        .await;
+
     tokio::select! {
         result = &mut heartbeat => panic!("heartbeat stopped before the first typing refresh: {result:?}"),
         () = observer.wait_for(2, MOCK_CALL_TIMEOUT, "first typing refresh") => {},
