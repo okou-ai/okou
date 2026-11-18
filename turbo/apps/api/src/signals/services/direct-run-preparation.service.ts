@@ -14,6 +14,7 @@ import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { agentInstructionsSelectionSql } from "./execution-instructions-selection";
 import { createExecutionRuntimeContext } from "./execution-runtime-context";
 import { contentBundleAvailableCondition } from "./execution-content-bundle";
+import { acceptedRunTemplatesAvailableCondition } from "./run-template-sources.service";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   cachedContentBundleUrlSchema,
@@ -70,6 +71,11 @@ export function createDirectRunPreparation(
     const db = get(rawSqlReadDb$);
     const selection = executionWorkflowInput(packageContext);
     const cache = get(contentBundleUrlCacheContext$);
+    const templatesAvailable = acceptedRunTemplatesAvailableCondition({
+      userId: input.facts.templateUserId,
+      orgId: input.run.orgId,
+      volumes: input.facts.templateSkillVolumes,
+    });
     // Read the admitted identity and its authorized packages in one snapshot.
     const rows = await db.execute(sql`WITH admitted_run AS MATERIALIZED (
       SELECT ${agentRuns.id} AS "id",${agentRuns.chatThreadId} AS "chatThreadId",${agentRuns.agentId} AS "agentId",
@@ -79,7 +85,8 @@ export function createDirectRunPreparation(
       ${executionWorkflowSelectionSql(selection)}
     SELECT EXISTS(SELECT 1 FROM workflow_admission)
       AND COALESCE((SELECT "bundlesAvailable" FROM workflow_selection),false)
-      AND NOT EXISTS(SELECT 1 FROM selected_agent WHERE NOT ${contentBundleAvailableCondition(sql`selected_agent."instructionsBundle"`)}) AS available,
+      AND NOT EXISTS(SELECT 1 FROM selected_agent WHERE NOT ${contentBundleAvailableCondition(sql`selected_agent."instructionsBundle"`)})
+      AND ${templatesAvailable} AS available,
       NOT EXISTS(SELECT 1 FROM ${chatEvents} WHERE ${and(eq(chatEvents.chatThreadId, input.run.chatThreadId), isNotNull(chatEvents.runId), ne(chatEvents.runId, input.run.id))}) AS "isFirstRun",
       (SELECT documents FROM workflow_selection) AS workflows,
       (SELECT "instructionsBundle" FROM selected_agent) AS "instructionsBundle",
@@ -151,6 +158,8 @@ export const prepareDirectRun$ = command(
       cacheWrites: [...prepared.storageCacheWrites, ...publication.cacheWrites],
       executionContext: publication.executionContext,
       sourceAuthorization: {
+        templateUserId: input.facts.templateUserId,
+        templateSkillVolumes: input.facts.templateSkillVolumes,
         workflows: packages.selection,
         workflowIds: packages.row.workflows.map((workflow) => {
           return workflow.id;

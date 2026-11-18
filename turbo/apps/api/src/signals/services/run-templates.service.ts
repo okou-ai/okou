@@ -4,7 +4,10 @@ import {
   type StoredTemplateGuidanceBundle,
   type TemplateGuidanceBundle,
 } from "@okouai/api-contracts/contracts/template-guidance-bundle";
-import { USER_TEMPLATE_KINDS } from "@okouai/api-contracts/contracts/user-templates";
+import {
+  USER_TEMPLATE_KINDS,
+  type UserTemplateKind,
+} from "@okouai/api-contracts/contracts/user-templates";
 import { computed, type Computed } from "ccstate";
 import { enum as zEnum } from "zod";
 import {
@@ -17,7 +20,10 @@ import {
 } from "../../lib/template-usage-identity";
 import { projectUserMessage } from "./chat-user-message.service";
 import { selectedUserPresentationTemplateIds } from "./presentation-template-data.service";
-import type { RunPromptAndSkills } from "./run-prompt-and-skills";
+import type {
+  RunPromptAndSkills,
+  TemplateSkillVolume,
+} from "./run-prompt-and-skills";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 import {
   selectedUserTemplateIds,
@@ -35,6 +41,7 @@ type PrefetchedTemplates = Pick<
 
 export type RunTemplatesResult =
   | (RunPromptAndSkills & {
+      readonly skillVolumes: readonly TemplateSkillVolume[];
       readonly templateUsageIdentities: readonly TemplateUsageIdentity[];
     })
   | {
@@ -45,10 +52,11 @@ export type RunTemplatesResult =
     };
 
 type RunTemplateGuidanceResult =
-  | (Pick<RunPromptAndSkills, "skillVolumes"> & {
+  | {
+      readonly skillVolumes: readonly TemplateSkillVolume[];
       readonly templateUsageIdentities: readonly TemplateUsageIdentity[];
       readonly renderPrompt: () => string;
-    })
+    }
   | Extract<RunTemplatesResult, { readonly error: unknown }>;
 
 export function createRunTemplates(
@@ -78,25 +86,6 @@ export function createRunTemplates(
     };
   });
   return { sources$: guidance.sources$, templates$ };
-}
-
-/** Current ACLs, selection validation and bundles, without discarded prompt text. */
-export function createRunTemplatePackages(
-  event$: Parameters<typeof createRunTemplateGuidance>[0],
-  orgId$: Parameters<typeof createRunTemplateGuidance>[1],
-  disabledPaidTools$: Parameters<typeof createRunTemplateGuidance>[2],
-) {
-  const guidance = createRunTemplateGuidance(
-    event$,
-    orgId$,
-    disabledPaidTools$,
-  );
-  return computed(async (get) => {
-    const prepared = await get(guidance.guidance$);
-    return "error" in prepared
-      ? prepared
-      : { skillVolumes: prepared.skillVolumes };
-  });
 }
 
 function createRunTemplateGuidance(
@@ -244,10 +233,13 @@ function buildRunTemplateGuidance(args: {
   if (guidance.status === "invalid") {
     return { error: { code: "BAD_REQUEST", message: guidance.message } };
   }
-  const references: StoredTemplateGuidanceBundle[] = [
+  const references: (StoredTemplateGuidanceBundle & {
+    readonly templateKind: UserTemplateKind;
+  })[] = [
     ...presentations.map((row) => {
       return {
         ownerKind: "presentation-template" as const,
+        templateKind: "presentation" as const,
         templateId: row.templateId,
         beforeMountPaths: [],
         ...row.guidanceBundle,
@@ -256,6 +248,7 @@ function buildRunTemplateGuidance(args: {
     ...mounted.map((row) => {
       return {
         ownerKind: "user-template" as const,
+        templateKind: row.kind,
         templateId: row.templateId,
         beforeMountPaths: [],
         ...row.guidanceBundle,
@@ -265,11 +258,12 @@ function buildRunTemplateGuidance(args: {
   return {
     templateUsageIdentities: templateUsageIdentities(templates, mounted),
     renderPrompt: guidance.render,
-    skillVolumes: references.map((reference) => {
+    skillVolumes: references.map(({ templateKind, ...reference }) => {
       return {
         source: "request_additional_volume" as const,
         mountPath: templateGuidanceMountPath(reference),
         templateGuidanceBundle: reference,
+        templateKind,
       };
     }),
   };

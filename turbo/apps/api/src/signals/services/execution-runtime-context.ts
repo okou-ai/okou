@@ -43,7 +43,6 @@ import {
   mergeRunSkillVolumes,
   resolveRunSkillVolumes,
 } from "./run-prompt-and-skills";
-import { createRunTemplatePackages } from "./run-templates.service";
 import { storedMountFromPrepared } from "./run-storage-manifest.service";
 import {
   DEFAULT_DISALLOWED_TOOLS,
@@ -144,12 +143,7 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
     }),
   );
   const storage$ = createExecutionStorage(input$);
-  const packages$ = createExecutionPackages(
-    input$,
-    disabledTools$,
-    sources,
-    storage$,
-  );
+  const packages$ = createExecutionPackages(input$, sources, storage$);
   const platform$ = createExecutionPlatform(input$, model$, disabledTools$);
   const environment$ = createExecutionEnvironment(
     input$,
@@ -377,21 +371,9 @@ function createExecutionModel(input$: ExecutionInput$) {
 
 function createExecutionPackages(
   input$: ExecutionInput$,
-  disabledTools$: DisabledTools$,
   sources: ExecutionSources,
   storage$: ReturnType<typeof createExecutionStorage>,
 ) {
-  const templateInput$ = computed(async (get) => {
-    const { templateInput } = (await get(input$)).facts;
-    return templateInput.userMessage ? templateInput : null;
-  });
-  const templates$ = createRunTemplatePackages(
-    templateInput$,
-    computed(async (get) => {
-      return (await get(input$)).run.orgId;
-    }),
-    disabledTools$,
-  );
   const connectorSkills$ = createConnectorSkillVolumes(
     sources.signals.authorizedConnectors$,
   );
@@ -404,22 +386,18 @@ function createExecutionPackages(
         : framework === "codex"
           ? "/home/user/.codex/skills"
           : "/home/user/.claude/skills";
-    const [connectors, templates] = await Promise.all([
+    const [connectors, storage] = await Promise.all([
       get(connectorSkills$),
-      get(templates$),
+      get(storage$),
     ]);
-    if ("error" in templates) {
-      throw new Error("Run execution sources are unavailable");
-    }
     const volumes = resolveRunSkillVolumes(
       mergeRunSkillVolumes([
         connectors,
         facts.seedSkillVolumes,
-        templates.skillVolumes,
+        facts.templateSkillVolumes,
       ]),
       skillRoot,
     );
-    const storage = await get(storage$);
     const winners = normalizeMountOverlay([
       ...volumes,
       ...storage.storageMounts,

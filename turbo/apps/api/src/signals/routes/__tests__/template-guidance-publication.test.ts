@@ -12,11 +12,16 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
 import { mockEnv } from "../../../lib/env";
+import {
+  getSecretKmsClient,
+  setSecretKmsClientForTests,
+} from "../../../lib/secret-kms-client";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { userTemplatesRoutes } from "../user-templates";
 import { presentationTemplatesRoutes } from "../presentation-templates";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
@@ -161,6 +166,112 @@ function executionFiles(
     return { path: file.path, content: file.content.toString("utf8") };
   });
 }
+
+test.each([
+  { kind: "user-template", change: "delete" },
+  { kind: "presentation-template", change: "delete" },
+  { kind: "user-template", change: "replace" },
+  { kind: "user-template", change: "metadata" },
+  { kind: "presentation-template", change: "metadata" },
+] as const)(
+  "checks $kind $change during external encryption before dispatch",
+  async ({ kind, change }) => {
+    const owner = await publicChatActor(context);
+    const fixture = await owner.run(() => {
+      return Promise.resolve(installS3Fixture(context));
+    });
+    const published = await owner.run(async () => {
+      return await publish(
+        kind,
+        await uploadInputs(owner.actor, fixture, tarGz(guidance("accepted"))),
+      );
+    });
+    if (published.status !== 200) {
+      throw new Error("Expected a published template");
+    }
+    const id = published.body.id;
+    const kms = getSecretKmsClient();
+    onTestFinished(() => {
+      setSecretKmsClientForTests(kms);
+    });
+    let changeStarted = false;
+    let changed = false;
+    await owner.run(() => {
+      setSecretKmsClientForTests({
+        ...kms,
+        async generateDataKey(request, signal) {
+          // Run encryption follows package preparation; the ownership statement
+          // must still authorize these accepted bytes after external IO returns.
+          if (!changeStarted) {
+            changeStarted = true;
+            if (change === "delete") {
+              await remove(kind, id);
+            } else if (change === "replace") {
+              const packageFileId = await uploadTemplateFile(
+                context,
+                owner.actor,
+                fixture,
+                {
+                  filename: "replacement.tar.gz",
+                  contentType: "application/gzip",
+                },
+                tarGz(guidance("replacement")),
+              );
+              await accept(
+                userClient().replacePackage({
+                  headers: authHeaders(),
+                  params: { templateId: id },
+                  body: { packageFileId },
+                }),
+                [200],
+              );
+            } else {
+              const args = {
+                headers: authHeaders(),
+                params: { templateId: id },
+                body: { title: "Renamed during encryption" },
+              };
+              if (kind === "user-template") {
+                await accept(userClient().update(args), [200]);
+              } else {
+                await accept(presentationClient().update(args), [200]);
+              }
+            }
+            changed = true;
+          }
+          return await kms.generateDataKey(request, signal);
+        },
+      });
+      return Promise.resolve();
+    });
+    const run = await owner.sendChatRun(owner.actor, {
+      agentId: owner.agentId,
+      prompt: "Use the accepted template",
+      template: selection(kind, id),
+    });
+    setSecretKmsClientForTests(kms);
+    expect(changed).toBeTruthy();
+    const state = await owner.run(() => {
+      return chat.api.readRun(owner.actor, run.runId);
+    });
+    if (change === "metadata") {
+      expect(state.status).toBe("running");
+      const dispatched = await owner.runExecution(run.runId);
+      expect(
+        executionFiles(fixture, dispatched.execution, kind, id),
+      ).toStrictEqual(guidance("accepted"));
+    } else {
+      expect(state.status).toBe("failed");
+      expect(
+        createRunsApi(context)
+          .receivedDispatches(owner.runnerGroup)
+          .some((dispatch) => {
+            return dispatch.executionContext.runId === run.runId;
+          }),
+      ).toBeFalsy();
+    }
+  },
+);
 
 describe.each(ownerKinds)("%s bundle publication", (kind) => {
   it("uses the FIFO head's template when a later send supplies a different prefetch candidate", async () => {

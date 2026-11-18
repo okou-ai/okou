@@ -1,5 +1,6 @@
 import type { StoredTemplateGuidanceBundle } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
+import type { UserTemplateKind } from "@okouai/api-contracts/contracts/user-templates";
 
 export interface SystemPromptVariables {
   readonly agentIdentity?: string;
@@ -51,6 +52,11 @@ export type SkillVolume =
 
 export type SeedSkillVolume = SkillVolume & {
   readonly source: "system_skill";
+};
+
+/** Accepted template package; kind participates in current source validation. */
+export type TemplateSkillVolume = TemplateBundleVolume & {
+  readonly templateKind: UserTemplateKind;
 };
 
 /** Prompt text and skill or template guidance packages for one run. */

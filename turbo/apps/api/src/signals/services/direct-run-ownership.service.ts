@@ -13,6 +13,8 @@ import {
   workflowReferencesAuthorizedCondition,
   type ExecutionWorkflowInput,
 } from "./execution-workflow-selection";
+import type { TemplateSkillVolume } from "./run-prompt-and-skills";
+import { acceptedRunTemplatesAvailableCondition } from "./run-template-sources.service";
 
 export interface DirectRunTarget extends UnacceptedRunOwner {
   readonly hostname: string;
@@ -22,6 +24,8 @@ export interface DirectRunSourceAuthorization {
   readonly workflows: ExecutionWorkflowInput;
   readonly workflowIds: readonly string[];
   readonly singleAgent: boolean;
+  readonly templateUserId: string;
+  readonly templateSkillVolumes: readonly TemplateSkillVolume[];
 }
 
 /** Run -> active owner -> Thread follows the existing terminal lock order. */
@@ -52,6 +56,7 @@ export const selectDirectRunOwner$ = command(
         ${executionWorkflowSelectionSql(args.sourceAuthorization.workflows)}
       SELECT 1 FROM workflow_admission
       WHERE ${workflowReferencesAuthorizedCondition(args.sourceAuthorization.workflows, args.sourceAuthorization.workflowIds)}
+        AND ${acceptedRunTemplatesAvailableCondition({ userId: args.sourceAuthorization.templateUserId, orgId: args.orgId, volumes: args.sourceAuthorization.templateSkillVolumes })}
     )`;
     const changed = db.$with("direct_selected_run").as(
       db
