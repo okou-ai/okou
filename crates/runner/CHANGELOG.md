@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.249.51](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.50...runner-rs-v0.249.51) (2026-11-18)
+
+
+### Refactoring
+
+* **runner:** keep buffered response start with its inspector ([#48663](https://github.com/okou-ai/okou/issues/48663)) ([38a5680](https://github.com/okou-ai/okou/commit/38a5680d8d15ed7d2fdbdec6889be558883adc3f))
+* **runner:** keep interruption reporting with the connector finalizer ([#48675](https://github.com/okou-ai/okou/issues/48675)) ([16c80f1](https://github.com/okou-ai/okou/commit/16c80f1f3ae26087444ad8f39da77b42b115d1ee))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.50](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.49...runner-rs-v0.249.50) (2026-11-18)
 
 ### Release Dependencies

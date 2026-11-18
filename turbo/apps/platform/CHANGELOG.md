@@ -13,6 +13,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1147.4](https://github.com/okou-ai/okou/compare/app-v0.1147.3...app-v0.1147.4) (2026-11-18)
+
+
+### Bug Fixes
+
+* **app:** keep website sharing anchored during permission refresh ([#48665](https://github.com/okou-ai/okou/issues/48665)) ([e431efb](https://github.com/okou-ai/okou/commit/e431efb3c35614c29763437b9f9c7d5a009dc5c5))
+* **artifacts:** reduce visibility update latency ([#48652](https://github.com/okou-ai/okou/issues/48652)) ([7f50485](https://github.com/okou-ai/okou/commit/7f50485e293fab339942a621798bd35ae9464bc2))
+
+
+### Performance Improvements
+
+* **test:** avoid missing-title dumps during browser regrant waits ([#48647](https://github.com/okou-ai/okou/issues/48647)) ([1e84fc5](https://github.com/okou-ai/okou/commit/1e84fc50bf39e6a6b202cc94ff89b602bce9a0f2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.86.3
+    * @okouai/core bumped to 8.853.1
+    * @okouai/ui bumped to 1.21.55
+
 ## [0.1147.3](https://github.com/okou-ai/okou/compare/app-v0.1147.2...app-v0.1147.3) (2026-11-18)
 
 

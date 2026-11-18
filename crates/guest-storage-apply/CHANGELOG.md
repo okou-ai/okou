@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.24](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.23...guest-storage-apply-v0.32.24) (2026-11-18)
+
+
+### Performance Improvements
+
+* **guest-storage:** use zlib-rs for gzip ([#48670](https://github.com/okou-ai/okou/issues/48670)) ([a6558ca](https://github.com/okou-ai/okou/commit/a6558ca608d2c2fdd34983066f056e866fdd9cef))
+
 ## [0.32.23](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.22...guest-storage-apply-v0.32.23) (2026-11-18)
 
 ## [0.32.22](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.21...guest-storage-apply-v0.32.22) (2026-11-18)

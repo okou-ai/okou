@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.85](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.84...process-control-ipc-v0.5.85) (2026-11-18)
+
+
+### Refactoring
+
+* **ipc:** use typed abstract unix socket setup ([#48678](https://github.com/okou-ai/okou/issues/48678)) ([726303f](https://github.com/okou-ai/okou/commit/726303f47233bb7925eedd279bb90c1896dcfe31))
+
 ## [0.5.84](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.83...process-control-ipc-v0.5.84) (2026-11-18)
 
 ## [0.5.83](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.82...process-control-ipc-v0.5.83) (2026-11-18)
