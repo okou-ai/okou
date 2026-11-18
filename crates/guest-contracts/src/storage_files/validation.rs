@@ -9,7 +9,7 @@ use super::{
 };
 
 /// Validate the admitted regular-file shape without touching the filesystem.
-pub fn validate_files(files: &[StorageFile]) -> io::Result<()> {
+pub fn validate_files<Content: AsRef<[u8]>>(files: &[StorageFile<Content>]) -> io::Result<()> {
     if files.is_empty() || files.len() > MAX_FILES {
         return Err(invalid());
     }
@@ -23,11 +23,13 @@ pub fn validate_files(files: &[StorageFile]) -> io::Result<()> {
             || !canonical_relative_path(Path::new(&file.path))
             || file.mode & !0o777 != 0
             || file.mtime > i64::MAX as u64
-            || file.content.len() > MAX_FILE_BYTES
+            || file.content.as_ref().len() > MAX_FILE_BYTES
         {
             return Err(invalid());
         }
-        total = total.checked_add(file.content.len()).ok_or_else(invalid)?;
+        total = total
+            .checked_add(file.content.as_ref().len())
+            .ok_or_else(invalid)?;
         path_bytes = path_bytes
             .checked_add(file.path.len())
             .ok_or_else(invalid)?;

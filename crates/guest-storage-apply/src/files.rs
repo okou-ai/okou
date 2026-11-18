@@ -7,8 +7,8 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, UNIX_EPOCH};
 
-pub(crate) fn materialize(
-    files: &[StorageFile],
+pub(crate) fn materialize<Content: AsRef<[u8]>>(
+    files: &[StorageFile<Content>],
     target: &Path,
     concurrency: usize,
 ) -> io::Result<()> {
@@ -41,7 +41,7 @@ pub(crate) fn materialize(
         let Some(mut file) = file else {
             continue;
         };
-        file.write_all(&entry.content)?;
+        file.write_all(entry.content.as_ref())?;
         file.set_permissions(Permissions::from_mode(entry.mode))?;
         // tar normalizes epoch-zero timestamps to one second.
         let modified = UNIX_EPOCH
