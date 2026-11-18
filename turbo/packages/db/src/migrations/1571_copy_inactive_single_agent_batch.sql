@@ -6621,28 +6621,56 @@ FROM jsonb_array_elements($cohort$
 ["org_3KtIVpwClS60h8ZkouW8ZJFkCCf","eb464fed-4935-454d-8508-5700189387c7",["user_3KtIVhlGlDv0QVjtappjpEfrABR"],[],[],[],[],[]]
 ]
 $cohort$::jsonb) AS item(value);
+ANALYZE inactive_batch_cohort;
 --> statement-breakpoint
 -- Freeze resource identities, not mutable authored content: copy each current
 -- canonical package, and preserve every saved personal value, including empty.
 CREATE TEMP TABLE inactive_copy_target ON COMMIT DROP AS
+WITH member_inventory AS MATERIALIZED (
+  SELECT m.org_id,array_agg(m.user_id ORDER BY m.user_id) AS ids,
+    bool_and(m.created_at < now()-interval '30 days'
+      AND f.switches->'singleAgent' IS NOT DISTINCT FROM 'false'::jsonb) AS all_old
+  FROM inactive_batch_cohort c JOIN org_members_metadata m ON m.org_id=c.org_id
+  LEFT JOIN user_feature_switches f ON f.org_id=m.org_id AND f.user_id=m.user_id GROUP BY m.org_id
+), cache_inventory AS MATERIALIZED (
+  SELECT m.org_id,array_agg(m.user_id ORDER BY m.user_id) AS ids
+  FROM inactive_batch_cohort c JOIN org_members_cache m ON m.org_id=c.org_id GROUP BY m.org_id
+), agent_inventory AS MATERIALIZED (
+  SELECT a.org_id,array_agg(a.id ORDER BY a.id) AS ids
+  FROM inactive_batch_cohort c JOIN agents a ON a.org_id=c.org_id GROUP BY a.org_id
+), workflow_inventory AS MATERIALIZED (
+  SELECT w.org_id,array_agg(w.id ORDER BY w.id) AS ids
+  FROM inactive_batch_cohort c JOIN workflows w ON w.org_id=c.org_id GROUP BY w.org_id
+), automation_inventory AS MATERIALIZED (
+  SELECT a.org_id,array_agg(a.id ORDER BY a.id) AS ids
+  FROM inactive_batch_cohort c JOIN workflow_automations a ON a.org_id=c.org_id GROUP BY a.org_id
+), chat_inventory AS MATERIALIZED (
+  SELECT source.org_id,array_agg(x.id ORDER BY x.id) AS ids,
+    bool_and(x.project_id IS NULL AND x.user_id=ANY(c.members)
+      AND (source.visibility<>'private' OR x.user_id=source.owner)) AS valid_owners
+  FROM inactive_batch_cohort c JOIN agents source ON source.org_id=c.org_id AND source.id<>c.default_agent_id
+  JOIN chat_threads x ON x.agent_id=source.id GROUP BY source.org_id
+)
 SELECT c.*, a.instructions, a.instructions_bundle
 FROM inactive_batch_cohort c
 JOIN org_metadata o ON o.org_id=c.org_id AND o.default_agent_id=c.default_agent_id
 JOIN agents a ON a.id=c.default_agent_id AND a.org_id=c.org_id
   AND a.visibility='public' AND a.owner=ANY(c.members)
+JOIN member_inventory mi ON mi.org_id=c.org_id
+LEFT JOIN cache_inventory ci ON ci.org_id=c.org_id
+LEFT JOIN agent_inventory ai ON ai.org_id=c.org_id
+LEFT JOIN workflow_inventory wi ON wi.org_id=c.org_id
+LEFT JOIN automation_inventory au ON au.org_id=c.org_id
+LEFT JOIN chat_inventory ch ON ch.org_id=c.org_id
 WHERE o.created_at < now()-interval '30 days'
   AND cardinality(c.members)>0 AND c.members <@ c.cached_members
   AND a.instructions_bundle IS NOT NULL
-  AND ARRAY(SELECT m.user_id FROM org_members_metadata m WHERE m.org_id=c.org_id ORDER BY m.user_id)=c.members
-  AND ARRAY(SELECT m.user_id FROM org_members_cache m WHERE m.org_id=c.org_id ORDER BY m.user_id)=c.cached_members
-  AND ARRAY(SELECT x.id FROM agents x WHERE x.org_id=c.org_id ORDER BY x.id)=c.agents
-  AND ARRAY(SELECT w.id FROM workflows w WHERE w.org_id=c.org_id ORDER BY w.id)=c.workflows
-  AND ARRAY(SELECT x.id FROM workflow_automations x WHERE x.org_id=c.org_id ORDER BY x.id)=c.automations
-  AND ARRAY(SELECT x.id FROM chat_threads x JOIN agents source ON source.id=x.agent_id
-    WHERE source.org_id=c.org_id AND source.id<>c.default_agent_id ORDER BY x.id)=c.chats
-  AND NOT EXISTS (SELECT 1 FROM org_members_metadata m LEFT JOIN user_feature_switches f
-    ON f.org_id=m.org_id AND f.user_id=m.user_id WHERE m.org_id=c.org_id
-    AND (m.created_at >= now()-interval '30 days' OR f.switches->'singleAgent' IS DISTINCT FROM 'false'::jsonb))
+  AND mi.ids=c.members AND mi.all_old
+  AND coalesce(ci.ids,'{}'::text[])=c.cached_members
+  AND coalesce(ai.ids,'{}'::uuid[])=c.agents
+  AND coalesce(wi.ids,'{}'::uuid[])=c.workflows
+  AND coalesce(au.ids,'{}'::uuid[])=c.automations
+  AND coalesce(ch.ids,'{}'::uuid[])=c.chats AND coalesce(ch.valid_owners,true)
   AND NOT EXISTS (SELECT 1 FROM projects x WHERE x.org_id=c.org_id)
   AND NOT EXISTS (SELECT 1 FROM queued_chat_threads x WHERE x.org_id=c.org_id)
   AND NOT EXISTS (SELECT 1 FROM active_agent_runs x WHERE x.org_id=c.org_id)
@@ -6656,10 +6684,6 @@ WHERE o.created_at < now()-interval '30 days'
         OR w.instruction IS NULL OR w.content_bundle IS NULL OR w.attachments IS NULL
         OR w.owner_user_id<>ALL(c.members) OR w.visibility NOT IN ('public','private')
         OR (source.visibility='private' AND w.owner_user_id<>source.owner)))))
-  AND NOT EXISTS (SELECT 1 FROM chat_threads x JOIN agents source ON source.id=x.agent_id
-    WHERE source.org_id=c.org_id AND source.id<>c.default_agent_id
-      AND (x.project_id IS NOT NULL OR x.user_id<>ALL(c.members)
-        OR (source.visibility='private' AND x.user_id<>source.owner)))
   AND NOT EXISTS (SELECT 1 FROM workflow_automations x JOIN workflows w ON w.id=x.workflow_id
     JOIN agents source ON source.id=w.agent_id WHERE x.org_id=c.org_id
       AND (x.enabled OR w.org_id<>c.org_id OR x.owner_user_id<>ALL(c.cached_members)
@@ -6847,9 +6871,10 @@ DO $$ BEGIN
     OR EXISTS (SELECT 1 FROM chat_threads c JOIN inactive_copy_agents a ON a.id=c.agent_id)
     OR EXISTS (SELECT 1 FROM workflow_automations a JOIN inactive_copy_workflows s ON s.id=a.workflow_id)
     OR EXISTS (SELECT 1 FROM workflow_user_automation_threads b JOIN inactive_copy_workflows s ON s.id=b.workflow_id)
-    OR EXISTS (SELECT 1 FROM inactive_copy_target t WHERE
-      ARRAY(SELECT m.user_id FROM org_members_metadata m WHERE m.org_id=t.org_id ORDER BY m.user_id)<>t.members
-      OR ARRAY(SELECT m.user_id FROM org_members_cache m WHERE m.org_id=t.org_id ORDER BY m.user_id)<>t.cached_members)
+    OR EXISTS (SELECT 1 FROM inactive_copy_target t
+      LEFT JOIN (SELECT org_id,array_agg(user_id ORDER BY user_id) AS ids FROM org_members_metadata GROUP BY org_id) m ON m.org_id=t.org_id
+      LEFT JOIN (SELECT org_id,array_agg(user_id ORDER BY user_id) AS ids FROM org_members_cache GROUP BY org_id) c ON c.org_id=t.org_id
+      WHERE coalesce(m.ids,'{}'::text[])<>t.members OR coalesce(c.ids,'{}'::text[])<>t.cached_members)
     OR EXISTS (SELECT 1 FROM inactive_copy_target t CROSS JOIN LATERAL unnest(t.members) m(user_id)
       LEFT JOIN user_feature_switches f ON f.org_id=t.org_id AND f.user_id=m.user_id
       WHERE f.switches->'singleAgent' IS DISTINCT FROM 'false'::jsonb) THEN
