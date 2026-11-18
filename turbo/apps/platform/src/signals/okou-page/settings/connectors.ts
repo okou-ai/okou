@@ -60,6 +60,8 @@ import {
 } from "../../utils.ts";
 import { waitAblyPayloadLoopUntil$ } from "../../realtime.ts";
 import { agents$, defaultAgentId$ } from "../../agent.ts";
+import { clerk$ } from "../../auth.ts";
+import { reloadOnboardingStatus$ } from "../onboarding.ts";
 import { connectedConnectorTargetKeys$ } from "../connector-accounts.ts";
 import { sanitizeTokenInputRecord } from "./token-input.ts";
 import { IN_VITEST } from "../../../env.ts";
@@ -957,27 +959,70 @@ async function readCompletedBuiltinConnectorAccount(
   );
 }
 
-const authorizeConnectorForVisibleAgents$ = command(
-  async (
-    { get },
-    connectorSlug: ConnectorSlug,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const singleAgent = get(singleAgentEnabled$);
-    const allAgents = await get(agents$);
+const authorizeConnectorForDefaultOkou$ = command(
+  async ({ get, set }, connectorSlug: ConnectorSlug, signal: AbortSignal) => {
+    const clerk = await get(clerk$);
     signal.throwIfAborted();
-    const defaultId = singleAgent ? await get(defaultAgentId$) : null;
+    const orgId = clerk.organization?.id;
+    const userId = clerk.user?.id;
+    const sessionId = clerk.session?.id;
+    const checkScope = () => {
+      signal.throwIfAborted();
+      if (
+        !orgId ||
+        !userId ||
+        !sessionId ||
+        clerk.organization?.id !== orgId ||
+        clerk.user?.id !== userId ||
+        clerk.session?.id !== sessionId
+      ) {
+        throw new DOMException(
+          "Connector authorization scope changed",
+          "AbortError",
+        );
+      }
+    };
+    checkScope();
+    let defaultId = await get(defaultAgentId$);
     signal.throwIfAborted();
-    const visibleAgents = singleAgent
-      ? allAgents.filter((agent) => {
-          return agent.agentId === defaultId;
-        })
-      : allAgents;
-    if (singleAgent && visibleAgents.length !== 1) {
+    checkScope();
+    if (!defaultId) {
+      set(reloadOnboardingStatus$);
+      defaultId = await get(defaultAgentId$);
+      signal.throwIfAborted();
+      checkScope();
+    }
+    if (!defaultId) {
       throw new ConnectorConnectionError(
         "Your workspace’s Okou is unavailable. Try again.",
       );
     }
+    const client = get(apiClient$)(userBuiltinConnectorsContract, {
+      getTokenGuard: () => {
+        checkScope();
+        return checkScope;
+      },
+    });
+    await accept(
+      client.update({
+        params: { id: defaultId },
+        body: { enabledConnectorSlugs: [connectorSlug], operation: "add" },
+        fetchOptions: { signal },
+      }),
+      [200],
+      signal,
+    );
+    checkScope();
+  },
+);
+
+const authorizeConnectorForVisibleAgents$ = command(
+  async ({ get, set }, connectorSlug: ConnectorSlug, signal: AbortSignal) => {
+    if (get(singleAgentEnabled$)) {
+      await set(authorizeConnectorForDefaultOkou$, connectorSlug, signal);
+      return;
+    }
+    const visibleAgents = await get(agents$);
     signal.throwIfAborted();
     const client = get(apiClient$)(userBuiltinConnectorsContract);
     await Promise.all(
