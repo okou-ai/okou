@@ -183,16 +183,24 @@ async fn retained_captures_exhaust_the_shared_budget_and_release_it_when_dropped
     // Each smaller capture is below 16 MiB individually. Retaining their
     // actual noisy PNG buffers, rather than synthetic reservations, eventually
     // prevents another real capture from fitting the shared 256 MiB budget.
-    let pixels = noisy_pixels(2048, 2048);
-    let (client, mut peer) = initialized(2048, 2048).await;
+    // Leave headroom for framing even when the selected deflate encoder
+    // produces close to the uncompressed pixel size.
+    const WIDTH: u16 = 1856;
+    const HEIGHT: u16 = 2048;
+    let pixels = noisy_pixels(WIDTH, HEIGHT);
+    let (client, mut peer) = initialized(WIDTH, HEIGHT).await;
     let mut session = Session::new(client);
     let mut captures = Vec::new();
     let mut exhausted = false;
     for _ in 0..20 {
-        match capture_raw(&mut session, &mut peer, 2048, 2048, &pixels).await {
+        match capture_raw(&mut session, &mut peer, WIDTH, HEIGHT, &pixels).await {
             Ok(capture) => {
                 assert!(capture.png().len() > 8 * 1024 * 1024);
-                assert!(capture.png().len() <= 16 * 1024 * 1024);
+                assert!(
+                    capture.png().len() <= 16 * 1024 * 1024,
+                    "fixture capture should stay below 16 MiB, got {} bytes",
+                    capture.png().len()
+                );
                 captures.push(capture);
             }
             Err(Error::ResourceLimit) => {
