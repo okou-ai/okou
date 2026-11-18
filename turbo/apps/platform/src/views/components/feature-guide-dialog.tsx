@@ -385,7 +385,7 @@ export function FeatureGuideDialog() {
     >
       <DialogContent
         maxWidth={720}
-        height="content"
+        height={720}
         scrollable={false}
         contentClassName="flex flex-col gap-5 font-(family-name:--font-family-sans) sm:gap-6"
         closeLabel={t(($) => {
