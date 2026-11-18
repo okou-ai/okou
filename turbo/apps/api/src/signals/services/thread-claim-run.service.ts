@@ -796,6 +796,7 @@ function isDirectSendContext(contextType: string | null): boolean {
 
 interface RunPlan {
   readonly args: ThreadRunArgs;
+  readonly integrationContext?: string;
   readonly enforceBuiltInCredits: boolean;
   readonly runner: ThreadRunnerFacts;
   readonly persisted: ThreadRunPersistenceContext;
@@ -1021,16 +1022,23 @@ type RunErrorResponse = {
 
 function withEmailSystemPrompt(
   plan: RunPlan,
-  appendSystemPrompt: string | null,
+  prompt: {
+    readonly appendSystemPrompt: string;
+    readonly integrationContext: string;
+  } | null,
 ): RunPlan {
-  if (appendSystemPrompt === null) {
+  if (prompt === null) {
     return plan;
   }
   return {
     ...plan,
+    integrationContext: prompt.integrationContext,
     persisted: {
       ...plan.persisted,
-      content: { ...plan.persisted.content, appendSystemPrompt },
+      content: {
+        ...plan.persisted.content,
+        appendSystemPrompt: prompt.appendSystemPrompt,
+      },
     },
   };
 }
@@ -1088,7 +1096,10 @@ function threadTitled(
   );
 }
 
-function claimLaunchRecord(record: ClaimLaunchRecord): ClaimLaunchRecord {
+function claimLaunchRecord(
+  record: ClaimLaunchRecord,
+  integrationContext: string | undefined,
+): ClaimLaunchRecord {
   if (record.kind === "automation") {
     return record;
   }
@@ -1099,6 +1110,10 @@ function claimLaunchRecord(record: ClaimLaunchRecord): ClaimLaunchRecord {
     templateUsageIdentities: record.templateUsageIdentities,
     context: {
       userId: record.context.userId,
+      integrationContext:
+        input.triggerSource === "web" || input.triggerSource === "agent"
+          ? undefined
+          : integrationContext,
       titled: record.context.titled,
       runInput: {
         orgId: input.orgId,
@@ -2664,6 +2679,8 @@ export function createThreadClaimRunObjects(
       modelProviderPermissions: runtimeContext.modelProviderPermissions,
       seedSkillVolumes: promptAndSkills.seedSkillVolumes,
       templateSkillVolumes: promptAndSkills.templateSkillVolumes,
+      integrationContext:
+        promptAndSkills.systemPromptVariables.integrationContext,
       userTimezone: promptAndSkills.userTimezone,
       ...metadata,
       officialWorkflowFacts: await get(officialWorkflowFacts$),
@@ -3052,6 +3069,7 @@ export function createThreadClaimRunObjects(
       const modelProvider = context.modelProvider;
       return {
         args,
+        integrationContext: context.integrationContext,
         enforceBuiltInCredits:
           !(
             officialWorkflowRun && args.agentRunMetadata.workflowAutomationId
@@ -3345,7 +3363,13 @@ export function createThreadClaimRunObjects(
     },
   );
   const prepareEmailSystemPrompt$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<string | null> => {
+    async (
+      { get, set },
+      signal: AbortSignal,
+    ): Promise<{
+      readonly appendSystemPrompt: string;
+      readonly integrationContext: string;
+    } | null> => {
       const email = await get(threadContext.emailContext$);
       signal.throwIfAborted();
       if (!email) {
@@ -3382,23 +3406,27 @@ export function createThreadClaimRunObjects(
         },
         signal,
       );
-      return renderRunPrompts({
-        systemPromptVariables: {
-          ...promptAndSkills.systemPromptVariables,
-          integrationContext: buildEmailPrompt(
-            email,
-            resolveIntegrationNotePrompt({
-              triggerSource: "email",
-              featureSwitchContext,
-              emailHasConnectedMailbox: true,
-            }),
-            mailboxes,
-            messageContext,
-          ),
-        },
-        userPromptVariables: { message: promptAndSkills.userPrompt },
-        skillVolumes: promptAndSkills.skillVolumes,
-      }).systemPrompt;
+      const integrationContext = buildEmailPrompt(
+        email,
+        resolveIntegrationNotePrompt({
+          triggerSource: "email",
+          featureSwitchContext,
+          emailHasConnectedMailbox: true,
+        }),
+        mailboxes,
+        messageContext,
+      );
+      return {
+        integrationContext,
+        appendSystemPrompt: renderRunPrompts({
+          systemPromptVariables: {
+            ...promptAndSkills.systemPromptVariables,
+            integrationContext,
+          },
+          userPromptVariables: { message: promptAndSkills.userPrompt },
+          skillVolumes: promptAndSkills.skillVolumes,
+        }).systemPrompt,
+      };
     },
   );
   /** Prepare Email context before launch facts and storage. */
@@ -3582,7 +3610,10 @@ export function createThreadClaimRunObjects(
                 head,
                 producerBinding: assembly.producerBinding,
                 rejection: claimRejectionContext(assembly.rejection),
-                launchRecord: claimLaunchRecord(assembly.launchRecord),
+                launchRecord: claimLaunchRecord(
+                  assembly.launchRecord,
+                  input.integrationContext,
+                ),
               },
               timing.run,
             ),

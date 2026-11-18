@@ -35,6 +35,8 @@ import { cronSyncSkillsRoutes } from "../cron-sync-skills";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
+import { mockGoogleText } from "./helpers/google-text";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
 import {
@@ -1014,7 +1016,35 @@ describe("Email integration", () => {
           },
         ],
       );
+      const titleRequests: string[] = [];
+      const expectedTitle = "Review customer discussion";
+      mockGoogleText();
+      createChatCallbacksApi(context).mockVertexCompletions((body) => {
+        if (
+          body.messages[0]?.content.includes(
+            "Generate a short, descriptive title",
+          )
+        ) {
+          const content = body.messages[1]?.content ?? "";
+          titleRequests.push(content);
+          return content.includes(sourceBody) && content.includes(historyBody)
+            ? expectedTitle
+            : "Review forwarded message";
+        }
+        return "Thinking";
+      });
       await message.send();
+      const threadEvents = await accept(
+        files.requestThreadEvents(actor, {}, [200]),
+        [200],
+      );
+      expect(threadEvents.body.events).toContainEqual(
+        expect.objectContaining({ kind: "renamed", title: expectedTitle }),
+      );
+      expect(titleRequests).toHaveLength(1);
+      expect(titleRequests[0]).toContain(sourceBody);
+      expect(titleRequests[0]).toContain(historyBody);
+      expect(titleRequests[0]).toContain('Subject: "Fwd: Customer discussion"');
       await runs.heartbeatRunner(group);
       const execution = await runs.nextReceivedExecution(group);
       const runId = execution.runId;
