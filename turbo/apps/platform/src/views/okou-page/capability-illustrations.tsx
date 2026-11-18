@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
+import { useGet } from "ccstate-react";
 import { cn } from "@okouai/ui";
 import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
+import { theme$ } from "../../signals/theme.ts";
 
 /**
  * The capability cards' art: a few photographed objects, shot flat from
@@ -38,7 +40,6 @@ function capabilityAsset(file: string): string {
   );
 }
 
-/** Every file the cards draw from; each is one request to the static host. */
 const ASSETS = {
   card: capabilityAsset("card-c7bc481949c3.webp"),
   page: capabilityAsset("page-6ea66047359d.webp"),
@@ -99,10 +100,12 @@ const SPIRAL =
  * A card's ground, under everything else in it. The hue wash paints over the
  * texture pool, so the white Spiral takes the card's tint instead of cutting
  * through it. The pool reaches a little further while the card is active, and
- * the Spiral drifts a few pixels the other way from the objects.
+ * the Spiral drifts a few pixels the other way from the objects. Only the
+ * current theme's Spiral is drawn, so the other one is never requested.
  */
 export function CapabilityGround({ card }: { readonly card: CapabilityCard }) {
   const { pool, spiral } = GROUNDS[card];
+  const dark = useGet(theme$) === "dark";
   return (
     <span
       aria-hidden
@@ -111,14 +114,9 @@ export function CapabilityGround({ card }: { readonly card: CapabilityCard }) {
       <span className="absolute inset-0 [mask-image:radial-gradient(var(--capability-pool-rx)_var(--capability-pool-ry)_at_var(--capability-pool-x)_var(--capability-pool-y),black_calc(var(--capability-pool)_-_50%),transparent_var(--capability-pool))] transition-[--capability-pool] duration-900 ease-[cubic-bezier(0.2,0.8,0.2,1)] capability-active:[--capability-pool:100%] motion-reduce:transition-none">
         <span className="absolute inset-0 bg-capability-pool opacity-35" />
         <img
-          src={ASSETS.spiralWhite}
+          src={dark ? ASSETS.spiralBlack : ASSETS.spiralWhite}
           alt=""
-          className={cn(SPIRAL, spiral, "dark:hidden")}
-        />
-        <img
-          src={ASSETS.spiralBlack}
-          alt=""
-          className={cn(SPIRAL, spiral, "hidden opacity-55 dark:block")}
+          className={cn(SPIRAL, spiral, dark && "opacity-55")}
         />
       </span>
       <span className="absolute inset-0 bg-capability-wash opacity-(--okou-capability-wash) transition-opacity duration-400 capability-active:opacity-(--okou-capability-wash-active) motion-reduce:transition-none" />
@@ -390,19 +388,32 @@ function entrance(art: CapabilityArt): string | undefined {
     : "motion-safe:animate-capability-layer-in";
 }
 
+/**
+ * `loading` is `lazy` for a drawing that is hidden until its choice is hovered
+ * or focused: the browser does not fetch a lazy image that is not rendered, so
+ * the home requests only the drawings it shows at rest, and a hidden one loads
+ * when its choice first brings it in.
+ */
 export function CapabilityObjects({
   art,
   className,
+  loading,
 }: {
   readonly art: CapabilityArt;
   readonly className?: string;
+  readonly loading?: "eager" | "lazy";
 }) {
   const layers: readonly CapabilityLayer[] = ARTS[art];
   return (
     <span className={cn("absolute inset-0", className)}>
       {layers.map(({ src, pose, width, turn, detail }) => {
         const photo = (
-          <img src={src} alt="" className="block w-full dark:brightness-93" />
+          <img
+            src={src}
+            alt=""
+            loading={loading}
+            className="block w-full dark:brightness-93"
+          />
         );
         return (
           // No two objects in a drawing share a place, so the pose is unique.

@@ -309,9 +309,9 @@
         var(--completion-dot-stagger)
     );
 
-  /* On the session's first home, the capability rows and the compliance block
-     under them settle in after the greeting: an 8px rise and a fade on the
-     greeting's own curve, one 70ms step apart through
+  /* On the session's first home, the capability rows rise in with the
+     greeting and the compliance block under them settles in after them: an
+     8px rise and a fade on the greeting's own curve, the block waiting out
      `--capability-row-delay`. It lives in this inline block so the utility
      carries the value itself: a theme variable is a custom property on
      `:root`, where its own `var(--capability-row-delay)` would resolve before

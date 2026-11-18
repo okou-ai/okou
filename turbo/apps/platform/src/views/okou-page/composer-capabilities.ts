@@ -10,7 +10,9 @@ import { detach, Reason } from "../../signals/utils.ts";
  * Each Create and Workflow choice carries `data-art`; its card shows the
  * matching drawing while that choice is hovered or focused. The visibility
  * classes are spelled out in full because Tailwind's scanner only generates
- * classes that appear literally in the source.
+ * classes that appear literally in the source. Only the drawing a card shows
+ * at rest loads with the page; the others are `lazy`, so they load when their
+ * choice first shows them.
  */
 export const CREATE_TASKS = [
   {
@@ -18,30 +20,35 @@ export const CREATE_TASKS = [
     art: "presentation",
     visibility:
       "group-has-[[data-art]:not([data-art=presentation]):is(:hover,:focus-visible)]/card:hidden",
+    loading: "eager",
   },
   {
     task: "image",
     art: "image",
     visibility:
       "hidden group-has-[[data-art=image]:is(:hover,:focus-visible)]/card:block",
+    loading: "lazy",
   },
   {
     task: "document",
     art: "document",
     visibility:
       "hidden group-has-[[data-art=document]:is(:hover,:focus-visible)]/card:block",
+    loading: "lazy",
   },
   {
     task: "website",
     art: "website",
     visibility:
       "hidden group-has-[[data-art=website]:is(:hover,:focus-visible)]/card:block",
+    loading: "lazy",
   },
   {
     task: "visualization",
     art: "chart",
     visibility:
       "hidden group-has-[[data-art=chart]:is(:hover,:focus-visible)]/card:block",
+    loading: "lazy",
   },
 ] as const;
 export const WORKFLOW_KINDS = [
@@ -50,18 +57,21 @@ export const WORKFLOW_KINDS = [
     art: "scheduled",
     visibility:
       "hidden group-has-[[data-art=scheduled]:is(:hover,:focus-visible)]/card:block",
+    loading: "lazy",
   },
   {
     kind: "triggers",
     art: "triggers",
     visibility:
       "hidden group-has-[[data-art=triggers]:is(:hover,:focus-visible)]/card:block",
+    loading: "lazy",
   },
   {
     kind: "advanced",
     art: "advanced",
     visibility:
       "group-has-[[data-art]:not([data-art=advanced]):is(:hover,:focus-visible)]/card:hidden",
+    loading: "eager",
   },
 ] as const;
 
