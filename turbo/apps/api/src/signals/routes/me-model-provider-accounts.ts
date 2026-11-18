@@ -24,10 +24,8 @@ import {
   consumePersonalCodexRateLimitResetCredit$,
   refreshPersonalModelProviderSubscriptionUsage$,
 } from "../services/model-provider-subscription-usage.service";
-import {
-  failedRunAccountIdentityCondition,
-  personalSubscriptionAccountIdentity,
-} from "../services/personal-subscription-recovery.service";
+import { failedRunAccountIdentityCondition } from "../services/personal-subscription-recovery.service";
+import { personalSubscriptionAccountIdentity } from "../services/execution-model-source.service";
 import { resetDisconnectedMemberModelSelection } from "../services/member-subscription-models.service";
 import {
   subscriptionSwitchRecoveries,
