@@ -2,12 +2,13 @@
 
 use crate::common;
 
-use std::future::Future;
+use std::future::{Future, poll_fn};
 use std::io::Write;
 use std::os::fd::OwnedFd;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::task::Poll;
 use std::time::Duration;
 
 use guest_agent::cli::CliExecutionResult;
@@ -18,6 +19,7 @@ use guest_agent::paths::GuestPaths;
 use guest_agent::run_context::GuestRuntime;
 use guest_contracts::diagnostics::{CliTerminationReason, CliTerminationSignal};
 use guest_contracts::stdout_framing::ORDINARY_CLI_STDOUT_MAX_LINE_BYTES;
+use raw_http_test_support::clock::advance_timer_phase;
 use rustix::process::{Pid, PidfdFlags, Signal};
 use tokio_util::sync::CancellationToken;
 
@@ -311,17 +313,30 @@ async fn child_exit_bounds_discarding_when_a_descendant_holds_stdout() -> Result
         .get()
         .ok_or_else(|| std::io::Error::other("holder PID was not captured"))?;
 
-    let result = tokio::time::timeout(Duration::from_secs(8), execution)
-        .await
-        .map_err(|_| {
-            std::io::Error::other("child exit did not bound the discarded-record drain")
-        })??;
+    let child_path = fixture.child_process_path()?;
+    let result = tokio::time::timeout(Duration::from_secs(8), async {
+        poll_fn(|cx| {
+            if let Poll::Ready(result) = execution.as_mut().poll(cx) {
+                return Poll::Ready(Err(std::io::Error::other(format!(
+                    "execution ended before observing the open stdout drain: {result:?}"
+                ))));
+            }
+            if child_path.try_exists()? {
+                return Poll::Pending;
+            }
+            Poll::Ready(Ok(()))
+        })
+        .await?;
+        // Reaping arms the stdout drain in the same execution poll. The outer
+        // timeout stays armed while the descendant keeps the pipe open.
+        advance_timer_phase(Duration::from_secs(5)).await;
+        execution.await.map_err(TestError::from)
+    })
+    .await
+    .map_err(|_| std::io::Error::other("child exit did not bound the discarded-record drain"))??;
     assert_eq!(result.exit_code, 0);
     assert!(result.control_error.is_none());
-    assert!(
-        !fixture.child_process_path()?.exists(),
-        "exited leader must be reaped",
-    );
+    assert!(!child_path.exists(), "exited leader must be reaped");
     assert!(
         PathBuf::from(format!("/proc/{holder_pid}")).exists(),
         "stdout must still be held open when the supervisor returns",
