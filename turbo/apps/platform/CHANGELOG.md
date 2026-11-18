@@ -13,6 +13,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1147.0](https://github.com/okou-ai/okou/compare/app-v0.1146.1...app-v0.1147.0) (2026-11-18)
+
+
+### Features
+
+* **app:** enable feature guides with the my okou redesign ([#47733](https://github.com/okou-ai/okou/issues/47733)) ([0e9387d](https://github.com/okou-ai/okou/commit/0e9387d6ef081ec765f9c1392e1158ac95bc6da0))
+
+
+### Bug Fixes
+
+* **app:** align billing surveys with the design system ([#48563](https://github.com/okou-ai/okou/issues/48563)) ([9cd4717](https://github.com/okou-ai/okou/commit/9cd4717e58d0bd85dc23d49744c87f8e8c7c697b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.86.0
+    * @okouai/core bumped to 8.852.0
+    * @okouai/ui bumped to 1.21.51
+
 ## [0.1146.1](https://github.com/okou-ai/okou/compare/app-v0.1146.0...app-v0.1146.1) (2026-11-18)
 
 

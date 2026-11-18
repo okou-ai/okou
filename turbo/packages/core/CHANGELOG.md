@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.852.0](https://github.com/okou-ai/okou/compare/core-v8.851.1...core-v8.852.0) (2026-11-18)
+
+
+### Features
+
+* **app:** enable feature guides with the my okou redesign ([#47733](https://github.com/okou-ai/okou/issues/47733)) ([0e9387d](https://github.com/okou-ai/okou/commit/0e9387d6ef081ec765f9c1392e1158ac95bc6da0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.86.0
+
 ## [8.851.1](https://github.com/okou-ai/okou/compare/core-v8.851.0...core-v8.851.1) (2026-11-18)
 
 
