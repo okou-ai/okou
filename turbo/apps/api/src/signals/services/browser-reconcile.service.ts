@@ -39,13 +39,15 @@ import {
   BrowserUseProviderError,
   BrowserUseWindowHealthError,
   BrowserUseWindowHealthTimeoutError,
-  browserUseWindowExists,
+  browserUseWindowsExist,
   browserUseNativeConnection,
   tryCloseBrowserUseWindow,
   findBrowserUseSession,
   findBrowserUseSessionByInstance,
   stopBrowserUseSessionForCleanup,
   type BrowserUseNativeConnection,
+  type BrowserUseSession,
+  type BrowserUseWindowHealth,
 } from "./browser-use.service";
 import {
   captureBrowserSnapshot$,
@@ -275,27 +277,30 @@ type BrowserWindowObservation =
       readonly providerStatus: "missing" | "stopped";
     }
   | { readonly kind: "healthy"; readonly observedAt: Date }
+  | { readonly kind: "unobserved" }
   | {
       readonly kind: "retire";
       readonly connection: BrowserUseNativeConnection | null;
       readonly nativeMissing: boolean;
     };
 
-/** Remote observation cannot turn independently expired usage into live usage. */
-async function observeBrowserWindow(
+type ProviderObservation =
+  | { readonly ok: true; readonly value: BrowserUseSession | null }
+  | { readonly ok: false; readonly error: unknown };
+interface WindowObservation {
+  readonly provider: ProviderObservation;
+  readonly health?: BrowserUseWindowHealth;
+}
+
+/** Captured IO never overrides current expiry or exact binding authority. */
+function observeBrowserWindow(
   target: Candidate,
+  observation: WindowObservation,
   progress: RetirementProgress,
-  signal: AbortSignal,
-): Promise<BrowserWindowObservation> {
+): BrowserWindowObservation {
   const { profile, window } = target;
   progress.phase = "find-provider";
-  if (!profile.providerSessionId) {
-    throw new Error("A shared Browser window has no provider session");
-  }
-  const found = await settleIncludingAbort(
-    findBrowserUseSession(profile.providerSessionId, signal),
-  );
-  signal.throwIfAborted();
+  const found = observation.provider;
   const retirementDue = needsWindowRetirement(
     profile,
     window,
@@ -327,30 +332,30 @@ async function observeBrowserWindow(
   }
   const connection = browserUseNativeConnection(provider);
   if (retirementDue) {
-    return { kind: "retire", connection, nativeMissing: false };
+    return {
+      kind: "retire",
+      connection,
+      nativeMissing:
+        observation.health?.ok === true && !observation.health.value,
+    };
   }
   progress.phase = "check-native-window";
-  const health = await settleIncludingAbort(
-    browserUseWindowExists(connection, window.primaryWindowId, signal),
-  );
-  signal.throwIfAborted();
-  const at = nowDate();
-  const dueAfterHealth = needsWindowRetirement(
-    profile,
-    window,
-    target.threadId,
-    at,
-  );
-  if (!health.ok && !dueAfterHealth) {
+  const health = observation.health;
+  // A selected due window may have been renewed before its exact binding read.
+  // It has no positive native observation and must remain live for a later sweep.
+  if (!health) {
+    return { kind: "unobserved" };
+  }
+  if (!health.ok) {
     throw health.error;
   }
-  if (health.ok && health.value && !dueAfterHealth) {
-    return { kind: "healthy", observedAt: at };
+  if (health.value) {
+    return { kind: "healthy", observedAt: health.observedAt };
   }
   return {
     kind: "retire",
     connection,
-    nativeMissing: health.ok && !health.value,
+    nativeMissing: true,
   };
 }
 
@@ -485,6 +490,7 @@ const retireBrowserWindow$ = command(
   async (
     { get, set },
     target: Candidate,
+    observation: WindowObservation,
     progress: RetirementProgress,
     signal: AbortSignal,
   ): Promise<string | null> => {
@@ -512,12 +518,14 @@ const retireBrowserWindow$ = command(
     if (!current) {
       return null;
     }
-    const observed = await observeBrowserWindow(
+    const observed = observeBrowserWindow(
       { ...target, window: current },
+      observation,
       progress,
-      signal,
     );
-    signal.throwIfAborted();
+    if (observed.kind === "unobserved") {
+      return null;
+    }
     if (observed.kind === "gone") {
       progress.phase = "mark-provider-gone";
       await set(
@@ -813,8 +821,148 @@ function browserStopCondition(
   );
 }
 
+const reconcileBrowserWindow$ = command(
+  async (
+    { set },
+    row: Candidate,
+    observation: WindowObservation,
+    signal: AbortSignal,
+  ) => {
+    const progress: RetirementProgress = { phase: "read-window" };
+    const result = await settleIncludingAbort(
+      set(retireBrowserWindow$, row, observation, progress, signal),
+    );
+    signal.throwIfAborted();
+    if (result.ok) {
+      return { closedInstance: result.value, failed: false };
+    }
+    // Preserve the original failure even if timestamp rotation also fails.
+    L.warn("Browser window reconciliation failed", {
+      instanceId: row.profile.instanceId,
+      primaryWindowId: row.window.primaryWindowId,
+      phase: progress.phase,
+      ...browserWindowFailure(result.error),
+    });
+    await set(writeDb$)
+      .update(windows)
+      .set({ updatedAt: nowDate() })
+      .where(
+        and(
+          browserLifetime(
+            {
+              orgId: row.profile.orgId,
+              userId: row.profile.userId,
+              chatThreadId: row.window.chatThreadId,
+            },
+            row.profile,
+            row.window,
+          ),
+          inArray(windows.state, ["active", "closing"]),
+        ),
+      );
+    signal.throwIfAborted();
+    return { closedInstance: null, failed: true };
+  },
+);
+
+const reconcileBrowserCandidates$ = command(
+  async ({ set }, rows: readonly Candidate[], signal: AbortSignal) => {
+    const closedInstances = new Set<string>();
+    let errors = 0;
+    const groups = new Map<string, Candidate[]>();
+    for (const row of rows) {
+      const group = groups.get(row.profile.instanceId) ?? [];
+      group.push(row);
+      groups.set(row.profile.instanceId, group);
+    }
+    const results: {
+      readonly closedInstance: string | null;
+      readonly failed: boolean;
+    }[] = [];
+    const observations: {
+      readonly live: readonly Candidate[];
+      readonly found: ProviderObservation;
+    }[] = [];
+    for (const group of groups.values()) {
+      const [first] = group;
+      if (!first) {
+        throw new Error("A Browser reconciliation group has no instance");
+      }
+      const found = await settleIncludingAbort(async () => {
+        if (!first.profile.providerSessionId) {
+          throw new Error("A shared Browser window has no provider session");
+        }
+        return await findBrowserUseSession(
+          first.profile.providerSessionId,
+          signal,
+        );
+      });
+      signal.throwIfAborted();
+      const due: Candidate[] = [];
+      const live: Candidate[] = [];
+      const observedAt = nowDate();
+      for (const row of group) {
+        (needsWindowRetirement(
+          row.profile,
+          row.window,
+          row.threadId,
+          observedAt,
+        )
+          ? due
+          : live
+        ).push(row);
+      }
+      // Independent expiry gets its own cleanup before any live health wait.
+      for (const row of due) {
+        results.push(
+          await set(reconcileBrowserWindow$, row, { provider: found }, signal),
+        );
+        signal.throwIfAborted();
+      }
+      observations.push({ live, found });
+    }
+    for (const { live, found } of observations) {
+      const provider = found.ok ? found.value : null;
+      const checks =
+        provider?.status === "active" && provider.cdpUrl
+          ? await browserUseWindowsExist(
+              browserUseNativeConnection(provider),
+              live.map((row) => {
+                return row.window.primaryWindowId;
+              }),
+              signal,
+            )
+          : new Map<number, BrowserUseWindowHealth>();
+      signal.throwIfAborted();
+      // The shared health wire has closed before snapshot/retirement IO begins.
+      for (const row of live) {
+        results.push(
+          await set(
+            reconcileBrowserWindow$,
+            row,
+            {
+              provider: found,
+              health: checks.get(row.window.primaryWindowId),
+            },
+            signal,
+          ),
+        );
+        signal.throwIfAborted();
+      }
+    }
+    for (const result of results) {
+      if (result.closedInstance) {
+        closedInstances.add(result.closedInstance);
+      }
+      errors += result.failed ? 1 : 0;
+    }
+    return { closedInstances: [...closedInstances], errors };
+  },
+);
+
 const reconcileBrowserWindows$ = command(
   async ({ get, set }, owner: Owner | null, signal: AbortSignal) => {
+    const at = nowDate();
     const rows = await get(db$)
       .select({
         profile: profiles,
@@ -835,7 +983,15 @@ const reconcileBrowserWindows$ = command(
           ownerScope(owner),
           owner?.chatThreadId
             ? or(
-                openNeedsReclamation(owner),
+                and(
+                  openNeedsReclamation(owner),
+                  or(
+                    eq(windows.state, "closing"),
+                    lte(windows.expiresAt, at),
+                    lte(profiles.timeoutAt, at),
+                    isNull(chatThreads.id),
+                  ),
+                ),
                 eq(windows.chatThreadId, owner.chatThreadId),
               )
             : undefined,
@@ -845,61 +1001,24 @@ const reconcileBrowserWindows$ = command(
       .orderBy(windows.updatedAt)
       .limit(BATCH_SIZE);
     signal.throwIfAborted();
-    const closedInstances = new Set<string>();
-    let errors = 0;
-    for (const raw of rows) {
-      const binding = browserChatWindow(raw.window);
+    const candidates = rows.map((row) => {
+      const binding = browserChatWindow(row.window);
       if (!binding) {
         throw new Error("A bound Browser chat has no live window");
       }
-      const row = {
-        ...raw,
-        window: binding,
-        operationId: owner?.operationId,
-      };
-      // Each candidate owns its diagnostic progress, including concurrent sweeps.
-      const progress: RetirementProgress = { phase: "read-window" };
-      const result = await settleIncludingAbort(
-        set(retireBrowserWindow$, row, progress, signal),
-      );
-      signal.throwIfAborted();
-      if (result.ok) {
-        if (result.value) {
-          closedInstances.add(result.value);
-        }
-      } else {
-        errors += 1;
-        // Preserve the original failure even if timestamp rotation also fails.
-        L.warn("Browser window reconciliation failed", {
-          instanceId: row.profile.instanceId,
-          primaryWindowId: row.window.primaryWindowId,
-          phase: progress.phase,
-          ...browserWindowFailure(result.error),
-        });
-        await set(writeDb$)
-          .update(windows)
-          .set({ updatedAt: nowDate() })
-          .where(
-            and(
-              browserLifetime(
-                {
-                  orgId: row.profile.orgId,
-                  userId: row.profile.userId,
-                  chatThreadId: row.window.chatThreadId,
-                },
-                row.profile,
-                row.window,
-              ),
-              inArray(windows.state, ["active", "closing"]),
-            ),
-          );
-        signal.throwIfAborted();
-      }
-    }
+      return { ...row, window: binding, operationId: owner?.operationId };
+    });
+    const reconciled = await set(
+      reconcileBrowserCandidates$,
+      candidates,
+      signal,
+    );
+    signal.throwIfAborted();
+    let errors = reconciled.errors;
     const empty = await get(db$)
       .select()
       .from(profiles)
-      .where(browserStopCondition(owner, [...closedInstances], nowDate()))
+      .where(browserStopCondition(owner, reconciled.closedInstances, nowDate()))
       .orderBy(profiles.updatedAt)
       .limit(BATCH_SIZE);
     signal.throwIfAborted();
