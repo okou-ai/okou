@@ -1622,7 +1622,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     const connectorSources = await exactSecretConnectorSources(actor, {
       TEST_OAUTH_TOKEN: "test-oauth",
     });
-    const forceRefresh = async (currentAccessToken: string) => {
+    const forceRefresh = async () => {
       const response = await fw.requestFirewallAuth(
         headers,
         {
@@ -1648,7 +1648,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
         scope: "provider-added",
       });
     });
-    const narrowed = await forceRefresh("initial-scoped-access");
+    const narrowed = await forceRefresh();
     expect(narrowed.headers.Authorization).toBe("Bearer narrow-scoped-access");
     const narrowedConnector = await connectors.readDefaultBuiltinAccount(
       actor,
@@ -1672,7 +1672,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
         expiresIn: 3600,
       });
     });
-    await forceRefresh("narrow-scoped-access");
+    await forceRefresh();
     const preservedConnector = await connectors.readDefaultBuiltinAccount(
       actor,
       "test-oauth",

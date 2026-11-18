@@ -204,10 +204,8 @@ export async function decryptPersistentSecretValue(
 /**
  * Encrypt a single secret value using AES-256-GCM.
  *
- * Reads `SECRETS_ENCRYPTION_KEY` from env so call sites stay clean — symmetric
- * counterpart to `decryptSecretValue` below. Output format
- * `iv:authTag:ciphertext` (all base64) matches what `encryptSecretForTests`
- * already produces, so encrypt/decrypt round-trip is provably consistent.
+ * Uses `SECRETS_ENCRYPTION_KEY` and produces the
+ * `iv:authTag:ciphertext` base64 format consumed by `decryptSecretValue`.
  */
 export function encryptSecretValue(plaintext: string): string {
   const key = Buffer.from(env("SECRETS_ENCRYPTION_KEY"), "hex");
