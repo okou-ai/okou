@@ -1,29 +1,30 @@
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import {
   officialWorkflowCatalogReleases,
   officialWorkflowDefinitionRevisions,
 } from "@okouai/db/schema/official-workflow-catalog";
 import { workflows } from "@okouai/db/schema/workflow";
-import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import {
   acceptedCatalogDefinitionRevision,
   acceptedOfficialWorkflowCatalogReadPlan,
 } from "./official-workflow-catalog-read.service";
-import { PROACTIVE_WORKFLOW_DEFINITIONS } from "./proactive-workflow-definitions";
-import { proactiveWorkflowOwnerEnabledSql } from "./proactive-workflow-owner";
+import { proactiveWorkflowOwnerPreferenceQuery } from "./proactive-workflow-owner";
 
 /** Read the release, its exact bundle revision, and installation authority with the Automation. */
-export function officialWorkflowSourcePlan(
-  scope: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly agentId: string;
-  },
-  requirePreference: boolean,
-) {
+export function officialWorkflowSourcePlan(scope: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly agentId: string;
+}) {
   const catalog = acceptedOfficialWorkflowCatalogReadPlan();
-  const { suggestions, learning } = PROACTIVE_WORKFLOW_DEFINITIONS;
+  const preferences = proactiveWorkflowOwnerPreferenceQuery(
+    scope,
+    scope.agentId,
+    {
+      prerequisite: isNotNull(officialWorkflowCatalogReleases.id),
+    },
+  ).as("official_workflow_preferences");
   return {
     catalogCondition: and(
       catalog.condition,
@@ -38,6 +39,7 @@ export function officialWorkflowSourcePlan(
       isNotNull(workflowAutomations.officialBlueprintKey),
     ),
     releaseJoin: catalog.join,
+    preferences,
     revisionJoin: and(
       eq(
         officialWorkflowDefinitionRevisions.definitionName,
@@ -61,10 +63,11 @@ export function officialWorkflowSourcePlan(
         payload: officialWorkflowDefinitionRevisions.payload,
         contentBundle: officialWorkflowDefinitionRevisions.contentBundle,
       },
-      proactiveOwnerEnabled: sql`CASE ${workflows.officialDefinitionName}
-        WHEN ${suggestions.name} THEN ${proactiveWorkflowOwnerEnabledSql(scope, scope.agentId, "suggestions", requirePreference)}
-        WHEN ${learning.name} THEN ${proactiveWorkflowOwnerEnabledSql(scope, scope.agentId, "learning", requirePreference)}
-        ELSE true END`.mapWith(pgBooleanDecoder),
+      proactivePreferences: {
+        memberUserId: preferences.memberUserId,
+        suggestionsEnabled: preferences.suggestionsEnabled,
+        learningEnabled: preferences.learningEnabled,
+      },
     },
   };
 }

@@ -136,9 +136,14 @@ export function createThreadWorkflowContext(
             message: "Proactive workflow is not enabled.",
           });
         }
+        const preferences = target.proactivePreferences;
+        const enabled =
+          kind === "suggestions"
+            ? preferences?.suggestionsEnabled
+            : preferences?.learningEnabled;
         if (
-          !target.proactiveOwnerEnabled ||
-          (context.eventType !== "manual" && !automation.enabled)
+          !preferences ||
+          (context.eventType !== "manual" && (!automation.enabled || !enabled))
         ) {
           throw new OfficialWorkflowRunAdmissionError({
             message: "Proactive workflow was paused before launch.",

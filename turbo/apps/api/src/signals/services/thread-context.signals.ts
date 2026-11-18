@@ -16,7 +16,7 @@ import {
 import { officialWorkflowSourcePlan } from "./official-workflow-context.signals";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { computed, type Computed } from "ccstate";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
@@ -62,7 +62,10 @@ export interface ThreadAutomationTarget {
     typeof officialWorkflowDefinitionRevisions.$inferSelect,
     "definitionName" | "revision" | "payload" | "contentBundle"
   > | null;
-  readonly proactiveOwnerEnabled: boolean;
+  readonly proactivePreferences: {
+    readonly suggestionsEnabled: boolean | null;
+    readonly learningEnabled: boolean | null;
+  } | null;
   readonly workflow: Pick<
     typeof workflows.$inferSelect,
     | "id"
@@ -465,10 +468,7 @@ function createAutomationTarget(
     if (!event) {
       return null;
     }
-    const source = officialWorkflowSourcePlan(
-      bootstrap,
-      event.eventType !== "manual",
-    );
+    const source = officialWorkflowSourcePlan(bootstrap);
     const [row] = await get(db$)
       .select({
         ...source.columns,
@@ -490,6 +490,7 @@ function createAutomationTarget(
       .leftJoin(officialWorkflowCatalogState, source.catalogCondition)
       .leftJoin(officialWorkflowCatalogReleases, source.releaseJoin)
       .leftJoin(officialWorkflowDefinitionRevisions, source.revisionJoin)
+      .leftJoinLateral(source.preferences, sql`true`)
       .where(eq(workflowAutomations.id, event.automationId))
       .limit(1);
     return row ?? null;
