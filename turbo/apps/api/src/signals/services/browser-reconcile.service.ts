@@ -300,6 +300,9 @@ function observeBrowserWindow(
 ): BrowserWindowObservation {
   const { profile, window } = target;
   progress.phase = "find-provider";
+  if (!profile.providerSessionId) {
+    throw new Error("A shared Browser window has no provider session");
+  }
   const found = observation.provider;
   const retirementDue = needsWindowRetirement(
     profile,
