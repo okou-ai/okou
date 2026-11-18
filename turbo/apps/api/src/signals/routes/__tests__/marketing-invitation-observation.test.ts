@@ -51,7 +51,7 @@ test("the source-only operator reports durable progress without settling the pub
     fixture.consumer.received.some((event) => {
       return event.type === "invitation.status-observed";
     }),
-  ).toBe(true);
+  ).toBeTruthy();
 });
 
 async function invited(
