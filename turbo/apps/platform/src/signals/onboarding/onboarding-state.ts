@@ -264,19 +264,19 @@ export const hydrateOnboardingRoute$ = command(
     // Strip known trailing instructions so a shared request submits each once.
     let task = prompt;
     const embedded: OnboardingOutputFormat[] = [];
-    for (;;) {
-      const format = ONBOARDING_OUTPUT_FORMATS.find((candidate) => {
+    const trailingFormat = () => {
+      return ONBOARDING_OUTPUT_FORMATS.find((candidate) => {
         return task.endsWith(`\n\n${copy.options[candidate].instruction}`);
       });
-      if (!format) {
-        break;
-      }
+    };
+    for (
+      let format = trailingFormat();
+      format;
+      format = allowMultipleOutputs ? trailingFormat() : undefined
+    ) {
       task = task.slice(0, -copy.options[format].instruction.length - 2);
       if (!embedded.includes(format)) {
         embedded.unshift(format);
-      }
-      if (!allowMultipleOutputs) {
-        break;
       }
     }
     const requested = (searchParams.get("outputFormats") ?? "").split(",");

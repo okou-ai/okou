@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.12.0](https://github.com/okou-ai/okou/compare/runner-host-v0.11.24...runner-host-v0.12.0) (2026-11-18)
+
+
+### Features
+
+* **runner:** attribute home lifecycle and entry-lock latency ([#48623](https://github.com/okou-ai/okou/issues/48623)) ([4ddc9c7](https://github.com/okou-ai/okou/commit/4ddc9c76a7d6d9e4d0b0055d5c84cfe6c562f593))
+
+## [0.11.24](https://github.com/okou-ai/okou/compare/runner-host-v0.11.23...runner-host-v0.11.24) (2026-11-18)
+
 ## [0.11.23](https://github.com/okou-ai/okou/compare/runner-host-v0.11.22...runner-host-v0.11.23) (2026-11-18)
 
 ## [0.11.22](https://github.com/okou-ai/okou/compare/runner-host-v0.11.21...runner-host-v0.11.22) (2026-11-18)

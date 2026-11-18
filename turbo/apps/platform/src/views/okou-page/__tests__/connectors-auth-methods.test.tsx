@@ -1484,14 +1484,15 @@ test("Submit credentials only for the chosen manual method", async () => {
   });
 });
 
-test("A personal connection authorizes only the default scope while keeping legacy grants separate", async () => {
+async function connectAxiomInPersonalMode(defaultListed: boolean) {
   const defaultId = "c0000000-0000-4000-a000-000000000001";
   const legacyId = "c0000000-0000-4000-a000-000000000002";
   mockConnectors(context, []);
   context.mocks.data.agents([
-    listAgent(defaultId, "Shared profile"),
+    ...(defaultListed ? [listAgent(defaultId, "Shared profile")] : []),
     listAgent(legacyId, "Research Agent"),
   ]);
+  context.mocks.data.onboardingStatus({ defaultAgentId: defaultId });
   mockPublicConnectorStatus(context, [
     publicStatusItem({
       connectorSlug: "axiom",
@@ -1514,7 +1515,9 @@ test("A personal connection authorizes only the default scope while keeping lega
       return respond(200, { connectionId: account.id });
     },
   );
+  const authorizedIds: string[] = [];
   mockAgentConnectorAccess("axiom", (id) => {
+    authorizedIds.push(id);
     expect(id).toBe(defaultId);
   });
   await setupPage({
@@ -1533,6 +1536,22 @@ test("A personal connection authorizes only the default scope while keeping lega
     name: "Name your Public Axiom account",
   });
   click(getConnectorAction("button", "Skip", naming));
+  return { authorizedIds, defaultId };
+}
+
+test("A personal connection authorizes the default Okou even when the agent list omits it", async () => {
+  const { authorizedIds, defaultId } = await connectAxiomInPersonalMode(false);
+  expect(authorizedIds).toStrictEqual([defaultId]);
+  await waitFor(() => {
+    expect(
+      within(getConnectorCard("Public Axiom")).getByText("Connected"),
+    ).toBeInTheDocument();
+  });
+});
+
+test("A personal connection authorizes only the default scope while keeping legacy grants separate", async () => {
+  const { authorizedIds, defaultId } = await connectAxiomInPersonalMode(true);
+  expect(authorizedIds).toStrictEqual([defaultId]);
   const manage = await waitFor(() => {
     return getConnectorAction("button", "Manage Public Axiom access");
   });

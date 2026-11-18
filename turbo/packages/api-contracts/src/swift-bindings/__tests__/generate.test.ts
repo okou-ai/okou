@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   array,
@@ -16,6 +18,7 @@ import {
 } from "zod";
 import {
   generatedSwiftDirectory,
+  generatedSwiftDomainDirectory,
   renderSwiftConstants,
   renderSwiftRoutes,
   renderSwiftTypes,
@@ -23,6 +26,19 @@ import {
 import { swiftConstantBindings } from "../constants";
 import { swiftRouteBindings } from "../routes";
 import { swiftTypeBindings } from "../types";
+import { renderSwiftRunFailureReasons } from "../run-failure-reasons";
+
+it("keeps the compiled Swift failure cases synchronized with the canonical schema", async () => {
+  expect(
+    await readFile(
+      join(
+        generatedSwiftDomainDirectory,
+        "KnownRunFailureReason.generated.swift",
+      ),
+      "utf8",
+    ),
+  ).toBe(renderSwiftRunFailureReasons());
+});
 
 describe("renderSwiftConstants", () => {
   it("renders string and integer constants with their docs", () => {

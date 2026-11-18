@@ -86,22 +86,10 @@ fn connect(timeout: Duration) -> io::Result<UnixStream> {
     stream.set_read_timeout(Some(timeout))?;
     stream.set_write_timeout(Some(timeout))?;
     // Authenticate the privileged broker, not an environment-selected user socket.
-    let mut credentials = unsafe { std::mem::zeroed::<libc::ucred>() };
-    let mut size = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
-    // SAFETY: stream is connected and the output buffers have the correct size.
-    if unsafe {
-        libc::getsockopt(
-            stream.as_raw_fd(),
-            libc::SOL_SOCKET,
-            libc::SO_PEERCRED,
-            std::ptr::addr_of_mut!(credentials).cast(),
-            &mut size,
-        )
-    } != 0
-    {
-        return Err(io::Error::last_os_error());
-    }
-    if size as usize != std::mem::size_of::<libc::ucred>() || credentials.uid != 0 {
+    let credentials =
+        nix::sys::socket::getsockopt(&stream, nix::sys::socket::sockopt::PeerCredentials)
+            .map_err(io::Error::from)?;
+    if credentials.uid() != 0 {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             "task broker is not privileged",

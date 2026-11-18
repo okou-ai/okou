@@ -59,6 +59,7 @@ import { uploadedArtifactPreviewImageUrl$ } from "./uploaded-artifact.service";
 interface ShareCandidate {
   readonly targetId: string;
   readonly ownerUrl: string;
+  readonly ownerReference?: string;
   readonly layout: LinkLayout;
   readonly candidateVersion: number | null;
   readonly target:
@@ -151,6 +152,7 @@ const ownedShareTarget$ = command(
           privateArtifactUrl(file.id, file.filename, file.metadata),
           env("APP_URL"),
         ).href,
+        ownerReference: file.artifactReference,
         layout: file.layout,
         candidateVersion: null,
         target: {
@@ -438,16 +440,14 @@ const publishArtifactShare$ = command(
     { get, set },
     args: {
       readonly candidate: ShareCandidate;
+      readonly row: ShareIdentity | null;
       readonly userId: string;
       readonly orgId: string;
       readonly audience: ArtifactSharePolicy["audience"];
     },
     signal: AbortSignal,
   ) => {
-    const row = await get(
-      shareIdentity(args.candidate.target.kind, args.candidate.targetId),
-    );
-    signal.throwIfAborted();
+    const { row } = args;
     if (!row || row.userId !== args.userId || row.orgId !== args.orgId) {
       return null;
     }
@@ -504,7 +504,7 @@ const publishArtifactShare$ = command(
     }
     const prepared = await set(
       prepareArtifactShareAliases$,
-      { policy: next, previous },
+      { policy: next, previous, ownerReference: args.candidate.ownerReference },
       signal,
     );
     // R2 is the only mutable authority. Acknowledge only after its strongly
@@ -618,7 +618,7 @@ export const revokeDeletedFileArtifactShare$ = command(
 
 export const updateArtifactShare$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly target: ArtifactShareTarget;
       readonly userId: string;
@@ -637,35 +637,41 @@ export const updateArtifactShare$ = command(
     if (!candidate) {
       return null;
     }
-    const member = await set(
-      currentShareMember$,
-      args.orgId,
-      args.userId,
-      signal,
-    );
+    const { targetId, target } = candidate;
+    const [member, existing] = await Promise.all([
+      set(currentShareMember$, args.orgId, args.userId, signal),
+      get(shareIdentity(target.kind, targetId)),
+    ]);
+    signal.throwIfAborted();
     if (!member) {
       return null;
     }
-    const db = set(writeDb$);
-    // Commit the durable identity before publishing. A failed later operation
-    // leaves an inert identity; it cannot leave an unowned public object.
-    await db
-      .insert(artifactShares)
-      .values({
-        userId: args.userId,
-        orgId: args.orgId,
-        linkLayoutSegment: linkLayoutSegment(candidate.layout),
-        targetKind: args.target.kind,
-        targetId: candidate.targetId,
-      })
-      .onConflictDoNothing({
-        target: [artifactShares.targetKind, artifactShares.targetId],
-      });
+    let row = existing;
+    if (!row) {
+      // Commit the durable identity before publishing. An allocated identity
+      // grants nothing on its own.
+      const [inserted] = await set(writeDb$)
+        .insert(artifactShares)
+        .values({
+          userId: args.userId,
+          orgId: args.orgId,
+          linkLayoutSegment: linkLayoutSegment(candidate.layout),
+          targetKind: target.kind,
+          targetId,
+        })
+        .onConflictDoNothing({
+          target: [artifactShares.targetKind, artifactShares.targetId],
+        })
+        .returning();
+      signal.throwIfAborted();
+      row = inserted ?? (await get(shareIdentity(target.kind, targetId)));
+    }
     signal.throwIfAborted();
     const policy = await set(
       publishArtifactShare$,
       {
         candidate,
+        row,
         userId: args.userId,
         orgId: args.orgId,
         audience: args.audience,

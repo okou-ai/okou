@@ -29,6 +29,7 @@ use super::path_safety::{
     filter_storage_fingerprints_for_home, is_safe_guest_working_dir,
     normalize_safe_guest_working_dir,
 };
+use super::timing::{HomeEntryLockTiming, HomePhase, HomePhaseTimer};
 use super::types::{
     HomeCacheCheckoutResult, HomeCacheLockDecision, HomeCacheLockOwner, HomeCacheTerminalStatus,
     HomeImageLeaseIdentity, HomeImageLeaseRequest, HomeImagePreparePolicy, HomeImagePrepareRequest,
@@ -44,6 +45,8 @@ use runner_host::home_observation::{HomeObservation, HomeObservationKind, HomeOb
 
 mod handoff;
 mod publication;
+#[cfg(test)]
+mod tests;
 
 const HOME_IMAGE_PREPARE_LOCK_TIMEOUT: Duration = Duration::from_millis(50);
 // Bound queued publication IO admission while retaining entry and resource
@@ -172,6 +175,7 @@ struct HomeEntryLockCustody {
     identity: Arc<()>,
     lock: Option<Flock<std::fs::File>>,
     unused_selection: std::sync::atomic::AtomicBool,
+    timing: HomeEntryLockTiming,
 }
 
 impl std::ops::Deref for HomeEntryLock {
@@ -188,7 +192,9 @@ impl HomeEntryLock {
         cache_key: &str,
         lock: Flock<std::fs::File>,
         owner: HomeCacheLockOwner,
+        acquiring_run_id: RunId,
     ) -> Self {
+        let timing = HomeEntryLockTiming::new(cache, acquiring_run_id);
         let identity = Arc::new(());
         let mut owners = cache
             .inner
@@ -213,6 +219,7 @@ impl HomeEntryLock {
             identity,
             lock: Some(lock),
             unused_selection: std::sync::atomic::AtomicBool::new(false),
+            timing,
         }))
     }
 
@@ -257,6 +264,7 @@ impl Drop for HomeEntryLockCustody {
         {
             self.inner.record_selection_release(&self.cache_key);
         }
+        self.timing.released(&self.cache_key);
     }
 }
 
@@ -531,6 +539,7 @@ impl HomeImageCache {
                     &cache_key,
                     lock,
                     HomeCacheLockOwner::Active,
+                    common.run_id,
                 )),
                 Some(cache_key),
                 None,
@@ -725,7 +734,13 @@ impl HomeImageCache {
                 );
             }
         };
-        let lock = HomeEntryLock::new(self, &cache_key, lock, HomeCacheLockOwner::Active);
+        let lock = HomeEntryLock::new(
+            self,
+            &cache_key,
+            lock,
+            HomeCacheLockOwner::Active,
+            common.run_id,
+        );
 
         let entry_dir = self.home_image_cache_entry_dir(&cache_key);
         match remove_non_directory_home_cache_entry(&entry_dir).await {
@@ -1502,13 +1517,31 @@ impl HomeImagePromotionContext {
     pub async fn acquire_required_idle_home_reclamation_permit(
         &self,
     ) -> LifecycleResult<super::IdleHomeReclamationPermit> {
-        self.cache.idle_home_reclamation.acquire_required().await
+        let timing = self.start_timing(HomePhase::IdleReclamationAdmission);
+        let result = self.cache.idle_home_reclamation.acquire_required().await;
+        timing.finish(if result.is_ok() {
+            HomeObservationOutcome::Completed
+        } else {
+            HomeObservationOutcome::Failed
+        });
+        result
     }
 
     pub async fn acquire_idle_home_reclamation_permit(
         &self,
     ) -> LifecycleResult<tokio::sync::OwnedSemaphorePermit> {
-        self.cache.acquire_idle_home_reclamation_permit().await
+        let timing = self.start_timing(HomePhase::IdleReclamationAdmission);
+        let result = self.cache.acquire_idle_home_reclamation_permit().await;
+        timing.finish(if result.is_ok() {
+            HomeObservationOutcome::Completed
+        } else {
+            HomeObservationOutcome::Failed
+        });
+        result
+    }
+
+    pub(crate) fn start_timing(&self, phase: HomePhase) -> HomePhaseTimer {
+        HomePhaseTimer::new(&self.cache, self.run_id, &self.cache_key, phase)
     }
 
     pub fn publication_generation(&self) -> String {
@@ -1678,6 +1711,7 @@ impl HomeImagePromotionContext {
                     &cache_key,
                     lock,
                     HomeCacheLockOwner::Finalizing,
+                    run_id,
                 )),
                 Err(e) => {
                     warn!(

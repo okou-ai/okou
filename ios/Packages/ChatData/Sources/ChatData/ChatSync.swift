@@ -3,6 +3,19 @@ import Foundation
 import OSLog
 
 public actor ChatSync {
+  public struct ThreadList: Sendable {
+    public let threads: [ChatThread]
+    public let eventIDs: Set<String>
+    public let cursor: ChatCacheCursor
+  }
+
+  public struct ThreadListWithIndicators: Sendable {
+    public let threads: [ChatThread]
+    public let indicators: Indicators?
+    public let eventIDs: Set<String>
+    public let cursor: ChatCacheCursor
+  }
+
   let client: APIClient
   private let chatEventSchemaVersion = 8
   private typealias CachedHistory = ChatHistoryIO.State
@@ -66,9 +79,7 @@ public actor ChatSync {
     try await threadsWithIndicators().threads
   }
 
-  public func threadsWithIndicators() async throws -> (
-    threads: [ChatThread], indicators: Indicators?, eventIDs: Set<String>, cursor: ChatCacheCursor
-  ) {
+  public func threadsWithIndicators() async throws -> ThreadListWithIndicators {
     let result = try await threadList()
     let indicators: Indicators?
     do {
@@ -91,13 +102,12 @@ public actor ChatSync {
       if thread.isMuted && updated.indicator == .unread { updated.indicator = nil }
       return updated
     }
-    return (threads, indicators, result.eventIDs, result.cursor)
+    return ThreadListWithIndicators(
+      threads: threads, indicators: indicators, eventIDs: result.eventIDs, cursor: result.cursor)
   }
 
   /// Synchronize list metadata independently of unread and running-state reads.
-  public func threadList() async throws -> (
-    threads: [ChatThread], eventIDs: Set<String>, cursor: ChatCacheCursor
-  ) {
+  public func threadList() async throws -> ThreadList {
     try await synchronizeThreadList(requirePersistence: false)
   }
 
@@ -106,9 +116,7 @@ public actor ChatSync {
     _ = try await synchronizeThreadList(requirePersistence: true)
   }
 
-  private func synchronizeThreadList(requirePersistence: Bool) async throws -> (
-    threads: [ChatThread], eventIDs: Set<String>, cursor: ChatCacheCursor
-  ) {
+  private func synchronizeThreadList(requirePersistence: Bool) async throws -> ThreadList {
     let cached = await readCachedThreadList()
     var state: ThreadListState
     if let cached {
@@ -158,7 +166,7 @@ public actor ChatSync {
           )
       }
     }
-    return (current, eventIDs, state.cursor)
+    return ThreadList(threads: current, eventIDs: eventIDs, cursor: state.cursor)
   }
 
   public func cachedIndicators() async -> CachedChatIndicators? {

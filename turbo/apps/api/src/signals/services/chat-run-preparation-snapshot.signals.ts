@@ -1,12 +1,10 @@
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
-import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   chatEvents,
   chatEventRunlessInputPredicate,
 } from "@okouai/db/schema/chat-event";
-import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { computed } from "ccstate";
 import {
   and,
@@ -15,19 +13,16 @@ import {
   eq,
   exists,
   inArray,
-  isNotNull,
   lt,
   not,
   notExists,
   sql,
 } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
-import { array, object, string, uuid, type infer as zInfer } from "zod";
 
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
-  zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { db$ } from "../external/db";
 import { joinAll } from "../utils";
@@ -43,21 +38,9 @@ import {
 import { officialWorkflowThreadCondition } from "./official-workflow-policy.service";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
-const threadSelectionRowsSchema = array(
-  object({
-    connectorId: uuid(),
-    connectorSlug: string().nullable(),
-    customConnectorId: uuid().nullable(),
-  }),
-);
-const threadSelectionRowsDecoder = zodDriverValueDecoder(
-  threadSelectionRowsSchema,
-);
-
 /** Preparation facts only: neither a connector grant nor commit-time authority. */
 export interface ChatRunPreparationFacts {
   readonly isOfficialWorkflowThread: boolean;
-  readonly threadConnectorSelections: zInfer<typeof threadSelectionRowsSchema>;
 }
 
 function buildPreparationTables(
@@ -146,36 +129,6 @@ function buildPreparationTables(
   return { occupancy, head };
 }
 
-function buildPreparationSelections(
-  head: ReturnType<typeof buildPreparationTables>["head"],
-  owner: { readonly agentId: string; readonly orgId: string },
-) {
-  const ownedAgent = exists(
-    new QueryBuilder()
-      .select({ id: agents.id })
-      .from(agents)
-      .where(and(eq(agents.id, owner.agentId), eq(agents.orgId, owner.orgId))),
-  );
-  return new QueryBuilder()
-    .select({
-      rows: sql`COALESCE(jsonb_agg(jsonb_build_object(
-        'connectorId', ${chatThreadConnectorSelections.connectorId},
-        'connectorSlug', ${chatThreadConnectorSelections.connectorSlug},
-        'customConnectorId', ${chatThreadConnectorSelections.customConnectorId}
-      ) ORDER BY ${asc(chatThreadConnectorSelections.connectorSlug)},
-        ${asc(chatThreadConnectorSelections.customConnectorId)}), '[]'::jsonb)`
-        .mapWith(threadSelectionRowsDecoder)
-        .as("selection_rows"),
-    })
-    .from(chatThreadConnectorSelections)
-    .where(
-      and(
-        eq(chatThreadConnectorSelections.chatThreadId, head.chatThreadId),
-        ownedAgent,
-      ),
-    );
-}
-
 /** One head/capacity statement joined with the claim's owned Thread facts. */
 export function createChatRunPreparationSnapshot(
   claim: { readonly orgId: string; readonly chatThreadId: string },
@@ -211,10 +164,6 @@ export function createChatRunPreparationSnapshot(
     );
     const hasCapacity =
       capacity === 0 ? sql`true` : lt(occupancy.activeCount, capacity);
-    const selections = buildPreparationSelections(head, {
-      agentId: bootstrap.agentId,
-      orgId: claim.orgId,
-    });
     const [row] = await database
       .with(occupancy, head)
       .select({
@@ -238,7 +187,7 @@ export function createChatRunPreparationSnapshot(
           modelSelection: head.modelSelection,
           sourceAutonomyBudget: head.sourceAutonomyBudget,
         },
-        // No head/full queues do not inspect policy or selections; automation
+        // No head/full queues do not inspect policy; automation
         // inputs bypass the prompt-only Official thread policy as before.
         isOfficialWorkflowThread: sql`CASE WHEN ${not(hasCapacity)} THEN false
             WHEN ${eq(head.eventType, "input.prompt")} THEN ${officialWorkflowThreadCondition(
@@ -248,10 +197,6 @@ export function createChatRunPreparationSnapshot(
                 userId: bootstrap.userId,
               },
             )} ELSE false END`.mapWith(pgBooleanDecoder),
-        threadConnectorSelections:
-          sql`CASE WHEN ${not(hasCapacity)} THEN '[]'::jsonb
-            WHEN ${isNotNull(head.id)} THEN (${selections})
-            ELSE '[]'::jsonb END`.mapWith(threadSelectionRowsDecoder),
       })
       .from(occupancy)
       .leftJoin(head, sql`true`);
@@ -287,7 +232,6 @@ export function createChatRunPreparationSnapshot(
       thread,
       preparation: {
         isOfficialWorkflowThread: row.isOfficialWorkflowThread,
-        threadConnectorSelections: row.threadConnectorSelections,
       },
     };
     return {

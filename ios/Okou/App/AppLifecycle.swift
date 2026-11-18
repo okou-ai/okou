@@ -207,7 +207,13 @@ final class WorkspaceLifecycle {
   private var phase = ScenePhase.inactive
   private var closed = false
   private var startupTask: Task<Void, Never>?
-  private var navigation: (id: UUID, destination: NotificationDestination, task: Task<Bool, Never>)?
+  private struct Navigation {
+    let id: UUID
+    let destination: NotificationDestination
+    let task: Task<Bool, Never>
+  }
+
+  private var navigation: Navigation?
   private var memoryTask: Task<Void, Never>?
 
   init(
@@ -259,7 +265,7 @@ final class WorkspaceLifecycle {
       return opened
     }
     lifecycleTasks.track(task)
-    navigation = (id, destination, task)
+    navigation = Navigation(id: id, destination: destination, task: task)
     return await task.value
   }
 

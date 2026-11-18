@@ -700,6 +700,10 @@ impl PreparedIdleDestroy {
 
     pub(super) async fn terminate(&mut self) -> IdleTerminationOutcome {
         let mut uncertain = false;
+        let timing = self
+            .prepared_promotion
+            .as_ref()
+            .map(PreparedHomeImagePromotion::start_termination_timing);
         let terminated = match AssertUnwindSafe(self.sandbox.kill()).catch_unwind().await {
             Ok(Ok(())) => true,
             Ok(Err(e)) => {
@@ -712,6 +716,9 @@ impl PreparedIdleDestroy {
                 false
             }
         };
+        if let Some(timing) = timing {
+            timing.finish(terminated);
+        }
         IdleTerminationOutcome {
             terminated,
             uncertain,

@@ -17,7 +17,7 @@ struct ConversationPositionInput<Content: View> {
 final class ConversationCollectionPosition<Content: View> {
   private let input: @MainActor () -> ConversationPositionInput<Content>?
   private let didEndScrolling: @MainActor () -> Void
-  var pendingScroll: (String, UnitPoint, Bool)?
+  var pendingScroll: ConversationScrollRequest?
   var sharingTrailingSpace: CGFloat = 0
   var animatesScroll = false
   private var lastMetrics: ConversationCollectionMetrics?
@@ -125,7 +125,7 @@ final class ConversationCollectionPosition<Content: View> {
 
   func scrollTo(_ id: String, anchor: UnitPoint, animated: Bool) {
     guard let context = input() else {
-      pendingScroll = (id, anchor, animated)
+      pendingScroll = ConversationScrollRequest(id: id, anchor: anchor, animated: animated)
       return
     }
     let source = context.source
@@ -139,7 +139,7 @@ final class ConversationCollectionPosition<Content: View> {
       setSharingTrailingSpace(0)
     }
     guard let index = dataSource.indexPath(for: targetID) else {
-      pendingScroll = (id, anchor, animated)
+      pendingScroll = ConversationScrollRequest(id: id, anchor: anchor, animated: animated)
       return
     }
     collection.layoutIfNeeded()

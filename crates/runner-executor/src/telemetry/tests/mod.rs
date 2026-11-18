@@ -156,6 +156,61 @@ async fn home_operations_use_the_existing_run_payload_and_first_run_context() {
 }
 
 #[tokio::test]
+async fn home_timings_preserve_duration_identity_and_incomplete_outcomes_in_host_payload() {
+    use runner_host::home_observation::{
+        HomeObservationKind as Kind, HomeObservationOutcome as Outcome,
+    };
+    let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
+        "200 OK",
+        r#"{"success":true}"#,
+    ))])
+    .await;
+    let telemetry = JobTelemetry::new_runner(
+        http_client_for_api_url(&server.url()),
+        "host-operation-token".into(),
+        None,
+    );
+    let producer = RunId::new_v4();
+    let reporter = telemetry.reporter();
+    for outcome in [Outcome::Completed, Outcome::Incomplete, Outcome::Released] {
+        let mut home = HomeObservation::new(Kind::LifecycleTiming, outcome);
+        home.run_id = Some(producer);
+        home.is_first_run = Some(false);
+        home.cache_key = Some("a".repeat(64));
+        home.reason = Some("entry_lock_lifetime".into());
+        // The adapter must derive failure from the truthful Home outcome, even
+        // when a caller supplies the ordinary successful record default.
+        let mut record = SandboxOpRecord::new("home", Duration::from_millis(1234), true, None);
+        record.home = Some(home);
+        reporter.record(record);
+    }
+    telemetry.flush().await;
+    let requests = server.assert_finished_with_requests().await;
+    assert_eq!(
+        requests.len(),
+        1,
+        "timing records use the existing batched transport"
+    );
+    let body: serde_json::Value =
+        serde_json::from_str(requests[0].split_once("\r\n\r\n").unwrap().1).unwrap();
+    assert!(body.get("runId").is_none());
+    for (index, outcome) in ["completed", "incomplete", "released"]
+        .into_iter()
+        .enumerate()
+    {
+        let op = &body["sandboxOperations"][index];
+        assert_eq!(op["action_type"], "runner_home_lifecycle_timing");
+        assert_eq!(op["duration_ms"], 1234);
+        assert_eq!(op["run_id"], producer.to_string());
+        assert_eq!(op["cache_key"], "a".repeat(64));
+        assert_eq!(op["is_first_run"], false);
+        assert_eq!(op["reason"], "entry_lock_lifetime");
+        assert_eq!(op["outcome"], outcome);
+        assert_eq!(op["success"], outcome != "incomplete");
+    }
+}
+
+#[tokio::test]
 async fn home_gc_operations_use_runner_credentials_and_omit_unknown_run_context() {
     use runner_host::home_observation::{
         HomeObservationKind as Kind, HomeObservationOutcome as Outcome,

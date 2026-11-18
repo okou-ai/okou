@@ -417,7 +417,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
           in: ids, arrivingView: cell, messageFrame: messageFrame)
       } else if let pendingScroll = scrolling.pendingScroll {
         self.scrolling.pendingScroll = nil
-        scrollTo(pendingScroll.0, anchor: pendingScroll.1, animated: pendingScroll.2)
+        scrollTo(pendingScroll.id, anchor: pendingScroll.anchor, animated: pendingScroll.animated)
       } else if source.followsBottom {
         source.anchor.followBottom()
         scrollTo("conversation-bottom", anchor: .bottom, animated: false)

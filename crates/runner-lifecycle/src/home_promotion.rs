@@ -16,6 +16,7 @@ use tracing::{Level, warn};
 
 use crate::error::LifecycleError;
 use crate::helper_exec::{format_helper_exec_failure, helper_exec_succeeded};
+use crate::home_image_cache::timing::{HomePhase, HomePhaseTimer};
 use crate::home_image_cache::{
     HomeCacheTerminalStatus, HomeImagePromotionContext, HomeImagePromotionOutcome,
 };
@@ -38,6 +39,19 @@ pub struct PreparedHomeImagePromotion {
     reason: &'static str,
 }
 
+/// Diagnostic observer only; dropping it does not cancel or release termination.
+pub struct HomeTerminationTiming(HomePhaseTimer);
+
+impl HomeTerminationTiming {
+    pub fn finish(self, stopped: bool) {
+        self.0.finish(if stopped {
+            HomeObservationOutcome::Completed
+        } else {
+            HomeObservationOutcome::Failed
+        });
+    }
+}
+
 pub async fn prepare_home_image_from_active_sandbox(
     sandbox: &dyn Sandbox,
     promotion: Option<HomeImagePromotionContext>,
@@ -51,13 +65,25 @@ pub async fn prepare_home_image_from_active_sandbox(
         // A privileged workload could have replaced the visible mount since
         // startup. Cleanup must cover the actual home filesystem, never
         // a same-device subtree whose hidden private namespaces would survive.
-        ensure_home_drive_mounted(sandbox, promotion.run_id())
-            .await
-            .map_err(|failure| failure.error)?;
+        let timing = promotion.start_timing(HomePhase::TerminalMount);
+        let mounted = ensure_home_drive_mounted(sandbox, promotion.run_id()).await;
+        timing.finish(if mounted.is_ok() {
+            HomeObservationOutcome::Completed
+        } else {
+            HomeObservationOutcome::Failed
+        });
+        mounted.map_err(|failure| failure.error)?;
         if !prepare_terminal_cache_runtime(sandbox, &mut promotion).await? {
             return Ok(false);
         }
-        freeze_home_drive(sandbox, promotion.run_id()).await?;
+        let timing = promotion.start_timing(HomePhase::TerminalFreeze);
+        let frozen = freeze_home_drive(sandbox, promotion.run_id()).await;
+        timing.finish(if frozen.is_ok() {
+            HomeObservationOutcome::Completed
+        } else {
+            HomeObservationOutcome::Failed
+        });
+        frozen?;
         Ok(true)
     })
     .catch_unwind()
@@ -120,6 +146,7 @@ pub(crate) async fn prepare_terminal_cache_runtime(
     sandbox: &dyn Sandbox,
     promotion: &mut HomeImagePromotionContext,
 ) -> crate::error::LifecycleResult<bool> {
+    let timing = promotion.start_timing(HomePhase::TerminalPreparation);
     let current_runtime_dir = guest_contracts::runtime_paths::run_dir_for_home(
         CANONICAL_GUEST_HOME_DIR,
         &promotion.run_id().to_string(),
@@ -176,6 +203,7 @@ pub(crate) async fn prepare_terminal_cache_runtime(
             home_available_inodes = report.cleanup.home.available_inodes,
             "home image rejected below reuse reserve");
         promotion.observe_publication(HomeObservationOutcome::Skipped, reason);
+        timing.finish(HomeObservationOutcome::Skipped);
         return Ok(false);
     }
     if let Some(binding) = &report.history_proof {
@@ -197,10 +225,15 @@ pub(crate) async fn prepare_terminal_cache_runtime(
     // Clear a previous candidate even on an ordinary history miss. This setter
     // validates the publication generation before storing optional evidence.
     promotion.set_home_history_proof(report.history_proof)?;
+    timing.finish(HomeObservationOutcome::Completed);
     Ok(true)
 }
 
 impl PreparedHomeImagePromotion {
+    pub fn start_termination_timing(&self) -> HomeTerminationTiming {
+        HomeTerminationTiming(self.promotion.start_timing(HomePhase::SandboxStop))
+    }
+
     /// The caller has completed required preparation and freeze, retaining the
     /// context on every error. This does not prove backing exit or publication.
     pub(crate) fn required(promotion: HomeImagePromotionContext, reason: &'static str) -> Self {
@@ -265,10 +298,16 @@ pub async fn prepare_home_image_from_parked_sandbox(
     reason: &'static str,
 ) -> Option<PreparedHomeImagePromotion> {
     let promotion = promotion?;
-    match AssertUnwindSafe(sandbox.unpark_for_terminal_operations())
+    let timing = promotion.start_timing(HomePhase::TerminalUnpark);
+    let result = AssertUnwindSafe(sandbox.unpark_for_terminal_operations())
         .catch_unwind()
-        .await
-    {
+        .await;
+    timing.finish(match &result {
+        Ok(Ok(())) => HomeObservationOutcome::Completed,
+        Ok(Err(_)) => HomeObservationOutcome::Failed,
+        Err(_) => HomeObservationOutcome::Incomplete,
+    });
+    match result {
         Ok(Ok(())) => {
             prepare_home_image_from_active_sandbox(sandbox, Some(promotion), reason).await
         }

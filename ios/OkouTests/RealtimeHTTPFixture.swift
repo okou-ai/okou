@@ -282,7 +282,13 @@ final class RealtimeHTTPFixture: Sendable {
     }
   }
 
-  private static func frame(_ data: Data) -> (consumed: Int, opcode: UInt8, payload: Data)? {
+  private struct Frame {
+    let consumed: Int
+    let opcode: UInt8
+    let payload: Data
+  }
+
+  private static func frame(_ data: Data) -> Frame? {
     let bytes = [UInt8](data)
     guard bytes.count >= 2 else { return nil }
     let opcode = bytes[0] & 15
@@ -302,6 +308,6 @@ final class RealtimeHTTPFixture: Sendable {
     let payload = (0..<length).map { index in
       bytes[offset + index] ^ (masked ? bytes[maskOffset + index % 4] : 0)
     }
-    return (offset + length, opcode, Data(payload))
+    return Frame(consumed: offset + length, opcode: opcode, payload: Data(payload))
   }
 }

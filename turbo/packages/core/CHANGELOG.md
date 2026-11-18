@@ -1,5 +1,35 @@
 # Changelog
 
+## [8.853.0](https://github.com/okou-ai/okou/compare/core-v8.852.2...core-v8.853.0) (2026-11-18)
+
+
+### Features
+
+* **core:** enable artifact generation timing by default ([#48626](https://github.com/okou-ai/okou/issues/48626)) ([f3c43bf](https://github.com/okou-ai/okou/commit/f3c43bf0cb414043f36623cc451d12d8ce223bae))
+
+## [8.852.2](https://github.com/okou-ai/okou/compare/core-v8.852.1...core-v8.852.2) (2026-11-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.86.2
+
+## [8.852.1](https://github.com/okou-ai/okou/compare/core-v8.852.0...core-v8.852.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* **api:** support attachments on inactive single agent workflow copies ([#48624](https://github.com/okou-ai/okou/issues/48624)) ([f41a05a](https://github.com/okou-ai/okou/commit/f41a05a04f254ecc6e4e614db921fef94b44ace1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.86.1
+
 ## [8.852.0](https://github.com/okou-ai/okou/compare/core-v8.851.1...core-v8.852.0) (2026-11-18)
 
 

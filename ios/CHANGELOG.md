@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.48.5](https://github.com/okou-ai/okou/compare/ios-v0.48.4...ios-v0.48.5) (2026-11-18)
+
+
+### Refactoring
+
+* **ios:** enable the large tuple lint rule ([#48631](https://github.com/okou-ai/okou/issues/48631)) ([55aa63d](https://github.com/okou-ai/okou/commit/55aa63dc24ff614767e11e994563573c95599118))
+
+## [0.48.4](https://github.com/okou-ai/okou/compare/ios-v0.48.3...ios-v0.48.4) (2026-11-18)
+
+
+### Bug Fixes
+
+* **chat:** dismiss archived reminders without marking chats read ([#48560](https://github.com/okou-ai/okou/issues/48560)) ([d3d69ae](https://github.com/okou-ai/okou/commit/d3d69ae2e7738d8b0b02450dde04399c91641a54))
+* **native:** cover every public run failure reason ([#48612](https://github.com/okou-ai/okou/issues/48612)) ([c1416bf](https://github.com/okou-ai/okou/commit/c1416bf15801f329cb95d836b1b66a722fb6a543))
+
+
+### Refactoring
+
+* **ios:** limit functions to five required parameters ([#48618](https://github.com/okou-ai/okou/issues/48618)) ([970f0db](https://github.com/okou-ai/okou/commit/970f0db7fb4b7a5c0f25d3dcd4487fc540a91076))
+
 ## [0.48.3](https://github.com/okou-ai/okou/compare/ios-v0.48.2...ios-v0.48.3) (2026-11-18)
 
 

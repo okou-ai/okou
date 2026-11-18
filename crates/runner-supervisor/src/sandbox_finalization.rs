@@ -1419,6 +1419,9 @@ async fn stop_and_destroy_sandbox(
             .await;
     let mut uncertain = false;
     let session_id = context.cli_agent_session_id;
+    let timing = prepared_promotion
+        .as_ref()
+        .map(|promotion| promotion.start_termination_timing());
     let stop = async {
         match context.shutdown {
             ActiveShutdown::Graceful => sandbox.stop().await,
@@ -1454,6 +1457,9 @@ async fn stop_and_destroy_sandbox(
             false
         }
     };
+    if let Some(timing) = timing {
+        timing.finish(stopped);
+    }
     let home_cache_promoted = match (prepared_promotion, stopped) {
         (Some(promotion), true) => promotion.publish().await,
         (Some(promotion), false) => {

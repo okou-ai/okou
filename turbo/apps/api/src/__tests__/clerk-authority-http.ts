@@ -45,6 +45,14 @@ async function response(
 export function installClerkAuthorityHttp(): void {
   const clerk = getApiTestMocks().clerk;
   server.use(
+    // Optional background authority reads need an explicit fixture for real facts.
+    // Other journeys exercise the unavailable-provider path rather than inventing a miss.
+    http.get(
+      "https://api.clerk.com/v1/organizations/:orgId/invitations/:invitationId",
+      () => {
+        return new HttpResponse(null, { status: 503 });
+      },
+    ),
     http.get("https://api.clerk.com/v1/sessions/:sessionId", ({ params }) => {
       return response(
         () => {

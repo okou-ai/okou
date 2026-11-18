@@ -75,3 +75,50 @@ fn missing_or_unsupported_capability_never_falls_back_and_emits_no_startup_recor
         assert!(metadata.is_empty());
     }
 }
+
+#[test]
+fn broker_identity_guards_stop_requests() {
+    use process_control_ipc::managed_task::{self as ipc, TaskReply, TaskRequest};
+
+    let tool = format!("peer-credentials-test-{}", TaskHandle::generate().as_str());
+    let listener = process_control_ipc::bind_abstract_listener(&ipc::endpoint(&tool)).unwrap();
+    let handle = TaskHandle::generate();
+    let expected = handle.clone();
+    // SAFETY: geteuid is a scalar query with no preconditions.
+    let privileged = unsafe { libc::geteuid() } == 0;
+    let broker = std::thread::spawn(move || {
+        let mut stream =
+            process_control_ipc::accept_with_timeout(&listener, Duration::from_secs(5)).unwrap();
+        stream
+            .set_write_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        if privileged {
+            let request = ipc::read_request_with_timeout(&stream, Duration::from_secs(5)).unwrap();
+            assert!(
+                matches!(request, TaskRequest::Stop { handle } if handle.as_str() == expected.as_str())
+            );
+            ipc::write_reply(&mut stream, &TaskReply::Stopped {}).unwrap();
+        } else {
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            assert_eq!(stream.read(&mut [0]).unwrap(), 0);
+        }
+    });
+
+    let output = Command::new(env!("CARGO_BIN_EXE_guest-task-exec"))
+        .args(["stop", handle.as_str()])
+        .env(CANONICAL_TOOL_CGROUP_PROCS_ENV, tool)
+        .output()
+        .unwrap();
+    broker.join().unwrap();
+
+    assert!(output.stdout.is_empty());
+    if privileged {
+        assert!(output.status.success());
+        assert!(output.stderr.is_empty());
+    } else {
+        assert_eq!(output.status.code(), Some(125));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("task broker is not privileged"));
+    }
+}

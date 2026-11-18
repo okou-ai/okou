@@ -10,10 +10,7 @@ import {
   connectorSlugSchema,
 } from "@okouai/api-contracts/contracts/connector-identity";
 import { isIntegrationManagedCustomConnectorProviderAdapter } from "@okouai/api-contracts/contracts/custom-connectors";
-import type {
-  ConnectorRuntimeTargetRegistration,
-  SecretConnectorMetadata,
-} from "@okouai/api-contracts/contracts/runners";
+import type { SecretConnectorMetadata } from "@okouai/api-contracts/contracts/runners";
 import {
   connectorAuthMethodRuntimeMetadata,
   type ConnectorRuntimeBindingEntry,
@@ -21,10 +18,6 @@ import {
 import { computed, type Computed } from "ccstate";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { chatThreadConnectorAccessOverrides } from "@okouai/db/schema/chat-thread-connector-access";
-import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { and, eq, inArray } from "drizzle-orm";
-import { db$ } from "../external/db";
 import { badRequestMessage } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
 import { joinAll, safeSync } from "../utils";
@@ -80,6 +73,7 @@ import type {
   ConnectorSourceResult,
   ConnectorSourceSnapshot,
 } from "./execution-connector-sources.service";
+import type { createThreadConnectorSources } from "./thread-connector-sources.service";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
 /** The integration account that delivered the picked input, if any. */
@@ -119,13 +113,13 @@ export function createConnectedAccountsSignals(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   connectorSourceId$: ConnectorSourceId$,
   dispatchTiming$: DispatchTiming$,
-  accessOverrides$: ReturnType<typeof createThreadAccountAccessOverrides>,
+  threadSources$: ReturnType<typeof createThreadConnectorSources>,
 ): ConnectedAccounts {
   const inputs = createConnectorInputSignals(
     pickedEvent$,
     execution,
     dispatchTiming$,
-    accessOverrides$,
+    threadSources$,
   );
   const accounts = createThreadAccountSignals(connectorSourceId$, inputs);
   const connectors$ = computed(async (get) => {
@@ -235,37 +229,9 @@ function createConnectorMaterialization(
 
 type ConnectorInputSignals = ReturnType<typeof createConnectorInputSignals>;
 
-/** Raw Thread facts; current execution constructs its own fresh source. */
-export function createThreadAccountAccessOverrides(
-  identity$: Computed<Promise<{ readonly chatThreadId: string }>>,
-  featureSwitches$: AgentRunContextSignals["featureSwitches$"],
-) {
-  const accessOverrides$ = computed(async (get) => {
-    if (
-      !isFeatureEnabled(
-        FeatureSwitchKey.ConnectorChatAccountAccess,
-        await get(featureSwitches$),
-      )
-    ) {
-      return [];
-    }
-    const input = await get(identity$);
-    return await get(db$)
-      .select({
-        connectorId: chatThreadConnectorAccessOverrides.connectorId,
-        enabled: chatThreadConnectorAccessOverrides.enabled,
-      })
-      .from(chatThreadConnectorAccessOverrides)
-      .where(
-        eq(chatThreadConnectorAccessOverrides.chatThreadId, input.chatThreadId),
-      );
-  });
-  return accessOverrides$;
-}
-
 function createChatAccountInputSignals(
   execution: Pick<AgentRunContextSignals, "featureSwitches$" | "connectors$">,
-  accessOverrides$: ReturnType<typeof createThreadAccountAccessOverrides>,
+  threadSources$: ReturnType<typeof createThreadConnectorSources>,
 ) {
   const chatAccountsEnabled$ = computed(async (get) => {
     return isFeatureEnabled(
@@ -274,9 +240,9 @@ function createChatAccountInputSignals(
     );
   });
   const effectiveAccounts$ = computed(async (get) => {
-    const [snapshot, overrides, chatAccountsEnabled] = await joinAll([
+    const [snapshot, threadSources, chatAccountsEnabled] = await joinAll([
       get(execution.connectors$),
-      get(accessOverrides$),
+      get(threadSources$),
       get(chatAccountsEnabled$),
     ]);
     const accounts = snapshot.connectorAccounts;
@@ -284,7 +250,7 @@ function createChatAccountInputSignals(
       return accounts;
     }
     const enabledById = new Map(
-      overrides.map((row) => {
+      (threadSources?.accessOverrides ?? []).map((row) => {
         return [row.connectorId, row.enabled];
       }),
     );
@@ -304,206 +270,17 @@ function createChatAccountInputSignals(
   return { chatAccountsEnabled$, effectiveAccounts$ };
 }
 
-/** Preserve registered account bindings and resolve current native-only selections. */
-interface ExecutionConnectedAccountsArgs {
-  readonly identity$: Computed<
-    Promise<{
-      readonly userId: string;
-      readonly orgId: string;
-      readonly agentId: string;
-      readonly chatThreadId: string;
-    }>
-  >;
-  readonly targets$: Computed<
-    Promise<readonly ConnectorRuntimeTargetRegistration[]>
-  >;
-  readonly scope$: AgentRunContextSignals["connectorScope$"];
-  readonly catalog$: AgentRunContextSignals["catalog$"];
-  readonly definitions$: AgentRunContextSignals["customConnectorDefinitions$"];
-  readonly connectors$: AgentRunContextSignals["connectors$"];
-  readonly policies$: AgentRunContextSignals["permissionPolicies$"];
-  readonly features$: AgentRunContextSignals["featureSwitches$"];
-  readonly timing$: DispatchTiming$;
-}
-
-function createExecutionAccountInputs(
-  args: ExecutionConnectedAccountsArgs,
-  connectorScope$: Computed<Promise<EffectiveConnectorScope>>,
-) {
-  const connectorInput$ = computed(async (get) => {
-    const [identity, targets, scope] = await Promise.all([
-      get(args.identity$),
-      get(args.targets$),
-      get(connectorScope$),
-    ]);
-    const registered = new Set(targets.map(connectorAccountTargetKey));
-    // Only native-only bindings can remain in scope without a registration.
-    const nativeSlugs = scope.allowedConnectorSlugs.filter((connectorSlug) => {
-      return !registered.has(
-        connectorAccountTargetKey({ kind: "builtin", connectorSlug }),
-      );
-    });
-    const rows =
-      nativeSlugs.length === 0
-        ? []
-        : await get(db$)
-            .select({
-              connectorId: chatThreadConnectorSelections.connectorId,
-              connectorSlug: chatThreadConnectorSelections.connectorSlug,
-              customConnectorId:
-                chatThreadConnectorSelections.customConnectorId,
-            })
-            .from(chatThreadConnectorSelections)
-            .where(
-              and(
-                eq(
-                  chatThreadConnectorSelections.chatThreadId,
-                  identity.chatThreadId,
-                ),
-                inArray(
-                  chatThreadConnectorSelections.connectorSlug,
-                  nativeSlugs,
-                ),
-              ),
-            );
-    return {
-      ...identity,
-      threadSelectionRows: [
-        ...rows,
-        ...targets.flatMap((target) => {
-          return target.sourceId
-            ? [
-                {
-                  connectorId: target.sourceId,
-                  connectorSlug:
-                    target.kind === "builtin" ? target.connectorSlug : null,
-                  customConnectorId:
-                    target.kind === "custom" ? target.customConnectorId : null,
-                },
-              ]
-            : [];
-        }),
-      ],
-      timing: get(args.timing$),
-    };
-  });
-  const accessOverrides$ = createThreadAccountAccessOverrides(
-    args.identity$,
-    args.features$,
-  );
-  const currentAccounts = createChatAccountInputSignals(
-    { featureSwitches$: args.features$, connectors$: args.connectors$ },
-    accessOverrides$,
-  );
-  const effectiveAccounts$ = computed(async (get) => {
-    const [rows, targets] = await Promise.all([
-      get(currentAccounts.effectiveAccounts$),
-      get(args.targets$),
-    ]);
-    const pinned = new Map(
-      targets.map((target) => {
-        return [connectorAccountTargetKey(target), target.sourceId];
-      }),
-    );
-    return rows.filter((row) => {
-      const key = connectorAccountTargetKey(runConnectorTargetFromRow(row));
-      return !pinned.has(key) || pinned.get(key) === row.connectorId;
-    });
-  });
-  return {
-    connectorInput$,
-    chatAccounts: { ...currentAccounts, effectiveAccounts$ },
-  };
-}
-
-function createExecutionConnectorScope(args: ExecutionConnectedAccountsArgs) {
-  return computed(async (get): Promise<EffectiveConnectorScope> => {
-    const [scope, targets, catalog] = await Promise.all([
-      get(args.scope$),
-      get(args.targets$),
-      get(args.catalog$),
-    ]);
-    const allowed = runConnectorScope(scope);
-    if (allowed.allowedConnectorSlugs.length > 0 && !catalog) {
-      throw new Error("Scoped connector catalog is missing from Claim");
-    }
-    return {
-      ...allowed,
-      customConnectorGrants: isFeatureEnabled(
-        FeatureSwitchKey.ConnectorChatAccountAccess,
-        await get(args.features$),
-      )
-        ? []
-        : allowed.customConnectorGrants,
-      allowedConnectorSlugs: allowed.allowedConnectorSlugs.filter((slug) => {
-        // Native-only environment bindings have no firewall registration.
-        return (
-          (catalog !== null &&
-            !catalog.serverFirewalls.has(slug) &&
-            !catalog.serverFirewalls.isMcp(slug)) ||
-          targets.some((target) => {
-            return target.kind === "builtin" && target.connectorSlug === slug;
-          })
-        );
-      }),
-      allowedCustomConnectorIds: allowed.allowedCustomConnectorIds.filter(
-        (id) => {
-          return targets.some((target) => {
-            return target.kind === "custom" && target.customConnectorId === id;
-          });
-        },
-      ),
-    };
-  });
-}
-
-export function createExecutionConnectedAccounts(
-  args: ExecutionConnectedAccountsArgs,
-): ConnectedAccounts {
-  const connectorScope$ = createExecutionConnectorScope(args);
-  const { connectorInput$, chatAccounts } = createExecutionAccountInputs(
-    args,
-    connectorScope$,
-  );
-  const inputs: ConnectorInputSignals = {
-    connectorInput$,
-    connectorScope$,
-    connectorCatalog$: computed(async (get) => {
-      const [scope, catalog] = await Promise.all([
-        get(connectorScope$),
-        get(args.catalog$),
-      ]);
-      return runConnectorCatalogSelection(scope, catalog);
-    }),
-    featureSwitchContext$: args.features$,
-    customConnectorDefinitions$: args.definitions$,
-    ownedThread$: computed(async (get) => {
-      return { agentId: (await get(args.identity$)).agentId };
-    }),
-    ...chatAccounts,
-    memberPermissionPolicies$: computed(async (get) => {
-      return (await get(chatAccounts.chatAccountsEnabled$))
-        ? await get(args.policies$)
-        : undefined;
-    }),
-  };
-  const accounts = createThreadAccountSignals(
-    computed(() => {
-      return Promise.resolve(undefined);
-    }),
-    inputs,
-  );
-  return createConnectorMaterialization(args.connectors$, inputs, accounts);
-}
-
 function createConnectorInputSignals(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   execution: AgentRunContextSignals,
   dispatchTiming$: DispatchTiming$,
-  accessOverrides$: ReturnType<typeof createThreadAccountAccessOverrides>,
+  threadSources$: ReturnType<typeof createThreadConnectorSources>,
 ) {
   const connectorInput$ = computed(async (get) => {
-    const event = await get(pickedEvent$);
+    const [event, sources] = await Promise.all([
+      get(pickedEvent$),
+      get(threadSources$),
+    ]);
     if (!event) {
       throw new Error("Connected accounts require a picked event");
     }
@@ -511,14 +288,11 @@ function createConnectorInputSignals(
       orgId: execution.orgId,
       userId: execution.userId,
       chatThreadId: event.chatThreadId,
-      threadSelectionRows: event.preparation.threadConnectorSelections,
+      threadSelectionRows: sources?.selections ?? [],
       timing: get(dispatchTiming$),
     };
   });
-  const chatAccounts = createChatAccountInputSignals(
-    execution,
-    accessOverrides$,
-  );
+  const chatAccounts = createChatAccountInputSignals(execution, threadSources$);
   const chatAccountsEnabled$ = chatAccounts.chatAccountsEnabled$;
   const effectiveAccounts$ = chatAccounts.effectiveAccounts$;
   const connectorScope$ = computed(
@@ -590,13 +364,25 @@ function createConnectorInputSignals(
     })();
   });
   const ownedThread$ = computed(async (get) => {
-    const thread = (await get(pickedEvent$))?.thread;
-    if (!thread) {
+    const [event, sources, agent] = await Promise.all([
+      get(pickedEvent$),
+      get(threadSources$),
+      get(execution.agent$),
+    ]);
+    const identity = sources?.identity;
+    if (
+      !event ||
+      !identity ||
+      identity.chatThreadId !== event.chatThreadId ||
+      identity.userId !== execution.userId ||
+      identity.orgId !== execution.orgId ||
+      identity.agentId !== event.thread.agentId ||
+      identity.agentId !== execution.agentId
+    ) {
       return null;
     }
-    const agent = await get(execution.agent$);
     return agent?.orgId === execution.orgId
-      ? { agentId: thread.agentId }
+      ? { agentId: event.thread.agentId }
       : null;
   });
   return {
@@ -1469,7 +1255,7 @@ export interface StoredConnectorMaterializationSnapshot {
   readonly variableValues: Record<string, string>;
 }
 
-export function emptyBuiltinConnectorRuntimeContext(): BuiltinConnectorRuntimeContext {
+function emptyBuiltinConnectorRuntimeContext(): BuiltinConnectorRuntimeContext {
   return {
     vars: undefined,
     secretConnectorMap: undefined,
@@ -1633,7 +1419,7 @@ function connectorSourceIdsBySlug(
   );
 }
 
-export function storedConnectorContextFromSnapshot(
+function storedConnectorContextFromSnapshot(
   snapshot: StoredConnectorMaterializationSnapshot | null,
 ): BuiltinConnectorRuntimeContext {
   if (!snapshot) {

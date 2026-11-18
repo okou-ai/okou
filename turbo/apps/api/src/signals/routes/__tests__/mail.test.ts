@@ -1800,6 +1800,21 @@ describe("POST /api/mail/drafts/link", () => {
     ["missing reasons", 400, {}],
     ["empty reasons", 400, { errors: [] }],
     [
+      "structured field violations without a reason",
+      400,
+      {
+        status: "INVALID_ARGUMENT",
+        details: [
+          {
+            "@type": "type.googleapis.com/google.rpc.BadRequest",
+            fieldViolations: [
+              { field: "message.raw", description: "Private draft contents" },
+            ],
+          },
+        ],
+      },
+    ],
+    [
       "unrecognized domain",
       400,
       { errors: [{ domain: "other", reason: "badRequest" }] },

@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.249.50](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.49...runner-rs-v0.249.50) (2026-11-18)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.49](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.48...runner-rs-v0.249.49) (2026-11-18)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.48](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.47...runner-rs-v0.249.48) (2026-11-18)
+
+
+### Refactoring
+
+* **firewall:** separate host resolver authority from guest identity ([#48459](https://github.com/okou-ai/okou/issues/48459)) ([949de84](https://github.com/okou-ai/okou/commit/949de843f47dd8152058c7d7e2ca8a418305f0fc))
+* **runner:** share bounded compressed input traversal ([#48555](https://github.com/okou-ai/okou/issues/48555)) ([c07773e](https://github.com/okou-ai/okou/commit/c07773eb16b278eff9896dd560b2e3ad11843305))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.47](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.46...runner-rs-v0.249.47) (2026-11-18)
 
 ### Release Dependencies

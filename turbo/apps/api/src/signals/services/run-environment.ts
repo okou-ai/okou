@@ -18,7 +18,7 @@ import {
  * applies precedence. Claim maps these fields to complete runtime preparation.
  */
 export interface Environment {
-  /** Current connector variables used by runtime preparation. */
+  /** Accepted connector variables used by runtime preparation. */
   readonly vars: Record<string, string> | undefined;
   /** Expanded, untrusted sandbox environment entries. */
   readonly environment: Record<string, string> | undefined;

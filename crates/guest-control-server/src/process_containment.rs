@@ -1625,25 +1625,11 @@ fn workload_bootstrap_peer_matches(
     peer_matches(stream, expected_uid, expected_cgroup)
 }
 
-fn peer_credentials(stream: &UnixStream) -> io::Result<libc::ucred> {
-    // SAFETY: zeroed ucred is a valid output buffer for SO_PEERCRED.
-    let mut credentials = unsafe { std::mem::zeroed::<libc::ucred>() };
-    let mut credentials_len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
-    // SAFETY: stream is a connected Unix socket and the output pointers refer
-    // to a correctly sized ucred buffer and socklen_t.
-    let result = unsafe {
-        libc::getsockopt(
-            stream.as_raw_fd(),
-            libc::SOL_SOCKET,
-            libc::SO_PEERCRED,
-            std::ptr::addr_of_mut!(credentials).cast(),
-            std::ptr::addr_of_mut!(credentials_len),
-        )
-    };
-    if result != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    if credentials_len as usize != std::mem::size_of::<libc::ucred>() || credentials.pid <= 0 {
+fn peer_credentials(stream: &UnixStream) -> io::Result<nix::sys::socket::UnixCredentials> {
+    let credentials =
+        nix::sys::socket::getsockopt(stream, nix::sys::socket::sockopt::PeerCredentials)
+            .map_err(io::Error::from)?;
+    if credentials.pid() <= 0 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "invalid placement peer identity",
@@ -1658,10 +1644,10 @@ fn peer_matches(
     expected_cgroup: &Path,
 ) -> io::Result<bool> {
     let credentials = peer_credentials(stream)?;
-    if credentials.uid != expected_uid {
+    if credentials.uid() != expected_uid {
         return Ok(false);
     }
-    let cgroup = fs::read_to_string(format!("/proc/{}/cgroup", credentials.pid));
+    let cgroup = fs::read_to_string(format!("/proc/{}/cgroup", credentials.pid()));
     let cgroup = match cgroup {
         Ok(cgroup) => cgroup,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),

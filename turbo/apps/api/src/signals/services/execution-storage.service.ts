@@ -7,7 +7,6 @@ import {
   MEMORY_ARTIFACT_NAME,
   SYSTEM_ORG_ID,
 } from "@okouai/core/storage-names";
-import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import { computed, type Computed } from "ccstate";
@@ -144,12 +143,16 @@ function validateRequests(mounts: readonly ExecutionStorageRequest[]): void {
 }
 
 type VersionRow = Pick<
-  typeof storageVersions.$inferSelect,
-  "storageId" | "s3Key" | "archiveSize" | "fileCount"
-> &
-  Pick<typeof storages.$inferSelect, "orgId" | "userId" | "name"> & {
-    readonly versionId: typeof storageVersions.$inferSelect.id;
-  };
+  typeof memoryVersions.$inferSelect,
+  "archiveSize" | "fileCount"
+> & {
+  readonly storageId: typeof memoryVersions.$inferSelect.memoryId;
+  readonly versionId: typeof memoryVersions.$inferSelect.id;
+  readonly s3Key: typeof memoryVersions.$inferSelect.objectPrefix;
+  readonly orgId: typeof memberMemories.$inferSelect.orgId;
+  readonly userId: typeof memberMemories.$inferSelect.userId;
+  readonly name: string;
+};
 
 interface ResolvedExecutionStorageInput {
   readonly mounts: readonly ExecutionStorageRequest[];
@@ -161,6 +164,9 @@ function acceptedStorageRequests(
   mounts: readonly PersistedStorageMount[],
 ): readonly ExecutionStorageRequest[] {
   return mounts.map((mount): ExecutionStorageRequest => {
+    if (!isMemberMemoryIdentity(mount)) {
+      throw new Error("Accepted Run mount is not member Memory");
+    }
     if (!mount.version) {
       throw new Error("Accepted storage mount is missing its exact version");
     }
@@ -182,7 +188,7 @@ function acceptedStorageRequests(
   });
 }
 
-/** Resolve accepted Run versions, without consulting mutable Storage HEAD. */
+/** Resolve the exact Memory versions captured at Run admission. */
 export function createAcceptedExecutionStorageObjects(
   mounts$: Computed<Promise<readonly PersistedStorageMount[]>>,
 ): ExecutionStorageObjects {
@@ -198,56 +204,13 @@ export function createAcceptedExecutionStorageObjects(
           return [mountKey(mount), mount];
         }),
       );
-      const cacheKey = storageVersionCacheKeySql({
-        orgId: sql`${storages.orgId}`,
-        versionId: sql`${storageVersions.id}`,
-        s3Key: sql`${storageVersions.s3Key}`,
-      });
       const db = get(db$);
-      const legacyMounts = [...unique.values()].filter((mount) => {
-        return !isMemberMemoryIdentity(mount);
-      });
-      const memoryMounts = [...unique.values()].filter(isMemberMemoryIdentity);
-      const legacyQuery = db
-        .select({
-          storageId: storageVersions.storageId,
-          versionId: storageVersions.id,
-          s3Key: storageVersions.s3Key,
-          archiveSize: storageVersions.archiveSize,
-          fileCount: storageVersions.fileCount,
-          orgId: storages.orgId,
-          userId: storages.userId,
-          name: storages.name,
-          cacheKey: systemStoragePresignedUrlCache.cacheKey,
-          cacheScope: systemStoragePresignedUrlCache.scope,
-          presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
-          expiresAt: systemStoragePresignedUrlCache.expiresAt,
-        })
-        .from(storageVersions)
-        .innerJoin(storages, eq(storages.id, storageVersions.storageId))
-        .leftJoin(
-          systemStoragePresignedUrlCache,
-          eq(systemStoragePresignedUrlCache.cacheKey, cacheKey),
-        )
-        .where(
-          or(
-            ...legacyMounts.map((mount) => {
-              return and(
-                eq(storageVersions.id, mount.versionId),
-                eq(storages.id, mount.storageId),
-                eq(storages.orgId, mount.orgId),
-                eq(storages.userId, mount.userId),
-                eq(storages.name, mount.name),
-              );
-            }),
-          ),
-        );
       const memoryCacheKey = storageVersionCacheKeySql({
         orgId: sql`${memberMemories.orgId}`,
         versionId: sql`${memoryVersions.id}`,
         s3Key: sql`${memoryVersions.objectPrefix}`,
       });
-      const memoryQuery = db
+      const rows = await db
         .select({
           storageId: memoryVersions.memoryId,
           versionId: memoryVersions.id,
@@ -273,7 +236,7 @@ export function createAcceptedExecutionStorageObjects(
         )
         .where(
           or(
-            ...memoryMounts.map((mount) => {
+            ...[...unique.values()].map((mount) => {
               return and(
                 eq(memoryVersions.id, mount.versionId),
                 eq(memberMemories.id, mount.storageId),
@@ -283,11 +246,6 @@ export function createAcceptedExecutionStorageObjects(
             }),
           ),
         );
-      const rows = await (legacyMounts.length > 0
-        ? memoryMounts.length > 0
-          ? legacyQuery.unionAll(memoryQuery)
-          : legacyQuery
-        : memoryQuery);
       const found = new Set(
         rows.map((row) => {
           return mountKey({ ...row, mountPath: "" });

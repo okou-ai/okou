@@ -19,42 +19,18 @@ jobs:
   detect-release:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       skip: ${{ steps.check.outputs.skip }}
     steps:
-      - name: Check for release-please
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/actions/detect-release
+          persist-credentials: false
+      - uses: ./.github/actions/detect-release
         id: check
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HEAD_REF: ${{ github.head_ref || '' }}
-          COMMIT_MSG: ${{ github.event.head_commit.message || '' }}
-          EVENT_NAME: ${{ github.event_name }}
-          MQ_HEAD_REF: ${{ github.event.merge_group.head_ref || '' }}
-          REPO: ${{ github.repository }}
-        run: |
-          if [[ "$HEAD_REF" == release-please--branches--* ]]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Release-please PR detected (branch: $HEAD_REF)"
-            exit 0
-          fi
-          if [[ "$EVENT_NAME" == "push" ]] && [[ "$COMMIT_MSG" == chore:\ release* ]]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Release-please push detected (message: $COMMIT_MSG)"
-            exit 0
-          fi
-          if [[ "$EVENT_NAME" == "merge_group" ]] && [[ -n "$MQ_HEAD_REF" ]]; then
-            PR_NUM=$(echo "$MQ_HEAD_REF" | grep -oE 'pr-[0-9]+' | head -1 | sed 's/pr-//')
-            if [[ -n "$PR_NUM" ]]; then
-              PR_BRANCH=$(gh pr view "$PR_NUM" --repo "$REPO" --json headRefName --jq .headRefName 2>/dev/null || echo "")
-              if [[ "$PR_BRANCH" == release-please--branches--* ]]; then
-                echo "skip=true" >> "$GITHUB_OUTPUT"
-                echo "Release-please merge queue entry detected (PR #$PR_NUM, branch: $PR_BRANCH)"
-                exit 0
-              fi
-            fi
-          fi
-          echo "skip=false" >> "$GITHUB_OUTPUT"
-          echo "Not a release-please context"
 
   detect:
     needs: [detect-release]

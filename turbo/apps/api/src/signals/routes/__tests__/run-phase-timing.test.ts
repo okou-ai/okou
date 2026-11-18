@@ -22,13 +22,13 @@ const client = () => {
 };
 const receipt = Object.freeze({ schemaVersion: 2, status: "accepted" });
 
-async function fixture(enabled = true) {
+async function fixture(enabled?: boolean) {
   const owned = await publicChatActor(context);
   owned.ownsFeatureSwitches();
   return await owned.run(async () => {
-    if (enabled) {
+    if (enabled !== undefined) {
       await features.updateFeatureSwitches(owned.actor, {
-        [FeatureSwitchKey.ArtifactGenerationTiming]: true,
+        [FeatureSwitchKey.ArtifactGenerationTiming]: enabled,
       });
     }
     const run = await runs.createThreadRun(owned.actor, {
@@ -37,8 +37,12 @@ async function fixture(enabled = true) {
       model: "claude-fable-5-1",
     });
     const execution = await owned.executionInput(run.runId);
+    const token = execution.platformEnvironment.OKOU_TOKEN;
+    if (!token) {
+      throw new Error("Expected a minted Run token");
+    }
     const headers = {
-      authorization: `Bearer ${execution.platformEnvironment.OKOU_TOKEN}`,
+      authorization: `Bearer ${token}`,
     };
     return {
       owned,
@@ -53,12 +57,14 @@ async function fixture(enabled = true) {
 }
 
 describe("current Run phase timing", () => {
-  it("accepts legal phase observations without requiring phase order", async () => {
+  it("enables timing by default and accepts legal observations without requiring phase order", async () => {
     const f = await fixture();
     expect(f.execution.appendSystemPrompt).toContain(
       "okou run mark research-start",
     );
-    expect(f.execution.appendSystemPrompt).toContain("--kind");
+    expect(f.execution.appendSystemPrompt).toContain(
+      "okou run mark generation-start --kind <kind>",
+    );
     for (const mark of [
       { phase: "generation-start", kind: "report", skipResearch: false },
       { phase: "research-start" },
@@ -106,9 +112,16 @@ describe("current Run phase timing", () => {
     ).resolves.toStrictEqual(receipt);
   });
 
-  it("leaves prompts and credentials uninstrumented by default", async () => {
+  it("honors an explicit false override for prompts, capabilities and mark authorization", async () => {
     const f = await fixture(false);
     expect(f.execution.appendSystemPrompt).not.toContain("okou run mark");
+    await accept(
+      client().mark({ headers: f.headers, body: { phase: "research-start" } }),
+      [403],
+    );
+    await features.updateFeatureSwitches(f.owned.actor, {
+      [FeatureSwitchKey.ArtifactGenerationTiming]: true,
+    });
     await accept(
       client().mark({ headers: f.headers, body: { phase: "research-start" } }),
       [403],

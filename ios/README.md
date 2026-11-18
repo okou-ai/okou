@@ -247,6 +247,15 @@ not establish the system pasteboard's image delivery. Keep data representations
 in this CI case so that a file-only fixture cannot hide an importer compatibility
 failure.
 
+Run-failure copy uses the complete generated `KnownRunFailureReason.Values` table;
+recovery switches exhaustively over the enum. Both are generated into ChatDomain with
+`cd turbo && pnpm -F @okouai/api-contracts generate:swift`. Update the native
+title, description and recovery mappings when adding a known case. Copy lives in
+`RunFailures.xcstrings`. Shared generator tests reject stale cases; Swift compilation
+rejects missing table arguments or switch branches.
+Transport/cache values remain raw strings so future server reasons still display
+generic guidance without breaking historical decoding or inventing retry actions.
+
 The transcript uses a native `UICollectionView` cell for each message, with
 SwiftUI message content and measured row heights. A bounded batch of temporary
 hosts settles Markdown layout before a snapshot is applied. Cell reuse keeps
@@ -269,7 +278,7 @@ separately from compilation, automated tests, and release publication.
 ## SwiftLint
 
 SwiftLint 0.65.1 includes the repository's [native rules](../docs/ios/ios-lint.md)
-through its SwiftLintExtraRules extension. It enables 97 upstream default checks,
+through its SwiftLintExtraRules extension. It enables 98 upstream default checks,
 including `file_length` at 800 warning / 1,000 error lines. Strict lint makes 800
 total lines, including comments and blank lines, the enforced limit for production
 and tests. `function_body_length` enforces 100 lines for functions and initializers,
@@ -282,7 +291,9 @@ including `switch` cases, with both warning and error set to 20.
 `function_parameter_count` uses the upstream warning threshold of 5 and error
 threshold of 8. Strict lint rejects functions with more than 5 parameters after
 excluding those with default values. Initializers and overrides are outside the rule.
-Three other metric checks and `identifier_name` remain disabled.
+`large_tuple` uses the upstream warning threshold of 2 and error threshold of 3.
+Strict lint permits up to two members in an explicit tuple type.
+Two other metric checks and `identifier_name` remain disabled.
 The existing opt-in and native rules remain enabled. `swift-format` owns
 formatting; multiline braces remain compatible with its layout, and
 `ios/.swift-format` aligns collection commas with SwiftLint's default rule.

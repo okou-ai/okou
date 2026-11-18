@@ -90,6 +90,58 @@ cancellation ownership remains unchanged.
 
 ## Terminal publication and reader compatibility
 
+### Host Home lifecycle timings
+
+Host-owned `runner_home_lifecycle_timing` operations use the existing telemetry
+batch and fields: `duration_ms`, `outcome`, `reason`, `cache_key` and known
+`run_id`/`is_first_run`. They contain no Guest content or filesystem paths. The
+bounded `reason` labels identify these existing boundaries:
+
+| Reason                       | Observed interval                                                                      |
+| ---------------------------- | -------------------------------------------------------------------------------------- |
+| `entry_lock_lifetime`        | Receipt of a physical entry-lock guard through its last custody drop                   |
+| `idle_reclamation_admission` | An ordinary or required idle Home reclamation permit request                           |
+| `terminal_unpark`            | Resume of a parked Guest for terminal operations                                       |
+| `terminal_mount`             | Verification/restoration of the actual Home mount                                      |
+| `terminal_preparation`       | Terminal helper cleanup, reserve check and proof processing                            |
+| `terminal_freeze`            | The existing Home freeze operation                                                     |
+| `sandbox_stop`               | Existing termination; guarded cleanup includes its backing-exit confirmation           |
+| `publication`                | Accepted publication work in the retained I/O task, including admission and retirement |
+| `publication_admission`      | One existing publication I/O-admission attempt                                         |
+| `durable_commit`             | Image/directory synchronization and generation metadata commit/reconciliation          |
+
+`completed` means that phase's completion boundary was observed; `released`
+is emitted only after the final physical flock drop and existing selection
+notification. Neither means a current reusable generation exists. Failed or
+skipped branches retain their outcome. `incomplete` is unsuccessful and means
+the observer did not reach an explicit completion boundary, including early
+error propagation, cancellation or unwinding; it does not prove that accepted
+underlying work stopped. In particular, publication observers stay inside the
+existing retained task when its initiating waiter disappears.
+
+A lock lifetime is attributed to its **acquiring Run**, even when native idle
+reactivation lets later Runs retain the same custody. Join on physical cache
+key and Runner/host cohort; do not treat the acquiring Run as the latest image
+generation. The interval begins when Host returns the guard, not at a separately
+instrumented kernel acquisition instant. Event time is recording time after the
+boundary. Batch upload retains recording time rather than reconstructing a
+separate kernel-release timestamp.
+
+Phases overlap: do not add publication and durable-commit durations. Retries can
+produce several admission/commit attempts; preserve each outcome. A missing or
+dropped event is unknown, not zero time, an absent lock or available Home.
+Older Runner writers omit these events and the existing API string fields accept
+the new labels without a persistent/cache/schema migration.
+
+Instrumentation adds scalar clocks, diagnostic construction and existing
+synchronous buffering at phase boundaries, never per lock poll. It adds no
+duplicate local phase logs to Runner's synchronous stderr output.
+It adds no awaited delivery, worker, filesystem operation or ownership transfer.
+This has finite CPU and telemetry-volume cost; these records alone are not a
+production performance benchmark or evidence that longer waits improve startup.
+
+### Publication compatibility
+
 Last history/identity/log readers finish before in-memory proof capture and
 terminal namespace/auth cleanup. A below-reserve home gets one allowlisted
 package-cache reclamation attempt before the proof is persisted; insufficient
