@@ -144,6 +144,32 @@ async function remove(kind: OwnerKind, id: string) {
     : await accept(presentationClient().delete(args), [204]);
 }
 
+async function setTemplateSharing(
+  kind: OwnerKind,
+  id: string,
+  shared: boolean,
+) {
+  const args = {
+    headers: authHeaders(),
+    params: { templateId: id },
+  };
+  return kind === "user-template"
+    ? await accept(
+        userClient().update({
+          ...args,
+          body: { visibility: shared ? "organization" : "private" },
+        }),
+        [200],
+      )
+    : await accept(
+        presentationClient().update({
+          ...args,
+          body: { visibility: shared ? "public" : "private" },
+        }),
+        [200],
+      );
+}
+
 function executionFiles(
   fixture: Fixture,
   execution: RunnerExecutionInput,
@@ -171,25 +197,39 @@ test.each([
   { kind: "user-template", change: "delete" },
   { kind: "presentation-template", change: "delete" },
   { kind: "user-template", change: "replace" },
+  { kind: "user-template", change: "revoke" },
+  { kind: "presentation-template", change: "revoke" },
   { kind: "user-template", change: "metadata" },
   { kind: "presentation-template", change: "metadata" },
 ] as const)(
   "checks $kind $change during external encryption before dispatch",
   async ({ kind, change }) => {
     const owner = await publicChatActor(context);
+    // Revocation must exercise a member's access, not the template owner's
+    // continuing access to their own private template.
+    const publisher =
+      change === "revoke"
+        ? bdd.user({ orgId: owner.actor.orgId })
+        : owner.actor;
     const fixture = await owner.run(() => {
       return Promise.resolve(installS3Fixture(context));
     });
     const published = await owner.run(async () => {
+      mocks.clerk.session(publisher.userId, publisher.orgId, publisher.orgRole);
       return await publish(
         kind,
-        await uploadInputs(owner.actor, fixture, tarGz(guidance("accepted"))),
+        await uploadInputs(publisher, fixture, tarGz(guidance("accepted"))),
       );
     });
     if (published.status !== 200) {
       throw new Error("Expected a published template");
     }
     const id = published.body.id;
+    if (change === "revoke") {
+      await owner.run(() => {
+        return setTemplateSharing(kind, id, true);
+      });
+    }
     const kms = getSecretKmsClient();
     onTestFinished(() => {
       setSecretKmsClientForTests(kms);
@@ -225,6 +265,23 @@ test.each([
                 }),
                 [200],
               );
+            } else if (change === "revoke") {
+              mocks.clerk.session(
+                publisher.userId,
+                publisher.orgId,
+                publisher.orgRole,
+              );
+              const revoked = await settleIncludingAbort(() => {
+                return setTemplateSharing(kind, id, false);
+              });
+              mocks.clerk.session(
+                owner.actor.userId,
+                owner.actor.orgId,
+                owner.actor.orgRole,
+              );
+              if (!revoked.ok) {
+                throw revoked.error;
+              }
             } else {
               const args = {
                 headers: authHeaders(),
