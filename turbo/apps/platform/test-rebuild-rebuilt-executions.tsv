@@ -1233,3 +1233,19 @@ client-004	turbo/apps/platform/src/signals/browser/__tests__/client.test.ts	canc
 client-006	turbo/apps/platform/src/signals/browser/__tests__/client.test.ts	native events remain private to the originating connection	177	passed
 client-007	turbo/apps/platform/src/signals/browser/__tests__/client.test.ts	parallel requests keep independent results when replies arrive out of order	231	passed
 client-008	turbo/apps/platform/src/signals/browser/__tests__/client.test.ts	cancelling one request preserves its socket and releases a late original attachment	275	passed
+onboarding-output-formats-001	turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-output-formats.test.tsx	format choices leave the task unchanged and only the final choice reaches the first chat	57	passed
+onboarding-output-formats-002	turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-output-formats.test.tsx	switching and clearing formats preserve task edits and clearing submits only the task	90	passed
+onboarding-output-formats-003	turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-output-formats.test.tsx	replacing the task preserves the selected format until submission	123	passed
+onboarding-output-formats-007	turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-output-formats.test.tsx	a saved report draft preserves custom instructions and requests a document artifact	146	passed
+onboarding-entry-skip-001	turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-entry-skip.test.tsx	Authentication keeps task text separate from the actual onboarding flags	21	passed
+onboarding-entry-skip-002	turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-entry-skip.test.tsx	A skip link redeems, completes and runs its task while cookie delivery survives navigation (eligible: true)	97	passed
+onboarding-entry-skip-006	turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-entry-skip.test.tsx	A skip link without a task completes onboarding and opens App from /onboarding	147	passed
+onboarding-entry-skip-008	turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-entry-skip.test.tsx	The prompt remains editable with skipOnboarding=false	167	passed
+onboarding-entry-skip-009	turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-entry-skip.test.tsx	A redemption error offers a manual continuation with the task intact	180	passed
+onboarding-entry-skip-011	turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-entry-skip.test.tsx	A skip entry shows progress until completion succeeds before starting its task	221	passed
+onboarding-preview-skip-001	turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-preview-skip.test.tsx	A preview visitor can skip unanswered onboarding on pr-40584-app-okou-app-preview.vm0.worke…	41	passed
+onboarding-preview-skip-005	turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-preview-skip.test.tsx	Onboarding does not offer the preview shortcut on app.okou.ai	65	passed
+onboarding-preview-skip-007	turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-preview-skip.test.tsx	Onboarding does not offer the preview shortcut on localhost	65	passed
+onboarding-preview-skip-009	turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-preview-skip.test.tsx	Skipping sources in a preview continues onboarding	79	passed
+onboarding-preview-skip-010	turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-preview-skip.test.tsx	Skip waits for completion and remains retryable after a failure	104	passed
+onboarding-preview-skip-011	turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-preview-skip.test.tsx	Skipping a preview prompt handoff opens the app without running the prompt	161	passed
