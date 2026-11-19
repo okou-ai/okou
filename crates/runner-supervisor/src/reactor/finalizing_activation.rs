@@ -23,7 +23,8 @@ use tokio::task::JoinSet;
 use tracing::info;
 
 use super::job_activation::{
-    activation_resources, build_spawn_job_request, job_activation_resources,
+    activation_resources, finish_spawn_job_request, home_prepare_policy_for_job,
+    job_activation_resources, prepare_spawn_job_request,
 };
 use super::job_spawn::{JobResult, SpawnContext, run_job};
 #[cfg(test)]
@@ -402,9 +403,26 @@ async fn run_finalizing_activation(
         },
         job_activation_resources(&ctx),
     );
-    let mut request = match AssertUnwindSafe(build_spawn_job_request(&mut activation, &ctx))
-        .catch_unwind()
-        .await
+    let request = match AssertUnwindSafe(async {
+        prepare_spawn_job_request(&mut activation, &ctx).await?;
+        let home_policy = if home_fallback && preferred_home_source.is_none() {
+            drop(activation_transfer_guard.take());
+            let (predecessor_state, lock_policy) = handoff_context.fallback_home_prepare_policy();
+            if lock_policy == HomeImagePreparePolicy::TryCacheWithoutLockWait {
+                info!(
+                    run_id = %run_id,
+                    ?predecessor_state,
+                    "finalizing fallback will skip home cache lock retry"
+                );
+            }
+            lock_policy
+        } else {
+            home_prepare_policy_for_job(activation.setup()?, &ctx)
+        };
+        finish_spawn_job_request(&mut activation, home_policy)
+    })
+    .catch_unwind()
+    .await
     {
         Ok(Ok(request)) => request,
         Ok(Err(error)) => {
@@ -422,17 +440,6 @@ async fn run_finalizing_activation(
         }
     };
     drop(activation_transfer_guard);
-    if home_fallback && preferred_home_source.is_none() {
-        let (predecessor_state, lock_policy) = handoff_context.fallback_home_prepare_policy();
-        request.job_profile.home_image_prepare_policy = lock_policy;
-        if lock_policy == HomeImagePreparePolicy::TryCacheWithoutLockWait {
-            info!(
-                run_id = %run_id,
-                ?predecessor_state,
-                "finalizing fallback will skip home cache lock retry"
-            );
-        }
-    }
     Ok(run_job(request, ctx).await)
 }
 

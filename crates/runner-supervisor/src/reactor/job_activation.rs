@@ -23,6 +23,7 @@ use crate::activation::{
 use crate::executor::{
     BlankPoolSelection, RunnerPreSpawnPhase, RunnerPreSpawnTiming, validate_resume_session_id,
 };
+use crate::home_image_cache::HomeImagePreparePolicy;
 use crate::idle_lifecycle::SharedIdlePool;
 use crate::job_acceptance::{
     AcceptanceResources, SandboxAcceptedResource, rollback_sandbox_accepted_resource,
@@ -121,7 +122,11 @@ impl JobActivationResult {
         jobs: &mut JoinSet<JobResult>,
     ) -> ReactorResult<Self> {
         if let Some(mut activation) = self.prepared.take() {
-            let request = finish_spawn_job_request(&mut activation, ctx)
+            let setup = activation
+                .setup()
+                .map_err(|error| ReactorError::Internal(error.to_string()))?;
+            let home_policy = home_prepare_policy_for_job(setup, ctx);
+            let request = finish_spawn_job_request(&mut activation, home_policy)
                 .map_err(|error| ReactorError::Internal(error.to_string()))?;
             spawn_job(request, ctx, jobs);
         }
@@ -471,7 +476,7 @@ pub(super) fn job_activation_resources(ctx: &SpawnContext) -> JobActivationResou
     }
 }
 
-async fn prepare_spawn_job_request(
+pub(super) async fn prepare_spawn_job_request(
     activation: &mut JobActivationGuard,
     ctx: &SpawnContext,
 ) -> Result<(), JobActivationError> {
@@ -490,9 +495,31 @@ async fn prepare_spawn_job_request(
     Ok(())
 }
 
-fn finish_spawn_job_request(
-    activation: &mut JobActivationGuard,
+pub(super) fn home_prepare_policy_for_job(
+    setup: &JobActivationSetup,
     ctx: &SpawnContext,
+) -> HomeImagePreparePolicy {
+    if setup.required_home_source_run_id.is_some() {
+        HomeImagePreparePolicy::TryCacheWithoutLockWait
+    } else if ctx.exec_config.home_cache.is_some()
+        && setup.job.context().reuse_key().is_some_and(|key| {
+            ctx.home_cache_snapshot
+                .has_compatible_home_hint(key, &setup.profile_name)
+        })
+    {
+        HomeImagePreparePolicy::TryCacheWithLockWait
+    } else if setup.job.is_supplied() {
+        // Assigned direct work can check a ready home without waiting for an
+        // unknown owner; advisory inventory need not observe every publication.
+        HomeImagePreparePolicy::TryCacheWithoutLockWait
+    } else {
+        HomeImagePreparePolicy::SkipCache
+    }
+}
+
+pub(super) fn finish_spawn_job_request(
+    activation: &mut JobActivationGuard,
+    home_image_prepare_policy: HomeImagePreparePolicy,
 ) -> Result<SpawnJobRequest, JobActivationError> {
     let sandbox_id = activation.sandbox_id();
     let JobActivationSetup {
@@ -518,23 +545,6 @@ fn finish_spawn_job_request(
         idle_snapshot,
     } = resource;
     drop(idle_snapshot);
-
-    let home_image_prepare_policy = if required_home_source_run_id.is_some() {
-        crate::home_image_cache::HomeImagePreparePolicy::TryCacheWithoutLockWait
-    } else if ctx.exec_config.home_cache.is_some()
-        && job.context().reuse_key().is_some_and(|key| {
-            ctx.home_cache_snapshot
-                .has_compatible_home_hint(key, &profile_name)
-        })
-    {
-        crate::home_image_cache::HomeImagePreparePolicy::TryCacheWithLockWait
-    } else if job.is_supplied() {
-        // Assigned direct work can check a ready home without waiting for an
-        // unknown owner; advisory inventory need not observe every publication.
-        crate::home_image_cache::HomeImagePreparePolicy::TryCacheWithoutLockWait
-    } else {
-        crate::home_image_cache::HomeImagePreparePolicy::SkipCache
-    };
 
     Ok(SpawnJobRequest {
         job,
@@ -628,14 +638,6 @@ async fn complete_execution_failure(
         .await;
     cancellation.unregister().await;
     ActivationFailureCompletion { telemetry }
-}
-
-pub(super) async fn build_spawn_job_request(
-    activation: &mut JobActivationGuard,
-    ctx: &SpawnContext,
-) -> Result<SpawnJobRequest, JobActivationError> {
-    prepare_spawn_job_request(activation, ctx).await?;
-    finish_spawn_job_request(activation, ctx)
 }
 
 pub(super) async fn recover_unconsumed_finalizing_activation(
