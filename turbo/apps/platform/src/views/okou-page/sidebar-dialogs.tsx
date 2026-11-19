@@ -1165,8 +1165,8 @@ function SpotlightSearchResults({
           </div>
         ) : null}
         {showNoResults ? (
-          // Same empty-state shape as the artifacts and workflows lists: a 96px
-          // spot illustration over a single line, centred in the list's minimum
+          // Same empty-state shape as the artifacts and workflows lists: a 96px-tall
+          // scene illustration over a single line, centred in the list's minimum
           // height so the dialog does not resize as results come and go.
           <div className="flex min-h-[268px] flex-col items-center justify-center px-6 text-center">
             <img
@@ -1174,7 +1174,7 @@ function SpotlightSearchResults({
               alt=""
               role="presentation"
               loading="lazy"
-              className="h-24 w-24 object-contain opacity-80"
+              className="h-24 w-36 object-contain"
             />
             <p className="mt-3 text-sm font-medium text-foreground">
               {t(($) => {
