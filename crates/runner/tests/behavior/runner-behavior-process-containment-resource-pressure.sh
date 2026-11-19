@@ -11,22 +11,19 @@ fail() {
 }
 
 require_contained_tool_oom() {
-  local log=$1
-  # System-stream delivery is asynchronous; observe the classification rather
-  # than treating the local-submit response as a log-flush acknowledgement.
-  for _ in $(seq 1 50); do
-    if sudo grep -F -q 'oom_classification=contained_tool_oom' "$log"; then
-      return 0
-    fi
-    sleep 0.1
-  done
-  if sudo grep -F -q 'oom_classification=contained_tool_oom' "$log"; then
-    return 0
-  fi
-  sudo tail -n 80 "$log" >&2 || true
-  fail "$2"
+  local run_id=$1
+  local evidence
+  # Runner records the supervised operation's evidence before publishing the
+  # local result. The earlier Guest Agent stream can omit the classification.
+  evidence=$(grep -F \
+    "runner_executor::executor::agent_run: preserved operation-scoped guest kernel oom evidence run_id=$run_id " \
+    <<< "$LOGS") || fail "missing Runner kernel OOM evidence (run_id=$run_id)"
+  printf '%s\n' "$evidence"
+  grep -F -q ' oom_classification="contained_tool_oom"' <<< "$evidence" \
+    || fail "$2 (run_id=$run_id)"
 }
 
+declare -A TASK_OOM_RUN_IDS=()
 TASK_REUSE_RUN_IDS=()
 
 # Each pressure case owns its independent chat and the follow-up reuse proof.
@@ -97,7 +94,6 @@ if ! sudo grep -E -q 'parallel-shell-tool-oom-survived .*guest_wide=true memcg_o
   sudo tail -n 80 "$GLOBAL_MEMORY_LOG" >&2 || true
   fail "Guest-wide OOM scope or recovery was not verified"
 fi
-require_contained_tool_oom "$GLOBAL_MEMORY_LOG" "Guest-wide tool OOM was not classified as contained"
 GLOBAL_REUSE_RESULT=$("$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
   --chat-thread-id "$GLOBAL_MEMORY_THREAD_ID" \
   --session-id e2e-process-containment-global-memory \
@@ -138,7 +134,7 @@ for TASK_SCOPE in workload guest; do
     sudo tail -n 80 "$TASK_LOG" >&2 || true
     fail "task family retirement, memory reclamation or OOM scope was not verified"
   fi
-  require_contained_tool_oom "$TASK_LOG" "nested task ${TASK_SCOPE} OOM was not classified as contained"
+  TASK_OOM_RUN_IDS[$TASK_SCOPE]=$TASK_RUN_ID
   TASK_REUSE_RESULT=$("$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
     --chat-thread-id "$TASK_THREAD_ID" --session-id "$TASK_SESSION_ID" \
     --prompt 'true') \
@@ -246,6 +242,10 @@ echo "--- Pressure: prove PID-exhaustion cleanup preserved sandbox reuse ---"
 
 LOGS=$(sudo journalctl --no-pager "_SYSTEMD_INVOCATION_ID=$INVOCATION_ID" 2>&1) \
   || fail "failed to read runner logs"
+require_contained_tool_oom "$GLOBAL_MEMORY_RUN_ID" "Guest-wide tool OOM was not classified as contained"
+for TASK_SCOPE in workload guest; do
+  require_contained_tool_oom "${TASK_OOM_RUN_IDS[$TASK_SCOPE]}" "nested task ${TASK_SCOPE} OOM was not classified as contained"
+done
 for TASK_REUSE_RUN_ID in "${TASK_REUSE_RUN_IDS[@]}"; do
   printf '%s\n' "$LOGS" \
     | grep -F "run_id=$TASK_REUSE_RUN_ID" \

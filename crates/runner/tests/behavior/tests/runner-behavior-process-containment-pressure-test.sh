@@ -30,6 +30,7 @@ log="$TEST_STATE/system-stream-${run_id}.log"
 status=0
 exit_code=0
 reused=true
+classification=""
 case "$prompt" in
   @parallel-shell-tool-oom)
     printf '%s\n' 'parallel-shell-tool-oom-survived oom_group_kill=1' \
@@ -38,10 +39,12 @@ case "$prompt" in
   @guest-wide-tool-oom-injected)
     printf '%s\n' 'parallel-shell-tool-oom-survived oom_group_kill=1 guest_wide=true memcg_ooms=0 trigger=sysrq' \
       'oom_classification=contained_tool_oom' > "$log"
+    classification=contained_tool_oom
     ;;
   @managed-task-oom)
     printf '%s\n' 'nested-managed-task-oom-survived oom_group_kill=1 guest_wide=false memcg_ooms=1 trigger=pressure reclaimed_bytes=100000000' \
       'oom_classification=contained_tool_oom' > "$log"
+    classification=contained_tool_oom
     ;;
   @guest-wide-task-oom-injected)
     trigger=sysrq
@@ -50,12 +53,7 @@ case "$prompt" in
     if [ "$TEST_MODE" = unproven ]; then classification=unproven_containment; fi
     printf '%s\n' \
       "nested-managed-task-oom-survived oom_group_kill=1 guest_wide=true memcg_ooms=0 trigger=$trigger reclaimed_bytes=100000000" \
-      "oom_classification=$classification" > "$log"
-    if [ "$TEST_MODE" = late-classification ]; then
-      head -n 1 "$log" > "$log.pending"
-      mv "$log.pending" "$log"
-      printf '%s\n' "$log" > "$TEST_STATE/delayed-log"
-    fi
+      'workload resource limit reached (memory_max=0, memory_oom=0, memory_oom_kill=6, memory_oom_group_kill=1, pids_max=0)' > "$log"
     ;;
   @runtime-only-oom)
     status=1
@@ -73,6 +71,10 @@ case "$prompt" in
   'test -f /tmp/vm0-process-containment/'*) ;;
   *) echo "unexpected Runner prompt: $prompt" >&2; exit 2 ;;
 esac
+if [ -n "$classification" ]; then
+  printf '2026-01-01T00:00:00.000000Z  INFO runner_executor::executor::agent_run: preserved operation-scoped guest kernel oom evidence run_id=%s operation_id=%s evidence_kind="guest_memory_oom_killed" oom_classification="%s"\n' \
+    "$run_id" "$run_id" "$classification" >> "$TEST_STATE/journal"
+fi
 if [ "$status" -eq 0 ]; then
   printf 'run_id=%s job finished reused=%s\n' "$run_id" "$reused" >> "$TEST_STATE/journal"
 fi
@@ -87,7 +89,10 @@ set -euo pipefail
 command=$1
 shift
 case "$command" in
-  journalctl) cat "$TEST_STATE/journal" ;;
+  journalctl)
+    [[ " $* " == *" _SYSTEMD_INVOCATION_ID=fixture-invocation "* ]] || exit 2
+    cat "$TEST_STATE/journal"
+    ;;
   grep|tail)
     args=()
     for arg in "$@"; do
@@ -99,24 +104,7 @@ case "$command" in
 esac
 SUDO
 
-# Control stream delivery at the final bounded observation without a real-time
-# wait. Other cases keep their classification present or permanently absent.
-cat > "$tmp/bin/sleep" << 'SLEEP'
-#!/usr/bin/env bash
-set -euo pipefail
-if [ -f "$TEST_STATE/delayed-log" ]; then
-  count=0
-  if [ -f "$TEST_STATE/observations" ]; then count=$(< "$TEST_STATE/observations"); fi
-  count=$((count + 1))
-  printf '%s\n' "$count" > "$TEST_STATE/observations"
-  if [ "$count" -eq 50 ]; then
-    printf '%s\n' 'oom_classification=contained_tool_oom' >> "$(< "$TEST_STATE/delayed-log")"
-    rm "$TEST_STATE/delayed-log"
-  fi
-fi
-exit 0
-SLEEP
-chmod +x "$tmp/bin/submit" "$tmp/bin/sudo" "$tmp/bin/sleep"
+chmod +x "$tmp/bin/submit" "$tmp/bin/sudo"
 
 run_case() {
   local mode=$1
@@ -137,7 +125,6 @@ run_case() {
 }
 
 run_case success 0 'PASS: Guest-wide OOM preserved tool isolation and runtime-only OOM attribution'
-run_case late-classification 0 'PASS: Guest-wide OOM preserved tool isolation and runtime-only OOM attribution'
 run_case wrong-trigger 1 'task family retirement, memory reclamation or OOM scope was not verified'
 run_case unproven 1 'nested task guest OOM was not classified as contained'
 run_case not-reused 1 'task OOM follow-up did not reuse its sandbox'
