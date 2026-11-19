@@ -56,7 +56,8 @@ final class PermissionBatchStore {
   func canConfirm(reviewing snapshot: ChatPermissionBatchSnapshot?) -> Bool {
     let allAllowed = snapshot?.allAllowed == true && !requiresReadback
     let needsContinuation = allAllowed && action.callbackPrompt != nil && !hasContinued
-    return !closed && isActive && operation == nil && !requiresReadback && snapshot?.complete == true
+    return !closed && isActive && operation == nil && !requiresReadback
+      && snapshot?.complete == true
       && (!allAllowed || needsContinuation)
   }
 

@@ -89,7 +89,8 @@ public struct ChatBatchPermissions: Sendable {
     ) { tasks in
       for slug in slugs {
         tasks.addTask {
-          async let rules = connectorScoped
+          async let rules =
+            connectorScoped
             ? permissions.connectorGrants(slug: slug)
             : grants.filter { $0.connectorSlug == slug }
           let metadata: ChatPermissionMetadata?
@@ -203,14 +204,16 @@ public struct ChatBatchPermissions: Sendable {
       }.map(\.rule)
       for group in current.groups {
         let changed = acknowledged.filter { $0.connectorSlug == group.connectorSlug }
-        confirmed[group.connectorSlug] = group.grants.filter { previous in
-          !changed.contains { $0.permission == previous.permission }
-        } + changed
+        confirmed[group.connectorSlug] =
+          group.grants.filter { previous in
+            !changed.contains { $0.permission == previous.permission }
+          } + changed
       }
     }
     try Task.checkCancellation()
     let updated = ChatPermissionBatchSnapshot(
-      enabled: current.enabled, agentName: current.agentName, connectorScoped: current.connectorScoped,
+      enabled: current.enabled, agentName: current.agentName,
+      connectorScoped: current.connectorScoped,
       groups: current.groups.map { group in
         ChatPermissionBatchSnapshot.Group(
           connectorSlug: group.connectorSlug, items: group.items, metadata: group.metadata,

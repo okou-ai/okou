@@ -227,12 +227,13 @@ public final class PermissionBatchHTTPFixture: Sendable {
       value.loseBatchResponseOnce = false
       return Self.error(503)
     }
-    return Self.encoded(value.grants.filter { grant in
-      body.groups.contains { group in
-        group.connectorSlug == grant.connectorSlug
-          && group.grants.contains { $0.permission == grant.permission }
-      }
-    })
+    return Self.encoded(
+      value.grants.filter { grant in
+        body.groups.contains { group in
+          group.connectorSlug == grant.connectorSlug
+            && group.grants.contains { $0.permission == grant.permission }
+        }
+      })
   }
 
   private struct Edit: Decodable {
