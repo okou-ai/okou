@@ -3522,6 +3522,13 @@
       "when": 1795073103039,
       "tag": "1581_activate_morning_brief_my_okou",
       "breakpoints": true
+    },
+    {
+      "idx": 1582,
+      "version": "7",
+      "when": 1795073129666,
+      "tag": "1582_activate_empty_workspaces_my_okou",
+      "breakpoints": true
     }
   ]
 }
