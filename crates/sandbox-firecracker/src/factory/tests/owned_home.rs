@@ -19,7 +19,7 @@ async fn actual_formatted_home_checkpoint_retains_transaction_until_cleanup() {
     use std::io::{Seek, SeekFrom};
     let dir = tempfile::tempdir().unwrap();
     let factory_paths = FactoryPaths::new(dir.path().join("factory"));
-    let netns_pool = NetnsPoolHandle::new_for_test(crate::network::NetnsPool::inactive_for_test());
+    let netns_pool = NetnsPool::inactive_for_test().handle();
     let device_pool =
         nbd_cow::pool::DevicePoolHandle::new(nbd_cow::pool::DevicePoolConfig::default());
     let cow_pool = crate::cow_pool::CowPoolHandle::new(crate::cow_pool::CowPoolConfig {
@@ -39,7 +39,6 @@ async fn actual_formatted_home_checkpoint_retains_transaction_until_cleanup() {
         resources: Some(StartedFactoryResources {
             leak_cleaner: LeakCleaner::spawn(netns_pool.clone()),
             netns_pool,
-            netns_ownership: NetnsPoolOwnership::Shared,
             cow_pool,
         }),
         shutdown_netns_pool: None,
@@ -132,8 +131,7 @@ fn cancelled_owned_home_create_cleans_workspace_after_physical_io_finishes() {
     runtime.block_on(async {
         let dir = tempfile::tempdir().unwrap();
         let factory_paths = FactoryPaths::new(dir.path().join("factory"));
-        let netns_pool =
-            NetnsPoolHandle::new_for_test(crate::network::NetnsPool::inactive_for_test());
+        let netns_pool = NetnsPool::inactive_for_test().handle();
         let device_pool =
             nbd_cow::pool::DevicePoolHandle::new(nbd_cow::pool::DevicePoolConfig::default());
         let cow_pool = crate::cow_pool::CowPoolHandle::new(crate::cow_pool::CowPoolConfig {
@@ -153,7 +151,6 @@ fn cancelled_owned_home_create_cleans_workspace_after_physical_io_finishes() {
             resources: Some(StartedFactoryResources {
                 leak_cleaner: LeakCleaner::spawn(netns_pool.clone()),
                 netns_pool,
-                netns_ownership: NetnsPoolOwnership::Shared,
                 cow_pool,
             }),
             shutdown_netns_pool: None,

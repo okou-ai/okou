@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 
-use crate::network::{NetnsPool, NetnsPoolHandle};
+use crate::network::NetnsPool;
 
 use super::*;
 
@@ -67,7 +67,7 @@ fn owned_real_filesystem_rollback_survives_cancelled_waiter_and_transaction_drop
             sandbox::SandboxCreateCustody::new(Arc::new(RollbackTaskDropSignal(Some(dropped))));
         let cleanup = FactoryCreateRollbackCleanup {
             id: "owned-rollback".into(),
-            netns_pool: NetnsPoolHandle::new_for_test(NetnsPool::inactive_for_test()),
+            netns_pool: NetnsPool::inactive_for_test().handle(),
             custody: Some(custody.clone()),
         };
         let mut tx = SandboxCreateTransaction::new("owned-rollback".into());

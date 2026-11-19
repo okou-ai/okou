@@ -85,6 +85,7 @@ pub struct NetnsPool {
     inner: NetnsPoolInner,
 }
 
+/// Shared access to leases while the pool owner controls readiness and shutdown.
 #[derive(Clone)]
 pub(crate) struct NetnsPoolHandle {
     inner: NetnsPoolInner,
@@ -1152,6 +1153,16 @@ impl NetnsPool {
         })
     }
 
+    pub(crate) fn handle(&self) -> NetnsPoolHandle {
+        NetnsPoolHandle {
+            inner: self.inner.clone(),
+        }
+    }
+
+    pub(crate) async fn host_device_pattern(&self) -> String {
+        self.inner.host_device_pattern().await
+    }
+
     /// Acquire a namespace from the pool, or create one on-demand if empty.
     pub async fn acquire(&mut self) -> Result<NetnsLease> {
         self.inner.acquire().await
@@ -1256,6 +1267,11 @@ impl NetnsPool {
     }
 
     #[cfg(test)]
+    pub(crate) async fn is_active_for_test(&self) -> bool {
+        self.inner.state.lock().await.active
+    }
+
+    #[cfg(test)]
     fn from_state_for_test(state: NetnsPoolState) -> Self {
         Self {
             inner: NetnsPoolInner::new(state),
@@ -1276,49 +1292,12 @@ impl NetnsPool {
 }
 
 impl NetnsPoolHandle {
-    pub(crate) async fn create_checked(config: CheckedNetnsPoolConfig) -> Result<Self> {
-        Ok(Self::new(NetnsPool::create_checked(config).await?))
-    }
-
-    pub(crate) fn new(pool: NetnsPool) -> Self {
-        Self { inner: pool.inner }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn new_for_test(pool: NetnsPool) -> Self {
-        Self::new(pool)
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn is_active_for_test(&self) -> bool {
-        self.inner.state.lock().await.active
-    }
-
-    #[cfg(test)]
-    fn from_state_for_test(state: NetnsPoolState) -> Self {
-        Self {
-            inner: NetnsPoolInner::new(state),
-        }
-    }
-
     pub(crate) async fn acquire(&self) -> Result<NetnsLease> {
         self.inner.acquire().await
     }
 
-    pub(crate) async fn activate_dns_readiness(&self) -> Result<()> {
-        self.inner.activate_dns_readiness().await
-    }
-
     pub(crate) async fn release(&self, lease: &mut Option<NetnsLease>) -> NetnsReleaseOutcome {
         self.inner.release_outcome(lease).await
-    }
-
-    pub(crate) async fn cleanup(&self) -> Result<()> {
-        self.inner.cleanup().await
-    }
-
-    pub(crate) async fn host_device_pattern(&self) -> String {
-        self.inner.host_device_pattern().await
     }
 }
 
