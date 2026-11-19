@@ -207,8 +207,9 @@ and PR-close cleanup. It requires `GH_TOKEN`, `GITHUB_REPOSITORY`, `GITHUB_RUN_I
 `METAL_HOSTS` and `METAL_USER`, plus the established SSH tunnel configuration.
 `RUNNER_PR_NUMBERS=42,43` selects those PRs even if inventory is empty, so a
 close event can fence the first image claim. `DRY_RUN=true` observes and selects
-without acquiring lifecycle locks or mutating resources. An incomplete host
-inventory fails even in dry-run mode.
+without acquiring lifecycle locks or mutating resources. Each host's inventory
+allows one retry on SSH exit 255 within its original 180-second deadline.
+An incomplete host inventory fails even in dry-run mode.
 
 The controller starts one ephemeral worker per host for small sorted batches.
 Each worker holds the established namespace flock files itself; all configured
