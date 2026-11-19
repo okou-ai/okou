@@ -189,22 +189,10 @@ export const loadTelegramQueuedLaunchMaterial$ = command(
     }
     const botUsername = officialBotConfig.botUsername;
     return {
-      prompt: context.messageText,
-      appendSystemPrompt: buildTelegramPrompt(
-        {
-          botId: providerBotId,
-          botUsername,
-          chatId: context.chatId,
-          chatType: context.chatType,
-          messageId: context.messageId,
-          rootMessageId: context.rootMessageId,
-          messageThreadId: context.messageThreadId,
-        },
-        resolveIntegrationNotePrompt({
-          triggerSource: "telegram",
-          featureSwitchContext: args.featureSwitchContext,
-        }),
-        context.threadContext,
+      ...telegramPromptFromContext(
+        context,
+        { botId: providerBotId, botUsername },
+        args.featureSwitchContext,
       ),
       telegramDelivery: telegramDeliveryTargetSchema.parse({
         installationId: OFFICIAL_TELEGRAM_BOT_ID,
@@ -226,3 +214,28 @@ export const loadTelegramQueuedLaunchMaterial$ = command(
     };
   },
 );
+
+export function telegramPromptFromContext(
+  context: NonNullable<TelegramThreadContext>,
+  bot: { readonly botId: string; readonly botUsername: string | null },
+  featureSwitchContext: FeatureSwitchContext,
+) {
+  return {
+    prompt: context.messageText,
+    appendSystemPrompt: buildTelegramPrompt(
+      {
+        ...bot,
+        chatId: context.chatId,
+        chatType: context.chatType,
+        messageId: context.messageId,
+        rootMessageId: context.rootMessageId,
+        messageThreadId: context.messageThreadId,
+      },
+      resolveIntegrationNotePrompt({
+        triggerSource: "telegram",
+        featureSwitchContext,
+      }),
+      context.threadContext,
+    ),
+  };
+}
