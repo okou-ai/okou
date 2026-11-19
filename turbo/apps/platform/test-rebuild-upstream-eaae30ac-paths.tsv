@@ -30,8 +30,8 @@ upstream_from	upstream_to	path_change	test_file	frozen_executions_in_file	frozen
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	14	7	pending
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/email-connect-page.test.tsx	8	4	reconciled
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/integrations-hub-status.test.tsx	14	7	pending
-03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/integrations-teams.test.tsx	9	5	pending
-03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/integrations-wechat.test.tsx	12	6	pending
+03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/integrations-teams.test.tsx	9	5	reconciled
+03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/integrations-wechat.test.tsx	12	6	reconciled
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/markdown-permission-batch.test.tsx	7	4	pending
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/markdown-table-export.test.tsx	27	14	pending
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/preferences-page.test.tsx	9	5	pending

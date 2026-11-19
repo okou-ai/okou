@@ -518,3 +518,14 @@ email-connect-page-001	turbo/apps/platform/src/views/okou-page/__tests__/email-c
 email-connect-page-003	turbo/apps/platform/src/views/okou-page/__tests__/email-connect-page.test.tsx	adds an email from the Works card with a short code and updates the open dialog	77	passed
 email-connect-page-004	turbo/apps/platform/src/views/okou-page/__tests__/email-connect-page.test.tsx	opens unsigned email settings with the login email connected	142	passed
 email-connect-page-005	turbo/apps/platform/src/views/okou-page/__tests__/email-connect-page.test.tsx	keeps a failed code request in the dialog and lets the user retry	178	passed
+integrations-teams-004	turbo/apps/platform/src/views/okou-page/__tests__/integrations-teams.test.tsx	Works Connect starts the required Teams installation	31	passed
+integrations-teams-005	turbo/apps/platform/src/views/okou-page/__tests__/integrations-teams.test.tsx	Returning to Works retries a failed Teams read without hiding the other integrations	50	passed
+integrations-teams-006	turbo/apps/platform/src/views/okou-page/__tests__/integrations-teams.test.tsx	Teams actions preserve prompt and protected preview access	81	passed
+integrations-teams-008	turbo/apps/platform/src/views/okou-page/__tests__/integrations-teams.test.tsx	Members can connect a Teams identity without an organization bot	108	passed
+integrations-teams-009	turbo/apps/platform/src/views/okou-page/__tests__/integrations-teams.test.tsx	An independent Teams identity remains connected after bot removal	132	passed
+integrations-wechat-002	turbo/apps/platform/src/views/okou-page/__tests__/integrations-wechat.test.tsx	Connect displays a QR and an expired code can be replaced	32	passed
+integrations-wechat-004	turbo/apps/platform/src/views/okou-page/__tests__/integrations-wechat.test.tsx	verification connects the account and disconnect revokes it	81	passed
+integrations-wechat-005	turbo/apps/platform/src/views/okou-page/__tests__/integrations-wechat.test.tsx	keyboard activation and Escape restore focus to Connect	134	passed
+integrations-wechat-008	turbo/apps/platform/src/views/okou-page/__tests__/integrations-wechat.test.tsx	a reconnect link identifies owner@example.com before confirmation	166	passed
+integrations-wechat-010	turbo/apps/platform/src/views/okou-page/__tests__/integrations-wechat.test.tsx	an unavailable reconnect link offers the same QR connection flow on the settings page	247	passed
+integrations-wechat-011	turbo/apps/platform/src/views/okou-page/__tests__/integrations-wechat.test.tsx	a rejected reconnect remains unconnected and shows recovery guidance	301	passed
