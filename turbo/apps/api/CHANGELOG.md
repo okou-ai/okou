@@ -10,6 +10,41 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.95.0](https://github.com/okou-ai/okou/compare/api-v2.94.4...api-v2.95.0) (2026-11-19)
+
+
+### Features
+
+* **api:** roll out chat connector accounts and retire the switch ([#48841](https://github.com/okou-ai/okou/issues/48841)) ([a5a153e](https://github.com/okou-ai/okou/commit/a5a153e20f5e7e9e3d3d7761772bd80720b3f684))
+
+
+### Bug Fixes
+
+* **api:** repair unpaired surrogates in chat message text ([#48989](https://github.com/okou-ai/okou/issues/48989)) ([077c6d9](https://github.com/okou-ai/okou/commit/077c6d9a53d324f225b773cfbdf564feb7066c75))
+
+
+### Refactoring
+
+* **api:** pass committed Run inputs directly to dispatch ([#48987](https://github.com/okou-ai/okou/issues/48987)) ([a936007](https://github.com/okou-ai/okou/commit/a9360077aa7df14a9cf5e37187af9615bc15f01a))
+
+
+### Performance Improvements
+
+* **api:** defer claude code subscription recovery lookup ([#48991](https://github.com/okou-ai/okou/issues/48991)) ([e2bf143](https://github.com/okou-ai/okou/commit/e2bf1434678d987e73a28d395bf7693224bfe7fe))
+* **api:** resolve queued integration delivery without prompts ([#48986](https://github.com/okou-ai/okou/issues/48986)) ([d722b53](https://github.com/okou-ai/okou/commit/d722b53d2716b0536dc84738e7932e0f7bdab616))
+* **api:** reuse private attachment records in conversation shares ([#48990](https://github.com/okou-ai/okou/issues/48990)) ([ee4d1de](https://github.com/okou-ai/okou/commit/ee4d1de1b0227f18b64321961abc9b66272ae801))
+* **api:** reuse proactive preference eligibility on reads ([#48981](https://github.com/okou-ai/okou/issues/48981)) ([05f347f](https://github.com/okou-ai/okou/commit/05f347f2cac7795dd64740226137d7dbaa6fb895))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.92.0
+    * @okouai/core bumped to 8.855.0
+    * @okouai/db bumped to 2.52.0
+    * @okouai/pi-agent-runtime bumped to 1.52.7
+
 ## [2.94.4](https://github.com/okou-ai/okou/compare/api-v2.94.3...api-v2.94.4) (2026-11-19)
 
 

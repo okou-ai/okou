@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.0](https://github.com/okou-ai/okou/compare/android-v0.28.0...android-v0.29.0) (2026-11-19)
+
+
+### Features
+
+* **android:** adopt material symbols for interface actions ([#48977](https://github.com/okou-ai/okou/issues/48977)) ([8c7c7a2](https://github.com/okou-ai/okou/commit/8c7c7a2b65753e3e005b02cda24126578ae26ade))
+
 ## [0.28.0](https://github.com/okou-ai/okou/compare/android-v0.27.1...android-v0.28.0) (2026-11-19)
 
 

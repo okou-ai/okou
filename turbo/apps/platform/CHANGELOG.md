@@ -13,6 +13,32 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1151.0](https://github.com/okou-ai/okou/compare/app-v0.1150.0...app-v0.1151.0) (2026-11-19)
+
+
+### Features
+
+* **api:** roll out chat connector accounts and retire the switch ([#48841](https://github.com/okou-ai/okou/issues/48841)) ([a5a153e](https://github.com/okou-ai/okou/commit/a5a153e20f5e7e9e3d3d7761772bd80720b3f684))
+
+
+### Bug Fixes
+
+* **app:** restore markdown pdf and docx downloads ([#48999](https://github.com/okou-ai/okou/issues/48999)) ([4aab3c5](https://github.com/okou-ai/okou/commit/4aab3c5123996c6f948f54475d2f581bf37cad89))
+
+
+### Performance Improvements
+
+* **app:** reuse saved proactive preferences ([#48985](https://github.com/okou-ai/okou/issues/48985)) ([9f88551](https://github.com/okou-ai/okou/commit/9f88551fada8578990f53d0ba6045e061d00e488))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.92.0
+    * @okouai/core bumped to 8.855.0
+    * @okouai/ui bumped to 1.21.64
+
 ## [0.1150.0](https://github.com/okou-ai/okou/compare/app-v0.1149.3...app-v0.1150.0) (2026-11-19)
 
 
