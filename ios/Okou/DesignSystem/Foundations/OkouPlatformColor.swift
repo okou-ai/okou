@@ -41,11 +41,14 @@ extension OkouColor {
   static let quietMark = gray500
 }
 
-/// Swipe-action fills. The system always draws a swipe action's icon and label in white, so a
-/// fill must carry white text in both appearances, and it says what kind of change it is: a
-/// quiet dark neutral for moving a chat (Archive, Unarchive), the unread dot's sky blue for
-/// read state. Amber stays for a primary commit and orange for warnings.
+/// Swipe-action fills. The system always draws a swipe action's icon in white, so a fill must
+/// carry a white glyph in both appearances, and it says what kind of change it is: a quiet dark
+/// neutral for moving a chat (Archive, Unarchive), the unread dot's sky blue for read state and
+/// the system's own destructive red for Delete, as Messages draws it. Web `destructive` turns
+/// light coral in dark appearance, where a white glyph would not read. Amber stays for a
+/// primary commit and orange for warnings.
 enum OkouSwipeTint {
   static let neutral = OkouColor.brandDarkGray
   static let readState = OkouStatusColor.running
+  static let destructive = Color(uiColor: .systemRed)
 }

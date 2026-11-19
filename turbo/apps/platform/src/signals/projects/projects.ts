@@ -432,10 +432,11 @@ export const renameProject$ = command(
     await set(syncProjects$, signal);
   },
 );
-export const deleteProject$ = command(
+export const deleteProjectWithEventId$ = command(
   async (
     { get, set },
     id: string,
+    eventId: string,
     onDeleted: () => Promise<void>,
     signal: AbortSignal,
   ) => {
@@ -443,7 +444,7 @@ export const deleteProject$ = command(
     await accept(
       get(apiClient$)(projectsContract).delete({
         params: { id },
-        body: { eventId: operation() },
+        body: { eventId },
         fetchOptions: { signal },
       }),
       [204],
@@ -456,6 +457,16 @@ export const deleteProject$ = command(
     await onDeleted();
     signal.throwIfAborted();
     await set(catchUpChatThreadEventSource$, signal);
+  },
+);
+export const deleteProject$ = command(
+  async (
+    { set },
+    id: string,
+    onDeleted: () => Promise<void>,
+    signal: AbortSignal,
+  ) => {
+    await set(deleteProjectWithEventId$, id, operation(), onDeleted, signal);
   },
 );
 export const moveProjectThread$ = command(

@@ -3298,6 +3298,8 @@ async fn background_fill_reserves_admission_for_a_miss_after_other_runs_maintena
 
 #[tokio::test]
 async fn background_fill_concurrent_runs_share_class_and_total_bounds() {
+    let progress_timeout = Duration::from_secs(5);
+    let initial_archives = ["active-0", "active-1", "active-2", "active-3"];
     let temp = tempfile::tempdir().unwrap();
     let home = home_at(&temp);
     let bytes = tarball_bytes();
@@ -3305,25 +3307,20 @@ async fn background_fill_concurrent_runs_share_class_and_total_bounds() {
     let mut server = gated_archive_server(bytes.clone(), 68).await;
     let coordinator = StorageCacheBackgroundFillCoordinator::new().unwrap();
     let reporter = new_telemetry().reporter();
-    for index in 0..4 {
+    for name in initial_archives {
         assert_eq!(
             coordinator.submit(
-                background_fill_group(
-                    server.url.clone(),
-                    &format!("active-{index}"),
-                    "v1",
-                    Some(bytes.len() as u64)
-                ),
+                background_fill_group(server.url.clone(), name, "v1", Some(bytes.len() as u64)),
                 home.clone(),
                 reporter.clone(),
                 BackgroundFillAction::Fill(None)
             ),
             BackgroundFillAdmission::Accepted
         );
-        tokio::time::timeout(Duration::from_secs(5), server.requests.recv())
+        tokio::time::timeout(progress_timeout, server.requests.recv())
             .await
-            .unwrap()
-            .unwrap();
+            .expect("initial archive request should reach the gate")
+            .expect("archive request channel should remain open");
     }
     // OS threads race the synchronous admission boundary used by distinct
     // executor runs, while all active network operations remain gated.
@@ -3364,23 +3361,39 @@ async fn background_fill_concurrent_runs_share_class_and_total_bounds() {
         .into_iter()
         .map(|thread| thread.join().unwrap())
         .collect::<Vec<_>>();
+    let queued = accepted.iter().map(Vec::len).sum::<usize>();
+    assert_eq!(queued, 64);
+    for (class, limit) in accepted.iter().zip([28, 60]) {
+        assert!((4..=limit).contains(&class.len()));
+    }
+
     server.release.add_permits(68);
-    tokio::time::timeout(Duration::from_secs(5), coordinator.wait_idle_for_test())
-        .await
-        .expect("accepted background operations should finish after release");
-    coordinator.shutdown().await;
+    // With all four worker slots occupied at release, each new request shows
+    // that a slot became available and the queue advanced.
+    for request in 1..=queued {
+        match tokio::time::timeout(progress_timeout, server.requests.recv()).await {
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                panic!("archive request channel closed before queued request {request}/{queued}")
+            }
+            Err(_) => panic!("timed out waiting for queued archive request {request}/{queued}"),
+        }
+    }
     join_raw_http_task(server.task, "released background archive requests")
         .await
         .unwrap();
-    assert_eq!(accepted.iter().map(Vec::len).sum::<usize>(), 64);
-    for (class, limit) in accepted.into_iter().zip([28, 60]) {
-        assert!((4..=limit).contains(&class.len()));
-        for name in class {
-            assert_eq!(
-                std::fs::read(home.storage_cache_dir(&name, "v1").join("archive.tar.gz")).unwrap(),
-                bytes
-            );
-        }
+    tokio::time::timeout(progress_timeout, coordinator.wait_idle_for_test())
+        .await
+        .expect("accepted background operations should finish after all responses");
+    coordinator.shutdown().await;
+    for name in initial_archives
+        .into_iter()
+        .chain(accepted.iter().flatten().map(String::as_str))
+    {
+        let path = home.storage_cache_dir(name, "v1").join("archive.tar.gz");
+        let published = std::fs::read(path)
+            .unwrap_or_else(|error| panic!("read published archive for {name}: {error}"));
+        assert_eq!(published, bytes, "published archive for {name}");
     }
     assert!(server.max_active.load(Ordering::SeqCst) <= 4);
     cache.shutdown().await;

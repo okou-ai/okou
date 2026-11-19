@@ -261,6 +261,42 @@ final class WorkspaceChatActions {
     return succeeded
   }
 
+  /// Deletes a chat the user has confirmed. It leaves the list at once and stays out of it
+  /// when the delete is not confirmed; Retry resends the same event.
+  @discardableResult
+  func deleteThread(_ id: String) async -> Bool {
+    guard let workspace else { return false }
+    guard !closed, !needsUpgrade, workspace.list.canUpdate(id),
+      let thread = workspace.list.threads.first(where: { $0.id == id })
+    else { return false }
+    return await deleteThread(
+      id, agentID: thread.agentID, eventID: UUID().uuidString.lowercased())
+  }
+
+  private func deleteThread(_ id: String, agentID: String, eventID: String) async -> Bool {
+    guard let workspace else { return false }
+    guard !closed, !needsUpgrade else { return false }
+    // Earlier feedback for this chat (Undo archive) has nothing left to act on.
+    if threadFeedback?.threadID == id { threadFeedback = nil }
+    var failure: String?
+    let deleted = await workspace.list.delete(
+      id, agentID: agentID, eventID: eventID, onFailure: { failure = $0 })
+    guard !closed, !needsUpgrade else { return false }
+    if deleted {
+      workspace.notificationReadStateChanged()
+    } else {
+      threadFeedback = ChatThreadFeedback(
+        threadID: id,
+        message: failure ?? String(localized: "The chat deletion was not confirmed."),
+        actionTitle: String(localized: "Retry"), persists: true, actsOnHiddenChat: true,
+        kind: .error
+      ) { [weak self] in
+        _ = await self?.deleteThread(id, agentID: agentID, eventID: eventID)
+      }
+    }
+    return deleted
+  }
+
   func setMuted(_ id: String, muted: Bool, markRead: Bool = true) async {
     guard let workspace else { return }
     guard !closed, !needsUpgrade, workspace.list.canMute(id) else { return }
@@ -388,6 +424,11 @@ extension WorkspaceStore {
     return await navigationActions.setArchived(
       id, archived: archived, leaveDetail: leaveDetail, restoreOnUndo: restoreOnUndo,
       reopenOnSuccess: reopenOnSuccess, eventID: eventID)
+  }
+
+  @discardableResult
+  func deleteThread(_ id: String) async -> Bool {
+    return await navigationActions.deleteThread(id)
   }
 
   func setMuted(_ id: String, muted: Bool, markRead: Bool = true) async {
