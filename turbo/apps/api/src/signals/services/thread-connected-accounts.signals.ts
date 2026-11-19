@@ -319,6 +319,9 @@ function createConnectorInputSignals(
   const featureSwitchContext$ = computed(async (get) => {
     return await get(execution.featureSwitches$);
   });
+  const memberPermissionPolicies$ = computed((get) => {
+    return get(execution.permissionPolicies$);
+  });
   const customConnectorDefinitions$ = computed(async (get) => {
     const { timing } = await get(connectorInput$);
     const collector = timing;
@@ -369,7 +372,7 @@ function createConnectorInputSignals(
     customConnectorDefinitions$,
     ownedThread$,
     effectiveAccounts$,
-    memberPermissionPolicies$: execution.permissionPolicies$,
+    memberPermissionPolicies$,
   };
 }
 
