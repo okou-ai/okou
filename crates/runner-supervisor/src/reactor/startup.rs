@@ -182,9 +182,10 @@ pub(super) async fn start(
         SignalSource::Override(controller) => controller,
     };
     let acceptance_slots = Arc::new(Semaphore::new(MAX_IN_FLIGHT_ACCEPTANCES));
-    let preferred_home_probe = ctx.exec_config.home_cache.clone().map(|cache| {
+    let dispatch_home_cache = ingress.as_ref().and(ctx.exec_config.home_cache.as_ref());
+    let preferred_home_probe = dispatch_home_cache.map(|cache| {
         PreferredHomeProbe::new(
-            cache,
+            cache.clone(),
             inventory.snapshot.clone(),
             ctx.runner
                 .profiles
