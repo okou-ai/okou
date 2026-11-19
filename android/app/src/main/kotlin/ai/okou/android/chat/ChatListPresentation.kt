@@ -13,8 +13,8 @@ internal enum class ChatRowStatus {
 
 internal fun chatRowStatus(indicator: IndicatorsThreadsValue?, muted: Boolean): ChatRowStatus =
     when {
-        indicator == IndicatorsThreadsValue.ACTIVE -> ChatRowStatus.Running
         muted -> ChatRowStatus.Muted
+        indicator == IndicatorsThreadsValue.ACTIVE -> ChatRowStatus.Running
         indicator == IndicatorsThreadsValue.UNREAD -> ChatRowStatus.Unread
         else -> ChatRowStatus.None
     }

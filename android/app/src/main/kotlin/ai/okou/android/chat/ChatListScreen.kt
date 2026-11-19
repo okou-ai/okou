@@ -1,7 +1,6 @@
 package ai.okou.android.chat
 
 import ai.okou.android.R
-import ai.okou.android.api.generated.IndicatorsThreadsValue
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -49,6 +48,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -147,12 +147,20 @@ internal fun ChatListScreen(
     val runningKeys =
         remember(indicators, sections) {
             buildSet {
-                indicators.forEach { (id, indicator) ->
-                    if (indicator == IndicatorsThreadsValue.ACTIVE) add(id)
-                }
                 sections.forEach { section ->
-                    if (section.foldedStatus == ChatRowStatus.Running) {
-                        add(projectRowKey(checkNotNull(section.group.project).id))
+                    when (section.foldedStatus) {
+                        ChatRowStatus.Running ->
+                            add(projectRowKey(checkNotNull(section.group.project).id))
+                        null ->
+                            section.group.threads.forEach { thread ->
+                                if (
+                                    chatRowStatus(indicators[thread.id], thread.muted == true) ==
+                                        ChatRowStatus.Running
+                                ) {
+                                    add(thread.id)
+                                }
+                            }
+                        else -> Unit
                     }
                 }
             }
@@ -261,11 +269,10 @@ internal fun ChatListScreen(
                         if (foldedStatus == null && group.threads.isEmpty()) {
                             item(key = "project_actions_${project.id}") {
                                 Column(Modifier.projectChildIndent(outline)) {
-                                    if (actionsEnabled) {
-                                        NewProjectChatAction { newChat(project.id) }
-                                    } else {
+                                    if (!actionsEnabled) {
                                         ChatNotice(R.string.chat_project_empty)
                                     }
+                                    NewProjectChatAction(actionsEnabled) { newChat(project.id) }
                                 }
                             }
                         }
@@ -333,34 +340,12 @@ internal fun ChatListScreen(
                 }
             }
         }
-        if (actionsEnabled) {
-            val colors = MaterialTheme.colorScheme
-            val end = if (wide) 20.dp else if (largeCompact) 32.dp else 24.dp
-            Surface(
-                onClick = { newChat(null) },
-                modifier =
-                    Modifier.align(Alignment.BottomEnd)
-                        .padding(end = end, bottom = 24.dp)
-                        .semantics { role = Role.Button },
-                shape = RoundedCornerShape(16.dp),
-                color = colors.inverseSurface,
-                contentColor = colors.inverseOnSurface,
-                shadowElevation = 3.dp,
-            ) {
-                Row(
-                    Modifier.heightIn(min = 56.dp).padding(horizontal = 20.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(painterResource(R.drawable.ic_edit_square), null, Modifier.size(22.dp))
-                    Text(
-                        stringResource(R.string.composer_new),
-                        style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 0.sp),
-                        fontWeight = FontWeight(550),
-                    )
-                }
-            }
-        }
+        val end = if (wide) 20.dp else if (largeCompact) 32.dp else 24.dp
+        NewChatAction(
+            Modifier.align(Alignment.BottomEnd).padding(end = end, bottom = 24.dp),
+            enabled = actionsEnabled,
+            onClick = { newChat(null) },
+        )
     }
 }
 
@@ -555,9 +540,6 @@ private fun ChatRow(
         listOfNotNull(
             status.label(),
             if (thread.pinnedAt != null) stringResource(R.string.chat_pinned) else null,
-            if (thread.muted == true && status == ChatRowStatus.Running) {
-                stringResource(R.string.chat_muted)
-            } else null,
             pendingAction?.let {
                 stringResource(
                     if (it.updatesChat) R.string.chat_row_action_pending
@@ -588,19 +570,22 @@ private fun ChatRow(
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                thread.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
-                Modifier.weight(1f),
-                color = if (isSelected) colors.onSecondaryContainer else colors.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = chatListTitleStyle(),
-                fontWeight = if (status == ChatRowStatus.Unread) FontWeight.SemiBold else null,
-            )
-            if (status != ChatRowStatus.None) {
-                Spacer(Modifier.width(8.dp))
-                ChatStatusGlyph(status, runningFrame, row)
+            Box(Modifier.weight(1f)) {
+                Text(
+                    thread.title?.takeIf { it.isNotBlank() }
+                        ?: stringResource(R.string.chat_untitled),
+                    if (status == ChatRowStatus.Running)
+                        Modifier.runningTitleWave(runningFrame, row)
+                    else Modifier,
+                    color = if (isSelected) colors.onSecondaryContainer else colors.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = chatListTitleStyle(),
+                    fontWeight = if (status == ChatRowStatus.Unread) FontWeight.SemiBold else null,
+                )
             }
+            Spacer(Modifier.width(8.dp))
+            ChatStatusGlyph(status, runningFrame, row)
         }
         if (actions.isNotEmpty()) {
             DropdownMenu(
@@ -707,9 +692,37 @@ private fun ChatAction(label: Int, action: () -> Unit, enabled: Boolean = true) 
 }
 
 @Composable
-private fun NewProjectChatAction(onClick: () -> Unit) {
+private fun NewChatAction(modifier: Modifier, enabled: Boolean, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.alpha(if (enabled) 1f else 0.4f).semantics { role = Role.Button },
+        shape = RoundedCornerShape(16.dp),
+        color = colors.inverseSurface,
+        contentColor = colors.inverseOnSurface,
+        shadowElevation = 3.dp,
+    ) {
+        Row(
+            Modifier.heightIn(min = 56.dp).padding(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(painterResource(R.drawable.ic_edit_square), null, Modifier.size(22.dp))
+            Text(
+                stringResource(R.string.composer_new),
+                style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 0.sp),
+                fontWeight = FontWeight(550),
+            )
+        }
+    }
+}
+
+@Composable
+private fun NewProjectChatAction(enabled: Boolean, onClick: () -> Unit) {
     TextButton(
         onClick = onClick,
+        enabled = enabled,
         modifier = Modifier.heightIn(min = 48.dp),
         shape = RoundedCornerShape(9.dp),
         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),

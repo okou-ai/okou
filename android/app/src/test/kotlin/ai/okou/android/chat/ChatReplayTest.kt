@@ -291,7 +291,7 @@ class ChatReplayTest {
     }
 
     @Test
-    fun mutedChatsKeepRunningStatusAndCollapsedProjectsPreferVisibleUnread() {
+    fun mutedChatsSuppressActivityAndCollapsedProjectsPreferVisibleUnread() {
         val rows =
             replay(
                 event(1, "created"),
@@ -306,7 +306,7 @@ class ChatReplayTest {
                 unread.id to IndicatorsThreadsValue.UNREAD,
             )
         assertEquals(
-            ChatRowStatus.Running,
+            ChatRowStatus.Muted,
             chatRowStatus(indicators[running.id], running.muted == true),
         )
         assertEquals(ChatRowStatus.Muted, chatRowStatus(indicators[unread.id], muted = true))
@@ -316,11 +316,14 @@ class ChatReplayTest {
         )
         assertEquals(
             ChatRowStatus.Running,
-            collapsedProjectStatus(listOf(running, unread.copy(muted = true)), indicators),
+            collapsedProjectStatus(
+                listOf(running.copy(muted = false), unread.copy(muted = true)),
+                indicators,
+            ),
         )
         assertEquals(
             ChatRowStatus.None,
-            collapsedProjectStatus(listOf(unread.copy(muted = true)), indicators),
+            collapsedProjectStatus(listOf(running, unread.copy(muted = true)), indicators),
         )
     }
 
