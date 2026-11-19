@@ -7,6 +7,7 @@ use std::time::Duration;
 use guest_control_proto::ExecControlNonce;
 use tokio::sync::oneshot;
 
+use crate::protocol_error;
 use crate::{ConnectionState, FrameWriteObserver, RouteId, Shared};
 
 use super::frame::{
@@ -120,7 +121,7 @@ impl ExecControlHandle {
             payload,
             request_timeout_ms,
         )
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error.to_string()))?;
+        .map_err(protocol_error::invalid_input)?;
         self.control_owned_with_write_observer(
             message_id.to_owned(),
             payload.to_vec(),
@@ -184,7 +185,7 @@ pub(in crate::exec_operation) async fn exec_control_on_shared(
         &control_payload,
         request_timeout_ms,
     )
-    .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error.to_string()))?;
+    .map_err(protocol_error::invalid_input)?;
     let normal_operation = shared.reserve_normal_operation()?;
     let (response_tx, response_rx) = oneshot::channel();
     let (request_route_id, ()) = shared.register_route(|request_route_id, state| {
@@ -219,7 +220,7 @@ pub(in crate::exec_operation) async fn exec_control_on_shared(
         &control_payload,
         request_timeout_ms,
     )
-    .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error.to_string()))?;
+    .map_err(protocol_error::invalid_input)?;
     drop(control_payload);
     drop(message_id);
     write_encoded_frame_with_pre_write(shared, &frame, None, || {
