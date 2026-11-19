@@ -1005,10 +1005,11 @@ jobs:
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 10.33.4
       - uses: ./.github/actions/toolchain-init
       - name: Build Discord Gateway relay for runtime tests
         working-directory: turbo
