@@ -479,8 +479,14 @@ test("native tab observations retain an uncommitted navigation destination", asy
       return pending.listen(0, "127.0.0.1", resolve);
     });
     const client = await f.client();
-    const created = (await client.call("createTab", { url: "about:blank" }))
-      .value;
+    const initialUrl = `${origin}/committed`;
+    const created = (await client.call("createTab", { url: initialUrl })).value;
+    // The initial navigation can still commit after createTab returns.
+    await expect
+      .poll(async () => {
+        return (await client.call("getTab", { tabId: created.id })).value?.url;
+      })
+      .toBe(initialUrl);
     const destination = `http://127.0.0.1:${pending.address().port}/pending`;
     await f.worker.evaluate(
       ({ tabId, url }) => {
@@ -491,7 +497,7 @@ test("native tab observations retain an uncommitted navigation destination", asy
     await entered.promise;
     const observed = (await client.call("getTab", { tabId: created.id })).value;
     expect(observed.pendingUrl).toBe(destination);
-    expect(observed.url).not.toBe(destination);
+    expect(observed.url).toBe(initialUrl);
   } finally {
     held?.end("<!doctype html><title>Completed</title>");
     pending.closeAllConnections();
