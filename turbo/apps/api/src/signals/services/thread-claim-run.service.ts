@@ -279,6 +279,7 @@ import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { workflowAutomationTriggerSource } from "./workflow-automation-trigger-source";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
 import { createStorageSignals } from "./thread-storage.signals";
+import { initializeMemberMemory$ } from "./member-memory-initialization.service";
 import type { AcceptedMemoryMount } from "./execution-storage.service";
 import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
 
@@ -705,20 +706,6 @@ function claimCommitArguments(
       admission: args.threadContinuation.admission,
     },
   };
-}
-
-/**
- * The first route error among prepared resources, in plan and launch order.
- */
-function firstPreparationFailure(
-  results: readonly unknown[],
-): CreateRunErrorResult | null {
-  for (const result of results) {
-    if (isRouteError(result)) {
-      return result;
-    }
-  }
-  return null;
 }
 
 /** Bind prepared launch facts to this admission's pending persistence. */
@@ -2014,7 +2001,11 @@ export function createThreadClaimRunObjects(
     pickedEvent$,
     threadContext,
   );
-  const storage$ = createStorageSignals(bootstrap, pickedEvent$, threadContext);
+  const { storage$, initializedMemoryMounts$ } = createStorageSignals(
+    bootstrap,
+    pickedEvent$,
+    threadContext,
+  );
   const runRuntimeInputs$ = computed(async (get) => {
     const [
       { authorization },
@@ -2405,57 +2396,41 @@ export function createThreadClaimRunObjects(
       }
     },
   );
-  const runIdentity$ = computed(async (get) => {
-    const ids = get(runIds$);
-    if (!(await get(selectionReady$))) {
-      return null;
-    }
-    return {
-      runId: ids.runId,
-    };
-  });
   // Resource reads do not wait for credit admission: its failure is checked
   // with the prepared resources before anything is committed.
   const resourceAllowed$ = computed(async (get) => {
     // Eager storage must not evaluate a Run plan for an automation source
     // whose delegation admission already rejects it.
-    if (
-      (await get(isAutomation$)) &&
-      (await get(automationBudget$)).kind === "invalid"
-    ) {
-      return false;
+    if (await get(isAutomation$)) {
+      return (
+        (await get(automationBudget$)).kind === "ok" && get(selectionReady$)
+      );
     }
     const [ready, validSource] = await Promise.all([
-      get(selectionReady$),
-      (await get(isAutomation$)) ? true : get(promptResourcesValid$),
+      get(promptReady$),
+      get(promptResourcesValid$),
     ]);
     return ready && validSource;
   });
   // Storage is read only for an admitted source. Rejections come from the Run
   // plan; storage runs alongside it and its failure matters only when the plan
   // is ready.
-  const preparedStorage$ = computed(
-    async (
-      get,
-    ): Promise<
-      readonly AcceptedMemoryMount[] | CreateRunErrorResult | null
-    > => {
-      if (!(await get(resourceAllowed$))) {
-        return null;
-      }
-      const [plan, storage] = await Promise.all([
-        get(runPlan$),
-        settle(get(storage$)),
-      ]);
-      if (!plan || isRouteError(plan)) {
-        return plan;
-      }
-      if (!storage.ok) {
-        throw storage.error;
-      }
-      return storage.value;
-    },
-  );
+  const preparedStorage$ = computed(async (get) => {
+    if (!(await get(resourceAllowed$))) {
+      return null;
+    }
+    const [plan, storage] = await Promise.all([
+      get(runPlan$),
+      settle(get(storage$)),
+    ]);
+    if (!plan || isRouteError(plan)) {
+      return plan;
+    }
+    if (!storage.ok) {
+      throw storage.error;
+    }
+    return storage.value;
+  });
   /** Captured launch facts before Run-scoped token creation. */
   const runnerFacts$ = computed(async (get) => {
     const [input, allowed] = await Promise.all([
@@ -2518,8 +2493,8 @@ export function createThreadClaimRunObjects(
         ),
         ordinaryAutomation,
       });
-      if (!executionPackages) {
-        return conflict("Run packages or source authorization are unavailable");
+      if ("error" in executionPackages) {
+        return conflict(executionPackages.error);
       }
       const okouToken = set(prepareOkouToken$, tokenInput, signal);
       return prepareRunnerLaunch({
@@ -2562,10 +2537,23 @@ export function createThreadClaimRunObjects(
       if (!preparedStorage || isRouteError(preparedStorage)) {
         return preparedStorage;
       }
+      if (preparedStorage.kind === "missing") {
+        await set(
+          initializeMemberMemory$,
+          { orgId: bootstrap.orgId, userId: bootstrap.userId },
+          signal,
+        );
+        signal.throwIfAborted();
+      }
+      const memoryMounts =
+        preparedStorage.kind === "ready"
+          ? preparedStorage.mounts
+          : await get(initializedMemoryMounts$);
+      signal.throwIfAborted();
       return {
         ...input,
-        memoryMounts: preparedStorage,
-        runStorageMounts: preparedStorage.map(({ mount }) => {
+        memoryMounts,
+        runStorageMounts: memoryMounts.map(({ mount }) => {
           return mount;
         }),
       };
@@ -2772,16 +2760,31 @@ export function createThreadClaimRunObjects(
         await get(automationAssembly$);
         signal.throwIfAborted();
       }
-      const [[input, runnerLaunch], callbackRows, assembly, identity] =
-        await Promise.all([
+      const [[input, runnerLaunch], callbackRows, assembly] = await Promise.all(
+        [
           set(prepareRunnerResources$, signal),
           get(callbackRows$),
           get(assembly$),
-          get(runIdentity$),
-        ]);
+        ],
+      );
       signal.throwIfAborted();
       if (assembly.kind !== "assembled") {
         return assembly;
+      }
+      const rejectResource = (failure: CreateRunErrorResult) => {
+        return {
+          kind: "rejected" as const,
+          rejection: claimAssemblyRejection(assembly, head, failure.body.error),
+        };
+      };
+      if (isRouteError(input)) {
+        return rejectResource(input);
+      }
+      if (isRouteError(runnerLaunch)) {
+        return rejectResource(runnerLaunch);
+      }
+      if (!input || !runnerLaunch) {
+        return { kind: "missing-resources" as const };
       }
       return {
         kind: "prepared" as const,
@@ -2789,7 +2792,6 @@ export function createThreadClaimRunObjects(
         runnerLaunch,
         callbackRows,
         assembly,
-        identity,
       };
     },
   );
@@ -2813,6 +2815,9 @@ export function createThreadClaimRunObjects(
         get(threadContext.connectorThreadSelections$),
       ]);
       signal.throwIfAborted();
+      if (resources.kind === "missing-resources") {
+        throw new Error("Prepared claim is missing launch resources");
+      }
       if (resources.kind !== "prepared") {
         await set(
           rejectChatQueueHead$,
@@ -2827,34 +2832,8 @@ export function createThreadClaimRunObjects(
         );
         return { kind: "passed" };
       }
-      const { input, runnerLaunch, callbackRows, assembly, identity } =
-        resources;
-      const failure = firstPreparationFailure([input, runnerLaunch]);
-      if (failure) {
-        await set(
-          rejectChatQueueHead$,
-          {
-            head,
-            rejection: claimAssemblyRejection(
-              assembly,
-              head,
-              failure.body.error,
-            ),
-          },
-          signal,
-        );
-        return { kind: "passed" };
-      }
-      if (
-        !input ||
-        !runnerLaunch ||
-        !callbackRows ||
-        !identity ||
-        isRouteError(input) ||
-        isRouteError(runnerLaunch)
-      ) {
-        throw new Error("Prepared claim is missing launch resources");
-      }
+      const { input, runnerLaunch, callbackRows, assembly } = resources;
+      const { runId } = get(runIds$);
       await set(recordQueuedInputAdmissionTiming$, head, timing.run, signal);
       signal.throwIfAborted();
       const preparedContext = await timing.run.measure(
@@ -2866,7 +2845,7 @@ export function createThreadClaimRunObjects(
               {
                 kind: "prepared",
                 input: claimCommitInput(input),
-                identity,
+                identity: { runId },
                 callbackRows,
                 launch: runnerLaunch,
                 head,

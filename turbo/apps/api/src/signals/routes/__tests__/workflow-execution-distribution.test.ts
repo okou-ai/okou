@@ -502,6 +502,12 @@ test("an ordinary Automation invokes the name of its bound Workflow package", as
         error: "conflict",
       }),
     );
+    expect(rejected.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "output.error",
+        content: "The Automation's Workflow package is unavailable",
+      }),
+    );
 
     await accept(
       detailClient().update({
