@@ -9,10 +9,7 @@ const binding = object({
   revision: number().int().min(1).max(Number.MAX_SAFE_INTEGER),
   deviceToken: apnsToken,
   environment: zEnum(["production", "sandbox"]),
-  /**
-   * WidgetKit's push token for this installation's widgets, in the binding's APNs
-   * environment. Absent until a widget is installed and from older apps.
-   */
+  /** Accepted for compatibility with builds that still send a widget token. */
   widgetPushToken: apnsToken.optional(),
 });
 const responses = {

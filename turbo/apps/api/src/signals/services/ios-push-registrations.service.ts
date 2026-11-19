@@ -72,7 +72,6 @@ export const updateIosPushRegistration$ = command(
       readonly sessionId: string;
       readonly deviceToken: string;
       readonly environment: "production" | "sandbox";
-      readonly widgetPushToken: string | null;
       readonly enabled: boolean;
     },
     signal: AbortSignal,
@@ -85,6 +84,8 @@ export const updateIosPushRegistration$ = command(
         set: binding.enabled
           ? {
               ...binding,
+              // A rebound installation must not inherit a previous widget token on API rollback.
+              widgetPushToken: null,
               updatedAt: sql`now()`,
               // Re-registration after a background launch must retain this user's acknowledgement.
               badgeClearedRevision: sql`CASE
