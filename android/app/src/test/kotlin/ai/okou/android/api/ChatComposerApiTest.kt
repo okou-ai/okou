@@ -190,12 +190,9 @@ class ChatComposerApiTest {
             val send = input(thread)
             assertEquals(thread, fixture.service.sendInput(send).threadId)
             val wire = fixture.inputs.values.single()
-            for (key in
-                listOf(
-                    "model",
-                    "computerUseHostId",
-                    "cloudBrowserEnabled",
-                )) assertFalse(wire.containsKey(key))
+            for (key in listOf("model", "computerUseHostId", "cloudBrowserEnabled")) assertFalse(
+                wire.containsKey(key)
+            )
             assertEquals(send.prompt, wire.getValue("prompt").jsonPrimitive.content)
             val observed = fixture.service.observeInput(thread, checkNotNull(send.clientEventId))
             assertEquals(TextDisposition.Queued, observed.disposition)
