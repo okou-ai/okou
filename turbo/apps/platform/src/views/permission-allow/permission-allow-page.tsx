@@ -45,7 +45,6 @@ import {
 } from "../../signals/chat-page/action-callback.ts";
 import { i18n } from "../../i18n/index.ts";
 
-
 function TargetPill({
   avatarUrl,
   displayName,
