@@ -311,9 +311,10 @@ class ImageOperationTest(unittest.TestCase):
         self.invoke("claim")
         self.invoke("run", "warm", str(self.result))
         self.environment.update(GITHUB_RUN_ID="1235", IMAGE_FAULT="slow-claim-retirement")
-        outcome = self.invoke("claim", check=False)
-        self.assertNotEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr)
-        self.assertIn("image claim work deadline exceeded", outcome.stderr)
+        with self.image_call("claim") as claim:
+            output, error = claim.communicate(timeout=5)
+            self.assertNotEqual(claim.returncode, 0, output + error)
+            self.assertIn("timed out after", error)
         binary_root = self.root / "var/lib/vm0-runner/bin"
         self.assertTrue((binary_root / "pr-123-image-1234").is_dir())
         self.assertFalse((binary_root / "pr-123-image-1235").exists())
@@ -326,11 +327,28 @@ class ImageOperationTest(unittest.TestCase):
                 fcntl.flock(deployment, fcntl.LOCK_EX)
                 claim = children.enter_context(
                     self.image_call(
-                        "claim", environment=dict(self.environment, GITHUB_RUN_ID="1235")
+                        "claim",
+                        environment=dict(
+                            self.environment,
+                            GITHUB_RUN_ID="1235",
+                            IMAGE_FAULT="pause-retirement-observation",
+                        ),
                     )
                 )
                 self.wait_for(lambda: self.claim_waiter_opened(lock))
-                prior = children.enter_context(self.image_call("run", "build", str(self.result)))
+                prior = children.enter_context(
+                    self.image_call(
+                        "run",
+                        "build",
+                        str(self.result),
+                        environment=dict(self.environment, IMAGE_FAULT="late-prior-launch"),
+                    )
+                )
+                self.wait_for(lambda: (self.root / "retirement-observation-paused").exists())
+                # Deliver the old unit between the first status read and confirmation.
+                (self.root / "release-launch").touch()
+                self.wait_for(lambda: any((self.root / "units").glob("*.json")))
+                (self.root / "resume-retirement-observation").touch()
                 output, error = prior.communicate(timeout=10)
                 self.assertNotEqual(prior.returncode, 0, output + error)
                 self.assertTrue(self.records("stops"))

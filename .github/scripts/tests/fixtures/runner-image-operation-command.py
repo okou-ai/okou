@@ -150,7 +150,7 @@ def ssh(arguments):
 def systemd_run(arguments):
     record("systemd", arguments)
     if any(argument.startswith("--on-active=") for argument in arguments):
-        if MODE == "pending-launch":
+        if MODE in ("pending-launch", "late-prior-launch"):
             (ROOT / "launch-pending").touch()
             wait_for(lambda: (ROOT / "release-launch").exists())
         return 0  # Record the real retention contract without waiting one hour.
@@ -188,11 +188,19 @@ def systemctl(arguments):
         return 0
     if arguments[0] == "show":
         if MODE == "slow-claim-retirement" and once():
-            time.sleep(2)
+            time.sleep(8)
         for unit in (a for a in arguments[1:] if a.endswith(".service")):
             path = ROOT / "units" / (unit + ".json")
             info = json.loads(path.read_text()) if path.exists() else {}
             running = bool(info) and alive(info["pid"])
+            if (
+                MODE == "pause-retirement-observation"
+                and not info
+                and (ROOT / "launch-pending").exists()
+                and once()
+            ):
+                (ROOT / "retirement-observation-paused").touch()
+                wait_for(lambda: (ROOT / "resume-retirement-observation").exists())
             paused = ROOT / "active-observation-paused"
             if MODE == "pause-active-observation" and running and not paused.exists():
                 # Hold an already captured active snapshot while the real

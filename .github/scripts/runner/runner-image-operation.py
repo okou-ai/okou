@@ -91,14 +91,21 @@ def gate(namespace, while_waiting=None, observe_intent=None, *, wait=True, deadl
         os.close(fd)
 
 
-def system(*arguments, deadline=None):
-    timeout = 15
+def command_timeout(limit, deadline):
     if deadline is not None:
-        timeout = min(timeout, deadline - time.monotonic())
-        if timeout <= 0:
+        limit = min(limit, deadline - time.monotonic())
+        if limit <= 0:
             raise TimeoutError("image claim work deadline exceeded")
+    return limit
+
+
+def system(*arguments, deadline=None):
     result = subprocess.run(
-        ["sudo", *arguments], capture_output=True, text=True, timeout=timeout, check=False
+        ["sudo", *arguments],
+        capture_output=True,
+        text=True,
+        timeout=command_timeout(15, deadline),
+        check=False,
     )
     if result.returncode:
         raise RuntimeError("image service command failed: " + arguments[0])
@@ -159,7 +166,7 @@ def claim_resource(namespace, owner, deadline):
     atomic_json(namespace / "owner.json", owner)
 
 
-def unit_state(unit):
+def unit_state(unit, *, deadline=None):
     result = subprocess.run(
         [
             "sudo",
@@ -170,7 +177,7 @@ def unit_state(unit):
         ],
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=command_timeout(10, deadline),
         check=False,
     )
     values = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
@@ -268,7 +275,7 @@ def require_observation_owner(namespace, expected):
     require_resource(owner)
 
 
-def retire(operation):
+def retire(operation, *, deadline=None):
     # Earlier PR revisions used these two exact names. Check both even if
     # intent is missing so a successor cannot reuse paths before retirement.
     units = (
@@ -276,12 +283,22 @@ def retire(operation):
         f"vm0-runner-{operation.parent.name}-image-{operation.name}.service",
         f"vm0-ci-image-{operation.name}.service",
     )
-    for unit in units:
-        if not stopped(unit_state(unit)):
-            system("systemctl", "stop", "--no-block", unit)
-    deadline = time.monotonic() + 15
-    while any(not stopped(unit_state(unit)) for unit in units):
-        if time.monotonic() >= deadline:
+    stopping = set()
+
+    def stop_visible_units():
+        # A submitted unit can first become visible during confirmation.
+        for unit in units:
+            if stopped(unit_state(unit, deadline=deadline)):
+                stopping.discard(unit)
+            elif unit not in stopping:
+                system("systemctl", "stop", "--no-block", unit, deadline=deadline)
+                stopping.add(unit)
+        return bool(stopping)
+
+    stop_visible_units()
+    retirement_deadline = time.monotonic() + 15
+    while stop_visible_units():
+        if time.monotonic() >= retirement_deadline:
             raise RuntimeError("image worker retirement unconfirmed; retaining files")
         time.sleep(0.1)
     (operation / "credentials.json").unlink(missing_ok=True)
@@ -372,7 +389,7 @@ def claim(request, namespace, owner, retire_matching, deadline):
                 raise RuntimeError("image workflow claim incomplete; a new attempt is required")
             retired = [] if previous is not None else list(operation_paths(namespace))
             for operation in retired:
-                retire(operation)
+                retire(operation, deadline=deadline)
             with lifecycle(lock_path, deadline, wait=False) as lock_fd:
                 if lock_fd is not None:
                     if previous is not None:
@@ -396,6 +413,7 @@ def claim(request, namespace, owner, retire_matching, deadline):
 
 
 def remote(request):
+    claim_deadline = None
     if request["action"] == "claim":
         budget = request["claimBudget"]
         if type(budget) is not int or not 5 < budget <= PR_CLAIM_SECONDS:
@@ -449,7 +467,7 @@ def remote(request):
             if (request["action"] == "claim" and generation < owner["generation"]) or (
                 request["action"] == "cancel" and intent["inputs"] == inputs
             ):
-                retire(operation)
+                retire(operation, deadline=claim_deadline)
 
     retiring = request["action"] in ("claim", "cancel")
     if retiring:
