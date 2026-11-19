@@ -1140,6 +1140,44 @@ test("A custom follow-up retains its form on failure and reuses its identities u
   // The API records the custom follow-up when it accepts the input.
   expect(pool.consumed).toStrictEqual([]);
 });
+test("An accepted custom follow-up preserves a newer direction entered after returning to the page", async () => {
+  mockPool();
+  mockChatLifecycle(context);
+  const sendRequested = context.mocks.deferred<void>();
+  const acceptSend = context.mocks.deferred<void>();
+  context.mocks.api(chatEventsContract.send, async ({ body, respond }) => {
+    sendRequested.resolve();
+    await acceptSend.promise;
+    return respond(201, {
+      threadId: body.threadId ?? threadId,
+      createdAt: "2026-10-27T00:00:00Z",
+    });
+  });
+  await openSuggestions();
+  await screen.findByText(makeSuggestion().content.title);
+  const { form, note } = await openCustomDirection();
+  await writeDirection(note, "Assess the budget risk first");
+  click(button("Send", "button", form));
+  await sendRequested.promise;
+
+  click(okouRow());
+  await waitFor(() => {
+    expect(composer()).toBeInTheDocument();
+  });
+  click(link(suggestionPath));
+  const returnedCard = await screen.findByRole("article", {
+    name: makeSuggestion().content.title,
+  });
+  const returnedNote = within(returnedCard).getByRole("textbox", {
+    name: "What do you have in mind?",
+  });
+  expect(returnedNote).toHaveValue("Assess the budget risk first");
+  await fill(returnedNote, "Compare the launch options next");
+
+  acceptSend.resolve();
+  await screen.findByText(SENT);
+  expect(returnedNote).toHaveValue("Compare the launch options next");
+});
 test("The custom direction form sends the background files without the home draft", async () => {
   const incoming = draftAttachment("suggestion-background.txt", {
     id: "a0000000-0000-4000-a000-000000000091",

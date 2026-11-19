@@ -95,6 +95,7 @@ const sendCustomAgentSuggestion$ = command(
     text: string,
     pageSignal: AbortSignal,
   ) => {
+    const submittedText = get(entry.customText$);
     const signal = get(rootSignal$);
     const agentId = await get(defaultAgentId$);
     signal.throwIfAborted();
@@ -149,7 +150,10 @@ const sendCustomAgentSuggestion$ = command(
             { type: "sent", threadId },
             pageSignal,
           );
-          set(entry.setCustomText$, "");
+          // A new page visit can edit the shared draft while this send is pending.
+          if (get(entry.customText$) === submittedText) {
+            set(entry.setCustomText$, "");
+          }
           showSuggestionSent();
         },
       },
