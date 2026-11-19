@@ -183,7 +183,7 @@ function DetailError({ error, agentId }: { error: string; agentId: string }) {
         <Breadcrumb />
         <main className="flex-1 flex items-center justify-center px-4 sm:px-6 pb-safe-or-16">
           <div className="flex flex-col items-center text-center gap-4 max-w-sm">
-            <NoPermissionIllustration className="h-32 w-auto max-w-[220px] object-contain opacity-90" />
+            <NoPermissionIllustration className="h-32 w-auto max-w-[220px] object-contain" />
             <div className="space-y-1.5">
               <h2 className="text-lg font-semibold text-foreground">
                 {t(($) => {
@@ -433,7 +433,7 @@ function NoConnectedConnectors() {
           alt={t(($) => {
             return $.authorization.noConnectorsAlt;
           })}
-          className="h-20 w-20 object-contain opacity-80"
+          className="h-20 w-30 object-contain"
         />
         <p className="text-sm text-muted-foreground text-center">
           {t(($) => {

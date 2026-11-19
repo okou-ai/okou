@@ -1110,7 +1110,7 @@ function ConnectorEmptyState({ message }: { readonly message: string }) {
         alt={t(($) => {
           return $.connectors.catalog.noConnectorsAlt;
         })}
-        className="h-20 w-20 object-contain opacity-80"
+        className="h-20 w-30 object-contain"
       />
       <p className="text-center text-sm text-muted-foreground">{message}</p>
     </div>

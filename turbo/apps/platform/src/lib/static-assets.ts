@@ -25,7 +25,7 @@ export const platformMessagePdfFontUrls = Object.freeze({
 });
 
 export const platformEmptyPrivateAgentsImg = platformStaticAssetUrl(
-  "views/agents-page/assets/empty-private-agents-9a8d7e3750b6.png",
+  "views/agents-page/assets/empty-private-agents-scene-a5ddc79eedd5.webp",
 );
 export const platformOkouWordmarkDarkImg =
   "https://static.okou.io/public/okou-logo-wordmark-dark-8ac16c9eb76d.svg";

@@ -570,7 +570,7 @@ export function ArtifactCatalogEmpty() {
         alt=""
         role="presentation"
         loading="lazy"
-        className="mx-auto h-24 w-24 object-contain opacity-80"
+        className="mx-auto h-24 w-36 object-contain"
       />
       <h2 className="mt-4 text-sm font-medium text-foreground">
         {t(($) => {
