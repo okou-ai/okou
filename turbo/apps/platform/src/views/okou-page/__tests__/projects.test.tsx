@@ -1265,7 +1265,7 @@ test("creates, renames and deletes a Project through the shared dialogs", async 
   await user.click(button("Options for Campaign two"));
   await user.click(await findMenuItem("Delete"));
   const dialog = await screen.findByRole("dialog");
-  await user.click(button("Delete Project", dialog));
+  await user.click(button("Delete project only", dialog));
   await waitFor(() => {
     return expect(
       queryAllByRoleFast("button").some((item) => {
@@ -1350,7 +1350,7 @@ test("Deleting a Project closes its dialog before its chats finish synchronizing
   await user.click(button("Options for Launch", projectRow()));
   await user.click(await findMenuItem("Delete"));
   const dialog = await screen.findByRole("dialog", { name: "Delete Project?" });
-  click(button("Delete Project", dialog));
+  click(button("Delete project only", dialog));
   try {
     await chatSyncStarted.promise;
     await waitFor(() => {
@@ -1428,20 +1428,20 @@ test("A rejected Project deletion stays open and can be retried", async () => {
   await user.click(button("Options for Launch", projectRow()));
   await user.click(await findMenuItem("Delete"));
   const dialog = await screen.findByRole("dialog", { name: "Delete Project?" });
-  click(button("Delete Project", dialog));
+  click(button("Delete project only", dialog));
   await waitFor(() => {
-    expect(button("Delete Project", dialog)).toBeDisabled();
+    expect(button("Delete project only", dialog)).toBeDisabled();
   });
   expect(projectRow()).toHaveTextContent("Launch");
   confirmation.resolve();
   await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
     "Could not delete Project",
   );
-  expect(button("Delete Project", dialog)).toBeEnabled();
+  expect(button("Delete project only", dialog)).toBeEnabled();
   expect(projectRow()).toHaveTextContent("Launch");
 
   canDelete = true;
-  click(button("Delete Project", dialog));
+  click(button("Delete project only", dialog));
   await waitFor(() => {
     expect(button("Create Project")).toHaveFocus();
   });
