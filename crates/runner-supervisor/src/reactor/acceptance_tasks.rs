@@ -42,13 +42,13 @@ pub(super) struct AcceptanceTasks {
 }
 
 impl AcceptanceTasks {
-    pub(super) fn new(context: AcceptanceContext) -> Self {
+    pub(super) fn new(context: AcceptanceContext, slots: Arc<Semaphore>) -> Self {
         Self {
             context: Arc::new(context),
             tasks: FuturesUnordered::new(),
             in_flight: HashSet::new(),
             preparing: None,
-            slots: Arc::new(Semaphore::new(MAX_IN_FLIGHT_ACCEPTANCES)),
+            slots,
         }
     }
 
@@ -58,10 +58,6 @@ impl AcceptanceTasks {
 
     pub(super) fn is_preparing(&self) -> bool {
         self.preparing.is_some()
-    }
-
-    pub(super) fn slots(&self) -> Arc<Semaphore> {
-        self.slots.clone()
     }
 
     pub(super) fn submit_supplied(
