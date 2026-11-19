@@ -729,6 +729,7 @@ describe("okou workflow automations", () => {
 
   it("creates, disables, and re-enables a cron automation without binding a chat thread", async () => {
     const { workflowId } = await setupFixture();
+    mockNow(Date.parse("2026-06-26T08:00:00.000Z"));
 
     const created = await accept(
       automationsClient().create({
@@ -755,7 +756,7 @@ describe("okou workflow automations", () => {
       },
     });
     expect(created.body.chatThreadId).toBeNull();
-    expect(created.body.nextRunAt).toBeTruthy();
+    expect(created.body.nextRunAt).toBe("2026-06-26T09:00:00.000Z");
     expect(created.body.scheduleSummary).toBe("0 9 * * 1-5 (UTC)");
 
     const disabled = await accept(
@@ -768,6 +769,7 @@ describe("okou workflow automations", () => {
     expect(disabled.body.enabled).toBeFalsy();
     expect(disabled.body.nextRunAt).toBeNull();
 
+    mockNow(Date.parse("2026-06-26T10:00:00.000Z"));
     const enabled = await accept(
       automationsClient().enable({
         headers: authHeaders(),
@@ -776,8 +778,17 @@ describe("okou workflow automations", () => {
       [200],
     );
     expect(enabled.body.enabled).toBeTruthy();
-    expect(enabled.body.nextRunAt).toBeTruthy();
+    expect(enabled.body.nextRunAt).toBe("2026-06-29T09:00:00.000Z");
     expect(enabled.body.chatThreadId).toBeNull();
+
+    // Keep the mock-dated automation out of later cron sweeps.
+    await accept(
+      automationsClient().disable({
+        headers: authHeaders(),
+        params: { id: created.body.id },
+      }),
+      [200],
+    );
   });
 
   it("lists thread-bound workflow automations", async () => {
