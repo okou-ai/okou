@@ -11,7 +11,7 @@ import {
 import { integrationsWhatsappContract } from "@okouai/api-contracts/client/integrations-whatsapp";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { whatsappLinkStatus$, reloadWhatsappLinkStatus$ } from "./whatsapp.ts";
 
 const reload$ = state(0);
@@ -50,7 +50,7 @@ export const agentPhoneConnectStatus$ = computed(async (get) => {
   if (
     !parsed.ok ||
     (get(isWhatsappConnectPage$) &&
-      !get(featureSwitch$)[FeatureSwitchKey.WhatsappIntegration])
+      !(await get(featureSwitches$))[FeatureSwitchKey.WhatsappIntegration])
   ) {
     return null;
   }

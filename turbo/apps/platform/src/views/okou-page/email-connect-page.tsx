@@ -1,4 +1,4 @@
-import { useGet, useLoadable } from "ccstate-react";
+import { useLastResolved, useGet, useLoadable } from "ccstate-react";
 import { Mail } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -6,7 +6,7 @@ import {
   emailConnection$,
   emailConnectParams$,
 } from "../../signals/okou-page/email.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import {
   PageShell,
   ConnectCheckingState,
@@ -25,7 +25,9 @@ export function EmailConnectPage() {
 
 function EmailConnectContent() {
   const { t } = useTranslation();
-  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.EmailIntegration];
+  const enabled =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.EmailIntegration] ===
+    true;
   const connection = useLoadable(emailConnection$);
   const params = useGet(emailConnectParams$);
   if (!enabled) {

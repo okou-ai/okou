@@ -62,7 +62,7 @@ function ForwardTargetContent({
 }: {
   readonly target: ChatForwardTarget;
 }) {
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const avatarAgentId = target.kind === "agent" ? target.id : target.agentId;
   return (
     <span className="flex min-w-0 items-center gap-2">
@@ -226,7 +226,7 @@ export function ChatForwardDialog({
   readonly onDismiss: () => void;
 }) {
   const { t } = useTranslation();
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const target = useGet(feedback.forwardTarget$);
   const prepared = useLoadable(feedback.forwardComposer$);
   const prepare = useSet(feedback.prepareForwardComposer$);

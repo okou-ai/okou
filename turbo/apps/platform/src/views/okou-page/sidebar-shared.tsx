@@ -11,7 +11,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { OkouAvatar, RunningIndicator } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import { agents$ } from "../../signals/agent.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { currentChatAgentDisplayName$ } from "../../signals/agent-chat.ts";
 import type { SidebarChatThreadIndicatorState } from "../../signals/chat-page/sidebar-chat-thread-item.ts";
 import { resolveAvatarUrl, resolveAvatarSvgConfig } from "./avatar-utils.ts";
@@ -193,7 +193,8 @@ function defaultAgentAvatarTextureUrl(): string {
  */
 function useOkouAvatarFor(rawAvatarUrl: string | null | undefined): boolean {
   const animatedAvatar =
-    useGet(featureSwitch$)[FeatureSwitchKey.OkouAnimatedAvatar];
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.OkouAnimatedAvatar] ===
+    true;
   return animatedAvatar && rawAvatarUrl === DEFAULT_AGENT_AVATAR_URL;
 }
 

@@ -194,6 +194,7 @@ export const platformEventSchema = feedItemBaseSchema.extend({
     workflowId: uuid(),
     workspaceId: string().min(1),
     automationName: string().min(1).max(200),
+    automationDescription: string().min(1).max(1024).optional(),
     disabledAt: iso.datetime(),
     consecutiveFailures: number().int().positive(),
     recoveryScheduled: boolean(),

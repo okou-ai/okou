@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import {
   pageCatalog,
   artifactCatalogSidebar,
@@ -175,7 +175,9 @@ const resetOpenArtifactSignal$ = resetSignal();
 
 export const openArtifact$ = command(
   async ({ get, set }, artifactId: string, signal: AbortSignal) => {
-    if (get(featureSwitch$)[FeatureSwitchKey.ArtifactSidebarPreview]) {
+    if (
+      (await get(featureSwitches$))[FeatureSwitchKey.ArtifactSidebarPreview]
+    ) {
       await set(artifactCatalogSidebar.openArtifact$, artifactId, signal);
       return;
     }
@@ -217,28 +219,38 @@ export const openArtifact$ = command(
       url: preview.url,
     };
     if (preview.kind === "file") {
-      set(openFileLightbox$, base);
+      await set(openFileLightbox$, base, undefined, signal);
       return;
     }
     if (preview.kind === "image") {
-      set(openImageLightbox$, base);
+      await set(openImageLightbox$, base, undefined, signal);
       return;
     }
     if (preview.kind === "video") {
-      set(openVideoLightbox$, base);
+      await set(openVideoLightbox$, base, undefined, signal);
       return;
     }
     if (preview.kind === "audio") {
-      set(openAudioLightbox$, base);
+      await set(openAudioLightbox$, base, undefined, signal);
       return;
     }
     if (isTextPreviewKind(preview.kind)) {
-      set(openDocumentLightbox$, {
-        ...base,
-        kind: preview.kind,
-      });
+      await set(
+        openDocumentLightbox$,
+        {
+          ...base,
+          kind: preview.kind,
+        },
+        undefined,
+        signal,
+      );
       return;
     }
-    set(openDocumentLightbox$, { ...base, kind: preview.kind });
+    await set(
+      openDocumentLightbox$,
+      { ...base, kind: preview.kind },
+      undefined,
+      signal,
+    );
   },
 );

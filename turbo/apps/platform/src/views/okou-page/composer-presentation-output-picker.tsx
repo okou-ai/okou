@@ -1,4 +1,4 @@
-import { useGet, useSet } from "ccstate-react";
+import { useLastResolved, useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { PRESENTATION_OUTPUT_FORMATS } from "@okouai/core/presentation-output-format";
 import {
@@ -14,7 +14,7 @@ export function ComposerPresentationOutputPicker({
   readonly nested?: boolean;
 }) {
   const { t } = useTranslation();
-  const enabled = useGet(presentationOutputFormatEnabled$);
+  const enabled = useLastResolved(presentationOutputFormatEnabled$) ?? false;
   const format = useGet(presentationOutputFormat$);
   const setFormat = useSet(setPresentationOutputFormat$);
   const formats = t(

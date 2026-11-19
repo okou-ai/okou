@@ -6,7 +6,7 @@ import {
   builtinConnectorsReloadVersion$,
   withBuiltinConnectorDefaults,
 } from "../external/connectors.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { navigateTo$, searchParams$ } from "../route.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import {
@@ -22,7 +22,7 @@ import {
 export const onboardingSourceConnectors$ = withBuiltinConnectorDefaults(
   computed(async (get) => {
     get(builtinConnectorsReloadVersion$);
-    get(featureSwitch$);
+    await get(featureSwitches$);
     const createClient = get(apiClient$);
     const client = createClient(onboardingSourcesContract);
     const result = await accept(client.list(), [200]);

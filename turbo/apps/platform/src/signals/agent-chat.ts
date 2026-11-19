@@ -2,7 +2,6 @@ import { singleAgentEnabled$ } from "./single-agent.ts";
 import { command, computed, state, type Computed } from "ccstate";
 import type { EventDrivenChatThread } from "@okouai/core/chat-thread-event-replay";
 import { comparePinnedThreads } from "@okouai/core/chat-thread-pin-order";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentById, currentAgentId$, defaultAgentId$ } from "./agent.ts";
 import { pathParams$ } from "./route.ts";
 import { activeRoute$ } from "./active-route.ts";
@@ -10,7 +9,6 @@ import { chatThreadIndicatorsFromWorker$ } from "./shared-database.ts";
 import { chatThreadOnlyUnread$ } from "./chat-page/chat-thread-only-unread.ts";
 import { chatThreadOnlyArchived$ } from "./chat-page/chat-thread-only-archived.ts";
 import { chatThreadOnlyMuted$ } from "./chat-page/chat-thread-only-muted.ts";
-import { featureSwitch$ } from "./external/feature-switch.ts";
 import {
   chatThreadMetaMap$,
   eventDrivenChatThreads$,
@@ -22,7 +20,7 @@ import {
   type ChatThreadListRow,
   type ChatThreadNavigationList,
 } from "./chat-page/chat-thread-list-rows.ts";
-import { projects$ } from "./projects/projects.ts";
+import { projectedProjects$, projectsEnabled$ } from "./projects/projects.ts";
 import { expandedProjectIds$ } from "./projects/project-expansion.ts";
 
 const internalChatAgentId$ = state<string | null>(null);
@@ -74,7 +72,7 @@ export const currentChatAgentId$ = computed(
 
 /** Fresh enabled chats always use the default executor; existing threads keep theirs. */
 export const newChatAgentId$ = computed(async (get) => {
-  return get(singleAgentEnabled$)
+  return (await get(singleAgentEnabled$))
     ? await get(defaultAgentId$)
     : await get(currentChatAgentId$);
 });
@@ -109,7 +107,7 @@ export const currentChatAgent$ = computed(async (get) => {
 export const currentChatAgentDisplayName$ = computed(
   async (get): Promise<string | null> => {
     if (
-      get(singleAgentEnabled$) &&
+      (await get(singleAgentEnabled$)) &&
       (await get(currentChatAgentId$)) === (await get(defaultAgentId$))
     ) {
       return "Okou";
@@ -155,15 +153,8 @@ function threadIdsOf(threads: readonly EventDrivenChatThread[]) {
   });
 }
 
-const projectsListed$ = computed((get): boolean => {
-  return get(featureSwitch$)[FeatureSwitchKey.SingleAgent] === true;
-});
-
 // Projects collect chats across Agents, so every Agent list shows them.
 const allProjectThreads$ = computed((get): EventDrivenChatThread[] => {
-  if (!get(projectsListed$)) {
-    return [];
-  }
   return sortChatThreads(
     get(eventDrivenChatThreads$).filter((thread) => {
       return thread.projectId !== null;
@@ -172,6 +163,7 @@ const allProjectThreads$ = computed((get): EventDrivenChatThread[] => {
 });
 
 function createChatThreadListView({
+  projectsListed,
   threads$,
   allThreadIds$,
   projectThreads$,
@@ -180,6 +172,7 @@ function createChatThreadListView({
   hideEmptyProjects,
   hasHiddenArchivedThreads$,
 }: {
+  projectsListed: boolean;
   threads$: Computed<EventDrivenChatThread[]>;
   allThreadIds$: Computed<readonly string[]>;
   projectThreads$: Computed<readonly EventDrivenChatThread[]>;
@@ -193,7 +186,7 @@ function createChatThreadListView({
   });
   const rows$ = computed((get): readonly ChatThreadListRow[] => {
     return buildChatThreadListRows({
-      projects: get(projects$),
+      projects: projectsListed ? get(projectedProjects$) : [],
       expandedProjectIds: get(expandedProjectIds$),
       projectThreads: get(projectThreads$),
       projectIdsWithHiddenArchivedThreads: get(
@@ -205,7 +198,7 @@ function createChatThreadListView({
   });
   const navigation$ = computed((get): ChatThreadNavigationList => {
     return buildChatThreadNavigationList({
-      projects: get(projects$),
+      projects: projectsListed ? get(projectedProjects$) : [],
       rows: get(rows$),
       allProjectThreads: get(allProjectThreadsSource$),
       allThreadIds: get(allThreadIds$),
@@ -234,12 +227,12 @@ function createChatThreadListView({
 function createChatThreadListSignals(
   agentId: string | null,
   filter: ChatThreadListFilter,
+  projectsListed: boolean,
 ): ChatThreadListSignals {
   const allThreads$ = computed((get): EventDrivenChatThread[] => {
     if (!agentId) {
       return [];
     }
-    const projectsListed = get(projectsListed$);
     return sortChatThreads(
       get(eventDrivenChatThreads$).filter((thread) => {
         return (
@@ -262,19 +255,22 @@ function createChatThreadListSignals(
   });
 
   return createChatThreadListView({
+    projectsListed,
     threads$,
     allThreadIds$: computed((get): readonly string[] => {
       return threadIdsOf(get(allThreads$));
     }),
     // A filter applies to the chats inside Projects as it does to the rest.
     projectThreads$: computed((get): readonly EventDrivenChatThread[] => {
-      return get(allProjectThreads$).filter(listed);
+      return projectsListed ? get(allProjectThreads$).filter(listed) : [];
     }),
-    allProjectThreads$,
+    allProjectThreads$: computed((get) => {
+      return projectsListed ? get(allProjectThreads$) : [];
+    }),
     projectIdsWithHiddenArchivedThreads$: computed(
       (get): ReadonlySet<string> => {
         const projectIds = new Set<string>();
-        if (inbox) {
+        if (inbox && projectsListed) {
           for (const thread of get(allProjectThreads$)) {
             if (thread.archived && thread.projectId !== null) {
               projectIds.add(thread.projectId);
@@ -304,10 +300,14 @@ const currentChatThreadListSignals$ = computed(
 
     const agentId = get(currentChatAgentScope$) ?? (await get(defaultAgentId$));
 
-    return createChatThreadListSignals(agentId, {
-      onlyArchived,
-      onlyMuted: get(chatThreadOnlyMuted$),
-    });
+    return createChatThreadListSignals(
+      agentId,
+      {
+        onlyArchived,
+        onlyMuted: get(chatThreadOnlyMuted$),
+      },
+      await get(projectsEnabled$),
+    );
   },
 );
 
@@ -328,7 +328,7 @@ export const unreadChatThreadListSignals$ = computed(
   async (get): Promise<ChatThreadListSignals> => {
     const agentId = await get(currentChatAgentId$);
     const indicators = await get(chatThreadIndicatorsFromWorker$);
-    const projectsListed = get(projectsListed$);
+    const projectsListed = await get(projectsEnabled$);
     const unread = get(eventDrivenChatThreads$).filter((thread) => {
       return indicators.threads[thread.id] === "unread";
     });
@@ -356,6 +356,7 @@ export const unreadChatThreadListSignals$ = computed(
 
     // Unread navigation keeps this snapshot for both ordering and eligibility.
     return createChatThreadListView({
+      projectsListed,
       threads$: computed(() => {
         return threads;
       }),

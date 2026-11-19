@@ -216,7 +216,7 @@ function MeNavigation({
 }) {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const subscriptionEntry = useSubscriptionLinkingEntry();
   const slackScopeMismatch = useLastResolved(slackOrgScopeMismatch$) ?? false;
   const defaultDisplayName =

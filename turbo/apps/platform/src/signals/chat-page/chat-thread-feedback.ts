@@ -661,7 +661,7 @@ function createStartForward(
           : {}),
         ...(selection.source ? { source: selection.source } : {}),
       };
-      if (get(singleAgentEnabled$)) {
+      if (await get(singleAgentEnabled$)) {
         const agentId = await get(defaultAgentId$);
         signal.throwIfAborted();
         const source = get(chatThreadMetaMap$).get(captured.threadId);
@@ -675,7 +675,7 @@ function createStartForward(
             target: { kind: "agent", id: agentId, title: ASSISTANT_NAME },
             forward: forwardContextFrom(captured, source),
             fork: true,
-            projectId: get(projectsEnabled$)
+            projectId: (await get(projectsEnabled$))
               ? (get(eventDrivenChatThreads$).find((thread) => {
                   return thread.id === captured.threadId;
                 })?.projectId ?? undefined)

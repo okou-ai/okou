@@ -31,7 +31,7 @@ import {
   type BrandName,
 } from "../../signals/branding.ts";
 import { currentUserInfo$ } from "../../signals/auth.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import type {
   SharedThreadRichContentSignals,
   SharedThreadArtifactSignals,
@@ -140,7 +140,10 @@ function groupSharedMessages(
 }
 
 function useAnimatedOkouAvatar(): boolean {
-  return useGet(featureSwitch$)[FeatureSwitchKey.OkouAnimatedAvatar];
+  return (
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.OkouAnimatedAvatar] ??
+    false
+  );
 }
 
 function SharedAssistantAvatar({
@@ -243,7 +246,9 @@ function SharedMessageCopyButton({ content }: { readonly content: string }) {
 }
 
 function SharedUserGroup({ group }: { readonly group: SharedMessageGroup }) {
-  const nameLine = useGet(featureSwitch$)[FeatureSwitchKey.ChatReplyNameLine];
+  const nameLine =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ChatReplyNameLine] ===
+    true;
   return (
     <>
       {group.messages.map((message, index) => {
@@ -305,7 +310,9 @@ function SharedAssistantGroup({
   readonly group: SharedMessageGroup;
   readonly richContent?: SharedThreadRichContentSignals;
 }) {
-  const nameLine = useGet(featureSwitch$)[FeatureSwitchKey.ChatReplyNameLine];
+  const nameLine =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ChatReplyNameLine] ===
+    true;
   const content = group.messages
     .map((message) => {
       return message.content;

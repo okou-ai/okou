@@ -123,7 +123,7 @@ const setupChatPageForAgent$ = command(
       }
       // My Okou's only chat page is this one, so another agent's chat would
       // route straight back here; its settings page is the usable surface.
-      if (get(singleAgentEnabled$)) {
+      if (await get(singleAgentEnabled$)) {
         set(detachedNavigateTo$, ROUTES.connectors, {
           searchParams: new URLSearchParams({ settings: "my-okou" }),
           replace: true,
@@ -174,7 +174,7 @@ const setupChatPageForAgent$ = command(
           return $.chat.documentTitle;
         }),
     );
-    set(setupAgentChatKeyboardShortcuts$, signal);
+    await set(setupAgentChatKeyboardShortcuts$, signal);
     await set(hydrateProjects$, signal);
     await set(checkUnifiedSettingsParam$, signal);
 
@@ -218,7 +218,7 @@ const setupChatPageForAgent$ = command(
 
 export const setupAgentChatPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    if (get(singleAgentEnabled$)) {
+    if (await get(singleAgentEnabled$)) {
       // My Okou has one chat page at `/`. Keep deep-link params such as
       // `prompt` and `handoff` so the page there still applies them.
       set(detachedNavigateTo$, ROUTES.home, {

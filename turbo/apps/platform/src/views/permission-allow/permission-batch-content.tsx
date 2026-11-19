@@ -1,5 +1,11 @@
 import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import {
+  useLastResolved,
+  useGet,
+  useLastLoadable,
+  useLoadable,
+  useSet,
+} from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";
@@ -21,7 +27,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { AlertCircle, Check, Loader2, ShieldCheck, X } from "lucide-react";
 import type { PermissionBatchSignals } from "../../signals/chat-page/permission-batch-signals.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { user$ } from "../../signals/auth.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
@@ -40,11 +46,8 @@ export function PermissionBatchContent({
   signals: PermissionBatchSignals;
   standalone?: boolean;
 }) {
-  const features = useLoadable(featureSwitch$);
-  if (
-    features.state !== "hasData" ||
-    !features.data[FeatureSwitchKey.BatchConnectorPermissions]
-  ) {
+  const features = useLastResolved(featureSwitches$);
+  if (!features?.[FeatureSwitchKey.BatchConnectorPermissions]) {
     return null;
   }
   return <BatchContent signals={signals} standalone={standalone} />;
@@ -243,12 +246,10 @@ function BatchHeader({
 
 function BatchPermissionDetails({ batch }: BatchViewProps) {
   const { t } = useTranslation();
-  const features = useLoadable(featureSwitch$);
-  const singleAgent =
-    features.state === "hasData" && features.data[FeatureSwitchKey.SingleAgent];
+  const features = useLastResolved(featureSwitches$);
+  const singleAgent = features?.[FeatureSwitchKey.SingleAgent] ?? false;
   const sharedPermissions =
-    features.state === "hasData" &&
-    features.data[FeatureSwitchKey.ConnectorChatAccountAccess];
+    features?.[FeatureSwitchKey.ConnectorChatAccountAccess] ?? false;
   const {
     complete,
     loadFailed,

@@ -1,7 +1,7 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed } from "ccstate";
 import { authenticatedSessionKey$ } from "../auth.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { billingStatusAsync$ } from "./billing.ts";
 import { openSettingsBillingPlansDialog$ } from "./settings/settings-dialog.ts";
 
@@ -13,7 +13,7 @@ import { openSettingsBillingPlansDialog$ } from "./settings/settings-dialog.ts";
 export const artifactPaywallLocked$ = computed(async (get) => {
   if (
     !get(authenticatedSessionKey$) ||
-    !get(featureSwitch$)[FeatureSwitchKey.FreePlanArtifactPaywall]
+    !(await get(featureSwitches$))[FeatureSwitchKey.FreePlanArtifactPaywall]
   ) {
     return false;
   }

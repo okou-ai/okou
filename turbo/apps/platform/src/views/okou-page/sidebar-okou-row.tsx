@@ -51,8 +51,8 @@ function RestingShortcutHint({ label }: { label: string | null }) {
 
 /** New chat leads the conversation list; suggestions have their own entry. */
 export function OkouChatListRow() {
-  const enabled = useGet(suggestionsEnabled$);
-  const singleAgent = useGet(singleAgentEnabled$);
+  const enabled = useLastResolved(suggestionsEnabled$) ?? false;
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const active = useLastResolved(defaultAgentChatPageActive$) === true;
   const assistantName = useGet(assistantName$);
   const { t } = useTranslation();
@@ -93,7 +93,7 @@ export function ForYouChatListRow({
   readonly touch?: boolean;
 }) {
   const { t } = useTranslation();
-  const enabled = useGet(suggestionsEnabled$);
+  const enabled = useLastResolved(suggestionsEnabled$) ?? false;
   const active = useGet(activeRoute$) === "forYou";
   const unread = useLastResolved(forYouHasUnread$) === true;
   const followFeed = useSet(followForYouFeedOnRef$);

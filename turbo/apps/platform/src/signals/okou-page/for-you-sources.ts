@@ -5,7 +5,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { createDeferredPromise, onRef } from "../utils.ts";
 
 const sourceState$ = computed((get) => {
@@ -25,7 +25,9 @@ export const forYouSources$ = computed(async (get) => {
 });
 
 export const forYouHasUnread$ = computed(async (get) => {
-  if (get(featureSwitch$)[FeatureSwitchKey.AgentSuggestion] !== true) {
+  if (
+    (await get(featureSwitches$))[FeatureSwitchKey.AgentSuggestion] !== true
+  ) {
     return false;
   }
   get(get(sourceState$).summaryVersion$);
@@ -74,20 +76,27 @@ export function createForYouReadRef(id: string) {
   return onRef(
     command(
       async ({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
-        if (get(featureSwitch$)[FeatureSwitchKey.AgentSuggestion] !== true) {
+        const enabled = (await get(featureSwitches$))[
+          FeatureSwitchKey.AgentSuggestion
+        ];
+        signal.throwIfAborted();
+        if (!enabled) {
           return;
         }
         if (document.hidden) {
           const visible = createDeferredPromise<void>(signal);
-          document.addEventListener(
-            "visibilitychange",
-            () => {
-              if (!document.hidden) {
-                visible.resolve();
-              }
-            },
-            { signal },
-          );
+          const onVisibilityChange = () => {
+            if (!document.hidden) {
+              document.removeEventListener(
+                "visibilitychange",
+                onVisibilityChange,
+              );
+              visible.resolve();
+            }
+          };
+          document.addEventListener("visibilitychange", onVisibilityChange, {
+            signal,
+          });
           await visible.promise;
           signal.throwIfAborted();
         }

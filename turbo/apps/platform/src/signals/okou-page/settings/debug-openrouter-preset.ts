@@ -4,14 +4,14 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed, state } from "ccstate";
 
 import { apiClient$ } from "../../api-client.ts";
-import { featureSwitch$ } from "../../external/feature-switch.ts";
+import { featureSwitches$ } from "../../external/feature-switch.ts";
 import { isOrgAdmin$ } from "../../org.ts";
 import { accept } from "../../../lib/accept.ts";
 
 export const canManageOpenrouterPreset$ = computed(async (get) => {
   const [admin, features] = await Promise.all([
     get(isOrgAdmin$),
-    get(featureSwitch$),
+    get(featureSwitches$),
   ]);
   return admin && features[FeatureSwitchKey.OkouDebug];
 });

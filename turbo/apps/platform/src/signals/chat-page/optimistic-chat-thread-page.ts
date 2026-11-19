@@ -24,7 +24,7 @@ import { nowDate } from "../../lib/time.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import { currentChatThreadId$ } from "../agent-chat.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { modelCatalog$, type ModelCatalog } from "../external/model-catalog.ts";
 import { availableRunModels$ } from "../external/run-models.ts";
 import { userModelPreference$ } from "../external/user-model-preference.ts";
@@ -561,7 +561,9 @@ const startNewChatThreadCreate$ = command(
           modelSelection,
           models,
           catalog,
-          codexExecution: get(featureSwitch$)[FeatureSwitchKey.CodexExecution],
+          codexExecution: (await get(featureSwitches$))[
+            FeatureSwitchKey.CodexExecution
+          ],
         },
         signal,
       );
@@ -837,7 +839,8 @@ const sendNewThreadMessage$ = command(
     if (!prepared) {
       return null;
     }
-    const features = get(featureSwitch$);
+    const features = await get(featureSwitches$);
+    signal.throwIfAborted();
     const { annotatedUserMessage, optimisticUserMessage } =
       annotatedMessagesForNewThread(
         request,

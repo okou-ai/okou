@@ -41,7 +41,7 @@ function PwaBackLink({
 
 // My Okou's chats tab is `/`; otherwise it opens the current agent's chat.
 function useChatsTabAgentId(): string | null {
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const agentId = useLastResolved(currentChatAgentId$) ?? null;
   return singleAgent ? null : agentId;
 }

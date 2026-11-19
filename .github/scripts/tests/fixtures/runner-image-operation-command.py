@@ -55,6 +55,8 @@ def ssh(arguments):
     record("requests", {"action": request["action"], "phase": request.get("phase")})
     if MODE == "ssh-error":
         return 7
+    if MODE == "missing-claim-time" and request["action"] == "claim":
+        del request["runCreatedAt"]
     if MODE in ("slow-claim-retirement", "short-claim-budget") and request["action"] == "claim":
         # Model a reconciliation request arriving with two seconds for host work.
         request["claimBudget"] = 7

@@ -1,6 +1,6 @@
 import type { ConnectedConnectors } from "@okouai/api-contracts/contracts/connected-connectors";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import {
@@ -1139,7 +1139,9 @@ function useTabVisibility(ownerId: string, visibility: "public" | "private") {
   const setActiveTab = useSet(setAgentActiveTab$);
   const hideProfileAndInstructions = !canEditProfile;
   const showAuthorization =
-    !useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.ConnectorChatAccountAccess
+    ] === false;
   const activeTab = resolveVisibleTab(
     rawTab,
     hideProfileAndInstructions,

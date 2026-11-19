@@ -27,7 +27,7 @@ interface ThreeColumnAgentSearchResult {
 export const threeColumnAgentSearchResults$ = computed(
   async (get): Promise<ThreeColumnAgentSearchResult> => {
     const query = get(chatListQuery$).trim().toLowerCase();
-    if (!query || get(singleAgentEnabled$)) {
+    if (!query || (await get(singleAgentEnabled$))) {
       return { query, agents: [] };
     }
     const agents = await get(agents$);

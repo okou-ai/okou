@@ -11,7 +11,7 @@ import {
 import { FeishuConnectErrorPage } from "../../views/okou-page/feishu-connect-error-page.tsx";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { detachedNavigateTo$, pathParams$, searchParams$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
 import { updatePage$ } from "../react-router.ts";
@@ -34,7 +34,8 @@ export const setupFeishuSettingsPage$ = command(
     const platform = get(feishuPlatform$);
     const isAccountConnect = get(hasFeishuConnectParams$);
     if (!isAccountConnect) {
-      const features = get(featureSwitch$);
+      const features = await get(featureSwitches$);
+      signal.throwIfAborted();
       if (
         !features[FEISHU_PLATFORMS[platform].featureSwitch] &&
         !(platform === "lark" && features[FeatureSwitchKey.LarkOfficialBot])
@@ -81,7 +82,9 @@ export const setupFeishuSettingsPage$ = command(
 export const setupFeishuSetupPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const platform = get(feishuPlatform$);
-    if (!get(featureSwitch$)[FEISHU_PLATFORMS[platform].featureSwitch]) {
+    if (
+      !(await get(featureSwitches$))[FEISHU_PLATFORMS[platform].featureSwitch]
+    ) {
       set(detachedNavigateTo$, ROUTES.home, { replace: true });
       return;
     }

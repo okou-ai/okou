@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { setupEmailConnectPage$ } from "./okou-page/email-connect-page.ts";
 import {
   captureFriendReferral$,
@@ -5,7 +6,7 @@ import {
 } from "./friend-referrals.ts";
 import { activeRoute$ } from "./active-route.ts";
 import { resetProjectUi$ } from "./projects/project-ui.ts";
-import { command, type Command } from "ccstate";
+import { command, type Command, type Store } from "ccstate";
 import { createElement } from "react";
 import { clerk$, setupClerkUser$, watchOrgSwitch$ } from "./auth.ts";
 import {
@@ -32,7 +33,7 @@ import {
   type RouterPathParams,
 } from "./route.ts";
 import { registerServiceWorker$ } from "../lib/push-notifications.ts";
-import { onDomEventFn, resetSignal } from "./utils.ts";
+import { detach, onDomEventFn, Reason, resetSignal } from "./utils.ts";
 import { setupVisualViewportKeyboardState } from "../lib/visual-viewport-keyboard.ts";
 import { refreshChatListLayout$ } from "./chat-page/chat-list-layout.ts";
 import "./pwa-install.ts";
@@ -133,11 +134,8 @@ import { setupChatThreadFilterShortcut$ } from "./okou-page/chat-thread-filter-s
 import { setupChatThreadPinShortcuts$ } from "./chat-page/chat-thread-pin-shortcuts.ts";
 import { setupProjectFoldShortcuts$ } from "./projects/project-fold-shortcuts.ts";
 import { setupProjectOrderShortcuts$ } from "./projects/project-order-shortcuts.ts";
+import { featureSwitches$ } from "./external/feature-switch.ts";
 import { bootstrapOnboardingGuard$ } from "./okou-page/onboard-guard.ts";
-import {
-  applyFeatureSwitches$,
-  featureSwitches$,
-} from "./external/feature-switch.ts";
 import { checkUnifiedSettingsParam$ } from "./okou-page/settings/settings-dialog.ts";
 import { captureInvitationRedirect$ } from "./invitation-redirect.ts";
 import { captureDiscordApprovalFragment$ } from "./okou-page/discord-oauth-approval.ts";
@@ -212,7 +210,9 @@ const setupAuthenticatedPwaMePage$ =
 const setupLegacyHomePage$ = setupSettingsParamAfterStableRoute(setupHomePage$);
 const setupHomeRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
   await set(
-    get(singleAgentEnabled$) ? setupHomeChatPage$ : setupLegacyHomePage$,
+    (await get(singleAgentEnabled$))
+      ? setupHomeChatPage$
+      : setupLegacyHomePage$,
     signal,
   );
 });
@@ -687,6 +687,7 @@ const completeBootstrap$ = command(
   async (
     { get, set },
     render: (view: BootstrapView) => void,
+    watch: Store["watch"],
     signal: AbortSignal,
   ): Promise<void> => {
     await set(initLocale$, signal);
@@ -696,13 +697,34 @@ const completeBootstrap$ = command(
     set(setupPwaNavigation$, signal);
 
     set(listenForceUpgradeDialog$, signal);
-    const [featureSwitches] = await Promise.allSettled([get(featureSwitches$)]);
+    const [features] = await Promise.allSettled([get(featureSwitches$)]);
     signal.throwIfAborted();
-    if (featureSwitches.status === "rejected") {
+    if (features.status === "rejected") {
       render("error");
-      throw featureSwitches.reason;
+      throw features.reason;
     }
-    set(applyFeatureSwitches$, featureSwitches.value);
+
+    // Keydown must decide synchronously whether to claim the browser event.
+    let singleAgent = features.value[FeatureSwitchKey.SingleAgent];
+    const refreshShortcutGate = async () => {
+      const pending = get(singleAgentEnabled$);
+      const enabled = await pending;
+      if (!signal.aborted && get(singleAgentEnabled$) === pending) {
+        singleAgent = enabled;
+      }
+    };
+    const stopWatching = watch(singleAgentEnabled$, () => {
+      detach(
+        refreshShortcutGate(),
+        Reason.Daemon,
+        "Refresh shortcut eligibility",
+      );
+    });
+    signal.addEventListener("abort", stopWatching, { once: true });
+    const isSingleAgent = () => {
+      return singleAgent;
+    };
+
     set(setupAuthenticatedRealtime$, signal);
     render("app");
 
@@ -718,11 +740,11 @@ const completeBootstrap$ = command(
       set(registerServiceWorker$, signal),
       set(setupNotificationListener$, signal),
 
-      set(setupGlobalKeyboardShortcuts$, signal),
+      set(setupGlobalKeyboardShortcuts$, isSingleAgent, signal),
       set(setupChatThreadFilterShortcut$, signal),
       set(setupChatThreadPinShortcuts$, signal),
-      set(setupProjectFoldShortcuts$, signal),
-      set(setupProjectOrderShortcuts$, signal),
+      set(setupProjectFoldShortcuts$, isSingleAgent, signal),
+      set(setupProjectOrderShortcuts$, isSingleAgent, signal),
       set(watchOrgSwitch$, signal),
       set(syncInitialPreferences$, signal),
     ]);
@@ -738,6 +760,7 @@ export const bootstrap$ = command(
     { get, set },
     appVersion: string,
     render: (view: BootstrapView) => void,
+    watch: Store["watch"],
     signal: AbortSignal,
   ): Promise<void> => {
     setupVisualViewportKeyboardState(
@@ -781,7 +804,7 @@ export const bootstrap$ = command(
     // Keep failures that happen before the first React render observable.
     set(listenSharedWorkerFailure$, signal);
     const sharedDatabaseSetup = set(setupSharedDatabaseBridge$, signal);
-    const ready = set(completeBootstrap$, render, signal);
+    const ready = set(completeBootstrap$, render, watch, signal);
 
     await Promise.all([clerkIdentitySetup, sharedDatabaseSetup, ready]);
     signal.throwIfAborted();

@@ -55,7 +55,7 @@ import {
   type RouteKey,
 } from "../route-paths.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { defaultAgentId$, currentAgentId$ } from "../agent.ts";
 import { ensureDraft$ } from "../chat-page/create-chat-thread.ts";
 import {
@@ -66,7 +66,7 @@ import { onRef, settle } from "../utils.ts";
 import { recordRecentWorkflowUse$ } from "../okou-page/recent-workflows.ts";
 
 export const singleAgentWorkflows$ = computed(async (get) => {
-  return (await get(featureSwitch$))[FeatureSwitchKey.SingleAgent];
+  return (await get(featureSwitches$))[FeatureSwitchKey.SingleAgent];
 });
 
 type WorkflowDetailActionDialog = "copy" | "delete" | null;

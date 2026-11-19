@@ -106,7 +106,7 @@ function AgentOptions() {
 
 export function PwaAgentSwitcher() {
   const name = useGet(assistantName$);
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   return singleAgent ? (
     <span className="px-2 text-base font-semibold">{name}</span>
   ) : (

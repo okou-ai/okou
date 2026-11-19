@@ -125,8 +125,13 @@ case "$SCENARIO" in
       exit 255
     fi
     sh -c "$2"
-    echo release > "$CASE_DIR/release"
-    read -r _ < "$CASE_DIR/done"
+    if ! timeout --kill-after=1s 20s bash -c '
+      echo release > "$CASE_DIR/release"
+      read -r _ < "$CASE_DIR/done"
+    '; then
+      echo 'late writer did not complete its fixture handshake' >&2
+      exit 1
+    fi
     exit 0
     ;;
 esac
@@ -183,38 +188,31 @@ done
 
 large="$test_root/large-binary"
 ln -s "$large" "$test_root/linked-binary"
-for scenario in chunk-healthy chunk-reset; do
-  case_dir="$test_root/$scenario"
-  mkdir "$case_dir"
-  cp "$test_root/test binary" "$large"
-  if [ "$scenario" = chunk-healthy ]; then
-    size=262978928
-    expected_chunks=4
-    expected_bytes=$size
-  else
-    size=332179440
-    expected_chunks=7
-    expected_bytes=$((size + 2 * 1048576))
-  fi
-  truncate -s "$size" "$large"
-  started=$SECONDS
-  if ! PATH="$test_root/bin:$PATH" CASE_DIR="$case_dir" SCENARIO="$scenario" \
-    bash "$helper" "$test_root/linked-binary" metal@host.vm3.ai "$destination" >"$case_dir/out" 2>&1; then
-    cat "$case_dir/out" >&2
-    exit 1
-  fi
-  cmp "$large" "$destination"
-  test -x "$destination"
-  test "$(wc -l <"$case_dir/chunks")" -eq "$expected_chunks"
-  test "$(awk '{bytes += $1} END {print bytes}' "$case_dir/bytes")" -eq "$expected_bytes"
-  if compgen -G "$destination.upload.*" >/dev/null; then
-    echo "chunk staging directory leaked" >&2
-    exit 1
-  fi
-  printf '%s: %s bytes, %s chunk attempts, %s seconds\n' \
-    "$scenario" "$expected_bytes" "$expected_chunks" "$((SECONDS - started))"
-  rm -f -- "$destination"
-done
+case_dir="$test_root/chunk-reset"
+mkdir "$case_dir"
+cp "$test_root/test binary" "$large"
+# Two full chunks and a short tail cover publication with the minimum chunk count.
+size=$((129 * 1024 * 1024 + 37))
+truncate -s "$size" "$large"
+started=$SECONDS
+if ! PATH="$test_root/bin:$PATH" CASE_DIR="$case_dir" SCENARIO=chunk-reset \
+  bash "$helper" "$test_root/linked-binary" metal@host.vm3.ai "$destination" >"$case_dir/out" 2>&1; then
+  cat "$case_dir/out" >&2
+  exit 1
+fi
+cmp "$large" "$destination"
+test -x "$destination"
+# The initial chunk must not be sent again when the second resets.
+printf "'%s'\n" 0 1 1 1 2 | cmp - "$case_dir/chunks"
+expected_bytes=$((size + 2 * 1048576))
+test "$(awk '{bytes += $1} END {print bytes}' "$case_dir/bytes")" -eq "$expected_bytes"
+if compgen -G "$destination.upload.*" >/dev/null; then
+  echo "chunk staging directory leaked" >&2
+  exit 1
+fi
+printf 'chunk-reset: %s bytes, 5 chunk attempts, %s seconds\n' \
+  "$expected_bytes" "$((SECONDS - started))"
+rm -f -- "$destination"
 
 for scenario in chunk-corrupt chunk-exhausted; do
   case_dir="$test_root/$scenario"

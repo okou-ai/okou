@@ -70,7 +70,7 @@ export function createComposerChatThreadSuggestions(
       }
     }
 
-    const chatThreads: ComposerChatThreadSuggestion[] = get(projects$)
+    const chatThreads: ComposerChatThreadSuggestion[] = (await get(projects$))
       .filter((p) => {
         return p.name.toLowerCase().includes(query);
       })
@@ -95,7 +95,7 @@ export function createComposerChatThreadSuggestions(
     return {
       agentId,
       query: range.query,
-      agents: get(singleAgentEnabled$) ? [] : agentSuggestions,
+      agents: (await get(singleAgentEnabled$)) ? [] : agentSuggestions,
       chatThreads,
     };
   });

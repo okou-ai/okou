@@ -39,7 +39,7 @@ export const selectChatThreadFilter$ = command(
       set(setChatThreadUnreadFilter$, filter === "unread");
     }
 
-    if (get(pwaChatListVisible$) && get(agentChatPageActive$)) {
+    if (get(pwaChatListVisible$) && (await get(agentChatPageActive$))) {
       return;
     }
 

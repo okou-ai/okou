@@ -366,7 +366,7 @@ export const checkUnifiedSettingsParam$ = command(
 
     const resolved = resolveAvailableSettingsSection(section, {
       isAdmin,
-      singleAgent: get(singleAgentEnabled$),
+      singleAgent: await get(singleAgentEnabled$),
     });
     set(internalActiveSection$, resolved);
     set(setBillingSubPage$, opensBillingPlans && resolved === "billing");

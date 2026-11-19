@@ -385,18 +385,26 @@ function ArtifactCardView({
   threadId: string;
   label?: string;
 }) {
+  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const openFileLightbox = useSet(openAttachmentFileLightbox$);
   const openImageLightbox = useSet(openAttachmentImageLightbox$);
   const openVideoLightbox = useSet(openAttachmentVideoLightbox$);
   const openLightbox = (url: string): void => {
-    openImageLightbox({
-      threadId,
-      url,
-      filename: signals.filename,
-      contentType: signals.contentType,
-      preview: signals,
-    });
+    detach(
+      openImageLightbox(
+        {
+          threadId,
+          url,
+          filename: signals.filename,
+          contentType: signals.contentType,
+          preview: signals,
+        },
+        undefined,
+        pageSignal,
+      ),
+      Reason.DomCallback,
+    );
   };
   const previewImageLoadable = useLastLoadable(signals.previewImageUrl$);
   const previewImagePending = previewImageLoadable.state === "loading";
@@ -445,12 +453,19 @@ function ArtifactCardView({
         buttonClassName={CHAT_INLINE_VIDEO_BODY_PREVIEW_CLASS}
         filename={signals.filename}
         onPreview={() => {
-          openVideoLightbox({
-            url: signals.url,
-            filename: signals.filename,
-            contentType: signals.contentType,
-            preview: signals,
-          });
+          detach(
+            openVideoLightbox(
+              {
+                url: signals.url,
+                filename: signals.filename,
+                contentType: signals.contentType,
+                preview: signals,
+              },
+              undefined,
+              pageSignal,
+            ),
+            Reason.DomCallback,
+          );
         }}
         posterClassName="h-full w-full"
         posterLoad={signals.previewImageLoad}
@@ -470,12 +485,19 @@ function ArtifactCardView({
         ...(previewImageUrl ? { previewImageUrl } : {}),
       }}
       onPreviewFile={() => {
-        openFileLightbox({
-          filename: signals.filename,
-          contentType: signals.contentType,
-          url: signals.url,
-          preview: signals,
-        });
+        detach(
+          openFileLightbox(
+            {
+              filename: signals.filename,
+              contentType: signals.contentType,
+              url: signals.url,
+              preview: signals,
+            },
+            undefined,
+            pageSignal,
+          ),
+          Reason.DomCallback,
+        );
       }}
       previewImageLoad={signals.previewImageLoad}
       text$={signals.text$}

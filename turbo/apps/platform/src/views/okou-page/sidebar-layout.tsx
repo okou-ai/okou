@@ -1,3 +1,4 @@
+import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { ProjectDialogs } from "../projects/project-dialogs.tsx";
 import { PersonalSubscriptionDialogs } from "./subscription-linking.tsx";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
@@ -38,10 +39,7 @@ import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signal
 import { AvatarFromUrl } from "./sidebar-shared.tsx";
 import { QueueDrawer } from "../queue-page/queue-drawer.tsx";
 import { sidebarOff$, isChatRoute } from "../../signals/okou-page/nav.ts";
-import {
-  activeRoute$,
-  agentChatPageActive$,
-} from "../../signals/active-route.ts";
+import { activeRoute$ } from "../../signals/active-route.ts";
 import { mobileBreadcrumb$ } from "../../signals/okou-page/mobile-breadcrumb.ts";
 import { Link } from "../router/link.tsx";
 import { isOrgAdmin$ } from "../../signals/org.ts";
@@ -422,17 +420,15 @@ function SidebarWorkspaceFrame({
   header,
   footer,
   pwaNavigation,
+  chatWorkspace,
 }: {
   children: ReactNode;
   header: ReactNode;
   footer: ReactNode;
   pwaNavigation: boolean;
+  chatWorkspace: boolean;
 }) {
-  const activeRoute = useGet(activeRoute$);
-  const agentChatPage = useGet(agentChatPageActive$);
-  const sharedWorkspace = agentChatPage || activeRoute === "project";
-
-  return activeRoute === "chat" || sharedWorkspace ? (
+  return chatWorkspace ? (
     <ChatWorkspace
       header={header}
       footer={footer}
@@ -458,7 +454,13 @@ function SidebarWorkspace({
 }) {
   const chatListVisible = useGet(pwaChatListVisible$);
   const activeRoute = useGet(activeRoute$);
-  const agentChatPage = useGet(agentChatPageActive$);
+  const singleAgent = useLastResolved(singleAgentEnabled$);
+  const agentChatPage =
+    activeRoute === "agentChat" || (activeRoute === "home" && singleAgent);
+
+  if (activeRoute === "home" && singleAgent === undefined) {
+    return null;
+  }
 
   const workspaceHeader = (
     <>
@@ -484,6 +486,11 @@ function SidebarWorkspace({
   const workspaceFooter = pwaNavigation ? <PwaBottomNavigation /> : null;
   return (
     <SidebarWorkspaceFrame
+      chatWorkspace={
+        Boolean(agentChatPage) ||
+        activeRoute === "chat" ||
+        activeRoute === "project"
+      }
       header={workspaceHeader}
       footer={workspaceFooter}
       pwaNavigation={pwaNavigation}
