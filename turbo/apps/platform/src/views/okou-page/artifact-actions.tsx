@@ -833,9 +833,12 @@ function MarkdownArtifactExportItem({
   readonly operation: MarkdownArtifactExportLoadable;
 }): ReactElement {
   const { t } = useTranslation();
-  const label = t(($) => $.artifacts.actions.downloadMarkdownAs, {
-    format: format.toUpperCase(),
-  });
+  const label = t(
+    ($) => {
+      return $.artifacts.actions.downloadMarkdownAs;
+    },
+    { format: format.toUpperCase() },
+  );
   const pending = operation.state === "loading";
   const download = operation.state === "hasData" ? operation.data : undefined;
   return (
@@ -924,12 +927,17 @@ async function showMarkdownExportError(
   operation: Promise<MarkdownArtifactExportResult>,
   signal: AbortSignal,
 ): Promise<void> {
-  try {
-    await operation;
-  } catch (error) {
-    if (!signal.aborted && !isAbortError(error)) {
-      toast.error(i18n.t(($) => $.artifacts.actions.markdownExportFailed));
-    }
+  const [outcome] = await Promise.allSettled([operation]);
+  if (
+    outcome.status === "rejected" &&
+    !signal.aborted &&
+    !isAbortError(outcome.reason)
+  ) {
+    toast.error(
+      i18n.t(($) => {
+        return $.artifacts.actions.markdownExportFailed;
+      }),
+    );
   }
 }
 

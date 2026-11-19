@@ -14,9 +14,15 @@ export async function runDocumentExportWorker(
     },
   );
   const result = createDeferredPromise<Blob>({ rejection: "owner" }, signal);
+  const stopWorker = () => {
+    signal.removeEventListener("abort", stopWorker);
+    worker.terminate();
+  };
+  signal.addEventListener("abort", stopWorker, { once: true });
   const onError = () => {
     if (!result.settled()) {
       result.reject(new Error("Document export worker could not complete"));
+      stopWorker();
     }
   };
   worker.addEventListener(
@@ -24,6 +30,7 @@ export async function runDocumentExportWorker(
     (event: MessageEvent<PdfWorkerResponse>) => {
       if (!result.settled() && event.data.ok) {
         result.resolve(event.data.blob);
+        stopWorker();
       } else {
         onError();
       }
@@ -32,10 +39,6 @@ export async function runDocumentExportWorker(
   );
   worker.addEventListener("error", onError, { signal });
   worker.addEventListener("messageerror", onError, { signal });
-  try {
-    worker.postMessage(request, transfer);
-    return await result.promise;
-  } finally {
-    worker.terminate();
-  }
+  worker.postMessage(request, transfer);
+  return await result.promise;
 }

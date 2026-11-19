@@ -1,17 +1,20 @@
 import type { Root, RootContent } from "hast";
 
+import { fetchAppAsset } from "../resource-fetch.ts";
 import { platformMessagePdfFontUrls } from "../static-assets.ts";
 import { preparePdfAssets } from "./assets.ts";
 import { parseMessagePdfTree } from "./document.ts";
 import type { PdfWorkerRequest } from "./types.ts";
-import { readPdfResource } from "./urls.ts";
 import { runDocumentExportWorker } from "./worker-client.ts";
 
 async function loadFont(
   url: string,
   signal: AbortSignal,
 ): Promise<ArrayBuffer> {
-  const response = await readPdfResource(url, "default", signal);
+  const response = await fetchAppAsset(url, signal);
+  if (!response.ok) {
+    throw new Error(`PDF font could not be loaded (${response.status})`);
+  }
   return response.arrayBuffer();
 }
 
