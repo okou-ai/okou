@@ -86,7 +86,6 @@ type QueuedModelContext =
       readonly reasoningEffort: ReasoningEffort | undefined;
       readonly builtInModelRuntimeRoute:
         BuiltInModelRuntimeRoute | null | undefined;
-      readonly memberAccountSnapshot: MemberModelAccountSnapshot | null;
     };
 
 /** The selected model facts shared by prompt preparation and Run persistence. */
@@ -188,23 +187,10 @@ function createQueuedModel(
   effectiveSelection$: Computed<Promise<ChatInputModelSelection | null>>,
   creditsWaived$: Computed<Promise<boolean>>,
 ) {
-  const memberSnapshot$ = computed(async (get) => {
-    const selected = bootstrap;
-    const { accounts, providers } = await get(selected.memberModels$);
-    return {
-      orgId: selected.orgId,
-      userId: selected.userId,
-      accounts,
-      providers,
-    };
-  });
-  const memberRoutes$ = computed((get) => {
-    return get(bootstrap.memberRoutes$);
-  });
   const subscriptionModels$ = computed(async (get) => {
     return memberSubscriptionModelRoutesFromCatalog(
       await get(bootstrap.modelCatalog$),
-      await get(memberRoutes$),
+      await get(bootstrap.memberRoutes$),
     );
   });
   const modelPin$: QueuedModelPinSignal = computed(async (get) => {
@@ -217,7 +203,7 @@ function createQueuedModel(
       selectedModel: selection.selectedModel,
       subscriptionModels: await get(subscriptionModels$),
       memberProviderTypes: new Set(
-        (await get(memberSnapshot$)).providers.map((provider) => {
+        (await get(bootstrap.memberModels$)).providers.map((provider) => {
           return provider.type;
         }),
       ),
@@ -227,7 +213,6 @@ function createQueuedModel(
   const builtInRuntimeRoute$ = createBuiltInRuntimeRoute(bootstrap, modelPin$);
   const providerAdmission$ = createProviderAdmission(
     bootstrap,
-    memberRoutes$,
     modelPin$,
     creditsWaived$,
   );
@@ -241,12 +226,10 @@ function createQueuedModel(
       return resolved;
     }
     const { pin, selection } = resolved;
-    const [admission, builtInModelRuntimeRoute, memberAccountSnapshot] =
-      await Promise.all([
-        get(providerAdmission$),
-        get(builtInRuntimeRoute$),
-        get(memberSnapshot$),
-      ]);
+    const [admission, builtInModelRuntimeRoute] = await Promise.all([
+      get(providerAdmission$),
+      get(builtInRuntimeRoute$),
+    ]);
     const unpriced =
       builtInModelRuntimeRoute === null && pin.selectedModel
         ? unpricedBuiltInModelRejection(
@@ -272,7 +255,6 @@ function createQueuedModel(
         ? undefined
         : (selection.reasoningEffort ?? undefined),
       builtInModelRuntimeRoute,
-      memberAccountSnapshot,
     };
   });
   return queuedModel$;
@@ -313,7 +295,6 @@ function createBuiltInRuntimeRoute(
 
 function createProviderAdmission(
   bootstrap: AgentRunContextSignals,
-  memberRoutes$: AgentRunContextSignals["memberRoutes$"],
   modelPin$: QueuedModelPinSignal,
   creditsWaived$: Computed<Promise<boolean>>,
 ) {
@@ -325,7 +306,7 @@ function createProviderAdmission(
     const { pin } = resolved;
     const [catalog, member, capabilities] = await Promise.all([
       get(bootstrap.modelCatalog$),
-      get(memberRoutes$),
+      get(bootstrap.memberRoutes$),
       get(bootstrap.plan$),
     ]);
     const effectiveModelProvider = pin.modelProviderType;

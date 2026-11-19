@@ -1,5 +1,8 @@
+import { ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
+import { buildArtifactPrefix } from "../../../lib/file-url";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { publicChatActor } from "./helpers/public-chat-actor";
@@ -92,7 +95,7 @@ describe("Published Agent instructions in direct Runs", () => {
     });
   });
 
-  it("rejects later member inputs after the Agent becomes private and retains published instructions", async () => {
+  it("launches a member send with the Agent instructions authorized before attachment verification", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const bdd = createBddApi(context);
@@ -107,15 +110,56 @@ describe("Published Agent instructions in direct Runs", () => {
       await createChatEventsFixture(context).configureSubscriptionPiModel(
         member,
       );
-      const queued = await api.createThreadRun(member, {
+      const chat = createChatFilesBddApi(context);
+      const fileId = randomUUID();
+      const filename = "attachment.txt";
+      chat.mockCompletedUploadObject(member, fileId, filename, 42);
+      const s3 = installWorkflowVolumeS3Fixture(context, new Map(), {
+        bundlesOnly: true,
+      });
+      await bdd.updateAgentInstructions(
+        owned.actor,
+        owned.agentId,
+        "Instructions at send authorization",
+      );
+      const send = context.mocks.s3.send.getMockImplementation();
+      if (!send) {
+        throw new Error("Expected the object store fixture");
+      }
+      context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+        if (
+          command instanceof ListObjectsV2Command &&
+          command.input.Prefix === buildArtifactPrefix(member.userId, fileId)
+        ) {
+          await bdd.updateAgentInstructions(
+            owned.actor,
+            owned.agentId,
+            "Instructions for subsequent Runs",
+          );
+          await bdd.updateAgentMetadata(owned.actor, owned.agentId, {
+            visibility: "private",
+          });
+        }
+        return await send(command);
+      });
+      const { runId } = await chat.sendAndLaunch(member, {
         agentId: owned.agentId,
-        prompt: "require current Agent eligibility",
+        prompt: "Launch with the authorized Agent",
         model: "gpt-6-luna",
+        userMessage: {
+          version: 1,
+          parts: [
+            { type: "text", text: "Launch with the authorized Agent" },
+            {
+              type: "file",
+              fileId,
+              filenameSnapshot: filename,
+              contentType: "text/plain",
+            },
+          ],
+        },
       });
-      await bdd.updateAgentMetadata(owned.actor, owned.agentId, {
-        visibility: "private",
-      });
-      const rejected = await createChatFilesBddApi(context).requestSendEvent(
+      const rejected = await chat.requestSendEvent(
         member,
         {
           agentId: owned.agentId,
@@ -127,14 +171,15 @@ describe("Published Agent instructions in direct Runs", () => {
       expect(rejected.body).toMatchObject({
         error: { message: "Only the private agent owner can run this agent" },
       });
-      await bdd.updateAgentMetadata(owned.actor, owned.agentId, {
-        visibility: "public",
-      });
-      const { execution } = await owned.runExecution(queued.runId);
-      expect(execution.contentBundles.instructions).toMatchObject({
-        sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
-        archiveBytes: expect.any(Number),
-      });
+      const { execution } = await owned.runExecution(runId);
+      expect(
+        readExecutionContentBundle(
+          s3.objects,
+          execution.contentBundles.instructions!,
+        )
+          .get("instructions.md")
+          ?.toString(),
+      ).toBe("Instructions at send authorization");
     });
   });
 });

@@ -143,10 +143,6 @@ it("ignores additional dispatch metadata and validates known fields", () => {
 function preparedExecutionContextFixture() {
   return {
     cliAgentType: "claude-code",
-    customWorkflowSelection: {
-      agentId: "11111111-1111-4111-8111-111111111111",
-      protectedMountPaths: [],
-    },
     officialWorkflowBundles: [],
     seedSkillBundles: [],
     templateGuidanceBundles: [],
@@ -291,27 +287,6 @@ describe("prepared Seed Skill bundle contract", () => {
           ],
         }).success,
       ).toBe(false);
-    }
-  });
-});
-
-describe("admitted Workflow selection contract", () => {
-  it("preserves admitted agent, automation and mount-precedence selections", () => {
-    const agentId = "11111111-1111-4111-8111-111111111111";
-    const automationId = "33333333-3333-4333-8333-333333333333";
-    for (const selection of [
-      { agentId, protectedMountPaths: [] },
-      {
-        agentId,
-        automationId,
-        protectedMountPaths: ["/home/user/.codex/skills/official-workflow"],
-      },
-    ]) {
-      expect(
-        preparedExecutionContextSchema.shape.customWorkflowSelection.parse(
-          selection,
-        ),
-      ).toStrictEqual(selection);
     }
   });
 });

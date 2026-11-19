@@ -35,11 +35,6 @@ export type ExecutionContextRun = Pick<
   | "id"
   | "orgId"
   | "userId"
-  | "modelProviderId"
-  | "modelProviderAccountIdentity"
-  | "modelRuntimeProvider"
-  | "modelRuntimeModel"
-  | "builtInModelKeyId"
   | "modelUsageProvider"
   | "modelLongContextMinTotalInputTokens"
   | "reasoningEffort"
@@ -252,7 +247,6 @@ function createExecutionPreparedContext(
         model,
         packages.officialWorkflowBundles.length > 0,
       ),
-      customWorkflowSelection: facts.customWorkflowSelection,
       featureFlags: facts.featureFlags,
       realAgentInPreview: facts.realAgentInPreview,
       apiStartTime: facts.apiStartTime,

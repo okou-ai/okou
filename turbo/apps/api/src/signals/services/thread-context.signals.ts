@@ -19,7 +19,6 @@ import { computed, type Computed } from "ccstate";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { object } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { db$, rawSqlReadDb$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
@@ -93,7 +92,7 @@ export interface ThreadAutomationTarget {
 }
 
 type CapturedAutomationTarget = ThreadAutomationTarget & {
-  readonly packageSources: ExecutionPackageSources | null;
+  readonly packageSources: ExecutionPackageSources;
 };
 
 type ThreadModels = ReturnType<typeof createThreadModelSignals>;
@@ -514,7 +513,7 @@ function createAutomationTarget(
         automation: workflowAutomationColumns(),
         agentId: workflows.agentId,
         packageSources: executionPackageSourcesSql(bootstrap).mapWith(
-          nullableDriverValueDecoder(executionPackageSourcesDecoder),
+          executionPackageSourcesDecoder,
         ),
         workflow: {
           id: workflows.id,
@@ -556,7 +555,7 @@ function createAutomationTarget(
 }
 
 const packageSourcesRowSchema = object({
-  packages: executionPackageSourcesSchema.nullable(),
+  packages: executionPackageSourcesSchema,
 });
 
 function createThreadExecutionPackageSources(
