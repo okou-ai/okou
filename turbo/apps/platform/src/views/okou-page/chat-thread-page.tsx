@@ -6258,10 +6258,7 @@ function ShareGroupSelectionColumn({
           checked={allSelected}
           indeterminate={indeterminate}
           disabled={!selecting}
-          className={cn(
-            "h-5 w-5 border-muted-foreground",
-            shareGroupCheckboxHoverClass(props),
-          )}
+          className={shareGroupCheckboxHoverClass(props) || undefined}
           onCheckedChange={onToggle}
         />
       </span>

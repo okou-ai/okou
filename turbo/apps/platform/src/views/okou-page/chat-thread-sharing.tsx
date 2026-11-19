@@ -3,6 +3,7 @@ import type { SharedThreadAudience } from "@okouai/api-contracts/contracts/share
 import { Field } from "@base-ui/react/field";
 import {
   Button,
+  Card,
   cn,
   Checkbox,
   CopyButton,
@@ -18,14 +19,14 @@ import {
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy, Link2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { currentOrgInfo$ } from "../../signals/auth.ts";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import { writeToClipboard } from "../../signals/okou-page/clipboard.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { ChatPageHeader } from "./chat-page-layout.tsx";
+import { ChatComposerFooter, ChatPageHeader } from "./chat-page-layout.tsx";
 import { SharedThreadShareMenu } from "./shared-thread-share-menu.tsx";
 
 export function ChatThreadSharingHeader({
@@ -53,28 +54,30 @@ export function ChatThreadSharingHeader({
     <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
       <div className="shrink-0">
         {showTitle && (
-          <ChatPageHeader>
-            <span className="text-sm font-medium text-foreground">
-              {t(($) => {
-                return $.chat.sharing.start;
-              })}
-            </span>
-            <Button
-              variant="quiet"
-              size="sm"
-              disabled={creating}
-              onClick={() => {
-                detach(
-                  close(signal),
-                  Reason.DomCallback,
-                  "close shared thread selection",
-                );
-              }}
-            >
-              {t(($) => {
-                return $.chat.sharing.close;
-              })}
-            </Button>
+          <ChatPageHeader className="px-4 sm:px-6">
+            <div className="mx-auto flex w-full max-w-[900px] items-center justify-between">
+              <span className="text-sm font-medium text-foreground">
+                {t(($) => {
+                  return $.chat.sharing.start;
+                })}
+              </span>
+              <Button
+                variant="quiet"
+                size="sm"
+                disabled={creating}
+                onClick={() => {
+                  detach(
+                    close(signal),
+                    Reason.DomCallback,
+                    "close shared thread selection",
+                  );
+                }}
+              >
+                {t(($) => {
+                  return $.chat.sharing.close;
+                })}
+              </Button>
+            </div>
           </ChatPageHeader>
         )}
         {phase === "selecting" && (
@@ -359,8 +362,8 @@ export function ChatThreadSharingFooter({
   const signal = useGet(pageSignal$);
   const creating = creation.state === "loading";
   return (
-    <footer className="@container/sharing relative shrink-0 px-4 py-3 sm:px-6">
-      <div className="mx-auto flex w-full max-w-[900px] flex-col gap-3">
+    <ChatComposerFooter>
+      <div className="@container/sharing flex flex-col gap-3">
         {id ? (
           <SharedThreadCreatedLink
             thread={thread}
@@ -376,10 +379,11 @@ export function ChatThreadSharingFooter({
                 })}
               </p>
             )}
-            <div className="flex flex-col gap-3 rounded-2xl border border-border bg-background p-3 @min-[560px]/sharing:flex-row @min-[560px]/sharing:items-start @min-[560px]/sharing:justify-between">
+            <Card className="flex flex-col gap-3 p-3 @min-[560px]/sharing:flex-row @min-[560px]/sharing:items-start @min-[560px]/sharing:justify-between">
               <ThreadSharingAccess thread={thread} disabled={creating} />
               <Button
-                className="shrink-0 bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed"
+                variant="neutral"
+                className="shrink-0"
                 pending={creating}
                 disabled={count === 0 || audience === null}
                 onClick={() => {
@@ -390,14 +394,15 @@ export function ChatThreadSharingFooter({
                   );
                 }}
               >
+                <Link2 />
                 {t(($) => {
                   return $.chat.sharing.createAndCopy;
                 })}
               </Button>
-            </div>
+            </Card>
           </>
         )}
       </div>
-    </footer>
+    </ChatComposerFooter>
   );
 }
