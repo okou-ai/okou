@@ -612,13 +612,7 @@ type QueuedAutomationLaunch =
       readonly recordLastRunId: boolean;
       readonly recordLastRunAt: boolean;
     }
-  | { readonly kind: "rejected"; readonly assembly: RejectedQueueRunAssembly };
-
-function rejectedAutomationLaunch(
-  assembly: RejectedQueueRunAssembly,
-): QueuedAutomationLaunch {
-  return { kind: "rejected", assembly };
-}
+  | RejectedQueueRunAssembly;
 
 const log = logger("ChatQueueConsume");
 
@@ -1791,18 +1785,9 @@ export function createThreadClaimRunObjects(
   const automationLaunch$ = computed(
     async (get): Promise<QueuedAutomationLaunch> => {
       const head = await get(head$);
-      const unreadable = (message: string): RejectedQueueRunAssembly => {
-        return {
-          kind: "rejected",
-          rejection: {
-            error: { code: "CONFLICT", message },
-            userId: head.userId,
-          },
-        };
-      };
       const input = await get(automationSource$);
       if (input.kind === "rejected") {
-        return rejectedAutomationLaunch(input.assembly);
+        return input.assembly;
       }
       await get(automationSourceBudget$);
       const { event, target } = input;
@@ -1812,16 +1797,21 @@ export function createThreadClaimRunObjects(
         proactiveWorkflowKind(target.workflow.officialDefinitionName) !==
           "learning"
       ) {
-        return rejectedAutomationLaunch(
-          unreadable(OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE),
-        );
+        return {
+          kind: "rejected",
+          rejection: {
+            error: conflict(OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE).body
+              .error,
+            userId: head.userId,
+          },
+        };
       }
       const [material, autonomyBudget] = await Promise.all([
         get(automationMaterial$),
         get(automationBudget$),
       ]);
       if (!material) {
-        return rejectedAutomationLaunch({
+        return {
           kind: "rejected",
           rejection: {
             userId: target.automation.ownerUserId,
@@ -1830,16 +1820,16 @@ export function createThreadClaimRunObjects(
               message: "Workflow queue event payload is unreadable",
             },
           },
-        });
+        };
       }
       if (autonomyBudget.kind === "invalid") {
-        return rejectedAutomationLaunch({
+        return {
           kind: "rejected",
           rejection: {
             userId: target.automation.ownerUserId,
             error: autonomyBudget.error,
           },
-        });
+        };
       }
       return {
         kind: "launch",
@@ -1859,7 +1849,7 @@ export function createThreadClaimRunObjects(
     async (get): Promise<ChatQueueRunAssembly> => {
       const launch = await get(automationLaunch$);
       if (launch.kind === "rejected") {
-        return launch.assembly;
+        return launch;
       }
       const { automation, chatThreadId } = launch;
       const reject = (error: {
@@ -2791,7 +2781,7 @@ export function createThreadClaimRunObjects(
         const launch = await get(automationLaunch$);
         signal.throwIfAborted();
         if (launch.kind === "rejected") {
-          return { kind: "rejected" as const, assembly: launch.assembly };
+          return { kind: "rejected" as const, assembly: launch };
         }
         await get(automationAssembly$);
         signal.throwIfAborted();
