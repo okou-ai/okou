@@ -537,3 +537,8 @@ directed-connect-page-012	turbo/apps/platform/src/views/okou-page/__tests__/dire
 directed-connect-page-013	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Reconnect the exact account and continue the originating chat only after success	909	passed
 directed-connect-page-014	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Connect a manual grant and continue the originating chat	987	passed
 directed-authorize-page-006	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Closing directed OAuth before completion leaves GitHub disconnected	1073	passed
+preferences-page-001	turbo/apps/platform/src/views/okou-page/__tests__/preferences-page.test.tsx	A missing workspace theme follows the system and explicit choices are saved	94	passed
+preferences-page-002	turbo/apps/platform/src/views/okou-page/__tests__/preferences-page.test.tsx	A saved workspace mode overrides the cookie and saves independently of the palette	138	passed
+preferences-page-004	turbo/apps/platform/src/views/okou-page/__tests__/preferences-page.test.tsx	A cached palette is visible during startup and cleared when the workspace uses the default	274	passed
+preferences-page-007	turbo/apps/platform/src/views/okou-page/__tests__/preferences-page.test.tsx	Saving a time zone refreshes the recovered Morning Brief preference	331	passed
+preferences-page-009	turbo/apps/platform/src/views/okou-page/__tests__/preferences-page.test.tsx	First paint cleans up duplicate cookies before the shared workspace mode loads	381	passed
