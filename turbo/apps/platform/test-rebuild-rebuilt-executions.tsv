@@ -1482,3 +1482,10 @@ vnc-settings-063	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.
 vnc-settings-064	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	A late RSA import cannot associate its old pin with a newer public-key draft	1628	passed
 remote-connection-order-001	turbo/apps/platform/src/views/okou-page/__tests__/remote-connection-order.test.tsx	Remote host names follow the active Chinese locale	30	passed
 remote-connection-order-003	turbo/apps/platform/src/views/okou-page/__tests__/remote-connection-order.test.tsx	A chat keeps remote choices in natural name order across access states with existing thread false	59	passed
+remote-network-order-001	turbo/apps/platform/src/views/okou-page/__tests__/remote-network-order.test.tsx	Private networks are sorted within their scope	73	passed
+remote-network-order-002	turbo/apps/platform/src/views/okou-page/__tests__/remote-network-order.test.tsx	A tailscale network shows linked hosts in natural order	103	passed
+remote-credential-order-001	turbo/apps/platform/src/views/okou-page/__tests__/remote-credential-order.test.tsx	ssh credentials and their associated hosts use natural order	108	passed
+remote-credential-order-003	turbo/apps/platform/src/views/okou-page/__tests__/remote-credential-order.test.tsx	ssh saved login choices sort their displayed host labels	140	passed
+remote-access-forward-001	turbo/apps/platform/src/views/okou-page/__tests__/remote-access-forward.test.tsx	A forward to an existing chat keeps its own remote permissions and pending save across resize	101	passed
+remote-access-dialog-001	turbo/apps/platform/src/views/okou-page/__tests__/remote-access-dialog.test.tsx	Allowed filtering retains a changed connection and keyboard focus until the filter changes	99	passed
+remote-access-dialog-002	turbo/apps/platform/src/views/okou-page/__tests__/remote-access-dialog.test.tsx	An unconfirmed write is reconciled by reading saved permissions before another change	129	passed
