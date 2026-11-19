@@ -95,8 +95,11 @@ run_auto_steer() {
             fail "Missing $field in steer scenario result"
         fi
     done
-    refute_equal "$(runner_chat_field "$output" '.successorRunId')" \
-        "$(runner_chat_field "$output" '.runId')"
+    local run_id
+    run_id="$(runner_chat_field "$output" '.runId')"
+    if [[ "$(runner_chat_field "$output" '.successorRunId')" == "$run_id" ]]; then
+        fail "Successor reused steered run $run_id"
+    fi
     assert_equal "$(runner_chat_field "$output" '.successorThreadId')" \
         "$(runner_chat_field "$output" '.threadId')"
 }
