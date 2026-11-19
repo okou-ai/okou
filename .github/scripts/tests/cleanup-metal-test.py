@@ -56,7 +56,7 @@ else:raise SystemExit('unexpected gh call')
 """
 
 SSH = r"""#!/usr/bin/env python3
-import json,os,shlex,signal,subprocess,sys
+import json,os,shlex,signal,subprocess,sys,time
 from pathlib import Path
 root=Path(os.environ['FIXTURE']);host=sys.argv[1].split('@')[1];args=sys.argv[2:]
 history=root/host/'ssh.log'
@@ -83,6 +83,38 @@ if args[2]=='-c':
  if os.environ.get('STOP_CLOCK_STEP'):
   source='import runpy;runpy.run_path('+repr(str(root/'clock.py'))+');'+source
  command=[sys.executable,'-c',source,*args[4:],'--root',str(root/host)]
+ failure = os.environ.get('READY_FAILURE')
+ if failure == 'prior-lost' and host == 'metal-a':
+  (root/'first-worker').write_text(str(os.getpid()))
+ failure = failure if host == 'metal-b' else None
+ if failure == 'invalid':
+  print('{"ready":[]}')
+  sys.exit(255)
+ if failure == 'command':
+  sys.exit(7)
+ if failure == 'reset-always' or (
+  failure in ('reset-once', 'prior-lost') and history.read_text().count('session\n') == 1
+ ):
+  with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as worker:
+   assert json.loads(worker.stdout.readline()) == {'ready': [int(n) for n in args[5:]]}
+   sys.stdout.write('{"ready":')
+   sys.stdout.flush()
+   worker.stdin.close()
+   worker.wait(timeout=5)
+  sys.exit(255)
+ if failure == 'prior-lost':
+  pid = int((root/'first-worker').read_text())
+  os.kill(pid, signal.SIGTERM)
+  stat = Path(f'/proc/{pid}/stat')
+  deadline = time.monotonic() + 5
+  while True:
+   try:
+    if stat.read_text().rsplit(')', 1)[1].split()[0] == 'Z':
+     break
+   except (FileNotFoundError, ProcessLookupError):
+    break
+   assert time.monotonic() < deadline, 'earlier worker did not stop'
+   time.sleep(0.01)
  if os.environ.get('PARTIAL_RELEASE'):
   with subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,bufsize=1) as worker:
    print(worker.stdout.readline(),end='',flush=True)
@@ -906,6 +938,50 @@ class CleanupTests(unittest.TestCase):
                         (self.root / host / "ssh.log").read_text(),
                         "inventory\n" * calls,
                     )
+
+    def test_lock_readiness_recovers_after_lost_reply(self):
+        files = [
+            self.resource("var/lib/vm0-runner/stripe/pr-42/config", host=host)
+            for host in ("metal-a", "metal-b")
+        ]
+        result = self.controller(READY_FAILURE="reset-once")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(all(not file.exists() for file in files))
+        self.assertIn('"cleaned": 1', result.stdout)
+        self.assertEqual(
+            (self.root / "metal-a/ssh.log").read_text(), "inventory\nsession\n"
+        )
+        self.assertEqual(
+            (self.root / "metal-b/ssh.log").read_text(), "inventory\nsession\nsession\n"
+        )
+
+    def test_lock_readiness_failure_preserves_all_host_resources(self):
+        files = [
+            self.resource("var/lib/vm0-runner/stripe/pr-42/config", host=host)
+            for host in ("metal-a", "metal-b")
+        ]
+        for failure, sessions in (("reset-always", 2), ("command", 1), ("invalid", 1)):
+            with self.subTest(failure=failure):
+                history = self.root / "metal-b/ssh.log"
+                history.unlink(missing_ok=True)
+                result = self.controller(READY_FAILURE=failure)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertTrue(all(file.is_file() for file in files))
+                self.assertEqual(
+                    history.read_text(), "inventory\n" + "session\n" * sessions
+                )
+
+    def test_lock_readiness_retry_cannot_dispatch_after_prior_host_exits(self):
+        files = [
+            self.resource("var/lib/vm0-runner/stripe/pr-42/config", host=host)
+            for host in ("metal-a", "metal-b")
+        ]
+        result = self.controller(READY_FAILURE="prior-lost")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertTrue(all(file.is_file() for file in files), result.stdout)
+        self.assertEqual(
+            (self.root / "metal-b/ssh.log").read_text(), "inventory\nsession\nsession\n"
+        )
 
     def test_namespace_selection_is_explicit_and_fails_closed(self):
         selected = self.resource("var/lib/vm0-runner/stripe/pr-42/config")

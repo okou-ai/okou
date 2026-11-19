@@ -258,6 +258,10 @@ class GitHub:
         return owners
 
 
+class WorkerChannelClosed(RuntimeError):
+    pass
+
+
 class Session:
     """One SSH channel whose remote mutation worker owns the namespace locks."""
 
@@ -267,35 +271,59 @@ class Session:
         self.stopped = threading.Event()
         self.writer = threading.Lock()
         self.write_error = None
-        self.response_buffer = b""
         source = base64.b64encode(
             (HERE / "cleanup-metal-resources.py").read_bytes()
         ).decode()
         code = shlex.quote(f'import base64;exec(base64.b64decode("{source}"))')
-        self.process = subprocess.Popen(
-            [
-                "ssh",
-                f"{user}@{host}",
-                "sudo",
-                "python3",
-                "-c",
-                code,
-                "session",
-                *map(str, numbers),
-            ],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-            start_new_session=True,
-        )
-        CHILDREN.add(self.process.pid)
-        try:
-            if self.read(70) != {"ready": numbers}:
-                raise RuntimeError(f"invalid lock readiness from {host}")
-        except BaseException:
-            self.abort()
-            raise
+        command = [
+            "ssh",
+            f"{user}@{host}",
+            "sudo",
+            "python3",
+            "-c",
+            code,
+            "session",
+            *map(str, numbers),
+        ]
+        deadline = time.monotonic() + 70
+        for attempt in range(2):
+            self.response_buffer = b""
+            self.process = subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                start_new_session=True,
+            )
+            CHILDREN.add(self.process.pid)
+            try:
+                if self.read(deadline - time.monotonic()) != {"ready": numbers}:
+                    raise RuntimeError(f"invalid lock readiness from {host}")
+            except WorkerChannelClosed as error:
+                try:
+                    if attempt:
+                        raise
+                    status = self.process.wait(
+                        timeout=min(5, max(0, deadline - time.monotonic()))
+                    )
+                except subprocess.TimeoutExpired:
+                    raise error from None
+                finally:
+                    self._close_process()
+                if status != 255 or time.monotonic() >= deadline:
+                    raise
+                # No cleanup was sent. The replacement still has to acquire
+                # the same flock, even if the first worker has yet to retire.
+                print(
+                    f"Retrying metal lock readiness on {host} after SSH exit 255",
+                    file=sys.stderr,
+                )
+            except BaseException:
+                self._close_process()
+                raise
+            else:
+                break
         self.heartbeat = threading.Thread(target=self.keep_alive, daemon=True)
         self.heartbeat.start()
 
@@ -317,7 +345,7 @@ class Session:
                 raise TimeoutError(f"worker response deadline exceeded on {self.host}")
             chunk = os.read(self.process.stdout.fileno(), 65536)
             if not chunk:
-                raise RuntimeError(f"worker channel closed on {self.host}")
+                raise WorkerChannelClosed(f"worker channel closed on {self.host}")
             self.response_buffer += chunk
         line, _, self.response_buffer = self.response_buffer.partition(b"\n")
         return json.loads(line)
@@ -330,9 +358,12 @@ class Session:
                 self.write_error = error
                 return
 
-    def cleanup(self, closed_at):
+    def require_active(self):
         if self.write_error is not None or self.process.poll() is not None:
             raise RuntimeError(f"namespace lock worker unavailable on {self.host}")
+
+    def cleanup(self, closed_at):
+        self.require_active()
         self.send({"operation": "cleanup", "closedAt": closed_at})
         result = self.read(510)["results"]
         if set(result) != {str(number) for number in closed_at}:
@@ -361,6 +392,9 @@ class Session:
         heartbeat = getattr(self, "heartbeat", None)
         if heartbeat is not None:
             heartbeat.join(timeout=1)
+        self._close_process()
+
+    def _close_process(self):
         if self.process.poll() is None:
             try:
                 os.killpg(self.process.pid, signal.SIGTERM)
@@ -469,6 +503,10 @@ def reconcile_batch(github, hosts, user, numbers):
             else:
                 selected.append(number)
         if selected:
+            # A previously ready worker can exit while another acquires its
+            # locks. Check all channels before sending any cleanup command.
+            for session in sessions.values():
+                session.require_active()
             with ThreadPoolExecutor(max_workers=min(len(hosts), 2)) as pool:
                 futures = {
                     host: pool.submit(
