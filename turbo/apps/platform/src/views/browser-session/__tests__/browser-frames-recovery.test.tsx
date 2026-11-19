@@ -10,7 +10,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 import {
   mockBrowserCdp,
   TEST_BROWSER_EXTENSION,
@@ -22,7 +22,6 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { openQualityInput } from "./browser-settings-test-helpers.ts";
 
 import { browserRecoveryClock } from "../../../__tests__/browser-recovery-clock.ts";
 
