@@ -658,9 +658,9 @@ async fn healthy_entry_wins_over_parallel_readiness_failure() {
 async fn host_device_pattern_scopes_to_pool_index() {
     let mut pool = NetnsPoolState::inactive_for_test();
     pool.pool_index = 10;
-    let handle = NetnsPoolHandle::from_state_for_test(pool);
+    let pool = NetnsPool::from_state_for_test(pool);
 
-    assert_eq!(handle.host_device_pattern().await, "vm0-ve-0a-*");
+    assert_eq!(pool.host_device_pattern().await, "vm0-ve-0a-*");
 }
 
 #[test]
@@ -785,7 +785,8 @@ async fn shared_acquire_does_not_hold_mutex_while_creation_is_pending() {
         Arc::clone(&entered),
         Arc::clone(&release),
     ));
-    let handle = NetnsPoolHandle::from_state_for_test(pool);
+    let mut pool = NetnsPool::from_state_for_test(pool);
+    let handle = pool.handle();
 
     let acquire = tokio::spawn({
         let handle = handle.clone();
@@ -810,7 +811,7 @@ async fn shared_acquire_does_not_hold_mutex_while_creation_is_pending() {
     assert_eq!(lease.as_ref().unwrap().name(), "test-ns");
     let outcome = handle.release(&mut lease).await;
     assert!(matches!(outcome, NetnsReleaseOutcome::Released));
-    handle.cleanup().await.unwrap();
+    pool.cleanup().await.unwrap();
 }
 
 #[tokio::test]
@@ -827,7 +828,8 @@ async fn shared_acquire_cancellation_preserves_completed_creation() {
         Arc::clone(&entered),
         Arc::clone(&release),
     ));
-    let handle = NetnsPoolHandle::from_state_for_test(pool);
+    let mut pool = NetnsPool::from_state_for_test(pool);
+    let handle = pool.handle();
 
     let acquire = tokio::spawn({
         let handle = handle.clone();
@@ -852,7 +854,7 @@ async fn shared_acquire_cancellation_preserves_completed_creation() {
 
     let outcome = handle.release(&mut lease).await;
     assert!(matches!(outcome, NetnsReleaseOutcome::Released));
-    handle.cleanup().await.unwrap();
+    pool.cleanup().await.unwrap();
 }
 
 #[tokio::test]
@@ -864,11 +866,11 @@ async fn creation_worker_panic_clears_pending_during_cleanup() {
         #[allow(unreachable_code)]
         Ok(test_info("never"))
     });
-    let handle = NetnsPoolHandle::from_state_for_test(pool);
+    let mut pool = NetnsPool::from_state_for_test(pool);
 
-    handle.cleanup().await.unwrap();
+    pool.cleanup().await.unwrap();
 
-    let pool = handle.inner.state.lock().await;
+    let pool = pool.inner.state.lock().await;
     assert!(pool.pending_plain.is_empty());
     assert!(pool.plain_queue.is_empty());
 }
@@ -1036,8 +1038,8 @@ async fn dropped_pool_retains_pool_index_through_creation_error_cleanup() {
     // The real creation wrapper deletes after a failed conntrack reset,
     // before the worker returns its error to the completion reporter.
     pool.spawn_proxy_creation_for_test(async { Ok(test_info("failed-ns")) });
-    let pool = NetnsPoolHandle::from_state_for_test(pool);
-    let last_handle = pool.clone();
+    let pool = NetnsPool::from_state_for_test(pool);
+    let last_handle = pool.handle();
     drop(pool);
     wait_for_sync("creation error cleanup to start", entered.notified()).await;
     drop(last_handle);
@@ -1073,7 +1075,7 @@ async fn dropped_pool_releases_pool_index_after_creation_panic() {
         }
     });
     wait_for_sync("panicking creation to start", entered.notified()).await;
-    drop(NetnsPoolHandle::from_state_for_test(pool));
+    drop(NetnsPool::from_state_for_test(pool));
 
     let (replacement_index, _replacement_lock) = acquire_pool_lock(&locks).unwrap();
     assert_ne!(replacement_index, index, "creation has not panicked yet");
@@ -1141,12 +1143,10 @@ async fn cleanup_rejects_acquire_and_deletes_late_completion() {
             Ok(test_info("late-ns"))
         }
     });
-    let handle = NetnsPoolHandle::from_state_for_test(pool);
+    let mut pool = NetnsPool::from_state_for_test(pool);
+    let handle = pool.handle();
 
-    let cleanup = tokio::spawn({
-        let handle = handle.clone();
-        async move { handle.cleanup().await }
-    });
+    let cleanup = tokio::spawn(async move { pool.cleanup().await });
     wait_for_sync("cleanup to mark namespace pool inactive", async {
         loop {
             if !handle.inner.state.lock().await.active {
@@ -1179,7 +1179,8 @@ async fn shared_release_does_not_hold_mutex_while_flush_blocks() {
     pool.active = true;
     pool.ops = ops;
     let lease = Some(pool.checkout(test_info("test-ns")).unwrap());
-    let handle = NetnsPoolHandle::from_state_for_test(pool);
+    let mut pool = NetnsPool::from_state_for_test(pool);
+    let handle = pool.handle();
 
     let release_task = tokio::spawn({
         let handle = handle.clone();
@@ -1206,7 +1207,7 @@ async fn shared_release_does_not_hold_mutex_while_flush_blocks() {
     let (outcome, lease) = release_task.await.unwrap();
     assert!(matches!(outcome, NetnsReleaseOutcome::Released));
     assert!(lease.is_none());
-    handle.cleanup().await.unwrap();
+    pool.cleanup().await.unwrap();
 }
 
 #[tokio::test]
@@ -1221,7 +1222,8 @@ async fn shared_release_deletes_when_cleanup_races_after_flush_started() {
     pool.active = true;
     pool.ops = ops;
     let lease = Some(pool.checkout(test_info("test-ns")).unwrap());
-    let handle = NetnsPoolHandle::from_state_for_test(pool);
+    let mut pool = NetnsPool::from_state_for_test(pool);
+    let handle = pool.handle();
 
     let release_task = tokio::spawn({
         let handle = handle.clone();
@@ -1237,7 +1239,7 @@ async fn shared_release_deletes_when_cleanup_races_after_flush_started() {
     )
     .await;
 
-    handle.cleanup().await.unwrap();
+    pool.cleanup().await.unwrap();
     flush_release.notify_one();
     let (outcome, lease) = release_task.await.unwrap();
 
@@ -1263,7 +1265,7 @@ async fn cancelled_release_during_flush_marks_namespace_non_reusable_for_retry()
     pool.active = true;
     pool.ops = ops;
     let mut lease = Some(pool.checkout(test_info("test-ns")).unwrap());
-    let handle = NetnsPoolHandle::from_state_for_test(pool);
+    let handle = NetnsPool::from_state_for_test(pool).handle();
 
     {
         let release = handle.release(&mut lease);
@@ -1313,7 +1315,7 @@ async fn release_cancelled_after_trusted_flush_before_commit_deletes_on_retry() 
     pool.active = true;
     pool.ops = ops;
     let mut lease = Some(pool.checkout(test_info("test-ns")).unwrap());
-    let handle = NetnsPoolHandle::from_state_for_test(pool);
+    let handle = NetnsPool::from_state_for_test(pool).handle();
 
     let mut release = Box::pin(handle.release(&mut lease));
     tokio::select! {
@@ -1410,7 +1412,7 @@ async fn untrusted_conntrack_flush_deletes_without_requeue() {
     pool.active = true;
     pool.ops = ops;
     let mut lease = Some(pool.checkout(test_info("test-ns")).unwrap());
-    let handle = NetnsPoolHandle::from_state_for_test(pool);
+    let handle = NetnsPool::from_state_for_test(pool).handle();
 
     let outcome = handle.release(&mut lease).await;
 
@@ -1435,7 +1437,7 @@ async fn attachment_marked_non_reusable_is_deleted_without_conntrack_flush() {
     let mut lease = pool.checkout(test_info("failed-ns")).unwrap();
     lease.mark_non_reusable();
     let mut lease = Some(lease);
-    let handle = NetnsPoolHandle::from_state_for_test(pool);
+    let handle = NetnsPool::from_state_for_test(pool).handle();
 
     let outcome = handle.release(&mut lease).await;
 
@@ -1462,7 +1464,7 @@ async fn attachment_reapproved_after_readiness_uses_normal_release_path() {
     lease.mark_non_reusable();
     lease.mark_reusable();
     let mut lease = Some(lease);
-    let handle = NetnsPoolHandle::from_state_for_test(pool);
+    let handle = NetnsPool::from_state_for_test(pool).handle();
 
     let outcome = handle.release(&mut lease).await;
 
@@ -1489,7 +1491,7 @@ async fn cancelled_untrusted_release_marks_namespace_non_reusable_for_retry() {
     pool.active = true;
     pool.ops = ops;
     let mut lease = Some(pool.checkout(test_info("test-ns")).unwrap());
-    let handle = NetnsPoolHandle::from_state_for_test(pool);
+    let handle = NetnsPool::from_state_for_test(pool).handle();
 
     {
         let release = handle.release(&mut lease);
@@ -1540,7 +1542,7 @@ async fn release_cancelled_after_delete_before_commit_retries_delete_without_flu
     pool.active = true;
     pool.ops = ops;
     let mut lease = Some(pool.checkout(test_info("test-ns")).unwrap());
-    let handle = NetnsPoolHandle::from_state_for_test(pool);
+    let handle = NetnsPool::from_state_for_test(pool).handle();
 
     let mut release = Box::pin(handle.release(&mut lease));
     tokio::select! {
@@ -1592,12 +1594,10 @@ async fn shared_cleanup_does_not_hold_mutex_while_delete_blocks() {
     pool.active = true;
     pool.plain_queue.push_back(test_info("test-ns"));
     pool.ops = ops;
-    let handle = NetnsPoolHandle::from_state_for_test(pool);
+    let mut pool = NetnsPool::from_state_for_test(pool);
+    let handle = pool.handle();
 
-    let cleanup = tokio::spawn({
-        let handle = handle.clone();
-        async move { handle.cleanup().await }
-    });
+    let cleanup = tokio::spawn(async move { pool.cleanup().await });
     wait_for_sync(
         "shared cleanup namespace deletion to start",
         delete_entered.notified(),
@@ -1629,19 +1629,20 @@ async fn shared_cleanup_retry_keeps_queue_when_cancelled_during_delete() {
     pool.active = true;
     pool.plain_queue.push_back(test_info("test-ns"));
     pool.ops = ops;
-    let handle = NetnsPoolHandle::from_state_for_test(pool);
+    let mut pool = NetnsPool::from_state_for_test(pool);
+    let handle = pool.handle();
 
-    let cleanup = tokio::spawn({
-        let handle = handle.clone();
-        async move { handle.cleanup().await }
-    });
-    wait_for_sync(
-        "cleanup namespace deletion to start before cancellation",
-        delete_entered.notified(),
-    )
-    .await;
-    cleanup.abort();
-    let _ = cleanup.await;
+    {
+        let cleanup = pool.cleanup();
+        tokio::pin!(cleanup);
+        tokio::select! {
+            result = &mut cleanup => panic!("cleanup completed before blocked deletion was released: {result:?}"),
+            _ = wait_for_sync(
+                "cleanup namespace deletion to start before cancellation",
+                delete_entered.notified(),
+            ) => {}
+        }
+    }
 
     {
         let pool = handle.inner.state.lock().await;
@@ -1651,7 +1652,7 @@ async fn shared_cleanup_retry_keeps_queue_when_cancelled_during_delete() {
     }
 
     delete_release.notify_one();
-    handle.cleanup().await.unwrap();
+    pool.cleanup().await.unwrap();
     let pool = handle.inner.state.lock().await;
     assert!(pool.plain_queue.is_empty());
     assert_eq!(delete_count.load(Ordering::SeqCst), 2);

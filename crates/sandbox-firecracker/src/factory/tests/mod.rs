@@ -8,27 +8,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 #[tokio::test]
-async fn shutdown_cleans_owned_netns_pool_with_extra_arc_refs() {
-    let pool = NetnsPoolHandle::new_for_test(NetnsPool::active_for_test());
-    let _destroy_task_clone = pool.clone();
-    let mut factory =
-        test_factory_with_resources(pool.clone(), NetnsPoolOwnership::Owned, test_leak_cleaner());
-
-    assert!(pool.is_active_for_test().await);
-    factory.shutdown().await;
-
-    assert!(factory.resources.is_none());
-    assert!(!pool.is_active_for_test().await);
-}
-
-#[tokio::test]
 async fn shutdown_keeps_shared_netns_pool_for_runtime_shutdown() {
-    let pool = NetnsPoolHandle::new_for_test(NetnsPool::active_for_test());
-    let mut factory = test_factory_with_resources(
-        pool.clone(),
-        NetnsPoolOwnership::Shared,
-        test_leak_cleaner(),
-    );
+    let mut pool = NetnsPool::active_for_test();
+    let mut factory = test_factory_with_resources(pool.handle(), test_leak_cleaner());
 
     assert!(pool.is_active_for_test().await);
     factory.shutdown().await;
@@ -72,12 +54,11 @@ fn test_pool_with_lease(name: &str) -> (NetnsPoolHandle, Option<NetnsLease>) {
     let mut raw_pool = NetnsPool::inactive_for_test();
     let lease = Some(raw_pool.lease_for_test(name));
     raw_pool.track_lease_for_test(lease.as_ref().unwrap());
-    (NetnsPoolHandle::new_for_test(raw_pool), lease)
+    (raw_pool.handle(), lease)
 }
 
 fn test_factory_with_resources(
     netns_pool: NetnsPoolHandle,
-    netns_ownership: NetnsPoolOwnership,
     leak_cleaner: LeakCleaner,
 ) -> FirecrackerFactory {
     let factory_paths = FactoryPaths::new(PathBuf::from("/tmp/factory-test"));
@@ -101,7 +82,6 @@ fn test_factory_with_resources(
         cleanup_group,
         resources: Some(StartedFactoryResources {
             netns_pool,
-            netns_ownership,
             cow_pool,
             leak_cleaner,
         }),
@@ -225,11 +205,8 @@ async fn destroy_without_resources_or_retained_pool_has_no_release_authority() {
 
 #[tokio::test]
 async fn create_rejects_factory_after_shutdown_even_with_retained_destroy_pool() {
-    let mut factory = test_factory_with_resources(
-        NetnsPoolHandle::new_for_test(NetnsPool::inactive_for_test()),
-        NetnsPoolOwnership::Shared,
-        test_leak_cleaner(),
-    );
+    let mut factory =
+        test_factory_with_resources(NetnsPool::inactive_for_test().handle(), test_leak_cleaner());
     factory.shutdown().await;
 
     let config = sandbox::SandboxConfig {
@@ -251,11 +228,8 @@ async fn create_rejects_factory_after_shutdown_even_with_retained_destroy_pool()
 
 #[tokio::test]
 async fn shutdown_is_idempotent_after_resources_are_taken() {
-    let mut factory = test_factory_with_resources(
-        NetnsPoolHandle::new_for_test(NetnsPool::inactive_for_test()),
-        NetnsPoolOwnership::Shared,
-        test_leak_cleaner(),
-    );
+    let mut factory =
+        test_factory_with_resources(NetnsPool::inactive_for_test().handle(), test_leak_cleaner());
 
     factory.shutdown().await;
     factory.shutdown().await;
@@ -267,11 +241,7 @@ async fn shutdown_is_idempotent_after_resources_are_taken() {
 #[tokio::test]
 async fn destroy_uses_retained_netns_pool_after_shutdown() {
     let (pool, mut lease) = test_pool_with_lease("test-ns");
-    let mut factory = test_factory_with_resources(
-        pool.clone(),
-        NetnsPoolOwnership::Shared,
-        test_leak_cleaner(),
-    );
+    let mut factory = test_factory_with_resources(pool.clone(), test_leak_cleaner());
     factory.shutdown().await;
 
     let selected = factory
@@ -297,8 +267,7 @@ async fn factory_shutdown_drains_cleanup_group_before_leak_cleaner() {
         leak_events.lock().unwrap().push("leak_cleaner");
     });
     let mut factory = test_factory_with_resources(
-        NetnsPoolHandle::new_for_test(NetnsPool::inactive_for_test()),
-        NetnsPoolOwnership::Owned,
+        NetnsPool::inactive_for_test().handle(),
         LeakCleaner::from_parts_for_test(tx, shutdown_tx, completed_cleanup_count_rx, handle),
     );
 

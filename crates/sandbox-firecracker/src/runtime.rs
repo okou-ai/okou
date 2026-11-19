@@ -14,7 +14,7 @@ use crate::config::{FirecrackerConfig, SnapshotConfig};
 use crate::duration::duration_ms;
 use crate::factory::FirecrackerFactory;
 use crate::host_cpu_cgroup::HostCpuCgroupManager;
-use crate::network::{NetnsPoolConfig, NetnsPoolHandle};
+use crate::network::{NetnsPool, NetnsPoolConfig};
 use crate::paths::{RuntimePaths, SandboxPaths, SnapshotOutputPaths, SockPaths};
 use crate::runtime_dirs::checked_runtime_sock_dir;
 
@@ -23,7 +23,7 @@ use crate::runtime_dirs::checked_runtime_sock_dir;
 /// Manages shared network namespace and device pools, then creates
 /// sandbox factories that share those resources.
 pub struct FirecrackerRuntime {
-    netns_pool: NetnsPoolHandle,
+    netns_pool: NetnsPool,
     device_pool: DevicePoolHandle,
     proxy_port: Option<u16>,
     dns_port: Option<u16>,
@@ -62,7 +62,7 @@ impl FirecrackerRuntime {
         let fc_config = self.to_firecracker_config(config)?;
         FirecrackerFactory::start(
             fc_config,
-            Some(self.netns_pool.clone()),
+            self.netns_pool.handle(),
             self.device_pool.clone(),
             self.host_cpu_cgroup.clone(),
             pressure,
@@ -86,7 +86,7 @@ impl FirecrackerRuntime {
         }
         .into_checked()
         .await?;
-        let netns_pool = match NetnsPoolHandle::create_checked(netns_config).await {
+        let netns_pool = match NetnsPool::create_checked(netns_config).await {
             Ok(pool) => pool,
             Err(e) => {
                 return Err(SandboxError::Initialization {
