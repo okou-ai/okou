@@ -111,15 +111,7 @@ async function openShelf(
   const create = within(
     screen.getByRole("group", { name: "Explore Okou capabilities" }),
   ).getByRole("region", { name: "Create" });
-  click(button("Presentation", create));
-  const types = await screen.findByRole("radiogroup", { name: "Create" });
-  const choice = queryAllByRoleFast("radio", types).find((item) => {
-    return item.textContent?.trim() === task;
-  });
-  if (!choice) {
-    throw new Error(`Expected creation type ${task}`);
-  }
-  click(choice);
+  click(button(task, create));
   const shelf = await screen.findByRole("group", { name: label });
   return { editor, shelf, tray: screen.getByRole("tabpanel") };
 }
