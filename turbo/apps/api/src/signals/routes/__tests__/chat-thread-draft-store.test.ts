@@ -8,13 +8,19 @@ import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { createBddApi } from "./helpers/api-bdd";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import {
+  createChatFilesBddApi,
+  persistedAttachment,
+} from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
+
+const malformedText = 'Keep "quotes", \\ and 👒; replace \udc52 and \ud83d.';
+const repairedText = String.raw`Keep "quotes", \ and 👒; replace � and �.`;
 
 interface DraftFixture {
   readonly actor: ReturnType<typeof bdd.user>;
@@ -50,6 +56,24 @@ async function sendWithoutCredits(fixture: DraftFixture): Promise<void> {
 
 function draftDocument(text: string): UserMessageInputDocument {
   return { version: 1, parts: [{ type: "text", text }] };
+}
+
+function imageMessage(
+  image: PersistedAttachment,
+  text: string,
+): UserMessageInputDocument {
+  return {
+    version: 1,
+    parts: [
+      {
+        type: "file",
+        fileId: image.id,
+        filenameSnapshot: image.filename,
+        contentType: image.contentType,
+      },
+      { type: "text", text },
+    ],
+  };
 }
 
 function draftBody(text: string) {
@@ -121,6 +145,27 @@ describe("thread drafts", () => {
     await expect(listedDraftIds(fixture)).resolves.not.toContain(
       fixture.threadId,
     );
+  });
+
+  it("saves rich draft edits containing unpaired surrogates", async () => {
+    const { actor, threadId } = await createDraftFixture();
+    const image = persistedAttachment(
+      randomUUID(),
+      "image.png",
+      "image/png",
+      23,
+    );
+
+    await chat.patchThread(actor, threadId, draftBody("earlier draft"));
+    await chat.patchThread(actor, threadId, {
+      draftUserMessage: imageMessage(image, malformedText),
+      draftAttachments: [image],
+    });
+
+    await expect(chat.readThreadDraft(actor, threadId)).resolves.toStrictEqual({
+      draftUserMessage: imageMessage(image, repairedText),
+      draftAttachments: [image],
+    });
   });
 
   it("keeps drafts separate per thread and per user", async () => {
@@ -199,6 +244,40 @@ describe("thread drafts", () => {
 });
 
 describe("sends and drafts", () => {
+  it("publishes a rich send containing unpaired surrogates", async () => {
+    const { actor, agentId, threadId } = await createDraftFixture();
+    await runs.ensurePersonalSubscriptionModel(actor);
+    const image = persistedAttachment(
+      randomUUID(),
+      "image.png",
+      "image/png",
+      23,
+    );
+    chat.mockCompletedUploadObject(actor, image.id, image.filename, image.size);
+    const clientEventId = randomUUID();
+
+    await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId,
+        clientEventId,
+        prompt: malformedText,
+        userMessage: imageMessage(image, malformedText),
+      },
+      [201],
+    );
+
+    const { events } = await chat.listThreadEvents(actor, threadId);
+    const stored = events.find((event) => {
+      return event.id === clientEventId;
+    });
+    expect(stored).toMatchObject({
+      eventType: "input.prompt",
+      userMessage: imageMessage(image, repairedText),
+    });
+  });
+
   it("leaves the saved draft for the client to clear when a message is sent", async () => {
     const fixture = await createDraftFixture();
     await runs.ensurePersonalSubscriptionModel(fixture.actor);
