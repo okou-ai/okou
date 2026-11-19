@@ -9,6 +9,7 @@ import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { isShareableArtifactReference } from "../../signals/artifact-sharing.ts";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import { ArtifactShareMenu } from "./artifact-share-menu.tsx";
+import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { HostedSiteShareMenu } from "./hosted-site-share-menu.tsx";
 import {
   currentHostedSiteUrl,
@@ -20,7 +21,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
-  FileType2,
   Loader2,
   RotateCcw,
   Share2,
@@ -67,7 +67,7 @@ import {
 } from "../../signals/artifact-preview-actions.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { lightboxUrl$ } from "../../signals/okou-page/attachment-chips.ts";
-import { detach, Reason } from "../../signals/utils.ts";
+import { detach, isAbortError, Reason } from "../../signals/utils.ts";
 import {
   syncArtifactAndRefresh$,
   googleDriveSyncAccount$,
@@ -833,65 +833,34 @@ function MarkdownArtifactExportItem({
   readonly operation: MarkdownArtifactExportLoadable;
 }): ReactElement {
   const { t } = useTranslation();
-  const exportLabel =
-    format === "pdf"
-      ? t(($) => {
-          return $.artifacts.actions.exportMarkdownPdf;
-        })
-      : t(($) => {
-          return $.artifacts.actions.exportMarkdownDocx;
-        });
-  const generatingLabel =
-    format === "pdf"
-      ? t(($) => {
-          return $.artifacts.actions.generatingMarkdownPdf;
-        })
-      : t(($) => {
-          return $.artifacts.actions.generatingMarkdownDocx;
-        });
-  const downloadLabel =
-    format === "pdf"
-      ? t(($) => {
-          return $.artifacts.actions.downloadMarkdownPdf;
-        })
-      : t(($) => {
-          return $.artifacts.actions.downloadMarkdownDocx;
-        });
-  if (operation.state === "hasData") {
-    return (
-      <DropdownMenuItem
-        render={
-          <a
-            href={operation.data.href}
-            download={operation.data.filename}
-            aria-label={downloadLabel}
-          />
-        }
-      >
-        <Download size={14} />
-        {downloadLabel}
-      </DropdownMenuItem>
-    );
-  }
-  const generating = operation.state === "loading";
+  const label = t(($) => $.artifacts.actions.downloadMarkdownAs, {
+    format: format.toUpperCase(),
+  });
+  const pending = operation.state === "loading";
+  const download = operation.state === "hasData" ? operation.data : undefined;
   return (
-    <>
-      <DropdownMenuItem disabled={generating} onClick={onExport}>
-        {generating ? (
-          <Loader2 size={14} className="animate-spin" />
-        ) : (
-          <FileType2 size={14} />
-        )}
-        {generating ? generatingLabel : exportLabel}
-      </DropdownMenuItem>
-      {operation.state === "hasError" && (
-        <div role="alert" className="px-2 py-1 text-xs text-destructive">
-          {t(($) => {
-            return $.artifacts.actions.markdownExportFailed;
-          })}
-        </div>
+    <DropdownMenuItem
+      aria-label={label}
+      aria-busy={pending || undefined}
+      disabled={pending}
+      onClick={download ? undefined : onExport}
+      render={
+        download ? (
+          <a href={download.href} download={download.filename} />
+        ) : undefined
+      }
+    >
+      {pending ? (
+        <Loader2 size={20} className="animate-spin" />
+      ) : (
+        <FilePreviewIcon
+          filename={`file.${format}`}
+          size="sm"
+          className="shrink-0"
+        />
       )}
-    </>
+      {label}
+    </DropdownMenuItem>
   );
 }
 
@@ -951,6 +920,19 @@ function ArtifactDownloadMenuItem({
   );
 }
 
+async function showMarkdownExportError(
+  operation: Promise<MarkdownArtifactExportResult>,
+  signal: AbortSignal,
+): Promise<void> {
+  try {
+    await operation;
+  } catch (error) {
+    if (!signal.aborted && !isAbortError(error)) {
+      toast.error(i18n.t(($) => $.artifacts.actions.markdownExportFailed));
+    }
+  }
+}
+
 export function ArtifactDownloadMenu({
   align = "end",
   ariaLabel,
@@ -1005,7 +987,10 @@ export function ArtifactDownloadMenu({
     const exportArtifact =
       format === "pdf" ? exportMarkdownPdf : exportMarkdownDocx;
     detach(
-      exportArtifact({ filename, url, format }, markdownExportSignal),
+      showMarkdownExportError(
+        exportArtifact({ filename, url, format }, markdownExportSignal),
+        markdownExportSignal,
+      ),
       Reason.DomCallback,
       `markdown artifact ${format} export`,
     );

@@ -90,7 +90,7 @@ function relatedArtifactRow(dialog: HTMLElement, url: string): HTMLElement {
 
 function menuItemNamed(name: string): HTMLElement | undefined {
   return queryAllByRoleFast("menuitem").find((item) => {
-    return item.textContent?.replace(/\s+/gu, " ").trim() === name;
+    return item.getAttribute("aria-label") === name;
   });
 }
 
@@ -132,8 +132,11 @@ async function setupArtifactRun(
   await readyChat();
 }
 
-test("Offer PDF and Word export actions on a generated Markdown artifact row", async () => {
+test("Show format download items and report conversion failures in a toast", async () => {
   const markdownUrl = artifactUrl("generated-report", "summary.md");
+  context.mocks.http.get(markdownUrl, () => {
+    return new HttpResponse(null, { status: 500 });
+  });
   await setupArtifactRun(
     [
       assistantEvent({
@@ -167,14 +170,36 @@ test("Offer PDF and Word export actions on a generated Markdown artifact row", a
   }
   click(exportButton);
   await waitFor(() => {
-    expect(menuItemNamed("Export Markdown as PDF")).toBeDefined();
+    expect(menuItemNamed("Download as PDF")).toBeDefined();
   });
-  expect(menuItemNamed("Export Markdown as PDF")).toBeDefined();
-  expect(menuItemNamed("Export Markdown as Word")).toBeDefined();
+  expect(menuItemNamed("Download as PDF")).toBeDefined();
+  expect(menuItemNamed("Download as DOCX")).toBeDefined();
+  const pdf = menuItemNamed("Download as PDF");
+  if (!pdf) {
+    throw new Error("Expected Markdown PDF download");
+  }
+  expect(within(pdf).getByText("PDF")).toBeInTheDocument();
+  click(pdf);
+  const error = await screen.findByText(
+    "Export failed. Select an export option to try again.",
+  );
+  expect(error.closest("[data-sonner-toast]")).toHaveAttribute(
+    "data-type",
+    "error",
+  );
+  expect(error.closest('[role="menu"]')).toBeNull();
+  click(exportButton);
+  await waitFor(() => {
+    expect(menuItemNamed("Download as PDF")).toBeDefined();
+  });
 });
 
 test("Offer PDF and Word export actions in the Markdown artifact preview", async () => {
   const markdownUrl = artifactUrl("generated-preview", "summary.md");
+  context.mocks.browser.blobDownload();
+  context.mocks.browser.dedicatedWorker(() => {
+    return { ok: true, blob: new Blob(["word"]) };
+  });
   context.mocks.http.get(markdownUrl, () => {
     return HttpResponse.text("# Summary");
   });
@@ -208,10 +233,25 @@ test("Offer PDF and Word export actions in the Markdown artifact preview", async
   }
   click(exportButton);
   await waitFor(() => {
-    expect(menuItemNamed("Export Markdown as PDF")).toBeDefined();
+    expect(menuItemNamed("Download as PDF")).toBeDefined();
   });
-  expect(menuItemNamed("Export Markdown as PDF")).toBeDefined();
-  expect(menuItemNamed("Export Markdown as Word")).toBeDefined();
+  expect(menuItemNamed("Download as PDF")).toBeDefined();
+  const docx = menuItemNamed("Download as DOCX");
+  if (!docx) {
+    throw new Error("Expected Markdown DOCX download");
+  }
+  expect(within(docx).getByText("DOCX")).toBeInTheDocument();
+  click(docx);
+  await waitFor(() => {
+    expect(exportButton).not.toHaveAttribute("aria-busy");
+  });
+  click(exportButton);
+  await waitFor(() => {
+    expect(menuItemNamed("Download as DOCX")).toHaveAttribute(
+      "download",
+      "summary.docx",
+    );
+  });
 });
 
 test("Expose an artifact referenced only by history from the main result actions", async () => {
