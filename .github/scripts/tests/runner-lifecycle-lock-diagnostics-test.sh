@@ -112,7 +112,7 @@ for scenario in acquire-error release-error lost-release-ack wrong-receipt lost-
   MOCK_ROOT="${tmp_dir}/${scenario}"
   MOCK_MODE=$scenario
   mkdir -p "$MOCK_ROOT"
-  command=(bash -c 'echo executed >> "$1"' _ "${MOCK_ROOT}/executions")
+  command=(printf 'executed\n')
   if [ "$scenario" = command-error ]; then
     MOCK_MODE=release-error
     command=(bash -c 'exit 37')
@@ -157,7 +157,7 @@ for scenario in acquire-error release-error lost-release-ack wrong-receipt lost-
     receipt-reset|receipt-unreachable)
       [ "$(wc -l <"${MOCK_ROOT}/queries")" -eq 2 ] || fail "expected two receipt attempts"
       [ "$(sort -u "${MOCK_ROOT}/queries" | wc -l)" -eq 1 ] || fail "retry changed release identity"
-      [ "$(wc -l <"${MOCK_ROOT}/executions")" -eq 1 ] || fail "protected command ran more than once"
+      [ "$(grep -cx executed "${MOCK_ROOT}/out")" -eq 1 ] || fail "expected one protected command execution"
       if [ "$scenario" = receipt-reset ]; then
         grep -q 'remote_release=reconciled' "${MOCK_ROOT}/err"
       else
