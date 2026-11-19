@@ -3069,9 +3069,8 @@ jobs:
             exit 1
           fi
 
-          # Check the exact string in Bash because Actions comparisons ignore case.
-          if [[ "$EVENT_NAME" == "merge_group" && "$RELEASE_MQ_ENTRY" == "true" && "$PRODUCTION_RELEASE_FREEZE" == "true" ]]; then
-            echo "::error title=Production release frozen::The repository variable PRODUCTION_RELEASE_FREEZE is true. Unset it after maintenance, then requeue the release PR."
+          if [[ "$EVENT_NAME" == "merge_group" && "$RELEASE_MQ_ENTRY" == "true" && "${PRODUCTION_RELEASE_FREEZE,,}" == "true" ]]; then
+            echo "::error title=Production release frozen::The repository variable PRODUCTION_RELEASE_FREEZE is enabled. Unset it after maintenance, then requeue the release PR."
             exit 1
           fi
 

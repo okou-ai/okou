@@ -171,9 +171,10 @@ for ios in ['false', '']:
 for needed in ['true', '']:
     gate(turbo, 'ci-gate-turbo', native | {'needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed': needed}, False)
 released = context(ios=False, ts=True, event='merge_group', release=True)
-for value in ['', 'false', 'TRUE', '1']:
+for value in ['', 'false', '1']:
     gate(turbo, 'ci-gate-turbo', released | {'vars.PRODUCTION_RELEASE_FREEZE': value}, True)
-gate(turbo, 'ci-gate-turbo', released | frozen, False)
+for value in ['true', 'TRUE', 'True']:
+    gate(turbo, 'ci-gate-turbo', released | {'vars.PRODUCTION_RELEASE_FREEZE': value}, False)
 gate(turbo, 'ci-gate-turbo', context(ios=False, ts=True, event='merge_group') | frozen, True)
 for event in ['pull_request', 'push']:
     gate(turbo, 'ci-gate-turbo', context(ios=False, ts=True, event=event, release=True) | frozen, True)
