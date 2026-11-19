@@ -44,10 +44,6 @@ function coreEnvSchema() {
     SECRETS_ENCRYPTION_KEY: string().length(64),
     SECRETS_KMS_KEY_ID: string().min(1).optional(),
     OFFICIAL_RUNNER_SECRET: string().length(64),
-    // Enable after the receiving fleet and Runner rollback floor support the hint.
-    RUNNER_PREFERRED_HOME_CHECKOUT_ENABLED: zEnum(["true", "false"]).default(
-      "false",
-    ),
     OPENAI_API_KEY: string().min(1),
     FAL_KEY: string().min(1).optional(),
     // Validated together at the Google LLM operation boundary.

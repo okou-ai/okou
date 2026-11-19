@@ -206,8 +206,7 @@ function preferredHomeOffer(
     preferredUntil <= 0 ||
     preference.kind !== "preference" ||
     preference.tier !== "predecessorHome" ||
-    preference.home.evidence !== "expected" ||
-    env("RUNNER_PREFERRED_HOME_CHECKOUT_ENABLED") !== "true"
+    preference.home.evidence !== "expected"
   ) {
     return { body: ordinaryBody };
   }

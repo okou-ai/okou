@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { HttpResponse } from "msw";
 import { testContext } from "../../../__tests__/test-context";
 import { mockNow, now, nowDate } from "../../../lib/time";
-import { mockEnv } from "../../../lib/env";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -226,13 +225,10 @@ describe("Independent finalizing resource dispatch", () => {
     );
   });
 
-  it.each(["accept", "alternate", "stale", "disabled"] as const)(
+  it.each(["accept", "alternate", "stale"] as const)(
     "bounds Home dispatch and same-byte retry with %s",
     async (scenario) => {
       const f = await terminalPredecessor(context, "completed");
-      if (scenario !== "disabled") {
-        mockEnv("RUNNER_PREFERRED_HOME_CHECKOUT_ENABLED", "true");
-      }
       await heartbeat(f, {
         snapshotSequence: 2,
         mode: "draining",
@@ -251,7 +247,7 @@ describe("Independent finalizing resource dispatch", () => {
             preferredBytes.push(bytes);
             preferredDeadlines.push(envelope.notAfter);
             const hint = envelope.preferredHomeCheckout;
-            if (scenario === "stale" || scenario === "disabled") {
+            if (scenario === "stale") {
               expect(hint).toBeUndefined();
             } else {
               expect(hint).toBeDefined();
@@ -305,9 +301,7 @@ describe("Independent finalizing resource dispatch", () => {
         owner.runnerId,
         owner.heartbeatGeneration,
       );
-      expect(preferredBytes).toHaveLength(
-        scenario === "stale" || scenario === "disabled" ? 1 : 2,
-      );
+      expect(preferredBytes).toHaveLength(scenario === "stale" ? 1 : 2);
       if (preferredBytes.length === 2) {
         expect(preferredBytes[1]).toBe(preferredBytes[0]);
       }
