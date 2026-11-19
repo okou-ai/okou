@@ -57,7 +57,7 @@ function ForwardContent({ text }: { readonly text: string }) {
   );
 }
 
-function ForwardTargetContent({
+export function ForwardTargetContent({
   target,
 }: {
   readonly target: ChatForwardTarget;

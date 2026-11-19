@@ -35,12 +35,6 @@ type SuggestionMutation =
   | { readonly type: "feedback"; readonly request: SuggestionFeedbackRequest }
   | { readonly type: "consume"; readonly optionId: string };
 
-// Unsent directions belong to the authenticated member, across For you visits.
-const customDirections$ = computed((get) => {
-  get(authenticatedSessionKey$);
-  return state<Readonly<Record<string, string>>>({});
-});
-
 function createSuggestionEntry(item: Suggestion) {
   const hidden$ = state(false);
   const mutations$ = state<readonly SuggestionMutation[]>([]);
@@ -139,29 +133,8 @@ function createSuggestionEntry(item: Suggestion) {
   const optionDraft = createDraftSignals();
   // The chosen action's send, whose progress and failure its sent row shows.
   const sending$ = state<Promise<void> | undefined>(undefined);
-  const customText$ = computed((get) => {
-    return get(get(customDirections$))[item.id] ?? "";
-  });
-  const customExpanded$ = state(false);
-  const customSending$ = state<Promise<void> | undefined>(undefined);
-  const customDraft = createDraftSignals();
-  const setCustomText$ = command(({ get, set }, text: string) => {
-    set(get(customDirections$), (drafts) => {
-      return { ...drafts, [item.id]: text };
-    });
-  });
-  const setCustomExpanded$ = command(({ set }, expanded: boolean) => {
-    set(customExpanded$, expanded);
-  });
   return {
     item,
-    customText$,
-    customExpanded$,
-    customSending$,
-    customDraft,
-    customDraftId: item.id,
-    setCustomText$,
-    setCustomExpanded$,
     readOnRef$: createForYouReadRef(item.id),
     hidden$,
     unavailable$,

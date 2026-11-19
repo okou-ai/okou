@@ -95,6 +95,8 @@ interface AgentComposerOptions {
   readonly inPlace?: boolean;
   /** The initial Project for a page's new chat or an in-place fork. */
   readonly projectId?: string;
+  /** Names the new thread instead of deriving its title from the message. */
+  readonly title?: string;
   readonly onOptimisticSend?: (threadId: string) => void;
 }
 
@@ -136,6 +138,7 @@ function createAgentSubmitMessage(
         {
           agentId,
           ...(options.projectId ? { projectId: options.projectId } : {}),
+          ...(options.title ? { title: options.title } : {}),
           draft,
           prompt: submission.prompt,
           generationTemplate: submission.generationTemplate,
@@ -241,6 +244,22 @@ export function createForwardAgentComposerSignals(
     agentId,
     createAgentDraftSignals(agentId),
     { forward, inPlace: true, onOptimisticSend, projectId },
+  );
+}
+
+/**
+ * A dialog composer that starts a new thread of `agentId` from its own unsaved
+ * draft and keeps the current page.
+ */
+export function createInPlaceAgentComposerSignals(
+  agentId: string,
+  onOptimisticSend: (threadId: string) => void,
+  title: string,
+) {
+  return createAgentComposerSignalsWithDraft(
+    agentId,
+    createAgentDraftSignals(agentId),
+    { inPlace: true, onOptimisticSend, title },
   );
 }
 
