@@ -71,8 +71,6 @@
     "test:web-upload-artifact-threads": "tsx scripts/test-web-upload-artifact-threads.ts",
     "test:pi-memory-retirement": "tsx scripts/test-pi-memory-retirement.ts",
     "test:run-output-memory-citation-retirement": "tsx scripts/test-run-output-memory-citation-retirement.ts",
-    "test:registry-resource-inventory": "node --import tsx scripts/migrations/028-registry-resource-bundles/test-inventory.ts",
-    "test:registry-resource-backfill": "node --import tsx scripts/migrations/028-registry-resource-bundles/test-backfill.ts",
     "test:registry-resource-publication": "node scripts/test-registry-publication.mjs",
     "test:template-guidance-backfill": "node --import tsx scripts/migrations/029-template-guidance-bundles/test-backfill.ts",
     "single-agent:prepare": "tsx scripts/migrations/030-single-agent/cli.ts",
