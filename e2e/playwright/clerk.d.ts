@@ -20,7 +20,6 @@ declare global {
       organization?: { readonly id: string } | null;
       setActive(options: { readonly organization: string }): Promise<void>;
       session?: {
-        readonly id: string;
         getToken(options?: {
           readonly skipCache?: boolean;
         }): Promise<string | null>;

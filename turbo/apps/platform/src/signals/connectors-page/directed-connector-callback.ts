@@ -3,25 +3,28 @@ import {
   routeChatActionCallback$,
   runChatActionCallback$,
   type ChatActionCallback,
+  type ChatActionCallbackIds,
 } from "../chat-page/action-callback.ts";
 import { pageVersion$ } from "../page-signal.ts";
 import { searchParams$ } from "../route.ts";
 
-interface CompletedCallback {
+interface CallbackAttempt {
   readonly agentId: string;
   readonly callback: ChatActionCallback;
+  readonly ids: ChatActionCallbackIds;
+  readonly completed: boolean;
 }
 
-const pageCompletedCallback$ = computed((get) => {
+const pageCallbackAttempt$ = computed((get) => {
   get(pageVersion$);
-  return state<CompletedCallback | null>(null);
+  return state<CallbackAttempt | null>(null);
 });
 
-function completedSameCallback(
-  previous: CompletedCallback | null,
+function matchesCallback(
+  previous: CallbackAttempt | null,
   agentId: string,
   callback: ChatActionCallback,
-): boolean {
+): previous is CallbackAttempt {
   return (
     previous?.agentId === agentId &&
     previous.callback.threadId === callback.threadId &&
@@ -35,11 +38,8 @@ export const pendingDirectedConnectorCallback$ = computed((get) => {
   if (!agentId || !callback.threadId || !callback.callbackPrompt?.trim()) {
     return false;
   }
-  return !completedSameCallback(
-    get(get(pageCompletedCallback$)),
-    agentId,
-    callback,
-  );
+  const attempt = get(get(pageCallbackAttempt$));
+  return !matchesCallback(attempt, agentId, callback) || !attempt.completed;
 });
 
 /** Continue the requesting chat only after the directed action has completed. */
@@ -50,22 +50,39 @@ export const completeDirectedConnectorAction$ = command(
     callback: ChatActionCallback,
     signal: AbortSignal,
   ) => {
-    if (agentId && callback.callbackPrompt && callback.threadId) {
-      const completedCallback$ = get(pageCompletedCallback$);
-      if (completedSameCallback(get(completedCallback$), agentId, callback)) {
-        return;
-      }
-      await set(
-        runChatActionCallback$,
-        {
+    if (!agentId || !callback.callbackPrompt || !callback.threadId) {
+      return;
+    }
+    const attempt$ = get(pageCallbackAttempt$);
+    const previous = get(attempt$);
+    const attempt = matchesCallback(previous, agentId, callback)
+      ? previous
+      : {
           agentId,
-          threadId: callback.threadId,
-          callbackPrompt: callback.callbackPrompt,
-        },
-        signal,
-      );
-      signal.throwIfAborted();
-      set(completedCallback$, { agentId, callback });
+          callback,
+          ids: {
+            clientEventId: crypto.randomUUID(),
+            chatThreadSortEventId: crypto.randomUUID(),
+          },
+          completed: false,
+        };
+    if (attempt.completed) {
+      return;
+    }
+    set(attempt$, attempt);
+    await set(
+      runChatActionCallback$,
+      {
+        agentId,
+        threadId: callback.threadId,
+        callbackPrompt: callback.callbackPrompt,
+        callbackIds: attempt.ids,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (get(attempt$) === attempt) {
+      set(attempt$, { ...attempt, completed: true });
     }
   },
 );

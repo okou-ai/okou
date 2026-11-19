@@ -700,9 +700,9 @@ function DirectedConnectCard() {
           <DirectedConnectContinuation
             connected={isConnected}
             busy={isConnecting || continueLoadable.state === "loading"}
-            onContinue={onDomEventFn(async () => {
-              await continueChat(connectorSlug, signal);
-            })}
+            onContinue={() => {
+              detach(continueChat(connectorSlug, signal), Reason.DomCallback);
+            }}
           />
         }
       />

@@ -941,11 +941,25 @@ test("Continue from an existing connector authorization link using the saved acc
   });
   const threadId = "00000000-0000-4000-a000-000000000101";
   const callbackPrompt = "Re-check Stripe, then continue";
-  const continuations: unknown[] = [];
+  const continuations: {
+    readonly clientEventId: string | undefined;
+    readonly chatThreadSortEventId: string | undefined;
+    readonly userMessage: unknown;
+  }[] = [];
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     expect(body).toMatchObject({ threadId });
-    if ("prompt" in body) {
-      continuations.push(body.userMessage);
+    continuations.push({
+      clientEventId: body.clientEventId,
+      chatThreadSortEventId: body.chatThreadSortEventId,
+      userMessage: body.userMessage,
+    });
+    if (continuations.length === 1) {
+      return respond(500, {
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Chat continuation unavailable",
+        },
+      });
     }
     return respond(201, { threadId });
   });
@@ -963,9 +977,21 @@ test("Continue from an existing connector authorization link using the saved acc
     }),
   );
   await waitFor(() => {
-    expect(continuations).toStrictEqual([
-      { version: 1, parts: [{ type: "text", text: callbackPrompt }] },
-    ]);
+    expect(continuations).toHaveLength(1);
+    expect(getButtonByText("Continue")).toBeEnabled();
+  });
+  click(getButtonByText("Continue"));
+  await waitFor(() => {
+    expect(continuations).toHaveLength(2);
+    expect(continuations[0]).toStrictEqual({
+      clientEventId: expect.any(String),
+      chatThreadSortEventId: expect.any(String),
+      userMessage: {
+        version: 1,
+        parts: [{ type: "text", text: callbackPrompt }],
+      },
+    });
+    expect(continuations[1]).toStrictEqual(continuations[0]);
     expect(screen.getByText("Public Stripe connected")).toBeInTheDocument();
     expect(screen.queryByText("Continue")).toBeNull();
   });
