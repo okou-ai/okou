@@ -3508,6 +3508,13 @@
       "when": 1795067765771,
       "tag": "1579_activate_quiet_default_agent_workspaces",
       "breakpoints": true
+    },
+    {
+      "idx": 1580,
+      "version": "7",
+      "when": 1795067788125,
+      "tag": "1580_activate_quiet_multi_agent_workspaces",
+      "breakpoints": true
     }
   ]
 }
