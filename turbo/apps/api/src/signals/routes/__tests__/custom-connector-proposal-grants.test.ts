@@ -2,19 +2,17 @@ import { randomUUID } from "node:crypto";
 
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
+import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
   customConnectorByIdContract,
   customConnectorProposalContract,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { agentsRoutes } from "../agents";
 import { connectorAccountRoutes } from "../connector-accounts";
-import { agentConnectorAccessRoutes } from "../agent-connector-access";
 import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
 import { customConnectorProposalRoutes } from "../custom-connectors-proposal";
 
@@ -24,63 +22,6 @@ const trackCleanup = createFixtureTracker<() => Promise<void>>(
     await action();
   },
 );
-
-test("agent connector grants stay scoped to the signed-in user", async () => {
-  const mocks = createRouteMocks(context);
-  const headers = { authorization: "Bearer clerk-session" };
-  const userId = `user_${randomUUID()}`;
-  const orgId = `org_${randomUUID()}`;
-  mocks.clerk.session(userId, orgId);
-  context.mocks.s3.send.mockResolvedValue({});
-
-  const created = await accept(
-    setupApp({ context, routes: agentsRoutes })(agentsMainContract).create({
-      headers,
-      body: { visibility: "private" },
-    }),
-    [201],
-  );
-  const client = setupApp({ context, routes: agentConnectorAccessRoutes })(
-    agentConnectorAccessContract,
-  );
-  const grants = await accept(
-    client.agent({ headers, params: { id: created.body.agentId } }),
-    [200],
-  );
-  expect(grants.body).toStrictEqual({
-    enabledConnectorSlugs: [],
-    customConnectorIds: [],
-  });
-
-  await accept(
-    setupApp({ context, routes: agentsRoutes })(
-      userBuiltinConnectorsContract,
-    ).update({
-      headers,
-      params: { id: created.body.agentId },
-      body: { enabledConnectorSlugs: ["github"] },
-    }),
-    [200],
-  );
-  const authorized = await accept(
-    client.agent({ headers, params: { id: created.body.agentId } }),
-    [200],
-  );
-  expect(authorized.body.enabledConnectorSlugs).toContain("github");
-
-  const missing = await client.agent({
-    headers,
-    params: { id: randomUUID() },
-  });
-  expect(missing.status).toBe(404);
-
-  mocks.clerk.session(`user_${randomUUID()}`, orgId);
-  const anotherUser = await client.agent({
-    headers,
-    params: { id: created.body.agentId },
-  });
-  expect(anotherUser.status).toBe(404);
-});
 
 test("a saved custom connector proposal invalidates the Agent access snapshot", async () => {
   const mocks = createRouteMocks(context);
@@ -92,7 +33,6 @@ test("a saved custom connector proposal invalidates the Agent access snapshot", 
   const routes = [
     ...agentsRoutes,
     ...customConnectorProposalRoutes,
-    ...agentConnectorAccessRoutes,
     ...connectorAccountRoutes,
     ...customConnectorsDeleteRoutes,
   ];
@@ -171,13 +111,15 @@ test("a saved custom connector proposal invalidates the Agent access snapshot", 
 
   expect(saved.body.authorizedAgentId).toBe(agent.body.agentId);
   const access = await accept(
-    client(agentConnectorAccessContract).agent({
+    client(agentCustomConnectorsContract).get({
       headers,
       params: { id: agent.body.agentId },
     }),
     [200],
   );
-  expect(access.body.customConnectorIds).toContain(connectorId);
+  expect(access.body.grants).toContainEqual(
+    expect.objectContaining({ customConnectorId: connectorId }),
+  );
   expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(`user:${userId}`);
   expect(context.mocks.ably.publish).toHaveBeenCalledWith(
     "composerAgentConnectorsChanged",

@@ -42,7 +42,6 @@ import {
   customConnectorValuesContract,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
-import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
 import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
@@ -816,20 +815,6 @@ export function createComposerConnectorHelpers(context: TestContext) {
           }),
       });
     });
-    context.mocks.api(
-      agentConnectorAccessContract.agent,
-      async ({ params, respond }) => {
-        await options.authorizationGates?.[params.id];
-        return respond(200, {
-          enabledConnectorSlugs: builtinAuthorizations.get(params.id) ?? [],
-          customConnectorIds: (customAuthorizations.get(params.id) ?? []).map(
-            (grant) => {
-              return grant.customConnectorId;
-            },
-          ),
-        });
-      },
-    );
     context.mocks.api(
       userBuiltinConnectorsContract.get,
       async ({ params, respond }) => {

@@ -49,7 +49,6 @@ import {
   mockSavedConnectorAccounts,
   mockOAuthCompletions,
   queryConnectorAction,
-  mockConnectorAgentAccess,
 } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
@@ -153,9 +152,6 @@ function mockCustomAgentAccess(
       return respond(200, { grants: grantsByAgent.get(params.id) ?? [] });
     },
   );
-  mockConnectorAgentAccess(context, (agentId) => {
-    return { grants: grantsByAgent.get(agentId) ?? [] };
-  });
   context.mocks.api(
     agentCustomConnectorsContract.update,
     ({ params, body, respond }) => {
@@ -1029,9 +1025,6 @@ test("Manage a manual MCP connector through its lifecycle", async () => {
       return respond(200, { grants: grants.get(params.id) ?? [] });
     },
   );
-  mockConnectorAgentAccess(context, (agentId) => {
-    return { grants: grants.get(agentId) ?? [] };
-  });
   context.mocks.api(
     agentCustomConnectorsContract.update,
     ({ params, body, respond }) => {

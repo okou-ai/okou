@@ -7,9 +7,7 @@ import {
   httpConnectorFixture,
   mcpConnectorFixture,
 } from "../../../mocks/handlers/connector-account-fixtures.ts";
-import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
-import { connectorAgentAccessContract } from "@okouai/api-contracts/contracts/connector-agent-access";
 import {
   type ConnectorAccountConnection,
   connectorAccountsContract,
@@ -36,7 +34,6 @@ import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/c
 import { screen, within } from "@testing-library/react";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
-import { mockAgentIds } from "../../../mocks/handlers/api-agents.ts";
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 
 export function mockOAuthCompletions(
@@ -161,37 +158,6 @@ export function listAgent(
     avatarUrl,
     visibility: "public",
   };
-}
-
-export function mockConnectorAgentAccess(
-  context: TestContext,
-  read: (agentId: string) => {
-    readonly enabledConnectorSlugs?: readonly ConnectorSlug[];
-    readonly grants?: readonly AgentCustomConnectorGrant[];
-  },
-): void {
-  context.mocks.api(connectorAgentAccessContract.get, ({ respond }) => {
-    const visibleAgentIds = mockAgentIds();
-    return respond(200, {
-      visibleAgentIds,
-      builtin: visibleAgentIds.flatMap((agentId) => {
-        return (read(agentId).enabledConnectorSlugs ?? []).map(
-          (connectorSlug) => {
-            return { connectorSlug, agentId };
-          },
-        );
-      }),
-      custom: visibleAgentIds.flatMap((agentId) => {
-        return (read(agentId).grants ?? []).map((grant) => {
-          return {
-            connectorId: grant.customConnectorId,
-            agentId,
-            permissionNames: grant.permissionNames,
-          };
-        });
-      }),
-    });
-  });
 }
 
 export function mockConnectors(
