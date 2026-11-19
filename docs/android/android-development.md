@@ -123,8 +123,9 @@ and `more_horiz` for More. Use the 24dp Android XML with the default weight 400,
 grade 0 and fill 0. The bundled vectors come from
 [Google's Material Symbols sources](https://github.com/google/material-design-icons/tree/10ecc14790612ca8fd164e3f4ffe9c16fc50d5b7/symbols/android).
 Keep one `res/drawable/ic_<symbol>.xml` per symbol and preserve its path and
-viewport. Let the Compose control supply the tint. Set `android:autoMirrored`
-for directional navigation such as Back and end chevrons.
+viewport. Remove the exported vector's `android:tint` so the Compose control
+supplies the tint. Set `android:autoMirrored` for directional navigation such
+as Back and end chevrons.
 
 Render vectors with `Icon(painterResource(...))`. Use a 24dp icon in the top app
 bar and a native `IconButton` with at least a 48 × 48dp touch target for a

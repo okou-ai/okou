@@ -90,12 +90,18 @@ internal fun WorkspaceToolbarActions(
             Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings))
         }
     } else {
+        val updateIconSize = 24.dp
         TextButton(
             onClick = openUpdate,
-            modifier = Modifier.widthIn(max = 136.dp),
+            // Preserve the label's width budget when adding the leading icon.
+            modifier = Modifier.widthIn(max = 136.dp + updateIconSize + ButtonDefaults.IconSpacing),
             colors = textButtonColors,
         ) {
-            Icon(painterResource(R.drawable.ic_download), contentDescription = null)
+            Icon(
+                painterResource(R.drawable.ic_download),
+                contentDescription = null,
+                modifier = Modifier.size(updateIconSize),
+            )
             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
             Text(
                 stringResource(R.string.updates_view),
