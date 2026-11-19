@@ -47,6 +47,7 @@ export function EmailCard() {
         className={surfaceVariants({ className: "flex min-w-0 flex-col" })}
       >
         <WorksChannelCardContent
+          actionsPlacement={email ? "footer" : "header"}
           icon={<Mail aria-hidden="true" className="size-5 text-foreground" />}
           title={t(($) => {
             return $.works.email.title;

@@ -312,6 +312,7 @@ function SlackCard({ displayName }: { displayName: string }) {
         className={surfaceVariants({ className: "flex min-w-0 flex-col" })}
       >
         <WorksChannelCardContent
+          actionsPlacement={isConnected ? "footer" : "header"}
           icon={
             <img src={slackIconImg} alt="" className="size-5 scale-[2.2]" />
           }
@@ -489,6 +490,7 @@ function DiscordCard() {
         className={surfaceVariants({ className: "flex min-w-0 flex-col" })}
       >
         <WorksChannelCardContent
+          actionsPlacement={data?.isConnected ? "footer" : "header"}
           icon={<DiscordMark size={20} />}
           title={title}
           description={<DiscordCardDescription data={data} />}
@@ -631,6 +633,7 @@ function TeamsCard({ displayName }: { displayName: string }) {
         className={surfaceVariants({ className: "flex min-w-0 flex-col" })}
       >
         <WorksChannelCardContent
+          actionsPlacement={isConnected ? "footer" : "header"}
           icon={<img src={teamsIconImg} alt="" className="size-5" />}
           title={t(($) => {
             return $.works.teams.title;
@@ -727,6 +730,7 @@ function GithubCard() {
       className={surfaceVariants({ className: "flex min-w-0 flex-col" })}
     >
       <WorksChannelCardContent
+        actionsPlacement={githubData?.isConnected ? "footer" : "header"}
         icon={<img src={githubIconImg} alt="" className="size-5" />}
         title={t(($) => {
           return $.works.github.title;
@@ -855,6 +859,7 @@ function TelegramCard() {
       className={surfaceVariants({ className: "flex min-w-0 flex-col" })}
     >
       <WorksChannelCardContent
+        actionsPlacement={bot?.isConnected ? "footer" : "header"}
         icon={<img src={telegramIconImg} alt="" className="size-5" />}
         title={t(($) => {
           return $.works.telegram.title;

@@ -166,6 +166,7 @@ export function AgentPhoneCard() {
         className={surfaceVariants({ className: "flex min-w-0 flex-col" })}
       >
         <WorksChannelCardContent
+          actionsPlacement={status?.linked ? "footer" : "header"}
           icon={<img src={imessageIconImg} alt="" className="size-5" />}
           title={t(($) => {
             return $.connectors.providerSettings.agentphone.phoneLabel;

@@ -58,6 +58,7 @@ export function WechatCard() {
         className={surfaceVariants({ className: "flex min-w-0 flex-col" })}
       >
         <WorksChannelCardContent
+          actionsPlacement={connected ? "footer" : "header"}
           icon={<img src={wechatIconImg} alt="" className="size-5" />}
           title={t(($) => {
             return $.works.wechat.name;

@@ -150,6 +150,7 @@ export function WhatsappCard() {
         className={surfaceVariants({ className: "flex min-w-0 flex-col" })}
       >
         <WorksChannelCardContent
+          actionsPlacement={status?.linked ? "footer" : "header"}
           icon={<WhatsappMark size={20} className="text-green-600" />}
           title={t(($) => {
             return $.works.whatsapp.name;
