@@ -44,75 +44,77 @@ async function openPermission(
   });
 }
 
-test.each(["succeeds", "fails"] as const)(
-  "The approval stays pending after a grant event until its chat continuation %s",
-  async (outcome) => {
-    mockNow(new Date(PERMISSION_NOW), context.signal);
-    mockPermissionCatalog(context);
-    const { writes } = mockPermissionGrants(context);
-    const started = context.mocks.deferred<void>();
-    const release = context.mocks.deferred<void>();
-    context.mocks.api(
-      chatEventsContract.send,
-      async ({ body, respond, withSignal }) => {
-        expect(body).toMatchObject({
-          agentId: APPROVING_AGENT,
-          threadId,
-          prompt: "Continue the report",
+async function confirmWhileChatIsPending(outcome: "succeeds" | "fails") {
+  mockNow(new Date(PERMISSION_NOW), context.signal);
+  mockPermissionCatalog(context);
+  const { writes } = mockPermissionGrants(context);
+  const started = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    chatEventsContract.send,
+    async ({ body, respond, withSignal }) => {
+      expect(body).toMatchObject({
+        agentId: APPROVING_AGENT,
+        threadId,
+        prompt: "Continue the report",
+      });
+      started.resolve(undefined);
+      await withSignal(release.promise);
+      if (outcome === "fails") {
+        return respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Chat unavailable",
+          },
         });
-        started.resolve(undefined);
-        await withSignal(release.promise);
-        if (outcome === "fails") {
-          return respond(500, {
-            error: {
-              code: "INTERNAL_SERVER_ERROR",
-              message: "Chat unavailable",
-            },
-          });
-        }
-        return respond(201, { threadId });
-      },
-    );
+      }
+      return respond(201, { threadId });
+    },
+  );
 
-    await openPermission({ callback: true });
-    await waitFor(() => {
-      expect(permissionButton("Confirm")).toBeEnabled();
-      expect(
-        context.mocks.ably.hasSubscription("connectorPermissionUpdated"),
-      ).toBe(true);
-    });
-    click(permissionButton("Confirm"));
-    await started.promise;
-    await act(() => {
-      context.mocks.ably.trigger("connectorPermissionUpdated");
-    });
-    expect(permissionButton("Saving...")).toBeDisabled();
-    expect(screen.queryByText("Permissions updated")).not.toBeInTheDocument();
-    expect(screen.queryByText("Already allowed")).not.toBeInTheDocument();
-    expect(writes).toMatchObject([
-      {
-        target: { kind: "builtin", connectorSlug: "slack" },
-        grants: [{ permission: ANALYTICS, action: "allow", expiresIn: "24h" }],
-      },
-    ]);
+  await openPermission({ callback: true });
+  await waitFor(() => {
+    expect(permissionButton("Confirm")).toBeEnabled();
+    expect(
+      context.mocks.ably.hasSubscription("connectorPermissionUpdated"),
+    ).toBeTruthy();
+  });
+  click(permissionButton("Confirm"));
+  await started.promise;
+  await act(() => {
+    context.mocks.ably.trigger("connectorPermissionUpdated");
+  });
+  expect(permissionButton("Saving...")).toBeDisabled();
+  expect(screen.queryByText("Permissions updated")).not.toBeInTheDocument();
+  expect(screen.queryByText("Already allowed")).not.toBeInTheDocument();
+  expect(writes).toMatchObject([
+    {
+      target: { kind: "builtin", connectorSlug: "slack" },
+      grants: [{ permission: ANALYTICS, action: "allow", expiresIn: "24h" }],
+    },
+  ]);
 
-    release.resolve(undefined);
-    if (outcome === "succeeds") {
-      expect(
-        await screen.findByText("Permissions updated"),
-      ).toBeInTheDocument();
-      return;
-    }
-    expect(
-      await screen.findByText("Couldn't update permissions"),
-    ).toBeInTheDocument();
-    expect(permissionButton("Confirm")).toBeDisabled();
-    expect(
-      screen.getByRole("combobox", { name: "Permission duration" }),
-    ).toBeDisabled();
-    expect(screen.queryByText("Already allowed")).not.toBeInTheDocument();
-  },
-);
+  release.resolve(undefined);
+}
+
+test("The approval stays pending after a grant event until its chat continuation succeeds", async () => {
+  await confirmWhileChatIsPending("succeeds");
+  await expect(
+    screen.findByText("Permissions updated"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("The approval stays pending after a grant event until its chat continuation fails", async () => {
+  await confirmWhileChatIsPending("fails");
+  await expect(
+    screen.findByText("Couldn't update permissions"),
+  ).resolves.toBeInTheDocument();
+  expect(permissionButton("Confirm")).toBeDisabled();
+  expect(
+    screen.getByRole("combobox", { name: "Permission duration" }),
+  ).toBeDisabled();
+  expect(screen.queryByText("Already allowed")).not.toBeInTheDocument();
+});
 
 test.each([
   { action: "allow", title: "Already allowed", expiresAt: PERMISSION_LATER },
@@ -128,7 +130,7 @@ test.each([
 
     await openPermission({ action });
 
-    expect(await screen.findByText(title)).toBeInTheDocument();
+    await expect(screen.findByText(title)).resolves.toBeInTheDocument();
     expect(
       screen.queryByRole("combobox", { name: "Permission duration" }),
     ).not.toBeInTheDocument();
@@ -137,7 +139,7 @@ test.each([
       queryAllByRoleFast("button", document.body).some(
         (button) => button.textContent?.trim() === "Confirm",
       ),
-    ).toBe(false);
+    ).toBeFalsy();
   },
 );
 
@@ -154,7 +156,9 @@ test("An older permission link can replace a Slack allow with a permanent denial
   await waitFor(() => expect(permissionButton("Confirm")).toBeEnabled());
   click(permissionButton("Confirm"));
 
-  expect(await screen.findByText("Permissions denied")).toBeInTheDocument();
+  await expect(
+    screen.findByText("Permissions denied"),
+  ).resolves.toBeInTheDocument();
   expect(screen.queryByText(/expires in/i)).not.toBeInTheDocument();
   expect(writes).toMatchObject([
     {

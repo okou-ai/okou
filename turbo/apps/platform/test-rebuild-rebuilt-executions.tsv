@@ -11,16 +11,16 @@ hosted-site-access-005	turbo/apps/platform/src/views/hosted-site-authorization/_
 email-subscription-settings-002	turbo/apps/platform/src/views/okou-page/__tests__/email-subscription-settings.test.tsx	Email updates can be enabled after a failed save	15	passed
 email-subscription-settings-003	turbo/apps/platform/src/views/okou-page/__tests__/email-subscription-settings.test.tsx	The saved email preference stays on when delivery is unavailable	66	passed
 onboarding-team-redirect-002	turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-team-redirect.test.tsx	A member opening an old invitation link keeps their redeem code	9	passed
-permission-allow-page-003	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	The approval stays pending after a grant event until its chat continuation succeeds	47	passed
-permission-allow-page-004	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	The approval stays pending after a grant event until its chat continuation fails	47	passed
-permission-allow-page-006	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	An existing allow grant needs no confirmation	120	passed
-permission-allow-page-007	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	An existing deny grant needs no confirmation	120	passed
-permission-allow-page-008	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	An older permission link can replace a Slack allow with a permanent denial	144	passed
-permission-allow-page-009	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	An expired or invalid grant (not-a-date) requires fresh confirmation	170	passed
-permission-allow-page-010	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	An expired or invalid grant (2030-01-01T00:00:00.000Z) requires fresh confirmation	170	passed
-permission-batch-page-003	turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Grouped grants remain allowed when chat continuation succeeds	79	passed
-permission-batch-page-002	turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Grouped grants remain allowed when chat continuation fails	79	passed
-permission-batch-page-006	turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Dismissing a batch leaves a second agent's request and chat continuation independent	146	passed
-permission-batch-page-008	turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Permissions allowed by policy appear complete without a new grant	220	passed
-permission-batch-page-009	turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Missing metadata prevents approval and still lets the user dismiss the request	231	passed
-permission-batch-page-011	turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx	An unacknowledged grant cannot continue the chat	251	passed
+permission-allow-page-003	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	The approval stays pending after a grant event until its chat continuation succeeds	100	passed
+permission-allow-page-004	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	The approval stays pending after a grant event until its chat continuation fails	107	passed
+permission-allow-page-006	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	An existing allow grant needs no confirmation	122	passed
+permission-allow-page-007	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	An existing deny grant needs no confirmation	122	passed
+permission-allow-page-008	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	An older permission link can replace a Slack allow with a permanent denial	146	passed
+permission-allow-page-009	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	An expired or invalid grant (not-a-date) requires fresh confirmation	174	passed
+permission-allow-page-010	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	An expired or invalid grant (2030-01-01T00:00:00.000Z) requires fresh confirmation	174	passed
+permission-batch-page-003	turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Grouped grants remain allowed when chat continuation succeeds	134	passed
+permission-batch-page-002	turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Grouped grants remain allowed when chat continuation fails	139	passed
+permission-batch-page-006	turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Dismissing a batch leaves a second agent's request and chat continuation independent	150	passed
+permission-batch-page-008	turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Permissions allowed by policy appear complete without a new grant	224	passed
+permission-batch-page-009	turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Missing metadata prevents approval and still lets the user dismiss the request	237	passed
+permission-batch-page-011	turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx	An unacknowledged grant cannot continue the chat	257	passed
