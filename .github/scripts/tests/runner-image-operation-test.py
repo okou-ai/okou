@@ -646,17 +646,22 @@ class ImageOperationTest(unittest.TestCase):
         self.assertEqual(sum(r["action"] == "run" for r in self.records("requests")), 2)
 
     def test_invalid_results_fail_without_replay(self):
-        faults = ("missing-hash", "wrong-result", "invalid-result-hash")
-        for attempt, fault in enumerate(faults, start=2):
+        faults = {
+            "missing-hash": "invalid image result hash",
+            "wrong-result": "invalid or mismatched image result",
+            "invalid-result-hash": "invalid image result hash",
+        }
+        for attempt, (fault, error) in enumerate(faults.items(), start=2):
             with self.subTest(fault=fault):
                 self.environment.update(IMAGE_FAULT=fault, GITHUB_RUN_ATTEMPT=str(attempt))
                 self.result.unlink(missing_ok=True)
+                previous_executions = len(self.records("executions"))
                 self.invoke("claim")
                 result = self.invoke("run", "build", str(self.result), check=False)
                 self.assertNotEqual(result.returncode, 0)
-                if self.result.exists():
-                    self.assertNotEqual(json.loads(self.result.read_text())["status"], 0)
-        self.assertEqual(len(self.records("executions")), len(faults))
+                self.assertIn(error, result.stderr)
+                self.assertFalse(self.result.exists())
+                self.assertEqual(len(self.records("executions")), previous_executions + 1)
 
     def test_cancellation_retires_worker_and_preserves_lease_successor(self):
         process = self.start_blocked()
