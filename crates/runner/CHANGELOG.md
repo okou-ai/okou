@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.67](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.66...runner-rs-v0.249.67) (2026-11-19)
+
+
+### Refactoring
+
+* **runner:** share http terminal hook completion ([#49281](https://github.com/okou-ai/okou/issues/49281)) ([3384e0b](https://github.com/okou-ai/okou/commit/3384e0bf622174d9f142651d1b052c2f1cdf26a7))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.66](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.65...runner-rs-v0.249.66) (2026-11-19)
 
 
