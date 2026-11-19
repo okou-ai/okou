@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { isOrgAdmin$ } from "../../signals/org.ts";
 import { authenticatedSessionKey$ } from "../../signals/auth.ts";
@@ -16,7 +17,6 @@ import type { ScopedCloudflareAccessConfig } from "@okouai/api-contracts/contrac
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
-  Laptop,
   Network,
   Cloud,
   Plus,
@@ -375,9 +375,7 @@ function RemoteDirectoryPlaceholder({
   const { t } = useTranslation();
   return (
     <Card className="flex flex-col items-center gap-5 rounded-3xl border-divider px-6 py-10 text-center sm:py-12">
-      <span className="flex size-12 items-center justify-center rounded-2xl bg-muted">
-        {icon}
-      </span>
+      <span className="flex items-center justify-center">{icon}</span>
       {loading ? (
         <LoadingSkeleton
           label={t(($) => {
@@ -459,7 +457,7 @@ function OwnerRemoteConnectionDirectory() {
       emptyTitle={t(($) => {
         return $.remoteControlSetup.emptyTitle;
       })}
-      icon={<Laptop size={24} aria-hidden />}
+      icon={<EmptyStateIllustration scene="computer" />}
       onAdd={() => {
         start();
       }}
@@ -764,7 +762,7 @@ function OwnerPrivateNetworkPanel() {
         emptyTitle={t(($) => {
           return $.remoteControlSetup.networkEmptyTitle;
         })}
-        icon={<Network size={24} aria-hidden />}
+        icon={<EmptyStateIllustration scene="connection" />}
         onAdd={() => {
           open(true);
         }}

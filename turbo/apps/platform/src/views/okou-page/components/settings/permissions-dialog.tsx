@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "../../../components/empty-state-illustration.tsx";
 import { LoadingSkeleton } from "../../../components/loading-skeleton.tsx";
 import { singleAgentEnabled$ } from "../../../../signals/single-agent.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
@@ -1367,7 +1368,8 @@ function LoadedPermissionsDrawerContent({
           }}
         >
           {searchActive && displayedPermissions.length === 0 ? (
-            <p className="px-3 py-4 text-sm text-muted-foreground">
+            <p className="flex flex-col items-center gap-2 px-3 py-4 text-sm text-muted-foreground">
+              <EmptyStateIllustration scene="search" size="panel" />
               {t(
                 ($) => {
                   return $.connectors.permissions.noResults;

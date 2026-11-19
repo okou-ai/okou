@@ -39,9 +39,6 @@ export const emptySearchImg = pageAssetUrl(
 export const thinkingBrandMotionImg = pageAssetUrl(
   "assets/okou-thinking-mark-textured-dd139799c2a2.svg",
 );
-export const computerUseIllustrationImg = pageAssetUrl(
-  "assets/computer-use-illustration-eecea534a3ac.png?v=568fa471",
-);
 export const computerUseInstallIllustrationImg = pageAssetUrl(
   "assets/computer-use-install-sign-in-95dbf88a9019.webp",
 );

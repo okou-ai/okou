@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import { useGet, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { AlertTriangle, Check, Monitor, Download, Loader2 } from "lucide-react";
@@ -19,7 +20,6 @@ import {
 import { computerUseProductName$ } from "../../signals/branding.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { computerUseIllustrationImg } from "../okou-page/platform-assets.ts";
 import { ProductBrandMarkLink } from "../okou-page/directed-shared.tsx";
 import {
   AuthorizationErrorState,
@@ -119,13 +119,7 @@ function EmptyHosts() {
 
   return (
     <div className="flex flex-col items-center gap-4 rounded-lg border border-border bg-muted/30 px-4 py-6 text-center">
-      <div className="flex h-24 w-24 items-center justify-center">
-        <img
-          src={computerUseIllustrationImg}
-          alt=""
-          className="h-24 w-24 object-contain"
-        />
-      </div>
+      <EmptyStateIllustration scene="computer" />
       <div className="flex max-w-sm flex-col gap-1">
         <h2 className="text-sm font-medium text-foreground">
           {t(($) => {

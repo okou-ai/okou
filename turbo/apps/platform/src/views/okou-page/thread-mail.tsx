@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import type { ThreadMailSummary } from "@okouai/api-contracts/contracts/mail";
 import {
   Button,
@@ -404,7 +405,8 @@ function ThreadMailRows({ thread }: { readonly thread: ChatPanelSignals }) {
           className="px-4 py-6"
         />
       ) : rows.length === 0 ? (
-        <p className="p-8 text-center text-sm text-muted-foreground">
+        <p className="flex flex-col items-center gap-2 p-8 text-center text-sm text-muted-foreground">
+          <EmptyStateIllustration scene="search" size="panel" />
           {t(($) => {
             return $.chat.mail.manager.noMatches;
           })}

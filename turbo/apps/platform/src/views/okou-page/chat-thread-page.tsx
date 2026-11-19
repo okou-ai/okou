@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import {
   ChatComposerFooter,
   ChatPageHeader,
@@ -1252,7 +1253,8 @@ function ChatThreadEmojiFeed({
         searchResults.length > 0 ? (
           <ChatThreadEmojiGrid items={searchResults} onSelect={onSelect} />
         ) : (
-          <p className="px-1 py-6 text-center text-xs text-muted-foreground">
+          <p className="flex flex-col items-center gap-2 px-1 py-6 text-center text-xs text-muted-foreground">
+            <EmptyStateIllustration scene="search" size="panel" />
             {t(($) => {
               return $.chat.thread.noEmojiFound;
             })}

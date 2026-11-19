@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "../../../components/empty-state-illustration.tsx";
 import type { WalletPaymentMethod } from "@okouai/api-contracts/contracts/wallet";
 import { Badge, buttonVariants, Card, surfaceVariants } from "@okouai/ui";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
@@ -103,7 +104,8 @@ export function WalletCards() {
           </p>
         </div>
       ) : cards.data.length === 0 ? (
-        <p className="px-5 py-4 text-sm text-muted-foreground">
+        <p className="flex flex-col items-center gap-3 px-5 py-6 text-center text-sm text-muted-foreground">
+          <EmptyStateIllustration scene="usage" size="panel" />
           {t(($) => {
             return $.settings.wallet.cards.empty;
           })}

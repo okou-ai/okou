@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 // The slash overview when the slash-actions switch is on: chat actions first,
 // then Workflows and Templates as single rows whose lists open as the second
@@ -519,7 +520,8 @@ function WorkflowListBody({
           className="px-2 py-1.5"
         />
       ) : workflows.length === 0 ? (
-        <div className="px-2 py-1.5 text-[13px] text-muted-foreground">
+        <div className="flex items-center gap-2 px-2 py-1.5 text-[13px] text-muted-foreground">
+          <EmptyStateIllustration scene="workflow" size="row" />
           {t(($) => {
             return $.workflows.list.noWorkflows;
           })}

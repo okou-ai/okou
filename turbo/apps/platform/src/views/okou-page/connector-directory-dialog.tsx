@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { Toolbar } from "@base-ui/react/toolbar";
 import { useLoadable, useSet, type LoadableState } from "ccstate-react";
@@ -151,14 +152,7 @@ function DirectoryEmptyState({
 }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">
-      <span
-        className={cn(
-          "flex h-13 w-13 items-center justify-center rounded-[14px] bg-gray-50 text-muted-foreground",
-          DIRECTORY_HAIRLINE,
-        )}
-      >
-        {icon}
-      </span>
+      <span className="flex items-center justify-center">{icon}</span>
       <div>
         <p className="text-sm font-medium text-foreground">{title}</p>
         <p className="mt-1 max-w-[38ch] text-xs text-muted-foreground">
@@ -202,7 +196,7 @@ function DirectoryNoResults({
   const { t } = useTranslation();
   return (
     <DirectoryEmptyState
-      icon={<Search size={24} aria-hidden="true" />}
+      icon={<EmptyStateIllustration scene="search" size="panel" />}
       title={t(
         ($) => {
           return $.chat.connectors.directory.noResultsTitle;
@@ -600,7 +594,7 @@ function DirectoryCustomPanel({
   if (connectors.length === 0) {
     return (
       <DirectoryEmptyState
-        icon={<Plus size={24} aria-hidden="true" />}
+        icon={<EmptyStateIllustration scene="connection" size="panel" />}
         title={t(($) => {
           return $.chat.connectors.directory.emptyCustomTitle;
         })}

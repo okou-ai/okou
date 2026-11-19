@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import {
@@ -815,6 +816,7 @@ function ActivityNetworkTab({ detailId }: { detailId: string }) {
   if (!data || data.networkLogs.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-12">
+        <EmptyStateIllustration scene="connection" />
         <h2 className="text-lg font-semibold text-foreground">
           {t(($) => {
             return $.activity.detail.networkEmpty.title;
@@ -1146,7 +1148,8 @@ export function StepsList({
           <Loader2 size={20} className="animate-spin text-muted-foreground" />
         </div>
       ) : groups.length === 0 && !hasContent ? (
-        <div className="py-8 text-center text-muted-foreground">
+        <div className="flex flex-col items-center gap-3 py-8 text-center text-muted-foreground">
+          <EmptyStateIllustration scene="workflow" size="panel" />
           {t(($) => {
             return $.activity.detail.steps.noEvents;
           })}

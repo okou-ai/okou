@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import { CircleCheck } from "lucide-react";
 import { useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -35,6 +36,7 @@ export function SuggestionsComplete({
           celebrate && "motion-safe:animate-completion-in",
         )}
       >
+        <EmptyStateIllustration scene="chat" />
         <span aria-hidden className="pointer-events-none relative size-14">
           <CircleCheck
             strokeWidth={1.5}

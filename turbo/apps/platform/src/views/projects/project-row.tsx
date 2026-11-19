@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import {
   projectIndicatorStates$,
   type ProjectIndicatorState,
@@ -491,10 +492,11 @@ export function ProjectStatusRow({
     return (
       <p
         className={cn(
-          "flex items-center text-xs text-nav-copy-muted",
+          "flex items-center gap-2 text-xs text-nav-copy-muted",
           layout === "list" ? "h-14 px-3" : "h-8 px-2",
         )}
       >
+        <EmptyStateIllustration scene="chat" size="inline" />
         {t(($) => {
           return $.projects.empty;
         })}

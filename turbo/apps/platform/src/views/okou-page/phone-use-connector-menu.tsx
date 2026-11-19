@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Plug, Smartphone } from "lucide-react";
@@ -113,7 +114,13 @@ function PhoneUseDevices({ signals }: { signals: ComposerConnectorSignals }) {
           })}
         </ul>
       ) : (
-        <p className="px-2 py-1.5 text-xs text-muted-foreground" role="status">
+        <p
+          className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground"
+          role="status"
+        >
+          {devices.state === "hasData" && (
+            <EmptyStateIllustration scene="connection" size="row" />
+          )}
           {devices.state === "hasError"
             ? t(($) => {
                 return $.chat.phoneUse.loadError;

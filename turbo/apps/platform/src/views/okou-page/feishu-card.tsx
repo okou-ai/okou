@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
@@ -1400,9 +1401,7 @@ function FeishuBotList({
   if (bots.length === 0) {
     return (
       <div className="px-6 py-12 text-center">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl bg-muted/40">
-          <img src={feishuIconImg} alt="" className="h-8 w-8" />
-        </div>
+        <EmptyStateIllustration scene="connection" className="mx-auto mb-4" />
         <div className="text-sm font-medium text-foreground">
           {t(($) => {
             return $.connectors.providerSettings[platform].emptyTitle;

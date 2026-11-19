@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import type { ComputerUseHost } from "@okouai/api-contracts/contracts/computer-use";
 import {
   Button,
@@ -178,8 +179,18 @@ export function ComputerUseAuthorizationCard({
       className="flex h-[224px] w-full flex-col justify-between gap-3 px-4 py-3 text-left @[320px]:h-[200px] @[640px]:h-[112px] @[640px]:flex-row @[640px]:items-center"
     >
       <div className="flex min-w-0 flex-1 items-center gap-3">
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-gray-50 text-muted-foreground">
-          <Monitor size={22} aria-hidden />
+        <div
+          className={
+            empty
+              ? "flex shrink-0 items-center justify-center"
+              : "flex size-10 shrink-0 items-center justify-center rounded-lg bg-gray-50 text-muted-foreground"
+          }
+        >
+          {empty ? (
+            <EmptyStateIllustration scene="computer" size="row" />
+          ) : (
+            <Monitor size={22} aria-hidden />
+          )}
         </div>
         <div className="min-w-0 flex-1">
           <div className="text-[0.9375rem] font-medium text-foreground">

@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
@@ -1543,7 +1544,11 @@ export function PinAgentDialog({
 
       <CommandList data-testid="pin-agent-dialog-list">
         {matches.length === 0 && (
-          <p className="px-5 py-3 text-xs text-muted-foreground">
+          <p className="flex flex-col items-center gap-2 px-5 py-3 text-center text-xs text-muted-foreground">
+            <EmptyStateIllustration
+              scene={trimmedQuery ? "search" : "agent"}
+              size="panel"
+            />
             {trimmedQuery
               ? t(($) => {
                   return $.sidebar.noResults;

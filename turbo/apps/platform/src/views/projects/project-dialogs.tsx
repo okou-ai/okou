@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import type { ReactNode } from "react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -399,7 +400,8 @@ function ProjectMembershipPicker({
           );
         })}
         {matches.length === 0 && (
-          <p className="p-2 text-sm text-muted-foreground">
+          <p className="flex flex-col items-center gap-2 p-2 text-sm text-muted-foreground">
+            <EmptyStateIllustration scene="search" size="panel" />
             {t(($) => {
               return $.projects.noMatches;
             })}

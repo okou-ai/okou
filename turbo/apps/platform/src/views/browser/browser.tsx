@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import type { ClipboardEvent, KeyboardEvent, ReactNode } from "react";
 import { Field } from "@base-ui/react/field";
 import { flushSync } from "react-dom";
@@ -1477,6 +1478,27 @@ function useBrowserStatusText(signals: BrowserSignals, recovering: boolean) {
             });
 }
 
+function BrowserEmptyIllustration({
+  signals,
+  recovering,
+}: {
+  readonly signals: BrowserSignals;
+  readonly recovering: boolean;
+}) {
+  const controls = useGet(signals.controls$);
+  const presentation = useGet(signals.presentation$);
+  if (
+    !controls.empty ||
+    recovering ||
+    presentation.error ||
+    presentation.status === "connecting" ||
+    presentation.status === "paused"
+  ) {
+    return null;
+  }
+  return <EmptyStateIllustration scene="search" />;
+}
+
 function BrowserStatus({
   signals,
   creating,
@@ -1508,6 +1530,9 @@ function BrowserStatus({
     >
       {showStatus && (recovering || presentation.status === "connecting") && (
         <Loader2 size={20} className="animate-spin" />
+      )}
+      {showStatus && (
+        <BrowserEmptyIllustration signals={signals} recovering={recovering} />
       )}
       {showStatus && <p>{text}</p>}
       {showStatus && !recovering && error && error.message !== text && (
@@ -1798,7 +1823,7 @@ function BrowserBlankPage() {
   const { t } = useTranslation();
   return (
     <div className="flex h-full flex-col items-center justify-center px-8 pb-10 text-center">
-      <Globe size={20} aria-hidden className="text-muted-foreground" />
+      <EmptyStateIllustration scene="search" />
       <p className="mt-3 text-sm font-medium text-foreground">
         {t(($) => {
           return $.browserSession.blankPage.title;

@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import type { ReactNode } from "react";
 import { useGet, useLoadable, useLastResolved, useSet } from "ccstate-react";
@@ -94,7 +95,11 @@ function DirectoryCustomSection({
       ) : connectors.length > 0 ? (
         <CustomConnectorGrid connectors={connectors} isAdmin={isAdmin} />
       ) : (
-        <p className="text-sm text-muted-foreground">
+        <p className="flex flex-col items-center gap-3 py-6 text-center text-sm text-muted-foreground">
+          <EmptyStateIllustration
+            scene={searching ? "search" : "connection"}
+            size="panel"
+          />
           {searching
             ? t(($) => {
                 return $.connectors.catalog.directory.noCustomMatches;
@@ -123,7 +128,8 @@ function DirectoryEmpty({
   const search = useGet(connectorsSearch$);
   const openScope = useSet(openConnectorDirectoryScope$);
   return (
-    <div className="flex flex-col items-center gap-3 py-12 text-sm text-muted-foreground">
+    <div className="flex flex-col items-center gap-3 py-12 text-center text-sm text-muted-foreground">
+      <EmptyStateIllustration scene="search" />
       <p>
         {scoped
           ? t(($) => {
