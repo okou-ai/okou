@@ -13,7 +13,7 @@ import {
   setupAuthenticatedRealtime$,
   setupAuthenticatedBootstrapData$,
 } from "./authenticated-daemons.ts";
-import { initTheme$, syncColorThemePreference$ } from "./theme.ts";
+import { initTheme$, syncThemePreferences$ } from "./theme.ts";
 import { initializeAppVersion$ } from "./app-version.ts";
 import { initLocale$, syncLocalePreference$ } from "./locale.ts";
 import { setRootSignal$ } from "./root-signal.ts";
@@ -636,13 +636,6 @@ const setupRoutes$ = command(async ({ set }, signal: AbortSignal) => {
   await set(initRoutes$, PAGE_ROUTES, signal);
 });
 
-const syncInitialPreferences$ = command(
-  async ({ set }, signal: AbortSignal) => {
-    await set(syncLocalePreference$, signal);
-    await set(syncColorThemePreference$, signal);
-  },
-);
-
 function notificationChatThreadId(data: unknown): string | null {
   if (
     typeof data !== "object" ||
@@ -746,7 +739,8 @@ const completeBootstrap$ = command(
       set(setupProjectFoldShortcuts$, isSingleAgent, signal),
       set(setupProjectOrderShortcuts$, isSingleAgent, signal),
       set(watchOrgSwitch$, signal),
-      set(syncInitialPreferences$, signal),
+      set(syncLocalePreference$, signal),
+      set(syncThemePreferences$, signal),
     ]);
 
     signal.throwIfAborted();

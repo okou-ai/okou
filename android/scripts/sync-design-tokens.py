@@ -52,8 +52,8 @@ def outputs():
     bindings = colors.block(css, "@theme {")
     bindings["color-selection"] = "hsl(var(--selection))"
     palettes = re.sub(r"/\*.*?\*/", "", PALETTE_SOURCE.read_text(), flags=re.S)
-    contract = (ROOT / "turbo/packages/api-contracts/src/contracts/user-preferences.ts").read_text()
-    names = re.findall(r'"([a-z-]+)"', re.search(r"COLOR_THEMES = \[(.*?)\] as const", contract, re.S)[1])
+    preferences = (ROOT / "turbo/packages/api-contracts/src/validators/user-preferences.ts").read_text()
+    names = re.findall(r'"([a-z-]+)"', re.search(r"COLOR_THEMES = \[(.*?)\] as const", preferences, re.S)[1])
     common_light = colors.block(palettes, ':root[data-gradient-color-themes][data-color-theme] {')
     dark_selector = re.search(r':root:is\(\s*\.dark,\s*\[data-theme="dark"\]\s*\)\[data-gradient-color-themes\]\[data-color-theme\]\s*\{', palettes)
     common_dark = colors.block(palettes, dark_selector[0])

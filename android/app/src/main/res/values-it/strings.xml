@@ -29,16 +29,10 @@
     <string name="settings">Impostazioni</string>
     <string name="back">Indietro</string>
     <string name="appearance">Aspetto</string>
-    <string name="appearance_description">Scegli l’aspetto di Okou su questo dispositivo.</string>
     <string name="appearance_system">Segui il sistema</string>
     <string name="appearance_light">Chiaro</string>
     <string name="appearance_dark">Scuro</string>
     <string name="on_this_device">Su questo dispositivo</string>
-    <string name="appearance_local">L’aspetto viene salvato solo su questo dispositivo.</string>
-    <string name="appearance_loading">Caricamento dell’aspetto…</string>
-    <string name="appearance_saving">Salvataggio dell’aspetto…</string>
-    <string name="appearance_read_failed">Impossibile caricare l’aspetto. Riprova.</string>
-    <string name="appearance_write_failed">Impossibile salvare l’aspetto. Riprova.</string>
     <string name="retry">Riprova</string>
     <string name="auth_welcome">Ti diamo il benvenuto su Okou</string>
     <string name="auth_restoring">Ripristino della sessione…</string>
@@ -55,7 +49,6 @@
     <string name="auth_switch_workspace">Cambia spazio di lavoro</string>
     <string name="auth_browser_unavailable">Installa un browser per configurare lo spazio di lavoro.</string>
     <string name="preferences_title">Preferenze dello spazio di lavoro</string>
-    <string name="preferences_description">Il tema colore e la lingua si sincronizzano con questo spazio di lavoro.</string>
     <string name="preference_loading">Aggiornamento delle preferenze…</string>
     <string name="preference_saving">Salvataggio delle preferenze…</string>
     <string name="preference_save_failed">Impossibile confermare il salvataggio. Riprova o aggiorna.</string>
@@ -63,7 +56,6 @@
     <string name="preference_refresh">Aggiorna preferenze</string>
     <string name="preference_color_theme">Tema colore</string>
     <string name="preference_language">Lingua</string>
-    <string name="preference_timezone">Fuso orario</string>
     <string name="palette_default">Predefinito</string>
     <string name="palette_golden_hour">Golden hour</string>
     <string name="palette_citrus_spark">Citrus spark</string>
@@ -84,7 +76,6 @@
     <string name="language_hi_in">हिन्दी</string>
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
-    <string name="instructions_section">Il mio Okou</string>
     <string name="instructions_title">Istruzioni</string>
     <string name="instructions_timing">Le modifiche salvate si applicano alle attività future.</string>
     <string name="instructions_loading">Caricamento istruzioni…</string>
@@ -148,4 +139,5 @@
     <string name="updates_android_unsupported">Questo aggiornamento richiede una versione Android più recente.</string>
     <string name="realtime_connecting">Connessione agli aggiornamenti in tempo reale…</string>
     <string name="realtime_unavailable">Gli aggiornamenti in tempo reale non sono disponibili. Puoi aggiornare manualmente.</string>
+    <string name="settings_account">Account</string>
 </resources>

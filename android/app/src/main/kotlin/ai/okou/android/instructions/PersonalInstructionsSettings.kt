@@ -6,9 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -21,7 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
@@ -44,15 +41,9 @@ fun PersonalInstructionsSettings(model: PersonalInstructionsModel) {
         onDispose { lifecycle.removeObserver(observer) }
     }
     Column(
-        Modifier.fillMaxWidth().imePadding().testTag("personal_instructions"),
+        Modifier.fillMaxWidth().testTag("personal_instructions"),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        HorizontalDivider()
-        Text(
-            stringResource(R.string.instructions_section),
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.semantics { heading() },
-        )
         if (state.saved != null || state.draft != null) {
             val editing =
                 rememberJournalEditor(state.content, replacementSelection = TextRange.Zero)

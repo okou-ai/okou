@@ -13,7 +13,10 @@ import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.chatScopeHash
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.instructions.PersonalInstructionsModel
+import ai.okou.android.preferences.MemberAppearance
+import ai.okou.android.preferences.MemberAppearanceCache
 import ai.okou.android.preferences.MemberPreferencesModel
+import ai.okou.android.preferences.appearance
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -29,7 +32,9 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 enum class SessionStage {
@@ -61,6 +66,7 @@ data class SessionUiState(
     val memberships: List<WorkspaceMembership> = emptyList(),
     val ready: ReadyWorkspace? = null,
     val working: Boolean = false,
+    val cachedAppearance: MemberAppearance? = null,
 )
 
 /** One owner for authorization, pending work and the currently permitted workspace resource. */
@@ -72,6 +78,7 @@ class SessionModel(
     private val instructionsDrafts: PersonalInstructionsDraftStore,
     private val composerJournal: ComposerJournalStore,
     private val runControlJournal: RunControlJournalStore,
+    private val appearanceCache: MemberAppearanceCache,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     updatesRequired: Flow<Boolean> = emptyFlow(),
 ) : ViewModel() {
@@ -130,39 +137,57 @@ class SessionModel(
         mutable.value = SessionUiState(generation, SessionStage.LoadingWorkspace, working = true)
         operation =
             viewModelScope.launch {
+                val initialIdentity =
+                    session.workspaceId
+                        ?.takeIf { snapshot.complete && session.active }
+                        ?.let {
+                            WorkspaceIdentity(apiOrigin, session.userId, session.sessionId, it)
+                        }
+                val appearanceRead =
+                    initialIdentity?.let { identity ->
+                        launch readCache@{
+                            val appearance = appearanceCache.load(identity) ?: return@readCache
+                            val state = mutable.value
+                            if (
+                                current(ticket, snapshot) &&
+                                    state.stage == SessionStage.LoadingWorkspace
+                            ) {
+                                mutable.value = state.copy(cachedAppearance = appearance)
+                            }
+                        }
+                    }
                 try {
                     authentication.refresh(session)
                     requireCurrent(ticket, snapshot)
                     val memberships = authentication.memberships(session)
                     requireCurrent(ticket, snapshot)
-                    if (
-                        !snapshot.complete ||
-                            !session.active ||
-                            session.workspaceId == null ||
-                            memberships.none { it.id == session.workspaceId }
-                    ) {
+                    val membership =
+                        initialIdentity?.let { identity ->
+                            memberships.firstOrNull { it.id == identity.workspaceId }
+                        }
+                    if (initialIdentity == null || membership == null) {
                         mutable.value =
                             SessionUiState(generation, SessionStage.ChooseWorkspace, memberships)
                         return@launch
                     }
                     val identity =
-                        WorkspaceIdentity(
-                            apiOrigin,
-                            session.userId,
-                            session.sessionId,
-                            session.workspaceId,
-                            chatScopeHash(
-                                listOf(memberships.first { it.id == session.workspaceId }.role) +
-                                    snapshot.membershipAccess
-                                        ?.firstOrNull { it.workspaceId == session.workspaceId }
-                                        ?.let {
-                                            listOf(
-                                                it.role,
-                                                if (it.permissions == null) "unknown" else "known",
-                                            ) + it.permissions.orEmpty().sorted()
-                                        }
-                                        .orEmpty()
-                            ),
+                        initialIdentity.copy(
+                            authorizationScope =
+                                chatScopeHash(
+                                    listOf(membership.role) +
+                                        snapshot.membershipAccess
+                                            ?.firstOrNull {
+                                                it.workspaceId == initialIdentity.workspaceId
+                                            }
+                                            ?.let {
+                                                listOf(
+                                                    it.role,
+                                                    if (it.permissions == null) "unknown"
+                                                    else "known",
+                                                ) + it.permissions.orEmpty().sorted()
+                                            }
+                                            .orEmpty()
+                                )
                         )
                     val owner =
                         factory.create(
@@ -298,6 +323,12 @@ class SessionModel(
                             ),
                         )
                     chats.refresh()
+                    launch {
+                        preferences.uiState
+                            .map { it.confirmed.appearance }
+                            .distinctUntilChanged()
+                            .collect { appearanceCache.save(identity, it) }
+                    }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
@@ -315,6 +346,8 @@ class SessionModel(
                             }
                         mutable.value = SessionUiState(generation, stage)
                     }
+                } finally {
+                    appearanceRead?.cancel()
                 }
             }
     }
