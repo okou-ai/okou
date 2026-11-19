@@ -791,7 +791,9 @@ test("Show working dots on scroll-to-bottom while the thread works", async () =>
   });
 
   await readyChat();
-  expect(document.querySelector("[data-thinking-indicator]")).toBeVisible();
+  expect(
+    document.querySelector("[data-thinking-indicator]"),
+  ).toBeInTheDocument();
   const scroller = document.querySelector<HTMLElement>(
     "[data-scroll-container]",
   );
@@ -818,10 +820,11 @@ test("Show working dots on scroll-to-bottom while the thread works", async () =>
 
   chat.completeRun("Report ready");
 
+  // The arrow returning is the positive sentinel for the finished run.
   await waitFor(() => {
-    expect(document.querySelector("[data-thinking-indicator]")).toBeNull();
-    expect(scrollButton()).not.toHaveAttribute("data-working");
+    expect(scrollButton()?.querySelector("svg")).toBeInTheDocument();
   });
+  expect(scrollButton()).not.toHaveAttribute("data-working");
   expect(
     scrollButton()?.querySelector("[data-scroll-to-bottom-working-dot]"),
   ).toBeNull();

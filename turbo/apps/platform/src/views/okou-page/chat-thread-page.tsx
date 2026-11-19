@@ -3787,7 +3787,7 @@ function ScrollToBottomWorkingDots() {
             key={delay}
             data-scroll-to-bottom-working-dot
             style={{ animationDelay: delay }}
-            className="size-1 rounded-full bg-current animate-working-dot motion-reduce:animate-none"
+            className="size-1 rounded-full bg-current motion-safe:animate-working-dot"
           />
         );
       })}
