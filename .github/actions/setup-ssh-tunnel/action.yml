@@ -29,7 +29,7 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: ./.github/actions/setup-gnu-timeout
+    - uses: ./.github/actions/setup-gnu-coreutils
 
     - name: Install cloudflared
       shell: bash
