@@ -124,7 +124,13 @@ async function shareArtifactUrl(url: string): Promise<void> {
 }
 
 export function ArtifactActionSeparator() {
-  return <span className="mx-0.5 h-5 w-px shrink-0 bg-divider/70" />;
+  return (
+    <span
+      role="separator"
+      aria-orientation="vertical"
+      className="mx-0.5 h-5 w-px shrink-0 bg-divider/70"
+    />
+  );
 }
 
 export function ArtifactActionTooltip({
