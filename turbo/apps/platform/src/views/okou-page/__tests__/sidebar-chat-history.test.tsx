@@ -1264,6 +1264,38 @@ test("My Okou's Chat link returns a filtered chat list to the inbox", async () =
   expect(header).toHaveTextContent(/^$/);
 });
 
+test("The Okou rail entry opens My Okou's chat page at /", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "Existing conversation"),
+  ]);
+
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+    featureSwitches: {
+      [FeatureSwitchKey.SingleAgent]: true,
+      [FeatureSwitchKey.OkouRailEntry]: true,
+    },
+  });
+
+  const rail = await screen.findByTestId("labeled-nav-rail");
+  await screen.findByPlaceholderText(PLACEHOLDER);
+  const okouLink = within(rail).getByLabelText("Okou");
+  expect(okouLink).toHaveTextContent("Okou");
+  expect(okouLink).toHaveAttribute("href", "/");
+  expect(within(rail).queryByLabelText("Chat")).toBeNull();
+
+  click(okouLink);
+  await waitFor(() => {
+    expect(pathname()).toBe("/");
+  });
+  const newChat = queryAllByRoleFast("link", sidebar()).find((link) => {
+    return link.textContent?.startsWith("New chat");
+  });
+  expect(newChat).toHaveAttribute("aria-current", "page");
+});
+
 test("Mark all current-agent chats read from the chat-list menu", async () => {
   prepareDefaultAgent();
   mockSidebarThreadStory([

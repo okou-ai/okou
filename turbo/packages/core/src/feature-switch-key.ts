@@ -51,4 +51,5 @@ export enum FeatureSwitchKey {
   FreePlanArtifactPaywall = "freePlanArtifactPaywall",
   BillingSurvey = "billingSurvey",
   OnboardingMultipleOutputs = "onboardingMultipleOutputs",
+  OkouRailEntry = "okouRailEntry",
 }

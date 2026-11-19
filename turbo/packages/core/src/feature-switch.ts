@@ -226,6 +226,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: true,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.OkouRailEntry]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Okou rail entry",
+    description:
+      "Show the Okou logo and name on the rail's chat entry, and a compose icon on New chat.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.BillingSurvey]: {
     maintainer: "ming@okou.ai",
     displayName: "Billing one-question surveys",
