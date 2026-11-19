@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.0](https://github.com/okou-ai/okou/compare/android-v0.27.1...android-v0.28.0) (2026-11-19)
+
+
+### Features
+
+* **android:** refine settings and sync display mode with web ([#48892](https://github.com/okou-ai/okou/issues/48892)) ([d8bf4f3](https://github.com/okou-ai/okou/commit/d8bf4f304697b69a4a283226315cc72c02d84275))
+
 ## [0.27.1](https://github.com/okou-ai/okou/compare/android-v0.27.0...android-v0.27.1) (2026-11-19)
 
 
