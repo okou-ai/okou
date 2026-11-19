@@ -225,3 +225,51 @@ chat-attachment-annotation-017	turbo/apps/platform/src/views/okou-page/__tests__
 chat-attachment-annotation-018	turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-annotation.test.tsx	A restored draft with marks rebuilds its copy from one image read and can send	339	passed
 chat-attachment-annotation-020	turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-annotation.test.tsx	A selected freehand stroke opens its note and moves with a drag	364	passed
 chat-attachment-annotation-021	turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-annotation.test.tsx	Enter confirms a note and one undo reverts a whole drag	393	passed
+chat-message-visualization-preferences-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-visualization-preferences.test.tsx	Sent visualization choices are grouped, concise, and only shown when selected	69	passed
+chat-message-history-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-history.test.tsx	A claimed queued message restores as the active run after refresh	18	passed
+chat-message-history-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-history.test.tsx	A chat with no artifacts shows an empty resources panel	52	passed
+chat-message-plain-text-links-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-plain-text-links.test.tsx	A link a user typed is clickable in the message and in its feedback note	64	passed
+chat-message-plain-text-links-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-plain-text-links.test.tsx	A link glued to a word or a digit stays plain text	85	passed
+chat-message-plain-text-links-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-plain-text-links.test.tsx	Text that only looks like a link stays plain text	95	passed
+chat-message-followups-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-followups.test.tsx	A late recommendation appears after navigating to another chat	152	passed
+chat-message-followups-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-followups.test.tsx	A recommended follow-up edits the draft without sending it	179	passed
+chat-message-followups-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-followups.test.tsx	Workflow and email recommendations keep their icons and edit the draft (touch: false)	230	passed
+chat-message-followups-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-followups.test.tsx	Workflow and email recommendations keep their icons and edit the draft (touch: true)	230	passed
+chat-message-structured-content-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-structured-content.test.tsx	Agent mentions are recognizable links in messages and feedback	78	passed
+chat-message-structured-content-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-structured-content.test.tsx	MCP messages show the saved client name or generic marker with a local icon	128	passed
+chat-message-structured-content-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-structured-content.test.tsx	Delegated work links back to its source run	188	passed
+chat-message-structured-content-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-structured-content.test.tsx	Related feedback notes are grouped with clear source links	221	passed
+chat-message-structured-content-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-structured-content.test.tsx	Structured message context stays in its pane when a companion chat opens	280	passed
+chat-resources-navigation-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-resources-navigation.test.tsx	The next chat starts closed and shows only its own resources once its messages load	31	passed
+chat-resources-navigation-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-resources-navigation.test.tsx	The rename dialog keeps chat shortcuts from leaving the chat	161	passed
+chat-resources-layout-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-resources-layout.test.tsx	Resources toggle open on mobile and close from the composer	16	passed
+chat-resources-layout-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-resources-layout.test.tsx	Space opens and then closes the resources from their trigger	31	passed
+chat-resources-layout-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-resources-layout.test.tsx	Escape from an artifact closes the resources and returns focus to their trigger	49	passed
+chat-resources-realtime-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-resources-realtime.test.tsx	Resources opened after a catalog notification show the latest published video	82	passed
+chat-resources-realtime-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-resources-realtime.test.tsx	Only the current chat's catalog notification refreshes its open resources	99	passed
+chat-resources-realtime-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-resources-realtime.test.tsx	A catalog notification adds a published video to the open gallery beside its hosted site	125	passed
+chat-resources-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-resources.test.tsx	An empty chat's resources open while loading and then show the empty hint	30	passed
+chat-resources-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-resources.test.tsx	Resources open while loading, show their artifact and child chat, and keep them on reopen	79	passed
+chat-resources-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-resources.test.tsx	The closed resource trigger names itself in a tooltip until the panel opens	170	passed
+chat-resources-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-resources.test.tsx	The artifacts list expands and collapses in place	185	passed
+chat-resources-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-resources.test.tsx	The floating resources show artifacts while transcript links stay outside	208	passed
+chat-continuity-draft-recovery-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-draft-recovery.test.tsx	Opening a chat restores its saved draft text and available attachment	16	passed
+chat-continuity-keyboard-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-keyboard.test.tsx	Moving to a newer chat from the main composer keeps the side pane	36	passed
+chat-continuity-keyboard-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-keyboard.test.tsx	Icon shortcuts add and remove the focused main chat's checkmark	72	passed
+chat-continuity-clipboard-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-clipboard.test.tsx	Pasted chat content keeps its lines and reports an inaccessible attachment	98	passed
+chat-continuity-clipboard-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-clipboard.test.tsx	Pasted text and a resolving attachment are saved once the file is available	164	passed
+chat-continuity-clipboard-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-clipboard.test.tsx	Pasted text and a chat reference land at the draft cursor in order	223	passed
+chat-continuity-history-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-history.test.tsx	Opening a long conversation renders its latest turns with one anchor for the final repeated answer	203	passed
+chat-continuity-history-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-history.test.tsx	Scroll to bottom and Control+ArrowUp move a long conversation to its ends	217	passed
+chat-continuity-history-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-history.test.tsx	A steering message for an active run is confirmed once in the main chat only	273	passed
+chat-continuity-uploads-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx	Picked files attach with their content types and credential-free storage transfers	151	passed
+chat-continuity-uploads-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx	An upload with an absolute private Artifact URL completes once and attaches	179	passed
+chat-continuity-uploads-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx	A failed upload leaves the successful attachment to be sent alone	230	passed
+chat-continuity-uploads-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx	A multipart recording runs four parts at a time and shows byte progress until finalized	331	passed
+chat-continuity-uploads-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx	A multipart finalization failure is reported once without retrying completion	391	passed
+chat-continuity-uploads-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx	A 5 GiB recording at the picker limit starts uploading	419	passed
+chat-continuity-uploads-014	turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx	Cancelling a multipart recording stops without a failure or starting queued parts	438	passed
+chat-continuity-drafts-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-drafts.test.tsx	Text typed while a saved draft loads is kept over the older draft	79	passed
+chat-continuity-drafts-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-drafts.test.tsx	Removing an attachment from a restored rich draft keeps its other content	122	passed
+chat-continuity-drafts-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-drafts.test.tsx	A typed draft is restored after visiting a neighboring conversation	221	passed
+chat-continuity-drafts-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-drafts.test.tsx	Sending a revised restored draft sends only its current text and attachment	255	passed
