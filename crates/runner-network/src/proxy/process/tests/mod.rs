@@ -567,10 +567,12 @@ async fn wait_for_reaped_pid_leaves_zombie_for_owner() {
     .await
     .expect("child should exit without being reaped");
 
-    assert!(
-        !wait_for_reaped_pid(pid, starttime).await,
-        "a matching zombie must not be reported as reaped"
-    );
+    // This zombie stays until its owner reaps it. Let the observer's timers
+    // advance between real procfs reads while the child state is stable.
+    tokio::time::pause();
+    let reaped = wait_for_reaped_pid(pid, starttime).await;
+    tokio::time::resume();
+    assert!(!reaped, "a matching zombie must not be reported as reaped");
     let status = child
         .0
         .try_wait()
