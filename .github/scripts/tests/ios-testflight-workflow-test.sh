@@ -88,7 +88,6 @@ ios = json.loads(subprocess.check_output(['yq', '-o=json', '.', ios_path], text=
 assert 'publish-archive' in ios['jobs']['ci-gate-ios']['needs']
 assert ios['jobs']['ci-gate-ios']['if'] == 'always()'
 native_jobs = ['swiftlint-build', 'swiftlint', 'prepare-package-sources', 'test-packages', 'build-test', 'build-preview', 'build-archive', 'publish-archive']
-release_subject = "startsWith(github.event.merge_group.head_commit.message, 'chore: release')"
 
 def ancestors(name):
     needs = ios['jobs'][name].get('needs', [])
@@ -104,8 +103,10 @@ def started(event, needed='true', release=False, reuse='', cancelled=False, **fo
         # Without a status function a job inherits success() over every ancestor.
         selected = not cancelled and (explicit or all(results[job] == 'success' for job in ancestors(name)))
         if selected:
-            context = {'github.event_name': event, release_subject: release, '!cancelled()': True,
-                       'needs.detect.outputs.needed': needed if results.get('detect') == 'success' else '',
+            detected = results.get('detect') == 'success'
+            context = {'github.event_name': event, '!cancelled()': True,
+                       'needs.detect.outputs.needed': needed if detected else '',
+                       'needs.detect.outputs.release': str(release).lower() if detected else '',
                        'needs.resolve-release.outputs.reuse': reuse if results.get('resolve-release') == 'success' else ''}
             context.update({f'needs.{job}.result': result for job, result in results.items()})
             expression = condition

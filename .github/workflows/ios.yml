@@ -73,6 +73,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       needed: ${{ steps.changes.outputs.needed }}
+      release: ${{ steps.changes.outputs.release }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -94,6 +95,13 @@ jobs:
         run: |
           needed=$(bash ios/scripts/ci-changed.sh)
           echo "needed=$needed" >> "$GITHUB_OUTPUT"
+          # A queued release commit may reuse published validation. Its subject only
+          # selects the resolver, which still classifies the whole group's diff.
+          release=false
+          if [[ "$EVENT_NAME" == merge_group && "$(git log -1 --format=%s)" == 'chore: release'* ]]; then
+            release=true
+          fi
+          echo "release=$release" >> "$GITHUB_OUTPUT"
 
   script-checks:
     runs-on: ubuntu-latest
@@ -126,9 +134,7 @@ jobs:
     # Release metadata reuses the archive and tests already published for its
     # native inputs. Other merge groups never start this job or wait for it.
     needs: detect
-    if: >-
-      github.event_name == 'merge_group' && needs.detect.outputs.needed == 'true' &&
-      startsWith(github.event.merge_group.head_commit.message, 'chore: release')
+    if: github.event_name == 'merge_group' && needs.detect.outputs.needed == 'true' && needs.detect.outputs.release == 'true'
     runs-on: xcode-27
     timeout-minutes: 30
     outputs:
