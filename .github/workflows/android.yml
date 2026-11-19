@@ -133,8 +133,21 @@ jobs:
             2>&1 | tee build/reports/instrumentation/gradle.log
           python3 scripts/check-native-results.py \
             app/build/outputs/androidTest-results/managedDevice/release/pixel2Api35 10
+      - name: Verify the Release artifact pair exists
+        id: release-artifacts
+        if: ${{ !cancelled() && (steps.native-tests.outcome == 'success' || steps.native-tests.outputs.release-directory != '') }}
+        env:
+          RELEASE_ARTIFACTS: ${{ steps.native-tests.outputs.release-directory }}
+        run: |
+          version=$(cat android/version.txt)
+          if [[ -z "$RELEASE_ARTIFACTS" ||
+                ! -s "$RELEASE_ARTIFACTS/okou-android-$version-unsigned.apk" ||
+                ! -s "$RELEASE_ARTIFACTS/okou-android-$version-mapping.txt.gz" ]]; then
+            echo '::error::Missing unsigned Android Release APK or R8 mapping'
+            exit 1
+          fi
       - name: Retain the unsigned Release APK and R8 mapping
-        if: ${{ !cancelled() && steps.native-tests.outputs.release-directory != '' }}
+        if: ${{ !cancelled() && steps.release-artifacts.outcome == 'success' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: okou-android-release-${{ github.sha }}
@@ -183,6 +196,7 @@ jobs:
             android/app/build/outputs/managed_device_android_test_additional_output/
             android/app/build/outputs/apk/androidTest/release/
           if-no-files-found: warn
+          overwrite: true
           retention-days: 7
 
   ci-gate-android:
