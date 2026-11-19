@@ -1,15 +1,13 @@
 -- Fixed current Seed packages, shared by native PostgreSQL and PGlite.
 -- Bytes and source identities are captured in dev-seed-skill-bundles.json and
 -- scripts/dev-seed-skill-bundles; existing catalog authority is preserved.
-INSERT INTO skills (
-  url, name, full_path, version_hash, content_bundle,
-  content_bundle_source_version_hash, commit_sha, size, file_count, frontmatter
+INSERT INTO built_in_skills (
+  url, version_hash, content_bundle, content_bundle_source_version_hash, commit_sha
 )
 SELECT
   'https://github.com/okou-ai/okou-skills/tree/main/' || seed.name,
-  seed.name, 'okou-ai/okou-skills/tree/main/' || seed.name,
   seed."versionHash", seed."contentBundle", seed."versionHash",
-  seed."commitSha", seed.size, seed."fileCount", seed.frontmatter
+  seed."commitSha"
 FROM jsonb_to_recordset($seed_skill_bundles$
 [
   {

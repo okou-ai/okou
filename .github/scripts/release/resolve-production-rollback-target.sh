@@ -136,6 +136,7 @@ readonly AGENT_INSTRUCTIONS_RUNNER_READER_COMMIT=da0dc9cd1b21ecdd91200fb1cad8600
 readonly CONTENT_BUNDLE_PREPARATION_COMMIT=fc8f99468cc7946843620ff655ae22c09f9cb2ae
 readonly CONTENT_BUNDLE_REFERENCE_ONLY_API_PATH=.github/rollback-floors/content-bundle-reference-only-api
 readonly SEED_SKILL_BUNDLE_ONLY_API_PATH=.github/rollback-floors/seed-skill-bundle-only-api
+readonly BUILT_IN_SKILL_CATALOG_API_PATH=.github/rollback-floors/built-in-skill-catalog-api
 readonly CONNECTOR_SKILL_BUNDLE_CLAIMS_PATH=.github/rollback-floors/connector-skill-bundle-claims
 readonly SINGLE_CHARACTER_SKILL_READER_PATH=.github/rollback-floors/single-character-skill-bundle-reader
 readonly SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_PATH=.github/rollback-floors/single-character-skill-capability-free-api
@@ -973,6 +974,20 @@ if [[ ! "$seed_skill_bundle_only_api_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$seed_skill_bundle_only_api_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Seed Skill bundle-only publisher: ${seed_skill_bundle_only_api_commit}."
+fi
+
+# The preparation API follows the activated catalog even when its old mirror is stale.
+if ! built_in_skill_catalog_api_commit=$(git show "origin/main:${BUILT_IN_SKILL_CATALOG_API_PATH}"); then
+  fail "Cannot read the built-in Skill catalog API rollback floor from main."
+fi
+if [[ ! "$built_in_skill_catalog_api_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid built-in Skill catalog API rollback floor."
+fi
+if ! git merge-base --is-ancestor "$built_in_skill_catalog_api_commit" origin/main; then
+  fail "Built-in Skill catalog API rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$built_in_skill_catalog_api_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the built-in Skill catalog reader: ${built_in_skill_catalog_api_commit}."
 fi
 
 # Captured Connector bundles must retain Workflow precedence, even after the

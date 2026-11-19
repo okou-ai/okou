@@ -24,8 +24,8 @@ export const builtInSkills = pgTable(
     ).notNull(),
     commitSha: varchar("commit_sha", { length: 40 }),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
-    // The cutover migration activates the complete catalog together.
-    authoritative: boolean("authoritative").default(false).notNull(),
+    // Retained while the preparation API remains an eligible rollback target.
+    authoritative: boolean("authoritative").default(true).notNull(),
   },
   (table) => {
     return [

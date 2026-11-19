@@ -10,13 +10,8 @@ import {
   DEFAULT_SKILLS_REPO,
   resolveSkillRef,
 } from "@okouai/core/github-url";
-import {
-  parseSkillFrontmatter,
-  type SkillFrontmatter,
-} from "@okouai/core/skill-frontmatter";
 import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import { builtInSkills } from "@okouai/db/schema/built-in-skill";
-import { skills } from "@okouai/db/schema/skill";
 import { command } from "ccstate";
 import { eq, inArray } from "drizzle-orm";
 import { Parser } from "tar";
@@ -49,13 +44,9 @@ interface ExtractedSkill {
 }
 
 interface SkillSyncContext {
-  readonly skillName: string;
   readonly files: readonly ExtractedFile[];
   readonly url: string;
-  readonly fullPath: string;
-  readonly frontmatter: SkillFrontmatter;
   readonly versionHash: string;
-  readonly totalSize: number;
 }
 
 const log = logger("skills:sync");
@@ -212,13 +203,6 @@ function buildSkillSyncContext(extracted: ExtractedSkill): SkillSyncContext {
   const skillName = extracted.skillName;
   const files = extracted.files;
   const url = skillUrl(skillName);
-  const fullPath = `${DEFAULT_SKILLS_OWNER}/${DEFAULT_SKILLS_REPO}/tree/${DEFAULT_SKILLS_BRANCH}/${skillName}`;
-  const skillMd = files.find((file) => {
-    return file.path === "SKILL.md";
-  });
-  const frontmatter: SkillFrontmatter = skillMd
-    ? parseSkillFrontmatter(skillMd.content.toString("utf8"))
-    : {};
   const fileEntries: FileEntryWithHash[] = files.map((file) => {
     return {
       path: file.path,
@@ -226,32 +210,13 @@ function buildSkillSyncContext(extracted: ExtractedSkill): SkillSyncContext {
       size: file.size,
     };
   });
-  const totalSize = files.reduce((sum, file) => {
-    return sum + file.size;
-  }, 0);
-
   return {
-    skillName,
     files,
     url,
-    fullPath,
-    frontmatter,
     versionHash: computeSystemSkillHash(url, fileEntries),
-    totalSize,
   };
 }
 
-function skillSourceValues(context: SkillSyncContext, timestamp: Date) {
-  return {
-    name: context.frontmatter.name ?? context.skillName,
-    fullPath: context.fullPath,
-    versionHash: context.versionHash,
-    frontmatter: context.frontmatter,
-    size: context.totalSize,
-    fileCount: context.files.length,
-    syncedAt: timestamp,
-  };
-}
 const commitSeedSkillPublication$ = command(
   async (
     { set },
@@ -263,32 +228,13 @@ const commitSeedSkillPublication$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     signal.throwIfAborted();
-    const database = set(writeDb$);
-    const record = {
-      ...skillSourceValues(args.context, args.timestamp),
-      storageId: null,
-      s3Key: null,
+    const publication = {
+      versionHash: args.context.versionHash,
       contentBundle: args.contentBundle,
       contentBundleSourceVersionHash: args.context.versionHash,
-    };
-    const legacy = database.$with("legacy_skill_publication").as(
-      database
-        .insert(skills)
-        .values({ url: args.context.url, ...record })
-        .onConflictDoUpdate({
-          target: skills.url,
-          set: { ...record, updatedAt: args.timestamp },
-        })
-        .returning({ url: skills.url }),
-    );
-    const publication = {
-      versionHash: record.versionHash,
-      contentBundle: record.contentBundle,
-      contentBundleSourceVersionHash: record.contentBundleSourceVersionHash,
       updatedAt: args.timestamp,
     };
-    await database
-      .with(legacy)
+    await set(writeDb$)
       .insert(builtInSkills)
       .values({ url: args.context.url, ...publication })
       .onConflictDoUpdate({
@@ -459,21 +405,9 @@ export const syncSkills$ = command(
     if (failed === 0 && extractedSkills.length === BUILT_IN_SKILLS.length) {
       // A missing Seed or failed publication must leave the batch retryable.
       // Advance only this complete Seed set, never retained non-Seed metadata.
-      const database = set(writeDb$);
-      const publishedCommit = { commitSha: headSha, updatedAt: nowDate() };
-      const legacy = database
-        .$with("legacy_skill_commit")
-        .as(
-          database
-            .update(skills)
-            .set(publishedCommit)
-            .where(inArray(skills.url, seedSkillUrls))
-            .returning({ url: skills.url }),
-        );
-      await database
-        .with(legacy)
+      await set(writeDb$)
         .update(builtInSkills)
-        .set(publishedCommit)
+        .set({ commitSha: headSha, updatedAt: nowDate() })
         .where(inArray(builtInSkills.url, seedSkillUrls));
       signal.throwIfAborted();
     }
