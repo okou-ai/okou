@@ -1019,7 +1019,7 @@ function authJsonFromTokens(tokens: CodexOAuthTokens): string {
 
 const completeLoadedCodexDeviceAuth$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly session: ModelProviderAuthSession;
       readonly orgId: string;
@@ -1080,6 +1080,16 @@ const completeLoadedCodexDeviceAuth$ = command(
       };
     }
 
+    // Capture the old active account while the approved session is still retryable.
+    const recoveries = await get(
+      subscriptionSwitchRecoveries({
+        orgId: args.orgId,
+        userId: args.userId,
+        type: "codex-oauth-token",
+      }),
+    );
+    signal.throwIfAborted();
+
     const claimed = await set(claimCompleting$, { session });
     signal.throwIfAborted();
     if (!claimed) {
@@ -1096,6 +1106,7 @@ const completeLoadedCodexDeviceAuth$ = command(
         userId: args.userId,
         authorizationCode: deviceToken.authorizationCode,
         codeVerifier: deviceToken.codeVerifier,
+        recoveries,
       },
       signal,
     );
@@ -1104,7 +1115,7 @@ const completeLoadedCodexDeviceAuth$ = command(
 
 const importClaimedCodexDeviceAuth$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly session: ModelProviderAuthSession;
       readonly mode: CodexDeviceAuthMode | undefined;
@@ -1113,6 +1124,7 @@ const importClaimedCodexDeviceAuth$ = command(
       readonly userId: string;
       readonly authorizationCode: string;
       readonly codeVerifier: string;
+      readonly recoveries: readonly SubscriptionRecovery[];
     },
     signal: AbortSignal,
   ): Promise<CodexDeviceAuthCompleteResult> => {
@@ -1146,35 +1158,22 @@ const importClaimedCodexDeviceAuth$ = command(
     }
 
     const imported = await settle(
-      (async () => {
-        // Capture failures against the old active account before publishing credentials.
-        const recoveries = await get(
-          subscriptionSwitchRecoveries({
-            orgId: args.orgId,
+      set(
+        importCodexAuthJson$,
+        {
+          authSession: {
+            id: args.session.id,
             userId: args.userId,
-            type: "codex-oauth-token",
-          }),
-        );
-        signal.throwIfAborted();
-        const result = await set(
-          importCodexAuthJson$,
-          {
-            authSession: {
-              id: args.session.id,
-              userId: args.userId,
-              source: "codex-device-auth",
-            },
-            orgId: args.orgId,
-            userId: args.userId,
-            rawAuthJson: authJsonFromTokens(tokens.value),
-            mode: args.mode,
-            modelProviderId: args.modelProviderId,
+            source: "codex-device-auth",
           },
-          signal,
-        );
-        signal.throwIfAborted();
-        return { result, recoveries };
-      })(),
+          orgId: args.orgId,
+          userId: args.userId,
+          rawAuthJson: authJsonFromTokens(tokens.value),
+          mode: args.mode,
+          modelProviderId: args.modelProviderId,
+        },
+        signal,
+      ),
       signal,
     );
     signal.throwIfAborted();
@@ -1196,7 +1195,7 @@ const importClaimedCodexDeviceAuth$ = command(
       };
     }
 
-    const { result, recoveries } = imported.value;
+    const result = imported.value;
     if (result.status === "auth_error") {
       await set(markSessionError$, {
         sessionId: args.session.id,
@@ -1208,7 +1207,7 @@ const importClaimedCodexDeviceAuth$ = command(
 
     return {
       status: "complete",
-      recoveries,
+      recoveries: args.recoveries,
       body: {
         provider: result.body.provider,
         created: result.body.created,
