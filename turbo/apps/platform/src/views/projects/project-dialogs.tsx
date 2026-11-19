@@ -567,7 +567,7 @@ function ProjectDeleteConfirmation({
             ($) => {
               return $.projects.deleteThreadsDescription;
             },
-            { quantity: confirmation?.length ?? 0 },
+            { count: confirmation?.length ?? 0 },
           )}
         </DialogDescription>
       </DialogHeader>

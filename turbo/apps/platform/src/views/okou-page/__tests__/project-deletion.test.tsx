@@ -342,6 +342,11 @@ test("A new Project member requires reviewing the changed list before deleting a
   const confirmation = await screen.findByRole("dialog", {
     name: "Delete project and threads?",
   });
+  expect(
+    within(confirmation).getByText(
+      /Permanently delete this Project and 1 thread,/,
+    ),
+  ).toBeInTheDocument();
   fixture.remaining.set(threads[1]!.id, threads[1]!);
   click(button("Permanently delete", confirmation));
   await expect(
@@ -349,6 +354,11 @@ test("A new Project member requires reviewing the changed list before deleting a
   ).resolves.toBeInTheDocument();
   expect(within(confirmation).getByText("Planning 1")).toBeInTheDocument();
   expect(within(confirmation).getByText("Planning 2")).toBeInTheDocument();
+  expect(
+    within(confirmation).getByText(
+      /Permanently delete this Project and 2 threads,/,
+    ),
+  ).toBeInTheDocument();
   click(button("Permanently delete", confirmation));
   await waitFor(() => {
     return expect(button("Create Project")).toHaveFocus();
