@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Prepare an unsigned device archive and verify an exported IPA without compiling."""
+"""Prepare an unsigned device archive and verify an exported IPA without compiling.
+
+The archive is built once per native input and promoted under a later release
+version. Preparation stamps that version and the build number into bundle
+metadata only; compiled code, resources and symbols stay byte-identical.
+"""
 
 import argparse
 import hashlib
@@ -28,6 +33,29 @@ def read_plist(path):
 def write_plist(path, value):
     with path.open("wb") as file:
         plistlib.dump(value, file)
+
+
+def archive_version(archive):
+    """Version the archive was compiled under, read from its own application."""
+    if not archive.is_dir() or archive.is_symlink():
+        raise ValueError("Expected a real xcarchive directory")
+    version = read_plist(archive / APP_PATH / "Info.plist").get(
+        "CFBundleShortVersionString"
+    )
+    if not isinstance(version, str) or not re.fullmatch(
+        r"[0-9]+\.[0-9]+\.[0-9]+", version
+    ):
+        raise ValueError("Archive has no numeric release version")
+    return version
+
+
+def resource_bundle_plists(app, version):
+    """Package resource bundles that inherited the application's build version."""
+    return [
+        path
+        for path in sorted(app.rglob("*.bundle/Info.plist"))
+        if read_plist(path).get("CFBundleShortVersionString") == version
+    ]
 
 
 def validate_archive(archive, version):
@@ -141,29 +169,37 @@ def file_digests(directory):
 def prepare(source, destination, version, build_number):
     if not re.fullmatch(r"[1-9][0-9]{0,3}", build_number):
         raise ValueError("Build number must be an integer from 1 through 9999")
+    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+        raise ValueError("Release version must be a numeric x.y.z version")
     if destination.exists() or destination.resolve().is_relative_to(source.resolve()):
         raise ValueError("Use a new destination outside the source archive")
-    _, info, archive_info = validate_archive(source, version)
+    built = archive_version(source)
+    validate_archive(source, built)
     before = file_digests(source)
     shutil.copytree(source, destination, symlinks=True)
-    info["CFBundleVersion"] = build_number
-    archive_info["ApplicationProperties"]["CFBundleVersion"] = build_number
-    write_plist(destination / APP_PATH / "Info.plist", info)
-    extension_info = read_plist(destination / APP_PATH / EXTENSION_PATH / "Info.plist")
-    extension_info["CFBundleVersion"] = build_number
-    write_plist(destination / APP_PATH / EXTENSION_PATH / "Info.plist", extension_info)
-    widgets_info = read_plist(destination / APP_PATH / WIDGETS_PATH / "Info.plist")
-    widgets_info["CFBundleVersion"] = build_number
-    write_plist(destination / APP_PATH / WIDGETS_PATH / "Info.plist", widgets_info)
-    write_plist(destination / "Info.plist", archive_info)
+    app = destination / APP_PATH
+    # Release identity lives in these four files; both values are stamped together.
+    identities = [
+        destination / "Info.plist",
+        app / "Info.plist",
+        app / EXTENSION_PATH / "Info.plist",
+        app / WIDGETS_PATH / "Info.plist",
+    ]
+    for path in identities:
+        info = read_plist(path)
+        properties = info["ApplicationProperties"] if path == identities[0] else info
+        properties["CFBundleShortVersionString"] = version
+        properties["CFBundleVersion"] = build_number
+        write_plist(path, info)
+    # Xcode gives package resource bundles the application's marketing version.
+    bundles = resource_bundle_plists(app, built) if built != version else []
+    for path in bundles:
+        info = read_plist(path)
+        info["CFBundleShortVersionString"] = version
+        write_plist(path, info)
     validate_archive(destination, version)
     after = file_digests(destination)
-    allowed = {
-        "Info.plist",
-        str(APP_PATH / "Info.plist"),
-        str(APP_PATH / EXTENSION_PATH / "Info.plist"),
-        str(APP_PATH / WIDGETS_PATH / "Info.plist"),
-    }
+    allowed = {str(path.relative_to(destination)) for path in identities + bundles}
     changed = {
         name
         for name in before.keys() | after.keys()
@@ -173,7 +209,16 @@ def prepare(source, destination, version, build_number):
         raise ValueError(
             "Preparing the archive changed compiled code, symbols, or its source"
         )
-    print(json.dumps({"buildNumber": build_number, "changedFiles": sorted(changed)}))
+    print(
+        json.dumps(
+            {
+                "archiveVersion": built,
+                "version": version,
+                "buildNumber": build_number,
+                "changedFiles": sorted(changed),
+            }
+        )
+    )
 
 
 def macho_sections(data):
@@ -229,7 +274,7 @@ def macho_sections(data):
 
 
 def verify_export(source, ipa, version, build_number):
-    app, _, _ = validate_archive(source, version)
+    app, _, _ = validate_archive(source, archive_version(source))
     if macho_sections((app / "Okou").read_bytes()) is None:
         raise ValueError("Application executable is not a supported Mach-O binary")
     with ZipFile(ipa) as package:

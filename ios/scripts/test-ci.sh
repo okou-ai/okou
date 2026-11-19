@@ -138,7 +138,7 @@ gate() {
   local preview_result=success
   if [[ "$2" == false ]]; then lint_result=skipped; fi
   if [[ "$2" == false ]]; then preview_result=skipped; fi
-  EVENT_NAME=pull_request DETECT_RESULT=$1 SCRIPT_CHECKS_RESULT=${5-success} LINT_RESULT=${6-$lint_result} PREVIEW_RESULT=${7-$preview_result} IOS_NEEDED=$2 BUILD_RESULT=$3 PACKAGES_RESULT=${4-$3} ARCHIVE_RESULT=skipped PUBLISH_RESULT=skipped bash "$script_dir/ci-gate.sh"
+  EVENT_NAME=pull_request DETECT_RESULT=$1 SCRIPT_CHECKS_RESULT=${5-success} LINT_RESULT=${6-$lint_result} PREVIEW_RESULT=${7-$preview_result} IOS_NEEDED=$2 RELEASE_RESULT=skipped BUILD_RESULT=$3 PACKAGES_RESULT=${4-$3} ARCHIVE_RESULT=skipped PUBLISH_RESULT=skipped bash "$script_dir/ci-gate.sh"
 }
 gate success true success
 gate success false skipped
@@ -192,6 +192,7 @@ if gate success false skipped skipped success success > "$test_root/rejected.log
 fi
 export LINT_RESULT=success
 export PREVIEW_RESULT=skipped
+export RELEASE_RESULT=skipped
 EVENT_NAME=merge_group DETECT_RESULT=success SCRIPT_CHECKS_RESULT=success IOS_NEEDED=true PACKAGES_RESULT=success BUILD_RESULT=success ARCHIVE_RESULT=success PUBLISH_RESULT=success bash "$script_dir/ci-gate.sh"
 EVENT_NAME=push DETECT_RESULT=success SCRIPT_CHECKS_RESULT=success IOS_NEEDED=true PACKAGES_RESULT=skipped BUILD_RESULT=skipped ARCHIVE_RESULT=skipped PUBLISH_RESULT=skipped bash "$script_dir/ci-gate.sh"
 for result in failure cancelled skipped; do
@@ -208,4 +209,32 @@ for result in failure cancelled skipped; do
     exit 1
   fi
 done
+
+# Release metadata may omit native jobs only after its resolver verified a
+# published archive and tests; a miss must complete the ordinary native path.
+release_gate() {
+  local native=$3
+  EVENT_NAME=${5-merge_group} DETECT_RESULT=success SCRIPT_CHECKS_RESULT=success IOS_NEEDED=true \
+    RELEASE_RESULT=$1 RELEASE_REUSE=$2 LINT_RESULT=${4-$native} PREVIEW_RESULT=${6-skipped} \
+    PACKAGES_RESULT=$native BUILD_RESULT=$native ARCHIVE_RESULT=$native PUBLISH_RESULT=$native \
+    bash "$script_dir/ci-gate.sh"
+}
+release_gate success true skipped
+release_gate success false success
+for rejected in \
+  'success true success' 'success true skipped success' 'success false skipped' \
+  'success "" skipped' 'success "" success' 'failure "" skipped' 'failure "" success' \
+  'cancelled "" skipped' 'skipped true skipped' 'skipped "" skipped' \
+  'success true skipped skipped pull_request success' 'success true skipped skipped push'; do
+  if eval "release_gate $rejected" > "$test_root/rejected.log" 2>&1; then
+    echo "Gate accepted an unverified release resolution: $rejected" >&2
+    exit 1
+  fi
+done
+if EVENT_NAME=merge_group DETECT_RESULT=success SCRIPT_CHECKS_RESULT=success IOS_NEEDED=true \
+  RELEASE_RESULT='' LINT_RESULT=success PACKAGES_RESULT=success BUILD_RESULT=success \
+  ARCHIVE_RESULT=success PUBLISH_RESULT=success bash "$script_dir/ci-gate.sh" > "$test_root/rejected.log" 2>&1; then
+  echo 'Gate accepted a missing release resolution' >&2
+  exit 1
+fi
 echo "iOS CI change detection and gate tests passed."
