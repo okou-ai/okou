@@ -21,7 +21,7 @@ jq -e '
   ($steps | map(((.uses // "") | startswith("actions/upload-artifact@")) and
     .with.name == "runner-cli-${{ github.run_id }}-${{ github.run_attempt }}") | index(true)) as $upload |
   ($steps | map(.id // "") | index("binary-plan")) as $plan |
-  ($checkout < $build and $build < $upload and $upload < $plan) and
+  ($checkout != null and $checkout < $build and $build < $upload and $upload < $plan) and
   .jobs.prepare.outputs["head-sha"] == "${{ steps.identity.outputs.head-sha }}" and
   .jobs.prepare.outputs["producer-head-sha"] == "${{ steps.identity.outputs.producer-head-sha }}" and
   any($steps[];
