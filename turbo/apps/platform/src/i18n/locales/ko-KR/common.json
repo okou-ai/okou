@@ -3517,7 +3517,7 @@
         "copySuccess": "전화번호가 복사되었습니다",
         "createCodeError": "연결 코드를 만들지 못했습니다.",
         "creatingCode": "연결 코드 만드는 중…",
-        "description": "iPhone에서 {{assistantName}}에게 아이디어를 문자로 보내고 초안을 부탁하세요.",
+        "description": "{{assistantName}}에 문자 메시지 접근",
         "openMessages": "메시지 열기",
         "options": "전화 옵션",
         "phoneLabel": "전화",
@@ -3622,7 +3622,7 @@
         "reviewGuide": "검토 가이드",
         "reviewGuideDescription": "이 Feishu 봇의 완료된 설정 단계를 검토하세요.",
         "reviewGuideTitle": "Feishu 검토 가이드",
-        "routeDescription": "Feishu에서 Okou에게 초안을 보내고 팀에 공유할 짧은 글로 다듬어 달라고 하세요.",
+        "routeDescription": "Feishu 메시지를 에이전트로 라우팅",
         "selectAgent": "에이전트 선택",
         "setupIncomplete": "설정 완료되지 않음",
         "steps": {
@@ -3759,7 +3759,7 @@
         "reviewGuide": "검토 가이드",
         "reviewGuideDescription": "이 Lark 봇의 완료된 설정 단계를 검토하세요.",
         "reviewGuideTitle": "Lark 검토 가이드",
-        "routeDescription": "Lark에서 Okou에게 초안을 보내고 팀에 공유할 짧은 글로 다듬어 달라고 하세요.",
+        "routeDescription": "Lark 메시지를 에이전트로 라우팅",
         "selectAgent": "에이전트 선택",
         "setupIncomplete": "설정 완료되지 않음",
         "steps": {
@@ -7111,6 +7111,18 @@
       "uninstalling": "제거 중…",
       "updatePermissions": "권한 업데이트"
     },
+    "channelExamples": {
+      "email": "이메일을 Okou에게 전달하고 요약이나 답장 초안을 부탁하세요.",
+      "feishu": "Feishu에서 Okou에게 초안을 보내고 팀에 공유할 짧은 글로 다듬어 달라고 하세요.",
+      "github": "풀 리퀘스트가 열리면 검토할 항목을 정리하는 워크플로를 실행하세요.",
+      "lark": "Lark에서 Okou에게 초안을 보내고 팀에 공유할 짧은 글로 다듬어 달라고 하세요.",
+      "phone": "iPhone에서 {{assistantName}}에게 아이디어를 문자로 보내고 초안을 부탁하세요.",
+      "slack": "Slack 채널에서 Okou를 멘션하고 작성 중인 초안에 대한 의견을 받아 보세요.",
+      "teams": "Teams 채팅에 회의 메모를 붙여 넣고 Okou에게 할 일을 정리해 달라고 하세요.",
+      "telegram": "Telegram에서 Okou에게 두 가지 방안을 보내고 각각의 장단점을 비교해 달라고 하세요.",
+      "wechat": "WeChat에서 Okou에게 두 가지 방안을 보내고 각각의 장단점을 비교해 달라고 하세요.",
+      "whatsapp": "WhatsApp에서 Okou에게 두 가지 방안을 보내고 각각의 장단점을 비교해 달라고 하세요."
+    },
     "connected": "연결됨",
     "connectedWithDetail": "연결됨 ({{detail}})",
     "discord": {
@@ -7144,7 +7156,7 @@
       "codeInstructions": "추가할 이메일 주소에서 이 코드를 제목이나 본문의 첫 줄에 넣어 Okou로 보내세요.",
       "connected": "이메일 연결됨",
       "deleteAria": "{{email}} 삭제",
-      "description": "이메일을 Okou에게 전달하고 요약이나 답장 초안을 부탁하세요.",
+      "description": "이메일로 Okou와 대화하세요",
       "emailAddress": "이메일 주소",
       "healthNotice": "HIPAA 규제 대상 환자 정보에는 이 연동을 사용하지 마세요.",
       "invalidLink": "연결 링크가 유효하지 않습니다. Okou에 새 이메일을 보내 주세요.",
@@ -7167,7 +7179,8 @@
     "feishuConnected": "Feishu가 성공적으로 연결되었습니다",
     "github": {
       "adminInstall": "조직 관리자에게 GitHub 앱 설치를 요청하세요",
-      "description": "풀 리퀘스트가 열리면 검토할 항목을 정리하는 워크플로를 실행하세요.",
+      "description": "GitHub 이벤트로 워크플로 자동화 실행",
+      "install": "GitHub 앱 설치",
       "title": "GitHub"
     },
     "header": {
@@ -7176,7 +7189,7 @@
     },
     "slack": {
       "adminInstall": "관리자에게 Slack 통합 설치를 요청하세요",
-      "description": "Slack 채널에서 Okou를 멘션하고 작성 중인 초안에 대한 의견을 받아 보세요.",
+      "description": "팀 커뮤니케이션 및 협업",
       "install": "Slack에 설치",
       "permissionsUpdated": "Slack 권한이 업데이트되었습니다",
       "title": "Slack",
@@ -7184,8 +7197,8 @@
       "uninstallTitle": "Slack 통합을 제거하시겠습니까?"
     },
     "teams": {
-      "connectAccount": "Teams 채팅에 회의 메모를 붙여 넣고 Okou에게 할 일을 정리해 달라고 하세요.",
-      "description": "Teams 채팅에 회의 메모를 붙여 넣고 Okou에게 할 일을 정리해 달라고 하세요.",
+      "connectAccount": "설정을 완료하려면 Microsoft 계정을 연결하세요",
+      "description": "팀 커뮤니케이션 및 협업",
       "disconnect": "Microsoft Teams 연결 해제",
       "install": "Teams에 설치",
       "moreOptions": "Microsoft Teams 추가 옵션",
@@ -7196,7 +7209,7 @@
       "uninstallTitle": "Microsoft Teams 통합을 제거하시겠습니까?"
     },
     "telegram": {
-      "description": "Telegram에서 Okou에게 두 가지 방안을 보내고 각각의 장단점을 비교해 달라고 하세요.",
+      "description": "Telegram 메시지를 에이전트로 라우팅",
       "title": "Telegram"
     },
     "wechat": {
@@ -7206,7 +7219,7 @@
       "connect": "연결",
       "connected": "연결됨",
       "creating": "QR 코드 생성 중…",
-      "description": "WeChat에서 Okou에게 두 가지 방안을 보내고 각각의 장단점을 비교해 달라고 하세요.",
+      "description": "WeChat에서 에이전트와 대화하세요.",
       "disconnect": "연결 해제",
       "expired": "이 QR 코드는 만료되었습니다. 새로 만드세요.",
       "failed": "WeChat에 연결하지 못했습니다.",
@@ -7234,7 +7247,7 @@
       "connect": "WhatsApp 연결",
       "connectDescription": "WhatsApp 계정을 {{brandName}}에 연결하여 에이전트와 채팅하세요.",
       "connected": "WhatsApp 연결됨",
-      "description": "WhatsApp에서 Okou에게 두 가지 방안을 보내고 각각의 장단점을 비교해 달라고 하세요.",
+      "description": "WhatsApp에서 Okou와 바로 대화하세요",
       "disconnected": "WhatsApp 연결 해제됨",
       "expires": "이 코드는 10분 후 만료됩니다. 연결 결과를 확인하려면 이 페이지를 열어 두세요.",
       "instructions": "WhatsApp을 열거나 QR 코드를 스캔한 후 연결 코드를 보내 계정을 연결하세요.",

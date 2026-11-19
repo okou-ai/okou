@@ -62,7 +62,7 @@ test("Integrations show current status and refresh after GitHub connects", async
   });
   const browserOpen = context.mocks.browser.open(providerWindow);
 
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { compact: true });
 
   await expect(screen.findByText("Slack")).resolves.toBeInTheDocument();
   expect(screen.getByText("Connected (Okou HQ)")).toBeInTheDocument();
@@ -128,7 +128,7 @@ test.each([true, false])(
       isConnected = false;
       return respond(200, { ok: true });
     });
-    await setupIntegrationsPage(context);
+    await setupIntegrationsPage(context, { compact: true });
     const card = getIntegrationCard("Slack");
     expect(within(card).getByText("Connected (Okou HQ)")).toBeInTheDocument();
     expect(queryAction("button", "Disconnect", card)).toBeNull();
@@ -156,7 +156,7 @@ test("A workspace member is directed to an admin for GitHub installation", async
     },
   );
 
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { compact: true });
 
   const githubCard = await waitFor(() => {
     return getIntegrationCard("GitHub");
@@ -219,7 +219,7 @@ test("Authorize the official Telegram bot directly in a new tab from Integration
   });
   const opened = context.mocks.browser.open(authorizationWindow);
 
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { compact: true });
 
   await expect(screen.findByText("Telegram")).resolves.toBeInTheDocument();
   const telegramCard = getIntegrationCard("Telegram");
@@ -289,7 +289,7 @@ test("The phone card describes messaging and the connect dialog displays the des
       });
     },
   );
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { compact: true });
   const phoneCard = await waitFor(() => {
     return getIntegrationCard("Phone");
   });
@@ -330,7 +330,7 @@ test("A user connects AgentPhone with a prefilled one-time code", async () => {
     },
   );
 
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { compact: true });
 
   const phoneCard = await waitFor(() => {
     return getIntegrationCard("Phone");
@@ -402,7 +402,7 @@ test("An admin can begin Microsoft Teams installation", async () => {
   mockSlack(context, { isConnected: true, isInstalled: true, isAdmin: true });
   mockTeams(context, { isConnected: false, isInstalled: false, isAdmin: true });
 
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { compact: true });
 
   const teamsCard = await waitFor(() => {
     return getIntegrationCard("Microsoft Teams");
@@ -429,7 +429,7 @@ test("Microsoft Teams offers Connect after installation", async () => {
   mockSlack(context, { isConnected: true, isInstalled: true, isAdmin: true });
   mockTeams(context, { isConnected: false, isInstalled: true, isAdmin: true });
 
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { compact: true });
 
   const teamsCard = await waitFor(() => {
     return getIntegrationCard("Microsoft Teams");
@@ -455,7 +455,7 @@ test("Microsoft Teams shows its connected account name", async () => {
     ],
   });
 
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { compact: true });
 
   await expect(
     screen.findByText("Microsoft Teams"),
@@ -468,7 +468,7 @@ test("Uninstalling connected Microsoft Teams requires confirmation", async () =>
   mockSlack(context, { isConnected: true, isInstalled: true, isAdmin: true });
   mockTeams(context, { isConnected: true, isInstalled: true, isAdmin: true });
 
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { compact: true });
 
   await expect(
     screen.findByText("Microsoft Teams"),
@@ -498,7 +498,7 @@ test.each([false, true])(
       });
     });
     const opened = context.mocks.browser.open();
-    await setupIntegrationsPage(context);
+    await setupIntegrationsPage(context, { compact: true });
     const card = getIntegrationCard("Slack");
     click(getAction("button", "Connect", card));
     const url = new URL(opened.calls[0]!.url!);
@@ -533,7 +533,7 @@ test("Slack permission refresh reports actual scope recovery on the original Wor
     });
   });
   const opened = context.mocks.browser.open();
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { compact: true });
   const card = getIntegrationCard("Slack");
   click(getAction("button", "Update Permissions", card));
   const url = new URL(opened.calls[0]!.url!);

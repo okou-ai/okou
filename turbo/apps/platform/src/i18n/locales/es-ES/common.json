@@ -3588,7 +3588,7 @@
         "copySuccess": "Número de teléfono copiado",
         "createCodeError": "No se pudo crear un código de conexión.",
         "creatingCode": "Creando código de conexión…",
-        "description": "Envía una idea a {{assistantName}} desde tu iPhone y pídele un primer borrador.",
+        "description": "Acceso por mensajes de texto a {{assistantName}}",
         "openMessages": "Abrir Mensajes",
         "options": "Opciones de teléfono",
         "phoneLabel": "Teléfono",
@@ -3693,7 +3693,7 @@
         "reviewGuide": "Guía para la revisión",
         "reviewGuideDescription": "Revisa los pasos de configuración completados para este bot de Feishu.",
         "reviewGuideTitle": "Guía de revisión de Feishu",
-        "routeDescription": "Envía un borrador a Okou en Feishu y pídele una versión breve para tu equipo.",
+        "routeDescription": "Dirige los mensajes de Feishu a los agentes",
         "selectAgent": "Selecciona un agente",
         "setupIncomplete": "Configuración incompleta",
         "steps": {
@@ -3830,7 +3830,7 @@
         "reviewGuide": "Guía para la revisión",
         "reviewGuideDescription": "Revisa los pasos de configuración completados para este bot de Lark.",
         "reviewGuideTitle": "Guía de revisión de Lark",
-        "routeDescription": "Envía un borrador a Okou en Lark y pídele una versión breve para tu equipo.",
+        "routeDescription": "Dirige los mensajes de Lark a los agentes",
         "selectAgent": "Selecciona un agente",
         "setupIncomplete": "Configuración incompleta",
         "steps": {
@@ -7213,6 +7213,18 @@
       "uninstalling": "Desinstalando...",
       "updatePermissions": "Actualizar permisos"
     },
+    "channelExamples": {
+      "email": "Reenvía un correo a Okou y pídele un resumen o un borrador de respuesta.",
+      "feishu": "Envía un borrador a Okou en Feishu y pídele una versión breve para tu equipo.",
+      "github": "Al abrirse un pull request, inicia un flujo de trabajo que prepare una lista de puntos para revisar.",
+      "lark": "Envía un borrador a Okou en Lark y pídele una versión breve para tu equipo.",
+      "phone": "Envía una idea a {{assistantName}} desde tu iPhone y pídele un primer borrador.",
+      "slack": "Menciona a Okou en un canal de Slack y pídele su opinión sobre un borrador.",
+      "teams": "Pega tus notas de la reunión en Teams y pídele a Okou una lista de tareas pendientes.",
+      "telegram": "Envía dos opciones a Okou en Telegram y pídele que compare sus ventajas y desventajas.",
+      "wechat": "Envía dos opciones a Okou en WeChat y pídele que compare sus ventajas y desventajas.",
+      "whatsapp": "Envía dos opciones a Okou en WhatsApp y pídele que compare sus ventajas y desventajas."
+    },
     "connected": "Conectado",
     "connectedWithDetail": "Conectado ({{detail}})",
     "discord": {
@@ -7246,7 +7258,7 @@
       "codeInstructions": "Envía este código a Okou desde el correo que quieres añadir. Ponlo en el asunto o en la primera línea del mensaje.",
       "connected": "Correo conectado",
       "deleteAria": "Eliminar {{email}}",
-      "description": "Reenvía un correo a Okou y pídele un resumen o un borrador de respuesta.",
+      "description": "Habla con tu Okou por email",
       "emailAddress": "Correo electrónico",
       "healthNotice": "No uses esta integración para información de pacientes regulada por HIPAA.",
       "invalidLink": "Este enlace de conexión no es válido. Envía un nuevo correo a Okou.",
@@ -7269,7 +7281,8 @@
     "feishuConnected": "Feishu conectado con éxito",
     "github": {
       "adminInstall": "Pide a un administrador de la organización que instale la aplicación de GitHub",
-      "description": "Al abrirse un pull request, inicia un flujo de trabajo que prepare una lista de puntos para revisar.",
+      "description": "Activa automatizaciones de flujo de trabajo con eventos de GitHub",
+      "install": "Instalar la aplicación de GitHub",
       "title": "GitHub"
     },
     "header": {
@@ -7278,7 +7291,7 @@
     },
     "slack": {
       "adminInstall": "Pide a tu administrador que instale la integración de Slack",
-      "description": "Menciona a Okou en un canal de Slack y pídele su opinión sobre un borrador.",
+      "description": "Comunicación y colaboración en equipo",
       "install": "Instalar en Slack",
       "permissionsUpdated": "Los permisos de Slack se han actualizado",
       "title": "Slack",
@@ -7286,8 +7299,8 @@
       "uninstallTitle": "¿Desinstalar la integración de Slack?"
     },
     "teams": {
-      "connectAccount": "Pega tus notas de la reunión en Teams y pídele a Okou una lista de tareas pendientes.",
-      "description": "Pega tus notas de la reunión en Teams y pídele a Okou una lista de tareas pendientes.",
+      "connectAccount": "Conecta tu cuenta de Microsoft para terminar la configuración",
+      "description": "Comunicación y colaboración en equipo",
       "disconnect": "Desconectar Microsoft Teams",
       "install": "Instalar en Teams",
       "moreOptions": "Más opciones de Microsoft Teams",
@@ -7298,7 +7311,7 @@
       "uninstallTitle": "¿Desinstalar la integración de Microsoft Teams?"
     },
     "telegram": {
-      "description": "Envía dos opciones a Okou en Telegram y pídele que compare sus ventajas y desventajas.",
+      "description": "Dirige los mensajes de Telegram a los agentes",
       "title": "Telegram"
     },
     "wechat": {
@@ -7308,7 +7321,7 @@
       "connect": "Conectar",
       "connected": "Conectado",
       "creating": "Creando código QR…",
-      "description": "Envía dos opciones a Okou en WeChat y pídele que compare sus ventajas y desventajas.",
+      "description": "Habla con tu agente en WeChat.",
       "disconnect": "Desconectar",
       "expired": "Este código QR ha caducado. Crea uno nuevo.",
       "failed": "No se pudo conectar con WeChat.",
@@ -7336,7 +7349,7 @@
       "connect": "Conectar WhatsApp",
       "connectDescription": "Conecta tu cuenta de WhatsApp a {{brandName}} para hablar con tu agente.",
       "connected": "WhatsApp conectado",
-      "description": "Envía dos opciones a Okou en WhatsApp y pídele que compare sus ventajas y desventajas.",
+      "description": "Chatea con Okou directamente desde WhatsApp",
       "disconnected": "WhatsApp desconectado",
       "expires": "Este código caduca en 10 minutos. Mantén esta página abierta para ver cuándo se conecta tu cuenta.",
       "instructions": "Abre WhatsApp o escanea el código QR y envía el código de conexión para vincular tu cuenta.",

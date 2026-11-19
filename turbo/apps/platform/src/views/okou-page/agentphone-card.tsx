@@ -1,7 +1,13 @@
+import { worksChannelCards$ } from "../../signals/works-page/works-channel-cards.ts";
 import { WorksChannelCardContent } from "./components/works-channel-card-content.tsx";
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import {
+  useLastResolved,
+  useGet,
+  useLastLoadable,
+  useSet,
+} from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Settings, Link2 } from "lucide-react";
+import { CircleCheck, EllipsisVertical, Settings, Link2 } from "lucide-react";
 import { surfaceVariants, Button } from "@okouai/ui";
 import {
   Popover,
@@ -35,6 +41,7 @@ function AgentPhoneCardActions({
   readonly canConnect: boolean;
   readonly onConnect: () => void;
 }) {
+  const compact = useLastResolved(worksChannelCards$);
   const { t } = useTranslation();
   const statusLoadable = useLastLoadable(agentPhoneLinkStatus$);
   const status =
@@ -49,16 +56,45 @@ function AgentPhoneCardActions({
 
   return (
     <>
-      {isConnected ? (
+      {compact ? (
+        isConnected ? (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span
+                    data-testid="agentphone-connected-indicator"
+                    className="min-w-0 flex-1 text-xs text-muted-foreground"
+                  >
+                    <span className="min-w-0 break-all">
+                      {connectedPhone ??
+                        t(($) => {
+                          return $.connectors.providerSettings.works.connected;
+                        })}
+                    </span>
+                  </span>
+                }
+              />
+              <TooltipContent>
+                {t(($) => {
+                  return $.connectors.providerSettings.agentphone
+                    .authorizedSender;
+                })}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ) : null
+      ) : isConnected ? (
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger
               render={
                 <span
                   data-testid="agentphone-connected-indicator"
-                  className="min-w-0 flex-1 text-xs text-muted-foreground"
+                  className="inline-flex min-w-0 max-w-52 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-1.5 py-1 text-xs font-medium text-secondary-foreground"
                 >
-                  <span className="min-w-0 break-all">
+                  <CircleCheck className="h-3 w-3 text-green-600" />
+                  <span className="min-w-0 truncate">
                     {connectedPhone ??
                       t(($) => {
                         return $.connectors.providerSettings.works.connected;
@@ -76,22 +112,84 @@ function AgentPhoneCardActions({
           </Tooltip>
         </TooltipProvider>
       ) : null}
-      {status !== null && !isConnected && canConnect ? (
+      {compact ? (
+        status !== null && !isConnected && canConnect ? (
+          <Button
+            showTooltip
+            type="button"
+            variant="quiet"
+            size="icon-xs"
+            className="shrink-0 rounded-md border border-border/60"
+            aria-label={t(($) => {
+              return $.connectors.providerSettings.agentphone.connectAria;
+            })}
+            onClick={onConnect}
+          >
+            <Link2 size={16} aria-hidden="true" />
+          </Button>
+        ) : null
+      ) : status !== null && !isConnected && canConnect ? (
         <Button
-          showTooltip
           type="button"
-          variant="quiet"
-          size="icon-xs"
-          className="shrink-0 rounded-md border border-border/60"
+          variant="outline"
+          size="sm"
+          className="h-8 shrink-0 gap-1.5 rounded-lg"
           aria-label={t(($) => {
             return $.connectors.providerSettings.agentphone.connectAria;
           })}
           onClick={onConnect}
         >
-          <Link2 size={16} aria-hidden="true" />
+          {t(($) => {
+            return $.connectors.actions.connect;
+          })}
         </Button>
       ) : null}
-      {isConnected ? (
+      {compact ? (
+        isConnected ? (
+          <Popover>
+            <PopoverTrigger
+              render={
+                <Button
+                  showTooltip
+                  type="button"
+                  variant="quiet"
+                  size="icon-xs"
+                  className="shrink-0"
+                  aria-label={t(($) => {
+                    return $.connectors.providerSettings.agentphone.options;
+                  })}
+                >
+                  <Settings size={16} />
+                </Button>
+              }
+            />
+            <PopoverContent
+              align="end"
+              className="flex flex-col gap-0.5 w-40 p-2"
+            >
+              <button
+                type="button"
+                aria-label={t(($) => {
+                  return $.connectors.actions.disconnect;
+                })}
+                disabled={disconnecting}
+                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-left hover:bg-state-hover hover:text-accent-foreground transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                onClick={() => {
+                  return detach(disconnect(pageSignal), Reason.DomCallback);
+                }}
+              >
+                {disconnecting
+                  ? t(($) => {
+                      return $.connectors.actions.disconnecting;
+                    })
+                  : t(($) => {
+                      return $.connectors.actions.disconnect;
+                    })}
+              </button>
+            </PopoverContent>
+          </Popover>
+        ) : null
+      ) : isConnected ? (
         <Popover>
           <PopoverTrigger
             render={
@@ -105,7 +203,7 @@ function AgentPhoneCardActions({
                   return $.connectors.providerSettings.agentphone.options;
                 })}
               >
-                <Settings size={16} />
+                <EllipsisVertical size={16} />
               </Button>
             }
           />
@@ -140,6 +238,7 @@ function AgentPhoneCardActions({
 }
 
 export function AgentPhoneCard() {
+  const compact = useLastResolved(worksChannelCards$);
   const { t } = useTranslation();
   const statusLoadable = useLastLoadable(agentPhoneLinkStatus$);
   const [connectionCodeLoadable, createConnectionCode] = useLoadableSet(
@@ -158,33 +257,56 @@ export function AgentPhoneCard() {
     detach(createConnectionCode(pageSignal), Reason.DomCallback);
   };
 
+  const cardActions = (
+    <AgentPhoneCardActions
+      canConnect={agentPhoneNumber !== null}
+      onConnect={() => {
+        requestConnectionCode();
+        setConnectOpen(true);
+      }}
+    />
+  );
+
   return (
     <>
       <div
         data-slot="integration-card"
         className={surfaceVariants({ className: "flex min-w-0 flex-col" })}
       >
-        <WorksChannelCardContent
-          actionsPlacement={status?.linked ? "footer" : "header"}
-          icon={<img src={imessageIconImg} alt="" className="size-5" />}
-          title={t(($) => {
-            return $.connectors.providerSettings.agentphone.phoneLabel;
-          })}
-          description={t(($) => {
-            return $.connectors.providerSettings.agentphone.description;
-          })}
-          actions={
-            <>
-              <AgentPhoneCardActions
-                canConnect={agentPhoneNumber !== null}
-                onConnect={() => {
-                  requestConnectionCode();
-                  setConnectOpen(true);
-                }}
-              />
-            </>
-          }
-        />
+        {compact ? (
+          <WorksChannelCardContent
+            actionsPlacement={status?.linked ? "footer" : "header"}
+            icon={<img src={imessageIconImg} alt="" className="size-5" />}
+            title={t(($) => {
+              return $.connectors.providerSettings.agentphone.phoneLabel;
+            })}
+            description={t(($) => {
+              return $.works.channelExamples.phone;
+            })}
+            actions={cardActions}
+          />
+        ) : (
+          <div className="flex items-center gap-4 p-4">
+            <div className="shrink-0 inline-flex h-7 w-7 items-center justify-center overflow-hidden">
+              <img src={imessageIconImg} alt="" className="h-7 w-7" />
+            </div>
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="truncate text-sm font-medium text-foreground">
+                  {t(($) => {
+                    return $.connectors.providerSettings.agentphone.phoneLabel;
+                  })}
+                </div>
+              </div>
+              <div className="truncate text-sm text-muted-foreground">
+                {t(($) => {
+                  return $.connectors.providerSettings.agentphone.description;
+                })}
+              </div>
+            </div>
+            {cardActions}
+          </div>
+        )}
       </div>
       <AgentPhoneConnectDialog
         phoneNumber={agentPhoneNumber}

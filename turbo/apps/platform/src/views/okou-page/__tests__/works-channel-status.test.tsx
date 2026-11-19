@@ -19,6 +19,7 @@ test("Works distinguishes Feishu and Lark connection states on the same page", a
     context,
     path: "/works",
     featureSwitches: {
+      [FeatureSwitchKey.WorksChannelCards]: true,
       [FeatureSwitchKey.FeishuIntegration]: true,
       [FeatureSwitchKey.LarkIntegration]: true,
       [FeatureSwitchKey.LarkOfficialBot]: false,
@@ -50,6 +51,7 @@ test("Works recognizes an official Lark connection without a custom bot", async 
     context,
     path: "/works",
     featureSwitches: {
+      [FeatureSwitchKey.WorksChannelCards]: true,
       [FeatureSwitchKey.LarkIntegration]: false,
       [FeatureSwitchKey.LarkOfficialBot]: true,
     },
@@ -61,4 +63,17 @@ test("Works recognizes an official Lark connection without a custom bot", async 
   expect(
     within(getIntegrationCard("Lark")).getByText("Connected"),
   ).toBeInTheDocument();
+});
+
+test("Works keeps the original Teams installation action and copy with cards off", async () => {
+  await setupPage({
+    context,
+    path: "/works",
+    featureSwitches: { [FeatureSwitchKey.WorksChannelCards]: false },
+  });
+  const card = getIntegrationCard("Microsoft Teams");
+  expect(await findAction("button", "Install in Teams", card)).toBeEnabled();
+  expect(card).toHaveTextContent(
+    "Connect your Microsoft account to finish setup",
+  );
 });

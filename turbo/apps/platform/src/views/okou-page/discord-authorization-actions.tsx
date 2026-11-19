@@ -1,7 +1,8 @@
+import { worksChannelCards$ } from "../../signals/works-page/works-channel-cards.ts";
 import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrations-discord";
 import { Button } from "@okouai/ui";
 import { Link2 } from "lucide-react";
-import { useGet } from "ccstate-react";
+import { useLastResolved, useGet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
@@ -36,6 +37,7 @@ export function DiscordAuthorizationActions({
   data: DiscordOrgStatus | null;
   disabled: boolean;
 }) {
+  const compact = useLastResolved(worksChannelCards$);
   const { t } = useTranslation();
   const [authorizationState, authorize] = useLoadableSet(
     connectDiscordFromWorks$,
@@ -45,6 +47,24 @@ export function DiscordAuthorizationActions({
     return null;
   }
 
+  if (!compact) {
+    return (
+      <Button
+        data-testid="discord-connect-button"
+        variant="outline"
+        size="sm"
+        className="h-8 shrink-0 gap-1.5 rounded-lg"
+        disabled={disabled || authorizationState.state === "loading"}
+        onClick={() => {
+          detach(authorize({}, pageSignal), Reason.DomCallback);
+        }}
+      >
+        {t(($) => {
+          return $.works.actions.connect;
+        })}
+      </Button>
+    );
+  }
   return (
     <Button
       showTooltip

@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   teamsConnectContract,
   type TeamsConnectStatus,
@@ -41,7 +42,11 @@ test.each(["focus", "visibility", "realtime"])(
     const visibility = context.mocks.browser.visibilityState("visible");
     const popup = context.mocks.browser.authWindow();
     const open = context.mocks.browser.open(popup);
-    await setupPage({ context, path: "/works?prompt=Retain+my+work" });
+    await setupPage({
+      featureSwitches: { [FeatureSwitchKey.WorksChannelCards]: true },
+      context,
+      path: "/works?prompt=Retain+my+work",
+    });
     const card = getIntegrationCard("Microsoft Teams");
     expect(queryAllByRoleFast("button", card)).toHaveLength(1);
     expect(getAction("button", "Connect", card)).toBeEnabled();
@@ -92,7 +97,11 @@ test("Works Connect starts the required Teams installation", async () => {
     return respond(200, status({ pendingInstallation: true }));
   });
   const open = context.mocks.browser.open();
-  await setupPage({ context, path: "/works" });
+  await setupPage({
+    featureSwitches: { [FeatureSwitchKey.WorksChannelCards]: true },
+    context,
+    path: "/works",
+  });
   const card = getIntegrationCard("Microsoft Teams");
   click(getAction("button", "Connect", card));
   expect(new URL(open.calls[0]?.url ?? "").searchParams.get("flow")).toBe(
@@ -110,9 +119,13 @@ test("Returning to Works retries a failed Teams read without hiding the other in
     }
     return respond(200, status());
   });
-  await expect(setupPage({ context, path: "/works" })).rejects.toThrow(
-    "Failed to fetch",
-  );
+  await expect(
+    setupPage({
+      featureSwitches: { [FeatureSwitchKey.WorksChannelCards]: true },
+      context,
+      path: "/works",
+    }),
+  ).rejects.toThrow("Failed to fetch");
   await waitFor(() => {
     expect(getIntegrationCard("Microsoft Teams")).toHaveTextContent(
       "Unable to check your Teams connection.",
@@ -141,6 +154,7 @@ test("Teams actions preserve prompt and protected preview access", async () => {
   });
   const open = context.mocks.browser.open();
   await setupPage({
+    featureSwitches: { [FeatureSwitchKey.WorksChannelCards]: true },
     context,
     host: "pr-431-app-okou-app-preview.vm0.workers.dev",
     path: "/works?prompt=Retain+my+work&x-vercel-protection-bypass=preview-secret",
@@ -169,7 +183,11 @@ test("An overlapping focus refresh keeps later realtime notifications active", a
     }
     return respond(200, snapshot);
   });
-  await setupPage({ context, path: "/works" });
+  await setupPage({
+    featureSwitches: { [FeatureSwitchKey.WorksChannelCards]: true },
+    context,
+    path: "/works",
+  });
   await waitFor(() => {
     expect(context.mocks.ably.hasSubscription("teams:changed")).toBeTruthy();
   });
@@ -214,7 +232,11 @@ test("Members can connect a Teams identity without an organization bot", async (
     );
   });
   const open = context.mocks.browser.open();
-  await setupPage({ context, path: "/works" });
+  await setupPage({
+    featureSwitches: { [FeatureSwitchKey.WorksChannelCards]: true },
+    context,
+    path: "/works",
+  });
   const card = getIntegrationCard("Microsoft Teams");
   click(getAction("button", "Connect", card));
   expect(
@@ -237,7 +259,11 @@ test("An independent Teams identity remains connected after bot removal", async 
     );
   });
   const open = context.mocks.browser.open();
-  await setupPage({ context, path: "/works" });
+  await setupPage({
+    featureSwitches: { [FeatureSwitchKey.WorksChannelCards]: true },
+    context,
+    path: "/works",
+  });
   await expect(
     screen.findByText("Connected (Personal identity tenant)"),
   ).resolves.toBeInTheDocument();

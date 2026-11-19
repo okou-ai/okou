@@ -1,3 +1,4 @@
+import { worksChannelCards$ } from "../../signals/works-page/works-channel-cards.ts";
 import { ConnectedIndicator } from "./components/connected-indicator.tsx";
 import { worksFeishuConnections } from "../../signals/works-page/feishu-channel-status.ts";
 import {
@@ -1139,7 +1140,62 @@ function FeishuSetupWizard({
   );
 }
 
+function ClassicFeishuCard({
+  platform = "feishu",
+}: {
+  platform?: FeishuPlatform;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Link
+      pathname={
+        platform === "lark" ? ROUTES.settingsLark : ROUTES.settingsFeishu
+      }
+      data-slot="integration-card"
+      data-testid={`${platform}-setup-button`}
+      className={surfaceVariants({ className: "block" })}
+    >
+      <div className="flex items-center gap-4 p-4">
+        <div className="inline-flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden">
+          <img src={feishuIconImg} alt="" className="h-7 w-7" />
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <div className="text-sm font-medium text-foreground">
+            {t(($) => {
+              return $.connectors.providerSettings[platform].documentTitle;
+            })}
+          </div>
+          <div className="truncate text-sm text-muted-foreground">
+            {t(($) => {
+              return $.connectors.providerSettings[platform].routeDescription;
+            })}
+          </div>
+        </div>
+        <span className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-xs font-medium text-secondary-foreground">
+          <Settings size={14} />
+          {t(($) => {
+            return $.connectors.providerSettings[platform].manage;
+          })}
+        </span>
+      </div>
+    </Link>
+  );
+}
+
 export function FeishuCard({
+  platform = "feishu",
+}: {
+  platform?: FeishuPlatform;
+}) {
+  const compact = useLastResolved(worksChannelCards$);
+  return compact ? (
+    <CompactFeishuCard platform={platform} />
+  ) : (
+    <ClassicFeishuCard platform={platform} />
+  );
+}
+
+function CompactFeishuCard({
   platform = "feishu",
 }: {
   platform?: FeishuPlatform;
@@ -1180,10 +1236,15 @@ export function FeishuCard({
                 actionsPlacement={connected ? "footer" : "header"}
                 icon={<img src={feishuIconImg} alt="" className="size-5" />}
                 title={title}
-                description={t(($) => {
-                  return $.connectors.providerSettings[platform]
-                    .routeDescription;
-                })}
+                description={
+                  platform === "lark"
+                    ? t(($) => {
+                        return $.works.channelExamples.lark;
+                      })
+                    : t(($) => {
+                        return $.works.channelExamples.feishu;
+                      })
+                }
                 actions={
                   <>
                     {connected ? (

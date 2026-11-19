@@ -3517,7 +3517,7 @@
         "copySuccess": "電話番号をコピーしました",
         "createCodeError": "接続コードを作成できませんでした。",
         "creatingCode": "接続コードを作成中…",
-        "description": "iPhone から {{assistantName}} にアイデアを送って、下書きを作ってもらえます。",
+        "description": "{{assistantName}} へのテキスト メッセージ アクセス",
         "openMessages": "メッセージを開く",
         "options": "電話オプション",
         "phoneLabel": "電話",
@@ -3622,7 +3622,7 @@
         "reviewGuide": "レビューガイド",
         "reviewGuideDescription": "この Feishu ボットの完了したセットアップ手順を確認してください。",
         "reviewGuideTitle": "Feishu レビュー ガイド",
-        "routeDescription": "Feishu で Okou に下書きを送り、チームに共有する短い文章に整えてもらえます。",
+        "routeDescription": "Feishu メッセージをエージェントにルーティングする",
         "selectAgent": "エージェントを選択してください",
         "setupIncomplete": "セットアップが不完全",
         "steps": {
@@ -3759,7 +3759,7 @@
         "reviewGuide": "レビューガイド",
         "reviewGuideDescription": "この Lark ボットの完了したセットアップ手順を確認してください。",
         "reviewGuideTitle": "Lark レビュー ガイド",
-        "routeDescription": "Lark で Okou に下書きを送り、チームに共有する短い文章に整えてもらえます。",
+        "routeDescription": "Lark メッセージをエージェントにルーティングする",
         "selectAgent": "エージェントを選択してください",
         "setupIncomplete": "セットアップが不完全",
         "steps": {
@@ -7111,6 +7111,18 @@
       "uninstalling": "アンインストール中…",
       "updatePermissions": "権限の更新"
     },
+    "channelExamples": {
+      "email": "メールを Okou に転送して、要点の整理や返信の下書きを頼めます。",
+      "feishu": "Feishu で Okou に下書きを送り、チームに共有する短い文章に整えてもらえます。",
+      "github": "プルリクエストが開かれたときに、レビュー用のチェックリストを作るワークフローを実行できます。",
+      "lark": "Lark で Okou に下書きを送り、チームに共有する短い文章に整えてもらえます。",
+      "phone": "iPhone から {{assistantName}} にアイデアを送って、下書きを作ってもらえます。",
+      "slack": "Slack のチャンネルで Okou にメンションして、下書きへの意見をもらえます。",
+      "teams": "Teams に会議メモを貼り付けて、次にやることを Okou にまとめてもらえます。",
+      "telegram": "Telegram で Okou に二つの案を送り、それぞれの利点と欠点を比較してもらえます。",
+      "wechat": "WeChat で Okou に二つの案を送り、それぞれの利点と欠点を比較してもらえます。",
+      "whatsapp": "WhatsApp で Okou に二つの案を送り、それぞれの利点と欠点を比較してもらえます。"
+    },
     "connected": "接続済み",
     "connectedWithDetail": "接続されました ({{detail}})",
     "discord": {
@@ -7144,7 +7156,7 @@
       "codeInstructions": "追加するメールアドレスから、このコードを件名または本文の最初の行に入れて Okou に送信してください。",
       "connected": "メールを接続しました",
       "deleteAria": "{{email}} を削除",
-      "description": "メールを Okou に転送して、要点の整理や返信の下書きを頼めます。",
+      "description": "メールで Okou と会話",
       "emailAddress": "メールアドレス",
       "healthNotice": "HIPAA の対象となる患者情報には、この連携を使用しないでください。",
       "invalidLink": "この接続リンクは無効です。Okou に新しいメールを送ってください。",
@@ -7167,7 +7179,8 @@
     "feishuConnected": "Feishu は正常に接続されました",
     "github": {
       "adminInstall": "組織管理者に GitHub App のインストールを依頼してください",
-      "description": "プルリクエストが開かれたときに、レビュー用のチェックリストを作るワークフローを実行できます。",
+      "description": "GitHub イベントからワークフローオートメーションを起動",
+      "install": "GitHub App をインストール",
       "title": "GitHub"
     },
     "header": {
@@ -7176,7 +7189,7 @@
     },
     "slack": {
       "adminInstall": "Slack 統合をインストールするように管理者に依頼してください",
-      "description": "Slack のチャンネルで Okou にメンションして、下書きへの意見をもらえます。",
+      "description": "チームのコミュニケーションとコラボレーション",
       "install": "Slack にインストールします",
       "permissionsUpdated": "Slack 権限が更新されました",
       "title": "Slack",
@@ -7184,8 +7197,8 @@
       "uninstallTitle": "Slack 統合をアンインストールしますか?"
     },
     "teams": {
-      "connectAccount": "Teams に会議メモを貼り付けて、次にやることを Okou にまとめてもらえます。",
-      "description": "Teams に会議メモを貼り付けて、次にやることを Okou にまとめてもらえます。",
+      "connectAccount": "Microsoft アカウントに接続してセットアップを完了してください",
+      "description": "チームのコミュニケーションとコラボレーション",
       "disconnect": "Microsoft Teams を切断します",
       "install": "Teams にインストールする",
       "moreOptions": "その他の Microsoft Teams オプション",
@@ -7196,7 +7209,7 @@
       "uninstallTitle": "Microsoft Teams 統合をアンインストールしますか?"
     },
     "telegram": {
-      "description": "Telegram で Okou に二つの案を送り、それぞれの利点と欠点を比較してもらえます。",
+      "description": "Telegram メッセージをエージェントにルーティングする",
       "title": "Telegram"
     },
     "wechat": {
@@ -7206,7 +7219,7 @@
       "connect": "接続",
       "connected": "接続済み",
       "creating": "QRコードを作成中…",
-      "description": "WeChat で Okou に二つの案を送り、それぞれの利点と欠点を比較してもらえます。",
+      "description": "WeChatでエージェントとチャットできます。",
       "disconnect": "接続解除",
       "expired": "このQRコードは期限切れです。新しく作成してください。",
       "failed": "WeChatに接続できませんでした。",
@@ -7234,7 +7247,7 @@
       "connect": "WhatsAppを接続",
       "connectDescription": "WhatsApp アカウントを {{brandName}} に接続して、エージェントとチャットできます。",
       "connected": "WhatsAppに接続しました",
-      "description": "WhatsApp で Okou に二つの案を送り、それぞれの利点と欠点を比較してもらえます。",
+      "description": "WhatsAppから直接Okouとチャット",
       "disconnected": "WhatsAppの接続を解除しました",
       "expires": "このコードは10分後に期限切れになります。接続の完了を確認するまで、このページを開いたままにしてください。",
       "instructions": "WhatsAppを開くかQRコードをスキャンし、接続コードを送信してアカウントを連携してください。",

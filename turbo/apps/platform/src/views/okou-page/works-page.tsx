@@ -1,3 +1,4 @@
+import { worksChannelCards$ } from "../../signals/works-page/works-channel-cards.ts";
 import { WorksChannelCardContent } from "./components/works-channel-card-content.tsx";
 import { EmailCard } from "./email-card.tsx";
 import type { TeamsConnectStatus } from "@okouai/api-contracts/contracts/teams-connect";
@@ -14,7 +15,14 @@ import {
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { AlertTriangle, Settings, Link2, RefreshCw } from "lucide-react";
+import {
+  EllipsisVertical,
+  Download,
+  AlertTriangle,
+  Settings,
+  Link2,
+  RefreshCw,
+} from "lucide-react";
 import { surfaceVariants, Button, buttonVariants, cn } from "@okouai/ui";
 import {
   Tooltip,
@@ -136,6 +144,7 @@ function ProviderCardActions({
   onUninstall: () => void;
   disconnecting: boolean;
 }) {
+  const compact = useLastResolved(worksChannelCards$);
   const { t } = useTranslation();
   const needsInstallation = !isInstalled && isAdmin && !!installUrl;
   const connectionUrl = needsInstallation
@@ -143,6 +152,58 @@ function ProviderCardActions({
     : isInstalled || independentIdentity
       ? connectUrl
       : null;
+  if (!compact) {
+    return (
+      <>
+        {isConnected ? (
+          <ConnectedIndicator
+            testId={connectedTestId}
+            connectedDetail={connectedDetail}
+          />
+        ) : null}
+        {!isInstalled && isAdmin && installUrl && (
+          <Button
+            data-testid={installTestId}
+            variant="outline"
+            size="sm"
+            className="h-8 shrink-0 gap-1.5 rounded-lg"
+            onClick={() => {
+              return openFreshOAuth(installUrl);
+            }}
+          >
+            <Download size={14} />
+            {installLabel}
+          </Button>
+        )}
+        {(isInstalled || independentIdentity) && !isConnected && connectUrl && (
+          <Button
+            data-testid={connectTestId}
+            variant="outline"
+            size="sm"
+            className="h-8 shrink-0 gap-1.5 rounded-lg"
+            onClick={() => {
+              return openFreshOAuth(connectUrl);
+            }}
+          >
+            {t(($) => {
+              return $.works.actions.connect;
+            })}
+          </Button>
+        )}
+        {((isInstalled && (isConnected || isAdmin)) ||
+          (independentIdentity && isConnected)) && (
+          <ProviderCardMenu
+            moreOptionsLabel={moreOptionsLabel}
+            disconnectLabel={disconnectLabel}
+            uninstallLabel={uninstallLabel}
+            disconnecting={disconnecting}
+            onDisconnect={isConnected ? onDisconnect : undefined}
+            onUninstall={isAdmin && isInstalled ? onUninstall : undefined}
+          />
+        )}
+      </>
+    );
+  }
   return (
     <>
       {isConnected ? (
@@ -204,11 +265,34 @@ function PermissionWarning({
   reinstallUrl: string | null | undefined;
   message: string;
 }) {
+  const compact = useLastResolved(worksChannelCards$);
   const { t } = useTranslation();
   if (!reinstallUrl) {
     return null;
   }
 
+  if (!compact) {
+    return (
+      <div className="flex items-center gap-3 border-t border-border/50 px-4 py-3">
+        <AlertTriangle size={16} className="shrink-0 text-amber-500" />
+        <span className="flex-1 text-sm text-amber-600 dark:text-amber-400">
+          {message}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 shrink-0 text-xs"
+          onClick={() => {
+            return openFreshOAuth(reinstallUrl);
+          }}
+        >
+          {t(($) => {
+            return $.works.actions.updatePermissions;
+          })}
+        </Button>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-2 border-t border-border/50 px-4 py-3">
       <div className="flex items-start gap-2">
@@ -300,6 +384,7 @@ function UninstallConfirmDialog({
 }
 
 function SlackCard({ displayName }: { displayName: string }) {
+  const compact = useLastResolved(worksChannelCards$);
   const { t } = useTranslation();
   // useLastLoadable keeps the prior resolved value during the polling refetch
   // so the card text doesn't flicker back to defaults on every poll cycle.
@@ -319,63 +404,88 @@ function SlackCard({ displayName }: { displayName: string }) {
   const scopeMismatch = slackData?.scopeMismatch === true;
   const reinstallUrl = slackData?.reinstallUrl;
 
+  const cardActions = (
+    <ProviderCardActions
+      isConnected={isConnected}
+      isInstalled={isInstalled}
+      isAdmin={isAdmin}
+      installUrl={slackData?.installUrl}
+      connectUrl={slackData?.connectUrl}
+      connectedDetail={slackData?.workspaceName}
+      connectedTestId="slack-connected-indicator"
+      installTestId="slack-install-button"
+      installLabel={t(($) => {
+        return $.works.slack.install;
+      })}
+      moreOptionsLabel={t(($) => {
+        return $.works.actions.moreOptions;
+      })}
+      disconnectLabel={t(($) => {
+        return $.works.actions.disconnect;
+      })}
+      uninstallLabel={t(($) => {
+        return $.works.actions.uninstall;
+      })}
+      disconnecting={disconnecting}
+      onDisconnect={() => {
+        return detach(disconnect(pageSignal), Reason.DomCallback);
+      }}
+      onUninstall={() => {
+        return setShowUninstallDialog(true);
+      }}
+    />
+  );
+
   return (
     <>
       <div
         data-slot="integration-card"
         className={surfaceVariants({ className: "flex min-w-0 flex-col" })}
       >
-        <WorksChannelCardContent
-          actionsPlacement={isConnected ? "footer" : "header"}
-          icon={
-            <img src={slackIconImg} alt="" className="size-5 scale-[2.2]" />
-          }
-          title={t(($) => {
-            return $.works.slack.title;
-          })}
-          description={
-            !isInstalled && !isAdmin
-              ? t(($) => {
-                  return $.works.slack.adminInstall;
-                })
-              : t(($) => {
-                  return $.works.slack.description;
-                })
-          }
-          actions={
-            <>
-              <ProviderCardActions
-                isConnected={isConnected}
-                isInstalled={isInstalled}
-                isAdmin={isAdmin}
-                installUrl={slackData?.installUrl}
-                connectUrl={slackData?.connectUrl}
-                connectedDetail={slackData?.workspaceName}
-                connectedTestId="slack-connected-indicator"
-                installTestId="slack-install-button"
-                installLabel={t(($) => {
-                  return $.works.slack.install;
+        {compact ? (
+          <WorksChannelCardContent
+            actionsPlacement={isConnected ? "footer" : "header"}
+            icon={
+              <img src={slackIconImg} alt="" className="size-5 scale-[2.2]" />
+            }
+            title={t(($) => {
+              return $.works.slack.title;
+            })}
+            description={
+              !isInstalled && !isAdmin
+                ? t(($) => {
+                    return $.works.slack.adminInstall;
+                  })
+                : t(($) => {
+                    return $.works.channelExamples.slack;
+                  })
+            }
+            actions={cardActions}
+          />
+        ) : (
+          <div className="flex items-center gap-4 p-4">
+            <div className="shrink-0 inline-flex h-7 w-7 items-center justify-center overflow-hidden">
+              <img src={slackIconImg} alt="" className="h-7 w-7 scale-[2.2]" />
+            </div>
+            <div className="flex flex-1 flex-col gap-1 min-w-0">
+              <div className="text-sm font-medium text-foreground">
+                {t(($) => {
+                  return $.works.slack.title;
                 })}
-                moreOptionsLabel={t(($) => {
-                  return $.works.actions.moreOptions;
-                })}
-                disconnectLabel={t(($) => {
-                  return $.works.actions.disconnect;
-                })}
-                uninstallLabel={t(($) => {
-                  return $.works.actions.uninstall;
-                })}
-                disconnecting={disconnecting}
-                onDisconnect={() => {
-                  return detach(disconnect(pageSignal), Reason.DomCallback);
-                }}
-                onUninstall={() => {
-                  return setShowUninstallDialog(true);
-                }}
-              />
-            </>
-          }
-        />
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {!isInstalled && !isAdmin
+                  ? t(($) => {
+                      return $.works.slack.adminInstall;
+                    })
+                  : t(($) => {
+                      return $.works.slack.description;
+                    })}
+              </div>
+            </div>
+            {cardActions}
+          </div>
+        )}
 
         <PermissionWarning
           reinstallUrl={scopeMismatch && isAdmin ? reinstallUrl : null}
@@ -470,7 +580,19 @@ function DiscordDmSelection({
 }
 
 function DiscordCardDescription({ data }: { data: DiscordOrgStatus | null }) {
+  const compact = useLastResolved(worksChannelCards$);
   const { t } = useTranslation();
+  if (!compact) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        {data
+          ? discordDescription(data)
+          : t(($) => {
+              return $.works.discord.description;
+            })}
+      </p>
+    );
+  }
   return (
     <p>
       {data
@@ -483,6 +605,7 @@ function DiscordCardDescription({ data }: { data: DiscordOrgStatus | null }) {
 }
 
 function DiscordCard() {
+  const compact = useLastResolved(worksChannelCards$);
   const { t } = useTranslation();
   const title = t(($) => {
     return $.works.discord.title;
@@ -496,6 +619,43 @@ function DiscordCard() {
   const pageSignal = useGet(pageSignal$);
   const data = status.state === "hasData" ? status.data : null;
 
+  const cardActions = (
+    <ProviderCardMenu
+      moreOptionsLabel={t(($) => {
+        return $.works.actions.moreOptions;
+      })}
+      disconnectLabel={t(($) => {
+        return $.works.discord.disconnect;
+      })}
+      disconnecting={disconnectState.state === "loading"}
+      disabled={installation.state === "loading"}
+      onDisconnect={() => {
+        detach(disconnect(pageSignal), Reason.DomCallback);
+      }}
+    >
+      {data?.isAvailable ? (
+        <button
+          type="button"
+          disabled={
+            disconnectState.state === "loading" ||
+            installation.state === "loading"
+          }
+          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-left hover:bg-state-hover hover:text-accent-foreground transition-colors disabled:opacity-50 disabled:pointer-events-none"
+          onClick={() => {
+            detach(
+              install({ flow: "install" }, pageSignal),
+              Reason.DomCallback,
+            );
+          }}
+        >
+          {t(($) => {
+            return $.works.discord.addNewServer;
+          })}
+        </button>
+      ) : null}
+    </ProviderCardMenu>
+  );
+
   return (
     <>
       <section
@@ -503,64 +663,53 @@ function DiscordCard() {
         aria-label={title}
         className={surfaceVariants({ className: "flex min-w-0 flex-col" })}
       >
-        <WorksChannelCardContent
-          actionsPlacement={data?.isConnected ? "footer" : "header"}
-          showDescription={!data?.isConnected || !data.isAvailable}
-          icon={<DiscordMark size={20} />}
-          title={title}
-          description={<DiscordCardDescription data={data} />}
-          actions={
-            <>
-              <DiscordAuthorizationActions
-                data={data}
-                disabled={disconnectState.state === "loading"}
-              />
-              {data?.isConnected ? (
-                <>
-                  <ConnectedIndicator
-                    variant="text"
-                    wrap
-                    testId="discord-connected-indicator"
-                  />
-                  <ProviderCardMenu
-                    moreOptionsLabel={t(($) => {
-                      return $.works.actions.moreOptions;
-                    })}
-                    disconnectLabel={t(($) => {
-                      return $.works.discord.disconnect;
-                    })}
-                    disconnecting={disconnectState.state === "loading"}
-                    disabled={installation.state === "loading"}
-                    onDisconnect={() => {
-                      detach(disconnect(pageSignal), Reason.DomCallback);
-                    }}
-                  >
-                    {data.isAvailable ? (
-                      <button
-                        type="button"
-                        disabled={
-                          disconnectState.state === "loading" ||
-                          installation.state === "loading"
-                        }
-                        className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-left hover:bg-state-hover hover:text-accent-foreground transition-colors disabled:opacity-50 disabled:pointer-events-none"
-                        onClick={() => {
-                          detach(
-                            install({ flow: "install" }, pageSignal),
-                            Reason.DomCallback,
-                          );
-                        }}
-                      >
-                        {t(($) => {
-                          return $.works.discord.addNewServer;
-                        })}
-                      </button>
-                    ) : null}
-                  </ProviderCardMenu>
-                </>
-              ) : null}
-            </>
-          }
-        />
+        {compact ? (
+          <WorksChannelCardContent
+            actionsPlacement={data?.isConnected ? "footer" : "header"}
+            showDescription={!data?.isConnected || !data.isAvailable}
+            icon={<DiscordMark size={20} />}
+            title={title}
+            description={<DiscordCardDescription data={data} />}
+            actions={
+              <>
+                <DiscordAuthorizationActions
+                  data={data}
+                  disabled={disconnectState.state === "loading"}
+                />
+                {data?.isConnected ? (
+                  <>
+                    <ConnectedIndicator
+                      variant="text"
+                      wrap
+                      testId="discord-connected-indicator"
+                    />
+                    {cardActions}
+                  </>
+                ) : null}
+              </>
+            }
+          />
+        ) : (
+          <div className="flex items-center gap-4 p-4">
+            <div className="shrink-0 text-foreground">
+              <DiscordMark size={28} />
+            </div>
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <div className="text-sm font-medium text-foreground">{title}</div>
+              <DiscordCardDescription data={data} />
+            </div>
+            <DiscordAuthorizationActions
+              data={data}
+              disabled={disconnectState.state === "loading"}
+            />
+            {data?.isConnected ? (
+              <>
+                <ConnectedIndicator testId="discord-connected-indicator" />
+                {cardActions}
+              </>
+            ) : null}
+          </div>
+        )}
         {data?.isConnected && data.dmBindings.length > 1 ? (
           <DiscordDmSelection
             data={data}
@@ -616,6 +765,7 @@ function teamsCardConnection(data: TeamsConnectStatus | null) {
 }
 
 function TeamsCard({ displayName }: { displayName: string }) {
+  const compact = useLastResolved(worksChannelCards$);
   const { t } = useTranslation();
   const brandName = useGet(brandName$);
   const teamsDataLoadable = useLoadable(teamsOrgData$);
@@ -632,7 +782,11 @@ function TeamsCard({ displayName }: { displayName: string }) {
   const { isConnected, isInstalled, isAdmin, connectedDetail } = connection;
   const permissionMismatch = teamsData?.permissionMismatch === true;
   const description = teamsData
-    ? teamsCardDescription(isConnected)
+    ? compact
+      ? t(($) => {
+          return $.works.channelExamples.teams;
+        })
+      : teamsCardDescription(isConnected)
     : teamsDataLoadable.state === "hasError"
       ? t(($) => {
           return $.connectors.providerConnect.teams.statusFailed;
@@ -641,55 +795,72 @@ function TeamsCard({ displayName }: { displayName: string }) {
           return $.connectors.providerConnect.common.checkingTitle;
         });
 
+  const cardActions = (
+    <ProviderCardActions
+      independentIdentity
+      isConnected={isConnected}
+      isInstalled={isInstalled}
+      isAdmin={isAdmin}
+      installUrl={connection.installUrl}
+      connectUrl={connection.connectUrl}
+      connectedDetail={connectedDetail}
+      connectedTestId="teams-connected-indicator"
+      installTestId="teams-install-button"
+      connectTestId="teams-connect-button"
+      installLabel={t(($) => {
+        return $.works.teams.install;
+      })}
+      moreOptionsLabel={t(($) => {
+        return $.works.teams.moreOptions;
+      })}
+      disconnectLabel={t(($) => {
+        return $.works.teams.disconnect;
+      })}
+      uninstallLabel={t(($) => {
+        return $.works.teams.uninstall;
+      })}
+      disconnecting={disconnecting}
+      onDisconnect={() => {
+        return detach(disconnect(pageSignal), Reason.DomCallback);
+      }}
+      onUninstall={() => {
+        return setShowUninstallDialog(true);
+      }}
+    />
+  );
+
   return (
     <>
       <div
         data-slot="integration-card"
         className={surfaceVariants({ className: "flex min-w-0 flex-col" })}
       >
-        <WorksChannelCardContent
-          actionsPlacement={isConnected ? "footer" : "header"}
-          icon={<img src={teamsIconImg} alt="" className="size-5" />}
-          title={t(($) => {
-            return $.works.teams.title;
-          })}
-          description={description}
-          actions={
-            <>
-              <ProviderCardActions
-                independentIdentity
-                isConnected={isConnected}
-                isInstalled={isInstalled}
-                isAdmin={isAdmin}
-                installUrl={connection.installUrl}
-                connectUrl={connection.connectUrl}
-                connectedDetail={connectedDetail}
-                connectedTestId="teams-connected-indicator"
-                installTestId="teams-install-button"
-                connectTestId="teams-connect-button"
-                installLabel={t(($) => {
-                  return $.works.teams.install;
+        {compact ? (
+          <WorksChannelCardContent
+            actionsPlacement={isConnected ? "footer" : "header"}
+            icon={<img src={teamsIconImg} alt="" className="size-5" />}
+            title={t(($) => {
+              return $.works.teams.title;
+            })}
+            description={description}
+            actions={cardActions}
+          />
+        ) : (
+          <div className="flex items-center gap-4 p-4">
+            <div className="shrink-0 inline-flex h-7 w-7 items-center justify-center overflow-hidden">
+              <img src={teamsIconImg} alt="" className="h-7 w-7" />
+            </div>
+            <div className="flex flex-1 flex-col gap-1 min-w-0">
+              <div className="text-sm font-medium text-foreground">
+                {t(($) => {
+                  return $.works.teams.title;
                 })}
-                moreOptionsLabel={t(($) => {
-                  return $.works.teams.moreOptions;
-                })}
-                disconnectLabel={t(($) => {
-                  return $.works.teams.disconnect;
-                })}
-                uninstallLabel={t(($) => {
-                  return $.works.teams.uninstall;
-                })}
-                disconnecting={disconnecting}
-                onDisconnect={() => {
-                  return detach(disconnect(pageSignal), Reason.DomCallback);
-                }}
-                onUninstall={() => {
-                  return setShowUninstallDialog(true);
-                }}
-              />
-            </>
-          }
-        />
+              </div>
+              <div className="text-sm text-muted-foreground">{description}</div>
+            </div>
+            {cardActions}
+          </div>
+        )}
 
         <PermissionWarning
           reinstallUrl={
@@ -722,6 +893,7 @@ function TeamsCard({ displayName }: { displayName: string }) {
 }
 
 function GithubCard() {
+  const compact = useLastResolved(worksChannelCards$);
   const { t } = useTranslation();
   const githubDataLoadable = useLastLoadable(githubIntegrationData$);
   const githubData =
@@ -744,87 +916,159 @@ function GithubCard() {
       data-testid="github-integration-card"
       className={surfaceVariants({ className: "flex min-w-0 flex-col" })}
     >
-      <WorksChannelCardContent
-        actionsPlacement={githubData?.isConnected ? "footer" : "header"}
-        showDescription={!githubData?.isConnected || adminInstallRequired}
-        icon={<img src={githubIconImg} alt="" className="size-5" />}
-        title={t(($) => {
-          return $.works.github.title;
-        })}
-        description={
-          adminInstallRequired
-            ? t(($) => {
-                return $.works.github.adminInstall;
-              })
-            : t(($) => {
-                return $.works.github.description;
-              })
-        }
-        actions={
-          <>
-            {githubData?.isConnected ? (
-              <ConnectedIndicator
-                variant="text"
-                wrap
-                testId="github-connected-indicator"
-                connectedDetail={connectedDetail}
-              />
-            ) : null}
-            {githubData && !githubData.isInstalled && githubData.installUrl ? (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <a
-                        data-testid="github-install-button"
-                        href={githubData.installUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        aria-label={t(($) => {
-                          return $.works.actions.connect;
-                        })}
-                        className={cn(
-                          buttonVariants({ variant: "quiet", size: "icon-xs" }),
-                          "shrink-0 rounded-md border border-border/60",
-                        )}
-                      >
-                        <Link2 size={16} aria-hidden="true" />
-                      </a>
-                    }
-                  />
-                  <TooltipContent>
-                    {t(($) => {
-                      return $.works.actions.connect;
-                    })}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            ) : null}
-            {githubData?.isInstalled && !githubData.isConnected ? (
-              <Button
-                showTooltip
-                data-testid="github-connect-button"
-                type="button"
-                variant="quiet"
-                size="icon-xs"
-                className="shrink-0 rounded-md border border-border/60"
-                aria-label={t(($) => {
-                  return $.works.actions.connect;
-                })}
-                disabled={connecting}
-                onClick={() => {
-                  return detach(
-                    connect(githubData.connectUrl, pageSignal),
-                    Reason.DomCallback,
-                  );
-                }}
-              >
-                <Link2 size={16} aria-hidden="true" />
-              </Button>
-            ) : null}
-          </>
-        }
-      />
+      {compact ? (
+        <WorksChannelCardContent
+          actionsPlacement={githubData?.isConnected ? "footer" : "header"}
+          showDescription={!githubData?.isConnected || adminInstallRequired}
+          icon={<img src={githubIconImg} alt="" className="size-5" />}
+          title={t(($) => {
+            return $.works.github.title;
+          })}
+          description={
+            adminInstallRequired
+              ? t(($) => {
+                  return $.works.github.adminInstall;
+                })
+              : t(($) => {
+                  return $.works.channelExamples.github;
+                })
+          }
+          actions={
+            <>
+              {githubData?.isConnected ? (
+                <ConnectedIndicator
+                  variant="text"
+                  wrap
+                  testId="github-connected-indicator"
+                  connectedDetail={connectedDetail}
+                />
+              ) : null}
+              {githubData &&
+              !githubData.isInstalled &&
+              githubData.installUrl ? (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <a
+                          data-testid="github-install-button"
+                          href={githubData.installUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label={t(($) => {
+                            return $.works.actions.connect;
+                          })}
+                          className={cn(
+                            buttonVariants({
+                              variant: "quiet",
+                              size: "icon-xs",
+                            }),
+                            "shrink-0 rounded-md border border-border/60",
+                          )}
+                        >
+                          <Link2 size={16} aria-hidden="true" />
+                        </a>
+                      }
+                    />
+                    <TooltipContent>
+                      {t(($) => {
+                        return $.works.actions.connect;
+                      })}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              ) : null}
+              {githubData?.isInstalled && !githubData.isConnected ? (
+                <Button
+                  showTooltip
+                  data-testid="github-connect-button"
+                  type="button"
+                  variant="quiet"
+                  size="icon-xs"
+                  className="shrink-0 rounded-md border border-border/60"
+                  aria-label={t(($) => {
+                    return $.works.actions.connect;
+                  })}
+                  disabled={connecting}
+                  onClick={() => {
+                    return detach(
+                      connect(githubData.connectUrl, pageSignal),
+                      Reason.DomCallback,
+                    );
+                  }}
+                >
+                  <Link2 size={16} aria-hidden="true" />
+                </Button>
+              ) : null}
+            </>
+          }
+        />
+      ) : (
+        <div className="flex items-center gap-4 p-4">
+          <div className="shrink-0 inline-flex h-7 w-7 items-center justify-center overflow-hidden">
+            <img src={githubIconImg} alt="" className="h-7 w-7" />
+          </div>
+          <div className="flex flex-1 flex-col gap-1 min-w-0">
+            <div className="text-sm font-medium text-foreground">
+              {t(($) => {
+                return $.works.github.title;
+              })}
+            </div>
+            <div className="text-sm text-muted-foreground">
+              {adminInstallRequired
+                ? t(($) => {
+                    return $.works.github.adminInstall;
+                  })
+                : t(($) => {
+                    return $.works.github.description;
+                  })}
+            </div>
+          </div>
+          {githubData?.isConnected ? (
+            <ConnectedIndicator
+              testId="github-connected-indicator"
+              connectedDetail={connectedDetail}
+            />
+          ) : null}
+          {githubData && !githubData.isInstalled && githubData.installUrl ? (
+            <a
+              data-testid="github-install-button"
+              href={githubData.installUrl}
+              target="_blank"
+              rel="noreferrer"
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "h-8 shrink-0 gap-1.5 rounded-lg",
+              )}
+            >
+              <Download size={14} />
+              {t(($) => {
+                return $.works.github.install;
+              })}
+            </a>
+          ) : null}
+          {githubData?.isInstalled && !githubData.isConnected ? (
+            <Button
+              data-testid="github-connect-button"
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 shrink-0 gap-1.5 rounded-lg"
+              disabled={connecting}
+              onClick={() => {
+                return detach(
+                  connect(githubData.connectUrl, pageSignal),
+                  Reason.DomCallback,
+                );
+              }}
+            >
+              {t(($) => {
+                return $.works.actions.connect;
+              })}
+            </Button>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
@@ -865,6 +1109,7 @@ function telegramConnectedDetail(bot: TelegramBot | undefined) {
 }
 
 function TelegramCard() {
+  const compact = useLastResolved(worksChannelCards$);
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const botsLoadable = useLoadable(telegramBots$);
@@ -889,103 +1134,203 @@ function TelegramCard() {
       data-slot="integration-card"
       className={surfaceVariants({ className: "flex min-w-0 flex-col" })}
     >
-      <WorksChannelCardContent
-        actionsPlacement={bot?.isConnected ? "footer" : "header"}
-        showDescription={!bot?.isConnected || !configured}
-        icon={<img src={telegramIconImg} alt="" className="size-5" />}
-        title={t(($) => {
-          return $.works.telegram.title;
-        })}
-        description={
-          botsLoadable.state === "hasError"
-            ? t(($) => {
-                return $.connectors.providerSettings.telegram.loadError;
-              })
-            : !loading && !configured
+      {compact ? (
+        <WorksChannelCardContent
+          actionsPlacement={bot?.isConnected ? "footer" : "header"}
+          showDescription={!bot?.isConnected || !configured}
+          icon={<img src={telegramIconImg} alt="" className="size-5" />}
+          title={t(($) => {
+            return $.works.telegram.title;
+          })}
+          description={
+            botsLoadable.state === "hasError"
               ? t(($) => {
-                  return $.connectors.providerSettings.telegram.officialMissing;
+                  return $.connectors.providerSettings.telegram.loadError;
                 })
-              : t(($) => {
-                  return $.works.telegram.description;
-                })
-        }
-        actions={
-          <>
-            {bot?.isConnected ? (
-              <>
-                <ConnectedIndicator
-                  variant="text"
-                  wrap
-                  testId="telegram-connected-indicator"
-                  connectedDetail={connectedDetail}
-                />
-                <Popover>
-                  <PopoverTrigger
-                    render={
-                      <Button
-                        showTooltip
-                        type="button"
-                        variant="quiet"
-                        size="icon-xs"
-                        className="shrink-0"
-                        aria-label={t(($) => {
-                          return $.works.actions.moreOptions;
-                        })}
-                      >
-                        <Settings size={16} />
-                      </Button>
-                    }
+              : !loading && !configured
+                ? t(($) => {
+                    return $.connectors.providerSettings.telegram
+                      .officialMissing;
+                  })
+                : t(($) => {
+                    return $.works.channelExamples.telegram;
+                  })
+          }
+          actions={
+            <>
+              {bot?.isConnected ? (
+                <>
+                  <ConnectedIndicator
+                    variant="text"
+                    wrap
+                    testId="telegram-connected-indicator"
+                    connectedDetail={connectedDetail}
                   />
-                  <PopoverContent
-                    align="end"
-                    className="flex w-40 flex-col gap-0.5 p-2"
-                  >
-                    <button
-                      type="button"
-                      disabled={disconnecting}
-                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-state-hover hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
-                      onClick={() => {
-                        detach(
-                          disconnect(OFFICIAL_TELEGRAM_BOT_ID, pageSignal),
-                          Reason.DomCallback,
-                        );
-                      }}
-                    >
-                      {disconnecting
-                        ? t(($) => {
-                            return $.works.actions.disconnecting;
-                          })
-                        : t(($) => {
-                            return $.works.actions.disconnect;
+                  <Popover>
+                    <PopoverTrigger
+                      render={
+                        <Button
+                          showTooltip
+                          type="button"
+                          variant="quiet"
+                          size="icon-xs"
+                          className="shrink-0"
+                          aria-label={t(($) => {
+                            return $.works.actions.moreOptions;
                           })}
-                    </button>
-                  </PopoverContent>
-                </Popover>
-              </>
-            ) : (
-              <Button
-                showTooltip
-                data-testid="telegram-connect-button"
-                variant="quiet"
-                size="icon-xs"
-                className="shrink-0 rounded-md border border-border/60"
-                aria-label={t(($) => {
-                  return $.works.actions.connect;
+                        >
+                          <Settings size={16} />
+                        </Button>
+                      }
+                    />
+                    <PopoverContent
+                      align="end"
+                      className="flex w-40 flex-col gap-0.5 p-2"
+                    >
+                      <button
+                        type="button"
+                        disabled={disconnecting}
+                        className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-state-hover hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
+                        onClick={() => {
+                          detach(
+                            disconnect(OFFICIAL_TELEGRAM_BOT_ID, pageSignal),
+                            Reason.DomCallback,
+                          );
+                        }}
+                      >
+                        {disconnecting
+                          ? t(($) => {
+                              return $.works.actions.disconnecting;
+                            })
+                          : t(($) => {
+                              return $.works.actions.disconnect;
+                            })}
+                      </button>
+                    </PopoverContent>
+                  </Popover>
+                </>
+              ) : (
+                <Button
+                  showTooltip
+                  data-testid="telegram-connect-button"
+                  variant="quiet"
+                  size="icon-xs"
+                  className="shrink-0 rounded-md border border-border/60"
+                  aria-label={t(($) => {
+                    return $.works.actions.connect;
+                  })}
+                  disabled={loading || !configured || connecting}
+                  onClick={() => {
+                    detach(
+                      connect(OFFICIAL_TELEGRAM_BOT_ID, "works", pageSignal),
+                      Reason.DomCallback,
+                    );
+                  }}
+                >
+                  <Link2 size={16} aria-hidden="true" />
+                </Button>
+              )}
+            </>
+          }
+        />
+      ) : (
+        <div className="flex items-center gap-4 p-4">
+          <div className="shrink-0 inline-flex h-7 w-7 items-center justify-center overflow-hidden">
+            <img src={telegramIconImg} alt="" className="h-7 w-7" />
+          </div>
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="truncate text-sm font-medium text-foreground">
+                {t(($) => {
+                  return $.works.telegram.title;
                 })}
-                disabled={loading || !configured || connecting}
-                onClick={() => {
-                  detach(
-                    connect(OFFICIAL_TELEGRAM_BOT_ID, "works", pageSignal),
-                    Reason.DomCallback,
-                  );
-                }}
-              >
-                <Link2 size={16} aria-hidden="true" />
-              </Button>
-            )}
-          </>
-        }
-      />
+              </div>
+            </div>
+            <div className="text-sm text-muted-foreground">
+              {botsLoadable.state === "hasError"
+                ? t(($) => {
+                    return $.connectors.providerSettings.telegram.loadError;
+                  })
+                : !loading && !configured
+                  ? t(($) => {
+                      return $.connectors.providerSettings.telegram
+                        .officialMissing;
+                    })
+                  : t(($) => {
+                      return $.works.telegram.description;
+                    })}
+            </div>
+          </div>
+          {bot?.isConnected ? (
+            <>
+              <ConnectedIndicator
+                testId="telegram-connected-indicator"
+                connectedDetail={connectedDetail}
+              />
+              <Popover>
+                <PopoverTrigger
+                  render={
+                    <Button
+                      showTooltip
+                      type="button"
+                      variant="quiet"
+                      size="icon-xs"
+                      className="shrink-0"
+                      aria-label={t(($) => {
+                        return $.works.actions.moreOptions;
+                      })}
+                    >
+                      <EllipsisVertical size={16} />
+                    </Button>
+                  }
+                />
+                <PopoverContent
+                  align="end"
+                  className="flex w-40 flex-col gap-0.5 p-2"
+                >
+                  <button
+                    type="button"
+                    disabled={disconnecting}
+                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-state-hover hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
+                    onClick={() => {
+                      detach(
+                        disconnect(OFFICIAL_TELEGRAM_BOT_ID, pageSignal),
+                        Reason.DomCallback,
+                      );
+                    }}
+                  >
+                    {disconnecting
+                      ? t(($) => {
+                          return $.works.actions.disconnecting;
+                        })
+                      : t(($) => {
+                          return $.works.actions.disconnect;
+                        })}
+                  </button>
+                </PopoverContent>
+              </Popover>
+            </>
+          ) : (
+            <Button
+              data-testid="telegram-connect-button"
+              variant="outline"
+              size="sm"
+              className="h-8 shrink-0 gap-1.5 rounded-lg"
+              disabled={loading || !configured || connecting}
+              onClick={() => {
+                detach(
+                  connect(OFFICIAL_TELEGRAM_BOT_ID, "works", pageSignal),
+                  Reason.DomCallback,
+                );
+              }}
+            >
+              {t(($) => {
+                return $.works.actions.connect;
+              })}
+            </Button>
+          )}
+        </div>
+      )}
       <TelegramConnectionFeedback
         connected={bot?.isConnected === true}
         connection={connectLoadable}
@@ -1031,7 +1376,13 @@ export function WorksPage() {
       </header>
 
       <main className="flex-1 overflow-auto px-4 sm:px-6 pt-3 pb-safe-or-8">
-        <div className="mx-auto grid max-w-[900px] grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div
+          className={
+            features?.[FeatureSwitchKey.WorksChannelCards]
+              ? "mx-auto grid max-w-[900px] grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
+              : "mx-auto max-w-[900px] flex flex-col gap-4"
+          }
+        >
           <SlackCard displayName={displayName} />
           <TeamsCard displayName={displayName} />
           <DiscordCard />

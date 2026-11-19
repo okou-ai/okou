@@ -24,7 +24,10 @@ function proof() {
 }
 const path = `/settings/email?${new URLSearchParams({ message: proof().messageId, expires: String(proof().expires), signature: proof().signature })}`;
 function featureSwitches() {
-  return { [FeatureSwitchKey.EmailIntegration]: true };
+  return {
+    [FeatureSwitchKey.WorksChannelCards]: true,
+    [FeatureSwitchKey.EmailIntegration]: true,
+  };
 }
 
 beforeEach(() => {
