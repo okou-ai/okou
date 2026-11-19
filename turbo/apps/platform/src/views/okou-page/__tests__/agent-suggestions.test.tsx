@@ -8,6 +8,7 @@ import {
   chatEventsContract,
   chatThreadByIdContract,
   chatThreadDraftContract,
+  chatThreadMetadataContract,
   chatThreadsContract,
   type ChatEventSendBody,
   type UserMessageDocument,
@@ -1131,4 +1132,87 @@ test("Sending after removing the quote leaves the suggestion available", async (
   ).resolves.toBeInTheDocument();
   expect(feed.consumed).toStrictEqual([]);
   expect(location.pathname).toBe("/for-you");
+});
+
+test("A custom direction continues a named chat missing from the chat list", async () => {
+  installChats([]);
+  installFeed([
+    suggestion({
+      id: FIRST_CARD_ID,
+      title: "Review interview notes",
+      customThreadId: TARGET_THREAD_ID,
+    }),
+  ]);
+  context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
+    expect(params.id).toBe(TARGET_THREAD_ID);
+    return respond(200, {
+      ...chatThread(TARGET_THREAD_ID, "Interview notes"),
+      muted: false,
+    });
+  });
+  const { creates, sends } = recordNewChats();
+  await openForYou();
+  const card = await findCard("Review interview notes");
+  const composer = await openDirection(card);
+  await typeDirection(composer, "Summarize the feedback");
+
+  await sendFrom(composer);
+
+  await waitFor(() => {
+    expect(sends).toHaveLength(1);
+  });
+  expect(sends[0]).toMatchObject({ threadId: TARGET_THREAD_ID });
+  expect(sentDocument(sends[0])?.parts).toContainEqual(
+    expect.objectContaining({
+      type: "feedback",
+      note: expect.arrayContaining([
+        { type: "text", text: "Summarize the feedback" },
+      ]),
+    }),
+  );
+  expect(creates).toHaveLength(0);
+});
+
+test("A custom direction starts a new chat when its named chat is gone", async () => {
+  installChats([]);
+  context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
+    expect(params.id).toBe(TARGET_THREAD_ID);
+    return respond(404, {
+      error: {
+        code: "CHAT_THREAD_NOT_FOUND",
+        message: "Chat thread not found",
+      },
+    });
+  });
+  installFeed([
+    suggestion({
+      id: FIRST_CARD_ID,
+      title: "Review interview notes",
+      customThreadId: TARGET_THREAD_ID,
+    }),
+  ]);
+  const { creates, sends } = recordNewChats();
+  await openForYou();
+  const composer = await openDirection(
+    await findCard("Review interview notes"),
+  );
+  await typeDirection(composer, "Summarize the feedback");
+
+  await sendFrom(composer);
+
+  await waitFor(() => {
+    expect(sends).toHaveLength(1);
+  });
+  expect(creates).toHaveLength(1);
+  expect(creates[0]?.clientThreadId).toEqual(expect.any(String));
+  expect(creates[0]?.clientThreadId).not.toBe(TARGET_THREAD_ID);
+  expect(sends[0]).toMatchObject({ threadId: creates[0]?.clientThreadId });
+  expect(sentDocument(sends[0])?.parts).toContainEqual(
+    expect.objectContaining({
+      type: "feedback",
+      note: expect.arrayContaining([
+        { type: "text", text: "Summarize the feedback" },
+      ]),
+    }),
+  );
 });

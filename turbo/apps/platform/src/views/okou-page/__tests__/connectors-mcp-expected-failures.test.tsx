@@ -53,6 +53,7 @@ test.each([
         error: { code, message: "Upstream OAuth setup failed" },
       });
     });
+    const sentry = context.mocks.sentry();
     const authWindow = context.mocks.browser.authWindow();
     context.mocks.browser.open(authWindow);
 
@@ -72,5 +73,10 @@ test.each([
     expect(
       within(getConnectorCard("Acme MCP")).getByText("No accounts"),
     ).toBeInTheDocument();
+    expect(
+      sentry.reports.filter((report) => {
+        return report.type === "exception";
+      }),
+    ).toHaveLength(0);
   },
 );
