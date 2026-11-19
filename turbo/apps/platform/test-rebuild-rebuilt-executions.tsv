@@ -444,3 +444,41 @@ chat-composer-slash-panel-020	turbo/apps/platform/src/views/okou-page/__tests__/
 chat-composer-slash-panel-023	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-panel.test.tsx	Manage workflows opens the Workflows page	399	passed
 chat-composer-slash-panel-024	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-panel.test.tsx	The desktop Templates overview at /chats/b0000000-0000-4000-a000-000000000900 keeps covers selectable across pointer handoff	415	passed
 chat-composer-slash-panel-025	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-panel.test.tsx	The desktop Templates overview at /agents/e0000000-0000-4000-a000-000000000010/chat?compose=1 keeps covers selectable across pointer handoff	415	passed
+chat-composer-ssh-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ssh.test.tsx	Remote host choices stay read-only across responsive remount and reopen until a save completes	152	passed
+chat-composer-ssh-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ssh.test.tsx	Remote access stays open while a changed chat host refreshes	212	passed
+chat-composer-ssh-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ssh.test.tsx	A new chat leaves host defaults untouched when no choice is changed	303	passed
+chat-composer-ssh-012	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ssh.test.tsx	Pending SSH choices survive reopen from a desktop viewport	378	passed
+chat-composer-ssh-014	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ssh.test.tsx	Apply SSH host choices during thread creation	413	passed
+chat-composer-ssh-015	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ssh.test.tsx	Remote access in two chat panes reads and updates each pane's thread	449	passed
+chat-composer-ssh-016	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ssh.test.tsx	Chat SSH setup respects hosts=0	562	passed
+chat-composer-ssh-017	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ssh.test.tsx	Chat SSH setup respects hosts=1	562	passed
+chat-composer-ssh-018	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ssh.test.tsx	Directory SSH setup follows shelves and categories	603	passed
+chat-composer-vnc-dependencies-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	New-chat SSH choices preserve row order, keyboard focus and VNC dependency feedback	233	passed
+chat-composer-vnc-dependencies-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	Saved-chat SSH keeps keyboard focus through a slow On save from default true	266	passed
+chat-composer-vnc-dependencies-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	A completed failed save preserves the user's new keyboard destination	305	passed
+chat-composer-vnc-dependencies-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	Dismissing Remote access during a save retains the connector trigger focus	351	passed
+chat-composer-vnc-dependencies-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	An enabled VNC host follows its exact SSH dependency	396	passed
+chat-composer-vnc-dependencies-012	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	A disabled VNC host shows its SSH dependency without a warning	412	passed
+chat-composer-vnc-dependencies-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	VNC dependency feedback follows the chat override over default true	424	passed
+chat-composer-vnc-dependencies-014	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	VNC dependency feedback follows the chat override over default false	424	passed
+chat-composer-vnc-dependencies-015	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	A new chat updates VNC warnings from unsent host choices	451	passed
+chat-composer-vnc-dependencies-017	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	Direct VNC transport still explains an SSH-backed KDC dependency	475	passed
+chat-composer-vnc-dependencies-021	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-vnc-dependencies.test.tsx	A failed access refresh reports its error without claiming dependency status	489	passed
+chat-composer-custom-templates-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	Content categories scope custom templates and reset their search	219	passed
+chat-composer-custom-templates-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	Returning to a type retains the loaded custom catalog	253	passed
+chat-composer-custom-templates-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	A custom deck steps through its pages on the stage	287	passed
+chat-composer-custom-templates-012	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	Using a custom template sends the row id and nothing about its kind	325	passed
+chat-composer-custom-templates-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	A document template with no cover is tiled by its format	383	passed
+chat-composer-custom-templates-014	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	A document template with a cover is tiled by its first page over a stack	405	passed
+chat-composer-custom-templates-015	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	Opening a Word template hands the source file to the Office viewer	427	passed
+chat-composer-custom-templates-016	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	A PDF template opens in the browser's own viewer	454	passed
+chat-composer-custom-templates-017	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	An image template is shown by the examples its style produced, not its source	537	passed
+chat-composer-custom-templates-019	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	Rename an image template from its card menu	570	passed
+chat-composer-custom-templates-020	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	A rename the server refuses keeps the dialog and the typed name	601	passed
+chat-composer-custom-templates-022	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	Renaming a template updates its card in the panel	646	passed
+chat-composer-custom-templates-023	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	Confirming an IME candidate keeps the template name focused and unsaved	663	passed
+chat-composer-custom-templates-026	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	Changing visibility updates the card's meta line	715	passed
+chat-composer-custom-templates-027	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	Deleting an image template keeps its category and other cards	730	passed
+chat-composer-custom-templates-030	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	A failed visibility change keeps the template and reports the error	762	passed
+chat-composer-custom-templates-033	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	Importing a document uses the custom template dispatcher	783	passed
+chat-composer-custom-templates-036	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-custom-templates.test.tsx	A failed custom catalog leaves built-in templates available	820	passed

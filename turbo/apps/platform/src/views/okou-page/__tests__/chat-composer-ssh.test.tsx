@@ -1,0 +1,656 @@
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
+import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
+import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
+import { act, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { expect, test } from "vitest";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  findFastControl,
+  queryFastControl,
+} from "./chat-message-experience-test-helpers.ts";
+import {
+  builtinConnector,
+  SCOUT_AGENT_ID,
+  SCOUT_THREAD_ID,
+  OTHER_THREAD_ID,
+  OTHER_AGENT_ID,
+  createComposerConnectorHelpers,
+} from "./chat-composer-connectors-test-helpers.ts";
+
+const context = testContext();
+const { installComposerConnectorFixture } =
+  createComposerConnectorHelpers(context);
+
+async function chooseRemoteHost(trigger: HTMLElement, optionName: string) {
+  click(trigger);
+  click(await screen.findByRole("option", { name: optionName }));
+}
+
+async function closeRemoteAccess() {
+  const dialog = screen.getByRole("dialog", { name: "Remote access" });
+  click(await findFastControl("button", "Close", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Remote access" })).toBeNull();
+  });
+}
+
+async function expectReopenedRemoteAccessCount(count: string) {
+  await closeRemoteAccess();
+  click(await findFastControl("button", "Connectors"));
+  const entry = await screen.findByText("Remote access");
+  await waitFor(() => {
+    expect(entry.closest("button")).toHaveTextContent(count);
+  });
+}
+
+async function prepareRemoteDefaults(
+  operation: "override-first" | "override-second" | "restore",
+  saveResponse?: Promise<void>,
+) {
+  const hostIds = [
+    "b0000000-0000-4000-8000-000000000001",
+    "b0000000-0000-4000-8000-000000000002",
+  ];
+  installComposerConnectorFixture({ threadId: SCOUT_THREAD_ID });
+  context.mocks.data.availableRunModels([]);
+  const overrides = new Map<string, boolean>(
+    operation === "restore"
+      ? [
+          [hostIds[0]!, false],
+          [hostIds[1]!, true],
+        ]
+      : operation === "override-second"
+        ? [[hostIds[0]!, false]]
+        : [],
+  );
+  const host = (connectionId: string, index: number) => {
+    const overrideEnabled = overrides.get(connectionId) ?? null;
+    const defaultEnabled = index === 0;
+    return {
+      connectionId,
+      displayName: `SSH host ${index + 1}`,
+      defaultEnabled,
+      overrideEnabled,
+      enabled: overrideEnabled ?? defaultEnabled,
+      source:
+        overrideEnabled === null ? ("default" as const) : ("override" as const),
+    };
+  };
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
+    return respond(200, {
+      computerUseHosts: [],
+      cloudBrowserAvailable: true,
+      cloudBrowserEnabledByDefault: true,
+      sshHosts: hostIds.map((connectionId, index) => {
+        const { displayName, defaultEnabled } = host(connectionId, index);
+        return { connectionId, displayName, defaultEnabled };
+      }),
+      vncHosts: [],
+    });
+  });
+  context.mocks.api(
+    chatRemoteAccessContract.listThreadAccess,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: hostIds.map(host),
+        vnc: [],
+      });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.setThreadOverride,
+    async ({ params, body, respond }) => {
+      await saveResponse;
+      overrides.set(params.connectionId, body.enabled);
+      return respond(
+        200,
+        host(params.connectionId, hostIds.indexOf(params.connectionId)),
+      );
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.clearThreadOverride,
+    ({ params, respond }) => {
+      overrides.delete(params.connectionId);
+      return respond(
+        200,
+        host(params.connectionId, hostIds.indexOf(params.connectionId)),
+      );
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${SCOUT_THREAD_ID}`,
+  });
+  click(await findFastControl("button", "Connectors"));
+  const remoteAccess = await screen.findByText("Remote access");
+  const cloudBrowser = screen.getByText("Cloud browser");
+  const yourComputer = screen.getByText("Your computer");
+  expect(
+    cloudBrowser.compareDocumentPosition(remoteAccess) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    remoteAccess.compareDocumentPosition(yourComputer) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(remoteAccess.closest("button")).toHaveTextContent(
+    operation === "override-second" ? "0 enabled" : "1 enabled",
+  );
+  expect(screen.queryByRole("combobox", { name: "SSH SSH host 1" })).toBeNull();
+  click(remoteAccess);
+  const first = await screen.findByRole("combobox", {
+    name: "SSH SSH host 1",
+  });
+  const second = screen.getByRole("combobox", { name: "SSH SSH host 2" });
+  return { hostIds, overrides, first, second };
+}
+
+test("Remote host choices stay read-only across responsive remount and reopen until a save completes", async () => {
+  const media = context.mocks.browser.matchMedia(true);
+  const saveResponse = context.mocks.deferred<void>();
+  const { first, second } = await prepareRemoteDefaults(
+    "override-first",
+    saveResponse.promise,
+  );
+
+  await chooseRemoteHost(first, "Off");
+  await waitFor(() => {
+    expect(first).toHaveAttribute("aria-readonly", "true");
+    expect(second).toHaveAttribute("aria-readonly", "true");
+  });
+
+  act(() => {
+    media.setMatches(false);
+  });
+  await waitFor(() => {
+    expect(first).not.toBeInTheDocument();
+  });
+  expect(
+    screen.getByRole("combobox", { name: "SSH SSH host 1" }),
+  ).toHaveAttribute("aria-readonly", "true");
+  expect(
+    screen.getByRole("combobox", { name: "SSH SSH host 2" }),
+  ).toHaveAttribute("aria-readonly", "true");
+
+  await closeRemoteAccess();
+  click(await findFastControl("button", "Connectors"));
+  click(await screen.findByText("Remote access"));
+  const reopenedFirst = await screen.findByRole("combobox", {
+    name: "SSH SSH host 1",
+  });
+  const reopenedSecond = screen.getByRole("combobox", {
+    name: "SSH SSH host 2",
+  });
+  expect(reopenedFirst).toHaveAttribute("aria-readonly", "true");
+  expect(reopenedSecond).toHaveAttribute("aria-readonly", "true");
+  const user = userEvent.setup({ delay: null });
+  reopenedSecond.focus();
+  await user.keyboard("{Enter}{ArrowDown}{Enter}");
+  click(reopenedFirst);
+  expect(screen.queryByRole("listbox")).toBeNull();
+  reopenedSecond.focus();
+
+  saveResponse.resolve();
+  await waitFor(() => {
+    expect(reopenedFirst).toHaveTextContent("Off");
+    expect(reopenedSecond).toHaveTextContent("Default (Off)");
+    expect(reopenedFirst).not.toHaveAttribute("aria-readonly", "true");
+    expect(reopenedSecond).not.toHaveAttribute("aria-readonly", "true");
+  });
+  expect(reopenedSecond).toHaveFocus();
+  await chooseRemoteHost(reopenedSecond, "On");
+  await waitFor(() => {
+    expect(reopenedFirst).toHaveTextContent("Off");
+    expect(reopenedSecond).toHaveTextContent("On");
+  });
+});
+
+test("Remote access stays open while a changed chat host refreshes", async () => {
+  const firstId = "b0000000-0000-4000-8000-000000000001";
+  const secondId = "b0000000-0000-4000-8000-000000000002";
+  const hosts = [
+    { connectionId: firstId, displayName: "SSH host 1", defaultEnabled: false },
+    {
+      connectionId: secondId,
+      displayName: "SSH host 2",
+      defaultEnabled: false,
+    },
+  ];
+  const refreshStarted = context.mocks.deferred<void>();
+  const releaseRefresh = context.mocks.deferred<void>();
+  const releaseDefaultsRefresh = context.mocks.deferred<void>();
+  let listRequests = 0;
+  let firstEnabled = false;
+  let delayDefaultsRefresh = false;
+  const access = () => {
+    return {
+      ssh: hosts.map((host) => {
+        const enabled = host.connectionId === firstId && firstEnabled;
+        return {
+          ...host,
+          overrideEnabled: enabled ? true : null,
+          enabled,
+          source: enabled ? ("override" as const) : ("default" as const),
+        };
+      }),
+      vnc: [],
+    };
+  };
+  installComposerConnectorFixture({ threadId: SCOUT_THREAD_ID });
+  context.mocks.api(remotesContract.overview, async ({ respond }) => {
+    if (delayDefaultsRefresh) {
+      await releaseDefaultsRefresh.promise;
+    }
+    return respond(200, {
+      computerUseHosts: [],
+      cloudBrowserAvailable: true,
+      cloudBrowserEnabledByDefault: true,
+      sshHosts: hosts,
+      vncHosts: [],
+    });
+  });
+  context.mocks.api(
+    chatRemoteAccessContract.listThreadAccess,
+    async ({ respond }) => {
+      listRequests += 1;
+      if (listRequests === 2) {
+        refreshStarted.resolve();
+        await releaseRefresh.promise;
+      }
+      return respond(200, access());
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.setThreadOverride,
+    ({ body, respond }) => {
+      firstEnabled = body.enabled;
+      return respond(200, access().ssh[0]!);
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${SCOUT_THREAD_ID}`,
+  });
+  click(await findFastControl("button", "Connectors"));
+  const remoteAccess = await screen.findByText("Remote access");
+  click(remoteAccess);
+  const menu = await screen.findByRole("dialog", { name: "Remote access" });
+  const first = await screen.findByRole("combobox", { name: "SSH SSH host 1" });
+  const second = screen.getByRole("combobox", { name: "SSH SSH host 2" });
+
+  delayDefaultsRefresh = true;
+  await chooseRemoteHost(first, "On");
+  await refreshStarted.promise;
+  expect(menu).toBeInTheDocument();
+  expect(first).toBeInTheDocument();
+  expect(second).toBeInTheDocument();
+  expect(second).not.toBeDisabled();
+  expect(first).toHaveTextContent("Default (Off)");
+
+  releaseDefaultsRefresh.resolve();
+  releaseRefresh.resolve();
+  await waitFor(() => {
+    expect(first).toHaveTextContent("On");
+    expect(menu).toBeInTheDocument();
+  });
+  await expectReopenedRemoteAccessCount("1 enabled");
+});
+
+test("A new chat leaves host defaults untouched when no choice is changed", async () => {
+  const fixture = installComposerConnectorFixture();
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
+    return respond(200, {
+      computerUseHosts: [],
+      cloudBrowserAvailable: true,
+      cloudBrowserEnabledByDefault: true,
+      sshHosts: [
+        {
+          connectionId: "b0000000-0000-4000-8000-000000000001",
+          displayName: "SSH host 1",
+          defaultEnabled: true,
+        },
+      ],
+      vncHosts: [],
+    });
+  });
+  await setupPage({
+    context,
+    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+  });
+  click(await findFastControl("button", "Connectors"));
+  const remoteAccess = await screen.findByText("Remote access");
+  expect(remoteAccess.closest("button")).toHaveTextContent("1 enabled");
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  await fill(composer, "Use my defaults");
+  await userEvent.setup({ delay: null }).keyboard("{Enter}");
+  await waitFor(() => {
+    expect(fixture.createdThreadRequests).toStrictEqual([
+      { threadId: expect.any(String), connectorSelections: [] },
+    ]);
+  });
+});
+
+async function prepareDraftHostChoices() {
+  const fixture = installComposerConnectorFixture();
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
+    return respond(200, {
+      computerUseHosts: [],
+      cloudBrowserAvailable: true,
+      cloudBrowserEnabledByDefault: true,
+      sshHosts: [
+        {
+          connectionId: "b0000000-0000-4000-8000-000000000001",
+          displayName: "SSH host 1",
+          defaultEnabled: true,
+        },
+        {
+          connectionId: "b0000000-0000-4000-8000-000000000002",
+          displayName: "SSH host 2",
+          defaultEnabled: false,
+        },
+      ],
+      vncHosts: [],
+    });
+  });
+  await setupPage({
+    context,
+    path: `/agents/${SCOUT_AGENT_ID}/chat?compose=1`,
+  });
+  const trigger = await findFastControl("button", "Connectors");
+  click(trigger);
+  const remoteAccess = await screen.findByText("Remote access");
+  expect(remoteAccess.closest("button")).toHaveTextContent("1 enabled");
+  click(remoteAccess);
+  const first = await screen.findByRole("combobox", {
+    name: "SSH SSH host 1",
+  });
+  const second = screen.getByRole("combobox", { name: "SSH SSH host 2" });
+  expect(first).toHaveTextContent("Default (On)");
+  expect(second).toHaveTextContent("Default (Off)");
+  const user = userEvent.setup({ delay: null });
+  return { trigger, first, user, fixture, second };
+}
+
+test("Pending SSH choices survive reopen from a desktop viewport", async () => {
+  const desktop = true;
+  context.mocks.browser.matchMedia(desktop);
+  const { trigger, first, user } = await prepareDraftHostChoices();
+  const dialog = screen.getByRole("dialog", { name: "Remote access" });
+  expect(
+    within(dialog).getByText("Applied when you send the first message"),
+  ).toBeInTheDocument();
+  await waitFor(() => {
+    expect(dialog.contains(document.activeElement)).toBeTruthy();
+  });
+
+  first.focus();
+  await user.keyboard("{Enter}");
+  await screen.findByRole("option", {
+    name: "Default (On)",
+    selected: true,
+  });
+  await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+  expect(first).toHaveTextContent("Off");
+
+  await expectReopenedRemoteAccessCount("0 enabled");
+  click(await screen.findByText("Remote access"));
+  const restoredChoice = await screen.findByRole("combobox", {
+    name: "SSH SSH host 1",
+  });
+  expect(restoredChoice).toHaveTextContent("Off");
+  await chooseRemoteHost(restoredChoice, "Default (On)");
+  expect(restoredChoice).toHaveTextContent("Default (On)");
+  await closeRemoteAccess();
+  await waitFor(() => {
+    expect(trigger).toHaveFocus();
+  });
+});
+
+test("Apply SSH host choices during thread creation", async () => {
+  const { fixture, first, second, user } = await prepareDraftHostChoices();
+  await chooseRemoteHost(first, "Off");
+  await waitFor(() => {
+    expect(first).toHaveTextContent("Off");
+  });
+  await chooseRemoteHost(second, "On");
+  await waitFor(() => {
+    expect(second).toHaveTextContent("On");
+  });
+  await closeRemoteAccess();
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  await fill(composer, "Inspect both hosts");
+  await user.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(fixture.createdThreadRequests).toStrictEqual([
+      {
+        threadId: expect.any(String),
+        connectorSelections: [],
+        initialRemoteAccessOverrides: [
+          {
+            protocol: "ssh",
+            connectionId: "b0000000-0000-4000-8000-000000000001",
+            enabled: false,
+          },
+          {
+            protocol: "ssh",
+            connectionId: "b0000000-0000-4000-8000-000000000002",
+            enabled: true,
+          },
+        ],
+      },
+    ]);
+  });
+});
+
+test("Remote access in two chat panes reads and updates each pane's thread", async () => {
+  const connectionId = "b0000000-0000-4000-8000-000000000001";
+  const overrides = new Map([[SCOUT_THREAD_ID, true]]);
+  const updates: { threadId: string; enabled: boolean }[] = [];
+  installComposerConnectorFixture({
+    threadId: SCOUT_THREAD_ID,
+    threads: [
+      { id: SCOUT_THREAD_ID, title: "Scout chat", agentId: SCOUT_AGENT_ID },
+      { id: OTHER_THREAD_ID, title: "Other chat", agentId: OTHER_AGENT_ID },
+    ],
+  });
+  const host = (threadId: string) => {
+    const overrideEnabled = overrides.get(threadId) ?? null;
+    return {
+      connectionId,
+      displayName: "Shared SSH host",
+      defaultEnabled: false,
+      overrideEnabled,
+      enabled: overrideEnabled ?? false,
+      source:
+        overrideEnabled === null ? ("default" as const) : ("override" as const),
+    };
+  };
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
+    return respond(200, {
+      computerUseHosts: [],
+      cloudBrowserAvailable: true,
+      cloudBrowserEnabledByDefault: true,
+      sshHosts: [
+        {
+          connectionId,
+          displayName: "Shared SSH host",
+          defaultEnabled: false,
+        },
+      ],
+      vncHosts: [],
+    });
+  });
+  context.mocks.api(
+    chatRemoteAccessContract.listThreadAccess,
+    ({ params, respond }) => {
+      return respond(200, { ssh: [host(params.threadId)], vnc: [] });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.setThreadOverride,
+    ({ params, body, respond }) => {
+      overrides.set(params.threadId, body.enabled);
+      updates.push({ threadId: params.threadId, enabled: body.enabled });
+      return respond(200, host(params.threadId));
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${SCOUT_THREAD_ID}?sidebar=${OTHER_THREAD_ID}`,
+  });
+  await waitFor(() => {
+    expect(
+      document.querySelectorAll("[data-chat-thread-container-id]"),
+    ).toHaveLength(2);
+  });
+  const pane = (threadId: string) => {
+    const element = document.querySelector<HTMLElement>(
+      `[data-chat-thread-container-id="${threadId}"]`,
+    );
+    if (!element) {
+      throw new Error(`Missing chat pane ${threadId}`);
+    }
+    return element;
+  };
+  const user = userEvent.setup({ delay: null });
+  const scoutTrigger = await findFastControl(
+    "button",
+    "Connectors",
+    pane(SCOUT_THREAD_ID),
+  );
+  click(scoutTrigger);
+  click(await screen.findByText("Remote access"));
+  await expect(
+    screen.findByRole("combobox", { name: "SSH Shared SSH host" }),
+  ).resolves.toHaveTextContent("On");
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(scoutTrigger).toHaveFocus();
+  });
+
+  const otherTrigger = await findFastControl(
+    "button",
+    "Connectors",
+    pane(OTHER_THREAD_ID),
+  );
+  click(otherTrigger);
+  click(await screen.findByText("Remote access"));
+  const otherHost = await screen.findByRole("combobox", {
+    name: "SSH Shared SSH host",
+  });
+  expect(otherHost).toHaveTextContent("Default (Off)");
+  await chooseRemoteHost(otherHost, "On");
+  await waitFor(() => {
+    expect(updates).toStrictEqual([
+      { threadId: OTHER_THREAD_ID, enabled: true },
+    ]);
+    expect(
+      screen.getByRole("combobox", { name: "SSH Shared SSH host" }),
+    ).toHaveTextContent("On");
+  });
+  expect(overrides.get(SCOUT_THREAD_ID)).toBeTruthy();
+  await closeRemoteAccess();
+  await waitFor(() => {
+    expect(otherTrigger).toHaveFocus();
+  });
+});
+
+test.each([{ configuredCount: 0 }, { configuredCount: 1 }])(
+  "Chat SSH setup respects hosts=$configuredCount",
+  async ({ configuredCount }) => {
+    installComposerConnectorFixture();
+    context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
+      return respond(200, { configuredCount });
+    });
+    context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+      return respond(200, { connections: [] });
+    });
+    await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+    click(await findFastControl("button", "Connectors"));
+    click(await findFastControl("button", "Add connectors"));
+    const search = await screen.findByPlaceholderText("Find connectors...");
+    const dialog = search.closest('[role="dialog"]');
+    if (!(dialog instanceof HTMLElement)) {
+      throw new Error("Missing connector dialog");
+    }
+    const showEntry = configuredCount === 0;
+    const initialEntry = showEntry
+      ? await findFastControl("link", "Manage SSH hosts", dialog)
+      : queryFastControl("link", "Manage SSH hosts", dialog);
+    expect(initialEntry !== null).toBe(showEntry);
+    if (showEntry) {
+      await fill(search, "ssh");
+      const entry = await findFastControl("link", "Manage SSH hosts", dialog);
+      click(entry);
+      click(await findFastControl("button", "Add connection"));
+      await screen.findByRole("heading", { name: "Add remote connection" });
+    }
+    await waitFor(() => {
+      return expect(window.location.pathname).toBe(
+        showEntry ? "/connectors" : `/agents/${SCOUT_AGENT_ID}/chat`,
+      );
+    });
+    expect(window.location.search).toBe(
+      showEntry ? "?scope=remote-control&type=ssh&setup=add" : "",
+    );
+  },
+);
+
+test("Directory SSH setup follows shelves and categories", async () => {
+  installComposerConnectorFixture({
+    catalog: ["GitHub", "Slack", "Gmail", "Notion", "Jira"].map(
+      (label, popularityRank) => {
+        return builtinConnector({
+          slug: connectorSlugSchema.parse(label.toLowerCase()),
+          label,
+          hasAccount: false,
+          popularityRank,
+        });
+      },
+    ),
+    categoryConnectorCounts: { productivity: 5 },
+  });
+  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
+    return respond(200, { configuredCount: 0 });
+  });
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [] });
+  });
+  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  click(await findFastControl("button", "Connectors"));
+  click(await findFastControl("button", "Add connectors"));
+  const dialog = await waitFor(() => {
+    const directory = screen
+      .getAllByRole("dialog", { name: "Connectors" })
+      .find((candidate) => {
+        return within(candidate).queryByTestId("connector-shelf-head") !== null;
+      });
+    if (!directory) {
+      throw new Error("Connector directory has not opened");
+    }
+    return directory;
+  });
+  await findFastControl("link", "Manage SSH hosts", dialog);
+  click(await findFastControl("button", "Remote access1", dialog));
+  await within(dialog).findByRole("heading", { name: "Remote access" });
+  expect(within(dialog).queryByText("GitHub")).toBeNull();
+  click(within(dialog).getByText("Custom", { exact: true }));
+  await within(dialog).findByText("No custom connectors yet");
+  expect(queryFastControl("link", "Manage SSH hosts", dialog)).toBeNull();
+  click(within(dialog).getByText("Discover", { exact: true }));
+  await findFastControl("link", "Manage SSH hosts", dialog);
+  click(await findFastControl("button", "All", dialog));
+  await within(dialog).findByTestId("connector-shelf-head");
+  const entry = await findFastControl("link", "Manage SSH hosts", dialog);
+  click(entry);
+  click(await findFastControl("button", "Add connection"));
+  await screen.findByRole("heading", { name: "Add remote connection" });
+  expect(window.location.pathname).toBe("/connectors");
+  expect(window.location.search).toBe(
+    "?scope=remote-control&type=ssh&setup=add",
+  );
+});
