@@ -8,6 +8,40 @@ const PHASES: [&str; 4] = [
     STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION,
 ];
 
+#[test]
+fn slow_headers_skip_fast_responses_failures_and_body_time() {
+    let phases = FreshArchivePhaseRecords::default();
+    let mut telemetry = new_telemetry();
+    let records = [
+        (STORAGE_CACHE_FRESH_DELIVERY_HEADERS, 99, true),
+        (STORAGE_CACHE_FRESH_DELIVERY_HEADERS, 100, true),
+        (STORAGE_CACHE_FRESH_DELIVERY_HEADERS, 101, true),
+        (STORAGE_CACHE_FRESH_DELIVERY_HEADERS, 150, false),
+        (STORAGE_CACHE_FRESH_DELIVERY_BODY, 250, true),
+    ];
+    phases
+        .records
+        .lock()
+        .unwrap()
+        .extend(
+            records.map(|(action, elapsed_ms, success)| FreshArchivePhaseRecord {
+                operation: SandboxOpRecord::new(
+                    action,
+                    Duration::from_millis(elapsed_ms),
+                    success,
+                    None,
+                ),
+                completed_at: Utc::now(),
+                archive_size_mismatch: None,
+                archive_connection_attempt: None,
+            }),
+        );
+
+    assert_eq!(phases.record_to(&mut telemetry), 2);
+    assert_eq!(phases.record_to(&mut telemetry), 0);
+    assert_eq!(phase_ops(&telemetry).len(), 5);
+}
+
 fn phase_ops(telemetry: &JobTelemetry) -> Vec<(String, bool, Option<String>)> {
     telemetry
         .pending_ops_snapshot()

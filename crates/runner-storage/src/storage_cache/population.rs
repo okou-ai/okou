@@ -115,7 +115,7 @@ pub(super) async fn prepare_mixed(
         cancel_fresh.cancel();
     }
     metrics.record_to(stage.telemetry);
-    delivery.phase_records.record_to(stage.telemetry);
+    delivery.record_phases(stage.telemetry);
     result
 }
 

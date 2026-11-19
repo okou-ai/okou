@@ -26,8 +26,9 @@ use super::{
 /// Maximum number of cache-fill groups that may be active across the runner.
 const BACKGROUND_FILL_ACTIVE_LIMIT: usize = CONCURRENCY;
 
-/// Maximum number of unique cache-fill groups waiting for a worker across the runner.
+/// Maximum number of groups waiting without expanded missing-archive admission.
 const BACKGROUND_FILL_QUEUE_CAPACITY: usize = 32;
+const BACKGROUND_FILL_EXPANDED_QUEUE_CAPACITY: usize = 64;
 /// Bound the number of missing archives dispatched while maintenance is waiting.
 const BACKGROUND_FILL_MISSING_BURST: usize = 3;
 /// Maximum number of completed telemetry tasks reaped between scheduler polls.
@@ -91,6 +92,8 @@ struct BackgroundFillEntry {
     action: BackgroundFillAction,
     subscribers: Vec<SandboxOpReporter>,
     state: BackgroundFillEntryState,
+    // Only a missing archive that could not enter under the base limits uses this slot.
+    uses_expanded_slot: bool,
 }
 
 struct BackgroundFillAdmissionState {
@@ -146,7 +149,10 @@ struct BackgroundFillWorkerResult {
 
 impl StorageCacheBackgroundFillCoordinator {
     pub fn new() -> RunnerResult<Self> {
-        Self::new_with_limits(BACKGROUND_FILL_ACTIVE_LIMIT, BACKGROUND_FILL_QUEUE_CAPACITY)
+        Self::new_with_limits(
+            BACKGROUND_FILL_ACTIVE_LIMIT,
+            BACKGROUND_FILL_EXPANDED_QUEUE_CAPACITY,
+        )
     }
 
     pub(super) fn new_with_limits(
@@ -188,6 +194,7 @@ impl StorageCacheBackgroundFillCoordinator {
         Ok(Self { lifecycle })
     }
 
+    #[cfg(test)]
     pub(super) fn submit(
         &self,
         group: CacheTargetGroup,
@@ -195,7 +202,7 @@ impl StorageCacheBackgroundFillCoordinator {
         reporter: SandboxOpReporter,
         action: BackgroundFillAction,
     ) -> BackgroundFillAdmission {
-        Self::submit_inner(&self.lifecycle.inner, group, home, reporter, action)
+        Self::submit_inner(&self.lifecycle.inner, group, home, reporter, action, true)
     }
 
     fn submit_inner(
@@ -204,6 +211,7 @@ impl StorageCacheBackgroundFillCoordinator {
         home: HomePaths,
         reporter: SandboxOpReporter,
         action: BackgroundFillAction,
+        expand_queue: bool,
     ) -> BackgroundFillAdmission {
         let key = group.key();
         let mut state = inner
@@ -266,20 +274,36 @@ impl StorageCacheBackgroundFillCoordinator {
         // Leave one worker wave of waiting positions for the other class.
         // Already accepted same-key promotions above keep ownership even when
         // they exceed this class cap; no entry is evicted to make room.
-        let reserved = inner.active_limit.min(inner.queue_capacity / 2);
-        let same_class = state
-            .entries
-            .values()
-            .filter(|entry| {
-                entry.state == BackgroundFillEntryState::Queued
-                    && entry.action.is_missing() == action.is_missing()
-            })
-            .count();
-        if state.pending.len() >= inner.queue_capacity
-            || same_class >= inner.queue_capacity - reserved
-        {
+        let queued = state.pending.len();
+        if queued >= inner.queue_capacity {
             return BackgroundFillAdmission::QueueSaturated;
         }
+        let base_capacity = inner.queue_capacity.min(BACKGROUND_FILL_QUEUE_CAPACITY);
+        let class_limit = |capacity| capacity - inner.active_limit.min(capacity / 2);
+        let missing = action.is_missing();
+        let queue_capacity = if missing && expand_queue {
+            inner.queue_capacity
+        } else {
+            base_capacity
+        };
+        // Expanded misses leave the base slots available to maintenance.
+        let mut occupied = queued;
+        let mut same_class = 0;
+        for entry in state
+            .entries
+            .values()
+            .filter(|entry| entry.state == BackgroundFillEntryState::Queued)
+        {
+            same_class += usize::from(entry.action.is_missing() == missing);
+            if !missing && entry.uses_expanded_slot {
+                occupied -= 1;
+            }
+        }
+        if occupied >= queue_capacity || same_class >= class_limit(queue_capacity) {
+            return BackgroundFillAdmission::QueueSaturated;
+        }
+        let uses_expanded_slot = queue_capacity > base_capacity
+            && (queued >= base_capacity || same_class >= class_limit(base_capacity));
         state.entries.insert(
             key.clone(),
             BackgroundFillEntry {
@@ -288,6 +312,7 @@ impl StorageCacheBackgroundFillCoordinator {
                 action,
                 subscribers: vec![reporter],
                 state: BackgroundFillEntryState::Queued,
+                uses_expanded_slot,
             },
         );
         state.pending.push_back(key);
@@ -350,8 +375,14 @@ impl StorageCacheBackgroundFillCoordinator {
                 if rejected {
                     continue;
                 }
-                let admission =
-                    Self::submit_inner(&inner, group, home.clone(), reporter.clone(), action);
+                let admission = Self::submit_inner(
+                    &inner,
+                    group,
+                    home.clone(),
+                    reporter.clone(),
+                    action,
+                    false,
+                );
                 record_background_admission(admission, &mut accepted, &mut records);
             }
             if accepted > 0 {
@@ -758,6 +789,7 @@ pub struct DeferredBackgroundFill {
     pub(super) groups: Vec<(CacheTargetGroup, BackgroundFillAction)>,
     pub(super) home: HomePaths,
     pub(super) selected_at: Instant,
+    pub(super) expand_queue: bool,
 }
 
 impl DeferredBackgroundFill {
@@ -801,8 +833,14 @@ impl DeferredBackgroundFill {
                 vec![(group, action)]
             };
             for (group, action) in batch {
-                let admission =
-                    coordinator.submit(group, self.home.clone(), reporter.clone(), action);
+                let admission = StorageCacheBackgroundFillCoordinator::submit_inner(
+                    &coordinator.lifecycle.inner,
+                    group,
+                    self.home.clone(),
+                    reporter.clone(),
+                    action,
+                    self.expand_queue,
+                );
                 record_background_admission(admission, &mut accepted, &mut records);
             }
         }
