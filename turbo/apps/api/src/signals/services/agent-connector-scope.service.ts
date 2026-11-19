@@ -2,14 +2,7 @@ import {
   connectorSlugSchema,
   type ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
-import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
-import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
-import { and, eq, isNotNull } from "drizzle-orm";
 
-import { pgBooleanDecoder } from "../../lib/db-structured-result";
-import { command } from "ccstate";
-import { db$ } from "../external/db";
 import { orderByCustomConnectorId } from "./custom-connector-order";
 
 export interface CustomConnectorDefinitionVersion {
@@ -75,57 +68,3 @@ export function agentConnectorScopeFromRows(args: {
     customConnectorDefinitions,
   };
 }
-
-interface LoadAgentConnectorScopeArgs {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly agentId: string;
-}
-
-export const readAgentConnectorScope$ = command(
-  async (
-    { get },
-    args: LoadAgentConnectorScopeArgs,
-  ): Promise<AgentConnectorScopeSnapshot> => {
-    const db = get(db$);
-    const [connectorRows, customConnectorRows] = await Promise.all([
-      db
-        .select({ connectorSlug: userBuiltinConnectors.connectorSlug })
-        .from(userBuiltinConnectors)
-        .where(
-          and(
-            eq(userBuiltinConnectors.orgId, args.orgId),
-            eq(userBuiltinConnectors.userId, args.userId),
-            eq(userBuiltinConnectors.agentId, args.agentId),
-          ),
-        ),
-      db
-        .select({
-          customConnectorId: userCustomConnectors.customConnectorId,
-          connectorSlug: orgCustomConnectors.slug,
-          storageVersion: orgCustomConnectors.storageVersion,
-          skillStorageVersionId: orgCustomConnectors.skillStorageVersionId,
-          isMcp: isNotNull(orgCustomConnectors.mcpEndpoint).mapWith(
-            pgBooleanDecoder,
-          ),
-        })
-        .from(userCustomConnectors)
-        .innerJoin(
-          orgCustomConnectors,
-          and(
-            eq(orgCustomConnectors.id, userCustomConnectors.customConnectorId),
-            eq(orgCustomConnectors.orgId, userCustomConnectors.orgId),
-          ),
-        )
-        .where(
-          and(
-            eq(userCustomConnectors.orgId, args.orgId),
-            eq(userCustomConnectors.userId, args.userId),
-            eq(userCustomConnectors.agentId, args.agentId),
-            eq(orgCustomConnectors.enabled, true),
-          ),
-        ),
-    ]);
-    return agentConnectorScopeFromRows({ connectorRows, customConnectorRows });
-  },
-);

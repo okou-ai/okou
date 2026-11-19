@@ -120,13 +120,9 @@ describe("GitHub installation status", () => {
     });
 
     mockGitHubConnectorOAuth({ userId: 701, login: "github-status-after" });
-    const started = await connectors.startOauth(
-      actor,
-      "github",
-      "oauth",
-      undefined,
-      { intent: "add" },
-    );
+    const started = await connectors.startOauth(actor, "github", "oauth", {
+      intent: "add",
+    });
     const state = new URL(started.authorizationUrl).searchParams.get("state");
     if (!state) {
       throw new Error("Expected GitHub OAuth state");

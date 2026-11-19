@@ -365,7 +365,6 @@ export type UpdateCustomConnectorBody = zInfer<
 >;
 
 export const startCustomConnectorOAuth2BodySchema = object({
-  agentId: uuid().optional(),
   account: connectorAccountMutationIntentSchema,
 }).strict();
 
@@ -404,7 +403,6 @@ export type CustomConnectorProposal = zInfer<
 export const saveCustomConnectorProposalBodySchema = object({
   proposal: customConnectorProposalSchema,
   values: array(customConnectorValueInputSchema),
-  agentId: uuid().optional(),
 });
 export type SaveCustomConnectorProposalBody = zInfer<
   typeof saveCustomConnectorProposalBodySchema
@@ -413,7 +411,6 @@ export type SaveCustomConnectorProposalBody = zInfer<
 export const saveCustomConnectorProposalResponseSchema = object({
   connector: customConnectorResponseSchema,
   connectionId: uuid().optional(),
-  authorizedAgentId: uuid().optional(),
 });
 export type SaveCustomConnectorProposalResponse = zInfer<
   typeof saveCustomConnectorProposalResponseSchema

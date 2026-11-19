@@ -98,10 +98,6 @@ import {
 } from "./connector-connection-write.service";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import {
-  addUserCustomConnector$,
-  type AddUserCustomConnectorResult,
-} from "./user-connectors.service";
-import {
   connectorRuntimeWakeupRunColumns,
   connectorRuntimeWakeupCondition,
   publishConnectorRuntimeWakeupRows,
@@ -649,7 +645,6 @@ interface StartCustomConnectorOAuth2Args {
   readonly connectorId: string;
   readonly redirectUri: string;
   readonly automaticOAuthClient?: AutomaticOAuthClientPresentation;
-  readonly agentId?: string;
   readonly account: ConnectorAccountMutationIntent;
   readonly feishuContext?: {
     readonly installationId?: string;
@@ -960,7 +955,6 @@ const persistCustomConnectorOAuthStart$ = command(
       allowSiblings,
       account: args.account,
       state: prepared.state,
-      agentId: args.agentId,
       redirectUri: prepared.redirectUri,
       authorizationUrl: prepared.authorizationUrl,
       oauthRequestedScopes: prepared.oauthRequestedScopes,
@@ -999,36 +993,6 @@ const persistCustomConnectorOAuthStart$ = command(
     );
   },
 );
-
-function automaticNoAuthAgentAuthorizationFailure(
-  authorization: AddUserCustomConnectorResult,
-): ReturnType<typeof badRequestMessage> | null {
-  switch (authorization.status) {
-    case "added": {
-      return null;
-    }
-    case "agentNotFound": {
-      return badRequestMessage(
-        "Authentication connected, but the requested agent was not found",
-      );
-    }
-    case "customConnectorsNotFound": {
-      return badRequestMessage(
-        "Authentication connected, but the custom connector was not found",
-      );
-    }
-    case "customConnectorPermissionSelectionRequired": {
-      return badRequestMessage(
-        "Authentication connected, but connector permissions must be selected before authorizing the agent",
-      );
-    }
-    case "invalidCustomConnectorPermissions": {
-      return badRequestMessage(
-        `Authentication connected, but agent authorization failed: ${authorization.message}`,
-      );
-    }
-  }
-}
 
 type AutomaticNoAuthConnector = CustomConnectorRow & {
   readonly kind: "mcp";
@@ -1218,7 +1182,7 @@ const persistAutomaticNoAuthConnection$ = command(
     context: AutomaticNoAuthPersistenceContext,
     signal: AbortSignal,
   ) => {
-    const { connector, args } = context;
+    const { connector } = context;
     let postCommitAbort: CapturedConnectorClientInvalidationAbort | undefined;
     const result = await set(commitAutomaticNoAuthConnection$, context, signal);
     if ("changed" in result) {
@@ -1239,20 +1203,6 @@ const persistAutomaticNoAuthConnection$ = command(
       throw postCommitAbort.reason;
     }
     signal.throwIfAborted();
-    if (args.agentId) {
-      const authorization = await set(addUserCustomConnector$, {
-        orgId: args.orgId,
-        userId: args.userId,
-        agentId: args.agentId,
-        customConnectorId: connector.id,
-      });
-      signal.throwIfAborted();
-      const authorizationFailure =
-        automaticNoAuthAgentAuthorizationFailure(authorization);
-      if (authorizationFailure) {
-        return authorizationFailure;
-      }
-    }
     return automaticNoAuthConnectionResponse(connector, result.connection);
   },
 );

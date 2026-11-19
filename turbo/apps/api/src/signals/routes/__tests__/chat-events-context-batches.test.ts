@@ -121,12 +121,7 @@ describe("shared context statement projections through normal sends", () => {
       let workflowName: string | undefined;
       if (hasAgentRows) {
         mockSlackConnectorOAuth();
-        const slack = await connectors.startOauth(
-          actor,
-          "slack",
-          "oauth",
-          agentId,
-        );
+        const slack = await connectors.startOauth(actor, "slack", "oauth");
         const state = new URL(slack.authorizationUrl).searchParams.get("state");
         if (!state) {
           throw new Error("Expected Slack authorization state");
@@ -168,9 +163,6 @@ describe("shared context statement projections through normal sends", () => {
           ],
         );
         customConnectionId = account.connectionId;
-        await connectors.updateAgentCustomConnectors(actor, agentId, [
-          custom.id,
-        ]);
         const workflow = await misc.createWorkflow(
           actor,
           agentId,

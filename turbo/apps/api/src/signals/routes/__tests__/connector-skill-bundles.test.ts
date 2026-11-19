@@ -40,9 +40,6 @@ describe("Connector Skill bundle delivery", () => {
         selected.id,
         [],
       );
-      await api.updateAgentCustomConnectors(owner.actor, owner.agentId, [
-        selected.id,
-      ]);
 
       return { selected, s3, connectionId: account.connectionId };
     });

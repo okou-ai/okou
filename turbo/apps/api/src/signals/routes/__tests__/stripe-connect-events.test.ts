@@ -53,7 +53,6 @@ async function connectStripeOAuth(
     actor,
     "stripe",
     "oauth",
-    undefined,
     displayName === undefined ? undefined : { intent: "add", displayName },
   );
   const state = new URL(started.authorizationUrl).searchParams.get("state");

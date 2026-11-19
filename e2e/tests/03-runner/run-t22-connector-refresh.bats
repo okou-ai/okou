@@ -50,7 +50,6 @@ assert_no_connector_refresh_raw_secrets() {
     run runner_e2e_connect_manual_connector \
         bentoml \
         api-token \
-        "$AGENT_ID" \
         "$values"
     echo "$output"
     assert_success
@@ -167,7 +166,6 @@ EOF
     run runner_e2e_connect_manual_connector \
         bentoml \
         api-token \
-        "$AGENT_ID" \
         "$values" \
         "$CONNECTOR_ACCOUNT_ID"
     echo "$output"

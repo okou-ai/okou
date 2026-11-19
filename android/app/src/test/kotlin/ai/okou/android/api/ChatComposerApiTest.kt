@@ -195,7 +195,6 @@ class ChatComposerApiTest {
                     "model",
                     "computerUseHostId",
                     "cloudBrowserEnabled",
-                    "connectorSelections",
                 )) assertFalse(wire.containsKey(key))
             assertEquals(send.prompt, wire.getValue("prompt").jsonPrimitive.content)
             val observed = fixture.service.observeInput(thread, checkNotNull(send.clientEventId))

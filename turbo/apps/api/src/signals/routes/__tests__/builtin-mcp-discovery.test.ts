@@ -1,8 +1,10 @@
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { chatConnectorAccessRoutes } from "../chat-connector-access";
 import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { mcpConnectorsRoutes } from "../mcp-connectors";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
@@ -126,17 +128,22 @@ describe("builtin MCP discovery authority", () => {
           chatThreadsContract,
         ).create({
           headers: { authorization: "Bearer clerk-session" },
-          body: {
-            agentId,
-            connectorSelections: [
-              {
-                connectionId: selected.id,
-                target: { kind: "builtin", connectorSlug: "manual-mcp" },
-              },
-            ],
-          },
+          body: { agentId },
         }),
         [201],
+      );
+      await accept(
+        setupApp({ context, routes: chatConnectorAccessRoutes })(
+          chatConnectorAccessContract,
+        ).setThreadCurrent({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { threadId: thread.body.id },
+          body: {
+            connectionId: selected.id,
+            target: { kind: "builtin", connectorSlug: "manual-mcp" },
+          },
+        }),
+        [200],
       );
       const run = await owned.sendChatRun(actor, {
         agentId,

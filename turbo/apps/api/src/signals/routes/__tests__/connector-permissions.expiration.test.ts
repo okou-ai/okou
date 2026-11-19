@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
-import type { ApplyUserPermissionGrant } from "@okouai/api-contracts/contracts/user-permission-grants";
+import type { ApplyUserPermissionGrant } from "@okouai/api-contracts/validators/user-permission-grants";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -24,10 +24,8 @@ const hour = 60 * 60 * 1000;
 
 async function owner() {
   const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
-  const { agentId } = await bdd.createAgent(actor);
   mockSlackConnectorOAuth();
-  const started = await connectors.startOauth(actor, "slack", "oauth", agentId);
+  const started = await connectors.startOauth(actor, "slack", "oauth");
   const state = new URL(started.authorizationUrl).searchParams.get("state");
   if (!state) {
     throw new Error("Expected OAuth state from the public start response");

@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
-import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { agentsRoutes } from "../agents";
+
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { http, HttpResponse } from "msw";
 import { onTestFinished } from "vitest";
 
@@ -10,7 +11,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { agentsRoutes } from "../agents";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { createBddApi } from "./helpers/api-bdd";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
@@ -19,7 +19,7 @@ import { createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 const mocks = createRouteMocks(context);
 
-test("each successful grant notifies readers when another grant is rejected", async () => {
+test("each successful Drive grant notifies readers when another grant is rejected", async () => {
   const headers = { authorization: "Bearer clerk-session" };
   const userId = `user_${randomUUID()}`;
   mocks.clerk.session(userId, `org_${randomUUID()}`);
@@ -47,7 +47,7 @@ test("each successful grant notifies readers when another grant is rejected", as
       return app(userBuiltinConnectorsContract).update({
         headers,
         params: { id: agentId },
-        body: { enabledConnectorSlugs: ["github"], operation: "add" },
+        body: { enabledConnectorSlugs: ["google-drive"], operation: "add" },
       });
     }),
   );
@@ -66,16 +66,15 @@ test("each successful grant notifies readers when another grant is rejected", as
       "composerAgentConnectorsChanged",
       { agentId },
     );
-    const access = await accept(
-      app(userBuiltinConnectorsContract).get({
-        headers,
-        params: { id: agentId },
-      }),
-      [200],
-    );
-    expect(access.body.enabledConnectorSlugs).toContain("github");
   }
-  expect(context.mocks.ably.publish).toHaveBeenCalledTimes(2);
+  expect(
+    updates.slice(1).map((update) => {
+      return update.body;
+    }),
+  ).toStrictEqual([
+    { enabledConnectorSlugs: ["google-drive"] },
+    { enabledConnectorSlugs: ["google-drive"] },
+  ]);
 });
 
 test("a committed account deletion still notifies readers when provider revocation is cancelled", async () => {

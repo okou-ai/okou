@@ -2,12 +2,10 @@ import { randomUUID } from "node:crypto";
 
 import { builtinConnectorNoAuthGrantContract } from "@okouai/api-contracts/contracts/connectors";
 import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow, now } from "../../../lib/time";
-import { agentsRoutes } from "../agents";
 import { builtinConnectorsRoutes } from "../connectors";
 import { mcpConnectorsRoutes } from "../mcp-connectors";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -61,48 +59,6 @@ async function connectPublic(actor: ApiTestUser) {
 }
 
 describe("builtin MCP Run admission", () => {
-  it("ignores Agent grants for unconnected MCP connectors", async () => {
-    const { actor, agentId, runnerGroup } = await runActor();
-    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    await accept(
-      setupApp({ context, routes: agentsRoutes })(
-        userBuiltinConnectorsContract,
-      ).update({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { id: agentId },
-        body: { enabledConnectorSlugs: ["manual-mcp", "github"] },
-      }),
-      [200],
-    );
-
-    const run = await runs.createThreadRun(actor, {
-      agentId,
-      prompt: "Find out which MCP accounts are available",
-    });
-    await runs.heartbeatRunner(runnerGroup);
-    const execution = await runs.executionInput(run.runId);
-    expect(execution.appendSystemPrompt).not.toContain("# MCP Connectors");
-    expect(execution.appendSystemPrompt).not.toContain("- `manual-mcp`");
-    expect(execution.appendSystemPrompt).not.toContain("- `public-mcp`");
-    expect(execution.appendSystemPrompt).not.toContain("- `github`");
-    expect(execution.connectorRuntimeTargets).toStrictEqual([]);
-    expect(execution.environment).not.toHaveProperty("MCP_API_KEY");
-    const token = execution.platformEnvironment.OKOU_TOKEN;
-    if (!token) {
-      throw new Error("Expected the Run authentication context");
-    }
-    const discovery = await accept(
-      setupApp({ context, routes: mcpConnectorsRoutes })(
-        mcpConnectorsContract,
-      ).list({
-        headers: { authorization: `Bearer ${token}` },
-      }),
-      [200],
-    );
-    expect(discovery.body.connectors).toStrictEqual([]);
-    await runs.requestCancelRun(actor, run.runId, [200]);
-  });
-
   it("pins execution input, refreshes discovery and keeps MCP credentials behind firewall auth", async () => {
     const { actor, agentId, runnerGroup } = await runActor();
     const publicAccountId = await connectPublic(actor);

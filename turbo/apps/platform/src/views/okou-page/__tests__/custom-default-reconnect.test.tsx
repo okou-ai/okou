@@ -3,10 +3,6 @@ import {
   connectorFixtureAccount,
 } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import {
-  agentCustomConnectorsContract,
-  type AgentCustomConnectorGrant,
-} from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import {
   connectorAccountTargetKey,
   connectorAccountsContract,
   type ConnectorAccountConnection,
@@ -148,14 +144,6 @@ test.each([1, 2])(
         return respond(200, { ...connector, connectionId: account.id });
       },
     );
-    let grants: AgentCustomConnectorGrant[] = [];
-    context.mocks.api(
-      agentCustomConnectorsContract.update,
-      ({ body, respond }) => {
-        grants = body.grants;
-        return respond(200, { grants });
-      },
-    );
 
     const dialog = await openConnection(connector);
     expect(getConnectorAction("button", "Save", dialog)).toBeDisabled();
@@ -173,7 +161,6 @@ test.each([1, 2])(
     expect(mutations).toStrictEqual([
       { intent: "reconnect", connectionId: account.id },
     ]);
-    expect(grants).toStrictEqual([]);
   },
 );
 
@@ -327,14 +314,6 @@ function installOAuthFlow(state: PreflightState, complete = false) {
       });
     },
   );
-  const grants: AgentCustomConnectorGrant[][] = [];
-  context.mocks.api(
-    agentCustomConnectorsContract.update,
-    ({ body, respond }) => {
-      grants.push(body.grants);
-      return respond(200, { grants: body.grants });
-    },
-  );
   const authWindow = context.mocks.browser.authWindow();
   Object.defineProperty(authWindow, "location", {
     value: { href: "about:blank" },
@@ -349,7 +328,6 @@ function installOAuthFlow(state: PreflightState, complete = false) {
     requested,
     release,
     mutations,
-    grants,
     authWindow,
     startPreflight: () => {
       preflight = true;
@@ -462,7 +440,6 @@ test("Reconnect the expired OAuth account after its completion receipt", async (
       screen.queryByRole("dialog", { name: "Connect Acme Search" }),
     ).toBeNull();
   });
-  expect(flow.grants).toStrictEqual([]);
   expect(flow.mutations).toStrictEqual([
     { intent: "reconnect", connectionId: flow.account.id },
   ]);
@@ -484,6 +461,5 @@ test("Leave an incomplete OAuth reconnect unconfirmed", async () => {
   expect(flow.mutations).toStrictEqual([
     { intent: "reconnect", connectionId: flow.account.id },
   ]);
-  expect(flow.grants).toStrictEqual([]);
   expect(screen.queryByText("Acme Search connected")).toBeNull();
 });

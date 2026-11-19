@@ -478,7 +478,6 @@ async function connectGmail(
   gmailEmail: string,
   subject = "bdd-gmail-user-id",
   account?: ConnectorAccountMutationIntent,
-  agentId?: string,
 ): Promise<string> {
   mockGmailConnectorOAuth({
     accessToken: "gmail-access-token",
@@ -489,7 +488,6 @@ async function connectGmail(
     actor,
     "gmail",
     "oauth",
-    agentId,
     account,
   );
   const state = new URL(start.authorizationUrl).searchParams.get("state");
@@ -534,13 +532,10 @@ async function addGmailAccount(
     email: args.gmailEmail,
     subject: args.subject,
   });
-  const start = await connectorsApi.startOauth(
-    actor,
-    "gmail",
-    "oauth",
-    args.agentId,
-    { intent: "add", displayName: args.displayName },
-  );
+  const start = await connectorsApi.startOauth(actor, "gmail", "oauth", {
+    intent: "add",
+    displayName: args.displayName,
+  });
   const state = new URL(start.authorizationUrl).searchParams.get("state");
   if (!state) {
     throw new Error("Expected Gmail OAuth start URL to include state");
@@ -629,8 +624,6 @@ async function setupMultiAccountGmailFixture(): Promise<MultiAccountGmailTestFix
     fixture.actor,
     firstEmail,
     "gmail-first-account",
-    undefined,
-    fixture.agentId,
   );
   const secondConnectorId = await addGmailAccount(fixture.actor, {
     gmailEmail: secondEmail,
@@ -1862,8 +1855,6 @@ describe("POST /api/webhooks/gmail", () => {
       actor,
       uniqueGmailEmail(),
       "gmail-first-account",
-      undefined,
-      agentId,
     );
     await accept(
       automationsClient().create({
@@ -1927,8 +1918,6 @@ describe("POST /api/webhooks/gmail", () => {
       actor,
       uniqueGmailEmail(),
       "gmail-initial-account",
-      undefined,
-      agentId,
     );
     const created = await accept(
       automationsClient().create({

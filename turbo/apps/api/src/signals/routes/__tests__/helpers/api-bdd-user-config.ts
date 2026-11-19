@@ -152,40 +152,6 @@ export function createUserConfigBddApi(context: TestContext) {
       return response.body;
     },
 
-    async readUserConnectors(
-      credential: Credential,
-      agentId: string,
-    ): Promise<{ readonly enabledConnectorSlugs: string[] }> {
-      const client = setupAppWithRoutes({ context, routes: userConfigRoutes })(
-        userBuiltinConnectorsContract,
-      );
-      const response = await accept(
-        client.get({
-          headers: authenticate(credential),
-          params: { id: agentId },
-        }),
-        [200],
-      );
-      return response.body;
-    },
-
-    async requestReadUserConnectors(
-      credential: Credential | null,
-      agentId: string,
-      statuses: readonly (200 | 401 | 403 | 404)[],
-    ) {
-      const client = setupAppWithRoutes({ context, routes: userConfigRoutes })(
-        userBuiltinConnectorsContract,
-      );
-      return await accept(
-        client.get({
-          headers: authenticate(credential),
-          params: { id: agentId },
-        }),
-        statuses,
-      );
-    },
-
     async updateUserBuiltinConnectors(
       credential: Credential,
       agentId: string,

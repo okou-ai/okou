@@ -156,7 +156,6 @@ describe("artifact catalog lazy Drive detail metadata", () => {
       actor,
       "google-drive",
       "oauth",
-      undefined,
       { intent: "add", displayName: "Detail selected Drive" },
     );
     const selectedState = new URL(

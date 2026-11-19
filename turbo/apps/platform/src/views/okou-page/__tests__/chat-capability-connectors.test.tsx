@@ -13,10 +13,6 @@ import {
   mockOAuthCompletions,
 } from "./connector-page-test-helpers.ts";
 import {
-  agentCustomConnectorsContract,
-  type AgentCustomConnectorGrant,
-} from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import {
   bankingUserContract,
   type BankingAccessRequestStatusResponse,
 } from "@okouai/api-contracts/contracts/banking";
@@ -34,7 +30,6 @@ import {
 
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, describe, beforeEach, it } from "vitest";
@@ -170,10 +165,7 @@ function installCatalogLookup(
 
 function installCustomConnectorApi(args: {
   readonly connector: () => CustomConnectorResponse;
-  readonly grants?: AgentCustomConnectorGrant[];
-  readonly authorizationUpdates?: AgentCustomConnectorGrant[][];
 }): void {
-  let grants = args.grants ?? [];
   const account = () => {
     return connectorFixtureAccount(args.connector()) ?? null;
   };
@@ -199,20 +191,6 @@ function installCustomConnectorApi(args: {
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [args.connector()] });
   });
-  context.mocks.api(agentCustomConnectorsContract.get, ({ respond }) => {
-    return respond(200, { grants });
-  });
-  context.mocks.api(
-    agentCustomConnectorsContract.update,
-    ({ body, respond }) => {
-      args.authorizationUpdates?.push([...body.grants]);
-      grants = [...body.grants];
-      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
-        agentId: CAPABILITY_AGENT_ID,
-      });
-      return respond(200, { grants });
-    },
-  );
 }
 
 function mockOpenedWindow(): {
@@ -566,7 +544,6 @@ test.each([
   "Read a canonical custom default only on action activation (%s)",
   async (status) => {
     const sends: CapturedChatSend[] = [];
-    const authorizationUpdates: AgentCustomConnectorGrant[][] = [];
     const connector = customConnector({
       slug: "_workspace-search",
       displayName: "Workspace Search",
@@ -577,7 +554,6 @@ test.each([
       connector: () => {
         return connector;
       },
-      authorizationUpdates,
     });
     const definition = connector;
     context.mocks.api(customConnectorsContract.list, ({ respond }) => {
@@ -635,7 +611,6 @@ test.each([
       expect(sentPrompts(sends)).toStrictEqual(
         status === "connected" ? ["Resume workspace search"] : [],
       );
-      expect(authorizationUpdates).toStrictEqual([]);
       expect(
         queryControl("button", "Connected", card)?.matches(":disabled") ??
           false,
@@ -654,7 +629,6 @@ async function attemptCustomMcpConnection(
 ) {
   const sends: CapturedChatSend[] = [];
   const submittedAccounts: ConnectorAccountMutationIntent[] = [];
-  const authorizationUpdates: AgentCustomConnectorGrant[][] = [];
   let connected = false;
   let writeAttempted = false;
   const account = customConnectorAccount(CUSTOM_CONNECTOR_ID, {
@@ -685,7 +659,7 @@ async function attemptCustomMcpConnection(
           : undefined,
     });
   };
-  installCustomConnectorApi({ connector, authorizationUpdates });
+  installCustomConnectorApi({ connector });
   context.mocks.api(customConnectorValuesContract.set, ({ body, respond }) => {
     submittedAccounts.push(body.account);
     expect(body.values).toStrictEqual([
@@ -720,17 +694,13 @@ async function attemptCustomMcpConnection(
         : { intent: "add" },
     ]);
   });
-  return { card, dialog, sends, authorizationUpdates };
+  return { card, dialog, sends };
 }
 
 test.each([false, true])(
   "Connect or reconnect a custom MCP default before resuming (%s)",
   async (hasSavedAccount) => {
-    const { sends, authorizationUpdates } = await attemptCustomMcpConnection(
-      hasSavedAccount,
-      true,
-    );
-    expect(authorizationUpdates).toStrictEqual([]);
+    const { sends } = await attemptCustomMcpConnection(hasSavedAccount, true);
     expect(screen.queryByText("Permissions")).not.toBeInTheDocument();
     await waitFor(() => {
       expect(sentPrompts(sends)).toStrictEqual(["Resume workspace search"]);
@@ -740,12 +710,10 @@ test.each([false, true])(
 );
 
 test("Keep an incomplete custom MCP reconnect open without resuming", async () => {
-  const { dialog, sends, authorizationUpdates } =
-    await attemptCustomMcpConnection(true, false);
+  const { dialog, sends } = await attemptCustomMcpConnection(true, false);
   await waitFor(() => {
     expect(getButton("Save", dialog)).toBeEnabled();
   });
-  expect(authorizationUpdates).toStrictEqual([]);
   expect(sentPrompts(sends)).toStrictEqual([]);
   expect(dialog).toBeInTheDocument();
 });
@@ -776,9 +744,6 @@ test("Connect a single available connector without an unnecessary chooser", asyn
       oauthAttemptId,
       connectionId: CONNECTOR_CONNECTION_ID,
     });
-  });
-  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
-    return respond(200, { enabledConnectorSlugs: [slug] });
   });
   installActionConversation({
     lines: [
@@ -856,9 +821,6 @@ test("Continue a chat with the saved default account of a connected connector", 
       });
     },
   );
-  context.mocks.api(userBuiltinConnectorsContract.update, () => {
-    throw new Error("A connection card cannot grant agent access");
-  });
   installActionConversation({
     lines: [
       connectorActionUrl({ slug, callbackPrompt: "Resume canonical drive" }),
@@ -891,9 +853,6 @@ test("A connector card observes a connection completed elsewhere", async () => {
           hasAccount: connected,
         })
       : null;
-  });
-  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
-    return respond(200, { enabledConnectorSlugs: [slug] });
   });
   installActionConversation({ lines: [connectorActionUrl({ slug })] });
 
@@ -964,13 +923,9 @@ test("Enable a single no-auth connector without an unnecessary dialog", async ()
   });
 });
 
-test("Preserve an existing custom connector permission during reconnection", async () => {
+test("Continue after connecting a custom connector with permission metadata", async () => {
   const sends: CapturedChatSend[] = [];
   let connected = false;
-  const existingGrant = {
-    customConnectorId: CUSTOM_CONNECTOR_ID,
-    permissionNames: ["documents.read"],
-  } satisfies AgentCustomConnectorGrant;
   const connector = () => {
     return customConnector({
       slug: "_permissioned-documents",
@@ -980,7 +935,7 @@ test("Preserve an existing custom connector permission during reconnection", asy
       account: connected ? {} : undefined,
     });
   };
-  installCustomConnectorApi({ connector, grants: [existingGrant] });
+  installCustomConnectorApi({ connector });
   context.mocks.api(customConnectorValuesContract.set, ({ respond }) => {
     connected = true;
     return respond(200, customConnectorCompletionFixture(connector()));
@@ -1067,9 +1022,6 @@ test("Reconnect an expired connector before resuming the task", async () => {
           : originalConnection,
       ],
     });
-  });
-  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
-    return respond(200, { enabledConnectorSlugs: [slug] });
   });
   installActionConversation({
     lines: [

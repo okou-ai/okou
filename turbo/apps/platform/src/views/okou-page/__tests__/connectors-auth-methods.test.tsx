@@ -13,7 +13,6 @@ import {
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -102,44 +101,6 @@ function mockConnectedCatalogTarget(
   });
 }
 
-function mockAgentConnectorAccess(
-  connectorSlug: ConnectorSlug,
-  onAuthorize?: (agentId: string) => void,
-): void {
-  const authorizedAgentIds = new Set<string>();
-  context.mocks.api(
-    userBuiltinConnectorsContract.get,
-    ({ params, respond }) => {
-      return respond(200, {
-        enabledConnectorSlugs: authorizedAgentIds.has(params.id)
-          ? [connectorSlug]
-          : [],
-      });
-    },
-  );
-  context.mocks.api(
-    userBuiltinConnectorsContract.update,
-    ({ params, body, respond }) => {
-      onAuthorize?.(params.id);
-      if (body.enabledConnectorSlugs.includes(connectorSlug)) {
-        if (body.operation === "add") {
-          authorizedAgentIds.add(params.id);
-        } else {
-          authorizedAgentIds.delete(params.id);
-        }
-      }
-      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
-        agentId: params.id,
-      });
-      return respond(200, {
-        enabledConnectorSlugs: authorizedAgentIds.has(params.id)
-          ? [connectorSlug]
-          : [],
-      });
-    },
-  );
-}
-
 function oauthMethod(label = "OAuth") {
   return {
     id: "oauth",
@@ -163,7 +124,6 @@ test.each(["none", "oauth"] as const)(
     context.mocks.data.agents([
       listAgent("c0000000-0000-4000-a000-000000000001", "Default"),
     ]);
-    mockAgentConnectorAccess(slug);
     const catalogItem = publicStatusItem({
       connectorSlug: slug,
       label: "Partner Tools",
@@ -326,7 +286,6 @@ test("Add an AWS account through external-code authorization", async () => {
   context.mocks.data.agents([
     listAgent("c0000000-0000-4000-a000-000000000002", "Research Agent"),
   ]);
-  mockAgentConnectorAccess("aws");
   const authWindow = createAuthWindow();
   const browserOpen = context.mocks.browser.open(authWindow);
   context.mocks.api(
@@ -409,7 +368,6 @@ test("Add an account through OpenID", async () => {
     listAgent("c0000000-0000-4000-a000-000000000001", "Default"),
     listAgent("c0000000-0000-4000-a000-000000000002", "Research"),
   ]);
-  mockAgentConnectorAccess(slug);
   const catalogItem = publicStatusItem({
     connectorSlug: slug,
     label: "Partner Steam",
@@ -532,7 +490,6 @@ test("Connect through device authorization", async () => {
     listAgent("c0000000-0000-4000-a000-000000000001", "Default"),
     listAgent("c0000000-0000-4000-a000-000000000002", "Research"),
   ]);
-  mockAgentConnectorAccess("base44");
   mockPublicConnectorStatus(context, [
     publicStatusItem({
       connectorSlug: "base44",
@@ -620,7 +577,6 @@ test.each([
     context.mocks.data.agents([
       listAgent("c0000000-0000-4000-a000-000000000002", "Research"),
     ]);
-    mockAgentConnectorAccess(slug);
     context.mocks.browser.open(createAuthWindow());
     mockPublicConnectorStatus(context, [
       publicStatusItem({
@@ -736,13 +692,11 @@ test("Enable a connector that needs no credentials", async () => {
   context.mocks.api(
     builtinConnectorNoAuthGrantContract.connect,
     ({ body, respond }) => {
-      expect(body.authorizeAgent).toBeUndefined();
       return respond(200, {
         connectionId: storeConnectedConnector("stripe", body.authMethod).id,
       });
     },
   );
-  mockAgentConnectorAccess("stripe");
   await setupPage({
     context,
     path: "/connectors",
@@ -857,7 +811,6 @@ test("Complete OAuth only after the current attempt succeeds", async () => {
       authorizationUrl: "https://oauth.test/stripe/authorize",
     });
   });
-  mockAgentConnectorAccess("stripe");
   context.mocks.api(builtinConnectorsMainContract.list, ({ respond }) => {
     return respond(200, { connectors: listed });
   });

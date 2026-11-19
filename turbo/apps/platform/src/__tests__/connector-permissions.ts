@@ -1,6 +1,11 @@
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { ConnectorPermissions } from "@okouai/api-contracts/contracts/connector-permissions";
 
+export type ConnectorPermissionFixture =
+  ConnectorPermissions["grants"][number] & {
+    readonly connectorSlug: string;
+  };
+
 export function connectorPermissionsResponse(
   target: ConnectorAccountTarget,
   grants: readonly (ConnectorPermissions["grants"][number] & {

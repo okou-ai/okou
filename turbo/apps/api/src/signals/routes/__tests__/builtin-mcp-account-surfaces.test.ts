@@ -1,4 +1,3 @@
-import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, it } from "vitest";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
@@ -8,10 +7,7 @@ import {
   builtinConnectorsMainContract,
   builtinConnectorsSearchContract,
 } from "@okouai/api-contracts/contracts/connectors";
-import {
-  agentsMainContract,
-  agentsByIdContract,
-} from "@okouai/api-contracts/contracts/agents";
+import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import {
   chatThreadConnectorSelectionContract,
@@ -28,6 +24,7 @@ import { agentsRoutes } from "../agents";
 import { chatThreadRoutes } from "../chat-threads";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 import { createRouteMocks } from "./helpers/route-test";
 
 describe("builtin MCP account surfaces", () => {
@@ -228,61 +225,6 @@ describe("builtin MCP account surfaces", () => {
     });
   });
 
-  it("replaces and removes MCP Agent grants through the ordinary connector list", async () => {
-    authenticate();
-    context.mocks.s3.send.mockResolvedValue({});
-    const created = await accept(
-      setupApp({ context, routes })(agentsMainContract).create({
-        headers,
-        body: {},
-      }),
-      [201],
-    );
-    const params = { id: created.body.agentId };
-    createdAgents.push(params.id);
-    const client = setupApp({ context, routes })(userBuiltinConnectorsContract);
-    await accept(
-      client.update({
-        headers,
-        params,
-        body: { enabledConnectorSlugs: ["public-mcp", "github"] },
-      }),
-      [200],
-    );
-    const visible = await accept(client.get({ headers, params }), [200]);
-    expect(new Set(visible.body.enabledConnectorSlugs)).toStrictEqual(
-      new Set(["public-mcp", "github"]),
-    );
-    const replaced = await accept(
-      client.update({
-        headers,
-        params,
-        body: { enabledConnectorSlugs: ["slack"] },
-      }),
-      [200],
-    );
-    expect(replaced.body.enabledConnectorSlugs).toStrictEqual(["slack"]);
-    const actual = await accept(client.get({ headers, params }), [200]);
-    expect(actual.body.enabledConnectorSlugs).toStrictEqual(["slack"]);
-    await accept(
-      client.update({
-        headers,
-        params,
-        body: { enabledConnectorSlugs: ["public-mcp"], operation: "add" },
-      }),
-      [200],
-    );
-    const removed = await accept(
-      client.update({
-        headers,
-        params,
-        body: { enabledConnectorSlugs: ["public-mcp"], operation: "remove" },
-      }),
-      [200],
-    );
-    expect(removed.body.enabledConnectorSlugs).toStrictEqual(["slack"]);
-  });
-
   it("manages selected MCP accounts and keeps reads available during catalog outages", async () => {
     mockEnv(
       "R2_USER_STORAGES_BUCKET_NAME",
@@ -326,16 +268,18 @@ describe("builtin MCP account surfaces", () => {
     const selections = setupApp({ context, routes: chatThreadRoutes })(
       chatThreadConnectorSelectionContract,
     );
-    const threadBody = {
-      agentId: agent.agentId,
-      model: "claude-sonnet-5-5" as const,
-      connectorSelections: [selection],
-    };
     const createdThread = await accept(
-      threads.create({ headers, body: threadBody }),
+      threads.create({
+        headers,
+        body: { agentId: agent.agentId, model: "claude-sonnet-5-5" },
+      }),
       [201],
     );
     const params = { id: createdThread.body.id };
+    await accept(
+      selections.update({ headers, params, body: selection }),
+      [200],
+    );
     const selected = await accept(selections.get({ headers, params }), [200]);
     expect(selected.body.selections).toStrictEqual([selection]);
     expect(selected.body.selectedConnections).toMatchObject([

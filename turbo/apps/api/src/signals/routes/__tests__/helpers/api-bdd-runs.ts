@@ -42,12 +42,6 @@ import {
 } from "@okouai/api-contracts/contracts/runners";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import {
-  userPermissionGrantsContract,
-  type ApplyUserPermissionGrant,
-  type ApplyUserPermissionGrantsRequest,
-  type UserPermissionGrantResponse,
-} from "@okouai/api-contracts/contracts/user-permission-grants";
 import { webhookStripeContract } from "@okouai/api-contracts/contracts/webhooks";
 import type StripeSDK from "stripe";
 import type { input, infer as zInfer } from "zod";
@@ -73,7 +67,6 @@ import { runnersRoutes } from "../../runners";
 import { runsRoutes } from "../../runs";
 import { runsCancelRoutes } from "../../runs-cancel";
 import { userModelPreferenceRoutes } from "../../user-model-preference";
-import { userPermissionGrantsRoutes } from "../../user-permission-grants";
 import { webhooksStripeRoutes } from "../../webhooks-stripe";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
@@ -145,7 +138,6 @@ const runRoutes = [
   ...runsRoutes,
   ...runsCancelRoutes,
   ...agentsRoutes,
-  ...userPermissionGrantsRoutes,
   ...userModelPreferenceRoutes,
 ] as const;
 
@@ -499,31 +491,6 @@ export function createRunsApi(context: TestContext) {
     runnerId: randomUUID(),
     heartbeatGeneration: 1,
   };
-  const applyUserPermissionGrantRequestBody = (
-    body: {
-      readonly agentId: string;
-      readonly connectorSlug: string;
-    } & ApplyUserPermissionGrant,
-  ): ApplyUserPermissionGrantsRequest => {
-    const grant: ApplyUserPermissionGrant =
-      body.action === "allow"
-        ? {
-            permission: body.permission,
-            action: "allow",
-            ...(body.expiresIn ? { expiresIn: body.expiresIn } : {}),
-          }
-        : {
-            permission: body.permission,
-            action: "deny",
-          };
-    return {
-      agentId: body.agentId,
-      connectorSlug: body.connectorSlug,
-      mode: "patch",
-      grants: [grant],
-    };
-  };
-
   async function registerDirectRunner(
     group: string,
     options: {
@@ -1065,81 +1032,6 @@ export function createRunsApi(context: TestContext) {
         }),
         statuses,
       );
-    },
-
-    async applyUserPermissionGrant(
-      actor: ApiTestUser,
-      body: {
-        readonly agentId: string;
-        readonly connectorSlug: string;
-      } & ApplyUserPermissionGrant,
-    ): Promise<UserPermissionGrantResponse> {
-      const response = await accept(
-        runApp(context)(userPermissionGrantsContract).apply({
-          headers: authenticate(context, actor),
-          body: applyUserPermissionGrantRequestBody(body),
-        }),
-        [200],
-      );
-      const grant = response.body[0];
-      if (!grant) {
-        throw new Error("User permission grant apply did not return a grant");
-      }
-      return grant;
-    },
-
-    async requestUserPermissionGrant(
-      actor: ApiTestUser,
-      body: {
-        readonly agentId: string;
-        readonly connectorSlug: string;
-      } & ApplyUserPermissionGrant,
-      statuses: readonly (200 | 400 | 401 | 403 | 404 | 500)[],
-    ) {
-      return await accept(
-        runApp(context)(userPermissionGrantsContract).apply({
-          headers: authenticate(context, actor),
-          body: applyUserPermissionGrantRequestBody(body),
-        }),
-        statuses,
-      );
-    },
-
-    async replaceUserPermissionGrants(
-      actor: ApiTestUser,
-      body: {
-        readonly agentId: string;
-        readonly connectorSlug: string;
-        readonly grants: readonly ApplyUserPermissionGrant[];
-      },
-    ): Promise<readonly UserPermissionGrantResponse[]> {
-      const response = await accept(
-        runApp(context)(userPermissionGrantsContract).apply({
-          headers: authenticate(context, actor),
-          body: {
-            agentId: body.agentId,
-            connectorSlug: body.connectorSlug,
-            mode: "replace",
-            grants: [...body.grants],
-          },
-        }),
-        [200],
-      );
-      return response.body;
-    },
-
-    async listUserPermissionGrants(
-      actor: ApiTestUser,
-      agentId: string,
-    ): Promise<readonly UserPermissionGrantResponse[]> {
-      const response = await accept(
-        runApp(context)(userPermissionGrantsContract).list({
-          headers: authenticate(context, actor),
-          query: { agentId },
-        }),
-        [200],
-      );
-      return response.body;
     },
 
     /**

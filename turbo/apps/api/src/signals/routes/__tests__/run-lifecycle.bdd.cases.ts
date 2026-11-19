@@ -162,8 +162,6 @@ async function connectAutomaticRuntime(args: {
       params: { connectorSlug: args.slug },
       body: {
         authMethod: args.methodId,
-        agentId: args.agentId,
-        authorizeAgent: true,
         account: args.connectionId
           ? { intent: "reconnect", connectionId: args.connectionId }
           : { intent: "add" },
@@ -3284,7 +3282,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             accessToken: "glpat-bdd",
             host: "gitlab.example.com",
           },
-          undefined,
           { intent: "reconnect", connectionId: gitlabConnection.id },
         );
         const withHost = await api.createThreadRun(actor, {
@@ -4029,11 +4026,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         ) {
           throw new Error("Expected Automatic MCP no-auth connection");
         }
-        await connectors.updateAgentCustomConnectors(actor, agentId, [
-          httpConnector.id,
-          mcpConnector.id,
-          automaticConnector.id,
-        ]);
         const run = await api.createThreadRun(actor, {
           agentId,
           prompt: "use the no-auth HTTP and MCP connectors",
@@ -4146,9 +4138,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           queryInjections: [],
         });
         await connectors.setCustomConnectorValues(actor, custom.id, []);
-        await connectors.updateAgentCustomConnectors(actor, agentId, [
-          custom.id,
-        ]);
 
         const run = await api.createThreadRun(actor, {
           agentId,
@@ -4176,15 +4165,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const connectors = createConnectorBddApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-        await connectors.connectManualGrant(
-          actor,
-          "figma",
-          "api-token",
-          {
-            accessToken: "selected-figma-token",
-          },
-          agentId,
-        );
+        await connectors.connectManualGrant(actor, "figma", "api-token", {
+          accessToken: "selected-figma-token",
+        });
         await api.enableAgentConnectors(actor, agentId, ["figma"]);
 
         const custom = await connectors.createCustomConnector(
@@ -4200,9 +4183,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           custom.id,
           "custom-figma-token",
         );
-        await connectors.updateAgentCustomConnectors(actor, agentId, [
-          custom.id,
-        ]);
 
         const run = await api.createThreadRun(actor, {
           agentId,
@@ -4250,15 +4230,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const connectors = createConnectorBddApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-        await connectors.connectManualGrant(
-          actor,
-          "figma",
-          "api-token",
-          {
-            accessToken: "selected-figma-token",
-          },
-          agentId,
-        );
+        await connectors.connectManualGrant(actor, "figma", "api-token", {
+          accessToken: "selected-figma-token",
+        });
         await api.enableAgentConnectors(actor, agentId, ["figma"]);
 
         const custom = await connectors.createCustomConnector(
@@ -4274,9 +4248,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           custom.id,
           "custom-figma-files-token",
         );
-        await connectors.updateAgentCustomConnectors(actor, agentId, [
-          custom.id,
-        ]);
 
         const run = await api.createThreadRun(actor, {
           agentId,
@@ -4429,11 +4400,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             return connectors.connectManualGrant(actor, "figma", "api-token", {
               accessToken: "unrelated-custom-source",
             });
-          });
-          await own(() => {
-            return connectors.updateAgentCustomConnectors(actor, agentId, [
-              custom.id,
-            ]);
           });
 
           const run = await own(() => {
@@ -4714,65 +4680,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
 
           context.mocks.ably.batchPublish.mockClear();
-          await own(() => {
-            return connectors.updateAgentCustomConnectors(actor, agentId, []);
-          });
-          expect(context.mocks.ably.batchPublish).toHaveBeenCalledWith({
-            channels: [expect.stringMatching(/^runner-group:/)],
-            messages: [
-              {
-                name: "connector-runtime-sync",
-                data: JSON.stringify({
-                  runId: run.runId,
-                  target: targetIdentity,
-                }),
-                encoding: "json",
-              },
-            ],
-          });
-          const [defaultPermissionRuntime] = await own(() => {
-            return api.syncConnectorRuntime(run.runId, {
-              targets: [target],
-            });
-          });
-          expect(defaultPermissionRuntime).toMatchObject({
-            target: targetIdentity,
-            state: "available",
-          });
-          expect(defaultPermissionRuntime?.nextSyncAt).toBeUndefined();
-
-          context.mocks.ably.batchPublish.mockClear();
-          await own(() => {
-            return connectors.updateAgentCustomConnectors(actor, agentId, [
-              custom.id,
-            ]);
-          });
-          expect(
-            context.mocks.ably.batchPublish,
-          ).toHaveBeenCalledExactlyOnceWith({
-            channels: [expect.stringMatching(/^runner-group:/)],
-            messages: [
-              {
-                name: "connector-runtime-sync",
-                data: JSON.stringify({
-                  runId: run.runId,
-                  target: targetIdentity,
-                }),
-                encoding: "json",
-              },
-            ],
-          });
-          const [restoredRuntime] = await own(() => {
-            return api.syncConnectorRuntime(run.runId, {
-              targets: [target],
-            });
-          });
-          expect(restoredRuntime).toMatchObject({
-            target: targetIdentity,
-            state: "available",
-          });
-
-          context.mocks.ably.batchPublish.mockClear();
           context.mocks.ably.batchPublish.mockRejectedValueOnce(
             new Error("Custom runtime wakeup unavailable"),
           );
@@ -4805,11 +4712,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                 encoding: "json",
               },
             ],
-          });
-          await own(() => {
-            return connectors.updateAgentCustomConnectors(actor, agentId, [
-              custom.id,
-            ]);
           });
           const lastKnownGoodAuth = await own(() => {
             return fw.requestFirewallAuth(
@@ -4936,10 +4838,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           http.id,
           "http-runtime-token",
         );
-        await connectors.updateAgentCustomConnectors(actor, agentId, [
-          mcp.id,
-          http.id,
-        ]);
 
         const run = await api.createThreadRun(actor, {
           agentId,
@@ -5128,26 +5026,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           state: "available",
           accountBinding: { connectionId: target.sourceId, baseUrlVars: {} },
         });
-
-        await connectors.updateAgentCustomConnectors(
-          actor,
-          agentId,
-          [mcp.id],
-          "remove",
-        );
-        const [removedGrantResult] = await api.syncConnectorRuntime(run.runId, {
-          targets: [target],
-        });
-        expect(
-          availableCustomConnectorRuntime(removedGrantResult).baseUrlVars,
-        ).toStrictEqual({});
-
-        await connectors.updateAgentCustomConnectors(
-          actor,
-          agentId,
-          [mcp.id],
-          "add",
-        );
         if (!target.sourceId) {
           throw new Error("Expected the MCP account selected for this Run");
         }
@@ -5228,9 +5106,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           );
           await connectors.setCustomConnectorValues(actor, custom.id, [
             { key: "secret", kind: "secret", value: "original-source-token" },
-          ]);
-          await connectors.updateAgentCustomConnectors(actor, agentId, [
-            custom.id,
           ]);
           const run = await api.createThreadRun(actor, {
             agentId,
@@ -5331,7 +5206,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           connectedConnectorIds.push(connector.id);
         }
         const incompleteSlug = "_mcp-awareness-00-unconnected";
-        const incomplete = await connectors.createCustomConnector(
+        await connectors.createCustomConnector(
           actor,
           manualMcpRuntimeConnectorBody({
             displayName: "Incomplete MCP connector",
@@ -5361,10 +5236,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           },
           false,
         );
-        await connectors.updateAgentCustomConnectors(actor, agentId, [
-          ...connectedConnectorIds,
-          incomplete.id,
-        ]);
         return {
           api,
           fw,
@@ -5630,9 +5501,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             },
           ],
         });
-        await connectors.updateAgentCustomConnectors(actor, agentId, [
-          runtimeConnector.id,
-        ]);
         await connectors.setCustomConnectorValues(
           actor,
           runtimeConnector.id,
@@ -5757,9 +5625,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           code: "unrefreshable-runtime-authorization-code",
           state: oauthState,
         });
-        await connectors.updateAgentCustomConnectors(actor, agentId, [
-          custom.id,
-        ]);
         await expect(
           connectors.listCustomConnectorAccounts(actor, custom.id),
         ).resolves.toContainEqual(
@@ -5911,11 +5776,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             code: "runtime-authorization-code",
             state,
           });
-        });
-        await own(() => {
-          return connectors.updateAgentCustomConnectors(actor, agentId, [
-            custom.id,
-          ]);
         });
         if (!actor.orgId) {
           throw new Error(
@@ -6208,9 +6068,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         if (!account) {
           throw new Error("Expected the authorized custom OAuth account");
         }
-        await connectors.updateAgentCustomConnectors(actor, agentId, [
-          custom.id,
-        ]);
 
         const firstRun = await api.createThreadRun(actor, {
           agentId,
@@ -6348,7 +6205,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const reconnectUrl = await connectors.startCustomConnectorOAuth2(
           actor,
           custom.id,
-          agentId,
           { intent: "reconnect", connectionId: account.id },
         );
         const reconnectState = new URL(reconnectUrl).searchParams.get("state");
@@ -6433,7 +6289,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           code: "mcp-runtime-authorization-code",
           state,
         });
-        await connectors.updateAgentCustomConnectors(actor, agentId, [mcp.id]);
 
         const run = await api.createThreadRun(actor, {
           agentId,
@@ -6823,11 +6678,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             iss: provider.issuer,
           });
         });
-        await own(() => {
-          return connectors.updateAgentCustomConnectors(actor, agentId, [
-            mcp.id,
-          ]);
-        });
 
         const run = await own(() => {
           return api.createThreadRun(actor, {
@@ -6879,7 +6729,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             actor,
             mcp.id,
             [200],
-            undefined,
             { intent: "reconnect", connectionId: sourceId },
           );
         });
@@ -7024,7 +6873,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             { key: "subdomain", kind: "variable", value: "münich" },
             { key: "scope", kind: "variable", value: "initial-scope" },
           ],
-          agentId,
         });
         const kms = useSecretKmsProbe();
 
@@ -7217,7 +7065,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             { key: "api_key", kind: "secret", value: "optional-primary" },
             { key: "tenant_id", kind: "variable", value: "initial-tenant" },
           ],
-          agentId,
         });
 
         const run = await api.createThreadRun(actor, {
@@ -7348,7 +7195,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               value: "incompatible-runtime-secret",
             },
           ],
-          agentId,
         });
         const updated = await connectors.updateCustomConnector(
           actor,
@@ -7438,7 +7284,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                 value: "initial-reconnect-required-secret",
               },
             ],
-            agentId,
           });
         });
         if (!actor.orgId) {
@@ -7638,7 +7483,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             { key: "api_key", kind: "secret", value: "version-one-key" },
             { key: "subdomain", kind: "variable", value: "version-one" },
           ],
-          agentId,
         });
         await connectors.deleteDefaultCustomConnectorAccount(
           actor,
@@ -7802,9 +7646,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               value: "optional-only-secret",
             },
           ],
-          agentId,
         });
-        expect(saved.authorizedAgentId).toBe(agentId);
 
         const run = await api.createThreadRun(actor, {
           agentId,
@@ -7925,9 +7767,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           custom.id,
           "custom-bdd",
         );
-        await connectors.updateAgentCustomConnectors(actor, agentId, [
-          custom.id,
-        ]);
 
         const run = await api.createThreadRun(actor, {
           agentId,
@@ -8093,12 +7932,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.enableAgentConnectors(actor, agentId, ["slack"]);
         await api.heartbeatRunner(runnerGroup);
 
-        await api.applyUserPermissionGrant(actor, {
-          agentId,
-          connectorSlug: "slack",
-          permission: "chat:write",
-          action: "allow",
-          expiresIn: "1h",
+        const access = createChatConnectorAccessApi(context);
+        const target = { kind: "builtin", connectorSlug: "slack" } as const;
+        await access.applyPermissions(actor, {
+          target,
+          mode: "patch",
+          grants: [
+            { permission: "chat:write", action: "allow", expiresIn: "1h" },
+          ],
         });
         mockNow(now() + 2 * 3_600_000);
         await api.registerDirectRunner(runnerGroup);
@@ -8119,19 +7960,16 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expiredExecution.sandboxToken,
         );
 
-        await api.applyUserPermissionGrant(actor, {
-          agentId,
-          connectorSlug: "slack",
-          permission: "chat:write",
-          action: "allow",
+        await access.applyPermissions(actor, {
+          target,
+          mode: "patch",
+          grants: [{ permission: "chat:write", action: "allow" }],
         });
-        await expect(
-          api.replaceUserPermissionGrants(actor, {
-            agentId,
-            connectorSlug: "slack",
-            grants: [],
-          }),
-        ).resolves.toStrictEqual([]);
+        await access.applyPermissions(actor, {
+          target,
+          mode: "replace",
+          grants: [],
+        });
         const revokedRun = await api.createThreadRun(actor, {
           agentId,
           prompt: "revoke a queued permission",
@@ -8526,9 +8364,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           customConnector.id,
           "bdd-context-secret",
         );
-        await connectors.updateAgentCustomConnectors(actor, agent.agentId, [
-          customConnector.id,
-        ]);
         const workflowName = "bdd-context-workflow";
         await misc.createWorkflow(
           actor,

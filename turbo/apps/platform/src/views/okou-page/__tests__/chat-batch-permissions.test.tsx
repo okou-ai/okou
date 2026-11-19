@@ -1,14 +1,15 @@
-import { connectorPermissionsResponse } from "../../../__tests__/connector-permissions.ts";
+import {
+  connectorPermissionsResponse,
+  type ConnectorPermissionFixture,
+} from "../../../__tests__/connector-permissions.ts";
 import {
   connectorPermissionsContract,
   type ApplyConnectorPermissions,
 } from "@okouai/api-contracts/contracts/connector-permissions";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
-import type {
-  UserPermissionGrantBatchItem,
-  UserPermissionGrantResponse,
-} from "@okouai/api-contracts/contracts/user-permission-grants";
+import type { UserPermissionGrantBatchItem } from "@okouai/api-contracts/validators/user-permission-grants";
+
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -96,14 +97,11 @@ async function openPermissions(
 
 function activeGrant(
   item: UserPermissionGrantBatchItem,
-): UserPermissionGrantResponse {
+): ConnectorPermissionFixture {
   return {
     ...item,
-    agentId: CAPABILITY_AGENT_ID,
     action: "allow",
     expiresAt: "2099-08-01T09:00:00.000Z",
-    createdAt: "2026-08-01T08:00:00.000Z",
-    updatedAt: "2026-08-01T09:00:00.000Z",
   };
 }
 
@@ -151,7 +149,7 @@ function installConversation(url: string): void {
 }
 
 function installGrants(
-  initial: readonly UserPermissionGrantResponse[] = [],
+  initial: readonly ConnectorPermissionFixture[] = [],
   beforeRead?: () => Promise<void>,
   afterSave?: () => void,
 ) {

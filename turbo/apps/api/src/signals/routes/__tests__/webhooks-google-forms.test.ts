@@ -1338,13 +1338,10 @@ describe("Google Forms Pub/Sub webhook", () => {
       subject: "bdd-google-forms-second-user-id",
       email: "bdd-google-forms-second@example.test",
     });
-    const oauth = await connectors.startOauth(
-      actor,
-      "google-forms",
-      "oauth",
-      agent.agentId,
-      { intent: "add", displayName: "Second Google Forms" },
-    );
+    const oauth = await connectors.startOauth(actor, "google-forms", "oauth", {
+      intent: "add",
+      displayName: "Second Google Forms",
+    });
     const state = new URL(oauth.authorizationUrl).searchParams.get("state");
     if (!state) {
       throw new Error("Expected Google Forms OAuth state");
@@ -1476,14 +1473,8 @@ describe("Google Forms Pub/Sub webhook", () => {
   });
 
   it("rebinds Forms to an allowed surviving account after deleting the selected account", async () => {
-    const {
-      actor,
-      agentId,
-      firstConnector,
-      secondConnector,
-      second,
-      formsApi,
-    } = await setupGoogleFormsMultiAccountAutomations();
+    const { actor, firstConnector, secondConnector, second, formsApi } =
+      await setupGoogleFormsMultiAccountAutomations();
     const target = { kind: "builtin", connectorSlug: "google-forms" } as const;
     const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
       chatConnectorAccessContract,
@@ -1506,13 +1497,10 @@ describe("Google Forms Pub/Sub webhook", () => {
       subject: randomUUID(),
       email,
     });
-    const oauth = await connectors.startOauth(
-      actor,
-      "google-forms",
-      "oauth",
-      agentId,
-      { intent: "add", displayName: "Third Google Forms" },
-    );
+    const oauth = await connectors.startOauth(actor, "google-forms", "oauth", {
+      intent: "add",
+      displayName: "Third Google Forms",
+    });
     const state = new URL(oauth.authorizationUrl).searchParams.get("state");
     if (!state) {
       throw new Error("Expected third Google Forms OAuth state");
@@ -1881,7 +1869,7 @@ describe("Google Forms Pub/Sub webhook", () => {
   });
 
   it("preserves watches when reconnecting the same Google Forms account", async () => {
-    const { actor, agentId, secondConnector, formsApi } =
+    const { actor, secondConnector, formsApi } =
       await setupGoogleFormsMultiAccountAutomations();
 
     mockGoogleFormsConnectorOAuth({
@@ -1894,7 +1882,6 @@ describe("Google Forms Pub/Sub webhook", () => {
       actor,
       "google-forms",
       "oauth",
-      agentId,
       { intent: "reconnect", connectionId: secondConnector.id },
     );
     const reconnectState = new URL(
@@ -1931,7 +1918,6 @@ describe("Google Forms Pub/Sub webhook", () => {
     it("repairs watches after Google Forms account deletion, replacement, and re-add", async () => {
       const {
         actor,
-        agentId,
         first,
         second,
         firstConnector,
@@ -1985,7 +1971,6 @@ describe("Google Forms Pub/Sub webhook", () => {
         actor,
         "google-forms",
         "oauth",
-        agentId,
         { intent: "add" },
       );
       const replaceState = new URL(
@@ -2083,7 +2068,6 @@ describe("Google Forms Pub/Sub webhook", () => {
         actor,
         "google-forms",
         "oauth",
-        agentId,
         { intent: "add", displayName: "Re-added Google Forms" },
       );
       const addState = new URL(addOauth.authorizationUrl).searchParams.get(

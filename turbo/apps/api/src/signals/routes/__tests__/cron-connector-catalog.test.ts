@@ -994,7 +994,7 @@ describe("connector catalog valid lifecycle", () => {
       connectionStatus: "connected",
     });
     const secondStart = await own(() => {
-      return connectorsApi.startOauth(actor, "slack", "oauth", undefined, {
+      return connectorsApi.startOauth(actor, "slack", "oauth", {
         intent: "reconnect",
         connectionId: firstAccount.id,
       });

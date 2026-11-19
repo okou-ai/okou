@@ -26,13 +26,9 @@ describe("authorized connector admission", () => {
       return api.updateUserModelPreference(actor, "claude-fable-5-1");
     });
     const connection = await own(() => {
-      return connectors.connectManualGrant(
-        actor,
-        "openai",
-        "api-token",
-        { apiKey: `required-entry-${randomUUID()}` },
-        agentId,
-      );
+      return connectors.connectManualGrant(actor, "openai", "api-token", {
+        apiKey: `required-entry-${randomUUID()}`,
+      });
     });
     await own(() => {
       return api.enableAgentConnectors(actor, agentId, ["openai"]);
@@ -62,13 +58,9 @@ describe("authorized connector admission", () => {
       return api.updateUserModelPreference(actor, "claude-fable-5-1");
     });
     const connection = await own(() => {
-      return connectors.connectManualGrant(
-        actor,
-        "manual-mcp",
-        "api-token",
-        { apiKey: `required-mcp-${randomUUID()}` },
-        agentId,
-      );
+      return connectors.connectManualGrant(actor, "manual-mcp", "api-token", {
+        apiKey: `required-mcp-${randomUUID()}`,
+      });
     });
     await own(() => {
       return api.enableAgentConnectors(actor, agentId, ["manual-mcp"]);

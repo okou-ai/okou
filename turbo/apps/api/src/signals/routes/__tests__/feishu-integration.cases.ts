@@ -37,7 +37,7 @@ import {
   customConnectorValuesContract,
   customConnectorsContract,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
+import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 import {
   logsByIdContract,
   logsListContract,
@@ -89,7 +89,6 @@ import {
   deleteFeatureSwitchesForUser,
 } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
-import { agentsRoutes } from "../agents";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { connectedConnectorsRoutes } from "../connected-connectors";
@@ -4655,21 +4654,21 @@ export function registerFeishuIntegrationTests(
           );
         });
         expect(disconnected.body.isConnected).toBeFalsy();
-        const grantsClient = setupApp({ context, routes: agentsRoutes })(
-          agentCustomConnectorsContract,
-        );
-        const ungranted = await own(() => {
+        const directory = setupApp({
+          context,
+          routes: connectedConnectorsRoutes,
+        })(connectedConnectorsContract);
+        const readConnections = () => {
           return accept(
-            grantsClient.get({
+            directory.list({
               headers: { authorization: "Bearer clerk-session" },
-              params: { id: fixture.defaultAgentId },
             }),
             [200],
           );
-        });
-        expect(ungranted.body.grants).not.toContainEqual(
-          expect.objectContaining({ customConnectorId: managedConnector.id }),
-        );
+        };
+        expect(
+          (await own(readConnections)).body.customConnectors,
+        ).toStrictEqual([]);
         await connectFixtureUser(fixture);
         const connected = await own(() => {
           return accept(
@@ -4680,22 +4679,17 @@ export function registerFeishuIntegrationTests(
           );
         });
         expect(connected.body.isConnected).toBeTruthy();
-        const granted = await own(() => {
-          return accept(
-            grantsClient.get({
-              headers: { authorization: "Bearer clerk-session" },
-              params: { id: fixture.defaultAgentId },
-            }),
-            [200],
-          );
-        });
-        expect(granted.body.grants).toContainEqual({
-          customConnectorId: managedConnector.id,
-          permissionNames: [],
-        });
+        expect(
+          (await own(readConnections)).body.customConnectors,
+        ).toStrictEqual([
+          expect.objectContaining({
+            id: managedConnector.id,
+            integrationManaged: true,
+          }),
+        ]);
       });
 
-      it("preserves agent access and retries welcome when reconnecting", async () => {
+      it("preserves member permissions and retries welcome when reconnecting", async () => {
         const fixture = await setupFeishuRunFixture();
         const { actor, appId, defaultAgentId } = fixture;
         const client = setupApp({ context, routes: feishuConnectRoutes })(
@@ -4791,27 +4785,23 @@ export function registerFeishuIntegrationTests(
           }),
           "Expected managed Feishu custom connector",
         );
-        const agentAccessClient = setupApp({ context, routes: agentsRoutes })(
-          agentCustomConnectorsContract,
-        );
-        const selectedPermissions = ["messages:send-as-user"];
-        await own(() => {
-          return accept(
-            agentAccessClient.update({
-              headers: { authorization: "Bearer clerk-session" },
-              params: { id: defaultAgentId },
-              body: {
-                grants: [
-                  {
-                    customConnectorId: managedConnector.id,
-                    permissionNames: selectedPermissions,
-                  },
-                ],
-                operation: "add",
+        const rules = createChatConnectorAccessApi(context);
+        const target = {
+          kind: "custom",
+          customConnectorId: managedConnector.id,
+        } as const;
+        const expectedPermissions = await own(() => {
+          return rules.applyPermissions(actor, {
+            target,
+            mode: "patch",
+            grants: [
+              {
+                permission: "messages:send-as-user",
+                action: "allow",
+                expiresIn: "1h",
               },
-            }),
-            [200],
-          );
+            ],
+          });
         });
         const retryConnectResponse = await own(() => {
           return connectApp.request("/api/feishu/connect", {
@@ -4829,19 +4819,11 @@ export function registerFeishuIntegrationTests(
           retryAuthorizationUrl,
           "ou_feishu_user",
         );
-        const preservedAccess = await own(() => {
-          return accept(
-            agentAccessClient.get({
-              headers: { authorization: "Bearer clerk-session" },
-              params: { id: defaultAgentId },
-            }),
-            [200],
-          );
-        });
-        expect(preservedAccess.body.grants).toContainEqual({
-          customConnectorId: managedConnector.id,
-          permissionNames: selectedPermissions,
-        });
+        await expect(
+          own(() => {
+            return rules.readPermissions(actor, target);
+          }),
+        ).resolves.toStrictEqual(expectedPermissions);
         await own(flushWaitUntilForTest);
         const welcome = fixtureState.outboundMessages.find((message) => {
           return (
@@ -5570,23 +5552,6 @@ export function registerFeishuIntegrationTests(
           "Expected connected Feishu custom connector",
         );
         const managedSkillDigest = uploadedSkillDigest(firstUploadCall);
-        const customConnectorGrants = await own(() => {
-          return accept(
-            setupApp({ context, routes: agentsRoutes })(
-              agentCustomConnectorsContract,
-            ).get({
-              headers: { authorization: "Bearer clerk-session" },
-              params: { id: defaultAgentId },
-            }),
-            [200],
-          );
-        });
-        expect(customConnectorGrants.body.grants).toStrictEqual([
-          {
-            customConnectorId: managedConnector.id,
-            permissionNames: [],
-          },
-        ]);
         const fileKey = `file_v2_${"a".repeat(1400)}`;
         await own(() => {
           return postEvent(
@@ -5716,32 +5681,6 @@ export function registerFeishuIntegrationTests(
             unknownPolicy: "deny",
           },
         );
-        const permissionGrant = await own(() => {
-          return accept(
-            setupApp({ context, routes: agentsRoutes })(
-              agentCustomConnectorsContract,
-            ).update({
-              headers: { authorization: "Bearer clerk-session" },
-              params: { id: defaultAgentId },
-              body: {
-                grants: [
-                  {
-                    customConnectorId: managedConnector.id,
-                    permissionNames: ["messages:send-as-user"],
-                  },
-                ],
-                operation: "replace",
-              },
-            }),
-            [200],
-          );
-        });
-        expect(permissionGrant.body.grants).toStrictEqual([
-          {
-            customConnectorId: managedConnector.id,
-            permissionNames: ["messages:send-as-user"],
-          },
-        ]);
         const managedSkillMount = receivedExecution.contentBundles.skills.find(
           (bundle) => {
             return bundle.mountPath.endsWith(
@@ -6624,32 +6563,6 @@ export function registerFeishuIntegrationTests(
           connectionId: connectorId,
           target: { kind: "custom", customConnectorId: customConnector.id },
         });
-        const genericCreate = await own(() => {
-          return accept(
-            setupApp({ context, routes: chatThreadRoutes })(
-              chatThreadsContract,
-            ).create({
-              headers: { authorization: "Bearer clerk-session" },
-              body: {
-                agentId: fixture.defaultAgentId,
-                model: "claude-fable-5-1",
-                connectorSelections: [
-                  {
-                    connectionId: connectorId,
-                    target: {
-                      kind: "custom",
-                      customConnectorId: customConnector.id,
-                    },
-                  },
-                ],
-              },
-            }),
-            [400],
-          );
-        });
-        expect(genericCreate.body.error.code).toBe(
-          "CONNECTOR_ACCOUNT_UNAVAILABLE",
-        );
         expect(context.mocks.ably.publish).toHaveBeenCalledWith(
           `chatThreadDetailChanged:${created.chatThreadId}`,
           null,

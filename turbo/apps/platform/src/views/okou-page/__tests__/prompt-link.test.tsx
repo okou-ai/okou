@@ -41,7 +41,6 @@ const DESIGN_AGENT_ID = "c0000000-0000-4000-a000-000000000002";
 
 interface PromptLaunchCapture {
   readonly createdThreads: {
-    readonly connectorSelections: readonly unknown[] | undefined;
     readonly model: string | null | undefined;
     readonly reasoningEffort: string | undefined;
     readonly serviceTier: string | null | undefined;
@@ -58,7 +57,6 @@ function capturePromptLaunch(
   const capture: PromptLaunchCapture = { createdThreads: [], sends: [] };
   context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
     capture.createdThreads.push({
-      connectorSelections: body.connectorSelections,
       model: body.model,
       reasoningEffort: body.reasoningEffort,
       serviceTier: body.serviceTier,
@@ -249,7 +247,6 @@ test("A prompt route starts a chat with its selected personal subscription model
   const parts = userMessageParts(send);
 
   expect(capture.createdThreads[0]).toStrictEqual({
-    connectorSelections: undefined,
     model: "gpt-6-astra",
     reasoningEffort: undefined,
     serviceTier: null,

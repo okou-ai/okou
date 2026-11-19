@@ -4,7 +4,7 @@ import type {
   UserPermissionGrantApplyMode,
   UserPermissionGrantExpiresIn,
   UserPermissionGrantAction,
-} from "@okouai/api-contracts/contracts/user-permission-grants";
+} from "@okouai/api-contracts/validators/user-permission-grants";
 import { connectorPermissionsContract } from "@okouai/api-contracts/client/connector-permissions";
 
 import {

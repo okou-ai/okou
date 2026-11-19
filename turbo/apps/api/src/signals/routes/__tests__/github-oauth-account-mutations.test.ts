@@ -34,13 +34,10 @@ async function connectGithubAdd(
   },
 ): Promise<void> {
   mockGitHubConnectorOAuth({ userId: args.userId, login: args.login });
-  const start = await connectors.startOauth(
-    actor,
-    "github",
-    "oauth",
-    undefined,
-    { intent: "add", displayName: args.displayName },
-  );
+  const start = await connectors.startOauth(actor, "github", "oauth", {
+    intent: "add",
+    displayName: args.displayName,
+  });
   await connectors.completeOauthCallback("github", {
     code: args.code,
     state: oauthState(start.authorizationUrl),
@@ -215,11 +212,11 @@ describe("GitHub OAuth account mutation selection", () => {
     mockGitHubConnectorOAuth({ userId: 303, login: "github-concurrent" });
 
     const [first, second] = await Promise.all([
-      connectors.startOauth(actor, "github", "oauth", undefined, {
+      connectors.startOauth(actor, "github", "oauth", {
         intent: "add",
         displayName: "Concurrent first",
       }),
-      connectors.startOauth(actor, "github", "oauth", undefined, {
+      connectors.startOauth(actor, "github", "oauth", {
         intent: "add",
         displayName: "Concurrent second",
       }),

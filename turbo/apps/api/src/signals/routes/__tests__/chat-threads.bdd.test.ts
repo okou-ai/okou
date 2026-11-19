@@ -2442,7 +2442,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       actor,
       "google-drive",
       "oauth",
-      undefined,
       { intent: "reconnect", connectionId: connected.id },
     );
     await connectorsApi.completeOauthCallback("google-drive", {
@@ -2523,7 +2522,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       actor,
       "google-drive",
       "oauth",
-      undefined,
       { intent: "reconnect", connectionId: connected.id },
     );
     await connectorsApi.completeOauthCallback("google-drive", {
@@ -4934,7 +4932,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       actor,
       "google-drive",
       "oauth",
-      undefined,
       { intent: "add", displayName: "Default Drive" },
     );
     await connectorsApi.completeOauthCallback("google-drive", {
@@ -4953,7 +4950,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       actor,
       "google-drive",
       "oauth",
-      undefined,
       { intent: "add", displayName: "Selected Drive" },
     );
     await connectorsApi.completeOauthCallback("google-drive", {
@@ -5094,7 +5090,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       actor,
       "google-drive",
       "oauth",
-      undefined,
       { intent: "reconnect", connectionId: defaultAccount.id },
     );
     await connectorsApi.completeOauthCallback("google-drive", {

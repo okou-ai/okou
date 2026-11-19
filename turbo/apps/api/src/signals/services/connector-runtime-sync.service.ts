@@ -71,7 +71,7 @@ import {
   customRuntimeSnapshotSectionsFromRows,
 } from "./custom-runtime-snapshot-query";
 
-import { readActiveNetworkPolicyRefreshes$ } from "./user-permission-grants.service";
+import { readActiveNetworkPolicyRefreshes$ } from "./connector-network-policy-refresh.service";
 
 const L = logger("connector-runtime-sync");
 

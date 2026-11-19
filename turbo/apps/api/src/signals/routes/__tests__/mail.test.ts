@@ -1626,11 +1626,6 @@ describe("POST /api/mail/drafts/link", () => {
         customConnectorId,
         [{ key: "secret", kind: "secret", value: `${operation}-secret` }],
       );
-      await connectors.updateAgentCustomConnectors(
-        fixture.actor,
-        fixture.agent.agentId,
-        [customConnectorId],
-      );
       const connectorId = connection.connectionId;
       if (!connectorId) {
         throw new Error(

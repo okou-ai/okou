@@ -137,8 +137,6 @@ import {
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-connector-permissions";
 
-import { addUserCustomConnector$ } from "./user-connectors.service";
-
 const L = logger("CustomConnectorService");
 
 const FIELD_KEY_REGEX = /^[a-z][a-z0-9_]{0,63}$/;
@@ -4179,13 +4177,12 @@ interface SaveCustomConnectorProposalArgs {
   readonly isAdmin: boolean;
   readonly proposal: CustomConnectorProposal;
   readonly values: readonly CustomConnectorValueInput[];
-  readonly agentId?: string;
 }
 
 type SaveCustomConnectorProposalResult =
   | {
       readonly connector: CustomConnectorResponse;
-      readonly authorizedAgentId?: string;
+      readonly connectionId?: string;
     }
   | BadRequestResponse
   | NotFoundResponse
@@ -4251,43 +4248,6 @@ const saveProposalDefinition$ = command(
   },
 );
 
-const authorizeProposalAgent$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly connectorId: string;
-      readonly agentId: string | undefined;
-    },
-    signal: AbortSignal,
-  ): Promise<string | undefined | NotFoundResponse> => {
-    if (!args.agentId) {
-      return undefined;
-    }
-    const added = await set(addUserCustomConnector$, {
-      orgId: args.orgId,
-      userId: args.userId,
-      agentId: args.agentId,
-      customConnectorId: args.connectorId,
-    });
-    signal.throwIfAborted();
-    if (added.status === "agentNotFound") {
-      return notFound("Agent not found");
-    }
-    if (added.status === "customConnectorsNotFound") {
-      return notFound("Custom connector not found");
-    }
-    if (
-      added.status === "customConnectorPermissionSelectionRequired" ||
-      added.status === "invalidCustomConnectorPermissions"
-    ) {
-      return undefined;
-    }
-    return args.agentId;
-  },
-);
-
 export const saveCustomConnectorProposal$ = command(
   async (
     { get, set },
@@ -4344,20 +4304,6 @@ export const saveCustomConnectorProposal$ = command(
       connectionId = valueResult.connectionId;
     }
 
-    const authorizedAgentId = await set(
-      authorizeProposalAgent$,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        connectorId: connector.id,
-        agentId: args.agentId,
-      },
-      signal,
-    );
-    if (authorizedAgentId && typeof authorizedAgentId !== "string") {
-      return authorizedAgentId;
-    }
-
     const response = await get(
       getCustomConnectorResponse({
         orgId: args.orgId,
@@ -4372,7 +4318,6 @@ export const saveCustomConnectorProposal$ = command(
     return {
       connector: response,
       ...(connectionId ? { connectionId } : {}),
-      ...(authorizedAgentId ? { authorizedAgentId } : {}),
     };
   },
 );

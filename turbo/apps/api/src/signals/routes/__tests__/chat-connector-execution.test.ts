@@ -111,7 +111,6 @@ async function addAccount(actor: ApiTestUser, name: string) {
     "manual-mcp",
     "api-token",
     { apiKey: `key-${name}` },
-    undefined,
     { intent: "add", displayName: name },
   );
 }
@@ -147,7 +146,6 @@ describe("Chat connector execution", () => {
       "runtime",
       "api-token",
       { apiKey: "selected-native-key" },
-      undefined,
       { intent: "add", displayName: "Selected native account" },
     );
     const registered = await addAccount(value.actor, "Registered MCP");

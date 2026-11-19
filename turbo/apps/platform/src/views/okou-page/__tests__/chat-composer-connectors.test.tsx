@@ -92,7 +92,6 @@ test("Configure connector permissions from the composer", async () => {
   });
   installComposerConnectorFixture({
     catalog: [axiom],
-    builtinAuthorizations: { [SCOUT_AGENT_ID]: [AXIOM_SLUG] },
     permissionDetails: new Map([
       [
         AXIOM_SLUG,
@@ -171,7 +170,6 @@ describe("connecting a custom connector from Chat", () => {
     const reopenedSecret = await screen.findByLabelText("Secret");
     expect(reopenedSecret).toHaveValue("");
     expect(fixture.customValueRequests).toStrictEqual([]);
-    expect(fixture.customAuthorizationUpdates).toStrictEqual([]);
   });
 
   it("connect a custom connector from Chat", async () => {
@@ -186,7 +184,6 @@ describe("connecting a custom connector from Chat", () => {
           values: [{ key: "secret", kind: "secret", value: "scout-secret" }],
         },
       ]);
-      expect(fixture.customAuthorizationUpdates).toStrictEqual([]);
     });
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).toBeNull();
@@ -249,7 +246,6 @@ test("Reconnect the expired custom default from the composer with healthy siblin
       values: [{ key: "secret", kind: "secret", value: "replacement-secret" }],
     },
   ]);
-  expect(fixture.customAuthorizationUpdates).toStrictEqual([]);
 });
 
 test("Show only the connector actions that are useful in chat", async () => {
@@ -287,9 +283,6 @@ test("Show only the connector actions that are useful in chat", async () => {
   });
   installComposerConnectorFixture({
     catalog: [axiom, github],
-    builtinAuthorizations: {
-      [SCOUT_AGENT_ID]: [AXIOM_SLUG, GITHUB_SLUG],
-    },
     accounts: [...axiomAccounts, githubAccount],
   });
 
@@ -358,8 +351,6 @@ test("Start connector setup from chat", async () => {
     expect(fixture.oauthConnectionRequests[0]).toMatchObject({
       connectorSlug: GOOGLE_ANALYTICS_SLUG,
       authMethod: "oauth",
-      agentId: undefined,
-      authorizeAgent: undefined,
     });
     expect(authWindow.location.href).toBe(
       "https://accounts.example.test/google-analytics",
@@ -467,11 +458,6 @@ test("Respect integration-managed connector availability in chat", async () => {
   ];
   installComposerConnectorFixture({
     customConnectors: [feishu],
-    customAuthorizations: {
-      [SCOUT_AGENT_ID]: [
-        { customConnectorId: FEISHU_CONNECTOR_ID, permissionNames: [] },
-      ],
-    },
     accounts,
   });
 
@@ -589,8 +575,6 @@ test("Enable a credential-free connector directly from chat", async () => {
       {
         connectorSlug: PUBLIC_STRIPE_SLUG,
         authMethod: "public",
-        agentId: undefined,
-        authorizeAgent: undefined,
       },
     ]);
     expect(screen.queryByRole("dialog")).toBeNull();

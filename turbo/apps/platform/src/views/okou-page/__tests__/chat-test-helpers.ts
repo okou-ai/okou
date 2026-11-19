@@ -32,7 +32,6 @@ import {
 } from "@okouai/api-contracts/contracts/run-routes";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
-import type { ConnectorAccountSelection } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { RunStatus } from "@okouai/api-contracts/contracts/runs";
 import {
   mockChatEventRows,
@@ -393,7 +392,6 @@ export function mockChatLifecycle(
       modelSelection: ModelSelectionRequest | null;
       serviceTier?: ChatThreadServiceTier | null;
       reasoningEffort?: ReasoningEffort;
-      connectorSelections?: readonly ConnectorAccountSelection[];
       initialRemoteAccessOverrides?: readonly {
         protocol: "ssh" | "vnc";
         connectionId: string;
@@ -899,7 +897,6 @@ export function mockChatLifecycle(
       modelSelection,
       serviceTier: body.serviceTier,
       reasoningEffort: body.reasoningEffort,
-      connectorSelections: body.connectorSelections,
       initialRemoteAccessOverrides: body.initialRemoteAccessOverrides,
     });
     return respond(201, {

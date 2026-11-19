@@ -1,9 +1,6 @@
 import { computed, type Computed } from "ccstate";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { agents } from "@okouai/db/schema/agent";
-import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
-import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { and, count, desc, eq, notExists, or } from "drizzle-orm";
 import { agentAvatarUrlForDefaultAgent } from "@okouai/core/agent-avatar";
@@ -111,38 +108,6 @@ export function agentList(
       return agentResponse(row);
     });
   });
-}
-
-export function agentEnabledConnectorSlugsCondition(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly agentId: string;
-}) {
-  return and(
-    eq(userBuiltinConnectors.orgId, args.orgId),
-    eq(userBuiltinConnectors.userId, args.userId),
-    eq(userBuiltinConnectors.agentId, args.agentId),
-  );
-}
-
-export function agentCustomConnectorGrantJoinCondition() {
-  return and(
-    eq(orgCustomConnectors.id, userCustomConnectors.customConnectorId),
-    eq(orgCustomConnectors.orgId, userCustomConnectors.orgId),
-  );
-}
-
-export function agentCustomConnectorGrantsCondition(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly agentId: string;
-}) {
-  return and(
-    eq(userCustomConnectors.orgId, args.orgId),
-    eq(userCustomConnectors.userId, args.userId),
-    eq(userCustomConnectors.agentId, args.agentId),
-    eq(orgCustomConnectors.enabled, true),
-  );
 }
 
 export interface BootstrapAgent {

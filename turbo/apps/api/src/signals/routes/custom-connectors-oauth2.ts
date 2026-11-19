@@ -10,8 +10,6 @@ import { customConnectorOAuth2Contract } from "@okouai/api-contracts/contracts/c
 import type { ConnectorOauthCallbackResult } from "@okouai/api-contracts/contracts/connectors-slug-callback";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-
-import { badRequestMessage } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { request$, setResHeader$ } from "../context/hono";
@@ -22,7 +20,6 @@ import {
   getConnectorOAuthStateStatus$,
   type StoredCustomConnectorOAuthState,
 } from "../services/connector-oauth-state.service";
-import { validateConnectorAuthorizationTarget$ } from "../services/connected-connector-authorization.service";
 import {
   customConnectorOAuth2EffectiveInitialToken as effectiveInitialToken,
   customConnectorOAuthStateMatchesDefinition,
@@ -42,7 +39,6 @@ import {
   validateMcpAutomaticOAuthCallbackIssuer,
 } from "../services/mcp-automatic-oauth.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
-import { addUserCustomConnector$ } from "../services/user-connectors.service";
 import {
   connectorRuntimeWakeupRunColumns,
   connectorRuntimeWakeupCondition,
@@ -135,19 +131,6 @@ const startOAuth2Inner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  const agentTarget = await set(
-    validateConnectorAuthorizationTarget$,
-    {
-      orgId: auth.orgId,
-      userId: auth.userId,
-      agentId: body.data.agentId,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (!agentTarget.ok) {
-    return badRequestMessage(agentTarget.message);
-  }
   const redirectUri = new URL(
     CUSTOM_CONNECTOR_OAUTH_CALLBACK_PATH,
     appOrigin(),
@@ -165,7 +148,6 @@ const startOAuth2Inner$ = command(async ({ get, set }, signal: AbortSignal) => {
         cimdClientId: okouClientMetadata.client_id,
         dcrClientMetadata: okouMcpOAuthDynamicClientMetadata(get(request$).raw),
       },
-      agentId: body.data.agentId,
       account: body.data.account,
     },
     signal,
@@ -229,45 +211,6 @@ function isCurrentAutomaticOAuthCustomConnector(
     customConnectorOAuthStateMatchesDefinition(context, connector),
   );
 }
-
-const authorizeCustomConnectorAgent$ = command(
-  async (
-    { set },
-    args: {
-      readonly state: StoredCustomConnectorOAuthState;
-      readonly connectorId: string;
-    },
-    signal: AbortSignal,
-  ): Promise<string | null> => {
-    if (!args.state.authorizeAgent || !args.state.agentId) {
-      return null;
-    }
-    const authorization = await set(addUserCustomConnector$, {
-      orgId: args.state.orgId,
-      userId: args.state.userId,
-      agentId: args.state.agentId,
-      customConnectorId: args.connectorId,
-    });
-    signal.throwIfAborted();
-    switch (authorization.status) {
-      case "added": {
-        return null;
-      }
-      case "agentNotFound": {
-        return "OAuth connected, but the requested agent was not found";
-      }
-      case "customConnectorsNotFound": {
-        return "OAuth connected, but the custom connector was not found";
-      }
-      case "customConnectorPermissionSelectionRequired": {
-        return "OAuth connected, but connector permissions must be selected before authorizing the agent";
-      }
-      case "invalidCustomConnectorPermissions": {
-        return `OAuth connected, but agent authorization failed: ${authorization.message}`;
-      }
-    }
-  },
-);
 
 type CustomOAuthPersistenceResult =
   | {
@@ -763,30 +706,17 @@ const completeOAuth2Callback$ = command(
         ),
       );
     }
-    const completionError = await set(
-      authorizeCustomConnectorAgent$,
+    await set(
+      recordConnectorOAuthCompletion$,
       {
-        state: claimed.state,
-        connectorId: connector.id,
+        attemptId: claimed.state.id,
+        connectionId: persistence.connectionId,
+        orgId: claimed.state.orgId,
+        userId: claimed.state.userId,
       },
       signal,
     );
-    if (!completionError) {
-      await set(
-        recordConnectorOAuthCompletion$,
-        {
-          attemptId: claimed.state.id,
-          connectionId: persistence.connectionId,
-          orgId: claimed.state.orgId,
-          userId: claimed.state.userId,
-        },
-        signal,
-      );
-    }
     signal.throwIfAborted();
-    if (completionError) {
-      return callbackError(origin, completionError);
-    }
     return callbackRedirect({ origin, status: "success" });
   },
 );

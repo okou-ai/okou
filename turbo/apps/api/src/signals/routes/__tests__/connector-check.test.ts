@@ -212,13 +212,6 @@ async function createOwnedRun(
       options.builtinConnectorSlugs,
     );
   }
-  if (options.customConnectorIds) {
-    await connectorsApi.updateAgentCustomConnectors(
-      actor,
-      agent.agentId,
-      options.customConnectorIds,
-    );
-  }
   const run = await runsApi.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "Create a connector check fixture",
@@ -237,20 +230,8 @@ async function createAwsRunWithPermissionGrants(): Promise<string> {
     code: awsVerificationCode(session.authorizationUrl),
   });
   await trackConnectedFixture(Promise.resolve({ actor, connectorSlug: "aws" }));
-  const { runId, agentId } = await createOwnedRun(actor, {
+  const { runId } = await createOwnedRun(actor, {
     builtinConnectorSlugs: ["aws"],
-  });
-  await runsApi.applyUserPermissionGrant(actor, {
-    agentId,
-    connectorSlug: "aws",
-    permission: "sts:get-caller-identity-alias",
-    action: "deny",
-  });
-  await runsApi.applyUserPermissionGrant(actor, {
-    agentId,
-    connectorSlug: "aws",
-    permission: "sts:get-caller-identity",
-    action: "allow",
   });
   return okouToken(actor, runId, ["connector:read", "agent-run:read"]);
 }
@@ -1000,7 +981,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
             "reap",
             "api-token",
             { apiKey: changedSecret, apiBaseUrl: changedBase },
-            undefined,
             { intent: "reconnect", connectionId: ownerAccount.id },
           );
           if (reconnected.id !== ownerAccount.id) {
@@ -1150,7 +1130,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
           apiKey: "reap-updated-api-key",
           apiBaseUrl: changedBase,
         },
-        undefined,
         { intent: "reconnect", connectionId: connectorId },
       );
     });
@@ -1494,9 +1473,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
         );
         await connectorsApi.setCustomConnectorValues(actor, definition.id, [
           { key: "secret", kind: "secret", value: "analysis-fixture-secret" },
-        ]);
-        await connectorsApi.updateAgentCustomConnectors(actor, agentId, [
-          definition.id,
         ]);
         const sent = await fixture.sendChatRun(actor, {
           agentId,

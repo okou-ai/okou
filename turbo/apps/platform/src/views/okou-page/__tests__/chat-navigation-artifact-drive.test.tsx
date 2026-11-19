@@ -85,9 +85,7 @@ type DriveConnectionState =
 
 interface OauthRequest {
   readonly account: ConnectorAccountMutationIntent;
-  readonly agentId?: string;
   readonly authMethod: string;
-  readonly authorizeAgent?: true;
   readonly callbackTarget?: "app";
 }
 
@@ -112,7 +110,6 @@ interface DriveMockOptions {
   readonly existingMimeType?: string;
   readonly returnOriginal?: boolean;
   readonly selectedAccountReady?: boolean;
-  readonly agentAuthorized?: boolean;
   readonly waitForSync?: (mode: GoogleDriveUploadMode) => Promise<void>;
   readonly failingMode?: GoogleDriveUploadMode;
   readonly uploadError?: "scope" | "forbidden";
@@ -131,7 +128,6 @@ function installDriveMocks(
   let artifactConnectionState = initialConnectionState;
   let uploadError = options.uploadError;
   let selectedAccountReady = options.selectedAccountReady ?? false;
-  let agentAuthorized = options.agentAuthorized ?? false;
   let artifactSynced = options.existingMimeType !== undefined;
   let mimeType = options.existingMimeType;
   let originalUploaded = Boolean(
@@ -276,16 +272,10 @@ function installDriveMocks(
       connectors: [googleDriveCatalogItem(connectionState)],
     });
   });
-  targetContext.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
-    return respond(200, {
-      enabledConnectorSlugs: agentAuthorized ? ["google-drive"] : [],
-    });
-  });
   targetContext.mocks.api(
     userBuiltinConnectorsContract.update,
     ({ body, respond }) => {
       authorizationUpdates.push(body);
-      agentAuthorized = true;
       return respond(200, { enabledConnectorSlugs: ["google-drive"] });
     },
   );
@@ -425,7 +415,6 @@ function installDriveMocks(
       connectionState = "not-connected";
       artifactConnectionState = "not-connected";
       selectedAccountReady = false;
-      agentAuthorized = false;
       artifactSynced = false;
     },
     oauthRequests,
@@ -708,7 +697,6 @@ test("Recheck Drive authorization after leaving and reopening the chat page", as
   const popup = installAuthorizationPopup();
   const drive = installDriveMocks(context, "connected", {
     selectedAccountReady: true,
-    agentAuthorized: true,
     filename: "deck.pptx",
     contentType:
       "application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -837,7 +825,6 @@ test("Recover missing Drive scope for a native upload only after explicit exact-
   const popup = installAuthorizationPopup();
   const drive = installDriveMocks(context, "connected", {
     selectedAccountReady: true,
-    agentAuthorized: true,
     uploadError: "scope",
     filename: "report.txt",
     contentType: "text/plain",
@@ -916,7 +903,6 @@ test("Keep one scope reconnect action beside an existing native import", async (
     filename: "report.txt",
     contentType: "text/plain",
     selectedAccountReady: true,
-    agentAuthorized: true,
     existingMimeType: GOOGLE_WORKSPACE_MIME_TYPES.document,
   });
   await setupPage({
@@ -985,7 +971,6 @@ test("Dismissed Drive scope recovery never resumes an upload", async () => {
   const popup = installAuthorizationPopup();
   const drive = installDriveMocks(context, "connected", {
     selectedAccountReady: true,
-    agentAuthorized: true,
     uploadError: "scope",
   });
   await setupPage({
@@ -1028,7 +1013,6 @@ test("Do not offer scope recovery or replay for a generic Drive 403 response", a
   const popup = installAuthorizationPopup();
   const drive = installDriveMocks(context, "connected", {
     selectedAccountReady: true,
-    agentAuthorized: true,
     uploadError: "forbidden",
   });
   await setupPage({
@@ -1056,7 +1040,6 @@ test("Sync with the artifact's ready Drive account when the default needs attent
   mockWideScreen();
   const drive = installDriveMocks(context, "reconnect-required", {
     selectedAccountReady: true,
-    agentAuthorized: true,
   });
 
   await setupPage({

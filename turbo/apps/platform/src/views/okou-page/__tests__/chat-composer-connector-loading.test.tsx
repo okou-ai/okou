@@ -46,7 +46,6 @@ function githubOverview(label: string) {
 test("Read connected inventory without fetching the connector directory or old authorization endpoints", async () => {
   installComposerConnectorFixture({
     catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
-    builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
   });
   context.mocks.api(connectorCatalogContract.discovery, ({ respond }) => {
     return respond(503, {
@@ -69,7 +68,6 @@ test("Read connected inventory without fetching the connector directory or old a
 test("Refresh the remote menu and Chat account inventory independently", async () => {
   installComposerConnectorFixture({
     catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
-    builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
   });
   let connectorLabel = "First GitHub";
   let computerLabel = "First computer";
@@ -117,7 +115,6 @@ test("Refresh the remote menu and Chat account inventory independently", async (
 test("Render connected connectors while remote resources are unavailable", async () => {
   installComposerConnectorFixture({
     catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
-    builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
   });
   context.mocks.api(remotesContract.overview, ({ respond }) => {
     return respond(403, {

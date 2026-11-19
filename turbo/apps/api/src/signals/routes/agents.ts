@@ -2,9 +2,8 @@ import { publishContentBundle$ } from "../services/content-bundle.service";
 import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
-import { and, asc, eq, lt, or, sql } from "drizzle-orm";
+import { and, eq, lt, or, sql } from "drizzle-orm";
 import { enum as zodEnum, int, object, string } from "zod";
-import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
   agentsByIdContract,
   agentsMainContract,
@@ -12,18 +11,10 @@ import {
   type AgentVisibility,
 } from "@okouai/api-contracts/contracts/agents";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import { randomAvatarUrl } from "@okouai/core/agent-avatar";
 import { agentIdentityUpdateError } from "@okouai/core/agent-protection";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
-import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
-import {
-  connectorCatalog,
-  connectorCatalogEntries,
-} from "@okouai/db/runtime/connector-catalog";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -42,29 +33,14 @@ import { deleteAgentById$ } from "../services/agent-deletion.service";
 import { publishVncLifecycleInvalidation$ } from "../services/remote-runtime-wakeup.service";
 import {
   agentResponse,
-  agentEnabledConnectorSlugsCondition,
-  agentCustomConnectorGrantJoinCondition,
-  agentCustomConnectorGrantsCondition,
   visibleAgentIdentityCondition,
   agentList,
   visibleJoinedAgentCondition,
   nonDefaultAgentCondition,
   publicAgentCountReadPlan,
 } from "../services/agent-data.service";
-import {
-  createConnectorActionResolver,
-  readConnectorResolver$,
-} from "../services/connector-action-resolver.service";
-import {
-  connectorCatalogCurrentWhere,
-  connectorRuntimeSlugSelectionReadPlan,
-  connectorRuntimeSlugSelectionFromRows,
-} from "../services/connector-catalog-slug-source.service";
-
-import {
-  updateUserBuiltinConnectors$,
-  updateUserCustomConnectors$,
-} from "../services/user-connectors.service";
+import { readConnectorResolver$ } from "../services/connector-action-resolver.service";
+import { updateUserBuiltinConnectors$ } from "../services/user-connectors.service";
 import type { RouteEntry } from "../route-entry";
 
 // This is a soft limit: concurrent requests may both observe an available slot.
@@ -521,120 +497,6 @@ const getAgentInner$ = computed(async (get) => {
   return { status: 200 as const, body: agent };
 });
 
-const getAgentUserConnectorsInner$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const params = get(pathParamsOf(userBuiltinConnectorsContract.get));
-  const agentScope = {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    agentId: params.id,
-  };
-  const [visibleAgent] = await get(db$)
-    .select({ id: agents.id })
-    .from(agents)
-    .where(visibleAgentIdentityCondition(agentScope))
-    .limit(1);
-  const exists = Boolean(visibleAgent);
-  if (!exists) {
-    return agentNotFound(params.id);
-  }
-
-  const connectorScope = {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    agentId: params.id,
-  };
-  const rows = await get(db$)
-    .select({ connectorSlug: userBuiltinConnectors.connectorSlug })
-    .from(userBuiltinConnectors)
-    .where(agentEnabledConnectorSlugsCondition(connectorScope))
-    .orderBy(asc(userBuiltinConnectors.connectorSlug));
-  const enabledConnectorSlugs = rows.map((row) => {
-    return connectorSlugSchema.parse(row.connectorSlug);
-  });
-  const connectorSlugs = enabledConnectorSlugs;
-  const catalogDb = get(db$);
-  const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
-    connectorSlugs,
-  });
-  const snapshot = connectorRuntimeSlugSelectionFromRows(
-    catalogPlan.selection,
-    await catalogDb
-      .select(catalogPlan.columns)
-      .from(connectorCatalog)
-      .leftJoin(connectorCatalogEntries, catalogPlan.join)
-      .where(connectorCatalogCurrentWhere()),
-  );
-  const resolver = createConnectorActionResolver(snapshot);
-  const availableEnabledConnectorSlugs: (typeof enabledConnectorSlugs)[number][] =
-    [];
-  for (const connectorSlug of enabledConnectorSlugs) {
-    const resolved = await resolver.resolveSlug({
-      connectorSlug,
-      requireExecutable: true,
-    });
-    if (resolved.ok) {
-      availableEnabledConnectorSlugs.push(connectorSlug);
-    }
-  }
-  return {
-    status: 200 as const,
-    body: {
-      enabledConnectorSlugs: availableEnabledConnectorSlugs,
-    },
-  };
-});
-
-const getAgentCustomConnectorsInner$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const params = get(pathParamsOf(agentCustomConnectorsContract.get));
-  const agentScope = {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    agentId: params.id,
-  };
-  const [visibleAgent] = await get(db$)
-    .select({ id: agents.id })
-    .from(agents)
-    .where(visibleAgentIdentityCondition(agentScope))
-    .limit(1);
-  const exists = Boolean(visibleAgent);
-  if (!exists) {
-    return agentNotFound(params.id);
-  }
-
-  const connectorScope = {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    agentId: params.id,
-  };
-  const rows = await get(db$)
-    .select({
-      customConnectorId: userCustomConnectors.customConnectorId,
-      permissionNames: userCustomConnectors.permissionNames,
-    })
-    .from(userCustomConnectors)
-    .innerJoin(orgCustomConnectors, agentCustomConnectorGrantJoinCondition())
-    .where(agentCustomConnectorGrantsCondition(connectorScope))
-    .orderBy(asc(userCustomConnectors.customConnectorId));
-  const grants = rows.map((row) => {
-    return {
-      customConnectorId: row.customConnectorId,
-      permissionNames: [...row.permissionNames],
-    };
-  });
-  return {
-    status: 200 as const,
-    body: {
-      grants: [...grants],
-    },
-  };
-});
-
-const updateAgentCustomConnectorsBody$ = bodyResultOf(
-  agentCustomConnectorsContract.update,
-);
-
 const updateAgentBody$ = bodyResultOf(agentsByIdContract.update);
 
 const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -945,75 +807,6 @@ const deleteAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 204 as const, body: undefined };
 });
 
-const updateAgentCustomConnectorsInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(organizationAuthContext$);
-    const params = get(pathParamsOf(agentCustomConnectorsContract.update));
-    const body = await get(updateAgentCustomConnectorsBody$);
-    signal.throwIfAborted();
-    if (!body.ok) {
-      return body.response;
-    }
-
-    const agentScope = {
-      orgId: auth.orgId,
-      userId: auth.userId,
-      agentId: params.id,
-    };
-    const [visibleAgent] = await get(db$)
-      .select({ id: agents.id })
-      .from(agents)
-      .where(visibleAgentIdentityCondition(agentScope))
-      .limit(1);
-    signal.throwIfAborted();
-    const exists = Boolean(visibleAgent);
-    if (!exists) {
-      return agentNotFound(params.id);
-    }
-
-    const operation = body.data.operation ?? "replace";
-
-    const updated = await set(updateUserCustomConnectors$, {
-      orgId: auth.orgId,
-      userId: auth.userId,
-      agentId: params.id,
-      grants: body.data.grants,
-      permissionIntent: "exact",
-      operation,
-    });
-    signal.throwIfAborted();
-    if (updated.status === "agentNotFound") {
-      return agentNotFound(params.id);
-    }
-    if (updated.status === "customConnectorsNotFound") {
-      return {
-        status: 400 as const,
-        body: {
-          error: {
-            message: `Unknown custom connector ids: ${updated.missingIds.join(", ")}`,
-            code: "VALIDATION_ERROR",
-          },
-        },
-      };
-    }
-    if (updated.status === "customConnectorPermissionSelectionRequired") {
-      return validationError(
-        `Permission selection is required for custom connector ids: ${updated.connectorIds.join(", ")}`,
-      );
-    }
-    if (updated.status === "invalidCustomConnectorPermissions") {
-      return validationError(updated.message);
-    }
-
-    return {
-      status: 200 as const,
-      body: {
-        grants: [...updated.grants],
-      },
-    };
-  },
-);
-
 const updateAgentUserConnectorsBody$ = bodyResultOf(
   userBuiltinConnectorsContract.update,
 );
@@ -1138,18 +931,6 @@ export const agentsRoutes: readonly RouteEntry[] = [
   {
     route: agentsByIdContract.delete,
     handler: authRoute(agentDeleteAuth, deleteAgentInner$),
-  },
-  {
-    route: userBuiltinConnectorsContract.get,
-    handler: authRoute(agentReadAuth, getAgentUserConnectorsInner$),
-  },
-  {
-    route: agentCustomConnectorsContract.get,
-    handler: authRoute(agentReadAuth, getAgentCustomConnectorsInner$),
-  },
-  {
-    route: agentCustomConnectorsContract.update,
-    handler: authRoute(agentReadAuth, updateAgentCustomConnectorsInner$),
   },
   {
     route: userBuiltinConnectorsContract.update,

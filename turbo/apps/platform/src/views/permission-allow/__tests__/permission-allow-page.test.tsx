@@ -1,4 +1,7 @@
-import { connectorPermissionsResponse } from "../../../__tests__/connector-permissions.ts";
+import {
+  connectorPermissionsResponse,
+  type ConnectorPermissionFixture,
+} from "../../../__tests__/connector-permissions.ts";
 import {
   agentsByIdContract,
   type AgentResponse,
@@ -11,7 +14,7 @@ import {
   type PublicConnectorCatalogPermissionDetail,
   connectorCatalogContract,
 } from "@okouai/api-contracts/contracts/connector-catalog";
-import type { UserPermissionGrantResponse } from "@okouai/api-contracts/contracts/user-permission-grants";
+
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";
 import {
   connectorPermissionsContract,
@@ -33,7 +36,6 @@ const context = testContext();
 const AGENT_ID = "10000000-0000-4000-a000-000000000001";
 const THREAD_ID = "20000000-0000-4000-a000-000000000001";
 const NOW_MS = 1_893_456_000_000;
-const CREATED_AT = "2029-12-01T00:00:00.000Z";
 
 interface PermissionPageOptions {
   readonly userName: string;
@@ -46,8 +48,8 @@ interface PermissionPageOptions {
   readonly expiresIn?: "1h" | "24h" | "7d" | "always";
   readonly connectorParam?: "connectorSlug" | "ref";
   readonly grants?:
-    | readonly UserPermissionGrantResponse[]
-    | (() => readonly UserPermissionGrantResponse[]);
+    | readonly ConnectorPermissionFixture[]
+    | (() => readonly ConnectorPermissionFixture[]);
   readonly grantLoadError?: boolean;
   readonly connectorAvailable?: boolean;
   readonly permissionDefault?: "allow" | "deny" | "ask";
@@ -138,15 +140,12 @@ function permissionGrant({
   readonly permission?: string;
   readonly action?: "allow" | "deny";
   readonly expiresAt: string | null;
-}): UserPermissionGrantResponse {
+}): ConnectorPermissionFixture {
   return {
-    agentId: AGENT_ID,
     connectorSlug,
     permission,
     action,
     expiresAt,
-    createdAt: CREATED_AT,
-    updatedAt: CREATED_AT,
   };
 }
 
@@ -324,7 +323,7 @@ async function confirmPermissionAfterGrantNotification(
   const callbackStarted = context.mocks.deferred<void>();
   const callbackResponse = context.mocks.deferred<void>();
   const grantsRefreshed = context.mocks.deferred<void>();
-  const grants: UserPermissionGrantResponse[] = [];
+  const grants: ConnectorPermissionFixture[] = [];
   context.mocks.api(connectorPermissionsContract.apply, ({ body, respond }) => {
     const grant = permissionGrant({ expiresAt: null });
     grants.push(grant);
