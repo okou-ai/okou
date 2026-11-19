@@ -198,14 +198,14 @@ async function createOutlookMailFixture() {
       "outlook-mail",
     ]);
     mocks.clerk.session(owner.actor.userId, owner.actor.orgId);
-    const link = () => {
+    const link = (outlookMessageId = messageId) => {
       return client().linkDraft({
         headers: authHeaders(),
         body: {
           threadId: thread.id,
           agentId: agent.agentId,
           provider: "outlook",
-          outlookMessageId: messageId,
+          outlookMessageId,
         },
       });
     };
@@ -214,6 +214,81 @@ async function createOutlookMailFixture() {
 }
 
 describe("Outlook mail in chat", () => {
+  it.each([
+    { code: "ErrorInvalidIdMalformed" },
+    {
+      code: "badRequest",
+      innerError: { code: "ErrorInvalidIdMalformed" },
+    },
+  ])(
+    "returns an actionable 400 for a malformed message ID ($code)",
+    async (error) => {
+      const fixture = await createOutlookMailFixture();
+      await fixture.run(async () => {
+        const invalidId = "malformed-id";
+        server.use(
+          http.get(
+            `https://graph.microsoft.com/v1.0/me/messages/${invalidId}`,
+            () => {
+              return HttpResponse.json(
+                {
+                  error: {
+                    ...error,
+                    message: "Provider detail for sender@example.com",
+                  },
+                },
+                { status: 400 },
+              );
+            },
+          ),
+        );
+
+        const rejected = await accept(fixture.link(invalidId), [400]);
+        expect(rejected.body.error).toStrictEqual({
+          code: "BAD_REQUEST",
+          message:
+            "Invalid Outlook draft ID. Use the message ID returned by Microsoft Graph for the draft.",
+        });
+        await accept(fixture.link(), [200]);
+      });
+    },
+  );
+
+  it.each([
+    [
+      "unrecognized message lookup error",
+      "messages/:messageId",
+      "private-code@example.com",
+    ],
+    [
+      "attachment lookup error",
+      "messages/:messageId/attachments",
+      "ErrorInvalidIdMalformed",
+    ],
+  ])("keeps an %s as a server failure", async (_name, path, code) => {
+    const fixture = await createOutlookMailFixture();
+    await fixture.run(async () => {
+      server.use(
+        http.get(`https://graph.microsoft.com/v1.0/me/${path}`, () => {
+          return HttpResponse.json(
+            {
+              error: {
+                code,
+                message:
+                  "Id is malformed. Provider detail for sender@example.com",
+              },
+            },
+            { status: 400 },
+          );
+        }),
+      );
+
+      await expect(fixture.link()).rejects.toThrow(
+        "Unknown response status 500",
+      );
+    });
+  });
+
   it("links, refreshes and previews the provider draft with its attachments", async () => {
     const fixture = await createOutlookMailFixture();
     await fixture.run(async () => {

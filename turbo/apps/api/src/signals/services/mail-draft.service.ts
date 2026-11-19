@@ -175,7 +175,9 @@ interface MailDraftErrorResult {
 export type MailDraftMutationResult = MailDraftResult | MailDraftErrorResult;
 
 export type MailDraftLinkMutationResult =
-  MailDraftLinkResult | MailDraftErrorResult;
+  | MailDraftLinkResult
+  | MailDraftErrorResult
+  | { readonly kind: "bad_request"; readonly message: string };
 
 type MailDraftAttachmentResult =
   MailDraftAttachmentSuccess | MailDraftErrorResult;
@@ -2276,6 +2278,16 @@ export const linkMailDraft$ = command(
       return reconnectMailError(provider);
     }
     if (mailResult.kind === "error") {
+      if (
+        mailResult.error instanceof OutlookRequestError &&
+        mailResult.error.isInvalidMessageId
+      ) {
+        return {
+          kind: "bad_request",
+          message:
+            "Invalid Outlook draft ID. Use the message ID returned by Microsoft Graph for the draft.",
+        };
+      }
       throw mailResult.error;
     }
     const mail = mailResult.value;

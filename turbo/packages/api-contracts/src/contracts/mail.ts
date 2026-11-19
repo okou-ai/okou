@@ -150,6 +150,7 @@ export const mailContract = c.router({
     body: linkMailDraftInputSchema,
     responses: {
       200: mailLinkResponseSchema,
+      400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
