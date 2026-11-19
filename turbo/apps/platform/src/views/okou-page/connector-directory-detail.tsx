@@ -1,7 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { useLastResolved } from "ccstate-react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
+
 import { ChevronLeft, SlidersHorizontal } from "lucide-react";
 import { Button, buttonVariants, cn } from "@okouai/ui";
 import { Link } from "../router/link.tsx";
@@ -149,10 +147,6 @@ export function ConnectorDetailPanel({
 }) {
   const { t } = useTranslation();
   const authMethodLabel = connector.authMethods[0]?.label;
-  const chatAccounts =
-    useLastResolved(featureSwitches$)?.[
-      FeatureSwitchKey.ConnectorChatAccountAccess
-    ];
 
   return (
     <>
@@ -176,7 +170,7 @@ export function ConnectorDetailPanel({
         </div>
 
         {connector.mcp === undefined &&
-          (!chatAccounts || connector.permissionSummary.hasPermissions) && (
+          connector.permissionSummary.hasPermissions && (
             <>
               <h3 className="mb-2 text-xs font-medium text-muted-foreground">
                 {t(($) => {
@@ -199,7 +193,7 @@ export function ConnectorDetailPanel({
                       variant="outline"
                       size="xs"
                       className="gap-1.5"
-                      disabled={chatAccounts && !hasAccounts}
+                      disabled={!hasAccounts}
                       onClick={onConfigurePermissions}
                     >
                       <SlidersHorizontal size={14} aria-hidden="true" />

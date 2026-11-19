@@ -33,9 +33,7 @@ export interface AdmittedExecutionFacts {
   readonly customWorkflowSelection: PreparedExecutionContext["customWorkflowSelection"];
   readonly featureFlags: Readonly<
     Record<
-      | FeatureSwitchKey.ArtifactThreePointTiming
-      | FeatureSwitchKey.SingleAgent
-      | FeatureSwitchKey.ConnectorChatAccountAccess,
+      FeatureSwitchKey.ArtifactThreePointTiming | FeatureSwitchKey.SingleAgent,
       boolean
     >
   >;

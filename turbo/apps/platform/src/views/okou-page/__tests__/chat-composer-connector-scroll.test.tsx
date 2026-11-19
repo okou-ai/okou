@@ -6,7 +6,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 
@@ -53,7 +53,7 @@ async function setup(count: number) {
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
     locale: "en-US",
-    featureSwitches: { [FeatureSwitchKey.ConnectorChatAccountAccess]: true },
+    featureSwitches: {},
   });
   const trigger = await findFastControl("button", "Connectors");
   click(trigger);

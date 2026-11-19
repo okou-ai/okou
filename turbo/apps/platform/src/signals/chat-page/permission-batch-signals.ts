@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import { userPermissionGrantsContract } from "@okouai/api-contracts/client/user-permission-grants";
+
 import type {
   ApplyUserPermissionGrantsBatchRequest,
   UserPermissionGrantExpiresIn,
@@ -242,12 +242,9 @@ function createBatchSaveCommand(
         expiresIn,
       );
       let acknowledged = grants;
-      const features = await get(featureSwitches$);
+
       signal.throwIfAborted();
-      if (
-        groups.length &&
-        features[FeatureSwitchKey.ConnectorChatAccountAccess]
-      ) {
+      if (groups.length) {
         const saved: PlatformUserPermissionGrant[] = [];
         for (const group of groups) {
           saved.push(
@@ -268,22 +265,6 @@ function createBatchSaveCommand(
           groups,
           grants,
           saved,
-        );
-      } else if (groups.length) {
-        const client = get(apiClient$)(userPermissionGrantsContract);
-        const result = await accept(
-          client.applyBatch({
-            body: { agentId: descriptor.agentId, groups },
-            fetchOptions: { signal },
-          }),
-          [200],
-        );
-        signal.throwIfAborted();
-        acknowledged = mergeBatchAcknowledgements(
-          descriptor.agentId,
-          groups,
-          grants,
-          result.body,
         );
       }
       if (!allBatchPermissionsAllowed(descriptor, acknowledged, metadata)) {

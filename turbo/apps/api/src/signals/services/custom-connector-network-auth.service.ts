@@ -5,15 +5,13 @@ import type { CustomConnectorNetworkIntent } from "@okouai/api-contracts/validat
 import type { ConnectorRuntimeSyncResult } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
-import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { matchFirewallRequestDecision } from "@okouai/connectors/firewall-rule-matcher";
 import { badRequestMessage, resourceUnavailable } from "../../lib/error";
 import type { FirewallAuth } from "../../types/auth";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
-import { userFeatureSwitchContext } from "./feature-switches.service";
+
 import { resolveConnectorRuntimeTargets$ } from "./connector-runtime-sync.service";
 import { resolveCustomConnectorNetworkAdmission$ } from "./custom-connector-network-authority.service";
 import { CustomConnectorNetworkError } from "./custom-connector-network-error";
@@ -22,7 +20,6 @@ interface NetworkRunAuthority {
   readonly agentId: string | null;
   readonly status: string;
   readonly definitionUpdatedAt: Date;
-  readonly grantId: string | null;
 }
 
 interface NetworkRequest {
@@ -103,12 +100,10 @@ function validateNetworkRequestScope(args: {
 
 function activeNetworkRun(
   run: NetworkRunAuthority | undefined,
-  chatAccounts: boolean,
 ): run is NetworkRunAuthority & { readonly agentId: string } {
   return (
     run !== undefined &&
     run.agentId !== null &&
-    (chatAccounts || run.grantId !== null) &&
     (run.status === "running" || run.status === "pending")
   );
 }
@@ -122,7 +117,6 @@ function networkAdmissionRunReadQuery(args: {
       agentId: agentRuns.agentId,
       status: agentRuns.status,
       definitionUpdatedAt: orgCustomConnectors.updatedAt,
-      grantId: userCustomConnectors.id,
     })
     .from(agentRuns)
     .innerJoin(
@@ -131,15 +125,6 @@ function networkAdmissionRunReadQuery(args: {
         eq(orgCustomConnectors.id, args.matched.customConnectorId),
         eq(orgCustomConnectors.orgId, agentRuns.orgId),
         eq(orgCustomConnectors.enabled, true),
-      ),
-    )
-    .leftJoin(
-      userCustomConnectors,
-      and(
-        eq(userCustomConnectors.customConnectorId, orgCustomConnectors.id),
-        eq(userCustomConnectors.orgId, agentRuns.orgId),
-        eq(userCustomConnectors.userId, agentRuns.userId),
-        eq(userCustomConnectors.agentId, agentRuns.agentId),
       ),
     )
     .where(
@@ -154,7 +139,7 @@ function networkAdmissionRunReadQuery(args: {
 
 export const admitCustomConnectorNetworkRequest$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly auth: FirewallAuth;
       readonly request: NetworkRequest;
@@ -167,15 +152,8 @@ export const admitCustomConnectorNetworkRequest$ = command(
       networkAdmissionRunReadQuery(args).as("custom_network_run");
     const [run] = await db.select().from(ownedRun);
     signal.throwIfAborted();
-    const features = await get(
-      userFeatureSwitchContext(args.auth.orgId, args.auth.userId),
-    );
-    signal.throwIfAborted();
-    const chatAccounts = isFeatureEnabled(
-      FeatureSwitchKey.ConnectorChatAccountAccess,
-      features,
-    );
-    if (!activeNetworkRun(run, chatAccounts)) {
+
+    if (!activeNetworkRun(run)) {
       return resourceUnavailable(
         "Run cannot admit custom connector network credentials",
       );
@@ -241,7 +219,7 @@ export const admitCustomConnectorNetworkRequest$ = command(
     const [current] = await db.select().from(ownedRun);
     signal.throwIfAborted();
     if (
-      !activeNetworkRun(current, chatAccounts) ||
+      !activeNetworkRun(current) ||
       current.agentId !== run.agentId ||
       current.definitionUpdatedAt.getTime() !==
         run.definitionUpdatedAt.getTime()

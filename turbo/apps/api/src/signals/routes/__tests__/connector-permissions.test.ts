@@ -62,12 +62,7 @@ function legacy() {
 function session(actor: ReturnType<typeof bdd.user>) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
 }
-async function member(actor = bdd.user(), { legacyMode = false } = {}) {
-  if (legacyMode) {
-    await connectors.updateFeatureSwitches(actor, {
-      connectorChatAccountAccess: false,
-    });
-  }
+function member(actor = bdd.user()) {
   session(actor);
   return actor;
 }
@@ -86,7 +81,7 @@ async function addOpenAi(actor: ReturnType<typeof bdd.user>) {
 
 describe("Member connector permissions", () => {
   it("starts from connector defaults, shares rules across Chats/Agents and preserves deny, expiry and reset", async () => {
-    const actor = await member();
+    const actor = member();
     bdd.acceptAgentStorageWrites();
     const first = await bdd.createAgent(actor);
     const second = await bdd.createAgent(actor);
@@ -249,7 +244,7 @@ describe("Member connector permissions", () => {
   });
 
   it("shares custom rules across accounts and permits editing with all accounts disabled", async () => {
-    const actor = await member();
+    const actor = member();
     bdd.acceptAgentStorageWrites();
     const agent = await bdd.createAgent(actor);
     const thread = await chat.createThread(actor, { agentId: agent.agentId });
@@ -380,14 +375,14 @@ describe("Member connector permissions", () => {
   });
 
   it("isolates member and organization grants for the same connector without requiring a Chat", async () => {
-    const actor = await member();
+    const actor = member();
     await addOpenAi(actor);
     const own = await save({
       target: openai,
       mode: "replace",
       grants: [{ permission: UNKNOWN_PERMISSION_GRANT, action: "deny" }],
     });
-    const otherMember = await member(bdd.user({ orgId: actor.orgId }));
+    const otherMember = member(bdd.user({ orgId: actor.orgId }));
     await addOpenAi(otherMember);
     const otherRules = await save({
       target: openai,
@@ -400,7 +395,7 @@ describe("Member connector permissions", () => {
         },
       ],
     });
-    const otherOrg = await member(bdd.user({ userId: actor.userId }));
+    const otherOrg = member(bdd.user({ userId: actor.userId }));
     await addOpenAi(otherOrg);
     const orgRules = await save({
       target: openai,
@@ -419,7 +414,7 @@ describe("Member connector permissions", () => {
     await expect(read(openai)).resolves.toStrictEqual(otherRules);
     session(otherOrg);
     await expect(read(openai)).resolves.toStrictEqual(orgRules);
-    await member();
+    member();
     await accept(client().get({ headers, query: openai }), [404]);
     await accept(
       client().apply({
@@ -430,13 +425,10 @@ describe("Member connector permissions", () => {
     );
   });
 
-  it("gates configuration and rejects a real Run credential before it can change shared rules", async () => {
-    const actor = await member(bdd.user(), { legacyMode: true });
+  it("rejects a real Run credential before it can change shared rules", async () => {
+    const actor = member();
     await addOpenAi(actor);
-    await accept(client().get({ headers, query: openai }), [404]);
-    await connectors.updateFeatureSwitches(actor, {
-      connectorChatAccountAccess: true,
-    });
+
     bdd.acceptAgentStorageWrites();
     const token = await tokenFor(actor);
     await accept(

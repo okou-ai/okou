@@ -1,43 +1,20 @@
 import { command, computed, state } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/client/user-connectors";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
-import { apiClient$ } from "../../api-client.ts";
 import { agents$ } from "../../agent.ts";
-import { accept } from "../../../lib/accept.ts";
-import { userPermissionGrantsByAgentIfExists } from "../../permission-allow/permission-allow-signals.ts";
-import { firewallPermissionMetadataByConnector } from "../../firewall-permission-metadata.ts";
-import type { PlatformUserPermissionGrant } from "../../connector-domain.ts";
 import { connectorAgentAccess$ } from "./connector-agent-access.ts";
 import { createConnectorPermissionsSignals } from "./connector-permissions.ts";
-import { featureSwitches$ } from "../../external/feature-switch.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { pageSignal$ } from "../../page-signal.ts";
-import { i18n } from "../../../i18n/index.ts";
-import {
-  createAgentPermissionDrawerSave,
-  type PermissionDrawerSession,
-} from "./permission-drawer-session.ts";
-
-export interface ConnectorAgentAccessRow {
-  readonly agent: AgentResponse;
-  readonly authorized: boolean;
-}
-
 interface ConnectorAgentAuthorizationRow {
   readonly agent: AgentResponse;
   readonly enabledConnectorSlugs: readonly ConnectorSlug[];
 }
 
 const managedConnectorAccessSlugState$ = state<ConnectorSlug | null>(null);
-const connectorAccessManagementSearchState$ = state("");
 
 export const managedConnectorAccessSlug$ = computed((get) => {
   return get(managedConnectorAccessSlugState$);
-});
-
-export const connectorAccessManagementSearch$ = computed((get) => {
-  return get(connectorAccessManagementSearchState$);
 });
 
 export const setManagedConnectorAccessSlug$ = command(
@@ -54,12 +31,12 @@ export const setManagedConnectorAccessSlug$ = command(
     signal.throwIfAborted();
     const current = get(managedConnectorAccessSignals$);
     if (current) {
-      set(current.memberPermissions.close$);
+      set(current.close$);
     }
     set(managedConnectorAccessSlugState$, connectorSlug);
     const next = get(managedConnectorAccessSignals$);
-    if (next && enabled) {
-      set(next.memberPermissions.open$, get(pageSignal$));
+    if (next) {
+      set(next.open$, get(pageSignal$));
     }
   },
 );
@@ -71,12 +48,6 @@ export const closeConnectorAccessManagement$ = command(({ get, set }) => {
   }
   set(managedConnectorAccessSlugState$, null);
 });
-
-export const setConnectorAccessManagementSearch$ = command(
-  ({ set }, search: string) => {
-    set(connectorAccessManagementSearchState$, search);
-  },
-);
 
 export const connectorAgentAuthorizations$ = computed(
   async (get): Promise<readonly ConnectorAgentAuthorizationRow[]> => {
@@ -104,121 +75,12 @@ export const connectorAgentAuthorizations$ = computed(
   },
 );
 
-export const connectorAuthorizedAgentsBySlug$ = computed(
-  async (
-    get,
-  ): Promise<ReadonlyMap<ConnectorSlug, readonly AgentResponse[]>> => {
-    const authorizations = await get(connectorAgentAuthorizations$);
-    const agentsBySlug = new Map<ConnectorSlug, AgentResponse[]>();
-    for (const row of authorizations) {
-      for (const connectorSlug of row.enabledConnectorSlugs) {
-        const agents = agentsBySlug.get(connectorSlug) ?? [];
-        agents.push(row.agent);
-        agentsBySlug.set(connectorSlug, agents);
-      }
-    }
-    return agentsBySlug;
-  },
-);
-
-function createManagedConnectorAccessSignals(connectorSlug: ConnectorSlug) {
-  const searchState$ = state("");
-  const permissionAgentIdState$ = state<string | null>(null);
-  const search$ = computed((get) => {
-    return get(searchState$);
-  });
-  const permissionAgentId$ = computed((get) => {
-    return get(permissionAgentIdState$);
-  });
-  const rows$ = computed(
-    async (get): Promise<readonly ConnectorAgentAccessRow[]> => {
-      const authorizations = await get(connectorAgentAuthorizations$);
-      return authorizations.map(({ agent, enabledConnectorSlugs }) => {
-        return {
-          agent,
-          authorized: enabledConnectorSlugs.includes(connectorSlug),
-        };
-      });
-    },
-  );
-  const metadata$ = computed((get) => {
-    return get(firewallPermissionMetadataByConnector({ connectorSlug }));
-  });
-  const permissionGrants$ = computed(
-    async (get): Promise<readonly PlatformUserPermissionGrant[] | null> => {
-      const agentId = get(permissionAgentId$);
-      return agentId
-        ? await get(userPermissionGrantsByAgentIfExists({ agentId }))
-        : null;
-    },
-  );
-  const setSearch$ = command(({ set }, search: string) => {
-    set(searchState$, search);
-  });
-  const setPermissionAgentId$ = command(({ set }, agentId: string | null) => {
-    set(permissionAgentIdState$, agentId);
-  });
-  // The legacy dialog edits one listed agent's grants at a time.
-  const permissionDrawer: PermissionDrawerSession = {
-    grants$: permissionGrants$,
-    metadata$,
-    save$: createAgentPermissionDrawerSave(permissionAgentId$, () => {
-      return i18n.t(($) => {
-        return $.connectors.access.permissionsUpdated;
-      });
-    }),
-    close$: command(({ set }) => {
-      set(permissionAgentIdState$, null);
-    }),
-  };
-  const setAuthorization$ = command(
-    async (
-      { get },
-      params: { readonly agentId: string; readonly authorized: boolean },
-      signal: AbortSignal,
-    ): Promise<void> => {
-      const client = get(apiClient$)(userBuiltinConnectorsContract);
-      await accept(
-        client.update({
-          params: { id: params.agentId },
-          body: {
-            enabledConnectorSlugs: [connectorSlug],
-            operation: params.authorized ? "add" : "remove",
-          },
-          fetchOptions: { signal },
-        }),
-        [200],
-      );
-      signal.throwIfAborted();
-    },
-  );
-  return {
-    memberPermissions: createConnectorPermissionsSignals(
-      {
-        target: { kind: "builtin", connectorSlug },
-        label: connectorSlug,
-      },
-      closeConnectorAccessManagement$,
-    ),
-    rows$,
-    metadata$,
-    permissionGrants$,
-    permissionDrawer,
-    search$,
-    permissionAgentId$,
-    setSearch$,
-    setPermissionAgentId$,
-    setAuthorization$,
-  };
-}
-
-export type ManagedConnectorAccessSignals = ReturnType<
-  typeof createManagedConnectorAccessSignals
->;
-
 export const managedConnectorAccessSignals$ = computed((get) => {
   const connectorSlug = get(managedConnectorAccessSlug$);
   return connectorSlug
-    ? createManagedConnectorAccessSignals(connectorSlug)
+    ? createConnectorPermissionsSignals(
+        { target: { kind: "builtin", connectorSlug }, label: connectorSlug },
+        closeConnectorAccessManagement$,
+      )
     : null;
 });

@@ -600,10 +600,7 @@ export function createComposerSignals(
     createComposerConnectorSignals(options.agentId, options.threadId);
   const draftSignals = composerDraftSignals(options.draft, fileInput);
   const annotation = createComposerAttachmentAnnotation(draft, draftSignals);
-  const connectorCompletion = createComposerConnectorCompletion(
-    connector,
-    options.agentId,
-  );
+  const connectorCompletion = createComposerConnectorCompletion(connector);
   return {
     agentId: options.agentId,
     threadId: options.threadId,

@@ -730,14 +730,11 @@ async function attemptCustomMcpConnection(
 test.each([false, true])(
   "Connect or reconnect a custom MCP default before resuming (%s)",
   async (hasSavedAccount) => {
-    const { card, sends, authorizationUpdates } =
-      await attemptCustomMcpConnection(hasSavedAccount, true);
-    await waitFor(() => {
-      expect(getButton("Authorized", card)).toBeDisabled();
-    });
-    expect(authorizationUpdates).toStrictEqual([
-      [{ customConnectorId: CUSTOM_CONNECTOR_ID, permissionNames: [] }],
-    ]);
+    const { sends, authorizationUpdates } = await attemptCustomMcpConnection(
+      hasSavedAccount,
+      true,
+    );
+    expect(authorizationUpdates).toStrictEqual([]);
     expect(screen.queryByText("Permissions")).not.toBeInTheDocument();
     await waitFor(() => {
       expect(sentPrompts(sends)).toStrictEqual(["Resume workspace search"]);
@@ -994,51 +991,6 @@ test("Enable a single no-auth connector without an unnecessary dialog", async ()
   await waitFor(() => {
     expect(sentPrompts(sends)).toStrictEqual(["Resume with public data"]);
   });
-});
-
-test("Require an explicit permission selection for a custom connector", async () => {
-  const sends: CapturedChatSend[] = [];
-  let connected = false;
-  const connector = () => {
-    return customConnector({
-      slug: "_permissioned-search",
-      displayName: "Permissioned Search",
-      permissionBundleRef: "builtin:permissioned-search@1",
-      kind: "http",
-      account: connected ? {} : undefined,
-    });
-  };
-  installCustomConnectorApi({ connector });
-  context.mocks.api(customConnectorValuesContract.set, ({ respond }) => {
-    connected = true;
-    return respond(200, customConnectorCompletionFixture(connector()));
-  });
-  installActionConversation({
-    lines: [
-      connectorActionUrl({
-        slug: "_permissioned-search",
-        callbackPrompt: "Resume permissioned search",
-      }),
-    ],
-    sends,
-  });
-
-  await setupPage({ context, host: "app.okou.ai", path: RUN_PATH });
-
-  await readyChat();
-  const card = await screen.findByTestId("connector-action-card");
-  click(getButton("Connect", card));
-  await fill(await screen.findByLabelText("API secret"), "permission-secret");
-  click(getButton("Save"));
-  const authorize = await waitFor(() => {
-    return getButton("Authorize", card);
-  });
-  click(authorize);
-
-  await waitFor(() => {
-    expect(getButton("Authorize", card)).toBeEnabled();
-  });
-  expect(sends).toHaveLength(0);
 });
 
 test("Preserve an existing custom connector permission during reconnection", async () => {

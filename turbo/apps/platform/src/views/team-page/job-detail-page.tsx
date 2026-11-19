@@ -1,6 +1,3 @@
-import type { ConnectedConnectors } from "@okouai/api-contracts/contracts/connected-connectors";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import {
@@ -12,22 +9,10 @@ import {
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import type { ReactNode } from "react";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import {
-  FileText,
-  UserCircle,
-  Shield,
-  Users,
-  Search,
-  X,
-  MessageCircle,
-  Wand,
-} from "lucide-react";
-import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import { FileText, UserCircle, Users, MessageCircle, Wand } from "lucide-react";
 import {
   surfaceVariants,
-  Button,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -44,7 +29,6 @@ import {
   SelectTrigger,
   SelectValue,
   buttonVariants,
-  LoadErrorRow,
 } from "@okouai/ui";
 import { InstructionsTab } from "../okou-page/instructions-tab.tsx";
 import { SettingsTab } from "../okou-page/settings-tab.tsx";
@@ -61,13 +45,13 @@ import {
   reloadLatestAgentInstructions$,
 } from "../../signals/okou-page/job-detail/instructions";
 import { updateAgentSettings$ } from "../../signals/okou-page/job-detail/settings";
-import { agentAuthorizedConnectors$ } from "../../signals/okou-page/job-detail/connectors";
+
 import {
   agentActiveTab$,
   setAgentActiveTab$,
 } from "../../signals/okou-page/job-detail/agent-name";
 import { Link } from "../router/link.tsx";
-import { detach, onDomEventFn, Reason } from "../../signals/utils.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 import { AgentAvatarImg } from "../okou-page/sidebar-shared.tsx";
 import { openAvatarMaker$ } from "../../signals/okou-page/settings/avatar-maker.ts";
 import {
@@ -78,29 +62,10 @@ import {
 import { isOrgAdmin$ } from "../../signals/org.ts";
 import { user$ } from "../../signals/auth.ts";
 import { NoPermissionIllustration } from "../okou-page/components/no-permission-illustration.tsx";
-import {
-  ConnectorCard,
-  type PermissionConnectorCardItem,
-} from "../okou-page/components/settings/connector-card.tsx";
-import { PermissionsDrawer } from "../okou-page/components/settings/permissions-dialog.tsx";
-import { noConnectorImg } from "../okou-page/platform-assets.ts";
-import { JobCustomConnectorsSection } from "./job-custom-connectors-section.tsx";
-import { currentAgentUserPermissionGrants$ } from "../../signals/permission-allow/permission-allow-signals.ts";
-import { matchesConnectorSearch } from "../../signals/okou-page/settings/connectors.ts";
-import { userConnectedConnectors$ } from "../../signals/okou-page/connector-overview.ts";
+
 import { currentAgentVisibleWorkflows$ } from "../../signals/workflows-page/workflows-signals.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import {
-  permConnectorSlug$,
-  agentPermissionDrawer,
-  setPermConnectorSlug$,
-  permSearch$,
-  setPermSearch$,
-  focusPermSearchRef$,
-  permSearchActive$,
-  setPermSearchActive$,
-  toggleAgentPermissionConnector$,
-} from "../../signals/okou-page/job-detail-page.ts";
+
 import {
   DetailPageBreadcrumbBar,
   DetailPageHeader,
@@ -232,56 +197,27 @@ function DetailError({ error, agentId }: { error: string; agentId: string }) {
   );
 }
 
-function resolveVisibleTab(
-  rawTab: string,
-  hideProfileAndInstructions: boolean,
-  showAuthorization: boolean,
-): string | null {
-  if (hideProfileAndInstructions) {
-    return showAuthorization ? "authorization" : null;
-  }
-  return rawTab === "authorization" && !showAuthorization ? "profile" : rawTab;
-}
-
 function AgentTabNav({
   activeTab,
   onTabChange,
-  showProfileAndInstructions,
-  showAuthorization,
 }: {
   activeTab: string;
   onTabChange: (tab: string) => void;
-  showProfileAndInstructions: boolean;
-  showAuthorization: boolean;
 }) {
   const { t } = useTranslation("agents");
   const tabItems = [
-    ...(showAuthorization
-      ? [
-          {
-            value: "authorization",
-            label: t(($) => {
-              return $.detail.tabs.authorization;
-            }),
-          },
-        ]
-      : []),
-    ...(showProfileAndInstructions
-      ? [
-          {
-            value: "profile",
-            label: t(($) => {
-              return $.detail.tabs.profile;
-            }),
-          },
-          {
-            value: "instructions",
-            label: t(($) => {
-              return $.detail.tabs.instructions;
-            }),
-          },
-        ]
-      : []),
+    {
+      value: "profile",
+      label: t(($) => {
+        return $.detail.tabs.profile;
+      }),
+    },
+    {
+      value: "instructions",
+      label: t(($) => {
+        return $.detail.tabs.instructions;
+      }),
+    },
   ];
   return (
     <Tabs
@@ -329,30 +265,18 @@ function AgentTabNav({
       </div>
 
       <TabsList className="hidden sm:inline-flex">
-        {showAuthorization && (
-          <TabsTrigger value="authorization">
-            <Shield size={14} />
-            {t(($) => {
-              return $.detail.tabs.authorization;
-            })}
-          </TabsTrigger>
-        )}
-        {showProfileAndInstructions && (
-          <TabsTrigger value="profile">
-            <UserCircle size={14} />
-            {t(($) => {
-              return $.detail.tabs.profile;
-            })}
-          </TabsTrigger>
-        )}
-        {showProfileAndInstructions && (
-          <TabsTrigger value="instructions">
-            <FileText size={14} />
-            {t(($) => {
-              return $.detail.tabs.instructions;
-            })}
-          </TabsTrigger>
-        )}
+        <TabsTrigger value="profile">
+          <UserCircle size={14} />
+          {t(($) => {
+            return $.detail.tabs.profile;
+          })}
+        </TabsTrigger>
+        <TabsTrigger value="instructions">
+          <FileText size={14} />
+          {t(($) => {
+            return $.detail.tabs.instructions;
+          })}
+        </TabsTrigger>
       </TabsList>
     </Tabs>
   );
@@ -362,412 +286,6 @@ function resolveSound(sound: string): Tone {
   return (TONE_OPTIONS as readonly string[]).includes(sound)
     ? (sound as Tone)
     : "professional";
-}
-
-function PermissionListSkeleton() {
-  return (
-    <div className="mx-auto max-w-[900px]">
-      <div className={surfaceVariants({ className: "animate-pulse" })}>
-        {Array.from({ length: 4 }, (_, i) => {
-          return (
-            <div
-              key={i}
-              className={cn(
-                "flex items-center gap-3 px-5 py-4",
-                i < 3 && "border-b border-border/50",
-              )}
-            >
-              <span className="h-5 w-5 shrink-0 rounded bg-muted/50" />
-              <div className="flex-1 space-y-1.5">
-                <span className="block h-4 w-24 rounded bg-muted/50" />
-                <span className="block h-3 w-48 rounded bg-muted/30" />
-              </div>
-              <span className="h-4 w-7 rounded-full bg-muted/50" />
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function PermissionGrantsError() {
-  const { t } = useTranslation("agents");
-  return (
-    <div className="mx-auto max-w-[900px]">
-      <div
-        className={surfaceVariants({
-          className: "px-5 py-4 text-sm text-destructive",
-        })}
-      >
-        {t(($) => {
-          return $.authorization.permissionLoadError;
-        })}
-      </div>
-    </div>
-  );
-}
-
-function ConnectorOverviewError() {
-  const { t } = useTranslation();
-  return (
-    <LoadErrorRow
-      message={t(($) => {
-        return $.connectors.accounts.accountsUnavailable;
-      })}
-    />
-  );
-}
-
-function NoConnectedConnectors() {
-  const { t } = useTranslation("agents");
-  return (
-    <>
-      <div
-        className={surfaceVariants({
-          className: "py-8 flex flex-col items-center gap-3",
-        })}
-      >
-        <img
-          src={noConnectorImg}
-          alt={t(($) => {
-            return $.authorization.noConnectorsAlt;
-          })}
-          className="h-20 w-30 object-contain"
-        />
-        <p className="text-sm text-muted-foreground text-center">
-          {t(($) => {
-            return $.authorization.noConnectorsBeforeLink;
-          })}{" "}
-          <Link
-            pathname="/connectors"
-            className="font-medium text-foreground hover:underline"
-          >
-            {t(($) => {
-              return $.authorization.connectorsLink;
-            })}
-          </Link>{" "}
-          {t(($) => {
-            return $.authorization.noConnectorsAfterLink;
-          })}
-        </p>
-      </div>
-      <JobCustomConnectorsSection />
-    </>
-  );
-}
-
-interface ConnectedPermissionConnector extends PermissionConnectorCardItem {
-  readonly slug: ConnectorSlug;
-  readonly hasPermissions: boolean;
-}
-
-function ConnectedPermissionConnectorRow({
-  connector,
-  enabled,
-  canManagePermissions,
-  onManage,
-  isLast,
-}: {
-  connector: ConnectedPermissionConnector;
-  enabled: boolean;
-  canManagePermissions: boolean;
-  onManage: (connectorSlug: ConnectorSlug) => void;
-  isLast: boolean;
-}) {
-  const { t } = useTranslation("agents");
-  const pageSignal = useGet(pageSignal$);
-  const [toggleLoadable, toggleConnector] = useLoadableSet(
-    toggleAgentPermissionConnector$,
-  );
-  const error = loadableErrorMessage(
-    toggleLoadable,
-    t(($) => {
-      return $.errors.unknown;
-    }),
-  );
-  return (
-    <>
-      <ConnectorCard
-        variant="permission"
-        connector={connector}
-        enabled={enabled}
-        disabled={toggleLoadable.state === "loading"}
-        onToggle={onDomEventFn(async (checked) => {
-          await toggleConnector(connector.slug, checked, pageSignal);
-        })}
-        loading={toggleLoadable.state === "loading"}
-        showManage={canManagePermissions && connector.hasPermissions}
-        onManage={() => {
-          return onManage(connector.slug);
-        }}
-        isLast={isLast}
-      />
-      {error && (
-        <p role="alert" className="px-5 pb-3 text-sm text-destructive">
-          {error}
-        </p>
-      )}
-    </>
-  );
-}
-
-function ConnectedConnectorPermissions({
-  status,
-  filteredConnectors,
-  authorizedSet,
-  search,
-  setSearch,
-  searchActive,
-  setSearchActive,
-  canManagePermissions,
-  onManage,
-}: {
-  status: ReactNode;
-  filteredConnectors: readonly ConnectedPermissionConnector[];
-  authorizedSet: ReadonlySet<string>;
-  search: string;
-  setSearch: (value: string) => void;
-  searchActive: boolean;
-  setSearchActive: (active: boolean) => void;
-  canManagePermissions: boolean;
-  onManage: (connectorSlug: ConnectorSlug) => void;
-}) {
-  const { t } = useTranslation("agents");
-  const focusSearch = useSet(focusPermSearchRef$);
-  return (
-    <>
-      <div className={surfaceVariants()}>
-        <div className="relative border-b border-border/50">
-          <div
-            className={cn(
-              "px-5 pt-4 pb-3 pr-12 text-sm text-muted-foreground transition-opacity duration-150",
-              searchActive && "opacity-0 select-none",
-            )}
-            aria-hidden={searchActive}
-          >
-            {t(($) => {
-              return $.authorization.description;
-            })}
-          </div>
-          {searchActive && (
-            <div className="absolute inset-0 flex items-center gap-2 px-5">
-              <Search size={14} className="shrink-0 text-muted-foreground" />
-              <input
-                ref={focusSearch}
-                type="text"
-                placeholder={t(($) => {
-                  return $.authorization.searchPlaceholder;
-                })}
-                value={search}
-                onChange={(e) => {
-                  return setSearch(e.target.value);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    setSearch("");
-                    setSearchActive(false);
-                  }
-                }}
-                className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
-              />
-              <Button
-                showTooltip
-                type="button"
-                onClick={() => {
-                  setSearch("");
-                  setSearchActive(false);
-                }}
-                variant="quiet"
-                size="icon-xs"
-                className="shrink-0"
-                aria-label={t(($) => {
-                  return $.authorization.closeSearch;
-                })}
-              >
-                <X size={14} />
-              </Button>
-            </div>
-          )}
-          {!searchActive && (
-            <Button
-              showTooltip
-              type="button"
-              onClick={() => {
-                return setSearchActive(true);
-              }}
-              variant="quiet"
-              size="icon-xs"
-              className="absolute right-3 top-1/2 -translate-y-1/2"
-              aria-label={t(($) => {
-                return $.authorization.findConnectors;
-              })}
-            >
-              <Search size={14} />
-            </Button>
-          )}
-        </div>
-        {status ??
-          (filteredConnectors.length > 0 ? (
-            filteredConnectors.map((c, i) => {
-              return (
-                <ConnectedPermissionConnectorRow
-                  key={c.slug}
-                  connector={c}
-                  enabled={authorizedSet.has(c.slug)}
-                  canManagePermissions={canManagePermissions}
-                  onManage={onManage}
-                  isLast={i === filteredConnectors.length - 1}
-                />
-              );
-            })
-          ) : (
-            <p className="px-5 py-4 text-sm text-muted-foreground">
-              {t(
-                ($) => {
-                  return $.authorization.noResults;
-                },
-                { search },
-              )}
-            </p>
-          ))}
-      </div>
-
-      <JobCustomConnectorsSection />
-    </>
-  );
-}
-
-function AgentPermissionsDrawer({
-  targetId,
-  connectorSlug,
-  connectorLabel,
-  displayName,
-}: {
-  targetId: string;
-  connectorSlug: ConnectorSlug | null;
-  connectorLabel: string;
-  displayName: string;
-}) {
-  if (!connectorSlug) {
-    return null;
-  }
-  return (
-    <PermissionsDrawer
-      agentId={targetId}
-      connectorSlug={connectorSlug}
-      connectorLabel={connectorLabel}
-      displayName={displayName}
-      session={agentPermissionDrawer}
-    />
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Tab wrappers — resolve signals into shared component props
-// ---------------------------------------------------------------------------
-
-function connectedPermissionConnectors(
-  overview: ConnectedConnectors,
-): readonly ConnectedPermissionConnector[] {
-  return overview.builtinConnectors.map((connector) => {
-    return {
-      ...connector,
-      externalUsername: null,
-    };
-  });
-}
-
-function JobPermissionsTab({
-  agentId,
-  displayName,
-}: {
-  agentId: string;
-  displayName: string;
-}) {
-  // Use useLastLoadable so the list keeps showing the previous data while the
-  // signal refetches after a toggle/save or a permission-policy reload. This
-  // prevents the entire list from flickering to the skeleton on each change
-  // (issue #9141).
-  const connectorsLoadable = useLastLoadable(agentAuthorizedConnectors$);
-  const authorizedConnectors =
-    connectorsLoadable.state === "hasData" ? connectorsLoadable.data : [];
-  const userGrantsLoadable = useLoadable(currentAgentUserPermissionGrants$);
-  const connectorSlug = useGet(permConnectorSlug$);
-  const setConnectorSlug = useSet(setPermConnectorSlug$);
-  const search = useGet(permSearch$);
-  const setSearch = useSet(setPermSearch$);
-  const searchActive = useGet(permSearchActive$);
-  const setSearchActive = useSet(setPermSearchActive$);
-
-  const connectorsLoading = connectorsLoadable.state === "loading";
-
-  const overviewLoadable = useLastLoadable(userConnectedConnectors$);
-  const connectedConnectors =
-    overviewLoadable.state === "hasData"
-      ? connectedPermissionConnectors(overviewLoadable.data)
-      : [];
-  const canManagePermissions = true;
-
-  // The drawer only opens from a connected row, so a label outside the
-  // connected list means the connector was just disconnected: the slug names it.
-  const connectorLabel = connectorSlug
-    ? (connectedConnectors.find((connector) => {
-        return connector.slug === connectorSlug;
-      })?.label ?? connectorSlug)
-    : "";
-  const filteredConnectors = connectedConnectors.filter((c) => {
-    return matchesConnectorSearch(search, c);
-  });
-  const authorizedSet = new Set(authorizedConnectors);
-
-  const status =
-    overviewLoadable.state === "hasError" ? (
-      <ConnectorOverviewError />
-    ) : overviewLoadable.state !== "hasData" ||
-      connectorsLoading ||
-      userGrantsLoadable.state === "loading" ? (
-      <PermissionListSkeleton />
-    ) : userGrantsLoadable.state === "hasError" ? (
-      <PermissionGrantsError />
-    ) : null;
-  if (status) {
-    return status;
-  }
-
-  return (
-    <div className="mx-auto w-full max-w-[900px] flex flex-col gap-4">
-      {connectedConnectors.length === 0 ? (
-        overviewLoadable.state === "hasData" &&
-        overviewLoadable.data.customConnectors.length > 0 ? (
-          <JobCustomConnectorsSection />
-        ) : (
-          <NoConnectedConnectors />
-        )
-      ) : (
-        <>
-          <ConnectedConnectorPermissions
-            key={agentId}
-            status={status}
-            filteredConnectors={filteredConnectors}
-            authorizedSet={authorizedSet}
-            search={search}
-            setSearch={setSearch}
-            searchActive={searchActive}
-            setSearchActive={setSearchActive}
-            canManagePermissions={canManagePermissions}
-            onManage={setConnectorSlug}
-          />
-          <AgentPermissionsDrawer
-            targetId={agentId}
-            connectorSlug={connectorSlug}
-            connectorLabel={connectorLabel}
-            displayName={displayName}
-          />
-        </>
-      )}
-    </div>
-  );
 }
 
 function JobInstructionsTab() {
@@ -854,8 +372,6 @@ function AgentHeader({
   avatarUrl,
   activeTab,
   onTabChange,
-  showProfileAndInstructions,
-  showAuthorization,
   isDefaultAgent,
 }: {
   displayName: string;
@@ -864,8 +380,6 @@ function AgentHeader({
   avatarUrl: string | null;
   activeTab: string | null;
   onTabChange: (tab: string) => void;
-  showProfileAndInstructions: boolean;
-  showAuthorization: boolean;
   isDefaultAgent: boolean | undefined;
 }) {
   const { t } = useTranslation("agents");
@@ -882,7 +396,7 @@ function AgentHeader({
               alt={displayName}
               className="h-14 w-14 shrink-0 rounded-full object-cover object-top sm:h-16 sm:w-16"
             />
-            {showProfileAndInstructions && isDefaultAgent === false && (
+            {activeTab !== null && isDefaultAgent === false && (
               <TooltipProvider delay={200}>
                 <Tooltip>
                   <TooltipTrigger
@@ -953,12 +467,7 @@ function AgentHeader({
 
       {activeTab !== null && (
         <div className="mt-4 sm:mt-6 flex items-center gap-2">
-          <AgentTabNav
-            activeTab={activeTab}
-            onTabChange={onTabChange}
-            showProfileAndInstructions={showProfileAndInstructions}
-            showAuthorization={showAuthorization}
-          />
+          <AgentTabNav activeTab={activeTab} onTabChange={onTabChange} />
         </div>
       )}
     </DetailPageHeader>
@@ -1060,9 +569,6 @@ function AgentTabContent({
   canEditVisibility: boolean;
 }) {
   switch (activeTab) {
-    case "authorization": {
-      return <JobPermissionsTab agentId={agentId} displayName={displayName} />;
-    }
     case "profile": {
       return (
         <AgentProfileSettings
@@ -1137,20 +643,13 @@ function useTabVisibility(ownerId: string, visibility: "public" | "private") {
 
   const rawTab = useGet(agentActiveTab$);
   const setActiveTab = useSet(setAgentActiveTab$);
-  const hideProfileAndInstructions = !canEditProfile;
-  const showAuthorization =
-    useLastResolved(featureSwitches$)?.[
-      FeatureSwitchKey.ConnectorChatAccountAccess
-    ] === false;
-  const activeTab = resolveVisibleTab(
-    rawTab,
-    hideProfileAndInstructions,
-    showAuthorization,
-  );
+  const activeTab = canEditProfile
+    ? rawTab === "authorization"
+      ? "profile"
+      : rawTab
+    : null;
 
   return {
-    hideProfileAndInstructions,
-    showAuthorization,
     isOwner,
     activeTab,
     setActiveTab,
@@ -1169,13 +668,10 @@ export function JobDetailPage() {
   const currentAgentId = useGet(currentAgentId$);
   const fields = useAgentFields();
   const errorAgentId = fields.agentId || currentAgentId || "";
-  const {
-    hideProfileAndInstructions,
-    showAuthorization,
-    isOwner,
-    activeTab,
-    setActiveTab,
-  } = useTabVisibility(fields.ownerId, fields.visibility);
+  const { isOwner, activeTab, setActiveTab } = useTabVisibility(
+    fields.ownerId,
+    fields.visibility,
+  );
   const isDefaultAgent = fields.isDefaultAgent;
 
   if (!fields.detail && !error) {
@@ -1196,8 +692,6 @@ export function JobDetailPage() {
         avatarUrl={fields.avatarUrl}
         activeTab={activeTab}
         onTabChange={setActiveTab}
-        showProfileAndInstructions={!hideProfileAndInstructions}
-        showAuthorization={showAuthorization}
         isDefaultAgent={isDefaultAgent}
       />
       <DetailPageMain>

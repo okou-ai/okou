@@ -23,6 +23,34 @@ function client() {
 }
 
 describe("/api/feature-switches", () => {
+  it("advertises Chat connector accounts to supported clients across workspaces", async () => {
+    const clerk = createRouteMocks(context).clerk;
+    const headers = { authorization: "Bearer clerk-session" };
+    const userId = `user_${randomUUID()}`;
+    for (const orgId of [
+      `org_${randomUUID()}`,
+      "org_3ANttyrbWYJk6JKRSTRLEsDLe",
+    ]) {
+      clerk.session(userId, orgId, "org:member");
+      const initial = await accept(client().get({ headers }), [200]);
+      expect(
+        initial.body.effectiveSwitches.connectorChatAccountAccess,
+      ).toBeTruthy();
+
+      const updated = await accept(
+        client().update({
+          headers,
+          body: { switches: { connectorChatAccountAccess: false } },
+        }),
+        [200],
+      );
+      expect(updated.body.switches).toStrictEqual({});
+      expect(
+        updated.body.effectiveSwitches.connectorChatAccountAccess,
+      ).toBeTruthy();
+    }
+  });
+
   it("keeps Projects availability with My Okou for each workspace membership", async () => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };
@@ -338,7 +366,11 @@ describe("/api/feature-switches", () => {
     expect(updated.body.switches).toStrictEqual(expected);
     expect(updated.body.effectiveSwitches).toMatchObject(expected);
     expect(Object.keys(updated.body.effectiveSwitches).sort()).toStrictEqual(
-      [...Object.values(FeatureSwitchKey), "projects"].sort(),
+      [
+        ...Object.values(FeatureSwitchKey),
+        "projects",
+        "connectorChatAccountAccess",
+      ].sort(),
     );
     const current = await accept(client().get({ headers }), [200]);
     expect(current.body.switches).toStrictEqual(expected);

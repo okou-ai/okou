@@ -587,12 +587,7 @@ function createIdentityContext(
           ]);
           return capturedFeatureSwitchContext(scope, member, overrides, agent);
         });
-  const connectorContext = createConnectorContextGroups(
-    userId,
-    orgId,
-    agentId,
-    featureSwitchContext$,
-  );
+  const connectorContext = createConnectorContextGroups(userId, orgId, agentId);
   const memory$ = computed(async (get): Promise<MemberMemoryContext> => {
     const requests = memberMemoryReadPlan(scope);
     const db = get(db$);
@@ -868,13 +863,9 @@ function bootstrapConnectorAccountRows(
 /** Related accounts, definitions, bindings, values and grants share one observation. */
 function createAgentEnvironment(
   identity$: Computed<Promise<AgentConnectorSelectionScope>>,
-  featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
 ) {
   return computed(async (get) => {
-    const [identity, features] = await Promise.all([
-      get(identity$),
-      get(featureSwitches$),
-    ]);
+    const identity = await get(identity$);
     const { userId, orgId } = identity;
     const db = get(db$);
     const variableRows = bootstrapVariableRows(userId, orgId);
@@ -902,14 +893,7 @@ function createAgentEnvironment(
         accountRows: contextJsonRows(accountRows).mapWith(
           bootstrapAccountRowsDecoder,
         ),
-        ...agentSelectionColumns(
-          identity,
-          nowDate(),
-          isFeatureEnabled(
-            FeatureSwitchKey.ConnectorChatAccountAccess,
-            features,
-          ),
-        ),
+        ...agentSelectionColumns(identity, nowDate()),
       })
       .from(variableSnapshot);
     const acquisitionCapture: PgPoolAcquisitionCapture = { acquisitions: [] };
@@ -1066,12 +1050,11 @@ function createConnectorContextGroups(
   userId: string,
   orgId: string,
   agentId: string,
-  featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
 ) {
   const identity$ = computed(() => {
     return Promise.resolve({ userId, orgId, agentId });
   });
-  const sources = createConnectorSources(identity$, featureSwitches$);
+  const sources = createConnectorSources(identity$);
   const runVariables$ = computed(async (get) => {
     const snapshot = await get(sources.environmentSnapshot$);
     return buildAgentRunVariables({ agentId, variables: snapshot.variables });
@@ -1087,12 +1070,8 @@ function createConnectorContextGroups(
 
 function createConnectorSources(
   identity$: Computed<Promise<AgentConnectorSelectionScope>>,
-  featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
 ) {
-  const environmentSnapshot$ = createAgentEnvironment(
-    identity$,
-    featureSwitches$,
-  );
+  const environmentSnapshot$ = createAgentEnvironment(identity$);
   const { connectorSelection$, permissionGrants$ } =
     createAgentSelectionContext(environmentSnapshot$);
   const customConnectorDefinitions$ = computed(async (get) => {

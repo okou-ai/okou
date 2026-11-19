@@ -136,9 +136,7 @@ test("mock bootstrap provisions both personal subscriptions", async (context) =>
       { method: "GET", path: "/api/run-models" },
     ],
   );
-  assert.deepEqual(calls[0].body, {
-    switches: { _realAgentInPreview: false, connectorChatAccountAccess: false },
-  });
+  assert.deepEqual(calls[0].body, { switches: { _realAgentInPreview: false } });
   assert.deepEqual(calls[1].body, {
     type: "claude-code-oauth-token",
     secret: "mock-oauth-token-for-e2e",

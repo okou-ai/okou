@@ -392,7 +392,6 @@ function CustomConnectorSecretDescription({
 
 function CustomConnectorConnectDialogContent({
   connector,
-  agentId,
   origin,
   accountOptions,
   accountMode,
@@ -441,7 +440,6 @@ function CustomConnectorConnectDialogContent({
       submit(
         {
           connector,
-          agentId,
           values,
           accountOptions,
           accountMode,

@@ -1,3 +1,4 @@
+import { connectorPermissionsResponse } from "../../../__tests__/connector-permissions.ts";
 import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
@@ -5,15 +6,12 @@ import {
   chatThreadMetadataContract,
   type ChatEventSendBody,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  userPermissionGrantsContract,
-  type ApplyUserPermissionGrantsBatchRequest,
-  type UserPermissionGrantResponse,
-} from "@okouai/api-contracts/contracts/user-permission-grants";
+import type { UserPermissionGrantResponse } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   connectorPermissionsContract,
   type ConnectorPermissions,
+  type ApplyConnectorPermissions,
 } from "@okouai/api-contracts/contracts/connector-permissions";
 import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -59,8 +57,8 @@ function installResources({
       visibility: "private",
     });
   });
-  context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
-    return respond(200, grants);
+  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
+    return respond(200, connectorPermissionsResponse(query, grants));
   });
   context.mocks.api(
     connectorCatalogContract.permissions,
@@ -70,8 +68,10 @@ function installResources({
           error: { code: "NOT_FOUND", message: "Connector unavailable" },
         });
       }
-      const permission =
-        params.connectorSlug === "slack" ? "chat:write" : "issues:read";
+      const permissions =
+        params.connectorSlug === "slack"
+          ? ["chat:write"]
+          : ["issues:read", "issues:write"];
       return respond(200, {
         permissions: {
           connectorSlug: params.connectorSlug,
@@ -80,10 +80,11 @@ function installResources({
             url: `https://assets.example.test/${params.connectorSlug}.svg`,
             invertInDarkMode: false,
           },
-          permissionCount: 1,
-          permissions: [
-            { name: permission, description: `Description for ${permission}` },
-          ],
+          permissionCount: permissions.length,
+          permissions: permissions.map((permission) => ({
+            name: permission,
+            description: `Description for ${permission}`,
+          })),
           categories: null,
           defaultPolicy: { permissionDefault, unknownPolicy: "ask" },
         },
@@ -111,12 +112,10 @@ function installResources({
 function openPage({
   callback = false,
   malformed = false,
-  chatAccounts = false,
   singleAgent = false,
 }: {
   callback?: boolean;
   malformed?: boolean;
-  chatAccounts?: boolean;
   singleAgent?: boolean;
 } = {}) {
   const params = new URLSearchParams({
@@ -133,7 +132,6 @@ function openPage({
     path: `/agents/${AGENT_ID}/permissions/batch?${params}`,
     featureSwitches: {
       [FeatureSwitchKey.BatchConnectorPermissions]: true,
-      [FeatureSwitchKey.ConnectorChatAccountAccess]: chatAccounts,
       [FeatureSwitchKey.SingleAgent]: singleAgent,
     },
   });
@@ -143,102 +141,58 @@ test.each([
   {
     outcome: "success",
     message: "The chat has continued.",
-    chatAccounts: false,
     singleAgent: false,
   },
   {
     outcome: "failure",
     message: /^Permissions allowed, but could not continue\./u,
-    chatAccounts: false,
     singleAgent: false,
   },
-  {
-    outcome: "success",
-    message: "The chat has continued.",
-    chatAccounts: true,
-    singleAgent: false,
-  },
-  {
-    outcome: "success",
-    message: "The chat has continued.",
-    chatAccounts: false,
-    singleAgent: true,
-  },
-  {
-    outcome: "success",
-    message: "The chat has continued.",
-    chatAccounts: true,
-    singleAgent: true,
-  },
+  { outcome: "success", message: "The chat has continued.", singleAgent: true },
 ] as const)(
-  "Grouped permissions remain allowed after continuation $outcome (My Okou=$singleAgent, chat accounts=$chatAccounts)",
-  async ({ outcome, message, chatAccounts, singleAgent }) => {
-    const grants = installResources();
+  "Grouped permissions remain allowed after continuation $outcome (My Okou=$singleAgent)",
+  async ({ outcome, message, singleAgent }) => {
+    installResources();
     const applied: string[] = [];
     const durations: string[] = [];
-    if (chatAccounts) {
-      const shared = new Map<string, ConnectorPermissions["grants"]>();
-      context.mocks.api(
-        connectorPermissionsContract.get,
-        ({ query, respond }) => {
-          return respond(200, {
-            target: query,
-            grants:
-              shared.get(
-                query.kind === "builtin"
-                  ? query.connectorSlug
-                  : query.customConnectorId,
-              ) ?? [],
-          });
-        },
-      );
-      context.mocks.api(
-        connectorPermissionsContract.apply,
-        ({ body, respond }) => {
-          if (body.target.kind !== "builtin") {
-            throw new Error("Expected builtin target");
-          }
-          const connectorSlug = body.target.connectorSlug;
-          for (const grant of body.grants) {
-            durations.push(String(grant.expiresIn));
-            applied.push(`${connectorSlug}:${grant.permission}`);
-          }
-          const saved = body.grants.map((grant) => {
-            return {
-              permission: grant.permission,
-              action: grant.action,
-              expiresAt: "2099-01-01T00:00:00.000Z",
-            };
-          });
-          shared.set(connectorSlug, saved);
-          return respond(200, {
-            target: body.target,
-            grants: saved,
-          });
-        },
-      );
-    }
+    const shared = new Map<string, ConnectorPermissions["grants"]>();
     context.mocks.api(
-      userPermissionGrantsContract.applyBatch,
+      connectorPermissionsContract.get,
+      ({ query, respond }) => {
+        return respond(200, {
+          target: query,
+          grants:
+            shared.get(
+              query.kind === "builtin"
+                ? query.connectorSlug
+                : query.customConnectorId,
+            ) ?? [],
+        });
+      },
+    );
+    context.mocks.api(
+      connectorPermissionsContract.apply,
       ({ body, respond }) => {
-        for (const group of body.groups) {
-          for (const grant of group.grants) {
-            expect(grant.expiresIn).toBe("1h");
-            durations.push(String(grant.expiresIn));
-            applied.push(`${group.connectorSlug}:${grant.permission}`);
-            grants.push({
-              agentId: AGENT_ID,
-              connectorSlug: group.connectorSlug,
-              permission: grant.permission,
-              action: "allow",
-              expiresAt: "2099-01-01T00:00:00.000Z",
-              createdAt: "2030-01-01T00:00:00.000Z",
-              updatedAt: "2030-01-01T00:00:00.000Z",
-            });
-          }
+        if (body.target.kind !== "builtin") {
+          throw new Error("Expected builtin target");
         }
-        context.mocks.ably.trigger("connectorPermissionUpdated");
-        return respond(200, grants);
+        const connectorSlug = body.target.connectorSlug;
+        for (const grant of body.grants) {
+          durations.push(String(grant.expiresIn));
+          applied.push(`${connectorSlug}:${grant.permission}`);
+        }
+        const saved = body.grants.map((grant) => {
+          return {
+            permission: grant.permission,
+            action: grant.action,
+            expiresAt: "2099-01-01T00:00:00.000Z",
+          };
+        });
+        shared.set(connectorSlug, saved);
+        return respond(200, {
+          target: body.target,
+          grants: saved,
+        });
       },
     );
     context.mocks.api(chatEventsContract.send, ({ respond }) => {
@@ -251,15 +205,11 @@ test.each([
             },
           });
     });
-    await openPage({ callback: true, chatAccounts, singleAgent });
+    await openPage({ callback: true, singleAgent });
     await screen.findByText("Description for chat:write");
     const scope = singleAgent
-      ? chatAccounts
-        ? "Applies to this connector across your chats in this workspace. Your teammates have their own permissions."
-        : "Applies to your use of Okou in this workspace, not only the current task."
-      : chatAccounts
-        ? "Applies to this connector across all your chats and agents."
-        : "Applies to this agent, not only the current task.";
+      ? "Applies to this connector across your chats in this workspace. Your teammates have their own permissions."
+      : "Applies to this connector across all your chats and agents.";
     expect(screen.getByText(scope)).toBeInTheDocument();
     expect(screen.getByText("GitHub")).toBeInTheDocument();
     expect(screen.getByText("Description for issues:read")).toBeInTheDocument();
@@ -287,7 +237,7 @@ test.each(["dismissed", "continued"] as const)(
     const nextAgentId = "10000000-0000-4000-a000-000000000002";
     const nextThreadId = "20000000-0000-4000-a000-000000000002";
     const grants = installResources();
-    const applied: ApplyUserPermissionGrantsBatchRequest[] = [];
+    const applied: ApplyConnectorPermissions[] = [];
     const sent: ChatEventSendBody[] = [];
     context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
       return respond(200, {
@@ -302,36 +252,26 @@ test.each(["dismissed", "continued"] as const)(
       });
     });
     context.mocks.api(
-      userPermissionGrantsContract.list,
-      ({ query, respond }) => {
-        return respond(
-          200,
-          grants.filter((grant) => {
-            return grant.agentId === query.agentId;
-          }),
-        );
-      },
-    );
-    context.mocks.api(
-      userPermissionGrantsContract.applyBatch,
+      connectorPermissionsContract.apply,
       ({ body, respond }) => {
         applied.push(body);
-        const saved = body.groups.flatMap((group) => {
-          return group.grants.map((grant) => {
-            return {
-              agentId: body.agentId,
-              connectorSlug: group.connectorSlug,
-              permission: grant.permission,
-              action: "allow" as const,
-              expiresAt: "2099-01-01T00:00:00.000Z",
-              createdAt: "2030-01-01T00:00:00.000Z",
-              updatedAt: "2030-01-01T00:00:00.000Z",
-            };
-          });
-        });
-        grants.push(...saved);
+        if (body.target.kind !== "builtin") {
+          throw new Error("Expected a builtin connector");
+        }
+        const { connectorSlug } = body.target;
+        grants.push(
+          ...body.grants.map((grant) => ({
+            agentId: AGENT_ID,
+            connectorSlug,
+            permission: grant.permission,
+            action: "allow" as const,
+            expiresAt: "2099-01-01T00:00:00.000Z",
+            createdAt: "2030-01-01T00:00:00.000Z",
+            updatedAt: "2030-01-01T00:00:00.000Z",
+          })),
+        );
         context.mocks.ably.trigger("connectorPermissionUpdated");
-        return respond(200, saved);
+        return respond(200, connectorPermissionsResponse(body.target, grants));
       },
     );
     context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
@@ -369,7 +309,7 @@ test.each(["dismissed", "continued"] as const)(
     }
 
     const nextParams = new URLSearchParams({
-      items: JSON.stringify([items[1]]),
+      items: JSON.stringify([{ ...items[1], permission: "issues:write" }]),
       action: "allow",
       threadId: nextThreadId,
       callbackPrompt: "Continue the next agent's review",
@@ -387,21 +327,19 @@ test.each(["dismissed", "continued"] as const)(
     await waitFor(() => {
       expect(button("Allow 1 permission")).toBeEnabled();
     });
-    expect(screen.getByText("Description for issues:read")).toBeInTheDocument();
+    expect(
+      screen.getByText("Description for issues:write"),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText("Permission duration")).toHaveTextContent(
       "1 hour",
     );
     click(button("Allow 1 permission"));
     await screen.findByText("The chat has continued.");
     expect(applied.at(-1)).toStrictEqual({
-      agentId: nextAgentId,
-      groups: [
-        {
-          connectorSlug: "github",
-          grants: [
-            { permission: "issues:read", action: "allow", expiresIn: "1h" },
-          ],
-        },
+      target: { kind: "builtin", connectorSlug: "github" },
+      mode: "patch",
+      grants: [
+        { permission: "issues:write", action: "allow", expiresIn: "1h" },
       ],
     });
     expect(sent.at(-1)).toMatchObject({
@@ -438,8 +376,8 @@ test("A malformed batch URL renders an unavailable page", async () => {
 
 test("A successful HTTP response without all grant acknowledgments cannot continue", async () => {
   installResources();
-  context.mocks.api(userPermissionGrantsContract.applyBatch, ({ respond }) => {
-    return respond(200, []);
+  context.mocks.api(connectorPermissionsContract.apply, ({ body, respond }) => {
+    return respond(200, connectorPermissionsResponse(body.target, []));
   });
   await openPage({ callback: true });
   await screen.findByText("Description for chat:write");

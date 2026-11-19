@@ -246,10 +246,10 @@ function BatchHeader({
 
 function BatchPermissionDetails({ batch }: BatchViewProps) {
   const { t } = useTranslation();
-  const features = useLastResolved(featureSwitches$);
-  const singleAgent = features?.[FeatureSwitchKey.SingleAgent] ?? false;
-  const sharedPermissions =
-    features?.[FeatureSwitchKey.ConnectorChatAccountAccess] ?? false;
+  const features = useLoadable(featureSwitch$);
+  const singleAgent =
+    features.state === "hasData" && features.data[FeatureSwitchKey.SingleAgent];
+  const sharedPermissions = features.state === "hasData";
   const {
     complete,
     loadFailed,

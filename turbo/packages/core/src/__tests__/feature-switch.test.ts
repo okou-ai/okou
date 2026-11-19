@@ -22,10 +22,8 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
-  it.each([
-    FeatureSwitchKey.SingleAgent,
-    FeatureSwitchKey.ConnectorChatAccountAccess,
-  ])("defaults %s on across workspaces and honors overrides", (key) => {
+  it("defaults SingleAgent on across workspaces and honors overrides", () => {
+    const key = FeatureSwitchKey.SingleAgent;
     for (const orgId of ["external-org", "org_3ANttyrbWYJk6JKRSTRLEsbsDLe"]) {
       const identity = { userId: "existing-account", orgId };
       expect(isFeatureEnabled(key, identity)).toBe(true);
@@ -444,9 +442,6 @@ describe("getFeatureSwitchMetadata", () => {
     expect(metadata[FeatureSwitchKey.PresentationConvert].rolloutStage).toBe(
       "alpha",
     );
-    expect(
-      metadata[FeatureSwitchKey.ConnectorChatAccountAccess].rolloutStage,
-    ).toBe("released");
     expect(
       metadata[FeatureSwitchKey.PresentationOutputFormat].rolloutStage,
     ).toBe("beta");

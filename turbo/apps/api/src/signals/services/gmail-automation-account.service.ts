@@ -91,7 +91,6 @@ export function gmailSelectedAccountCondition(args: {
   readonly userId: string;
   readonly workflowId: string;
   readonly connectorId: string;
-  readonly chatAccountAccess?: boolean;
 }) {
   return sql`${args.connectorId}::uuid = (
     ${workflowAutomationConnectorSelectionSql({ ...args, workflowId: sql`${args.workflowId}`, connectorSlug: "gmail" })}

@@ -1,11 +1,8 @@
 import { command } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
 import { agentRunConnectorDiagnosticRegistrationPayloadSchema } from "@okouai/api-contracts/contracts/runners";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { connectors } from "@okouai/db/schema/connector";
@@ -86,26 +83,16 @@ const readActiveEmailMailboxes$ = command(
     if (targets.length === 0) {
       return null;
     }
-    const chatMode = isFeatureEnabled(
-      FeatureSwitchKey.ConnectorChatAccountAccess,
-      args.featureSwitchContext,
-    );
-    const selections = chatMode
-      ? chatConnectorExecutionFromRows(
-          await db
-            .select()
-            .from(
-              chatConnectorExecutionReadPlan({ ...args, kind: "run" }).as(
-                "email_execution_accounts",
-              ),
-            ),
-        ).selections
-      : targets.map(({ connectorSlug, connectionId }) => {
-          return {
-            target: { kind: "builtin" as const, connectorSlug },
-            connectionId,
-          };
-        });
+
+    const selections = chatConnectorExecutionFromRows(
+      await db
+        .select()
+        .from(
+          chatConnectorExecutionReadPlan({ ...args, kind: "run" }).as(
+            "email_execution_accounts",
+          ),
+        ),
+    ).selections;
     signal.throwIfAborted();
     const bindings = new Map(
       selections.flatMap((selection) => {
@@ -144,12 +131,10 @@ const readActiveEmailMailboxes$ = command(
         ),
       );
     signal.throwIfAborted();
-    const memberRules = chatMode
-      ? await db
-          .select(memberConnectorPermissionColumns())
-          .from(connectorPermissionGrants)
-          .where(activeMemberConnectorPermissionCondition(args, nowDate()))
-      : undefined;
+    const memberRules = await db
+      .select(memberConnectorPermissionColumns())
+      .from(connectorPermissionGrants)
+      .where(activeMemberConnectorPermissionCondition(args, nowDate()));
     signal.throwIfAborted();
     return {
       agentId: run.agentId,
@@ -188,7 +173,6 @@ export const loadActiveEmailIntegrationContext$ = command(
         signal,
       );
       const refreshes = await set(readActiveNetworkPolicyRefreshes$, {
-        scope: { ...args, agentId: selection.agentId },
         connectorSlugs,
         snapshot,
         memberRules: selection.memberRules,

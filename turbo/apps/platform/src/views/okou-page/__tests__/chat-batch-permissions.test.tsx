@@ -1,10 +1,13 @@
+import { connectorPermissionsResponse } from "../../../__tests__/connector-permissions.ts";
+import {
+  connectorPermissionsContract,
+  type ApplyConnectorPermissions,
+} from "@okouai/api-contracts/contracts/connector-permissions";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  userPermissionGrantsContract,
-  type ApplyUserPermissionGrantsBatchRequest,
-  type UserPermissionGrantBatchItem,
-  type UserPermissionGrantResponse,
+import type {
+  UserPermissionGrantBatchItem,
+  UserPermissionGrantResponse,
 } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";
@@ -147,29 +150,34 @@ function installConversation(url: string): void {
   });
 }
 
-function installGrants(initial: readonly UserPermissionGrantResponse[] = []) {
+function installGrants(
+  initial: readonly UserPermissionGrantResponse[] = [],
+  beforeRead?: () => Promise<void>,
+  afterSave?: () => void,
+) {
   let grants = [...initial];
-  const applied: ApplyUserPermissionGrantsBatchRequest[] = [];
-  context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
-    return respond(200, grants);
-  });
+  const applied: ApplyConnectorPermissions[] = [];
   context.mocks.api(
-    userPermissionGrantsContract.applyBatch,
-    ({ body, respond }) => {
-      applied.push(body);
-      const saved = body.groups.flatMap((group) => {
-        return group.grants.map((grant) => {
-          return activeGrant({
-            connectorSlug: group.connectorSlug,
-            permission: grant.permission,
-          });
-        });
-      });
-      grants = [...grants, ...saved];
-      context.mocks.ably.trigger("connectorPermissionUpdated");
-      return respond(200, saved);
+    connectorPermissionsContract.get,
+    async ({ query, respond }) => {
+      await beforeRead?.();
+      return respond(200, connectorPermissionsResponse(query, grants));
     },
   );
+  context.mocks.api(connectorPermissionsContract.apply, ({ body, respond }) => {
+    applied.push(body);
+    if (body.target.kind !== "builtin") {
+      throw new Error("Expected a builtin connector");
+    }
+    const { connectorSlug } = body.target;
+    const saved = body.grants.map((grant) => {
+      return activeGrant({ connectorSlug, permission: grant.permission });
+    });
+    grants = [...grants, ...saved];
+    afterSave?.();
+    context.mocks.ably.trigger("connectorPermissionUpdated");
+    return respond(200, connectorPermissionsResponse(body.target, grants));
+  });
   return applied;
 }
 
@@ -241,37 +249,27 @@ test("Review full scopes grouped by connector and apply the selected duration to
   expect(within(reopened).getByText("Permissions allowed")).toBeInTheDocument();
   expect(applied).toStrictEqual([
     {
-      agentId: CAPABILITY_AGENT_ID,
-      groups: [
-        {
-          connectorSlug: "calendar-service",
-          grants: items.slice(0, 2).map((item) => {
-            return {
-              permission: item.permission,
-              action: "allow",
-              expiresIn: "24h",
-            };
-          }),
-        },
-        {
-          connectorSlug: "reports-service",
-          grants: expect.arrayContaining([
-            {
-              permission: items[2]!.permission,
-              action: "allow",
-              expiresIn: "24h",
-            },
-            {
-              permission: UNKNOWN_PERMISSION_GRANT,
-              action: "allow",
-              expiresIn: "24h",
-            },
-          ]),
-        },
-      ],
+      target: { kind: "builtin", connectorSlug: "calendar-service" },
+      mode: "patch",
+      grants: items.slice(0, 2).map(({ permission }) => ({
+        permission,
+        action: "allow",
+        expiresIn: "24h",
+      })),
+    },
+    {
+      target: { kind: "builtin", connectorSlug: "reports-service" },
+      mode: "patch",
+      grants: expect.arrayContaining(
+        [items[2]!.permission, UNKNOWN_PERMISSION_GRANT].map((permission) => ({
+          permission,
+          action: "allow",
+          expiresIn: "24h",
+        })),
+      ),
     },
   ]);
-  expect(applied[0]!.groups[1]!.grants).toHaveLength(2);
+  expect(applied[1]!.grants).toHaveLength(2);
 });
 
 test("Review every scope in a large batch as metadata and grants arrive separately", async () => {
@@ -305,21 +303,9 @@ test("Review every scope in a large batch as metadata and grants arrive separate
       });
     },
   );
-  let grants: UserPermissionGrantResponse[] = [];
-  const applied: ApplyUserPermissionGrantsBatchRequest[] = [];
-  context.mocks.api(userPermissionGrantsContract.list, async ({ respond }) => {
+  const applied = installGrants([], async () => {
     await grantsResponse.promise;
-    return respond(200, grants);
   });
-  context.mocks.api(
-    userPermissionGrantsContract.applyBatch,
-    ({ body, respond }) => {
-      applied.push(body);
-      grants = largeBatch.map(activeGrant);
-      context.mocks.ably.trigger("connectorPermissionUpdated");
-      return respond(200, grants);
-    },
-  );
   installConversation(batchUrl({ rows: largeBatch }));
 
   await setupPage({
@@ -371,31 +357,23 @@ test("Review every scope in a large batch as metadata and grants arrive separate
     within(card).findByText("Permissions allowed"),
   ).resolves.toBeInTheDocument();
   expect(within(dialog).getByText("Permissions allowed")).toBeInTheDocument();
-  expect(applied).toStrictEqual([
-    {
-      agentId: CAPABILITY_AGENT_ID,
-      groups: ["calendar-service", "reports-service"].map((connectorSlug) => {
-        return {
-          connectorSlug,
-          grants: expect.arrayContaining(
-            largeBatch
-              .filter((item) => {
-                return item.connectorSlug === connectorSlug;
-              })
-              .map((item) => {
-                return {
-                  permission: item.permission,
-                  action: "allow",
-                  expiresIn: "always",
-                };
-              }),
-          ),
-        };
-      }),
-    },
-  ]);
-  for (const group of applied[0]!.groups) {
-    expect(group.grants).toHaveLength(10);
+  expect(applied).toStrictEqual(
+    ["calendar-service", "reports-service"].map((connectorSlug) => ({
+      target: { kind: "builtin", connectorSlug },
+      mode: "patch",
+      grants: expect.arrayContaining(
+        largeBatch
+          .filter((item) => item.connectorSlug === connectorSlug)
+          .map(({ permission }) => ({
+            permission,
+            action: "allow",
+            expiresIn: "always",
+          })),
+      ),
+    })),
+  );
+  for (const request of applied) {
+    expect(request.grants).toHaveLength(10);
   }
 });
 
@@ -423,18 +401,10 @@ test("Approve only missing scopes without reapplying or extending active grants"
   ).resolves.toBeInTheDocument();
   expect(applied).toStrictEqual([
     {
-      agentId: CAPABILITY_AGENT_ID,
-      groups: [
-        {
-          connectorSlug: "reports-service",
-          grants: [
-            {
-              permission: items[2]!.permission,
-              action: "allow",
-              expiresIn: "1h",
-            },
-          ],
-        },
+      target: { kind: "builtin", connectorSlug: "reports-service" },
+      mode: "patch",
+      grants: [
+        { permission: items[2]!.permission, action: "allow", expiresIn: "1h" },
       ],
     },
   ]);
@@ -525,31 +495,18 @@ test("A batch save does not empty sibling permission cards during a grants reloa
   const reloadStarted = context.mocks.deferred<void>();
   const reloadResponse = context.mocks.deferred<void>();
   let refreshing = false;
-  let grants: UserPermissionGrantResponse[] = [];
-  context.mocks.api(userPermissionGrantsContract.list, async ({ respond }) => {
-    if (refreshing) {
-      // Each card owns a grants read, so the shared reload starts multiple requests.
-      if (!reloadStarted.settled()) {
-        reloadStarted.resolve(undefined);
+  installGrants(
+    [],
+    async () => {
+      if (refreshing) {
+        if (!reloadStarted.settled()) {
+          reloadStarted.resolve(undefined);
+        }
+        await reloadResponse.promise;
       }
-      await reloadResponse.promise;
-    }
-    return respond(200, grants);
-  });
-  context.mocks.api(
-    userPermissionGrantsContract.applyBatch,
-    ({ body, respond }) => {
-      grants = body.groups.flatMap((group) => {
-        return group.grants.map((grant) => {
-          return activeGrant({
-            connectorSlug: group.connectorSlug,
-            permission: grant.permission,
-          });
-        });
-      });
+    },
+    () => {
       refreshing = true;
-      context.mocks.ably.trigger("connectorPermissionUpdated");
-      return respond(200, grants);
     },
   );
   const single = new URL(

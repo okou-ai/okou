@@ -4454,10 +4454,6 @@ function prepareRunnerLaunch(input: {
         FeatureSwitchKey.SingleAgent,
         args.featureSwitchContext,
       ),
-      [FeatureSwitchKey.ConnectorChatAccountAccess]: isFeatureEnabled(
-        FeatureSwitchKey.ConnectorChatAccountAccess,
-        args.featureSwitchContext,
-      ),
     },
   };
   return {

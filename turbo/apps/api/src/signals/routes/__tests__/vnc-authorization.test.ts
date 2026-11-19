@@ -23,7 +23,7 @@ import { vncConnectionsRoutes } from "../vnc-connections";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { createRouteMocks } from "./helpers/route-test";
 import { createPublicRemoteAccessRunApi } from "./helpers/public-remote-access-run";
-import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
+
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { vncConnectionBody } from "./helpers/vnc-runtime";
@@ -77,17 +77,14 @@ describe("VNC chat authorization", () => {
     await flushWaitUntilForTest();
     await publicRuns.cleanup();
   });
-  async function scenario(memberMode = false) {
+  async function scenario() {
     mockEnv("OFFICIAL_RUNNER_SECRET", "c".repeat(64));
     const owner = {
       userId: `user_vnc_approval_${randomUUID()}`,
       orgId: `org_vnc_approval_${randomUUID()}`,
     };
     const pending = await publicRuns.start(owner);
-    await createAuthDeviceSupportApi(context).updateFeatureSwitches(
-      pending.actor,
-      { connectorChatAccountAccess: memberMode },
-    );
+
     const run = await publicRuns.executionInput(pending, {
       authorization: `Bearer vm0_official_${"c".repeat(64)}`,
     });

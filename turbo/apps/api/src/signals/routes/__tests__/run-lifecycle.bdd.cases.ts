@@ -1,3 +1,4 @@
+import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 import { readonlyConnectorSkills } from "./helpers/readonly-connector-skills";
 import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { captureSessionStorageMocks } from "./helpers/prepared-session-history";
@@ -592,12 +593,6 @@ const piExecutionFixture = createChatEventsFixture(context);
  */
 function preparePiSandboxExecution(): void {
   piExecutionFixture.mockPiObjectStore();
-}
-
-async function useAgentConnectorGrants(actor: ApiTestUser): Promise<void> {
-  await createConnectorBddApi(context).updateFeatureSwitches(actor, {
-    [FeatureSwitchKey.ConnectorChatAccountAccess]: false,
-  });
 }
 
 async function entitledRunActor(
@@ -3021,11 +3016,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
   // oxlint-disable-next-line vitest/no-conditional-tests -- The entrypoint selects this group before collection.
   if (group === "connector-injection") {
     describe("RUN-02: stored connector injection into dispatched Runs", () => {
-      it("omits connected stored connectors when the agent run allowlist is empty", async () => {
+      it("omits connected stored connectors when the account is disabled for Chats", async () => {
         const oauth = createOrdinaryOAuthRunApi();
         const api = oauth.api;
         const { actor, agentId, runnerGroup } = await oauth.entitledRunActor();
-        await useAgentConnectorGrants(actor);
 
         await oauth.connect(actor, {
           connectorSlug: "x",
@@ -3033,6 +3027,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           refreshToken: "x-bdd-unallowed-refresh",
         });
 
+        const account = await createConnectorBddApi(
+          context,
+        ).readDefaultBuiltinAccount(actor, "x");
+        await createChatConnectorAccessApi(context).setDefault(
+          actor,
+          {
+            target: { kind: "builtin", connectorSlug: "x" },
+            connectionId: account.id,
+          },
+          false,
+        );
         const run = await api.createThreadRun(actor, {
           agentId,
           prompt: "run without enabled stored connectors",
@@ -3058,7 +3063,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = oauth.api;
         const fw = createFirewallApi(context);
         const { actor, agentId, runnerGroup } = await oauth.entitledRunActor();
-        await useAgentConnectorGrants(actor);
 
         await oauth.connect(actor, {
           connectorSlug: "x",
@@ -3069,8 +3073,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           connectorSlug: "slack",
           accessToken: "xoxb-bdd-unenabled-access",
         });
-        const enabled = await api.enableAgentConnectors(actor, agentId, ["x"]);
-        expect(enabled).toContain("x");
+        const account = await createConnectorBddApi(
+          context,
+        ).readDefaultBuiltinAccount(actor, "slack");
+        await createChatConnectorAccessApi(context).setDefault(
+          actor,
+          {
+            target: { kind: "builtin", connectorSlug: "slack" },
+            connectionId: account.id,
+          },
+          false,
+        );
 
         const run = await api.createThreadRun(actor, {
           agentId,
@@ -3381,8 +3394,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const connectors = createConnectorBddApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-        await useAgentConnectorGrants(actor);
-
         const connected = await connectors.connectManualGrant(
           actor,
           "lark",
@@ -3476,29 +3487,25 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           run.runId,
           { targets: [larkTarget] },
         );
-        expect(exactRuntimeWithSibling).toStrictEqual(exactRuntime);
+        expect(exactRuntimeWithSibling).toMatchObject({
+          target: { kind: "builtin", connectorSlug: "lark" },
+          state: "available",
+          accountBinding: { connectionId: sibling.body.connectionId },
+        });
         const [missingSourceRuntime] = await api.syncConnectorRuntime(
           run.runId,
           {
             targets: [{ kind: "builtin", connectorSlug: "lark" }],
           },
         );
-        expect(missingSourceRuntime).toStrictEqual({
-          target: { kind: "builtin", connectorSlug: "lark" },
-          state: "unresolved",
-          reason: "connector-unavailable",
-        });
+        expect(missingSourceRuntime).toStrictEqual(exactRuntimeWithSibling);
         const [missingExactRuntime] = await api.syncConnectorRuntime(
           run.runId,
           {
             targets: [{ ...larkTarget, sourceId: wrongTargetConnection.id }],
           },
         );
-        expect(missingExactRuntime).toStrictEqual({
-          target: { kind: "builtin", connectorSlug: "lark" },
-          state: "unresolved",
-          reason: "connector-unavailable",
-        });
+        expect(missingExactRuntime).toStrictEqual(exactRuntimeWithSibling);
 
         await api.requestCancelRun(actor, run.runId, [200]);
         const cancelled = await api.readRun(actor, run.runId);
@@ -3513,7 +3520,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-        await useAgentConnectorGrants(actor);
         const connected = await connectors.connectManualGrant(
           actor,
           "lark",
@@ -3570,24 +3576,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           plainCustom.id,
           "plain-runtime-token",
         );
-        const customGrants = [
-          {
-            customConnectorId: permissionedCustom.id,
-            permissionNames: ["chat:write"],
-          },
-          { customConnectorId: plainCustom.id, permissionNames: [] },
-        ];
-        const customGrantResponse =
-          await connectors.requestUpdateAgentCustomConnectorGrants(
-            actor,
-            agentId,
-            customGrants,
-            [200],
-          );
-        if (customGrantResponse.status !== 200) {
-          throw new Error("Expected custom connector grants to succeed");
-        }
-        expect(customGrantResponse.body.grants).toStrictEqual(customGrants);
+        await createChatConnectorAccessApi(context).applyPermissions(actor, {
+          target: { kind: "custom", customConnectorId: permissionedCustom.id },
+          mode: "patch",
+          grants: [{ permission: "chat:write", action: "allow" }],
+        });
 
         const run = await api.createThreadRun(actor, {
           agentId,
@@ -4332,7 +4325,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           return owned.run(operation);
         }
         await own(async () => {
-          await useAgentConnectorGrants(actor);
           await own(() => {
             return api.updateUserModelPreference(actor, "claude-fable-5-1");
           });
@@ -4506,11 +4498,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               ],
             });
           });
-          expect(missingSourceRuntime).toStrictEqual({
-            target: targetIdentity,
-            state: "absent",
-            reason: "connector-unavailable",
-          });
+          expect(missingSourceRuntime).toStrictEqual(initialRuntime);
           const missingSourceAuth = await own(() => {
             return fw.requestFirewallAuth(
               { authorization: `Bearer ${execution.firewallToken}` },
@@ -4540,11 +4528,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               targets: [{ ...target, sourceId: wrongTargetConnection.id }],
             });
           });
-          expect(missingExactRuntime).toStrictEqual({
-            target: targetIdentity,
-            state: "absent",
-            reason: "connector-unavailable",
-          });
+          expect(missingExactRuntime).toStrictEqual(initialRuntime);
           const missingExactAuth = await own(() => {
             return fw.requestFirewallAuth(
               { authorization: `Bearer ${execution.firewallToken}` },
@@ -4875,7 +4859,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const connectors = createConnectorBddApi(context);
         const fw = createFirewallApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor();
-        await useAgentConnectorGrants(actor);
 
         const mcpDefinition = manualMcpRuntimeConnectorBody({
           displayName: "BDD MCP Runtime",
@@ -5033,18 +5016,18 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             },
           ],
         });
-        expect(legacySourceResult).toStrictEqual({
+        expect(legacySourceResult).toMatchObject({
           target: { kind: "custom", customConnectorId: mcp.id },
-          state: "absent",
-          reason: "connector-unavailable",
+          state: "available",
+          accountBinding: { connectionId: target.sourceId },
         });
         const [missingExactResult] = await api.syncConnectorRuntime(run.runId, {
           targets: [{ ...target, sourceId: randomUUID() }],
         });
-        expect(missingExactResult).toStrictEqual({
+        expect(missingExactResult).toMatchObject({
           target: { kind: "custom", customConnectorId: mcp.id },
-          state: "absent",
-          reason: "connector-unavailable",
+          state: "available",
+          accountBinding: { connectionId: target.sourceId },
         });
 
         const movedDefinition = manualMcpRuntimeConnectorBody({
@@ -5092,8 +5075,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         expect(mismatchedRoutingResult).toMatchObject({
           target: { kind: "custom", customConnectorId: mcp.id },
-          state: "unresolved",
-          reason: "runtime-configuration-unavailable",
+          state: "available",
+          accountBinding: { connectionId: target.sourceId, baseUrlVars: {} },
         });
 
         await connectors.updateAgentCustomConnectors(
@@ -5178,7 +5161,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, run.runId, [200]);
       });
 
-      it("keeps a revoked exact custom source absent after a replacement becomes default", async () => {
+      it("rejects a deleted custom credential and synchronizes its replacement", async () => {
         const owned = await publicChatActor(context);
         owned.ownsFeatureSwitches();
         const { actor, agentId, runnerGroup } = owned;
@@ -5186,7 +5169,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const connectors = createConnectorBddApi(context);
         const fw = createFirewallApi(context);
         await owned.run(async () => {
-          await useAgentConnectorGrants(actor);
           const custom = await connectors.createCustomConnector(
             actor,
             manualMcpRuntimeConnectorBody({
@@ -5245,10 +5227,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const [revoked] = await api.syncConnectorRuntime(run.runId, {
             targets: [target],
           });
-          expect(revoked).toStrictEqual({
+          expect(revoked).toMatchObject({
             target: { kind: "custom", customConnectorId: custom.id },
-            state: "absent",
-            reason: "connector-unavailable",
+            state: "available",
+            accountBinding: { connectionId: replacement.id },
           });
           const rejected = await fw.requestFirewallAuth(
             { authorization: `Bearer ${execution.firewallToken}` },
@@ -5277,7 +5259,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {},
           NATIVE_RUNNER_ROUTE,
         );
-        await useAgentConnectorGrants(actor);
         const connectedSlugs = Array.from(
           { length: MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT + 1 },
           (_, index) => {
@@ -5317,9 +5298,19 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             slug: ungrantedSlug,
           }),
         );
-        await connectors.setCustomConnectorValues(actor, ungranted.id, [
-          { key: "secret", kind: "secret", value: "ungranted-credential" },
-        ]);
+        const ungrantedAccount = await connectors.setCustomConnectorValues(
+          actor,
+          ungranted.id,
+          [{ key: "secret", kind: "secret", value: "ungranted-credential" }],
+        );
+        await createChatConnectorAccessApi(context).setDefault(
+          actor,
+          {
+            target: { kind: "custom", customConnectorId: ungranted.id },
+            connectionId: ungrantedAccount.connectionId,
+          },
+          false,
+        );
         await connectors.updateAgentCustomConnectors(actor, agentId, [
           ...connectedConnectorIds,
           incomplete.id,
@@ -5346,10 +5337,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         if (!section) {
           throw new Error("Expected MCP awareness");
         }
-        const authorizedSlugs = [
-          ...fixture.connectedSlugs,
-          fixture.incompleteSlug,
-        ].sort();
+        const authorizedSlugs = [...fixture.connectedSlugs].sort();
         const expectedListedSlugs = authorizedSlugs.slice(
           0,
           MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT,
@@ -5367,9 +5355,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           authorizedSlugs[MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT],
         );
         expect(section).toContain(
-          "2 additional authorized MCP connectors were omitted from this prompt",
+          "1 additional authorized MCP connector was omitted from this prompt",
         );
-        expect(section).toContain(fixture.incompleteSlug);
+        expect(section).not.toContain(fixture.incompleteSlug);
         expect(section).not.toContain(fixture.ungrantedSlug);
         expect(section).not.toContain("Remote display");
         expect(section).not.toContain("example.test");
@@ -5494,7 +5482,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {},
           NATIVE_RUNNER_ROUTE,
         );
-        await useAgentConnectorGrants(actor);
         if (!actor.orgId) {
           throw new Error(
             "Expected a custom connector actor with an organization",
@@ -5634,13 +5621,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               },
             ],
           });
-          expect(rejectedRuntime).toStrictEqual({
-            target: {
-              kind: "custom",
-              customConnectorId: runtimeConnector.id,
+          expect(rejectedRuntime).toMatchObject({
+            target: { kind: "custom", customConnectorId: runtimeConnector.id },
+            state: "available",
+            accountBinding: {
+              connectionId: runtimeTarget.sourceId,
+              baseUrlVars: runtimeTarget.baseUrlVars,
             },
-            state: "unresolved",
-            reason: "runtime-configuration-unavailable",
           });
         }
         const [runtimeResult] = await api.syncConnectorRuntime(run.runId, {
@@ -5667,187 +5654,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         await cleanup();
-      });
-
-      it("keeps a granted custom skill independent from runtime admission", async () => {
-        const api = createRunsApi(context);
-        createBddApi(context).acceptAgentStorageWrites();
-        const connectors = createConnectorBddApi(context);
-        const fixture = await publicChatActor(context);
-        fixture.ownsFeatureSwitches();
-        const { actor, agentId, runnerGroup } = fixture;
-        await fixture.run(async () => {
-          await useAgentConnectorGrants(actor);
-          const slug = `_bdd-permission-skill-${randomUUID().slice(0, 8)}`;
-          const custom = await connectors.createCustomConnector(actor, {
-            slug,
-            displayName: "BDD Permissioned API",
-            prefixTemplates: [
-              "https://{{variables.workspace}}.permissioned.example.test/api/",
-            ],
-            fields: [
-              {
-                key: "workspace",
-                label: "Workspace",
-                kind: "variable",
-                required: true,
-              },
-            ],
-            headerInjections: [],
-            queryInjections: [
-              {
-                name: "workspace",
-                valueTemplate: "{{variables.workspace}}",
-              },
-            ],
-            authMode: "manual",
-            permissionBundleRef: "builtin:slack@1",
-            skillMarkdown: "Use the selected Slack-compatible operations only.",
-          });
-          const grant = {
-            customConnectorId: custom.id,
-            permissionNames: ["chat:write"],
-          };
-          const grantResponse =
-            await connectors.requestUpdateAgentCustomConnectorGrants(
-              actor,
-              agentId,
-              [grant],
-              [200],
-            );
-          if (grantResponse.status !== 200) {
-            throw new Error(
-              "Expected custom connector permission grant to succeed",
-            );
-          }
-          expect(grantResponse.body.grants).toStrictEqual([grant]);
-          const internalName = `custom_connector_${custom.id.replaceAll("-", "")}`;
-          const initialRun = await fixture.sendChatRun(actor, {
-            agentId,
-            prompt: "Observe the initial skill version",
-          });
-          const initialExecution = await fixture.runExecution(initialRun.runId);
-          const initialSkill = customSkillMount(
-            initialExecution.execution.contentBundles,
-            custom.id,
-          );
-          if (!initialSkill) {
-            throw new Error("Expected an independently observed initial skill");
-          }
-          await createChatEventsFixture(context).cancelChatRun(
-            actor,
-            initialRun.runId,
-            initialExecution.sandboxHeaders,
-          );
-          const disconnectedRun = await fixture.sendChatRun(actor, {
-            agentId,
-            prompt: "use the disconnected custom connector skill",
-          });
-          await connectors.updateCustomConnector(actor, custom.id, {
-            displayName: custom.displayName,
-            prefixTemplates: custom.prefixTemplates,
-            fields: custom.fields,
-            headerInjections: custom.headerInjections,
-            queryInjections: custom.queryInjections,
-            authMode: custom.authMode,
-            permissionBundleRef: custom.permissionBundleRef,
-            skillMarkdown: "Use the updated Slack-compatible operations only.",
-            storageVersion: custom.storageVersion,
-          });
-          await api.heartbeatRunner(runnerGroup);
-          const disconnected = await fixture.runExecution(
-            disconnectedRun.runId,
-          );
-          const disconnectedExecution = disconnected.execution;
-          expect(
-            findFirewallEntry(disconnectedExecution.firewalls, internalName),
-          ).toBeUndefined();
-          expect(
-            disconnectedExecution.networkPolicies ?? {},
-          ).not.toHaveProperty(internalName);
-          expect(
-            disconnectedExecution.connectorRuntimeTargets,
-          ).not.toContainEqual(
-            expect.objectContaining({
-              kind: "custom",
-              customConnectorId: custom.id,
-            }),
-          );
-          const disconnectedSkillMount = customSkillMount(
-            disconnectedExecution.contentBundles,
-            custom.id,
-          );
-          expect(disconnectedSkillMount?.mountPath).toBe(
-            `/home/user/.claude/skills/custom-${slug.slice(1, 49)}-${custom.id.replaceAll("-", "").slice(0, 8)}`,
-          );
-          expect(disconnectedSkillMount?.sha256).toBe(initialSkill.sha256);
-
-          await connectors.setCustomConnectorValues(actor, custom.id, [
-            { key: "workspace", kind: "variable", value: "restored" },
-          ]);
-          await createChatEventsFixture(context).cancelChatRun(
-            actor,
-            disconnectedRun.runId,
-            disconnected.sandboxHeaders,
-          );
-          const restoredRun = await fixture.sendChatRun(actor, {
-            agentId,
-            prompt: "use the reconnected custom connector",
-          });
-          const restored = await fixture.runExecution(restoredRun.runId);
-          const restoredExecution = restored.execution;
-          const customApis = inlineFirewallApis(
-            restoredExecution.firewalls,
-            internalName,
-          );
-          expect(customApis[0]?.permissions).toStrictEqual(
-            expect.arrayContaining([
-              expect.objectContaining({ name: "chat:write" }),
-            ]),
-          );
-          expect(
-            restoredExecution.networkPolicies?.[internalName]?.allow,
-          ).toContain("chat:write");
-          expect(
-            restoredExecution.networkPolicies?.[internalName]?.deny.length,
-          ).toBeGreaterThan(0);
-          expect(
-            restoredExecution.networkPolicies?.[internalName]?.unknownPolicy,
-          ).toBe("deny");
-          expect(
-            findFirewallEntry(restoredExecution.firewalls, internalName),
-          ).toMatchObject({
-            kind: "inline",
-            customConnectorId: custom.id,
-          });
-          expect(
-            findFirewallEntry(restoredExecution.firewalls, "slack"),
-          ).toBeUndefined();
-          expect(restoredExecution.networkPolicies ?? {}).not.toHaveProperty(
-            "slack",
-          );
-          expect(restoredExecution.connectorRuntimeTargets).toContainEqual({
-            kind: "custom",
-            customConnectorId: custom.id,
-            baseUrlVars: { workspace: "restored" },
-            sourceId: expect.any(String),
-          });
-          const restoredSkillMount = customSkillMount(
-            restoredExecution.contentBundles,
-            custom.id,
-          );
-          expect(restoredSkillMount?.mountPath).toBe(
-            disconnectedSkillMount?.mountPath,
-          );
-          expect(restoredSkillMount?.sha256).toStrictEqual(expect.any(String));
-          expect(restoredSkillMount?.sha256).not.toBe(initialSkill.sha256);
-
-          await createChatEventsFixture(context).cancelChatRun(
-            actor,
-            restoredRun.runId,
-            restored.sandboxHeaders,
-          );
-        });
       });
 
       it("fails expired custom OAuth without a refresh token at matched auth", async () => {
@@ -6016,10 +5822,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             return withMockNowForTest(acceptedAt, operation);
           });
         }
-        fixture.ownsFeatureSwitches();
-        await own(() => {
-          return connectors.updateFeatureSwitches(actor, {});
-        });
 
         const custom = await own(() => {
           return connectors.createCustomConnector(actor, {
@@ -7114,7 +6916,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {},
           NATIVE_RUNNER_ROUTE,
         );
-        await useAgentConnectorGrants(actor);
         if (!actor.orgId) {
           throw new Error("Expected an organization-scoped run actor");
         }
@@ -7272,33 +7073,21 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           },
         );
         expect(context.mocks.ably.batchPublish).not.toHaveBeenCalled();
-        const [pinnedRuntimeResult] = await api.syncConnectorRuntime(
-          run.runId,
-          {
-            targets: [pinnedTarget],
-          },
-        );
-        const pinnedRuntime =
-          availableCustomConnectorRuntime(pinnedRuntimeResult);
-        expect(pinnedRuntime.baseUrlVars).toStrictEqual({
-          subdomain: "münich",
+        const [currentRuntime] = await api.syncConnectorRuntime(run.runId, {
+          targets: [pinnedTarget],
         });
-        expect(pinnedRuntime.firewall.firewall.apis[0]?.base).toBe(
-          `https://xn--mnich-kva.${rand}.test/v1/`,
+        const current = availableCustomConnectorRuntime(currentRuntime);
+        expect(current.baseUrlVars).toStrictEqual({ subdomain: "later-run" });
+        expect(current.firewall.firewall.apis[0]?.base).toBe(
+          `https://later-run.${rand}.test/v1/`,
         );
         const updatedAuth = await fw.requestFirewallAuth(
           { authorization: `Bearer ${execution.firewallToken}` },
-          authBody,
+          customConnectorRuntimeAuthBody(current).body,
           [200],
         );
-        if (updatedAuth.status !== 200) {
-          throw new Error(
-            "Expected the updated custom firewall auth to resolve",
-          );
-        }
-        expect(updatedAuth.body.query).toStrictEqual({
-          tenant: "münich",
-          scope: "later-scope",
+        expect(updatedAuth.body).toMatchObject({
+          query: { tenant: "later-run", scope: "later-scope" },
         });
 
         const laterRun = await api.createThreadRun(actor, {
@@ -8241,341 +8030,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, run.runId, [200]);
       });
 
-      it("applies, scopes, expires, and snapshots user permission grants", async () => {
-        const bdd = createBddApi(context);
-        const oauth = createOrdinaryOAuthRunApi();
-        const api = oauth.api;
-        const { actor, runnerGroup } = await oauth.entitledRunActor(
-          {},
-          NATIVE_RUNNER_ROUTE,
-        );
-        await useAgentConnectorGrants(actor);
-
-        // The grants agent is public so a same-org member can write their own
-        // grants for it without being the owner.
-        const agent = await oauth.createAgent(actor, {
-          displayName: "BDD grants agent",
-        });
-        const agentId = agent.agentId;
-        await oauth.connect(actor, {
-          connectorSlug: "slack",
-          accessToken: "xoxb-bdd-grants",
-        });
-        await api.enableAgentConnectors(actor, agentId, ["slack"]);
-
-        async function runWithSlackContext(prompt: string): Promise<{
-          readonly execution: Awaited<ReturnType<typeof api.executionInput>>;
-          readonly policy: {
-            readonly allow: readonly string[];
-            readonly deny: readonly string[];
-            readonly unknownPolicy?: string;
-          };
-        }> {
-          await api.registerDirectRunner(runnerGroup);
-          const run = await api.createThreadRun(actor, {
-            agentId,
-            prompt,
-          });
-          const execution = await api.executionInput(run.runId);
-          await api.requestCancelRun(actor, run.runId, [200]);
-          await oauth.finishCancelledRun(run.runId, execution.sandboxToken);
-          const policy = execution.networkPolicies?.slack;
-          if (!policy) {
-            throw new Error(
-              "Expected a slack network policy in execution input",
-            );
-          }
-          return { execution, policy };
-        }
-
-        async function runWithSlackPolicy(prompt: string): Promise<{
-          readonly allow: readonly string[];
-          readonly deny: readonly string[];
-          readonly unknownPolicy?: string;
-        }> {
-          return (await runWithSlackContext(prompt)).policy;
-        }
-
-        await api.heartbeatRunner(runnerGroup);
-        const defaults = await runWithSlackPolicy("no grants yet");
-        expect(defaults.allow).toContain("conversations:read");
-        expect(defaults.allow).toContain("users:read");
-        expect(defaults.deny).toContain("chat:write");
-        expect(defaults.unknownPolicy).toBe("allow");
-
-        // Grants across every expiry arm; the list API shows the stored expiry.
-        await api.applyUserPermissionGrant(actor, {
-          agentId,
-          connectorSlug: "slack",
-          permission: "chat:write",
-          action: "allow",
-          expiresIn: "1h",
-        });
-        await api.applyUserPermissionGrant(actor, {
-          agentId,
-          connectorSlug: "slack",
-          permission: "files:read",
-          action: "allow",
-          expiresIn: "24h",
-        });
-        await api.applyUserPermissionGrant(actor, {
-          agentId,
-          connectorSlug: "slack",
-          permission: "search:read",
-          action: "allow",
-          expiresIn: "7d",
-        });
-        await api.applyUserPermissionGrant(actor, {
-          agentId,
-          connectorSlug: "slack",
-          permission: "conversations:read",
-          action: "allow",
-        });
-        const grants = await api.listUserPermissionGrants(actor, agentId);
-        const expiryByPermission = new Map(
-          grants.map((grant) => {
-            return [grant.permission, grant.expiresAt];
-          }),
-        );
-        expect(expiryByPermission.get("chat:write")).toStrictEqual(
-          expect.any(String),
-        );
-        expect(expiryByPermission.get("files:read")).toStrictEqual(
-          expect.any(String),
-        );
-        expect(expiryByPermission.get("search:read")).toStrictEqual(
-          expect.any(String),
-        );
-        expect(expiryByPermission.get("conversations:read")).toBeNull();
-        const firstExpiry = expiryByPermission.get("chat:write");
-        if (typeof firstExpiry !== "string") {
-          throw new Error("Expected the temporary chat:write grant expiry");
-        }
-        const laterExpiry = expiryByPermission.get("files:read");
-
-        // A same-org member's own grant never leaks into the owner's runs.
-        const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-        await api.applyUserPermissionGrant(member, {
-          agentId,
-          connectorSlug: "slack",
-          permission: "files:write",
-          action: "allow",
-        });
-
-        const grantedContext = await runWithSlackContext("granted permissions");
-        const granted = grantedContext.policy;
-        expect(
-          grantedContext.execution.networkPolicyRefreshes?.slack?.nextRefreshAt,
-        ).toBe(firstExpiry);
-        expect(grantedContext.execution.environment).toMatchObject({
-          CLAUDE_CODE_OAUTH_TOKEN: expect.any(String),
-        });
-        expect(grantedContext.execution.billableFirewalls).toStrictEqual([]);
-        expect(grantedContext.execution.connectorRuntimeTargets).toContainEqual(
-          {
-            kind: "builtin",
-            connectorSlug: "slack",
-            sourceId: expect.any(String),
-          },
-        );
-        expect(granted.allow).toContain("chat:write");
-        expect(granted.allow).toContain("files:read");
-        expect(granted.deny).not.toContain("chat:write");
-        expect(granted.deny).toContain("files:write");
-
-        // The 1h grant expires at equality, while longer and permanent grants hold.
-        mockNow(Date.parse(firstExpiry));
-        const expiredContext = await runWithSlackContext(
-          "at the 1h grant expiry",
-        );
-        const expired = expiredContext.policy;
-        expect(expired.deny).toContain("chat:write");
-        expect(expired.allow).toContain("files:read");
-        expect(expired.allow).toContain("search:read");
-        expect(expired.allow).toContain("conversations:read");
-        expect(
-          expiredContext.execution.networkPolicyRefreshes?.slack?.nextRefreshAt,
-        ).toBe(laterExpiry);
-
-        // Unknown-permission grants flip only the unknown policy.
-        await api.applyUserPermissionGrant(actor, {
-          agentId,
-          connectorSlug: "slack",
-          permission: UNKNOWN_PERMISSION_GRANT,
-          action: "deny",
-        });
-        const unknownDenied = await runWithSlackPolicy(
-          "deny unknown permissions",
-        );
-        expect(unknownDenied.unknownPolicy).toBe("deny");
-        expect(unknownDenied.allow).toContain("conversations:read");
-        expect(unknownDenied.deny).toContain("chat:write");
-
-        // Published input retains its preparation-time policy. Runtime sync must
-        // enforce later permission changes without mutating that snapshot.
-        await api.applyUserPermissionGrant(actor, {
-          agentId,
-          connectorSlug: "slack",
-          permission: "chat:write",
-          action: "allow",
-        });
-        const snapshotRun = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "snapshot the grant state",
-        });
-        await api.applyUserPermissionGrant(actor, {
-          agentId,
-          connectorSlug: "slack",
-          permission: "chat:write",
-          action: "deny",
-        });
-        const snapshotExecution = await api.executionInput(snapshotRun.runId);
-        const snapshotSlackTarget = builtinConnectorRuntimeRegistration(
-          snapshotExecution,
-          "slack",
-        );
-        expect(snapshotExecution.networkPolicies?.slack?.deny).not.toContain(
-          "chat:write",
-        );
-        expect(snapshotExecution.networkPolicies?.slack?.allow).toContain(
-          "chat:write",
-        );
-        const actorRunnerKey = await api.createCliToken(actor);
-        const memberRunnerKey = await api.createCliToken(member);
-        const sameUserRuntime = await api.requestSyncConnectorRuntimeAs(
-          `Bearer ${actorRunnerKey.token}`,
-          snapshotRun.runId,
-          {
-            targets: [
-              { kind: "builtin", connectorSlug: "missing-builtin" },
-              snapshotSlackTarget,
-            ],
-          },
-          [200],
-        );
-        // A slug without a catalog entry is treated as never authorized.
-        expect(sameUserRuntime.body.results[0]).toMatchObject({
-          target: { kind: "builtin", connectorSlug: "missing-builtin" },
-          state: "absent",
-          reason: "connector-unavailable",
-        });
-        expect(sameUserRuntime.body.results[1]).toMatchObject({
-          target: { kind: "builtin", connectorSlug: "slack" },
-          state: "available",
-          networkPolicy: expect.objectContaining({
-            deny: expect.arrayContaining(["chat:write"]),
-          }),
-          nextSyncAt: expect.any(String),
-        });
-        const sameUserSync = sameUserRuntime.body.results[1];
-        if (sameUserSync?.state !== "available") {
-          throw new Error(
-            "Expected the owner's runtime policy to be available",
-          );
-        }
-        expect(sameUserSync.networkPolicy.allow).not.toContain("chat:write");
-        expect(sameUserSync.nextSyncAt).toBe(laterExpiry);
-        const otherUserRuntime = await api.requestSyncConnectorRuntimeAs(
-          `Bearer ${memberRunnerKey.token}`,
-          snapshotRun.runId,
-          {
-            targets: [{ kind: "builtin", connectorSlug: "slack" }],
-          },
-          [403],
-        );
-        expect(otherUserRuntime.body.error.message).toBe(
-          "Run does not belong to user",
-        );
-        context.mocks.ably.batchPublish.mockClear();
-        await api.applyUserPermissionGrant(actor, {
-          agentId,
-          connectorSlug: "slack",
-          permission: "files:write",
-          action: "allow",
-        });
-        expect(context.mocks.ably.batchPublish).toHaveBeenCalledWith({
-          channels: [expect.stringMatching(/^runner-group:/)],
-          messages: expect.arrayContaining([
-            {
-              name: "connector-runtime-sync",
-              data: JSON.stringify({
-                runId: snapshotRun.runId,
-                target: { kind: "builtin", connectorSlug: "slack" },
-              }),
-              encoding: "json",
-            },
-          ]),
-        });
-        const [refreshedRuntime] = await api.syncConnectorRuntime(
-          snapshotRun.runId,
-          { targets: [snapshotSlackTarget] },
-        );
-        if (refreshedRuntime?.state !== "available") {
-          throw new Error(
-            "Expected refreshed connector runtime to be available",
-          );
-        }
-        expect(refreshedRuntime.networkPolicy.deny).toContain("chat:write");
-        expect(refreshedRuntime.networkPolicy.allow).not.toContain(
-          "chat:write",
-        );
-        expect(refreshedRuntime.networkPolicy.allow).toContain("files:write");
-        expect(refreshedRuntime.nextSyncAt).toStrictEqual(expect.any(String));
-
-        context.mocks.ably.publish.mockRejectedValueOnce(
-          new Error("network policy refresh publish failed"),
-        );
-        const failedRefreshNotification = await api.requestUserPermissionGrant(
-          actor,
-          {
-            agentId,
-            connectorSlug: "slack",
-            permission: "files:write",
-            action: "deny",
-          },
-          [200],
-        );
-        expect(failedRefreshNotification.status).toBe(200);
-        expect(failedRefreshNotification.body).toContainEqual(
-          expect.objectContaining({
-            connectorSlug: "slack",
-            permission: "files:write",
-            action: "deny",
-          }),
-        );
-        const committedGrants = await api.listUserPermissionGrants(
-          actor,
-          agentId,
-        );
-        expect(committedGrants).toContainEqual(
-          expect.objectContaining({
-            connectorSlug: "slack",
-            permission: "files:write",
-            action: "deny",
-          }),
-        );
-
-        await api.requestCancelRun(actor, snapshotRun.runId, [200]);
-        const cancelledRuntime = await api.requestSyncConnectorRuntimeAs(
-          `Bearer ${actorRunnerKey.token}`,
-          snapshotRun.runId,
-          {
-            targets: [{ kind: "builtin", connectorSlug: "slack" }],
-          },
-          [409],
-        );
-        expect(cancelledRuntime.body.error.code).toBe(
-          CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
-        );
-        expect((await api.readRunQueue(actor)).body.concurrency.active).toBe(1);
-        await oauth.finishCancelledRun(
-          snapshotRun.runId,
-          snapshotExecution.sandboxToken,
-        );
-        const drained = await api.readRunQueue(actor);
-        expect(drained.body.concurrency.active).toBe(0);
-      });
-
       it("distinguishes terminal connector runtime sync from missing runs", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
@@ -8742,7 +8196,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const oauth = createOrdinaryOAuthRunApi();
         const api = oauth.api;
         const { actor, runnerGroup } = await oauth.entitledRunActor();
-        await useAgentConnectorGrants(actor);
 
         const agent = await oauth.createAgent(actor, {
           displayName: "BDD Cloudflare unknown policy agent",
@@ -8797,17 +8250,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(defaults.deny).toContain("dns-firewall.write");
         expect(defaults.unknownPolicy).toBe("deny");
 
-        await api.applyUserPermissionGrant(actor, {
-          agentId,
-          connectorSlug: "cloudflare",
-          permission: "dns-firewall.write",
-          action: "allow",
+        await createChatConnectorAccessApi(context).applyPermissions(actor, {
+          target: { kind: "builtin", connectorSlug: "cloudflare" },
+          mode: "patch",
+          grants: [{ permission: "dns-firewall.write", action: "allow" }],
         });
-        await api.applyUserPermissionGrant(actor, {
-          agentId,
-          connectorSlug: "cloudflare",
-          permission: UNKNOWN_PERMISSION_GRANT,
-          action: "allow",
+        await createChatConnectorAccessApi(context).applyPermissions(actor, {
+          target: { kind: "builtin", connectorSlug: "cloudflare" },
+          mode: "patch",
+          grants: [{ permission: UNKNOWN_PERMISSION_GRANT, action: "allow" }],
         });
 
         const overridden = await runWithCloudflarePolicy(
@@ -8898,7 +8349,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const completed = await bdd.completeOnboarding(actor);
         expect(completed.status).toBe(200);
-        await useAgentConnectorGrants(actor);
         await bdd.updateUserTimezone(actor, "America/Los_Angeles");
         // Reading the current user caches the Clerk name/email used by the
         // run context's user-info section.
@@ -8916,11 +8366,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           accessToken: "xoxb-bdd-context",
         });
         await api.enableAgentConnectors(actor, agent.agentId, ["slack"]);
-        await api.applyUserPermissionGrant(actor, {
-          agentId: agent.agentId,
-          connectorSlug: "slack",
-          permission: "chat:write",
-          action: "allow",
+        await createChatConnectorAccessApi(context).applyPermissions(actor, {
+          target: { kind: "builtin", connectorSlug: "slack" },
+          mode: "patch",
+          grants: [{ permission: "chat:write", action: "allow" }],
         });
         const customConnector = await connectors.createCustomConnector(
           actor,

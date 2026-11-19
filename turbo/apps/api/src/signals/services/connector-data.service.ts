@@ -7,7 +7,6 @@ import {
   type BuiltinConnectorDeletionContext,
 } from "./connector-account-deletion-queries";
 import { randomUUID } from "node:crypto";
-import { loadWorkflowAutomationAccountMode$ } from "./workflow-automation-account.service";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { isOneClickConnectorGrantKind } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
@@ -1164,11 +1163,8 @@ const deleteBuiltinConnectorLocalState$ = command(
     const revocations = deletionPreparedRevocations(args);
     const payload = JSON.stringify({
       ...args.request,
-      chatAccountAccess: await set(
-        loadWorkflowAutomationAccountMode$,
-        args.request,
-        signal,
-      ),
+      // The deployed deletion function selects Chat account repair from this field.
+      chatAccountAccess: true,
       projections,
       revocations: revocations.map(({ preparation, read }) => {
         return {

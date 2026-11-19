@@ -1,6 +1,6 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
+
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
@@ -13,7 +13,8 @@ import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { nowDate } from "../../../lib/time.ts";
 import {
   builtinConnector,
-  OTHER_AGENT_ID,
+  chatConnectorOverviewFixture,
+  connectorAccount,
   SCOUT_AGENT_ID,
   SCOUT_THREAD_ID,
   createComposerConnectorHelpers,
@@ -25,7 +26,22 @@ const { installComposerConnectorFixture } =
   createComposerConnectorHelpers(context);
 
 const GITHUB_SLUG = "github" as ConnectorSlug;
-const SLACK_SLUG = "slack" as ConnectorSlug;
+
+function githubOverview(label: string) {
+  const target = { kind: "builtin", connectorSlug: GITHUB_SLUG } as const;
+  return chatConnectorOverviewFixture({
+    target,
+    label,
+    accounts: [
+      connectorAccount({
+        id: "f0000000-0000-4000-a000-000000000002",
+        target,
+        displayName: "Work GitHub",
+        isDefault: true,
+      }),
+    ],
+  });
+}
 
 test("Read connected inventory without fetching the connector directory or old authorization endpoints", async () => {
   installComposerConnectorFixture({
@@ -46,32 +62,19 @@ test("Read connected inventory without fetching the connector directory or old a
   await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
   click(await findFastControl("button", "Connectors"));
   await expect(
-    screen.findByLabelText("Remove GitHub"),
+    screen.findByRole("button", { name: /^GitHub/u }),
   ).resolves.toBeInTheDocument();
 });
 
-test("Refresh both independent resource domains every time the menu opens", async () => {
+test("Refresh the remote menu and Chat account inventory independently", async () => {
   installComposerConnectorFixture({
     catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
     builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
   });
   let connectorLabel = "First GitHub";
   let computerLabel = "First computer";
-  context.mocks.api(connectedConnectorsContract.list, ({ respond }) => {
-    return respond(200, {
-      builtinConnectors: [
-        {
-          slug: GITHUB_SLUG,
-          label: connectorLabel,
-          icon: {
-            url: "https://icons.example.test/github.svg",
-            invertInDarkMode: false,
-          },
-          hasPermissions: false,
-        },
-      ],
-      customConnectors: [],
-    });
+  context.mocks.api(chatConnectorAccessContract.overview, ({ respond }) => {
+    return respond(200, [githubOverview(connectorLabel)]);
   });
   context.mocks.api(remotesContract.overview, ({ respond }) => {
     return respond(200, {
@@ -94,17 +97,18 @@ test("Refresh both independent resource domains every time the menu opens", asyn
   const trigger = await findFastControl("button", "Connectors");
   expect(screen.queryByText("First computer")).not.toBeInTheDocument();
   click(trigger);
-  await screen.findByLabelText("Remove First GitHub");
+  await screen.findByRole("button", { name: /^First GitHub/u });
   await screen.findByText("First computer");
   click(trigger);
   await waitFor(() => {
     return expect(screen.queryByText("First computer")).not.toBeInTheDocument();
   });
   connectorLabel = "Renamed GitHub";
+  context.mocks.ably.trigger("connector:changed");
   computerLabel = "Renamed computer";
   click(trigger);
   await expect(
-    screen.findByLabelText("Remove Renamed GitHub"),
+    screen.findByRole("button", { name: /^Renamed GitHub/u }),
   ).resolves.toBeVisible();
   await expect(screen.findByText("Renamed computer")).resolves.toBeVisible();
   expect(screen.queryByText("First computer")).not.toBeInTheDocument();
@@ -122,63 +126,45 @@ test("Render connected connectors while remote resources are unavailable", async
   });
   await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
   click(await findFastControl("button", "Connectors"));
-  await expect(screen.findByLabelText("Remove GitHub")).resolves.toBeVisible();
+  await expect(
+    screen.findByRole("button", { name: /^GitHub/u }),
+  ).resolves.toBeVisible();
   await expect(screen.findByRole("alert")).resolves.toBeVisible();
 });
 
-test("Closing a pending menu releases its snapshot before reopening", async () => {
-  installComposerConnectorFixture({
-    builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
-  });
-  const started = context.mocks.deferred<AbortSignal>();
+test("Reopening a pending menu shares the Chat page's inventory request", async () => {
+  installComposerConnectorFixture();
+  const started = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
-  let pending = true;
+  let reads = 0;
   context.mocks.api(
-    connectedConnectorsContract.list,
-    async ({ request, respond }) => {
-      const stale = pending;
-      if (stale) {
-        started.resolve(request.signal);
-        await release.promise;
-      }
-      return respond(200, {
-        builtinConnectors: [
-          {
-            slug: GITHUB_SLUG,
-            label: stale ? "Stale GitHub" : "Fresh GitHub",
-            icon: {
-              url: "https://icons.example.test/github.svg",
-              invertInDarkMode: false,
-            },
-            hasPermissions: false,
-          },
-        ],
-        customConnectors: [],
-      });
+    chatConnectorAccessContract.overview,
+    async ({ respond, withSignal }) => {
+      reads += 1;
+      started.resolve();
+      await withSignal(release.promise);
+      return respond(200, [githubOverview("GitHub")]);
     },
   );
   await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
   const trigger = await findFastControl("button", "Connectors");
   click(trigger);
-  await screen.findByRole("dialog", { name: "Connectors" });
-  const requestSignal = await started.promise;
+  await started.promise;
   click(trigger);
   await waitFor(() => {
     expect(screen.queryByRole("dialog", { name: "Connectors" })).toBeNull();
-    expect(requestSignal.aborted).toBeTruthy();
   });
-  pending = false;
   click(trigger);
-  await expect(
-    screen.findByLabelText("Remove Fresh GitHub"),
-  ).resolves.toBeVisible();
   release.resolve(undefined);
-  expect(screen.queryByLabelText("Remove Stale GitHub")).toBeNull();
+  await expect(
+    screen.findByRole("button", { name: /^GitHub/u }),
+  ).resolves.toBeVisible();
+  expect(reads).toBe(1);
 });
 
 test("Render remote resources while connected connectors are unavailable", async () => {
   installComposerConnectorFixture();
-  context.mocks.api(connectedConnectorsContract.list, ({ respond }) => {
+  context.mocks.api(chatConnectorAccessContract.overview, ({ respond }) => {
     return respond(503, {
       error: {
         code: "PROVIDER_UNAVAILABLE",
@@ -207,7 +193,7 @@ test("Render remote resources while connected connectors are unavailable", async
   click(await findFastControl("button", "Connectors"));
   await expect(screen.findByText("Available computer")).resolves.toBeVisible();
   await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
-    "Couldn't load connectors.",
+    "Accounts are unavailable for this connector.",
   );
 });
 
@@ -250,66 +236,4 @@ test("Reopening an existing chat refreshes its effective host choices", async ()
   enabled = false;
   click(trigger);
   await expect(screen.findByText("0 enabled")).resolves.toBeVisible();
-});
-
-test("Do not show the previous Agent's connectors while the next Agent loads", async () => {
-  const otherAuthorization = context.mocks.deferred<void>();
-  installComposerConnectorFixture({
-    catalog: [
-      builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" }),
-      builtinConnector({ slug: SLACK_SLUG, label: "Slack" }),
-    ],
-    builtinAuthorizations: {
-      [SCOUT_AGENT_ID]: [GITHUB_SLUG],
-      [OTHER_AGENT_ID]: [SLACK_SLUG],
-    },
-    authorizationGates: { [OTHER_AGENT_ID]: otherAuthorization.promise },
-  });
-  context.mocks.data.userPreferences({
-    pinnedAgentIds: [SCOUT_AGENT_ID, OTHER_AGENT_ID],
-  });
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
-  const trigger = await findFastControl("button", "Connectors");
-  click(trigger);
-  await screen.findByLabelText("Remove GitHub");
-  click(trigger);
-  await waitFor(() => {
-    expect(screen.queryByLabelText("Remove GitHub")).toBeNull();
-  });
-
-  click(await findFastControl("link", "Other Agent"));
-  await waitFor(() => {
-    expect(window.location.pathname).toBe(`/agents/${OTHER_AGENT_ID}/chat`);
-  });
-  click(await findFastControl("button", "Connectors"));
-  await screen.findByRole("dialog", { name: "Connectors" });
-  expect(screen.queryByLabelText("Remove GitHub")).toBeNull();
-  expect(screen.queryByRole("list", { name: "Connectors" })).toBeNull();
-
-  otherAuthorization.resolve(undefined);
-  await expect(
-    screen.findByLabelText("Remove Slack"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByLabelText("Add GitHub")).toBeInTheDocument();
-});
-
-test("Show an error when an authorization change cannot be saved", async () => {
-  installComposerConnectorFixture({
-    catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
-    builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
-  });
-  context.mocks.api(userBuiltinConnectorsContract.update, ({ respond }) => {
-    return respond(500, {
-      error: {
-        code: "INTERNAL_ERROR",
-        message: "Authorization could not be saved",
-      },
-    });
-  });
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
-  click(await findFastControl("button", "Connectors"));
-  click(await screen.findByLabelText("Remove GitHub"));
-  await expect(
-    screen.findByText("Authorization could not be saved"),
-  ).resolves.toBeVisible();
 });

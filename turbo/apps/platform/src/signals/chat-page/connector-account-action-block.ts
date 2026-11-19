@@ -6,23 +6,18 @@ import { connectorAccountsContract } from "@okouai/api-contracts/client/connecto
 import type {
   ConnectorAccountConnection,
   ConnectorAccountSelection,
-  ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/client/chat-threads";
+
 import { runConnectorAccountsContract } from "@okouai/api-contracts/client/run-connector-accounts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitches$ } from "../external/feature-switch.ts";
+
 import { command, computed, type Command, type Computed } from "ccstate";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { connectorCatalogItemBySlug } from "../external/connectors.ts";
-import type {
-  ComposerConnectorAuthorizationState,
-  ComposerConnectorSignals,
-} from "../okou-page/connectors.ts";
+import type { ComposerConnectorSignals } from "../okou-page/connectors.ts";
 import { customConnectors$ } from "../okou-page/settings/custom-connectors.ts";
 import {
   chatActionCallbackFromUrl,
@@ -178,15 +173,6 @@ function selectionIsCurrent(
   });
 }
 
-function targetIsAuthorized(
-  authorization: ComposerConnectorAuthorizationState,
-  target: ConnectorAccountTarget,
-): boolean {
-  return target.kind === "builtin"
-    ? authorization.enabledConnectorSlugs.includes(target.connectorSlug)
-    : authorization.customConnectorIds.includes(target.customConnectorId);
-}
-
 // A block names one connector, so it reads that catalog entry rather than the
 // whole catalog status.
 function builtinActionConnector(
@@ -228,30 +214,18 @@ function createConnectorAccountConfirmSignal(
       clientEventId: crypto.randomUUID(),
       chatThreadSortEventId: crypto.randomUUID(),
     };
-    const features = await get(featureSwitches$);
+
     signal.throwIfAborted();
-    if (features[FeatureSwitchKey.ConnectorChatAccountAccess]) {
-      await accept(
-        get(apiClient$)(runConnectorAccountsContract).approve({
-          params: { threadId: descriptor.threadId },
-          body: descriptor.selection,
-          fetchOptions: { signal },
-        }),
-        [200],
-        signal,
-      );
-      set(connector.reloadAccountPreference$);
-    } else {
-      await accept(
-        get(apiClient$)(chatThreadConnectorSelectionContract).update({
-          params: { id: descriptor.threadId },
-          body: descriptor.selection,
-          fetchOptions: { signal },
-        }),
-        [200],
-        signal,
-      );
-    }
+    await accept(
+      get(apiClient$)(runConnectorAccountsContract).approve({
+        params: { threadId: descriptor.threadId },
+        body: descriptor.selection,
+        fetchOptions: { signal },
+      }),
+      [200],
+      signal,
+    );
+    set(connector.reloadAccountPreference$);
     await set(
       runChatActionCallback$,
       {
@@ -276,16 +250,6 @@ function createConnectorAccountActionSignals(
       : customActionConnector(target.customConnectorId);
   const status$ = computed(
     async (get): Promise<ConnectorAccountActionStatus> => {
-      if (
-        !(await get(featureSwitches$))[
-          FeatureSwitchKey.ConnectorChatAccountAccess
-        ]
-      ) {
-        const authorization = await get(connector.connectorAuthorization$);
-        if (!targetIsAuthorized(authorization, descriptor.selection.target)) {
-          return { kind: "unavailable" };
-        }
-      }
       const result = await accept(
         get(apiClient$)(connectorAccountsContract).connection({
           params: { connectionId: descriptor.selection.connectionId },

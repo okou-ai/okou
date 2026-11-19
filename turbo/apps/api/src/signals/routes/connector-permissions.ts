@@ -1,6 +1,5 @@
 import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { command, computed } from "ccstate";
 
 import { badRequestMessage, notFound } from "../../lib/error";
@@ -13,7 +12,7 @@ import {
   applyConnectorPermissions$,
   connectorPermissions,
 } from "../services/connector-permissions.service";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
+
 import { publishConnectorRuntimeSyncWakeups$ } from "../services/connector-runtime-wakeup.service";
 import { publishConnectorPermissionUpdatedSafely } from "../external/realtime";
 
@@ -22,24 +21,10 @@ const ownerAuth = {
   missingOrganizationStatus: 401,
   accept: ["session"],
 } as const;
-const unavailable = notFound(
-  "Connector permission configuration is not available",
-);
 const missing = notFound("Connector account not found");
 const owner$ = computed((get) => {
   const auth = get(organizationAuthContext$);
   return { orgId: auth.orgId, userId: auth.userId };
-});
-const featureAvailable$ = command(async ({ get, set }, signal: AbortSignal) => {
-  set(setResHeader$, "Cache-Control", "no-store");
-  const owner = get(owner$);
-  const context = await set(
-    loadUserFeatureSwitchContext$,
-    owner.orgId,
-    owner.userId,
-    signal,
-  );
-  return isFeatureEnabled(FeatureSwitchKey.ConnectorChatAccountAccess, context);
 });
 const scope$ = computed((get) => {
   return {
@@ -49,9 +34,7 @@ const scope$ = computed((get) => {
 });
 const permissions$ = connectorPermissions(scope$);
 const getHandler$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await set(featureAvailable$, signal))) {
-    return unavailable;
-  }
+  set(setResHeader$, "Cache-Control", "no-store");
   const body = await get(permissions$);
   signal.throwIfAborted();
   return body ? { status: 200 as const, body } : missing;
@@ -62,9 +45,7 @@ const applyScope$ = computed(async (get) => {
 });
 const appliedPermissions$ = connectorPermissions(applyScope$);
 const applyHandler$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await set(featureAvailable$, signal))) {
-    return unavailable;
-  }
+  set(setResHeader$, "Cache-Control", "no-store");
   const body = await get(bodyResultOf(connectorPermissionsContract.apply));
   signal.throwIfAborted();
   if (!body.ok) {

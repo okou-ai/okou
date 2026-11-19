@@ -102,17 +102,8 @@ import {
   ConnectorShelfSection,
 } from "./components/settings/connector-shelf.tsx";
 import { ConnectorAccessManagementDialog } from "./components/settings/connector-access-management-dialog.tsx";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
-import {
-  ConnectorAgentAccessButton,
-  connectorAgentAccessStatus,
-} from "./components/settings/connector-agent-access-button.tsx";
-import {
-  closeConnectorAccessManagement$,
-  connectorAuthorizedAgentsBySlug$,
-  managedConnectorAccessSlug$,
-} from "../../signals/okou-page/settings/connector-access-management.ts";
+
+import { managedConnectorAccessSlug$ } from "../../signals/okou-page/settings/connector-access-management.ts";
 import { noConnectorImg } from "./platform-assets.ts";
 import { AvatarFromUrl } from "./sidebar-shared.tsx";
 import {
@@ -998,56 +989,19 @@ function ConnectorAccessButton(props: {
   readonly allowAccessIncrease: boolean;
   readonly onClick: () => void;
 }) {
-  const enabled =
-    useLastResolved(featureSwitches$)?.[
-      FeatureSwitchKey.ConnectorChatAccountAccess
-    ];
   const { t } = useTranslation();
-  return enabled ? (
-    props.allowAccessIncrease && props.hasPermissions ? (
-      <Button
-        variant="quiet"
-        size="xs"
-        className="px-2 text-xs font-normal"
-        onClick={props.onClick}
-      >
-        {t(($) => {
-          return $.connectorChatAccess.permissions;
-        })}
-      </Button>
-    ) : null
-  ) : (
-    <LegacyConnectorAccessButton {...props} />
-  );
-}
-
-function LegacyConnectorAccessButton({
-  connectorSlug,
-  connectorLabel,
-  allowAccessIncrease,
-  onClick,
-}: {
-  readonly connectorSlug: ConnectorSlug;
-  readonly connectorLabel: string;
-  readonly allowAccessIncrease: boolean;
-  readonly onClick: () => void;
-}) {
-  const agentsBySlugLoadable = useLastLoadable(
-    connectorAuthorizedAgentsBySlug$,
-  );
-  const agents =
-    agentsBySlugLoadable.state === "hasData"
-      ? (agentsBySlugLoadable.data.get(connectorSlug) ?? [])
-      : [];
-  return (
-    <ConnectorAgentAccessButton
-      agents={agents}
-      status={connectorAgentAccessStatus(agentsBySlugLoadable.state)}
-      allowAccessIncrease={allowAccessIncrease}
-      connectorLabel={connectorLabel}
-      onClick={onClick}
-    />
-  );
+  return props.allowAccessIncrease && props.hasPermissions ? (
+    <Button
+      variant="quiet"
+      size="xs"
+      className="px-2 text-xs font-normal"
+      onClick={props.onClick}
+    >
+      {t(($) => {
+        return $.connectorChatAccess.permissions;
+      })}
+    </Button>
+  ) : null;
 }
 
 /**
@@ -1292,11 +1246,7 @@ function ManagedConnectorAccessDialogBody({
 }: {
   readonly connectorSlug: ConnectorSlug;
 }) {
-  const close = useSet(closeConnectorAccessManagement$);
   const catalogItemsLoadable = useLastLoadable(relatedCatalogItems$);
-  const connectedTargetsLoadable = useLastLoadable(
-    connectedConnectorTargetKeys$,
-  );
   if (catalogItemsLoadable.state !== "hasData") {
     return null;
   }
@@ -1307,16 +1257,10 @@ function ManagedConnectorAccessDialogBody({
   if (!connectorLabel) {
     return null;
   }
-  const hasAccount =
-    connectedTargetsLoadable.state === "hasData"
-      ? connectedTargetsLoadable.data.has(`builtin:${connectorSlug}`)
-      : undefined;
   return (
     <ConnectorAccessManagementDialog
       connectorSlug={connectorSlug}
       connectorLabel={connectorLabel}
-      allowAccessIncrease={hasAccount === true}
-      onClose={close}
     />
   );
 }

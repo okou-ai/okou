@@ -122,17 +122,12 @@ function createAgentSubmitMessage(
       const initialPhoneUse = features[FeatureSwitchKey.PhoneUse]
         ? get(connector.phoneAccess.pending$)
         : null;
-      const chatAccessEnabled =
-        features[FeatureSwitchKey.ConnectorChatAccountAccess];
-      const connectorPreference = chatAccessEnabled
-        ? null
-        : await get(connector.accounts.preferenceState$);
+
       signal.throwIfAborted();
       const send = options.inPlace
         ? sendNewThreadWithoutNavigation$
         : sendNewThread$;
       const initialRemoteAccessOverrides = get(pendingRemoteAccess.overrides$);
-      const connectorSelections = connectorPreference?.selections ?? [];
       const pendingConnectorAccess = get(connector.chatAccess.pending$);
       const hasPendingConnectorAccess =
         pendingConnectorAccess.overrides.length > 0 ||
@@ -165,8 +160,7 @@ function createAgentSubmitMessage(
           ...(options.onOptimisticSend
             ? { onOptimisticSend: options.onOptimisticSend }
             : {}),
-          ...(connectorSelections.length > 0 ? { connectorSelections } : {}),
-          ...(chatAccessEnabled && hasPendingConnectorAccess
+          ...(hasPendingConnectorAccess
             ? { initialConnectorAccess: pendingConnectorAccess }
             : {}),
           ...(initialRemoteAccessOverrides.length > 0

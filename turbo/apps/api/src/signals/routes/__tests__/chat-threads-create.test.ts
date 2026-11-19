@@ -1,3 +1,4 @@
+import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 import { randomUUID } from "node:crypto";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 
@@ -397,11 +398,9 @@ describe("POST /api/chat-threads", () => {
     );
   });
 
-  it("resolves only sparse connector selections during account deletion", async () => {
+  it("repairs selected and inherited accounts during deletion", async () => {
     const fixture = await seedAgent();
-    await updateFeatureSwitchesForUser(context, fixture, {
-      connectorChatAccountAccess: false,
-    });
+
     const firstResponse = await connectorApi.requestManualGrant(
       fixture.actor,
       "openai",
@@ -490,8 +489,14 @@ describe("POST /api/chat-threads", () => {
       }),
       [200],
     );
-    expect(selected.body.selections).toStrictEqual([]);
-    expect(selected.body.selectedConnections).toStrictEqual([]);
+    const remaining = {
+      target: { kind: "builtin", connectorSlug: "openai" },
+      connectionId: firstResponse.body.connectionId,
+    };
+    expect(selected.body.selections).toStrictEqual([remaining]);
+    expect(selected.body.selectedConnections).toMatchObject([
+      { id: remaining.connectionId, target: remaining.target },
+    ]);
     const inherited = await accept(
       connectorSelectionsClient().get({
         headers: { authorization: `Bearer ${token}` },
@@ -499,8 +504,10 @@ describe("POST /api/chat-threads", () => {
       }),
       [200],
     );
-    expect(inherited.body.selections).toStrictEqual([]);
-    expect(inherited.body.selectedConnections).toStrictEqual([]);
+    expect(inherited.body).toStrictEqual({
+      selections: [],
+      selectedConnections: [],
+    });
 
     createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
     const deletedRemainingAccount = await accept(
@@ -513,7 +520,7 @@ describe("POST /api/chat-threads", () => {
       }),
       [200],
     );
-    expect(deletedRemainingAccount.body.resolvedSelectionCount).toBe(0);
+    expect(deletedRemainingAccount.body.resolvedSelectionCount).toBe(1);
     const afterClear = await accept(
       connectorSelectionsClient().get({
         headers: { authorization: `Bearer ${token}` },
@@ -581,11 +588,9 @@ describe("POST /api/chat-threads", () => {
     ).resolves.toHaveLength(1);
   });
 
-  it("refreshes builtin and custom selection authorization after grant changes", async () => {
+  it("refreshes builtin and custom selection authorization after Chat allowance changes", async () => {
     const actor = bdd.user();
-    await connectorApi.updateFeatureSwitches(actor, {
-      connectorChatAccountAccess: false,
-    });
+
     bdd.acceptAgentStorageWrites();
     const agent = await bdd.createAgent(actor, {
       displayName: "Selection authorization changes",
@@ -651,9 +656,9 @@ describe("POST /api/chat-threads", () => {
       expect.arrayContaining([...requested]),
     );
 
-    await api.enableAgentConnectors(actor, agent.agentId, []);
-    await connectorApi.updateAgentCustomConnectors(actor, agent.agentId, []);
+    const access = createChatConnectorAccessApi(context);
     for (const selection of requested) {
+      await access.setThreadOverride(actor, created.body.id, selection, false);
       const denied = await accept(
         connectorSelectionsClient().update({
           headers,
@@ -664,7 +669,7 @@ describe("POST /api/chat-threads", () => {
       );
       expect(denied.body.error).toStrictEqual({
         code: "BAD_REQUEST",
-        message: "Connector target is not authorized for this agent",
+        message: "Account is unavailable or not allowed in this Chat",
       });
     }
     const preserved = await accept(
@@ -674,13 +679,10 @@ describe("POST /api/chat-threads", () => {
       }),
       [200],
     );
-    expect(preserved.body.selections).toStrictEqual(initial.body.selections);
+    expect(preserved.body.selections).toStrictEqual([]);
 
-    await api.enableAgentConnectors(actor, agent.agentId, ["openai"]);
-    await connectorApi.updateAgentCustomConnectors(actor, agent.agentId, [
-      definition.id,
-    ]);
     for (const selection of requested) {
+      await access.setThreadOverride(actor, created.body.id, selection, true);
       const updated = await accept(
         connectorSelectionsClient().update({
           headers,
@@ -703,9 +705,7 @@ describe("POST /api/chat-threads", () => {
 
   it("creates and reads an exact built-in connector account selection", async () => {
     const fixture = await seedAgent();
-    await updateFeatureSwitchesForUser(context, fixture, {
-      connectorChatAccountAccess: false,
-    });
+
     const connection = await connectorApi.connectManualGrant(
       fixture.actor,
       "openai",
@@ -759,9 +759,7 @@ describe("POST /api/chat-threads", () => {
       { orgId: fixture.orgId, userId: foreignActor.userId },
       context.signal,
     );
-    await connectorApi.updateFeatureSwitches(foreignActor, {
-      connectorChatAccountAccess: false,
-    });
+
     const foreignConnection = await connectorApi.connectManualGrant(
       foreignActor,
       "openai",
@@ -801,36 +799,20 @@ describe("POST /api/chat-threads", () => {
       { orgId: otherOrgId, userId: fixture.userId },
       context.signal,
     );
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: fixture.userId, orgId: otherOrgId },
-      { connectorChatAccountAccess: false },
-    );
+
     const otherOrgToken = await executionToken({
       userId: fixture.userId,
       orgId: otherOrgId,
     });
     for (const deniedToken of [foreignToken, otherOrgToken]) {
       await accept(
-        connectorSelectionsClient().clear({
+        connectorSelectionsClient().get({
           headers: { authorization: `Bearer ${deniedToken}` },
           params: { id: created.body.id },
-          body: { kind: "builtin", connectorSlug: "openai" },
         }),
         [404],
       );
     }
-    const afterDeniedClear = await accept(
-      connectorSelectionsClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    expect(afterDeniedClear.body.selections).toStrictEqual(
-      selections.body.selections,
-    );
-
     context.mocks.ably.publish.mockClear();
     const updated = await accept(
       connectorSelectionsClient().update({
@@ -849,50 +831,6 @@ describe("POST /api/chat-threads", () => {
       null,
     );
 
-    await api.enableAgentConnectors(fixture.actor, fixture.agentId, []);
-    const preserved = await accept(
-      connectorSelectionsClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    expect(preserved.body.selections).toStrictEqual(selections.body.selections);
-    await accept(
-      connectorSelectionsClient().update({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-        body: {
-          connectionId: connection.id,
-          target: { kind: "builtin", connectorSlug: "openai" },
-        },
-      }),
-      [400],
-    );
-
-    context.mocks.ably.publish.mockClear();
-    await accept(
-      connectorSelectionsClient().clear({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-        body: { kind: "builtin", connectorSlug: "openai" },
-      }),
-      [204],
-    );
-    const cleared = await accept(
-      connectorSelectionsClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    expect(cleared.body.selections).toStrictEqual([]);
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      `chatThreadDetailChanged:${created.body.id}`,
-      null,
-    );
-
-    await api.enableAgentConnectors(fixture.actor, fixture.agentId, ["openai"]);
     await accept(
       connectorSelectionsClient().update({
         headers: { authorization: `Bearer ${token}` },
@@ -904,62 +842,25 @@ describe("POST /api/chat-threads", () => {
       }),
       [400],
     );
-    await Promise.all([
-      accept(
-        connectorSelectionsClient().update({
-          headers: { authorization: `Bearer ${token}` },
-          params: { id: created.body.id },
-          body: {
-            connectionId: connection.id,
-            target: { kind: "builtin", connectorSlug: "openai" },
-          },
-        }),
-        [200],
-      ),
-      accept(
-        connectorSelectionsClient().clear({
-          headers: { authorization: `Bearer ${token}` },
-          params: { id: created.body.id },
-          body: { kind: "builtin", connectorSlug: "openai" },
-        }),
-        [204],
-      ),
-    ]);
-    const afterConcurrentClear = await accept(
-      connectorSelectionsClient().get({
+
+    createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
+    const [concurrentSelectionWrite, concurrentDisconnect] = await Promise.all([
+      connectorSelectionsClient().update({
         headers: { authorization: `Bearer ${token}` },
         params: { id: created.body.id },
+        body: {
+          connectionId: connection.id,
+          target: { kind: "builtin", connectorSlug: "openai" },
+        },
       }),
-      [200],
-    );
-    expect([[], selections.body.selections]).toContainEqual(
-      afterConcurrentClear.body.selections,
-    );
-    createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
-    const [concurrentSelectionWrite, concurrentDisconnect, concurrentClear] =
-      await Promise.all([
-        connectorSelectionsClient().update({
-          headers: { authorization: `Bearer ${token}` },
-          params: { id: created.body.id },
-          body: {
-            connectionId: connection.id,
-            target: { kind: "builtin", connectorSlug: "openai" },
-          },
-        }),
-        connectorAccountsClient().delete({
-          headers: { authorization: "Bearer clerk-session" },
-          params: { connectionId: connection.id },
-          body: { target: { kind: "builtin", connectorSlug: "openai" } },
-        }),
-        connectorSelectionsClient().clear({
-          headers: { authorization: `Bearer ${token}` },
-          params: { id: created.body.id },
-          body: { kind: "builtin", connectorSlug: "openai" },
-        }),
-      ]);
+      connectorAccountsClient().delete({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { connectionId: connection.id },
+        body: { target: { kind: "builtin", connectorSlug: "openai" } },
+      }),
+    ]);
     expect([200, 400]).toContain(concurrentSelectionWrite.status);
     expect(concurrentDisconnect.status).toBe(200);
-    expect(concurrentClear.status).toBe(204);
     const afterDisconnect = await accept(
       connectorSelectionsClient().get({
         headers: { authorization: `Bearer ${token}` },

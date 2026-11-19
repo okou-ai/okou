@@ -16,7 +16,6 @@ import { mockApi } from "../msw-contract.ts";
 
 export const DEFAULT_SWITCH_OVERRIDES = Object.freeze({
   [FeatureSwitchKey.SingleAgent]: false,
-  [FeatureSwitchKey.ConnectorChatAccountAccess]: false,
 });
 
 export const apiFeatureSwitchesHandlers = [

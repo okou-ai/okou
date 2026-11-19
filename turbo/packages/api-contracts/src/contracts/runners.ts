@@ -860,7 +860,7 @@ const preparedExecutionContextObjectSchema = object({
   firewalls: executionFirewallsSchema,
   // Per-firewall network policies: which permissions are granted + unknownPolicy
   networkPolicies: networkPoliciesSchema,
-  // Captured decisions: singleAgent and connectorChatAccountAccess.
+  // Captured decisions used by runtime consumers.
   // They must match the admitted token, prompt and connector account choices.
   featureFlags: record(string(), boolean()),
   billableFirewalls: array(string()),

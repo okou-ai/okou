@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import {
@@ -30,7 +29,6 @@ import {
   getConnectorAction,
   getConnectorCard,
   getConnectorIcon,
-  getConnectorSwitch,
   listAgent,
   mockConnectors,
   mockOAuthCompletions,
@@ -243,11 +241,9 @@ test.each(["none", "oauth"] as const)(
         : { location: { href: authorizationUrl } },
     );
     click(getConnectorAction("button", "Skip", naming));
-    await waitFor(() => {
-      expect(
-        getConnectorAction("button", "Manage Partner Tools access"),
-      ).toHaveTextContent("Used by Default");
-    });
+    await expect(
+      within(getConnectorCard("Partner Tools")).findByText("Connected"),
+    ).resolves.toBeInTheDocument();
   },
 );
 
@@ -409,9 +405,6 @@ test("Add an AWS account through external-code authorization", async () => {
   await expect(
     within(awsCard).findByText("Connected"),
   ).resolves.toBeInTheDocument();
-  expect(
-    getConnectorAction("button", "Manage AWS access", awsCard),
-  ).toHaveTextContent("Used by Research Agent");
 });
 
 test("Add an account through OpenID", async () => {
@@ -490,11 +483,9 @@ test("Add an account through OpenID", async () => {
     name: "Name your Partner Steam account",
   });
   click(getConnectorAction("button", "Skip", naming));
-  await waitFor(() => {
-    expect(
-      getConnectorAction("button", "Manage Partner Steam access"),
-    ).toHaveTextContent("Used by 2 agents");
-  });
+  await expect(
+    within(getConnectorCard("Partner Steam")).findByText("Connected"),
+  ).resolves.toBeInTheDocument();
 });
 
 test("Choose a credential-free method", async () => {
@@ -539,125 +530,6 @@ test("Choose a credential-free method", async () => {
       within(getConnectorCard("Public Stripe")).getByText("Connected"),
     ).toBeInTheDocument();
   });
-});
-
-test("Authorize visible agents only for the first manual account", async () => {
-  const researchId = "c0000000-0000-4000-a000-000000000002";
-  mockConnectors(context, []);
-  context.mocks.data.agents([
-    listAgent("c0000000-0000-4000-a000-000000000001", "Nova"),
-    listAgent(researchId, "Research Agent"),
-  ]);
-  mockPublicConnectorStatus(context, [
-    publicStatusItem({
-      connectorSlug: "axiom",
-      label: "Public Axiom",
-      authMethods: [
-        manualMethod({
-          id: "api-token",
-          label: "Public API Token",
-          fieldId: "apiToken",
-          fieldLabel: "Public API token",
-          placeholder: "public-xaat",
-        }),
-      ],
-    }),
-  ]);
-  let connectedAccount: BuiltinConnectorResponse | undefined;
-  context.mocks.api(
-    builtinConnectorManualGrantContract.connect,
-    ({ body, respond }) => {
-      expect(body.authorizeAgent ?? false).toBe(!connectedAccount);
-      connectedAccount = storeConnectedConnector("axiom", body.authMethod);
-      return respond(200, { connectionId: connectedAccount.id });
-    },
-  );
-  mockAgentConnectorAccess("axiom");
-  await setupPage({
-    context,
-    path: "/connectors?keywords=axiom",
-  });
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "Connect Public Axiom");
-    }),
-  );
-  const dialog = await screen.findByRole("dialog", { name: "Public Axiom" });
-  const tokenInput = within(dialog).getByPlaceholderText("public-xaat");
-  expect(tokenInput).toHaveAttribute("type", "password");
-  expect(tokenInput).toHaveAttribute("autocomplete", "off");
-  expect(tokenInput.closest("form")).toHaveAttribute("autocomplete", "off");
-  await fill(tokenInput, "xaat-test");
-
-  click(getConnectorAction("button", "Save", dialog));
-
-  await expect(
-    screen.findByText("Public Axiom connected successfully"),
-  ).resolves.toBeInTheDocument();
-  const naming = await screen.findByRole("dialog", {
-    name: "Name your Public Axiom account",
-  });
-  click(getConnectorAction("button", "Skip", naming));
-  await waitFor(() => {
-    expect(
-      within(getConnectorCard("Public Axiom")).getByText("Connected"),
-    ).toBeInTheDocument();
-    expect(
-      getConnectorAction(
-        "button",
-        "Manage Public Axiom access",
-        getConnectorCard("Public Axiom"),
-      ),
-    ).toHaveTextContent("Used by 2 agents");
-  });
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-
-  click(getConnectorAction("button", "Manage Public Axiom access"));
-  const access = await screen.findByRole("dialog", {
-    name: "Manage Public Axiom access",
-  });
-  click(getConnectorSwitch("Revoke Public Axiom access for Nova", access));
-  await waitFor(() => {
-    expect(
-      getConnectorSwitch("Authorize Public Axiom access for Nova", access),
-    ).not.toBeChecked();
-  });
-  click(getConnectorAction("button", "Close", access));
-  click(getConnectorAction("button", "Manage Public Axiom accounts"));
-  const manager = await screen.findByRole("dialog", {
-    name: "Manage Public Axiom accounts",
-  });
-  click(getConnectorAction("button", "Add account", manager));
-  const addition = await screen.findByRole("dialog", {
-    name: "Public Axiom",
-  });
-  await fill(
-    within(addition).getByPlaceholderText("public-xaat"),
-    "second-token",
-  );
-  click(getConnectorAction("button", "Save", addition));
-  const secondNaming = await screen.findByRole("dialog", {
-    name: "Name your Public Axiom account",
-  });
-  click(getConnectorAction("button", "Skip", secondNaming));
-  await waitFor(() => {
-    expect(
-      getConnectorAction("button", "Manage Public Axiom access"),
-    ).toHaveTextContent("Used by Research Agent");
-  });
-  click(getConnectorAction("button", "Manage Public Axiom access"));
-  const updatedAccess = await screen.findByRole("dialog", {
-    name: "Manage Public Axiom access",
-  });
-  expect(
-    getConnectorSwitch("Authorize Public Axiom access for Nova", updatedAccess),
-  ).not.toBeChecked();
-  expect(
-    getConnectorSwitch(
-      "Revoke Public Axiom access for Research Agent",
-      updatedAccess,
-    ),
-  ).toBeChecked();
 });
 
 test("Connect through device authorization", async () => {
@@ -739,9 +611,6 @@ test("Connect through device authorization", async () => {
     expect(
       within(getConnectorCard("Base44")).getByText("Connected"),
     ).toBeInTheDocument();
-    expect(
-      getConnectorAction("button", "Manage Base44 access"),
-    ).toHaveTextContent("Used by 2 agents");
   });
 });
 
@@ -850,17 +719,9 @@ test.each([
       screen.queryByRole("dialog", { name: `Name your ${label} account` }),
     ).not.toBeInTheDocument();
     click(within(dialog).getByLabelText("Close"));
-    click(
-      await waitFor(() => {
-        return getConnectorAction("button", `Manage ${label} access`);
-      }),
-    );
-    const access = await screen.findByRole("dialog", {
-      name: `Manage ${label} access`,
-    });
-    expect(
-      getConnectorSwitch(`Authorize ${label} access for Research`, access),
-    ).not.toBeChecked();
+    await expect(
+      screen.findByRole("button", { name: `Manage ${label} accounts` }),
+    ).resolves.toBeVisible();
   },
 );
 
@@ -882,7 +743,7 @@ test("Enable a connector that needs no credentials", async () => {
   context.mocks.api(
     builtinConnectorNoAuthGrantContract.connect,
     ({ body, respond }) => {
-      expect(body.authorizeAgent).toBeTruthy();
+      expect(body.authorizeAgent).toBeUndefined();
       return respond(200, {
         connectionId: storeConnectedConnector("stripe", body.authMethod).id,
       });
@@ -911,13 +772,6 @@ test("Enable a connector that needs no credentials", async () => {
     expect(
       within(getConnectorCard("Public Stripe")).getByText("Connected"),
     ).toBeInTheDocument();
-    expect(
-      getConnectorAction(
-        "button",
-        "Manage Public Stripe access",
-        getConnectorCard("Public Stripe"),
-      ),
-    ).toHaveTextContent("Used by 2 agents");
   });
   expect(browserOpen.calls).toHaveLength(0);
 });
@@ -1076,15 +930,9 @@ test("Complete OAuth only after the current attempt succeeds", async () => {
     name: "Name your Public Stripe account",
   });
   click(getConnectorAction("button", "Skip", naming));
-  await waitFor(() => {
-    expect(
-      getConnectorAction(
-        "button",
-        "Manage Public Stripe access",
-        getConnectorCard("Public Stripe"),
-      ),
-    ).toHaveTextContent("Used by 2 agents");
-  });
+  await expect(
+    within(getConnectorCard("Public Stripe")).findByText("Connected"),
+  ).resolves.toBeInTheDocument();
 });
 
 async function addManualAccountForNaming({
@@ -1482,96 +1330,4 @@ test("Submit credentials only for the chosen manual method", async () => {
       within(getConnectorCard("Public Axiom")).getByText("Connected"),
     ).toBeInTheDocument();
   });
-});
-
-async function connectAxiomInPersonalMode(defaultListed: boolean) {
-  const defaultId = "c0000000-0000-4000-a000-000000000001";
-  const legacyId = "c0000000-0000-4000-a000-000000000002";
-  mockConnectors(context, []);
-  context.mocks.data.agents([
-    ...(defaultListed ? [listAgent(defaultId, "Shared profile")] : []),
-    listAgent(legacyId, "Research Agent"),
-  ]);
-  context.mocks.data.onboardingStatus({ defaultAgentId: defaultId });
-  mockPublicConnectorStatus(context, [
-    publicStatusItem({
-      connectorSlug: "axiom",
-      label: "Public Axiom",
-      authMethods: [
-        manualMethod({
-          id: "api-token",
-          label: "Public API Token",
-          fieldId: "apiToken",
-          fieldLabel: "Public API token",
-          placeholder: "public-xaat",
-        }),
-      ],
-    }),
-  ]);
-  context.mocks.api(
-    builtinConnectorManualGrantContract.connect,
-    ({ respond }) => {
-      const account = storeConnectedConnector("axiom", "api-token");
-      return respond(200, { connectionId: account.id });
-    },
-  );
-  const authorizedIds: string[] = [];
-  mockAgentConnectorAccess("axiom", (id) => {
-    authorizedIds.push(id);
-    expect(id).toBe(defaultId);
-  });
-  await setupPage({
-    context,
-    path: "/connectors?keywords=axiom",
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
-  });
-  const connect = await waitFor(() => {
-    return getConnectorAction("button", "Connect Public Axiom");
-  });
-  click(connect);
-  const dialog = await screen.findByRole("dialog", { name: "Public Axiom" });
-  await fill(within(dialog).getByPlaceholderText("public-xaat"), "xaat-test");
-  click(getConnectorAction("button", "Save", dialog));
-  const naming = await screen.findByRole("dialog", {
-    name: "Name your Public Axiom account",
-  });
-  click(getConnectorAction("button", "Skip", naming));
-  return { authorizedIds, defaultId };
-}
-
-test("A personal connection authorizes the default Okou even when the agent list omits it", async () => {
-  const { authorizedIds, defaultId } = await connectAxiomInPersonalMode(false);
-  expect(authorizedIds).toStrictEqual([defaultId]);
-  await waitFor(() => {
-    expect(
-      within(getConnectorCard("Public Axiom")).getByText("Connected"),
-    ).toBeInTheDocument();
-  });
-});
-
-test("A personal connection authorizes only the default scope while keeping legacy grants separate", async () => {
-  const { authorizedIds, defaultId } = await connectAxiomInPersonalMode(true);
-  expect(authorizedIds).toStrictEqual([defaultId]);
-  const manage = await waitFor(() => {
-    return getConnectorAction("button", "Manage Public Axiom access");
-  });
-  click(manage);
-  const access = await screen.findByRole("dialog", {
-    name: "Manage Public Axiom access",
-  });
-  await waitFor(() => {
-    expect(
-      getConnectorSwitch("Revoke Public Axiom access for Okou", access),
-    ).toBeChecked();
-  });
-  // Revoke only the personal/default grant through its real UI.
-  click(getConnectorSwitch("Revoke Public Axiom access for Okou", access));
-  await waitFor(() => {
-    expect(
-      getConnectorSwitch("Authorize Public Axiom access for Okou", access),
-    ).not.toBeChecked();
-  });
-  expect(
-    within(access).getByText("Your access in this workspace"),
-  ).toBeInTheDocument();
 });

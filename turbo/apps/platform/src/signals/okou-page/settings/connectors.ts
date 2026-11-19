@@ -2,8 +2,6 @@ import { singleAgentEnabled$ } from "../../single-agent.ts";
 import { command, computed, state } from "ccstate";
 import { delay } from "signal-timers";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitches$ } from "../../external/feature-switch.ts";
 
 import { accept } from "../../../lib/accept.ts";
 import { now } from "../../../lib/time.ts";
@@ -25,7 +23,7 @@ import {
   builtinConnectorOauthDeviceAuthSessionContract,
 } from "@okouai/api-contracts/client/connectors";
 import { builtinConnectorAutomaticResponseSchema } from "@okouai/api-contracts/validators/connectors";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/client/user-connectors";
+
 import type {
   InitClientArgs,
   InitClientReturn,
@@ -59,9 +57,7 @@ import {
   settle,
 } from "../../utils.ts";
 import { waitAblyPayloadLoopUntil$ } from "../../realtime.ts";
-import { agents$, defaultAgentId$ } from "../../agent.ts";
-import { clerk$ } from "../../auth.ts";
-import { reloadOnboardingStatus$ } from "../onboarding.ts";
+
 import { connectedConnectorTargetKeys$ } from "../connector-accounts.ts";
 import { sanitizeTokenInputRecord } from "./token-input.ts";
 import { IN_VITEST } from "../../../env.ts";
@@ -80,7 +76,6 @@ import type {
   PlatformConnectorCatalogStatusItem,
 } from "../../connector-domain.ts";
 import {
-  hasSavedConnectorAccounts,
   readConnectorAccountPage,
   readConnectorOAuthCompletion,
   readConnectorAccountCompletion,
@@ -142,29 +137,12 @@ const resolveConnectorPostConnectOptions$ = command(
         account = { intent: "add" };
       }
     }
-    if (
-      (await get(featureSwitches$))[FeatureSwitchKey.ConnectorChatAccountAccess]
-    ) {
-      return {
-        ...options,
-        account,
-        authorizeVisibleAgents: false,
-        agentId: undefined,
-      };
-    }
-    if (!options.authorizeVisibleAgents) {
-      return { ...options, account };
-    }
-    const authorizeVisibleAgents =
-      account.intent === "add" &&
-      !(page
-        ? page.connections.length > 0
-        : await hasSavedConnectorAccounts(
-            get(apiClient$),
-            { kind: "builtin", connectorSlug },
-            signal,
-          ));
-    return { ...options, account, authorizeVisibleAgents };
+    return {
+      ...options,
+      account,
+      authorizeVisibleAgents: false,
+      agentId: undefined,
+    };
   },
 );
 
@@ -964,107 +942,14 @@ async function readCompletedBuiltinConnectorAccount(
   );
 }
 
-const authorizeConnectorForDefaultOkou$ = command(
-  async ({ get, set }, connectorSlug: ConnectorSlug, signal: AbortSignal) => {
-    const clerk = await get(clerk$);
-    signal.throwIfAborted();
-    const orgId = clerk.organization?.id;
-    const userId = clerk.user?.id;
-    const sessionId = clerk.session?.id;
-    const checkScope = () => {
-      signal.throwIfAborted();
-      if (
-        !orgId ||
-        !userId ||
-        !sessionId ||
-        clerk.organization?.id !== orgId ||
-        clerk.user?.id !== userId ||
-        clerk.session?.id !== sessionId
-      ) {
-        throw new DOMException(
-          "Connector authorization scope changed",
-          "AbortError",
-        );
-      }
-    };
-    checkScope();
-    let defaultId = await get(defaultAgentId$);
-    signal.throwIfAborted();
-    checkScope();
-    if (!defaultId) {
-      set(reloadOnboardingStatus$);
-      defaultId = await get(defaultAgentId$);
-      signal.throwIfAborted();
-      checkScope();
-    }
-    if (!defaultId) {
-      throw new ConnectorConnectionError(
-        "Your workspace’s Okou is unavailable. Try again.",
-      );
-    }
-    const client = get(apiClient$)(userBuiltinConnectorsContract, {
-      getTokenGuard: () => {
-        checkScope();
-        return checkScope;
-      },
-    });
-    await accept(
-      client.update({
-        params: { id: defaultId },
-        body: { enabledConnectorSlugs: [connectorSlug], operation: "add" },
-        fetchOptions: { signal },
-      }),
-      [200],
-      signal,
-    );
-    checkScope();
-  },
-);
-
-const authorizeConnectorForVisibleAgents$ = command(
-  async ({ get, set }, connectorSlug: ConnectorSlug, signal: AbortSignal) => {
-    if (await get(singleAgentEnabled$)) {
-      await set(authorizeConnectorForDefaultOkou$, connectorSlug, signal);
-      return;
-    }
-    const visibleAgents = await get(agents$);
-    signal.throwIfAborted();
-    const client = get(apiClient$)(userBuiltinConnectorsContract);
-    await Promise.all(
-      visibleAgents.map(async (agent) => {
-        await accept(
-          client.update({
-            params: { id: agent.agentId },
-            body: {
-              enabledConnectorSlugs: [connectorSlug],
-              operation: "add",
-            },
-            fetchOptions: { signal },
-          }),
-          [200, 404],
-        );
-      }),
-    );
-    signal.throwIfAborted();
-  },
-);
-
 const finishConnectorConnection$ = command(
-  async (
-    { get, set },
+  (
+    { set },
     connectorSlug: ConnectorSlug,
     options: FinishConnectorConnectionOptions,
     signal: AbortSignal,
-  ): Promise<boolean> => {
-    if (
-      options.authorizeVisibleAgents &&
-      !(await get(featureSwitches$))[
-        FeatureSwitchKey.ConnectorChatAccountAccess
-      ]
-    ) {
-      await set(authorizeConnectorForVisibleAgents$, connectorSlug, signal);
-    }
-
+  ): boolean => {
+    signal.throwIfAborted();
     if (options.toastMessage !== null) {
       toast.success(
         options.toastMessage ??
@@ -1150,7 +1035,7 @@ export const submitBuiltinManualGrant$ = command(
     ) {
       return false;
     }
-    await set(
+    set(
       finishConnectorConnection$,
       connectorSlug,
       {
@@ -1240,7 +1125,7 @@ export const connectBuiltinConnectorNoAuth$ = command(
     ) {
       return false;
     }
-    await set(
+    set(
       finishConnectorConnection$,
       connectorSlug,
       {
@@ -1501,7 +1386,7 @@ const pollConnectorOAuthDeviceAuthOnce$ = command(
       if (!isCurrentRequest(get(internalConnectorOAuthDeviceAuthState$))) {
         return { stop: true };
       }
-      await set(
+      set(
         finishConnectorConnection$,
         connectorSlug,
         {
@@ -2064,7 +1949,7 @@ const completeConnectorExternalCode$ = command(
     ) {
       return false;
     }
-    await set(
+    set(
       finishConnectorConnection$,
       connectorSlug,
       {
@@ -2513,7 +2398,7 @@ const finishAcceptedConnectorConnection$ = command(
     if (!isConnected) {
       return false;
     }
-    await set(
+    set(
       finishConnectorConnection$,
       args.connectorSlug,
       {

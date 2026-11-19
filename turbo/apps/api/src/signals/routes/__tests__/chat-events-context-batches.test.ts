@@ -123,9 +123,6 @@ describe("shared context statement projections through normal sends", () => {
       let customConnectionId: string | undefined;
       let workflowName: string | undefined;
       if (hasAgentRows) {
-        await connectors.updateFeatureSwitches(actor, {
-          connectorChatAccountAccess: false,
-        });
         mockSlackConnectorOAuth();
         const slack = await connectors.startOauth(
           actor,

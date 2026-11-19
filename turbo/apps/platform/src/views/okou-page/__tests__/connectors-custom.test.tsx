@@ -7,8 +7,6 @@ import {
 } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import {
   type AgentCustomConnectorGrant,
-  type AgentCustomConnectorGrants,
-  type AgentCustomConnectorUpdate,
   agentCustomConnectorsContract,
 } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
@@ -45,7 +43,6 @@ import {
   customConnector,
   getConnectorAction,
   getConnectorCard,
-  getConnectorSwitch,
   listAgent,
   mcpCustomConnector,
   mockCustomConnectorStory,
@@ -249,14 +246,8 @@ test.each([
       screen.queryByRole("dialog", { name: "Name your Acme Search account" }),
     ).toBeNull();
     click(getConnectorAction("button", "Cancel", dialog));
-    click(getConnectorAction("button", "Manage Acme Search access"));
-    const access = await screen.findByRole("dialog", {
-      name: "Manage Acme Search access",
-    });
     await waitFor(() => {
-      expect(
-        getConnectorSwitch("Authorize Acme Search access for Research", access),
-      ).not.toBeChecked();
+      expect(dialog).not.toBeInTheDocument();
     });
   },
 );
@@ -402,397 +393,7 @@ test("Add and optionally name a custom connector account", async () => {
     await expect(
       within(getConnectorCard(name)).findByText("Connected"),
     ).resolves.toBeInTheDocument();
-    expect(
-      getConnectorAction(
-        "button",
-        `Manage ${name} access`,
-        getConnectorCard(name),
-      ),
-    ).toHaveTextContent("Used by Research");
   }
-  expect(
-    getConnectorAction("button", "Manage Acme Search access"),
-  ).toHaveTextContent("Used by Research");
-});
-
-test("Reflect a late successful agent grant after another grant has failed", async () => {
-  const connector = customConnector({ account: undefined });
-  const lateGrant = context.mocks.deferred<void>();
-  const lateGrantStarted = context.mocks.deferred<void>();
-  const grantsByAgent = new Map<string, AgentCustomConnectorGrant[]>();
-  let account: ConnectorAccountConnection | undefined;
-  context.mocks.data.agents([
-    listAgent(RESEARCH_ID, "Research"),
-    listAgent(SUPPORT_ID, "Support"),
-  ]);
-  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    return respond(200, { connectors: [connector] });
-  });
-  mockSavedConnectorAccounts(context, () => {
-    return account ? [account] : [];
-  });
-  context.mocks.api(connectorAccountsContract.connection, ({ respond }) => {
-    return account
-      ? respond(200, account)
-      : respond(404, {
-          error: { code: "NOT_FOUND", message: "Account not found" },
-        });
-  });
-  context.mocks.api(customConnectorValuesContract.set, ({ respond }) => {
-    account = customAccount(connector.id, crypto.randomUUID(), {
-      configuredFieldKeys: ["secret"],
-    });
-    return respond(200, { ...connector, connectionId: account.id });
-  });
-  context.mocks.api(
-    agentCustomConnectorsContract.get,
-    ({ params, respond }) => {
-      return respond(200, { grants: grantsByAgent.get(params.id) ?? [] });
-    },
-  );
-  mockConnectorAgentAccess(context, (agentId) => {
-    return { grants: grantsByAgent.get(agentId) ?? [] };
-  });
-  context.mocks.api(
-    agentCustomConnectorsContract.update,
-    async ({ params, body, respond, withSignal }) => {
-      if (params.id === RESEARCH_ID) {
-        return respond(403, {
-          error: { code: "FORBIDDEN", message: "Research access was denied" },
-        });
-      }
-      lateGrantStarted.resolve();
-      await withSignal(lateGrant.promise);
-      grantsByAgent.set(params.id, body.grants);
-      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
-        agentId: params.id,
-      });
-      return respond(200, { grants: body.grants });
-    },
-  );
-  await setupCustomPage();
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "Connect Acme Search");
-    }),
-  );
-  const connect = await screen.findByRole("dialog", {
-    name: "Connect Acme Search",
-  });
-  await fill(within(connect).getByLabelText("Secret"), "custom-secret");
-  click(getConnectorAction("button", "Save", connect));
-  await lateGrantStarted.promise;
-  await expect(
-    within(connect).findByText(/Research access was denied/u),
-  ).resolves.toBeInTheDocument();
-  expect(getConnectorCard("Acme Search")).not.toHaveTextContent(
-    "Used by Support",
-  );
-
-  lateGrant.resolve();
-  await waitFor(() => {
-    expect(getConnectorCard("Acme Search")).toHaveTextContent(
-      "Used by Support",
-    );
-  });
-  expect(
-    within(connect).getByText(/Research access was denied/u),
-  ).toBeInTheDocument();
-  click(getConnectorAction("button", "Cancel", connect));
-  click(getConnectorAction("button", "Manage Acme Search access"));
-  const access = await screen.findByRole("dialog", {
-    name: "Manage Acme Search access",
-  });
-  expect(
-    getConnectorSwitch("Revoke Acme Search access for Support", access),
-  ).toBeChecked();
-  expect(
-    getConnectorSwitch("Authorize Acme Search access for Research", access),
-  ).not.toBeChecked();
-});
-
-test("Preserve revoked access when adding another account", async () => {
-  const defaultId = "c0000000-0000-4000-a000-000000000001";
-  const connector = customConnector({
-    account: {
-      missingRequiredFields: [],
-      configuredFieldKeys: ["secret"],
-    },
-  });
-  const existing = customAccount(connector.id, crypto.randomUUID(), {
-    displayName: "Existing",
-  });
-  const accounts = [existing];
-  const grant = { customConnectorId: connector.id, permissionNames: [] };
-  context.mocks.data.agents([
-    listAgent(defaultId, "Default"),
-    listAgent(RESEARCH_ID, "Research"),
-  ]);
-  mockCustomAgentAccess([
-    [defaultId, [grant]],
-    [RESEARCH_ID, [grant]],
-  ]);
-  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    return respond(200, { connectors: [connector] });
-  });
-  mockSavedConnectorAccounts(context, () => {
-    return accounts;
-  });
-  context.mocks.api(
-    connectorAccountsContract.connection,
-    ({ params, respond }) => {
-      const account = accounts.find((candidate) => {
-        return candidate.id === params.connectionId;
-      });
-      return account
-        ? respond(200, account)
-        : respond(404, {
-            error: { code: "NOT_FOUND", message: "Account not found" },
-          });
-    },
-  );
-  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
-    return respond(200, {
-      connections: accounts,
-      nextCursor: null,
-      defaultConnection:
-        accounts.find((account) => {
-          return account.isDefault;
-        }) ?? null,
-    });
-  });
-  context.mocks.api(customConnectorValuesContract.set, ({ body, respond }) => {
-    expect(body.account).toStrictEqual({ intent: "add" });
-    const account = customAccount(connector.id, crypto.randomUUID(), {
-      isDefault: false,
-    });
-    accounts.push(account);
-    return respond(
-      200,
-      customConnectorCompletionFixture(
-        httpConnectorFixture({
-          ...connector,
-          account: { id: account.id },
-        }),
-      ),
-    );
-  });
-  await setupCustomPage();
-  const name = connector.displayName;
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", `Manage ${name} access`);
-    }),
-  );
-  const access = await screen.findByRole("dialog", {
-    name: `Manage ${name} access`,
-  });
-  click(getConnectorSwitch(`Revoke ${name} access for Default`, access));
-  await waitFor(() => {
-    expect(
-      getConnectorSwitch(`Authorize ${name} access for Default`, access),
-    ).not.toBeChecked();
-  });
-  click(getConnectorAction("button", "Close", access));
-  click(getConnectorAction("button", `Manage ${name} accounts`));
-  const manager = await screen.findByRole("dialog", {
-    name: `Manage ${name} accounts`,
-  });
-  click(getConnectorAction("button", "Add account", manager));
-  const addition = await screen.findByRole("dialog", {
-    name: `Connect ${name}`,
-  });
-  await fill(within(addition).getByLabelText("Secret"), "second-secret");
-  click(getConnectorAction("button", "Save", addition));
-  const naming = await screen.findByRole("dialog", {
-    name: `Name your ${name} account`,
-  });
-  click(getConnectorAction("button", "Skip", naming));
-  await waitFor(() => {
-    expect(
-      getConnectorAction("button", `Manage ${name} access`),
-    ).toHaveTextContent("Used by Research");
-  });
-  click(getConnectorAction("button", `Manage ${name} access`));
-  const updatedAccess = await screen.findByRole("dialog", {
-    name: `Manage ${name} access`,
-  });
-  expect(
-    getConnectorSwitch(`Authorize ${name} access for Default`, updatedAccess),
-  ).not.toBeChecked();
-  expect(
-    getConnectorSwitch(`Revoke ${name} access for Research`, updatedAccess),
-  ).toBeChecked();
-});
-
-test("Manage agent access and permissions for a custom connector", async () => {
-  const connector = customConnector({
-    permissionBundleRef: "builtin:feishu@1",
-    account: {
-      missingRequiredFields: [],
-      configuredFieldKeys: ["secret"],
-    },
-  });
-  const access = new Map<string, AgentCustomConnectorGrants>([
-    [RESEARCH_ID, { grants: [] }],
-    [SUPPORT_ID, { grants: [] }],
-  ]);
-  const updates: {
-    readonly agentId: string;
-    readonly body: AgentCustomConnectorUpdate;
-  }[] = [];
-  context.mocks.data.agents([
-    listAgent(RESEARCH_ID, "Research"),
-    listAgent(SUPPORT_ID, "Support"),
-  ]);
-  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    return respond(200, { connectors: [connector] });
-  });
-  context.mocks.api(customConnectorByIdContract.permissions, ({ respond }) => {
-    return respond(200, {
-      ref: "builtin:feishu@1",
-      permissions: [
-        {
-          name: "standard:use",
-          description: "Use standard Feishu APIs with approval.",
-        },
-        {
-          name: "messages:send-as-user",
-          description: "Send messages as the connected user.",
-        },
-      ],
-      defaultPolicies: {
-        "standard:use": "allow",
-        "messages:send-as-user": "deny",
-      },
-    });
-  });
-  context.mocks.api(
-    agentCustomConnectorsContract.get,
-    ({ params, respond }) => {
-      return respond(200, access.get(params.id) ?? { grants: [] });
-    },
-  );
-  mockConnectorAgentAccess(context, (agentId) => {
-    return access.get(agentId) ?? { grants: [] };
-  });
-  context.mocks.api(
-    agentCustomConnectorsContract.update,
-    ({ params, body, respond }) => {
-      updates.push({ agentId: params.id, body });
-      const next = body.operation === "remove" ? [] : body.grants;
-      const grants = { grants: next };
-      access.set(params.id, grants);
-      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
-        agentId: params.id,
-      });
-      return respond(200, grants);
-    },
-  );
-  mockCustomAccounts(() => {
-    return connector;
-  });
-  await setupCustomPage();
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "Manage Acme Search access");
-    }),
-  );
-  const dialog = await screen.findByRole("dialog", {
-    name: "Manage Acme Search access",
-  });
-
-  click(
-    await waitFor(() => {
-      return getConnectorSwitch(
-        "Authorize Acme Search access for Support",
-        dialog,
-      );
-    }),
-  );
-  const drawer = await screen.findByRole("dialog", {
-    name: "Acme Search permissions for Support",
-  });
-  expect(within(drawer).getByText("messages:send-as-user")).toBeInTheDocument();
-  click(getConnectorAction("button", "Allow", drawer));
-  expect(getConnectorAction("button", "Allow", drawer)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  expect(updates).toHaveLength(0);
-  click(getConnectorAction("button", "Apply", drawer));
-  await waitFor(() => {
-    expect(
-      getConnectorSwitch("Revoke Acme Search access for Support", dialog),
-    ).toBeInTheDocument();
-    expect(
-      within(getConnectorCard("Acme Search")).getByTestId(
-        "connector-card-agent-access",
-      ),
-    ).toHaveTextContent("Used by Support");
-  });
-  expect(updates.at(-1)?.body).toStrictEqual({
-    grants: [
-      {
-        customConnectorId: connector.id,
-        permissionNames: ["messages:send-as-user"],
-      },
-    ],
-    operation: "add",
-  });
-
-  click(
-    await waitFor(() => {
-      return getConnectorAction(
-        "button",
-        "Manage Acme Search permissions for Support",
-        dialog,
-      );
-    }),
-  );
-  const editedDrawer = await screen.findByRole("dialog", {
-    name: "Acme Search permissions for Support",
-  });
-  expect(
-    within(editedDrawer).getByText("messages:send-as-user"),
-  ).toBeInTheDocument();
-  expect(getConnectorAction("button", "Apply", editedDrawer)).toBeDisabled();
-  click(getConnectorAction("button", "Deny", editedDrawer));
-  expect(getConnectorAction("button", "Deny", editedDrawer)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  expect(getConnectorAction("button", "Apply", editedDrawer)).toBeEnabled();
-  expect(updates).toHaveLength(1);
-  click(getConnectorAction("button", "Apply", editedDrawer));
-  await waitFor(() => {
-    expect(updates.at(-1)?.body).toStrictEqual({
-      grants: [{ customConnectorId: connector.id, permissionNames: [] }],
-      operation: "add",
-    });
-    expect(
-      getConnectorSwitch("Revoke Acme Search access for Support", dialog),
-    ).toBeInTheDocument();
-  });
-
-  click(
-    await waitFor(() => {
-      return getConnectorSwitch(
-        "Revoke Acme Search access for Support",
-        dialog,
-      );
-    }),
-  );
-  await waitFor(() => {
-    expect(
-      getConnectorSwitch("Authorize Acme Search access for Support", dialog),
-    ).toBeInTheDocument();
-    expect(
-      within(getConnectorCard("Acme Search")).getByTestId(
-        "connector-card-agent-access",
-      ),
-    ).toHaveTextContent("Add access");
-  });
 });
 
 test("Complete a custom connector’s declared fields", async () => {
@@ -1005,13 +606,6 @@ test("Manage a custom HTTP connector through creation and connection", async () 
   click(getConnectorAction("button", "Skip", naming));
   await waitFor(() => {
     expect(getConnectorCard("Acme API")).toHaveTextContent("Connected");
-    expect(
-      getConnectorAction(
-        "button",
-        "Manage Acme API access",
-        getConnectorCard("Acme API"),
-      ),
-    ).toHaveTextContent("Used by 2 agents");
   });
 });
 
@@ -1379,13 +973,6 @@ test("Manage custom HTTP OAuth through configuration update and connection", asy
       "https://oauth.acme.test/authorize?state=ui-test",
     );
     expect(getConnectorCard("Acme API")).toHaveTextContent("Connected");
-    expect(
-      getConnectorAction(
-        "button",
-        "Manage Acme API access",
-        getConnectorCard("Acme API"),
-      ),
-    ).toHaveTextContent("Used by Research");
   });
 });
 
@@ -1514,39 +1101,7 @@ test("Manage a manual MCP connector through its lifecycle", async () => {
   click(getConnectorAction("button", "Skip", naming));
   await waitFor(() => {
     expect(getConnectorCard("Acme MCP")).toHaveTextContent("Connected");
-    expect(
-      getConnectorAction(
-        "button",
-        "Manage Acme MCP access",
-        getConnectorCard("Acme MCP"),
-      ),
-    ).toHaveTextContent("Used by 2 agents");
   });
-
-  click(getConnectorAction("button", "Manage Acme MCP access"));
-  const access = await screen.findByRole("dialog", {
-    name: "Manage Acme MCP access",
-  });
-  click(
-    await waitFor(() => {
-      return getConnectorSwitch("Revoke Acme MCP access for Support", access);
-    }),
-  );
-  await waitFor(() => {
-    return expect(
-      getConnectorSwitch("Authorize Acme MCP access for Support", access),
-    ).toBeEnabled();
-  });
-  click(getConnectorSwitch("Authorize Acme MCP access for Support", access));
-  await waitFor(() => {
-    return expect(
-      getConnectorSwitch("Revoke Acme MCP access for Support", access),
-    ).toBeInTheDocument();
-  });
-  expect(
-    getConnectorSwitch("Revoke Acme MCP access for Research", access),
-  ).toBeInTheDocument();
-  click(getConnectorAction("button", "Close", access));
 
   click(
     await waitFor(() => {
@@ -1689,9 +1244,6 @@ test("Create and connect an MCP server through automatic authorization", async (
   await waitFor(() => {
     expect(getConnectorCard("Discovery MCP")).toHaveTextContent("Connected");
     expect(authWindow.closed).toBeTruthy();
-    expect(
-      getConnectorAction("button", "Manage Discovery MCP access"),
-    ).toHaveTextContent("Used by 2 agents");
   });
 });
 
@@ -1786,7 +1338,7 @@ test("Keep saved custom accounts manageable when only the default needs reconnec
   const original = await within(manager).findByRole("group", {
     name: "Original default",
   });
-  expect(within(original).getByText("Default")).toBeInTheDocument();
+  expect(within(original).getByText("Reconnect required")).toBeInTheDocument();
   expect(getConnectorAction("button", "Reconnect", original)).toBeEnabled();
   expect(
     within(manager).getByRole("group", { name: "Work" }),
@@ -1914,9 +1466,6 @@ test("Reconnect an OAuth account after cancelled consent and metadata changes", 
     expect(getConnectorAction("button", "Continue", dialog)).toBeEnabled();
   });
   expect(dialog).toBeInTheDocument();
-  await waitFor(() => {
-    expect(getConnectorCard("Acme OAuth")).toHaveTextContent("Add access");
-  });
 
   const completedWindow = createAuthWindow();
   context.mocks.browser.open(completedWindow);
@@ -1940,9 +1489,6 @@ test("Reconnect an OAuth account after cancelled consent and metadata changes", 
   completedAttempts.set(oauthAttemptId, personal.id);
   completedWindow.close();
   await waitFor(() => {
-    expect(
-      getConnectorAction("button", "Manage Acme OAuth access"),
-    ).toHaveTextContent("Add access");
     expect(dialog).not.toBeInTheDocument();
   });
   expect(
@@ -2167,13 +1713,7 @@ test("Add and optionally name a custom OAuth account", async () => {
   await expect(
     within(getConnectorCard("Acme Search")).findByText("Connected"),
   ).resolves.toBeInTheDocument();
-  expect(
-    getConnectorAction(
-      "button",
-      "Manage Acme Search access",
-      getConnectorCard("Acme Search"),
-    ),
-  ).toHaveTextContent("Used by Research");
+
   expect(submitted).toStrictEqual({ intent: "add" });
 });
 
@@ -2299,19 +1839,9 @@ test("Do not grant access after an unsuccessful custom connection", async () => 
   await within(dialog).findByText(/This account needs additional setup/u);
   expect(dialog).toBeInTheDocument();
   click(getConnectorAction("button", "Close", dialog));
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "Manage Acme Incomplete access");
-    }),
-  );
-  const access = await screen.findByRole("dialog", {
-    name: "Manage Acme Incomplete access",
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
   });
-  await expect(
-    within(access).findByRole("switch", {
-      name: "Authorize Acme Incomplete access for Research",
-    }),
-  ).resolves.not.toBeChecked();
 });
 
 test("Hide integration-managed connectors from custom settings", async () => {
@@ -2473,9 +2003,7 @@ test("Validate new and reconnecting custom accounts appropriately", async () => 
   const defaultRow = await within(reopenedManager).findByRole("group", {
     name: "Existing",
   });
-  expect(
-    within(defaultRow).getByRole("radio", { name: "Default" }),
-  ).toBeChecked();
+  expect(defaultRow).toBeVisible();
   click(
     await waitFor(() => {
       return accountAction(defaultRow);
@@ -2504,99 +2032,6 @@ test("Validate new and reconnecting custom accounts appropriately", async () => 
   expect(
     screen.queryByRole("dialog", { name: "Name your Acme Search account" }),
   ).toBeNull();
-});
-
-test("Preserve custom connector grants when credentials are added", async () => {
-  const connector = customConnector({
-    permissionBundleRef: "builtin:feishu@1",
-  });
-  let connected = false;
-  let grantMutations = 0;
-  context.mocks.data.agents([listAgent(RESEARCH_ID, "Research")]);
-  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    return respond(200, {
-      connectors: [connector],
-    });
-  });
-  context.mocks.api(agentCustomConnectorsContract.get, ({ respond }) => {
-    return respond(200, {
-      grants: [
-        {
-          customConnectorId: connector.id,
-          permissionNames: ["messages:send-as-user"],
-        },
-      ],
-    });
-  });
-  mockConnectorAgentAccess(context, () => {
-    return {
-      grants: [
-        {
-          customConnectorId: connector.id,
-          permissionNames: ["messages:send-as-user"],
-        },
-      ],
-    };
-  });
-  context.mocks.api(agentCustomConnectorsContract.update, ({ respond }) => {
-    grantMutations += 1;
-    return respond(200, { grants: [] });
-  });
-  context.mocks.api(customConnectorValuesContract.set, ({ body, respond }) => {
-    expect(body.values).toStrictEqual([
-      { key: "secret", kind: "secret", value: "acme-secret" },
-    ]);
-    connected = true;
-    return respond(
-      200,
-      customConnectorCompletionFixture(
-        httpConnectorFixture({
-          ...connector,
-          account: {
-            id: "66666666-6666-4666-8666-666666666666",
-            missingRequiredFields: [],
-            configuredFieldKeys: ["secret"],
-          },
-        }),
-      ),
-    );
-  });
-  mockCustomAccounts(() => {
-    return connected
-      ? httpConnectorFixture({
-          ...connector,
-          account: {},
-        })
-      : null;
-  });
-  await setupCustomPage();
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "Connect Acme Search");
-    }),
-  );
-  const dialog = await screen.findByRole("dialog", {
-    name: "Connect Acme Search",
-  });
-  await fill(within(dialog).getByLabelText("Secret"), "acme-secret");
-
-  click(getConnectorAction("button", "Save", dialog));
-
-  const naming = await screen.findByRole("dialog", {
-    name: "Name your Acme Search account",
-  });
-  click(getConnectorAction("button", "Skip", naming));
-  await waitFor(() => {
-    expect(getConnectorCard("Acme Search")).toHaveTextContent("Connected");
-    expect(
-      getConnectorAction(
-        "button",
-        "Manage Acme Search access",
-        getConnectorCard("Acme Search"),
-      ),
-    ).toHaveTextContent("Used by Research");
-  });
-  expect(grantMutations).toBe(0);
 });
 
 test("Read a custom target again when its account manager reopens", async () => {

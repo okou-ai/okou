@@ -1,8 +1,4 @@
 import {
-  agentCustomConnectorsContract,
-  type AgentCustomConnectorGrant,
-} from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import {
   connectorAccountsContract,
   type ConnectorAccountConnection,
 } from "@okouai/api-contracts/contracts/connector-accounts";
@@ -16,7 +12,6 @@ import {
   customConnectorAccount,
   getConnectorAction,
   listAgent,
-  mockConnectorAgentAccess,
   mockCustomConnectorStory,
   mockSavedConnectorAccounts,
 } from "./connector-page-test-helpers.ts";
@@ -106,24 +101,9 @@ test("Keep a custom connection pending until its account naming continuation is 
   const connector = customConnector();
   mockCustomConnectorStory(context, [{ connector }]);
   context.mocks.data.agents([listAgent(RESEARCH_ID, "Research")]);
-  let grants: AgentCustomConnectorGrant[] = [];
   let account: ConnectorAccountConnection | undefined;
-  mockSavedConnectorAccounts(context, () => {
-    return account ? [account] : [];
-  });
-  context.mocks.api(agentCustomConnectorsContract.get, ({ respond }) => {
-    return respond(200, { grants });
-  });
-  mockConnectorAgentAccess(context, () => {
-    return { grants };
-  });
-  context.mocks.api(
-    agentCustomConnectorsContract.update,
-    ({ body, respond }) => {
-      grants = body.grants;
-      return respond(200, { grants });
-    },
-  );
+  mockSavedConnectorAccounts(context, () => (account ? [account] : []));
+  let accountReads = 0;
   context.mocks.api(customConnectorValuesContract.set, ({ respond }) => {
     account = customConnectorAccount(connector.id, {
       configuredFieldKeys: ["secret"],
@@ -140,7 +120,7 @@ test("Keep a custom connection pending until its account naming continuation is 
           error: { code: "NOT_FOUND", message: "Account not found" },
         });
       }
-      if (grants.length > 0) {
+      if (++accountReads > 1) {
         namingRead.resolve();
         await withSignal(finishNamingRead.promise);
       }

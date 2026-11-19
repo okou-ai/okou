@@ -54,8 +54,7 @@ import {
 } from "./composer-connector-accounts.ts";
 import { resetBuiltinManualGrantForm$ } from "./settings/connectors.ts";
 import { createChatConnectorAccessSignals } from "./chat-connector-access.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitches$ } from "../external/feature-switch.ts";
+
 import { createPhoneUseAccessSignals } from "./phone-use-access.ts";
 
 export interface ComposerConnectorAuthorizationState {
@@ -350,30 +349,16 @@ function createConnectorNavigation(
   >,
 ) {
   const openConnectorPermissions$ = command(
-    async (
-      { get, set },
-      connector: BuiltinConnectorBrief,
-      signal: AbortSignal,
-    ) => {
-      const chatAccounts = (await get(featureSwitches$))[
-        FeatureSwitchKey.ConnectorChatAccountAccess
-      ];
-      signal.throwIfAborted();
-      if (chatAccounts) {
-        set(chatAccess.setPermissions$, {
-          target: { kind: "builtin", connectorSlug: connector.slug },
-          label: connector.label,
-        });
-      }
-      await set(
-        ui.updateConnectorUiState$,
-        {
-          showAddDialog: false,
-          permissionConnectorSlug: chatAccounts ? null : connector.slug,
-          permissionConnector: chatAccounts ? null : connector,
-        },
-        signal,
-      );
+    ({ set }, connector: BuiltinConnectorBrief) => {
+      set(chatAccess.setPermissions$, {
+        target: { kind: "builtin", connectorSlug: connector.slug },
+        label: connector.label,
+      });
+      set(ui.updateConnectorUiState$, {
+        showAddDialog: false,
+        permissionConnectorSlug: null,
+        permissionConnector: null,
+      });
     },
   );
   const directoryFinalFocus$ = command(({ get }) => {
@@ -564,46 +549,61 @@ function createConnectorUiSignals(
   const connectorUiState$ = computed((get): ComposerConnectorUiState => {
     return get(internalUiState$);
   });
-  const { applyConnectorUiState$, updateConnectorUiState$ } =
-    createConnectorUiStateCommands(internalUiState$, resources);
-  const openAddConnectorsDialog$ = command(
-    ({ set }, signal: AbortSignal): Promise<void> => {
-      // Ordinary entry starts a fresh browsing session without changing explicit
-      // connector/account targets or the lifetime of an ongoing connection.
-      return set(
-        updateConnectorUiState$,
-        {
-          showAddDialog: true,
-          addDialogSearch: "",
-          directoryTab: "discover",
-          directoryCategory: null,
-          directoryDetailSlug: null,
-        },
-        signal,
-      );
-    },
-  );
-  const setPopoverOpen$ = command(
-    async ({ get, set }, open: boolean, signal: AbortSignal): Promise<void> => {
-      const features = await get(featureSwitches$);
-      signal.throwIfAborted();
-      if (open) {
-        set(applyConnectorUiState$, { popoverOpen: true }, features, signal);
-        if (features[FeatureSwitchKey.ConnectorChatAccountAccess]) {
-          set(chatAccess.open$, signal);
-        }
-      } else {
-        set(accounts.closeMenu$);
-        set(chatAccess.close$);
-        set(
-          applyConnectorUiState$,
-          { popoverOpen: false, popoverSearch: "", popoverSortOrder: null },
-          features,
-          signal,
-        );
+  const updateConnectorUiState$ = command(
+    ({ get, set }, patch: Partial<ComposerConnectorUiState>): void => {
+      const current = get(internalUiState$);
+      const next = { ...current, ...patch };
+      const hadResourceConsumer =
+        current.popoverOpen || current.remoteAccessDialogOpen;
+      const hasResourceConsumer =
+        next.popoverOpen || next.remoteAccessDialogOpen;
+      const wasOpen =
+        current.showAddDialog || current.selectedConnectorSlug !== null;
+      const isOpen = next.showAddDialog || next.selectedConnectorSlug !== null;
+      if (isOpen && !wasOpen) {
+        const signal = set(resetBuiltinSubscription$, get(pageSignal$));
+        set(subscribeBuiltinConnectorChanges$, signal);
+      } else if (!isOpen && wasOpen) {
+        set(resetBuiltinSubscription$);
       }
+      // The remote dialog takes over the same resources without cancelling
+      // their owner when the connector popover closes.
+      if (hasResourceConsumer && !hadResourceConsumer) {
+        set(resources.open$, false, get(pageSignal$));
+      } else if (!hasResourceConsumer && hadResourceConsumer) {
+        set(resources.close$);
+      }
+      if (patch.selectedConnectorSlug) {
+        set(resetBuiltinManualGrantForm$, patch.selectedConnectorSlug);
+      }
+      set(internalUiState$, next);
     },
   );
+  const openAddConnectorsDialog$ = command(({ set }): void => {
+    // Ordinary entry starts a fresh browsing session without changing explicit
+    // connector/account targets or the lifetime of an ongoing connection.
+    set(updateConnectorUiState$, {
+      showAddDialog: true,
+      addDialogSearch: "",
+      directoryTab: "discover",
+      directoryCategory: null,
+      directoryDetailSlug: null,
+    });
+  });
+  const setPopoverOpen$ = command(({ get, set }, open: boolean): void => {
+    if (open) {
+      set(updateConnectorUiState$, { popoverOpen: true });
+      set(chatAccess.open$, get(pageSignal$));
+    } else {
+      set(accounts.closeMenu$);
+      set(chatAccess.close$);
+      set(updateConnectorUiState$, {
+        popoverOpen: false,
+        popoverSearch: "",
+        popoverSortOrder: null,
+      });
+    }
+  });
   const openAccountManager$ = command(
     async ({ set }, target: ConnectorAccountTarget, signal: AbortSignal) => {
       if (await set(chatAccess.accountManager.open$, target, signal)) {
@@ -674,23 +674,14 @@ export function createComposerConnectorSignals(
   const ui = createConnectorUiSignals(resources, accounts, chatAccess);
   const authorization$ = createConnectorAuthorizationSignal(agentId);
   const data$ = computed(async (get): Promise<ComposerConnectorData> => {
-    if (
-      (await get(featureSwitches$))[FeatureSwitchKey.ConnectorChatAccountAccess]
-    ) {
-      return {
-        overview: await get(resources.connected$),
-        authorization: {
-          agentId,
-          enabledConnectorSlugs: [],
-          customConnectorIds: [],
-        },
-      };
-    }
-    const [overview, authorization] = await Promise.all([
-      get(resources.connected$),
-      get(authorization$),
-    ]);
-    return { overview, authorization };
+    return {
+      overview: await get(resources.connected$),
+      authorization: {
+        agentId,
+        enabledConnectorSlugs: [],
+        customConnectorIds: [],
+      },
+    };
   });
   const addDialogKeyword$ = computed((get) => {
     return get(ui.connectorUiState$).addDialogSearch;

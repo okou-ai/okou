@@ -1,3 +1,4 @@
+import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { publicChatActor } from "./helpers/public-chat-actor";
@@ -47,6 +48,7 @@ const context = testContext();
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
+const chatAccess = createChatConnectorAccessApi(context);
 const authDevice = createAuthDeviceApiActions(context);
 const runsApi = createRunsApi(context);
 const store = createStore();
@@ -1087,9 +1089,8 @@ describe("POST /api/connectors/diagnostics/check", () => {
     },
   );
 
-  it("keeps builtin registration pinned while permission and account authority change", async () => {
+  it("refreshes an active Run after shared permission and account authority change", async () => {
     const fixture = await publicChatActor(context);
-    fixture.ownsFeatureSwitches();
     const { actor: owner, agentId, run: own } = fixture;
     const runBase = "https://prod.api.reap.global/v1";
     const changedBase = "https://changed.api.reap.global/v1";
@@ -1100,11 +1101,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
       });
     });
     const connectorId = connected.id;
-    await own(() => {
-      return connectorsApi.updateFeatureSwitches(owner, {
-        connectorChatAccountAccess: false,
-      });
-    });
     await own(() => {
       return runsApi.enableAgentConnectors(owner, agentId, ["reap"]);
     });
@@ -1121,11 +1117,10 @@ describe("POST /api/connectors/diagnostics/check", () => {
       url: `${runBase}/users`,
     };
     await own(() => {
-      return runsApi.applyUserPermissionGrant(owner, {
-        agentId,
-        connectorSlug: "reap",
-        permission: "read",
-        action: "deny",
+      return chatAccess.applyPermissions(owner, {
+        target: { kind: "builtin", connectorSlug: "reap" },
+        mode: "patch",
+        grants: [{ permission: "read", action: "deny" }],
       });
     });
     const initial = await own(() => {
@@ -1172,18 +1167,27 @@ describe("POST /api/connectors/diagnostics/check", () => {
         alternate.id,
       );
     });
-    const pinned = await own(() => {
+    const oldBase = await own(() => {
       return checkWithToken(token, request);
     });
-    expect(pinned.body).toMatchObject({
+    expect(oldBase.body).toStrictEqual({ outcome: "no-match", scope: "run" });
+    const alternateBase = "https://alternate.api.reap.global/v1";
+    const current = await own(() => {
+      return checkWithToken(token, {
+        ...request,
+        url: `${alternateBase}/users`,
+      });
+    });
+    expect(current.body).toMatchObject({
       outcome: "resolved",
-      base: runBase,
-      run: { status: "configured", bases: [runBase] },
+      base: alternateBase,
+      run: { status: "configured", bases: [alternateBase] },
+      permission: {
+        permissions: [
+          { name: "read", policy: { outcome: "deny", basis: "deny-list" } },
+        ],
+      },
     });
-    const changed = await own(() => {
-      return checkWithToken(token, { ...request, url: `${changedBase}/users` });
-    });
-    expect(changed.body).toStrictEqual({ outcome: "no-match", scope: "run" });
     await own(() => {
       return runsApi.requestCancelRun(owner, sent.runId, [200]);
     });
@@ -1250,9 +1254,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
         await flushWaitUntilForTest();
       });
       await seedAdminMembership(owner);
-      await connectorsApi.updateFeatureSwitches(owner, {
-        connectorChatAccountAccess: false,
-      });
+
       await bdd.completeOnboarding(owner);
       configureCloudflareOAuth();
       server.use(
@@ -1288,7 +1290,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
       if (connected.body.status !== "success") {
         throw new Error("Expected the Cloudflare OAuth callback to connect");
       }
-      const { runId, agentId } = await createOwnedRun(owner, {
+      const { runId } = await createOwnedRun(owner, {
         builtinConnectorSlugs: ["cloudflare"],
         onAgentCreated(createdAgentId) {
           owned.agentId = createdAgentId;
@@ -1296,12 +1298,16 @@ describe("POST /api/connectors/diagnostics/check", () => {
       });
       owned.runId = runId;
       owned.sandboxToken = (await runsApi.executionInput(runId)).sandboxToken;
-      await runsApi.applyUserPermissionGrant(owner, {
-        agentId,
-        connectorSlug: "cloudflare",
-        permission: "dns-firewall.write",
-        action: "allow",
-        expiresIn: "1h",
+      await chatAccess.applyPermissions(owner, {
+        target: { kind: "builtin", connectorSlug: "cloudflare" },
+        mode: "patch",
+        grants: [
+          {
+            permission: "dns-firewall.write",
+            action: "allow",
+            expiresIn: "1h",
+          },
+        ],
       });
       const request = {
         mode: "url" as const,
@@ -1597,9 +1603,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     async function prepareScenario() {
       const actor = bdd.user();
       await seedAdminMembership(actor);
-      await connectorsApi.updateFeatureSwitches(actor, {
-        connectorChatAccountAccess: false,
-      });
+
       const pinnedHost = "prod.api.reap.global";
       const changedHost = "changed.api.reap.global";
       const runBase = `https://${pinnedHost}/v1`;
@@ -1686,7 +1690,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
     it("redacts explicit custom diagnostics and reflects permission changes and selection precedence", async () => {
       const {
         actor,
-        agentId,
         token,
         url,
         custom,
@@ -1729,19 +1732,11 @@ describe("POST /api/connectors/diagnostics/check", () => {
         expect(serialized).not.toContain(forbidden);
       }
 
-      const grantResponse =
-        await connectorsApi.requestUpdateAgentCustomConnectorGrants(
-          actor,
-          agentId,
-          [
-            {
-              customConnectorId: custom.id,
-              permissionNames: ["chat:write"],
-            },
-          ],
-          [200],
-        );
-      expect(grantResponse.status).toBe(200);
+      await chatAccess.applyPermissions(actor, {
+        target: { kind: "custom", customConnectorId: custom.id },
+        mode: "patch",
+        grants: [{ permission: "chat:write", action: "allow" }],
+      });
       const allowed = await checkWithToken(token, customRequest);
       expect(allowed.body).toMatchObject({
         permission: {
@@ -1753,11 +1748,10 @@ describe("POST /api/connectors/diagnostics/check", () => {
           ],
         },
       });
-      await runsApi.applyUserPermissionGrant(actor, {
-        agentId,
-        connectorSlug: "reap",
-        permission: "write",
-        action: "deny",
+      await chatAccess.applyPermissions(actor, {
+        target: { kind: "builtin", connectorSlug: "reap" },
+        mode: "patch",
+        grants: [{ permission: "write", action: "deny" }],
       });
       const includedCustom = await checkWithToken(token, {
         mode: "url",
@@ -1782,7 +1776,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
       });
     });
 
-    it("keeps admitted host values pinned across reconnection and live definition changes", async () => {
+    it("refreshes the Chat account host after reconnection and definition changes", async () => {
       const {
         actor,
         custom,
@@ -1811,27 +1805,24 @@ describe("POST /api/connectors/diagnostics/check", () => {
         queryInjections: customBody.queryInjections,
         permissionBundleRef: customBody.permissionBundleRef,
       });
-      const updatedCustomRequest = {
+      const previous = await checkWithToken(token, {
         ...customRequest,
         url: `https://${pinnedHost}/v2/chat.postMessage`,
-      };
-      const pinned = await checkWithToken(token, updatedCustomRequest);
-      expect(pinned.body).toMatchObject({
-        outcome: "resolved",
-        connector: { label: "Updated Run Reap Overlay" },
-        base: `https://${pinnedHost}/v2`,
-        run: {
-          status: "configured",
-          bases: [`https://${pinnedHost}/v2`],
-        },
       });
-      const changedBase = await checkWithToken(token, {
-        ...updatedCustomRequest,
-        url: `https://${changedHost}/v2/chat.postMessage`,
-      });
-      expect(changedBase.body).toStrictEqual({
+      expect(previous.body).toStrictEqual({
         outcome: "no-match",
         scope: "run",
+      });
+      const currentBase = `https://${changedHost}/v2`;
+      const current = await checkWithToken(token, {
+        ...customRequest,
+        url: `${currentBase}/chat.postMessage`,
+      });
+      expect(current.body).toMatchObject({
+        outcome: "resolved",
+        connector: { label: "Updated Run Reap Overlay" },
+        base: currentBase,
+        run: { status: "configured", bases: [currentBase] },
       });
     });
 

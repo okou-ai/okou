@@ -1,6 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import { avatarComposerUrl } from "@okouai/core/agent-avatar";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { expect, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
@@ -19,7 +19,7 @@ test.each(["", "?tab=authorization"])(
     await setupTeamPage({
       context,
       path: `/agents/${RESEARCH_AGENT_ID}${query}`,
-      featureSwitches: { [FeatureSwitchKey.ConnectorChatAccountAccess]: true },
+      featureSwitches: {},
     });
 
     await screen.findByRole("heading", { name: "Research Agent" });
@@ -54,7 +54,7 @@ test("Chat connector accounts preserves a member's chat access without exposing 
         ownerId: "other-owner",
       }),
     ],
-    featureSwitches: { [FeatureSwitchKey.ConnectorChatAccountAccess]: true },
+    featureSwitches: {},
   });
 
   await screen.findByRole("heading", { name: "Research Agent" });

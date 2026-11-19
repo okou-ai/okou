@@ -50,8 +50,8 @@ import {
   type ChatActionCallback,
 } from "../../signals/chat-page/action-callback.ts";
 import { i18n } from "../../i18n/index.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
+
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 
 function TargetPill({
   avatarUrl,
@@ -425,7 +425,7 @@ function ConfirmGrantCard({
             avatarUrl={target.avatarUrl}
             displayName={target.displayName}
           />
-          {features?.[FeatureSwitchKey.ConnectorChatAccountAccess] && (
+          {features.state === "hasData" && (
             <p className="text-sm text-muted-foreground">
               {t(($) => {
                 return $.authorization.permissionBatch.sharedScopeNote;

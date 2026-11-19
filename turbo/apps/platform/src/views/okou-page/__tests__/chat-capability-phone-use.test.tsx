@@ -38,7 +38,6 @@ function phone(online = true): PhoneDevice {
 
 async function setup(
   enabled: boolean,
-  accountAccess = true,
   options: {
     path?: string;
     onSend?: () => void;
@@ -58,10 +57,7 @@ async function setup(
     context,
     path: options.path ?? NEW_CHAT_PATH,
     locale: "en-US",
-    featureSwitches: {
-      [FeatureSwitchKey.PhoneUse]: enabled,
-      [FeatureSwitchKey.ConnectorChatAccountAccess]: accountAccess,
-    },
+    featureSwitches: { [FeatureSwitchKey.PhoneUse]: enabled },
   });
   await readyChat();
   click(await findButton("Connectors"));
@@ -79,33 +75,30 @@ test("Phone Use stays hidden without fetching devices until manually enabled", a
   expect(reads).toBe(0);
 });
 
-test.each([true, false])(
-  "Show online phones and refresh on reopen (account menu: %s)",
-  async (accountAccess) => {
-    const offline = {
-      ...phone(false),
-      id: "e0000000-0000-4000-a000-000000001003",
-      displayName: "Offline iPhone",
-    };
-    let devices = [phone(), offline];
-    let reads = 0;
-    context.mocks.api(phoneUseContract.devices, ({ respond }) => {
-      reads += 1;
-      return respond(200, { devices });
-    });
-    await setup(true, accountAccess);
-    const phones = await screen.findByRole("list", { name: "Your phone" });
-    expect(within(phones).getByText("Owner iPhone")).toBeVisible();
-    expect(within(phones).queryByText("Offline iPhone")).toBeNull();
-    devices = [phone(false), offline];
-    expect(reads).toBe(1);
-    await userEvent.keyboard("{Escape}");
-    expect(reads).toBe(1);
-    click(await findButton("Connectors"));
-    await screen.findByText("No phones online");
-    expect(reads).toBe(2);
-  },
-);
+test("Show online phones and refresh on reopen", async () => {
+  const offline = {
+    ...phone(false),
+    id: "e0000000-0000-4000-a000-000000001003",
+    displayName: "Offline iPhone",
+  };
+  let devices = [phone(), offline];
+  let reads = 0;
+  context.mocks.api(phoneUseContract.devices, ({ respond }) => {
+    reads += 1;
+    return respond(200, { devices });
+  });
+  await setup(true);
+  const phones = await screen.findByRole("list", { name: "Your phone" });
+  expect(within(phones).getByText("Owner iPhone")).toBeVisible();
+  expect(within(phones).queryByText("Offline iPhone")).toBeNull();
+  devices = [phone(false), offline];
+  expect(reads).toBe(1);
+  await userEvent.keyboard("{Escape}");
+  expect(reads).toBe(1);
+  click(await findButton("Connectors"));
+  await screen.findByText("No phones online");
+  expect(reads).toBe(2);
+});
 
 test("A selected phone stays visible offline so its chat access can be revoked", async () => {
   let selection: PhoneUseSelection | null = {
@@ -128,7 +121,7 @@ test("A selected phone stays visible offline so its chat access can be revoked",
     selection = null;
     return respond(200, { ok: true });
   });
-  await setup(true, true, { path: RUN_PATH });
+  await setup(true, { path: RUN_PATH });
   const control = await screen.findByRole("switch", { name: /Owner iPhone/u });
   await waitFor(() => {
     expect(control).toBeChecked();
@@ -175,61 +168,58 @@ test("Connect my phone explains chat-menu consent and native preparation separat
   });
 });
 
-test.each([true, false])(
-  "Authorize, switch and revoke a phone from this chat (account menu: %s)",
-  async (accountAccess) => {
-    const secondary = {
-      ...phone(),
-      id: "e0000000-0000-4000-a000-000000001002",
-      displayName: "Second iPhone",
-    };
-    let selection: PhoneUseSelection | null = null;
-    context.mocks.api(phoneUseContract.devices, ({ respond }) => {
-      return respond(200, { devices: [phone(), secondary] });
-    });
-    context.mocks.api(phoneUseContract.chatGrant, ({ respond, params }) => {
-      expect(params.threadId).toBe(RUN_THREAD_ID);
-      return respond(200, { selection });
-    });
-    context.mocks.api(phoneUseContract.grant, async ({ respond, request }) => {
-      const body = phoneUseContract.grant.body.parse(await request.json());
-      expect(body.threadId).toBe(RUN_THREAD_ID);
-      selection = body.allow
-        ? { deviceId: body.deviceId, generation: body.generation }
-        : null;
-      return respond(200, { ok: true });
-    });
-    await setup(true, accountAccess, { path: RUN_PATH });
-    const primary = await screen.findByRole("switch", {
-      name: /^Owner iPhone/u,
-    });
-    expect(primary).toHaveAccessibleName("Owner iPhone");
-    const second = await screen.findByRole("switch", {
-      name: /^Second iPhone/u,
-    });
-    await waitFor(() => {
-      expect(primary).not.toHaveAttribute("aria-disabled", "true");
-    });
-    expect(primary).not.toBeChecked();
-    click(primary);
-    await waitFor(() => {
-      expect(primary).toBeChecked();
-      expect(primary).not.toHaveAttribute("aria-disabled", "true");
-    });
-    click(second);
-    await waitFor(() => {
-      expect(second).toBeChecked();
-      expect(second).not.toHaveAttribute("aria-disabled", "true");
-    });
-    expect(primary).not.toBeChecked();
-    click(second);
-    await waitFor(() => {
-      expect(second).not.toBeChecked();
-      expect(second).not.toHaveAttribute("aria-disabled", "true");
-    });
-    expect(selection).toBeNull();
-  },
-);
+test("Authorize, switch and revoke a phone from this chat", async () => {
+  const secondary = {
+    ...phone(),
+    id: "e0000000-0000-4000-a000-000000001002",
+    displayName: "Second iPhone",
+  };
+  let selection: PhoneUseSelection | null = null;
+  context.mocks.api(phoneUseContract.devices, ({ respond }) => {
+    return respond(200, { devices: [phone(), secondary] });
+  });
+  context.mocks.api(phoneUseContract.chatGrant, ({ respond, params }) => {
+    expect(params.threadId).toBe(RUN_THREAD_ID);
+    return respond(200, { selection });
+  });
+  context.mocks.api(phoneUseContract.grant, async ({ respond, request }) => {
+    const body = phoneUseContract.grant.body.parse(await request.json());
+    expect(body.threadId).toBe(RUN_THREAD_ID);
+    selection = body.allow
+      ? { deviceId: body.deviceId, generation: body.generation }
+      : null;
+    return respond(200, { ok: true });
+  });
+  await setup(true, { path: RUN_PATH });
+  const primary = await screen.findByRole("switch", {
+    name: /^Owner iPhone/u,
+  });
+  expect(primary).toHaveAccessibleName("Owner iPhone");
+  const second = await screen.findByRole("switch", {
+    name: /^Second iPhone/u,
+  });
+  await waitFor(() => {
+    expect(primary).not.toHaveAttribute("aria-disabled", "true");
+  });
+  expect(primary).not.toBeChecked();
+  click(primary);
+  await waitFor(() => {
+    expect(primary).toBeChecked();
+    expect(primary).not.toHaveAttribute("aria-disabled", "true");
+  });
+  click(second);
+  await waitFor(() => {
+    expect(second).toBeChecked();
+    expect(second).not.toHaveAttribute("aria-disabled", "true");
+  });
+  expect(primary).not.toBeChecked();
+  click(second);
+  await waitFor(() => {
+    expect(second).not.toBeChecked();
+    expect(second).not.toHaveAttribute("aria-disabled", "true");
+  });
+  expect(selection).toBeNull();
+});
 
 test("A new chat saves its selected phone before the first message starts a Run", async () => {
   const order: string[] = [];
@@ -251,7 +241,7 @@ test("A new chat saves its selected phone before the first message starts a Run"
     order.push("grant");
     return respond(200, { ok: true });
   });
-  await setup(true, true, {
+  await setup(true, {
     onSend: () => {
       order.push("send");
     },
@@ -282,7 +272,7 @@ test("A failed chat-authorization read recovers when reopening the menu", async 
       ? respond(503, { error: { message: "Unavailable", code: "UNAVAILABLE" } })
       : respond(200, { selection: null });
   });
-  await setup(true, true, { path: RUN_PATH });
+  await setup(true, { path: RUN_PATH });
   const control = await screen.findByRole("switch", { name: /^Owner iPhone/u });
   await screen.findByRole("alert");
   expect(control).toHaveAttribute("aria-disabled", "true");
@@ -307,7 +297,7 @@ test("Rejected phone consent preserves the new-chat draft and never starts its R
       error: { code: "FORBIDDEN", message: "Phone access could not be saved" },
     });
   });
-  await setup(true, true, {
+  await setup(true, {
     onSend: () => {
       sends += 1;
     },

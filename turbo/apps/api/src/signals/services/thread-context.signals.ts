@@ -209,15 +209,9 @@ export function createThreadContext(
     integrations.automationTarget$,
     runIds$,
   );
-  const connectorSourceId$ = createConnectorSourceId(
-    pickedEvent$,
-    integrations.automationContext$,
-    integrations.feishuContext$,
-  );
   const connectedAccounts = createConnectedAccountsSignals(
     bootstrap,
     pickedEvent$,
-    connectorSourceId$,
     dispatchTiming$,
     threadConnectorSources$,
   );
@@ -586,28 +580,6 @@ function createThreadExecutionPackageSources(
     );
     const [row] = parseRawRows(packageSourcesRowSchema, rows);
     return row?.packages ?? null;
-  });
-}
-
-function createConnectorSourceId(
-  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  automationContext$: ThreadContext["automationContext$"],
-  feishuContext$: ThreadContext["feishuContext$"],
-) {
-  return computed(async (get): Promise<string | undefined> => {
-    const event = await get(pickedEvent$);
-    // Only these inputs carry the integration account that delivered them.
-    switch (event?.contextType) {
-      case "automation": {
-        return (await get(automationContext$))?.connectorSourceId ?? undefined;
-      }
-      case "feishu": {
-        return (await get(feishuContext$))?.connectorSourceId;
-      }
-      default: {
-        return undefined;
-      }
-    }
   });
 }
 

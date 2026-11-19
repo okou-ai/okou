@@ -12,13 +12,11 @@ if [[ -n "${VERCEL_AUTOMATION_BYPASS_SECRET:-}" ]]; then
 fi
 
 # Pin the mocked runtime before provisioning synthetic subscription accounts.
-# The PAT-driven permission refresh probe exercises the Agent grant endpoint.
 curl -fsS "${headers[@]}" \
     -X POST \
-    -d '{"switches":{"_realAgentInPreview":false,"connectorChatAccountAccess":false}}' \
+    -d '{"switches":{"_realAgentInPreview":false}}' \
     "${api_url}/api/feature-switches" \
-    | jq -e '.effectiveSwitches._realAgentInPreview == false and
-        .effectiveSwitches.connectorChatAccountAccess == false' >/dev/null
+    | jq -e '.effectiveSwitches._realAgentInPreview == false' >/dev/null
 
 provider_response=$(curl -fsS "${headers[@]}" \
     -X POST \

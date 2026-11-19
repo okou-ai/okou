@@ -43,7 +43,6 @@ export function googleCalendarAutomationProjectionCondition(args: {
 export function googleCalendarAccountProjectionStatement(args: {
   readonly orgId: string;
   readonly userId: string;
-  readonly chatAccountAccess?: boolean;
 }) {
   const eventTypes = inArray(workflowAutomations.eventType, [
     ...GOOGLE_CALENDAR_EVENT_TYPES,

@@ -501,12 +501,11 @@ describe("connector catalog valid lifecycle", () => {
       await fixture.configureSubscriptionPiModel(owner.actor);
       await connectorsApi.updateFeatureSwitches(owner.actor, {
         [FeatureSwitchKey.CodexExecution]: false,
-        [FeatureSwitchKey.ConnectorChatAccountAccess]: false,
       });
       installWorkflowVolumeS3Fixture(context, objects);
-      await fixture.api.enableAgentConnectors(owner.actor, owner.agentId, [
-        "x",
-      ]);
+      await connectorsApi.connectManualGrant(owner.actor, "x", "api-token", {
+        credential: "published-x-credential",
+      });
     });
     const run = await owner.sendChatRun(owner.actor, {
       agentId: owner.agentId,
@@ -650,9 +649,6 @@ describe("connector catalog valid lifecycle", () => {
     owned.ownsFeatureSwitches();
     const fixture = createChatEventsFixture(context);
     await owned.run(async () => {
-      await connectorsApi.updateFeatureSwitches(owned.actor, {
-        [FeatureSwitchKey.ConnectorChatAccountAccess]: false,
-      });
       await fixture.api.createPersonalModelProvider(owned.actor, {
         type: "codex-oauth-token",
         authMethod: "auth_json",
@@ -692,14 +688,14 @@ describe("connector catalog valid lifecycle", () => {
         published: readPublishedArchive(context, start),
       });
     }
-    await owned.run(() => {
-      return connectorsApi.updateAgentCustomConnectors(
-        owned.actor,
-        owned.agentId,
-        skills.map((skill) => {
-          return skill.connector.id;
-        }),
-      );
+    await owned.run(async () => {
+      for (const { connector } of skills) {
+        await connectorsApi.setCustomConnectorValues(
+          owned.actor,
+          connector.id,
+          [{ key: "secret", kind: "secret", value: "skill-fixture-token" }],
+        );
+      }
     });
     for (const prompt of [
       "Use all published connector skills",
