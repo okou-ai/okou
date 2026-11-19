@@ -1788,17 +1788,23 @@ test("Open and manage a deep-linked automation", async () => {
   const gmailSwitch = await screen.findByRole("switch", {
     name: "Disable Gmail new message",
   });
-  expect(screen.getByText(/from contains "@acme.com"/)).toBeInTheDocument();
-  expect(
-    screen.getByText(/subject does not contain "newsletter"/),
-  ).toBeInTheDocument();
-  expect(screen.getAllByText("Next")).toHaveLength(1);
-  const gmailRow = document.querySelector(
+  const gmailRow = document.querySelector<HTMLElement>(
     `[data-automation-id="${GMAIL_AUTOMATION_ID}"]`,
   );
-  const weekdayRow = document.querySelector(
+  const weekdayRow = document.querySelector<HTMLElement>(
     '[data-automation-id="workflow-automation-weekday-brief"]',
   );
+  if (!gmailRow || !weekdayRow) {
+    throw new Error("Expected both automation cards");
+  }
+  expect(
+    within(gmailRow).getByText(/from contains "@acme.com"/),
+  ).toBeInTheDocument();
+  expect(
+    within(gmailRow).getByText(/subject does not contain "newsletter"/),
+  ).toBeInTheDocument();
+  expect(within(gmailRow).queryByText("Next")).not.toBeInTheDocument();
+  expect(within(weekdayRow).getByText("Next")).toBeInTheDocument();
   expect(gmailRow).toHaveAttribute("aria-current", "true");
   expect(weekdayRow).not.toHaveAttribute("aria-current");
   expect(scrollIntoView).toHaveBeenCalledWith({ block: "center" });
