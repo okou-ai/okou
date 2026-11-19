@@ -1,16 +1,14 @@
-import { command, computed, state, type Computed, type Command } from "ccstate";
+import { command, computed, state } from "ccstate";
 import { connectedConnectorsContract } from "@okouai/api-contracts/client/connected-connectors";
 import { remotesContract } from "@okouai/api-contracts/client/remotes";
 import { phoneUseContract } from "@okouai/api-contracts/client/phone-use";
-import type { PhoneDevice } from "@okouai/api-contracts/contracts/phone-use";
-import { phoneUseDevicesChangedEvent } from "@okouai/api-contracts/validators/phone-use";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept } from "../../lib/accept.ts";
 import { sortRemoteHosts } from "../../lib/remote-resource-order.ts";
 import { locale$ } from "../locale.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
-import { setAblyLoop$, setAblyInvalidationLoop$ } from "../realtime.ts";
+import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { resetSignal } from "../utils.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
 
@@ -60,65 +58,6 @@ function resourceRequests(signal?: AbortSignal) {
   };
 }
 
-function createPhoneUseSubscriptions(
-  phoneUseDevices$: Computed<Promise<readonly PhoneDevice[]>>,
-  reloadPhoneUseDevices$: Command<void, []>,
-) {
-  const resetPresence$ = resetSignal();
-  const presenceKeys$ = state("");
-  const refreshPhones$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
-      set(reloadPhoneUseDevices$);
-      const devices = await get(phoneUseDevices$);
-      signal.throwIfAborted();
-      const keys = devices
-        .map((device) => {
-          return `${device.id}:${device.generation}`;
-        })
-        .sort();
-      const identity = keys.join(",");
-      if (get(presenceKeys$) !== identity) {
-        set(presenceKeys$, identity);
-        const presenceSignal = set(resetPresence$);
-        for (const topic of keys) {
-          set(
-            setAblyLoop$,
-            {
-              scope: "phone-presence",
-              topic,
-              loopCommand$: refreshPhones$,
-              options: { runOnSubscribe: true },
-            },
-            presenceSignal,
-          );
-        }
-      }
-      return false;
-    },
-  );
-  return command(({ set }, signal: AbortSignal) => {
-    // The resource owner explicitly retires dynamic presence subscriptions.
-    signal.addEventListener(
-      "abort",
-      () => {
-        set(resetPresence$);
-      },
-      { once: true },
-    );
-    set(presenceKeys$, "");
-    set(
-      setAblyLoop$,
-      {
-        scope: "credential",
-        topic: phoneUseDevicesChangedEvent,
-        loopCommand$: refreshPhones$,
-        options: { runOnSubscribe: true },
-      },
-      signal,
-    );
-  });
-}
-
 /** Resource snapshots belong to their visible consumer, never to an Ably loop. */
 export function createConnectorResourceSignals(threadId?: string) {
   const connectedVersion$ = state(0);
@@ -157,22 +96,10 @@ export function createConnectorResourceSignals(threadId?: string) {
     get(phonesVersion$);
     return await get(requests$).phoneGrant(get(apiClient$), threadId);
   });
-  const openPhones$ = createPhoneUseSubscriptions(
-    phoneUseDevices$,
-    reloadPhoneUseDevices$,
-  );
   const open$ = command(
-    (
-      { set },
-      watchConnectors: boolean,
-      watchPhone: boolean,
-      signal: AbortSignal,
-    ) => {
+    ({ set }, watchConnectors: boolean, signal: AbortSignal) => {
       const ownerSignal = set(resetRequests$, signal);
       set(requests$, resourceRequests(ownerSignal));
-      if (watchPhone) {
-        set(openPhones$, ownerSignal);
-      }
       if (watchConnectors) {
         set(
           setAblyInvalidationLoop$,

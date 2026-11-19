@@ -5,7 +5,6 @@ import type { hostedSiteVisibilityStatusSchema } from "@okouai/api-contracts/con
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
-import userEvent from "@testing-library/user-event";
 import { posthog } from "posthog-js/dist/module.slim";
 import type { infer as zInfer } from "zod";
 import {
@@ -1279,38 +1278,3 @@ test("rapid permission choices settle on the latest audience using the refreshed
     expect(getButtonByName("Copy link")).toBeEnabled();
   });
 });
-
-test.each([false, true])(
-  "Share and Download open on click and retain keyboard dismissal (sidebar: %s)",
-  async (sidebar) => {
-    const user = userEvent.setup();
-    await openSite({ sidebar });
-    const shareLabel = sidebar ? "Share artifact" : "Share";
-    const share = getButtonByName(shareLabel);
-    click(share);
-    const menu = await screen.findByRole("dialog", { name: shareLabel });
-    await waitFor(() => {
-      expect(getButtonByName("Copy link", menu)).toBeEnabled();
-    });
-    expect(share).toHaveAttribute("aria-expanded", "true");
-    await user.keyboard("{Escape}");
-    await waitFor(() => {
-      expect(share).toHaveAttribute("aria-expanded", "false");
-    });
-    expect(share).toBeInTheDocument();
-    const download = getButtonByName(
-      sidebar ? "Download artifact" : "Download options",
-    );
-    click(download);
-    const downloadMenu = await screen.findByRole("menu");
-    expect(within(downloadMenu).getByText("Download")).toBeInTheDocument();
-    await user.keyboard("{Escape}");
-    await waitFor(() => {
-      expect(download).toHaveAttribute("aria-expanded", "false");
-    });
-    // Keyboard users still open the same menu without a mouse.
-    download.focus();
-    await user.keyboard("{ArrowDown}");
-    await screen.findByRole("menu");
-  },
-);

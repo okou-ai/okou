@@ -92,7 +92,7 @@ import {
 import type { DirectRunDispatchResult } from "./direct-run-dispatch.service";
 import type { AdmittedRunLaunch } from "./direct-run-preparation.service";
 import {
-  executionSkillRoot,
+  prepareRunPackageMounts,
   selectExecutionPackages,
 } from "./execution-workflow-selection";
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
@@ -154,8 +154,7 @@ import { morningBriefScheduleClaimBound$ } from "./morning-brief-schedule-claim.
 import {
   OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
   OfficialWorkflowRunAdmissionError,
-  exactMountsMatch,
-  type OfficialWorkflowRunObservation,
+  type OfficialWorkflowObservation,
 } from "./official-workflow-run.service";
 import { pendingLaunchBillingAttributionSql } from "./pending-launch-billing-plan";
 import {
@@ -225,7 +224,6 @@ import { isStaffOrg } from "@okouai/core/staff-org";
 import type {
   AgentRunFullLaunchSnapshot,
   AgentRunLaunchSnapshot,
-  AgentRunOfficialWorkflowProvenance,
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -302,7 +300,6 @@ import {
 } from "./workflow-automation-enqueue.service";
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
-import { prepareRunAdmissionMetadata } from "./run-storage-manifest.service";
 import { createStorageSignals } from "./thread-storage.signals";
 import type { AcceptedMemoryMount } from "./execution-storage.service";
 import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
@@ -2638,16 +2635,16 @@ export function createThreadClaimRunObjects(
     if (isRouteError(promptAndSkills)) {
       return promptAndSkills;
     }
-    const metadata = prepareRunAdmissionMetadata({
+    const launchFramework =
+      modelProvider.piModelConfig === undefined ? framework : ("pi" as const);
+    const packageMounts = prepareRunPackageMounts({
+      framework: launchFramework,
       skillVolumes: promptAndSkills.skillVolumes,
       officialWorkflow: officialWorkflowRun,
-      framework,
-      piSandbox: modelProvider.piModelConfig,
     });
     return {
       content,
       resolved,
-      framework,
       modelProvider,
       connectorRuntimeTargets: runtimeContext.connectorRuntimeTargets,
       connectorEnvironment: runtimeContext.connectorEnvironment,
@@ -2659,7 +2656,9 @@ export function createThreadClaimRunObjects(
       integrationContext:
         promptAndSkills.systemPromptVariables.integrationContext,
       userTimezone: promptAndSkills.userTimezone,
-      ...metadata,
+      launchFramework,
+      officialWorkflowProvenance: officialWorkflowRun?.provenance,
+      ...packageMounts,
       featureSwitchContext: contentContext.featureSwitchContext,
       selectedImageModel,
     };
@@ -3006,10 +3005,7 @@ export function createThreadClaimRunObjects(
       const modelProvider = context.modelProvider;
       const launchSnapshot = {
         schemaVersion: 5 as const,
-        framework:
-          modelProvider.piModelConfig === undefined
-            ? context.framework
-            : ("pi" as const),
+        framework: context.launchFramework,
         runnerProfile: DEFAULT_PROFILE,
       };
       const { content } = context;
@@ -3043,7 +3039,7 @@ export function createThreadClaimRunObjects(
           integration = event.contextType ?? undefined;
         }
       }
-      const { officialWorkflowRun, selectedImageModel } = context;
+      const { officialWorkflowProvenance, selectedImageModel } = context;
       return {
         args,
         integrationContext: context.integrationContext,
@@ -3052,7 +3048,7 @@ export function createThreadClaimRunObjects(
           content,
           selectedImageModel,
           launchSnapshot,
-          officialWorkflowRun,
+          officialWorkflowProvenance,
           resolved: {
             agentId: context.resolved.agentId,
           },
@@ -3067,11 +3063,9 @@ export function createThreadClaimRunObjects(
           },
         },
         runner: {
-          skillRoot: executionSkillRoot(launchSnapshot.framework),
           workflowAutomationId: args.agentRunMetadata.workflowAutomationId,
           agentId: context.resolved.agentId,
           protectedMountPaths: context.protectedMountPaths,
-          officialWorkflowRun,
           nativeContinuation:
             args.threadContinuation.executionSnapshot.nativeContinuation,
           realAgentInPreview: args.realAgentInPreview,
@@ -3079,6 +3073,8 @@ export function createThreadClaimRunObjects(
           featureSwitchContext: context.featureSwitchContext,
           connectorRuntimeTargets: context.connectorRuntimeTargets,
           facts: {
+            skillRoot: context.skillRoot,
+            officialWorkflowBundles: context.officialWorkflowBundles,
             templateSkillVolumes: context.templateSkillVolumes,
             integration,
             captureNetworkBodies: args.captureNetworkBodies === true,
@@ -3167,10 +3163,11 @@ export function createThreadClaimRunObjects(
           : { automationId: args.workflowAutomationId }),
         protectedMountPaths: [...args.protectedMountPaths],
       };
-      const officialMountPaths =
-        args.officialWorkflowRun?.provenance.definitions.map((definition) => {
-          return `${args.skillRoot}/${definition.name}`;
-        }) ?? [];
+      const officialMountPaths = args.facts.officialWorkflowBundles.map(
+        ({ mountPath }) => {
+          return mountPath;
+        },
+      );
       const timing = get(threadContext.dispatchTiming$);
       const [
         tokenInput,
@@ -3186,14 +3183,15 @@ export function createThreadClaimRunObjects(
             return get(threadContext.executionPackageSources$);
           },
         ),
-        args.workflowAutomationId && !args.officialWorkflowRun
+        args.workflowAutomationId &&
+        args.facts.officialWorkflowBundles.length === 0
           ? get(automationTarget$)
           : null,
         get(bootstrap.disabledPaidTools$),
       ]);
       signal.throwIfAborted();
       const executionPackages = selectExecutionPackages(packageSources, {
-        skillRoot: args.skillRoot,
+        skillRoot: args.facts.skillRoot,
         protectedMountPaths: [
           ...args.protectedMountPaths,
           ...officialMountPaths,
@@ -4116,7 +4114,8 @@ interface ThreadRunPersistenceContext {
   readonly content: ThreadRunContent;
   readonly selectedImageModel: ImageModel;
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
-  readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
+  readonly officialWorkflowProvenance:
+    OfficialWorkflowObservation["provenance"] | undefined;
   readonly resolved: {
     readonly agentId: string;
   };
@@ -4166,8 +4165,7 @@ interface LaunchRunRowsArgs {
   readonly apiStartTime: number;
   readonly runnerGroup: string;
   readonly launchSnapshot: AgentRunLaunchSnapshot;
-  readonly officialWorkflowProvenance:
-    AgentRunOfficialWorkflowProvenance | undefined;
+  readonly officialWorkflowProvenance: ThreadRunPersistenceContext["officialWorkflowProvenance"];
 }
 
 function launchRunValues(
@@ -4298,7 +4296,7 @@ function preparedLaunchRowsArgs(
     apiStartTime: commit.createArgs.apiStartTime,
     runnerGroup: commit.launch.runnerGroup,
     launchSnapshot: commit.context.launchSnapshot,
-    officialWorkflowProvenance: commit.context.officialWorkflowRun?.provenance,
+    officialWorkflowProvenance: commit.context.officialWorkflowProvenance,
   };
 }
 
@@ -4539,13 +4537,13 @@ interface ThreadExecution {
 
 /** The Thread facts needed to prepare one Runner launch. */
 interface ThreadRunnerFacts {
-  readonly skillRoot: string;
   readonly workflowAutomationId: string | undefined;
   readonly agentId: string;
   readonly protectedMountPaths: readonly string[];
-  readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
   readonly facts: Pick<
     AdmittedExecutionFacts,
+    | "skillRoot"
+    | "officialWorkflowBundles"
     | "templateSkillVolumes"
     | "integration"
     | "captureNetworkBodies"
@@ -4916,7 +4914,6 @@ function admittedRunLaunch(
       agentId: rows.resolved.agentId,
       chatThreadId: rows.chatThreadId,
       framework: rows.launchSnapshot.framework,
-      officialWorkflowProvenance: rows.officialWorkflowProvenance ?? null,
       prompt: rows.content.prompt,
       appendSystemPrompt: rows.content.appendSystemPrompt,
       vars: rows.content.vars,
@@ -5215,8 +5212,14 @@ const commitThreadLaunch$ = command(
     signal: AbortSignal,
   ): Promise<AtomicLaunchCommitAttempt> => {
     signal.throwIfAborted();
-    const official = args.context.officialWorkflowRun;
-    if (official && !exactMountsMatch(official, args.launch.runStorageMounts)) {
+    const { officialWorkflowBundles } = args.launch.facts;
+    if (
+      officialWorkflowBundles.some(({ mountPath }) => {
+        return args.launch.runStorageMounts.some((mount) => {
+          return mount.mountPath === mountPath;
+        });
+      })
+    ) {
       return conflict(OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE);
     }
     const db = set(writeDb$);

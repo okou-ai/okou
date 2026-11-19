@@ -1,26 +1,14 @@
 import { performance } from "node:perf_hooks";
 import {
-  CANONICAL_CLAUDE_CONFIG_DIR,
   CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
-  CANONICAL_CODEX_HOME_DIR,
   CANONICAL_CODEX_MEMORY_MOUNT_PATH,
   CANONICAL_PI_MEMORY_MOUNT_PATH,
-  PI_SKILLS_ROOT,
   type PiModelConfig,
   type StorageMountEntry,
 } from "@okouai/api-contracts/contracts/runners";
-import { templateGuidanceMountPath } from "@okouai/api-contracts/contracts/template-guidance-bundle";
-import {
-  resolveRunSkillVolumes,
-  type SkillVolume,
-} from "./run-prompt-and-skills";
 import { now } from "../../lib/time";
 import type { AcceptedMemoryMount } from "./execution-storage.service";
 import { isMemberMemoryIdentity } from "./member-memory-records";
-import type {
-  OfficialWorkflowObservation,
-  OfficialWorkflowRunObservation,
-} from "./official-workflow-run.service";
 import {
   type ApiDispatchTimingActionType,
   ApiDispatchTimingCollector,
@@ -530,21 +518,6 @@ export interface AgentRunStorageSelection {
   readonly requests: readonly StorageRequest[];
 }
 
-function frameworkSkillsMountPath(framework: SupportedFramework): string {
-  return framework === "codex"
-    ? `${CANONICAL_CODEX_HOME_DIR}/skills`
-    : `${CANONICAL_CLAUDE_CONFIG_DIR}/skills`;
-}
-
-function skillsRootForRun(
-  framework: SupportedFramework,
-  piSandbox: PiModelConfig | undefined,
-): string {
-  return piSandbox === undefined
-    ? frameworkSkillsMountPath(framework)
-    : PI_SKILLS_ROOT;
-}
-
 const AUTO_MEMORY_MISSING_ROOT_POLICY: ArtifactMissingRootPolicy =
   "preserveParentVersion";
 
@@ -568,37 +541,6 @@ export function memoryArtifactsForRun(args: {
       missingRootPolicy: AUTO_MEMORY_MISSING_ROOT_POLICY,
     },
   ];
-}
-
-export function prepareRunAdmissionMetadata(args: {
-  readonly skillVolumes: readonly SkillVolume[];
-  readonly officialWorkflow: OfficialWorkflowObservation | undefined;
-  readonly framework: SupportedFramework;
-  readonly piSandbox: PiModelConfig | undefined;
-}): {
-  readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
-  readonly protectedMountPaths: readonly string[];
-} {
-  const skillsRoot = skillsRootForRun(args.framework, args.piSandbox);
-  const winners = normalizeMountOverlay(
-    resolveRunSkillVolumes(args.skillVolumes, skillsRoot),
-  );
-  return {
-    protectedMountPaths: winners.flatMap((volume) => {
-      return "templateGuidanceBundle" in volume
-        ? [templateGuidanceMountPath(volume.templateGuidanceBundle)]
-        : [];
-    }),
-    officialWorkflowRun: args.officialWorkflow && {
-      ...args.officialWorkflow,
-      definitions: args.officialWorkflow.definitions.map((definition) => {
-        return {
-          ...definition,
-          mountPath: `${skillsRoot}/${definition.workflowName}`,
-        };
-      }),
-    },
-  };
 }
 
 type ArtifactMissingRootPolicy = NonNullable<

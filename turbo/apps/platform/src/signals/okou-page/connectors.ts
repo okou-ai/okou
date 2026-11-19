@@ -501,12 +501,7 @@ function createConnectorUiStateCommands(
       // The remote dialog takes over the same resources without cancelling
       // their owner when the connector popover closes.
       if (hasResourceConsumer && !hadResourceConsumer) {
-        set(
-          resources.open$,
-          !chatAccounts,
-          features[FeatureSwitchKey.PhoneUse],
-          signal,
-        );
+        set(resources.open$, !chatAccounts, signal);
       } else if (!hasResourceConsumer && hadResourceConsumer) {
         set(resources.close$);
       }

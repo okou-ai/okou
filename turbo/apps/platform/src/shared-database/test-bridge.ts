@@ -114,9 +114,6 @@ function directRealtimeChannelName(
   topic: string,
 ): string {
   switch (scope) {
-    case "phone-presence": {
-      return `phone-use:${identity.orgId}:${identity.userId}:${topic}`;
-    }
     case "run-output": {
       return sessionOutputChannelName(identity.userId, identity.orgId, topic);
     }
@@ -191,17 +188,17 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
     channelName: string,
     message: DirectRealtimeMessage,
   ): void {
-    const scope = (
-      ["credential", "org", "user", "run-output", "phone-presence"] as const
-    ).find((candidate) => {
-      return (
-        directRealtimeChannelName(
-          this.options.identity,
-          candidate,
-          message.name,
-        ) === channelName
-      );
-    });
+    const scope = (["credential", "org", "user", "run-output"] as const).find(
+      (candidate) => {
+        return (
+          directRealtimeChannelName(
+            this.options.identity,
+            candidate,
+            message.name,
+          ) === channelName
+        );
+      },
+    );
     if (scope) {
       this.handleRealtimeMessage(scope, message);
     }

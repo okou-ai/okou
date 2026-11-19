@@ -665,10 +665,8 @@ function HostedSiteSharePopover({
           <Button
             variant="quiet"
             size="icon-sm"
-            className={cn(
-              "data-popup-open:bg-state-hover data-popup-open:text-foreground",
-              className,
-            )}
+            highlightWhenOpen
+            className={className}
           />
         }
       >

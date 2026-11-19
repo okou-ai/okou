@@ -80,7 +80,7 @@ function officialObservationFromTarget(
     throw new OfficialWorkflowRunAdmissionError();
   }
   return assembleWorkflowObservation(
-    { workflowId: workflow.id, workflowName: workflow.name },
+    workflow.id,
     definition,
     acceptedRevisionFromRow(target.officialRevision),
   );

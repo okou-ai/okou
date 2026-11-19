@@ -13,10 +13,6 @@ import {
   createAcceptedExecutionStorage,
   type AcceptedMemoryMount,
 } from "./execution-storage.service";
-import {
-  assertOfficialWorkflowMounts,
-  executionSkillRoot,
-} from "./execution-workflow-selection";
 import type { ModelFirstPin } from "./model-selection.service";
 import {
   emptyEnvironment,
@@ -53,7 +49,6 @@ export type ExecutionContextRun = Pick<
   | "modelLongContextMinTotalInputTokens"
   | "reasoningEffort"
   | "codexServiceTier"
-  | "officialWorkflowProvenance"
 > & {
   readonly modelProvider: ModelFirstPin["modelProviderType"];
   readonly selectedModel: string;
@@ -135,8 +130,8 @@ function createExecutionModel(input$: ExecutionInput$) {
 
 function createExecutionPackages(input$: ExecutionInput$) {
   return computed(async (get) => {
-    const { run, facts, memoryMounts } = await get(input$);
-    const skillRoot = executionSkillRoot(run.framework);
+    const { facts, memoryMounts } = await get(input$);
+    const { skillRoot, officialWorkflowBundles } = facts;
     // Overlay precedence depends on the accepted mount paths and order.
     const storageMounts = memoryMounts.map(({ mount }) => {
       return mount;
@@ -167,12 +162,6 @@ function createExecutionPackages(input$: ExecutionInput$) {
           ]
         : [];
     });
-    const officialWorkflowBundles = executionOfficialBundles(run, skillRoot);
-    assertOfficialWorkflowMounts(
-      officialWorkflowBundles,
-      storageMounts,
-      skillRoot,
-    );
     return {
       skillRoot,
       officialWorkflowBundles,
@@ -282,7 +271,11 @@ function createExecutionPreparedContext(
     ]);
     const { environment, untrustedEnvironment } = resolved;
     const prepared: PreparedExecutionContext = {
-      ...executionModelConfiguration(run, model),
+      ...executionModelConfiguration(
+        run,
+        model,
+        packages.officialWorkflowBundles.length > 0,
+      ),
       customWorkflowSelection: facts.customWorkflowSelection,
       featureFlags: facts.featureFlags,
       realAgentInPreview: facts.realAgentInPreview,
@@ -329,6 +322,7 @@ function createExecutionPreparedContext(
 function executionModelConfiguration(
   run: ExecutionContextRun,
   model: ExecutionModel,
+  isOfficialWorkflow: boolean,
 ): Pick<
   PreparedExecutionContext,
   | "cliAgentType"
@@ -355,20 +349,9 @@ function executionModelConfiguration(
     piLaunchConfig: framework === "pi" ? { schemaVersion: 2 } : undefined,
     piSessionId:
       framework === "pi"
-        ? run.officialWorkflowProvenance
+        ? isOfficialWorkflow
           ? run.id
           : run.chatThreadId
         : undefined,
   };
-}
-
-function executionOfficialBundles(run: ExecutionContextRun, skillRoot: string) {
-  return run.officialWorkflowProvenance?.schemaVersion === 2
-    ? run.officialWorkflowProvenance.definitions.map((definition) => {
-        return {
-          ...definition.contentBundle,
-          mountPath: `${skillRoot}/${definition.name}`,
-        };
-      })
-    : [];
 }
