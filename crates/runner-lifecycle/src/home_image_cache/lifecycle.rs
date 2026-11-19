@@ -1,10 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::convert::Infallible;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use nix::fcntl::Flock;
 use tokio::fs;
+use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use crate::duration::duration_ms;
@@ -607,19 +609,62 @@ impl HomeImageCache {
             .await
     }
 
+    /// Match the preferred producer after a cancellable lock acquisition.
+    pub async fn prepare_preferred_from_source(
+        &self,
+        request: HomeImagePrepareRequest<'_>,
+        source_run_id: RunId,
+        deadline: tokio::time::Instant,
+        cancel: &CancellationToken,
+    ) -> Option<HomeImageLease> {
+        let policy = HomeImagePreparePolicy::TryCacheUntil(deadline);
+        self.try_prepare_with_source_selection(request, policy, Some(source_run_id), async |path| {
+            tokio::select! {
+                biased;
+                () = cancel.cancelled() => Err(()),
+                lock = self.acquire_prepare_lock(path, policy) => Ok(lock),
+            }
+        })
+        .await
+        .ok()
+    }
+
     async fn prepare_with_source_selection(
         &self,
         request: HomeImagePrepareRequest<'_>,
         prepare_policy: HomeImagePreparePolicy,
         source_run_id: Option<RunId>,
     ) -> HomeImageLease {
+        let Ok(lease) = self
+            .try_prepare_with_source_selection(
+                request,
+                prepare_policy,
+                source_run_id,
+                async |path| {
+                    Ok::<_, Infallible>(self.acquire_prepare_lock(path, prepare_policy).await)
+                },
+            )
+            .await;
+        lease
+    }
+
+    async fn try_prepare_with_source_selection<E>(
+        &self,
+        request: HomeImagePrepareRequest<'_>,
+        prepare_policy: HomeImagePreparePolicy,
+        source_run_id: Option<RunId>,
+        acquire_lock: impl AsyncFnOnce(
+            PathBuf,
+        )
+            -> Result<LifecycleResult<runner_host::lock::TryLock>, E>,
+    ) -> Result<HomeImageLease, E> {
         if prepare_policy == HomeImagePreparePolicy::SkipCache {
-            return self
+            return Ok(self
                 .lease_active(HomeImageLeaseRequest {
                     identity: request.identity,
                     home_drive_available: request.home_drive_required,
                 })
-                .await;
+                .await);
         }
         let common = HomeImageLeaseCommon::new(self, request.identity);
         let home_drive = |result,
@@ -646,7 +691,7 @@ impl HomeImageCache {
         };
 
         if common.rootfs_hash.is_empty() || common.image_size_bytes == 0 {
-            return home_drive(
+            return Ok(home_drive(
                 HomeCacheCheckoutResult::InvalidMetadata,
                 None,
                 None,
@@ -654,7 +699,7 @@ impl HomeImageCache {
                 None,
                 true,
                 None,
-            );
+            ));
         }
         let Some(working_dir) = common.safe_working_dir() else {
             warn!(
@@ -662,7 +707,7 @@ impl HomeImageCache {
                 working_dir = %common.raw_working_dir,
                 "home image cache disabled for unsafe working directory"
             );
-            return home_drive(
+            return Ok(home_drive(
                 HomeCacheCheckoutResult::InvalidWorkingDir,
                 None,
                 None,
@@ -670,10 +715,10 @@ impl HomeImageCache {
                 None,
                 request.home_drive_required,
                 None,
-            );
+            ));
         };
         let Some(reuse_key) = common.reuse_key else {
-            return home_drive(
+            return Ok(home_drive(
                 HomeCacheCheckoutResult::NoReuseKey,
                 None,
                 None,
@@ -681,7 +726,7 @@ impl HomeImageCache {
                 None,
                 true,
                 None,
-            );
+            ));
         };
         // Protect and inspect the requested image before considering pressure.
         // Same-filesystem consumption moves existing blocks; allocation safety
@@ -689,7 +734,9 @@ impl HomeImageCache {
         let cache_key = common.cache_key(self, reuse_key);
         let lock_path = self.entry_lock_path(&cache_key);
         let owner_before = self.local_entry_lock_observation(&cache_key);
-        let lock = match self.acquire_prepare_lock(lock_path, prepare_policy).await {
+        // A cancelled acquisition leaves before any protected cache work.
+        // The lock remains owned through metadata inspection and repairs.
+        let lock = match acquire_lock(lock_path).await? {
             Ok(runner_host::lock::TryLock::Acquired(lock)) => lock,
             Ok(runner_host::lock::TryLock::Busy) => {
                 let owner = self.stable_local_entry_lock_owner(&cache_key, owner_before.as_ref());
@@ -718,7 +765,7 @@ impl HomeImageCache {
                         )
                     }
                 }
-                return home_drive(
+                return Ok(home_drive(
                     HomeCacheCheckoutResult::LockBusy,
                     None,
                     None,
@@ -726,7 +773,7 @@ impl HomeImageCache {
                     None,
                     true,
                     Some(HomeCacheLockDecision::Busy(owner)),
-                );
+                ));
             }
             Err(e) => {
                 info!(
@@ -735,7 +782,7 @@ impl HomeImageCache {
                     error = %e,
                     "home image cache lock unavailable; using fresh home image"
                 );
-                return home_drive(
+                return Ok(home_drive(
                     HomeCacheCheckoutResult::LockBusy,
                     None,
                     None,
@@ -743,7 +790,7 @@ impl HomeImageCache {
                     None,
                     true,
                     Some(HomeCacheLockDecision::Unavailable),
-                );
+                ));
             }
         };
         let lock = HomeEntryLock::new(
@@ -763,7 +810,7 @@ impl HomeImageCache {
                     path = %entry_dir.display(),
                     "removed non-directory home image cache entry before checkout"
                 );
-                return home_drive(
+                return Ok(home_drive(
                     HomeCacheCheckoutResult::Miss,
                     None,
                     None,
@@ -771,7 +818,7 @@ impl HomeImageCache {
                     Some(cache_key),
                     true,
                     None,
-                );
+                ));
             }
             Ok(false) => {}
             Err(e) => {
@@ -782,7 +829,7 @@ impl HomeImageCache {
                     error = %e,
                     "failed to remove non-directory home image cache entry before checkout"
                 );
-                return home_drive(
+                return Ok(home_drive(
                     HomeCacheCheckoutResult::InvalidMetadata,
                     None,
                     None,
@@ -790,7 +837,7 @@ impl HomeImageCache {
                     Some(cache_key),
                     true,
                     None,
-                );
+                ));
             }
         }
 
@@ -847,7 +894,7 @@ impl HomeImageCache {
                             HomeObservationOutcome::Deleted,
                             "invalid_metadata",
                         );
-                        return home_drive(
+                        return Ok(home_drive(
                             HomeCacheCheckoutResult::Miss,
                             None,
                             None,
@@ -855,10 +902,10 @@ impl HomeImageCache {
                             Some(cache_key),
                             true,
                             None,
-                        );
+                        ));
                     }
                     Err(remove_error) if remove_error.kind() == std::io::ErrorKind::NotFound => {
-                        return home_drive(
+                        return Ok(home_drive(
                             HomeCacheCheckoutResult::Miss,
                             None,
                             None,
@@ -866,7 +913,7 @@ impl HomeImageCache {
                             Some(cache_key),
                             true,
                             None,
-                        );
+                        ));
                     }
                     Err(remove_error) => {
                         self.observe_invalidated_entry(
@@ -883,7 +930,7 @@ impl HomeImageCache {
                         );
                     }
                 }
-                return home_drive(
+                return Ok(home_drive(
                     HomeCacheCheckoutResult::InvalidMetadata,
                     None,
                     None,
@@ -891,11 +938,11 @@ impl HomeImageCache {
                     Some(cache_key),
                     true,
                     None,
-                );
+                ));
             }
         };
 
-        match hit {
+        Ok(match hit {
             Some((source, previous, binding, expected_image)) => {
                 let pin = super::fs::PinnedImage::open(&source, common.image_size_bytes);
                 if !pin
@@ -911,7 +958,7 @@ impl HomeImageCache {
                             .and_then(|name| name.to_str())
                             .and_then(super::entry::image_generation),
                     );
-                    return home_drive(
+                    return Ok(home_drive(
                         HomeCacheCheckoutResult::Miss,
                         None,
                         None,
@@ -919,7 +966,7 @@ impl HomeImageCache {
                         Some(cache_key),
                         true,
                         None,
-                    );
+                    ));
                 }
                 let mut lease = home_drive(
                     HomeCacheCheckoutResult::Hit,
@@ -938,7 +985,7 @@ impl HomeImageCache {
                     Some(pin) => lease.selected_commit_pin = Some(pin),
                     None => {
                         lease.discard_cached_image();
-                        return lease;
+                        return Ok(lease);
                     }
                 }
                 if let Some(lock) = lease.entry_lock.as_mut() {
@@ -959,7 +1006,7 @@ impl HomeImageCache {
                 };
                 home_drive(result, None, None, Some(lock), Some(cache_key), true, None)
             }
-        }
+        })
     }
 
     pub async fn held_home_states_for_profiles(

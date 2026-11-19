@@ -120,6 +120,75 @@ async fn expired_contention_deadline_still_attempts_an_uncontended_lock() {
     ));
 }
 
+#[test]
+fn contention_deadline_prevents_a_ready_retry_from_opening_the_lock() {
+    const WATCHDOG: Duration = Duration::from_secs(2);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .max_blocking_threads(1)
+        .enable_time()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.lock");
+        let holder = acquire(path.clone()).await.unwrap();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        let (busy_tx, busy_rx) = tokio::sync::oneshot::channel();
+        let (retry_tx, retry_rx) = tokio::sync::oneshot::channel();
+        let mut acquisition = Box::pin(acquire_with_contention_limit(
+            path.clone(),
+            ContentionLimit::Deadline(deadline),
+            async {
+                busy_tx.send(()).unwrap();
+                retry_rx.await.unwrap();
+            },
+        ));
+        tokio::select! {
+            _ = acquisition.as_mut() => panic!("completed before observing Busy"),
+            result = tokio::time::timeout(WATCHDOG, busy_rx) => {
+                result.unwrap().unwrap();
+            }
+        }
+
+        // Keep the only blocking worker occupied so any queued probe runs
+        // after the waiter returns. Opening the lock would tighten its mode.
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let blocker = tokio::task::spawn_blocking(move || {
+            started_tx.send(()).unwrap();
+            let _ = release_rx.recv();
+        });
+        tokio::time::timeout(WATCHDOG, started_rx)
+            .await
+            .unwrap()
+            .unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        tokio::time::pause();
+        retry_tx.send(()).unwrap();
+        poll_fn(|context| {
+            assert!(acquisition.as_mut().poll(context).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        tokio::time::advance(remaining + Duration::from_millis(1)).await;
+        tokio::time::resume();
+        let result = tokio::time::timeout(WATCHDOG, acquisition).await.unwrap();
+        assert!(matches!(result.unwrap(), TryLock::Busy));
+
+        release_tx.send(()).unwrap();
+        blocker.await.unwrap();
+        assert_eq!(
+            tokio::task::spawn_blocking(move || mode(&path))
+                .await
+                .unwrap(),
+            0o644
+        );
+        drop(holder);
+    });
+}
+
 #[tokio::test]
 async fn contention_limits_acquire_after_observed_busy_is_released() {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);

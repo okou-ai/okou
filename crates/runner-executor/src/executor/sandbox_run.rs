@@ -520,10 +520,19 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
     // A Runner finishing the predecessor can still hold this Home lock. Keep
     // weighted startup capacity available while the preferred checkout waits.
     let mut home_image = if checkout_before_admission {
+        let lease = prepare_home_image(
+            context,
+            sandbox_id,
+            config,
+            params,
+            &controls.cancel,
+            telemetry,
+        )
+        .await;
         if controls.cancel.is_cancelled() {
             return Err(RunnerError::Cancelled);
         }
-        prepare_home_image(context, sandbox_id, config, params, telemetry).await
+        lease
     } else {
         None
     };
@@ -564,7 +573,15 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
     controls.pre_spawn_admission_lease = Some(admission_lease);
     let prepare_started = Instant::now();
     if checkout_home && !checkout_before_admission {
-        home_image = prepare_home_image(context, sandbox_id, config, params, telemetry).await;
+        home_image = prepare_home_image(
+            context,
+            sandbox_id,
+            config,
+            params,
+            &controls.cancel,
+            telemetry,
+        )
+        .await;
     }
     let prepared_storage = prepare_storage(
         context,
@@ -1021,6 +1038,7 @@ pub(super) async fn prepare_home_image(
     sandbox_id: SandboxId,
     config: &ExecutorConfig,
     params: &JobParams,
+    cancel: &CancellationToken,
     telemetry: &mut JobTelemetry,
 ) -> Option<HomeImageLease> {
     let cache = config.home_cache.as_ref()?;
@@ -1040,10 +1058,14 @@ pub(super) async fn prepare_home_image(
         home_drive_required: true,
     };
     let policy = params.home_image_prepare_policy;
-    let lease = if let Some(source) = params.required_home_source_run_id {
-        cache.prepare_from_source(request, source, policy).await
-    } else {
-        cache.prepare_with_policy(request, policy).await
+    let lease = match (params.required_home_source_run_id, policy) {
+        (Some(source), HomeImagePreparePolicy::TryCacheUntil(deadline)) => {
+            cache
+                .prepare_preferred_from_source(request, source, deadline, cancel)
+                .await?
+        }
+        (Some(source), _) => cache.prepare_from_source(request, source, policy).await,
+        (None, _) => cache.prepare_with_policy(request, policy).await,
     };
     let prepare_elapsed = prepare_started.elapsed();
     let prepare_error = home_image_prepare_error(lease.result());

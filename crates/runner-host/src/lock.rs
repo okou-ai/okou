@@ -355,7 +355,12 @@ async fn acquire_with_contention_limit(
     let wait = match limit {
         ContentionLimit::Timeout(timeout) => tokio::time::timeout(timeout, retry),
         ContentionLimit::Deadline(deadline) if deadline > tokio::time::Instant::now() => {
-            tokio::time::timeout_at(deadline, retry)
+            // Give the deadline priority over a backoff that is also ready.
+            return tokio::select! {
+                biased;
+                () = tokio::time::sleep_until(deadline) => Ok(TryLock::Busy),
+                result = retry => result.map(TryLock::Acquired),
+            };
         }
         ContentionLimit::Deadline(_) => return Ok(TryLock::Busy),
     };
