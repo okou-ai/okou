@@ -3501,6 +3501,13 @@
       "when": 1795064566795,
       "tag": "1578_ios_widget_push_token",
       "breakpoints": true
+    },
+    {
+      "idx": 1579,
+      "version": "7",
+      "when": 1795067765771,
+      "tag": "1579_activate_quiet_default_agent_workspaces",
+      "breakpoints": true
     }
   ]
 }
