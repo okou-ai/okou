@@ -65,9 +65,9 @@ assert_auto_route() {
     assert_success
     successor_result="$output"
     successor_run_id="$(runner_chat_field "$successor_result" '.runId')"
-    [[ "$successor_run_id" != "$RUN_ID" ]]
-    [[ "$(runner_chat_field "$successor_result" '.threadId')" == "$THREAD_ID" ]]
-    [[ "$(runner_chat_field "$successor_result" '.sessionId')" == "$first_session" ]]
+    refute_equal "$successor_run_id" "$RUN_ID"
+    assert_equal "$(runner_chat_field "$successor_result" '.threadId')" "$THREAD_ID"
+    assert_equal "$(runner_chat_field "$successor_result" '.sessionId')" "$first_session"
     RUN_ID="$successor_run_id"
     run assert_auto_route "$RUN_ID"
     assert_success

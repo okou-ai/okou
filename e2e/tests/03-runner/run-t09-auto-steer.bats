@@ -89,13 +89,14 @@ run_auto_steer() {
     assert_output --partial "$expected_output"
     assert_output --partial "$after_complete_prompt"
     assert_output --partial '"status":"completed"'
-    [[ -n "$(runner_chat_field "$output" '.runId')" ]]
-    [[ -n "$(runner_chat_field "$output" '.steerEventId')" ]]
-    [[ -n "$(runner_chat_field "$output" '.sessionId')" ]]
-    [[ -n "$(runner_chat_field "$output" '.successorRunId')" ]]
-    [[ -n "$(runner_chat_field "$output" '.successorSessionId')" ]]
-    [[ "$(runner_chat_field "$output" '.successorRunId')" != \
-        "$(runner_chat_field "$output" '.runId')" ]]
-    [[ "$(runner_chat_field "$output" '.successorThreadId')" == \
-        "$(runner_chat_field "$output" '.threadId')" ]]
+    local field
+    for field in runId steerEventId sessionId successorRunId successorSessionId; do
+        if [[ -z "$(runner_chat_field "$output" ".$field")" ]]; then
+            fail "Missing $field in steer scenario result"
+        fi
+    done
+    refute_equal "$(runner_chat_field "$output" '.successorRunId')" \
+        "$(runner_chat_field "$output" '.runId')"
+    assert_equal "$(runner_chat_field "$output" '.successorThreadId')" \
+        "$(runner_chat_field "$output" '.threadId')"
 }
