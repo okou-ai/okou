@@ -1,0 +1,169 @@
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
+import { mockAuthorizationCallbackThread } from "../../okou-page/__tests__/authorization-callback-test-helpers.ts";
+import {
+  computerUseAuthorizationRequestsContract,
+  type ComputerUseAuthorizationSource,
+  type ComputerUseHost,
+} from "@okouai/api-contracts/contracts/computer-use";
+import { screen, waitFor } from "@testing-library/react";
+import { expect, test } from "vitest";
+
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+
+const context = testContext();
+const REQUEST_TOKEN = "computer-use-request-token";
+const OFFLINE_HOST_ID = "33333333-3333-4333-8333-333333333333";
+
+function computerUseHost(
+  id: string,
+  displayName: string,
+  overrides: Partial<ComputerUseHost> = {},
+): ComputerUseHost {
+  return {
+    id,
+    hostName: displayName,
+    displayName,
+    appVersion: "1.0.0",
+    osVersion: "14.6",
+    supportedCapabilities: [],
+    permissions: {
+      accessibility: true,
+      screenRecording: true,
+      automation: {
+        chrome: { status: "granted", updatedAt: null, reason: null },
+        safari: { status: "granted", updatedAt: null, reason: null },
+      },
+    },
+    status: "online",
+    lastSeenAt: "2026-09-01T10:00:00.000Z",
+    createdAt: "2026-09-01T09:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function mockAuthorizationRequest({
+  hosts,
+  source = "chat",
+}: {
+  readonly hosts: ComputerUseHost[];
+  readonly source?: ComputerUseAuthorizationSource;
+}): void {
+  context.mocks.api(
+    computerUseAuthorizationRequestsContract.get,
+    ({ respond }) => {
+      return respond(200, {
+        source,
+        id: "10000000-0000-4000-8000-000000000001",
+        chatThreadId:
+          source === "chat" ? "20000000-0000-4000-8000-000000000001" : null,
+        expiresAt: "2099-09-01T10:00:00.000Z",
+        completedAt: null,
+        computerUseHostId: null,
+        hosts,
+      });
+    },
+  );
+}
+
+function getButton(
+  name: string,
+  container: ParentNode = document.body,
+): HTMLButtonElement {
+  const button = queryAllByRoleFast("button", container).find((candidate) => {
+    return candidate.textContent?.trim() === name;
+  });
+  if (!(button instanceof HTMLButtonElement)) {
+    throw new Error(`Button not found: ${name}`);
+  }
+  return button;
+}
+
+function getDownloadLink(): HTMLAnchorElement | undefined {
+  const link = queryAllByRoleFast("link").find((candidate) => {
+    return candidate.textContent?.trim() === "Download for macOS";
+  });
+  return link instanceof HTMLAnchorElement ? link : undefined;
+}
+
+test("A user with no online computer receives setup guidance", async () => {
+  mockAuthorizationRequest({
+    hosts: [
+      computerUseHost(OFFLINE_HOST_ID, "Offline Desktop", {
+        status: "offline",
+      }),
+    ],
+  });
+
+  await setupPage({
+    context,
+    path: `/computer-use/authorize/${REQUEST_TOKEN}`,
+    host: "app.okou.ai",
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: "No online computers" }),
+  ).resolves.toBeVisible();
+  expect(
+    screen.getByText("Open Okou on your Mac to bring it online."),
+  ).toBeVisible();
+  expect(screen.queryByText("Offline Desktop")).toBeNull();
+  expect(
+    screen.getByText(
+      "Requires an Apple silicon Mac with macOS 14 or newer. Intel Macs aren't supported.",
+    ),
+  ).toBeVisible();
+  expect(getDownloadLink()).toHaveAttribute(
+    "href",
+    expect.stringContaining("/api/desktop/updates/stable/darwin/arm64/dmg"),
+  );
+});
+
+test.each([false])(
+  "The standalone computer page honors the optional callback (%s)",
+  async (callback) => {
+    const threadId = "20000000-0000-4000-8000-000000000001";
+    const hostId = "30000000-0000-4000-8000-000000000001";
+    mockAuthorizationRequest({ hosts: [computerUseHost(hostId, "Work Mac")] });
+    mockAuthorizationCallbackThread(context, threadId);
+    let grants = 0;
+    const prompts: string[] = [];
+    context.mocks.api(
+      computerUseAuthorizationRequestsContract.apply,
+      ({ respond }) => {
+        grants++;
+        return respond(200, {
+          ok: true,
+          source: "chat",
+          computerUseHostId: hostId,
+        });
+      },
+    );
+    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+      expect(grants).toBe(1);
+      expect(body.clientEventId).toBe("10000000-0000-4000-8000-000000000001");
+      if (body.prompt) {
+        prompts.push(body.prompt);
+      }
+      return respond(201, { threadId });
+    });
+    await setupPage({
+      context,
+      path: `/computer-use/authorize/${REQUEST_TOKEN}${callback ? `?threadId=${threadId}&callbackPrompt=Continue` : ""}`,
+      host: "app.okou.ai",
+    });
+    await waitFor(() => {
+      expect(getButton("Authorize")).toBeEnabled();
+    });
+    click(getButton("Authorize"));
+    await waitFor(() => {
+      expect(getButton("Authorized")).toBeDisabled();
+    });
+    expect(grants).toBe(1);
+    expect(prompts).toStrictEqual(callback ? ["Continue"] : []);
+  },
+);
