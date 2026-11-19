@@ -1,4 +1,3 @@
-import { EmptyStateIllustration } from "../../../components/empty-state-illustration.tsx";
 import { useLastLoadable } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { CircleCheck, Download } from "lucide-react";
@@ -107,8 +106,7 @@ export function OrgInvoicesTab() {
   if (!loading && invoices.length === 0) {
     return (
       <div className="flex flex-col gap-4">
-        <p className="flex flex-col items-center gap-3 py-8 text-center text-sm text-muted-foreground">
-          <EmptyStateIllustration scene="usage" size="page" />
+        <p className="text-sm text-muted-foreground">
           {t(($) => {
             return $.billing.invoices.empty;
           })}

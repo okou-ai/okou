@@ -1,4 +1,3 @@
-import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import { useGet, useLoadable, useLastResolved, useSet } from "ccstate-react";
@@ -197,8 +196,7 @@ export function IdeationPage() {
             <main className="pt-4">
               <div className="flex flex-col gap-6">
                 {visibleCategories.length === 0 ? (
-                  <p className="flex flex-col items-center gap-2 text-sm text-muted-foreground">
-                    <EmptyStateIllustration scene="search" size="panel" />
+                  <p className="text-sm text-muted-foreground">
                     {t(($) => {
                       return $.ideation.search.empty;
                     })}

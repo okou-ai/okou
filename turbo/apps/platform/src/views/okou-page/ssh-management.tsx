@@ -1,4 +1,3 @@
-import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { RemoteSecretInput } from "./remote-secret-input.tsx";
 import {
@@ -1798,8 +1797,7 @@ function OwnerSshCredentials() {
         </Button>
       </div>
       {credentials.data.length === 0 && (
-        <p className="flex flex-col items-center gap-3 rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-          <EmptyStateIllustration scene="permission" size="panel" />
+        <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
           {t(($) => {
             return $.ssh.credential.empty;
           })}

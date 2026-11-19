@@ -1,4 +1,3 @@
-import { EmptyStateIllustration } from "../../../components/empty-state-illustration.tsx";
 import type {
   WalletPurchaseHistoryEntry,
   WalletTransaction,
@@ -196,8 +195,7 @@ export function WalletTransactions() {
           </p>
         </div>
       ) : !loading && !data?.transactions.length ? (
-        <p className="flex flex-col items-center gap-3 py-8 text-center text-sm text-muted-foreground">
-          <EmptyStateIllustration scene="usage" size="page" />
+        <p className="text-sm text-muted-foreground">
           {requests
             ? t(($) => {
                 return $.settings.wallet.transactions.requestsEmpty;

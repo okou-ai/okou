@@ -1,4 +1,3 @@
-import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import { useGet, useSet, useLastResolved } from "ccstate-react";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -120,7 +119,7 @@ function InspectEmptyState() {
         })}
       />
       <div className="flex-1 flex flex-col items-center justify-center gap-3 pb-20">
-        <EmptyStateIllustration scene="artifact" />
+        <Upload size={48} className="" />
         <h2 className="text-lg font-semibold text-foreground">
           {t(($) => {
             return $.activity.inspect.noLog.title;

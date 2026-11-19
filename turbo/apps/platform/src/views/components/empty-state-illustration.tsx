@@ -1,22 +1,14 @@
 import { cn } from "@okouai/ui";
 import {
-  emptyArtifactImg,
   emptyAutomationsImg,
-  emptyChatImg,
   emptySearchImg,
-  emptyUsageImg,
   noConnectorImg,
-  noPermissionIllustration,
 } from "../okou-page/platform-assets.ts";
 
 const scenes = Object.freeze({
-  artifact: emptyArtifactImg,
   computer: emptyAutomationsImg,
-  chat: emptyChatImg,
   search: emptySearchImg,
-  usage: emptyUsageImg,
   connection: noConnectorImg,
-  permission: noPermissionIllustration,
 });
 
 const sizes = Object.freeze({
@@ -24,7 +16,7 @@ const sizes = Object.freeze({
   panel: "h-16 w-24",
 });
 
-/** Artwork for primary empty regions; compact controls keep text or icons. */
+/** Artwork for initial setup and browser blanks; other states keep their existing UI. */
 export function EmptyStateIllustration({
   scene,
   size = "page",

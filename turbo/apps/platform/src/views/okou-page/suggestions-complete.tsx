@@ -1,4 +1,3 @@
-import { EmptyStateIllustration } from "../components/empty-state-illustration.tsx";
 import { CircleCheck } from "lucide-react";
 import { useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -36,33 +35,27 @@ export function SuggestionsComplete({
           celebrate && "motion-safe:animate-completion-in",
         )}
       >
-        <div className="relative">
-          <EmptyStateIllustration scene="chat" />
-          <span
-            aria-hidden
-            className="pointer-events-none absolute right-0 bottom-0 size-7 rounded-full bg-background"
-          >
-            <CircleCheck
-              strokeWidth={1.5}
-              className={cn(
-                "size-full text-muted-foreground",
-                celebrate && "motion-safe:animate-completion-check-in",
-              )}
-            />
-            {celebrate &&
-              COMPLETION_DOTS.map((dot) => {
-                return (
-                  <span
-                    key={dot}
-                    className={cn(
-                      "absolute top-1/2 left-1/2 -translate-1/2 rounded-full bg-green-700/70 opacity-0 motion-safe:animate-completion-dot dark:bg-green-300/70",
-                      dot,
-                    )}
-                  />
-                );
-              })}
-          </span>
-        </div>
+        <span aria-hidden className="pointer-events-none relative size-14">
+          <CircleCheck
+            strokeWidth={1.5}
+            className={cn(
+              "size-full text-muted-foreground",
+              celebrate && "motion-safe:animate-completion-check-in",
+            )}
+          />
+          {celebrate &&
+            COMPLETION_DOTS.map((dot) => {
+              return (
+                <span
+                  key={dot}
+                  className={cn(
+                    "absolute top-1/2 left-1/2 -translate-1/2 rounded-full bg-green-700/70 opacity-0 motion-safe:animate-completion-dot dark:bg-green-300/70",
+                    dot,
+                  )}
+                />
+              );
+            })}
+        </span>
         <h3
           ref={focusTitle}
           tabIndex={-1}

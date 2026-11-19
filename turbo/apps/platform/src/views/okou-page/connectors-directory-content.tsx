@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useGet, useLoadable, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
-import { Button, LoadErrorRow } from "@okouai/ui";
+import { Button, LoadErrorRow, cn } from "@okouai/ui";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import { isOrgAdmin$ } from "../../signals/org.ts";
 import {
@@ -59,6 +59,7 @@ function DirectoryCustomSection({
   readonly searching: boolean;
 }) {
   const { t } = useTranslation();
+  const showEmptyIllustration = customOnly && !searching;
   if (
     sourceState === "hasData" &&
     connectors.length === 0 &&
@@ -95,11 +96,16 @@ function DirectoryCustomSection({
       ) : connectors.length > 0 ? (
         <CustomConnectorGrid connectors={connectors} isAdmin={isAdmin} />
       ) : (
-        <p className="flex flex-col items-center gap-3 py-6 text-center text-sm text-muted-foreground">
-          <EmptyStateIllustration
-            scene={searching ? "search" : "connection"}
-            size="panel"
-          />
+        <p
+          className={cn(
+            "text-sm text-muted-foreground",
+            showEmptyIllustration &&
+              "flex flex-col items-center gap-3 py-6 text-center",
+          )}
+        >
+          {showEmptyIllustration && (
+            <EmptyStateIllustration scene="connection" size="panel" />
+          )}
           {searching
             ? t(($) => {
                 return $.connectors.catalog.directory.noCustomMatches;
@@ -128,8 +134,7 @@ function DirectoryEmpty({
   const search = useGet(connectorsSearch$);
   const openScope = useSet(openConnectorDirectoryScope$);
   return (
-    <div className="flex flex-col items-center gap-3 py-12 text-center text-sm text-muted-foreground">
-      <EmptyStateIllustration scene="search" />
+    <div className="flex flex-col items-center gap-3 py-12 text-sm text-muted-foreground">
       <p>
         {scoped
           ? t(($) => {
