@@ -66,3 +66,9 @@ submission, browser viewer and remote access matrices. Review fixtures
 and product branches before grouping parameter rows. Keep the automation
 retry sample and further rebuild work pending until the deletion gate is
 met.
+
+## Latest tally
+
+See [Workflow attribution and recovery screening](test-rebuild-batch-recovery.md)
+for the current count of 15 confirmed frozen deductions and the remaining
+1,519-row gap. Earlier figures above are batch checkpoints.
