@@ -10,7 +10,6 @@ import { performance } from "node:perf_hooks";
 import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   DEFAULT_PROFILE,
-  type ConnectorRuntimeTargetRegistration,
 } from "@okouai/api-contracts/contracts/runners";
 import {
   autoRunBillingProvider,
@@ -2590,7 +2589,6 @@ export function createThreadClaimRunObjects(
     return {
       framework: modelProviderFramework(modelProvider),
       modelProvider,
-      connectorRuntimeTargets: connector.environment.runtimeTargets,
       connectorEnvironment: connector.environment,
       connectorNetworkPolicyInputs: connector.networkPolicyInputs,
       modelProviderPermissions: providerPermissions.ok,
@@ -2643,7 +2641,6 @@ export function createThreadClaimRunObjects(
       content,
       resolved,
       modelProvider,
-      connectorRuntimeTargets: runtimeContext.connectorRuntimeTargets,
       connectorEnvironment: runtimeContext.connectorEnvironment,
       connectorNetworkPolicyInputs: runtimeContext.connectorNetworkPolicyInputs,
       modelProviderPermissions: runtimeContext.modelProviderPermissions,
@@ -3025,7 +3022,6 @@ export function createThreadClaimRunObjects(
           realAgentInPreview: args.realAgentInPreview,
           profile: launchSnapshot.runnerProfile,
           featureSwitchContext: context.featureSwitchContext,
-          connectorRuntimeTargets: context.connectorRuntimeTargets,
           facts: {
             skillRoot: context.skillRoot,
             skillMounts: context.skillMounts,
@@ -3718,7 +3714,7 @@ export function createThreadClaimRunObjects(
         runId: identity.runId,
         runnerGroup: launch.runnerGroup,
         profile: launch.profile,
-        dimensions: timingDimensionsForCreateArgs(input.args),
+        dimensions: input.args.timingDimensions,
         triggerSource: input.context.content.triggerSource,
       });
       const preparedCommit: PreparedThreadLaunchCommit = {
@@ -4013,10 +4009,9 @@ interface PreparedRunnerLaunch {
   readonly runnerGroup: string;
   readonly profile: string;
   readonly reuseKey: string;
-  readonly facts: Omit<AdmittedExecutionFacts, "connectorRuntimeTargets">;
+  readonly facts: AdmittedExecutionFacts;
   readonly runStorageMounts: readonly PersistedStorageMount[];
   readonly memoryMounts: readonly AcceptedMemoryMount[];
-  readonly connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[];
 }
 
 type AgentRunCallbackInsert = typeof agentRunCallbacks.$inferInsert;
@@ -4091,15 +4086,6 @@ interface ThreadLaunchCommitInput {
   readonly callbackRows: readonly AgentRunCallbackInsert[];
   readonly launch: PreparedRunnerLaunch;
   readonly timing: ApiDispatchTimingCollector;
-}
-
-function timingDimensionsForCreateArgs(args: {
-  readonly timingDimensions: ApiDispatchTimingDimensions;
-}): ApiDispatchTimingDimensions {
-  return {
-    run_preparation_retry_count: "0",
-    ...args.timingDimensions,
-  };
 }
 
 interface LaunchRunRowsArgs {
@@ -4281,7 +4267,7 @@ function prepareAtomicLaunchPersistence(
     diagnosticRegistrationPayload:
       agentRunConnectorDiagnosticRegistrationPayloadSchema.parse({
         version: 1,
-        targets: commit.launch.connectorRuntimeTargets,
+        targets: commit.launch.facts.connectorEnvironment.runtimeTargets,
       }),
   };
 }
@@ -4445,7 +4431,7 @@ function recordAtomicLaunchTiming(args: {
     runId: args.committed.run.id,
     runnerGroup: args.committed.admittedLaunch.runnerGroup,
     profile: args.committed.admittedLaunch.profile,
-    dimensions: timingDimensionsForCreateArgs(args.createArgs),
+    dimensions: args.createArgs.timingDimensions,
     triggerSource: args.createArgs.triggerSource,
   });
 }
@@ -4512,7 +4498,6 @@ interface ThreadRunnerFacts {
   readonly apiStartTime: number | undefined;
   readonly chatThreadId: string;
   readonly featureSwitchContext: FeatureSwitchContext;
-  readonly connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[];
 }
 
 /** Capture selectors and request receipts; admitted preparation assembles runtime input. */
@@ -4552,7 +4537,6 @@ function prepareRunnerLaunch(input: {
     runnerGroup: preparedRunnerGroup(),
     profile: args.profile,
     reuseKey: runnerReuseKey(args.chatThreadId),
-    connectorRuntimeTargets: args.connectorRuntimeTargets,
     facts,
   };
 }
@@ -4757,7 +4741,7 @@ function flushQueueFirstClaimLostTiming(args: {
     runnerGroup: args.launch.runnerGroup,
     profile: args.launch.profile,
     dimensions: {
-      ...timingDimensionsForCreateArgs(args.createArgs),
+      ...args.createArgs.timingDimensions,
       queue_first_launch_outcome: "claim_lost",
     },
     triggerSource: args.createArgs.triggerSource,
@@ -4884,8 +4868,10 @@ function admittedRunLaunch(
     memoryMounts: args.launch.memoryMounts,
     facts: {
       ...args.launch.facts,
-      connectorRuntimeTargets:
-        args.persistence.diagnosticRegistrationPayload.targets,
+      connectorEnvironment: {
+        ...args.launch.facts.connectorEnvironment,
+        runtimeTargets: args.persistence.diagnosticRegistrationPayload.targets,
+      },
     },
     runnerGroup: args.launch.runnerGroup,
     profile: args.launch.profile,
