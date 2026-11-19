@@ -677,7 +677,7 @@ run_resolver() {
     MOCK_REGISTRY_ARCHIVE_READER_FLOOR="$registry_archive_reader_floor" \
     MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_FLOOR="$template_guidance_bundle_reader_floor" \
     MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_FLOOR="$template_guidance_bundle_writer_floor" \
-    MOCK_BUILT_IN_SKILL_CATALOG_API_FLOOR="$(<"${repo_root}/.github/rollback-floors/built-in-skill-catalog-api")" \
+    MOCK_BUILT_IN_SKILL_CATALOG_API_FLOOR=9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d \
     MOCK_CONTENT_BUNDLE_REFERENCE_API_FLOOR="$content_bundle_reference_api_floor" \
     TARGET_COMMIT="$target_commit" \
     VERCEL_ORG_ID=test-org \
