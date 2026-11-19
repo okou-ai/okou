@@ -12,7 +12,7 @@ import later_parking_report as later
 import pressure_report as pressure
 import report
 import status_failure_report as failure
-from cleanup_report import COUNTS, accounting, supplied_policy
+from cleanup_report import COUNTS, accounting, has_accounting_shape, supplied_policy
 from report import exact
 
 PREFIX = "NATIVE_BATCH_REPLACEMENT_WITNESS "
@@ -25,8 +25,7 @@ def covered(value, policy):
     if not isinstance(value, dict) or not isinstance(value.get("accounting"), dict):
         raise ValueError("replacement lacks accepted original custody")
     state = value["accounting"]
-    if (set(state) != COUNTS | {"closed"} or state["closed"] is not False
-            or any(not pressure.integer(state[k]) for k in COUNTS)
+    if (not has_accounting_shape(state, False)
             or state["queued"] != 2 or state["registered_operations"] < 3
             or state["started"] < 1 or state["tracked_tasks"] < 1
             or any(state[k] != 0 for k in ("granted", "uncertain", "ordinary_growth_bytes"))

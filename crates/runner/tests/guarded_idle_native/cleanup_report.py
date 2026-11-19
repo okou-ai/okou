@@ -9,10 +9,18 @@ COUNTS = {"registered_operations", "queued", "granted", "started", "uncertain",
           "ordinary_growth_bytes", "cleanup_growth_bytes", "tracked_tasks"}
 
 
+def has_accounting_shape(value, closed):
+    """Check the full cleanup receipt before applying scenario-specific policy."""
+    return (
+        isinstance(value, dict)
+        and set(value) == COUNTS | {"closed"}
+        and value["closed"] is closed
+        and all(pressure.integer(value[key]) for key in COUNTS)
+    )
+
+
 def accounting(value, closed, policy=None):
-    if (not isinstance(value, dict) or set(value) != COUNTS | {"closed"}
-            or value["closed"] is not closed
-            or any(not pressure.integer(value[k]) for k in COUNTS)):
+    if not has_accounting_shape(value, closed):
         raise ValueError("cleanup accounting shape or types changed")
     if policy is None:
         exact(value, dict.fromkeys(COUNTS, 0) | {"closed": True},
