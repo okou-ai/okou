@@ -93,6 +93,18 @@ function buildMatrix(files: readonly WeightedTestFile[]): {
     shard.files.sort();
   }
 
+  // Keep the independent probes in the same shard for the one-off overlap check.
+  const strapiFile = "tests/03-runner/run-t03-firewall-strapi.bats";
+  const customFile = "tests/03-runner/run-t23-custom-connector.bats";
+  const strapiShard = shards.find((shard) => shard.files.includes(strapiFile));
+  const customShard = shards.find((shard) => shard.files.includes(customFile));
+  if (strapiShard && customShard && strapiShard !== customShard) {
+    strapiShard.files.splice(strapiShard.files.indexOf(strapiFile), 1);
+    customShard.files.unshift(strapiFile);
+    strapiShard.weight -= 1;
+    customShard.weight += 1;
+  }
+
   return { include: shards };
 }
 
