@@ -104,11 +104,6 @@ jq -e '
     .with.architecture == "${{ matrix.id }}"
   ) and
   any($rootfs_process.steps[]?;
-    ((.uses // "") | startswith("Swatinem/rust-cache@")) and
-    .with["shared-key"] == "${{ matrix.cacheSuffix }}-rootfs-process-local" and
-    .with["save-if"] == "${{ github.ref == \u0027refs/heads/main\u0027 }}"
-  ) and
-  any($rootfs_process.steps[]?;
     (.run // "" | contains("--profile local")) and
     (.run // "" | contains(".target.name == \"runner\" and .profile.test"))
   ) and

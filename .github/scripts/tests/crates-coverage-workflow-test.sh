@@ -15,7 +15,6 @@ root = Path(sys.argv[1])
 relative = '.github/scripts/checks/crates-coverage-needed.sh'
 exempt = [
     '.github/scripts/tests/clerk-test-resource-workflow-test.sh',
-    '.github/scripts/tests/app-preview-ingress-workflow-test.sh',
     '.github/scripts/tests/turbo-playwright-runner-workflow-test.sh',
 ]
 manifest = (root / '.github/scripts/workflow-script-test-shards.txt').read_text()

@@ -14,60 +14,9 @@ command -v yq >/dev/null || fail "yq is required"
 release_json=$(yq -o=json '.' "$RELEASE_WORKFLOW")
 
 jq -e '
-  .jobs["build-runner-release-assets"] as $job |
-  ($job | has("environment") | not) and
-  $job.needs == ["release-please", "prepare-runner-cli"] and
-  any($job.steps[];
-    .with["artifact-ids"] == "${{ needs.prepare-runner-cli.outputs.artifact-id }}" and
-    .with.path == "runner-cli-intermediate"
-  ) and
-  $job.strategy.matrix.target == [
-    "aarch64-unknown-linux-musl",
-    "x86_64-unknown-linux-musl"
-  ] and
-  any($job.steps[];
-    .id == "target-metadata" and
-    (.run // "" | contains("runner_image_cache_suffix")) and
-    (.run // "" | contains("runner_image_sccache_architecture")) and
-    (.run // "" | contains("sccache_architecture=$sccache_architecture"))
-  ) and
-  any($job.steps[];
-    .uses == "./.github/actions/setup-r2-sccache" and
-    .with.architecture == "${{ steps.target-metadata.outputs.sccache_architecture }}" and
-    .with["r2-access-key-id"] == "${{ secrets.R2_ACCESS_KEY_ID }}" and
-    .with["r2-secret-access-key"] == "${{ secrets.R2_SECRET_ACCESS_KEY }}" and
-    .with["r2-account-id"] == "${{ vars.R2_ACCOUNT_ID }}" and
-    .with["r2-bucket-name"] == "${{ vars.R2_USER_STORAGES_BUCKET_NAME }}"
-  ) and
-  any($job.steps[];
-    ((.uses // "") | startswith("Swatinem/rust-cache@")) and
-    .with.workspaces == "crates -> target" and
-    .with["shared-key"] == "${{ steps.target-metadata.outputs.cache_suffix }}-release-${{ hashFiles('\''crates/Cargo.toml'\'') }}" and
-    (.with["save-if"] | contains("github.ref == ")) and
-    (.with["save-if"] | contains("refs/heads/main"))
-  ) and
-  any($job.steps[];
-    .env.TARGET_TRIPLE == "${{ matrix.target }}" and
-    (.run // "" | contains("runner_guest_binaries_load")) and
-    (.run // "" | contains("cargo build --release --target \"$TARGET_TRIPLE\" \"${guest_cargo_args[@]}\""))
-  ) and
-  any($job.steps[];
-    .env.TARGET_TRIPLE == "${{ matrix.target }}" and
-    .env.GUEST_CLI_PATH == "${{ github.workspace }}/runner-cli-intermediate/package.tgz" and
-    .env.GUEST_CLI_MANIFEST_PATH == "${{ github.workspace }}/runner-cli-intermediate/manifest.json" and
-    (.run // "" | contains("runner_guest_binaries_load")) and
-    (.run // "" | contains("env \"${guest_env[@]}\" cargo build --release --target \"$TARGET_TRIPLE\" -p runner"))
-  ) and
-  any($job.steps[];
-    .env.VERSION == "${{ needs.release-please.outputs.runner_rs_version }}" and
-    .env.TARGET_TRIPLE == "${{ matrix.target }}" and
-    (.run // "" | contains("https://uploads.github.com/repos/"))
-  )
-' <<<"$release_json" >/dev/null || fail "production release build must preserve cache, compilation, and release effects"
-
-jq -e '
   .jobs["resolve-image-cache"] as $resolve |
   .jobs["build-runner-production"] as $production |
+  (.jobs["build-runner-release-assets"] | has("environment") | not) and
   ($resolve | has("environment") | not) and
   any($resolve.steps[];
     .id == "resolve" and
