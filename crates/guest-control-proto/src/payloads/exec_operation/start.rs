@@ -72,6 +72,48 @@ pub enum ExecOutputPolicy {
     },
 }
 
+/// Byte limits for an exec output stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExecStreamLimits {
+    /// Maximum emitted bytes for the stream.
+    pub total_limit_bytes: u32,
+    /// Maximum bytes in one emitted chunk.
+    pub chunk_limit_bytes: u32,
+}
+
+impl ExecOutputPolicy {
+    /// Returns the retained-byte limit when capture is enabled, including zero.
+    pub fn capture_limit_bytes(self) -> Option<u32> {
+        match self {
+            Self::Discard | Self::Stream { .. } => None,
+            Self::Capture { limit_bytes }
+            | Self::CaptureAndStream {
+                capture_limit_bytes: limit_bytes,
+                ..
+            } => Some(limit_bytes),
+        }
+    }
+
+    /// Returns the limits when streaming is enabled, including a zero total limit.
+    pub fn stream_limits(self) -> Option<ExecStreamLimits> {
+        match self {
+            Self::Discard | Self::Capture { .. } => None,
+            Self::Stream {
+                limit_bytes,
+                chunk_limit_bytes,
+            }
+            | Self::CaptureAndStream {
+                stream_limit_bytes: limit_bytes,
+                chunk_limit_bytes,
+                ..
+            } => Some(ExecStreamLimits {
+                total_limit_bytes: limit_bytes,
+                chunk_limit_bytes,
+            }),
+        }
+    }
+}
+
 /// Exec process lifecycle policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecLifecyclePolicy {
