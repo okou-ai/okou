@@ -56,8 +56,8 @@ assert_env_value() {
   local key="$2"
   local expected="$3"
   local value
-  value="$(awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); print; found = 1 } END { if (!found) exit 1 }' "$env_file")" ||
-    fail "expected ${key} in ${env_file}"
+  value="$(awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); print; count++ } END { if (count != 1) exit 1 }' "$env_file")" ||
+    fail "expected exactly one ${key} in ${env_file}"
   if [[ "$value" != "$expected" ]]; then
     fail "unexpected value for ${key}"
   fi
@@ -494,16 +494,18 @@ for integration_environment in preview production; do
     assert_no_fixture_secret_values "$integration_output"
     assert_env_absent_value "$integration_env_file" "github-conflicting-integration"
     if [[ "$integration_app" == api ]]; then
+      integration_rows="$(jq -er 'to_entries[] | [.key, .value] | @tsv' <<< "$integration_doppler_json")"
       while IFS=$'\t' read -r integration_key integration_value; do
         assert_env_value "$integration_env_file" "$integration_key" "$integration_value"
-      done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$integration_doppler_json")
+      done <<< "$integration_rows"
       assert_env_value "$integration_env_file" WHATSAPP_ALLOWED_COUNTRY_PREFIXES "+1,+49"
     else
+      integration_rows="$(jq -er --argjson keys "$gateway_config_keys" '$keys[] as $key | [$key, .[$key]] | @tsv' \
+        <<< "$integration_doppler_json")"
       while IFS=$'\t' read -r integration_key integration_value; do
         assert_env_key_absent "$integration_env_file" "$integration_key"
         assert_env_absent_value "$integration_env_file" "$integration_value"
-      done < <(jq -r --argjson keys "$gateway_config_keys" '$keys[] as $key | [$key, .[$key]] | @tsv' \
-        <<< "$integration_doppler_json")
+      done <<< "$integration_rows"
       assert_env_key_absent "$integration_env_file" WHATSAPP_ALLOWED_COUNTRY_PREFIXES
     fi
   done
