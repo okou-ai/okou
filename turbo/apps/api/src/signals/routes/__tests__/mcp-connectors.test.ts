@@ -320,7 +320,7 @@ describe("GET /api/mcp-connectors", () => {
     });
   });
 
-  it("removes a no-auth MCP from the Run inventory when its only account is deleted", async () => {
+  it("removes a no-auth MCP from the running Run when its only account is deleted", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const { actor } = owned;
@@ -342,15 +342,33 @@ describe("GET /api/mcp-connectors", () => {
       );
       const run = await createRunForAgent(owned);
       const token = run.token;
+      const target = {
+        kind: "custom",
+        customConnectorId: connector.id,
+      } as const;
+      const registration = {
+        ...target,
+        sourceId: connectionId,
+        baseUrlVars: {},
+      };
       const initial = await accept(
         client().list({ headers: headers(token) }),
         [200],
       );
       expect(initial.body.connectors).toStrictEqual([
         expect.objectContaining({
-          target: { kind: "custom", customConnectorId: connector.id },
+          target,
           connectionId,
           runtimeAvailable: true,
+        }),
+      ]);
+      await expect(
+        runs.syncConnectorRuntime(run.runId, { targets: [registration] }),
+      ).resolves.toStrictEqual([
+        expect.objectContaining({
+          target,
+          state: "available",
+          accountBinding: { connectionId, baseUrlVars: {} },
         }),
       ]);
       await connectors.deleteCustomConnectorAccount(
@@ -363,6 +381,11 @@ describe("GET /api/mcp-connectors", () => {
         [200],
       );
       expect(response.body.connectors).toStrictEqual([]);
+      await expect(
+        runs.syncConnectorRuntime(run.runId, { targets: [registration] }),
+      ).resolves.toStrictEqual([
+        { target, state: "absent", reason: "connector-unavailable" },
+      ]);
     });
   });
 
