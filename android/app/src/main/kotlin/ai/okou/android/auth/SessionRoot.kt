@@ -15,6 +15,7 @@ import ai.okou.android.instructions.PersonalInstructionsSettings
 import ai.okou.android.preferences.MemberPreferencesSettings
 import ai.okou.android.state.SettingsDestination
 import ai.okou.android.workspaceListPaneWidth
+import ai.okou.android.workspaceListTitleStyle
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -57,10 +58,8 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.clerk.api.ui.ClerkColors
 import com.clerk.api.ui.ClerkTheme
 import com.clerk.api.ui.ClerkTypography
@@ -331,13 +330,6 @@ private fun WorkspaceTitle(
     val pane = workspaceListPaneWidth(window.screenWidthDp, window.screenHeightDp)
     val logoSize = if (pane == null) 28.dp else 26.dp
     val spacing = if (pane == null) 8.dp else 6.dp
-    val titleSize =
-        when {
-            pane == 320 -> 18
-            pane == 344 -> 20
-            window.screenWidthDp >= 600 -> 21
-            else -> 20
-        }
     var choosing by remember { mutableStateOf(false) }
     val identity: @Composable RowScope.() -> Unit = {
         val logo = remember(workspace.id) { workspaceLogo(workspace.id) }
@@ -349,13 +341,7 @@ private fun WorkspaceTitle(
         Column(Modifier.padding(start = spacing).weight(1f, fill = false)) {
             Text(
                 workspace.name,
-                style =
-                    MaterialTheme.typography.titleLarge.copy(
-                        fontSize = titleSize.sp,
-                        lineHeight = 24.sp,
-                        letterSpacing = 0.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    ),
+                style = workspaceListTitleStyle(window.screenWidthDp, pane),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

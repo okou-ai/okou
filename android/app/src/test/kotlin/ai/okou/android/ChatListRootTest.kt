@@ -15,6 +15,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -35,6 +36,7 @@ import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import java.util.UUID
@@ -672,9 +674,9 @@ class ChatListRootTest {
                 if (projectUnread.get()) put(CHAT_IN_PROJECT, CHAT_DATE)
             }
             val markers = unread.entries.joinToString(",") { (id, time) -> "\"$id\":\"$time\"" }
-            val threads = unread.keys.joinToString("") { id -> ",\"$id\":\"unread\"" }
+            val personal = if (CHAT_PERSONAL in unread) ",\"$CHAT_PERSONAL\":\"unread\"" else ""
             jsonResponse(
-                """{"agents":{},"threads":{"$running":"active"$threads},"unreadAt":{$markers}}"""
+                """{"agents":{},"threads":{"$running":"active","$CHAT_IN_PROJECT":"active"$personal},"unreadAt":{$markers}}"""
             )
         }
         app.fixture.commandResponse = { request ->
@@ -706,13 +708,25 @@ class ChatListRootTest {
         val list = compose.onNodeWithTag("chat_list")
         val unread = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unread")
         val projectUnreadCount =
-            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unread 1")
-        list.performScrollToNode(hasText("Research"))
-        compose.onNodeWithText("Research").performClick()
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unread 1, Active 1")
         val filter = compose.onNodeWithContentDescription("Filter")
         filter.performClick()
+        val enabled = !SemanticsMatcher.keyIsDefined(SemanticsProperties.Disabled)
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodes(hasText("Mark all as read").and(enabled))
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
         compose.onNodeWithText("Unread").performClick()
+        list.performScrollToNode(hasText("Project chat"))
+        compose
+            .onNodeWithText("Project chat")
+            .assert(
+                SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Active, Unread")
+            )
         list.performScrollToNode(hasText("Research"))
+        compose.onNodeWithText("Research").performClick()
         compose.waitUntil(10_000) {
             compose
                 .onAllNodes(hasText("Research").and(projectUnreadCount))
@@ -740,9 +754,21 @@ class ChatListRootTest {
         rejectProject.set(false)
         markAll()
         awaitMessage("Marked 2 chats as read.")
+        val feedback = compose.onNodeWithTag("chat_list_feedback").getUnclippedBoundsInRoot()
+        val newChat = compose.onNodeWithText("New chat").getUnclippedBoundsInRoot()
+        assertEquals(8f, (newChat.top - feedback.bottom).value, 1f)
+        assertTrue(feedback.bottom - feedback.top >= 48.dp)
         compose.onNodeWithText("Filter · Unread").assertExists()
         filter.performClick()
         compose.onNodeWithText("Unread").assertIsSelected()
+        compose.onNodeWithText("Archived").performClick()
+        list.performScrollToNode(hasText("Research"))
+        compose.onNodeWithText("Research").performClick()
+        list.performScrollToNode(hasText("Project chat"))
+        compose
+            .onNodeWithText("Project chat")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Active"))
+        filter.performClick()
         compose.onNodeWithText("Inbox").performClick()
         list.performScrollToNode(hasText("Running chat"))
         compose

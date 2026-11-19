@@ -32,15 +32,14 @@ internal data class ProjectActivity(val unread: Int, val running: Int) {
 internal fun collapsedProjectActivity(
     threads: List<ConfirmedChat>,
     indicators: Map<String, IndicatorsThreadsValue>,
+    unreadChatIds: Set<String>,
 ): ProjectActivity {
     var unread = 0
     var running = 0
     for (thread in threads) {
-        when (chatRowStatus(indicators[thread.id], thread.muted == true)) {
-            ChatRowStatus.Unread -> unread++
-            ChatRowStatus.Running -> running++
-            else -> Unit
-        }
+        if (thread.muted == true) continue
+        if (thread.id in unreadChatIds) unread++
+        if (indicators[thread.id] == IndicatorsThreadsValue.ACTIVE) running++
     }
     return ProjectActivity(unread, running)
 }
@@ -85,13 +84,15 @@ internal fun chatListSections(
     groups: List<ChatListGroup>,
     collapsed: List<String>,
     indicators: Map<String, IndicatorsThreadsValue>,
+    unreadChatIds: Set<String>,
 ): List<ChatListSection> {
     val foldedIds = collapsed.toSet()
     var row = 0
     return groups.map { group ->
         val foldedActivity =
-            if (group.project?.id in foldedIds) collapsedProjectActivity(group.threads, indicators)
-            else null
+            if (group.project?.id in foldedIds) {
+                collapsedProjectActivity(group.threads, indicators, unreadChatIds)
+            } else null
         val section = ChatListSection(group, row, foldedActivity)
         row = section.firstChatRow + if (foldedActivity == null) group.threads.size else 0
         section

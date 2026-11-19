@@ -51,6 +51,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -72,6 +73,7 @@ import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -85,6 +87,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -116,6 +119,7 @@ internal fun OkouApp(
     var focusSearch by remember { mutableStateOf(false) }
     val searchActive = chats != null && composer != null && navigation.search == SearchRoute.Open
     val showList = listWidth != null || searchActive || target == WorkspaceTarget.List
+    val showChatList = settings == null && showList && !searchActive
     val showWorkspaceBack = listWidth == null && !searchActive && target != WorkspaceTarget.List
     val listPositions =
         ChatListFilter.entries.map { filter -> key(filter) { rememberLazyListState() } }
@@ -173,8 +177,8 @@ internal fun OkouApp(
                 if (action.updatesChat) R.string.chat_row_action_failed
                 else R.string.chat_read_action_failed
             )
-        LaunchedEffect(action, message) {
-            snackbar.showSnackbar(message)
+        LaunchedEffect(chats, action, message, showChatList) {
+            if (showChatList) snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
             chats?.dismissRowActionFailure(action)
         }
     }
@@ -189,8 +193,8 @@ internal fun OkouApp(
             } else {
                 stringResource(R.string.chat_mark_all_read_unconfirmed)
             }
-        LaunchedEffect(chats, result, message) {
-            snackbar.showSnackbar(message)
+        LaunchedEffect(chats, result, message, showChatList) {
+            if (showChatList) snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
             chats?.dismissMarkAllReadResult(result)
         }
     }
@@ -231,7 +235,9 @@ internal fun OkouApp(
             if (thread != null) chats?.history?.open(thread)
             else if (list.listPhase == ChatReadPhase.Ready && navigation.target == target) {
                 returnToList()
-                scope.launch { snackbar.showSnackbar(missingChat) }
+                scope.launch {
+                    snackbar.showSnackbar(missingChat, duration = SnackbarDuration.Indefinite)
+                }
             }
         }
     }
@@ -372,7 +378,7 @@ internal fun OkouApp(
                         Column(Modifier.padding(start = 8.dp)) {
                             Text(
                                 stringResource(R.string.app_name),
-                                style = MaterialTheme.typography.titleLarge,
+                                style = workspaceListTitleStyle(window.screenWidthDp, listWidth),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -389,28 +395,11 @@ internal fun OkouApp(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         snackbarHost = {
-            SnackbarHost(snackbar) { data ->
-                Surface(
-                    modifier =
-                        Modifier.widthIn(max = 512.dp)
-                            .fillMaxWidth()
-                            .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.inverseSurface,
-                    contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-                    shadowElevation = 4.dp,
-                ) {
-                    Box(
-                        Modifier.heightIn(min = 48.dp)
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
-                        contentAlignment = Alignment.CenterStart,
-                    ) {
-                        Text(
-                            data.visuals.message,
-                            style = MaterialTheme.typography.bodySmall.copy(letterSpacing = 0.sp),
-                        )
-                    }
-                }
+            if (!showChatList) {
+                WorkspaceFeedbackHost(
+                    snackbar,
+                    Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                )
             }
         },
         topBar = {
@@ -508,6 +497,17 @@ internal fun OkouApp(
                                     actionsEnabled = composer != null,
                                     refreshEnabled = chats != null,
                                     startupRecovery = startupRecovery,
+                                    feedback = {
+                                        WorkspaceFeedbackHost(
+                                            snackbar,
+                                            Modifier.padding(
+                                                    start = 16.dp,
+                                                    end = 16.dp,
+                                                    bottom = 8.dp,
+                                                )
+                                                .testTag("chat_list_feedback"),
+                                        )
+                                    },
                                 )
                             }
                         }
@@ -598,6 +598,45 @@ internal fun OkouApp(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceFeedbackHost(state: SnackbarHostState, modifier: Modifier) {
+    val accessibility = LocalAccessibilityManager.current
+    val current = state.currentSnackbarData
+    LaunchedEffect(current, accessibility) {
+        if (current != null) {
+            val duration =
+                accessibility?.calculateRecommendedTimeoutMillis(5_000L, containsText = true)
+                    ?: 5_000L
+            delay(duration)
+            current.dismiss()
+        }
+    }
+    SnackbarHost(state) { data ->
+        Surface(
+            modifier = modifier.widthIn(max = 480.dp).fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.inverseSurface,
+            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+            shadowElevation = 4.dp,
+        ) {
+            Box(
+                Modifier.heightIn(min = 48.dp).padding(horizontal = 14.dp, vertical = 10.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Text(
+                    data.visuals.message,
+                    style =
+                        MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                            letterSpacing = 0.sp,
+                        ),
+                )
             }
         }
     }

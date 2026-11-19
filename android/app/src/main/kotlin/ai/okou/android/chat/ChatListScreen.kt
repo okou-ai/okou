@@ -111,6 +111,7 @@ internal fun ChatListScreen(
     actionsEnabled: Boolean,
     refreshEnabled: Boolean,
     startupRecovery: @Composable (() -> Unit)?,
+    feedback: @Composable () -> Unit,
 ) {
     var renamingId by remember { mutableStateOf<String?>(null) }
     val renaming =
@@ -144,8 +145,11 @@ internal fun ChatListScreen(
             chatListGroups(state)
         }
     val indicators = state.indicators?.threads.orEmpty()
+    val unreadChatIds = state.indicators?.unreadAt.orEmpty().keys
     val sections =
-        remember(groups, collapsed, indicators) { chatListSections(groups, collapsed, indicators) }
+        remember(groups, collapsed, indicators, unreadChatIds) {
+            chatListSections(groups, collapsed, indicators, unreadChatIds)
+        }
     val runningKeys =
         remember(indicators, sections) {
             buildSet {
@@ -186,7 +190,8 @@ internal fun ChatListScreen(
             state.threads.any { it.hidden != true && it.projectId !in knownProjects }
     val refreshLabel = stringResource(R.string.chat_refresh)
     val listLabel = stringResource(R.string.chat_list_title)
-    val largeCompact = LocalConfiguration.current.screenWidthDp >= 600
+    val widthDp = LocalConfiguration.current.screenWidthDp
+    val largeCompact = widthDp >= 600
     val listInset = if (wide) 12.dp else if (largeCompact) 24.dp else 16.dp
     val outline = MaterialTheme.colorScheme.outline
     PullToRefreshBox(
@@ -296,8 +301,9 @@ internal fun ChatListScreen(
                                 ChatRow(
                                     thread,
                                     chatRowStatus(indicators[thread.id], thread.muted == true),
-                                    thread.id == selectedChatId,
-                                    runningFrame,
+                                    unread = thread.id in unreadChatIds,
+                                    isSelected = thread.id == selectedChatId,
+                                    runningFrame = runningFrame,
                                     row = section.firstChatRow + index,
                                     actions =
                                         if (actionsEnabled) state.rowActions(thread, group, index)
@@ -331,16 +337,14 @@ internal fun ChatListScreen(
                             state.indicatorsPhase == ChatReadPhase.Ready)
                 ) {
                     item {
-                        Column(Modifier.padding(horizontal = 12.dp, vertical = 38.dp)) {
+                        Column(
+                            Modifier.padding(start = 12.dp, end = 12.dp, top = 24.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
                             Text(
                                 stringResource(R.string.chat_empty),
                                 Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                                style =
-                                    MaterialTheme.typography.titleMedium.copy(
-                                        fontSize = 19.sp,
-                                        lineHeight = 28.5.sp,
-                                        letterSpacing = 0.sp,
-                                    ),
+                                style = chatListTitleStyle().copy(fontWeight = FontWeight.SemiBold),
                             )
                             if (state.filter != ChatListFilter.Inbox) {
                                 ChatListTextAction(
@@ -354,12 +358,24 @@ internal fun ChatListScreen(
                 }
             }
         }
-        val end = if (wide) 20.dp else if (largeCompact) 32.dp else 24.dp
-        NewChatAction(
-            Modifier.align(Alignment.BottomEnd).padding(end = end, bottom = 24.dp),
-            enabled = actionsEnabled,
-            onClick = { newChat(null) },
-        )
+        val end =
+            when {
+                wide -> 20.dp
+                largeCompact -> 32.dp
+                widthDp < 360 -> 16.dp
+                else -> 24.dp
+            }
+        Column(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(bottom = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            feedback()
+            NewChatAction(
+                Modifier.align(Alignment.End).padding(end = end),
+                enabled = actionsEnabled,
+                onClick = { newChat(null) },
+            )
+        }
     }
 }
 
@@ -548,6 +564,7 @@ private fun Modifier.contextMenuInput(openMenu: (() -> Unit)?): Modifier {
 private fun ChatRow(
     thread: ConfirmedChat,
     status: ChatRowStatus,
+    unread: Boolean,
     isSelected: Boolean,
     runningFrame: LongState,
     row: Int,
@@ -563,6 +580,8 @@ private fun ChatRow(
     val labels =
         listOfNotNull(
             status.label(),
+            if (status == ChatRowStatus.Running && unread) stringResource(R.string.chat_unread)
+            else null,
             if (thread.pinnedAt != null) stringResource(R.string.chat_pinned) else null,
             pendingAction?.let {
                 stringResource(
@@ -720,14 +739,19 @@ private fun NewChatAction(modifier: Modifier, enabled: Boolean, onClick: () -> U
         shadowElevation = 3.dp,
     ) {
         Row(
-            Modifier.heightIn(min = 56.dp).padding(horizontal = 20.dp),
+            Modifier.heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(painterResource(R.drawable.ic_edit_square), null, Modifier.size(22.dp))
             Text(
                 stringResource(R.string.composer_new),
-                style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 0.sp),
+                style =
+                    MaterialTheme.typography.labelLarge.copy(
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        letterSpacing = 0.sp,
+                    ),
                 fontWeight = FontWeight(550),
             )
         }

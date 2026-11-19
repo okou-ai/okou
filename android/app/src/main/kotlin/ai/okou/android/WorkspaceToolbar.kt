@@ -69,6 +69,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -80,6 +81,22 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
+
+@Composable
+internal fun workspaceListTitleStyle(widthDp: Int, listWidth: Int?): TextStyle {
+    val fontSize =
+        when {
+            listWidth == 320 -> 18.sp
+            widthDp < 360 -> 16.sp
+            else -> 20.sp
+        }
+    return MaterialTheme.typography.titleLarge.copy(
+        fontSize = fontSize,
+        lineHeight = 24.sp,
+        letterSpacing = 0.sp,
+        fontWeight = FontWeight.SemiBold,
+    )
+}
 
 @Composable
 internal fun WorkspaceFilterSubtitle(filter: ChatListFilter) {
@@ -109,6 +126,7 @@ internal fun WorkspaceListToolbar(
         when {
             listWidth == 320 -> 10.dp
             listWidth == null && widthDp >= 600 -> 16.dp
+            widthDp < 360 -> 8.dp
             else -> 12.dp
         }
     Row(
