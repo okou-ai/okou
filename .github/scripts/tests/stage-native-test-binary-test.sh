@@ -11,7 +11,7 @@ cleanup() {
     [ -f "$pid_file" ] || continue
     kill -TERM -- "-$(cat "$pid_file")" 2>/dev/null || true
   done
-  rm -f -- "$destination" "$destination".upload.*
+  rm -rf -- "$destination" "$destination".upload.*
   rm -rf -- "$test_root"
 }
 trap cleanup EXIT
@@ -27,7 +27,25 @@ cat >"$test_root/bin/ssh" <<'SSH'
 set -euo pipefail
 # The guarded transport's probe must leave the transfer's stdin untouched.
 if [ "${!#}" = true ]; then exit 0; fi
+if [ "$1" = -n ]; then shift; fi
 [ "$1" = metal@host.vm3.ai ]
+if [[ "$2" == *native-chunk* ]]; then
+  read -r _ index _ <<<"${2##*native-chunk }"
+  printf '%s\n' "$index" >> "$CASE_DIR/chunks"
+  case "$SCENARIO" in
+    chunk-corrupt) head -c 3 | sh -c "$2"; exit $? ;;
+    chunk-exhausted) exit 255 ;;
+  esac
+  if [ "$index" = "'1'" ] && [ "$SCENARIO" = chunk-reset ]; then
+    tries=$(grep -Fxc -- "$index" "$CASE_DIR/chunks")
+    if [ "$tries" -lt 3 ]; then
+      head -c 1048576 | sh -c "$2" || true
+      echo 1048576 >> "$CASE_DIR/bytes"
+      exit 255
+    fi
+  fi
+  stat -Lc %s "/proc/$$/fd/0" >> "$CASE_DIR/bytes"
+fi
 count=0
 if [ -f "$CASE_DIR/count" ]; then count=$(cat "$CASE_DIR/count"); fi
 count=$((count + 1))
@@ -129,6 +147,61 @@ for scenario in success pipe lost-ack late-writer corrupt permanent exhausted; d
     test ! -e "$destination"
   fi
   rm -f "$case_dir/writer.pid"
+done
+
+large="$test_root/large-binary"
+ln -s "$large" "$test_root/linked-binary"
+for scenario in chunk-healthy chunk-reset; do
+  case_dir="$test_root/$scenario"
+  mkdir "$case_dir"
+  cp "$test_root/test binary" "$large"
+  if [ "$scenario" = chunk-healthy ]; then
+    size=262978928
+    expected_chunks=4
+    expected_bytes=$size
+  else
+    size=332179440
+    expected_chunks=7
+    expected_bytes=$((size + 2 * 1048576))
+  fi
+  truncate -s "$size" "$large"
+  started=$SECONDS
+  if ! PATH="$test_root/bin:$PATH" CASE_DIR="$case_dir" SCENARIO="$scenario" \
+    bash "$helper" "$test_root/linked-binary" metal@host.vm3.ai "$destination" >"$case_dir/out" 2>&1; then
+    cat "$case_dir/out" >&2
+    exit 1
+  fi
+  cmp "$large" "$destination"
+  test -x "$destination"
+  test "$(wc -l <"$case_dir/chunks")" -eq "$expected_chunks"
+  test "$(awk '{bytes += $1} END {print bytes}' "$case_dir/bytes")" -eq "$expected_bytes"
+  if compgen -G "$destination.upload.*" >/dev/null; then
+    echo "chunk staging directory leaked" >&2
+    exit 1
+  fi
+  printf '%s: %s bytes, %s chunk attempts, %s seconds\n' \
+    "$scenario" "$expected_bytes" "$expected_chunks" "$((SECONDS - started))"
+  rm -f -- "$destination"
+done
+
+for scenario in chunk-corrupt chunk-exhausted; do
+  case_dir="$test_root/$scenario"
+  mkdir "$case_dir"
+  status=0
+  PATH="$test_root/bin:$PATH" CASE_DIR="$case_dir" SCENARIO="$scenario" \
+    bash "$helper" "$large" metal@host.vm3.ai "$destination" >"$case_dir/out" 2>&1 || status=$?
+  if [ "$scenario" = chunk-corrupt ]; then
+    test "$status" -eq 1
+    test "$(wc -l <"$case_dir/chunks")" -eq 1
+  else
+    test "$status" -eq 255
+    test "$(wc -l <"$case_dir/chunks")" -eq 3
+  fi
+  test ! -e "$destination"
+  if compgen -G "$destination.upload.*" >/dev/null; then
+    echo "failed upload leaked staging files" >&2
+    exit 1
+  fi
 done
 
 # Exercise the real guarded SSH caller, including its cancellation cleanup.
