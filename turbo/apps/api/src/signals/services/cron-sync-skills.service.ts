@@ -14,7 +14,8 @@ import {
   parseSkillFrontmatter,
   type SkillFrontmatter,
 } from "@okouai/core/skill-frontmatter";
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
+import { builtInSkills } from "@okouai/db/schema/built-in-skill";
 import { skills } from "@okouai/db/schema/skill";
 import { command } from "ccstate";
 import { eq, inArray } from "drizzle-orm";
@@ -115,7 +116,7 @@ function extractSkillsFromTarball(
       }
 
       const skillName = parts[1]!;
-      if (!SEED_SKILLS.includes(skillName)) {
+      if (!BUILT_IN_SKILLS.includes(skillName)) {
         entry.resume();
         return;
       }
@@ -270,12 +271,29 @@ const commitSeedSkillPublication$ = command(
       contentBundle: args.contentBundle,
       contentBundleSourceVersionHash: args.context.versionHash,
     };
+    const legacy = database.$with("legacy_skill_publication").as(
+      database
+        .insert(skills)
+        .values({ url: args.context.url, ...record })
+        .onConflictDoUpdate({
+          target: skills.url,
+          set: { ...record, updatedAt: args.timestamp },
+        })
+        .returning({ url: skills.url }),
+    );
+    const publication = {
+      versionHash: record.versionHash,
+      contentBundle: record.contentBundle,
+      contentBundleSourceVersionHash: record.contentBundleSourceVersionHash,
+      updatedAt: args.timestamp,
+    };
     await database
-      .insert(skills)
-      .values({ url: args.context.url, ...record })
+      .with(legacy)
+      .insert(builtInSkills)
+      .values({ url: args.context.url, ...publication })
       .onConflictDoUpdate({
-        target: skills.url,
-        set: { ...record, updatedAt: args.timestamp },
+        target: builtInSkills.url,
+        set: publication,
       });
     signal.throwIfAborted();
   },
@@ -290,12 +308,13 @@ const syncSingleSkill$ = command(
     const context = buildSkillSyncContext(extracted);
     const [existingSkill] = await get(db$)
       .select({
-        versionHash: skills.versionHash,
-        contentBundle: skills.contentBundle,
-        contentBundleSourceVersionHash: skills.contentBundleSourceVersionHash,
+        versionHash: builtInSkills.versionHash,
+        contentBundle: builtInSkills.contentBundle,
+        contentBundleSourceVersionHash:
+          builtInSkills.contentBundleSourceVersionHash,
       })
-      .from(skills)
-      .where(eq(skills.url, context.url))
+      .from(builtInSkills)
+      .where(eq(builtInSkills.url, context.url))
       .limit(1);
     signal.throwIfAborted();
     if (
@@ -338,7 +357,7 @@ function validateSeedSkills(
   });
 
   if (missingSkills.length > 0) {
-    log.error("SEED_SKILLS references skills not found in repository", {
+    log.error("BUILT_IN_SKILLS references skills not found in repository", {
       missingSkills: missingSkills.map((name) => {
         return resolveSkillRef(name);
       }),
@@ -351,21 +370,22 @@ export const syncSkills$ = command(
     const headSha = await fetchHeadCommitSha(signal);
     signal.throwIfAborted();
 
-    const seedSkillUrls = SEED_SKILLS.map(skillUrl);
+    const seedSkillUrls = BUILT_IN_SKILLS.map(skillUrl);
     // commitSha is a batch completion marker. A failed or interrupted attempt
     // leaves the set incomplete so the next cron run downloads the same commit
     // and retries its missing work. Historical non-Seed rows belong to retained
     // Registry/Run inputs and must not participate in this batch.
     const existing = await get(db$)
       .select({
-        url: skills.url,
-        commitSha: skills.commitSha,
-        versionHash: skills.versionHash,
-        contentBundle: skills.contentBundle,
-        contentBundleSourceVersionHash: skills.contentBundleSourceVersionHash,
+        url: builtInSkills.url,
+        commitSha: builtInSkills.commitSha,
+        versionHash: builtInSkills.versionHash,
+        contentBundle: builtInSkills.contentBundle,
+        contentBundleSourceVersionHash:
+          builtInSkills.contentBundleSourceVersionHash,
       })
-      .from(skills)
-      .where(inArray(skills.url, seedSkillUrls));
+      .from(builtInSkills)
+      .where(inArray(builtInSkills.url, seedSkillUrls));
     signal.throwIfAborted();
 
     if (
@@ -373,7 +393,7 @@ export const syncSkills$ = command(
       existing.every((skill) => {
         return skill.commitSha === headSha;
       }) &&
-      SEED_SKILLS.every((name) => {
+      BUILT_IN_SKILLS.every((name) => {
         return existing.some((skill) => {
           return (
             skill.url === skillUrl(name) &&
@@ -434,15 +454,27 @@ export const syncSkills$ = command(
       }
     }
 
-    validateSeedSkills(extractedSkills, SEED_SKILLS);
+    validateSeedSkills(extractedSkills, BUILT_IN_SKILLS);
 
-    if (failed === 0 && extractedSkills.length === SEED_SKILLS.length) {
+    if (failed === 0 && extractedSkills.length === BUILT_IN_SKILLS.length) {
       // A missing Seed or failed publication must leave the batch retryable.
       // Advance only this complete Seed set, never retained non-Seed metadata.
-      await set(writeDb$)
-        .update(skills)
-        .set({ commitSha: headSha, updatedAt: nowDate() })
-        .where(inArray(skills.url, seedSkillUrls));
+      const database = set(writeDb$);
+      const publishedCommit = { commitSha: headSha, updatedAt: nowDate() };
+      const legacy = database
+        .$with("legacy_skill_commit")
+        .as(
+          database
+            .update(skills)
+            .set(publishedCommit)
+            .where(inArray(skills.url, seedSkillUrls))
+            .returning({ url: skills.url }),
+        );
+      await database
+        .with(legacy)
+        .update(builtInSkills)
+        .set(publishedCommit)
+        .where(inArray(builtInSkills.url, seedSkillUrls));
       signal.throwIfAborted();
     }
 

@@ -26,7 +26,7 @@ import {
   type WorkflowCreateRequest,
   type WorkflowImportSource,
 } from "@okouai/api-contracts/contracts/workflows";
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 import {
@@ -743,7 +743,7 @@ export const createWorkflowRecord$ = command(
     args: WorkflowCreationInput,
     signal: AbortSignal,
   ): Promise<WorkflowCreationOutcome> => {
-    if (SEED_SKILLS.includes(args.body.name)) {
+    if (BUILT_IN_SKILLS.includes(args.body.name)) {
       return {
         kind: "error",
         response: conflict(
@@ -938,7 +938,7 @@ const updateWorkflowInner$ = command(
       bodyResult.data.name !== undefined &&
       bodyResult.data.name !== visible.workflow.name
     ) {
-      if (SEED_SKILLS.includes(bodyResult.data.name)) {
+      if (BUILT_IN_SKILLS.includes(bodyResult.data.name)) {
         return conflict(
           `Workflow name "${bodyResult.data.name}" conflicts with a built-in workflow`,
         );

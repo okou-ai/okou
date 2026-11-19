@@ -114,6 +114,7 @@ import * as backgroundJobSchema from "./schema/background-job";
 import * as userExportEntrySchema from "./schema/user-export-entry";
 import * as emailSuppressionSchema from "./schema/email-suppression";
 import * as skillSchema from "./schema/skill";
+import * as builtInSkillSchema from "./schema/built-in-skill";
 import * as usagePricingSchema from "./runtime/usage-pricing";
 import * as agentDraftSchema from "./schema/agent-draft";
 import * as chatThreadDraftSchema from "./schema/chat-thread-draft";
@@ -299,6 +300,7 @@ export const schema = {
   ...userExportEntrySchema,
   ...emailSuppressionSchema,
   ...skillSchema,
+  ...builtInSkillSchema,
   ...usagePricingSchema,
   ...agentDraftSchema,
   ...chatThreadDraftSchema,

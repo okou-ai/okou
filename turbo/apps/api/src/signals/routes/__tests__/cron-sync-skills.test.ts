@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { cronSyncSkillsContract } from "@okouai/api-contracts/contracts/cron";
 import { readContentBundle } from "@okouai/core/content-bundle";
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -62,15 +62,15 @@ describe("Seed Skill bundles through sync-skills", () => {
       );
     };
     expect((await sync()).body).toMatchObject({
-      synced: SEED_SKILLS.length,
+      synced: BUILT_IN_SKILLS.length,
       skipped: 0,
       failed: 0,
       removed: 0,
-      total: SEED_SKILLS.length,
+      total: BUILT_IN_SKILLS.length,
     });
     const bundles = emittedSeedFiles(s3.objects);
-    expect(bundles).toHaveLength(SEED_SKILLS.length);
-    for (const name of SEED_SKILLS) {
+    expect(bundles).toHaveLength(BUILT_IN_SKILLS.length);
+    for (const name of BUILT_IN_SKILLS) {
       const expected = new Map(
         [...first.files]
           .filter(([path]) => {
@@ -82,7 +82,7 @@ describe("Seed Skill bundles through sync-skills", () => {
       );
       expect(bundles).toContainEqual(expected);
     }
-    expect(s3.objects.size).toBe(SEED_SKILLS.length);
+    expect(s3.objects.size).toBe(BUILT_IN_SKILLS.length);
     const published = new Map(s3.objects);
     expect((await sync()).body).toMatchObject({
       synced: 0,
@@ -93,18 +93,18 @@ describe("Seed Skill bundles through sync-skills", () => {
     githubSource("b".repeat(40), first.archive);
     expect((await sync()).body).toMatchObject({
       synced: 0,
-      skipped: SEED_SKILLS.length,
+      skipped: BUILT_IN_SKILLS.length,
       failed: 0,
-      total: SEED_SKILLS.length,
+      total: BUILT_IN_SKILLS.length,
     });
     expect(s3.objects).toStrictEqual(published);
     const changed = await sourceArchive("updated gen instructions");
     githubSource("c".repeat(40), changed.archive);
     expect((await sync()).body).toMatchObject({
       synced: 1,
-      skipped: SEED_SKILLS.length - 1,
+      skipped: BUILT_IN_SKILLS.length - 1,
       failed: 0,
-      total: SEED_SKILLS.length,
+      total: BUILT_IN_SKILLS.length,
     });
     expect(emittedSeedFiles(s3.objects)).toContainEqual(
       new Map([["SKILL.md", changed.files.get("gen/SKILL.md")]]),
@@ -131,17 +131,17 @@ describe("Seed Skill bundles through sync-skills", () => {
       );
     };
     expect((await sync()).body).toMatchObject({
-      synced: SEED_SKILLS.length - 1,
+      synced: BUILT_IN_SKILLS.length - 1,
       failed: 1,
-      total: SEED_SKILLS.length,
+      total: BUILT_IN_SKILLS.length,
     });
     expect((await sync()).body).toMatchObject({
       synced: 1,
-      skipped: SEED_SKILLS.length - 1,
+      skipped: BUILT_IN_SKILLS.length - 1,
       failed: 0,
-      total: SEED_SKILLS.length,
+      total: BUILT_IN_SKILLS.length,
     });
-    expect(emittedSeedFiles(s3.objects)).toHaveLength(SEED_SKILLS.length);
+    expect(emittedSeedFiles(s3.objects)).toHaveLength(BUILT_IN_SKILLS.length);
     expect((await sync()).body).toMatchObject({ total: 0, failed: 0 });
   });
 
@@ -202,11 +202,11 @@ describe("Seed Skill bundles through sync-skills", () => {
         return bundle.mountPath;
       }),
     ).toStrictEqual(
-      SEED_SKILLS.map((name) => {
+      BUILT_IN_SKILLS.map((name) => {
         return `${root}/${name}`;
       }),
     );
-    for (const name of SEED_SKILLS) {
+    for (const name of BUILT_IN_SKILLS) {
       const bundle = execution.contentBundles.skills.find((entry) => {
         return entry.mountPath === `${root}/${name}`;
       })!;
@@ -302,7 +302,7 @@ describe("Seed Skill bundle delivery", () => {
           return bundle.mountPath;
         }),
       ).toStrictEqual(
-        SEED_SKILLS.map((name) => {
+        BUILT_IN_SKILLS.map((name) => {
           return `${root}/${name}`;
         }),
       );

@@ -8,7 +8,7 @@ import {
   contentBundleSchema,
   type ContentBundle,
 } from "@okouai/api-contracts/contracts/content-bundle";
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import {
   STAFF_SINGLE_AGENT_ORG_ID,
   staffWorkflowCopyId,
@@ -75,7 +75,7 @@ export function executionPackageSourcesSql(scope: ExecutionPackageScope) {
           eq(workflows.visibility, "public"),
           eq(workflows.ownerUserId, scope.userId),
         ),
-        notInArray(workflows.name, [...SEED_SKILLS]),
+        notInArray(workflows.name, [...BUILT_IN_SKILLS]),
       )}
       ORDER BY ${workflows.name},
         (${workflows.visibility} = 'private' AND ${workflows.ownerUserId} = ${scope.userId}) DESC,
