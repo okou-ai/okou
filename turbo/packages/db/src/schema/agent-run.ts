@@ -11,11 +11,14 @@ import {
   boolean,
   text,
   jsonb,
+  varchar,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 const migrationColumns = {
   ...agentRunColumns(),
+  // Retain historical statistics outside application runtime projections.
+  artifactResult: varchar("artifact_result", { length: 20 }),
   // Retain historical diagnostics without exposing this column to application
   // INSERT, SELECT or RETURNING projections.
   error: text("error"),

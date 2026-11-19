@@ -1,4 +1,3 @@
-import type { RunArtifactResult } from "@okouai/api-contracts/contracts/runs";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { RunnerCancellationMode } from "@okouai/api-contracts/contracts/runners";
 import type { SandboxStartupPath } from "@okouai/api-contracts/contracts/runner-primitives";
@@ -48,10 +47,6 @@ export function agentRunColumns() {
       length: 64,
     }),
     status: varchar("status", { length: 20 }).notNull(),
-    // Output outcome is independent of execution status; NULL means unknown.
-    artifactResult: varchar("artifact_result", {
-      length: 20,
-    }).$type<RunArtifactResult>(),
     // Explicit stop intent. NULL preserves ordinary completion and older writers.
     runnerCancellationMode: text(
       "runner_cancellation_mode",

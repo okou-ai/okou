@@ -234,7 +234,6 @@ import {
 import { cronCleanupXResourceReadsContract as OriginalCronCleanupXResourceReadsContract } from "../contracts/cron-cleanup-x-resource-reads";
 import { cronCleanupXResourceReadsContract } from "./cron-cleanup-x-resource-reads";
 import {
-  cronAggregateRunPhaseTimingsContract as OriginalCronAggregateRunPhaseTimingsContract,
   cronBrowserReconcileContract as OriginalCronBrowserReconcileContract,
   cronCleanupSandboxesContract as OriginalCronCleanupSandboxesContract,
   cronCleanupSuggestionsContract as OriginalCronCleanupSuggestionsContract,
@@ -265,7 +264,6 @@ import {
   cronTelegramCleanupContract as OriginalCronTelegramCleanupContract,
 } from "../contracts/cron";
 import {
-  cronAggregateRunPhaseTimingsContract,
   cronBrowserReconcileContract,
   cronCleanupSandboxesContract,
   cronCleanupSuggestionsContract,
@@ -960,10 +958,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [
     cronCleanupXResourceReadsContract,
     OriginalCronCleanupXResourceReadsContract,
-  ],
-  [
-    cronAggregateRunPhaseTimingsContract,
-    OriginalCronAggregateRunPhaseTimingsContract,
   ],
   [cronBrowserReconcileContract, OriginalCronBrowserReconcileContract],
   [cronCleanupSandboxesContract, OriginalCronCleanupSandboxesContract],

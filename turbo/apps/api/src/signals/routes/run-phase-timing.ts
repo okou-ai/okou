@@ -3,6 +3,7 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed } from "ccstate";
 import { notFound } from "../../lib/error";
+import { runPhaseMarkEvent } from "../../lib/run-phase-mark";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { apiStartTime$, setResHeader$ } from "../context/hono";
@@ -40,25 +41,10 @@ const mark$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (auth.tokenType !== "agent") {
     throw new Error("Phase marks require Run authentication");
   }
-  const mark = body.data;
-  const event = {
-    _time: receivedAt.toISOString(),
-    schema_version: 1,
-    type: "run_phase_mark",
-    run_id: auth.runId,
-    user_id: auth.userId,
-    org_id: auth.orgId,
-    phase: mark.phase,
-    ...(mark.phase === "generation-start"
-      ? {
-          generation_kind: mark.kind,
-          research_skipped: mark.skipResearch,
-        }
-      : {}),
-  };
+  const event = runPhaseMarkEvent(auth, body.data, receivedAt);
   const telemetrySignal = AbortSignal.any([signal, AbortSignal.timeout(5000)]);
   // Acceptance owns one bounded attempt, not delivery. Preserve legal raw marks;
-  // aggregation resolves duplicates, ordering and the Run completion boundary.
+  // the authenticated Agent completion callback supplies the final stage mark.
   waitUntil(
     settleIncludingAbort(
       ingestAxiomDirect(getDatasetName("web-logs"), [event], telemetrySignal),

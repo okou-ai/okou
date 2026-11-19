@@ -80,7 +80,6 @@ import { builtinConnectorsSlugCallbackRoutes } from "./routes/connectors-slug-ca
 import { cronBrowserReconcileRoutes } from "./routes/cron-browser-reconcile";
 import { cronCleanupSandboxesRoutes } from "./routes/cron-cleanup-sandboxes";
 import { cronCleanupXResourceReadsRoutes } from "./routes/cron-cleanup-x-resource-reads";
-import { cronAggregateRunPhaseTimingsRoutes } from "./routes/cron-aggregate-run-phase-timings";
 import { cronCompactChatThreadSnapshotsRoutes } from "./routes/cron-compact-chat-thread-snapshots";
 import { cronCompactUsageEventsRoutes } from "./routes/cron-compact-usage-events";
 import { cronComputerUseScreenshotCleanupRoutes } from "./routes/cron-computer-use-screenshot-cleanup";
@@ -418,7 +417,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...modelCatalogRoutes,
   ...runModelsRoutes,
   ...runPhaseTimingRoutes,
-  ...cronAggregateRunPhaseTimingsRoutes,
   ...meModelProvidersDeleteRoutes,
   ...meModelProviderAccountRoutes,
   ...meModelProvidersListRoutes,

@@ -3,18 +3,19 @@ import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
 import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhooks";
 import { command, computed } from "ccstate";
 import { logger } from "../../lib/log";
-import { authorization$ } from "../context/hono";
+import { apiStartTime$, authorization$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import type { RouteEntry } from "../route-entry";
 import { dispatchCompleteSideEffects$ } from "../services/agent-run-lifecycle.service";
 import { scheduleReleasedSlotPicks$ } from "../services/pick-chat-run.service";
 import { createAgentRunCompletion } from "../services/agent-webhook-complete.service";
+import { createRunPhaseCallback } from "../services/run-phase-callback.service";
 import {
   createRequiredTerminalChatCallback,
   type RequiredTerminalChatCallbackResult,
 } from "../services/required-terminal-chat-callback.service";
-import { settle, tapError } from "../utils";
+import { settle, settleIncludingAbort, tapError } from "../utils";
 import {
   getSandboxAuthForRun,
   unauthorizedRunMismatch,
@@ -31,6 +32,7 @@ function createAuthorizedCompletion(runId: string) {
     return {
       auth,
       completion: createAgentRunCompletion(runId, auth.userId),
+      phaseCallback: createRunPhaseCallback(auth),
     };
   });
 }
@@ -52,6 +54,7 @@ const completeRequest$ = computed(async (get) => {
 
 const completeAgentRunRoute$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    const receivedAt = new Date(get(apiStartTime$));
     const bodyResult = await get(completeRequest$);
     signal.throwIfAborted();
     if (!bodyResult.ok) {
@@ -69,6 +72,22 @@ const completeAgentRunRoute$ = command(
       { auth: authorized.auth, body },
       signal,
     );
+    if (
+      result.status === 200 &&
+      result.sideEffects?.kind === "terminal" &&
+      result.sideEffects.firstTerminalTransition &&
+      result.sideEffects.status === "completed"
+    ) {
+      const telemetrySignal = AbortSignal.any([
+        signal,
+        AbortSignal.timeout(5000),
+      ]);
+      waitUntil(
+        settleIncludingAbort(
+          set(authorized.phaseCallback.record$, receivedAt, telemetrySignal),
+        ),
+      );
+    }
     if (result.status === 200) {
       set(scheduleReleasedSlotPicks$, result.releasedSlots, signal);
       if (result.marketingRewardEventId) {

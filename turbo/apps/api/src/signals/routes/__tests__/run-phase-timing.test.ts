@@ -88,7 +88,7 @@ describe("current Run phase timing", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
 
-  it("accepts legal observations after completion for aggregation to classify", async () => {
+  it("accepts late legal observations after the completion callback", async () => {
     const f = await fixture();
     await f.owned.run(() => {
       return completePublicClaudeRun(
@@ -138,6 +138,26 @@ describe("current Run phase timing", () => {
       [404],
     );
     expect(response.status).toBe(404);
+  });
+
+  it("reserves completion-callback for the authenticated Agent completion protocol", async () => {
+    const f = await fixture();
+    const response = await setupRawAppRequest({
+      context,
+      routes: runPhaseTimingRoutes,
+    })(runPhaseTimingContract.mark.path, {
+      method: "POST",
+      headers: { ...f.headers, "content-type": "application/json" },
+      body: JSON.stringify({ phase: "completion-callback" }),
+    });
+    expect(response.status).toBe(400);
+    await expect(
+      f.mark({
+        phase: "generation-start",
+        kind: "report",
+        skipResearch: false,
+      }),
+    ).resolves.toStrictEqual(receipt);
   });
 
   it("requires kind and rejects caller-supplied identity and timestamps", async () => {
