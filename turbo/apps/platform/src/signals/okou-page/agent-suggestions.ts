@@ -9,7 +9,7 @@ import { defaultAgentId$ } from "../agent.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { navigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
-import { resetSignal } from "../utils.ts";
+import { onRef, resetSignal } from "../utils.ts";
 import { chatThreadMetaMap$ } from "../chat-page/chat-thread-event-sourcing.ts";
 import {
   createInPlaceThreadComposerSignals,
@@ -126,7 +126,7 @@ function relatedThreadIds(item: Suggestion): readonly string[] {
 interface SuggestionDirectionSession {
   readonly entry: AgentSuggestionEntry;
   readonly agentId: string;
-  /** Ends the dialog and settles the card once a send is accepted. */
+  /** Closes the composer and settles the card once a send is accepted. */
   readonly finish: (
     target: SuggestionDirectionTarget,
     threadId: string,
@@ -179,6 +179,7 @@ export const suggestionDirection$ = computed((get) => {
   }
   const threads = get(chatThreadMetaMap$);
   return {
+    itemId: session.entry.item.id,
     agentId: session.agentId,
     threads: relatedThreadIds(session.entry.item).flatMap(
       (id): SuggestionThreadTarget[] => {
@@ -199,21 +200,41 @@ export const suggestionDirectionComposer$ = computed((get) => {
   return get(internalDirectionComposer$);
 });
 
-/** Returns the open dialog to its choice of target. */
+/** Returns the editor to its choice of target. */
 export const resetSuggestionDirectionTarget$ = command(({ set }) => {
   set(resetDirectionTarget$);
   set(internalDirectionTarget$, null);
   set(internalDirectionComposer$, null);
 });
 
-export const closeSuggestionDirection$ = command(({ set }) => {
+const closeSuggestionDirection$ = command(({ set }) => {
   set(resetDirection$);
   set(resetSuggestionDirectionTarget$);
   set(internalDirectionSession$, null);
 });
 
+const directionFocusReturnId$ = state<string | null>(null);
+
+export const collapseSuggestionDirection$ = command(({ get, set }) => {
+  const itemId = get(internalDirectionSession$)?.entry.item.id ?? null;
+  set(directionFocusReturnId$, itemId);
+  set(closeSuggestionDirection$);
+});
+
+export const restoreDirectionFocusOnRef$ = onRef<HTMLButtonElement>(
+  command(({ get, set }, trigger: HTMLButtonElement) => {
+    if (
+      get(directionFocusReturnId$) ===
+      trigger.dataset.suggestionDirectionTrigger
+    ) {
+      set(directionFocusReturnId$, null);
+      trigger.focus({ preventScroll: true });
+    }
+  }),
+);
+
 /**
- * An accepted send ends the dialog and moves the card below the waiting ones
+ * An accepted send closes the composer and moves the card below the waiting ones
  * as a link to the chat that received it. The API consumes the card when it
  * accepts the follow-up.
  */
@@ -291,7 +312,7 @@ const prepareDirectionComposer$ = command(
   },
 );
 
-/** Opens the composer of `target` for the card in the open dialog. */
+/** Opens the composer of `target` for the open card. */
 export const chooseSuggestionDirectionTarget$ = command(
   async (
     { get, set },
@@ -310,7 +331,7 @@ export const chooseSuggestionDirectionTarget$ = command(
 );
 
 /**
- * Opens the custom direction dialog for a card. A card without related chats
+ * Opens the custom direction editor for a card. A card without related chats
  * goes straight to a new chat of the default Agent; otherwise the member first
  * chooses between a new chat and one of those chats.
  */
@@ -320,6 +341,7 @@ export const openSuggestionDirection$ = command(
     entry: AgentSuggestionEntry,
     pageSignal: AbortSignal,
   ): Promise<void> => {
+    set(directionFocusReturnId$, null);
     const signal = set(resetDirection$, pageSignal);
     set(resetSuggestionDirectionTarget$);
     const agentId = await get(defaultAgentId$);
@@ -338,7 +360,7 @@ export const openSuggestionDirection$ = command(
       },
     };
     set(internalDirectionSession$, session);
-    // Leaving the page or opening another card's dialog ends this session.
+    // Leaving the page or opening another card's editor ends this session.
     signal.addEventListener(
       "abort",
       () => {

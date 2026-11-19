@@ -14,26 +14,20 @@ import {
   Send,
   ArrowLeft,
 } from "lucide-react";
-import {
-  Button,
-  buttonVariants,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@okouai/ui";
+import { Button, buttonVariants } from "@okouai/ui";
 import type { SuggestionOption } from "@okouai/api-contracts/contracts/feed";
 import {
   agentSuggestionEntries$,
   type AgentSuggestionEntry,
   closeSettledSuggestion$,
+  focusSuggestionTitleOnRef$,
   retryAgentSuggestion$,
   submitSuggestionFeedbackWithUndo$,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
 import {
   chooseSuggestionDirectionTarget$,
-  closeSuggestionDirection$,
+  collapseSuggestionDirection$,
+  restoreDirectionFocusOnRef$,
   openSuggestionDirection$,
   resetSuggestionDirectionTarget$,
   startAgentSuggestion$,
@@ -223,9 +217,12 @@ function SuggestionDirectionEntry({
 }) {
   const { t } = useTranslation();
   const open = useSet(openSuggestionDirection$);
+  const restoreFocus = useSet(restoreDirectionFocusOnRef$);
   const signal = useGet(pageSignal$);
   return (
     <Button
+      ref={restoreFocus}
+      data-suggestion-direction-trigger={entry.item.id}
       type="button"
       variant="quiet"
       className="h-auto min-h-14 w-full justify-between gap-3 whitespace-normal rounded-3xl bg-nested-fill px-4 py-3 text-left text-sm font-normal text-muted-foreground"
@@ -264,6 +261,7 @@ function SuggestionDirectionTargets({
   agentId,
   threads,
   newChatTitle,
+  relatedLabelId,
 }: {
   readonly agentId: string;
   readonly threads: readonly Extract<
@@ -271,6 +269,7 @@ function SuggestionDirectionTargets({
     { readonly kind: "thread" }
   >[];
   readonly newChatTitle: string;
+  readonly relatedLabelId: string;
 }) {
   const { t } = useTranslation();
   const choose = useSet(chooseSuggestionDirectionTarget$);
@@ -294,12 +293,9 @@ function SuggestionDirectionTargets({
           target={directionHeaderTarget({ kind: "new", agentId }, newChatTitle)}
         />
       </Button>
-      <section
-        aria-labelledby="suggestion-direction-related"
-        className="min-w-0"
-      >
+      <section aria-labelledby={relatedLabelId} className="min-w-0">
         <h3
-          id="suggestion-direction-related"
+          id={relatedLabelId}
           className="pb-2 text-sm font-medium leading-5 text-foreground"
         >
           {t(($) => {
@@ -330,101 +326,128 @@ function SuggestionDirectionTargets({
   );
 }
 
-/**
- * A custom direction is written like a forward: in a new chat of the default
- * Agent, or as a reply in a chat the card relates to, while the member stays
- * on For you.
- */
-export function SuggestionDirectionDialog() {
-  const { t } = useTranslation();
+function SuggestionDirection({
+  entry,
+}: {
+  readonly entry: AgentSuggestionEntry;
+}) {
   const direction = useGet(suggestionDirection$);
+  return direction?.itemId === entry.item.id ? (
+    <SuggestionDirectionComposer direction={direction} />
+  ) : (
+    <SuggestionDirectionEntry entry={entry} />
+  );
+}
+
+function SuggestionDirectionComposer({
+  direction,
+}: {
+  readonly direction: {
+    readonly itemId: string;
+    readonly agentId: string;
+    readonly threads: readonly Extract<
+      SuggestionDirectionTarget,
+      { readonly kind: "thread" }
+    >[];
+  };
+}) {
+  const { t } = useTranslation();
+  const headingId = `suggestion-direction-heading-${direction.itemId}`;
+  const descriptionId = `suggestion-direction-description-${direction.itemId}`;
+  const focusHeading = useSet(focusSuggestionTitleOnRef$);
   const target = useGet(suggestionDirectionTarget$);
   const prepared = useLoadable(suggestionDirectionComposer$);
-  const close = useSet(closeSuggestionDirection$);
   const back = useSet(resetSuggestionDirectionTarget$);
-  if (!direction) {
-    return null;
-  }
+  const close = useSet(collapseSuggestionDirection$);
   const newChatTitle = t(($) => {
     return $.chat.newChat;
   });
   const choosing = direction.threads.length > 0;
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) {
-          close();
-        }
-      }}
+    <section
+      aria-labelledby={headingId}
+      aria-describedby={!target ? descriptionId : undefined}
+      className="flex min-w-0 flex-col gap-3 pt-2"
     >
-      <DialogContent
-        smMaxWidth="xl"
-        contentClassName="grid-cols-[minmax(0,1fr)] gap-4 overflow-hidden p-5"
-      >
-        <DialogHeader className="min-w-0">
-          <div className="flex min-w-0 items-center gap-2 pr-8">
-            {target && choosing ? (
-              <IconTooltipButton
-                type="button"
-                onClick={() => {
-                  back();
-                }}
-                className="-ml-2 inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground"
-                aria-label={t(($) => {
-                  return $.chat.forward.back;
-                })}
-              >
-                <ArrowLeft size={16} />
-              </IconTooltipButton>
-            ) : null}
-            <DialogTitle className="min-w-0 flex-1 overflow-hidden text-base font-semibold">
-              {target ? (
-                <ForwardTargetContent
-                  target={directionHeaderTarget(target, newChatTitle)}
-                />
-              ) : (
-                t(($) => {
-                  return $.chat.agentSuggestions.directionTitle;
-                })
-              )}
-            </DialogTitle>
-          </div>
-          <DialogDescription className={target ? "sr-only" : undefined}>
-            {target
-              ? t(($) => {
-                  return $.chat.agentSuggestions.customDirectionDescription;
-                })
-              : t(($) => {
-                  return $.chat.agentSuggestions.directionDescription;
-                })}
-          </DialogDescription>
-        </DialogHeader>
-        {prepared.state === "hasError" ? (
-          <p role="alert" className="text-sm text-muted-foreground">
-            {prepared.error instanceof Error
-              ? prepared.error.message
-              : t(($) => {
-                  return $.global.errors.requestFailed;
-                })}
-          </p>
-        ) : prepared.state === "hasData" && prepared.data ? (
-          <div className="w-full min-w-0" data-chat-composer>
-            <ChatComposer signals={prepared.data} showPendingItems={false} />
-          </div>
-        ) : target || !choosing ? (
-          <div className="flex min-h-40 items-center justify-center text-muted-foreground">
-            <Loader2 size={16} className="animate-spin" aria-hidden />
-          </div>
-        ) : (
-          <SuggestionDirectionTargets
-            agentId={direction.agentId}
-            threads={direction.threads}
-            newChatTitle={newChatTitle}
-          />
+      <div className="flex min-w-0 items-center gap-2">
+        {target && choosing && (
+          <IconTooltipButton
+            type="button"
+            onClick={() => {
+              back();
+            }}
+            className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground"
+            aria-label={t(($) => {
+              return $.chat.forward.back;
+            })}
+          >
+            <ArrowLeft size={16} />
+          </IconTooltipButton>
         )}
-      </DialogContent>
-    </Dialog>
+        <h3
+          key={target?.kind === "thread" ? target.id : target?.kind}
+          id={headingId}
+          tabIndex={-1}
+          ref={focusHeading}
+          className="min-w-0 flex-1 text-sm font-medium"
+        >
+          {target ? (
+            <ForwardTargetContent
+              target={directionHeaderTarget(target, newChatTitle)}
+            />
+          ) : (
+            t(($) => {
+              return $.chat.agentSuggestions.directionTitle;
+            })
+          )}
+        </h3>
+        <Button
+          type="button"
+          variant="quiet"
+          size="icon-xs"
+          showTooltip
+          aria-label={t(($) => {
+            return $.workflows.common.close;
+          })}
+          onClick={() => {
+            close();
+          }}
+        >
+          <X />
+        </Button>
+      </div>
+      {!target && (
+        <p id={descriptionId} className="sr-only">
+          {t(($) => {
+            return $.chat.agentSuggestions.directionDescription;
+          })}
+        </p>
+      )}
+      {prepared.state === "hasError" ? (
+        <p role="alert" className="text-sm text-muted-foreground">
+          {prepared.error instanceof Error
+            ? prepared.error.message
+            : t(($) => {
+                return $.global.errors.requestFailed;
+              })}
+        </p>
+      ) : prepared.state === "hasData" && prepared.data ? (
+        <div className="w-full min-w-0" data-chat-composer>
+          <ChatComposer signals={prepared.data} showPendingItems={false} />
+        </div>
+      ) : target || !choosing ? (
+        <div className="flex min-h-40 items-center justify-center text-muted-foreground">
+          <Loader2 size={16} className="animate-spin" aria-hidden />
+        </div>
+      ) : (
+        <SuggestionDirectionTargets
+          agentId={direction.agentId}
+          threads={direction.threads}
+          newChatTitle={newChatTitle}
+          relatedLabelId={`suggestion-direction-related-${direction.itemId}`}
+        />
+      )}
+    </section>
   );
 }
 
@@ -525,7 +548,7 @@ export function AgentSuggestionCard({
             </Button>
           );
         })}
-        <SuggestionDirectionEntry entry={entry} />
+        {active && <SuggestionDirection entry={entry} />}
       </div>
       <SuggestionFeedback entry={entry} />
       <footer className="mt-3 flex items-center justify-between gap-3">

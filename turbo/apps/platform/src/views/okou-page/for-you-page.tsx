@@ -31,7 +31,6 @@ import { Link } from "../router/link.tsx";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
 import {
   AgentSuggestionCard,
-  SuggestionDirectionDialog,
   SuggestionSaveErrors,
   SuggestionSentNotice,
 } from "./agent-suggestions.tsx";
@@ -441,7 +440,6 @@ export function ForYouPage() {
           })}
         </div>
       </main>
-      <SuggestionDirectionDialog />
     </div>
   );
 }
