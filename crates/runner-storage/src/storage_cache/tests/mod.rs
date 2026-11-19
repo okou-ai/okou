@@ -3299,6 +3299,7 @@ async fn background_fill_reserves_admission_for_a_miss_after_other_runs_maintena
 #[tokio::test]
 async fn background_fill_concurrent_runs_share_class_and_total_bounds() {
     let progress_timeout = Duration::from_secs(5);
+    let initial_archives = ["active-0", "active-1", "active-2", "active-3"];
     let temp = tempfile::tempdir().unwrap();
     let home = home_at(&temp);
     let bytes = tarball_bytes();
@@ -3306,15 +3307,10 @@ async fn background_fill_concurrent_runs_share_class_and_total_bounds() {
     let mut server = gated_archive_server(bytes.clone(), 68).await;
     let coordinator = StorageCacheBackgroundFillCoordinator::new().unwrap();
     let reporter = new_telemetry().reporter();
-    for index in 0..4 {
+    for name in initial_archives {
         assert_eq!(
             coordinator.submit(
-                background_fill_group(
-                    server.url.clone(),
-                    &format!("active-{index}"),
-                    "v1",
-                    Some(bytes.len() as u64)
-                ),
+                background_fill_group(server.url.clone(), name, "v1", Some(bytes.len() as u64)),
                 home.clone(),
                 reporter.clone(),
                 BackgroundFillAction::Fill(None)
@@ -3373,7 +3369,7 @@ async fn background_fill_concurrent_runs_share_class_and_total_bounds() {
 
     server.release.add_permits(68);
     // With all four worker slots occupied at release, each new request shows
-    // that the queue is progressing through durable cache writes.
+    // that a slot became available and the queue advanced.
     for request in 1..=queued {
         match tokio::time::timeout(progress_timeout, server.requests.recv()).await {
             Ok(Some(_)) => {}
@@ -3390,11 +3386,14 @@ async fn background_fill_concurrent_runs_share_class_and_total_bounds() {
         .await
         .expect("accepted background operations should finish after all responses");
     coordinator.shutdown().await;
-    for name in accepted.into_iter().flatten() {
-        assert_eq!(
-            std::fs::read(home.storage_cache_dir(&name, "v1").join("archive.tar.gz")).unwrap(),
-            bytes
-        );
+    for name in initial_archives
+        .into_iter()
+        .chain(accepted.iter().flatten().map(String::as_str))
+    {
+        let path = home.storage_cache_dir(name, "v1").join("archive.tar.gz");
+        let published = std::fs::read(path)
+            .unwrap_or_else(|error| panic!("read published archive for {name}: {error}"));
+        assert_eq!(published, bytes, "published archive for {name}");
     }
     assert!(server.max_active.load(Ordering::SeqCst) <= 4);
     cache.shutdown().await;
