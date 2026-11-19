@@ -847,11 +847,7 @@ function createCustomConnectorBundleSignals(
         const row = rows.find((candidate) => {
           return (
             customConnectorNewRunRowIsAdmissible(candidate) &&
-            resolveCustomConnectorBaseUrlVars({
-              row: candidate,
-              provided: undefined,
-              hasProvided: false,
-            }) !== undefined
+            resolveCustomConnectorBaseUrlVars(candidate) !== undefined
           );
         });
         if (!row) {
@@ -914,47 +910,42 @@ function createCustomConnectorContextSignals(
       const memberPermissionPolicies = await get(
         inputs.memberPermissionPolicies$,
       );
-      return await (
-        await get(connectorInput$)
-      ).timing.measure(
+      return (await get(connectorInput$)).timing.measureSync(
         "api_dispatch_prepare_context_build_custom_connector_firewalls",
         "nested",
-        async () => {
-          const contexts = await Promise.all(
-            orderByCustomConnectorId(
-              connectors.filter((connector) => {
-                return args.allowedCustomConnectorIds.includes(connector.id);
-              }),
-              (connector) => {
-                return connector.id;
-              },
-            ).map(async (connector) => {
-              const rows = customConnectorCandidateRuntimeRows({
-                connector,
-                storageRows,
-                candidateIds:
-                  candidates.get(
-                    connectorAccountTargetKey({
-                      kind: "custom",
-                      customConnectorId: connector.id,
-                    }),
-                  ) ?? [],
-              });
-              for (const row of rows) {
-                const context = await buildNewRunCustomConnectorRuntimeContext({
-                  rows: [row],
-                  permissionBundlesByConnectorId,
-                  featureSwitchContext,
-                  connectorCatalogSnapshot: args.connectorCatalogSnapshot,
-                  memberPermissionPolicies,
-                });
-                if (context.targets.length > 0) {
-                  return context;
-                }
-              }
-              return emptyCustomConnectorRuntimeContext();
+        () => {
+          const contexts = orderByCustomConnectorId(
+            connectors.filter((connector) => {
+              return args.allowedCustomConnectorIds.includes(connector.id);
             }),
-          );
+            (connector) => {
+              return connector.id;
+            },
+          ).map((connector) => {
+            const rows = customConnectorCandidateRuntimeRows({
+              connector,
+              storageRows,
+              candidateIds:
+                candidates.get(
+                  connectorAccountTargetKey({
+                    kind: "custom",
+                    customConnectorId: connector.id,
+                  }),
+                ) ?? [],
+            });
+            for (const row of rows) {
+              const context = buildNewRunCustomConnectorRuntimeContext({
+                rows: [row],
+                permissionBundlesByConnectorId,
+                featureSwitchContext,
+                memberPermissionPolicies,
+              });
+              if (context.targets.length > 0) {
+                return context;
+              }
+            }
+            return emptyCustomConnectorRuntimeContext();
+          });
           return {
             firewalls: contexts.flatMap((context) => {
               return context.firewalls;
@@ -1530,12 +1521,12 @@ function customConnectorNewRunRowIsAdmissible(
   );
 }
 
-async function buildNewRunCustomConnectorRuntimeContext(
+function buildNewRunCustomConnectorRuntimeContext(
   args: BuildCustomConnectorRuntimeContextArgs,
-): Promise<CustomConnectorRuntimeContext> {
+): CustomConnectorRuntimeContext {
   // Active targets call the shared builder directly so credential loss does
   // not remove their pinned firewall. Only new runs apply this admission gate.
-  return await buildCustomConnectorRuntimeContext({
+  return buildCustomConnectorRuntimeContext({
     ...args,
     rows: args.rows.filter(customConnectorNewRunRowIsAdmissible),
   });
