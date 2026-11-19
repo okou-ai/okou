@@ -20,7 +20,9 @@ async fn native_checks_keep_fresh_streams_separate_from_reused_node_and_shared_t
     let mut h = Harness::new().await;
     h.run.enable_checks(&h.runtime, &["vnc:write"]).await;
     let api = Api::secure(None).await;
-    let home = Server::secure().await;
+    // Retiring a temporary VNC flow can invalidate an in-flight DERP frame.
+    // Keep the listener available for relay replacement under the same node.
+    let home = Server::secure_reconnecting().await;
     let key = NodeKeyPair::random();
     let mut value: Value = serde_json::from_slice(&map(&home)).unwrap();
     let mut peer = node(2, "peer.synthetic.ts.net.", 2, &key);
