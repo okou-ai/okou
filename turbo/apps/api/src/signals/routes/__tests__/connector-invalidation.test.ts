@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
-import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { http, HttpResponse } from "msw";
@@ -12,7 +11,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { agentsRoutes } from "../agents";
-import { agentConnectorAccessRoutes } from "../agent-connector-access";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { createBddApi } from "./helpers/api-bdd";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
@@ -26,10 +24,7 @@ test("each successful grant notifies readers when another grant is rejected", as
   const userId = `user_${randomUUID()}`;
   mocks.clerk.session(userId, `org_${randomUUID()}`);
   context.mocks.s3.send.mockResolvedValue({});
-  const app = setupApp({
-    context,
-    routes: [...agentsRoutes, ...agentConnectorAccessRoutes],
-  });
+  const app = setupApp({ context, routes: agentsRoutes });
   const agents = await Promise.all(
     ["First agent", "Second agent"].map((displayName) => {
       return accept(
@@ -72,7 +67,7 @@ test("each successful grant notifies readers when another grant is rejected", as
       { agentId },
     );
     const access = await accept(
-      app(agentConnectorAccessContract).agent({
+      app(userBuiltinConnectorsContract).get({
         headers,
         params: { id: agentId },
       }),

@@ -571,7 +571,7 @@ describe("createApp", () => {
   });
 
   describe("web client compatibility", () => {
-    it.each(["0.1098.0", "0.1099.1", "0.1122.1"])(
+    it.each(["0.1098.0", "0.1099.1", "0.1122.1", "0.1150.0"])(
       "force-upgrades App %s before route matching",
       async (version) => {
         const app = createApp({
@@ -703,7 +703,6 @@ describe("createApp", () => {
     ])(
       "force-upgrades iOS builds below the floor before $method $path route matching",
       async ({ method, path }) => {
-        iosClientCompatibility.minimumSupportedVersion = IOS_MINIMUM_VERSION;
         const app = createApp({
           signal: context.signal,
           routes: TEST_APP_ROUTES,
@@ -712,7 +711,7 @@ describe("createApp", () => {
           method,
           headers: {
             [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS,
-            [CLIENT_VERSION_HEADER]: "0.7.4",
+            [CLIENT_VERSION_HEADER]: "0.49.0",
           },
         });
 
@@ -722,7 +721,8 @@ describe("createApp", () => {
             code: "IOS_UPDATE_REQUIRED",
             message: "Update Okou in TestFlight to continue.",
           },
-          minimumSupportedVersion: IOS_MINIMUM_VERSION,
+          minimumSupportedVersion:
+            iosClientCompatibility.minimumSupportedVersion,
         });
         expect(response.headers.get("cache-control")).toBe("no-store");
       },

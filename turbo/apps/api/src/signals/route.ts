@@ -66,10 +66,8 @@ import { connectorAccountRoutes } from "./routes/connector-accounts";
 import { chatConnectorAccessRoutes } from "./routes/chat-connector-access";
 import { runConnectorAccountRoutes } from "./routes/run-connector-accounts";
 import { connectorPermissionsRoutes } from "./routes/connector-permissions";
-import { connectorAgentAccessRoutes } from "./routes/connector-agent-access";
 import { connectorCatalogRoutes } from "./routes/connector-catalog";
 import { connectorCheckRoutes } from "./routes/connector-check";
-import { agentConnectorAccessRoutes } from "./routes/agent-connector-access";
 import { connectedConnectorsRoutes } from "./routes/connected-connectors";
 import { remotesRoutes } from "./routes/remotes";
 import { builtinConnectorsRoutes } from "./routes/connectors";
@@ -338,7 +336,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...agentInstructionsRoutes,
   ...instructionsRoutes,
   ...agentsRoutes,
-  ...connectorAgentAccessRoutes,
   ...artifactCatalogRoutes,
   ...billingAutoRechargeRoutes,
   ...billingCheckoutRoutes,
@@ -373,7 +370,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...codexDeviceAuthRoutes,
   ...atomSubscriptionGrantRoutes,
   ...connectorCatalogRoutes,
-  ...agentConnectorAccessRoutes,
   ...connectedConnectorsRoutes,
   ...remotesRoutes,
   ...connectorCheckRoutes,

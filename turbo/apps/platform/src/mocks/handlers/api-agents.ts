@@ -3,8 +3,6 @@ import {
   type AgentCustomConnectorGrant,
 } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
-import { connectorAgentAccessContract } from "@okouai/api-contracts/contracts/connector-agent-access";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
@@ -65,12 +63,6 @@ function createMockAgentResponse(agent: MockAgentResponse): AgentResponse {
 export function setMockAgents(agents: MockAgentResponse[]): void {
   mockAgents = agents.map((agent) => {
     return createMockAgentResponse(agent);
-  });
-}
-
-export function mockAgentIds(): string[] {
-  return mockAgents.map((agent) => {
-    return agent.agentId;
   });
 }
 
@@ -135,53 +127,9 @@ function mockCustomConnectorGrantUpdateResponse(
 }
 
 export const apiAgentsHandlers = [
-  mockApi(agentConnectorAccessContract.agent, ({ params, respond }) => {
-    return respond(200, {
-      enabledConnectorSlugs:
-        mockEnabledConnectorSlugsByAgent.get(params.id) ?? [],
-      customConnectorIds: (
-        mockCustomConnectorGrantsByAgent.get(params.id) ?? []
-      ).map((grant) => {
-        return grant.customConnectorId;
-      }),
-    });
-  }),
   // GET /api/agents
   mockApi(agentsMainContract.list, ({ respond }) => {
     return respond(200, mockAgents);
-  }),
-
-  // GET /api/connectors/agent-access
-  mockApi(connectorAgentAccessContract.get, ({ query, respond }) => {
-    const visibleAgentIds = mockAgentIds();
-    return respond(200, {
-      visibleAgentIds,
-      builtin: visibleAgentIds.flatMap((agentId) => {
-        return (mockEnabledConnectorSlugsByAgent.get(agentId) ?? [])
-          .filter((connectorSlug) => {
-            return !query.builtinSlug || connectorSlug === query.builtinSlug;
-          })
-          .map((connectorSlug) => {
-            return { connectorSlug, agentId };
-          });
-      }),
-      custom: visibleAgentIds.flatMap((agentId) => {
-        return (mockCustomConnectorGrantsByAgent.get(agentId) ?? [])
-          .filter((grant) => {
-            return (
-              !query.customConnectorId ||
-              grant.customConnectorId === query.customConnectorId
-            );
-          })
-          .map((grant) => {
-            return {
-              connectorId: grant.customConnectorId,
-              agentId,
-              permissionNames: grant.permissionNames,
-            };
-          });
-      }),
-    });
   }),
 
   // GET /api/agents/:id/user-connectors

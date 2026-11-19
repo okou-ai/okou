@@ -1,4 +1,3 @@
-import { agentConnectorAccessContract } from "../contracts/agent-connector-access";
 import { agentCustomConnectorsContract } from "../contracts/agent-custom-connectors";
 import { agentDraftContract } from "../contracts/agent-draft";
 import { agentsByIdContract, agentsMainContract } from "../contracts/agents";
@@ -104,10 +103,6 @@ const iosContracts: readonly {
 }[] = [
   { id: "ios.instructionsContract.get", route: instructionsContract.get },
   { id: "ios.instructionsContract.update", route: instructionsContract.update },
-  {
-    id: "ios.agentConnectorAccessContract.agent",
-    route: agentConnectorAccessContract.agent,
-  },
   {
     id: "ios.agentCustomConnectorsContract.get",
     route: agentCustomConnectorsContract.get,

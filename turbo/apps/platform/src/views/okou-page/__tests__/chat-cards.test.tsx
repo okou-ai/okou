@@ -7,7 +7,6 @@ import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/ru
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
-import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { expect, test } from "vitest";
 
@@ -122,12 +121,6 @@ function mockExactReconnectAccount(
   });
   context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
     return respond(200, { connectors: [catalogItem] });
-  });
-  context.mocks.api(agentConnectorAccessContract.agent, ({ respond }) => {
-    return respond(200, {
-      enabledConnectorSlugs: [github],
-      customConnectorIds: [],
-    });
   });
   context.mocks.api(
     connectorAccountsContract.connection,
@@ -1100,12 +1093,6 @@ test("Connector account switches A → B → A keep their icon and continue with
   switchUrl.searchParams.set("connectorSlug", github);
   switchUrl.searchParams.set("threadId", THREAD_ID);
   switchUrl.searchParams.set("callbackPrompt", "Continue");
-  context.mocks.api(agentConnectorAccessContract.agent, ({ respond }) => {
-    return respond(200, {
-      enabledConnectorSlugs: [],
-      customConnectorIds: [],
-    });
-  });
   context.mocks.api(
     connectorAccountsContract.connection,
     ({ params, respond }) => {

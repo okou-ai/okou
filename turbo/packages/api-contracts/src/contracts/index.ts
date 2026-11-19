@@ -845,16 +845,6 @@ export {
   type CustomConnectorBrief,
 } from "./connected-connectors";
 export {
-  agentConnectorAccessContract,
-  agentConnectorAccessSchema,
-  type AgentConnectorAccess,
-} from "./agent-connector-access";
-export {
-  connectorAgentAccessContract,
-  connectorAgentAccessSchema,
-  type ConnectorAgentAccess,
-} from "./connector-agent-access";
-export {
   userPermissionGrantsContract,
   userPermissionGrantScopeSchema,
   userPermissionGrantActionSchema,
