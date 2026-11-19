@@ -718,6 +718,16 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(payload["43"]["outcome"], "cleaned")
         self.assertFalse(sibling.exists())
 
+        unit = self.resource("etc/systemd/system/vm0-runner-pr-43.service")
+        result, payload = self.worker("cleanup", 42, 43, RELOAD_ERROR="1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload["42"]["outcome"], "failed")
+        self.assertIn("resource ancestor is a symlink", payload["42"]["error"])
+        self.assertTrue(marker.is_file())
+        self.assertEqual(payload["43"]["outcome"], "unverified")
+        self.assertEqual(payload["43"]["operation_result"]["outcome"], "cleaned")
+        self.assertFalse(unit.exists())
+
     @unittest.skipIf(os.getuid() == 0, "requires normal filesystem permissions")
     def test_permission_failure_keeps_resource_and_other_pr_progresses(self):
         unit = self.resource("etc/systemd/system/vm0-runner-pr-42-api.service")

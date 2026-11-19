@@ -336,12 +336,13 @@ class Host:
 
     def cleanup(self, selected):
         # Revoke admission even if a later inventory or bulk teardown fails.
-        command_errors = {pr: [] for pr in selected}
-        outcomes = self.revoke_image_admission(selected)
-        selected = [pr for pr in selected if pr not in outcomes]
+        revocation_failures = self.revoke_image_admission(selected)
+        selected = [pr for pr in selected if pr not in revocation_failures]
         if not selected:
-            return outcomes
+            return revocation_failures
         before = self.inventory(selected)
+        outcomes = {}
+        command_errors = {pr: [] for pr in selected}
         dirty = False
 
         def teardown(pr, operation, *args):
@@ -435,7 +436,7 @@ class Host:
         for pr, result in outcomes.items():
             if result["outcome"] in {"failed", "unverified"} and command_errors[pr]:
                 result["command_errors"] = command_errors[pr]
-        return outcomes
+        return revocation_failures | outcomes
 
     def session(self, numbers):
         """Own the locks in the same process that performs the mutation.
