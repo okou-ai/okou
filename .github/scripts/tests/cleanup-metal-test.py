@@ -56,9 +56,20 @@ else:raise SystemExit('unexpected gh call')
 """
 
 SSH = r"""#!/usr/bin/env python3
-import json,os,shlex,signal,subprocess,sys,time
+import json,os,select,shlex,signal,subprocess,sys
 from pathlib import Path
-root=Path(os.environ['FIXTURE']);host=sys.argv[1].split('@')[1];args=sys.argv[2:]
+root = Path(os.environ['FIXTURE'])
+if sys.argv[1:4] == ['-v', '-n', '-T'] and sys.argv[-1] == 'true':
+ print(f"debug1: fixture probe for {sys.argv[-2]}", file=sys.stderr)
+ sys.exit(0)
+host = sys.argv[1].split('@')[1].removesuffix('.vm3.ai')
+args = sys.argv[2:]
+
+def await_event(name):
+ with (root / name).open() as event:
+  assert select.select([event], [], [], 10)[0], name
+  assert event.readline() == 'ready\n'
+
 history=root/host/'ssh.log'
 if args[:4]==['sudo','python3','-','inventory']:
  with history.open('a') as log:log.write('inventory\n')
@@ -85,7 +96,12 @@ if args[2]=='-c':
  command=[sys.executable,'-c',source,*args[4:],'--root',str(root/host)]
  failure = os.environ.get('READY_FAILURE')
  if failure == 'prior-lost' and host == 'metal-a':
-  (root/'first-worker').write_text(str(os.getpid()))
+  with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as worker:
+   print(worker.stdout.readline(), end='', flush=True)
+   await_event('disconnect-a')
+   worker.stdin.close()
+   worker.wait(timeout=5)
+  sys.exit(255)
  failure = failure if host == 'metal-b' else None
  if failure == 'invalid':
   print('{"ready":[]}')
@@ -103,26 +119,20 @@ if args[2]=='-c':
    worker.wait(timeout=5)
   sys.exit(255)
  if failure == 'prior-lost':
-  pid = int((root/'first-worker').read_text())
-  os.kill(pid, signal.SIGTERM)
-  stat = Path(f'/proc/{pid}/stat')
-  deadline = time.monotonic() + 5
-  while True:
-   try:
-    if stat.read_text().rsplit(')', 1)[1].split()[0] == 'Z':
-     break
-   except (FileNotFoundError, ProcessLookupError):
-    break
-   assert time.monotonic() < deadline, 'earlier worker did not stop'
-   time.sleep(0.01)
- if os.environ.get('PARTIAL_RELEASE'):
+  (root / 'disconnect-a').write_text('ready\n')
+  await_event('diagnosing-a')
+ partial_release = os.environ.get('PARTIAL_RELEASE')
+ if partial_release or failure == 'prior-lost':
   with subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,bufsize=1) as worker:
    print(worker.stdout.readline(),end='',flush=True)
    for line in sys.stdin:
     worker.stdin.write(line);worker.stdin.flush()
     if json.loads(line)['operation']=='heartbeat':continue
     reply=worker.stdout.readline()
-    if json.loads(reply).get('released'):
+    if failure == 'prior-lost':
+     (root / 'finish-diagnostics').write_text('ready\n')
+     failure = None
+    if partial_release and json.loads(reply).get('released'):
      worker.stdin.close();worker.wait(timeout=5)
      sys.stdout.write('{"released":');sys.stdout.flush()
      with (root/'reply-ready').open('w') as ready:ready.write(str(os.getpid())+'\n')
@@ -133,6 +143,26 @@ if args[2]=='-c':
   subprocess.call(command);sys.exit(255)
  os.execv(sys.executable,command)
 os.execv(sys.executable,[sys.executable,*args[2:],'--root',str(root/host)])
+"""
+
+BLOCKED_DIAGNOSTICS = r"""
+import os
+import select
+import sys
+from pathlib import Path
+
+args = sys.argv[1:]
+if (
+    len(args) == 3
+    and args[1] == "master"
+    and "metal-a.vm3.ai" in Path(args[2]).read_text()
+):
+    root = Path(os.environ["FIXTURE"])
+    (root / "diagnosing-a").write_text("ready\n")
+    with (root / "finish-diagnostics").open() as event:
+        assert select.select([event], [], [], 10)[0], "diagnostics were not released"
+        assert event.readline() == "ready\n"
+os.execv(sys.executable, [sys.executable, *args])
 """
 
 CLOCK = r"""import os,sys,threading,time
@@ -971,14 +1001,37 @@ class CleanupTests(unittest.TestCase):
                     history.read_text(), "inventory\n" + "session\n" * sessions
                 )
 
-    def test_lock_readiness_retry_cannot_dispatch_after_prior_host_exits(self):
+    def test_lock_readiness_retry_cannot_dispatch_during_prior_host_diagnostics(self):
         files = [
             self.resource("var/lib/vm0-runner/stripe/pr-42/config", host=host)
             for host in ("metal-a", "metal-b")
         ]
-        result = self.controller(READY_FAILURE="prior-lost")
+        for name in ("disconnect-a", "diagnosing-a", "finish-diagnostics"):
+            event = self.root / name
+            os.mkfifo(event)
+            self.addCleanup(os.close, os.open(event, os.O_RDWR | os.O_NONBLOCK))
+        bin_dir = self.root / "bin"
+        fake_ssh = (bin_dir / "ssh").rename(bin_dir / "real-ssh")
+        (bin_dir / "ssh").symlink_to(TOOLS / "cloudflare-ssh-command.sh")
+        python = bin_dir / "python3"
+        python.write_text(f"#!{sys.executable}\n{BLOCKED_DIAGNOSTICS}")
+        python.chmod(0o755)
+        transport_state = self.root / "transport"
+        transport_state.mkdir()
+
+        result = self.controller(
+            READY_FAILURE="prior-lost",
+            METAL_HOSTS="metal-a.vm3.ai,metal-b.vm3.ai",
+            RUNNER_TEMP=str(self.root),
+            OKOU_CLOUDFLARE_SSH_REAL_SSH=str(fake_ssh),
+            OKOU_CLOUDFLARE_SSH_SCRIPTS_DIR=str(TOOLS),
+            OKOU_CLOUDFLARE_SSH_STATE_DIR=str(transport_state),
+        )
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertTrue(all(file.is_file() for file in files), result.stdout)
+        self.assertIn(
+            "namespace lock worker unavailable on metal-a.vm3.ai", result.stdout
+        )
         self.assertEqual(
             (self.root / "metal-b/ssh.log").read_text(), "inventory\nsession\nsession\n"
         )

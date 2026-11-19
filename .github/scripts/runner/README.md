@@ -215,7 +215,8 @@ The controller starts one ephemeral worker per host for small sorted batches.
 An SSH exit 255 before a complete readiness frame permits one reacquisition on
 that host within the original 70-second deadline. Each worker holds the namespace
 flock itself. All configured hosts must report readiness before fresh GitHub
-authorization. The controller checks each session again before dispatching cleanup.
+authorization. Before dispatching cleanup, the controller checks each session's
+process and output pipe so a closed channel cannot appear active during diagnostics.
 PR state and stabilized owner discovery are fresh under those locks.
 Exact owner association protects older CI generations; unresolved
 association fails closed instead of guessing from a reused branch. Proven live

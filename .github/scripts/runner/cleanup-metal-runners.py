@@ -359,7 +359,14 @@ class Session:
                 return
 
     def require_active(self):
-        if self.write_error is not None or self.process.poll() is not None:
+        # An idle lock worker has no pending reply. Readability can signal
+        # EOF while the SSH wrapper is still emitting diagnostics.
+        if (
+            self.write_error is not None
+            or self.process.poll() is not None
+            or self.response_buffer
+            or select.select([self.process.stdout], [], [], 0)[0]
+        ):
             raise RuntimeError(f"namespace lock worker unavailable on {self.host}")
 
     def cleanup(self, closed_at):
