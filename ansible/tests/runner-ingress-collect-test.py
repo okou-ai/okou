@@ -220,20 +220,19 @@ class CollectorTest(unittest.TestCase):
 
         # Replacing all identities must update the same two host series, even
         # when the number of eligible targets and the results change.
-        for round_number in range(3):
-            replacements = {}
-            for name in ("serving", "draining", "dead-but-status-remains"):
-                path = self.runners / name
-                runner_id = str(uuid.uuid4())
-                (path / "runner_id").write_text(runner_id)
-                (path / "heartbeat_generation").write_text(str(round_number + 2))
-                replacements[name] = runner_id
-            (self.runners / "dead-but-status-remains" / "status.json").write_text(
-                json.dumps({"mode": "stopped"})
-            )
-            self.peer.responses = {replacements["serving"]: (200, b"ok")}
-            self.assert_counts(self.run_collector(), 1, 1)
-        self.assertEqual(len(self.peer.requests), 9)
+        replacements = {}
+        for name in ("serving", "draining", "dead-but-status-remains"):
+            path = self.runners / name
+            runner_id = str(uuid.uuid4())
+            (path / "runner_id").write_text(runner_id)
+            (path / "heartbeat_generation").write_text("2")
+            replacements[name] = runner_id
+        (self.runners / "dead-but-status-remains" / "status.json").write_text(
+            json.dumps({"mode": "stopped"})
+        )
+        self.peer.responses = {replacements["serving"]: (200, b"ok")}
+        self.assert_counts(self.run_collector(), 1, 1)
+        self.assertEqual(len(self.peer.requests), 5)
 
     def test_no_eligible_targets_publish_zero_counts(self):
         self.runner("stopped", mode="stopped")

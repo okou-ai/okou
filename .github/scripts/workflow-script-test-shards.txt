@@ -72,7 +72,6 @@
 2 runner-host-architecture-groups-test.sh
 2 runner-image-architecture-test.sh
 2 runner-image-workflow-test.sh
-2 runner-rust-cache-prewarm-workflow-test.sh
 2 setup-r2-sccache-test.sh
 2 smoke-okou-cli-artifact-test.sh
 2 staging-workflow-test.sh

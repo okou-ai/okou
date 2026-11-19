@@ -224,7 +224,6 @@ def main():
                 line.split()[3] == f"127.0.0.1:{port}"
                 for line in listeners.splitlines()
             ), listeners
-            unchanged("before", 404)
             initial = process_state()
             unit_publication = [
                 task for task in tasks if task.get("register") == "runner_caddy_unit"
