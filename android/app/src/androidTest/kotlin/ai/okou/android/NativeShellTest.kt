@@ -93,22 +93,18 @@ class NativeShellTest {
                 check(automation.clearCache()) { "Native accessibility cache could not be cleared" }
                 return device.findObject(target)
             }
-            fun reveal(target: BySelector, value: String): UiObject2 {
+            fun reveal(target: BySelector, value: String, firstChoice: Int? = null): UiObject2 {
                 if (findCurrent(target) == null) {
-                    val container =
-                        requireNotNull(
-                            device.wait(
-                                Until.findObject(By.pkg(app.packageName).scrollable(true)),
-                                WAIT,
-                            )
-                        )
+                    val selector = By.pkg(app.packageName).scrollable(true)
+                    if (firstChoice != null) selector.hasDescendant(appearanceOption(firstChoice))
+                    fun container() = requireNotNull(device.wait(Until.findObject(selector), WAIT))
                     val visible =
                         object : Condition<UiObject2, Boolean> {
                             override fun apply(container: UiObject2) = findCurrent(target) != null
                         }
-                    // Settings and restored pickers can retain a position below the target.
-                    if (!container.scrollUntil(Direction.UP, visible)) {
-                        container.scrollUntil(Direction.DOWN, visible)
+                    // The sheet starts at the first choice. The overview can retain a scroll.
+                    if (firstChoice != null || !container().scrollUntil(Direction.UP, visible)) {
+                        container().scrollUntil(Direction.DOWN, visible)
                     }
                 }
                 return requireNotNull(
@@ -131,15 +127,18 @@ class NativeShellTest {
                         .hasDescendant(label(id)),
                     app.getString(id),
                 )
-            fun option(id: Int) = reveal(appearanceOption(id).enabled(true), app.getString(id))
-            fun dismissPicker(firstChoice: Int, selected: Int) {
-                // The selected option may be offscreen; first identify the actual picker.
+            fun option(id: Int, firstChoice: Int) =
+                reveal(appearanceOption(id).enabled(true), app.getString(id), firstChoice)
+            fun openPicker(row: Int, firstChoice: Int) {
+                button(row).click()
                 await("Preference picker is open") {
                     findCurrent(appearanceOption(firstChoice)) != null
                 }
+            }
+            fun dismissPicker(firstChoice: Int, selected: Int) {
                 assertTrue(
                     "Confirmed preference selection: ${app.getString(selected)}",
-                    option(selected).isChecked,
+                    option(selected, firstChoice).isChecked,
                 )
                 assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
                 await("Preference picker is dismissed") {
@@ -154,28 +153,28 @@ class NativeShellTest {
             await("Update details are dismissed") {
                 findCurrent(label(R.string.updates_check)) == null
             }
-            button(R.string.preference_color_theme).click()
-            option(R.string.palette_blue_horizon).click()
-            button(R.string.preference_color_theme).click()
+            openPicker(R.string.preference_color_theme, R.string.palette_default)
+            option(R.string.palette_blue_horizon, R.string.palette_default).click()
+            openPicker(R.string.preference_color_theme, R.string.palette_default)
             dismissPicker(R.string.palette_default, R.string.palette_blue_horizon)
-            button(R.string.language_en_us).click()
-            option(R.string.language_zh_hant).click()
+            openPicker(R.string.language_en_us, R.string.language_en_us)
+            option(R.string.language_zh_hant, R.string.language_en_us).click()
             awaitActivity("Traditional Chinese is applied by Android") {
                 it.resources.configuration.locales[0].toLanguageTag() == "zh-Hant"
             }
-            button(R.string.language_zh_hant).click()
+            openPicker(R.string.language_zh_hant, R.string.language_en_us)
             dismissPicker(R.string.language_en_us, R.string.language_zh_hant)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             text(R.string.chat_list_title)
             closeActivity()
             launch()
             click(R.string.settings)
-            button(R.string.palette_blue_horizon).click()
+            openPicker(R.string.palette_blue_horizon, R.string.palette_default)
             dismissPicker(R.string.palette_default, R.string.palette_blue_horizon)
             await("Restored palette label is Traditional Chinese") {
                 findCurrent(By.pkg(app.packageName).text("藍色地平線")) != null
             }
-            button(R.string.language_zh_hant).click()
+            openPicker(R.string.language_zh_hant, R.string.language_en_us)
             dismissPicker(R.string.language_en_us, R.string.language_zh_hant)
         }
 

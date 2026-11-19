@@ -135,8 +135,9 @@ class NativeInstructionsTest {
                     )
                 )
                 .click()
-            assertTrue(entered.await(10, TimeUnit.SECONDS))
             text(app.getString(R.string.appearance))
+            click(R.string.instructions_title)
+            assertTrue(entered.await(10, TimeUnit.SECONDS))
             scenario.onActivity {
                 val editor =
                     checkNotNull(
@@ -149,7 +150,6 @@ class NativeInstructionsTest {
             // The host Compose test covers pending Instructions feedback. Release the actual HTTP
             // response after native first-display proof, before gestures can exhaust its deadline.
             held.countDown()
-            reveal(app.getString(R.string.instructions_section))
             reveal(app.getString(R.string.instructions_current))
             editor().click()
             awaitIme(true)
@@ -159,7 +159,7 @@ class NativeInstructionsTest {
             assertEquals(0, fixture.requests.count { it.method == "PUT" })
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             awaitIme(false)
-            reveal(app.getString(R.string.instructions_section))
+            reveal(app.getString(R.string.instructions_title))
             scenario.recreate()
             reveal(app.getString(R.string.instructions_unsaved))
             assertTrue(editor().text.contains("Native **instructions** 👋"))
@@ -184,6 +184,10 @@ class NativeInstructionsTest {
             click(R.string.instructions_reload)
             reveal(app.getString(R.string.instructions_current))
             assertEquals("Changed on Web", editor().text)
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            reveal(app.getString(R.string.appearance))
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            text(app.getString(R.string.chat_list_title))
         } catch (error: Throwable) {
             failures += error
             try {
