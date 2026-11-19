@@ -396,9 +396,9 @@ function ChatWorkspace({
       animateEntry={active?.animateEntry ?? true}
       open={active !== null}
       sidebar={active ? <ChatThreadSidebarPane /> : null}
-      // The browser scales a 1440px screen into the panel and wants room;
-      // every other panel shares one remembered width.
-      widthKey={active?.target.type === "browser" ? "browser" : "panel"}
+      // Each panel kind remembers its own width, so widening the browser or a
+      // preview never carries over to a list.
+      widthKey={active?.target.type}
       workspace={{ header, footer, pwaNavigation, fullscreen }}
     >
       <WorkspaceInset

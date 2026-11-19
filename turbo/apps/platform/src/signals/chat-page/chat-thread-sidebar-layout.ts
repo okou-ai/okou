@@ -31,8 +31,16 @@ export const CHAT_THREAD_SIDEBAR_MIN_WIDTH = 400;
 // gets the rest: a 1440px browser screen is scaled to the panel, so its width
 // is what keeps pages legible.
 export const CHAT_THREAD_SIDEBAR_MIN_THREAD_WIDTH = 420;
-// Share of the space beside the chat list a panel opens at before resizing.
+// Share of the space beside the chat list a browser or a preview opens at
+// before resizing.
 export const CHAT_THREAD_SIDEBAR_DEFAULT_SHARE = 0.55;
+// Opening widths for panels whose content has a natural measure: a list only
+// gains empty space past its rows, and a mail body reads at a letter's width.
+const CHAT_THREAD_SIDEBAR_DEFAULT_WIDTHS: Readonly<Record<string, number>> = {
+  artifacts: 480,
+  automations: 480,
+  "email-draft": 600,
+};
 // The frame margin the sheet gains when the chat list folds away.
 const WORKSPACE_FRAME_GAP = 8;
 const KEYBOARD_STEP = 16;
@@ -58,6 +66,11 @@ function parseSidebarWidths(
       return typeof entry[1] === "number" && Number.isFinite(entry[1]);
     }),
   );
+}
+
+/** Fixed width a panel kind opens at, or null when it takes the share. */
+export function chatThreadSidebarDefaultWidth(key: string): number | null {
+  return CHAT_THREAD_SIDEBAR_DEFAULT_WIDTHS[key] ?? null;
 }
 
 const storedSidebarWidths$ = computed((get) => {
@@ -185,11 +198,12 @@ const resizeSidebar$ = command(
 );
 
 /** Width the panel renders at before any resize, as the shell's CSS does. */
-function defaultSidebarWidth(containerWidth: number): number {
+function defaultSidebarWidth(containerWidth: number, key: string): number {
   return Math.max(
     CHAT_THREAD_SIDEBAR_MIN_WIDTH,
     Math.min(
-      containerWidth * CHAT_THREAD_SIDEBAR_DEFAULT_SHARE,
+      chatThreadSidebarDefaultWidth(key) ??
+        containerWidth * CHAT_THREAD_SIDEBAR_DEFAULT_SHARE,
       containerWidth - CHAT_THREAD_SIDEBAR_MIN_THREAD_WIDTH,
     ),
   );
@@ -415,7 +429,7 @@ export const chatThreadSidebarResizeHandleRef$ = onRef(
         );
         const width = Math.min(
           get(chatThreadSidebarWidths$)[key] ??
-            defaultSidebarWidth(containerWidth),
+            defaultSidebarWidth(containerWidth, key),
           maxWidth,
         );
         const step = event.shiftKey ? KEYBOARD_LARGE_STEP : KEYBOARD_STEP;
