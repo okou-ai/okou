@@ -29,16 +29,10 @@
     <string name="settings">Paramètres</string>
     <string name="back">Retour</string>
     <string name="appearance">Apparence</string>
-    <string name="appearance_description">Choisissez l’apparence d’Okou sur cet appareil.</string>
     <string name="appearance_system">Suivre le système</string>
     <string name="appearance_light">Clair</string>
     <string name="appearance_dark">Sombre</string>
     <string name="on_this_device">Sur cet appareil</string>
-    <string name="appearance_local">L’apparence est enregistrée uniquement sur cet appareil.</string>
-    <string name="appearance_loading">Chargement de l’apparence…</string>
-    <string name="appearance_saving">Enregistrement de l’apparence…</string>
-    <string name="appearance_read_failed">Impossible de charger l’apparence. Réessayez.</string>
-    <string name="appearance_write_failed">Impossible d’enregistrer l’apparence. Réessayez.</string>
     <string name="retry">Réessayer</string>
     <string name="auth_welcome">Bienvenue sur Okou</string>
     <string name="auth_restoring">Restauration de votre session…</string>
@@ -55,7 +49,6 @@
     <string name="auth_switch_workspace">Changer d’espace de travail</string>
     <string name="auth_browser_unavailable">Installez un navigateur pour configurer votre espace de travail.</string>
     <string name="preferences_title">Préférences de l’espace de travail</string>
-    <string name="preferences_description">Le thème de couleurs et la langue sont synchronisés avec cet espace de travail.</string>
     <string name="preference_loading">Actualisation des préférences…</string>
     <string name="preference_saving">Enregistrement des préférences…</string>
     <string name="preference_save_failed">Impossible de confirmer l’enregistrement. Réessayez ou actualisez.</string>
@@ -63,7 +56,6 @@
     <string name="preference_refresh">Actualiser les préférences</string>
     <string name="preference_color_theme">Thème de couleur</string>
     <string name="preference_language">Langue</string>
-    <string name="preference_timezone">Fuseau horaire</string>
     <string name="palette_default">Par défaut</string>
     <string name="palette_golden_hour">Golden hour</string>
     <string name="palette_citrus_spark">Citrus spark</string>
@@ -84,7 +76,6 @@
     <string name="language_hi_in">हिन्दी</string>
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
-    <string name="instructions_section">Mon Okou</string>
     <string name="instructions_title">Instructions</string>
     <string name="instructions_timing">Les modifications enregistrées concernent les prochaines tâches.</string>
     <string name="instructions_loading">Chargement des instructions…</string>
@@ -149,5 +140,4 @@
     <string name="realtime_connecting">Connexion aux mises à jour en direct…</string>
     <string name="realtime_unavailable">Les mises à jour en direct sont indisponibles. Vous pouvez actualiser manuellement.</string>
     <string name="settings_account">Compte</string>
-    <string name="preference_color_theme_description">Choisissez un thème de couleur. Le mode d’apparence reste le même.</string>
 </resources>

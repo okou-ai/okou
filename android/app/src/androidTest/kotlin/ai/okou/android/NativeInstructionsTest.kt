@@ -68,21 +68,25 @@ class NativeInstructionsTest {
                 )
             fun reveal(value: String) {
                 val target = By.pkg(app.packageName).text(value)
+                val scrollable = By.pkg(app.packageName).scrollable(true)
+                assertTrue(
+                    "Instructions control or scrollable content is visible: $value",
+                    device.wait(
+                        object : Condition<UiDevice, Boolean> {
+                            override fun apply(device: UiDevice) =
+                                device.hasObject(target) || device.hasObject(scrollable)
+                        },
+                        10_000,
+                    ) == true,
+                )
                 if (!device.hasObject(target)) {
-                    val scroll =
-                        checkNotNull(
-                            device.wait(
-                                Until.findObject(By.pkg(app.packageName).scrollable(true)),
-                                10_000,
-                            )
-                        )
                     val visible =
                         object : Condition<UiObject2, Boolean> {
                             // Compose exposes virtual descendants in the current window.
                             override fun apply(unused: UiObject2) = device.hasObject(target)
                         }
-                    if (!scroll.scrollUntil(Direction.UP, visible)) {
-                        scroll.scrollUntil(Direction.DOWN, visible)
+                    if (device.findObject(scrollable)?.scrollUntil(Direction.UP, visible) != true) {
+                        device.findObject(scrollable)?.scrollUntil(Direction.DOWN, visible)
                     }
                 }
                 text(value)

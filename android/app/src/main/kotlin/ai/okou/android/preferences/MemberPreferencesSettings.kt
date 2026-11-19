@@ -1,88 +1,85 @@
 package ai.okou.android.preferences
 
 import ai.okou.android.R
+import ai.okou.android.SettingsChoiceRow
 import ai.okou.android.SettingsGroup
 import ai.okou.android.SettingsIcon
 import ai.okou.android.SettingsPickerRow
 import ai.okou.android.SettingsRadioOptions
-import ai.okou.android.SettingsRow
 import ai.okou.android.SettingsSection
 import ai.okou.android.SettingsSheet
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesLocale
+import ai.okou.android.api.generated.UserPreferencesTheme
+import ai.okou.android.resolveDark
 import ai.okou.android.resolvePalette
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
-internal fun MemberPreferencesSettings(model: MemberPreferencesModel, dark: Boolean) {
+internal fun MemberPreferencesSettings(model: MemberPreferencesModel) {
     val state by model.uiState.collectAsStateWithLifecycle()
+    val dark = state.theme.resolveDark(isSystemInDarkTheme())
     SettingsSection(stringResource(R.string.preferences_title)) {
         SettingsGroup {
-            val themeTitle = stringResource(R.string.preference_color_theme)
+            val appearanceTitle = stringResource(R.string.appearance)
+            val colorTitle = stringResource(R.string.preference_color_theme)
             val languageTitle = stringResource(R.string.preference_language)
             SettingsPickerRow(
-                themeTitle,
-                value = stringResource(paletteLabel(state.colorTheme)),
-                leading = {
-                    val colors = MaterialTheme.colorScheme
-                    Surface(
-                        Modifier.size(20.dp),
-                        shape = CircleShape,
-                        color = colors.primary,
-                        border = BorderStroke(1.dp, colors.outline),
-                    ) {}
-                },
+                appearanceTitle,
+                value = stringResource(appearanceLabel(state.theme)),
+                leading = { SettingsIcon(R.drawable.ic_settings_appearance) },
                 enabled = !state.busy,
             ) { dismiss ->
-                SettingsSheet(themeTitle, dismiss) {
-                    Text(
-                        stringResource(R.string.preference_color_theme_description),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
+                SettingsSheet(appearanceTitle, dismiss) {
+                    SettingsRadioOptions(
+                        options = UserPreferencesTheme.entries,
+                        selected = state.theme,
+                        label = ::appearanceLabel,
+                        enabled = !state.busy,
+                    ) { mode ->
+                        dismiss()
+                        model.selectTheme(mode)
+                    }
+                }
+            }
+            HorizontalDivider()
+            SettingsPickerRow(
+                colorTitle,
+                value = stringResource(paletteLabel(state.colorTheme)),
+                leading = { PaletteSwatch(MaterialTheme.colorScheme) },
+                enabled = !state.busy,
+            ) { dismiss ->
+                SettingsSheet(colorTitle, dismiss) {
                     PaletteOptions(state.colorTheme, dark, !state.busy) { palette ->
                         dismiss()
                         model.selectColorTheme(palette)
@@ -108,33 +105,17 @@ internal fun MemberPreferencesSettings(model: MemberPreferencesModel, dark: Bool
                     }
                 }
             }
-            HorizontalDivider()
-            SettingsRow(
-                stringResource(R.string.preference_timezone),
-                leading = { SettingsIcon(R.drawable.ic_settings_time_zone) },
-                value = checkNotNull(state.confirmed.timezone),
-            )
         }
-        Text(
-            stringResource(R.string.preferences_description),
-            Modifier.padding(horizontal = 8.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall,
-        )
-        PreferenceFeedback(state, model::retry)
-        TextButton(
-            onClick = model::refresh,
-            enabled = !state.busy,
-            colors =
-                ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
-        ) {
-            Text(stringResource(R.string.preference_refresh))
-        }
+        PreferenceFeedback(state, model::retry, model::refresh)
     }
 }
 
 @Composable
-private fun PreferenceFeedback(state: MemberPreferencesState, retry: () -> Unit) {
+private fun PreferenceFeedback(
+    state: MemberPreferencesState,
+    retry: () -> Unit,
+    refresh: () -> Unit,
+) {
     val message =
         when (state.status) {
             PreferenceStatus.Ready -> return
@@ -150,13 +131,16 @@ private fun PreferenceFeedback(state: MemberPreferencesState, retry: () -> Unit)
             stringResource(message),
             color = if (state.busy) colors.onSurfaceVariant else colors.error,
         )
-        if (!state.busy)
-            TextButton(
-                onClick = retry,
-                colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurface),
-            ) {
+        if (!state.busy) {
+            val buttonColors = ButtonDefaults.textButtonColors(contentColor = colors.onSurface)
+            TextButton(onClick = retry, colors = buttonColors) {
                 Text(stringResource(R.string.retry))
             }
+            if (state.status == PreferenceStatus.SaveFailed)
+                TextButton(onClick = refresh, colors = buttonColors) {
+                    Text(stringResource(R.string.preference_refresh))
+                }
+        }
     }
 }
 
@@ -169,56 +153,25 @@ private fun PaletteOptions(
 ) {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
-    val colors = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(12.dp)
-    FlowRow(
+    Column(
         Modifier.fillMaxWidth().selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        maxItemsInEachRow = 2,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        UserPreferencesColorTheme.entries.forEach { palette ->
-            val checked = palette == selected
-            val preview =
-                remember(context, configuration, dark, palette) {
-                    resolvePalette(context, dark, palette).scheme
-                }
-            Surface(
-                modifier =
-                    Modifier.weight(1f)
-                        .clip(shape)
-                        .selectable(
-                            selected = checked,
-                            enabled = enabled,
-                            role = Role.RadioButton,
-                            onClick = { onSelect(palette) },
-                        ),
-                shape = shape,
-                color = colors.background,
-                border =
-                    if (checked) BorderStroke(2.dp, colors.onSurface)
-                    else BorderStroke(1.dp, colors.outlineVariant),
-            ) {
-                Column(Modifier.padding(6.dp)) {
-                    PalettePreview(preview)
-                    Row(
-                        Modifier.fillMaxWidth()
-                            .padding(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            stringResource(paletteLabel(palette)),
-                            Modifier.weight(1f),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        if (checked)
-                            Icon(
-                                painterResource(R.drawable.ic_settings_check),
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                            )
-                    }
+        UserPreferencesColorTheme.entries.chunked(2).forEach { choices ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                choices.forEach { palette ->
+                    val preview =
+                        remember(context, configuration, dark, palette) {
+                            resolvePalette(context, dark, palette).scheme
+                        }
+                    SettingsChoiceRow(
+                        stringResource(paletteLabel(palette)),
+                        selected = palette == selected,
+                        enabled = enabled,
+                        onClick = { onSelect(palette) },
+                        modifier = Modifier.weight(1f),
+                        leading = { PaletteSwatch(preview) },
+                    )
                 }
             }
         }
@@ -226,54 +179,23 @@ private fun PaletteOptions(
 }
 
 @Composable
-private fun PalettePreview(colors: ColorScheme) {
-    Surface(
-        Modifier.fillMaxWidth().height(52.dp).clearAndSetSemantics {},
-        shape = RoundedCornerShape(8.dp),
-        color = colors.background,
-        contentColor = colors.onBackground,
-        border = BorderStroke(1.dp, colors.outlineVariant),
-    ) {
-        Column(
-            Modifier.padding(6.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically),
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(6.dp).background(colors.primary, CircleShape))
-                Text(
-                    stringResource(R.string.app_name),
-                    fontSize = 8.sp,
-                    lineHeight = 9.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                )
-            }
-            Box(
-                Modifier.fillMaxWidth(0.55f)
-                    .height(3.dp)
-                    .background(colors.onBackground.copy(alpha = 0.18f), CircleShape)
+private fun PaletteSwatch(colors: ColorScheme) {
+    Box(
+        Modifier.size(20.dp)
+            .background(
+                Brush.linearGradient(listOf(colors.primary, colors.primaryContainer)),
+                CircleShape,
             )
-            Box(
-                Modifier.fillMaxWidth()
-                    .height(12.dp)
-                    .border(1.dp, colors.outlineVariant, CircleShape)
-                    .padding(horizontal = 2.dp),
-                contentAlignment = Alignment.CenterEnd,
-            ) {
-                Icon(
-                    painterResource(R.drawable.ic_settings_send),
-                    contentDescription = null,
-                    modifier =
-                        Modifier.size(8.dp).background(colors.primary, CircleShape).padding(1.dp),
-                    tint = colors.onPrimary,
-                )
-            }
-        }
-    }
+            .border(1.dp, colors.outlineVariant, CircleShape)
+    )
 }
+
+private fun appearanceLabel(theme: UserPreferencesTheme): Int =
+    when (theme) {
+        UserPreferencesTheme.SYSTEM -> R.string.appearance_system
+        UserPreferencesTheme.LIGHT -> R.string.appearance_light
+        UserPreferencesTheme.DARK -> R.string.appearance_dark
+    }
 
 private fun paletteLabel(palette: UserPreferencesColorTheme): Int =
     when (palette) {

@@ -125,18 +125,11 @@ export const updateColorThemePreference$ = command(
 );
 
 /**
- * Reconcile the in-memory color theme with the authoritative workspace
- * preference. Light/dark/system is still restored from the shared cookie;
- * explicit choices in Settings are also saved to the workspace.
- *
- * A member who has never chosen a palette carries no stored one, and this
- * keeps it that way: the absent preference resolves to the default palette in
- * memory and nothing is written back. Recording the fallback instead is what
- * left members on a palette they never picked (migration
- * `1190_reset_unchosen_blue_horizon_color_theme`), and it would pin every new
- * member to whichever palette is the default on the day they first sign in.
+ * Apply the active member's shared appearance and palette once their workspace
+ * preferences have loaded. The cookie supplies appearance for the first paint.
+ * Missing values resolve in memory so defaults can evolve without writes.
  */
-export const syncColorThemePreference$ = command(
+export const syncThemePreferences$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const user = await get(clerkUser$);
     signal.throwIfAborted();
@@ -149,7 +142,8 @@ export const syncColorThemePreference$ = command(
     const preferences = await get(userPreferences$);
     signal.throwIfAborted();
 
-    set(setColorTheme$, preferences.colorTheme ?? get(colorTheme$));
+    set(setTheme$, preferences.theme ?? "system");
+    set(setColorTheme$, preferences.colorTheme ?? DEFAULT_COLOR_THEME);
   },
 );
 

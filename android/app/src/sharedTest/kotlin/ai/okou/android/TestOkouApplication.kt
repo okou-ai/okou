@@ -10,6 +10,7 @@ import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesLocale
+import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.auth.Authentication
 import ai.okou.android.auth.AuthenticationState
 import ai.okou.android.auth.NativeSession
@@ -159,6 +160,9 @@ open class TestOkouApplication : OkouApplication() {
                             locale =
                                 update.locale?.let { UserPreferencesLocale.valueOf(it.name) }
                                     ?: stored().locale,
+                            theme =
+                                update.theme?.let { UserPreferencesTheme.valueOf(it.name) }
+                                    ?: stored().theme,
                         )
                 preferences[key] = updated
                 return updated

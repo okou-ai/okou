@@ -5,7 +5,6 @@ import android.app.UiModeManager
 import android.content.res.Configuration
 import android.view.KeyEvent
 import androidx.core.view.WindowCompat
-import androidx.datastore.preferences.core.emptyPreferences
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.takeScreenshot
 import androidx.test.core.graphics.writeToTestStorage
@@ -22,8 +21,6 @@ import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -205,27 +202,23 @@ class NativeShellTest {
     private fun appearanceOption(id: Int): BySelector =
         By.pkg(app.packageName).checkable(true).hasDescendant(label(id))
 
+    private fun appearanceRow() =
+        By.pkg(app.packageName)
+            .clickable(true)
+            .checkable(false)
+            .enabled(true)
+            .hasDescendant(label(R.string.appearance))
+
     private fun openAppearance() {
-        requireNotNull(
-                device.wait(
-                    Until.findObject(
-                        By.pkg(app.packageName)
-                            .clickable(true)
-                            .checkable(false)
-                            .enabled(true)
-                            .hasDescendant(label(R.string.appearance))
-                    ),
-                    WAIT,
-                )
-            )
-            .click()
+        requireNotNull(device.wait(Until.findObject(appearanceRow()), WAIT)).click()
     }
 
     private fun selectAppearance(id: Int) {
         requireNotNull(device.wait(Until.findObject(appearanceOption(id).enabled(true)), WAIT))
             .click()
         await("Appearance choice is applied") {
-            !device.hasObject(appearanceOption(id)) && device.hasObject(label(id))
+            !device.hasObject(appearanceOption(id)) &&
+                device.hasObject(appearanceRow().hasDescendant(label(id)))
         }
     }
 
@@ -286,8 +279,6 @@ class NativeShellTest {
 
     /** Capture before cleanup; preserve every primary/diagnostic/restoration failure. */
     private fun onIsolatedDevice(name: String, test: () -> Unit) {
-        val store = app.appearancePreferences
-        val preferences = runBlocking { store.data.first() }
         val apiFixture = app as TestOkouApplication
         val apiPreferences = apiFixture.snapshotApiPreferences()
         val cacheSnapshot =
@@ -299,7 +290,7 @@ class NativeShellTest {
         val failures = mutableListOf<Throwable>()
         try {
             automation.adoptShellPermissionIdentity("android.permission.MODIFY_DAY_NIGHT_MODE")
-            runBlocking { store.updateData { emptyPreferences() } }
+            apiFixture.restoreApiPreferences(emptyMap())
             test()
         } catch (failure: Throwable) {
             failures += failure
@@ -327,7 +318,6 @@ class NativeShellTest {
             restore { cacheSnapshot.restore() }
             restore { apiFixture.restoreApiPreferences(apiPreferences) }
             restore { locales.applicationLocales = applicationLocales }
-            restore { runBlocking { store.updateData { preferences } } }
             restore { mode.nightMode = nightMode }
             restore { automation.dropShellPermissionIdentity() }
         }

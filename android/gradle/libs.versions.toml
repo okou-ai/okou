@@ -6,7 +6,6 @@ activity = "1.13.0"
 lifecycle = "2.10.0"
 clerk = "1.4.1"
 appcompat = "1.8.0"
-datastore = "1.1.4"
 coroutines = "1.11.0"
 junit = "4.13.2"
 robolectric = "4.14.1"
@@ -40,7 +39,6 @@ activity-compose = { module = "androidx.activity:activity-compose", version.ref 
 lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
 lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
 lifecycle-runtime-testing = { module = "androidx.lifecycle:lifecycle-runtime-testing", version.ref = "lifecycle" }
-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
 coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 junit = { module = "junit:junit", version.ref = "junit" }

@@ -13,7 +13,7 @@ import {
   setupAuthenticatedRealtime$,
   setupAuthenticatedBootstrapData$,
 } from "./authenticated-daemons.ts";
-import { initTheme$, syncColorThemePreference$ } from "./theme.ts";
+import { initTheme$, syncThemePreferences$ } from "./theme.ts";
 import { initializeAppVersion$ } from "./app-version.ts";
 import { initLocale$, syncLocalePreference$ } from "./locale.ts";
 import { setRootSignal$ } from "./root-signal.ts";
@@ -639,7 +639,7 @@ const setupRoutes$ = command(async ({ set }, signal: AbortSignal) => {
 const syncInitialPreferences$ = command(
   async ({ set }, signal: AbortSignal) => {
     await set(syncLocalePreference$, signal);
-    await set(syncColorThemePreference$, signal);
+    await set(syncThemePreferences$, signal);
   },
 );
 

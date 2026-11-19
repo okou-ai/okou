@@ -29,16 +29,10 @@
     <string name="settings">Setelan</string>
     <string name="back">Kembali</string>
     <string name="appearance">Tampilan</string>
-    <string name="appearance_description">Pilih tampilan Okou di perangkat ini.</string>
     <string name="appearance_system">Ikuti sistem</string>
     <string name="appearance_light">Terang</string>
     <string name="appearance_dark">Gelap</string>
     <string name="on_this_device">Di perangkat ini</string>
-    <string name="appearance_local">Tampilan hanya disimpan di perangkat ini.</string>
-    <string name="appearance_loading">Memuat tampilan…</string>
-    <string name="appearance_saving">Menyimpan tampilan…</string>
-    <string name="appearance_read_failed">Tidak dapat memuat tampilan. Coba lagi.</string>
-    <string name="appearance_write_failed">Tidak dapat menyimpan tampilan. Coba lagi.</string>
     <string name="retry">Coba lagi</string>
     <string name="auth_welcome">Selamat datang di Okou</string>
     <string name="auth_restoring">Memulihkan sesi Anda…</string>
@@ -55,7 +49,6 @@
     <string name="auth_switch_workspace">Ganti ruang kerja</string>
     <string name="auth_browser_unavailable">Instal browser untuk membuka pengaturan ruang kerja.</string>
     <string name="preferences_title">Preferensi ruang kerja</string>
-    <string name="preferences_description">Tema warna dan bahasa disinkronkan dengan ruang kerja ini.</string>
     <string name="preference_loading">Memuat ulang preferensi…</string>
     <string name="preference_saving">Menyimpan preferensi…</string>
     <string name="preference_save_failed">Penyimpanan belum dapat dikonfirmasi. Coba lagi atau muat ulang.</string>
@@ -63,7 +56,6 @@
     <string name="preference_refresh">Muat ulang preferensi</string>
     <string name="preference_color_theme">Tema warna</string>
     <string name="preference_language">Bahasa</string>
-    <string name="preference_timezone">Zona waktu</string>
     <string name="palette_default">Default</string>
     <string name="palette_golden_hour">Golden hour</string>
     <string name="palette_citrus_spark">Citrus spark</string>
@@ -84,7 +76,6 @@
     <string name="language_hi_in">हिन्दी</string>
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
-    <string name="instructions_section">Okou Saya</string>
     <string name="instructions_title">Instruksi</string>
     <string name="instructions_timing">Perubahan yang disimpan berlaku untuk tugas berikutnya.</string>
     <string name="instructions_loading">Memuat Instruksi…</string>
@@ -149,5 +140,4 @@
     <string name="realtime_connecting">Menghubungkan pembaruan langsung…</string>
     <string name="realtime_unavailable">Pembaruan langsung tidak tersedia. Anda tetap dapat menyegarkan secara manual.</string>
     <string name="settings_account">Akun</string>
-    <string name="preference_color_theme_description">Pilih tema warna. Mode tampilan Anda tetap sama.</string>
 </resources>
