@@ -72,8 +72,11 @@ pub(crate) fn open_archive(
     if response.status().is_client_error() || response.status().is_server_error() {
         return Err(crate::http_failure::from_response(url, response));
     }
+    let body = response.into_body();
+    let content_length = body.content_length();
     Ok(ArchiveSource::http(
-        response.into_body().into_reader(),
+        body.into_reader(),
+        content_length,
         metrics,
     ))
 }
@@ -160,12 +163,17 @@ impl ArchiveSource {
         }
     }
 
-    fn http(reader: impl Read + 'static, metrics: RemoteArchiveAttemptMetrics) -> Self {
+    fn http(
+        reader: impl Read + 'static,
+        content_length: Option<u64>,
+        metrics: RemoteArchiveAttemptMetrics,
+    ) -> Self {
         let http_body_read_failure = HttpBodyReadFailure::enabled();
         Self {
             reader: Box::new(HttpBodyReader {
                 reader,
                 failure: http_body_read_failure.clone(),
+                remaining_content_length: content_length,
                 metrics,
             }),
             http_body_read_failure,
@@ -290,21 +298,30 @@ impl HttpBodyReadFailure {
 struct HttpBodyReader<R> {
     reader: R,
     failure: HttpBodyReadFailure,
+    remaining_content_length: Option<u64>,
     metrics: RemoteArchiveAttemptMetrics,
 }
 
 impl<R: Read> Read for HttpBodyReader<R> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         let start = Instant::now();
-        let result = self.reader.read(buffer);
-        let duration = start.elapsed();
-        match result {
+        match self.reader.read(buffer) {
             Ok(bytes_read) => {
-                self.metrics.record_body_read(duration, bytes_read);
+                self.remaining_content_length = self
+                    .remaining_content_length
+                    .and_then(|remaining| remaining.checked_sub(bytes_read as u64));
+                if bytes_read > 0 && self.remaining_content_length == Some(0) {
+                    // The gzip decoder can stop after the final data read. ureq
+                    // returns the connection to the pool on its next nonempty read.
+                    // A completed fixed-length body needs no more response bytes.
+                    self.remaining_content_length = None;
+                    let _ = self.reader.read(&mut [0]);
+                }
+                self.metrics.record_body_read(start.elapsed(), bytes_read);
                 Ok(bytes_read)
             }
             Err(e) => {
-                self.metrics.record_body_read(duration, 0);
+                self.metrics.record_body_read(start.elapsed(), 0);
                 self.failure.mark_failed();
                 Err(e)
             }

@@ -4,9 +4,8 @@ use guest_contracts::storage_files::{self, StorageFile};
 use serde_json::json;
 
 fn respond_reusable_error(stream: &mut TcpStream) -> io::Result<()> {
-    // The HTTP error path drains its reader to EOF and returns the connection
-    // to the pool. A successful archive stops at the gzip trailer instead,
-    // which need not advance ureq's HTTP reader through its EOF cleanup.
+    // The HTTP error path drains the response and allows the next request
+    // to reuse this connection.
     let body = b"private-response-content";
     write!(
         stream,
@@ -15,6 +14,58 @@ fn respond_reusable_error(stream: &mut TcpStream) -> io::Result<()> {
     )?;
     stream.write_all(body)?;
     stream.flush()
+}
+
+#[test]
+fn binary_reuses_connection_after_successful_fixed_length_archive() {
+    let first = create_tar_gz(&[("first", b"first archive")]).unwrap();
+    let second = create_tar_gz(&[("second", b"second archive")]).unwrap();
+    let server = TcpTestServer::start(move |server| {
+        let mut stream = accept(&server)?;
+        request(&mut stream, "/first")?;
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n",
+            first.len()
+        )?;
+        stream.write_all(&first)?;
+        stream.flush()?;
+
+        let next_path = read_http_request_path(&mut stream)?;
+        let reused = !next_path.is_empty();
+        if reused {
+            assert_eq!(next_path, "/second");
+        } else {
+            stream = accept(&server)?;
+            request(&mut stream, "/second")?;
+        }
+        respond(&mut stream, &second)?;
+        Ok(reused)
+    })
+    .unwrap();
+    let fixture = BinaryLoggingFixture::new("connection-success-reuse").unwrap();
+    let parent = fixture.dir.path().join("mount");
+    let child = parent.join("child");
+    // Overlapping mounts serialize the two successful downloads.
+    let manifest = json!({"storageMounts": [
+        {"mountPath": parent, "archiveUrl": format!("{}/first", server.base_url())},
+        {"mountPath": child, "archiveUrl": format!("{}/second", server.base_url())}
+    ]});
+    let output = run_manifest(&fixture, &manifest).unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        std::fs::read(parent.join("first")).unwrap(),
+        b"first archive"
+    );
+    assert_eq!(
+        std::fs::read(child.join("second")).unwrap(),
+        b"second archive"
+    );
+    assert!(server.finish().unwrap(), "expected the same TCP connection");
+    let records = observations(&fixture).unwrap();
+    assert_eq!(records.len(), 2, "{records:?}");
+    assert_record(&records[0], "response_headers", "new_for_call_only");
+    assert_record(&records[1], "response_headers", "prior_call_only");
 }
 
 #[test]
