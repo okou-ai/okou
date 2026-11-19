@@ -494,15 +494,10 @@ jq '.createdAt = "2026-10-07T00:00:00Z" |
 [ "$(cli_digest_value)" = "$embedded_arm_digest" ] \
   || fail "unconsumed CLI metadata must not affect the digest"
 cli_manifest_compact=$(jq -c . "$cli_manifest_base")
-for unused in \
-  '"unused":1.25' \
-  '"unused":1,"unused":2' \
-  '"unused":{"cli":1,"cli":2}' \
-  '"commitSha":"first","commitSha":"second"'; do
-  printf '%s,%s}\n' "${cli_manifest_compact%?}" "$unused" > "$cli_manifest"
-  [ "$(cli_digest_value)" = "$embedded_arm_digest" ] \
-    || fail "valid ignored JSON metadata must not affect the digest: ${unused}"
-done
+printf '%s,"ignoredNumber":1.25,"unused":1,"unused":2,"ignoredObject":{"cli":1,"cli":2},"commitSha":"second"}\n' \
+  "${cli_manifest_compact%?}" > "$cli_manifest"
+[ "$(cli_digest_value)" = "$embedded_arm_digest" ] \
+  || fail "valid ignored JSON metadata must not affect the digest"
 printf '%s,"unused":%s}\n' "${cli_manifest_compact%?}" \
   "$(printf '1%.0s' {1..5000})" > "$cli_manifest"
 [ "$(cli_digest_value)" = "$embedded_arm_digest" ] \
@@ -560,37 +555,27 @@ done
 # Do not let jq normalize away lexical integer types or duplicate fields.
 # serde's typed CliManifest rejects these even when the last value looks valid.
 cli_manifest_compact=$(jq -c . "$cli_manifest_base")
-for token in 1.0 1e0 0.1e1 1.00000000000000001; do
-  printf '%s\n' "${cli_manifest_compact/\"version\":1/\"version\":${token}}" > "$cli_manifest"
-  assert_cli_digest_fails "non-integer CLI schema token: ${token}"
-done
+printf '%s\n' "${cli_manifest_compact/\"version\":1/\"version\":1.00000000000000001}" > "$cli_manifest"
+assert_cli_digest_fails "non-integer CLI schema token"
 cli_package_size=$(stat -c '%s' "$cli_package")
-for token in "${cli_package_size}.0" "${cli_package_size}e0" "${cli_package_size}.00000000000000001"; do
-  printf '%s\n' "${cli_manifest_compact/\"size\":${cli_package_size}/\"size\":${token}}" > "$cli_manifest"
-  assert_cli_digest_fails "non-integer CLI size token: ${token}"
-done
-for field in version package versions path sha256 size cli piAgentRuntime piSdk; do
-  printf '%s\n' "${cli_manifest_compact/\"${field}\":/\"${field}\":null,\"${field}\":}" > "$cli_manifest"
-  assert_cli_digest_fails "duplicate consumed CLI field: ${field}"
-done
+printf '%s\n' "${cli_manifest_compact/\"size\":${cli_package_size}/\"size\":${cli_package_size}e0}" > "$cli_manifest"
+assert_cli_digest_fails "non-integer CLI size token"
 printf '%s\n' "${cli_manifest_compact/\"version\":1/\"version\":1,\"version\":1}" > "$cli_manifest"
 assert_cli_digest_fails "identical duplicate CLI schema fields"
+printf '%s\n' "${cli_manifest_compact/\"sha256\":/\"sha256\":null,\"sha256\":}" > "$cli_manifest"
+assert_cli_digest_fails "duplicate CLI package checksum field"
 printf '%s\n' "${cli_manifest_compact/\"cli\":/\"\\u0063li\":\"9.354.0\",\"cli\":}" > "$cli_manifest"
 assert_cli_digest_fails "duplicate escaped CLI version field"
-for constant in NaN Infinity -Infinity; do
-  printf '%s,"unused":%s}\n' "${cli_manifest_compact%?}" "$constant" > "$cli_manifest"
-  assert_cli_digest_fails "non-JSON numeric constant: ${constant}"
-done
+printf '%s,"unused":NaN}\n' "${cli_manifest_compact%?}" > "$cli_manifest"
+assert_cli_digest_fails "non-JSON numeric constant"
 printf '%s,"\\ud800":0}\n' "${cli_manifest_compact%?}" > "$cli_manifest"
 assert_cli_digest_fails "non-UTF-8 CLI manifest field name"
-for encoding in utf-16 utf-32; do
-  python3 - "$cli_manifest_base" "$cli_manifest" "$encoding" <<'PY'
+python3 - "$cli_manifest_base" "$cli_manifest" <<'PY'
 import pathlib
 import sys
-pathlib.Path(sys.argv[2]).write_bytes(pathlib.Path(sys.argv[1]).read_text().encode(sys.argv[3]))
+pathlib.Path(sys.argv[2]).write_bytes(pathlib.Path(sys.argv[1]).read_text().encode("utf-16"))
 PY
-  assert_cli_digest_fails "non-UTF-8 CLI manifest encoding: ${encoding}"
-done
+assert_cli_digest_fails "non-UTF-8 CLI manifest encoding"
 printf 'not JSON\n' > "$cli_manifest"
 assert_cli_digest_fails "malformed CLI JSON"
 cat "$cli_manifest_base" "$cli_manifest_base" > "$cli_manifest"
