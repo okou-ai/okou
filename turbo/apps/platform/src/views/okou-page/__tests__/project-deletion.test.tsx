@@ -59,6 +59,22 @@ function installDeletion(threads: readonly ChatThreadSnapshotProjection[]) {
       return [thread.id, thread];
     }),
   );
+  context.mocks.api(chatThreadByIdContract.get, ({ params, respond }) => {
+    if (
+      threads.some((thread) => {
+        return thread.id === params.id;
+      }) &&
+      !remaining.has(params.id)
+    ) {
+      return respond(404, {
+        error: { code: "NOT_FOUND", message: "Chat not found" },
+      });
+    }
+    return respond(200, {
+      lastReadAt: null,
+      cancellationRecoveryPending: false,
+    });
+  });
   const projectEvents: ProjectEvent[] = [];
   const projectDeleted = context.mocks.deferred<void>();
   const threadEvents: ChatThreadEvent[] = [];
@@ -254,7 +270,7 @@ test("Deleting all Project threads requires a second confirmation and includes e
   ).toHaveTextContent("Unrelated chat");
 });
 
-test("A partially failed deletion keeps the Project and reconciles an unknown outcome before retry", async () => {
+test("Retry reconciles an unknown deletion of the open thread and recovers navigation", async () => {
   const threads = members(3);
   const fixture = installDeletion(threads);
   let reject = true;
@@ -276,7 +292,7 @@ test("A partially failed deletion keeps the Project and reconciles an unknown ou
   );
   await setupPage({
     context,
-    path: `/chats/${fixture.ordinary.id}`,
+    path: `/chats/${threads[1]!.id}`,
     ...fixture.workspace.pageOptions,
     featureSwitches: switches(),
   });
@@ -304,9 +320,8 @@ test("A partially failed deletion keeps the Project and reconciles an unknown ou
   ).toHaveTextContent("Launch");
   click(button("Permanently delete", confirmation));
   await waitFor(() => {
-    return expect(button("Create Project")).toHaveFocus();
+    return expect(location.pathname).toBe("/");
   });
-  expect(location.pathname).toBe(`/chats/${fixture.ordinary.id}`);
 });
 
 test("A new Project member requires reviewing the changed list before deleting anything", async () => {

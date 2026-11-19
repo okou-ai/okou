@@ -29,6 +29,7 @@ const deletionSession$ = computed((get) => {
     confirmation$: state<readonly ChatThreadSnapshotProjection[] | null>(null),
     changed$: state(false),
     deletedThreadIds$: state<readonly string[]>([]),
+    attemptedThreadIds$: state<readonly string[]>([]),
     projectDeleteEventId$: state<string | null>(null),
   };
 });
@@ -105,6 +106,7 @@ const navigateAfterProjectDeletion$ = command(
     { get, set },
     projectId: string,
     deletedThreadIds: readonly string[],
+    attemptedThreadIds: readonly string[],
     signal: AbortSignal,
   ) => {
     const currentThreadId = get(currentChatThreadId$);
@@ -113,6 +115,23 @@ const navigateAfterProjectDeletion$ = command(
       get(pathParams$)?.projectId === projectId
     ) {
       await set(navigateToNewChat$, signal);
+    } else if (
+      currentThreadId &&
+      attemptedThreadIds.includes(currentThreadId)
+    ) {
+      // A failed response may still have deleted the open chat. Leaving the
+      // Project alone is not proof of deletion: it could have moved elsewhere.
+      const current = await accept(
+        get(apiClient$)(chatThreadByIdContract).get({
+          params: { id: currentThreadId },
+          fetchOptions: { signal },
+        }),
+        [200, 404],
+        signal,
+      );
+      if (current.status === 404) {
+        await set(navigateToNewChat$, signal);
+      }
     }
   },
 );
@@ -144,6 +163,7 @@ export const deleteProjectAndThreads$ = command(
           navigateAfterProjectDeletion$,
           session.projectId,
           get(session.deletedThreadIds$),
+          get(session.attemptedThreadIds$),
           signal,
         );
         return;
@@ -171,6 +191,9 @@ export const deleteProjectAndThreads$ = command(
     const client = get(apiClient$)(chatThreadByIdContract);
     for (const thread of current) {
       const eventId = crypto.randomUUID();
+      set(session.attemptedThreadIds$, (ids) => {
+        return ids.includes(thread.id) ? ids : [...ids, thread.id];
+      });
       await accept(
         client.delete({
           params: { id: thread.id },
@@ -219,6 +242,7 @@ export const deleteProjectAndThreads$ = command(
       navigateAfterProjectDeletion$,
       session.projectId,
       get(session.deletedThreadIds$),
+      get(session.attemptedThreadIds$),
       signal,
     );
   },
