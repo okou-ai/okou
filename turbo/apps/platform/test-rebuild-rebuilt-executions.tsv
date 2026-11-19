@@ -490,3 +490,12 @@ chat-capability-permissions-002	turbo/apps/platform/src/views/okou-page/__tests_
 chat-capability-permissions-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-permissions.test.tsx	Reflect current connector permission decisions	197	passed
 chat-capability-permissions-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-permissions.test.tsx	Permission cards keep the full operation pending and expose callback failure	279	passed
 chat-capability-permissions-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-permissions.test.tsx	Review and confirm connector permissions individually	339	passed
+chat-capability-phone-use-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx	Show online phones and refresh on reopen	65	passed
+chat-capability-phone-use-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx	A selected phone stays visible offline so its chat access can be revoked	90	passed
+chat-capability-phone-use-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx	Connect my phone explains chat-menu consent and native preparation separately	123	passed
+chat-capability-phone-use-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx	Authorize, switch and revoke a phone from this chat	146	passed
+chat-capability-phone-use-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx	A new chat saves its selected phone before the first message starts a Run	199	passed
+chat-capability-phone-use-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx	Rejected phone consent preserves the new-chat draft and never starts its Run	240	passed
+chat-thread-sidebar-resize-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-sidebar-resize.test.tsx	A captured touch resize ends on pointerup and leaves the sidebar usable	78	passed
+chat-thread-sidebar-resize-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-sidebar-resize.test.tsx	A second touch cannot move or end the active resize	113	passed
+chat-thread-sidebar-resize-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-sidebar-resize.test.tsx	Closing the sidebar during a resize removes its blocking mask	133	passed

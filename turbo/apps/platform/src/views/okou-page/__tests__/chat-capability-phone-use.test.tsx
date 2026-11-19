@@ -1,0 +1,275 @@
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { expect, test } from "vitest";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  phoneUseContract,
+  type PhoneDevice,
+  type PhoneUseSelection,
+} from "@okouai/api-contracts/contracts/phone-use";
+import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  createChatRunFixtures,
+  findButton,
+  NEW_CHAT_PATH,
+  queryButton,
+  readyChat,
+  RUN_PATH,
+  RUN_THREAD_ID,
+  sendText,
+} from "./chat-run-test-fixtures.ts";
+
+const context = testContext();
+const { installRunChat } = createChatRunFixtures(context);
+
+function phone(online = true): PhoneDevice {
+  return {
+    id: "e0000000-0000-4000-a000-000000001001",
+    displayName: "Owner iPhone",
+    osVersion: "27.1",
+    appVersion: "1",
+    generation: 1,
+    online,
+    lastSeenAt: "2026-11-16T04:00:00.000Z",
+  };
+}
+
+async function setup(
+  options: {
+    path?: string;
+    onSend?: () => void;
+  } = {},
+) {
+  installRunChat({ onSendRequest: options.onSend });
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
+    return respond(200, {
+      cloudBrowserAvailable: true,
+      cloudBrowserEnabledByDefault: true,
+      sshHosts: [],
+      vncHosts: [],
+      computerUseHosts: [],
+    });
+  });
+  await setupPage({
+    context,
+    path: options.path ?? NEW_CHAT_PATH,
+    locale: "en-US",
+    featureSwitches: { [FeatureSwitchKey.PhoneUse]: true },
+  });
+  await readyChat();
+  click(await findButton("Connectors"));
+}
+
+test("Show online phones and refresh on reopen", async () => {
+  const offline = {
+    ...phone(false),
+    id: "e0000000-0000-4000-a000-000000001003",
+    displayName: "Offline iPhone",
+  };
+  let devices = [phone(), offline];
+  let reads = 0;
+  context.mocks.api(phoneUseContract.devices, ({ respond }) => {
+    reads += 1;
+    return respond(200, { devices });
+  });
+  await setup();
+  const phones = await screen.findByRole("list", { name: "Your phone" });
+  expect(within(phones).getByText("Owner iPhone")).toBeVisible();
+  expect(within(phones).queryByText("Offline iPhone")).toBeNull();
+  expect(reads).toBe(1);
+  await userEvent.keyboard("{Escape}");
+  expect(reads).toBe(1);
+  devices = [phone(false), offline];
+  click(await findButton("Connectors"));
+  await screen.findByText("No phones online");
+  expect(reads).toBe(2);
+});
+
+test("A selected phone stays visible offline so its chat access can be revoked", async () => {
+  let selection: PhoneUseSelection | null = {
+    deviceId: phone().id,
+    generation: phone().generation,
+  };
+  context.mocks.api(phoneUseContract.devices, ({ respond }) => {
+    return respond(200, { devices: [phone(false)] });
+  });
+  context.mocks.api(phoneUseContract.chatGrant, ({ respond }) => {
+    return respond(200, { selection });
+  });
+  context.mocks.api(phoneUseContract.grant, async ({ request, respond }) => {
+    await expect(request.json()).resolves.toStrictEqual({
+      deviceId: phone().id,
+      generation: phone().generation,
+      threadId: RUN_THREAD_ID,
+      allow: false,
+    });
+    selection = null;
+    return respond(200, { ok: true });
+  });
+  await setup({ path: RUN_PATH });
+  const control = await screen.findByRole("switch", { name: /Owner iPhone/u });
+  await waitFor(() => {
+    expect(control).toBeChecked();
+    expect(control).not.toHaveAttribute("aria-disabled", "true");
+  });
+  await expect(screen.findByText("Offline")).resolves.toBeVisible();
+  click(control);
+  await screen.findByText("No phones online");
+  expect(selection).toBeNull();
+});
+
+test("Connect my phone explains chat-menu consent and native preparation separately", async () => {
+  context.mocks.api(phoneUseContract.devices, ({ respond }) => {
+    return respond(200, { devices: [] });
+  });
+  await setup();
+  click(await findButton("Connect my phone"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Connect my phone",
+  });
+  expect(within(dialog).getByText("Open Okou iOS Use")).toBeVisible();
+  expect(
+    within(dialog).getByText("Enable your phone in this chat"),
+  ).toBeVisible();
+  expect(within(dialog).getByText("Send your next task")).toBeVisible();
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Connect my phone" }),
+    ).toBeNull();
+    expect(queryButton("Connectors")).toHaveFocus();
+  });
+});
+
+test("Authorize, switch and revoke a phone from this chat", async () => {
+  const secondary = {
+    ...phone(),
+    id: "e0000000-0000-4000-a000-000000001002",
+    displayName: "Second iPhone",
+  };
+  let selection: PhoneUseSelection | null = null;
+  context.mocks.api(phoneUseContract.devices, ({ respond }) => {
+    return respond(200, { devices: [phone(), secondary] });
+  });
+  context.mocks.api(phoneUseContract.chatGrant, ({ respond, params }) => {
+    expect(params.threadId).toBe(RUN_THREAD_ID);
+    return respond(200, { selection });
+  });
+  context.mocks.api(phoneUseContract.grant, async ({ respond, request }) => {
+    const body = phoneUseContract.grant.body.parse(await request.json());
+    expect(body.threadId).toBe(RUN_THREAD_ID);
+    selection = body.allow
+      ? { deviceId: body.deviceId, generation: body.generation }
+      : null;
+    return respond(200, { ok: true });
+  });
+  await setup({ path: RUN_PATH });
+  const primary = await screen.findByRole("switch", {
+    name: /^Owner iPhone/u,
+  });
+  expect(primary).toHaveAccessibleName("Owner iPhone");
+  const second = await screen.findByRole("switch", {
+    name: /^Second iPhone/u,
+  });
+  await waitFor(() => {
+    expect(primary).not.toHaveAttribute("aria-disabled", "true");
+  });
+  expect(primary).not.toBeChecked();
+  click(primary);
+  await waitFor(() => {
+    expect(primary).toBeChecked();
+    expect(primary).not.toHaveAttribute("aria-disabled", "true");
+  });
+  click(second);
+  await waitFor(() => {
+    expect(second).toBeChecked();
+    expect(second).not.toHaveAttribute("aria-disabled", "true");
+  });
+  expect(primary).not.toBeChecked();
+  click(second);
+  await waitFor(() => {
+    expect(second).not.toBeChecked();
+    expect(second).not.toHaveAttribute("aria-disabled", "true");
+  });
+  expect(selection).toBeNull();
+});
+
+test("A new chat saves its selected phone before the first message starts a Run", async () => {
+  const order: string[] = [];
+  let selection: PhoneUseSelection | null = null;
+  context.mocks.api(phoneUseContract.devices, ({ respond }) => {
+    return respond(200, { devices: [phone()] });
+  });
+  context.mocks.api(phoneUseContract.chatGrant, ({ respond }) => {
+    return respond(200, { selection });
+  });
+  context.mocks.api(phoneUseContract.grant, async ({ respond, request }) => {
+    const body = phoneUseContract.grant.body.parse(await request.json());
+    expect(body).toMatchObject({
+      deviceId: phone().id,
+      generation: 1,
+      allow: true,
+    });
+    selection = { deviceId: body.deviceId, generation: body.generation };
+    order.push("grant");
+    return respond(200, { ok: true });
+  });
+  await setup({
+    onSend: () => {
+      order.push("send");
+    },
+  });
+  const control = await screen.findByRole("switch", { name: /^Owner iPhone/u });
+  await waitFor(() => {
+    expect(control).not.toHaveAttribute("aria-disabled", "true");
+  });
+  click(control);
+  await waitFor(() => {
+    expect(control).toBeChecked();
+  });
+  expect(order).toStrictEqual([]);
+  await userEvent.keyboard("{Escape}");
+  await sendText("Use my phone");
+  await waitFor(() => {
+    expect(order).toStrictEqual(["grant", "send"]);
+  });
+});
+
+test("Rejected phone consent preserves the new-chat draft and never starts its Run", async () => {
+  let sends = 0;
+  context.mocks.api(phoneUseContract.devices, ({ respond }) => {
+    return respond(200, { devices: [phone()] });
+  });
+  context.mocks.api(phoneUseContract.grant, ({ respond }) => {
+    return respond(403, {
+      error: { code: "FORBIDDEN", message: "Phone access could not be saved" },
+    });
+  });
+  await setup({
+    onSend: () => {
+      sends += 1;
+    },
+  });
+  const control = await screen.findByRole("switch", { name: /^Owner iPhone/u });
+  await waitFor(() => {
+    expect(control).not.toHaveAttribute("aria-disabled", "true");
+  });
+  click(control);
+  await waitFor(() => {
+    expect(control).toBeChecked();
+  });
+  await userEvent.keyboard("{Escape}");
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  await fill(composer, "Use my phone");
+  click(await findButton("Send"));
+  await screen.findByText("Phone access could not be saved");
+  expect(composer).toHaveTextContent("Use my phone");
+  expect(window.location.pathname).toBe(NEW_CHAT_PATH);
+  expect(sends).toBe(0);
+  click(await findButton("Connectors"));
+  await expect(
+    screen.findByRole("switch", { name: /^Owner iPhone/u }),
+  ).resolves.toBeChecked();
+});

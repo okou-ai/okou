@@ -173,60 +173,6 @@ Preserve an existing custom connector permission during reconnection. [Registrat
 - **Then** Preserve an existing custom connector permission during reconnection.
 - **Disposition** not_selected.
 
-## chat-capability-phone-use-002
-
-Show online phones and refresh on reopen. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx#L78).
-
-- **Given** The actor starts in the product surface described by the scenario.
-- **When** The actor performs the scenario action through its product surface.
-- **Then** Show online phones and refresh on reopen. Relevant visible labels or feedback in the upstream scenario include “Your phone”, “Owner iPhone”, “No phones online”.
-- **Disposition** retain.
-
-## chat-capability-phone-use-004
-
-A selected phone stays visible offline so its chat access can be revoked. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx#L103).
-
-- **Given** The actor starts in the product surface described by the scenario.
-- **When** The actor performs the scenario action through its product surface.
-- **Then** A selected phone stays visible offline so its chat access can be revoked. Relevant visible labels or feedback in the upstream scenario include “Offline”, “No phones online”.
-- **Disposition** retain.
-
-## chat-capability-phone-use-007
-
-Authorize, switch and revoke a phone from this chat. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx#L171).
-
-- **Given** The actor starts in the product surface described by the scenario.
-- **When** The actor opens the permission surface and reviews or confirms the requested access.
-- **Then** Authorize, switch and revoke a phone from this chat.
-- **Disposition** retain.
-
-## chat-capability-phone-use-009
-
-A new chat saves its selected phone before the first message starts a Run. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx#L224).
-
-- **Given** The scenario starts with the first message starts a Run.
-- **When** The actor opens the preference surface and makes the indicated change or reopens its saved setting.
-- **Then** A new chat saves its selected phone before the first message starts a Run.
-- **Disposition** retain.
-
-## chat-capability-phone-use-010
-
-A failed chat-authorization read recovers when reopening the menu. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx#L265).
-
-- **Given** The scenario starts with reopening the menu.
-- **When** The actor opens the permission surface and reviews or confirms the requested access.
-- **Then** A failed chat-authorization read recovers when reopening the menu.
-- **Disposition** not_selected.
-
-## chat-capability-phone-use-011
-
-Rejected phone consent preserves the new-chat draft and never starts its Run. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx#L290).
-
-- **Given** The actor starts in the product surface described by the scenario.
-- **When** The actor performs the scenario action through its product surface.
-- **Then** Rejected phone consent preserves the new-chat draft and never starts its Run. Relevant visible labels or feedback in the upstream scenario include “Message”, “Phone access could not be saved”, “Use my phone”.
-- **Disposition** retain.
-
 ## chat-cards-031
 
 Connector account switches A → B → A keep their icon and continue with fresh callback IDs. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-cards.test.tsx#L1091).
@@ -324,15 +270,6 @@ Show working dots on scroll-to-bottom while the thread works. [Registration](htt
 - **Given** A thread is producing output while the reader is above the end.
 - **When** Open the thread while the run is active and view the scroll-to-bottom control.
 - **Then** The scroll-to-bottom control indicates ongoing activity.
-- **Disposition** retain.
-
-## upstream-eaae30ac-chat-thread-sidebar-resize-161-01
-
-Each panel kind opens at its own width and keeps its own resize. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-sidebar-resize.test.tsx#L161).
-
-- **Given** A thread can open more than one type of side panel.
-- **When** Open each panel and resize one of them.
-- **Then** Each panel starts at its own width and remembers its own resize.
 - **Disposition** retain.
 
 ## connectors-accounts-005

@@ -3,7 +3,7 @@ upstream_from	upstream_to	path_change	test_file	frozen_executions_in_file	frozen
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-batch-permissions.test.tsx	6	4	reconciled
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	16	8	pending
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-permissions.test.tsx	6	4	reconciled
-03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx	11	6	pending
+03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx	11	6	reconciled
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-cards.test.tsx	33	17	pending
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-account-selection.test.tsx	4	2	reconciled
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-chat-connector-access.test.tsx	18	9	reconciled
@@ -17,7 +17,7 @@ upstream_from	upstream_to	path_change	test_file	frozen_executions_in_file	frozen
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	22	11	pending
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-artifact-carryover.test.tsx	10	5	pending
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-history.test.tsx	24	12	pending
-03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-sidebar-resize.test.tsx	5	3	pending
+03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-sidebar-resize.test.tsx	5	3	reconciled
 03698f76	eaae30ac	deleted	turbo/apps/platform/src/views/okou-page/__tests__/connector-account-projection.test.tsx	2	1	pending
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/connectors-accounts.test.tsx	27	14	pending
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/connectors-auth-methods.test.tsx	21	11	pending
