@@ -72,6 +72,13 @@ writer cannot become the executable. Remote EXIT cleans its own temporary file;
 an interrupted transport can delay that cleanup. Actual native execution remains
 outside this retry boundary. NBD-COW retains its own isolated-candidate protocol.
 
+Inputs above 128 MiB use a private upload directory and independently verified
+64 MiB chunks. A transport interruption retries the current chunk while keeping
+the previously accepted chunks. Finalization verifies the assembled executable
+against the original SHA-256 before the atomic rename. All requests share the
+400-second staging deadline. Cleanup removes the upload directory when the
+host is reachable and reports an unconfirmed cleanup otherwise.
+
 ## Image operation recovery
 
 `python3 runner-image-operation.py claim|cancel HOST`,
