@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.27](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.26...guest-contracts-v0.32.27) (2026-11-19)
+
+
+### Refactoring
+
+* **rust:** share vectored log writes ([#49127](https://github.com/okou-ai/okou/issues/49127)) ([4592830](https://github.com/okou-ai/okou/commit/45928304aad5dc912cf2aafe9c6b241c03f1c063))
+
 ## [0.32.26](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.25...guest-contracts-v0.32.26) (2026-11-19)
 
 

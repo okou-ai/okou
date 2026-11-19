@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.11](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.10...runner-lifecycle-v0.18.11) (2026-11-19)
+
+
+### Refactoring
+
+* **runner:** unify home image preparation ([#49131](https://github.com/okou-ai/okou/issues/49131)) ([e831cb1](https://github.com/okou-ai/okou/commit/e831cb18e971db5b85ed819460d282d632c62c21))
+
 ## [0.18.10](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.9...runner-lifecycle-v0.18.10) (2026-11-19)
 
 ## [0.18.9](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.8...runner-lifecycle-v0.18.9) (2026-11-19)

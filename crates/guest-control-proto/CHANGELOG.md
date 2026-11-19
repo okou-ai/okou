@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.92](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.91...guest-control-proto-v0.22.92) (2026-11-19)
+
+
+### Performance Improvements
+
+* **guest-control:** receive large storage inputs into owned buffers ([#49059](https://github.com/okou-ai/okou/issues/49059)) ([d928b49](https://github.com/okou-ai/okou/commit/d928b49f7e1d59d8edf6e62fbdaa500a47302ced))
+
 ## [0.22.91](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.90...guest-control-proto-v0.22.91) (2026-11-19)
 
 

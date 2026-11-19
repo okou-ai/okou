@@ -13,6 +13,23 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1153.0](https://github.com/okou-ai/okou/compare/app-v0.1152.0...app-v0.1153.0) (2026-11-19)
+
+
+### Features
+
+* **app:** gate an okou rail entry behind a staff switch ([#49130](https://github.com/okou-ai/okou/issues/49130)) ([3ce54fd](https://github.com/okou-ai/okou/commit/3ce54fd46e6166a3b4cf828052e20a375f4ade08))
+* **platform:** confirm deletion of project threads ([#49121](https://github.com/okou-ai/okou/issues/49121)) ([89d08cc](https://github.com/okou-ai/okou/commit/89d08ccd4ff5399208552bff0e1f3dbbf08414fb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.93.0
+    * @okouai/core bumped to 8.856.0
+    * @okouai/ui bumped to 1.21.66
+
 ## [0.1152.0](https://github.com/okou-ai/okou/compare/app-v0.1151.0...app-v0.1152.0) (2026-11-19)
 
 
