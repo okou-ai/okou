@@ -6,6 +6,7 @@ import json
 import pathlib
 
 import batch_aba_report as batch
+import observation_report
 import progress_report as foreground
 import later_parking_report as later
 import pressure_report as pressure
@@ -127,7 +128,9 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
             raise ValueError("replacement heartbeat runner replayed")
         runners.add(first)
         samples = waiting.get("samples")
-        batch.reads(samples,policy,events[0]["monotonic_ns"],events[5]["monotonic_ns"])
+        observation_report.paired_fresh_reads(
+            samples, policy, events[0]["monotonic_ns"], events[5]["monotonic_ns"]
+        )
         if (not any(insertion < s["started_ns"] < s["finished_ns"] < events[1]["monotonic_ns"] for s in samples)
                 or not any(resumed < s["started_ns"] < s["finished_ns"] < polled for s in samples)):
             raise ValueError("replacement and old resumed claims lack distinct real fresh reads")
