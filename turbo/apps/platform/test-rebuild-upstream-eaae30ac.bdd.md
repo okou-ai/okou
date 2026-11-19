@@ -1676,32 +1676,32 @@ An older permission link can still deny connector access safely. [Registration](
 - **Then** An older permission link can still deny connector access safely. Relevant visible labels or feedback in the upstream scenario include “Hey Morgan, you”, “Slack”, “Access workspace analytics data”, “Permissions denied”.
 - **Disposition** retain.
 
-## upstream-eaae30ac-permission-batch-page-142-01
+## permission-batch-page-003
 
 Grouped permissions remain allowed after continuation success (My Okou=false). [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx#L142).
 
 - **Given** A chat asks for connector permissions grouped by connector.
 - **When** Approve the batch and allow continuation to settle.
-- **Then** Saved grants remain effective whether continuation succeeds or reports a failure.
-- **Disposition** review-prior-upstream-or-remapped.
+- **Then** The page shows that both permissions were allowed and the chat has continued.
+- **Disposition** retain.
 
-## upstream-eaae30ac-permission-batch-page-142-02
+## permission-batch-page-002
 
 Grouped permissions remain allowed after continuation failure (My Okou=false). [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx#L142).
 
 - **Given** A chat asks for connector permissions grouped by connector.
 - **When** Approve the batch and allow continuation to settle.
-- **Then** Saved grants remain effective whether continuation succeeds or reports a failure.
-- **Disposition** review-prior-upstream-or-remapped.
+- **Then** The page still shows that both permissions were allowed and separately reports that the chat could not continue.
+- **Disposition** retain.
 
-## upstream-eaae30ac-permission-batch-page-142-03
+## permission-batch-page-005
 
 Grouped permissions remain allowed after continuation success (My Okou=true). [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx#L142).
 
 - **Given** A chat asks for connector permissions grouped by connector.
 - **When** Approve the batch and allow continuation to settle.
 - **Then** Saved grants remain effective whether continuation succeeds or reports a failure.
-- **Disposition** review-prior-upstream-or-remapped.
+- **Disposition** not_selected.
 
 ## permission-batch-page-006
 
