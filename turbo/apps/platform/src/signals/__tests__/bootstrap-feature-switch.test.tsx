@@ -1,4 +1,5 @@
 import { testContext } from "./test-helpers.ts";
+import { featureGuidesContract } from "@okouai/api-contracts/contracts/feature-guides";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
@@ -29,6 +30,22 @@ test("A signed-out page does not load workspace features", async () => {
   await screen.findByTestId("clerk-sign-in");
 
   expect(workspaceFeatureRequested).toBeFalsy();
+});
+
+test("A member who opted out does not request a feature guide during startup", async () => {
+  let guideRequested = false;
+  context.mocks.api(featureGuidesContract.current, ({ respond }) => {
+    guideRequested = true;
+    return respond(200, { edition: null });
+  });
+
+  await setupPage({
+    context,
+    path: "/",
+    featureSwitches: { [FeatureSwitchKey.FeatureGuides]: false },
+  });
+
+  expect(guideRequested).toBeFalsy();
 });
 
 test("Routes wait for authoritative workspace features", async () => {
