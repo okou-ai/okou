@@ -7,7 +7,11 @@ import {
   catalogStatusItem,
   stubConnectorCatalog,
 } from "../../../__tests__/helpers/connector-catalog";
-import { stubCustomConnectors } from "../../../__tests__/helpers/custom-connectors";
+import {
+  customConnector,
+  stubCustomConnectors,
+} from "../../../__tests__/helpers/custom-connectors";
+import { stubRunConnectorAccountInventory } from "../../../__tests__/helpers/run-connector-accounts";
 import { switchConnectorAccountCommand } from "../switch";
 import { connectorAccountSelectionSchema } from "@okouai/api-contracts/contracts/connector-accounts";
 
@@ -53,7 +57,6 @@ const target = { kind: "builtin", connectorSlug: "github" } as const;
 const log = vi.spyOn(console, "log").mockImplementation(() => {});
 const error = vi.spyOn(console, "error").mockImplementation(() => {});
 let selected: unknown[] = [];
-let enabled = true;
 beforeEach(() => {
   vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
   vi.stubEnv("OKOU_AGENT_ID", "agent-1");
@@ -65,7 +68,6 @@ beforeEach(() => {
   transport.exit = 0;
   transport.response = `${JSON.stringify({ type: "result", data: { connectionId } })}\n`;
   selected = [];
-  enabled = true;
   process.exitCode = 0;
   vi.spyOn(process, "exit").mockImplementation((code) => {
     process.exitCode = code ?? undefined;
@@ -83,21 +85,17 @@ beforeEach(() => {
       }),
     ]),
     stubCustomConnectors([]),
-    http.get("http://localhost:3000/api/run/connector-accounts", () => {
-      return HttpResponse.json({
-        chatThreadId: "22222222-2222-4222-8222-222222222222",
-        permissionGrants: [],
-        accounts: [
-          {
-            target,
-            connectionId,
-            displayName: "Work",
-            enabled,
-            isCurrent: false,
-            isDefault: false,
-          },
-        ],
-      });
+    stubRunConnectorAccountInventory({
+      accounts: [
+        {
+          target,
+          connectionId,
+          displayName: "Work",
+          enabled: true,
+          isCurrent: false,
+          isDefault: false,
+        },
+      ],
     }),
     http.put(
       "http://localhost:3000/api/run/connector-accounts/current",
@@ -115,11 +113,11 @@ afterEach(() => {
   vi.unstubAllEnvs();
   process.exitCode = 0;
 });
-const run = () => {
+const run = (selector = "github") => {
   return switchConnectorAccountCommand.parseAsync([
     "node",
     "okou",
-    "github",
+    selector,
     "--connection-id",
     connectionId,
     "--json",
@@ -147,13 +145,30 @@ describe("connector account switch", () => {
       selected: true,
     });
   });
-  it("guides denied accounts to owner approval without saving or dispatching", async () => {
-    enabled = false;
-    await expect(run()).rejects.toThrow("exit");
+  it("gives an exact approval command when a custom display name resolves to a disabled account", async () => {
+    const connector = customConnector();
+    server.use(
+      stubCustomConnectors([connector]),
+      stubRunConnectorAccountInventory({
+        accounts: [
+          {
+            target: { kind: "custom", customConnectorId: connector.id },
+            connectionId,
+            displayName: "Work",
+            enabled: false,
+            isCurrent: false,
+            isDefault: false,
+          },
+        ],
+      }),
+    );
+    await expect(run(connector.displayName)).rejects.toThrow("exit");
     expect(process.exitCode).toBe(1);
     expect(selected).toHaveLength(0);
     expect(spawn).not.toHaveBeenCalled();
-    expect(error.mock.calls.flat().join(" ")).toContain("switch-request");
+    expect(error.mock.calls.flat().join(" ")).toContain(
+      `okou connector account switch-request custom:${connector.id} --connection-id ${connectionId} --callback-prompt "<prompt>"`,
+    );
   });
   it("does not claim success or replay when publication is unconfirmed", async () => {
     transport.response = `${JSON.stringify({ type: "error", code: "unavailable", delivery: "unknown" })}\n`;

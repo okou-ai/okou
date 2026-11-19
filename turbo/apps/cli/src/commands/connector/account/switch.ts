@@ -77,7 +77,7 @@ export const switchConnectorAccountCommand = new Command()
           );
         if (!account.enabled)
           throw new Error(
-            `Account is not allowed in this Chat. Request owner approval with okou connector account switch-request ${selector} --connection-id ${connectionId} --callback-prompt <prompt>`,
+            `Account is not allowed in this Chat. Request owner approval with okou connector account switch-request ${targetKey} --connection-id ${connectionId} --callback-prompt "<prompt>"`,
           );
         const selected = await selectRunConnectorAccount({
           target,
