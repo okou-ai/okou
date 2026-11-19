@@ -129,6 +129,8 @@ lock and retries admission in the original lock order. PR claim uses a
 180-second end-to-end budget covering both lock waits and admission, including
 the default 150-second deployment lease. The owner and closure cutoff are
 checked again under both locks.
+During claim retirement, a timed-out unit status read can retry once within
+the same claim deadline. Admission still requires verified retirement.
 The healthy path uses one SSH request. Run and guard retain their 600-second
 budgets.
 A claim places an exact-owner admission marker in the managed binary directory;

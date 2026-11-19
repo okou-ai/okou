@@ -200,8 +200,9 @@ def systemctl(arguments):
                 print(name + " loaded active running Image fixture")
         return 0
     if arguments[0] == "show":
-        if MODE == "slow-claim-retirement" and once():
-            time.sleep(8)
+        if MODE in ("slow-claim-retirement", "claim-observation-timeout") and once():
+            # Outlast the real unit observation timeout.
+            time.sleep(12)
         for unit in (a for a in arguments[1:] if a.endswith(".service")):
             path = ROOT / "units" / (unit + ".json")
             info = json.loads(path.read_text()) if path.exists() else {}
