@@ -36,17 +36,15 @@ const PREFERENCE_FIELDS = {
 
 const readProactivePreference$ = command(
   async (
-    { get, set },
+    { get },
     owner: ProactiveWorkflowOwner,
     kind: ProactiveWorkflowKind,
+    eligibility: Awaited<
+      ReturnType<typeof loadProactiveWorkflowsEligibility$.write>
+    >,
     signal: AbortSignal,
   ): Promise<ProactivePreference> => {
     const definition = PROACTIVE_WORKFLOW_DEFINITIONS[kind];
-    const eligibility = await set(
-      loadProactiveWorkflowsEligibility$,
-      owner,
-      signal,
-    );
     const automations = await get(db$)
       .select({
         enabled: workflowAutomations.enabled,
@@ -131,10 +129,16 @@ function createProactivePreferenceRoutes(
           set(ensureProactiveWorkflows$, owner, signal),
           signal,
         );
+        const savedEligibility = await set(
+          loadProactiveWorkflowsEligibility$,
+          owner,
+          signal,
+        );
         const preference = await set(
           readProactivePreference$,
           owner,
           kind,
+          savedEligibility,
           signal,
         );
         return {
@@ -146,7 +150,13 @@ function createProactivePreferenceRoutes(
       }
       return {
         status: 200 as const,
-        body: await set(readProactivePreference$, owner, kind, signal),
+        body: await set(
+          readProactivePreference$,
+          owner,
+          kind,
+          eligibility,
+          signal,
+        ),
       };
     },
   );
