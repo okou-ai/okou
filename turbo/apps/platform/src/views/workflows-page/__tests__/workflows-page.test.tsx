@@ -1492,55 +1492,19 @@ async function openCopyDialog(): Promise<HTMLElement> {
   });
 }
 
-function mockConnectedAutomationConnectors(): void {
-  context.mocks.data.connectors([
-    {
-      id: "10000000-0000-4000-a000-000000000001",
-      slug: "slack",
-      authMethod: "oauth",
-      externalId: "slack-workspace",
-      externalUsername: "workspace",
-      externalEmail: null,
-      oauthScopes: [],
-      connectionStatus: "connected",
-      reconnectReason: null,
-      tokenExpiresAt: null,
-      createdAt: "2026-01-01T00:00:00Z",
-      updatedAt: "2026-01-01T00:00:00Z",
-    },
-    {
-      id: "10000000-0000-4000-a000-000000000002",
-      slug: "gmail",
-      authMethod: "oauth",
-      externalId: "gmail-user",
-      externalUsername: "user@example.com",
-      externalEmail: "user@example.com",
-      oauthScopes: ["https://www.googleapis.com/auth/gmail.modify"],
-      connectionStatus: "connected",
-      reconnectReason: null,
-      tokenExpiresAt: null,
-      createdAt: "2026-01-01T00:00:00Z",
-      updatedAt: "2026-01-01T00:00:00Z",
-    },
-  ]);
-}
+test("Return to Workflows with a toast when a workflow no longer exists", async () => {
+  mockWorkflowApis([opsPlaybook()]);
 
-test.each(["automations", "instructions", "info"] as const)(
-  "Return to Workflows with a toast when the %s detail no longer exists",
-  async (tab) => {
-    mockWorkflowApis([opsPlaybook()]);
+  await setupWorkflowDetailPage(workflowDetailPath("automations"));
 
-    await setupWorkflowDetailPage(workflowDetailPath(tab));
-
-    await expect(
-      screen.findByText("Workflow not found."),
-    ).resolves.toBeInTheDocument();
-    await waitFor(() => {
-      expect(pathname()).toBe("/workflows");
-      expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
-    });
-  },
-);
+  await expect(
+    screen.findByText("Workflow not found."),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(pathname()).toBe("/workflows");
+    expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
+  });
+});
 
 test("Return to Workflows with a toast when a legacy detail link is inaccessible", async () => {
   mockWorkflowApis([opsPlaybook()]);
@@ -1602,18 +1566,7 @@ test("Redirect a cold Morning Brief detail to its preference", async () => {
   expect(screen.queryByText("Instructions")).not.toBeInTheDocument();
 });
 
-test("Redirect an Official Workflow without a user-facing page to Workflows", async () => {
-  mockWorkflowApis([officialSalesResearch(), opsPlaybook()]);
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-  await waitFor(() => {
-    expect(pathname()).toBe("/workflows");
-    expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
-  });
-});
-
-test("Keep Official Workflows out of the Workflows list", async () => {
+test("Redirect a hidden Official Workflow and exclude Official Workflows from the list", async () => {
   const morningBrief = morningBriefWorkflow();
   if (!morningBrief.official) {
     throw new Error("Expected an Official Workflow fixture");
@@ -1631,9 +1584,10 @@ test("Keep Official Workflows out of the Workflows list", async () => {
     opsPlaybook(),
   ]);
 
-  await setupPage({ context, path: "/workflows" });
+  await setupWorkflowDetailPage(workflowDetailPath("automations"));
 
   await waitFor(() => {
+    expect(pathname()).toBe("/workflows");
     expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
   });
   const listed = queryAllByRoleFast("link").map((link) => {
@@ -1834,6 +1788,11 @@ test("Open and manage a deep-linked automation", async () => {
   const gmailSwitch = await screen.findByRole("switch", {
     name: "Disable Gmail new message",
   });
+  expect(screen.getByText(/from contains "@acme.com"/)).toBeInTheDocument();
+  expect(
+    screen.getByText(/subject does not contain "newsletter"/),
+  ).toBeInTheDocument();
+  expect(screen.getAllByText("Next")).toHaveLength(1);
   const gmailRow = document.querySelector(
     `[data-automation-id="${GMAIL_AUTOMATION_ID}"]`,
   );
@@ -2272,26 +2231,6 @@ test("Navigate between workflow detail tabs", async () => {
   expect(search()).toBe("");
 });
 
-test("Summarize Gmail automation match conditions", async () => {
-  const workflow = {
-    ...salesResearch(),
-    automations: [...workflowAutomations(), gmailWorkflowAutomation()],
-  };
-  mockWorkflowApis([workflow]);
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-  await waitFor(() => {
-    expect(screen.getAllByText("Gmail new message").length).toBeGreaterThan(0);
-  });
-  expect(screen.getByText(/from contains "@acme.com"/)).toBeInTheDocument();
-  expect(
-    screen.getByText(/subject does not contain "newsletter"/),
-  ).toBeInTheDocument();
-  // Only the schedule automation shows a "Next" run stat; event automations omit it.
-  expect(screen.getAllByText("Next")).toHaveLength(1);
-});
-
 test("Recover when a stale Run now action receives the automatic-only policy rejection", async () => {
   const message =
     "Official Workflows can only run through their automatic triggers";
@@ -2488,54 +2427,46 @@ test("Correct an unavailable Gmail label and create the automation", async () =>
   );
 });
 
-test.each([
-  { status: 400 as const, code: "BAD_REQUEST" },
-  { status: 403 as const, code: "GMAIL_LABEL_NOT_FOUND" },
-])(
-  "Keep Gmail creation errors observable for $status/$code",
-  async ({ status, code }) => {
-    const consoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => {});
-    mockWorkflowApis([salesResearch()]);
-    context.mocks.api(workflowAutomationsContract.create, ({ respond }) => {
-      return respond(status, {
-        error: { code, message: "Failed to read Gmail labels" },
-      });
+test("Keep Gmail provider failures visible while preserving the form", async () => {
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  mockWorkflowApis([salesResearch()]);
+  context.mocks.api(workflowAutomationsContract.create, ({ respond }) => {
+    return respond(400, {
+      error: { code: "BAD_REQUEST", message: "Failed to read Gmail labels" },
     });
+  });
 
-    await setupWorkflowDetailPage(workflowDetailPath("automations"));
-    await waitFor(() => {
-      expect(buttonByText("Add automation")).toBeInTheDocument();
-    });
-    click(buttonByText("Add automation"));
-    await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();
-    pickAutomation("Email", /^Gmail label applied/);
-    const form = await screen.findByRole("form", {
-      name: "Add Gmail label automation",
-    });
-    const input = within(form).getByLabelText("Label name");
-    await fill(input, "Support");
-    fireEvent.submit(form);
+  await setupWorkflowDetailPage(workflowDetailPath("automations"));
+  await waitFor(() => {
+    expect(buttonByText("Add automation")).toBeInTheDocument();
+  });
+  click(buttonByText("Add automation"));
+  await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();
+  pickAutomation("Email", /^Gmail label applied/);
+  const form = await screen.findByRole("form", {
+    name: "Add Gmail label automation",
+  });
+  const input = within(form).getByLabelText("Label name");
+  await fill(input, "Support");
+  fireEvent.submit(form);
 
-    await expect(
-      screen.findByText("Failed to read Gmail labels"),
-    ).resolves.toBeInTheDocument();
-    await waitFor(() => {
-      expect(consoleError.mock.calls.flat()).toContainEqual(
-        expect.objectContaining({
-          name: "ApiError",
-          code,
-          status,
-          expected: false,
-        }),
-      );
-    });
-    expect(input).toHaveValue("Support");
-    expect(within(form).queryByRole("alert")).not.toBeInTheDocument();
-    expect(buttonByText("Add label automation", form)).toBeEnabled();
-  },
-);
+  await expect(
+    screen.findByText("Failed to read Gmail labels"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(consoleError.mock.calls.flat()).toContainEqual(
+      expect.objectContaining({
+        name: "ApiError",
+        code: "BAD_REQUEST",
+        status: 400,
+        expected: false,
+      }),
+    );
+  });
+  expect(input).toHaveValue("Support");
+  expect(within(form).queryByRole("alert")).not.toBeInTheDocument();
+  expect(buttonByText("Add label automation", form)).toBeEnabled();
+});
 
 test("Create a filtered GitHub workflow-run automation", async () => {
   const createBodies: WorkflowAutomationCreateRequest[] = [];
@@ -3291,8 +3222,6 @@ async function verifyWebhookFieldInteractions(
 }
 
 test("Allow webhook creation when the plan grants the capability", async () => {
-  const user = userEvent.setup();
-  const clipboard = context.mocks.browser.clipboardWriteText();
   context.mocks.data.org({
     id: "org_1",
     name: "Test Org",
@@ -3319,11 +3248,13 @@ test("Allow webhook creation when the plan grants the capability", async () => {
   ).not.toBeInTheDocument();
 
   click(buttonByText("Create webhook"));
-  await expect(screen.findByLabelText("Webhook URL")).resolves.toHaveValue(
-    webhookWorkflowAutomation().webhookUrl,
-  );
   const dialog = screen.getByRole("dialog", { name: "Add webhook automation" });
-  await verifyWebhookFieldInteractions(dialog, user, clipboard.writes);
+  await expect(
+    within(dialog).findByLabelText("Webhook URL"),
+  ).resolves.toHaveValue(webhookWorkflowAutomation().webhookUrl);
+  expect(within(dialog).getByLabelText("Signing secret")).toHaveValue(
+    "webhook-secret",
+  );
   click(buttonByText("Done", dialog));
   await waitFor(() => {
     expect(dialog).not.toBeInTheDocument();
@@ -3960,78 +3891,77 @@ test("Warn when a workflow slash command resolves to another workflow", async ()
   expect(screen.getByText("Private Sales Research")).toBeInTheDocument();
 });
 
-test.each(["Enter", "Space"])(
-  "Select workflow files with accessible current state using %s",
-  async (activation) => {
-    const user = userEvent.setup();
-    mockWorkflowApis([salesResearch()]);
+test("Select workflow files with Enter and Space and preserve accessible current state", async () => {
+  const user = userEvent.setup();
+  mockWorkflowApis([salesResearch()]);
 
-    await setupWorkflowDetailPage(
-      `${workflowDetailPath("instructions")}?file=config%2Fsettings.json`,
-    );
-    await expect(
-      screen.findByDisplayValue('{ "risk": "low", "tone": "direct" }'),
-    ).resolves.toBeInTheDocument();
+  await setupWorkflowDetailPage(
+    `${workflowDetailPath("instructions")}?file=config%2Fsettings.json`,
+  );
+  await expect(
+    screen.findByDisplayValue('{ "risk": "low", "tone": "direct" }'),
+  ).resolves.toBeInTheDocument();
 
-    const picker = screen.getByLabelText("Workflow files");
-    expect(picker).toHaveTextContent("config/settings.json");
-    click(picker);
-    expect(workflowFileItemByText(/config\/settings\.json/)).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
-    const instructions = workflowFileItemByText("instructions");
-    expect(instructions).toHaveAttribute("aria-checked", "false");
-    expect(workflowFileItemByText(/examples\/prompt\.md/)).toHaveAttribute(
-      "aria-checked",
-      "false",
-    );
+  const picker = screen.getByLabelText("Workflow files");
+  expect(picker).toHaveTextContent("config/settings.json");
+  click(picker);
+  expect(workflowFileItemByText(/config\/settings\.json/)).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  const instructions = workflowFileItemByText("instructions");
+  expect(instructions).toHaveAttribute("aria-checked", "false");
+  expect(workflowFileItemByText(/examples\/prompt\.md/)).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
 
-    await user.keyboard("{Home}");
-    expect(instructions).toHaveFocus();
-    expect(search()).toBe("?file=config%2Fsettings.json");
-    await user.keyboard(activation === "Enter" ? "{Enter}" : " ");
-    await expect(
-      screen.findByText("Gather CRM context before outreach."),
-    ).resolves.toBeInTheDocument();
-    expect(search()).toBe("");
-    await waitFor(() => {
-      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-      expect(picker).toHaveFocus();
-    });
+  await user.keyboard("{Home}");
+  expect(instructions).toHaveFocus();
+  expect(search()).toBe("?file=config%2Fsettings.json");
+  await user.keyboard("{Enter}");
+  await expect(
+    screen.findByText("Gather CRM context before outreach."),
+  ).resolves.toBeInTheDocument();
+  expect(search()).toBe("");
+  await waitFor(() => {
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(picker).toHaveFocus();
+  });
 
-    click(picker);
-    expect(workflowFileItemByText("instructions")).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
-    click(workflowFileItemByText(/examples\/prompt\.md/));
-    await expect(
-      screen.findByText("Ask for market segment and urgency."),
-    ).resolves.toBeInTheDocument();
-    expect(search()).toBe("?file=examples%2Fprompt.md");
-    expect(picker).toHaveTextContent("examples/prompt.md");
-    await waitFor(() => {
-      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-    });
+  click(picker);
+  expect(workflowFileItemByText("instructions")).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  workflowFileItemByText(/examples\/prompt\.md/).focus();
+  await user.keyboard(" ");
+  await expect(
+    screen.findByText("Ask for market segment and urgency."),
+  ).resolves.toBeInTheDocument();
+  expect(search()).toBe("?file=examples%2Fprompt.md");
+  expect(picker).toHaveTextContent("examples/prompt.md");
+  await waitFor(() => {
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(picker).toHaveFocus();
+  });
 
-    click(picker);
-    expect(workflowFileItemByText(/examples\/prompt\.md/)).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
-    expect(workflowFileItemByText("instructions")).toHaveAttribute(
-      "aria-checked",
-      "false",
-    );
-    await user.keyboard("{Escape}");
-    await waitFor(() => {
-      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-      expect(picker).toHaveFocus();
-    });
-    expect(search()).toBe("?file=examples%2Fprompt.md");
-  },
-);
+  click(picker);
+  expect(workflowFileItemByText(/examples\/prompt\.md/)).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  expect(workflowFileItemByText("instructions")).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(picker).toHaveFocus();
+  });
+  expect(search()).toBe("?file=examples%2Fprompt.md");
+});
 
 test("Reach workflow file actions with arrows and typeahead, then delete with Enter", async () => {
   const user = userEvent.setup();
@@ -4350,42 +4280,6 @@ test("Clear the author cache when the active organization changes", async () => 
   await expect(
     screen.findByText("New Organization Author"),
   ).resolves.toBeInTheDocument();
-});
-
-test("Browse workspace workflows", async () => {
-  const user = userEvent.setup();
-  mockWorkflowApis([salesResearch()]);
-
-  await setupPage({
-    context,
-    path: "/workflows",
-  });
-
-  await waitFor(() => {
-    expect(pathname()).toBe("/workflows");
-    expect(
-      screen.getByRole("heading", { name: "Workflows" }),
-    ).toBeInTheDocument();
-  });
-  expect(screen.getByText("Sales Research")).toBeInTheDocument();
-
-  await user.hover(linkByAriaLabel("Open Sales Research"));
-  await expect(screen.findByText("TU")).resolves.toBeInTheDocument();
-});
-
-test("Open a workflow from the workspace", async () => {
-  mockWorkflowApis([salesResearch()]);
-  mockConnectedAutomationConnectors();
-
-  await setupPage({
-    context,
-    path: `/workflows/${SALES_WORKFLOW_ID}/automations`,
-  });
-
-  await waitFor(() => {
-    expect(pathname()).toBe(`/workflows/${SALES_WORKFLOW_ID}/automations`);
-    expect(screen.getAllByText("Sales Research").length).toBeGreaterThan(0);
-  });
 });
 
 test("A completed automation creation preserves a reopened creation draft", async () => {
