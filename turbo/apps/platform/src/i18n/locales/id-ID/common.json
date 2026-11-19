@@ -1047,12 +1047,10 @@
       "invalid": "Tautan izin ini tidak valid atau tidak tersedia.",
       "loadFailed": "Tidak dapat memverifikasi semua izin yang diminta. Tidak ada izin yang dapat diubah.",
       "loading": "Memuat izin",
-      "myOkouScopeNote": "Berlaku untuk penggunaan Okou Anda di ruang kerja ini, bukan hanya tugas saat ini.",
       "myOkouSharedScopeNote": "Berlaku untuk konektor ini di seluruh chat Anda dalam ruang kerja ini. Rekan tim memiliki izin sendiri.",
       "notNow": "Tidak sekarang",
       "pending_other": "{{count}} izin untuk disetujui",
       "review": "Tinjau izin",
-      "scopeNote": "Berlaku untuk agen ini, bukan hanya tugas saat ini.",
       "sharedScopeNote": "Berlaku untuk konektor ini di semua chat dan agen Anda.",
       "title": "Berikan izin berikut"
     }

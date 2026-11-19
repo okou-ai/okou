@@ -1050,13 +1050,11 @@
       "invalid": "This permission link is invalid or unavailable.",
       "loadFailed": "Could not verify all requested permissions. No permissions can be changed.",
       "loading": "Loading permissions",
-      "myOkouScopeNote": "Applies to your use of Okou in this workspace, not only the current task.",
       "myOkouSharedScopeNote": "Applies to this connector across your chats in this workspace. Your teammates have their own permissions.",
       "notNow": "Not now",
       "pending_one": "{{count}} permission to allow",
       "pending_other": "{{count}} permissions to allow",
       "review": "Review permissions",
-      "scopeNote": "Applies to this agent, not only the current task.",
       "sharedScopeNote": "Applies to this connector across all your chats and agents.",
       "title": "Allow the following permissions"
     }
