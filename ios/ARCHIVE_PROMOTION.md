@@ -53,11 +53,23 @@ checks archive provenance against `build-archive` and test provenance against
 `build-test` and `test-packages`, using each producer's exact run attempt. The
 required `ci-gate-ios` includes all three native jobs and publication.
 
-A release-only merge group can omit simulator tests only when an existing test
-record matches its complete test input fingerprint. Standalone package tests
-still run on every selected merge group. The classifier examines the
-**whole group's diff**, not its branch name or last commit. Its conservative
-allowlist accepts release manifest versions, configured package changelogs,
+A release-only merge group performs no native work when a published archive and
+its test record already match its complete input fingerprint. A queued commit
+titled as a release starts one macOS resolver. It captures the actual toolchain
+and verifies readiness, the manifest, the archive checksum, and the test evidence
+with their builder provenance. Only that verified decision leaves the lint,
+package, simulator, archive, and publication jobs skipped, and the required gate
+accepts those skips for no other reason. The title only selects the attempt: the
+classifier still examines the **whole group's diff**, not its branch name or
+last commit. Other merge groups never start the resolver or wait for it.
+
+A missing record selects the complete native path in the same run, where
+simulator tests can still reuse a matching test record. When the queue entry that
+introduced these inputs is still validating ahead of the group, the resolver
+waits for its publication instead of repeating its build and tests; the group
+cannot merge before that entry. A failed or undecided resolver starts nothing.
+
+The classifier's conservative allowlist accepts release manifest versions, configured package changelogs,
 simple version files, package.json top-level versions, configured JSON extra-files
 whose top-level `version` is the only changed value, Cargo package versions and
 local Cargo.lock package versions, and the exact release-please version line in
@@ -68,9 +80,13 @@ The fingerprint covers Git blob contents **and modes** for all tracked iOS files
 (except `ios/CHANGELOG.md`), the iOS/proof/release workflows, the CI base resolver,
 and release-please configuration. It also includes actual Xcode build version,
 device and simulator SDK build versions, architecture, and simulator destination.
-Only the values in `ios/version.txt` and the marked `MARKETING_VERSION` line are
-normalized for test reuse. The archive fingerprint keeps those values intact.
-Consequently an old-version archive never substitutes for a new-version archive.
+The values in `ios/version.txt` and the marked `MARKETING_VERSION` line are
+normalized, so the archive and its tests share one identity across release
+versions. The marketing version reaches the product only as
+`CFBundleShortVersionString` bundle metadata; compiled code, resources, and
+symbols are identical across versions. Promotion stamps that metadata together
+with the build number, so an archive compiled before a version bump is the
+archive of the release that follows it.
 Dirty or untracked promotion inputs and `Local.xcconfig` are rejected.
 
 Test records preserve repository, builder commit, run ID, and **run attempt**.
@@ -161,17 +177,21 @@ checks out `release-please.outputs.release_target`. Before calling App Store
 Connect, it computes that checkout's actual fingerprints, waits up to ten minutes
 for the **exact** readiness key, checks provenance and both checksums, and safely
 unpacks the device archive. It does not list archives, choose a latest successful
-run, or assume the merge-group and main SHAs match.
+run, or assume the merge-group and main SHAs match. The archive is bound to the
+release by that fingerprint, not by the version it was compiled under.
 
 After verification it writes an immutable `release-target → archive` mapping,
-including the original builder SHA/run/attempt, manifest key/hash, archive hash,
-and test evidence. A conflicting mapping for the same release target fails.
+including the release version, the version the archive was compiled under, the
+original builder SHA/run/attempt, manifest key/hash, archive hash, and test
+evidence. A conflicting mapping for the same release target fails.
 The same record is retained as a private workflow artifact for 90 days.
 
 The existing App Store Connect preparation obtains the next build number and
 internal group. `release-testflight.sh --archive <Original.xcarchive>` copies the
-archive and changes only the archive, application and notification extension
-Info.plist build numbers before signing. Both bundle versions must agree.
+archive and stamps the release version and build number into the archive,
+application, and extension Info.plist files before signing. Package resource
+bundles that inherited the compiled version receive the release version. No
+other file may change, and the stamped bundle versions must agree.
 It expands each bundle's source entitlements for production, embeds its validated
 distribution profile in that private copy, and signs the extension before the
 containing app with a disposable keychain. Both profiles must authorize the
@@ -200,6 +220,8 @@ closed and requires matching merge-group inputs to be built again through CI.
 
 `iOS Archive Promotion Proof` remains available for native validation. Its PR job
 builds an unsigned device archive and proves metadata-only build-number changes.
+It also promotes that real archive under a later version and requires that no
+application bundle keeps the version it was compiled under.
 On main, an explicit dispatch with `signing_export=true` uses production approval
 and calls `--verify-archive`; it verifies distribution export/signing and never
 accesses the App Store Connect API or uploads a build. The production script no
@@ -225,7 +247,8 @@ bash .github/scripts/tests/ios-testflight-workflow-test.sh
 
 Promotion tests invoke the real CLI with temporary Git repositories and files;
 only external R2/GitHub commands are replaced. They cover differing builder/main
-SHAs, metadata-only test reuse, missing evidence/full tests, mixed groups, input
+SHAs, release reuse of a prior archive and its tests, waiting for a queued
+builder, missing evidence/full tests, mixed groups, input
 invalidation, independent native-job provenance and input agreement, bounded
 queue ancestry, immutable readiness, checksums, missing objects, and safe
 extraction. Generated archive placeholders test the protocol, not native

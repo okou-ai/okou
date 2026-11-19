@@ -156,8 +156,10 @@ required for the final archive.
 [Archive promotion](ARCHIVE_PROMOTION.md) defines the exact input fingerprints,
 prior-test evidence, immutable shared artifact storage/readiness, and release-target
 mapping. Ordinary merge groups run simulator tests and build unsigned Release
-archives. Release-only groups omit tests only with verified, matching prior
-merge-group evidence; missing evidence or mixed groups run full tests. The
+archives. Release-only groups reuse that archive and its tests only after
+verifying matching prior merge-group records; missing records or mixed groups run
+the complete native path. Publication stamps the release version and build
+number into the promoted archive's bundle metadata. The
 production job requires `release-testflight.sh --archive <unsigned.xcarchive>`.
 Its export-only `--verify-archive` mode remains available and never uploads.
 

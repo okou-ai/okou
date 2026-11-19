@@ -11,15 +11,26 @@ if [ "${SCRIPT_CHECKS_RESULT:?SCRIPT_CHECKS_RESULT is required}" != success ]; t
   exit 1
 fi
 
-case "${IOS_NEEDED:-}:${LINT_RESULT:-}" in
-  true:success | false:skipped) ;;
+# Only a main merge group whose resolver verified a published archive and its
+# tests may omit native jobs. A skipped resolver selects the ordinary path.
+case "${EVENT_NAME:?EVENT_NAME is required}:${IOS_NEEDED:-}:${RELEASE_RESULT:?RELEASE_RESULT is required}:${RELEASE_REUSE:-}" in
+  merge_group:true:success:true) release_reuse=true ;;
+  merge_group:true:success:false | *:*:skipped:) release_reuse=false ;;
+  *)
+    echo "::error::Unexpected release resolution: event=$EVENT_NAME, needed=${IOS_NEEDED:-missing}, result=$RELEASE_RESULT, reuse=${RELEASE_REUSE:-missing}"
+    exit 1
+    ;;
+esac
+
+case "${IOS_NEEDED:-}:$release_reuse:${LINT_RESULT:-}" in
+  true:false:success | true:true:skipped | false:false:skipped) ;;
   *)
     echo "::error::Unexpected SwiftLint result: needed=${IOS_NEEDED:-missing}, lint=${LINT_RESULT:-missing}"
     exit 1
     ;;
 esac
 
-case "${EVENT_NAME:?EVENT_NAME is required}:${IOS_NEEDED:-}:${PREVIEW_RESULT:-}" in
+case "$EVENT_NAME:${IOS_NEEDED:-}:${PREVIEW_RESULT:-}" in
   pull_request:true:success | workflow_dispatch:true:success | merge_group:true:skipped | push:true:skipped | *:false:skipped) ;;
   *)
     echo "::error::Unexpected staging device build: event=$EVENT_NAME, needed=${IOS_NEEDED:-missing}, preview=${PREVIEW_RESULT:-missing}"
@@ -27,17 +38,20 @@ case "${EVENT_NAME:?EVENT_NAME is required}:${IOS_NEEDED:-}:${PREVIEW_RESULT:-}"
     ;;
 esac
 
-case "${EVENT_NAME:?EVENT_NAME is required}:${IOS_NEEDED:-}:${PACKAGES_RESULT:-}:${BUILD_RESULT:-}:${ARCHIVE_RESULT:-}:${PUBLISH_RESULT:-}" in
-  merge_group:true:success:success:success:success)
+case "$EVENT_NAME:${IOS_NEEDED:-}:$release_reuse:${PACKAGES_RESULT:-}:${BUILD_RESULT:-}:${ARCHIVE_RESULT:-}:${PUBLISH_RESULT:-}" in
+  merge_group:true:false:success:success:success:success)
     echo 'Swift package tests, simulator tests or exact-input evidence, device archive, and immutable publication passed.'
     ;;
-  pull_request:true:success:success:skipped:skipped | workflow_dispatch:true:success:success:skipped:skipped)
+  merge_group:true:true:skipped:skipped:skipped:skipped)
+    echo 'Release metadata reused exact-input test evidence and the published device archive.'
+    ;;
+  pull_request:true:false:success:success:skipped:skipped | workflow_dispatch:true:false:success:success:skipped:skipped)
     echo 'Swift package tests, iOS app build, simulator tests, and staging device artifacts passed.'
     ;;
-  push:true:skipped:skipped:skipped:skipped)
+  push:true:false:skipped:skipped:skipped:skipped)
     echo 'Main consumes canonical archives; native build and tests are intentionally absent.'
     ;;
-  *:false:skipped:skipped:skipped:skipped)
+  *:false:false:skipped:skipped:skipped:skipped)
     echo 'iOS native checks were not needed for this event.'
     ;;
   *)

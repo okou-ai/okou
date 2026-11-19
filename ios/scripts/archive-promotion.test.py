@@ -54,9 +54,19 @@ if '/commits?' in route:
     sys.exit(0)
 if '/actions/workflows/ios.yml/runs?' in route:
     query = urllib.parse.parse_qs(urllib.parse.urlsplit(route).query)
+    status = query.get('status', [None])[0]
     print(json.dumps({'workflow_runs': [r['run'] for r in records.values()
         if r['run']['head_sha'] == query['head_sha'][0]
-        and r['run'].get('conclusion') == 'success']}))
+        and status in (None, r['run'].get('conclusion'))]}))
+    # A validating queue entry finishes, and may publish, after one observation.
+    finished = [r for r in records.values() if 'nextRun' in r]
+    for record in finished:
+        record['run'] = record.pop('nextRun')
+        if 'publishes' in record:
+            os.rename(record.pop('publishes'), os.environ['STORE'])
+    if finished:
+        with open(os.environ['GITHUB_RECORDS'], 'w') as output:
+            json.dump(records, output)
     sys.exit(0)
 run_id = route.split('/runs/')[1].split('/')[0]
 record = records[run_id]
@@ -178,6 +188,7 @@ class PromotionTest(unittest.TestCase):
             "run": {
                 "id": int(self.env["GITHUB_RUN_ID"]),
                 "run_attempt": int(self.env["GITHUB_RUN_ATTEMPT"]),
+                "status": "completed",
                 "conclusion": "success",
                 "html_url": f"https://github.com/okou-ai/okou/actions/runs/{self.env['GITHUB_RUN_ID']}",
                 "head_sha": self.git("rev-parse", "HEAD"),
@@ -331,7 +342,7 @@ class PromotionTest(unittest.TestCase):
         (self.repo / "ios/check.sh").chmod(0o755)
         self.commit()
         actual = self.capture()
-        archive, tests = [], []
+        sources = []
         entries = subprocess.check_output(
             ["git", "ls-tree", "-r", "-z", "HEAD"], cwd=self.repo
         )
@@ -353,7 +364,6 @@ class PromotionTest(unittest.TestCase):
             data = subprocess.check_output(
                 ["git", "cat-file", "blob", oid], cwd=self.repo
             )
-            archive.append([path, mode, hashlib.sha256(data).hexdigest()])
             if path == "ios/version.txt":
                 data = b"<release-version>\n"
             elif path == "ios/Config/Shared.xcconfig":
@@ -361,15 +371,15 @@ class PromotionTest(unittest.TestCase):
                     b"MARKETING_VERSION = 1.0.0",
                     b"MARKETING_VERSION = <release-version>",
                 )
-            tests.append([path, mode, hashlib.sha256(data).hexdigest()])
+            sources.append([path, mode, hashlib.sha256(data).hexdigest()])
         tools = json.loads((self.root / "toolchain.json").read_bytes())
-        for key, files in (("archiveInputSha256", archive), ("testInputSha256", tests)):
-            expected = (
-                json.dumps([files, tools], sort_keys=True, indent=2) + "\n"
-            ).encode()
+        expected = (
+            json.dumps([sources, tools], sort_keys=True, indent=2) + "\n"
+        ).encode()
+        for key in ("archiveInputSha256", "testInputSha256"):
             self.assertEqual(actual[key], hashlib.sha256(expected).hexdigest())
 
-    def test_shallow_release_checkout_fetches_prior_tests_and_publishes(self):
+    def test_shallow_release_checkout_reuses_the_prior_archive_and_tests(self):
         builder = self.git("rev-parse", "HEAD")
         old = self.capture()
         self.cli("publish", self.work)
@@ -393,11 +403,52 @@ class PromotionTest(unittest.TestCase):
             ).returncode,
             0,
         )
-        current = self.capture()
-        self.assertEqual(old["testInputSha256"], current["testInputSha256"])
-        self.assertNotEqual(old["archiveInputSha256"], current["archiveInputSha256"])
+        # Only the release version changed, so neither identity moves.
+        self.assertEqual(old, self.capture())
         self.cli("resolve-tests", self.work)
-        self.assertIn("run_tests=false", Path(self.env["GITHUB_OUTPUT"]).read_text())
+        self.cli("resolve-release", self.work, "--wait-seconds", 60)
+        output = Path(self.env["GITHUB_OUTPUT"]).read_text()
+        self.assertIn("run_tests=false", output)
+        self.assertIn("reuse=true", output)
+        target = self.consume_work()
+        self.cli("consume", target, "--wait-seconds", 0)
+        mapping = json.loads((target / "release-mapping.json").read_bytes())
+        self.assertEqual(mapping["builderCommit"], builder)
+        self.assertEqual(mapping["builderRunId"], 123)
+        self.assertEqual(mapping["testEvidence"]["runId"], 123)
+        self.assertEqual(mapping["archiveVersion"], "1.0.0")
+        self.assertEqual(mapping["iosVersion"], "1.0.1")
+
+    def test_only_published_release_metadata_skips_native_validation(self):
+        # Nothing published yet: no queue entry is validating, so do not wait.
+        self.release()
+        self.capture()
+        self.cli("resolve-release", self.work, "--wait-seconds", 60)
+        output = Path(self.env["GITHUB_OUTPUT"])
+        self.assertEqual(output.read_text(), "reuse=false\n")
+        # Published inputs still require native validation for a mixed group.
+        self.git("reset", "--hard", self.base)
+        self.cli("publish", self.work)
+        self.file("turbo/apps/cli/source.ts", "export const changed = true\n")
+        self.commit()
+        self.capture()
+        output.unlink()
+        self.cli("resolve-release", self.work, "--wait-seconds", 60)
+        self.assertEqual(output.read_text(), "reuse=false\n")
+
+    def test_release_without_a_ready_archive_rebuilds_it_with_prior_tests(self):
+        # Test evidence outlives a lost readiness marker: the native path rebuilds
+        # and republishes the archive without repeating the tests.
+        self.cli("publish", self.work)
+        self.ready().unlink()
+        self.release()
+        self.capture()
+        self.cli("resolve-release", self.work, "--wait-seconds", 60)
+        self.cli("resolve-tests", self.work)
+        self.assertEqual(
+            Path(self.env["GITHUB_OUTPUT"]).read_text(),
+            "reuse=false\nrun_tests=false\n",
+        )
         self.env["GITHUB_RUN_ID"] = "124"
         self.env["IOS_RAN_TESTS"] = "false"
         self.record()
@@ -410,6 +461,40 @@ class PromotionTest(unittest.TestCase):
         mapping = json.loads((target / "release-mapping.json").read_bytes())
         self.assertEqual(mapping["builderRunId"], 124)
         self.assertEqual(mapping["testEvidence"]["runId"], 123)
+        self.assertEqual(mapping["archiveVersion"], "1.0.1")
+
+    def test_release_metadata_waits_for_the_queue_entry_validating_its_inputs(self):
+        self.cli("publish", self.work)
+        staged = self.root / "staged-store"
+        for publishes, decision in ((True, "reuse=true"), (False, "reuse=false")):
+            with self.subTest(publishes=publishes):
+                # The entry ahead is observed in progress, then finishes.
+                Path(self.env["STORE"]).rename(staged)
+                self.record()
+                queued = self.records["123"]
+                queued["nextRun"] = dict(queued["run"])
+                queued["run"] = queued["run"] | {
+                    "status": "in_progress",
+                    "conclusion": None,
+                }
+                if publishes:
+                    queued["publishes"] = str(staged)
+                else:
+                    queued["nextRun"]["conclusion"] = "failure"
+                self.save_records()
+                self.git("reset", "--hard", self.base)
+                self.release()
+                self.capture()
+                output = Path(self.env["GITHUB_OUTPUT"])
+                output.unlink(missing_ok=True)
+                self.cli("resolve-release", self.work, "--wait-seconds", 1)
+                self.assertEqual(output.read_text(), decision + "\n")
+                self.assertNotIn(
+                    "nextRun",
+                    json.loads(Path(self.env["GITHUB_RECORDS"]).read_text())["123"],
+                )
+                if not publishes:
+                    staged.rename(self.env["STORE"])
 
     def test_missing_test_evidence_runs_tests(self):
         self.release()
@@ -951,6 +1036,9 @@ class PromotionTest(unittest.TestCase):
         self.env["GITHUB_RUN_ID"] = "124"
         self.record()
         self.cli("publish", self.work, error="Manifest checksum mismatch")
+        self.release()
+        self.capture()
+        self.cli("resolve-release", self.work, error="Manifest checksum mismatch")
 
     def test_non_main_consumption_and_invalid_test_decision_fail_closed(self):
         self.env["GITHUB_REF"] = "refs/heads/untrusted"
