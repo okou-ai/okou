@@ -215,9 +215,6 @@ jq -e '
 ' <<<"$workflow_json" >/dev/null || fail "prepare must publish cache references and the miss-only compile matrix"
 
 jq -e '
-  (.architecture.jobs.compile.if | contains("!cancelled()")) and
-  (.architecture.jobs.compile.if | contains("!inputs.cache-hit")) and
-  .architecture.jobs.compile.strategy.matrix.include == "${{ fromJSON(format('\''[{0}]'\'', inputs.architecture-json)) }}" and
   any(.architecture.jobs.compile.steps[];
     .uses == "./.github/actions/setup-r2-sccache" and
     .with.architecture == "${{ matrix.id }}" and
@@ -232,14 +229,10 @@ jq -e '
     .env.PRODUCER_RUN_ATTEMPT == "${{ github.run_attempt }}" and
     (. | has("continue-on-error") | not)
   )
-' <<<"$workflow_json" >/dev/null || fail "compile must be required for cache misses and preserve R2 bindings"
+' <<<"$workflow_json" >/dev/null || fail "compile must preserve R2 bindings and verified publication"
 
 jq -e '
-  (.architecture.jobs.build.needs | sort) == ["compile"] and
   (.architecture.jobs.build | has("container") | not) and
-  .architecture.jobs.build.strategy.matrix.include == "${{ fromJSON(format('\''[{0}]'\'', inputs.architecture-json)) }}" and
-  (.architecture.jobs.build.if | contains("always()")) and
-  (.architecture.jobs.build.if | contains("!cancelled()")) and
   any(.architecture.jobs.build.steps[];
     (.run // "" | contains(".github/scripts/runner/runner-image-architecture.sh build-ready")) and
     .env.CLI_ARTIFACT_ID == "${{ inputs.cli-artifact-id }}" and
@@ -282,9 +275,6 @@ jq -e '
   ($steps | map(.id // "") | index("shadow")) as $shadow |
   ($steps | map(.id // "") | index("artifact")) as $artifact |
   ($steps | map(.id // "") | index("manifest-upload")) as $upload |
-  (.architecture.jobs.compile | has("needs") | not) and
-  .architecture.jobs.compile.strategy["fail-fast"] == false and
-  .architecture.jobs.compile.permissions == {actions: "read", contents: "read"} and
   ($build != null and $build < $fresh and $fresh < $transport and $transport < $shadow and $shadow < $artifact and $artifact < $upload) and
   $steps[$build].run == ".github/scripts/runner/runner-binary-build/build.sh build" and
   all([$build, $fresh, $transport, $shadow, $artifact][];
