@@ -4,11 +4,15 @@ import { setupGlobalShortcut } from "../../lib/setup-global-shortcut.ts";
 import { projectOrderShortcutOwner } from "../../lib/project-order-shortcut-owner.ts";
 import { shouldHandleShortcutPress } from "../okou-page/nav.ts";
 import { selectedProjectId$ } from "./project-navigation.ts";
-import { projectReorderFilterAllows$, stepProject$ } from "./project-order.ts";
-import { projectedProjects$ } from "./projects.ts";
+import { stepProject$ } from "./project-order.ts";
 
 export const setupProjectOrderShortcuts$ = command(
-  ({ get, set }, projectsEnabled: () => boolean, signal: AbortSignal) => {
+  (
+    { get, set },
+    projectIds: readonly string[],
+    reorderEnabled: boolean,
+    signal: AbortSignal,
+  ) => {
     const targetProjectId = (event: KeyboardEvent) => {
       const owner = projectOrderShortcutOwner(event.target);
       return owner
@@ -18,11 +22,7 @@ export const setupProjectOrderShortcuts$ = command(
         : get(selectedProjectId$);
     };
     const shouldHandle = (event: KeyboardEvent) => {
-      if (
-        !shouldHandleShortcutPress(event) ||
-        !projectsEnabled() ||
-        !get(projectReorderFilterAllows$)
-      ) {
+      if (!shouldHandleShortcutPress(event) || !reorderEnabled) {
         return false;
       }
       // An unrelated menu retains its own keys, even on a Project page.
@@ -36,9 +36,7 @@ export const setupProjectOrderShortcuts$ = command(
         return false;
       }
       const id = targetProjectId(event);
-      return get(projectedProjects$).some((project) => {
-        return project.id === id;
-      });
+      return id !== null && projectIds.includes(id);
     };
     const move = async (event: KeyboardEvent, direction: -1 | 1) => {
       const id = targetProjectId(event);
@@ -46,7 +44,7 @@ export const setupProjectOrderShortcuts$ = command(
         await set(stepProject$, id, direction, signal);
       }
     };
-    setupGlobalShortcut(
+    return setupGlobalShortcut(
       {
         [GLOBAL_KEYBOARD_SHORTCUTS.moveChatPinUp.binding]: {
           allowInEditableTarget: true,

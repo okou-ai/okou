@@ -4,16 +4,13 @@ import { chatThreadOnlyUnread$ } from "../chat-page/chat-thread-only-unread.ts";
 import { chatThreadOnlyMuted$ } from "../chat-page/chat-thread-only-muted.ts";
 import { projects$, projectsEnabled$, reorderProject$ } from "./projects.ts";
 
-export const projectReorderFilterAllows$ = computed((get) => {
+export const projectReorderEnabled$ = computed(async (get) => {
   return (
+    (await get(projectsEnabled$)) &&
     !get(chatThreadOnlyUnread$) &&
     !get(chatThreadOnlyArchived$) &&
     !get(chatThreadOnlyMuted$)
   );
-});
-
-export const projectReorderEnabled$ = computed(async (get) => {
-  return (await get(projectsEnabled$)) && get(projectReorderFilterAllows$);
 });
 
 export const stepProject$ = command(

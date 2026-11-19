@@ -169,19 +169,33 @@ def claim_resource(namespace, owner, deadline):
 
 
 def unit_state(unit, *, deadline=None):
-    result = subprocess.run(
-        [
-            "sudo",
-            "systemctl",
-            "show",
-            unit,
-            "--property=LoadState,ActiveState,MainPID,ControlGroup,Job",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=command_timeout(10, deadline),
-        check=False,
-    )
+    command = [
+        "sudo",
+        "systemctl",
+        "show",
+        unit,
+        "--property=LoadState,ActiveState,MainPID,ControlGroup,Job",
+    ]
+    for attempt in range(2):
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=command_timeout(10, deadline),
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            # Only claim retirement supplies a deadline for unit observations.
+            if attempt or deadline is None or time.monotonic() >= deadline:
+                raise
+            print(
+                f"Image claim unit observation timed out for {unit}. Retrying.",
+                file=sys.stderr,
+                flush=True,
+            )
+        else:
+            break
     values = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
     if values.get("LoadState") == "not-found":
         return values

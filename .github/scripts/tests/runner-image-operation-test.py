@@ -418,9 +418,29 @@ class ImageOperationTest(unittest.TestCase):
         ]
         self.assertEqual(len(marker_installs), 1)
 
+    def test_claim_retries_a_timed_out_unit_observation(self):
+        prior = self.start_blocked("wait-for-retirement")
+        claim_request = {"action": "claim", "phase": None}
+        claim_count = self.records("requests").count(claim_request)
+
+        self.environment.update(GITHUB_RUN_ID="1235", IMAGE_FAULT="claim-observation-timeout")
+        self.invoke("claim")
+
+        self.assertTrue((self.root / "fault-used").exists())
+        self.assertEqual(self.records("requests").count(claim_request), claim_count + 1)
+        self.assertTrue(self.records("stops"))
+        output, error = prior.communicate(timeout=15)
+        self.assertNotEqual(prior.returncode, 0, output + error)
+        self.assert_one_build()
+        successor = self.root / "var/lib/vm0-runner/bin/pr-123-image-1235"
+        self.assertTrue(successor.is_dir())
+
     def test_claim_budget_includes_prior_worker_retirement(self):
         self.invoke("claim")
         self.invoke("run", "warm", str(self.result))
+        owner_path = next(self.root.glob("vm0-runner-image-*/*/owner.json"))
+        previous_owner = owner_path.read_bytes()
+        intent_path = next(owner_path.parent.glob("*/intent.json"))
         self.environment.update(GITHUB_RUN_ID="1235", IMAGE_FAULT="slow-claim-retirement")
         with self.image_call("claim") as claim:
             output, error = claim.communicate(timeout=5)
@@ -429,6 +449,8 @@ class ImageOperationTest(unittest.TestCase):
         binary_root = self.root / "var/lib/vm0-runner/bin"
         self.assertTrue((binary_root / "pr-123-image-1234").is_dir())
         self.assertFalse((binary_root / "pr-123-image-1235").exists())
+        self.assertEqual(owner_path.read_bytes(), previous_owner)
+        self.assertTrue(intent_path.is_file())
 
     def test_waiting_claim_retires_a_late_prior_worker(self):
         self.invoke("claim")

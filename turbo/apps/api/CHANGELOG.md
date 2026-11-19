@@ -10,6 +10,31 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.95.1](https://github.com/okou-ai/okou/compare/api-v2.95.0...api-v2.95.1) (2026-11-19)
+
+
+### Refactoring
+
+* **api:** remove queued run startup remnants ([#49046](https://github.com/okou-ai/okou/issues/49046)) ([66d7775](https://github.com/okou-ai/okou/commit/66d7775eb7dce25b22529760728854c071bd53e4))
+* **api:** resolve custom runtime from selected chat accounts ([#49025](https://github.com/okou-ai/okou/issues/49025)) ([3d3351f](https://github.com/okou-ai/okou/commit/3d3351f281c530b7d81bba93fd59cd87c02ba57c))
+* **api:** retire chat connector client compatibility ([#49047](https://github.com/okou-ai/okou/issues/49047)) ([3202044](https://github.com/okou-ai/okou/commit/3202044add225011588e98a5724cec7470c78cde))
+* **api:** simplify queued run planning and launch receipts ([#49019](https://github.com/okou-ai/okou/issues/49019)) ([f838858](https://github.com/okou-ai/okou/commit/f838858251a73c1fba7a7cb21b9ce314ed665549))
+
+
+### Performance Improvements
+
+* **api:** send bounded predecessor home checkout hints ([#49035](https://github.com/okou-ai/okou/issues/49035)) ([4fbea89](https://github.com/okou-ai/okou/commit/4fbea89804e16caa8372afcb9626b5716bb8f8e0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.92.1
+    * @okouai/core bumped to 8.855.1
+    * @okouai/db bumped to 2.53.0
+    * @okouai/pi-agent-runtime bumped to 1.52.8
+
 ## [2.95.0](https://github.com/okou-ai/okou/compare/api-v2.94.4...api-v2.95.0) (2026-11-19)
 
 

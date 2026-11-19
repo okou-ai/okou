@@ -38,9 +38,6 @@ function featureSwitchResponseBody(params: {
       ...effectiveSwitches,
       // Shipped native clients consume this capability name; My Okou owns its value.
       projects: effectiveSwitches[FeatureSwitchKey.SingleAgent],
-      // Supported Web and iOS builds use this wire value to select the Chat APIs.
-      // Remove after their replacement builds are published and the client floors exclude them.
-      connectorChatAccountAccess: true,
     },
   };
 }

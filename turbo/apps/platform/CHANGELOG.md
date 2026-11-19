@@ -13,6 +13,34 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1152.0](https://github.com/okou-ai/okou/compare/app-v0.1151.0...app-v0.1152.0) (2026-11-19)
+
+
+### Features
+
+* **platform:** refresh the for you illustrated card deck ([#49016](https://github.com/okou-ai/okou/issues/49016)) ([4bf10b8](https://github.com/okou-ai/okou/commit/4bf10b89e09adce4c9253418d2ad8de1937e3e9e))
+
+
+### Bug Fixes
+
+* **app:** compact works channels into a responsive grid ([#49001](https://github.com/okou-ai/okou/issues/49001)) ([978a7fb](https://github.com/okou-ai/okou/commit/978a7fb1b057df9ec03eca609a78c6b0dae34e66))
+
+
+### Refactoring
+
+* **api:** retire chat connector client compatibility ([#49047](https://github.com/okou-ai/okou/issues/49047)) ([3202044](https://github.com/okou-ai/okou/commit/3202044add225011588e98a5724cec7470c78cde))
+* **app:** propagate async project switch dependencies ([#48925](https://github.com/okou-ai/okou/issues/48925)) ([71af7ce](https://github.com/okou-ai/okou/commit/71af7ce1e753cc71ce955f58f46c0a389cfa781d))
+* **app:** remove redundant projects switch default ([#49058](https://github.com/okou-ai/okou/issues/49058)) ([b86b730](https://github.com/okou-ai/okou/commit/b86b730f2e3f6b6f01f751435cfdafd22f5c9ac5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.92.1
+    * @okouai/core bumped to 8.855.1
+    * @okouai/ui bumped to 1.21.65
+
 ## [0.1151.0](https://github.com/okou-ai/okou/compare/app-v0.1150.0...app-v0.1151.0) (2026-11-19)
 
 

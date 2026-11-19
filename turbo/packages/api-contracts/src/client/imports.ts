@@ -3,11 +3,6 @@
 
 export const clientContractImportManifest = [
   {
-    module: "agent-connector-access",
-    contracts: ["agentConnectorAccessContract"],
-    bindings: [],
-  },
-  {
     module: "agent-custom-connectors",
     contracts: ["agentCustomConnectorsContract"],
     bindings: [],
@@ -589,11 +584,6 @@ export const clientContractImportManifest = [
         imported: "connectorAccountTargetSchema",
       },
     ],
-  },
-  {
-    module: "connector-agent-access",
-    contracts: ["connectorAgentAccessContract"],
-    bindings: [],
   },
   {
     module: "connector-catalog",

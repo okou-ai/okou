@@ -16,36 +16,6 @@
       "uses": 4
     },
     {
-      "file": "turbo/packages/db/scripts/migrations/025-presentation-template-copy/copy.ts",
-      "dependency": "sql:storage_versions",
-      "uses": 5
-    },
-    {
-      "file": "turbo/packages/db/scripts/migrations/025-presentation-template-copy/copy.ts",
-      "dependency": "sql:storages",
-      "uses": 5
-    },
-    {
-      "file": "turbo/packages/db/scripts/migrations/026-retire-workflow-storage/cleanup.ts",
-      "uses": 6,
-      "dependency": "module:turbo/packages/db/scripts/migrations/026-retire-workflow-storage/queries"
-    },
-    {
-      "file": "turbo/packages/db/scripts/migrations/026-retire-workflow-storage/queries.ts",
-      "dependency": "sql:storage_version_lineage",
-      "uses": 1
-    },
-    {
-      "file": "turbo/packages/db/scripts/migrations/026-retire-workflow-storage/queries.ts",
-      "dependency": "sql:storage_versions",
-      "uses": 4
-    },
-    {
-      "file": "turbo/packages/db/scripts/migrations/026-retire-workflow-storage/queries.ts",
-      "dependency": "sql:storages",
-      "uses": 7
-    },
-    {
       "file": "turbo/packages/db/scripts/migrations/028-registry-resource-bundles/backfill-command.ts",
       "uses": 9,
       "dependency": "module:turbo/packages/db/scripts/migrations/028-registry-resource-bundles/source"

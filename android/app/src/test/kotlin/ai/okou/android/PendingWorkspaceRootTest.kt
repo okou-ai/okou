@@ -138,16 +138,21 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithTag("chat_list").assertExists()
         compose.onNodeWithText("Loading chats…").assertExists()
         compose.onNodeWithText(CACHED_CHAT).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Search").assertDoesNotExist()
         compose.runOnIdle { app.organizationResponse.complete(Unit) }
         awaitCachedRow()
         compose.onNodeWithTag("chat_$CHAT_PERSONAL").assertIsNotEnabled()
         compose.onNodeWithText("New chat").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Search").assertDoesNotExist()
 
         compose.activityRule.scenario.recreate()
         awaitCachedRow()
         compose.runOnIdle { app.preferencesResponse.complete(Unit) }
         compose.onNodeWithContentDescription("Settings").assertExists()
         compose.onNodeWithTag("chat_$CHAT_PERSONAL").assertIsEnabled()
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.onNodeWithTag("chat_search_results").assertExists()
+        compose.onNodeWithText(CACHED_CHAT).assertExists()
     }
 
     @Test

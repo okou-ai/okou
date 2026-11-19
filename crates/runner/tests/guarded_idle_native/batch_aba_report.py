@@ -5,6 +5,7 @@ import argparse
 import json
 import pathlib
 
+import observation_report
 import progress_report as foreground
 import pressure_report as pressure
 import report
@@ -26,21 +27,6 @@ def clock(value, begin, end):
 def queued(value):
     exact(value, dict.fromkeys(COUNTS, 0) | {"registered_operations": 2, "queued": 2, "closed": False},
           "batch ABA did not preserve its two unused queued claims")
-
-
-def reads(value, policy, begin, end):
-    if not isinstance(value, list) or len(value) < 2:
-        raise ValueError("batch ABA lacks original paired fresh reads")
-    for sample in value:
-        if (not isinstance(sample, dict) or set(sample) != {"started_ns", "finished_ns", "read_start_offset_ns",
-                "available_bytes", "age_ns", "read_duration_ns"}
-                or any(not pressure.integer(v) for v in sample.values())
-                or not begin < sample["started_ns"] < sample["finished_ns"] < end
-                or not 0 < sample["available_bytes"] <= policy["host_total_bytes"]
-                or not sample["read_duration_ns"] <= sample["age_ns"] <= sample["finished_ns"]-sample["started_ns"]
-                or sample["age_ns"] > policy["max_sample_age_millis"]*1_000_000):
-            raise ValueError("batch ABA observation was fabricated stale or outside resumed admission")
-        begin = sample["finished_ns"]
 
 
 def validate(directory, *, cases=None, policy_key="native_batch_aba_policy_json"):
@@ -110,7 +96,9 @@ def validate(directory, *, cases=None, policy_key="native_batch_aba_policy_json"
         before, after = waiting.get("status_waits_before"), waiting.get("status_waits_after")
         if not failure.status_wait_advanced(before, after):
             raise ValueError("old batch final status wait was not positively observed")
-        reads(waiting.get("samples"), policy, resumed, polled)
+        observation_report.paired_fresh_reads(
+            waiting.get("samples"), policy, resumed, polled
+        )
         second = foreground.heartbeat(waiting.get("heartbeat"), 2, polled, events[3]["monotonic_ns"])
         exact(waiting.get("accounting"), dict.fromkeys(COUNTS, 0) | {"closed": False}, "unused old claims did not settle")
         exact(waiting, {"source_resumed_ns": resumed, "status_wait_polled_ns": polled,

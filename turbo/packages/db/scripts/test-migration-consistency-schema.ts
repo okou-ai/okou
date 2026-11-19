@@ -1810,7 +1810,7 @@ async function validatePermanentAgentRunMetadataState(
     );
     await client.query(
       `UPDATE "agent_runs"
-       SET "trigger_source" = 'chat', "autonomy_budget" = 32
+       SET "trigger_source" = 'chat', "autonomy_budget" = 128
        WHERE "id" = $1`,
       [fixture.productRunId],
     );
@@ -1836,7 +1836,7 @@ async function validatePermanentAgentRunMetadataState(
       query: `INSERT INTO "agent_runs" (
         "id", "user_id", "status", "prompt", "org_id",
         "trigger_source", "autonomy_budget"
-      ) VALUES ($1, $2, 'failed', 'invalid budget', $3, 'chat', 33)`,
+      ) VALUES ($1, $2, 'failed', 'invalid budget', $3, 'chat', 129)`,
       values: [fixture.outOfRangeRunId, fixture.userId, fixture.orgId],
     });
 
@@ -1890,7 +1890,7 @@ async function validatePermanentAgentRunMetadataState(
     );
     assert.deepEqual(validStates.rows, [
       {
-        autonomyBudget: 32,
+        autonomyBudget: 128,
         id: fixture.productRunId,
         summary: null,
         triggerSource: "chat",
@@ -3045,12 +3045,6 @@ async function main(): Promise<void> {
   let migrationsBackedUp = false;
 
   try {
-    console.log(
-      execCommand("tsx scripts/test-migration-cli-stderr.ts", {
-        cwd: PACKAGE_DIR,
-      }),
-    );
-
     // Step 0: Validate snapshot files
     await validateSnapshotFiles();
 
@@ -3076,14 +3070,6 @@ async function main(): Promise<void> {
     await resetDatabase(dbUrl1);
     await runMigrations(dbUrl1);
     console.log("   ✅ Consecutive database resets completed successfully\n");
-
-    console.log("=== Workflow Storage retirement CLI ===");
-    console.log(
-      execCommand(
-        "node --import tsx scripts/migrations/026-retire-workflow-storage/test-cleanup.ts",
-        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
-      ),
-    );
 
     console.log("=== Registry resource inventory CLI ===");
     console.log(
@@ -3113,14 +3099,6 @@ async function main(): Promise<void> {
     console.log(
       execCommand(
         "node --import tsx scripts/migrations/029-template-guidance-bundles/test-backfill.ts",
-        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
-      ),
-    );
-
-    console.log("=== Presentation template copy CLI ===");
-    console.log(
-      execCommand(
-        "node --import tsx scripts/migrations/025-presentation-template-copy/test-copy.ts",
         { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
       ),
     );

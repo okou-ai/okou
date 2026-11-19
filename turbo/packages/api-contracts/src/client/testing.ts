@@ -5,8 +5,6 @@
 
 import type { AppRouter } from "../contracts/trpc-contract";
 import type { ClientRouter } from "./types";
-import { agentConnectorAccessContract as OriginalAgentConnectorAccessContract } from "../contracts/agent-connector-access";
-import { agentConnectorAccessContract } from "./agent-connector-access";
 import { agentCustomConnectorsContract as OriginalAgentCustomConnectorsContract } from "../contracts/agent-custom-connectors";
 import { agentCustomConnectorsContract } from "./agent-custom-connectors";
 import { agentDraftContract as OriginalAgentDraftContract } from "../contracts/agent-draft";
@@ -199,8 +197,6 @@ import { connectedConnectorsContract as OriginalConnectedConnectorsContract } fr
 import { connectedConnectorsContract } from "./connected-connectors";
 import { connectorAccountsContract as OriginalConnectorAccountsContract } from "../contracts/connector-accounts";
 import { connectorAccountsContract } from "./connector-accounts";
-import { connectorAgentAccessContract as OriginalConnectorAgentAccessContract } from "../contracts/connector-agent-access";
-import { connectorAgentAccessContract } from "./connector-agent-access";
 import { connectorCatalogContract as OriginalConnectorCatalogContract } from "../contracts/connector-catalog";
 import { connectorCatalogContract } from "./connector-catalog";
 import { connectorCheckContract as OriginalConnectorCheckContract } from "../contracts/connector-check";
@@ -806,7 +802,6 @@ export const clientDescriptorContracts: readonly (readonly [
   ClientRouter,
   AppRouter,
 ])[] = [
-  [agentConnectorAccessContract, OriginalAgentConnectorAccessContract],
   [agentCustomConnectorsContract, OriginalAgentCustomConnectorsContract],
   [agentDraftContract, OriginalAgentDraftContract],
   [agentSetupPromptsContract, OriginalAgentSetupPromptsContract],
@@ -916,7 +911,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [computerUseWriteCommandContract, OriginalComputerUseWriteCommandContract],
   [connectedConnectorsContract, OriginalConnectedConnectorsContract],
   [connectorAccountsContract, OriginalConnectorAccountsContract],
-  [connectorAgentAccessContract, OriginalConnectorAgentAccessContract],
   [connectorCatalogContract, OriginalConnectorCatalogContract],
   [connectorCheckContract, OriginalConnectorCheckContract],
   [connectorPermissionsContract, OriginalConnectorPermissionsContract],
