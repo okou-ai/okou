@@ -47,15 +47,10 @@ import type { ImageArtifactNavigationItem } from "./artifact-image-navigation.ts
 
 const ARTIFACT_AUTO_LOAD_THRESHOLD_PX = 800;
 
-/**
- * Return from an artifact detail to the thread's gallery and refresh its first page.
- */
 function useOpenThreadArtifacts(thread: ChatPanelSignals): () => void {
   const open = useSet(openThreadArtifacts$);
-  const reloadArtifacts = useSet(thread.sidebar.artifactCatalog.reload$);
   return () => {
     open(thread);
-    reloadArtifacts();
   };
 }
 

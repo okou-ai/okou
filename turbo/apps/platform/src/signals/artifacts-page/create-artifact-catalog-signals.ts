@@ -92,13 +92,7 @@ function withThumbnailLoad(
   };
 }
 
-export interface ArtifactCatalogSignals {
-  readonly selectedKind$: Computed<ArtifactCatalogKind | null>;
-  readonly setKind$: Command<void, [ArtifactCatalogKind | null]>;
-  readonly reload$: Command<void, []>;
-  readonly catalog$: Computed<Promise<ArtifactCatalogPage>>;
-  readonly loadMore$: Command<Promise<void>, [AbortSignal]>;
-  readonly loadThroughArtifact$: Command<Promise<void>, [string, AbortSignal]>;
+interface ArtifactCatalogSelection {
   readonly selectArtifact$: Command<void, [string | null]>;
   readonly reloadSelectedArtifactDetail$: Command<void, []>;
   readonly ensureSelectedArtifactPreview$: Command<
@@ -107,6 +101,16 @@ export interface ArtifactCatalogSignals {
   >;
   readonly selectedArtifactDetail$: Computed<Promise<ArtifactDetail | null>>;
   readonly selectedArtifactPreview$: Computed<AttachmentPreviewSignals | null>;
+}
+
+export interface ArtifactCatalogSignals extends ArtifactCatalogSelection {
+  readonly selectedKind$: Computed<ArtifactCatalogKind | null>;
+  readonly setKind$: Command<void, [ArtifactCatalogKind | null]>;
+  readonly reload$: Command<void, []>;
+  readonly catalog$: Computed<Promise<ArtifactCatalogPage>>;
+  readonly loadMore$: Command<Promise<void>, [AbortSignal]>;
+  readonly loadThroughArtifact$: Command<Promise<void>, [string, AbortSignal]>;
+  readonly createSelection: () => ArtifactCatalogSelection;
 }
 
 interface CatalogPagingState {
@@ -221,14 +225,7 @@ function createCatalogSelectionSignals(
   catalog$: Computed<Promise<ArtifactCatalogPage>>,
   reloadVersion$: State<number>,
   chatThreadId: string | undefined,
-): Pick<
-  ArtifactCatalogSignals,
-  | "selectArtifact$"
-  | "reloadSelectedArtifactDetail$"
-  | "ensureSelectedArtifactPreview$"
-  | "selectedArtifactDetail$"
-  | "selectedArtifactPreview$"
-> {
+): ArtifactCatalogSelection {
   const internalDetailVersion$ = state(0);
   const reloadSelectedArtifactDetail$ = command(({ set }) => {
     set(internalDetailVersion$, (version) => {
@@ -367,11 +364,13 @@ export function createArtifactCatalogSignals(
     generation$: internalGeneration$,
     pages$: internalPages$,
   });
-  const selection = createCatalogSelectionSignals(
-    catalog$,
-    internalReload$,
-    options.chatThreadId,
-  );
+  const createSelection = () => {
+    return createCatalogSelectionSignals(
+      catalog$,
+      internalReload$,
+      options.chatThreadId,
+    );
+  };
 
   const loadThroughArtifact$ = command(
     async ({ get, set }, artifactId: string, signal: AbortSignal) => {
@@ -408,6 +407,7 @@ export function createArtifactCatalogSignals(
     catalog$,
     loadMore$,
     loadThroughArtifact$,
-    ...selection,
+    createSelection,
+    ...createSelection(),
   };
 }

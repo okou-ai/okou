@@ -10,16 +10,21 @@ import {
 } from "../hosted-site-url-changes.ts";
 import type { ChatRelationSignals } from "./chat-relations.ts";
 
+type CopySelection = Pick<
+  ArtifactCatalogSignals,
+  "selectArtifact$" | "ensureSelectedArtifactPreview$"
+>;
+
 export const copyChatResourceArtifact$ = command(
   async (
     { get, set },
-    catalog: ArtifactCatalogSignals,
+    selection: CopySelection,
     artifactId: string,
     signal: AbortSignal,
   ) => {
-    set(catalog.selectArtifact$, artifactId);
+    set(selection.selectArtifact$, artifactId);
     const preview = await set(
-      catalog.ensureSelectedArtifactPreview$,
+      selection.ensureSelectedArtifactPreview$,
       artifactId,
       signal,
     );
@@ -125,7 +130,8 @@ export function createChatResourceSignals(
     ),
     content$,
     ready$,
-    catalog,
+    loadMore$: catalog.loadMore$,
+    copySelection: catalog.createSelection(),
     ...panel,
   };
 }

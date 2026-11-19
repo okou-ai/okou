@@ -1,4 +1,7 @@
-import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import {
+  artifactCatalogContract,
+  chatArtifactCatalogChangedEvent,
+} from "@okouai/api-contracts/contracts/artifact-catalog";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -14,6 +17,7 @@ import { privateAttachmentUrl } from "./chat-attachment-test-helpers.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   createChatResourcesHelpers,
+  openResources,
   RESOURCE_ARTIFACT_ID,
 } from "./chat-resources-test-helpers.ts";
 
@@ -37,10 +41,15 @@ function artifactEntryNamed(title: string, container: HTMLElement) {
 test("Browse artifacts without source URLs in the popover and sidebar without showing message links", async () => {
   const user = userEvent.setup({ delay: null });
   const report = artifactSummary(RESOURCE_ARTIFACT_ID, "file", "report.pdf");
+  let catalogReads = 0;
   await setupResources({
+    open: false,
     sourceUrl: false,
     mock: () => {
       context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
+        if (query.chatThreadId === NAVIGATION_ARTIFACT_THREAD_ID) {
+          catalogReads += 1;
+        }
         return respond(200, {
           artifacts:
             query.chatThreadId === NAVIGATION_ARTIFACT_THREAD_ID
@@ -70,9 +79,14 @@ test("Browse artifacts without source URLs in the popover and sidebar without sh
       );
     },
   });
-  const resources = await screen.findByRole("dialog", {
-    name: "Artifacts and chats",
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscription(
+        chatArtifactCatalogChangedEvent(NAVIGATION_ARTIFACT_THREAD_ID),
+      ),
+    ).toBeTruthy();
   });
+  const resources = await openResources();
   await within(resources).findByText("report.pdf");
   const entry = artifactEntryNamed("report.pdf", resources);
   const clip = entry.querySelector<HTMLElement>("[data-title-reveal]");
@@ -111,6 +125,7 @@ test("Browse artifacts without source URLs in the popover and sidebar without sh
   click(buttonNamed("Back to all artifacts", sidebar));
   const artifactList = await screen.findByTestId("thread-sidebar-artifacts");
   await within(artifactList).findByText("report.pdf");
+  expect(catalogReads).toBe(1);
   expect(
     within(artifactList).getByRole("heading", { name: "Artifacts 1" }),
   ).toBeInTheDocument();
