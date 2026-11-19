@@ -566,8 +566,10 @@ test("keeps an already-seen edition closed based on the server response", async 
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
 
-test("keeps the UI hidden while the feature switch is off", async () => {
+test("skips the guide request and dialog when the feature switch is off", async () => {
+  let guideRequests = 0;
   context.mocks.api(featureGuidesContract.current, ({ respond }) => {
+    guideRequests++;
     return respond(200, { edition });
   });
   await setupPage({
@@ -575,6 +577,7 @@ test("keeps the UI hidden while the feature switch is off", async () => {
     path,
     featureSwitches: { [FeatureSwitchKey.FeatureGuides]: false },
   });
+  expect(guideRequests).toBe(0);
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
 

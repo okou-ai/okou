@@ -10,10 +10,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { authenticatedSessionKey$, clerk$ } from "../auth";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
-import {
-  featureSwitchState$,
-  setFeatureSwitchState$,
-} from "./feature-switch-state.ts";
 
 type FeatureSwitchClerk = Pick<Clerk, "organization" | "session" | "user">;
 
@@ -54,6 +50,9 @@ function applySwitches(
 }
 
 const internalReloadFeatureSwitches$ = state(0);
+const internalFeatureSwitchState$ = state<
+  Record<FeatureSwitchKey, boolean> | undefined
+>(undefined);
 
 export const availableFeatureSwitchKeys$ = computed(async (get) => {
   get(authenticatedSessionKey$);
@@ -93,12 +92,16 @@ export const featureSwitches$ = computed(async (get) => {
 });
 
 export const featureSwitch$ = computed((get) => {
-  return get(featureSwitchState$);
+  const switches = get(internalFeatureSwitchState$);
+  if (switches === undefined) {
+    throw new Error("Feature switches were not initialized during bootstrap");
+  }
+  return switches;
 });
 
 export const applyFeatureSwitches$ = command(
   ({ set }, switches: Record<FeatureSwitchKey, boolean>) => {
-    set(setFeatureSwitchState$, switches);
+    set(internalFeatureSwitchState$, switches);
   },
 );
 

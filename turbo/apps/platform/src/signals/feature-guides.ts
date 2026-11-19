@@ -10,7 +10,6 @@ import { forceUpgradeDialogOpen$ } from "./force-upgrade.ts";
 import { settingsDialogOpen$ } from "./okou-page/settings/settings-dialog.ts";
 import { apiClient$ } from "./api-client.ts";
 import { authenticatedSessionKey$ } from "./auth.ts";
-import { appliedFeatureSwitchState$ } from "./external/feature-switch-state.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
 import { talkDraft$ } from "./okou-page/chat-draft.ts";
 import {
@@ -63,11 +62,7 @@ export const featureGuide$ = computed(
     const searchParams = get(searchParams$);
     const preview = searchParams.get("featureGuidePreview") === "1";
     const edition = searchParams.get("featureGuideEdition") ?? undefined;
-    // Bootstrap replaces the default switches with the workspace's settings.
-    // Wait for those settings before looking up the current edition.
-    const enabled = get(appliedFeatureSwitchState$)?.[
-      FeatureSwitchKey.FeatureGuides
-    ];
+    const enabled = get(featureSwitch$)[FeatureSwitchKey.FeatureGuides];
     if (!owner || !enabled) {
       return null;
     }
