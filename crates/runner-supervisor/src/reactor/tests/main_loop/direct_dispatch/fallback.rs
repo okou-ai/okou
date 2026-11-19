@@ -58,6 +58,15 @@ async fn preferred_dispatch_retries_after_cross_process_home_publication() {
     assert_eq!(busy.2["disposition"], "busy");
     assert!(env.cancel_tokens.handle(run_id).await.is_none());
 
+    // A local predecessor alone is insufficient for a native sandbox handoff.
+    let local_predecessor =
+        env.active_runs
+            .register(predecessor, Some(key.into()), "vm0/default".into());
+    let busy = client(&socket, identity, run_id, &body).await;
+    assert_eq!(busy.0, 429);
+    assert_eq!(busy.2["disposition"], "busy");
+    drop(local_predecessor);
+
     // Neither an ordinary offer nor an expired preference defers on this lock.
     for (start_count, other_key, expired) in
         [(1, "thread:ordinary", false), (2, "thread:expired", true)]
@@ -167,6 +176,7 @@ enum Available {
     LateHome,
     UnadvertisedHomeOnBlank,
     UnadvertisedHomeOnFresh,
+    DifferentPreferredHomeSource,
     ReplacedHome,
     Blank,
     Home,
@@ -199,6 +209,11 @@ async fn supplied_fresh_vm_reuses_unadvertised_home_without_a_live_producer() {
 }
 
 #[tokio::test]
+async fn supplied_expired_preference_still_requires_its_exact_home_source() {
+    assert_fallback(Available::DifferentPreferredHomeSource).await;
+}
+
+#[tokio::test]
 async fn supplied_fallback_keeps_selected_home_source_through_blank_activation() {
     assert_fallback(Available::ReplacedHome).await;
 }
@@ -224,9 +239,11 @@ async fn supplied_fallback_creates_cold_vm_when_sandbox_and_home_are_unavailable
 }
 
 async fn assert_fallback(available: Available) {
-    let ordinary = matches!(
+    let without_live_producer = matches!(
         available,
-        Available::UnadvertisedHomeOnBlank | Available::UnadvertisedHomeOnFresh
+        Available::UnadvertisedHomeOnBlank
+            | Available::UnadvertisedHomeOnFresh
+            | Available::DifferentPreferredHomeSource
     );
     let execution = MockLifecycleGate::new();
     let overrides = Arc::new(MockSandboxOverrides::new());
@@ -264,7 +281,7 @@ async fn assert_fallback(available: Available) {
     };
     Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(cache.clone());
     let cache_dir = config.paths.home.home_image_cache_dir();
-    let producer = (!ordinary).then(|| {
+    let producer = (!without_live_producer).then(|| {
         env.active_runs
             .register(source, Some(key.into()), "vm0/default".into())
     });
@@ -328,7 +345,7 @@ async fn assert_fallback(available: Available) {
     peer.wait_connected().await;
     peer.allow_health();
     wait_status_mode(&env._temp_dir.path().join("status.json"), "running", WAIT).await;
-    if ordinary {
+    if without_live_producer {
         // Publication remains on disk after its producer exits and the
         // receiver's advisory watcher loses its directory.
         let moved = cache_dir.with_extension("moved");
@@ -343,11 +360,17 @@ async fn assert_fallback(available: Available) {
     body["executionContext"]["nativeContinuation"] = json!({
         "sessionId": RunId::new_v4(), "generationRunId": source, "recoveryPrompt": null
     });
+    if matches!(available, Available::DifferentPreferredHomeSource) {
+        body["preferredHomeCheckout"] = json!({
+            "predecessorRunId": RunId::new_v4(),
+            "waitUntil": 0,
+        });
+    }
     assert_eq!(
         client(&socket, identity, run_id, &body.to_string()).await.2["disposition"],
         "accepted"
     );
-    if !ordinary {
+    if !without_live_producer {
         env.start_observer
             .wait_finalizing_handoff_requested(source, run_id, WAIT)
             .await;
@@ -427,12 +450,22 @@ async fn assert_fallback(available: Available) {
         unpark.release_many(usize::MAX);
     }
     execution.wait_entered(1, WAIT).await.unwrap();
-    if matches!(available, Available::ReplacedHome) {
+    if matches!(available, Available::DifferentPreferredHomeSource) {
+        assert!(
+            overrides.create_configs()[0]
+                .home_drive
+                .as_ref()
+                .unwrap()
+                .seed_image
+                .is_none(),
+            "an expired deferral window must still fence checkout to the supplied source"
+        );
+    } else if matches!(available, Available::ReplacedHome) {
         assert!(
             overrides.home_drive_replacements().is_empty(),
             "a selected source must not silently accept another producer's home"
         );
-    } else if (cached_home || ordinary || matches!(available, Available::LateHome))
+    } else if (cached_home || without_live_producer || matches!(available, Available::LateHome))
         && retained.is_none()
     {
         let drive = if blank.is_some() {

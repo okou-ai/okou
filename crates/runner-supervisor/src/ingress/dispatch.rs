@@ -49,6 +49,7 @@ struct Envelope {
 #[serde(rename_all = "camelCase")]
 struct PreferredHomeCheckout {
     predecessor_run_id: RunId,
+    // Bounds deferral before custody. A late retry still selects this source.
     wait_until: u64,
 }
 

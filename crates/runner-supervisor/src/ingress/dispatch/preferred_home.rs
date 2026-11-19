@@ -12,6 +12,7 @@ use tokio::time::{Instant, timeout_at};
 
 use crate::home_image_cache::HomeImageCache;
 use crate::idle_lifecycle::SharedIdlePool;
+use crate::job_acceptance::supplied_finalizing_predecessor;
 
 // Cap the consumer's remaining preference and the single filesystem probe.
 pub(super) const MAX_WAIT_MS: u64 = 1_000;
@@ -70,10 +71,7 @@ impl PreferredHomeProbe {
         if self
             .snapshot
             .has_source_home_hint(reuse_key, profile, predecessor)
-            || self
-                .active_runs
-                .finalizing_predecessor(predecessor, reuse_key, profile)
-                .is_some()
+            || supplied_finalizing_predecessor(context, profile, &self.active_runs).is_some()
             || self.idle_pool.try_lock().ok()?.has_reusable(
                 reuse_key,
                 profile,
