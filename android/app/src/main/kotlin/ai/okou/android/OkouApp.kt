@@ -71,6 +71,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -165,6 +166,22 @@ internal fun OkouApp(
         LaunchedEffect(action, message) {
             snackbar.showSnackbar(message)
             chats?.dismissRowActionFailure(action)
+        }
+    }
+    list.markAllReadResult?.let { result ->
+        val message =
+            if (result.confirmed == result.requested) {
+                pluralStringResource(
+                    R.plurals.chat_mark_all_read_success,
+                    result.confirmed,
+                    result.confirmed,
+                )
+            } else {
+                stringResource(R.string.chat_mark_all_read_unconfirmed)
+            }
+        LaunchedEffect(chats, result, message) {
+            snackbar.showSnackbar(message)
+            chats?.dismissMarkAllReadResult(result)
         }
     }
 
@@ -302,8 +319,9 @@ internal fun OkouApp(
                         ) {
                             WorkspaceToolbarActions(
                                 showFilter = showList,
-                                filter = list.filter,
+                                list = list,
                                 selectFilter = chats::selectFilter,
+                                markAllRead = chats::markAllRead,
                                 openSearch = if (showList) ::openSearch else null,
                                 openUpdate = openUpdate,
                                 settingsFocus = settingsFocus,
@@ -357,9 +375,9 @@ internal fun OkouApp(
                                     onOpen = { openChat(it, fromSearch = true) },
                                 )
                             } else {
-                                if (list.filter != ChatListFilter.Recent) {
+                                if (list.filter != ChatListFilter.Inbox) {
                                     AppliedChatFilter(list.filter) {
-                                        chats?.selectFilter(ChatListFilter.Recent)
+                                        chats?.selectFilter(ChatListFilter.Inbox)
                                     }
                                 }
                                 ChatListScreen(

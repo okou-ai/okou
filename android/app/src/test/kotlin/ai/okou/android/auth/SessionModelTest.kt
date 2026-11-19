@@ -303,10 +303,7 @@ class SessionModelTest {
             assertTrue(resources.first().closed)
             val next = requireNotNull(model.uiState.value.ready)
             assertNotSame(original.chats, next.chats)
-            assertEquals(
-                ai.okou.android.chat.ChatListFilter.Recent,
-                next.chats.uiState.value.filter,
-            )
+            assertEquals(ai.okou.android.chat.ChatListFilter.Inbox, next.chats.uiState.value.filter)
             token.complete("old-token")
             runCurrent()
             assertTrue(request.await().exceptionOrNull() is CancellationException)

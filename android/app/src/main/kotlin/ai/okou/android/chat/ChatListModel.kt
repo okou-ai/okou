@@ -13,7 +13,10 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,7 +36,7 @@ enum class ChatReadPhase {
 }
 
 enum class ChatListFilter {
-    Recent,
+    Inbox,
     Unread,
     Archived,
     Muted,
@@ -43,6 +46,8 @@ enum class ChatListSource {
     Cache,
     Network,
 }
+
+data class ChatMarkAllReadResult(val confirmed: Int, val requested: Int)
 
 enum class ChatRowAction(
     internal val updatesChat: Boolean = true,
@@ -80,9 +85,11 @@ data class ChatListUiState(
     val projectsSource: ChatListSource? = null,
     val indicators: Indicators? = null,
     val indicatorsPhase: ChatReadPhase = ChatReadPhase.Idle,
-    val filter: ChatListFilter = ChatListFilter.Recent,
+    val filter: ChatListFilter = ChatListFilter.Inbox,
     val pendingRowActions: Map<String, ChatRowAction> = emptyMap(),
     val failedRowAction: ChatRowAction? = null,
+    val markingAllRead: Boolean = false,
+    val markAllReadResult: ChatMarkAllReadResult? = null,
     internal val threadsByRecency: List<ConfirmedChat> = emptyList(),
 )
 
@@ -109,11 +116,27 @@ internal fun ChatListUiState.rowActions(
     ) {
         val pinned = thread.pinnedAt != null
         add(if (pinned) ChatRowAction.Unpin else ChatRowAction.Pin)
-        if (pinned && filter == ChatListFilter.Recent) {
+        if (pinned && filter == ChatListFilter.Inbox) {
             if (group.pinNeighbor(index, -1) != null) add(ChatRowAction.MovePinUp)
             if (group.pinNeighbor(index, 1) != null) add(ChatRowAction.MovePinDown)
         }
     }
+}
+
+internal fun ChatListUiState.markAllReadTargets(): Map<String, String> {
+    val unreadAt = indicators?.unreadAt ?: return emptyMap()
+    if (markingAllRead || indicatorsPhase == ChatReadPhase.Failed || unreadAt.isEmpty()) {
+        return emptyMap()
+    }
+    // The Unread view includes every matching chat before collapse or viewport filtering.
+    val targets = buildMap {
+        for (group in chatListGroups(this@markAllReadTargets, ChatListFilter.Unread)) {
+            for (thread in group.threads) {
+                unreadAt[thread.id]?.let { put(thread.id, it) }
+            }
+        }
+    }
+    return if (targets.keys.any { it in pendingRowActions }) emptyMap() else targets
 }
 
 /** Workspace-retained HTTP observations; no row collector owns synchronization or durable state. */
@@ -316,6 +339,72 @@ class ChatListModel(
         if (current()) mutable.value = mutable.value.copy(filter = value)
     }
 
+    internal fun markAllRead() {
+        if (!current()) return
+        val state = mutable.value
+        val targets = state.markAllReadTargets()
+        if (targets.isEmpty()) return
+
+        val write = CompletableDeferred<Unit>()
+        targets.keys.forEach { readWrites[it] = write }
+        mutable.value =
+            state.copy(
+                pendingRowActions =
+                    state.pendingRowActions + targets.keys.associateWith { ChatRowAction.MarkRead },
+                markingAllRead = true,
+                markAllReadResult = null,
+            )
+        viewModelScope.launch {
+            var result: ChatMarkAllReadResult? = null
+            try {
+                val confirmed =
+                    try {
+                        coroutineScope {
+                            targets
+                                .map { (id, unreadAt) -> async { acknowledgeUnread(id, unreadAt) } }
+                                .awaitAll()
+                                .count { it }
+                        }
+                    } finally {
+                        targets.keys.forEach { readWrites.remove(it) }
+                        write.complete(Unit)
+                    }
+                readIndicatorsAfterWrite()
+                requireCurrent()
+                result = ChatMarkAllReadResult(confirmed, targets.size)
+            } finally {
+                if (current()) {
+                    mutable.value =
+                        mutable.value.copy(
+                            pendingRowActions = mutable.value.pendingRowActions - targets.keys,
+                            markingAllRead = false,
+                            markAllReadResult = result,
+                        )
+                }
+            }
+        }
+    }
+
+    internal fun dismissMarkAllReadResult(result: ChatMarkAllReadResult) {
+        if (current() && mutable.value.markAllReadResult == result) {
+            mutable.value = mutable.value.copy(markAllReadResult = null)
+        }
+    }
+
+    private suspend fun acknowledgeUnread(threadId: String, unreadAt: String): Boolean {
+        return try {
+            requireCurrent()
+            val observed = chatTimestamp(unreadAt)
+            markReadWithReceipt(threadId)?.let { it >= observed } == true
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            requireCurrent()
+            if (error !is ApiFailure.Http || error.status != 404) onFailure(error)
+            false
+        }
+    }
+
     internal fun performRowAction(threadId: String, action: ChatRowAction) =
         performRowAction(threadId, action, title = null)
 
@@ -383,14 +472,12 @@ class ChatListModel(
                     acknowledgement?.join()
                     requireCurrent()
                     when (action) {
-                        ChatRowAction.MarkRead -> service.markRead(threadId)
+                        ChatRowAction.MarkRead -> markReadWithReceipt(threadId)
                         ChatRowAction.MarkUnread -> service.markUnread(threadId)
                         ChatRowAction.Mute -> service.setMuted(threadId, true, newRowEventId())
                         ChatRowAction.Unmute -> {
                             // Acknowledge replies that arrived while this chat was muted.
-                            val receipt = service.markRead(threadId)
-                            requireCurrent()
-                            applyReadReceipt(threadId, receipt.lastReadAt)
+                            markReadWithReceipt(threadId)
                             service.setMuted(threadId, false, newRowEventId())
                         }
                         ChatRowAction.Archive ->
@@ -434,13 +521,7 @@ class ChatListModel(
                         write.complete(Unit)
                     }
                 }
-                if (action.updatesIndicators) {
-                    // A read already in flight may have started before the write.
-                    awaitIndicatorRead()
-                    requireCurrent()
-                    refreshIndicators()
-                    indicatorsJob?.join()
-                }
+                if (action.updatesIndicators) readIndicatorsAfterWrite()
                 if (action.updatesChat) {
                     // A missing response can still leave a committed event on the server.
                     awaitListRead()
@@ -502,13 +583,17 @@ class ChatListModel(
 
     private fun newRowEventId() = UUID.randomUUID().toString()
 
-    private fun applyReadReceipt(threadId: String, lastReadAt: String?) {
-        val watermark = lastReadAt?.let(::chatTimestamp) ?: return
+    private suspend fun markReadWithReceipt(threadId: String): ChatTimestamp? {
+        val lastReadAt = service.markRead(threadId).lastReadAt
+        requireCurrent()
+        val watermark = lastReadAt?.let(::chatTimestamp) ?: return null
         // The current indicator request can still return unread evidence from before this receipt.
         if (indicatorsJob?.isActive == true) indicatorReadReceipts[threadId] = watermark
         val state = mutable.value
-        val indicators = state.indicators ?: return
-        mutable.value = state.copy(indicators = indicators.acknowledgeUnread(threadId, watermark))
+        state.indicators?.let {
+            mutable.value = state.copy(indicators = it.acknowledgeUnread(threadId, watermark))
+        }
+        return watermark
     }
 
     private fun Indicators.acknowledgeUnread(
@@ -785,6 +870,14 @@ class ChatListModel(
 
     private suspend fun awaitIndicatorRead() {
         while (indicatorsJob?.isCompleted == false) indicatorsJob?.join()
+    }
+
+    private suspend fun readIndicatorsAfterWrite() {
+        // A read already in flight may have started before the write.
+        awaitIndicatorRead()
+        requireCurrent()
+        refreshIndicators()
+        indicatorsJob?.join()
     }
 
     fun refreshIndicators() {

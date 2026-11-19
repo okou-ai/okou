@@ -12,7 +12,13 @@
     <string name="chat_status_unavailable">Could not refresh status. Previous indicators may be out of date.</string>
     <string name="chat_status_loading">Checking activity and unread status…</string>
     <string name="chat_refresh_status">Refresh status</string>
-    <string name="chat_all">All</string>
+    <string name="chat_inbox">Inbox</string>
+    <string name="chat_mark_all_read">Mark all as read</string>
+    <string name="chat_mark_all_read_unconfirmed">Some chats may still be unread.</string>
+    <plurals name="chat_mark_all_read_success">
+        <item quantity="one">Marked %1$d chat as read.</item>
+        <item quantity="other">Marked %1$d chats as read.</item>
+    </plurals>
     <string name="chat_filter">Filter</string>
     <string name="chat_clear_filter">Clear filter</string>
     <string name="chat_more_actions">More actions</string>

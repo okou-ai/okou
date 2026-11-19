@@ -10,6 +10,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.MouseButton
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.click
@@ -39,6 +40,7 @@ import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.Job
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -570,6 +572,124 @@ class ChatListRootTest {
         choose("Mark as unread")
         awaitAction(unreadStatus)
         compose.onNodeWithTag("conversation").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun markAllReadIncludesCollapsedArchivedChatsAndKeepsNewUnreadActivity() {
+        val app = compose.activity.application as ChatListApplication
+        val running = UUID.randomUUID().toString()
+        val newer = "2026-11-13T00:01:00.000Z"
+        val personalUnread = AtomicReference<String?>(CHAT_DATE)
+        val projectUnread = AtomicBoolean(true)
+        val rejectProject = AtomicBoolean(true)
+        val marked = CopyOnWriteArrayList<String>()
+        val events =
+            listOf(
+                chatEventWire(),
+                chatEventWire(
+                    id = UUID.randomUUID().toString(),
+                    seq = 18,
+                    thread = CHAT_IN_PROJECT,
+                    extra = ",\"projectId\":\"$CHAT_PROJECT\"",
+                    agent = CHAT_OTHER_AGENT,
+                    title = "Project chat",
+                ),
+                chatEventWire(
+                    id = UUID.randomUUID().toString(),
+                    seq = 19,
+                    thread = CHAT_IN_PROJECT,
+                    kind = "archived",
+                    agent = CHAT_OTHER_AGENT,
+                ),
+                chatEventWire(
+                    id = UUID.randomUUID().toString(),
+                    seq = 20,
+                    thread = running,
+                    title = "Running chat",
+                ),
+            )
+        app.fixture.events = { request ->
+            val rows =
+                if (request.requestUrl?.queryParameter("sinceSeqId") == null) {
+                    events.joinToString(",")
+                } else ""
+            jsonResponse("""{"events":[$rows],"hasMore":false}""")
+        }
+        app.fixture.indicators = {
+            val unread = buildMap {
+                personalUnread.get()?.let { put(CHAT_PERSONAL, it) }
+                if (projectUnread.get()) put(CHAT_IN_PROJECT, CHAT_DATE)
+            }
+            val markers = unread.entries.joinToString(",") { (id, time) -> "\"$id\":\"$time\"" }
+            val threads = unread.keys.joinToString("") { id -> ",\"$id\":\"unread\"" }
+            jsonResponse(
+                """{"agents":{},"threads":{"$running":"active"$threads},"unreadAt":{$markers}}"""
+            )
+        }
+        app.fixture.commandResponse = { request ->
+            val path = request.requestUrl?.pathSegments.orEmpty()
+            if (request.method != "POST" || path.lastOrNull() != "mark-read") {
+                null
+            } else {
+                val id = path[2]
+                marked.add(id)
+                when (id) {
+                    CHAT_PERSONAL -> {
+                        // A newer reply finishes before the client receives the first receipt.
+                        val receipt =
+                            personalUnread.getAndUpdate { if (it == CHAT_DATE) newer else null }
+                        jsonResponse("""{"lastReadAt":"$receipt"}""")
+                    }
+                    CHAT_IN_PROJECT ->
+                        if (rejectProject.get()) MockResponse().setResponseCode(503)
+                        else {
+                            projectUnread.set(false)
+                            jsonResponse("""{"lastReadAt":"$CHAT_DATE"}""")
+                        }
+                    else -> MockResponse().setResponseCode(400)
+                }
+            }
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val list = compose.onNodeWithTag("chat_list")
+        val unread = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unread")
+        list.performScrollToNode(hasText("Research"))
+        compose.onNodeWithText("Research").performClick()
+        val filter = compose.onNodeWithContentDescription("Filter")
+        filter.performClick()
+        compose.onNodeWithText("Unread").performClick()
+        list.performScrollToNode(hasText("Research"))
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasText("Research").and(unread)).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("Project chat").assertDoesNotExist()
+
+        fun markAll() {
+            filter.performClick()
+            compose.onNodeWithText("Mark all as read").assertIsEnabled().performClick()
+        }
+        fun awaitMessage(message: String) {
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText(message).fetchSemanticsNodes().isNotEmpty()
+            }
+        }
+        markAll()
+        awaitMessage("Some chats may still be unread.")
+        assertEquals(setOf(CHAT_PERSONAL, CHAT_IN_PROJECT), marked.toSet())
+        assertEquals(2, marked.size)
+        list.performScrollToNode(hasText("Personal chat"))
+        compose.onNodeWithText("Personal chat").assert(unread)
+        compose.onNodeWithText("Research").assert(unread)
+        rejectProject.set(false)
+        markAll()
+        awaitMessage("Marked 2 chats as read.")
+        compose.onNodeWithText("Unread").assertIsSelected().performClick()
+        list.performScrollToNode(hasText("Running chat"))
+        compose
+            .onNodeWithText("Running chat")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Active"))
     }
 
     @Test

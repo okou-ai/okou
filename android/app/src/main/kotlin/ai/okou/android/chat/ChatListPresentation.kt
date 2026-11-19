@@ -85,11 +85,14 @@ internal fun chatListSections(
 }
 
 /** Known Projects span agents; the inbox outside them uses the actual default agent. */
-fun chatListGroups(state: ChatListUiState): List<ChatListGroup> {
+fun chatListGroups(
+    state: ChatListUiState,
+    filter: ChatListFilter = state.filter,
+): List<ChatListGroup> {
     val visible = state.threads.filter { it.hidden != true }
     val matches: (ConfirmedChat) -> Boolean = { row ->
-        when (state.filter) {
-            ChatListFilter.Recent -> !row.archived
+        when (filter) {
+            ChatListFilter.Inbox -> !row.archived
             ChatListFilter.Archived -> row.archived
             ChatListFilter.Muted -> row.muted == true
             ChatListFilter.Unread ->
@@ -103,7 +106,7 @@ fun chatListGroups(state: ChatListUiState): List<ChatListGroup> {
     val groups =
         projects.mapNotNull { project ->
             val rows = byProject[project.id].orEmpty().filter(matches)
-            if (rows.isEmpty() && state.filter != ChatListFilter.Recent) null
+            if (rows.isEmpty() && filter != ChatListFilter.Inbox) null
             else ChatListGroup(project, rows)
         }
     val default = state.defaultAgentId()

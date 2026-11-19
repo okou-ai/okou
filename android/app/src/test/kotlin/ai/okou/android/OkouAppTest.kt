@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelectable
@@ -222,7 +223,8 @@ class OkouAppTest {
         compose.onNodeWithText("Chats").assertExists()
         compose.onNodeWithContentDescription("More actions").assertDoesNotExist()
         compose.onNodeWithContentDescription("Filter").performClick()
-        compose.onNodeWithText("All").assertIsSelected()
+        compose.onNodeWithText("Inbox").assertIsSelected()
+        compose.onNodeWithText("Mark all as read").assertIsNotEnabled()
         compose.onNodeWithText("Archived").performClick()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Appearance").assertExists()
@@ -230,6 +232,18 @@ class OkouAppTest {
         compose.onNodeWithText("Archived").assertIsSelected()
         compose.onNodeWithText("Archived").performClick()
         compose.onNodeWithText("Archived").assertDoesNotExist()
+    }
+
+    @Test
+    fun updateOverflowOpensTheSameFilterMenu() {
+        render(openUpdate = {})
+        compose.onNodeWithContentDescription("More actions").performClick()
+        compose.onNodeWithText("Filter").performClick()
+        compose.onNodeWithText("Inbox").assertIsSelected()
+        compose.onNodeWithText("Mark all as read").assertIsNotEnabled()
+        compose.onNodeWithText("Muted").performClick()
+        compose.onNodeWithText("Muted").assertIsSelected().performClick()
+        compose.onNodeWithText("Muted").assertDoesNotExist()
     }
 
     @Test

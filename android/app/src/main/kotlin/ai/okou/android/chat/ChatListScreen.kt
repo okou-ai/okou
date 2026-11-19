@@ -627,7 +627,7 @@ private fun ChatNotice(message: Int) {
 
 internal fun ChatListFilter.label() =
     when (this) {
-        ChatListFilter.Recent -> R.string.chat_all
+        ChatListFilter.Inbox -> R.string.chat_inbox
         ChatListFilter.Unread -> R.string.chat_unread
         ChatListFilter.Archived -> R.string.chat_archived
         ChatListFilter.Muted -> R.string.chat_muted
