@@ -36,13 +36,11 @@ import {
   suggestionDirectionTarget$,
   type SuggestionDirectionTarget,
 } from "../../signals/okou-page/agent-suggestions.ts";
-import type { ChatForwardTarget } from "../../signals/chat-page/chat-forward.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
 import { ForYouCardHeading } from "./for-you-card-heading.tsx";
-import { ForwardTargetContent } from "./chat-forward-dialog.tsx";
 import { ChatComposer } from "./composer.tsx";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 
@@ -243,20 +241,6 @@ function SuggestionDirectionEntry({
   );
 }
 
-function directionHeaderTarget(
-  target: SuggestionDirectionTarget,
-  newChatTitle: string,
-): ChatForwardTarget {
-  return target.kind === "new"
-    ? { kind: "agent", id: target.agentId, title: newChatTitle }
-    : {
-        kind: "thread",
-        id: target.id,
-        agentId: target.agentId,
-        title: target.title ?? newChatTitle,
-      };
-}
-
 function SuggestionDirectionTargets({
   agentId,
   threads,
@@ -289,9 +273,7 @@ function SuggestionDirectionTargets({
           select({ kind: "new", agentId });
         }}
       >
-        <ForwardTargetContent
-          target={directionHeaderTarget({ kind: "new", agentId }, newChatTitle)}
-        />
+        {newChatTitle}
       </Button>
       <section aria-labelledby={relatedLabelId} className="min-w-0">
         <h3
@@ -314,9 +296,7 @@ function SuggestionDirectionTargets({
                   select(target);
                 }}
               >
-                <ForwardTargetContent
-                  target={directionHeaderTarget(target, newChatTitle)}
-                />
+                <span className="truncate">{target.title ?? newChatTitle}</span>
               </Button>
             );
           })}
@@ -367,9 +347,15 @@ function SuggestionDirectionComposer({
     <section
       aria-labelledby={headingId}
       aria-describedby={!target ? descriptionId : undefined}
-      className="flex min-w-0 flex-col gap-3 pt-2"
+      className="relative flex min-w-0 flex-col gap-3"
     >
-      <div className="flex min-w-0 items-center gap-2">
+      <div
+        className={
+          choosing
+            ? "flex min-w-0 items-center gap-2"
+            : "absolute -top-2 right-2 z-20"
+        }
+      >
         {target && choosing && (
           <IconTooltipButton
             type="button"
@@ -388,23 +374,26 @@ function SuggestionDirectionComposer({
           key={target?.kind === "thread" ? target.id : target?.kind}
           id={headingId}
           tabIndex={-1}
-          ref={focusHeading}
-          className="min-w-0 flex-1 text-sm font-medium"
+          ref={choosing ? focusHeading : undefined}
+          className={
+            choosing ? "min-w-0 flex-1 truncate text-sm font-medium" : "sr-only"
+          }
         >
-          {target ? (
-            <ForwardTargetContent
-              target={directionHeaderTarget(target, newChatTitle)}
-            />
-          ) : (
-            t(($) => {
-              return $.chat.agentSuggestions.directionTitle;
-            })
-          )}
+          {target
+            ? target.kind === "thread"
+              ? (target.title ?? newChatTitle)
+              : newChatTitle
+            : t(($) => {
+                return $.chat.agentSuggestions.directionTitle;
+              })}
         </h3>
         <Button
           type="button"
           variant="quiet"
           size="icon-xs"
+          className={
+            choosing ? undefined : "rounded-full border border-border bg-card"
+          }
           showTooltip
           aria-label={t(($) => {
             return $.workflows.common.close;
