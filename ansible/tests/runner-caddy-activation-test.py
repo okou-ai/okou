@@ -254,7 +254,9 @@ def main():
                     provision(marker="after", status=410, listen=occupied_port)
                 except subprocess.CalledProcessError:
                     assert f"http://127.0.0.1:{occupied_port} {{" in config.read_text()
-                    result = run(["systemctl", "show", unit, "--property=Result", "--value"])
+                    result = run(
+                        ["systemctl", "show", unit, "--property=Result", "--value"]
+                    )
                     assert result.strip() == "exit-code", result
                     assert applied.read_bytes() == committed_state
                 else:
