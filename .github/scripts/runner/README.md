@@ -212,9 +212,18 @@ allows one retry on SSH exit 255 within its original 180-second deadline.
 An incomplete host inventory fails even in dry-run mode.
 
 The controller starts one ephemeral worker per host for small sorted batches.
-Each worker holds the established namespace flock files itself; all configured
-hosts must report readiness before fresh GitHub authorization. PR state and stabilized owner discovery are fresh under
-those locks. Exact owner association protects older CI generations; unresolved
+An SSH exit 255 before a complete readiness frame permits one reacquisition on
+that host within the original 70-second deadline. Each worker holds the namespace
+flock itself. All configured hosts must report readiness before fresh GitHub
+authorization. Before dispatching cleanup, the controller checks each session's
+process and output pipe so a closed channel cannot appear active during diagnostics.
+If a previously ready session exits 255 before dispatch, the controller can retire
+the batch's sessions and restart preparation once within that host's remaining
+readiness budget. The controller requests release from the other sessions before
+retiring their channels. It reacquires the full lock set in the original host
+order and refreshes GitHub authorization before sending cleanup.
+PR state and stabilized owner discovery are fresh under those locks.
+Exact owner association protects older CI generations; unresolved
 association fails closed instead of guessing from a reused branch. Proven live
 owners are reported as deferred, and reopened PRs are retained. Other batches
 continue after errors; failed/unknown cleanup and lock outcomes fail the job.

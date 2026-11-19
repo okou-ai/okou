@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise the cleanup CLI with real files/flocks and external command fixtures."""
 
+import contextlib
 import json
 import os
 import select
@@ -28,7 +29,10 @@ if 'graphql' in args:
    with path.open('a') as lock:
     try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB);locked=False
     except BlockingIOError:pass
-  state='OPEN' if data.get('reopen')==n and locked else 'CLOSED'
+  reopened = data.get('reopen') == n
+  if locked and data.get('reopen_after_recovery') == n:
+   reopened = (root / 'metal-a/ssh.log').read_text().count('session\n') == 2
+  state = 'OPEN' if locked and reopened else 'CLOSED'
   pulls[f'p{n}']={'number':n,'state':state,'createdAt':'2026-10-01T00:00:00Z','closedAt':'2026-10-02T00:00:00Z','headRefName':'reused','headRepository':{'nameWithOwner':'okou-ai/okou'}}
  print(json.dumps({'data':{'repository':pulls}}))
 elif any(a.endswith('/actions/runs') for a in args):
@@ -42,6 +46,8 @@ elif any(a.endswith('/actions/runs') for a in args):
    scans.pop(0);(root/'github.json').write_text(json.dumps(data))
   print(json.dumps(pages));sys.exit(0)
  runs=[dict(r) for r in data.get('runs',[]) if r['status']==status]
+ if data.get('hide_owners_after_recovery') and (root / 'metal-a/ssh.log').read_text().count('session\n') == 2:
+  runs=[]
  if data.get('churn'):
   for run in runs:run['id']+=len((root/'github.log').read_text().splitlines())
  pages=[{'total_count':len(runs),'workflow_runs':runs[offset:offset+100]} for offset in range(0,min(len(runs),1000),100)]
@@ -56,9 +62,20 @@ else:raise SystemExit('unexpected gh call')
 """
 
 SSH = r"""#!/usr/bin/env python3
-import json,os,shlex,signal,subprocess,sys
+import fcntl,json,os,select,shlex,signal,subprocess,sys
 from pathlib import Path
-root=Path(os.environ['FIXTURE']);host=sys.argv[1].split('@')[1];args=sys.argv[2:]
+root = Path(os.environ['FIXTURE'])
+if sys.argv[1:4] == ['-v', '-n', '-T'] and sys.argv[-1] == 'true':
+ print(f"debug1: fixture probe for {sys.argv[-2]}", file=sys.stderr)
+ sys.exit(0)
+host = sys.argv[1].split('@')[1].removesuffix('.vm3.ai')
+args = sys.argv[2:]
+
+def await_event(name):
+ with (root / name).open() as event:
+  assert select.select([event], [], [], 10)[0], name
+  assert event.readline() == 'ready\n'
+
 history=root/host/'ssh.log'
 if args[:4]==['sudo','python3','-','inventory']:
  with history.open('a') as log:log.write('inventory\n')
@@ -83,7 +100,45 @@ if args[2]=='-c':
  if os.environ.get('STOP_CLOCK_STEP'):
   source='import runpy;runpy.run_path('+repr(str(root/'clock.py'))+');'+source
  command=[sys.executable,'-c',source,*args[4:],'--root',str(root/host)]
- if os.environ.get('PARTIAL_RELEASE'):
+ failure = os.environ.get('READY_FAILURE')
+ prior_lost = failure in ('prior-lost', 'prior-lost-command', 'prior-lost-repeat')
+ session_count = history.read_text().count('session\n')
+ if prior_lost and host == 'metal-a' and session_count == 1:
+  with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as worker:
+   print(worker.stdout.readline(), end='', flush=True)
+   await_event('disconnect-a')
+   worker.stdin.close()
+   worker.wait(timeout=5)
+  sys.exit(7 if failure == 'prior-lost-command' else 255)
+ if prior_lost and host == 'metal-a':
+  # Reacquiring the first host while retaining B would invert lock order.
+  for number in args[5:]:
+   path = root / 'metal-b/var/lock' / f'vm0-runner-lifecycle-pr-{number}.lock'
+   with path.open() as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+  if failure == 'prior-lost-repeat':
+   sys.exit(255)
+ failure = failure if host == 'metal-b' else None
+ if failure == 'invalid':
+  print('{"ready":[]}')
+  sys.exit(255)
+ if failure == 'command':
+  sys.exit(7)
+ if failure == 'reset-always' or (
+  (failure == 'reset-once' or (prior_lost and host == 'metal-b')) and session_count == 1
+ ):
+  with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as worker:
+   assert json.loads(worker.stdout.readline()) == {'ready': [int(n) for n in args[5:]]}
+   sys.stdout.write('{"ready":')
+   sys.stdout.flush()
+   worker.stdin.close()
+   worker.wait(timeout=5)
+  sys.exit(255)
+ retiring_b = prior_lost and host == 'metal-b' and session_count == 2
+ if retiring_b:
+  (root / 'disconnect-a').write_text('ready\n')
+  await_event('diagnosing-a')
+ if retiring_b or os.environ.get('PARTIAL_RELEASE'):
   with subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,bufsize=1) as worker:
    print(worker.stdout.readline(),end='',flush=True)
    for line in sys.stdin:
@@ -91,6 +146,14 @@ if args[2]=='-c':
     if json.loads(line)['operation']=='heartbeat':continue
     reply=worker.stdout.readline()
     if json.loads(reply).get('released'):
+     if retiring_b:
+      (root / 'released-b').touch()
+      drop_receipt = os.environ.get('DROP_RESTART_RELEASE')
+      if not drop_receipt:
+       print(reply, end='', flush=True)
+      worker.stdin.close()
+      status = worker.wait(timeout=5)
+      sys.exit(255 if drop_receipt else status)
      worker.stdin.close();worker.wait(timeout=5)
      sys.stdout.write('{"released":');sys.stdout.flush()
      with (root/'reply-ready').open('w') as ready:ready.write(str(os.getpid())+'\n')
@@ -101,6 +164,27 @@ if args[2]=='-c':
   subprocess.call(command);sys.exit(255)
  os.execv(sys.executable,command)
 os.execv(sys.executable,[sys.executable,*args[2:],'--root',str(root/host)])
+"""
+
+BLOCKED_DIAGNOSTICS = r"""
+import os
+import sys
+import time
+from pathlib import Path
+
+args = sys.argv[1:]
+if len(args) == 3 and args[1] == "master":
+    probe = Path(args[2]).read_text()
+    failure = os.environ.get("READY_FAILURE")
+    if failure in ("prior-lost", "prior-lost-command", "prior-lost-repeat") and "metal-a.vm3.ai" in probe:
+        root = Path(os.environ["FIXTURE"])
+        (root / "diagnosing-a").write_text("ready\n")
+        # Keep the wrapper alive briefly after the native command closes.
+        time.sleep(1.5)
+    elif failure == "reset-once" and "metal-b.vm3.ai" in probe:
+        # Reproduce diagnostics finishing after the former five-second exit wait.
+        time.sleep(6)
+os.execv(sys.executable, [sys.executable, *args])
 """
 
 CLOCK = r"""import os,sys,threading,time
@@ -299,6 +383,24 @@ class CleanupTests(unittest.TestCase):
             text=True,
             timeout=30,
             check=False,
+        )
+
+    def guarded_controller(self, **env):
+        bin_dir = self.root / "bin"
+        fake_ssh = (bin_dir / "ssh").rename(bin_dir / "real-ssh")
+        (bin_dir / "ssh").symlink_to(TOOLS / "cloudflare-ssh-command.sh")
+        python = bin_dir / "python3"
+        python.write_text(f"#!{sys.executable}\n{BLOCKED_DIAGNOSTICS}")
+        python.chmod(0o755)
+        transport_state = self.root / "transport"
+        transport_state.mkdir()
+        return self.controller(
+            METAL_HOSTS="metal-a.vm3.ai,metal-b.vm3.ai",
+            RUNNER_TEMP=str(self.root),
+            OKOU_CLOUDFLARE_SSH_REAL_SSH=str(fake_ssh),
+            OKOU_CLOUDFLARE_SSH_SCRIPTS_DIR=str(TOOLS),
+            OKOU_CLOUDFLARE_SSH_STATE_DIR=str(transport_state),
+            **env,
         )
 
     def owner(self, number=42, associated=True):
@@ -870,6 +972,118 @@ class CleanupTests(unittest.TestCase):
                         (self.root / host / "ssh.log").read_text(),
                         "inventory\n" * calls,
                     )
+
+    def test_lock_readiness_recovers_after_lost_reply_and_slow_diagnostics(self):
+        files = [
+            self.resource("var/lib/vm0-runner/stripe/pr-42/config", host=host)
+            for host in ("metal-a", "metal-b")
+        ]
+        result = self.guarded_controller(READY_FAILURE="reset-once")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(all(not file.exists() for file in files))
+        self.assertIn('"cleaned": 1', result.stdout)
+        self.assertEqual(
+            (self.root / "metal-a/ssh.log").read_text(), "inventory\nsession\n"
+        )
+        self.assertEqual(
+            (self.root / "metal-b/ssh.log").read_text(), "inventory\nsession\nsession\n"
+        )
+
+    def test_lock_readiness_failure_preserves_all_host_resources(self):
+        files = [
+            self.resource("var/lib/vm0-runner/stripe/pr-42/config", host=host)
+            for host in ("metal-a", "metal-b")
+        ]
+        for failure, sessions in (("reset-always", 2), ("command", 1), ("invalid", 1)):
+            with self.subTest(failure=failure):
+                history = self.root / "metal-b/ssh.log"
+                history.unlink(missing_ok=True)
+                result = self.controller(READY_FAILURE=failure)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertTrue(all(file.is_file() for file in files))
+                self.assertEqual(
+                    history.read_text(), "inventory\n" + "session\n" * sessions
+                )
+
+    def pre_dispatch_loss(self, failure, **env):
+        files = [
+            self.resource("var/lib/vm0-runner/stripe/pr-42/config", host=host)
+            for host in ("metal-a", "metal-b")
+        ]
+
+        def open_event(path, flags):
+            return os.open(path, flags | os.O_RDWR | os.O_NONBLOCK)
+
+        with contextlib.ExitStack() as events:
+            for name in ("disconnect-a", "diagnosing-a"):
+                event = self.root / name
+                os.mkfifo(event)
+                events.enter_context(open(event, "rb", opener=open_event))
+            return files, self.guarded_controller(READY_FAILURE=failure, **env)
+
+    def test_restarts_lock_preparation_after_ready_host_disconnects(self):
+        files, result = self.pre_dispatch_loss("prior-lost")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(all(not file.exists() for file in files), result.stdout)
+        self.assertTrue((self.root / "released-b").is_file(), result.stderr)
+        self.assertIn('"cleaned": 1', result.stdout)
+        self.assertEqual(
+            (self.root / "metal-a/ssh.log").read_text(), "inventory\nsession\nsession\n"
+        )
+        self.assertEqual(
+            (self.root / "metal-b/ssh.log").read_text(),
+            "inventory\nsession\nsession\nsession\n",
+        )
+
+    def test_reacquires_locks_when_old_release_receipt_is_lost(self):
+        files, result = self.pre_dispatch_loss("prior-lost", DROP_RESTART_RELEASE="1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.root / "released-b").is_file(), result.stderr)
+        self.assertTrue(all(not file.exists() for file in files), result.stdout)
+        self.assertIn('"cleaned": 1', result.stdout)
+
+    def test_rechecks_github_authority_after_pre_dispatch_restart(self):
+        self.github(reopen_after_recovery=42)
+        files, result = self.pre_dispatch_loss("prior-lost")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(all(file.is_file() for file in files), result.stdout)
+        self.assertIn('"skipped_open": 1', result.stdout)
+
+    def test_rechecks_a_previously_seen_owner_after_pre_dispatch_restart(self):
+        owner = self.owner()
+        self.github(
+            runs=[owner],
+            hide_owners_after_recovery=True,
+            run_details={str(owner["id"]): owner},
+        )
+        selected = [
+            self.resource("var/lib/vm0-runner/stripe/pr-43/config", host=host)
+            for host in ("metal-a", "metal-b")
+        ]
+        owned, result = self.pre_dispatch_loss("prior-lost")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(all(file.is_file() for file in owned), result.stdout)
+        self.assertTrue(all(not file.exists() for file in selected), result.stdout)
+        self.assertIn('"deferred_owner": 1', result.stdout)
+
+    def test_pre_dispatch_command_failure_keeps_all_host_resources(self):
+        files, result = self.pre_dispatch_loss("prior-lost-command")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertTrue(all(file.is_file() for file in files), result.stdout)
+        self.assertIn(
+            "namespace lock worker unavailable on metal-a.vm3.ai", result.stdout
+        )
+        self.assertEqual(
+            (self.root / "metal-b/ssh.log").read_text(), "inventory\nsession\nsession\n"
+        )
+
+    def test_pre_dispatch_restart_does_not_retry_a_second_disconnect(self):
+        files, result = self.pre_dispatch_loss("prior-lost-repeat")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertTrue(all(file.is_file() for file in files), result.stdout)
+        self.assertEqual(
+            (self.root / "metal-a/ssh.log").read_text(), "inventory\nsession\nsession\n"
+        )
 
     def test_namespace_selection_is_explicit_and_fails_closed(self):
         selected = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
