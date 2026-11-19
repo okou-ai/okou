@@ -131,6 +131,14 @@ def unique_object(pairs):
     return result
 
 
+def decode_original_policy(raw_policy, artifacts, mismatch_message):
+    """Verify the captured policy bytes before decoding their JSON."""
+    if (not isinstance(raw_policy, str)
+            or hashlib.sha256(raw_policy.encode()).hexdigest() != artifacts["policy_sha256"]):
+        raise ValueError(mismatch_message)
+    return json.loads(raw_policy, object_pairs_hook=unique_object)
+
+
 def collect_witnesses(log_path, groups, *, case_matches, invalid_message):
     """Admit strict witnesses into caller-owned groups in original log order."""
     for line in log_path.read_text().splitlines():
