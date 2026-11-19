@@ -926,3 +926,8 @@ browser-navigation-regression-02	turbo/apps/platform/src/views/browser-session/_
 browser-navigation-regression-04.01	turbo/apps/platform/src/views/browser-session/__tests__/browser-navigation-regression.test.tsx	Clear a failed reload notice by submitting a working address	60	passed
 browser-navigation-regression-05	turbo/apps/platform/src/views/browser-session/__tests__/browser-navigation-regression.test.tsx	Keep the confirmed document selected when a navigation starts a download without history	77	passed
 browser-navigation-regression-06	turbo/apps/platform/src/views/browser-session/__tests__/browser-navigation-regression.test.tsx	Display the final redirect address when the pending navigation is acknowledged	109	passed
+browser-touch-regression-01	turbo/apps/platform/src/views/browser-session/__tests__/browser-touch-regression.test.tsx	Send one touch click at the release point despite compatibility mouse events	78	passed
+browser-touch-regression-03.01	turbo/apps/platform/src/views/browser-session/__tests__/browser-touch-regression.test.tsx	Pointer cancellation drops the active gesture and leaves the next tap usable	102	passed
+browser-touch-regression-04	turbo/apps/platform/src/views/browser-session/__tests__/browser-touch-regression.test.tsx	Ignore letterbox taps and map touches within the image	115	passed
+browser-touch-regression-05	turbo/apps/platform/src/views/browser-session/__tests__/browser-touch-regression.test.tsx	Discard the old tab touch and send the new tap only to the selected tab	126	passed
+browser-touch-regression-07	turbo/apps/platform/src/views/browser-session/__tests__/browser-touch-regression.test.tsx	Forward a desktop mouse click and wheel movement in order	146	passed
