@@ -180,6 +180,8 @@
      Keyframes stay below. */
   --animate-chat-greeting-token: chat-greeting-token 720ms
     cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-chat-greeting-avatar: chat-greeting-avatar 720ms
+    cubic-bezier(0.22, 1, 0.36, 1) both;
 
   /* The composer's second level. The panel settles once when a type is picked,
      then each row's items resolve left to right, which is the order they are
@@ -690,6 +692,18 @@ body {
   }
   to {
     background-position: -100% center;
+  }
+}
+
+/* The SVG avatar fades on its resting pixel grid. Transforming or filtering
+   the whole tile can change its rasterized edges when the filled entrance is
+   cleared after the last greeting word. */
+@keyframes chat-greeting-avatar {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
 
