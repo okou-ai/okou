@@ -913,3 +913,8 @@ browser-viewer-acquisition-003	turbo/apps/platform/src/views/browser-session/__t
 browser-viewer-acquisition-007	turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-acquisition.test.tsx	Retire the operation ID after an unrelated notice invalidates Start	223	passed
 browser-viewer-acquisition-008	turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-acquisition.test.tsx	Reconnect acquires a replacement when explicit opening is unavailable	295	passed
 browser-viewer-acquisition-009	turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-acquisition.test.tsx	Acquire a fresh native connection after revoking and renewing a Start grant	319	passed
+browser-viewer-binding-002	turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-binding.test.tsx	Wait for the fresh binding before reconnecting to the replacement window	14	passed
+browser-viewer-binding-003	turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-binding.test.tsx	Switch to a separate image connection while socket opening is pending	100	passed
+browser-viewer-binding-004	turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-binding.test.tsx	Switch to a separate image connection while native attachment is pending	100	passed
+browser-frame-budgets-01.01	turbo/apps/platform/src/views/browser-session/__tests__/browser-frame-budgets.test.tsx	Render a 48 MiB first image on the shared connection	14	passed
+browser-frame-budgets-03	turbo/apps/platform/src/views/browser-session/__tests__/browser-frame-budgets.test.tsx	Reconnect explicitly after an oversized transport message disconnects	26	passed
