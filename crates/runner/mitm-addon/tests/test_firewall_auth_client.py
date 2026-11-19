@@ -25,9 +25,11 @@ from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 from mitmproxy import http
 from mitmproxy.net.http.http1 import read_request_head
 
+import data_router
 import firewall_auth_cache as auth_cache
 import firewall_auth_client as auth_client
 import platform_api
+import platform_http_transport as transport
 from aws_sigv4 import AwsSigV4Credentials
 from tests.auth_endpoint_helpers import FakeAuthEndpoint, firewall_auth_success_response
 from tests.auth_state_helpers import auth_cache_key, cached_headers, require_cached_headers
@@ -538,8 +540,8 @@ def _tls_trust_environment(ca_path: Path) -> dict[str, str]:
     return {"SSL_CERT_FILE": str(ca_path), "SSL_CERT_DIR": "", "SSLKEYLOGFILE": ""}
 
 
-class TestPostPlatformJson:
-    @pytest.mark.parametrize("status", [200, 204, 401, 500])
+class TestDataRouterRegistrationHttp:
+    @pytest.mark.parametrize("status", [200, 204, 401, 404, 409, 500])
     async def test_registration_http_status(self, mitm_ctx, status: int):
         payload = {"runId": str(uuid.uuid4()), "requestId": str(uuid.uuid4())}
         body = json.dumps(payload).encode()
@@ -555,10 +557,10 @@ class TestPostPlatformJson:
         ):
             url = f"{endpoint.api_url}/api/webhooks/agent/data-request"
             if status < 300:
-                assert await auth_client.post_platform_json(url, body, "registration-token") is None
+                assert await data_router.post_registration(url, body, "registration-token") is None
             else:
                 with pytest.raises(urllib.error.HTTPError) as exc_info:
-                    await auth_client.post_platform_json(url, body, "registration-token")
+                    await data_router.post_registration(url, body, "registration-token")
                 assert exc_info.value.code == status
                 assert exc_info.value.geturl() == url
                 assert exc_info.value.read() == error_body
@@ -1331,8 +1333,8 @@ class TestFetchFirewallHeaders:
             endpoint.run(),
             mitm_ctx(api_url=endpoint.api_url),
             patch.object(
-                auth_client,
-                "MAX_FIREWALL_AUTH_RESPONSE_BODY_BYTES",
+                transport,
+                "MAX_RESPONSE_BODY_BYTES",
                 len(error_body),
             ),
             patch.object(platform_api, "VERCEL_BYPASS", ""),
@@ -1358,8 +1360,8 @@ class TestFetchFirewallHeaders:
             endpoint.run(),
             mitm_ctx(api_url=endpoint.api_url),
             patch.object(
-                auth_client,
-                "MAX_FIREWALL_AUTH_RESPONSE_BODY_BYTES",
+                transport,
+                "MAX_RESPONSE_BODY_BYTES",
                 len(error_body) - 1,
             ),
             patch.object(platform_api, "VERCEL_BYPASS", ""),
@@ -1598,7 +1600,7 @@ class TestFirewallAuthAsyncTransport:
             with (
                 patch.dict(os.environ, _EMPTY_PROXY_ENVIRONMENT | _tls_trust_environment(ca_path)),
                 patch.object(
-                    auth_client,
+                    transport,
                     "_dns_resolver",
                     _OrderedResolver(expected_host="localhost", addresses=("127.0.0.1",)),
                 ),
@@ -1651,11 +1653,11 @@ class TestFirewallAuthAsyncTransport:
             with (
                 patch.dict(os.environ, _EMPTY_PROXY_ENVIRONMENT | _tls_trust_environment(ca_path)),
                 patch.object(
-                    auth_client,
+                    transport,
                     "_dns_resolver",
                     _OrderedResolver(expected_host="localhost", addresses=("127.0.0.1",)),
                 ),
-                patch.object(auth_client.socket, "socket", side_effect=socket_factory),
+                patch.object(transport.socket, "socket", side_effect=socket_factory),
                 patch.object(platform_api, "VERCEL_BYPASS", ""),
                 mitm_ctx(api_url=f"https://localhost:{port}"),
             ):
@@ -1735,7 +1737,7 @@ class TestFirewallAuthAsyncTransport:
         async with _run_test_server(handle_client) as port:
             with (
                 patch.dict(os.environ, _EMPTY_PROXY_ENVIRONMENT),
-                patch.object(auth_client.socket, "socket", side_effect=socket_factory),
+                patch.object(transport.socket, "socket", side_effect=socket_factory),
                 patch.object(platform_api, "VERCEL_BYPASS", ""),
                 mitm_ctx(api_url=f"http://127.0.0.1:{port}"),
             ):
@@ -1762,7 +1764,7 @@ class TestFirewallAuthAsyncTransport:
         async with _run_test_server(handle_client) as port:
             with (
                 patch.dict(os.environ, _EMPTY_PROXY_ENVIRONMENT),
-                patch.object(auth_client.socket, "socket", side_effect=socket_factory),
+                patch.object(transport.socket, "socket", side_effect=socket_factory),
                 patch.object(platform_api, "VERCEL_BYPASS", ""),
                 mitm_ctx(api_url=f"http://127.0.0.1:{port}"),
                 pytest.raises(OSError, match=r"setsockopt failed$") as exc_info,
@@ -1811,12 +1813,12 @@ class TestFirewallAuthAsyncTransport:
             ]
             with (
                 patch.dict(os.environ, _EMPTY_PROXY_ENVIRONMENT),
-                patch.object(auth_client, "_dns_resolver", resolver),
-                patch.object(auth_client.socket, "socket", side_effect=socket_factory),
+                patch.object(transport, "_dns_resolver", resolver),
+                patch.object(transport.socket, "socket", side_effect=socket_factory),
                 patch.object(loop, "sock_connect", new=connect_probe),
                 patch.object(
-                    auth_client,
-                    "_FIREWALL_AUTH_CONNECTION_ATTEMPT_DELAY_SECONDS",
+                    transport,
+                    "_CONNECTION_ATTEMPT_DELAY_SECONDS",
                     0.0,
                 ),
                 patch.object(platform_api, "VERCEL_BYPASS", ""),
@@ -1865,8 +1867,8 @@ class TestFirewallAuthAsyncTransport:
             expected_address: _SocketAddress = ("192.0.2.1", port)
             with (
                 patch.dict(os.environ, _EMPTY_PROXY_ENVIRONMENT),
-                patch.object(auth_client, "_dns_resolver", resolver),
-                patch.object(auth_client.socket, "socket", side_effect=socket_factory),
+                patch.object(transport, "_dns_resolver", resolver),
+                patch.object(transport.socket, "socket", side_effect=socket_factory),
                 patch.object(loop, "sock_connect", new=connect_probe),
                 patch.object(platform_api, "VERCEL_BYPASS", ""),
                 mitm_ctx(api_url=f"http://firewall-auth.invalid:{port}"),
@@ -1900,8 +1902,8 @@ class TestFirewallAuthAsyncTransport:
 
         with (
             patch.dict(os.environ, _EMPTY_PROXY_ENVIRONMENT),
-            patch.object(auth_client, "_dns_resolver", resolver),
-            patch.object(auth_client.socket, "socket", side_effect=socket_factory),
+            patch.object(transport, "_dns_resolver", resolver),
+            patch.object(transport.socket, "socket", side_effect=socket_factory),
             patch.object(platform_api, "VERCEL_BYPASS", ""),
             mitm_ctx(api_url="http://firewall-auth.invalid"),
             pytest.raises(OSError, match=r"file table overflow$") as exc_info,
@@ -1944,8 +1946,8 @@ class TestFirewallAuthAsyncTransport:
         async with _run_test_server(handle_client) as port:
             with (
                 patch.dict(os.environ, _EMPTY_PROXY_ENVIRONMENT),
-                patch.object(auth_client, "_dns_resolver", OrderedResolver()),
-                patch.object(auth_client.socket, "socket", side_effect=create_socket),
+                patch.object(transport, "_dns_resolver", OrderedResolver()),
+                patch.object(transport.socket, "socket", side_effect=create_socket),
                 patch.object(platform_api, "VERCEL_BYPASS", ""),
                 mitm_ctx(api_url=f"http://firewall-auth.invalid:{port}"),
             ):
@@ -2001,13 +2003,13 @@ class TestFirewallAuthAsyncTransport:
             ]
             with (
                 patch.dict(os.environ, _EMPTY_PROXY_ENVIRONMENT),
-                patch.object(auth_client, "_dns_resolver", resolver),
-                patch.object(auth_client.socket, "socket", side_effect=socket_factory),
+                patch.object(transport, "_dns_resolver", resolver),
+                patch.object(transport.socket, "socket", side_effect=socket_factory),
                 patch.object(loop, "sock_connect", new=connect_probe),
-                patch.object(auth_client.asyncio, "open_connection", new=record_open_connection),
+                patch.object(transport.asyncio, "open_connection", new=record_open_connection),
                 patch.object(
-                    auth_client,
-                    "_FIREWALL_AUTH_CONNECTION_ATTEMPT_DELAY_SECONDS",
+                    transport,
+                    "_CONNECTION_ATTEMPT_DELAY_SECONDS",
                     0.0,
                 ),
                 patch.object(platform_api, "VERCEL_BYPASS", ""),
@@ -2044,7 +2046,7 @@ class TestFirewallAuthAsyncTransport:
             sock: socket.socket,
             limit: int,
         ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-            assert limit == auth_client._MAX_FIREWALL_AUTH_RESPONSE_HEADER_BYTES
+            assert limit == transport._MAX_RESPONSE_HEADER_BYTES
             assert isinstance(sock, _LifecycleSocket)
             handoff_states.append((sock, list(sock.shutdown_calls), sock.close_call_count))
             raise OSError("stream wrapping failed")
@@ -2052,8 +2054,8 @@ class TestFirewallAuthAsyncTransport:
         async with _run_test_server(handle_client) as port:
             with (
                 patch.dict(os.environ, _EMPTY_PROXY_ENVIRONMENT),
-                patch.object(auth_client.socket, "socket", side_effect=socket_factory),
-                patch.object(auth_client.asyncio, "open_connection", new=fail_open_connection),
+                patch.object(transport.socket, "socket", side_effect=socket_factory),
+                patch.object(transport.asyncio, "open_connection", new=fail_open_connection),
                 patch.object(platform_api, "VERCEL_BYPASS", ""),
                 mitm_ctx(api_url=f"http://127.0.0.1:{port}"),
                 pytest.raises(OSError, match=r"^stream wrapping failed$"),
@@ -2085,14 +2087,14 @@ class TestFirewallAuthAsyncTransport:
         async with _run_test_server(handle_client) as port:
             with (
                 patch.dict(os.environ, _EMPTY_PROXY_ENVIRONMENT),
-                patch.object(auth_client, "_dns_resolver", resolver),
+                patch.object(transport, "_dns_resolver", resolver),
                 patch.object(loop, "sock_connect", new=connect_probe),
                 patch.object(
-                    auth_client,
-                    "_FIREWALL_AUTH_CONNECTION_ATTEMPT_DELAY_SECONDS",
+                    transport,
+                    "_CONNECTION_ATTEMPT_DELAY_SECONDS",
                     0.01,
                 ),
-                patch.object(auth_client, "FIREWALL_AUTH_FETCH_DEADLINE_SECONDS", 0.2),
+                patch.object(transport, "REQUEST_DEADLINE_SECONDS", 0.2),
                 patch.object(platform_api, "VERCEL_BYPASS", ""),
                 mitm_ctx(api_url=f"http://firewall-auth.invalid:{port}"),
             ):
@@ -2135,11 +2137,11 @@ class TestFirewallAuthAsyncTransport:
         async with _run_test_server(handle_client) as port:
             with (
                 patch.dict(os.environ, _EMPTY_PROXY_ENVIRONMENT),
-                patch.object(auth_client, "_dns_resolver", resolver),
+                patch.object(transport, "_dns_resolver", resolver),
                 patch.object(loop, "sock_connect", new=connect_probe),
                 patch.object(
-                    auth_client,
-                    "_FIREWALL_AUTH_CONNECTION_ATTEMPT_DELAY_SECONDS",
+                    transport,
+                    "_CONNECTION_ATTEMPT_DELAY_SECONDS",
                     0.0,
                 ),
                 patch.object(platform_api, "VERCEL_BYPASS", ""),
@@ -2186,14 +2188,14 @@ class TestFirewallAuthAsyncTransport:
         async with _run_test_server(handle_client) as port:
             with (
                 patch.dict(os.environ, _EMPTY_PROXY_ENVIRONMENT),
-                patch.object(auth_client, "_dns_resolver", resolver),
+                patch.object(transport, "_dns_resolver", resolver),
                 patch.object(loop, "sock_connect", new=connect_probe),
                 patch.object(
-                    auth_client,
-                    "_FIREWALL_AUTH_CONNECTION_ATTEMPT_DELAY_SECONDS",
+                    transport,
+                    "_CONNECTION_ATTEMPT_DELAY_SECONDS",
                     0.01,
                 ),
-                patch.object(auth_client, "FIREWALL_AUTH_FETCH_DEADLINE_SECONDS", 0.5),
+                patch.object(transport, "REQUEST_DEADLINE_SECONDS", 0.5),
                 patch.object(platform_api, "VERCEL_BYPASS", ""),
                 mitm_ctx(api_url=f"http://firewall-auth.invalid:{port}"),
             ):
@@ -2220,21 +2222,21 @@ class TestFirewallAuthAsyncTransport:
         )
         with (
             patch.dict(os.environ, _EMPTY_PROXY_ENVIRONMENT),
-            patch.object(auth_client, "_dns_resolver", resolver),
+            patch.object(transport, "_dns_resolver", resolver),
             patch.object(loop, "sock_connect", new=connect_probe),
             patch.object(
-                auth_client,
-                "_FIREWALL_AUTH_CONNECTION_ATTEMPT_DELAY_SECONDS",
+                transport,
+                "_CONNECTION_ATTEMPT_DELAY_SECONDS",
                 0.01,
             ),
-            patch.object(auth_client, "FIREWALL_AUTH_FETCH_DEADLINE_SECONDS", 0.1),
+            patch.object(transport, "REQUEST_DEADLINE_SECONDS", 0.1),
             patch.object(platform_api, "VERCEL_BYPASS", ""),
             mitm_ctx(api_url="http://firewall-auth.invalid"),
             pytest.raises(auth_client.FirewallAuthDeadlineExceededError) as exc_info,
         ):
             await auth_client.fetch_firewall_headers(firewall_auth_request())
 
-        assert exc_info.value.phase is auth_client.FirewallAuthFetchPhase.CONNECT
+        assert exc_info.value.phase is transport.RequestPhase.CONNECT
         assert [address[0] for address in connect_probe.attempted_addresses] == list(pending_hosts)
         assert {address[0] for address in connect_probe.cancelled_addresses} == set(pending_hosts)
         assert connect_probe.max_active_count == 3
@@ -2284,7 +2286,7 @@ class TestFirewallAuthAsyncTransport:
         async with _run_test_server(handle_client) as port:
             with (
                 mitm_ctx(api_url=f"http://127.0.0.1:{port}"),
-                patch.object(auth_client, "FIREWALL_AUTH_FETCH_DEADLINE_SECONDS", 0.5),
+                patch.object(transport, "REQUEST_DEADLINE_SECONDS", 0.5),
                 patch.object(platform_api, "VERCEL_BYPASS", ""),
                 pytest.raises(auth_client.FirewallAuthDeadlineExceededError) as exc_info,
             ):
@@ -2297,7 +2299,7 @@ class TestFirewallAuthAsyncTransport:
             await asyncio.wait_for(request_received.wait(), timeout=2.0)
             await asyncio.wait_for(peer_closed.wait(), timeout=2.0)
 
-        assert exc_info.value.phase is auth_client.FirewallAuthFetchPhase.RESPONSE_BODY
+        assert exc_info.value.phase is transport.RequestPhase.RESPONSE_BODY
         assert str(exc_info.value) == ("Firewall auth fetch deadline exceeded during response_body")
         assert "sensitive-host-firewall-token" not in str(exc_info.value)
 
@@ -2320,7 +2322,7 @@ class TestFirewallAuthAsyncTransport:
         async with _run_test_server(handle_client) as port:
             with (
                 mitm_ctx(api_url=f"http://127.0.0.1:{port}"),
-                patch.object(auth_client, "FIREWALL_AUTH_FETCH_DEADLINE_SECONDS", 0.1),
+                patch.object(transport, "REQUEST_DEADLINE_SECONDS", 0.1),
                 patch.object(platform_api, "VERCEL_BYPASS", ""),
                 pytest.raises(auth_client.FirewallAuthDeadlineExceededError) as exc_info,
             ):
@@ -2329,7 +2331,7 @@ class TestFirewallAuthAsyncTransport:
             await asyncio.wait_for(request_received.wait(), timeout=2.0)
             await asyncio.wait_for(peer_closed.wait(), timeout=2.0)
 
-        assert exc_info.value.phase is auth_client.FirewallAuthFetchPhase.RESPONSE_HEADERS
+        assert exc_info.value.phase is transport.RequestPhase.RESPONSE_HEADERS
         assert str(exc_info.value) == (
             "Firewall auth fetch deadline exceeded during response_headers"
         )
@@ -2364,7 +2366,7 @@ class TestFirewallAuthAsyncTransport:
             with (
                 patch.dict(os.environ, proxy_environment),
                 mitm_ctx(api_url=f"https://127.0.0.1:{port}"),
-                patch.object(auth_client, "FIREWALL_AUTH_FETCH_DEADLINE_SECONDS", 0.5),
+                patch.object(transport, "REQUEST_DEADLINE_SECONDS", 0.5),
                 pytest.raises(auth_client.FirewallAuthDeadlineExceededError) as exc_info,
             ):
                 await auth_client.fetch_firewall_headers(firewall_auth_request())
@@ -2372,7 +2374,7 @@ class TestFirewallAuthAsyncTransport:
             await asyncio.wait_for(handshake_started.wait(), timeout=2.0)
             await asyncio.wait_for(peer_closed.wait(), timeout=2.0)
 
-        assert exc_info.value.phase is auth_client.FirewallAuthFetchPhase.TLS
+        assert exc_info.value.phase is transport.RequestPhase.TLS
 
     async def test_total_deadline_cancels_dns_lookup_before_connect(self, mitm_ctx):
         class BlockingResolver:
@@ -2403,14 +2405,14 @@ class TestFirewallAuthAsyncTransport:
         }
         with (
             patch.dict(os.environ, proxy_environment),
-            patch.object(auth_client, "_dns_resolver", resolver),
-            patch.object(auth_client, "FIREWALL_AUTH_FETCH_DEADLINE_SECONDS", 0.05),
+            patch.object(transport, "_dns_resolver", resolver),
+            patch.object(transport, "REQUEST_DEADLINE_SECONDS", 0.05),
             mitm_ctx(api_url="http://firewall-auth.invalid"),
             pytest.raises(auth_client.FirewallAuthDeadlineExceededError) as exc_info,
         ):
             await auth_client.fetch_firewall_headers(firewall_auth_request())
 
-        assert exc_info.value.phase is auth_client.FirewallAuthFetchPhase.DNS
+        assert exc_info.value.phase is transport.RequestPhase.DNS
         assert resolver.started.is_set()
         assert resolver.cancelled.is_set()
 
@@ -2443,7 +2445,7 @@ class TestFirewallAuthAsyncTransport:
         async with _run_test_server(handle_client) as port:
             with (
                 mitm_ctx(api_url=f"http://127.0.0.1:{port}"),
-                patch.object(auth_client, "FIREWALL_AUTH_FETCH_DEADLINE_SECONDS", 0.5),
+                patch.object(transport, "REQUEST_DEADLINE_SECONDS", 0.5),
                 patch.object(platform_api, "VERCEL_BYPASS", ""),
             ):
                 leader = asyncio.create_task(auth_cache.get_firewall_headers(shared_key, request))
@@ -2468,7 +2470,7 @@ class TestFirewallAuthAsyncTransport:
             for result in shared_results
         )
         assert all(
-            result.phase is auth_client.FirewallAuthFetchPhase.RESPONSE_BODY
+            result.phase is transport.RequestPhase.RESPONSE_BODY
             for result in shared_results
             if isinstance(result, auth_client.FirewallAuthDeadlineExceededError)
         )
@@ -2508,7 +2510,7 @@ class TestFirewallAuthAsyncTransport:
             }
             with (
                 patch.dict(os.environ, proxy_environment),
-                patch.object(auth_client, "_dns_resolver", resolver),
+                patch.object(transport, "_dns_resolver", resolver),
                 mitm_ctx(api_url="http://platform.example:8123"),
                 patch.object(platform_api, "VERCEL_BYPASS", ""),
             ):
@@ -2534,12 +2536,10 @@ class TestFirewallAuthAsyncTransport:
             pytest.param("ftp://{authority}", "only HTTP environment proxies", id="ftp-proxy"),
             pytest.param("//", "Proxy URL must include a host", id="missing-host"),
             pytest.param("///{authority}", "Proxy URL must include a host", id="extra-slash"),
-            pytest.param("//{authority}/path", "Invalid firewall auth HTTP proxy URL", id="path"),
+            pytest.param("//{authority}/path", "Invalid platform HTTP proxy URL", id="path"),
+            pytest.param("//{authority}?query=1", "Invalid platform HTTP proxy URL", id="query"),
             pytest.param(
-                "//{authority}?query=1", "Invalid firewall auth HTTP proxy URL", id="query"
-            ),
-            pytest.param(
-                "//{authority}#fragment", "Invalid firewall auth HTTP proxy URL", id="fragment"
+                "//{authority}#fragment", "Invalid platform HTTP proxy URL", id="fragment"
             ),
             pytest.param("//127.0.0.1:", "invalid port", id="empty-port"),
             pytest.param("//127.0.0.1:invalid", "invalid port", id="invalid-port"),
@@ -2593,7 +2593,7 @@ class TestFirewallAuthAsyncTransport:
         }
         with (
             patch.dict(os.environ, proxy_environment),
-            patch.object(auth_client, "_dns_resolver", RecordingResolver()),
+            patch.object(transport, "_dns_resolver", RecordingResolver()),
             mitm_ctx(api_url="http://platform.example:8123"),
             pytest.raises(UnicodeError, match="unsafe IDNA compatibility mapping"),
         ):
@@ -2672,7 +2672,7 @@ class TestFirewallAuthAsyncTransport:
                 mitm_ctx(api_url=f"https://{origin_authority}"),
                 pytest.raises(
                     OSError,
-                    match=r"^Firewall auth HTTP proxy CONNECT failed with status 407$",
+                    match=r"^Platform HTTP proxy CONNECT failed with status 407$",
                 ) as exc_info,
             ):
                 await auth_client.fetch_firewall_headers(firewall_auth_request())
@@ -2722,12 +2722,12 @@ class TestFirewallAuthAsyncTransport:
                     os.environ,
                     _https_proxy_environment(f"http://127.0.0.1:{proxy_port}"),
                 ),
-                patch.object(auth_client, "bytearray", FindTrackingBytearray, create=True),
+                patch.object(transport, "bytearray", FindTrackingBytearray, create=True),
                 patch.object(platform_api, "VERCEL_BYPASS", ""),
                 mitm_ctx(api_url="https://platform.example"),
                 pytest.raises(
                     OSError,
-                    match=r"^Firewall auth HTTP proxy CONNECT failed with status 407$",
+                    match=r"^Platform HTTP proxy CONNECT failed with status 407$",
                 ),
             ):
                 await auth_client.fetch_firewall_headers(firewall_auth_request())
@@ -2753,7 +2753,7 @@ class TestFirewallAuthAsyncTransport:
                 repeat_bytes(
                     b"HTTP/1.1 100 Continue\r\nX-Fill: ",
                     b"x",
-                    auth_client._MAX_FIREWALL_AUTH_RESPONSE_HEADER_BYTES,
+                    transport._MAX_RESPONSE_HEADER_BYTES,
                     b"",
                 )
             )
@@ -2775,7 +2775,7 @@ class TestFirewallAuthAsyncTransport:
                 mitm_ctx(api_url="https://platform.example"),
                 pytest.raises(
                     ValueError,
-                    match=r"^Firewall auth HTTP proxy response headers too large$",
+                    match=r"^Platform HTTP proxy response headers too large$",
                 ),
             ):
                 await auth_client.fetch_firewall_headers(firewall_auth_request())
@@ -2811,7 +2811,7 @@ class TestFirewallAuthAsyncTransport:
                     os.environ,
                     _https_proxy_environment(f"http://127.0.0.1:{proxy_port}"),
                 ),
-                patch.object(auth_client, "FIREWALL_AUTH_FETCH_DEADLINE_SECONDS", 0.1),
+                patch.object(transport, "REQUEST_DEADLINE_SECONDS", 0.1),
                 patch.object(platform_api, "VERCEL_BYPASS", ""),
                 mitm_ctx(api_url="https://platform.example"),
                 pytest.raises(auth_client.FirewallAuthDeadlineExceededError) as exc_info,
@@ -2821,7 +2821,7 @@ class TestFirewallAuthAsyncTransport:
             await asyncio.wait_for(connect_received.wait(), timeout=2.0)
             await asyncio.wait_for(proxy_peer_closed.wait(), timeout=2.0)
 
-        assert exc_info.value.phase is auth_client.FirewallAuthFetchPhase.PROXY_CONNECT
+        assert exc_info.value.phase is transport.RequestPhase.PROXY_CONNECT
 
     @pytest.mark.parametrize(
         "proxy_prefix", ["http://", "", "//"], ids=["url", "authority", "prefixed-authority"]
@@ -2989,7 +2989,7 @@ class TestFirewallAuthAsyncTransport:
                     mitm_ctx(api_url=f"https://localhost:{origin_port}"),
                     pytest.raises(
                         ValueError,
-                        match=r"^Firewall auth HTTP proxy sent data before TLS$",
+                        match=r"^Platform HTTP proxy sent data before TLS$",
                     ),
                 ):
                     await auth_client.fetch_firewall_headers(

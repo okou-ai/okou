@@ -19,7 +19,10 @@ from datetime import datetime
 from pathlib import Path
 
 WORK_SECONDS = 570  # Reserve reconciliation/termination inside the existing 600s call.
-CLAIM_SECONDS = 30
+# Cover the deployment holder's default 150s lease, with 30s for admission
+# and its reply inside the existing image job budget.
+PR_CLAIM_SECONDS = 180
+CLAIM_WORK_SECONDS = 25
 LOG_BYTES = 1024 * 1024
 R2_NAMES = (
     "R2_ACCOUNT_ID",
@@ -63,18 +66,19 @@ def private_dir(path, create=True):
 
 
 @contextlib.contextmanager
-def gate(namespace, while_waiting=None, observe_intent=None):
+def gate(namespace, while_waiting=None, observe_intent=None, *, wait=True, deadline=None):
     fd = os.open(namespace / "gate", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     try:
-        deadline = time.monotonic() + 15
+        if deadline is None:
+            deadline = time.monotonic() + 15
         while True:
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
             except BlockingIOError:
-                if observe_intent is not None and observe_intent.exists():
-                    # Reattachment is read-only once the original launch
-                    # publishes intent; it must not wait behind its worker.
+                if not wait or (observe_intent is not None and observe_intent.exists()):
+                    # Probes and observers of a submitted operation can
+                    # proceed without acquiring the gate.
                     yield False
                     return
                 if time.monotonic() >= deadline:
@@ -87,9 +91,21 @@ def gate(namespace, while_waiting=None, observe_intent=None):
         os.close(fd)
 
 
-def system(*arguments):
+def command_timeout(limit, deadline):
+    if deadline is not None:
+        limit = min(limit, deadline - time.monotonic())
+        if limit <= 0:
+            raise TimeoutError("image claim work deadline exceeded")
+    return limit
+
+
+def system(*arguments, deadline=None):
     result = subprocess.run(
-        ["sudo", *arguments], capture_output=True, text=True, timeout=15, check=False
+        ["sudo", *arguments],
+        capture_output=True,
+        text=True,
+        timeout=command_timeout(15, deadline),
+        check=False,
     )
     if result.returncode:
         raise RuntimeError("image service command failed: " + arguments[0])
@@ -97,10 +113,10 @@ def system(*arguments):
 
 
 @contextlib.contextmanager
-def lifecycle(owner, deadline):
+def lifecycle(path, deadline, *, wait=True, while_waiting=None):
     # Linux flock permits LOCK_EX on a read-only FD. The existing root-owned
     # lock stays on the same inode; workers do not need to run Python as root.
-    fd = os.open(owner["lifecycleLock"], os.O_RDONLY | os.O_NOFOLLOW)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     try:
         while True:
             if time.monotonic() >= deadline:
@@ -109,6 +125,11 @@ def lifecycle(owner, deadline):
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
             except BlockingIOError:
+                if not wait:
+                    yield None
+                    return
+                if while_waiting is not None:
+                    while_waiting()
                 time.sleep(0.1)
         yield fd
     finally:
@@ -125,31 +146,27 @@ def require_resource(owner):
         raise RuntimeError("image namespace retired; a new workflow attempt is required")
 
 
-def claim_resource(namespace, owner, run_created_at, deadline):
-    lock = "/var/lock/vm0-runner-lifecycle-" + namespace.name + ".lock"
-    owner["lifecycleLock"] = system(
-        "python3", "-c", LOCK_BOOTSTRAP, "image-lifecycle-lock", lock
-    ).strip()
-    with lifecycle(owner, deadline) as lock_fd:
-        if namespace.name.startswith("pr-"):
-            created = datetime.strptime(run_created_at, "%Y-%m-%dT%H:%M:%SZ")
-            cutoff = os.read(lock_fd, 22)
-            if cutoff and created <= datetime.strptime(
-                cutoff.decode("ascii"), "%Y-%m-%dT%H:%M:%SZ\n"
-            ):
-                raise RuntimeError("image workflow predates PR closure; a fresh run is required")
-        directory = "/var/lib/vm0-runner/bin/" + namespace.name
-        if namespace.name.startswith("pr-"):
-            directory += f"-image-{owner['generation'][0]}"
-        system("install", "-d", "-m", "755", directory)
-        owner["resourceRoot"] = system("realpath", "-e", directory).strip()
-        system("install", "-m", "600", "/dev/null", str(marker_for(owner)))
-        require_resource(owner)
-        owner["state"] = "ready"
-        atomic_json(namespace / "owner.json", owner)
+def check_closure(namespace, lock_fd, run_created_at):
+    if namespace.name.startswith("pr-"):
+        created = datetime.strptime(run_created_at, "%Y-%m-%dT%H:%M:%SZ")
+        cutoff = os.read(lock_fd, 22)
+        if cutoff and created <= datetime.strptime(cutoff.decode("ascii"), "%Y-%m-%dT%H:%M:%SZ\n"):
+            raise RuntimeError("image workflow predates PR closure; a fresh run is required")
 
 
-def unit_state(unit):
+def claim_resource(namespace, owner, deadline):
+    directory = "/var/lib/vm0-runner/bin/" + namespace.name
+    if namespace.name.startswith("pr-"):
+        directory += f"-image-{owner['generation'][0]}"
+    system("install", "-d", "-m", "755", directory, deadline=deadline)
+    owner["resourceRoot"] = system("realpath", "-e", directory, deadline=deadline).strip()
+    system("install", "-m", "600", "/dev/null", str(marker_for(owner)), deadline=deadline)
+    require_resource(owner)
+    owner["state"] = "ready"
+    atomic_json(namespace / "owner.json", owner)
+
+
+def unit_state(unit, *, deadline=None):
     result = subprocess.run(
         [
             "sudo",
@@ -160,7 +177,7 @@ def unit_state(unit):
         ],
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=command_timeout(10, deadline),
         check=False,
     )
     values = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
@@ -258,7 +275,7 @@ def require_observation_owner(namespace, expected):
     require_resource(owner)
 
 
-def retire(operation):
+def retire(operation, *, deadline=None):
     # Earlier PR revisions used these two exact names. Check both even if
     # intent is missing so a successor cannot reuse paths before retirement.
     units = (
@@ -266,12 +283,22 @@ def retire(operation):
         f"vm0-runner-{operation.parent.name}-image-{operation.name}.service",
         f"vm0-ci-image-{operation.name}.service",
     )
-    for unit in units:
-        if not stopped(unit_state(unit)):
-            system("systemctl", "stop", "--no-block", unit)
-    deadline = time.monotonic() + 15
-    while any(not stopped(unit_state(unit)) for unit in units):
-        if time.monotonic() >= deadline:
+    stopping = set()
+
+    def stop_visible_units():
+        # A submitted unit can first become visible during confirmation.
+        for unit in units:
+            if stopped(unit_state(unit, deadline=deadline)):
+                stopping.discard(unit)
+            elif unit not in stopping:
+                system("systemctl", "stop", "--no-block", unit, deadline=deadline)
+                stopping.add(unit)
+        return bool(stopping)
+
+    stop_visible_units()
+    retirement_deadline = time.monotonic() + 15
+    while stop_visible_units():
+        if time.monotonic() >= retirement_deadline:
             raise RuntimeError("image worker retirement unconfirmed; retaining files")
         time.sleep(0.1)
     (operation / "credentials.json").unlink(missing_ok=True)
@@ -327,10 +354,71 @@ def emit(value):
     print(json.dumps(value, separators=(",", ":")), flush=True)
 
 
+def claim(request, namespace, owner, retire_matching, deadline):
+    owner_path = namespace / "owner.json"
+    lock = "/var/lock/vm0-runner-lifecycle-" + namespace.name + ".lock"
+    lock_path = system(
+        "python3", "-c", LOCK_BOOTSTRAP, "image-lifecycle-lock", lock, deadline=deadline
+    ).strip()
+
+    def current_claim():
+        previous = json.loads(owner_path.read_text()) if owner_path.exists() else None
+        if owner_matches(previous, owner):
+            if previous["state"] == "cancelled":
+                raise RuntimeError("image workflow owner cancelled; a new attempt is required")
+            return previous
+        if previous and admission_floor(previous) >= owner["generation"]:
+            raise RuntimeError("image owner superseded, cancelled or input identity conflicts")
+        return None
+
+    def check_waiting_claim():
+        # A prior owner can start more work after we release the gate. Its
+        # worker holds the gate while waiting for or holding the lifecycle lock.
+        with gate(namespace, wait=False) as available:
+            current_claim()
+        if not available:
+            retire_matching()
+
+    while True:
+        with gate(namespace, while_waiting=check_waiting_claim, deadline=deadline):
+            if time.monotonic() >= deadline:
+                raise TimeoutError("image claim work deadline exceeded")
+            previous = current_claim()
+            # Until we own the gate, a same-owner claim may still be committing.
+            if previous is not None and not owner_admitted(previous, owner):
+                raise RuntimeError("image workflow claim incomplete; a new attempt is required")
+            retired = [] if previous is not None else list(operation_paths(namespace))
+            for operation in retired:
+                retire(operation, deadline=deadline)
+            with lifecycle(lock_path, deadline, wait=False) as lock_fd:
+                if lock_fd is not None:
+                    if previous is not None:
+                        require_resource(previous)
+                    else:
+                        check_closure(namespace, lock_fd, request.get("runCreatedAt"))
+                        for operation in retired:
+                            shutil.rmtree(operation)
+                        claimed = dict(
+                            owner, operations=[], state="claiming", lifecycleLock=lock_path
+                        )
+                        atomic_json(owner_path, claimed)
+                        work_deadline = min(deadline, time.monotonic() + CLAIM_WORK_SECONDS)
+                        claim_resource(namespace, claimed, work_deadline)
+                    emit({"claimed": owner["identity"]})
+                    return
+        # This acquisition only observes availability. Release it before
+        # entering the private gate and recheck the owner on the next pass.
+        with lifecycle(lock_path, deadline, while_waiting=check_waiting_claim):
+            pass
+
+
 def remote(request):
-    # A healthy peer can hold the shared lifecycle lock longer than the
-    # short admission gate. Spend the claim budget, reserving time for reply.
-    claim_deadline = time.monotonic() + CLAIM_SECONDS - 5
+    claim_deadline = None
+    if request["action"] == "claim":
+        budget = request["claimBudget"]
+        if type(budget) is not int or not 5 < budget <= PR_CLAIM_SECONDS:
+            raise ValueError("invalid remaining image claim budget")
+        claim_deadline = time.monotonic() + budget - 5
     os.umask(0o077)
     inputs = request["inputs"]
     validate_inputs(inputs)
@@ -379,11 +467,14 @@ def remote(request):
             if (request["action"] == "claim" and generation < owner["generation"]) or (
                 request["action"] == "cancel" and intent["inputs"] == inputs
             ):
-                retire(operation)
+                retire(operation, deadline=claim_deadline)
 
     retiring = request["action"] in ("claim", "cancel")
     if retiring:
         retire_matching()
+    if request["action"] == "claim":
+        claim(request, namespace, owner, retire_matching, claim_deadline)
+        return
     if (
         request["action"] == "cancel"
         and entry_owner
@@ -401,28 +492,6 @@ def remote(request):
             observe(request, operation)
             return
         previous = json.loads(owner_path.read_text()) if owner_path.exists() else None
-        if request["action"] == "claim":
-            if not owner_matches(previous, owner):
-                if previous and admission_floor(previous) >= owner["generation"]:
-                    raise RuntimeError(
-                        "image owner superseded, cancelled or input identity conflicts"
-                    )
-                for operation in operation_paths(namespace):
-                    retire(operation)
-                    shutil.rmtree(operation)
-                # Record admission intent before creating managed resources.
-                claimed = dict(owner, operations=[], state="claiming")
-                atomic_json(owner_path, claimed)
-                claim_resource(namespace, claimed, request.get("runCreatedAt"), claim_deadline)
-            elif not owner_admitted(previous, owner):
-                raise RuntimeError(
-                    "image workflow claim incomplete or cancelled; a new attempt is required"
-                )
-            else:
-                with lifecycle(previous, claim_deadline):
-                    require_resource(previous)
-            emit({"claimed": owner["identity"]})
-            return
         if not owner_matches(previous, owner):
             if request["action"] == "cancel":
                 # A cancellation may reach the host before its first claim.
@@ -563,7 +632,7 @@ def worker(operation):
         owner = json.loads((operation.parent / "owner.json").read_text())
         if not owner_admitted(owner, owner_for(inputs)):
             raise RuntimeError("image operation owner superseded or cancelled")
-        with lifecycle(owner, intent["deadline"]):
+        with lifecycle(owner["lifecycleLock"], intent["deadline"]):
             # Cleanup may have run while this service was queued. Admission
             # belongs to the managed namespace, not merely to a live unit.
             require_resource(owner)
@@ -667,6 +736,8 @@ def exchange(request, remote_host, deadline):
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         raise TimeoutError("image operation deadline exceeded")
+    if request["action"] == "claim":
+        request = dict(request, claimBudget=int(remaining))
     environment = dict(
         os.environ, OKOU_CLOUDFLARE_SSH_OPERATION_TIMEOUT_SECONDS=str(max(1, int(remaining)))
     )
@@ -781,7 +852,10 @@ def main():
         request["runCreatedAt"] = os.environ["RUNNER_IMAGE_RUN_CREATED_AT"]
     remote_host = user + "@" + host
     if action not in ("run", "guard"):
-        reconnect(request, remote_host, CLAIM_SECONDS if action == "claim" else 30)
+        budget = (
+            PR_CLAIM_SECONDS if action == "claim" and inputs["jobRef"].startswith("pr-") else 30
+        )
+        reconnect(request, remote_host, budget)
         return 0
     if action == "guard":
         if len(sys.argv) < 4:

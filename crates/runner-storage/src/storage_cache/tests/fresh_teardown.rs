@@ -25,6 +25,7 @@ async fn dropped_delivery_keeps_publication_joined_by_runner_shutdown() {
     let mut delivery = FreshArchiveDelivery {
         cancel: CancellationToken::new(),
         phase_records: FreshArchivePhaseRecords::default(),
+        slow_headers: 0,
         classification: JoinSet::new(),
         groups: None,
         owned_keys: HashSet::new(),
