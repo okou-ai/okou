@@ -3658,17 +3658,20 @@ interface CreateChatThreadComposerSignalsOptions {
   readonly messageActions: ReturnType<typeof createThreadMessageActions>;
   readonly cancellationRecoveryPending$: Computed<Promise<boolean>>;
   readonly forward?: ChatForwardContext;
-  readonly onOptimisticSend?: () => void;
+  /** Writes in a dialog over another page rather than under the thread. */
+  readonly inPlace: boolean;
+  readonly onOptimisticSend?: (submission: ComposerSubmission) => void;
   readonly connector: ComposerSignals["connector"];
 }
 
 interface ChatThreadComposerContext {
   readonly threadMeta$: Computed<ThreadMeta | null>;
-  readonly preserveThreadDraft?: boolean;
+  /** A dialog composer that leaves the thread's saved draft untouched. */
+  readonly inPlace?: boolean;
   readonly agentId: string;
   readonly cancellationRecoveryPending$: Computed<Promise<boolean>>;
   readonly forward?: ChatForwardContext;
-  readonly onOptimisticSend?: () => void;
+  readonly onOptimisticSend?: (submission: ComposerSubmission) => void;
 }
 
 function createThreadSubmitMessageSignal(
@@ -3689,6 +3692,11 @@ function createThreadSubmitMessageSignal(
       const cloudBrowserEnabled = get(
         computerUseHostSelection.cloudBrowserEnabled$,
       );
+      const onOptimisticSend = options.onOptimisticSend
+        ? () => {
+            options.onOptimisticSend?.(submission);
+          }
+        : undefined;
       const submitted =
         action === "queue"
           ? await set(
@@ -3700,9 +3708,7 @@ function createThreadSubmitMessageSignal(
                 generationTemplate: submission.generationTemplate,
                 editorDocument: submission.editorDocument,
                 ...(options.forward ? { forward: options.forward } : {}),
-                ...(options.onOptimisticSend
-                  ? { onOptimisticSend: options.onOptimisticSend }
-                  : {}),
+                onOptimisticSend,
               },
               signal,
             )
@@ -3715,9 +3721,7 @@ function createThreadSubmitMessageSignal(
                 generationTemplate: submission.generationTemplate,
                 editorDocument: submission.editorDocument,
                 ...(options.forward ? { forward: options.forward } : {}),
-                ...(options.onOptimisticSend
-                  ? { onOptimisticSend: options.onOptimisticSend }
-                  : {}),
+                onOptimisticSend,
               },
               signal,
             );
@@ -3778,7 +3782,7 @@ function createChatThreadComposerSignals(
     threadId: options.chatEvents.threadId,
     voiceDraftTarget: `thread:${options.chatEvents.threadId}`,
     singleLineOnMobile: true,
-    forwardComposer: options.forward !== undefined,
+    forwardComposer: options.forward !== undefined || options.inPlace,
     modelSelection$: composerModelSelection$,
     selectedModelOauthAvailable$: modelSelection.selectedModelOauthAvailable$,
     setModelSelection$: modelSelection.setModelSelection$,
@@ -3826,7 +3830,7 @@ function createThreadComposerSignalsWithContext(
     context.threadMeta$,
   );
   const { queueDraftSync$, cancelDraftSync$, flushDraftClear$, loadDraft$ } =
-    context.preserveThreadDraft
+    context.inPlace
       ? {
           queueDraftSync$: noOpComposerDraftAction$,
           cancelDraftSync$: command(() => {
@@ -3860,6 +3864,7 @@ function createThreadComposerSignalsWithContext(
     cancellationRecoveryPending$: context.cancellationRecoveryPending$,
     connector,
     forward: context.forward,
+    inPlace: context.inPlace === true,
     onOptimisticSend: context.onOptimisticSend,
   });
 }
@@ -3875,8 +3880,8 @@ export function createThreadComposerSignals(
   chatEvents: ChatEventSignals,
   options: {
     readonly forward?: ChatForwardContext;
-    readonly onOptimisticSend?: () => void;
-    readonly preserveThreadDraft?: boolean;
+    readonly onOptimisticSend?: (submission: ComposerSubmission) => void;
+    readonly inPlace?: boolean;
   } = {},
 ): ComposerSignals {
   const threadMeta$ = createThreadMeta(threadId);
@@ -3892,7 +3897,7 @@ export function createThreadComposerSignals(
       cancellationRecoveryPending$: cancellationRecovery.pending$,
       forward: options.forward,
       onOptimisticSend: options.onOptimisticSend,
-      preserveThreadDraft: options.preserveThreadDraft,
+      inPlace: options.inPlace,
     },
     draft,
     createThreadDraftPersistence(threadId, draft, threadDraft$),
@@ -3946,6 +3951,31 @@ const createChatForwardComposerSignals: ChatForwardComposerFactory = (
   );
   return { prepare$ };
 };
+
+/**
+ * A dialog composer that replies in an existing thread from another page. It
+ * catches up the thread's events so the member can join running work there,
+ * and it leaves that thread's saved draft untouched.
+ */
+export function createInPlaceThreadComposerSignals(
+  threadId: string,
+  agentId: string,
+  onOptimisticSend: (submission: ComposerSubmission) => void,
+) {
+  const chatEvents = createChatEventSignals(threadId);
+  const composer = createThreadComposerSignals(threadId, agentId, chatEvents, {
+    onOptimisticSend,
+    inPlace: true,
+  });
+  const setup$ = command(async ({ set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    set(composer.setup$, signal);
+    await set(chatEvents.setup$, signal);
+    await set(chatEvents.catchUp$, signal);
+    signal.throwIfAborted();
+  });
+  return { composer, setup$ };
+}
 
 /**
  * Creates the complete signal graph of one chat panel. The graph carries no

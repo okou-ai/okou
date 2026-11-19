@@ -95,7 +95,12 @@ interface AgentComposerOptions {
   readonly inPlace?: boolean;
   /** The initial Project for a page's new chat or an in-place fork. */
   readonly projectId?: string;
-  readonly onOptimisticSend?: (threadId: string) => void;
+  /** Names the new thread instead of deriving its title from the message. */
+  readonly title?: string;
+  readonly onOptimisticSend?: (
+    threadId: string,
+    submission: ComposerSubmission,
+  ) => void;
 }
 
 function createAgentSubmitMessage(
@@ -136,6 +141,7 @@ function createAgentSubmitMessage(
         {
           agentId,
           ...(options.projectId ? { projectId: options.projectId } : {}),
+          ...(options.title ? { title: options.title } : {}),
           draft,
           prompt: submission.prompt,
           generationTemplate: submission.generationTemplate,
@@ -155,9 +161,11 @@ function createAgentSubmitMessage(
                 cloudBrowserEnabled: access.kind === "cloudBrowser",
               }),
           ...(options.forward ? { forward: options.forward } : {}),
-          ...(options.onOptimisticSend
-            ? { onOptimisticSend: options.onOptimisticSend }
-            : {}),
+          onOptimisticSend: options.onOptimisticSend
+            ? (threadId) => {
+                options.onOptimisticSend?.(threadId, submission);
+              }
+            : undefined,
           ...(hasPendingConnectorAccess
             ? { initialConnectorAccess: pendingConnectorAccess }
             : {}),
@@ -241,6 +249,22 @@ export function createForwardAgentComposerSignals(
     agentId,
     createAgentDraftSignals(agentId),
     { forward, inPlace: true, onOptimisticSend, projectId },
+  );
+}
+
+/**
+ * A dialog composer that starts a new thread of `agentId` from its own unsaved
+ * draft and keeps the current page.
+ */
+export function createInPlaceAgentComposerSignals(
+  agentId: string,
+  onOptimisticSend: (threadId: string, submission: ComposerSubmission) => void,
+  title: string,
+) {
+  return createAgentComposerSignalsWithDraft(
+    agentId,
+    createAgentDraftSignals(agentId),
+    { inPlace: true, onOptimisticSend, title },
   );
 }
 
