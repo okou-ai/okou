@@ -1,0 +1,32 @@
+name: Setup GNU coreutils
+description: Select GNU timeout and tail for process supervision and bounded diagnostics
+
+runs:
+  using: composite
+  steps:
+    - name: Select GNU timeout and tail
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Ubuntu 26.04 ships GNU binaries alongside uutils. These scripts need
+        # GNU cancellation, group escalation, and byte bounds on piped tails.
+        bin_dir=
+        for tool in timeout tail; do
+          if ! tool_bin=$(command -v "gnu$tool" || command -v "$tool") ||
+             ! version=$(LC_ALL=C "$tool_bin" --version) ||
+             [[ $version != "$tool (GNU coreutils)"* ]]; then
+            echo "::error::GNU $tool is required for CI process supervision and diagnostics" >&2
+            exit 1
+          fi
+
+          if [[ ${tool_bin##*/} != "$tool" ]]; then
+            if [[ -z "$bin_dir" ]]; then
+              bin_dir=$(mktemp -d "${RUNNER_TEMP%/}/gnu-coreutils.XXXXXX")
+            fi
+            ln -s "$tool_bin" "$bin_dir/$tool"
+          fi
+          printf 'Using %s\n' "${version%%$'\n'*}"
+        done
+        if [[ -n "$bin_dir" ]]; then
+          printf '%s\n' "$bin_dir" >> "$GITHUB_PATH"
+        fi

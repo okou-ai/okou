@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.3](https://github.com/okou-ai/okou/compare/runner-host-v0.12.2...runner-host-v0.12.3) (2026-11-18)
+
+
+### Refactoring
+
+* **runner-host:** use borrowed descriptors for private files ([#48790](https://github.com/okou-ai/okou/issues/48790)) ([cb4c274](https://github.com/okou-ai/okou/commit/cb4c27430746caf09eac5c78f1e47fede98826ea))
+
 ## [0.12.2](https://github.com/okou-ai/okou/compare/runner-host-v0.12.1...runner-host-v0.12.2) (2026-11-18)
 
 ## [0.12.1](https://github.com/okou-ai/okou/compare/runner-host-v0.12.0...runner-host-v0.12.1) (2026-11-18)
