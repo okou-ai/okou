@@ -109,6 +109,7 @@ describe("Button", () => {
     render(
       <Button
         showTooltip
+        tooltipSide="bottom"
         aria-label="Open settings"
         title="Legacy settings title"
       >
@@ -120,7 +121,12 @@ describe("Button", () => {
     expect(button).not.toHaveAttribute("title");
     await user.hover(button);
 
-    expect(await screen.findByText("Open settings")).toBeVisible();
+    const label = await screen.findByText("Open settings");
+    expect(label).toBeVisible();
+    expect(label.closest('[data-slot="tooltip-content"]')).toHaveAttribute(
+      "data-side",
+      "bottom",
+    );
   });
 
   it("shows the accessible label for a disabled button", async () => {
@@ -150,7 +156,12 @@ describe("Button", () => {
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
-            <Button variant="neutral" showTooltip aria-label="More actions" />
+            <Button
+              variant="quiet"
+              highlightWhenOpen
+              showTooltip
+              aria-label="More actions"
+            />
           }
         >
           More icon
@@ -161,7 +172,10 @@ describe("Button", () => {
       </DropdownMenu>,
     );
 
-    await user.click(screen.getByRole("button", { name: "More actions" }));
+    const trigger = screen.getByRole("button", { name: "More actions" });
+    await user.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(trigger).toHaveClass("aria-expanded:bg-state-hover");
 
     expect(
       await screen.findByRole("menuitem", { name: "Rename" }),
