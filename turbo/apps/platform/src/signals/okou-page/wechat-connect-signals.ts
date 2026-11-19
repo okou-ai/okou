@@ -11,10 +11,10 @@ import { replaceSearchParams$, searchParams$ } from "../route.ts";
 import { refreshWechat$, wechatStatus$ } from "./wechat.ts";
 
 export const wechatConnectPageStatus$ = computed(async (get) => {
+  const token = get(searchParams$).get("token");
   if (!(await get(featureSwitches$))[FeatureSwitchKey.WechatIntegration]) {
     return { kind: "disabled" } as const;
   }
-  const token = get(searchParams$).get("token");
   const identity = await get(runtimeAuthenticatedIdentity$);
   if (token !== null) {
     if (!token || token.length > 1024) {

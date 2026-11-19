@@ -29,10 +29,10 @@ export const setWechatCode$ = command(({ set }, code: string) => {
   return set(code$, code);
 });
 export const wechatStatus$ = computed(async (get) => {
+  get(reload$);
   if (!(await get(featureSwitches$))[FeatureSwitchKey.WechatIntegration]) {
     return null;
   }
-  get(reload$);
   await get(runtimeAuthenticatedIdentity$);
   const client = get(apiClient$)(integrationsWechatContract, {
     apiBase: "api",
