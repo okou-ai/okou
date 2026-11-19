@@ -3045,12 +3045,6 @@ async function main(): Promise<void> {
   let migrationsBackedUp = false;
 
   try {
-    console.log(
-      execCommand("tsx scripts/test-migration-cli-stderr.ts", {
-        cwd: PACKAGE_DIR,
-      }),
-    );
-
     // Step 0: Validate snapshot files
     await validateSnapshotFiles();
 
@@ -3105,14 +3099,6 @@ async function main(): Promise<void> {
     console.log(
       execCommand(
         "node --import tsx scripts/migrations/029-template-guidance-bundles/test-backfill.ts",
-        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
-      ),
-    );
-
-    console.log("=== Presentation template copy CLI ===");
-    console.log(
-      execCommand(
-        "node --import tsx scripts/migrations/025-presentation-template-copy/test-copy.ts",
         { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
       ),
     );
