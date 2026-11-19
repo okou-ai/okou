@@ -209,33 +209,6 @@ Double-clicking the side panel divider restores its default width. [Registration
 - **Then** Double-clicking the side panel divider restores its default width.
 - **Disposition** retain.
 
-## upstream-eaae30ac-works-channel-status-15-01
-
-Works distinguishes Feishu and Lark connection states on the same page. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/works-channel-status.test.tsx#L15).
-
-- **Given** Feishu and Lark have different connectivity states.
-- **When** Open Works.
-- **Then** Each channel shows its own result and available action.
-- **Disposition** retain.
-
-## upstream-eaae30ac-works-channel-status-41-01
-
-Works recognizes an official Lark connection without a custom bot. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/works-channel-status.test.tsx#L41).
-
-- **Given** An official Lark connection is active with no custom bot.
-- **When** Open Works.
-- **Then** The Lark connection is recognized as connected.
-- **Disposition** retain.
-
-## upstream-eaae30ac-works-channel-status-68-01
-
-Works keeps the original Teams installation action and copy with cards off. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/works-channel-status.test.tsx#L68).
-
-- **Given** The new cards experience is disabled for this session.
-- **When** Open Works and inspect the Teams connection entry.
-- **Then** The original Teams installation action and instructions remain available.
-- **Disposition** not_selected.
-
 ## permission-allow-page-002
 
 A user grants a time-limited connector permission and resumes the chat. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx#L242).

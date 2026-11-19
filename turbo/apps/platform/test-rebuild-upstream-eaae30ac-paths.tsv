@@ -25,7 +25,7 @@ upstream_from	upstream_to	path_change	test_file	frozen_executions_in_file	frozen
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	27	14	reconciled
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/custom-connector-connect-lifecycle.test.tsx	2	1	reconciled
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx	11	6	reconciled
-03698f76	eaae30ac	deleted	turbo/apps/platform/src/views/okou-page/__tests__/custom-permission-save-lifecycle.test.tsx	1	1	pending
+03698f76	eaae30ac	deleted	turbo/apps/platform/src/views/okou-page/__tests__/custom-permission-save-lifecycle.test.tsx	1	1	reconciled
 03698f76	eaae30ac	deleted	turbo/apps/platform/src/views/okou-page/__tests__/directed-authorize-page.test.tsx	6	3	reconciled
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	14	7	reconciled
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/email-connect-page.test.tsx	8	4	reconciled
@@ -37,7 +37,7 @@ upstream_from	upstream_to	path_change	test_file	frozen_executions_in_file	frozen
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/preferences-page.test.tsx	9	5	reconciled
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	11	6	reconciled
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.test.tsx	9	5	pending
-03698f76	eaae30ac	added	turbo/apps/platform/src/views/okou-page/__tests__/works-channel-status.test.tsx	0	0	pending
+03698f76	eaae30ac	added	turbo/apps/platform/src/views/okou-page/__tests__/works-channel-status.test.tsx	0	0	reconciled
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	13	7	pending
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx	11	6	pending
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/team-page/__tests__/permission-editor.test.tsx	6	3	pending

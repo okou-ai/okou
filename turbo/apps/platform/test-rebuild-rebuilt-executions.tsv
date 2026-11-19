@@ -616,3 +616,52 @@ integrations-hub-status-006	turbo/apps/platform/src/views/okou-page/__tests__/in
 integrations-hub-status-007	turbo/apps/platform/src/views/okou-page/__tests__/integrations-hub-status.test.tsx	A user connects AgentPhone with a prefilled one-time code	281	passed
 integrations-hub-status-011	turbo/apps/platform/src/views/okou-page/__tests__/integrations-hub-status.test.tsx	Uninstalling connected Microsoft Teams requires confirmation	350	passed
 integrations-hub-status-012	turbo/apps/platform/src/views/okou-page/__tests__/integrations-hub-status.test.tsx	Slack starts OAuth directly and refreshes the original Works page (installed: false)	370	passed
+connector-directory-001	turbo/apps/platform/src/views/okou-page/__tests__/connector-directory.test.tsx	Show builtin tool service details without HTTP permission controls	52	passed
+connector-directory-002	turbo/apps/platform/src/views/okou-page/__tests__/connector-directory.test.tsx	Offer the catalog for adding, and find a connected connector by name	83	passed
+connector-directory-003	turbo/apps/platform/src/views/okou-page/__tests__/connector-directory.test.tsx	Find a connector by a tag that is not in its name	109	passed
+connector-directory-004	turbo/apps/platform/src/views/okou-page/__tests__/connector-directory.test.tsx	Open connector detail and step back to the list	136	passed
+connector-directory-010	turbo/apps/platform/src/views/okou-page/__tests__/connector-directory.test.tsx	Open one provider authorization window from a focused card with Enter	165	passed
+connector-directory-011	turbo/apps/platform/src/views/okou-page/__tests__/connector-directory.test.tsx	Keep remote access results outside connector action navigation	210	passed
+connectors-directory-custom-002	turbo/apps/platform/src/views/okou-page/__tests__/connectors-directory-custom.test.tsx	Separate same-name built-in and custom search results	100	passed
+connectors-directory-custom-004	turbo/apps/platform/src/views/okou-page/__tests__/connectors-directory-custom.test.tsx	Keep zero-custom navigation and role-specific creation for member	131	passed
+connectors-directory-custom-007	turbo/apps/platform/src/views/okou-page/__tests__/connectors-directory-custom.test.tsx	Scope navigation returns directly to Remote control	154	passed
+connectors-directory-custom-008	turbo/apps/platform/src/views/okou-page/__tests__/connectors-directory-custom.test.tsx	Do not turn Custom loading failure into an empty search result	185	passed
+connectors-directory-custom-009	turbo/apps/platform/src/views/okou-page/__tests__/connectors-directory-custom.test.tsx	Keep Remote control and Custom in separate scopes	206	passed
+connectors-directory-custom-010	turbo/apps/platform/src/views/okou-page/__tests__/connectors-directory-custom.test.tsx	Cancel and create a custom connector from the Custom scope	228	passed
+connectors-category-filter-001	turbo/apps/platform/src/views/okou-page/__tests__/connectors-category-filter.test.tsx	Offer every whole-catalog category id, named from the id alone	21	passed
+connectors-category-virtualization-001	turbo/apps/platform/src/views/okou-page/__tests__/connectors-category-virtualization.test.tsx	Mount a screen of a category instead of all of it	18	passed
+connectors-account-rename-focus-001	turbo/apps/platform/src/views/okou-page/__tests__/connectors-account-rename-focus.test.tsx	Keep input navigation focus after keyboard account rename	282	passed
+connectors-account-rename-focus-002	turbo/apps/platform/src/views/okou-page/__tests__/connectors-account-rename-focus.test.tsx	Keep input navigation focus after pointer account rename	282	passed
+connectors-account-rename-focus-005	turbo/apps/platform/src/views/okou-page/__tests__/connectors-account-rename-focus.test.tsx	Keep account menu focus after keyboard account rename	314	passed
+connectors-account-rename-focus-006	turbo/apps/platform/src/views/okou-page/__tests__/connectors-account-rename-focus.test.tsx	Keep account menu focus after pointer account rename	314	passed
+connectors-account-rename-focus-009	turbo/apps/platform/src/views/okou-page/__tests__/connectors-account-rename-focus.test.tsx	Restore the renamed account actions only after the refreshed list arrives	351	passed
+connectors-account-rename-focus-011	turbo/apps/platform/src/views/okou-page/__tests__/connectors-account-rename-focus.test.tsx	Keep focus outside a manager closed during a delayed rename	385	passed
+connectors-account-rename-focus-013	turbo/apps/platform/src/views/okou-page/__tests__/connectors-account-rename-focus.test.tsx	An old rename response cannot clear or steal focus from a newly opened edit	427	passed
+connector-provider-pages-002	turbo/apps/platform/src/views/okou-page/__tests__/connector-provider-pages.test.tsx	A connected Slack workspace shows success and next actions	55	passed
+connector-provider-pages-003	turbo/apps/platform/src/views/okou-page/__tests__/connector-provider-pages.test.tsx	Slack Connect continues to user OAuth before opening Slack	86	passed
+connector-provider-pages-004	turbo/apps/platform/src/views/okou-page/__tests__/connector-provider-pages.test.tsx	Slack Connect fails closed when link status cannot be checked	111	passed
+connector-provider-pages-005	turbo/apps/platform/src/views/okou-page/__tests__/connector-provider-pages.test.tsx	Slack Connect renders an API error when OAuth cannot start	129	passed
+connector-provider-pages-008	turbo/apps/platform/src/views/okou-page/__tests__/connector-provider-pages.test.tsx	Slack Connect offers an OAuth-verified account switch	148	passed
+connector-provider-pages-011	turbo/apps/platform/src/views/okou-page/__tests__/connector-provider-pages.test.tsx	A user links their account to the official Telegram bot at /telegram/connect	183	passed
+connector-provider-pages-013	turbo/apps/platform/src/views/okou-page/__tests__/connector-provider-pages.test.tsx	A successful Feishu callback opens the connected bot	249	passed
+connector-callbacks-002	turbo/apps/platform/src/views/okou-page/__tests__/connector-callbacks.test.tsx	Complete a GitHub connector authorization	24	passed
+connector-callbacks-005	turbo/apps/platform/src/views/okou-page/__tests__/connector-callbacks.test.tsx	Show the Link wallet icon on a refreshed success page	84	passed
+connector-callbacks-007	turbo/apps/platform/src/views/okou-page/__tests__/connector-callbacks.test.tsx	Show Mercury attribution on a completed connector callback	114	passed
+connector-callbacks-008	turbo/apps/platform/src/views/okou-page/__tests__/connector-callbacks.test.tsx	Show a provider error safely without an authenticated session	146	passed
+connector-oauth-receipts-001	turbo/apps/platform/src/views/okou-page/__tests__/connector-oauth-receipts.test.tsx	Preserve the pending OAuth receipt outcome when the final receipt is missing	18	passed
+connector-redirect-pages-001	turbo/apps/platform/src/views/okou-page/__tests__/connector-redirect-pages.test.tsx	The Mercury redirect page shows its required disclosure	10	passed
+debug-connector-catalog-001	turbo/apps/platform/src/views/okou-page/__tests__/debug-connector-catalog.test.tsx	shows the accepted catalog identity with version 3.21.0 in Debug settings	19	passed
+connectors-cloudflare-access-001	turbo/apps/platform/src/views/okou-page/__tests__/connectors-cloudflare-access.test.tsx	Private network lists Cloudflare Access configurations	17	passed
+connectors-remote-control-001	turbo/apps/platform/src/views/okou-page/__tests__/connectors-remote-control.test.tsx	Remote control lists each connection and filters credentials by type	17	passed
+connectors-mcp-expected-failures-001	turbo/apps/platform/src/views/okou-page/__tests__/connectors-mcp-expected-failures.test.tsx	Keep MCP failure feedback and retry available for invalid discovery metadata	20	passed
+connectors-mcp-expected-failures-002	turbo/apps/platform/src/views/okou-page/__tests__/connectors-mcp-expected-failures.test.tsx	Keep MCP failure feedback and retry available for temporary provider unavailability	20	passed
+connectors-ssh-001	turbo/apps/platform/src/views/okou-page/__tests__/connectors-ssh.test.tsx	Management scope changes show current data on return	47	passed
+connectors-ssh-004	turbo/apps/platform/src/views/okou-page/__tests__/connectors-ssh.test.tsx	Remote control keeps saved hosts available when SSH diagnostics fail	94	passed
+connectors-ssh-005	turbo/apps/platform/src/views/okou-page/__tests__/connectors-ssh.test.tsx	Deleting an SSH host referenced by VNC explains how to resolve the dependency	122	passed
+custom-connector-cloudflare-authoring-001	turbo/apps/platform/src/views/okou-page/__tests__/custom-connector-cloudflare-authoring.test.tsx	Create a http connector with organization Cloudflare Access	275	passed
+custom-connector-cloudflare-authoring-005	turbo/apps/platform/src/views/okou-page/__tests__/custom-connector-cloudflare-authoring.test.tsx	A member following a dependency link sees the connector without admin editing controls	329	passed
+custom-connector-cloudflare-authoring-009	turbo/apps/platform/src/views/okou-page/__tests__/custom-connector-cloudflare-authoring.test.tsx	A collapsed requirement distinguishes pending, failed and unavailable lookup before a valid rebind	371	passed
+custom-connector-cloudflare-authoring-010	turbo/apps/platform/src/views/okou-page/__tests__/custom-connector-cloudflare-authoring.test.tsx	A configuration load failure and rejected save preserve the connector draft until explicit retry	447	passed
+custom-connector-create-lifecycle-001	turbo/apps/platform/src/views/okou-page/__tests__/custom-connector-create-lifecycle.test.tsx	A completed creation preserves a newer connector draft and directory search	21	passed
+custom-connector-delete-lifecycle-001	turbo/apps/platform/src/views/okou-page/__tests__/custom-connector-delete-lifecycle.test.tsx	A completed deletion preserves a newer connector draft	20	passed
+custom-connector-edit-lifecycle-002	turbo/apps/platform/src/views/okou-page/__tests__/custom-connector-edit-lifecycle.test.tsx	A completed edit preserves a newer connector draft	23	passed
