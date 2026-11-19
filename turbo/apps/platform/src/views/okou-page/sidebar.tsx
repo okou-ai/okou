@@ -26,12 +26,14 @@ import { activeRoute$ } from "../../signals/active-route.ts";
 import { ROUTES, type RouteKey } from "../../signals/route-paths.ts";
 import { defaultAgentId$, defaultAgentName$ } from "../../signals/agent.ts";
 import { assistantName$ } from "../../signals/branding.ts";
+import { okouRailEntryEnabled$ } from "../../signals/okou-page/okou-rail-entry.ts";
 import {
   openThreeColumnSearchDialog$,
   setThreeColumnSearchOpen$,
   threeColumnSearchOpen$,
 } from "../../signals/okou-page/sidebar-state.ts";
 import { OrgSwitcherCompact } from "./org-switcher.tsx";
+import { OkouLogomark } from "../components/okou-logomark.tsx";
 import { Link } from "../router/link.tsx";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
 import { showChatThreadInbox$ } from "../../signals/okou-page/chat-thread-filter-selection.ts";
@@ -229,11 +231,6 @@ function LabeledRailLink({
   const { t } = useTranslation();
   const caption = (() => {
     switch (id) {
-      case "chat": {
-        return t(($) => {
-          return $.appShell.sidebar.chat;
-        });
-      }
       case "workflows": {
         return t(($) => {
           return $.appShell.sidebar.rail.workflows;
@@ -334,9 +331,16 @@ function ThreeColumnChatListToggle({
   );
 }
 
+/** Sized to the visible glyph of the rail's 19px stroke icons. */
+function OkouRailIcon({ className }: { className?: string }) {
+  return <OkouLogomark className={cn("size-4", className)} />;
+}
+
 function LabeledChatRailLink() {
   const activeId = useGet(activeRoute$);
   const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
+  const okouEntry = useLastResolved(okouRailEntryEnabled$) ?? false;
+  const assistantName = useGet(assistantName$);
   const defaultAgentId = useLastResolved(defaultAgentId$) ?? null;
   const showInbox = useSet(showChatThreadInbox$);
   // My Okou's chat page is `/` itself.
@@ -349,10 +353,14 @@ function LabeledChatRailLink() {
       navOptions={
         agentChatId ? { pathParams: { agentId: agentChatId } } : undefined
       }
-      label={t(($) => {
-        return $.appShell.sidebar.chat;
-      })}
-      icon={MessageCircle as NavIcon}
+      label={
+        okouEntry
+          ? assistantName
+          : t(($) => {
+              return $.appShell.sidebar.chat;
+            })
+      }
+      icon={okouEntry ? OkouRailIcon : (MessageCircle as NavIcon)}
       isActive={
         activeId !== null &&
         ["home", "agentChat", "agentIdeas", "chat"].includes(activeId)
