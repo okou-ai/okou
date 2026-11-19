@@ -190,14 +190,14 @@ export const restoreSourcesFirstDraft$ = command(
   async (
     { get, set },
     identity: SourcesFirstDraftIdentity,
-    serverEnabled: boolean,
+    needsOnboarding: boolean,
     signal: AbortSignal,
   ): Promise<SourcesFirstStep | null> => {
     const active = get(internalDraftIdentity$);
     if (active?.orgId === identity.orgId && active.userId === identity.userId) {
       return null;
     }
-    const remote = serverEnabled
+    const remote = needsOnboarding
       ? await set(loadServerOnboardingDraft$, identity, signal)
       : null;
     signal.throwIfAborted();

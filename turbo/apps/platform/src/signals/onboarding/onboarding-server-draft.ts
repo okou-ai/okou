@@ -76,23 +76,23 @@ export function createServerOnboardingDraftSync(
       if (serialized === get(savedPayload$)) {
         return false;
       }
-      const response = await client.save({
-        body: { ...payload, revision: get(revision$) },
-        fetchOptions: { signal },
-      });
+      const result = await accept(
+        client.save({
+          body: { ...payload, revision: get(revision$) },
+          fetchOptions: { signal },
+        }),
+        [200, 404, 409],
+        signal,
+      );
       signal.throwIfAborted();
       guard();
-      if (response.status === 404 || response.status === 409) {
+      if (result.status !== 200) {
         // Stop this client after a completed flow or a competing editor. A
         // reload restores the saved revision instead of overwriting it.
         set(stopped$, true);
-      }
-      const result = await accept(
-        Promise.resolve(response),
-        [200, 404],
-        signal,
-      );
-      if (result.status === 404) {
+        if (result.status === 409) {
+          await accept(Promise.resolve(result), [200], signal);
+        }
         return false;
       }
       set(revision$, result.body.revision);
