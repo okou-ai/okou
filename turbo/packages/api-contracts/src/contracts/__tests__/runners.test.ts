@@ -132,12 +132,18 @@ it("accepts additional dispatch metadata while validating known envelope fields"
     futureDispatchMetadata: { version: 2 },
     preferredHomeCheckout: checkout,
   };
-  expect(
-    runnerDispatchEnvelopeSchema.parse(envelope).preferredHomeCheckout,
-  ).toStrictEqual(checkout);
+  const parsed = runnerDispatchEnvelopeSchema.parse(envelope);
+  expect(parsed.preferredHomeCheckout).toStrictEqual(checkout);
+  expect(parsed).not.toHaveProperty("futureDispatchMetadata");
   expect(
     runnerDispatchEnvelopeSchema.safeParse({ ...envelope, notAfter: "2000" })
       .success,
+  ).toBe(false);
+  expect(
+    runnerDispatchEnvelopeSchema.safeParse({
+      ...envelope,
+      preferredHomeCheckout: null,
+    }).success,
   ).toBe(false);
 });
 

@@ -1,26 +1,4 @@
 use super::*;
-
-#[tokio::test]
-async fn expired_contention_deadline_still_attempts_an_uncontended_lock() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("preferred-home.lock");
-    let held = try_acquire(path.clone()).await.unwrap();
-    let deadline = tokio::time::Instant::now();
-
-    assert!(matches!(
-        acquire_with_contention_deadline(path.clone(), deadline)
-            .await
-            .unwrap(),
-        TryLock::Busy
-    ));
-    drop(held);
-    assert!(matches!(
-        acquire_with_contention_deadline(path, deadline)
-            .await
-            .unwrap(),
-        TryLock::Acquired(_)
-    ));
-}
 use std::future::{Future as _, poll_fn};
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::sync::mpsc;
@@ -121,21 +99,48 @@ fn cancelled_acquire_does_not_occupy_blocking_pool() {
 }
 
 #[tokio::test]
-async fn contention_timeout_acquires_after_observed_busy_is_released() {
+async fn expired_contention_deadline_still_attempts_an_uncontended_lock() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("preferred-home.lock");
+    let held = try_acquire(path.clone()).await.unwrap();
+    let deadline = tokio::time::Instant::now();
+
+    assert!(matches!(
+        acquire_with_contention_deadline(path.clone(), deadline)
+            .await
+            .unwrap(),
+        TryLock::Busy
+    ));
+    drop(held);
+    assert!(matches!(
+        acquire_with_contention_deadline(path, deadline)
+            .await
+            .unwrap(),
+        TryLock::Acquired(_)
+    ));
+}
+
+#[tokio::test]
+async fn contention_limits_acquire_after_observed_busy_is_released() {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    for limit in [
+        ContentionLimit::Timeout(Duration::MAX),
+        ContentionLimit::Deadline(deadline),
+    ] {
+        assert_acquires_after_observed_busy(limit).await;
+    }
+}
+
+async fn assert_acquires_after_observed_busy(limit: ContentionLimit) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("test.lock");
     let holder = acquire(path.clone()).await.unwrap();
     let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
     let (release_tx, release_rx) = tokio::sync::oneshot::channel();
-    let mut acquisition = Box::pin(acquire_with_contention_timeout_after_busy(
-        path.clone(),
-        LockMode::Exclusive,
-        Duration::from_secs(2),
-        async {
-            entered_tx.send(()).unwrap();
-            release_rx.await.unwrap();
-        },
-    ));
+    let mut acquisition = Box::pin(acquire_with_contention_limit(path.clone(), limit, async {
+        entered_tx.send(()).unwrap();
+        release_rx.await.unwrap();
+    }));
     tokio::select! {
         _ = acquisition.as_mut() => panic!("completed before observing Busy"),
         result = tokio::time::timeout(Duration::from_secs(2), entered_rx) => {
@@ -144,7 +149,11 @@ async fn contention_timeout_acquires_after_observed_busy_is_released() {
     }
     drop(holder);
     release_tx.send(()).unwrap();
-    let TryLock::Acquired(guard) = acquisition.await.unwrap() else {
+    let TryLock::Acquired(guard) = tokio::time::timeout(Duration::from_secs(2), acquisition)
+        .await
+        .unwrap()
+        .unwrap()
+    else {
         panic!("released flock must be acquired within the contention budget");
     };
     assert!(matches!(
@@ -166,10 +175,9 @@ async fn contention_timeout_expires_after_the_retry_timer_is_armed() {
     let timeout = Duration::from_millis(100);
     let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
     let (release_tx, release_rx) = tokio::sync::oneshot::channel();
-    let mut acquisition = Box::pin(acquire_with_contention_timeout_after_busy(
+    let mut acquisition = Box::pin(acquire_with_contention_limit(
         path.clone(),
-        LockMode::Exclusive,
-        timeout,
+        ContentionLimit::Timeout(timeout),
         async {
             entered_tx.send(()).unwrap();
             release_rx.await.unwrap();
@@ -212,10 +220,9 @@ async fn cancelled_contention_timeout_leaves_no_lock_owner() {
     let holder = acquire(path.clone()).await.unwrap();
     let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
     let (release_tx, release_rx) = tokio::sync::oneshot::channel();
-    let mut acquisition = Box::pin(acquire_with_contention_timeout_after_busy(
+    let mut acquisition = Box::pin(acquire_with_contention_limit(
         path.clone(),
-        LockMode::Exclusive,
-        Duration::from_secs(2),
+        ContentionLimit::Timeout(Duration::from_secs(2)),
         async {
             entered_tx.send(()).unwrap();
             release_rx.await.unwrap();

@@ -299,10 +299,9 @@ pub async fn acquire_with_contention_timeout(
     path: PathBuf,
     contention_timeout: Duration,
 ) -> HostResult<TryLock> {
-    acquire_with_contention_timeout_after_busy(
+    acquire_with_contention_limit(
         path,
-        LockMode::Exclusive,
-        contention_timeout,
+        ContentionLimit::Timeout(contention_timeout),
         std::future::ready(()),
     )
     .await
@@ -313,10 +312,9 @@ pub async fn acquire_with_contention_deadline(
     path: PathBuf,
     deadline: tokio::time::Instant,
 ) -> HostResult<TryLock> {
-    acquire_with_deadline_after_busy(
+    acquire_with_contention_limit(
         path,
-        LockMode::Exclusive,
-        || deadline,
+        ContentionLimit::Deadline(deadline),
         std::future::ready(()),
     )
     .await
@@ -330,49 +328,40 @@ pub async fn acquire_with_contention_timeout_for_test(
     contention_timeout: Duration,
     after_busy: impl std::future::Future<Output = ()>,
 ) -> HostResult<TryLock> {
-    acquire_with_contention_timeout_after_busy(
+    acquire_with_contention_limit(
         path,
-        LockMode::Exclusive,
-        contention_timeout,
+        ContentionLimit::Timeout(contention_timeout),
         after_busy,
     )
     .await
 }
 
-async fn acquire_with_contention_timeout_after_busy(
-    path: PathBuf,
-    mode: LockMode,
-    contention_timeout: Duration,
-    after_busy: impl std::future::Future<Output = ()>,
-) -> HostResult<TryLock> {
-    acquire_with_deadline_after_busy(
-        path,
-        mode,
-        || tokio::time::Instant::now() + contention_timeout,
-        after_busy,
-    )
-    .await
+enum ContentionLimit {
+    Timeout(Duration),
+    Deadline(tokio::time::Instant),
 }
 
-async fn acquire_with_deadline_after_busy(
+async fn acquire_with_contention_limit(
     path: PathBuf,
-    mode: LockMode,
-    deadline: impl FnOnce() -> tokio::time::Instant,
+    limit: ContentionLimit,
     after_busy: impl std::future::Future<Output = ()>,
 ) -> HostResult<TryLock> {
-    match acquire_result_once(&path, mode).await? {
-        LockAcquire::Acquired(lock) => Ok(TryLock::Acquired(lock)),
-        LockAcquire::Busy => {
-            after_busy.await;
-            let deadline = deadline();
-            if deadline <= tokio::time::Instant::now() {
-                return Ok(TryLock::Busy);
-            }
-            match tokio::time::timeout_at(deadline, acquire_after_busy(&path, mode)).await {
-                Ok(result) => result.map(TryLock::Acquired),
-                Err(_) => Ok(TryLock::Busy),
-            }
+    let mode = LockMode::Exclusive;
+    if let LockAcquire::Acquired(lock) = acquire_result_once(&path, mode).await? {
+        return Ok(TryLock::Acquired(lock));
+    }
+    after_busy.await;
+    let retry = acquire_after_busy(&path, mode);
+    let wait = match limit {
+        ContentionLimit::Timeout(timeout) => tokio::time::timeout(timeout, retry),
+        ContentionLimit::Deadline(deadline) if deadline > tokio::time::Instant::now() => {
+            tokio::time::timeout_at(deadline, retry)
         }
+        ContentionLimit::Deadline(_) => return Ok(TryLock::Busy),
+    };
+    match wait.await {
+        Ok(result) => result.map(TryLock::Acquired),
+        Err(_) => Ok(TryLock::Busy),
     }
 }
 

@@ -43,6 +43,30 @@ struct PreferredHomeCheckoutInput {
     wait_until: u64,
 }
 
+impl PreferredHomeCheckoutInput {
+    fn deserialize_present<'de, D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<Self>, D::Error> {
+        use serde::de::{MapAccess, Visitor, value::MapAccessDeserializer};
+
+        struct CheckoutObject;
+
+        impl<'de> Visitor<'de> for CheckoutObject {
+            type Value = PreferredHomeCheckoutInput;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a preferred Home checkout object")
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+                Self::Value::deserialize(MapAccessDeserializer::new(map))
+            }
+        }
+
+        deserializer.deserialize_map(CheckoutObject).map(Some)
+    }
+}
+
 // Dispatch senders and receivers roll independently.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,6 +75,10 @@ struct Envelope {
     heartbeat_generation: u64,
     profile: String,
     not_after: u64,
+    #[serde(
+        default,
+        deserialize_with = "PreferredHomeCheckoutInput::deserialize_present"
+    )]
     preferred_home_checkout: Option<PreferredHomeCheckoutInput>,
     execution_context: Box<serde_json::value::RawValue>,
 }
