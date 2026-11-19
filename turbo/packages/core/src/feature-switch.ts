@@ -103,7 +103,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Prefer Markdown for unformatted text documents and offer DOCX and PDF exports.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    restrictOverridesToAudience: true,
   },
   [FeatureSwitchKey.SingleAgent]: {
     maintainer: "lancy@okou.ai",

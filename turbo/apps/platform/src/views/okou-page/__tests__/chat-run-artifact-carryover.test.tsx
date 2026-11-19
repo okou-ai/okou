@@ -124,20 +124,6 @@ async function setupArtifactRun(
   await setupPage({
     context,
     path: RUN_PATH,
-    ...(markdownFirstOutput
-      ? {
-          auth: {
-            user: { id: "test-user-123", fullName: "Test User" },
-            organization: {
-              activeOrg: {
-                id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
-                name: "Okou",
-              },
-              memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
-            },
-          },
-        }
-      : {}),
     featureSwitches: {
       [FeatureSwitchKey.ArtifactSidebarPreview]: sidebarPreviews,
       [FeatureSwitchKey.MarkdownFirstOutput]: markdownFirstOutput,

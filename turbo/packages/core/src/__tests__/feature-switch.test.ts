@@ -78,17 +78,19 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("defaults Markdown-first output off outside staff and enables it for staff", () => {
+  it("defaults Markdown-first output to staff and honors external opt-in", () => {
     const key = FeatureSwitchKey.MarkdownFirstOutput;
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
     for (const context of [
       {},
       { userId: "external-user", orgId: "external-org" },
-      { orgId: "external-org", overrides: { [key]: true } },
     ]) {
       expect(isFeatureEnabled(key, context)).toBe(false);
       expect(getAllFeatureStates(context)[key]).toBe(false);
     }
+    const optedIn = { orgId: "external-org", overrides: { [key]: true } };
+    expect(isFeatureEnabled(key, optedIn)).toBe(true);
+    expect(getAllFeatureStates(optedIn)[key]).toBe(true);
     expect(isFeatureEnabled(key, staff)).toBe(true);
     expect(getAllFeatureStates(staff)[key]).toBe(true);
     expect(

@@ -40,6 +40,9 @@ auditConfig:
     - GHSA-ch52-4w7c-c8xp
 
 overrides:
+  # Keep docx declarations on the workspace Node type line. A second Node type
+  # peer splits Vitest from the instance augmented by jest-dom.
+  "docx@9.15.4>@types/node": 24.13.4
   # speech-rule-engine 4.1.4 pins xmldom 0.9.10, which has XML injection and
   # parser DoS advisories. Remove when upstream requires xmldom >=0.9.12.
   "speech-rule-engine>@xmldom/xmldom": ^0.9.12
