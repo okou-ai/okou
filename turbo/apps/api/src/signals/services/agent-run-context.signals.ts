@@ -28,10 +28,9 @@ import { waitUntil } from "../context/wait-until";
 import { safeSync, settle } from "../utils";
 import type { BootstrapAgent } from "./agent-data.service";
 import {
-  captureMemberMemoryContext,
+  createMemberMemoryContext,
   type MemberMemoryContext,
 } from "./agent-storage-context.service";
-import { memberMemoryReadPlan } from "./member-memory";
 import {
   connectorSourceSnapshotsFromRows,
   type ConnectorSourceIdentity,
@@ -51,10 +50,6 @@ import {
   createModelPricing,
 } from "./model-source-context.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
-import {
-  storageBaseIndexFromRows,
-  storageBaseIndexReadPlan,
-} from "./storage-index.service";
 import { variables } from "@okouai/db/schema/variable";
 import { and, eq, isNull, isNotNull, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
@@ -590,27 +585,7 @@ function createIdentityContext(
           return capturedFeatureSwitchContext(scope, member, overrides, agent);
         });
   const connectorContext = createConnectorContextGroups(userId, orgId, agentId);
-  const memory$ = computed(async (get): Promise<MemberMemoryContext> => {
-    const requests = memberMemoryReadPlan(scope);
-    const db = get(db$);
-    return captureMemberMemoryContext(
-      requests,
-      await (async () => {
-        const readPlan = storageBaseIndexReadPlan(requests);
-        if (readPlan === null) {
-          return new Map();
-        }
-        const rows = await db
-          .select(readPlan.columns)
-          .from(readPlan.from)
-          .innerJoin(readPlan.requested, readPlan.requestedCondition)
-          .leftJoin(readPlan.head, readPlan.headCondition)
-          .leftJoin(readPlan.exact, readPlan.exactCondition)
-          .leftJoin(readPlan.cache, readPlan.cacheCondition);
-        return storageBaseIndexFromRows(rows);
-      })(),
-    );
-  });
+  const memory$ = createMemberMemoryContext(scope);
   const disabledPaidTools$ =
     sharedMember?.disabledPaidTools$ ?? memberContext.disabledPaidTools$;
   const environment$ = computed(async (get) => {

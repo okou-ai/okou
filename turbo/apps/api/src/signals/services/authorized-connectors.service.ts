@@ -11,6 +11,7 @@ import { getCustomConnectorSkillName } from "@okouai/core/storage-names";
 import { connectorCatalogEntries } from "@okouai/db/runtime/connector-catalog";
 import { computed, type Computed } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
+import { logger } from "../../lib/log";
 import { db$ } from "../external/db";
 import {
   agentConnectorScopeFromRows,
@@ -28,7 +29,11 @@ interface AuthorizedConnectorSkill {
   readonly contentBundle: ContentBundle;
 }
 
-function requiredSkillBundle(
+const log = logger("api:authorized-connector-skills");
+
+function availableSkillBundle(
+  connectorId: string,
+  skillName: string,
   row:
     | {
         readonly bundle: ContentBundle | null;
@@ -36,11 +41,17 @@ function requiredSkillBundle(
       }
     | undefined,
   versionId: string,
-): ContentBundle {
+): AuthorizedConnectorSkill | null {
   if (!row?.bundle || row.sourceVersionId !== versionId) {
-    throw new Error("Authorized connector Skill bundle is unavailable");
+    log.warn("Connector Skill bundle is unavailable", { connectorId });
+    return null;
   }
-  return contentBundleSchema.parse(row.bundle);
+  const bundle = contentBundleSchema.safeParse(row.bundle);
+  if (!bundle.success) {
+    log.warn("Connector Skill bundle is invalid", { connectorId });
+    return null;
+  }
+  return { skillName, contentBundle: bundle.data };
 }
 
 type AuthorizedConnector =
@@ -187,13 +198,12 @@ function authorizedConnectorsFromBundles({
       skill:
         connector.skill.kind === "none"
           ? null
-          : {
-              contentBundle: requiredSkillBundle(
-                builtinBundles.get(connectorSlug),
-                connector.skill.versionId,
-              ),
-              skillName: connectorSlug,
-            },
+          : availableSkillBundle(
+              connectorSlug,
+              connectorSlug,
+              builtinBundles.get(connectorSlug),
+              connector.skill.versionId,
+            ),
     };
   });
   for (const connector of scope.customConnectorDefinitions) {
@@ -207,16 +217,15 @@ function authorizedConnectorsFromBundles({
         skill:
           connector.skillStorageVersionId === null
             ? null
-            : {
-                contentBundle: requiredSkillBundle(
-                  customBundles.get(connector.customConnectorId),
-                  connector.skillStorageVersionId,
-                ),
-                skillName: getCustomConnectorSkillName(
+            : availableSkillBundle(
+                connector.customConnectorId,
+                getCustomConnectorSkillName(
                   slug.data,
                   connector.customConnectorId,
                 ),
-              },
+                customBundles.get(connector.customConnectorId),
+                connector.skillStorageVersionId,
+              ),
       });
     }
   }
