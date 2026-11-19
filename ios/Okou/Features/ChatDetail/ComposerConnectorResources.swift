@@ -59,8 +59,7 @@ final class ComposerConnectorResources {
       _ = try get(revision)
       let pending = try get(self.options)
       let signal = options.signal
-      let task = Task<[ChatComposerConnector], Error> {
-        @MainActor [weak self, service, agentID, threadID] in
+      let task = Task { @MainActor [weak self, service, agentID, threadID] in
         guard let self else { throw CancellationError() }
         do {
           let value = try await read {

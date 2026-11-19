@@ -48,22 +48,12 @@ final class AttachmentFlowFixture: Sendable {
       if path.hasPrefix("/api/agents/") && path.hasSuffix("/draft") {
         return try Self.agentDraftResponse(request, path: path, state: state)
       }
-      if let response = Self.supportResponse(path: path) { return response }
+      if let response = try await Self.settingsResponse(
+        request, path: path, connectorSettings: connectorSettings)
+      {
+        return response
+      }
       switch path {
-      case "/api/agents/\(Self.agentID)":
-        return ChatHTTPResponse(body: "{\"agentId\":\"\(Self.agentID)\"}")
-      case "/api/remotes/overview":
-        return ChatHTTPResponse(
-          body:
-            #"{"computerUseHosts":[],"cloudBrowserAvailable":true,"cloudBrowserEnabledByDefault":false,"sshHosts":[],"vncHosts":[]}"#
-        )
-      case "/api/connectors/connected",
-        "/api/connector-account-access/defaults",
-        _
-      where path.hasPrefix("/api/connector-accounts/")
-        || path.contains("/connector-access/") || path.hasSuffix("/connector-current"):
-        guard let connectorSettings else { throw URLError(.unsupportedURL) }
-        return try await connectorSettings(request)
       case "/api/voice-io/quota", "/api/voice-io/transcribe/segment",
         "/api/voice-io/polish/segments":
         guard let voiceInput else { throw URLError(.unsupportedURL) }
@@ -121,6 +111,20 @@ final class AttachmentFlowFixture: Sendable {
     }
   }
 
+  private static func settingsResponse(
+    _ request: URLRequest, path: String, connectorSettings: ChatHTTPFixture.Handler?
+  ) async throws -> ChatHTTPResponse? {
+    switch path {
+    case "/api/connectors/connected", "/api/connector-account-access/defaults",
+      _
+    where path.hasPrefix("/api/connector-accounts/") || path.contains("/connector-access/")
+      || path.hasSuffix("/connector-current"):
+      guard let connectorSettings else { throw URLError(.unsupportedURL) }
+      return try await connectorSettings(request)
+    default: return Self.supportResponse(path: path)
+    }
+  }
+
   private static func navigationResponse(
     _ request: URLRequest, path: String, threadList: ChatHTTPFixture.Handler?
   ) async throws -> ChatHTTPResponse {
@@ -146,7 +150,13 @@ final class AttachmentFlowFixture: Sendable {
       return ChatHTTPResponse(
         body:
           "[{\"agentId\":\"\(Self.agentID)\",\"displayName\":\"Okou\",\"isDefaultAgent\":true}]")
-
+    case "/api/agents/\(Self.agentID)":
+      return ChatHTTPResponse(body: "{\"agentId\":\"\(Self.agentID)\"}")
+    case "/api/remotes/overview":
+      return ChatHTTPResponse(
+        body:
+          #"{"computerUseHosts":[],"cloudBrowserAvailable":true,"cloudBrowserEnabledByDefault":false,"sshHosts":[],"vncHosts":[]}"#
+      )
     case "/api/feature-switches": return ChatHTTPResponse(body: #"{"effectiveSwitches":{}}"#)
     case "/api/user-model-preference": return ChatHTTPResponse(body: "{}")
     case "/api/run-models", "/api/model-catalog":
