@@ -1,4 +1,7 @@
-import { httpConnectorFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
+import {
+  httpConnectorFixture,
+  mcpConnectorFixture,
+} from "../../../mocks/handlers/connector-account-fixtures.ts";
 import {
   cloudflareAccessContract,
   type ScopedCloudflareAccessConfig,
@@ -21,6 +24,7 @@ import {
   customConnector,
   getConnectorAction,
   getConnectorCard,
+  mcpCustomConnector,
   mockSavedConnectorAccounts,
   queryConnectorAction,
   queryConnectorCard,
@@ -159,7 +163,10 @@ function mockConnectorStore(
         body.networkBinding,
         configs(),
       );
-      const updated = httpConnectorFixture(merged);
+      const updated =
+        current.kind === "mcp"
+          ? mcpConnectorFixture(merged)
+          : httpConnectorFixture(merged);
       store.connectors = store.connectors.map((connector) => {
         return connector.id === params.id ? updated : connector;
       });
@@ -533,3 +540,93 @@ test("A configuration load failure and rejected save preserve the connector draf
     expect(queryConnectorCard("Draft API")).not.toBeNull();
   });
 });
+
+test.each(["http", "mcp"] as const)(
+  "Resolve a %s dependency through its settings link before a fresh network deletion",
+  async (kind) => {
+    const dependency =
+      kind === "http"
+        ? customConnector({
+            displayName: "Protected API",
+            storageVersion: 7,
+            ...boundTo(corporate),
+          })
+        : mcpCustomConnector({
+            displayName: "Protected API",
+            storageVersion: 7,
+            ...boundTo(corporate),
+          });
+    const store = mockConnectorStore([dependency], () => {
+      return [corporate];
+    });
+    mockAccessConfigs(() => {
+      return [
+        accessConfig(
+          CORPORATE_ID,
+          "Corporate gateway",
+          "organization",
+          store.connectors.filter((connector) => {
+            return connector.networkBinding?.configId === CORPORATE_ID;
+          }),
+        ),
+      ];
+    });
+    await setupCustomScope({
+      path: `/connectors?scope=private-network&remoteResource=cloudflare:${CORPORATE_ID}`,
+      cloudflare: false,
+    });
+    await waitFor(() => {
+      expect(getConnectorAction("button", "Edit settings")).toBeEnabled();
+    });
+    expect(
+      getConnectorAction("button", "Delete Cloudflare Access"),
+    ).toBeDisabled();
+
+    click(getConnectorAction("button", "Edit settings"));
+    const settings = await waitFor(() => {
+      const form = getConnectorAction("button", "Save network").closest("form");
+      if (!form) {
+        throw new Error("Expected the gateway settings form");
+      }
+      return form;
+    });
+    click(getConnectorAction("link", "Protected API", settings));
+    const edit = await screen.findByRole("dialog", {
+      name: "Edit custom connector",
+    });
+    click(advancedSummary(edit));
+    await chooseAccess(edit, "No Cloudflare Access");
+    await waitFor(() => {
+      expect(advancedSummary(edit)).toHaveTextContent(
+        "Cloudflare Access will be removed on save",
+      );
+    });
+    click(getConnectorAction("button", "Save", edit));
+    await waitFor(() => {
+      expect(edit).not.toBeInTheDocument();
+    });
+    expect(store.updates).toHaveLength(1);
+    expect(store.updates[0]).toMatchObject({
+      networkBinding: null,
+      storageVersion: 7,
+    });
+
+    window.history.back();
+    await expect(
+      screen.findByText("Not used by any of your hosts"),
+    ).resolves.toBeInTheDocument();
+    expect(queryConnectorAction("link", "Protected API")).toBeNull();
+    click(screen.getByRole("radio", { name: /Only me/ }));
+    await waitFor(() => {
+      expect(screen.getByRole("radio", { name: /Only me/ })).toBeChecked();
+    });
+
+    window.history.back();
+    await waitFor(() => {
+      expect(
+        getConnectorAction("button", "Delete Cloudflare Access"),
+      ).toBeEnabled();
+    });
+    expect(screen.getByText("Corporate gateway")).toBeInTheDocument();
+  },
+);
