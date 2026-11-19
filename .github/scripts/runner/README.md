@@ -189,12 +189,13 @@ contain no values. Retained logs are redacted and capped at 1 MiB while the work
 continues draining output and collecting hashes. Private operation state lives
 on remote `/dev/shm`; an unavailable state root fails without falling back to
 disk. One-shot systemd timers schedule expiration services under the operation's
-SSH user and group. After one hour the service verifies retirement before
-removing files. Unconfirmed retirement retains evidence, and reboot removes
-tmpfs state even if a transient timer was lost. The
-small namespace ownership ledger and stable gate remain until reboot or explicit
-namespace retirement. At most 32 operation tombstones per owner prevent an older
-workflow reclaiming ownership or an expired result permitting execution again.
+SSH user and group. At submission, the CI host's monotonic clock defines a fixed
+one-hour deadline that survives systemd reloads. At expiry the service verifies
+retirement before removing files. Unconfirmed retirement retains evidence, and
+reboot removes tmpfs state. The small namespace ownership ledger and stable gate
+remain until reboot or explicit namespace retirement. At most 32 operation
+tombstones per owner prevent an older workflow reclaiming ownership or an expired
+result permitting execution again.
 
 Cancellation stops and verifies owned services; failed or unreachable retirement
 is reported as unconfirmed and retains files. Remote hard deadlines remain in
