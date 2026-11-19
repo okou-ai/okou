@@ -8,7 +8,7 @@ import struct
 
 import guest_preparation_report as preparation
 import report
-from snapshot_report import exact
+from report import exact
 
 
 def terminal(value, sequence=None):

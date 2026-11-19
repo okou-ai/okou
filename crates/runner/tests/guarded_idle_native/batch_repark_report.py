@@ -9,7 +9,7 @@ import pathlib
 import batch_aba_report as batch
 import pressure_report as pressure
 import report
-from snapshot_report import exact
+from report import exact
 
 PREFIX = "NATIVE_BATCH_REPARK_WITNESS "
 CASES = {f"BatchRepark-{mode}" for mode in ("fresh", "snapshot")}

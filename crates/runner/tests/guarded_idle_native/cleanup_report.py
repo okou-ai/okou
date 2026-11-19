@@ -3,7 +3,7 @@
 
 import pressure_report as pressure
 import report
-from snapshot_report import exact
+from report import exact
 
 COUNTS = {"registered_operations", "queued", "granted", "started", "uncertain",
           "ordinary_growth_bytes", "cleanup_growth_bytes", "tracked_tasks"}

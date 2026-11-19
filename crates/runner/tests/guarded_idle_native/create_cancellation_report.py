@@ -27,7 +27,7 @@ def accounting(value, growth, uncertain=False):
     tracked = value.get("tracked_tasks") if isinstance(value,dict) else None
     if not pressure.integer(tracked, 0 if uncertain else 1) or (uncertain and tracked != 0):
         raise ValueError("actual create tracked custody changed")
-    startup.exact(value, {"registered_operations":1, "started":0 if uncertain else 1,
+    report.exact(value, {"registered_operations":1, "started":0 if uncertain else 1,
         "ordinary_growth_bytes":growth,"cleanup_growth_bytes":0,"tracked_tasks":tracked,"uncertain":int(uncertain)},
         "actual create original P2 allowance/uncertainty changed")
 
@@ -55,7 +55,7 @@ def validate(directory):
         initial, accepted, waiting, joined, producers, closed = [e["evidence"] for e in events]
         preparation = policy["replacement_preparation_bytes"]
         growth = startup.BYTES+preparation
-        startup.exact(initial,{"policy":policy,"inputs_sha256":hashlib.sha256(raw.encode()).hexdigest(),
+        report.exact(initial,{"policy":policy,"inputs_sha256":hashlib.sha256(raw.encode()).hexdigest(),
             "snapshot_sha256":result["artifacts"]["snapshot_files"]["memory.bin"],"snapshot_bytes":startup.BYTES,
             "preparation_bytes":preparation,
             "allocated":[2,4096,1],"checkpoint_models_stalled_storage":False},"actual create inputs/full original lease changed")
@@ -72,7 +72,7 @@ def validate(directory):
             raise ValueError("actual ext4 superblock bytes/hash mismatch")
         created_ids.add(path.parent.name)
         ordered([events[0]["monotonic_ns"],created.get("held_ns"),events[1]["monotonic_ns"]])
-        startup.exact(created,{"home_path":str(path),"home_bytes":report.NATIVE_HOME_BYTES,"ext4_magic":"53ef",
+        report.exact(created,{"home_path":str(path),"home_bytes":report.NATIVE_HOME_BYTES,"ext4_magic":"53ef",
             "superblock_hex":created["superblock_hex"],"superblock_sha256":created["superblock_sha256"],"held_ns":created["held_ns"]},"actual formatted home shape changed")
         actual = accepted.get("samples")
         reads.samples(actual, events[0]["monotonic_ns"],events[1]["monotonic_ns"],policy)
@@ -81,7 +81,7 @@ def validate(directory):
                 or not any(v["available_bytes"] == accepted.get("available_bytes") for v in fresh)):
             raise ValueError("actual create lacks sustained fresh Ready")
         accounting(accepted.get("accounting"),growth)
-        startup.exact(accepted,{"created":created,"state":"Ready","available_bytes":accepted["available_bytes"],
+        report.exact(accepted,{"created":created,"state":"Ready","available_bytes":accepted["available_bytes"],
             "samples":actual,"accounting":accepted["accounting"],"allocated":[4,8192,2],"release_byte_withheld":True},"accepted actual create custody changed")
         ordered([events[1]["monotonic_ns"], *(waiting.get(k) for k in ("cancelled_ns","first_dropped_ns","second_pending_ns","foreground_acquired_ns")),events[2]["monotonic_ns"]])
         accounting(waiting.get("accounting"),growth)
@@ -89,23 +89,23 @@ def validate(directory):
         generation=foreground.heartbeat(waiting.get("heartbeat"),1,waiting["foreground_acquired_ns"],events[2]["monotonic_ns"],allocated=(4,8192))
         if generation in generations: raise ValueError("actual create heartbeat generation replayed")
         generations.add(generation)
-        startup.exact(waiting,{**{k:waiting[k] for k in ("cancelled_ns","first_dropped_ns","second_pending_ns","foreground_acquired_ns","accounting","heartbeat","observer")},
+        report.exact(waiting,{**{k:waiting[k] for k in ("cancelled_ns","first_dropped_ns","second_pending_ns","foreground_acquired_ns","accounting","heartbeat","observer")},
             "first_pending":True,"first_dropped":True,"second_pending":True,"release_byte_withheld":True,"allocated":[4,8192,2]},"cancelled actual create observer custody changed")
         completion=joined.get("completion")
         if not isinstance(completion,dict): raise ValueError("actual workspace rollback absent")
         accounting(completion.get("accounting"),growth)
-        startup.exact(completion,{"workspace":str(path.parent),"workspace_absent":True,"cleanup_ns":completion.get("cleanup_ns"),
+        report.exact(completion,{"workspace":str(path.parent),"workspace_absent":True,"cleanup_ns":completion.get("cleanup_ns"),
             "allocated":[4,8192,2],"accounting":completion["accounting"]},"actual workspace cleanup lost full custody")
         ordered([events[2]["monotonic_ns"],joined.get("release_ns"),completion["cleanup_ns"],joined.get("joined_ns"),events[3]["monotonic_ns"]])
         accounting(joined.get("accounting"),growth,True)
-        startup.exact(joined,{"completion":completion,"release_ns":joined["release_ns"],"joined_ns":joined["joined_ns"],
+        report.exact(joined,{"completion":completion,"release_ns":joined["release_ns"],"joined_ns":joined["joined_ns"],
             "transaction_joined":True,"cancelled":True,
             "allocated":[2,4096,1],"accounting":joined["accounting"]},"actual create cancellation/uncertainty result changed")
         accounting(producers.get("accounting"),growth,True)
-        startup.exact(producers,{"creation_joined":True,"pressure_stopped":True,"heartbeat_joined":True,
+        report.exact(producers,{"creation_joined":True,"pressure_stopped":True,"heartbeat_joined":True,
             "provider_joined":True,"peer_joined":True,"snapshot_reverified":True,"allocated":[2,4096,1],
             "accounting":producers["accounting"]},"actual create producers not joined before original saving")
-        startup.exact(closed,{"registered_operations":1,"tracked_tasks":0,"started":0,"uncertain":1,
+        report.exact(closed,{"registered_operations":1,"tracked_tasks":0,"started":0,"uncertain":1,
             "ordinary_growth_bytes":growth,"cleanup_growth_bytes":0,"closed":True,"allocated":[0,0,0]},"closed actual create P2 uncertainty was discarded")
         result["cases"][case]["create_cancellation"]=events
     result.update(format="native-create-cancellation-report-v2",native_create_cancellation_complete=True,
