@@ -922,3 +922,7 @@ browser-frame-window-01.01	turbo/apps/platform/src/views/browser-session/__tests
 browser-frame-window-02	turbo/apps/platform/src/views/browser-session/__tests__/browser-frame-window.test.tsx	Keep the three-frame window while the optional RTT probe is stalled	55	passed
 browser-frame-window-03	turbo/apps/platform/src/views/browser-session/__tests__/browser-frame-window.test.tsx	Keep the three-frame window when the optional RTT probe is rejected	68	passed
 browser-frame-window-05	turbo/apps/platform/src/views/browser-session/__tests__/browser-frame-window.test.tsx	Size the split image socket from its own RTT after retiring the shared probe	85	passed
+browser-navigation-regression-02	turbo/apps/platform/src/views/browser-session/__tests__/browser-navigation-regression.test.tsx	Keep remote input usable while the first history response is held	32	passed
+browser-navigation-regression-04.01	turbo/apps/platform/src/views/browser-session/__tests__/browser-navigation-regression.test.tsx	Clear a failed reload notice by submitting a working address	60	passed
+browser-navigation-regression-05	turbo/apps/platform/src/views/browser-session/__tests__/browser-navigation-regression.test.tsx	Keep the confirmed document selected when a navigation starts a download without history	77	passed
+browser-navigation-regression-06	turbo/apps/platform/src/views/browser-session/__tests__/browser-navigation-regression.test.tsx	Display the final redirect address when the pending navigation is acknowledged	109	passed
