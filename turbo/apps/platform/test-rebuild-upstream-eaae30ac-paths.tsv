@@ -35,7 +35,7 @@ upstream_from	upstream_to	path_change	test_file	frozen_executions_in_file	frozen
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/markdown-permission-batch.test.tsx	7	4	pending
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/markdown-table-export.test.tsx	27	14	pending
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/preferences-page.test.tsx	9	5	reconciled
-03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	11	6	pending
+03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	11	6	reconciled
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.test.tsx	9	5	pending
 03698f76	eaae30ac	added	turbo/apps/platform/src/views/okou-page/__tests__/works-channel-status.test.tsx	0	0	pending
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/permission-allow/__tests__/permission-allow-page.test.tsx	13	7	pending

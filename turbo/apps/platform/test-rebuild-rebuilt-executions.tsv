@@ -542,3 +542,8 @@ preferences-page-002	turbo/apps/platform/src/views/okou-page/__tests__/preferenc
 preferences-page-004	turbo/apps/platform/src/views/okou-page/__tests__/preferences-page.test.tsx	A cached palette is visible during startup and cleared when the workspace uses the default	274	passed
 preferences-page-007	turbo/apps/platform/src/views/okou-page/__tests__/preferences-page.test.tsx	Saving a time zone refreshes the recovered Morning Brief preference	331	passed
 preferences-page-009	turbo/apps/platform/src/views/okou-page/__tests__/preferences-page.test.tsx	First paint cleans up duplicate cookies before the shared workspace mode loads	381	passed
+settings-refresh-state-003	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	Saving Learning keeps enabled Suggestions unchanged while the save is pending	117	passed
+settings-refresh-state-005	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	Reopening Settings refreshes a Learning preference changed elsewhere after a save	180	passed
+settings-refresh-state-007	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	saving time zone keeps enabled Morning brief unchanged	235	passed
+settings-refresh-state-008	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	Updates Morning brief from the save response while leaving other preferences usable	268	passed
+settings-refresh-state-011	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	a Morning brief refresh failure after returning to Preference reports the error and disables the switch	330	passed
