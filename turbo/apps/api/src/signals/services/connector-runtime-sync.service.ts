@@ -472,9 +472,6 @@ async function resolveCustomTarget(args: {
     rows: [row],
     featureSwitchContext: args.snapshot.featureSwitchContext,
     connectorCatalogSnapshot: args.snapshot.connectorCatalogSelection,
-    grants: [
-      { customConnectorId: target.customConnectorId, permissionNames: [] },
-    ],
     memberPermissionPolicies: permissionGrantsToFirewallPolicies(
       args.snapshot.memberRules,
     ),

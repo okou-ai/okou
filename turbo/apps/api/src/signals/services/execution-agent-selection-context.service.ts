@@ -1,16 +1,13 @@
 import { computed, type Computed } from "ccstate";
-import { memberConnectorSelectionQueries } from "./member-connector-selection";
-
-import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
-
-import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
+import {
+  type ConnectorMember,
+  memberConnectorRuleColumns,
+  memberConnectorSelectionQueries,
+} from "./member-connector-selection";
 import { array, object, string, unknown as zUnknown } from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { contextJsonRows, contextProjectionSchema } from "./context-rowset";
-import {
-  agentConnectorSelectionFromRows,
-  type AgentConnectorSelectionScope,
-} from "./execution-agent-connectors.service";
+import { agentConnectorSelectionFromRows } from "./execution-agent-connectors.service";
 import {
   customConnectorExecutionDefinitionSelection,
   customConnectorExecutionOAuthSelection,
@@ -18,10 +15,6 @@ import {
 import { customConnectorNetworkMetadataSchema } from "@okouai/api-contracts/validators/custom-connector-network";
 import { customConnectorSkillBundleSelection } from "./custom-connector-skill-bundle-columns";
 
-/** These column definitions decode the member account snapshot. */
-const builtinColumns = Object.freeze({
-  connectorSlug: userBuiltinConnectors.connectorSlug,
-});
 const { networkBinding: _networkBinding, ...connectorDefinitionColumns } =
   customConnectorExecutionDefinitionSelection();
 const connectorColumns = Object.freeze({
@@ -29,19 +22,15 @@ const connectorColumns = Object.freeze({
   ...customConnectorSkillBundleSelection(),
 });
 const oauthColumns = customConnectorExecutionOAuthSelection();
-const permissionColumns = Object.freeze({
-  connectorSlug: userPermissionGrants.connectorSlug,
-  permission: userPermissionGrants.permission,
-  action: userPermissionGrants.action,
-  expiresAt: userPermissionGrants.expiresAt,
-});
+const connectorSlugRow = object({ connectorSlug: string() });
+const permissionGrantRow = connectorSlugRow.and(
+  contextProjectionSchema(memberConnectorRuleColumns),
+);
+
 /** These related selections are included in the first account/environment statement. */
-export function agentSelectionColumns(
-  scope: AgentConnectorSelectionScope,
-  at: Date,
-) {
+export function agentSelectionColumns(member: ConnectorMember, at: Date) {
   const { builtin, custom, permissions } = memberConnectorSelectionQueries(
-    scope,
+    member,
     at,
   );
   return {
@@ -66,9 +55,7 @@ export function createAgentSelectionContext(
 ) {
   const connectorSelection$ = computed(async (get) => {
     const row = await get(raw$);
-    const builtin = array(contextProjectionSchema(builtinColumns)).parse(
-      row.builtin,
-    );
+    const builtin = array(connectorSlugRow).parse(row.builtin);
     const custom = array(
       object({
         connector: contextProjectionSchema(connectorColumns).and(
@@ -77,15 +64,12 @@ export function createAgentSelectionContext(
           }),
         ),
         oauthConfig: contextProjectionSchema(oauthColumns).nullable(),
-        permissionNames: array(string()),
       }),
     ).parse(row.custom);
     return agentConnectorSelectionFromRows(builtin, custom);
   });
   const permissionGrants$ = computed(async (get) => {
-    return array(contextProjectionSchema(permissionColumns)).parse(
-      (await get(raw$)).permissions,
-    );
+    return array(permissionGrantRow).parse((await get(raw$)).permissions);
   });
   return { connectorSelection$, permissionGrants$ };
 }

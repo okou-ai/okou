@@ -75,10 +75,8 @@ import {
 import type { ConnectorExecutionRuntimeSelection } from "./connector-catalog-runtime.service";
 import type { CustomConnectorExecutionDefinition } from "./custom-connector-definition-selection";
 import { customConnectorPermissionBundleDependencySlug } from "./custom-connector-permission-bundle.service";
-import type {
-  AgentConnectorSelection,
-  AgentConnectorSelectionScope,
-} from "./execution-agent-connectors.service";
+import type { AgentConnectorSelection } from "./execution-agent-connectors.service";
+import type { ConnectorMember } from "./member-connector-selection";
 import {
   agentSelectionColumns,
   createAgentSelectionContext,
@@ -161,9 +159,9 @@ export interface AgentRunContextSignals {
   readonly requestTemplateInputId$: Computed<Promise<string | undefined>>;
   readonly requestTemplateSources$: ReturnType<typeof createRunTemplateSources>;
   readonly connectorSelection$: Computed<Promise<AgentConnectorSelection>>;
-  /** Connectors the Agent may use, derived from its connector selection. */
+  /** The member's saved connector scope before applying Chat access. */
   readonly connectorScope$: Computed<Promise<AgentConnectorScopeSnapshot>>;
-  /** The Agent's permission grants, expanded into firewall policies. */
+  /** The member's connector permission grants, expanded into firewall policies. */
   readonly permissionPolicies$: Computed<Promise<FirewallPolicies | null>>;
   readonly runVariables$: Computed<Promise<Record<string, string>>>;
   readonly authorizedConnectors$: Computed<Promise<AuthorizedConnectors>>;
@@ -505,7 +503,7 @@ function createSelectedImageModel(
 }
 
 function createRequestInputSources(
-  scope: AgentConnectorSelectionScope,
+  scope: ConnectorMember & { readonly agentId: string },
   requestInputs: Parameters<typeof createAgentRunContextSignals>[3],
 ) {
   const requestThreadConnectorIdentity$ = computed(() => {
@@ -861,12 +859,9 @@ function bootstrapConnectorAccountRows(
 }
 
 /** Related accounts, definitions, bindings, values and grants share one observation. */
-function createAgentEnvironment(
-  identity$: Computed<Promise<AgentConnectorSelectionScope>>,
-) {
+function createAgentEnvironment(member: ConnectorMember) {
   return computed(async (get) => {
-    const identity = await get(identity$);
-    const { userId, orgId } = identity;
+    const { userId, orgId } = member;
     const db = get(db$);
     const variableRows = bootstrapVariableRows(userId, orgId);
     const variableSnapshot = bootstrapVariableSnapshot(variableRows);
@@ -893,7 +888,7 @@ function createAgentEnvironment(
         accountRows: contextJsonRows(accountRows).mapWith(
           bootstrapAccountRowsDecoder,
         ),
-        ...agentSelectionColumns(identity, nowDate()),
+        ...agentSelectionColumns(member, nowDate()),
       })
       .from(variableSnapshot);
     const acquisitionCapture: PgPoolAcquisitionCapture = { acquisitions: [] };
@@ -1051,10 +1046,7 @@ function createConnectorContextGroups(
   orgId: string,
   agentId: string,
 ) {
-  const identity$ = computed(() => {
-    return Promise.resolve({ userId, orgId, agentId });
-  });
-  const sources = createConnectorSources(identity$);
+  const sources = createConnectorSources({ userId, orgId });
   const runVariables$ = computed(async (get) => {
     const snapshot = await get(sources.environmentSnapshot$);
     return buildAgentRunVariables({ agentId, variables: snapshot.variables });
@@ -1068,17 +1060,15 @@ function createConnectorContextGroups(
   };
 }
 
-function createConnectorSources(
-  identity$: Computed<Promise<AgentConnectorSelectionScope>>,
-) {
-  const environmentSnapshot$ = createAgentEnvironment(identity$);
+function createConnectorSources(member: ConnectorMember) {
+  const environmentSnapshot$ = createAgentEnvironment(member);
   const { connectorSelection$, permissionGrants$ } =
     createAgentSelectionContext(environmentSnapshot$);
   const customConnectorDefinitions$ = computed(async (get) => {
     return (await get(connectorSelection$)).customConnectorDefinitions;
   });
   const connectorSnapshot$ = computed(async (get) => {
-    const { userId, orgId } = await get(identity$);
+    const { userId, orgId } = member;
     const [snapshot, definitions] = await Promise.all([
       get(environmentSnapshot$),
       get(customConnectorDefinitions$),

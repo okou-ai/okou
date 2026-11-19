@@ -1,5 +1,4 @@
 import { performance } from "node:perf_hooks";
-import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import type {
   ConnectorAccountSelection,
   ConnectorAccountTarget,
@@ -305,7 +304,6 @@ function createConnectorInputSignals(
             return custom.has(id);
           },
         ),
-        customConnectorGrants: [],
       };
     },
   );
@@ -320,9 +318,6 @@ function createConnectorInputSignals(
   );
   const featureSwitchContext$ = computed(async (get) => {
     return await get(execution.featureSwitches$);
-  });
-  const memberPermissionPolicies$ = computed((get) => {
-    return get(execution.permissionPolicies$);
   });
   const customConnectorDefinitions$ = computed(async (get) => {
     const { timing } = await get(connectorInput$);
@@ -374,7 +369,7 @@ function createConnectorInputSignals(
     customConnectorDefinitions$,
     ownedThread$,
     effectiveAccounts$,
-    memberPermissionPolicies$,
+    memberPermissionPolicies$: execution.permissionPolicies$,
   };
 }
 
@@ -550,7 +545,6 @@ function createConnectorPreparationSignals(
                   connectorScope.allowedCustomConnectorIds,
                 connectorIdCandidatesByCustomConnectorId:
                   threadConnectorSelectionIds.connectorIdCandidatesByCustomConnectorId,
-                customConnectorGrants: connectorScope.customConnectorGrants,
                 connectorCatalogSnapshot,
               },
       };
@@ -949,7 +943,6 @@ function createCustomConnectorContextSignals(
                   permissionBundlesByConnectorId,
                   featureSwitchContext,
                   connectorCatalogSnapshot: args.connectorCatalogSnapshot,
-                  grants: args.customConnectorGrants,
                   memberPermissionPolicies,
                 });
                 if (context.targets.length > 0) {
@@ -996,14 +989,13 @@ function createCustomConnectorContextSignals(
   return { customConnectorContext$ };
 }
 
-/** The Agent's stored connector scope as a Run connector scope. */
+/** The member's saved connector scope before applying Chat access. */
 function runConnectorScope(
   scope: AgentConnectorScope,
 ): EffectiveConnectorScope {
   return {
     allowedConnectorSlugs: scope.allowedConnectorSlugs,
     allowedCustomConnectorIds: scope.allowedCustomConnectorIds,
-    customConnectorGrants: scope.customConnectorGrants,
     source: isEmptyRunConnectorScope(scope) ? "empty" : "stored_agent",
   };
 }
@@ -1101,8 +1093,6 @@ type ConnectorScopeSource = "stored_agent" | "empty";
 export interface EffectiveConnectorScope {
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
   readonly allowedCustomConnectorIds: readonly string[];
-  readonly customConnectorGrants:
-    readonly AgentCustomConnectorGrant[] | undefined;
   readonly source: ConnectorScopeSource;
 }
 
@@ -1675,8 +1665,6 @@ interface RunConnectorPreparation {
     readonly allowedCustomConnectorIds: readonly string[];
     readonly connectorIdCandidatesByCustomConnectorId:
       ReadonlyMap<string, readonly string[]> | undefined;
-    readonly customConnectorGrants:
-      readonly AgentCustomConnectorGrant[] | undefined;
     readonly connectorCatalogSnapshot: ConnectorExecutionRuntimeSelection;
   } | null;
 }
