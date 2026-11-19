@@ -195,7 +195,6 @@ import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-con
 import { WechatLaunchUnavailableError } from "./wechat-context.service";
 import { isMemberSubscriptionRoute } from "./effective-model-route.service";
 
-import { recordGetStartedWorkflowSql } from "./get-started-workflow.service";
 import { workflowRewardRunEventInsert } from "./workflow-reward-source-publication";
 import { formatIntegrationRunError$ } from "./integration-run-errors.service";
 
@@ -1974,25 +1973,6 @@ export function createThreadClaimRunObjects(
       });
     },
   );
-  const recordQueuedWorkflowReward$ = command(
-    async (
-      { set },
-      args: AssembleWorkflowAutomationRunArgs,
-      signal: AbortSignal,
-    ) => {
-      const statement = recordGetStartedWorkflowSql(
-        {
-          orgId: args.due.automation.orgId,
-          userId: args.due.automation.ownerUserId,
-          workflowId: args.due.automation.workflowId,
-          sourceEventId: args.queueEventId,
-        },
-        nowDate(),
-      );
-      await set(writeDb$).execute(statement);
-      signal.throwIfAborted();
-    },
-  );
   const automationModel$ = computed(
     async (get): Promise<ThreadModelSelection | RunFailure> => {
       if (!(await get(automationExecutionInput$))) {
@@ -2103,11 +2083,7 @@ export function createThreadClaimRunObjects(
     },
   );
   const prepareAutomationRun$ = command(
-    async (
-      { get },
-      args: AssembleWorkflowAutomationRunArgs,
-      signal: AbortSignal,
-    ): Promise<AssembleWorkflowAutomationRunArgs | null> => {
+    async ({ get }, signal: AbortSignal): Promise<void> => {
       const assembly = await get(assembleWorkflowAutomationRun$);
       signal.throwIfAborted();
       if (assembly.kind === "assembled") {
@@ -2117,9 +2093,6 @@ export function createThreadClaimRunObjects(
           now(),
         );
       }
-      // An assembled launch records its independent Get Started reward; the
-      // caller runs it alongside the launch reads rather than ahead of them.
-      return assembly.kind === "assembled" ? args : null;
     },
   );
   // A head whose automation input can no longer be read is rejected from its
@@ -3443,21 +3416,17 @@ export function createThreadClaimRunObjects(
   /** Validate the automation source before starting shared launch reads. */
   const prepareLaunchResources$ = command(
     async ({ get, set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
-      let rewardArgs: AssembleWorkflowAutomationRunArgs | null = null;
       if (head.contextType === "automation") {
         const launch = await set(prepareAutomationLaunch$, head, signal);
         signal.throwIfAborted();
         if (launch.kind === "rejected") {
           return { kind: "rejected" as const, assembly: launch.assembly };
         }
-        rewardArgs = await set(prepareAutomationRun$, launch.args, signal);
+        await set(prepareAutomationRun$, signal);
         signal.throwIfAborted();
       }
-      const [runner, , callbackRows, assembly, identity] = await Promise.all([
+      const [runner, callbackRows, assembly, identity] = await Promise.all([
         set(prepareRunnerResources$, signal),
-        rewardArgs
-          ? set(recordQueuedWorkflowReward$, rewardArgs, signal)
-          : undefined,
         get(callbackRows$),
         get(assembly$),
         get(runIdentity$),

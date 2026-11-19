@@ -57,17 +57,6 @@ const settle$ = command(async ({ get, set }, signal: AbortSignal) => {
     { intent, apply: true },
     signal,
   );
-  if (result.kind === "pending") {
-    return {
-      status: 202 as const,
-      body: {
-        version: 1 as const,
-        environment: env("ENV"),
-        intentId: intent.id,
-        status: "pending" as const,
-      },
-    };
-  }
   if (result.kind !== "receipt") {
     return result.kind === "missing"
       ? createErrorResponse(

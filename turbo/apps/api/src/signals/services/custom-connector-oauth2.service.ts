@@ -3,7 +3,6 @@ import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { customOAuthConnectionPublicationSql } from "./custom-oauth-connection-publication";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { safeSqlStateCode } from "../../lib/pg-errors";
-import { CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY } from "./get-started-rewards.service";
 import { feishuPlatformFromTokenUrl } from "@okouai/core/feishu-platform";
 import { Buffer } from "node:buffer";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -2072,7 +2071,6 @@ export const storeCustomConnectorOAuth2Connection$ = command(
       binding: args.automaticOAuthBinding
         ? { customConnectorId: args.connectorId, ...args.automaticOAuthBinding }
         : null,
-      quest: customOAuthQuest(args),
     });
     signal.throwIfAborted();
     // Finish the admitted publication before the caller observes post-commit abort.
@@ -2859,15 +2857,4 @@ function automaticNoAuthWakeup(
         targets: [{ kind: "custom", customConnectorId: connector.id }],
       }
     : undefined;
-}
-
-function customOAuthQuest(
-  args: Pick<StoreCustomConnectorOAuth2ConnectionArgs, "orgId" | "userId">,
-) {
-  return {
-    orgId: args.orgId,
-    userId: args.userId,
-    questKey: "connector" as const,
-    sourceKey: CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY,
-  };
 }

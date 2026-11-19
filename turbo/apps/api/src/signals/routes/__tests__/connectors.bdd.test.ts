@@ -1,10 +1,14 @@
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import {
+  marketingRewardConsumer,
+  settleMarketingRequest,
+} from "./helpers/marketing-reward-consumer";
 import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { readGetStartedStatus } from "./helpers/get-started";
 /**
  * helper gap:
  * - Selected scope, custom-value, and proposal cases use normal user writes.
@@ -341,11 +345,6 @@ describe("CONN-01 and CHAIN-CONNECTOR: connector discovery and manual grant life
     await expect(
       authOrgApi.readEnabledConnectorSlugs(actor, agent.agentId),
     ).resolves.toContain("openai");
-    expect(
-      (await readGetStartedStatus(context, actor)).quests.find((q) => {
-        return q.key === "connector";
-      })?.claimedCount,
-    ).toBe(0);
   });
 
   it("authorizes a manual-grant connector for the current default agent when no agent is requested", async () => {
@@ -713,11 +712,6 @@ describe("CONN-02: OAuth start and callback", () => {
     expect(accounts).toContainEqual(
       expect.objectContaining({ displayName: "Personal", isDefault: false }),
     );
-    expect(
-      (await readGetStartedStatus(context, actor)).quests.find((q) => {
-        return q.key === "connector";
-      })?.claimedCount,
-    ).toBe(1);
   });
 
   it("persists the callback-selected Datadog site through the public OAuth flow", async () => {
@@ -1807,7 +1801,8 @@ describe("CONN-02: OAuth device authorization", () => {
     await connectorsApi.deleteFeatureSwitches(actor);
   });
 
-  it("awards each connector once when different device connections and reconnects complete concurrently", async () => {
+  it("settles device connector facts once across concurrent connections and reconnects", async () => {
+    const consumer = marketingRewardConsumer();
     const actor = createBddApi(context).user();
     mockBase44OAuthProvider();
     mockSlockOAuthProvider();
@@ -1855,12 +1850,35 @@ describe("CONN-02: OAuth device authorization", () => {
         });
       }),
     );
-
-    expect(
-      (await readGetStartedStatus(context, actor)).quests.find((quest) => {
-        return quest.key === "connector";
-      })?.claimedCount,
-    ).toBe(2);
+    await flushWaitUntilForTest();
+    const facts = consumer.received.filter((event) => {
+      return event.type === "connector.oauth-authorized";
+    });
+    expect(facts).toHaveLength(4);
+    for (const fact of facts) {
+      if (
+        fact.type !== "connector.oauth-authorized" ||
+        fact.connector.kind !== "builtin"
+      ) {
+        throw new Error("Expected device authorization source");
+      }
+      const sourceKey = `builtin:${fact.connector.connectorSlug}`;
+      await settleMarketingRequest(context, {
+        version: 1,
+        environment: fact.environment,
+        policy: "get-started-v1",
+        sourceEventId: fact.id,
+        questKey: "connector",
+        sourceKey,
+        rewardKey: `connector:${fact.userId}:${sourceKey}`,
+        orgId: fact.orgId,
+        actorUserId: fact.userId,
+        beneficiaryUserId: fact.userId,
+        rewardTarget: "user",
+        rewardAmount: 100,
+        completedAt: fact.occurredAt,
+      });
+    }
     const balance = await accept(
       setupApp({ context, routes: billingUsagePackCreditsRoutes })(
         billingUsagePackCreditsContract,

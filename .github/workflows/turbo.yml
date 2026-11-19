@@ -40,15 +40,9 @@ on:
         required: false
       FAL_KEY:
         required: false
-      MARKETING_REWARDS_EXPORT_SECRET:
-        required: false
-      MARKETING_REWARDS_RECEIPT_SECRET:
-        required: false
       MARKETING_REWARDS_SETTLEMENT_SECRET:
         required: false
       MARKETING_REWARDS_PROJECTION_SECRET:
-        required: false
-      MARKETING_REWARDS_SOURCE_SECRET:
         required: false
       MARKETING_REWARDS_EVENTS_SECRET:
         required: false

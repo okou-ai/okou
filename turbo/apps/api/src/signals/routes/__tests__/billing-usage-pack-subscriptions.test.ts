@@ -12,7 +12,6 @@ import {
 
 import { chargePublicDataUsage } from "./helpers/public-data-charge";
 import { createBddApi } from "./helpers/api-bdd";
-import { readGetStartedStatus } from "./helpers/get-started";
 import { randomUUID } from "node:crypto";
 import { mockClerkUsers } from "./helpers/clerk-users";
 import {
@@ -6737,15 +6736,6 @@ describe("usage pack allocation management", () => {
           expect.objectContaining({ memberId: acceptedUserId }),
         );
         expect(
-          (
-            await run(() => {
-              return readGetStartedStatus(context, fixture);
-            })
-          ).quests.find((quest) => {
-            return quest.key === "invite";
-          }),
-        ).toMatchObject({ claimedCount: 0, pendingCount: 1 });
-        expect(
           context.mocks.clerk.organizations.createOrganizationInvitation,
         ).toHaveBeenCalledTimes(1);
         expect(
@@ -6783,9 +6773,9 @@ describe("usage pack allocation management", () => {
         expect(credits).toMatchObject({
           hasUsagePack: true,
           purchasedCredits: 20_000,
-          // The owner's existing package also receives the one accepted-invite reward.
-          bonusCredits: 500,
-          totalCredits: 20_500,
+          // Marketing settles campaign rewards independently of paid package grants.
+          bonusCredits: 400,
+          totalCredits: 20_400,
         });
         await postClerkInvitationAccepted({
           purchase,
@@ -6798,14 +6788,6 @@ describe("usage pack allocation management", () => {
         expect(context.mocks.stripe.subscriptions.update).toHaveBeenCalledTimes(
           1,
         );
-        const getStarted = await run(() => {
-          return readGetStartedStatus(context, fixture);
-        });
-        expect(
-          getStarted.quests.find((quest) => {
-            return quest.key === "invite";
-          }),
-        ).toMatchObject({ claimedCount: 1, earnedCredits: 100 });
       });
     });
   });
@@ -7247,7 +7229,7 @@ describe("usage pack allocation management", () => {
             readDeferredReplayCredits(fixture),
           ).resolves.toMatchObject({
             purchasedCredits: 20_000,
-            bonusCredits: 500,
+            bonusCredits: 400,
           });
           await expect(
             readDeferredReplayCredits({ ...fixture, userId: acceptedUserId }),
@@ -7296,7 +7278,7 @@ describe("usage pack allocation management", () => {
             readDeferredReplayCredits(fixture),
           ).resolves.toMatchObject({
             purchasedCredits: 35_000,
-            bonusCredits: 1600,
+            bonusCredits: 1500,
           });
           const management = await run(() => {
             return accept(
@@ -7346,7 +7328,7 @@ describe("usage pack allocation management", () => {
             readDeferredReplayCredits(fixture),
           ).resolves.toMatchObject({
             purchasedCredits: 35_000,
-            bonusCredits: 1600,
+            bonusCredits: 1500,
           });
         });
       });

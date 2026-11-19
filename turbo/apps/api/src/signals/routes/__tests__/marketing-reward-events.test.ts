@@ -21,7 +21,6 @@ import {
   mockCustomConnectorOAuth2Provider,
   mockGitHubConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
-import { readGetStartedStatus } from "./helpers/get-started";
 import {
   createAgentPhoneBddApi,
   uniquePhoneHandle,
@@ -161,13 +160,6 @@ test("cron recovers a retained source after configuration returns and retries it
   expect(followedRedirect).toBeFalsy();
   await Promise.all([cron(), cron()]);
   expect(received).toHaveLength(7);
-  expect((await readGetStartedStatus(context, actor)).quests).toContainEqual(
-    expect.objectContaining({
-      key: "connector",
-      claimedCount: 1,
-      earnedCredits: 100,
-    }),
-  );
 });
 
 test("records custom OAuth connection identity without publishing its provider credentials", async () => {
