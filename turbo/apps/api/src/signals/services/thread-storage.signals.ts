@@ -11,6 +11,7 @@ import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { createMemberMemoryContext } from "./agent-storage-context.service";
 import { storageVersionCacheKeySql } from "./execution-storage-cache-read.service";
+import type { AcceptedMemoryMount } from "./execution-storage.service";
 import { initializeMemberMemory$ } from "./member-memory-initialization.service";
 import {
   type AgentRunStorageInput,
@@ -34,6 +35,13 @@ import {
 import type { ThreadContext } from "./thread-context.signals";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
+type RunMemoryObservation =
+  | { readonly kind: "ready"; readonly mounts: readonly AcceptedMemoryMount[] }
+  | {
+      readonly kind: "missing";
+      readonly input: AgentRunStoragePlan["requested"]["input"];
+    };
+
 /**
  * The Run's memory storage from its current Agent and model: resolved
  * versions, mount paths and writeback targets.
@@ -50,13 +58,13 @@ export function createStorageSignals(
   );
   const index = createStorageIndexSignals(bootstrap, storageInput$);
   const { plan$ } = createStoragePlanSignals(index);
-  const storage$ = computed(async (get) => {
+  const storage$ = computed(async (get): Promise<RunMemoryObservation> => {
     const plan = await get(plan$);
     if (plan.missingArtifacts.length > 0) {
-      return { kind: "missing" as const, input: plan.requested.input };
+      return { kind: "missing", input: plan.requested.input };
     }
     return {
-      kind: "ready" as const,
+      kind: "ready",
       mounts: await finalizeMemoryMounts(plan.requested),
     };
   });
