@@ -1379,3 +1379,23 @@ proactive-learning-settings-001	turbo/apps/platform/src/views/okou-page/__tests_
 proactive-learning-settings-002	turbo/apps/platform/src/views/okou-page/__tests__/proactive-learning-settings.test.tsx	offers Morning brief independently of the other rollout	58	passed
 sidebar-account-settings-001	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-account-settings.test.tsx	Open personal Settings and manage account security	25	passed
 sidebar-account-settings-002	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-account-settings.test.tsx	Toggle network-body capture in Debug settings	92	passed
+settings-wallet-001	turbo/apps/platform/src/views/okou-page/__tests__/settings-wallet.test.tsx	lets a member connect their workspace wallet and disconnect after consent completes	105	passed
+settings-wallet-003	turbo/apps/platform/src/views/okou-page/__tests__/settings-wallet.test.tsx	shows authorization errors and allows retry when connectionStatus=not-connected	157	passed
+settings-wallet-007	turbo/apps/platform/src/views/okou-page/__tests__/settings-wallet.test.tsx	reconnects an existing wallet without disconnecting it first	189	passed
+settings-wallet-008	turbo/apps/platform/src/views/okou-page/__tests__/settings-wallet.test.tsx	reconnects changed scopes directly and keeps the warning until new consent completes	219	passed
+settings-wallet-009	turbo/apps/platform/src/views/okou-page/__tests__/settings-wallet.test.tsx	reconnects an expired authorization directly from its status	273	passed
+settings-wallet-010	turbo/apps/platform/src/views/okou-page/__tests__/settings-wallet.test.tsx	offers Disconnect for a previously unfinished provider revocation	314	passed
+settings-wallet-012	turbo/apps/platform/src/views/okou-page/__tests__/settings-wallet.test.tsx	shows a transaction error separately from connection status	328	passed
+paid-tools-settings-001	turbo/apps/platform/src/views/okou-page/__tests__/paid-tools-settings.test.tsx	Members manage Paid tools in Tools	118	passed
+paid-tools-settings-003	turbo/apps/platform/src/views/okou-page/__tests__/paid-tools-settings.test.tsx	Saving Image generation preserves other controls while preferences refresh	137	passed
+paid-tools-settings-008	turbo/apps/platform/src/views/okou-page/__tests__/paid-tools-settings.test.tsx	Router discovery is cancelled when you close Settings during its delayed first page and loads on a new visit	234	passed
+paid-tools-settings-014	turbo/apps/platform/src/views/okou-page/__tests__/paid-tools-settings.test.tsx	A workspace switch while a save obtains its token prevents sending that save under the new workspace	362	passed
+paid-tools-settings-015	turbo/apps/platform/src/views/okou-page/__tests__/paid-tools-settings.test.tsx	The image model shows the system default when the member has none	394	passed
+paid-tools-settings-016	turbo/apps/platform/src/views/okou-page/__tests__/paid-tools-settings.test.tsx	The image model shows the member's stored model	405	passed
+paid-tools-settings-017	turbo/apps/platform/src/views/okou-page/__tests__/paid-tools-settings.test.tsx	The image model is locked but still shown while image generation is off	416	passed
+paid-tools-settings-019	turbo/apps/platform/src/views/okou-page/__tests__/paid-tools-settings.test.tsx	A failed image model save retains the unsaved choice	436	passed
+paid-tools-settings-020	turbo/apps/platform/src/views/okou-page/__tests__/paid-tools-settings.test.tsx	An unsaved image model is discarded when you disable image generation	461	passed
+paid-tools-settings-022	turbo/apps/platform/src/views/okou-page/__tests__/paid-tools-settings.test.tsx	An image model change from another session refreshes the displayed model	506	passed
+paid-tools-settings-023	turbo/apps/platform/src/views/okou-page/__tests__/paid-tools-settings.test.tsx	An image model save cannot cross workspaces while awaiting its preference read	531	passed
+paid-tools-settings-024	turbo/apps/platform/src/views/okou-page/__tests__/paid-tools-settings.test.tsx	An image model save cannot cross workspaces while awaiting its write token	531	passed
+my-okou-avatar-settings-001	turbo/apps/platform/src/views/okou-page/__tests__/my-okou-avatar-settings.test.tsx	The home avatar opens My Okou settings	17	passed
