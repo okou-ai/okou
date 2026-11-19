@@ -24,7 +24,6 @@ import {
   type TokenConnectionMetadataPublication,
 } from "./builtin-token-connection-metadata";
 import { tokenConnectionWalletClauses } from "./connector-publication-wallet";
-import { completedGetStartedQuestPublication } from "./get-started-member-reward";
 import { env } from "../../lib/env";
 import { marketingRewardOAuthEventInsert } from "./marketing-reward-event-publication";
 
@@ -46,7 +45,6 @@ interface CustomOAuthPublication {
     typeof customConnectorAccountOauthBindings.$inferInsert,
     "connectorAccountId"
   > | null;
-  readonly quest: Parameters<typeof completedGetStartedQuestPublication>[0];
 }
 
 function customOAuthDefinition(args: CustomOAuthPublication) {
@@ -212,16 +210,6 @@ export function customOAuthConnectionPublicationSql(
       },
       sql`SELECT id FROM token_connection`,
     )})`,
-  );
-  const reward = completedGetStartedQuestPublication(
-    args.quest,
-    nowDate(),
-    sql`SELECT id FROM token_connection
-    WHERE (SELECT ${count()} FROM custom_oauth_removed_binding) >= 0`,
-  );
-  clauses.push(
-    sql`claim AS (${reward.claim})`,
-    sql`custom_oauth_quest AS (${reward.grant} RETURNING id)`,
   );
   const bindingComplete =
     args.binding === null

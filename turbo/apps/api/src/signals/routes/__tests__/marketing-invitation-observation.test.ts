@@ -10,7 +10,6 @@ import { mockNow, now, nowDate } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { orgInviteRoutes } from "../org-invite";
 import { createBddApi } from "./helpers/api-bdd";
-import { readGetStartedStatus } from "./helpers/get-started";
 import { marketingRewardConsumer } from "./helpers/marketing-reward-consumer";
 import { createRouteMocks } from "./helpers/route-test";
 import { createApp } from "../../../app-factory";
@@ -41,12 +40,6 @@ test("the source-only operator reports durable progress without settling the pub
     sourcePending: expect.any(Number),
     unobservedInvitations: expect.any(Number),
   });
-  const status = await readGetStartedStatus(context, fixture.actor);
-  expect(
-    status.quests.find((quest) => {
-      return quest.key === "invite";
-    }),
-  ).toMatchObject({ pendingCount: 1, claimedCount: 0 });
   expect(
     fixture.consumer.received.some((event) => {
       return event.type === "invitation.status-observed";
@@ -154,15 +147,6 @@ test.each(["pending", "accepted", "unavailable"] as const)(
     ]) {
       expect(serialized).not.toContain(value);
     }
-    expect(
-      (await readGetStartedStatus(context, fixture.actor)).quests,
-    ).toContainEqual(
-      expect.objectContaining({
-        key: "invite",
-        claimedCount: 0,
-        pendingCount: 1,
-      }),
-    );
   },
 );
 
@@ -179,14 +163,5 @@ test.each(["provider failure", "different organization"] as const)(
         );
       }),
     ).toHaveLength(0);
-    expect(
-      (await readGetStartedStatus(context, fixture.actor)).quests,
-    ).toContainEqual(
-      expect.objectContaining({
-        key: "invite",
-        claimedCount: 0,
-        pendingCount: 1,
-      }),
-    );
   },
 );

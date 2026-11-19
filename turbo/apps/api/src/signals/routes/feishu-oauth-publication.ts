@@ -29,10 +29,8 @@ import { QueryBuilder } from "drizzle-orm/pg-core";
 import { boolean, literal, object, string } from "zod";
 import { nowDate } from "../../lib/time";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
-import { completedGetStartedQuestPublication } from "../services/get-started-member-reward";
 import { env } from "../../lib/env";
 import { marketingRewardOAuthEventInsert } from "../services/marketing-reward-event-publication";
-import { CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY } from "../services/get-started-rewards.service";
 import { slackRewardWalletEntitlement } from "../services/slack-installation-reward";
 import {
   connectionTokenRows,
@@ -463,30 +461,11 @@ export function feishuOAuthPublicationSql(
   const wallet = feishuOAuthWallet(args, member);
   const account = feishuOAuthAccount(args, member, wallet);
   const credentials = feishuOAuthCredentials(args, encrypted, account);
-  const at = query.$with("oauth_reward_time", {
-    at: sql`${sql.param(args.at, members.updatedAt)}`.as("at"),
-  }).as(sql`
-    SELECT ${sql.param(args.at, members.updatedAt)} AS at FROM ${account.accepted}
-    WHERE (SELECT count(*) FROM ${credentials.custom}) >= 0
-  `);
-  const reward = completedGetStartedQuestPublication(
-    {
-      ...args.state,
-      questKey: "connector",
-      sourceKey: CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY,
-    },
-    args.at,
-    query.select().from(at).getSQL(),
-  );
-  const claim = query.$with("claim", {}).as(reward.claim);
-  const credited = query
-    .$with("oauth_member_reward", {})
-    .as(sql`${reward.grant} RETURNING id`);
   const tenant = query.$with("oauth_tenant", { id: feishuOrgInstallations.id })
     .as(sql`
     UPDATE ${feishuOrgInstallations} SET feishu_tenant_key = ${args.userInfo.tenantKey}, updated_at = ${sql.param(args.at, members.updatedAt)}
     WHERE id = ${args.state.installationId}::uuid AND ${!args.installation.tenantKey && Boolean(args.userInfo.tenantKey)}
-      AND EXISTS (SELECT 1 FROM ${account.accepted}) AND (SELECT count(*) FROM ${credited}) >= 0 RETURNING id
+      AND EXISTS (SELECT 1 FROM ${account.accepted}) AND (SELECT count(*) FROM ${credentials.custom}) >= 0 RETURNING id
   `);
   const grant = feishuOAuthGrant(args, admission, account, sql`${tenant}`);
   const sourceEvent = query.$with("reward_source_event", {}).as(
@@ -519,9 +498,6 @@ export function feishuOAuthPublicationSql(
       credentials.builtin,
       credentials.inserted,
       credentials.custom,
-      at,
-      claim,
-      credited,
       tenant,
       grant.inserted,
       grant.retained,

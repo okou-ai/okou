@@ -1,3 +1,4 @@
+import { marketingCheckinCampaign } from "./helpers/marketing-reward-consumer";
 import { randomUUID } from "node:crypto";
 
 import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
@@ -41,6 +42,7 @@ function creditsClient() {
 }
 
 async function checkIn(actor: UsagePackCreditsFixture): Promise<void> {
+  marketingCheckinCampaign(context);
   authenticate(actor);
   await accept(
     setupApp({ context, routes: getStartedRoutes })(getStartedContract).checkin(

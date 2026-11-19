@@ -361,7 +361,7 @@ export const clientDescriptorManifest = [
   },
   {
     module: "get-started",
-    contracts: ["cronGetStartedContract", "getStartedContract"],
+    contracts: ["getStartedContract"],
   },
   {
     module: "github-oauth-callback",

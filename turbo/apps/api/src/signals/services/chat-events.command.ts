@@ -179,7 +179,6 @@ import {
   withAgentRunSourceAnnotation,
   type ChatAgentRunSourceAnnotation,
 } from "./chat-user-message.service";
-import { recordGetStartedWorkflowSql } from "./get-started-workflow.service";
 import {
   workflowRewardQueuedEventInsert,
   workflowRewardSourceEventId,
@@ -2055,20 +2054,6 @@ function normalSendFinalWrites(
       ),
     });
     after = "normal_send_workflow_source";
-    writes.push({
-      name: "normal_send_get_started",
-      statement: recordGetStartedWorkflowSql(
-        {
-          orgId: args.orgId,
-          userId: args.userId,
-          workflowId: args.getStartedWorkflowId,
-          sourceEventId: event.id,
-        },
-        nowDate(),
-        normalChatInputWriteGate(after),
-      ),
-    });
-    after = "normal_send_get_started";
   }
   const queue = queuedChatThreadPublicationPlan({
     ...input.queueInput,

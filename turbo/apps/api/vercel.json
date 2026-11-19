@@ -123,10 +123,6 @@
     {
       "path": "/api/cron/steer-run-time-budget",
       "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/cron/get-started-rewards",
-      "schedule": "0 * * * *"
     }
   ]
 }

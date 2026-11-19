@@ -1,3 +1,8 @@
+import {
+  marketingCheckinCampaign,
+  marketingRewardConsumer,
+  settleMarketingRequest,
+} from "./helpers/marketing-reward-consumer";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
@@ -341,6 +346,63 @@ function checkoutSubscriptionId(input: unknown): string {
   return input.metadata.usagePackSubscriptionId;
 }
 
+async function settleInstalledSlackRewards(
+  consumer: ReturnType<typeof marketingRewardConsumer>,
+  workspaceId: string,
+) {
+  await flushWaitUntilForTest();
+  const fact = consumer.received.find((event) => {
+    return (
+      event.type === "slack.oauth-authorized" &&
+      event.workspaceId === workspaceId
+    );
+  });
+  if (!fact || fact.type !== "slack.oauth-authorized") {
+    throw new Error("Expected installed Slack source");
+  }
+  await settleMarketingRequest(context, {
+    version: 1,
+    environment: fact.environment,
+    policy: "get-started-v1",
+    sourceEventId: fact.id,
+    questKey: "slack",
+    sourceKey: fact.workspaceId,
+    rewardKey: `slack:${fact.workspaceId}`,
+    orgId: fact.orgId,
+    actorUserId: fact.userId,
+    beneficiaryUserId: null,
+    rewardTarget: "org",
+    rewardAmount: 2000,
+    completedAt: fact.occurredAt,
+  });
+  const oauth = consumer.received.find((event) => {
+    return event.type === "connector.oauth-authorized";
+  });
+  if (
+    !oauth ||
+    oauth.type !== "connector.oauth-authorized" ||
+    oauth.connector.kind !== "builtin"
+  ) {
+    throw new Error("Expected installer OAuth source");
+  }
+  const sourceKey = `builtin:${oauth.connector.connectorSlug}`;
+  await settleMarketingRequest(context, {
+    version: 1,
+    environment: oauth.environment,
+    policy: "get-started-v1",
+    sourceEventId: oauth.id,
+    questKey: "connector",
+    sourceKey,
+    rewardKey: `connector:${oauth.userId}:${sourceKey}`,
+    orgId: oauth.orgId,
+    actorUserId: oauth.userId,
+    beneficiaryUserId: oauth.userId,
+    rewardTarget: "user",
+    rewardAmount: 100,
+    completedAt: oauth.occurredAt,
+  });
+}
+
 async function checkoutUsagePackLifecycle(
   userId: string,
   usagePackUsd: UsagePackUsd,
@@ -502,6 +564,7 @@ async function checkoutUsagePackLifecycle(
     await spendToOrgDebt(fixture, credits);
   }
   if (credits === 2000) {
+    const consumer = marketingRewardConsumer();
     const slack = createPublicSlackOrgApi(context);
     const installed = await slack.installOrg({
       actor: createBddApi(context).user({
@@ -511,6 +574,7 @@ async function checkoutUsagePackLifecycle(
       }),
       withConnection: true,
     });
+    await settleInstalledSlackRewards(consumer, installed.slackWorkspaceId);
     onTestFinished(() => {
       return slack.uninstallWorkspace(installed.slackWorkspaceId);
     });
@@ -628,6 +692,7 @@ async function spendToOrgDebt(
     orgRole: "org:member",
   });
   routeMocks.clerk.session(spender.userId, spender.orgId, "org:member");
+  marketingCheckinCampaign(context);
   const reward = await accept(
     setupApp({ context, routes: getStartedRoutes })(getStartedContract).checkin(
       { headers: { authorization: "Bearer clerk-session" } },

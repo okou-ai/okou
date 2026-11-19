@@ -3,23 +3,12 @@ import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { command } from "ccstate";
 import { sql } from "drizzle-orm";
 import { env } from "../../lib/env";
-import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { settle } from "../utils";
-import {
-  type GetStartedClaimRow,
-  getRewardAvailabilityFromAwards,
-} from "./get-started-rewards.service";
-import {
-  getStartedMemberRewardSql,
-  getStartedRewardAvailabilityQuery,
-  unresolvedClaimWhere,
-} from "./get-started-member-reward";
-import { slackRewardIneligibleValues } from "./slack-installation-reward";
+import type { GetStartedClaimRow } from "./get-started-rewards.service";
+import { unresolvedClaimWhere } from "./get-started-member-reward";
 import { ensureGetStartedRewardWallet$ } from "./get-started-wallet.service";
 import { marketingRewardInvitationEventInsert } from "./marketing-reward-event-publication";
-import { getStartedRewardWriter } from "./marketing-reward-ownership";
 import {
   acceptedInvitationClaimQuery,
   acceptedInvitationPurchaseQuery,
@@ -30,59 +19,12 @@ import {
   type AcceptedGetStartedInvitation,
 } from "./get-started-invitation-acceptance";
 
-export class InvitationRewardSlotConflict extends Error {
-  constructor(readonly orgId: string) {
-    super(`Invitation reward for organization ${orgId} lost a concurrent slot`);
-    this.name = "InvitationRewardSlotConflict";
-  }
-}
-
-const publishAcceptedReward$ = command(
-  async (
-    { set },
-    plan: {
-      readonly claim: GetStartedClaimRow;
-      readonly rewardKey: string;
-      readonly slot: number | null;
-      readonly at: Date;
-      readonly acceptance: ReturnType<typeof invitationAcceptanceValues>;
-    },
-    signal: AbortSignal,
-  ) => {
-    const db = set(writeDb$);
-    const marketingRewardEventId = randomUUID();
-    const { rowCount } = await db.execute(
-      getStartedMemberRewardSql({
-        claim: plan.claim,
-        rewardKey: plan.rewardKey,
-        rewardSlot: plan.slot,
-        at: plan.at,
-        acceptance: plan.acceptance,
-        invitationEvent: {
-          id: marketingRewardEventId,
-          environment: env("ENV"),
-          type: "invitation.accepted",
-          occurredAt: plan.acceptance.completedAt.toISOString(),
-        },
-      }),
-    );
-    signal.throwIfAborted();
-
-    if (rowCount !== 0 && rowCount !== 1) {
-      throw new Error("Invitation reward grant was not committed");
-    }
-    return rowCount === 1 ? marketingRewardEventId : undefined;
-  },
-);
-
 const publishUnfundedAcceptance$ = command(
   async (
     { set },
     args: {
       readonly claim: GetStartedClaimRow;
       readonly acceptance: ReturnType<typeof invitationAcceptanceValues>;
-      readonly reason: string | null;
-      readonly at: Date;
     },
     signal: AbortSignal,
   ) => {
@@ -91,9 +33,7 @@ const publishUnfundedAcceptance$ = command(
     const accepted = db
       .update(getStartedClaims)
       .set({
-        ...(args.reason === null
-          ? { reason: null, updatedAt: args.at }
-          : slackRewardIneligibleValues(args.reason, args.at)),
+        reason: null,
         ...args.acceptance,
       })
       .where(unresolvedClaimWhere(args.claim))
@@ -114,7 +54,7 @@ const publishUnfundedAcceptance$ = command(
   },
 );
 
-/** Signed acceptance and its bonus publish through one fenced claim transition. */
+/** Signed acceptance and its source fact publish through one fenced claim transition. */
 export const acceptGetStartedInvitation$ = command(
   async (
     { set },
@@ -161,77 +101,6 @@ export const acceptGetStartedInvitation$ = command(
     if (!claim.beneficiaryUserId) {
       throw new Error("Invitation reward has no original inviter");
     }
-    if (
-      getStartedRewardWriter("user", claim.beneficiaryUserId) === "marketing"
-    ) {
-      const marketingRewardEventId = await set(
-        publishUnfundedAcceptance$,
-        { claim, acceptance, reason: null, at },
-        signal,
-      );
-      signal.throwIfAborted();
-      return marketingRewardEventId;
-    }
-    if (claim.beneficiaryUserId === args.userId) {
-      const marketingRewardEventId = await set(
-        publishUnfundedAcceptance$,
-        { claim, acceptance, reason: "self_invitation", at },
-        signal,
-      );
-      signal.throwIfAborted();
-      return marketingRewardEventId;
-    }
-    const rewardKey = `invite:${args.userId}`;
-    const awards = await db
-      .select()
-      .from(getStartedRewardAvailabilityQuery(claim, rewardKey));
-    signal.throwIfAborted();
-    const availability = getRewardAvailabilityFromAwards(
-      claim,
-      rewardKey,
-      awards,
-    );
-    if (availability.kind === "ineligible") {
-      const marketingRewardEventId = await set(
-        publishUnfundedAcceptance$,
-        { claim, acceptance, reason: availability.reason, at },
-        signal,
-      );
-      signal.throwIfAborted();
-      return marketingRewardEventId;
-    }
-    const slot = availability.slots[0];
-    if (slot === undefined) {
-      throw new Error("Invitation reward has no available slot");
-    }
-    // Acceptance provenance belongs to the same UPDATE as the grant: a stale
-    // delivery never changes the attribution of another redeemer's result.
-    const result = await settle(
-      set(
-        publishAcceptedReward$,
-        {
-          claim,
-          rewardKey,
-          slot,
-          at,
-          acceptance,
-        },
-        signal,
-      ),
-      signal,
-    );
-    signal.throwIfAborted();
-    if (result.ok) {
-      return result.value;
-    }
-    if (
-      isUniqueViolation(result.error, "uq_get_started_reward_key") ||
-      isUniqueViolation(result.error, "uq_get_started_reward_slot")
-    ) {
-      // Only this grant statement rolled back. Signed redelivery and
-      // membership recovery rediscover the durable pending claim, as in R1.
-      throw new InvitationRewardSlotConflict(args.orgId);
-    }
-    throw result.error;
+    return await set(publishUnfundedAcceptance$, { claim, acceptance }, signal);
   },
 );

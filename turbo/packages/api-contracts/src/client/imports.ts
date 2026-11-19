@@ -976,7 +976,7 @@ export const clientContractImportManifest = [
   },
   {
     module: "get-started",
-    contracts: ["cronGetStartedContract", "getStartedContract"],
+    contracts: ["getStartedContract"],
     bindings: [
       {
         name: "GET_STARTED_REWARDS_CHANGED_EVENT",

@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { cronGetStartedContract } from "@okouai/api-contracts/contracts/get-started";
 import {
   marketingRewardSettlementContract,
   type MarketingRewardIntent,
@@ -15,7 +14,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, nowDate } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { getStartedRoutes } from "../get-started";
 import { workflowsRoutes } from "../workflows";
 import { marketingRewardSettlementRoutes } from "../marketing-reward-settlement";
 import { createBddApi } from "./helpers/api-bdd";
@@ -30,7 +28,6 @@ import {
   campaignRequest,
   marketingRewardConsumer,
 } from "./helpers/marketing-reward-consumer";
-import { readGetStartedStatus } from "./helpers/get-started";
 import {
   createConnectorBddApi,
   mockGitHubConnectorOAuth,
@@ -84,15 +81,8 @@ function missingIntent() {
 
 async function completedWorkflow(
   consumer: ReturnType<typeof marketingRewardConsumer>,
-  marketingOwned = false,
 ) {
   const { actor } = await workflows.setupWorkflowOrg({ tier: "team" });
-  if (marketingOwned) {
-    mockEnv(
-      "MARKETING_REWARDS_ROUTING",
-      JSON.stringify({ mode: "cohort", userIds: [actor.userId], orgIds: [] }),
-    );
-  }
   const { agentId } = await workflows.createAgent(actor, {
     visibility: "public",
   });
@@ -195,7 +185,7 @@ test("authenticates the dedicated financial capability and binds the immutable e
   expect(disabled.headers.get("cache-control")).toBe("no-store");
 });
 
-test("selects one original creator's writer, fences concurrent legacy review, and recovers the receipt after deletion and expiry", async () => {
+test("settles for the original creator concurrently and recovers the receipt after deletion and expiry", async () => {
   await setupApp({
     context,
     routes: marketingRewardSettlementRoutes,
@@ -206,22 +196,10 @@ test("selects one original creator's writer, fences concurrent legacy review, an
   const { actor, executor, workflowId, intent } =
     await completedWorkflow(consumer);
   const api = client();
-  expect((await api.settle({ body: intent, headers })).status).toBe(202);
-  mockEnv(
-    "MARKETING_REWARDS_ROUTING",
-    JSON.stringify({ mode: "cohort", userIds: [actor.userId], orgIds: [] }),
-  );
   await createMiscRoutesApi(context).deleteWorkflow(actor, workflowId, [204]);
   await Promise.all([
     accept(api.settle({ body: intent, headers }), [200, 202]),
-    accept(
-      setupApp({ context, routes: getStartedRoutes })(
-        cronGetStartedContract,
-      ).process({
-        headers: { authorization: "Bearer marketing-consumer-cron" },
-      }),
-      [200],
-    ),
+    accept(api.settle({ body: intent, headers }), [200, 202]),
   ]);
   const first = await accept(api.settle({ body: intent, headers }), [200]);
   expect(first.body.receipt).toMatchObject({
@@ -243,26 +221,11 @@ test("selects one original creator's writer, fences concurrent legacy review, an
   expect(
     (await accept(api.settle({ body: intent, headers }), [200])).body,
   ).toStrictEqual(first.body);
-  mockEnv("MARKETING_REWARDS_ROUTING", undefined);
-  expect((await readGetStartedStatus(context, actor)).quests).toContainEqual(
-    expect.objectContaining({
-      key: "workflow",
-      claimedCount: 1,
-      earnedCredits: 1000,
-    }),
-  );
-  expect((await readGetStartedStatus(context, executor)).quests).toContainEqual(
-    expect.objectContaining({
-      key: "workflow",
-      claimedCount: 0,
-      earnedCredits: 0,
-    }),
-  );
 });
 
 test("rejects caller-chosen recipients, sources and amounts even when the caller recomputes a valid request identity", async () => {
   const consumer = marketingRewardConsumer();
-  const { actor, intent } = await completedWorkflow(consumer);
+  const { intent } = await completedWorkflow(consumer);
   const api = client();
   const changed: MarketingRewardIntent[] = [
     campaignRequest({ ...intent, beneficiaryUserId: "another-user" }),
@@ -275,13 +238,6 @@ test("rejects caller-chosen recipients, sources and amounts even when the caller
   }
   const inflated = { ...intent, rewardAmount: 99_999 };
   expect((await api.settle({ body: inflated, headers })).status).toBe(400);
-  expect((await readGetStartedStatus(context, actor)).quests).toContainEqual(
-    expect.objectContaining({
-      key: "workflow",
-      claimedCount: 0,
-      earnedCredits: 0,
-    }),
-  );
 });
 
 test("returns a prior OAuth award by the complete request after a lost response without funding the reconnect or extending expiry", async () => {
@@ -332,22 +288,11 @@ test("returns a prior OAuth award by the complete request after a lost response 
   expect(
     (await accept(api.settle({ body: intent, headers }), [200])).body,
   ).toStrictEqual(original.body);
-  expect((await readGetStartedStatus(context, actor)).quests).toContainEqual(
-    expect.objectContaining({
-      key: "connector",
-      claimedCount: 1,
-      earnedCredits: 100,
-    }),
-  );
 });
 
 test("preserves one user's ten-connector cap when Marketing settles real source facts from two organizations", async () => {
   const consumer = marketingRewardConsumer();
   const actor = bdd.user();
-  mockEnv(
-    "MARKETING_REWARDS_ROUTING",
-    JSON.stringify({ mode: "cohort", userIds: [actor.userId], orgIds: [] }),
-  );
   const anotherOrg = { ...actor, orgId: `org_${randomUUID()}` };
   const connectors = createConnectorBddApi(context);
   mockGmailConnectorOAuth();
@@ -386,7 +331,6 @@ test("preserves one user's ten-connector cap when Marketing settles real source 
     );
   });
   const api = client();
-  mockEnv("MARKETING_REWARDS_ROUTING", JSON.stringify({ mode: "marketing" }));
   const outcomes = [];
   for (const fact of facts) {
     if (
@@ -427,14 +371,6 @@ test("preserves one user's ten-connector cap when Marketing settles real source 
       return status === "ineligible";
     }),
   ).toHaveLength(1);
-  mockEnv("MARKETING_REWARDS_ROUTING", undefined);
-  expect((await readGetStartedStatus(context, actor)).quests).toContainEqual(
-    expect.objectContaining({
-      key: "connector",
-      claimedCount: 10,
-      earnedCredits: 1000,
-    }),
-  );
 });
 
 test("recovers the original iMessage and organization Slack receipts without replaying their financial effects", async () => {
@@ -493,109 +429,13 @@ test("recovers the original iMessage and organization Slack receipts without rep
       (await accept(api.settle({ body: intent, headers }), [200])).body,
     ).toStrictEqual(original.body);
   }
-  const status = await readGetStartedStatus(context, actor);
-  expect(status.quests).toContainEqual(
-    expect.objectContaining({
-      key: "slack",
-      claimedCount: 1,
-      earnedCredits: 2000,
-    }),
-  );
-  expect(status.quests).toContainEqual(
-    expect.objectContaining({
-      key: "imessage",
-      claimedCount: 1,
-      earnedCredits: 1000,
-    }),
-  );
 });
 
-test.each(["user", "org"] as const)(
-  "routes fresh iMessage and Slack sources by their %s scope",
-  async (target) => {
-    const consumer = marketingRewardConsumer();
-    const integrations = createBddIntegrationApi(context);
-    const actor = integrations.user();
-    mockEnv(
-      "MARKETING_REWARDS_ROUTING",
-      JSON.stringify({
-        mode: "cohort",
-        userIds: target === "user" ? [actor.userId] : [],
-        orgIds: target === "org" ? [actor.orgId] : [],
-      }),
-    );
-    integrations.configureAgentPhoneProvider();
-    integrations.configureAgentPhoneWebhook();
-    const phone = createAgentPhoneBddApi(context);
-    const proof = await phone.requestConnectLink(
-      uniquePhoneHandle(),
-      phone.captureAgentPhoneSends(),
-    );
-    await integrations.requestConnectAgentPhone(actor, proof, [200]);
-    integrations.configureSlackAppMocks();
-    await integrations.installSlackWorkspace(actor);
-    await flushWaitUntilForTest();
-    const facts = consumer.received.filter((fact) => {
-      return (
-        fact.type === "imessage.identity-linked" ||
-        fact.type === "slack.oauth-authorized"
-      );
-    });
-    expect(facts).toHaveLength(2);
-    const api = client();
-    for (const fact of facts) {
-      const slack = fact.type === "slack.oauth-authorized";
-      const sourceKey = slack ? fact.workspaceId : "agentphone-link";
-      const questKey = slack ? "slack" : "imessage";
-      const rewardTarget = slack ? "org" : "user";
-      const intent = campaignRequest({
-        version: 1,
-        environment: fact.environment,
-        policy: "get-started-v1",
-        sourceEventId: fact.id,
-        questKey,
-        sourceKey,
-        rewardKey: slack
-          ? `slack:${sourceKey}`
-          : `imessage:${fact.userId}:${sourceKey}`,
-        orgId: fact.orgId,
-        actorUserId: fact.userId,
-        beneficiaryUserId: slack ? null : fact.userId,
-        rewardTarget,
-        rewardAmount: slack ? 2000 : 1000,
-        completedAt: fact.occurredAt,
-      });
-      const granted = await accept(
-        api.settle({ body: intent, headers }),
-        [200],
-      );
-      expect(granted.body.receipt).toMatchObject({
-        status: "granted",
-        rewardTarget,
-        beneficiaryUserId: slack ? null : actor.userId,
-      });
-      expect(
-        (await accept(api.settle({ body: intent, headers }), [200])).body,
-      ).toStrictEqual(granted.body);
-    }
-    mockEnv("MARKETING_REWARDS_ROUTING", undefined);
-    const status = await readGetStartedStatus(context, actor);
-    for (const key of ["slack", "imessage"]) {
-      expect(status.quests).toContainEqual(
-        expect.objectContaining({ key, claimedCount: 1 }),
-      );
-    }
-  },
-);
-
-test("captures a signed acceptance without legacy funding and settles the selected inviter exactly once", async () => {
-  const consumer = marketingRewardConsumer();
-  const actor = bdd.user();
-  await bdd.completeOnboarding(actor);
-  mockEnv(
-    "MARKETING_REWARDS_ROUTING",
-    JSON.stringify({ mode: "cohort", userIds: [actor.userId], orgIds: [] }),
-  );
+async function invitationIntent(
+  consumer: ReturnType<typeof marketingRewardConsumer>,
+  actor: ReturnType<typeof bdd.user>,
+  inviteeUserId: string,
+) {
   mocks.clerk.session(actor.userId, actor.orgId);
   const signingSecret = `whsec_${Buffer.from("marketing-acceptance-test-secret").toString("base64")}`;
   mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", signingSecret);
@@ -628,7 +468,6 @@ test("captures a signed acceptance without legacy funding and settles the select
   if (!claimId) {
     throw new Error("Expected server-attributed invitation");
   }
-  const inviteeUserId = `user_invitee_${randomUUID()}`;
   const body = JSON.stringify({
     type: "organizationInvitation.accepted",
     data: {
@@ -657,7 +496,10 @@ test("captures a signed acceptance without legacy funding and settles the select
   );
   await flushWaitUntilForTest();
   const fact = consumer.received.find((event) => {
-    return event.type === "invitation.accepted";
+    return (
+      event.type === "invitation.accepted" &&
+      event.invitationId === invitationId
+    );
   });
   if (!fact || fact.type !== "invitation.accepted") {
     throw new Error("Expected accepted invitation fact");
@@ -677,6 +519,19 @@ test("captures a signed acceptance without legacy funding and settles the select
     rewardAmount: 100,
     completedAt: fact.occurredAt,
   });
+  return { intent, claimId };
+}
+
+test("captures a signed acceptance and settles the original inviter exactly once", async () => {
+  const consumer = marketingRewardConsumer();
+  const actor = bdd.user();
+  await bdd.completeOnboarding(actor);
+  const inviteeUserId = `user_invitee_${randomUUID()}`;
+  const { intent, claimId } = await invitationIntent(
+    consumer,
+    actor,
+    inviteeUserId,
+  );
   const api = client();
   const original = await accept(api.settle({ body: intent, headers }), [200]);
   expect(original.body.receipt).toMatchObject({
@@ -688,4 +543,50 @@ test("captures a signed acceptance without legacy funding and settles the select
   expect(
     (await accept(api.settle({ body: intent, headers }), [200])).body,
   ).toStrictEqual(original.body);
+});
+
+test("enforces the inviter's fifteen-award limit across organizations and rewards each invitee only once", async () => {
+  const consumer = marketingRewardConsumer();
+  const actor = bdd.user();
+  const anotherOrg = { ...actor, orgId: `org_${randomUUID()}` };
+  await bdd.completeOnboarding(actor);
+  await bdd.completeOnboarding(anotherOrg);
+  const firstInvitee = `user_${randomUUID()}`;
+  const api = client();
+  const outcomes = [];
+  for (let index = 0; index < 16; index++) {
+    const { intent } = await invitationIntent(
+      consumer,
+      index < 8 ? actor : anotherOrg,
+      index === 0 ? firstInvitee : `user_${randomUUID()}`,
+    );
+    const response = await accept(api.settle({ body: intent, headers }), [200]);
+    expect(
+      (await accept(api.settle({ body: intent, headers }), [200])).body,
+    ).toStrictEqual(response.body);
+    outcomes.push(response.body.receipt.status);
+  }
+  expect(
+    outcomes.filter((status) => {
+      return status === "granted";
+    }),
+  ).toHaveLength(15);
+  expect(
+    outcomes.filter((status) => {
+      return status === "ineligible";
+    }),
+  ).toHaveLength(1);
+  const otherInviter = bdd.user();
+  await bdd.completeOnboarding(otherInviter);
+  const { intent } = await invitationIntent(
+    consumer,
+    otherInviter,
+    firstInvitee,
+  );
+  expect(
+    (await accept(api.settle({ body: intent, headers }), [200])).body.receipt,
+  ).toMatchObject({
+    status: "ineligible",
+    reason: "already_redeemed",
+  });
 });

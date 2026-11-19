@@ -615,25 +615,17 @@ for history_app in api web; do
   TEMP_DIRS+=("$history_dir")
   history_output="$(run_action "$(build_doppler_secrets_json)" "$history_dir" \
     "$history_app" preview canonical '{"MARKETING_REWARDS_EVENTS_ORIGIN":"https://events.example.test"}' \
-    '{"MARKETING_REWARDS_EXPORT_SECRET":"history-export-operator-fixture-123456789","MARKETING_REWARDS_RECEIPT_SECRET":"receipt-lookup-service-fixture-123456789","MARKETING_REWARDS_EVENTS_SECRET":"event-delivery-service-fixture-123456789"}' 2>&1)"
+    '{"MARKETING_REWARDS_EVENTS_SECRET":"event-delivery-service-fixture-123456789"}' 2>&1)"
   history_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${history_dir}/github-output")"
-  assert_not_contains "$history_output" "history-export-operator-fixture-123456789"
-  assert_not_contains "$history_output" "receipt-lookup-service-fixture-123456789"
   assert_not_contains "$history_output" "event-delivery-service-fixture-123456789"
   if [[ "$history_app" == api ]]; then
-    assert_env_value "$history_env_file" MARKETING_REWARDS_EXPORT_SECRET "history-export-operator-fixture-123456789"
-    assert_env_value "$history_env_file" MARKETING_REWARDS_RECEIPT_SECRET "receipt-lookup-service-fixture-123456789"
     assert_env_value "$history_env_file" MARKETING_REWARDS_EVENTS_SECRET "event-delivery-service-fixture-123456789"
     assert_env_value "$history_env_file" MARKETING_REWARDS_EVENTS_ORIGIN "https://events.example.test"
   else
-    assert_env_key_absent "$history_env_file" MARKETING_REWARDS_EXPORT_SECRET
-    assert_env_key_absent "$history_env_file" MARKETING_REWARDS_RECEIPT_SECRET
     assert_env_key_absent "$history_env_file" MARKETING_REWARDS_EVENTS_SECRET
     assert_env_key_absent "$history_env_file" MARKETING_REWARDS_EVENTS_ORIGIN
   fi
 done
-assert_env_value "$success_env_file" MARKETING_REWARDS_EXPORT_SECRET ""
-assert_env_value "$success_env_file" MARKETING_REWARDS_RECEIPT_SECRET ""
 assert_env_value "$success_env_file" MARKETING_REWARDS_EVENTS_SECRET ""
 assert_env_value "$success_env_file" MARKETING_REWARDS_EVENTS_ORIGIN ""
 assert_env_value "$success_env_file" R2_STATIC_BUCKET_NAME "static-releases"
