@@ -570,3 +570,49 @@ agent-suggestions-026	turbo/apps/platform/src/views/okou-page/__tests__/agent-su
 agent-suggestions-027	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	Slow feedback leaves other cards usable and Undo restores the original card in order	378	passed
 agent-suggestions-039	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	An empty For you page stays accessible and reports zero suggestions	428	passed
 agent-suggestions-041	turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions-deck.test.tsx	For you handles a suggestion and a platform event in the same deck	440	passed
+connectors-accounts-001	turbo/apps/platform/src/views/okou-page/__tests__/connectors-accounts.test.tsx	Manage each saved account's default availability independently	247	passed
+connectors-accounts-003	turbo/apps/platform/src/views/okou-page/__tests__/connectors-accounts.test.tsx	Disconnect an account while retaining another enabled account	282	passed
+connectors-accounts-004	turbo/apps/platform/src/views/okou-page/__tests__/connectors-accounts.test.tsx	Keep the exact account and current reconnect UI when future setup metadata is present	329	passed
+connectors-accounts-005	turbo/apps/platform/src/views/okou-page/__tests__/connectors-accounts.test.tsx	Show Mercury disclosures while managing its accounts	373	passed
+connectors-accounts-018	turbo/apps/platform/src/views/okou-page/__tests__/connectors-accounts.test.tsx	Keep a failed connector disconnect open and finish a successful retry	408	passed
+connectors-accounts-019	turbo/apps/platform/src/views/okou-page/__tests__/connectors-accounts.test.tsx	Keep another account's confirmation open when an earlier disconnect finishes	467	passed
+connectors-accounts-020	turbo/apps/platform/src/views/okou-page/__tests__/connectors-accounts.test.tsx	Review and reconnect the connector account the user selected	527	passed
+connectors-accounts-021	turbo/apps/platform/src/views/okou-page/__tests__/connectors-accounts.test.tsx	Let account search own the entire manager result list	591	passed
+connectors-accounts-026	turbo/apps/platform/src/views/okou-page/__tests__/connectors-accounts.test.tsx	Read accounts only inside the manager and refresh them each time it opens	624	passed
+connectors-catalog-008	turbo/apps/platform/src/views/okou-page/__tests__/connectors-catalog.test.tsx	Search connectors and keep the query in the URL	122	passed
+connectors-catalog-009	turbo/apps/platform/src/views/okou-page/__tests__/connectors-catalog.test.tsx	Search the full connector catalog	149	passed
+connectors-catalog-010	turbo/apps/platform/src/views/okou-page/__tests__/connectors-catalog.test.tsx	Present a connector with no accounts and start direct OAuth	181	passed
+connectors-catalog-012	turbo/apps/platform/src/views/okou-page/__tests__/connectors-catalog.test.tsx	Land on Discover, then switch to the connectors this workspace has	239	passed
+connectors-catalog-013	turbo/apps/platform/src/views/okou-page/__tests__/connectors-catalog.test.tsx	Keep a saved connector in Connected when its account needs a reconnect	283	passed
+connectors-catalog-015	turbo/apps/platform/src/views/okou-page/__tests__/connectors-catalog.test.tsx	Reach the connectors this workspace built from their own segment	305	passed
+connectors-auth-methods-002	turbo/apps/platform/src/views/okou-page/__tests__/connectors-auth-methods.test.tsx	Connect a builtin Automatic method resolving to oauth	184	passed
+connectors-auth-methods-003	turbo/apps/platform/src/views/okou-page/__tests__/connectors-auth-methods.test.tsx	Show Mercury disclosures before connecting an account	217	passed
+connectors-auth-methods-004	turbo/apps/platform/src/views/okou-page/__tests__/connectors-auth-methods.test.tsx	Add an AWS account through external-code authorization	261	passed
+connectors-auth-methods-005	turbo/apps/platform/src/views/okou-page/__tests__/connectors-auth-methods.test.tsx	Add an account through OpenID	330	passed
+connectors-auth-methods-009	turbo/apps/platform/src/views/okou-page/__tests__/connectors-auth-methods.test.tsx	Reject device-auth completion when account setup is configuration_invalid	370	passed
+connectors-auth-methods-012	turbo/apps/platform/src/views/okou-page/__tests__/connectors-auth-methods.test.tsx	Follow provider-authored external-code instructions	421	passed
+connectors-auth-methods-013	turbo/apps/platform/src/views/okou-page/__tests__/connectors-auth-methods.test.tsx	Complete OAuth only after the current attempt succeeds	469	passed
+connectors-auth-methods-015	turbo/apps/platform/src/views/okou-page/__tests__/connectors-auth-methods.test.tsx	Keep the new account name after a failed save and close on retry	527	passed
+connectors-auth-methods-016	turbo/apps/platform/src/views/okou-page/__tests__/connectors-auth-methods.test.tsx	Keep a replacement account name prompt when an earlier save completes	590	passed
+connectors-auth-methods-017	turbo/apps/platform/src/views/okou-page/__tests__/connectors-auth-methods.test.tsx	Submit a chosen device-authorization start option	665	passed
+connectors-auth-methods-018	turbo/apps/platform/src/views/okou-page/__tests__/connectors-auth-methods.test.tsx	Start provider sign-in from catalog metadata	739	passed
+connectors-custom-001	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Do not complete or authorize an exact account when required configuration is incomplete	377	passed
+connectors-custom-003	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Create a custom connector without authentication	403	passed
+connectors-custom-010	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Manage a custom HTTP connector through creation and connection	461	passed
+connectors-custom-011	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Manage a custom HTTP connector through rename and deletion	498	passed
+connectors-custom-021	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Edit a custom HTTP connector without losing advanced configuration	537	passed
+connectors-custom-022	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Do not grant access after an unsuccessful custom connection	571	passed
+connectors-custom-024	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Manage a custom connector before it is connected	607	passed
+connectors-custom-013	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Manage custom HTTP OAuth through configuration update and connection	640	passed
+connectors-custom-014	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Manage a manual MCP connector through its lifecycle	701	passed
+connectors-custom-015	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Create and connect an MCP server through automatic authorization	751	passed
+connectors-custom-017	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Keep saved custom accounts manageable when only the default needs reconnect	815	passed
+connectors-custom-018	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Reconnect an OAuth account after cancelled consent and metadata changes	877	passed
+connectors-custom-020	turbo/apps/platform/src/views/okou-page/__tests__/connectors-custom.test.tsx	Add and optionally name a custom OAuth account	962	passed
+integrations-hub-status-001	turbo/apps/platform/src/views/okou-page/__tests__/integrations-hub-status.test.tsx	Integrations show current status and refresh after GitHub connects	65	passed
+integrations-hub-status-002	turbo/apps/platform/src/views/okou-page/__tests__/integrations-hub-status.test.tsx	Slack keeps account disconnect in its overflow menu (admin: true)	122	passed
+integrations-hub-status-005	turbo/apps/platform/src/views/okou-page/__tests__/integrations-hub-status.test.tsx	Authorize the official Telegram bot directly in a new tab from Integrations	158	passed
+integrations-hub-status-006	turbo/apps/platform/src/views/okou-page/__tests__/integrations-hub-status.test.tsx	The phone card describes messaging and the connect dialog displays the destination number	246	passed
+integrations-hub-status-007	turbo/apps/platform/src/views/okou-page/__tests__/integrations-hub-status.test.tsx	A user connects AgentPhone with a prefilled one-time code	281	passed
+integrations-hub-status-011	turbo/apps/platform/src/views/okou-page/__tests__/integrations-hub-status.test.tsx	Uninstalling connected Microsoft Teams requires confirmation	350	passed
+integrations-hub-status-012	turbo/apps/platform/src/views/okou-page/__tests__/integrations-hub-status.test.tsx	Slack starts OAuth directly and refreshes the original Works page (installed: false)	370	passed
