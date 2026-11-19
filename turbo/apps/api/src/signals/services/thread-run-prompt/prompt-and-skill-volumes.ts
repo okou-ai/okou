@@ -121,6 +121,7 @@ function createIntegrationPrompts(
     automation: createAutomationThreadPrompt(
       pickedEvent$,
       threadContext.automationContext$,
+      threadContext.automationPayload$,
       threadContext.automationTarget$,
       singleAgent$,
     ),
