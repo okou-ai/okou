@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.34.10](https://github.com/okou-ai/okou/compare/cli-v10.34.9...cli-v10.34.10) (2026-11-19)
+
+
+### Bug Fixes
+
+* **api:** state run limits and saved data responses as facts ([#49270](https://github.com/okou-ai/okou/issues/49270)) ([6c2ec0a](https://github.com/okou-ai/okou/commit/6c2ec0a09b22dd1bed15ccaa32c4b05886f5d217))
+
 ## [10.34.9](https://github.com/okou-ai/okou/compare/cli-v10.34.8...cli-v10.34.9) (2026-11-19)
 
 
