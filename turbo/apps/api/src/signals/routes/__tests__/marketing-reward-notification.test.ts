@@ -16,13 +16,13 @@ import { marketingRewardNotificationRoutes } from "../marketing-reward-notificat
 import { marketingRewardSettlementRoutes } from "../marketing-reward-settlement";
 import { orgInviteRoutes } from "../org-invite";
 import { createRouteMocks } from "./helpers/route-test";
-import { readGetStartedStatus } from "./helpers/get-started";
 import { captureRewardProjectionPublications } from "./helpers/reward-projection-publications";
 import { createBddApi } from "./helpers/api-bdd";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import {
   campaignRequest,
   marketingRewardConsumer,
+  marketingCheckinCampaign,
 } from "./helpers/marketing-reward-consumer";
 
 const context = testContext();
@@ -139,13 +139,6 @@ test("deduplicates source refreshes durably without changing pending invitations
   ).toStrictEqual(first.body);
   await flushWaitUntilForTest();
   expect(publications).toHaveLength(1);
-  expect(
-    (await readGetStartedStatus(context, fixture.actor)).quests.find(
-      (quest) => {
-        return quest.key === "invite";
-      },
-    ),
-  ).toMatchObject({ claimedCount: 0, pendingCount: 1, earnedCredits: 0 });
 });
 
 test("validates the original invitation claim reference and recovers failed nonfinancial delivery without settlement credentials", async () => {
@@ -221,13 +214,6 @@ test("validates the original invitation claim reference and recovers failed nonf
       name: "getStartedRewardsChanged",
     },
   ]);
-  expect(
-    (await readGetStartedStatus(context, fixture.actor)).quests.find(
-      (quest) => {
-        return quest.key === "invite";
-      },
-    ),
-  ).toMatchObject({ claimedCount: 0, pendingCount: 1, earnedCredits: 0 });
 });
 
 test("refreshes a signed revocation using its retained original inviter", async () => {
@@ -272,7 +258,9 @@ test("refreshes a signed revocation using its retained original inviter", async 
 });
 
 async function receiptFixture(slack = false) {
-  const consumer = marketingRewardConsumer();
+  const consumer = slack
+    ? marketingRewardConsumer()
+    : marketingCheckinCampaign(context);
   const actor = bdd.user();
   if (slack) {
     const integrations = createBddIntegrationApi(context);

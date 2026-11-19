@@ -1,3 +1,4 @@
+import { marketingCheckinCampaign } from "./helpers/marketing-reward-consumer";
 import { randomUUID } from "node:crypto";
 import type StripeSDK from "stripe";
 import {
@@ -28,6 +29,7 @@ const returnUrl = "http://localhost:3002/settings/billing";
 const portalUrl = "https://billing.stripe.com/session/metadata-binding";
 
 function clients() {
+  marketingCheckinCampaign(context);
   const app = setupApp({
     context,
     routes: [

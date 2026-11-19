@@ -1,4 +1,3 @@
-import { readGetStartedStatus } from "./helpers/get-started";
 import { randomUUID } from "node:crypto";
 
 import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
@@ -72,32 +71,6 @@ async function createCustomOAuthConnector(
     actor,
     customOAuthConnectorBody(provider),
   );
-}
-
-async function connectCustomOAuthConnector(
-  actor: ApiTestUser,
-  connectorId: string,
-): Promise<void> {
-  const authorizationUrl = new URL(
-    await connectors.startCustomConnectorOAuth2AtBaseUrl(
-      actor,
-      connectorId,
-      "https://api.okou.ai",
-    ),
-  );
-  await connectors.completeCustomConnectorOAuth2Callback(
-    {
-      code: `${connectorId}-code`,
-      state: authorizationState(authorizationUrl),
-    },
-    { baseUrl: "https://api.okou.ai" },
-  );
-}
-
-async function readConnectorQuest(actor: ApiTestUser) {
-  return (await readGetStartedStatus(context, actor)).quests.find((quest) => {
-    return quest.key === "connector";
-  });
 }
 
 describe("Custom connector OAuth callbacks", () => {
@@ -402,57 +375,6 @@ describe("Custom connector OAuth callbacks", () => {
       await own(() => {
         return connectors.deleteCustomConnector(actor, connector.id);
       });
-      expect(
-        (
-          await own(() => {
-            return readGetStartedStatus(context, actor);
-          })
-        ).quests.find((q) => {
-          return q.key === "connector";
-        }),
-      ).toMatchObject({
-        claimedCount: 1,
-        earnedCredits: 100,
-        canEarnMore: true,
-      });
     });
-  });
-});
-
-describe("Custom connector Get Started reward", () => {
-  it("awards custom connectors once per user across new and recreated connectors", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
-    const provider = mockCustomConnectorOAuth2Provider(context, {
-      initialScope: "read",
-    });
-    const actor = createBddApi(context).user({ orgRole: "org:admin" });
-    await connectors.updateFeatureSwitches(actor, {});
-
-    const first = await createCustomOAuthConnector(actor, provider);
-    await connectCustomOAuthConnector(actor, first.id);
-    await expect(readConnectorQuest(actor)).resolves.toMatchObject({
-      claimedCount: 1,
-      earnedCredits: 100,
-    });
-
-    // A second connector with the same provider credentials earns nothing.
-    const second = await createCustomOAuthConnector(actor, provider);
-    await connectCustomOAuthConnector(actor, second.id);
-    await expect(readConnectorQuest(actor)).resolves.toMatchObject({
-      claimedCount: 1,
-      earnedCredits: 100,
-    });
-
-    // Deleting and recreating a connector does not reset eligibility.
-    await connectors.deleteCustomConnector(actor, first.id);
-    await connectors.deleteCustomConnector(actor, second.id);
-    const recreated = await createCustomOAuthConnector(actor, provider);
-    await connectCustomOAuthConnector(actor, recreated.id);
-    await expect(readConnectorQuest(actor)).resolves.toMatchObject({
-      claimedCount: 1,
-      earnedCredits: 100,
-    });
-
-    await connectors.deleteCustomConnector(actor, recreated.id);
   });
 });

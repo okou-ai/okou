@@ -15,7 +15,6 @@ import {
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { workflowsRoutes } from "../workflows";
-import { readGetStartedStatus } from "./helpers/get-started";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -215,10 +214,6 @@ test("continues publishing source facts after the creator has already earned the
   const settlementSecret = "workflow-lifetime-settlement-12345678901234567890";
   mockEnv("MARKETING_REWARDS_SETTLEMENT_SECRET", settlementSecret);
   const { actor } = await workflows.setupWorkflowOrg();
-  mockEnv(
-    "MARKETING_REWARDS_ROUTING",
-    JSON.stringify({ mode: "cohort", userIds: [actor.userId], orgIds: [] }),
-  );
   const { agentId } = await workflows.createAgent(actor);
   installWorkflowVolumeS3Fixture(context);
   const workflowId = await workflows.createWorkflow(actor, {
@@ -271,14 +266,6 @@ test("continues publishing source facts after the creator has already earned the
     );
   }
   await flushWaitUntilForTest();
-  mockEnv("MARKETING_REWARDS_ROUTING", undefined);
-  expect((await readGetStartedStatus(context, actor)).quests).toContainEqual(
-    expect.objectContaining({
-      key: "workflow",
-      claimedCount: 1,
-      earnedCredits: 1000,
-    }),
-  );
   expect(received).toHaveLength(6);
   expect(
     received.filter((event) => {

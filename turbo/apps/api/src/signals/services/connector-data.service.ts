@@ -2163,12 +2163,6 @@ function builtinConnectorTokenConnectionValues(
       userId: connection.userId,
       state: connection.connectorTokenState,
     },
-    quest: {
-      orgId: connection.orgId,
-      userId: connection.userId,
-      questKey: "connector" as const,
-      sourceKey: `builtin:${connection.runtimeMethod.connectorSlug}`,
-    },
   };
 }
 
@@ -2570,11 +2564,6 @@ export const prepareBuiltinConnectorTokenPublication$ = command(
             existing !== null && existing.externalId !== args.userInfo.id,
           projections,
         },
-        quest: isOneClickConnectorGrantKind(
-          args.runtimeMethod.method.grant.kind,
-        )
-          ? values.quest
-          : null,
       },
     };
     return ready;

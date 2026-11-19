@@ -10,7 +10,6 @@ import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { ensureGetStartedRewardWallet$ } from "./get-started-wallet.service";
 import { pendingSlackRewardSql } from "./slack-installation-reward";
-import { settleSlackWorkspaceRewards$ } from "./slack-reward.service";
 import {
   connectedSlackWorkspace,
   slackConnectionAdmission,
@@ -195,13 +194,6 @@ export const connectSlackWorkspace$ = command(
         };
       }
       throw result.error;
-    }
-    if (result.value.kind === "ok") {
-      await set(
-        settleSlackWorkspaceRewards$,
-        { orgId: args.orgId, workspaceId: args.workspaceId },
-        signal,
-      );
     }
     return result.value;
   },

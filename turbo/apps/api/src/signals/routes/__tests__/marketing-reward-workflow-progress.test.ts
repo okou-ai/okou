@@ -18,7 +18,6 @@ import { createPublicAutomationRunApi } from "./helpers/public-automation-run";
 import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { marketingRewardConsumer } from "./helpers/marketing-reward-consumer";
-import { readGetStartedStatus } from "./helpers/get-started";
 import { captureRewardProjectionPublications } from "./helpers/reward-projection-publications";
 
 const context = testContext();
@@ -98,12 +97,6 @@ test("refreshes the original Workflow creator from retained proof after failure 
     fixture.workflowId,
     [204],
   );
-  const status = await readGetStartedStatus(context, fixture.actor);
-  expect(
-    status.quests.find((quest) => {
-      return quest.key === "workflow";
-    })?.claimedCount,
-  ).toBe(0);
   const publications = captureRewardProjectionPublications(context);
   const progressSecret =
     "workflow-progress-projection-1234567890123456789012345";
