@@ -10,6 +10,25 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.94.1](https://github.com/okou-ai/okou/compare/api-v2.94.0...api-v2.94.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* **api:** authorize OAuth by route scopes ([#48878](https://github.com/okou-ai/okou/issues/48878)) ([34d574a](https://github.com/okou-ai/okou/commit/34d574a25f2bb3f096829e94b7a53d7608545245))
+
+
+### Refactoring
+
+* **api:** reuse resolved skill mounts during dispatch ([#48883](https://github.com/okou-ai/okou/issues/48883)) ([1d13675](https://github.com/okou-ai/okou/commit/1d136754b73d395b3b1a587ee9a947e745a2b2b0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.50.0
+
 ## [2.94.0](https://github.com/okou-ai/okou/compare/api-v2.93.0...api-v2.94.0) (2026-11-19)
 
 
