@@ -3085,14 +3085,6 @@ async function main(): Promise<void> {
       ),
     );
 
-    console.log("=== Content bundle preparation CLI ===");
-    console.log(
-      execCommand(
-        "node --import tsx scripts/migrations/027-content-bundles/test-backfill.ts",
-        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
-      ),
-    );
-
     console.log("=== Registry resource inventory CLI ===");
     console.log(
       execCommand(
