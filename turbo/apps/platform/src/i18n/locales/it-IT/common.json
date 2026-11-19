@@ -4017,6 +4017,7 @@
     "automationDisabled": {
       "backToWorkflows": "Torna ai workflow",
       "disabledAt": "Disattivata il {{time}}",
+      "enable": "Attiva",
       "loadFailed": "Impossibile caricare questa automazione",
       "loadingAutomation": "Caricamento dell’automazione",
       "otherWorkspace": "Questa automazione si trova in {{workspace}}. Cambia area di lavoro per visualizzarla.",

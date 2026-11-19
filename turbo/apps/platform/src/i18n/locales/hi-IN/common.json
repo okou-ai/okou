@@ -3962,6 +3962,7 @@
     "automationDisabled": {
       "backToWorkflows": "वर्कफ़्लो पर वापस जाएँ",
       "disabledAt": "{{time}} पर बंद किया गया",
+      "enable": "चालू करें",
       "loadFailed": "यह ऑटोमेशन लोड नहीं हो सका",
       "loadingAutomation": "ऑटोमेशन लोड हो रहा है",
       "otherWorkspace": "यह ऑटोमेशन {{workspace}} में है। इसे देखने के लिए वर्कस्पेस बदलें।",

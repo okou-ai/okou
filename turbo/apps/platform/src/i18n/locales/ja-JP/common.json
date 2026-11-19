@@ -3946,6 +3946,7 @@
     "automationDisabled": {
       "backToWorkflows": "ワークフローに戻る",
       "disabledAt": "無効化日時：{{time}}",
+      "enable": "有効にする",
       "loadFailed": "この自動化を読み込めませんでした",
       "loadingAutomation": "自動化を読み込み中",
       "otherWorkspace": "この自動化は {{workspace}} にあります。ワークスペースを切り替えて確認してください。",

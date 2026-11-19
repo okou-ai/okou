@@ -3962,6 +3962,7 @@
     "automationDisabled": {
       "backToWorkflows": "Zurück zu Workflows",
       "disabledAt": "Deaktiviert am {{time}}",
+      "enable": "Aktivieren",
       "loadFailed": "Diese Automatisierung konnte nicht geladen werden",
       "loadingAutomation": "Automatisierung wird geladen",
       "otherWorkspace": "Diese Automatisierung befindet sich in {{workspace}}. Wechsle den Arbeitsbereich, um sie anzuzeigen.",

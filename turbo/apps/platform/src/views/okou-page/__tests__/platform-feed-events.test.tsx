@@ -122,11 +122,30 @@ function workflow(): WorkflowDetailResponse {
 }
 
 function mockAutomationDestination(detail = workflow()) {
+  let automations = detail.automations;
+  context.mocks.api(
+    workflowAutomationsContract.enable,
+    ({ params, respond }) => {
+      const target = automations.find((item) => {
+        return item.id === params.id;
+      });
+      if (!target) {
+        return respond(404, {
+          error: { code: "NOT_FOUND", message: "Automation not found" },
+        });
+      }
+      const enabled = { ...target, enabled: true };
+      automations = automations.map((item) => {
+        return item.id === params.id ? enabled : item;
+      });
+      return respond(200, enabled);
+    },
+  );
   context.mocks.api(workflowAutomationsContract.get, ({ respond }) => {
-    return respond(200, detail.automations[0]!);
+    return respond(200, automations[0]!);
   });
   context.mocks.api(workflowsDetailContract.get, ({ respond }) => {
-    return respond(200, detail);
+    return respond(200, { ...detail, automations });
   });
   context.mocks.api(workflowsDetailContract.ownerProfile, ({ respond }) => {
     return respond(200, { displayName: "Feed tester", imageUrl: null });
@@ -151,8 +170,13 @@ function control(
 }
 
 async function openDetails(item = platformEvent()) {
+  let dismissed = false;
   context.mocks.api(feedContract.list, ({ respond }) => {
-    return respond(200, { items: [item] });
+    return respond(200, { items: dismissed ? [] : [item] });
+  });
+  context.mocks.api(feedContract.dismiss, ({ respond }) => {
+    dismissed = true;
+    return respond(204);
   });
   context.mocks.data.userPreferences({ timezone: "Asia/Shanghai" });
   await setupPage({
@@ -174,16 +198,16 @@ test("A fast event destination replaces its initially hidden loading status", as
   const response = createDeferredPromise<void>(context.signal);
   context.mocks.api(workflowAutomationsContract.get, async ({ respond }) => {
     await response.promise;
-    return respond(200, automation());
+    return respond(200, automation(AUTOMATION_ID, true));
   });
   const dialog = await openDetails();
-  click(control("link", "View automation", dialog));
+  click(control("button", "Enable", dialog));
   const loading = await screen.findByLabelText("Loading automation");
   expect(loading).not.toBeVisible();
   response.resolve();
   const selected = await screen.findByRole("group", { name: "Every 1 hour" });
   expect(selected).toHaveAttribute("aria-current", "true");
-  expect(within(selected).getByRole("switch")).not.toBeChecked();
+  expect(within(selected).getByRole("switch")).toBeChecked();
   expect(loading).not.toBeInTheDocument();
 });
 
@@ -192,10 +216,10 @@ test("A pending event destination shows a lightweight status until access resolv
   const response = createDeferredPromise<void>(context.signal);
   context.mocks.api(workflowAutomationsContract.get, async ({ respond }) => {
     await response.promise;
-    return respond(200, automation());
+    return respond(200, automation(AUTOMATION_ID, true));
   });
   const dialog = await openDetails();
-  click(control("link", "View automation", dialog));
+  click(control("button", "Enable", dialog));
   const loading = await screen.findByLabelText("Loading automation");
   await waitFor(() => {
     expect(loading).toBeVisible();
@@ -204,7 +228,7 @@ test("A pending event destination shows a lightweight status until access resolv
   response.resolve();
   const selected = await screen.findByRole("group", { name: "Every 1 hour" });
   expect(selected).toHaveAttribute("aria-current", "true");
-  expect(within(selected).getByRole("switch")).not.toBeChecked();
+  expect(within(selected).getByRole("switch")).toBeChecked();
 });
 
 test("A failed destination can retry through the loading status and reach the same automation", async () => {
@@ -234,22 +258,29 @@ test("A failed destination can retry through the loading status and reach the sa
   expect(within(selected).getByRole("switch")).not.toBeChecked();
 });
 
-test("View automation rechecks access and focuses the exact current automation without enabling it or its sibling", async () => {
-  mockAutomationDestination();
+test("Enable re-enables the exact automation, dismisses its event and focuses its current state", async () => {
+  const detail = workflow();
+  detail.automations[1] = automation(OTHER_AUTOMATION_ID);
+  mockAutomationDestination(detail);
   const dialog = await openDetails();
-  click(control("link", "View automation", dialog));
+  click(control("button", "Enable", dialog));
   const selected = await screen.findByRole("group", { name: "Every 1 hour" });
   await waitFor(() => {
     expect(selected).toHaveFocus();
   });
   expect(selected).toHaveAttribute("aria-current", "true");
-  expect(within(selected).getByRole("switch")).not.toBeChecked();
+  expect(within(selected).getByRole("switch")).toBeChecked();
   const other = screen.getByRole("group", { name: "Every 2 hours" });
-  expect(within(other).getByRole("switch")).toBeChecked();
+  expect(within(other).getByRole("switch")).not.toBeChecked();
   expect(pathname()).toBe(`/workflows/${WORKFLOW_ID}/automations`);
   expect(search()).toBe(
     `?automationId=${AUTOMATION_ID}&workspaceId=${WORKSPACE_ID}`,
   );
+
+  click(control("link", "For you"));
+
+  await screen.findByRole("heading", { name: "All caught up" });
+  expect(screen.queryByText("Daily work summary")).not.toBeInTheDocument();
 });
 
 test.each([
@@ -378,6 +409,7 @@ test("A recovered Official Workflow automation opens read-only with its current 
 });
 
 test("A failed dismissal stays visible and can be retried without changing its automation", async () => {
+  await openDetails();
   let fail = true;
   context.mocks.api(feedContract.dismiss, ({ respond }) => {
     return fail
@@ -386,7 +418,6 @@ test("A failed dismissal stays visible and can be retried without changing its a
         })
       : respond(204);
   });
-  await openDetails();
   expect(screen.getByText("Platform event")).toBeInTheDocument();
   click(control("button", "Dismiss"));
   await screen.findByRole("alert");
@@ -398,7 +429,7 @@ test("A failed dismissal stays visible and can be retried without changing its a
   await screen.findByText("All caught up");
 });
 
-test("An event preserves its actual disable time in the member's timezone and exact automation link", async () => {
+test("An event preserves its actual disable time in the member's timezone and offers Enable and Dismiss", async () => {
   const card = await openDetails();
   expect(within(card).getByText("Daily work summary")).toBeInTheDocument();
   expect(within(card).getByText("Platform event")).toBeInTheDocument();
@@ -406,9 +437,130 @@ test("An event preserves its actual disable time in the member's timezone and ex
   expect(timestamp).toHaveAttribute("datetime", DISABLED_AT);
   expect(timestamp).toHaveTextContent("2026");
   expect(timestamp).toHaveTextContent("11:00 AM");
-  expect(control("link", "View automation", card)).toHaveAttribute(
-    "href",
-    destination(),
-  );
+  expect(control("button", "Enable", card)).toBeEnabled();
+  expect(control("button", "Dismiss", card)).toBeEnabled();
   expect(card).not.toHaveTextContent(WORKSPACE_ID);
+});
+
+test("Dismiss removes the event entirely and it stays gone on the next visit", async () => {
+  await openDetails();
+
+  click(control("button", "Dismiss"));
+
+  await screen.findByRole("heading", { name: "All caught up" });
+  expect(screen.queryByText("Daily work summary")).not.toBeInTheDocument();
+  click(control("link", "Agents"));
+  await screen.findByRole("heading", { name: "Agents" });
+  click(control("link", "For you"));
+  await screen.findByRole("heading", { name: "All caught up" });
+});
+
+test.each([403, 500] as const)(
+  "A failed enable (%i) retains the card for an explicit retry",
+  async (status) => {
+    mockAutomationDestination();
+    await openDetails();
+    context.mocks.api(workflowAutomationsContract.enable, ({ respond }) => {
+      return respond(status, {
+        error: {
+          code: status === 403 ? "FORBIDDEN" : "INTERNAL_ERROR",
+          message: "Unable to enable automation",
+        },
+      });
+    });
+
+    click(control("button", "Enable"));
+
+    await screen.findByRole("alert");
+    expect(pathname()).toBe("/for-you");
+    expect(control("button", "Enable")).toBeEnabled();
+    expect(control("button", "Dismiss")).toBeEnabled();
+    // The successful retry is reflected by subsequent authoritative reads.
+    mockAutomationDestination({
+      ...workflow(),
+      automations: [automation(AUTOMATION_ID, true)],
+    });
+    click(control("button", "Enable"));
+    const selected = await screen.findByRole("group", { name: "Every 1 hour" });
+    expect(within(selected).getByRole("switch")).toBeChecked();
+    click(control("link", "For you"));
+    await screen.findByRole("heading", { name: "All caught up" });
+  },
+);
+
+test.each(["enable", "dismiss"] as const)(
+  "Enable waits for the %s response before navigating and blocks competing actions",
+  async (phase) => {
+    mockAutomationDestination({
+      ...workflow(),
+      automations: [automation(AUTOMATION_ID, true)],
+    });
+    await openDetails();
+    const response = createDeferredPromise<void>(context.signal);
+    const requested = createDeferredPromise<void>(context.signal);
+    if (phase === "enable") {
+      context.mocks.api(
+        workflowAutomationsContract.enable,
+        async ({ respond }) => {
+          requested.resolve();
+          await response.promise;
+          return respond(200, automation(AUTOMATION_ID, true));
+        },
+      );
+    } else {
+      context.mocks.api(feedContract.dismiss, async ({ respond }) => {
+        requested.resolve();
+        await response.promise;
+        return respond(204);
+      });
+    }
+
+    click(control("button", "Enable"));
+
+    await requested.promise;
+    expect(control("button", "Enable")).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(control("button", "Dismiss")).toBeDisabled();
+    expect(pathname()).toBe("/for-you");
+    response.resolve();
+    const selected = await screen.findByRole("group", { name: "Every 1 hour" });
+    expect(within(selected).getByRole("switch")).toBeChecked();
+  },
+);
+
+test("An enabled automation with a failed event dismissal stays on the card until dismissal succeeds", async () => {
+  mockAutomationDestination();
+  await openDetails();
+  let dismissed = false;
+  context.mocks.api(feedContract.list, ({ respond }) => {
+    return respond(200, { items: dismissed ? [] : [platformEvent()] });
+  });
+  let failed = true;
+  context.mocks.api(feedContract.dismiss, ({ respond }) => {
+    if (failed) {
+      return respond(500, {
+        error: { code: "INTERNAL_ERROR", message: "Unable to dismiss" },
+      });
+    }
+    dismissed = true;
+    return respond(204);
+  });
+
+  click(control("button", "Enable"));
+
+  await screen.findByRole("alert");
+  expect(pathname()).toBe("/for-you");
+  context.mocks.api(workflowAutomationsContract.enable, ({ respond }) => {
+    return respond(409, {
+      error: { code: "CONFLICT", message: "Automation is being reconfigured" },
+    });
+  });
+  failed = false;
+  click(control("button", "Enable"));
+  const selected = await screen.findByRole("group", { name: "Every 1 hour" });
+  expect(within(selected).getByRole("switch")).toBeChecked();
+  click(control("link", "For you"));
+  await screen.findByRole("heading", { name: "All caught up" });
 });

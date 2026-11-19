@@ -3960,6 +3960,7 @@
     "automationDisabled": {
       "backToWorkflows": "Back to workflows",
       "disabledAt": "Disabled at {{time}}",
+      "enable": "Enable",
       "loadFailed": "Couldn’t load this automation",
       "loadingAutomation": "Loading automation",
       "otherWorkspace": "This automation is in {{workspace}}. Switch workspace to view it.",

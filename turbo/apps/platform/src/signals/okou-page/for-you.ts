@@ -16,13 +16,13 @@ export const forYouDeck$ = computed(async (get) => {
     get(platformEventEntries$),
   ]);
   const items = [
-    ...events.map((entry) => {
-      return {
-        kind: "event" as const,
-        entry,
-        outcome: get(entry.dismissed$) ? { type: "dismissed" as const } : null,
-      };
-    }),
+    ...events
+      .filter((entry) => {
+        return !get(entry.dismissed$);
+      })
+      .map((entry) => {
+        return { kind: "event" as const, entry, outcome: null };
+      }),
     ...suggestions.map((item) => {
       return { ...item, kind: "suggestion" as const };
     }),

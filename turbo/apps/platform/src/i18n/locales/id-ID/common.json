@@ -3946,6 +3946,7 @@
     "automationDisabled": {
       "backToWorkflows": "Kembali ke alur kerja",
       "disabledAt": "Dinonaktifkan pada {{time}}",
+      "enable": "Aktifkan",
       "loadFailed": "Tidak dapat memuat otomatisasi ini",
       "loadingAutomation": "Memuat otomatisasi",
       "otherWorkspace": "Otomatisasi ini berada di {{workspace}}. Ganti ruang kerja untuk melihatnya.",

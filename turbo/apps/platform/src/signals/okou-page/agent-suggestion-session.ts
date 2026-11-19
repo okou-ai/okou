@@ -247,7 +247,7 @@ function createSuggestionSession() {
         return item.type === "event";
       })
       .map((item) => {
-        return createPlatformEventEntry(item, settledOrder$);
+        return createPlatformEventEntry(item, reloadForYouFeed$);
       });
   });
   // A visit owns its cards, independent of reactive metadata invalidations.

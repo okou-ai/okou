@@ -1,14 +1,12 @@
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { AlertTriangle, ArrowRight } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Button, buttonVariants } from "@okouai/ui";
+import { Button } from "@okouai/ui";
 import { resolvedAppLocale } from "../../i18n/format.ts";
 import type { createPlatformEventEntry } from "../../signals/okou-page/platform-feed-events.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { ROUTES } from "../../signals/route-paths.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { Link } from "../router/link.tsx";
 import { userPreferences$ } from "../../signals/okou-page/settings/user-preferences.ts";
 import { focusSuggestionTitleOnRef$ } from "../../signals/okou-page/agent-suggestion-session.ts";
 
@@ -22,6 +20,8 @@ export function PlatformFeedEvent({
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
   const [dismissal, dismiss] = useLoadableSet(entry.dismiss$);
+  const [enabling, enable] = useLoadableSet(entry.enable$);
+  const pending = dismissal.state === "loading" || enabling.state === "loading";
   const preferences = useLastResolved(userPreferences$);
   const focusTitle = useSet(focusSuggestionTitleOnRef$);
   const { content } = entry.item;
@@ -81,25 +81,22 @@ export function PlatformFeedEvent({
           )}
         </time>
         <div className="mt-auto flex flex-wrap items-center gap-3 pt-6">
-          <Link
-            pathname={ROUTES.workflowDetailAutomations}
-            options={{
-              pathParams: { workflowId: content.workflowId },
-              searchParams: new URLSearchParams({
-                automationId: content.automationId,
-                workspaceId: content.workspaceId,
-              }),
+          <Button
+            variant="neutral"
+            pending={enabling.state === "loading"}
+            disabled={pending}
+            onClick={() => {
+              return detach(enable(signal), Reason.DomCallback);
             }}
-            className={buttonVariants({ variant: "neutral" })}
           >
             {t(($) => {
-              return $.feedEvents.automationDisabled.viewAutomation;
+              return $.feedEvents.automationDisabled.enable;
             })}
-            <ArrowRight aria-hidden className="size-4" />
-          </Link>
+          </Button>
           <Button
             variant="quiet"
             pending={dismissal.state === "loading"}
+            disabled={pending}
             onClick={() => {
               return detach(dismiss(signal), Reason.DomCallback);
             }}
@@ -109,7 +106,7 @@ export function PlatformFeedEvent({
             })}
           </Button>
         </div>
-        {dismissal.state === "hasError" && (
+        {(dismissal.state === "hasError" || enabling.state === "hasError") && (
           <p role="alert" className="text-sm text-destructive">
             {t(($) => {
               return $.global.errors.requestFailed;

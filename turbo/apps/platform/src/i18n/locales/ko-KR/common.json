@@ -3946,6 +3946,7 @@
     "automationDisabled": {
       "backToWorkflows": "워크플로로 돌아가기",
       "disabledAt": "비활성화 시간: {{time}}",
+      "enable": "활성화",
       "loadFailed": "이 자동화를 불러올 수 없습니다",
       "loadingAutomation": "자동화 불러오는 중",
       "otherWorkspace": "이 자동화는 {{workspace}}에 있습니다. 워크스페이스를 전환하여 확인하세요.",

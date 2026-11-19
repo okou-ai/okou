@@ -1773,6 +1773,7 @@ test("For you handles a suggestion and a platform event in the same deck", async
   click(button("Dismiss"));
   await screen.findByRole("heading", { name: "All caught up" });
   expect(pool.consumed).toStrictEqual([suggestion.id]);
+  expect(screen.queryByText("Daily work summary")).not.toBeInTheDocument();
   expect(dismissed).toBeTruthy();
 });
 

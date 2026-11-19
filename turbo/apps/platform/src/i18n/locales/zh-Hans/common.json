@@ -3946,6 +3946,7 @@
     "automationDisabled": {
       "backToWorkflows": "返回工作流",
       "disabledAt": "停用时间：{{time}}",
+      "enable": "启用",
       "loadFailed": "无法加载此自动化",
       "loadingAutomation": "正在加载自动化",
       "otherWorkspace": "此自动化位于 {{workspace}}。请切换工作区以查看。",
