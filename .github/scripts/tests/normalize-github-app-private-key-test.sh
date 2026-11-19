@@ -10,7 +10,7 @@ fail() {
   exit 1
 }
 
-for command in base64 openssl rg; do
+for command in base64 openssl; do
   command -v "$command" >/dev/null || fail "$command is required"
 done
 
@@ -43,18 +43,18 @@ if printf '%s' '-----BEGIN PRIVATE KEY----- invalid -----END PRIVATE KEY-----' |
   fail "invalid PEM input must fail"
 fi
 
-rg --quiet --fixed-strings \
-  'SOURCE_PRIVATE_KEY_PEM: ${{ secrets.OKOU_CI_APP_PRIVATE_KEY }}' \
+grep -qF \
+  "SOURCE_PRIVATE_KEY_PEM: \${{ secrets.OKOU_CI_APP_PRIVATE_KEY }}" \
   "$workflow" || fail "workflow must read the canonical PEM private key secret"
-rg --quiet --fixed-strings \
+grep -qF \
   'bash .github/scripts/normalize-github-app-private-key.sh' \
   "$workflow" || fail "workflow must normalize the private key before token creation"
-rg --quiet --fixed-strings \
-  'private-key: ${{ steps.source-private-key.outputs.private-key }}' \
+grep -qF \
+  "private-key: \${{ steps.source-private-key.outputs.private-key }}" \
   "$workflow" || fail "token action must consume the normalized private key"
 
-if rg --quiet --fixed-strings \
-  'private-key: ${{ secrets.OKOU_CI_APP_PRIVATE_KEY }}' \
+if grep -qF \
+  "private-key: \${{ secrets.OKOU_CI_APP_PRIVATE_KEY }}" \
   "$workflow"; then
   fail "token action must not receive the secret directly"
 fi

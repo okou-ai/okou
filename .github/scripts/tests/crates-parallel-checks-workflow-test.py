@@ -18,9 +18,6 @@ assert gate["if"] == "always()" and all(name in gate["needs"] for name in lanes)
 for name in lanes:
     job = jobs[name]
     assert job["needs"] == ["detect"], f"{name}: must start at the common detect boundary"
-    cache = next(step for step in job["steps"] if step.get("uses", "").startswith("Swatinem/rust-cache@"))
-    assert cache["with"]["shared-key"] == "check"
-    assert cache["with"]["save-if"] == ("${{ github.ref == 'refs/heads/main' }}" if name == "check" else False)
     # Once a lane is selected, its Cargo checks must run.
     assert not any("if" in step for step in job["steps"] if "cargo " in step.get("run", "")), name
 

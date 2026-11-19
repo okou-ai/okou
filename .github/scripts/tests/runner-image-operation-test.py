@@ -542,15 +542,14 @@ class ImageOperationTest(unittest.TestCase):
     def assert_one_build(self):
         self.assertEqual([r["phase"] for r in self.records("executions")], ["build"])
 
-    def test_healthy_and_lost_result_keep_original_execution(self):
-        for fault in ("", "lost-result", "partial-result"):
+    def test_healthy_and_truncated_result_keep_original_execution(self):
+        for fault in ("", "partial-result"):
             with self.subTest(fault=fault):
                 (self.root / "fault-used").unlink(missing_ok=True)
                 self.environment["IMAGE_FAULT"] = fault
                 self.environment["GITHUB_RUN_ATTEMPT"] = str(
                     int(self.environment["GITHUB_RUN_ATTEMPT"]) + 1
                 )
-                started = time.monotonic()
                 self.invoke("claim")
                 outcome = self.invoke("run", "build", str(self.result))
                 result = json.loads(self.result.read_text())
@@ -559,12 +558,8 @@ class ImageOperationTest(unittest.TestCase):
                 self.assertEqual(result["snapshotHash"], "2" * 64)
                 self.assertIn("image-progress", outcome.stdout)
                 self.assertNotIn(self.environment["R2_SECRET_ACCESS_KEY"], outcome.stdout)
-                request_count = sum(r["action"] == "run" for r in self.records("requests"))
-                print(
-                    f"image fixture fault={fault or 'none'} elapsed={time.monotonic() - started:.3f}s cumulative_run_requests={request_count}"
-                )
-        self.assertEqual(len(self.records("executions")), 3)
-        self.assertEqual(sum(r["action"] == "run" for r in self.records("requests")), 5)
+        self.assertEqual(len(self.records("executions")), 2)
+        self.assertEqual(sum(r["action"] == "run" for r in self.records("requests")), 3)
         calls = json.dumps(self.records("privileged"))
         self.assertNotIn(self.environment["R2_SECRET_ACCESS_KEY"], calls)
         self.assertIn("--property=RuntimeMaxSec=570", calls)

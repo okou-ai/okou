@@ -457,8 +457,17 @@ gateway_config_keys='[
   "WECHAT_GATEWAY_CONTROL_SECRET"
 ]'
 
-# Each render exercises all integration sources for one app and environment.
+# Each render exercises integration and MCP inputs for one app and environment.
 for integration_environment in preview production; do
+  if [[ "$integration_environment" == preview ]]; then
+    integration_api_origin="https://pr-123-api.okou.test"
+    integration_api_url="$integration_api_origin"
+    integration_mcp_issuer="https://clerk-dev.example.test"
+  else
+    integration_api_origin="https://api.okou.test"
+    integration_api_url="$integration_api_origin/"
+    integration_mcp_issuer="https://clerk.example.test"
+  fi
   integration_doppler_json="$(
     jq -cn --argjson keys "$integration_config_keys" --argjson gateway_keys "$gateway_config_keys" \
       --arg scope "$integration_environment" '
@@ -478,7 +487,13 @@ for integration_environment in preview production; do
     )' <<< "$integration_doppler_json"
   )"
   integration_repo_vars="$(
-    jq -c '. + {WHATSAPP_ALLOWED_COUNTRY_PREFIXES: "+1,+49"}' <<< "$integration_repo_secrets"
+    jq -c --arg issuer "$integration_mcp_issuer" '
+      . + {
+        WHATSAPP_ALLOWED_COUNTRY_PREFIXES: "+1,+49",
+        MCP_OAUTH_ISSUER: $issuer,
+        MCP_RESOURCE_URL: "https://wrong-resource.example.test/mcp"
+      }
+    ' <<< "$integration_repo_secrets"
   )"
   integration_secrets="$(
     build_doppler_secrets_json | jq -c --argjson vars "$integration_doppler_json" '. + $vars'
@@ -486,9 +501,13 @@ for integration_environment in preview production; do
   for integration_app in api web; do
     integration_dir="$(mktemp -d)"
     TEMP_DIRS+=("$integration_dir")
+    integration_backend_url=""
+    if [[ "$integration_app" == api ]]; then
+      integration_backend_url="$integration_api_url"
+    fi
     integration_output="$(
       run_action "$integration_secrets" "$integration_dir" "$integration_app" "$integration_environment" \
-        canonical "$integration_repo_vars" "$integration_repo_secrets" 2>&1
+        canonical "$integration_repo_vars" "$integration_repo_secrets" pr-123 "$integration_backend_url" 2>&1
     )"
     integration_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${integration_dir}/github-output")"
     if [[ ! -f "$integration_env_file" || ! -r "$integration_env_file" || ! -s "$integration_env_file" ]]; then
@@ -502,6 +521,11 @@ for integration_environment in preview production; do
         assert_env_value "$integration_env_file" "$integration_key" "$integration_value"
       done <<< "$integration_rows"
       assert_env_value "$integration_env_file" WHATSAPP_ALLOWED_COUNTRY_PREFIXES "+1,+49"
+      assert_api_backend_url_canonical "$integration_env_file" "$integration_api_url"
+      assert_env_value "$integration_env_file" MCP_RESOURCE_URL "$integration_api_origin/mcp"
+      assert_env_value "$integration_env_file" MCP_OAUTH_ISSUER "$integration_mcp_issuer"
+      assert_env_value "$integration_env_file" FEISHU_CALLBACK_BASE_URL "$integration_api_url"
+      assert_env_value "$integration_env_file" FINICITY_WEBHOOK_BASE_URL "$integration_api_url"
     else
       integration_rows="$(jq -er --argjson keys "$gateway_config_keys" '$keys[] as $key | [$key, .[$key]] | @tsv' \
         <<< "$integration_doppler_json")"
@@ -510,6 +534,9 @@ for integration_environment in preview production; do
         assert_env_absent_value "$integration_env_file" "$integration_value"
       done <<< "$integration_rows"
       assert_env_key_absent "$integration_env_file" WHATSAPP_ALLOWED_COUNTRY_PREFIXES
+      assert_api_backend_url_absent "$integration_env_file"
+      assert_env_key_absent "$integration_env_file" MCP_RESOURCE_URL
+      assert_env_key_absent "$integration_env_file" MCP_OAUTH_ISSUER
     fi
   done
 done
@@ -518,11 +545,12 @@ machine_secret_dir="$(mktemp -d)"
 TEMP_DIRS+=("$machine_secret_dir")
 machine_secret_output="$(run_action \
   "$(build_doppler_secrets_json)" "$machine_secret_dir" api preview canonical \
-  "" "" pr-123 "https://pr-123-api-backend.okou.test" \
+  "" "" "" "https://pr-123-api-backend.okou.test" \
   '{"OKOU_MACHINE_SECRET_KEY":" preview-canonical-machine-secret=bytes "}' 2>&1)"
 machine_secret_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${machine_secret_dir}/github-output")"
 assert_machine_secret_values_absent_from_output "$machine_secret_output" " preview-canonical-machine-secret=bytes "
 assert_machine_secret_canonical "$machine_secret_env_file" " preview-canonical-machine-secret=bytes "
+assert_preview_job_ref_absent "$machine_secret_env_file"
 
 api_backend_url_absent_dir="$(mktemp -d)"
 TEMP_DIRS+=("$api_backend_url_absent_dir")
@@ -534,54 +562,6 @@ if [[ "$status" -eq 0 || -e "${api_backend_url_absent_dir}/web-api-api-preview.e
   fail "missing API backend URL must fail before creating an environment file"
 fi
 assert_contains "$api_backend_url_absent_output" "::error::api-backend-url is required for API deployments"
-
-web_backend_url_absent_dir="$(mktemp -d)"
-TEMP_DIRS+=("$web_backend_url_absent_dir")
-web_backend_url_absent_output="$(
-  run_action \
-    "$(build_doppler_secrets_json)" \
-    "$web_backend_url_absent_dir" \
-    web \
-    production \
-    canonical \
-    "" \
-    "" \
-    pr-123 \
-    "" \
-    2>&1
-)"
-web_backend_url_absent_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${web_backend_url_absent_dir}/github-output")"
-assert_contains "$web_backend_url_absent_output" "Rendered"
-assert_api_backend_url_absent "$web_backend_url_absent_env_file"
-assert_env_key_absent "$web_backend_url_absent_env_file" MCP_RESOURCE_URL
-
-# Exercise environment-specific audiences and issuers through the real renderer.
-# A shared resource variable must never override a deployment's own API URL.
-for mcp_case in \
-  'api|preview|https://pr-123-api.okou.test|https://clerk-dev.example.test|https://pr-123-api.okou.test/mcp' \
-  'api|production|https://api.okou.test/|https://clerk.example.test|https://api.okou.test/mcp' \
-  'web|production|https://api.okou.test|https://clerk.example.test|'; do
-  IFS='|' read -r mcp_app mcp_environment mcp_api_url mcp_issuer mcp_resource <<< "$mcp_case"
-  mcp_dir="$(mktemp -d)"
-  TEMP_DIRS+=("$mcp_dir")
-  mcp_vars="$(jq -nc --arg issuer "$mcp_issuer" \
-    '{MCP_OAUTH_ISSUER: $issuer, MCP_RESOURCE_URL: "https://wrong-resource.example.test/mcp"}')"
-  mcp_output="$(run_action "$(build_doppler_secrets_json)" "$mcp_dir" \
-    "$mcp_app" "$mcp_environment" \
-    canonical "" "" pr-123 "$mcp_api_url" "" "$mcp_vars" 2>&1)"
-  mcp_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${mcp_dir}/github-output")"
-  assert_contains "$mcp_output" "Rendered"
-  if [[ "$mcp_app" == "api" ]]; then
-    assert_api_backend_url_canonical "$mcp_env_file" "$mcp_api_url"
-    assert_env_value "$mcp_env_file" MCP_RESOURCE_URL "$mcp_resource"
-    assert_env_value "$mcp_env_file" MCP_OAUTH_ISSUER "$mcp_issuer"
-    assert_env_value "$mcp_env_file" FEISHU_CALLBACK_BASE_URL "$mcp_api_url"
-    assert_env_value "$mcp_env_file" FINICITY_WEBHOOK_BASE_URL "$mcp_api_url"
-  else
-    assert_env_key_absent "$mcp_env_file" MCP_RESOURCE_URL
-    assert_env_key_absent "$mcp_env_file" MCP_OAUTH_ISSUER
-  fi
-done
 
 # The disabled wallet pilot must not make Link credentials required for deployment,
 # and populated GitHub fixture secrets must not become a fallback source.
@@ -748,16 +728,6 @@ assert_env_key_absent "$preview_web_env_file" GCP_LLM_PROJECT_ID
 assert_env_key_absent "$preview_web_env_file" GCP_LLM_WORKLOAD_IDENTITY_PROVIDER
 assert_env_key_absent "$preview_web_env_file" GCP_LLM_SERVICE_ACCOUNT_EMAIL
 
-empty_job_ref_dir="$(mktemp -d)"
-TEMP_DIRS+=("$empty_job_ref_dir")
-empty_job_ref_output="$(run_action "$(build_doppler_secrets_json)" "$empty_job_ref_dir" api preview canonical "" "" "" 2>&1)"
-empty_job_ref_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${empty_job_ref_dir}/github-output")"
-assert_contains "$empty_job_ref_output" "Rendered"
-assert_preview_job_ref_absent "$empty_job_ref_env_file"
-assert_debug_canonical "$empty_job_ref_env_file"
-assert_api_backend_url_canonical "$empty_job_ref_env_file" "https://pr-123-api-backend.okou.test"
-assert_machine_secret_canonical "$empty_job_ref_env_file" "github-atom-machine-secret"
-
 empty_dir="$(mktemp -d)"
 TEMP_DIRS+=("$empty_dir")
 empty_output="$(run_action "$(build_doppler_secrets_json)" "$empty_dir" api preview empty 2>&1)"
@@ -774,7 +744,9 @@ assert_env_value "$empty_env_file" OKOU_ONE_TIME_CAMPAIGN ""
 
 production_web_dir="$(mktemp -d)"
 TEMP_DIRS+=("$production_web_dir")
-production_web_output="$(run_action "$(build_doppler_secrets_json)" "$production_web_dir" web production 2>&1)"
+production_web_output="$(run_action "$(build_doppler_secrets_json)" "$production_web_dir" web production \
+  canonical "" "" pr-123 "https://pr-123-api-backend.okou.test" "" \
+  '{"MCP_OAUTH_ISSUER":"https://clerk.example.test","MCP_RESOURCE_URL":"https://wrong-resource.example.test/mcp"}' 2>&1)"
 production_web_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${production_web_dir}/github-output")"
 assert_contains "$production_web_output" "Rendered"
 assert_no_fixture_secret_values "$production_web_output"
@@ -782,6 +754,8 @@ assert_machine_secret_values_absent_from_output "$production_web_output" "github
 assert_env_value "$production_web_env_file" OKOU_HOST_SCHEME "https"
 assert_debug_absent "$production_web_env_file"
 assert_api_backend_url_canonical "$production_web_env_file" "https://pr-123-api-backend.okou.test"
+assert_env_key_absent "$production_web_env_file" MCP_RESOURCE_URL
+assert_env_key_absent "$production_web_env_file" MCP_OAUTH_ISSUER
 assert_web_url_absent "$production_web_env_file"
 assert_env_key_absent "$production_web_env_file" GCP_LLM_PROJECT_ID
 assert_env_key_absent "$production_web_env_file" GCP_LLM_WORKLOAD_IDENTITY_PROVIDER

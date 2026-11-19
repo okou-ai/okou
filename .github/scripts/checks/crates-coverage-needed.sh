@@ -24,7 +24,6 @@ while IFS= read -r -d '' path; do
     # in Security's workflow-script shards. No directory-wide test exemption:
     # unknown or newly shared scripts must still require coverage.
     .github/scripts/tests/clerk-test-resource-workflow-test.sh | \
-    .github/scripts/tests/app-preview-ingress-workflow-test.sh | \
     .github/scripts/tests/turbo-playwright-runner-workflow-test.sh)
       continue
       ;;
