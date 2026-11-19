@@ -885,3 +885,8 @@ browser-session-page-003	turbo/apps/platform/src/views/browser-session/__tests__
 chat-header-loading-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-header-loading.test.tsx	Keep header actions focusable and busy while the next chat loads	211	passed
 chat-header-loading-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-header-loading.test.tsx	Open the destination's browser from the mobile menu after navigating	90	passed
 chat-header-loading-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-header-loading.test.tsx	Let each pane open its own chat's mail	138	passed
+browser-session-page-004	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Apply numeric quality on Enter and blur while preserving IME editing	161	passed
+browser-session-page-006	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Apply quality presets and slider keys while preserving Escape focus	189	passed
+browser-session-page-007	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Commit an image quality drag from the numeric field only on release	300	passed
+browser-session-page-008	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Ignore queued drag events when Escape dismisses image quality	323	passed
+browser-session-page-009	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Preserve a chosen quality preset through lossless PNG and JPEG	234	passed
