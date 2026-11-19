@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.312](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.311...guest-write-file-v0.1.312) (2026-11-19)
+
+
+### Performance Improvements
+
+* **guest-control:** stream large file writes into sealed inputs ([#49029](https://github.com/okou-ai/okou/issues/49029)) ([4c926a5](https://github.com/okou-ai/okou/commit/4c926a5a96d2fd68883a5be1b34247f62389f2d2))
+
 ## [0.1.311](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.310...guest-write-file-v0.1.311) (2026-11-19)
 
 ## [0.1.310](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.309...guest-write-file-v0.1.310) (2026-11-18)

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.30.0](https://github.com/okou-ai/okou/compare/android-v0.29.0...android-v0.30.0) (2026-11-19)
+
+
+### Features
+
+* **android:** add workspace chat title search ([#49021](https://github.com/okou-ai/okou/issues/49021)) ([d363f5b](https://github.com/okou-ai/okou/commit/d363f5b7f09179ad469429497eeb01dd52290f45))
+
+
+### Bug Fixes
+
+* **android:** open the chat list before workspace startup completes ([#49036](https://github.com/okou-ai/okou/issues/49036)) ([c49b85a](https://github.com/okou-ai/okou/commit/c49b85a980a8545742cfddf4373bad51fa4515e5))
+
 ## [0.29.0](https://github.com/okou-ai/okou/compare/android-v0.28.0...android-v0.29.0) (2026-11-19)
 
 

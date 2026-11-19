@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.3.222](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.221...guest-telemetry-v0.3.222) (2026-11-19)
+
 ## [0.3.221](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.220...guest-telemetry-v0.3.221) (2026-11-19)
 
 ## [0.3.220](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.219...guest-telemetry-v0.3.220) (2026-11-18)

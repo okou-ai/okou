@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.64](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.63...runner-rs-v0.249.64) (2026-11-19)
+
+
+### Refactoring
+
+* **runner:** share native pressure read window validation ([#49054](https://github.com/okou-ai/okou/issues/49054)) ([b4984ec](https://github.com/okou-ai/okou/commit/b4984ec245dc8cd456276d10ff24fec9cb945487))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.63](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.62...runner-rs-v0.249.63) (2026-11-19)
 
 ### Release Dependencies

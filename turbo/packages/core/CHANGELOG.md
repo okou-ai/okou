@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.855.1](https://github.com/okou-ai/okou/compare/core-v8.855.0...core-v8.855.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* **app:** compact works channels into a responsive grid ([#49001](https://github.com/okou-ai/okou/issues/49001)) ([978a7fb](https://github.com/okou-ai/okou/commit/978a7fb1b057df9ec03eca609a78c6b0dae34e66))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.92.1
+
 ## [8.855.0](https://github.com/okou-ai/okou/compare/core-v8.854.6...core-v8.855.0) (2026-11-19)
 
 
