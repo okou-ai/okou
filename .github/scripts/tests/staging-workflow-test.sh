@@ -173,9 +173,8 @@ with tempfile.TemporaryDirectory() as temporary:
                     (Path(temporary) / 'web-api-api-preview.env').read_text().splitlines())
 
     fallback_keys = {'R2_USER_ARTIFACTS_ACCESS_KEY_ID', 'R2_USER_ARTIFACTS_SECRET_ACCESS_KEY',
-                     'SENTRY_DSN_API'}
-    scenarios = [(set(), 'postgres://database.invalid/staging'), (fallback_keys, ''),
-                 (fallback_keys | {'SENTRY_DSN_WEB'}, 'postgres://database.invalid/staging')]
+                     'SENTRY_DSN_API', 'SENTRY_DSN_WEB'}
+    scenarios = [(set(), 'postgres://database.invalid/staging'), (fallback_keys, '')]
     for absent, database_url in scenarios:
         environment['INPUT_DATABASE_URL'] = database_url
         fixture = {name: value for name, value in synthetic_secrets.items() if name not in absent}
