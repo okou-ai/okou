@@ -111,9 +111,11 @@ export function createArtifactCatalogSidebarSignals(
         const trigger =
           target.trigger?.isConnected && element.contains(target.trigger)
             ? target.trigger
-            : [...element.querySelectorAll<HTMLElement>("[data-artifact-id]")].find(
-                (card) => card.dataset.artifactId === target.artifactId,
-              );
+            : [
+                ...element.querySelectorAll<HTMLElement>("[data-artifact-id]"),
+              ].find((card) => {
+                return card.dataset.artifactId === target.artifactId;
+              });
         (trigger ?? element.querySelector<HTMLElement>("main"))?.focus({
           preventScroll: true,
         });
