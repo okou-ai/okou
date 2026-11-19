@@ -50,15 +50,6 @@ class ChatRunningWaveTest {
     @get:Rule val compose = createComposeRule(effectContext = motion)
 
     @Test
-    fun titleWaveRepeatsEveryWavelengthAndUsesTheActualRowOrder() {
-        assertEquals(0.5f, checkNotNull(runningTitleWavePhase(900_000_000L, 0)), 0.001f)
-        assertEquals(0.5f, checkNotNull(runningTitleWavePhase(700_000_000L, 1)), 0.001f)
-        assertEquals(0.5f, checkNotNull(runningTitleWavePhase(900_000_000L, 9)), 0.001f)
-        assertEquals(0f, checkNotNull(runningTitleWavePhase(1_800_000_000L, 0)), 0.001f)
-        assertEquals(null, runningTitleWavePhase(STATIC_RUNNING_FRAME, 0))
-    }
-
-    @Test
     fun sharedFrameAdvancesOnlyForVisibleRunningRowsWithMotionEnabled() {
         lateinit var lifecycle: TestLifecycleOwner
         lateinit var frame: LongState

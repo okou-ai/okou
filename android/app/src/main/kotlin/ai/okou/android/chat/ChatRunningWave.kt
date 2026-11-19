@@ -10,20 +10,10 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
-import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Paint
-import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.translate
-import androidx.compose.ui.graphics.withSaveLayer
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -34,7 +24,6 @@ internal const val STATIC_RUNNING_FRAME = -1L
 private const val WAVE_ROWS = 12
 private const val ROW_DELAY_NANOS = 200_000_000L
 private const val CYCLE_NANOS = WAVE_ROWS * ROW_DELAY_NANOS
-private const val TITLE_CYCLE_NANOS = 1_800_000_000L
 private val centerEasing = CubicBezierEasing(0.33f, 0f, 0.66f, 1f)
 private val rippleEasing = CubicBezierEasing(0f, 0f, 0.58f, 1f)
 
@@ -74,44 +63,6 @@ internal fun rememberRunningWaveFrame(
 internal fun runningWavePhase(frameNanos: Long, row: Int): Float {
     val rowDelay = row % WAVE_ROWS * ROW_DELAY_NANOS
     return Math.floorMod(frameNanos % CYCLE_NANOS - rowDelay, CYCLE_NANOS).toFloat() / CYCLE_NANOS
-}
-
-/** Horizontal movement as a fraction of one wavelength. */
-internal fun runningTitleWavePhase(frameNanos: Long, row: Int): Float? {
-    if (frameNanos == STATIC_RUNNING_FRAME) return null
-    val elapsed = Math.floorMod(frameNanos + row * ROW_DELAY_NANOS, TITLE_CYCLE_NANOS)
-    return elapsed.toFloat() / TITLE_CYCLE_NANOS
-}
-
-internal fun Modifier.runningTitleWave(frame: LongState, row: Int) = drawWithCache {
-    val wavelength = 72.dp.toPx()
-    val mask =
-        Brush.horizontalGradient(
-            0f to Color.White,
-            0.25f to Color.White.copy(alpha = 0.88f),
-            0.5f to Color.White.copy(alpha = 0.65f),
-            0.75f to Color.White.copy(alpha = 0.88f),
-            1f to Color.White,
-            endX = wavelength,
-            tileMode = TileMode.Repeated,
-        )
-    val bounds = Rect(Offset.Zero, size)
-    val paint = Paint()
-    onDrawWithContent {
-        val phase = runningTitleWavePhase(frame.longValue, row)
-        if (phase == null || size.isEmpty()) {
-            drawContent()
-        } else {
-            // Mask only the text layer. The moving band leaves its color and layout intact.
-            val x = phase * wavelength
-            drawContext.canvas.withSaveLayer(bounds, paint) {
-                drawContent()
-                translate(left = x) {
-                    drawRect(mask, Offset(-x, 0f), size, blendMode = BlendMode.DstIn)
-                }
-            }
-        }
-    }
 }
 
 internal fun DrawScope.drawRunningWave(color: Color, frameNanos: Long, row: Int) {

@@ -17,11 +17,26 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+
+internal val LocalActivityStatusColor = staticCompositionLocalOf { Color(0xFFB5790C) }
+
+private fun activityStatusColor(palette: UserPreferencesColorTheme, dark: Boolean): Color =
+    when (palette) {
+        UserPreferencesColorTheme.DEFAULT -> Color(if (dark) 0xFFFFA500 else 0xFFB5790C)
+        UserPreferencesColorTheme.GOLDEN_HOUR -> Color(if (dark) 0xFFCC9655 else 0xFFBB731B)
+        UserPreferencesColorTheme.CITRUS_SPARK -> Color(if (dark) 0xFFF4E33C else 0xFF908730)
+        UserPreferencesColorTheme.BERRY_BLUSH -> Color(if (dark) 0xFFE1829E else 0xFFC22E5A)
+        UserPreferencesColorTheme.COTTON_SKY -> Color(if (dark) 0xFFE4ABC8 else 0xFF9F7A8D)
+        UserPreferencesColorTheme.BLUE_HORIZON -> Color(if (dark) 0xFF819EE0 else 0xFF3758A1)
+        UserPreferencesColorTheme.DAYDREAM -> Color(if (dark) 0xFF9CB7F2 else 0xFF7385AC)
+        UserPreferencesColorTheme.DEEP_LAGOON -> Color(if (dark) 0xFF53C6B3 else 0xFF017562)
+    }
 
 internal fun UserPreferencesTheme.resolveDark(systemDark: Boolean): Boolean =
     when (this) {
@@ -66,6 +81,7 @@ fun OkouTheme(
             ),
         content = {
             CompositionLocalProvider(
+                LocalActivityStatusColor provides activityStatusColor(palette, dark),
                 LocalTextSelectionColors provides
                     TextSelectionColors(
                         handleColor = colors.onSurface,

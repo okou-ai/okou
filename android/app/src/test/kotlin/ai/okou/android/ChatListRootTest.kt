@@ -469,8 +469,10 @@ class ChatListRootTest {
         }
         compose.onNodeWithText("Project chat").assert(unread)
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Research"))
-        compose.onNodeWithText("Research").assert(!unread).performClick()
-        compose.onNodeWithText("Research").assert(unread)
+        val projectUnreadCount =
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unread 1")
+        compose.onNodeWithText("Research").assert(!projectUnreadCount).performClick()
+        compose.onNodeWithText("Research").assert(projectUnreadCount)
         compose.onNodeWithText("Project chat").assertDoesNotExist()
         compose.onNodeWithTag("chat_list").performScrollToIndex(0)
         compose.onNodeWithContentDescription("Filter").performClick()
@@ -667,6 +669,8 @@ class ChatListRootTest {
         awaitListAndNames()
         val list = compose.onNodeWithTag("chat_list")
         val unread = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unread")
+        val projectUnreadCount =
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unread 1")
         list.performScrollToNode(hasText("Research"))
         compose.onNodeWithText("Research").performClick()
         val filter = compose.onNodeWithContentDescription("Filter")
@@ -674,7 +678,10 @@ class ChatListRootTest {
         compose.onNodeWithText("Unread").performClick()
         list.performScrollToNode(hasText("Research"))
         compose.waitUntil(10_000) {
-            compose.onAllNodes(hasText("Research").and(unread)).fetchSemanticsNodes().isNotEmpty()
+            compose
+                .onAllNodes(hasText("Research").and(projectUnreadCount))
+                .fetchSemanticsNodes()
+                .isNotEmpty()
         }
         compose.onNodeWithText("Project chat").assertDoesNotExist()
 
@@ -693,7 +700,7 @@ class ChatListRootTest {
         assertEquals(2, marked.size)
         list.performScrollToNode(hasText("Personal chat"))
         compose.onNodeWithText("Personal chat").assert(unread)
-        compose.onNodeWithText("Research").assert(unread)
+        compose.onNodeWithText("Research").assert(projectUnreadCount)
         rejectProject.set(false)
         markAll()
         awaitMessage("Marked 2 chats as read.")

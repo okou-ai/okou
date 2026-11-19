@@ -149,7 +149,7 @@ class ChatReplayTest {
                     Indicators(
                         emptyMap(),
                         mapOf(projectRow.id to IndicatorsThreadsValue.UNREAD),
-                        emptyMap(),
+                        mapOf(projectRow.id to "2026-11-13T00:00:00Z"),
                     ),
                 filter = ChatListFilter.Unread,
             )
@@ -200,7 +200,7 @@ class ChatReplayTest {
                     Indicators(
                         emptyMap(),
                         mapOf(CHAT_IN_PROJECT to IndicatorsThreadsValue.UNREAD),
-                        emptyMap(),
+                        mapOf(CHAT_IN_PROJECT to "2026-11-13T00:00:00Z"),
                     ),
             )
         val (projectGroup, outsideGroup) = chatListGroups(state)
@@ -311,19 +311,19 @@ class ChatReplayTest {
         )
         assertEquals(ChatRowStatus.Muted, chatRowStatus(indicators[unread.id], muted = true))
         assertEquals(
-            ChatRowStatus.Unread,
-            collapsedProjectStatus(listOf(running, unread), indicators),
+            ProjectActivity(unread = 1, running = 0),
+            collapsedProjectActivity(listOf(running, unread), indicators),
         )
         assertEquals(
-            ChatRowStatus.Running,
-            collapsedProjectStatus(
+            ProjectActivity(unread = 0, running = 1),
+            collapsedProjectActivity(
                 listOf(running.copy(muted = false), unread.copy(muted = true)),
                 indicators,
             ),
         )
         assertEquals(
-            ChatRowStatus.None,
-            collapsedProjectStatus(listOf(running, unread.copy(muted = true)), indicators),
+            ProjectActivity(unread = 0, running = 0),
+            collapsedProjectActivity(listOf(running, unread.copy(muted = true)), indicators),
         )
     }
 

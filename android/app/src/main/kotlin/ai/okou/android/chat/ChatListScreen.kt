@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
@@ -53,7 +54,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
@@ -88,6 +88,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.text.NumberFormat
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -258,8 +259,7 @@ internal fun ChatListScreen(
                         item(key = projectRowKey(project.id)) {
                             ProjectRow(
                                 project.name,
-                                collapsed = foldedStatus != null,
-                                status = foldedStatus ?: ChatRowStatus.None,
+                                activity = section.foldedActivity,
                                 runningFrame = runningFrame,
                                 row = section.firstRow,
                                 toggle = { toggleProject(project.id) },
@@ -402,14 +402,24 @@ private fun projectRowKey(id: String) = "group_$id"
 @Composable
 private fun ProjectRow(
     name: String,
-    collapsed: Boolean,
-    status: ChatRowStatus,
+    activity: ProjectActivity?,
     runningFrame: LongState,
     row: Int,
     toggle: () -> Unit,
     newChat: (() -> Unit)?,
 ) {
-    val label = status.label()
+    val collapsed = activity != null
+    val status = activity?.status ?: ChatRowStatus.None
+    val locale = LocalConfiguration.current.locales[0]
+    val number = remember(locale) { NumberFormat.getIntegerInstance(locale) }
+    val unread = stringResource(R.string.chat_unread)
+    val running = stringResource(R.string.chat_active)
+    val label =
+        listOfNotNull(
+                activity?.unread?.takeIf { it > 0 }?.let { "$unread ${number.format(it)}" },
+                activity?.running?.takeIf { it > 0 }?.let { "$running ${number.format(it)}" },
+            )
+            .joinToString()
     var menuOpen by remember(newChat != null) { mutableStateOf(false) }
     val openMenu: (() -> Unit)? = if (newChat != null) ({ menuOpen = true }) else null
     Box {
@@ -426,7 +436,7 @@ private fun ProjectRow(
                 )
                 .semantics {
                     heading()
-                    if (label != null) stateDescription = label
+                    if (label.isNotEmpty()) stateDescription = label
                     if (collapsed) {
                         expand {
                             toggle()
@@ -570,20 +580,15 @@ private fun ChatRow(
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(Modifier.weight(1f)) {
-                Text(
-                    thread.title?.takeIf { it.isNotBlank() }
-                        ?: stringResource(R.string.chat_untitled),
-                    if (status == ChatRowStatus.Running)
-                        Modifier.runningTitleWave(runningFrame, row)
-                    else Modifier,
-                    color = if (isSelected) colors.onSecondaryContainer else colors.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = chatListTitleStyle(),
-                    fontWeight = if (status == ChatRowStatus.Unread) FontWeight.SemiBold else null,
-                )
-            }
+            Text(
+                thread.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
+                Modifier.weight(1f),
+                color = if (isSelected) colors.onSecondaryContainer else colors.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = chatListTitleStyle(),
+                fontWeight = if (status == ChatRowStatus.Unread) FontWeight.SemiBold else null,
+            )
             Spacer(Modifier.width(8.dp))
             ChatStatusGlyph(status, runningFrame, row)
         }
@@ -659,10 +664,7 @@ private fun ChatRowStatus.label(): String? =
 
 @Composable
 private fun ChatStatusGlyph(status: ChatRowStatus, runningFrame: LongState, row: Int) {
-    // Web uses sky-600. A lighter blue keeps the mark legible on dark selection fills.
-    val color =
-        if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF38BDF8)
-        else Color(0xFF0084D1)
+    val color = LocalActivityStatusColor.current
     Box(Modifier.size(16.dp), contentAlignment = Alignment.Center) {
         when (status) {
             ChatRowStatus.Unread -> Canvas(Modifier.size(8.dp)) { drawCircle(color) }
