@@ -1,6 +1,5 @@
 """Shared original-snapshot receipt validation for native preparation cases."""
 
-import hashlib
 import json
 import pathlib
 
@@ -18,10 +17,10 @@ def exact(actual, expected, reason):
 
 def original_inputs(metadata, artifacts, prefix):
     raw_policy, raw_inputs = metadata[prefix+"_policy_json"], metadata[prefix+"_inputs_json"]
-    if (not isinstance(raw_policy, str) or not isinstance(raw_inputs, str)
-            or hashlib.sha256(raw_policy.encode()).hexdigest() != artifacts["policy_sha256"]):
-        raise ValueError("startup raw policy/hash mismatch")
-    policy = json.loads(raw_policy, object_pairs_hook=report.unique_object)
+    mismatch_message = "startup raw policy/hash mismatch"
+    if not isinstance(raw_inputs, str):
+        raise ValueError(mismatch_message)
+    policy = report.decode_original_policy(raw_policy, artifacts, mismatch_message)
     inputs = json.loads(raw_inputs, object_pairs_hook=report.unique_object)
     if (not pressure_report.has_policy_shape(policy)
             or not policy["operating_floor_bytes"] <= policy["critical_available_bytes"]
