@@ -1,0 +1,13 @@
+frozen_id	test_file	vitest_name	registration_line	status
+banking-connect-return-page-002	turbo/apps/platform/src/views/banking-connect-return/__tests__/banking-connect-return-page.test.tsx	A successful bank connection opens its confirmation page	12	passed
+email-unsubscribe-page-001	turbo/apps/platform/src/views/email-unsubscribe/__tests__/email-unsubscribe-page.test.tsx	An invalid email link reports an unsubscribe error after confirmation	28	passed
+email-unsubscribe-page-002	turbo/apps/platform/src/views/email-unsubscribe/__tests__/email-unsubscribe-page.test.tsx	An email link without a token offers no unsubscribe action	44	passed
+email-unsubscribe-page-003	turbo/apps/platform/src/views/email-unsubscribe/__tests__/email-unsubscribe-page.test.tsx	A signed-out recipient can confirm email unsubscribe	52	passed
+hosted-site-access-001	turbo/apps/platform/src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	A signed-out visitor can sign in to view the requested website	33	passed
+hosted-site-access-002	turbo/apps/platform/src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	A signed-in visitor can continue incomplete verification	56	passed
+hosted-site-access-003	turbo/apps/platform/src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	An expired session can restart verification for the original website path	72	passed
+hosted-site-access-004	turbo/apps/platform/src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	A visitor denied access can switch accounts or ask the sharer for access	88	passed
+hosted-site-access-005	turbo/apps/platform/src/views/hosted-site-authorization/__tests__/hosted-site-access.test.tsx	An unavailable website explains that the failure is temporary	102	passed
+email-subscription-settings-002	turbo/apps/platform/src/views/okou-page/__tests__/email-subscription-settings.test.tsx	Email updates can be enabled after a failed save	15	passed
+email-subscription-settings-003	turbo/apps/platform/src/views/okou-page/__tests__/email-subscription-settings.test.tsx	The saved email preference stays on when delivery is unavailable	66	passed
+onboarding-team-redirect-002	turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-team-redirect.test.tsx	A member opening an old invitation link keeps their redeem code	9	passed
