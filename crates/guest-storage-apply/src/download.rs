@@ -20,6 +20,8 @@ use std::time::{Duration, Instant};
 
 const LOCAL_CONCURRENT: usize = 4;
 const MAX_CONCURRENT: usize = 16;
+const LARGE_REMOTE_BATCH: usize = 64;
+const LARGE_REMOTE_CONCURRENT: usize = 24;
 type AttemptRunner = fn(&mut StartedDownload<'_>) -> Result<(), DownloadError>;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -359,6 +361,15 @@ fn download_all_parallel_with_runner(
     download_with_readiness(tasks, None, attempt_runner)
 }
 
+fn download_concurrency(remote_count: usize, task_count: usize) -> usize {
+    let limit = if remote_count >= LARGE_REMOTE_BATCH {
+        LARGE_REMOTE_CONCURRENT
+    } else {
+        MAX_CONCURRENT
+    };
+    remote_count.clamp(LOCAL_CONCURRENT, limit).min(task_count)
+}
+
 fn download_with_readiness(
     mut tasks: Vec<PreparedDownloadTask<'_>>,
     readiness: Option<Readiness>,
@@ -372,15 +383,14 @@ fn download_with_readiness(
     // Remote requests spend time waiting for headers before extraction can
     // start. Grow only for actual remote work; decoded HTTP-origin inputs and
     // file archives retain the smaller CPU-bound worker budget.
-    let concurrency = tasks
+    let remote_count = tasks
         .iter()
         .filter(|task| task.task.telemetry.is_remote())
-        .count()
-        .clamp(LOCAL_CONCURRENT, MAX_CONCURRENT)
-        .min(tasks.len());
+        .count();
+    let concurrency = download_concurrency(remote_count, tasks.len());
     // Local archives compete for CPU. Prefer longer ready work without changing
     // the original pending order used to enforce logical and physical ownership.
-    let local_only = tasks.iter().all(|task| !task.task.telemetry.is_remote());
+    let local_only = remote_count == 0;
     let pending = tasks
         .into_iter()
         .enumerate()
