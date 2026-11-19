@@ -412,7 +412,8 @@ within a 20-minute test step and 25-minute job budget so timeout diagnostics can
 termination. Nonzero exits, timeout and cancellation remain failures. CI also
 requires all ten distinct native cases with no failures, errors or skips.
 CI retains these outputs and the Gradle execution log for seven days in
-`android-instrumentation-api35-<revision>` artifacts.
+`android-instrumentation-api35-<revision>` artifacts. Reruns append
+`-attempt-<number>` so earlier diagnostics remain available.
 
 ## Components and Authority
 

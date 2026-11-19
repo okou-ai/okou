@@ -186,7 +186,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: android-instrumentation-api35-${{ github.sha }}
+          name: android-instrumentation-api35-${{ github.sha }}${{ github.run_attempt != '1' && format('-attempt-{0}', github.run_attempt) || '' }}
           path: |
             android/build/reports/instrumentation/
             android/build/reports/release/
@@ -196,7 +196,6 @@ jobs:
             android/app/build/outputs/managed_device_android_test_additional_output/
             android/app/build/outputs/apk/androidTest/release/
           if-no-files-found: warn
-          overwrite: true
           retention-days: 7
 
   ci-gate-android:
