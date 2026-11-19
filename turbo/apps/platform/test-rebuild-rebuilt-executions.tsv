@@ -44,3 +44,4 @@ shared-thread-snapshot-viewer-001	turbo/apps/platform/src/views/shared-artifact-
 shared-thread-snapshot-viewer-003	turbo/apps/platform/src/views/shared-artifact-page/__tests__/shared-thread-snapshot-viewer.test.tsx	An anonymous HTML snapshot preserves its slide fragment, sandbox and download credential	78	passed
 shared-thread-private-artifacts-001	turbo/apps/platform/src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	An anonymous reader sees temporary previews while sharing and copy retain stable references	30	passed
 shared-thread-private-artifacts-003	turbo/apps/platform/src/views/shared-thread-page/__tests__/shared-thread-private-artifacts.test.tsx	Denied shared snapshots show unavailable previews and keep stable file links	123	passed
+shared-thread-diagrams-001	turbo/apps/platform/src/views/shared-thread-page/__tests__/shared-thread-diagrams.test.tsx	A shared conversation renders and downloads its expanded diagram locally	30	passed
