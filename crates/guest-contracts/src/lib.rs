@@ -35,6 +35,8 @@ pub mod reuse_preparation;
 pub mod runtime_environment;
 pub mod runtime_paths;
 pub mod sandbox_startup;
+#[cfg(target_os = "linux")]
+pub mod sealed_input;
 pub mod session_history_identity;
 pub mod stdout_framing;
 pub mod storage_files;

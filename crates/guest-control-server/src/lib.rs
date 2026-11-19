@@ -28,6 +28,8 @@ mod oom_evidence;
 mod process;
 mod process_containment;
 mod quiesce;
+#[cfg(target_os = "linux")]
+mod sealed_input;
 mod shell_command;
 mod shutdown;
 #[cfg(test)]
