@@ -90,7 +90,8 @@ case "$*" in
     fi
     ;;
   "sudo ${BIN_DIR}/runner service wait-running "*)
-    if [ "${MOCK_FAILURE:-none}" = readiness ]; then
+    [[ "$*" == *" --check-health" ]] || exit 1
+    if [ "${MOCK_FAILURE:-none}" = health ]; then
       exit 1
     fi
     if [ "${MOCK_FAILURE:-none}" = cancel ]; then
@@ -99,7 +100,6 @@ case "$*" in
     fi
     echo 35
     ;;
-  "sudo ${BIN_DIR}/runner doctor "*) ;;
   *) echo "unexpected SSH command: $*" >&2; exit 1 ;;
 esac
 SH
@@ -234,6 +234,8 @@ run_case() {
     fi
     [ ! -f "${case_dir}/${selected_host}/${service_ref}-${selected_index}" ] ||
       fail "${case_name}: failed start left the selected service running"
+    [ ! -s "${case_dir}/github-output" ] ||
+      fail "${case_name}: failed start published a deployment receipt"
   else
     if [ "$status" -ne 0 ]; then
       cat "${case_dir}/output" >&2
@@ -283,7 +285,7 @@ run_case x86 pr-1 x86-1 2 none
 run_case x86 pr-1 x86-1 2 none
 run_case arm pr-2 arm-1 1 none
 run_case recovered-binary pr-1 x86-1 2 none true
-run_case failed-start pr-9 x86-2 3 readiness
+run_case failed-health-check pr-9 x86-2 3 health
 run_case invalid-identity pr-9 x86-2 3 identity
 run_case failed-retirement pr-1 x86-1 2 retire
 run_case cancelled-start pr-9 x86-2 3 cancel

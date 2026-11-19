@@ -93,7 +93,7 @@ read_host_capacity() {
   local RUNNER_SERVICE_SUFFIX=$2
   local REMOTE="${METAL_USER}@${HOST}"
   # shellcheck disable=SC2029
-  ssh "$REMOTE" "sudo ${BIN_DIR}/runner service wait-running --name ${RUNNER_SERVICE_SUFFIX} --timeout-secs 120"
+  ssh "$REMOTE" "sudo ${BIN_DIR}/runner service wait-running --name ${RUNNER_SERVICE_SUFFIX} --timeout-secs 120 --check-health"
 }
 
 reconcile_service_on_host() {
@@ -161,8 +161,6 @@ reconcile_service_on_host() {
     return 1
   fi
   echo "Runner ready on ${HOST}: max_concurrent=${MC}"
-  # shellcheck disable=SC2029
-  ssh "$REMOTE" "sudo ${BIN_DIR}/runner doctor --name ${RUNNER_SERVICE_SUFFIX}"
 
   # Capture the deployed generation while the caller still owns its lifecycle
   # lock. Cleanup must not discover a replacement generation later.
