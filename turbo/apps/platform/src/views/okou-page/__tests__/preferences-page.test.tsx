@@ -9,7 +9,7 @@ import {
 } from "@okouai/api-contracts/contracts/user-model-preference";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 
@@ -17,6 +17,7 @@ import {
   click,
   queryAllByRoleFast,
   setupPage,
+  startPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
@@ -165,6 +166,13 @@ test("A saved workspace mode overrides the cookie and saves independently of the
   expect(document.documentElement).toHaveAttribute("data-theme", "dark");
   expectSelected(getFastRole("button", "Golden hour", colorTheme));
 
+  // Another page on the shared domain can change the first-paint cookie.
+  act(() => {
+    window.dispatchEvent(new Event("focus"));
+  });
+  expectSelected(getFastRole("button", "Dark"));
+  expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+
   click(getFastRole("button", "Light"));
 
   await waitFor(() => {
@@ -199,6 +207,50 @@ test("A saved workspace mode overrides the cookie and saves independently of the
     "__Secure-okou-theme=v1.light; Domain=.okou.ai; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
   );
   expect(cookieWrites.join("\n")).not.toMatch(/golden-hour|deep-lagoon/u);
+});
+
+test("A theme choice made during startup survives the initial workspace read", async () => {
+  mockPreferences({ theme: "light" });
+  context.mocks.browser.cookie("__Secure-okou-theme=v1.light");
+  const releaseInitialRead = context.mocks.deferred<void>();
+  const releaseSave = context.mocks.deferred<void>();
+  context.mocks.api(
+    userPreferencesContract.get,
+    async ({ respond, withSignal }) => {
+      await withSignal(releaseInitialRead.promise);
+      return respond(200, { ...defaultPreferences(), theme: "light" });
+    },
+  );
+  context.mocks.api(
+    userPreferencesContract.update,
+    async ({ body, respond, withSignal }) => {
+      await withSignal(releaseSave.promise);
+      return respond(200, { ...defaultPreferences(), ...body });
+    },
+  );
+
+  const page = await startPage({
+    context,
+    path: "/agents?settings=preference",
+    host: "app.okou.ai",
+  });
+  await page.content;
+  await screen.findByText("Your preferred color scheme");
+  const dark = getFastRole("button", "Dark");
+  click(dark);
+  expectSelected(dark);
+  expect(dark).toBeDisabled();
+
+  releaseInitialRead.resolve();
+  await page.ready;
+  expectSelected(dark);
+  expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+
+  releaseSave.resolve();
+  await waitFor(() => {
+    expect(dark).toBeEnabled();
+  });
+  expectSelected(dark);
 });
 
 test("A failed theme save keeps the local choice and can be retried", async () => {

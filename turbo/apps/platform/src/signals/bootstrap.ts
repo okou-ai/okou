@@ -636,13 +636,6 @@ const setupRoutes$ = command(async ({ set }, signal: AbortSignal) => {
   await set(initRoutes$, PAGE_ROUTES, signal);
 });
 
-const syncInitialPreferences$ = command(
-  async ({ set }, signal: AbortSignal) => {
-    await set(syncLocalePreference$, signal);
-    await set(syncThemePreferences$, signal);
-  },
-);
-
 function notificationChatThreadId(data: unknown): string | null {
   if (
     typeof data !== "object" ||
@@ -724,7 +717,8 @@ const completeBootstrap$ = command(
       set(setupProjectFoldShortcuts$, signal),
       set(setupProjectOrderShortcuts$, signal),
       set(watchOrgSwitch$, signal),
-      set(syncInitialPreferences$, signal),
+      set(syncLocalePreference$, signal),
+      set(syncThemePreferences$, signal),
     ]);
 
     signal.throwIfAborted();

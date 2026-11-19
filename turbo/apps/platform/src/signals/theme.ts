@@ -4,7 +4,7 @@ import type {
   ThemePreference,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { cookieSignals, refreshCookies$ } from "./external/cookie.ts";
-import { clerk$, clerkUser$ } from "./auth.ts";
+import { authenticatedSessionKey$, clerk$, clerkUser$ } from "./auth.ts";
 import {
   updateUserPreference$,
   userPreferences$,
@@ -28,6 +28,7 @@ const DEFAULT_COLOR_THEME: ColorTheme = "default";
 const internalPreference$ = state<ThemePreference>("system");
 const internalResolved$ = state<"light" | "dark">("light");
 const internalColorTheme$ = state<ColorTheme>(DEFAULT_COLOR_THEME);
+const workspaceThemeChosen$ = state(false);
 const shellDocumentAttributesMounted$ = state(false);
 
 const {
@@ -101,6 +102,7 @@ export const setTheme$ = command(({ set }, preference: ThemePreference) => {
  */
 export const updateThemePreference$ = command(
   async ({ set }, theme: ThemePreference, signal: AbortSignal) => {
+    set(workspaceThemeChosen$, true);
     set(setTheme$, theme);
     await set(updateUserPreference$, { theme }, signal);
   },
@@ -135,14 +137,21 @@ export const syncThemePreferences$ = command(
     signal.throwIfAborted();
     const clerk = await get(clerk$);
     signal.throwIfAborted();
-    if (!user || !clerk.organization) {
+    const workspaceId = clerk.organization?.id;
+    if (!user || !workspaceId) {
       return;
     }
 
     const preferences = await get(userPreferences$);
     signal.throwIfAborted();
+    if (clerk.organization?.id !== workspaceId || clerk.user?.id !== user.id) {
+      return;
+    }
 
-    set(setTheme$, preferences.theme ?? "system");
+    // A choice made while startup was loading belongs to the current session.
+    if (!get(workspaceThemeChosen$)) {
+      set(setTheme$, preferences.theme ?? "system");
+    }
     set(setColorTheme$, preferences.colorTheme ?? get(colorTheme$));
   },
 );
@@ -203,6 +212,7 @@ export const initTheme$ = command(({ get, set }, signal: AbortSignal) => {
   const preference =
     decodeOkouThemePreference(set(promoteThemeCookieToSharedDomain$)) ??
     "system";
+  set(workspaceThemeChosen$, false);
   set(internalPreference$, preference);
   set(internalColorTheme$, DEFAULT_COLOR_THEME);
   const resolved = resolveTheme(preference);
@@ -226,6 +236,10 @@ export const initTheme$ = command(({ get, set }, signal: AbortSignal) => {
   );
 
   const syncThemeFromCookie = () => {
+    // The shared cookie can be updated by a different account or workspace.
+    if (get(authenticatedSessionKey$)) {
+      return;
+    }
     set(refreshCookies$);
     const nextPreference =
       decodeOkouThemePreference(get(themeCookieGet$)) ?? "system";
