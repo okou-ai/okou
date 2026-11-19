@@ -1389,12 +1389,16 @@ export const workflowListResponseSchema = array(workflowSummarySchema);
  * What the chat composer needs to offer and highlight `/workflow` commands:
  * the agent's own workflows that are not shadowed by a private override.
  */
-export const composerWorkflowSchema = workflowSummarySchema.pick({
-  id: true,
-  name: true,
-  displayName: true,
-  description: true,
-});
+export const composerWorkflowSchema = workflowSummarySchema
+  .pick({
+    id: true,
+    name: true,
+    displayName: true,
+    description: true,
+  })
+  .extend({
+    lastUsedAt: iso.datetime().nullable().optional(),
+  });
 
 export const composerWorkflowListResponseSchema = array(composerWorkflowSchema);
 

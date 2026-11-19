@@ -16,6 +16,10 @@ import {
   type CopyWorkflowDatabaseResult,
 } from "./workflow-copy-publication-plans";
 import { workflowNamespace$ } from "../services/workflow-namespace.service";
+import {
+  composerWorkflows,
+  memberWorkflowRecency,
+} from "../services/workflow-composer.service";
 import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
@@ -255,28 +259,26 @@ const listWorkflowsInner$ = computed(async (get) => {
 const listComposerWorkflowsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const { agentId } = get(queryOf(workflowsCollectionContract.composer));
-  const workflows = await get(
-    workflowList({
-      orgId: auth.orgId,
-      member: memberFromAuth(auth),
-      agentId,
-    }),
-  );
+  const [workflows, recency] = await Promise.all([
+    get(
+      composerWorkflows({
+        orgId: auth.orgId,
+        member: memberFromAuth(auth),
+        agentId,
+      }),
+    ),
+    get(memberWorkflowRecency({ orgId: auth.orgId, userId: auth.userId })),
+  ]);
   return {
     status: 200 as const,
-    body: workflows.flatMap((workflow) => {
-      // A private override shadows the public workflow of the same name, so
-      // only the override is a command the composer can offer.
-      return workflow.official || workflow.shadowedBy
-        ? []
-        : [
-            {
-              id: workflow.id,
-              name: workflow.name,
-              displayName: workflow.displayName,
-              description: workflow.description,
-            },
-          ];
+    body: workflows.map((workflow) => {
+      return {
+        id: workflow.id,
+        name: workflow.name,
+        displayName: workflow.displayName,
+        description: workflow.description,
+        lastUsedAt: recency.get(workflow.id) ?? null,
+      };
     }),
   };
 });
@@ -1647,6 +1649,7 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       userId: auth.userId,
       orgId: auth.orgId,
       agentRunPreCreateSource: "workflow_slash_command",
+      recordWorkflowRecency: true,
       getStartedWorkflowId: workflow.id,
     },
     signal,

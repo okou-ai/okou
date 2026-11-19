@@ -1036,6 +1036,7 @@ describe("workflows", () => {
       name: workflowName,
       displayName: "Private Workflow",
       description: "Private override",
+      lastUsedAt: null,
     });
     const listedIds = composerList.body.map((workflow) => {
       return workflow.id;

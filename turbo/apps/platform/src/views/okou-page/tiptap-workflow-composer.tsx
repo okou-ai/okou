@@ -1,9 +1,4 @@
-import {
-  useGet,
-  useLastLoadable,
-  useLastResolved,
-  useSet,
-} from "ccstate-react";
+import { useGet, useLoadable, useLastResolved, useSet } from "ccstate-react";
 import type { ReactNode } from "react";
 import type { Editor } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
@@ -14,6 +9,7 @@ import { i18n } from "../../i18n/index.ts";
 import type { ComposerAgentSuggestion } from "../../signals/okou-page/composer-agent-suggestion-domain.ts";
 import type { ComposerChatThreadSuggestion } from "../../signals/okou-page/chat-thread-suggestion-domain.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
+import { recentWorkflowIds } from "../../signals/okou-page/recent-workflows.ts";
 import type { ComposerTask } from "../../signals/okou-page/composer-task-chips.ts";
 import { ComposerMentionSuggestionMenu } from "./chat-thread-suggestion.tsx";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
@@ -452,10 +448,9 @@ function useComposerWorkflowSuggestions(
   composer: ComposerSignals,
   query: string | undefined,
 ) {
-  const workflowsLoadable = useLastLoadable(composer.workflow.workflows$);
-  const recentIds = useGet(composer.suggestion.recentWorkflowIds$);
-  // Empty drafts do not need the list; the last loadable can retain that
-  // null while a request is in flight.
+  // An in-flight query must not keep another snapshot's selectable rows.
+  const workflowsLoadable = useLoadable(composer.suggestion.queryWorkflows$);
+  // Empty drafts do not need the list.
   const requested =
     workflowsLoadable.state === "hasData" ? workflowsLoadable.data : undefined;
   const workflows = buildComposerSlashWorkflows({
@@ -466,7 +461,11 @@ function useComposerWorkflowSuggestions(
     workflows:
       query === undefined
         ? []
-        : findWorkflowQueryMatches(workflows, query, recentIds),
+        : findWorkflowQueryMatches(
+            workflows,
+            query,
+            recentWorkflowIds(requested ?? []),
+          ),
     loading: workflowsLoadable.state === "loading" || requested === null,
   };
 }

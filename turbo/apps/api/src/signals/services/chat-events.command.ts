@@ -84,6 +84,7 @@ import { db$, writeDb$ } from "../external/db";
 import {
   publishDesktopShellAuthorizationChangedSafely,
   publishThreadListChangedSafely,
+  publishUserPreferenceChangedForUserSafely,
 } from "../external/realtime";
 import {
   bestEffort,
@@ -201,6 +202,11 @@ import {
 } from "./private-artifact-storage.service";
 import { s3ObjectHead } from "../external/s3";
 import { webChatContextId } from "./web-chat-queue-context.service";
+import {
+  composerWorkflows,
+  workflowIdsInUserMessage,
+} from "./workflow-composer.service";
+import { workflowRecencyWritePlan } from "./workflow-recency-sql";
 /** Canonical ChatEvent write commands. */
 export const chatEnqueueTiming$ = computed((get) => {
   return get(route$) === chatEventsContract.send
@@ -261,6 +267,10 @@ interface NormalSendArgs {
   readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
   readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly getStartedWorkflowId?: string;
+  /** Only interactive production routes opt in; internal continuations do not. */
+  readonly recordWorkflowRecency?: true;
+  /** Server-resolved ordinary workflow tokens, never caller-provided IDs. */
+  readonly recentWorkflowIds?: readonly string[];
   /**
    * The request-scoped plan of the authenticated organization, supplied by a
    * caller inside an auth route whose `orgId` is that organization, so the
@@ -1937,17 +1947,31 @@ function normalSendSelectionWrites(
     });
     after = "normal_send_capture";
   }
-  if (preferencePlan) {
+  const recency = args.recentWorkflowIds?.length
+    ? workflowRecencyWritePlan({
+        orgId: args.orgId,
+        userId: args.userId,
+        workflowIds: args.recentWorkflowIds,
+      })
+    : null;
+  if (preferencePlan || recency) {
+    // One target-row writer also preserves an explicit model preference in the
+    // same send. Separate writing CTEs cannot update the same metadata row.
     writes.push({
       name: "normal_send_preference",
       statement: normalChatInputInsertSql(
         orgMembersMetadata,
-        preferencePlan.values,
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          ...preferencePlan?.values,
+          ...recency?.values,
+        },
         normalChatInputWriteGate(after),
         normalChatInputConflictSql(
           orgMembersMetadata,
-          preferencePlan.conflict.target,
-          preferencePlan.conflict.set,
+          [orgMembersMetadata.orgId, orgMembersMetadata.userId],
+          { ...preferencePlan?.conflict.set, ...recency?.conflict.set },
         ),
       ),
     });
@@ -2420,6 +2444,40 @@ const publishEnqueuedNormalSend$ = command(
     }
   },
 );
+const normalSendWorkflowRecency$ = command(
+  async (
+    { get },
+    args: Pick<
+      NormalSendArgs,
+      "orgId" | "userId" | "auth" | "body" | "recordWorkflowRecency"
+    >,
+    signal: AbortSignal,
+  ) => {
+    const recentWorkflowIds =
+      args.recordWorkflowRecency &&
+      args.auth.tokenType === "session" &&
+      args.body.userMessage.parts.some((part) => {
+        return part.type === "text" && part.text.includes("/");
+      })
+        ? workflowIdsInUserMessage(
+            args.body.userMessage,
+            await get(
+              composerWorkflows({
+                orgId: args.orgId,
+                member: {
+                  userId: args.userId,
+                  role: args.auth.orgRole ?? "member",
+                },
+                agentId: args.body.agentId,
+              }),
+            ),
+          )
+        : [];
+    signal.throwIfAborted();
+    return recentWorkflowIds;
+  },
+);
+
 const prepareNormalSendInput$ = command(
   async (
     { set },
@@ -2427,6 +2485,8 @@ const prepareNormalSendInput$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly body: NormalSendBody;
+      readonly auth: OrganizationAuthContext;
+      readonly recordWorkflowRecency?: true;
       readonly thread: SendThread;
       readonly catalog: ModelCatalog;
       readonly orgPlanCapabilities: OrgPlanCapabilities | null | undefined;
@@ -2479,15 +2539,17 @@ const prepareNormalSendInput$ = command(
     if ("status" in modelSelection) {
       return modelSelection;
     }
-    return {
-      attachFileMetadata,
+    const thread = withCapturedModelReplacement(
+      args.catalog,
+      args.thread,
       modelSelection,
-      thread: withCapturedModelReplacement(
-        args.catalog,
-        args.thread,
-        modelSelection,
-      ),
-    };
+    );
+    const recentWorkflowIds = await set(
+      normalSendWorkflowRecency$,
+      args,
+      signal,
+    );
+    return { attachFileMetadata, modelSelection, thread, recentWorkflowIds };
   },
 );
 function preparedNormalSendEvent(
@@ -2678,6 +2740,13 @@ const publishPreparedNormalSend$ = command(
       publishedLease,
     } = committed;
     args.enqueueTiming?.committed(enqueueCommit.committedAt);
+    if (args.recentWorkflowIds?.length) {
+      waitUntil(
+        publishUserPreferenceChangedForUserSafely(args.userId, [
+          "workflowRecency",
+        ]),
+      );
+    }
     // Schedule before observing abort; touch, realtime and the running-run
     // notice follow this pick's outcome.
     waitUntil(
@@ -2816,7 +2885,7 @@ export const sendNormalEvent$ = command(
       measureChatEnqueue(args.enqueueTiming, "publication", async () => {
         return await set(
           publishPreparedNormalSend$,
-          args,
+          { ...args, recentWorkflowIds: input.recentWorkflowIds },
           {
             input: {
               thread,
@@ -3427,6 +3496,7 @@ export const handleSendChatEvent$ = command(
       sendNormalEvent$,
       {
         enqueueTiming: timing,
+        recordWorkflowRecency: true,
         body,
         auth: auth.tokenType === "oauth" ? { ...auth, clientName } : auth,
         userId: auth.userId,

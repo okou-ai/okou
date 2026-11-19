@@ -19,10 +19,7 @@ import { manualTriggerSource } from "./workflow-automation-trigger-source";
 import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 import { OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE } from "./official-workflow-constants";
 
-/**
- * Repeated "Run now" clicks are otherwise indistinguishable, so the request time
- * is this run's unique identifier.
- */
+/** Manual requests remain distinct queue inputs, even at the same timestamp. */
 function manualTriggerContext(args: {
   readonly automation: AutomationRow;
   readonly workflowName: string;
@@ -45,10 +42,25 @@ function manualTriggerContext(args: {
   };
 }
 
+type ManualAutomationRunInput = AutomationActionInput & {
+  readonly recordWorkflowRecency?: true;
+};
+
+function manualWorkflowRecencyOptions(
+  args: ManualAutomationRunInput,
+  automation: AutomationRow,
+) {
+  return args.recordWorkflowRecency &&
+    args.sourceRunId === undefined &&
+    automation.officialBlueprintKey === null
+    ? { recordWorkflowRecency: true as const }
+    : {};
+}
+
 export const runOwnedWorkflowAutomationNow$ = command(
   async (
     { set },
-    args: AutomationActionInput,
+    args: ManualAutomationRunInput,
     signal: AbortSignal,
   ): Promise<WorkflowAutomationRunNowResult> => {
     const owned = await set(loadOwnedAutomation$, args, signal);
@@ -168,6 +180,7 @@ export const runOwnedWorkflowAutomationNow$ = command(
             userTimezone: ownerTimezone,
           }) ?? undefined,
         replacePendingScheduleTick: false,
+        ...manualWorkflowRecencyOptions(args, automation),
       },
       signal,
     );

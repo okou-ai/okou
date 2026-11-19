@@ -62,8 +62,8 @@ import {
   reloadWorkflowData$,
   workflowReloadVersion$,
 } from "./workflow-reload.ts";
-import { onRef, settle } from "../utils.ts";
-import { recordRecentWorkflowUse$ } from "../okou-page/recent-workflows.ts";
+import { onRef } from "../utils.ts";
+import { reloadComposerWorkflowRecency$ } from "../okou-page/composer-workflows.ts";
 
 export const singleAgentWorkflows$ = computed(async (get) => {
   return (await get(featureSwitches$))[FeatureSwitchKey.SingleAgent];
@@ -1683,7 +1683,6 @@ export const runWorkflowAutomationNow$ = command(
     automationId: string,
     signal: AbortSignal,
   ): Promise<{ chatThreadId: string; runId: string | null }> => {
-    const workflowId = get(currentWorkflowId$);
     const client = get(apiClient$)(workflowAutomationsContract);
     const result = await accept(
       client.run({
@@ -1693,12 +1692,7 @@ export const runWorkflowAutomationNow$ = command(
       [201],
     );
     signal.throwIfAborted();
-    if (workflowId) {
-      // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
-      await settle(() => {
-        set(recordRecentWorkflowUse$, [workflowId], signal);
-      }, signal);
-    }
+    set(reloadComposerWorkflowRecency$);
     return result.body;
   },
 );

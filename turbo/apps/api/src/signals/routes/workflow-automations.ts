@@ -444,6 +444,9 @@ const runAutomationInner$ = command(
         orgId: auth.orgId,
         member: memberFromAuth(auth),
         automationId: params.id,
+        ...(auth.tokenType === "session"
+          ? { recordWorkflowRecency: true as const }
+          : {}),
         ...(auth.tokenType === "agent" ? { sourceRunId: auth.runId } : {}),
       },
       signal,

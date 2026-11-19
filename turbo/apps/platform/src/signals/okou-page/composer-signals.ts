@@ -20,11 +20,8 @@ import {
 import { i18n } from "../../i18n/index.ts";
 import { createComputerUseGuideSignals } from "../computer-use-setup.ts";
 import { command, computed, state, type Command, type Computed } from "ccstate";
-import { onRef, settle } from "../utils.ts";
-import {
-  prepareRecentWorkflowUse$,
-  recordRecentWorkflowUse$,
-} from "./recent-workflows.ts";
+import { onRef } from "../utils.ts";
+import { reloadComposerWorkflowRecency$ } from "./composer-workflows.ts";
 import {
   createPendingRemoteAccessSignals,
   threadRemoteAccess$,
@@ -101,7 +98,7 @@ type ComposerEditorSignals = Pick<
 
 type ComposerWorkflowEditorSignals = Pick<
   WorkflowComposerSignals,
-  "workflows$" | "reloadWorkflows$" | "insertWorkflow$"
+  "reloadWorkflows$" | "insertWorkflow$"
 >;
 
 type ComposerSuggestionSignals = Pick<
@@ -115,7 +112,7 @@ type ComposerSuggestionSignals = Pick<
   | "previewSuggestion$"
   | "slashWorkflowsExpanded$"
   | "slashWorkflowsExpandedHeight$"
-  | "recentWorkflowIds$"
+  | "queryWorkflows$"
   | "expandSlashWorkflows$"
   | "slashMenuSide$"
   | "measureSlashMenuSide$"
@@ -392,7 +389,6 @@ function composerWorkflowSignals(
   composer: WorkflowComposerSignals,
 ): ComposerWorkflowEditorSignals {
   return {
-    workflows$: composer.workflows$,
     reloadWorkflows$: composer.reloadWorkflows$,
     insertWorkflow$: composer.insertWorkflow$,
   };
@@ -443,7 +439,7 @@ function composerSuggestionSignals(
     previewSuggestion$: composer.previewSuggestion$,
     slashWorkflowsExpanded$: composer.slashWorkflowsExpanded$,
     slashWorkflowsExpandedHeight$: composer.slashWorkflowsExpandedHeight$,
-    recentWorkflowIds$: composer.recentWorkflowIds$,
+    queryWorkflows$: composer.queryWorkflows$,
     expandSlashWorkflows$: composer.expandSlashWorkflows$,
     slashMenuSide$: composer.slashMenuSide$,
     measureSlashMenuSide$: composer.measureSlashMenuSide$,
@@ -1078,12 +1074,6 @@ function createSubmitCurrentInput({
         return false;
       }
       signal.throwIfAborted();
-      const workflowUse = await set(
-        prepareRecentWorkflowUse$,
-        visiblePrompt,
-        workflowComposer.workflows$,
-        signal,
-      );
       const submitted = await set(
         submitMessage$,
         action,
@@ -1091,14 +1081,9 @@ function createSubmitCurrentInput({
         signal,
       );
       if (submitted) {
+        // The server alone decides which visible slash tokens were accepted.
+        set(reloadComposerWorkflowRecency$);
         await set(taskChips.home.dismissMenu$, menuRevision, signal);
-      }
-      if (submitted && workflowUse) {
-        // Browser history must never turn an accepted send into a send error.
-        // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
-        await settle(() => {
-          set(recordRecentWorkflowUse$, workflowUse, signal);
-        }, signal);
       }
       return submitted;
     },

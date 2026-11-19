@@ -3,9 +3,10 @@ import {
   chatEventsContract,
   workflowsCollectionContract,
 } from "@okouai/api-contracts";
-import { screen, waitFor } from "@testing-library/react";
+import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 import {
   click,
   fill,
@@ -82,18 +83,54 @@ function workflowNames(): string[] {
     });
 }
 
-function mockHistory(ids: readonly string[]) {
-  const values = new Map([["okou_recent-workflows", JSON.stringify(ids)]]);
-  vi.spyOn(localStorage, "getItem").mockImplementation((key) => {
-    return values.get(key) ?? null;
+function mockHistory(workflows: ComposerWorkflow[], ids: readonly string[]) {
+  for (const [index, workflow] of workflows.entries()) {
+    const rank = ids.indexOf(workflow.id);
+    workflows[index] = {
+      ...workflow,
+      lastUsedAt:
+        rank === -1
+          ? null
+          : new Date(Date.UTC(2026, 10, 16, 0, 0, 100 - rank)).toISOString(),
+    };
+  }
+}
+
+function mockAcceptedWorkflowUses(
+  workflows: ComposerWorkflow[],
+  sendGate?: Promise<void>,
+) {
+  let prompt = "";
+  let use = 1000;
+  const record = () => {
+    for (const [index, workflow] of workflows.entries()) {
+      if (prompt.split(/\s/u).includes(`/${workflow.name}`)) {
+        workflows[index] = {
+          ...workflow,
+          lastUsedAt: new Date(
+            Date.UTC(2026, 10, 16, 0, 0, use++),
+          ).toISOString(),
+        };
+      }
+    }
+  };
+  mockChatLifecycle(context, {
+    threadId: THREAD_ID,
+    onSendRequest(body) {
+      prompt = body.prompt;
+      if (!sendGate) {
+        record();
+      }
+    },
+    ...(sendGate
+      ? {
+          sendGate: async () => {
+            await sendGate;
+            record();
+          },
+        }
+      : {}),
   });
-  vi.spyOn(localStorage, "setItem").mockImplementation((key, value) => {
-    values.set(key, value);
-  });
-  vi.spyOn(localStorage, "removeItem").mockImplementation((key) => {
-    values.delete(key);
-  });
-  return values;
 }
 
 async function openComposer(path = `/chats/${THREAD_ID}`) {
@@ -119,6 +156,29 @@ test("The overview fills from the alphabet and expanding preserves the visible w
   click(button("Show 2 more"));
 
   expect(workflowNames()).toStrictEqual([...overview, "/echo", "/zulu"]);
+});
+
+test("Server recency preserves accepted timestamps within the same millisecond", async () => {
+  const workflows = mockWorkflows();
+  for (const [index, workflow] of workflows.entries()) {
+    if (workflow.name === "zulu" || workflow.name === "alpha") {
+      workflows[index] = {
+        ...workflow,
+        lastUsedAt:
+          workflow.name === "zulu"
+            ? "2026-11-16T00:00:00.000002Z"
+            : "2026-11-16T00:00:00.000001Z",
+      };
+    }
+  }
+  mockChatLifecycle(context, { threadId: THREAD_ID });
+  await openComposer();
+  expect(workflowNames()).toStrictEqual([
+    "/zulu",
+    "/alpha",
+    "/beta",
+    "/charlie",
+  ]);
 });
 
 test.each([`/chats/${THREAD_ID}`, `/agents/${AGENT_ID}/chat`])(
@@ -171,6 +231,7 @@ test.each([
   async ({ path, history, name, expected }) => {
     const workflows = mockWorkflows();
     mockHistory(
+      workflows,
       history.map((token) => {
         const workflow = workflows.find((workflow) => {
           return workflow.name === token;
@@ -181,7 +242,7 @@ test.each([
         return workflow.id;
       }),
     );
-    mockChatLifecycle(context, { threadId: THREAD_ID });
+    mockAcceptedWorkflowUses(workflows);
     let editor = await openComposer(path);
     const names = [name];
     for (const name of names) {
@@ -214,12 +275,9 @@ test.each([
 );
 
 test("An open menu keeps its order when an earlier send finishes, then refreshes on reopening", async () => {
-  mockWorkflows();
+  const workflows = mockWorkflows();
   const sendGate = createDeferredPromise<void>(context.signal);
-  mockChatLifecycle(context, {
-    threadId: THREAD_ID,
-    sendGate: sendGate.promise,
-  });
+  mockAcceptedWorkflowUses(workflows, sendGate.promise);
   const editor = await openComposer();
   await fill(editor, "/zulu");
   click(button("Send"));
@@ -261,17 +319,17 @@ test("An open menu keeps its order when an earlier send finishes, then refreshes
   });
 });
 
-test("An accepted use retains history written by another browser tab", async () => {
+test("An accepted use retains server history written by another device", async () => {
   const workflows = mockWorkflows();
   const [zulu, , echo] = workflows;
   if (!zulu || !echo) {
     throw new Error("Expected workflow fixtures");
   }
-  const history = mockHistory([zulu.id]);
-  mockChatLifecycle(context, { threadId: THREAD_ID });
+  mockHistory(workflows, [zulu.id]);
+  mockAcceptedWorkflowUses(workflows);
   const editor = await openComposer();
-  // The page has read the first accepted use; another tab writes before the next send.
-  history.set("okou_recent-workflows", JSON.stringify([echo.id, zulu.id]));
+  // Another device is accepted after this page's first composer read.
+  mockHistory(workflows, [echo.id, zulu.id]);
   for (const name of ["delta"]) {
     await fill(editor, `/${name}`);
     await waitFor(() => {
@@ -297,13 +355,13 @@ test("An accepted use retains history written by another browser tab", async () 
   });
 });
 
-test("Persisted local recency ignores unavailable workflow ids", async () => {
+test("Server history is available in a fresh browser session", async () => {
   const workflows = mockWorkflows();
   const echo = workflows[2];
   if (!echo) {
     throw new Error("Expected workflow fixtures");
   }
-  mockHistory(["deleted-workflow", echo.id]);
+  mockHistory(workflows, [echo.id]);
   mockChatLifecycle(context, { threadId: THREAD_ID });
   await openComposer();
   expect(workflowNames()).toStrictEqual([
@@ -317,6 +375,7 @@ test("Persisted local recency ignores unavailable workflow ids", async () => {
 test("Typed search keeps name matches ahead of more recently used description matches", async () => {
   const workflows = mockWorkflows();
   mockHistory(
+    workflows,
     workflows.map((workflow) => {
       return workflow.id;
     }),
@@ -357,6 +416,7 @@ test("The pr-a search ranks recently used prefixes above substrings, abbreviatio
     return respond(200, workflows);
   });
   mockHistory(
+    workflows,
     ["report", "team-pr-auto", "pr-auto", "pr-auto-deploy"].map((name) => {
       const workflow = workflows.find((workflow) => {
         return workflow.name === name;
@@ -407,8 +467,8 @@ async function sendWorkflowPrompt(prompt: string): Promise<HTMLElement> {
 }
 
 test("The latest accepted use wins regardless of frequency on desktop and mobile", async () => {
-  mockWorkflows("qz-");
-  mockChatLifecycle(context, { threadId: THREAD_ID });
+  const workflows = mockWorkflows("qz-");
+  mockAcceptedWorkflowUses(workflows);
   await openComposer();
   await sendWorkflowPrompt("/qz-delta");
   await sendWorkflowPrompt("/qz-delta");
@@ -458,13 +518,145 @@ test("A rejected send does not promote a workflow", async () => {
   });
 });
 
+test.each(["typed", "IME"] as const)(
+  "A delayed %s query refresh does not expose another snapshot's selectable rows",
+  async (input) => {
+    const workflows = mockWorkflows("qz-");
+    let refresh: Promise<void> | null = null;
+    context.mocks.api(
+      workflowsCollectionContract.composer,
+      async ({ respond }) => {
+        const items = [...workflows];
+        await refresh;
+        return respond(200, items);
+      },
+    );
+    mockChatLifecycle(context, { threadId: THREAD_ID });
+    const editor = await openComposer();
+    await fill(editor, "/qz");
+    await waitFor(() => {
+      expect(workflowNames()).toHaveLength(6);
+      expect(
+        context.mocks.ably.hasSubscription("userPreferenceChanged"),
+      ).toBeTruthy();
+    });
+    const zulu = workflows.find((workflow) => {
+      return workflow.name === "qz-zulu";
+    });
+    if (!zulu) {
+      throw new Error("Expected workflow fixture");
+    }
+    mockHistory(workflows, [zulu.id]);
+    const response = createDeferredPromise<void>(context.signal);
+    refresh = response.promise;
+    await act(() => {
+      context.mocks.ably.trigger("userPreferenceChanged", {
+        kinds: ["workflowRecency"],
+      });
+    });
+    if (input === "IME") {
+      fireEvent.compositionStart(editor);
+    }
+    // Neither a notification nor starting composition changes this query.
+    expect(workflowNames()).toHaveLength(6);
+    if (input === "typed") {
+      await fill(editor, "/qz-");
+    } else {
+      fireEvent(
+        editor,
+        Object.assign(new Event("compositionupdate", { bubbles: true }), {
+          data: "-",
+        }),
+      );
+      const text = document
+        .createTreeWalker(editor, NodeFilter.SHOW_TEXT)
+        .nextNode();
+      if (!(text instanceof Text)) {
+        throw new Error("Expected composer text");
+      }
+      text.data = "/qz-";
+      window.getSelection()?.collapse(text, text.length);
+      fireEvent.input(editor, {
+        data: "-",
+        inputType: "insertCompositionText",
+        isComposing: true,
+      });
+    }
+    await screen.findByRole("status", { name: "Loading workflows..." });
+    expect(workflowNames()).toStrictEqual([]);
+    const user = userEvent.setup();
+    expect(
+      fireEvent.keyDown(editor, {
+        key: "ArrowDown",
+        ...(input === "IME" ? { isComposing: true, keyCode: 229 } : {}),
+      }),
+    ).toBe(input === "IME");
+    response.resolve();
+    await waitFor(() => {
+      expect(workflowNames()[0]).toBe("/qz-zulu");
+    });
+    if (input === "IME") {
+      fireEvent.compositionEnd(editor, { data: "-" });
+    }
+    await user.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(editor.textContent).toBe("/qz-zulu ");
+    });
+  },
+);
+
+test.each(["notification", "continuity gap"] as const)(
+  "A %s refresh preserves the open query and updates the next query",
+  async (source) => {
+    const workflows = mockWorkflows("qz-");
+    mockChatLifecycle(context, { threadId: THREAD_ID });
+    const editor = await openComposer();
+    await fill(editor, "Draft /qz");
+    const alphabetical = [
+      "/qz-alpha",
+      "/qz-beta",
+      "/qz-charlie",
+      "/qz-delta",
+      "/qz-echo",
+      "/qz-zulu",
+    ];
+    await waitFor(() => {
+      expect(workflowNames()).toStrictEqual(alphabetical);
+      expect(
+        context.mocks.ably.hasSubscription("userPreferenceChanged"),
+      ).toBeTruthy();
+    });
+    const zulu = workflows.find((workflow) => {
+      return workflow.name === "qz-zulu";
+    });
+    if (!zulu) {
+      throw new Error("Expected workflow fixture");
+    }
+    mockHistory(workflows, [zulu.id]);
+    await act(() => {
+      if (source === "notification") {
+        context.mocks.ably.trigger("userPreferenceChanged", {
+          kinds: ["workflowRecency"],
+        });
+      } else {
+        context.mocks.ably.triggerReconnect();
+      }
+    });
+    expect(workflowNames()).toStrictEqual(alphabetical);
+    await fill(editor, "Draft /qz-");
+    await waitFor(() => {
+      expect(workflowNames()).toStrictEqual([
+        "/qz-zulu",
+        ...alphabetical.slice(0, -1),
+      ]);
+    });
+  },
+);
+
 test("Typed results keep their order and keyboard selection while an earlier send finishes", async () => {
-  mockWorkflows("qz-");
+  const workflows = mockWorkflows("qz-");
   const sendGate = createDeferredPromise<void>(context.signal);
-  mockChatLifecycle(context, {
-    threadId: THREAD_ID,
-    sendGate: sendGate.promise,
-  });
+  mockAcceptedWorkflowUses(workflows, sendGate.promise);
   const editor = await openComposer();
   await fill(editor, "/qz-delta");
   click(button("Send"));

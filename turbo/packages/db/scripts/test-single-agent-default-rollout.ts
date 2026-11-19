@@ -68,7 +68,9 @@ try {
   const before = await flags();
   const membersBefore = Array.from(
     await sql`SELECT * FROM org_members_metadata ORDER BY org_id,user_id`,
-  );
+  ).map((member) => {
+    return { ...member, recent_workflows: [] };
+  });
   const journalBefore = Array.from(
     await sql`SELECT * FROM drizzle.__drizzle_migrations ORDER BY id`,
   );

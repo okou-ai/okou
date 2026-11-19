@@ -15,6 +15,7 @@ import { db$, writeDb$ } from "../external/db";
 
 import { safeSync, settle, settleIncludingAbort } from "../utils";
 import { waitUntil } from "../context/wait-until";
+import { publishUserPreferenceChangedForUserSafely } from "../external/realtime";
 import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import type { ChatInputEnqueueCommit } from "./chat-input-enqueue-observation";
 import {
@@ -552,6 +553,7 @@ const commitWorkflowInput$ = command(
       queueStatement,
       replacement: replacementPlan,
       rewardSource: workflowRewardSource(input),
+      recordWorkflowRecency: args.recordWorkflowRecency,
     });
     let tickCount: number | undefined;
     const executionStartedAt = now();
@@ -712,13 +714,58 @@ const prepareWorkflowAdmission$ = command(
   },
 );
 
+const publishAcceptedWorkflowInput$ = command(
+  (
+    { set },
+    args: RunWorkflowAutomationNowArgs,
+    enqueueCommit: WorkflowInputCommit | undefined,
+    signal: AbortSignal,
+  ) => {
+    const { automation, chatThreadId } = args.due;
+    if (enqueueCommit && args.recordWorkflowRecency) {
+      waitUntil(
+        publishUserPreferenceChangedForUserSafely(automation.ownerUserId, [
+          "workflowRecency",
+        ]),
+      );
+    }
+    const searchScope = {
+      orgId: automation.orgId,
+      userId: automation.ownerUserId,
+      threadId: chatThreadId,
+    };
+    waitUntil(set(projectCommittedChatThreadSearch$, searchScope, signal));
+
+    if (enqueueCommit?.marketingRewardEventId) {
+      const delivery = {
+        jobId: enqueueCommit.marketingRewardEventId,
+        handlerVersion: 4 as const,
+      };
+      waitUntil(set(deliverMarketingRewardEvents$, delivery, signal));
+    }
+    waitUntil(
+      set(
+        publishEnqueuedWorkflowInput$,
+        {
+          orgId: automation.orgId,
+          userId: automation.ownerUserId,
+          chatThreadId,
+          ...(enqueueCommit ? { enqueueCommit } : {}),
+        },
+        signal,
+      ),
+    );
+    waitUntil(set(notifyRunningChatRunOfPendingInput$, chatThreadId, signal));
+  },
+);
+
 export const runWorkflowAutomationNow$ = command(
   async (
     { set },
     args: RunWorkflowAutomationNowArgs,
     signal: AbortSignal,
   ): Promise<RunWorkflowAutomationResult> => {
-    const { automation, chatThreadId } = args.due;
+    const { automation } = args.due;
     const timing = workflowAutomationAdmissionTiming(args);
 
     const { scheduleClaim } = args;
@@ -809,33 +856,7 @@ export const runWorkflowAutomationNow$ = command(
     signal.throwIfAborted();
 
     if (enqueued) {
-      const searchScope = {
-        orgId: automation.orgId,
-        userId: automation.ownerUserId,
-        threadId: chatThreadId,
-      };
-      waitUntil(set(projectCommittedChatThreadSearch$, searchScope, signal));
-
-      if (enqueueCommit?.marketingRewardEventId) {
-        const delivery = {
-          jobId: enqueueCommit.marketingRewardEventId,
-          handlerVersion: 4 as const,
-        };
-        waitUntil(set(deliverMarketingRewardEvents$, delivery, signal));
-      }
-      waitUntil(
-        set(
-          publishEnqueuedWorkflowInput$,
-          {
-            orgId: automation.orgId,
-            userId: automation.ownerUserId,
-            chatThreadId,
-            ...(enqueueCommit ? { enqueueCommit } : {}),
-          },
-          signal,
-        ),
-      );
-      waitUntil(set(notifyRunningChatRunOfPendingInput$, chatThreadId, signal));
+      set(publishAcceptedWorkflowInput$, args, enqueueCommit, signal);
     }
     return workflowEnqueueResult(
       scheduleClaim !== undefined || usesProactiveWorkflowInput(args),

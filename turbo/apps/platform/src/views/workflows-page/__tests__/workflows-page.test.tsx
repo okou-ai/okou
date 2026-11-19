@@ -2273,6 +2273,8 @@ test("Run a workflow automation now and promote it in the next composer overview
         name: "sales-research",
         displayName: null,
         description: null,
+        lastUsedAt:
+          runAutomationIds.length > 0 ? "2026-11-16T00:00:00.000000Z" : null,
       },
     ]);
   });
