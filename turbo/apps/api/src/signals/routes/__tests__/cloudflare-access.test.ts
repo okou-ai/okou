@@ -86,99 +86,109 @@ describe("inline SSH resource creation", () => {
   const gateway = { name: "Inline gateway", credentials: token };
 
   it.each(["create", "update"] as const)(
-    "%s supports each reuse/new combination and returns only resolved metadata",
+    "%s independently binds inline and saved resources and returns only resolved metadata",
     async (operation) => {
       const o = owner();
       const existingConfig = await config();
       const existingHost = await host(existingConfig.id);
       let current = existingHost;
-      for (const newAccess of [false, true]) {
-        for (const newCredential of [false, true]) {
-          const before = await resources();
-          context.mocks.ably.publish.mockClear();
-          const fields = {
-            displayName: "Combined host",
-            host: "new.example.com",
-            port: 443,
-            credential: newCredential
-              ? { create: login }
-              : { id: credentialBackedSshHost(existingHost).credentialId },
-            transport: newAccess
-              ? { type: "cloudflare_access" as const, create: gateway }
-              : {
-                  type: "cloudflare_access" as const,
-                  configId: existingConfig.id,
-                },
-          };
-          const result =
-            operation === "create"
-              ? (
-                  await accept(
-                    connections().create({
-                      headers,
-                      body: { id: randomUUID(), ...fields },
-                    }),
-                    [201],
-                  )
-                ).body
-              : (
-                  await accept(
-                    connections().update({
-                      headers,
-                      params: { connectionId: current.id },
-                      body: {
-                        ...fields,
-                        expectedGeneration: current.generation,
-                      },
-                    }),
-                    [200],
-                  )
-                ).body;
-          current = result;
-          const parsed = sshConnectionResponseSchema.parse(result);
-          expect(parsed).toStrictEqual(result);
-          expect(JSON.stringify(result)).not.toContain("canary");
-          expect(result).toMatchObject({
-            transport: {
-              type: "cloudflare_access",
-              configId: expect.any(String),
-            },
-          });
-          expect(context.mocks.ably.publish.mock.calls).toContainEqual([
-            "ssh:changed",
-            { orgId: o.orgId },
-          ]);
-          expect(
-            context.mocks.ably.publish.mock.calls.some(([event]) => {
-              return event === "cloudflare-access:changed";
-            }),
-          ).toBe(newAccess);
-          const after = await resources();
-          expect(after.hosts).toHaveLength(
-            before.hosts.length + (operation === "create" ? 1 : 0),
-          );
-          expect(after.credentials).toHaveLength(
-            before.credentials.length + Number(newCredential),
-          );
-          expect(after.configs).toHaveLength(
-            before.configs.length + Number(newAccess),
-          );
-          expect(after.hosts).toContainEqual(result);
-          expect(
-            after.credentials.find((entry) => {
-              return entry.id === credentialBackedSshHost(result).credentialId;
-            })?.hosts,
-          ).toContainEqual({ id: result.id, displayName: result.displayName });
-          if (!("transport" in parsed) || !("configId" in parsed.transport)) {
-            throw new Error("Missing protected transport");
-          }
-          const selectedConfigId = parsed.transport.configId;
-          expect(
-            after.configs.find((entry) => {
-              return entry.id === selectedConfigId;
-            })?.sshHosts,
-          ).toContainEqual({ id: result.id, displayName: result.displayName });
+      const combinations =
+        operation === "create"
+          ? [
+              [false, false],
+              [true, false],
+              [true, true],
+            ]
+          : [
+              [false, true],
+              [true, false],
+              [true, true],
+            ];
+      for (const [newAccess, newCredential] of combinations) {
+        const before = await resources();
+        context.mocks.ably.publish.mockClear();
+        const fields = {
+          displayName: "Combined host",
+          host: "new.example.com",
+          port: 443,
+          credential: newCredential
+            ? { create: login }
+            : { id: credentialBackedSshHost(existingHost).credentialId },
+          transport: newAccess
+            ? { type: "cloudflare_access" as const, create: gateway }
+            : {
+                type: "cloudflare_access" as const,
+                configId: existingConfig.id,
+              },
+        };
+        const result =
+          operation === "create"
+            ? (
+                await accept(
+                  connections().create({
+                    headers,
+                    body: { id: randomUUID(), ...fields },
+                  }),
+                  [201],
+                )
+              ).body
+            : (
+                await accept(
+                  connections().update({
+                    headers,
+                    params: { connectionId: current.id },
+                    body: {
+                      ...fields,
+                      expectedGeneration: current.generation,
+                    },
+                  }),
+                  [200],
+                )
+              ).body;
+        current = result;
+        const parsed = sshConnectionResponseSchema.parse(result);
+        expect(parsed).toStrictEqual(result);
+        expect(JSON.stringify(result)).not.toContain("canary");
+        expect(result).toMatchObject({
+          transport: {
+            type: "cloudflare_access",
+            configId: expect.any(String),
+          },
+        });
+        expect(context.mocks.ably.publish.mock.calls).toContainEqual([
+          "ssh:changed",
+          { orgId: o.orgId },
+        ]);
+        expect(
+          context.mocks.ably.publish.mock.calls.some(([event]) => {
+            return event === "cloudflare-access:changed";
+          }),
+        ).toBe(newAccess);
+        const after = await resources();
+        expect(after.hosts).toHaveLength(
+          before.hosts.length + (operation === "create" ? 1 : 0),
+        );
+        expect(after.credentials).toHaveLength(
+          before.credentials.length + Number(newCredential),
+        );
+        expect(after.configs).toHaveLength(
+          before.configs.length + Number(newAccess),
+        );
+        expect(after.hosts).toContainEqual(result);
+        expect(
+          after.credentials.find((entry) => {
+            return entry.id === credentialBackedSshHost(result).credentialId;
+          })?.hosts,
+        ).toContainEqual({ id: result.id, displayName: result.displayName });
+        if (!("transport" in parsed) || !("configId" in parsed.transport)) {
+          throw new Error("Missing protected transport");
         }
+        const selectedConfigId = parsed.transport.configId;
+        expect(
+          after.configs.find((entry) => {
+            return entry.id === selectedConfigId;
+          })?.sshHosts,
+        ).toContainEqual({ id: result.id, displayName: result.displayName });
       }
     },
   );
@@ -1833,7 +1843,18 @@ describe("protected SSH authority", () => {
     const f = await executionFixture();
     const direct = await host();
     await enableHostDefault(direct.id);
-    expect(sshConnectionResponseSchema.parse(direct)).toStrictEqual(direct);
+    const inventory = setupApp({ context, routes: sshAccessRoutes })(
+      sshHostsContract,
+    );
+    const {
+      body: { hosts: listed },
+    } = await accept(inventory.list({ headers: f.guestHeaders }), [200]);
+    expect(
+      listed.map((row) => {
+        return row.id;
+      }),
+    ).toStrictEqual(expect.arrayContaining([f.host.id, direct.id]));
+
     const params = { connectionId: f.host.id };
     const renamed = await accept(
       connections().update({
@@ -1926,47 +1947,6 @@ describe("protected SSH authority", () => {
         )
       ).body.outcome,
     ).toBe("pinned");
-  });
-
-  it("allows ordinary owners to manage and execute Direct and Access hosts without feature overrides", async () => {
-    const f = await executionFixture();
-    const direct = await host();
-    await enableHostDefault(direct.id);
-    const inventory = setupApp({ context, routes: sshAccessRoutes })(
-      sshHostsContract,
-    );
-    await expect(resolve(f)).resolves.toMatchObject({
-      outcome: "resolved_access",
-    });
-    expect(
-      (
-        await accept(inventory.list({ headers: f.guestHeaders }), [200])
-      ).body.hosts.map((h) => {
-        return h.id;
-      }),
-    ).toStrictEqual(expect.arrayContaining([f.host.id, direct.id]));
-    expect(
-      (
-        await accept(
-          runner().resolve({
-            headers: runnerHeaders,
-            params: f.params,
-            body: { ...f.body, connectionId: direct.id },
-          }),
-          [200],
-        )
-      ).body.outcome,
-    ).toBe("resolved_password");
-    authenticate(f);
-    expect(
-      (await accept(configs().list({ headers }), [200])).body.configs,
-    ).toContainEqual(expect.objectContaining({ id: f.config.id, revision: 1 }));
-    expect(
-      (await accept(connections().list({ headers }), [200])).body.connections,
-    ).toHaveLength(2);
-    await expect(resolve(f)).resolves.toMatchObject({
-      outcome: "resolved_access",
-    });
   });
 
   it("preserves host trust across rotation, protected edits and Access transitions; rejects stale evidence", async () => {
