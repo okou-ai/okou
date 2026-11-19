@@ -996,11 +996,11 @@ fn validate_replace_target(parent: &OwnedFd, name: &OsStr, path: &Path) -> io::R
 
 #[cfg(unix)]
 fn sync_private_replacement_directory(parent: &OwnedFd) -> io::Result<()> {
-    // SAFETY: `parent` owns a live directory descriptor.
-    if unsafe { libc::fsync(parent.as_raw_fd()) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(())
+    nix::unistd::fsync(parent).map_err(|error| match error {
+        // Nix maps platform error codes outside its errno enum to zero.
+        nix::errno::Errno::UnknownErrno => io::Error::last_os_error(),
+        error => error.into(),
+    })
 }
 
 #[cfg(unix)]
