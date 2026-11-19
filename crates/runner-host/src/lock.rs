@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use nix::fcntl::{Flock, FlockArg};
+use tokio_util::task::AbortOnDropHandle;
 
 use crate::error::{HostError, HostResult};
 use crate::host_file::{self, DirMode, PRIVATE_FILE_MODE};
@@ -128,9 +129,14 @@ enum LockAcquire {
 
 async fn acquire_result_once(path: &Path, mode: LockMode) -> HostResult<LockAcquire> {
     let attempt_path = path.to_path_buf();
-    tokio::task::spawn_blocking(move || acquire_result_blocking(&attempt_path, mode))
-        .await
-        .map_err(|e| HostError::Internal(format!("lock task: {e}")))?
+    // Cancel queued work if the waiter drops. A probe already running finishes
+    // its nonblocking flock and drops any guard the waiter did not receive.
+    let mut probe = AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
+        acquire_result_blocking(&attempt_path, mode)
+    }));
+    let result = (&mut probe).await;
+    drop(probe.detach());
+    result.map_err(|e| HostError::Internal(format!("lock task: {e}")))?
 }
 
 async fn acquire_after_busy(path: &Path, mode: LockMode) -> HostResult<Flock<File>> {

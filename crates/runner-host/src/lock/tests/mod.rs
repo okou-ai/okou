@@ -122,6 +122,15 @@ async fn expired_contention_deadline_still_attempts_an_uncontended_lock() {
 
 #[test]
 fn contention_deadline_prevents_a_ready_retry_from_opening_the_lock() {
+    assert_deadline_leaves_lock_untouched(false);
+}
+
+#[test]
+fn contention_deadline_cancels_a_probe_queued_before_expiry() {
+    assert_deadline_leaves_lock_untouched(true);
+}
+
+fn assert_deadline_leaves_lock_untouched(queue_retry_before_deadline: bool) {
     const WATCHDOG: Duration = Duration::from_secs(2);
     let runtime = tokio::runtime::Builder::new_current_thread()
         .max_blocking_threads(1)
@@ -171,6 +180,14 @@ fn contention_deadline_prevents_a_ready_retry_from_opening_the_lock() {
             std::task::Poll::Ready(())
         })
         .await;
+        if queue_retry_before_deadline {
+            tokio::time::advance(LOCK_RETRY_INITIAL_DELAY + Duration::from_millis(1)).await;
+            poll_fn(|context| {
+                assert!(acquisition.as_mut().poll(context).is_pending());
+                std::task::Poll::Ready(())
+            })
+            .await;
+        }
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
         tokio::time::advance(remaining + Duration::from_millis(1)).await;
         tokio::time::resume();
