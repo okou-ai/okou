@@ -1347,6 +1347,14 @@ describe("okou workflow automations", () => {
     await expect(wf.readThreadSelectedModel(threadId)).resolves.toBe(
       "claude-fable-5-1",
     );
+    const remaining = await accept(
+      automationsClient().listForChatThread({
+        headers: authHeaders(),
+        params: { threadId },
+      }),
+      [200],
+    );
+    expect(remaining.body).toStrictEqual([]);
   });
 
   it("uses configured webhook URLs for agent run tokens", async () => {
