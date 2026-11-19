@@ -3517,7 +3517,7 @@
         "copySuccess": "電話號碼已複製",
         "createCodeError": "無法建立連線碼。",
         "creatingCode": "正在建立連線碼…",
-        "description": "用 iPhone 傳簡訊給 {{assistantName}}。",
+        "description": "用 iPhone 傳簡訊給 {{assistantName}}，說說你的想法，請它寫份初稿。",
         "openMessages": "開啟 Messages",
         "options": "手機選項",
         "phoneLabel": "電話",
@@ -3622,7 +3622,7 @@
         "reviewGuide": "檢視指南",
         "reviewGuideDescription": "檢視此飛書機器人已完成的配置步驟。",
         "reviewGuideTitle": "飛書配置指南",
-        "routeDescription": "在飛書裡傳訊息給 Okou。",
+        "routeDescription": "把草稿傳給飛書裡的 Okou，請它改寫成方便分享的團隊近況。",
         "selectAgent": "選擇智能體",
         "setupIncomplete": "配置未完成",
         "steps": {
@@ -3759,7 +3759,7 @@
         "reviewGuide": "檢視指南",
         "reviewGuideDescription": "檢視此 Lark 機器人已完成的配置步驟。",
         "reviewGuideTitle": "Lark 配置指南",
-        "routeDescription": "在 Lark 裡傳訊息給 Okou。",
+        "routeDescription": "把草稿傳給 Lark 裡的 Okou，請它改寫成方便分享的團隊近況。",
         "selectAgent": "選擇智能體",
         "setupIncomplete": "配置未完成",
         "steps": {
@@ -7144,7 +7144,7 @@
       "codeInstructions": "從要新增的信箱將此驗證碼寄給 Okou，放在郵件主旨或內文第一行皆可。",
       "connected": "信箱已連線",
       "deleteAria": "刪除 {{email}}",
-      "description": "寄信給 Okou，在收件匣查看回覆。",
+      "description": "將郵件轉寄給 Okou，請它整理重點或草擬回覆。",
       "emailAddress": "電子郵件地址",
       "healthNotice": "請勿透過此整合處理受 HIPAA 監管的患者資訊。",
       "invalidLink": "連線連結無效，請重新寄信給 Okou。",
@@ -7167,7 +7167,7 @@
     "feishuConnected": "飛書連線成功",
     "github": {
       "adminInstall": "請組織管理員安裝 GitHub App",
-      "description": "有人建立提取要求時，自動啟動工作流程。",
+      "description": "有人建立提取要求時，執行工作流程，準備一份程式碼審查清單。",
       "title": "GitHub"
     },
     "header": {
@@ -7176,7 +7176,7 @@
     },
     "slack": {
       "adminInstall": "請管理員安裝 Slack 整合",
-      "description": "在 Slack 頻道裡 @Okou。",
+      "description": "在 Slack 頻道裡 @Okou，貼上草稿，請它提供修改建議。",
       "install": "安裝到 Slack",
       "permissionsUpdated": "Slack 權限已更新",
       "title": "Slack",
@@ -7184,8 +7184,8 @@
       "uninstallTitle": "解除安裝 Slack 整合？"
     },
     "teams": {
-      "connectAccount": "在 Teams 裡傳訊息給 Okou。",
-      "description": "在 Teams 裡傳訊息給 Okou。",
+      "connectAccount": "在 Teams 聊天中貼上會議筆記，請 Okou 幫你列出待辦事項。",
+      "description": "在 Teams 聊天中貼上會議筆記，請 Okou 幫你列出待辦事項。",
       "disconnect": "斷開 Microsoft Teams",
       "install": "安裝到 Teams",
       "moreOptions": "更多 Microsoft Teams 選項",
@@ -7196,7 +7196,7 @@
       "uninstallTitle": "解除安裝 Microsoft Teams 整合？"
     },
     "telegram": {
-      "description": "在 Telegram 裡傳訊息給 Okou。",
+      "description": "把兩個方案傳給 Telegram 裡的 Okou，請它幫你比較各自的優缺點。",
       "title": "Telegram"
     },
     "wechat": {
@@ -7206,7 +7206,7 @@
       "connect": "連接",
       "connected": "已連接",
       "creating": "正在產生 QR code…",
-      "description": "在微信裡傳訊息給 Okou。",
+      "description": "把兩個方案傳給微信裡的 Okou，請它幫你比較各自的優缺點。",
       "disconnect": "中斷連接",
       "expired": "QR code 已過期，請重新產生。",
       "failed": "連接微信失敗。",
@@ -7234,7 +7234,7 @@
       "connect": "連接 WhatsApp",
       "connectDescription": "將你的 WhatsApp 帳號連接到 {{brandName}}，即可與你的智慧代理聊天。",
       "connected": "WhatsApp 已連接",
-      "description": "在 WhatsApp 裡傳訊息給 Okou。",
+      "description": "把兩個方案傳給 WhatsApp 裡的 Okou，請它幫你比較各自的優缺點。",
       "disconnected": "WhatsApp 已斷開",
       "expires": "連接碼將在 10 分鐘後過期。保持此頁面開啟以查看連接結果。",
       "instructions": "開啟 WhatsApp 或掃描 QR 碼，將連接碼傳送給 Okou 即可綁定帳號。",

@@ -3533,7 +3533,7 @@
         "copySuccess": "Telefonnummer kopiert",
         "createCodeError": "Verbindungscode konnte nicht erstellt werden.",
         "creatingCode": "Verbindungscode wird erstellt…",
-        "description": "Schreiben Sie {{assistantName}} eine Nachricht von Ihrem iPhone.",
+        "description": "Senden Sie {{assistantName}} eine Idee von Ihrem iPhone und bitten Sie um einen ersten Entwurf.",
         "openMessages": "Nachrichten öffnen",
         "options": "Telefonoptionen",
         "phoneLabel": "Telefon",
@@ -3638,7 +3638,7 @@
         "reviewGuide": "Review-Leitfaden",
         "reviewGuideDescription": "Sehen Sie sich die abgeschlossenen Einrichtungsschritte für diesen Feishu-Bot an.",
         "reviewGuideTitle": "Feishu-Review-Leitfaden",
-        "routeDescription": "Schreiben Sie Okou in Feishu.",
+        "routeDescription": "Schicken Sie Okou in Feishu einen Entwurf und bitten Sie um eine Kurzfassung für Ihr Team.",
         "selectAgent": "Wählen Sie einen Agenten aus",
         "setupIncomplete": "Einrichtung unvollständig",
         "steps": {
@@ -3775,7 +3775,7 @@
         "reviewGuide": "Review-Leitfaden",
         "reviewGuideDescription": "Sehen Sie sich die abgeschlossenen Einrichtungsschritte für diesen Lark-Bot an.",
         "reviewGuideTitle": "Lark-Review-Leitfaden",
-        "routeDescription": "Schreiben Sie Okou in Lark.",
+        "routeDescription": "Schicken Sie Okou in Lark einen Entwurf und bitten Sie um eine Kurzfassung für Ihr Team.",
         "selectAgent": "Wählen Sie einen Agenten aus",
         "setupIncomplete": "Einrichtung unvollständig",
         "steps": {
@@ -7168,7 +7168,7 @@
       "codeInstructions": "Sende diesen Code von der E-Mail-Adresse, die du hinzufügen möchtest, an Okou. Verwende ihn als Betreff oder erste Zeile deiner Nachricht.",
       "connected": "E-Mail verbunden",
       "deleteAria": "{{email}} löschen",
-      "description": "Schreiben Sie Okou eine E-Mail. Die Antwort kommt in Ihr Postfach.",
+      "description": "Leiten Sie eine E-Mail an Okou weiter und bitten Sie um eine Zusammenfassung oder einen Antwortentwurf.",
       "emailAddress": "E-Mail-Adresse",
       "healthNotice": "Verwende diese Integration nicht für Patientendaten, die unter HIPAA fallen.",
       "invalidLink": "Dieser Verbindungslink ist ungültig. Sende Okou eine neue E-Mail.",
@@ -7191,7 +7191,7 @@
     "feishuConnected": "Feishu hat erfolgreich eine Verbindung hergestellt",
     "github": {
       "adminInstall": "Bitten Sie einen Organisationsadministrator, die GitHub-App zu installieren",
-      "description": "Starten Sie einen Workflow, wenn ein Pull Request geöffnet wird.",
+      "description": "Starten Sie beim Öffnen eines Pull Requests einen Workflow für eine Review-Checkliste.",
       "title": "GitHub"
     },
     "header": {
@@ -7200,7 +7200,7 @@
     },
     "slack": {
       "adminInstall": "Bitten Sie Ihren Administrator, die Slack-Integration zu installieren",
-      "description": "Erwähnen Sie Okou in einem Slack-Kanal.",
+      "description": "Erwähnen Sie Okou in einem Slack-Kanal und bitten Sie um Feedback zu einem Entwurf.",
       "install": "Auf Slack installieren",
       "permissionsUpdated": "Slack-Berechtigungen wurden aktualisiert",
       "title": "Slack",
@@ -7208,8 +7208,8 @@
       "uninstallTitle": "Slack-Integration deinstallieren?"
     },
     "teams": {
-      "connectAccount": "Schreiben Sie Okou in Teams.",
-      "description": "Schreiben Sie Okou in Teams.",
+      "connectAccount": "Fügen Sie Ihre Besprechungsnotizen in Teams ein und bitten Sie Okou, die Aufgaben aufzulisten.",
+      "description": "Fügen Sie Ihre Besprechungsnotizen in Teams ein und bitten Sie Okou, die Aufgaben aufzulisten.",
       "disconnect": "Trennen Sie die Verbindung zu Microsoft Teams",
       "install": "In Teams installieren",
       "moreOptions": "Weitere Microsoft Teams-Optionen",
@@ -7220,7 +7220,7 @@
       "uninstallTitle": "Microsoft Teams-Integration deinstallieren?"
     },
     "telegram": {
-      "description": "Schreiben Sie Okou in Telegram.",
+      "description": "Schicken Sie Okou in Telegram zwei Vorschläge und fragen Sie nach den Vor- und Nachteilen.",
       "title": "Telegram"
     },
     "wechat": {
@@ -7230,7 +7230,7 @@
       "connect": "Verbinden",
       "connected": "Verbunden",
       "creating": "QR-Code wird erstellt…",
-      "description": "Schreiben Sie Okou in WeChat.",
+      "description": "Schicken Sie Okou in WeChat zwei Vorschläge und fragen Sie nach den Vor- und Nachteilen.",
       "disconnect": "Trennen",
       "expired": "Dieser QR-Code ist abgelaufen. Erstelle einen neuen.",
       "failed": "Die Verbindung zu WeChat ist fehlgeschlagen.",
@@ -7258,7 +7258,7 @@
       "connect": "WhatsApp verbinden",
       "connectDescription": "Verbinde dein WhatsApp-Konto mit {{brandName}}, um mit deinem Agenten zu chatten.",
       "connected": "WhatsApp verbunden",
-      "description": "Schreiben Sie Okou in WhatsApp.",
+      "description": "Schicken Sie Okou in WhatsApp zwei Vorschläge und fragen Sie nach den Vor- und Nachteilen.",
       "disconnected": "WhatsApp getrennt",
       "expires": "Dieser Code läuft in 10 Minuten ab. Lass diese Seite geöffnet, um die Verbindung zu bestätigen.",
       "instructions": "Öffne WhatsApp oder scanne den QR-Code. Sende dann den Verbindungscode, um dein Konto zu verknüpfen.",

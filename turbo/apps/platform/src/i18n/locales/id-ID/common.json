@@ -3517,7 +3517,7 @@
         "copySuccess": "Nomor telepon disalin",
         "createCodeError": "Tidak dapat membuat kode koneksi.",
         "creatingCode": "Membuat kode koneksi…",
-        "description": "Kirim pesan ke {{assistantName}} dari iPhone Anda.",
+        "description": "Kirim ide ke {{assistantName}} dari iPhone dan minta bantuan membuat draf awal.",
         "openMessages": "Buka Pesan",
         "options": "Opsi telepon",
         "phoneLabel": "Telepon",
@@ -3622,7 +3622,7 @@
         "reviewGuide": "Tinjau panduan",
         "reviewGuideDescription": "Tinjau langkah-langkah penyiapan yang telah selesai untuk bot Feishu ini.",
         "reviewGuideTitle": "Panduan tinjau Feishu",
-        "routeDescription": "Kirim pesan ke Okou di Feishu.",
+        "routeDescription": "Kirim draf ke Okou di Feishu dan minta versi singkat untuk dibagikan kepada tim.",
         "selectAgent": "Pilih agen",
         "setupIncomplete": "Penyiapan belum selesai",
         "steps": {
@@ -3759,7 +3759,7 @@
         "reviewGuide": "Tinjau panduan",
         "reviewGuideDescription": "Tinjau langkah-langkah penyiapan yang telah selesai untuk bot Lark ini.",
         "reviewGuideTitle": "Panduan tinjau Lark",
-        "routeDescription": "Kirim pesan ke Okou di Lark.",
+        "routeDescription": "Kirim draf ke Okou di Lark dan minta versi singkat untuk dibagikan kepada tim.",
         "selectAgent": "Pilih agen",
         "setupIncomplete": "Penyiapan belum selesai",
         "steps": {
@@ -7144,7 +7144,7 @@
       "codeInstructions": "Kirim kode ini ke Okou dari alamat email yang ingin ditambahkan. Gunakan sebagai subjek atau baris pertama pesan.",
       "connected": "Email terhubung",
       "deleteAria": "Hapus {{email}}",
-      "description": "Kirim email ke Okou dan terima balasannya di kotak masuk Anda.",
+      "description": "Teruskan email ke Okou dan minta ringkasan atau draf balasan.",
       "emailAddress": "Alamat email",
       "healthNotice": "Jangan gunakan integrasi ini untuk informasi pasien yang diatur oleh HIPAA.",
       "invalidLink": "Tautan koneksi ini tidak valid. Kirim email baru ke Okou.",
@@ -7167,7 +7167,7 @@
     "feishuConnected": "Feishu berhasil terhubung",
     "github": {
       "adminInstall": "Minta admin organisasi untuk menginstal aplikasi GitHub",
-      "description": "Mulai alur kerja saat pull request dibuka.",
+      "description": "Saat pull request dibuka, jalankan alur kerja untuk menyiapkan daftar periksa peninjauan.",
       "title": "GitHub"
     },
     "header": {
@@ -7176,7 +7176,7 @@
     },
     "slack": {
       "adminInstall": "Minta admin Anda untuk memasang integrasi Slack",
-      "description": "Sebut Okou di kanal Slack.",
+      "description": "Sebut Okou di kanal Slack dan minta masukan tentang draf yang sedang Anda tulis.",
       "install": "Pasang ke Slack",
       "permissionsUpdated": "Izin Slack telah diperbarui",
       "title": "Slack",
@@ -7184,8 +7184,8 @@
       "uninstallTitle": "Copot pemasangan integrasi Slack?"
     },
     "teams": {
-      "connectAccount": "Kirim pesan ke Okou di Teams.",
-      "description": "Kirim pesan ke Okou di Teams.",
+      "connectAccount": "Tempel catatan rapat di Teams dan minta Okou merangkum tugas yang perlu ditindaklanjuti.",
+      "description": "Tempel catatan rapat di Teams dan minta Okou merangkum tugas yang perlu ditindaklanjuti.",
       "disconnect": "Putuskan koneksi Microsoft Teams",
       "install": "Pasang di Teams",
       "moreOptions": "Opsi Microsoft Teams lainnya",
@@ -7196,7 +7196,7 @@
       "uninstallTitle": "Copot pemasangan integrasi Microsoft Teams?"
     },
     "telegram": {
-      "description": "Kirim pesan ke Okou di Telegram.",
+      "description": "Kirim dua pilihan ke Okou di Telegram dan minta perbandingan kelebihan serta kekurangannya.",
       "title": "Telegram"
     },
     "wechat": {
@@ -7206,7 +7206,7 @@
       "connect": "Hubungkan",
       "connected": "Terhubung",
       "creating": "Membuat kode QR…",
-      "description": "Kirim pesan ke Okou di WeChat.",
+      "description": "Kirim dua pilihan ke Okou di WeChat dan minta perbandingan kelebihan serta kekurangannya.",
       "disconnect": "Putuskan koneksi",
       "expired": "Kode QR ini telah kedaluwarsa. Buat yang baru.",
       "failed": "Tidak dapat terhubung ke WeChat.",
@@ -7234,7 +7234,7 @@
       "connect": "Hubungkan WhatsApp",
       "connectDescription": "Hubungkan akun WhatsApp Anda ke {{brandName}} untuk mengobrol dengan agen Anda.",
       "connected": "WhatsApp terhubung",
-      "description": "Kirim pesan ke Okou di WhatsApp.",
+      "description": "Kirim dua pilihan ke Okou di WhatsApp dan minta perbandingan kelebihan serta kekurangannya.",
       "disconnected": "WhatsApp terputus",
       "expires": "Kode ini kedaluwarsa dalam 10 menit. Biarkan halaman ini terbuka untuk melihat konfirmasi koneksi.",
       "instructions": "Buka WhatsApp atau pindai kode QR, lalu kirim kode koneksi untuk menautkan akun Anda.",
