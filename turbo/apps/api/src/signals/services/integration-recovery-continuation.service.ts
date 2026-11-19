@@ -12,14 +12,13 @@ import { sendChatAction } from "../external/telegram-client";
 import { publishThreadListChangedSafely } from "../external/realtime";
 import { logger } from "../../lib/log";
 import { settle } from "../utils";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { reconcileCanonicalSlackThreadStatus$ } from "./canonical-slack-thread-status.service";
-import { loadSlackQueuedLaunchMaterial$ } from "./slack-queued-launch-context.service";
+import { createSlackQueuedDelivery } from "./slack-queued-launch-context.service";
 import { createTeamsQueuedDelivery } from "./teams-queued-launch-context.service";
 import { sendTeamsRunStartIndicator } from "./teams-thinking-indicator.service";
-import { loadTelegramQueuedLaunchMaterial$ } from "./telegram-queued-launch-context.service";
-import { loadAgentPhoneQueuedLaunchMaterial$ } from "./agentphone-queued-launch-context.service";
-import { loadWechatQueuedLaunchMaterial$ } from "./wechat-context.service";
+import { createTelegramQueuedDelivery } from "./telegram-queued-launch-context.service";
+import { createAgentPhoneQueuedDelivery } from "./agentphone-queued-launch-context.service";
+import { loadWechatQueuedDelivery$ } from "./wechat-context.service";
 import { reconcileWechatThreadTyping$ } from "./wechat-thread-typing.service";
 import { sendAgentPhoneRunTyping } from "./agentphone-run-typing.service";
 import { createFeishuRecoveryContext } from "./feishu-queued-launch-context.service";
@@ -39,30 +38,23 @@ const showRecoveryIndicator$ = command(
     input: IntegrationRecoveryInput,
     signal: AbortSignal,
   ): Promise<void> => {
-    if (input.contextType === "teams") {
-      signal.throwIfAborted();
-      const activity = await get(createTeamsQueuedDelivery(input));
-      signal.throwIfAborted();
-      if (activity) {
-        await sendTeamsRunStartIndicator({ activity }, signal);
-      }
-      return;
-    }
-    const featureSwitchContext = await set(
-      loadUserFeatureSwitchContext$,
-      input.orgId,
-      input.userId,
-      signal,
-    );
-    const source = { ...input, featureSwitchContext };
+    signal.throwIfAborted();
     switch (input.contextType) {
-      case "slack": {
-        const material = await set(loadSlackQueuedLaunchMaterial$, source);
+      case "teams": {
+        const activity = await get(createTeamsQueuedDelivery(input));
         signal.throwIfAborted();
-        if (material) {
+        if (activity) {
+          await sendTeamsRunStartIndicator({ activity }, signal);
+        }
+        break;
+      }
+      case "slack": {
+        const target = await get(createSlackQueuedDelivery(input));
+        signal.throwIfAborted();
+        if (target) {
           await set(
             reconcileCanonicalSlackThreadStatus$,
-            { ...material.slackDelivery, chatThreadId: input.chatThreadId },
+            { ...target, chatThreadId: input.chatThreadId },
             signal,
           );
         }
@@ -88,23 +80,18 @@ const showRecoveryIndicator$ = command(
         break;
       }
       case "telegram": {
-        const material = await set(loadTelegramQueuedLaunchMaterial$, source);
+        const target = await get(createTelegramQueuedDelivery(input));
         signal.throwIfAborted();
         const botToken = getOfficialTelegramBotConfig().botToken;
-        if (material && botToken) {
-          await sendChatAction(
-            botToken,
-            material.telegramDelivery.chatId,
-            "typing",
-          );
+        if (target && botToken) {
+          await sendChatAction(botToken, target.chatId, "typing");
           signal.throwIfAborted();
         }
         break;
       }
       case "agentphone": {
-        const material = await set(loadAgentPhoneQueuedLaunchMaterial$, source);
+        const target = await get(createAgentPhoneQueuedDelivery(input));
         signal.throwIfAborted();
-        const target = material?.agentphoneDelivery;
         if (
           target?.conversationId &&
           (target.channel === "imessage" || target.channel === "whatsapp")
@@ -117,18 +104,12 @@ const showRecoveryIndicator$ = command(
         break;
       }
       case "wechat": {
-        const material = await set(
-          loadWechatQueuedLaunchMaterial$,
-          source,
-          signal,
-        );
-        if (material) {
+        const target = await set(loadWechatQueuedDelivery$, input, signal);
+        signal.throwIfAborted();
+        if (target) {
           await set(
             reconcileWechatThreadTyping$,
-            {
-              chatThreadId: input.chatThreadId,
-              target: material.wechatDelivery,
-            },
+            { chatThreadId: input.chatThreadId, target },
             signal,
           );
         }

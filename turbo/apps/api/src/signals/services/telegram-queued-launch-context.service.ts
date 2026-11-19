@@ -171,6 +171,37 @@ function telegramUserInfoExtras(
   };
 }
 
+function telegramDeliveryFromContext(
+  context: NonNullable<TelegramThreadContext>,
+) {
+  return telegramDeliveryTargetSchema.parse({
+    installationId: OFFICIAL_TELEGRAM_BOT_ID,
+    chatId: context.chatId,
+    messageId: context.messageId,
+    rootMessageId: context.rootMessageId,
+    userLinkId: context.userLinkId,
+    userLinkKind: context.userLinkKind,
+    agentId: context.agentId,
+    isDM: context.chatType === "private",
+    ...(context.messageThreadId !== null
+      ? { messageThreadId: context.messageThreadId }
+      : {}),
+    ...(context.thinkingMessageId !== null
+      ? { thinkingMessageId: context.thinkingMessageId }
+      : {}),
+  });
+}
+
+export function createTelegramQueuedDelivery(args: TelegramLaunchSource) {
+  const context$ = createTelegramLaunchContext(args);
+  return computed(async (get) => {
+    const context = await get(context$);
+    return context && getOfficialTelegramBotConfig().botId !== null
+      ? telegramDeliveryFromContext(context)
+      : null;
+  });
+}
+
 export const loadTelegramQueuedLaunchMaterial$ = command(
   async (
     { get },
@@ -206,22 +237,7 @@ export const loadTelegramQueuedLaunchMaterial$ = command(
         }),
         context.threadContext,
       ),
-      telegramDelivery: telegramDeliveryTargetSchema.parse({
-        installationId: OFFICIAL_TELEGRAM_BOT_ID,
-        chatId: context.chatId,
-        messageId: context.messageId,
-        rootMessageId: context.rootMessageId,
-        userLinkId: context.userLinkId,
-        userLinkKind: context.userLinkKind,
-        agentId: context.agentId,
-        isDM: context.chatType === "private",
-        ...(context.messageThreadId !== null
-          ? { messageThreadId: context.messageThreadId }
-          : {}),
-        ...(context.thinkingMessageId !== null
-          ? { thinkingMessageId: context.thinkingMessageId }
-          : {}),
-      }),
+      telegramDelivery: telegramDeliveryFromContext(context),
       userInfoExtras: telegramUserInfoExtras(context),
     };
   },

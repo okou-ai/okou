@@ -6,7 +6,7 @@ import {
   emailDeliveryTargetSchema,
   type EmailDeliveryTarget,
 } from "./email-chat-callback-payload";
-import { loadEmailQueuedLaunchMaterial$ } from "./email-queued-launch-context.service";
+import { createEmailQueuedDelivery } from "./email-queued-launch-context.service";
 import {
   dispatchEmailChatDeliveryOnce$,
   deliverEmailChatAdmissionFailure$,
@@ -15,7 +15,7 @@ import {
   wechatDeliveryTargetSchema,
   type WechatDeliveryTarget,
 } from "./wechat-chat-callback-payload";
-import { loadWechatQueuedLaunchMaterial$ } from "./wechat-context.service";
+import { loadWechatQueuedDelivery$ } from "./wechat-context.service";
 import { reconcileWechatThreadTyping$ } from "./wechat-thread-typing.service";
 import {
   sendWechatChatReply$,
@@ -29,7 +29,6 @@ import { v5 as uuidv5 } from "uuid";
 import type { ChatRecommendedFollowup } from "@okouai/api-contracts/contracts/chat-threads";
 import { publicProviderBalanceFailureReason } from "@okouai/api-contracts/contracts/run-balance-errors";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { serializeError } from "@okouai/core/log-utils";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
@@ -63,7 +62,7 @@ import {
   agentphoneDeliveryTargetSchema,
   type AgentPhoneDeliveryTarget,
 } from "./agentphone-chat-callback-payload";
-import { loadAgentPhoneQueuedLaunchMaterial$ } from "./agentphone-queued-launch-context.service";
+import { createAgentPhoneQueuedDelivery } from "./agentphone-queued-launch-context.service";
 import { integrationCompletionFallbackEventIdForRun } from "./assistant-event-id";
 import {
   loadCompletedRunOutput$,
@@ -120,7 +119,7 @@ import {
   discordDeliveryTargetSchema,
   type DiscordDeliveryTarget,
 } from "./discord-chat-callback-payload";
-import { loadDiscordQueuedLaunchMaterial$ } from "./discord-queued-launch-context.service";
+import { loadDiscordQueuedDelivery$ } from "./discord-queued-launch-context.service";
 import { scheduleDiscordRunTyping$ } from "./discord-run-typing.service";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import {
@@ -160,7 +159,7 @@ import {
 import { sendUserPushNotifications$ } from "./push-notifications.service";
 import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
 import { saveRunSummary$ } from "./run-summary.service";
-import { loadSlackQueuedLaunchMaterial$ } from "./slack-queued-launch-context.service";
+import { createSlackQueuedDelivery } from "./slack-queued-launch-context.service";
 import {
   slackChatDeliveryFields,
   type SlackDeliveryTarget,
@@ -174,7 +173,7 @@ import {
   telegramDeliveryTargetSchema,
   type TelegramDeliveryTarget,
 } from "./telegram-chat-callback-payload";
-import { loadTelegramQueuedLaunchMaterial$ } from "./telegram-queued-launch-context.service";
+import { createTelegramQueuedDelivery } from "./telegram-queued-launch-context.service";
 
 const log = logger("callback:chat");
 type ChatCallbackPreCreateTimingSpanKind = "top_level" | "nested";
@@ -3487,98 +3486,25 @@ export type QueuedPromptRejectionTarget =
       readonly channel: QueuedAdmissionFailureChannel;
     };
 
-function isQueuedRejectionDeliveryType(contextType: string): boolean {
-  const deliveryTypes: readonly string[] = [
-    "slack",
-    "feishu",
-    "teams",
-    "discord",
-    "wechat",
-    "telegram",
-    "email",
-    "agentphone",
-  ];
-  return deliveryTypes.includes(contextType);
-}
-
-function queuedRejectionChannelContext(
-  head: QueuedRejectionHead,
-  featureSwitchContext: FeatureSwitchContext,
-) {
-  const source = {
-    eventId: head.id,
-    chatThreadId: head.chatThreadId,
-    orgId: head.orgId,
-    userId: head.userId,
-    featureSwitchContext,
-  };
-  const delivery = {
-    chatThreadId: head.chatThreadId,
-    orgId: head.orgId,
-    userId: head.userId,
-    agentId: head.agentId,
-  };
-  return { source, delivery };
-}
-
-const loadMessageRejectionDelivery$ = command(
-  async (
-    { set },
-    args: ReturnType<typeof queuedRejectionChannelContext> & {
-      readonly contextType: "email" | "agentphone";
-    },
-    signal: AbortSignal,
-  ): Promise<QueuedAdmissionFailureChannel | undefined> => {
-    if (args.contextType === "email") {
-      const material = await set(loadEmailQueuedLaunchMaterial$, args.source);
-      signal.throwIfAborted();
-      return material
-        ? { ...args.delivery, kind: "Email", target: material.emailDelivery }
-        : undefined;
-    }
-    const material = await set(
-      loadAgentPhoneQueuedLaunchMaterial$,
-      args.source,
-    );
-    signal.throwIfAborted();
-    return material
-      ? {
-          ...args.delivery,
-          kind: "AgentPhone",
-          target: material.agentphoneDelivery,
-        }
-      : undefined;
-  },
-);
-
 const loadQueuedRejectionChannel$ = command(
   async (
     { get, set },
     head: QueuedRejectionHead,
     signal: AbortSignal,
   ): Promise<QueuedAdmissionFailureChannel | undefined> => {
-    const contextType = head.contextType;
-    if (contextType === null || !isQueuedRejectionDeliveryType(contextType)) {
-      return undefined;
-    }
-    const featureSwitchContext = await set(
-      loadUserFeatureSwitchContext$,
-      head.orgId,
-      head.userId,
-      signal,
-    );
+    const owner = {
+      chatThreadId: head.chatThreadId,
+      orgId: head.orgId,
+      userId: head.userId,
+    };
+    const source = { ...owner, eventId: head.id };
+    const delivery = { ...owner, agentId: head.agentId };
     signal.throwIfAborted();
-    const { source, delivery } = queuedRejectionChannelContext(
-      head,
-      featureSwitchContext,
-    );
-    switch (contextType) {
+    switch (head.contextType) {
       case "slack": {
-        const material = await set(loadSlackQueuedLaunchMaterial$, source);
+        const target = await get(createSlackQueuedDelivery(source));
         signal.throwIfAborted();
-        return material
-          ? { ...delivery, kind: "Slack", target: material.slackDelivery }
-          : undefined;
+        return target ? { ...delivery, kind: "Slack", target } : undefined;
       }
       case "feishu": {
         const context = await get(createFeishuLaunchContext(source));
@@ -3597,39 +3523,41 @@ const loadQueuedRejectionChannel$ = command(
         return target ? { ...delivery, kind: "Teams", target } : undefined;
       }
       case "discord": {
-        const material = await set(
-          loadDiscordQueuedLaunchMaterial$,
-          source,
-          signal,
-        );
-        return material
-          ? { ...delivery, kind: "Discord", target: material.discordDelivery }
-          : undefined;
+        const target = await set(loadDiscordQueuedDelivery$, source, signal);
+        signal.throwIfAborted();
+        return target ? { ...delivery, kind: "Discord", target } : undefined;
       }
       case "wechat": {
-        const material = await set(
-          loadWechatQueuedLaunchMaterial$,
-          source,
-          signal,
-        );
-        return material
-          ? { ...delivery, kind: "Wechat", target: material.wechatDelivery }
-          : undefined;
+        const target = await set(loadWechatQueuedDelivery$, source, signal);
+        signal.throwIfAborted();
+        return target ? { ...delivery, kind: "Wechat", target } : undefined;
       }
       case "telegram": {
-        const material = await set(loadTelegramQueuedLaunchMaterial$, source);
+        const target = await get(createTelegramQueuedDelivery(source));
         signal.throwIfAborted();
-        return material
-          ? { ...delivery, kind: "Telegram", target: material.telegramDelivery }
-          : undefined;
+        return target ? { ...delivery, kind: "Telegram", target } : undefined;
       }
-      case "email":
-      case "agentphone": {
-        return await set(
-          loadMessageRejectionDelivery$,
-          { source, delivery, contextType },
+      case "email": {
+        const featureSwitchContext = await set(
+          loadUserFeatureSwitchContext$,
+          head.orgId,
+          head.userId,
           signal,
         );
+        signal.throwIfAborted();
+        const target = await get(
+          createEmailQueuedDelivery({ ...source, featureSwitchContext }),
+        );
+        signal.throwIfAborted();
+        return target ? { ...delivery, kind: "Email", target } : undefined;
+      }
+      case "agentphone": {
+        const target = await get(createAgentPhoneQueuedDelivery(source));
+        signal.throwIfAborted();
+        return target ? { ...delivery, kind: "AgentPhone", target } : undefined;
+      }
+      default: {
+        return undefined;
       }
     }
   },
