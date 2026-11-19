@@ -163,7 +163,7 @@ if [ "$is_probe" = "true" ]; then
   fi
 
   case "$FAKE_SSH_SCENARIO" in
-    healthy|actual-failure|actual-hang)
+    healthy|actual-failure|actual-hang|hold-channel)
       exit 0
       ;;
     auto-master-failure|auto-master-reuse)
@@ -222,6 +222,11 @@ if [ "$FAKE_SSH_SCENARIO" = "actual-failure" ]; then
   echo "actual stdout"
   echo "actual stderr" >&2
   exit 42
+fi
+if [ "$FAKE_SSH_SCENARIO" = "hold-channel" ]; then
+  printf '%s\n' "$$" > "$FAKE_ACTUAL_SSH_PID"
+  IFS= read -r _ < "$FAKE_MASTER_TRIGGER"
+  echo 'old channel completed'
 fi
 if [ "$FAKE_SSH_SCENARIO" = "actual-hang" ]; then
   printf '%s\n' "$$" > "$FAKE_ACTUAL_SSH_PID"
@@ -876,11 +881,25 @@ fi
 
 concurrent="${tmp}/concurrent"
 setup_case "$concurrent"
-invoke_wrapper "$concurrent" stale-success ssh \
+target_key=$(printf '%s' 'metal@dev-8.aws.vm3.ai' | sha256sum | cut -c1-24)
+old_proxy_root="$concurrent/runner-temp/cloudflare-ssh-master-${target_key}.stderr.proxies"
+mkfifo "$concurrent/auto-master.trigger"
+OKOU_CLOUDFLARE_SSH_OPERATION_TIMEOUT_SECONDS=15 \
+  invoke_wrapper "$concurrent" hold-channel ssh metal@dev-8.aws.vm3.ai held-operation \
+  > "$concurrent/held.out" 2> "$concurrent/held.err" &
+held_pid=$!
+for _ in {1..100}; do
+  [ ! -s "$concurrent/actual-ssh.pid" ] || break
+  "$system_sleep" 0.02
+done
+[ -s "$concurrent/actual-ssh.pid" ] || fail "old master channel did not start"
+mkdir -p "$old_proxy_root"
+touch "$old_proxy_root/retired"
+invoke_wrapper "$concurrent" healthy ssh \
   metal@dev-8.aws.vm3.ai touch /tmp/concurrent-ssh \
   > "$concurrent/stdout-1" 2> "$concurrent/stderr-1" &
 pid1=$!
-invoke_wrapper "$concurrent" stale-success scp \
+invoke_wrapper "$concurrent" healthy scp \
   /tmp/source metal@dev-8.aws.vm3.ai:/tmp/concurrent-scp \
   > "$concurrent/stdout-2" 2> "$concurrent/stderr-2" &
 pid2=$!
@@ -895,6 +914,25 @@ assert_match_count "$concurrent/ssh.log" 1 "-M -N -f"
 assert_match_count "$concurrent/actual-ssh.log" 1 \
   "metal@dev-8.aws.vm3.ai touch /tmp/concurrent-ssh"
 assert_match_count "$concurrent/scp.log" 1 "/tmp/source metal@dev-8.aws.vm3.ai:/tmp/concurrent-scp"
+assert_line_count "$concurrent/ssh.log" 1 "-v -n -T metal@dev-8.aws.vm3.ai true"
+assert_not_contains "$concurrent/ssh.log" "-O exit"
+printf 'release\n' | "$system_timeout" 5s tee "$concurrent/auto-master.trigger" >/dev/null
+wait "$held_pid"
+assert_contains "$concurrent/held.out" "old channel completed"
+state_file="$concurrent/state/${target_key}.control-path"
+replacement=$(< "$state_file")
+touch "$old_proxy_root/retired"
+run_wrapper "$concurrent" healthy ssh metal@dev-8.aws.vm3.ai echo unchanged
+assert_contains "$concurrent/status" "0"
+[ "$(< "$state_file")" = "$replacement" ] || fail "late retirement replaced the current master"
+assert_match_count "$concurrent/ssh.log" 1 "-M -N -f"
+mkdir -p "${replacement}.stderr.proxies"
+touch "${replacement}.stderr.proxies/retired"
+run_wrapper "$concurrent" healthy ssh metal@dev-8.aws.vm3.ai echo renewed
+assert_contains "$concurrent/status" "0"
+[ "$(< "$state_file")" != "$replacement" ] || fail "retired replacement was reused"
+assert_match_count "$concurrent/ssh.log" 2 "-M -N -f"
+assert_not_contains "$concurrent/ssh.log" "-O exit"
 if [ -s "$concurrent/probe-stdin" ]; then
   fail "concurrent probes consumed caller stdin"
 fi

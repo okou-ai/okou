@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [ -z "${NATIVE_DIAGNOSTIC_CASE:-}" ]; then
-  for creation in preconnect probe recovery failed-recovery failed-preconnect; do
+  for creation in preconnect probe recovery failed-recovery failed-preconnect reset; do
     NATIVE_DIAGNOSTIC_CASE="$creation" timeout --kill-after=2s 10s bash "$0"
   done
   exit 0
@@ -52,6 +52,9 @@ printf '%s\n' '{"time":"2026-10-16T04:05:18Z","level":"debug","message":"Websock
   >> "$application/cloudflared.log"
 printf 'ready\n' > "$FIXTURE/started"
 IFS= read -r _ < "$FIXTURE/trigger"
+if [ "$NATIVE_DIAGNOSTIC_CASE" = reset ]; then
+  printf '%s\n' '{"level":"debug","message":"downstream->upstream copy: read tcp 10.1.0.62:35700->104.21.72.88:443: read: connection reset by peer"}' >> "$application/cloudflared.log"
+fi
 printf '%s\n' '{"time":"2026-10-16T04:06:09Z","level":"debug","message":"downstream->upstream copy: websocket: close 1006 (abnormal closure): unexpected EOF"}' \
   >> "$application/cloudflared.log"
 exit 0
@@ -62,7 +65,7 @@ set -euo pipefail
 create=false
 if [ ! -e "$FIXTURE/master-created" ]; then
   case "$NATIVE_DIAGNOSTIC_CASE" in
-    preconnect)
+    preconnect|reset)
       [[ " $* " != *" -M -N -f "* ]] || create=true
       ;;
     probe)
@@ -117,6 +120,10 @@ set -euo pipefail
 if [ ! -e "$FIXTURE/first-call" ]; then
   touch "$FIXTURE/first-call"
   printf 'ordinary caller stdout\n'
+  exit 0
+fi
+if [ "$NATIVE_DIAGNOSTIC_CASE" = reset ] && [[ " $* " == *'ControlPath='* ]]; then
+  printf 'replacement caller stdout\n'
   exit 0
 fi
 printf 'fail\n' > "$FIXTURE/trigger"
@@ -176,6 +183,15 @@ for forbidden in fixture-secret fixture-cookie; do
 done
 test "$(stat -c %a "$proxy_dir")" = 700
 test "$(stat -c %a "$proxy_dir/application/cloudflared.log")" = 600
+if [ "$NATIVE_DIAGNOSTIC_CASE" = reset ]; then
+  test -f "${master_log}.proxies/retired"
+  test -z "$(find "$tmp/state" -name '*.control-path' -print -quit)"
+  "$tmp/bin/scp" /tmp/source ubuntu@dev-11.gcp.vm3.ai:/tmp/target > "$tmp/retry.out" 2> "$tmp/retry.err"
+  test "$(< "$tmp/retry.out")" = 'replacement caller stdout'
+  test -n "$(find "$tmp/state" -name '*.control-path' -print -quit)"
+else
+  test ! -e "${master_log}.proxies/retired"
+fi
 
 # Malformed structured data and symlinked namespaces must also fail closed.
 printf '%s\n' '{"message":"fixture-malformed-secret' >> "$proxy_dir/application/cloudflared.log"

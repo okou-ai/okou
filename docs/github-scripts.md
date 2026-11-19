@@ -78,6 +78,11 @@ remains local for the job lifetime, including after a proxy exits 0. Standalone
 proxies remove their own temporary directory on exit. Outside an ephemeral CI
 job, the preconnection owner must remove its namespace after retiring all masters.
 
+A proxy that observes a native peer reset marks its own master as retired at
+teardown. The next guarded call skips that master and verifies a fresh control
+path under the existing per-target lock. The old master can finish its active
+channels. The caller retains its original result and owns any semantic retry.
+
 The access client runs with native `--log-level debug --log-directory` logging.
 In stdin/stdout proxy mode its application logger does not write to stderr, and
 an established stream failure can still return 0. Neither empty stderr nor that
