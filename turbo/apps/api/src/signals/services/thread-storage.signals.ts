@@ -1,5 +1,5 @@
 import { performance } from "node:perf_hooks";
-import { command, computed, type Computed } from "ccstate";
+import { computed, type Computed } from "ccstate";
 import { getFrameworkForType } from "@okouai/api-contracts/contracts/model-providers";
 import { isValidVersionPrefix } from "@okouai/core/version-id";
 import { memoryVersions } from "@okouai/db/schema/member-memory";
@@ -12,7 +12,6 @@ import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { createMemberMemoryContext } from "./agent-storage-context.service";
 import { storageVersionCacheKeySql } from "./execution-storage-cache-read.service";
 import type { AcceptedMemoryMount } from "./execution-storage.service";
-import { initializeMemberMemory$ } from "./member-memory-initialization.service";
 import {
   type AgentRunStorageInput,
   type AgentRunStoragePlan,
@@ -54,9 +53,9 @@ export function createStorageSignals(
     threadContext,
   );
   const index = createStorageIndexSignals(bootstrap, storageInput$);
-  const { plan$ } = createStoragePlanSignals(index);
+  const storagePlan = createStoragePlanSignals(index);
   const storage$ = computed(async (get): Promise<RunMemoryObservation> => {
-    const plan = await get(plan$);
+    const plan = await get(storagePlan.plan$);
     if (plan.missingArtifacts.length > 0) {
       return { kind: "missing" };
     }
@@ -67,18 +66,14 @@ export function createStorageSignals(
   });
   const owner = { orgId: bootstrap.orgId, userId: bootstrap.userId };
   const initializedMemory$ = createMemberMemoryContext(owner);
-  const recoverMemoryMounts$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const { requested } = await get(plan$);
-      await set(initializeMemberMemory$, owner, signal);
-      const { index: storageIndex } = await get(initializedMemory$);
-      signal.throwIfAborted();
-      return await finalizeMemoryMounts(
-        await resolveStorageEntries({ ...requested.input, storageIndex }),
-      );
-    },
-  );
-  return { storage$, recoverMemoryMounts$ };
+  const initializedMemoryMounts$ = computed(async (get) => {
+    const { requested } = await get(storagePlan.plan$);
+    const { index: storageIndex } = await get(initializedMemory$);
+    return await finalizeMemoryMounts(
+      await resolveStorageEntries({ ...requested.input, storageIndex }),
+    );
+  });
+  return { storage$, initializedMemoryMounts$ };
 }
 
 function createStorageInputSignal(

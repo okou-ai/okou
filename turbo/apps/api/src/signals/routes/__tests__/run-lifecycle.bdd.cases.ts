@@ -1439,7 +1439,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const firstExecution = await api.executionInput(first.runId);
         const firstMemory = expectCanonicalStorageManifest(
           firstExecution.storageManifest,
-        )?.storageMounts.find(({ name }) => name === "memory");
+        )?.storageMounts.find(({ name }) => {
+          return name === "memory";
+        });
         expect(firstMemory).toMatchObject({
           empty: true,
           writeback: true,
@@ -1458,7 +1460,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(
           expectCanonicalStorageManifest(
             nextExecution.storageManifest,
-          )?.storageMounts.find(({ name }) => name === "memory"),
+          )?.storageMounts.find(({ name }) => {
+            return name === "memory";
+          }),
         ).toStrictEqual(firstMemory);
         await api.requestCancelRun(member, next.runId, [200]);
         await finishCancelledRun(next.runId, nextExecution.sandboxToken);

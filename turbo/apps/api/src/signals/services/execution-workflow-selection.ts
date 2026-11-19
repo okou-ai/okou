@@ -165,7 +165,9 @@ export function selectExecutionPackages(
   }
   if (
     input.ordinaryAutomation &&
-    !selectedWorkflows.some(({ name }) => name === requiredWorkflow)
+    !selectedWorkflows.some(({ name }) => {
+      return name === requiredWorkflow;
+    })
   ) {
     return { error: "The Automation's Workflow package is unavailable" };
   }

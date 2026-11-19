@@ -279,6 +279,7 @@ import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { workflowAutomationTriggerSource } from "./workflow-automation-trigger-source";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
 import { createStorageSignals } from "./thread-storage.signals";
+import { initializeMemberMemory$ } from "./member-memory-initialization.service";
 import type { AcceptedMemoryMount } from "./execution-storage.service";
 import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
 
@@ -2028,7 +2029,7 @@ export function createThreadClaimRunObjects(
     pickedEvent$,
     threadContext,
   );
-  const { storage$, recoverMemoryMounts$ } = createStorageSignals(
+  const { storage$, initializedMemoryMounts$ } = createStorageSignals(
     bootstrap,
     pickedEvent$,
     threadContext,
@@ -2574,10 +2575,19 @@ export function createThreadClaimRunObjects(
       if (!preparedStorage || isRouteError(preparedStorage)) {
         return preparedStorage;
       }
+      if (preparedStorage.kind === "missing") {
+        await set(
+          initializeMemberMemory$,
+          { orgId: bootstrap.orgId, userId: bootstrap.userId },
+          signal,
+        );
+        signal.throwIfAborted();
+      }
       const memoryMounts =
         preparedStorage.kind === "ready"
           ? preparedStorage.mounts
-          : await set(recoverMemoryMounts$, signal);
+          : await get(initializedMemoryMounts$);
+      signal.throwIfAborted();
       return {
         ...input,
         memoryMounts,

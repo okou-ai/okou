@@ -16,8 +16,8 @@ export interface MemberMemoryContext {
 }
 
 export function createMemberMemoryContext(owner: MemberMemoryOwner) {
-  const requests = memberMemoryReadPlan(owner);
   return computed(async (get): Promise<MemberMemoryContext> => {
+    const requests = memberMemoryReadPlan(owner);
     const readPlan = storageBaseIndexReadPlan(requests);
     if (readPlan === null) {
       throw new Error("Member Memory lookup requires an index request");
