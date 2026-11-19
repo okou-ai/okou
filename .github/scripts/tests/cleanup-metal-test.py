@@ -149,19 +149,22 @@ BLOCKED_DIAGNOSTICS = r"""
 import os
 import select
 import sys
+import time
 from pathlib import Path
 
 args = sys.argv[1:]
-if (
-    len(args) == 3
-    and args[1] == "master"
-    and "metal-a.vm3.ai" in Path(args[2]).read_text()
-):
-    root = Path(os.environ["FIXTURE"])
-    (root / "diagnosing-a").write_text("ready\n")
-    with (root / "finish-diagnostics").open() as event:
-        assert select.select([event], [], [], 10)[0], "diagnostics were not released"
-        assert event.readline() == "ready\n"
+if len(args) == 3 and args[1] == "master":
+    probe = Path(args[2]).read_text()
+    failure = os.environ.get("READY_FAILURE")
+    if failure == "prior-lost" and "metal-a.vm3.ai" in probe:
+        root = Path(os.environ["FIXTURE"])
+        (root / "diagnosing-a").write_text("ready\n")
+        with (root / "finish-diagnostics").open() as event:
+            assert select.select([event], [], [], 10)[0], "diagnostics were not released"
+            assert event.readline() == "ready\n"
+    elif failure == "reset-once" and "metal-b.vm3.ai" in probe:
+        # Reproduce diagnostics finishing after the former five-second exit wait.
+        time.sleep(6)
 os.execv(sys.executable, [sys.executable, *args])
 """
 
@@ -361,6 +364,24 @@ class CleanupTests(unittest.TestCase):
             text=True,
             timeout=30,
             check=False,
+        )
+
+    def guarded_controller(self, **env):
+        bin_dir = self.root / "bin"
+        fake_ssh = (bin_dir / "ssh").rename(bin_dir / "real-ssh")
+        (bin_dir / "ssh").symlink_to(TOOLS / "cloudflare-ssh-command.sh")
+        python = bin_dir / "python3"
+        python.write_text(f"#!{sys.executable}\n{BLOCKED_DIAGNOSTICS}")
+        python.chmod(0o755)
+        transport_state = self.root / "transport"
+        transport_state.mkdir()
+        return self.controller(
+            METAL_HOSTS="metal-a.vm3.ai,metal-b.vm3.ai",
+            RUNNER_TEMP=str(self.root),
+            OKOU_CLOUDFLARE_SSH_REAL_SSH=str(fake_ssh),
+            OKOU_CLOUDFLARE_SSH_SCRIPTS_DIR=str(TOOLS),
+            OKOU_CLOUDFLARE_SSH_STATE_DIR=str(transport_state),
+            **env,
         )
 
     def owner(self, number=42, associated=True):
@@ -969,12 +990,12 @@ class CleanupTests(unittest.TestCase):
                         "inventory\n" * calls,
                     )
 
-    def test_lock_readiness_recovers_after_lost_reply(self):
+    def test_lock_readiness_recovers_after_lost_reply_and_slow_diagnostics(self):
         files = [
             self.resource("var/lib/vm0-runner/stripe/pr-42/config", host=host)
             for host in ("metal-a", "metal-b")
         ]
-        result = self.controller(READY_FAILURE="reset-once")
+        result = self.guarded_controller(READY_FAILURE="reset-once")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(all(not file.exists() for file in files))
         self.assertIn('"cleaned": 1', result.stdout)
@@ -1010,23 +1031,7 @@ class CleanupTests(unittest.TestCase):
             event = self.root / name
             os.mkfifo(event)
             self.addCleanup(os.close, os.open(event, os.O_RDWR | os.O_NONBLOCK))
-        bin_dir = self.root / "bin"
-        fake_ssh = (bin_dir / "ssh").rename(bin_dir / "real-ssh")
-        (bin_dir / "ssh").symlink_to(TOOLS / "cloudflare-ssh-command.sh")
-        python = bin_dir / "python3"
-        python.write_text(f"#!{sys.executable}\n{BLOCKED_DIAGNOSTICS}")
-        python.chmod(0o755)
-        transport_state = self.root / "transport"
-        transport_state.mkdir()
-
-        result = self.controller(
-            READY_FAILURE="prior-lost",
-            METAL_HOSTS="metal-a.vm3.ai,metal-b.vm3.ai",
-            RUNNER_TEMP=str(self.root),
-            OKOU_CLOUDFLARE_SSH_REAL_SSH=str(fake_ssh),
-            OKOU_CLOUDFLARE_SSH_SCRIPTS_DIR=str(TOOLS),
-            OKOU_CLOUDFLARE_SSH_STATE_DIR=str(transport_state),
-        )
+        result = self.guarded_controller(READY_FAILURE="prior-lost")
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertTrue(all(file.is_file() for file in files), result.stdout)
         self.assertIn(

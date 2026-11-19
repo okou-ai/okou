@@ -301,17 +301,16 @@ class Session:
                 if self.read(deadline - time.monotonic()) != {"ready": numbers}:
                     raise RuntimeError(f"invalid lock readiness from {host}")
             except WorkerChannelClosed as error:
+                # The wrapper closes stdout before finishing its diagnostics.
                 try:
-                    if attempt:
-                        raise
                     status = self.process.wait(
-                        timeout=min(5, max(0, deadline - time.monotonic()))
+                        timeout=max(0, deadline - time.monotonic())
                     )
                 except subprocess.TimeoutExpired:
                     raise error from None
                 finally:
                     self._close_process()
-                if status != 255 or time.monotonic() >= deadline:
+                if attempt or status != 255 or time.monotonic() >= deadline:
                     raise
                 # No cleanup was sent. The replacement still has to acquire
                 # the same flock, even if the first worker has yet to retire.
