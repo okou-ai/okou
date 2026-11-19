@@ -7913,24 +7913,116 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(cancelled.status).toBe("cancelled");
       });
 
-      it("rejects stored connector base URL vars outside their host policy", async () => {
-        const api = createRunsApi(context);
-        const connectors = createConnectorBddApi(context);
-        const { actor, agentId } = await entitledRunActor();
+      it.each([{ enabled: ["jira", "gitlab"] }, { enabled: ["jira"] }])(
+        "isolates stored connector base URL vars outside their host policy ($enabled)",
+        async ({ enabled }) => {
+          const api = createRunsApi(context);
+          const connectors = createConnectorBddApi(context);
+          const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-        await connectors.connectManualGrant(actor, "jira", "api-token", {
-          apiToken: "jira-token-bdd",
-          domain: "attacker.example",
-          email: "connector@example.com",
-        });
-        await api.enableAgentConnectors(actor, agentId, ["jira"]);
+          const jiraConnection = await connectors.connectManualGrant(
+            actor,
+            "jira",
+            "api-token",
+            {
+              apiToken: "jira-token-bdd",
+              domain: "attacker.example",
+              email: "connector@example.com",
+            },
+          );
+          const gitlabConnection = await connectors.connectManualGrant(
+            actor,
+            "gitlab",
+            "api-token",
+            { accessToken: "glpat-bdd", host: "gitlab.example.com" },
+          );
+          await api.enableAgentConnectors(actor, agentId, enabled);
 
-        // The pick rejects the input without a run; the exact host-policy message
-        // is asserted by packages/connectors firewall-expander.test.ts.
-        await expect(
-          api.readThreadRunRejection(actor, { agentId, prompt: "use jira" }),
-        ).resolves.toBe("bad_request");
-      });
+          const run = await api.createThreadRun(actor, {
+            agentId,
+            prompt: "Perform an unrelated task",
+          });
+          await api.heartbeatRunner(runnerGroup);
+          const execution = await api.executionInput(run.runId);
+
+          expect(
+            findFirewallEntry(execution.firewalls, "jira"),
+          ).toBeUndefined();
+          expect(execution.billableFirewalls).not.toContain("jira");
+          expect(execution.networkPolicies ?? {}).not.toHaveProperty("jira");
+          expect(execution.connectorRuntimeTargets).not.toContainEqual(
+            expect.objectContaining({
+              kind: "builtin",
+              connectorSlug: "jira",
+            }),
+          );
+          for (const alias of ["JIRA_API_TOKEN", "JIRA_DOMAIN", "JIRA_EMAIL"]) {
+            expect(execution.environment ?? {}).not.toHaveProperty(alias);
+            expect(execution.vars ?? {}).not.toHaveProperty(alias);
+            expect(execution.secretConnectorMap ?? {}).not.toHaveProperty(
+              alias,
+            );
+            expect(
+              execution.secretConnectorMetadataMap ?? {},
+            ).not.toHaveProperty(alias);
+          }
+          expect(
+            Object.values(execution.secretConnectorMap ?? {}),
+          ).not.toContain("jira");
+          expect(
+            Object.values(execution.secretConnectorMetadataMap ?? {}),
+          ).not.toContainEqual(
+            expect.objectContaining({ sourceId: jiraConnection.id }),
+          );
+
+          if (enabled.includes("gitlab")) {
+            expect(
+              findFirewallEntry(execution.firewalls, "gitlab"),
+            ).toMatchObject({
+              kind: "builtin",
+              sourceId: gitlabConnection.id,
+            });
+            expect(execution.networkPolicies).toHaveProperty("gitlab");
+            expect(execution.connectorRuntimeTargets).toContainEqual(
+              expect.objectContaining({
+                kind: "builtin",
+                connectorSlug: "gitlab",
+                sourceId: gitlabConnection.id,
+              }),
+            );
+            expect(execution.environment?.GITLAB_TOKEN).toBe(
+              connectorPlaceholder("gitlab", "GITLAB_TOKEN"),
+            );
+            expect(execution.environment?.GITLAB_HOST).toBe(
+              "gitlab.example.com",
+            );
+            expect(execution.vars).toMatchObject({
+              GITLAB_HOST: "gitlab.example.com",
+            });
+            expect(execution.secretConnectorMap).toMatchObject({
+              GITLAB_TOKEN: "gitlab",
+            });
+            expect(execution.secretConnectorMetadataMap).toMatchObject({
+              GITLAB_TOKEN: {
+                sourceType: "connector",
+                sourceId: gitlabConnection.id,
+              },
+            });
+          }
+          await expect(
+            connectors.readBuiltinConnectorAccount(
+              actor,
+              "jira",
+              jiraConnection.id,
+            ),
+          ).resolves.toMatchObject({ id: jiraConnection.id });
+
+          await api.requestCancelRun(actor, run.runId, [200]);
+          await finishCancelledRun(run.runId, execution.sandboxToken);
+          const drained = await api.readRunQueue(actor);
+          expect(drained.body.concurrency.active).toBe(0);
+        },
+      );
 
       it("applies expired and revoked connector grants before dispatch", async () => {
         const oauth = createOrdinaryOAuthRunApi();
