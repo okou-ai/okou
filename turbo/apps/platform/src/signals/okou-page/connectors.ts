@@ -517,6 +517,20 @@ function createConnectorUiStateCommands(
       patch: Partial<ComposerConnectorUiState>,
       signal: AbortSignal,
     ) => {
+      signal.throwIfAborted();
+      // Search, sorting and filters only edit local UI state. The four
+      // resource-owning fields below need the current account-mode switch.
+      if (
+        !("popoverOpen" in patch) &&
+        !("remoteAccessDialogOpen" in patch) &&
+        !("showAddDialog" in patch) &&
+        !("selectedConnectorSlug" in patch)
+      ) {
+        set(internalUiState$, (current) => {
+          return { ...current, ...patch };
+        });
+        return;
+      }
       const features = await get(featureSwitches$);
       signal.throwIfAborted();
       set(applyConnectorUiState$, patch, features, signal);
