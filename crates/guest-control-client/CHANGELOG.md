@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.113](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.112...guest-control-client-v0.23.113) (2026-11-19)
+
+
+### Refactoring
+
+* **guest-control:** centralize exec output policy limits ([#49027](https://github.com/okou-ai/okou/issues/49027)) ([eaae30a](https://github.com/okou-ai/okou/commit/eaae30ac5e7ed88de0dbb946fd552489d633b560))
+
 ## [0.23.112](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.111...guest-control-client-v0.23.112) (2026-11-19)
 
 ## [0.23.111](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.110...guest-control-client-v0.23.111) (2026-11-18)

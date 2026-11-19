@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.26](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.25...guest-contracts-v0.32.26) (2026-11-19)
+
+
+### Performance Improvements
+
+* **guest-control:** stream large file writes into sealed inputs ([#49029](https://github.com/okou-ai/okou/issues/49029)) ([4c926a5](https://github.com/okou-ai/okou/commit/4c926a5a96d2fd68883a5be1b34247f62389f2d2))
+
 ## [0.32.25](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.24...guest-contracts-v0.32.25) (2026-11-19)
 
 

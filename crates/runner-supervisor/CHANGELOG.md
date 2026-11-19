@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.10](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.9...runner-supervisor-v0.26.10) (2026-11-19)
+
+
+### Bug Fixes
+
+* **runner:** enable direct dispatch before startup readiness ([#48996](https://github.com/okou-ai/okou/issues/48996)) ([ff43cc4](https://github.com/okou-ai/okou/commit/ff43cc42defc24c5c02511ec822a31f50ec8ae05))
+
 ## [0.26.9](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.8...runner-supervisor-v0.26.9) (2026-11-19)
 
 
