@@ -20,7 +20,6 @@ import { isCanonicalMorningBriefAutomation$ } from "./morning-brief-schedule-cla
 import {
   scheduleTriggerContext,
   type AutomationRow,
-  type DueWorkflowAutomation,
   type RunWorkflowAutomationResult,
   type WorkflowScheduleClaimPlan,
 } from "./workflow-automation-enqueue.service";
@@ -67,7 +66,8 @@ const startDueWorkflowAutomation$ = command(
   async (
     { set },
     args: {
-      readonly due: DueWorkflowAutomation;
+      readonly automation: AutomationRow;
+      readonly chatThreadId: string;
       readonly row: DueWorkflowAutomationRow;
       readonly currentTime: Date;
       readonly scheduleContext: ReturnType<typeof scheduleTriggerContext>;
@@ -75,11 +75,13 @@ const startDueWorkflowAutomation$ = command(
     },
     signal: AbortSignal,
   ): Promise<RunWorkflowAutomationResult> => {
-    const { automation } = args.due;
+    const { automation } = args;
     return await set(
       runWorkflowAutomationNow$,
       {
-        due: args.due,
+        automation,
+        agentId: args.row.agentId,
+        chatThreadId: args.chatThreadId,
         automationContext: args.scheduleContext,
         apiStartTime: now(),
         ...(args.scheduleClaim ? { scheduleClaim: args.scheduleClaim } : {}),
@@ -102,8 +104,7 @@ const startDueWorkflowAutomation$ = command(
 /**
  * Claim a due workflow automation via an optimistic lock on `next_run_at`: clear
  * the next run and stamp `last_run_at`. A one-time automation stays readable
- * until its queued event claims a run, so a draining previous API version does
- * not discard the event during rollout. Recurrence advance happens in the
+ * until its queued event claims a run. Recurrence advance happens in the
  * completion callback. Returns the claimed row, or null when another tick won
  * the race.
  */
@@ -473,11 +474,6 @@ const launchClaimedDueRow$ = command(
     if (!chatThreadId) {
       return;
     }
-    const due: DueWorkflowAutomation = {
-      automation: claimed,
-      agentId: row.agentId,
-      chatThreadId,
-    };
     const scheduleContext = scheduleTriggerContext({
       automation: claimed,
       workflowName: row.workflowName,
@@ -487,7 +483,8 @@ const launchClaimedDueRow$ = command(
       set(
         startDueWorkflowAutomation$,
         {
-          due,
+          automation: claimed,
+          chatThreadId,
           row,
           currentTime,
           scheduleContext,

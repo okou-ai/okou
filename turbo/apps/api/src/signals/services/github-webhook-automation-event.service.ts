@@ -857,11 +857,9 @@ const startGithubWebhookAutomation$ = command(
     await set(
       runWorkflowAutomationNow$,
       {
-        due: {
-          automation: args.automation.automation,
-          agentId: args.automation.agentId,
-          chatThreadId: args.automation.chatThreadId,
-        },
+        automation: args.automation.automation,
+        agentId: args.automation.agentId,
+        chatThreadId: args.automation.chatThreadId,
         automationContext: context,
         apiStartTime: args.apiStartTime,
         triggerSource: "automation-event",

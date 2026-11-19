@@ -242,11 +242,9 @@ const admitChatRunFinishedAutomation$ = command(
       set(
         runWorkflowAutomationNow$,
         {
-          due: {
-            automation,
-            agentId,
-            chatThreadId,
-          },
+          automation,
+          agentId,
+          chatThreadId,
           automationContext: context,
           queueEventId: uuidv5(
             `${automation.id}:${event.runId}`,

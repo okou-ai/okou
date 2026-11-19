@@ -276,7 +276,7 @@ import {
   workflowAutomationEventTypeSchema,
 } from "./workflow-automation-context.service";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
-import { manualTriggerSource } from "./workflow-automation-trigger-source";
+import { workflowAutomationTriggerSource } from "./workflow-automation-trigger-source";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
 import { createStorageSignals } from "./thread-storage.signals";
 import type { AcceptedMemoryMount } from "./execution-storage.service";
@@ -594,18 +594,6 @@ function workflowAutomationRunMetadata(
   };
 }
 
-function workflowAutomationTiming(
-  timing: ApiDispatchTimingCollector,
-  apiStartTime: number,
-): ApiDispatchTimingCollector {
-  timing.recordElapsed(
-    "api_dispatch_pre_create_agent_workflow_automation_entrypoint_gap",
-    "nested",
-    apiStartTime,
-  );
-  return timing;
-}
-
 type RejectedQueueRunAssembly = Extract<
   ChatQueueRunAssembly,
   { readonly kind: "rejected" }
@@ -624,13 +612,7 @@ type QueuedAutomationLaunch =
       readonly recordLastRunId: boolean;
       readonly recordLastRunAt: boolean;
     }
-  | { readonly kind: "rejected"; readonly assembly: RejectedQueueRunAssembly };
-
-function rejectedAutomationLaunch(
-  assembly: RejectedQueueRunAssembly,
-): QueuedAutomationLaunch {
-  return { kind: "rejected", assembly };
-}
+  | RejectedQueueRunAssembly;
 
 const log = logger("ChatQueueConsume");
 
@@ -1660,7 +1642,24 @@ export function createThreadClaimRunObjects(
       ...queuedIntegrationLaunchFields(material, args.agent.id),
     });
   });
-  const automationTarget$ = threadContext.automationTarget$;
+  const automationSource$ = computed(async (get) => {
+    const [event, target] = await Promise.all([
+      get(automationEvent$),
+      get(threadContext.automationTarget$),
+    ]);
+    if (event && target) {
+      return { kind: "ready" as const, event, target };
+    }
+    const head = await get(head$);
+    const assembly: RejectedQueueRunAssembly = {
+      kind: "rejected",
+      rejection: {
+        userId: head.userId,
+        error: conflict("Workflow automation no longer exists").body.error,
+      },
+    };
+    return { kind: "rejected" as const, event, assembly };
+  });
   const automationSourceBudget$ = computed(async (get) => {
     const event = await get(automationEvent$);
     if (!event) {
@@ -1686,12 +1685,11 @@ export function createThreadClaimRunObjects(
   });
   const automationBudget$ = computed(
     async (get): Promise<AutonomyBudgetResult> => {
-      const [event, target, source] = await Promise.all([
-        get(automationEvent$),
-        get(automationTarget$),
+      const [input, source] = await Promise.all([
+        get(automationSource$),
         get(automationSourceBudget$),
       ]);
-      if (!event || !target || !source) {
+      if (input.kind === "rejected" || !source) {
         return {
           kind: "invalid",
           error: {
@@ -1700,6 +1698,7 @@ export function createThreadClaimRunObjects(
           },
         };
       }
+      const { event, target } = input;
       if (
         event.eventType !== "chat-run-finished" &&
         source.sourceRunId === undefined
@@ -1741,14 +1740,14 @@ export function createThreadClaimRunObjects(
     },
   );
   const automationMaterial$ = computed(async (get) => {
-    const [event, target, eventPayload] = await Promise.all([
-      get(automationEvent$),
-      get(automationTarget$),
+    const [input, eventPayload] = await Promise.all([
+      get(automationSource$),
       get(threadContext.automationPayload$),
     ]);
-    if (!event || !target) {
+    if (input.kind === "rejected") {
       return null;
     }
+    const { event, target } = input;
     return buildWorkflowAutomationQueuedLaunchMaterial({
       // Staff migration retains queued event bytes while reassigning the live
       // Automation. Resolve its new execution name without rewriting history.
@@ -1766,7 +1765,7 @@ export function createThreadClaimRunObjects(
   });
   const automationModel$ = computed(
     async (get): Promise<ThreadModelSelection | ThreadModelError> => {
-      if (!(await get(hasAutomationTarget$))) {
+      if ((await get(automationSource$)).kind === "rejected") {
         return conflict("Workflow automation no longer exists");
       }
       return get(threadContext.dispatchTiming$).measure(
@@ -1778,92 +1777,41 @@ export function createThreadClaimRunObjects(
       );
     },
   );
-  const hasAutomationTarget$ = computed(async (get) => {
-    const [event, target] = await Promise.all([
-      get(automationEvent$),
-      get(automationTarget$),
-    ]);
-    return event !== null && target !== null;
-  });
   const automationIdentity$ = computed(async (get) => {
-    return (await get(hasAutomationTarget$))
+    return (await get(automationSource$)).kind === "ready"
       ? { owner: { orgId: bootstrap.orgId, userId: bootstrap.userId } }
       : null;
   });
-  // A head whose automation input can no longer be read is rejected from its
-  // captured reads.
-  const earlyAutomationAssembly$ = computed(
-    async (get): Promise<ChatQueueRunAssembly | null> => {
-      if (await get(hasAutomationTarget$)) {
-        return null;
-      }
-      const head = await get(head$);
-      return {
-        kind: "rejected",
-        rejection: {
-          userId: head.userId,
-          error: {
-            code: "CONFLICT",
-            message: "Workflow automation no longer exists",
-          },
-        },
-      };
-    },
-  );
-  const recordAutomationEntryTiming$ = command(
-    (
-      _store,
-      head: ChatQueueHeadContext,
-      runTiming: ApiDispatchTimingCollector,
-      signal: AbortSignal,
-    ): void => {
-      signal.throwIfAborted();
-      // Records the entrypoint gap on the claim's run timing.
-      workflowAutomationTiming(runTiming, head.apiStartTime);
-    },
-  );
   const automationLaunch$ = computed(
     async (get): Promise<QueuedAutomationLaunch> => {
       const head = await get(head$);
-      const unreadable = (message: string): RejectedQueueRunAssembly => {
-        return {
-          kind: "rejected",
-          rejection: {
-            error: { code: "CONFLICT", message },
-            userId: head.userId,
-          },
-        };
-      };
-      const [event, target] = await Promise.all([
-        get(automationEvent$),
-        get(automationTarget$),
-        get(automationSourceBudget$),
-      ]);
-      if (!event || !target) {
-        return rejectedAutomationLaunch(
-          unreadable(
-            !event
-              ? "Workflow queue event payload is unreadable"
-              : "Workflow automation no longer exists",
-          ),
-        );
+      const input = await get(automationSource$);
+      if (input.kind === "rejected") {
+        return input.assembly;
       }
+      await get(automationSourceBudget$);
+      const { event, target } = input;
       if (
         target.workflow.officialDefinitionName !== null &&
         event.eventType === "manual" &&
         proactiveWorkflowKind(target.workflow.officialDefinitionName) !==
           "learning"
       ) {
-        return rejectedAutomationLaunch(
-          unreadable(OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE),
-        );
+        return {
+          kind: "rejected",
+          rejection: {
+            error: conflict(OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE).body
+              .error,
+            userId: head.userId,
+          },
+        };
       }
       const [material, autonomyBudget] = await Promise.all([
         get(automationMaterial$),
         get(automationBudget$),
       ]);
       if (!material) {
-        return rejectedAutomationLaunch({
+        return {
           kind: "rejected",
           rejection: {
             userId: target.automation.ownerUserId,
@@ -1872,16 +1820,16 @@ export function createThreadClaimRunObjects(
               message: "Workflow queue event payload is unreadable",
             },
           },
-        });
+        };
       }
       if (autonomyBudget.kind === "invalid") {
-        return rejectedAutomationLaunch({
+        return {
           kind: "rejected",
           rejection: {
             userId: target.automation.ownerUserId,
             error: autonomyBudget.error,
           },
-        });
+        };
       }
       return {
         kind: "launch",
@@ -1899,13 +1847,9 @@ export function createThreadClaimRunObjects(
   );
   const automationAssembly$ = computed(
     async (get): Promise<ChatQueueRunAssembly> => {
-      const early = await get(earlyAutomationAssembly$);
-      if (early) {
-        return early;
-      }
       const launch = await get(automationLaunch$);
       if (launch.kind === "rejected") {
-        return launch.assembly;
+        return launch;
       }
       const { automation, chatThreadId } = launch;
       const reject = (error: {
@@ -1934,7 +1878,7 @@ export function createThreadClaimRunObjects(
         run: {
           owner: { orgId: bootstrap.orgId, userId: bootstrap.userId },
           apiStartTime: launch.apiStartTime,
-          triggerSource: manualTriggerSource(automation),
+          triggerSource: workflowAutomationTriggerSource(automation),
           chatThreadId,
           codexServiceTier: model.codexServiceTier,
           reasoningEffort: model.reasoningEffort ?? null,
@@ -2570,7 +2514,7 @@ export function createThreadClaimRunObjects(
         ),
         args.workflowAutomationId &&
         args.facts.officialWorkflowBundles.length === 0
-          ? get(automationTarget$)
+          ? get(threadContext.automationTarget$)
           : null,
         get(bootstrap.disabledPaidTools$),
       ]);
@@ -2675,18 +2619,27 @@ export function createThreadClaimRunObjects(
       const head = await get(head$);
       signal.throwIfAborted();
       if (head.contextType === "automation") {
-        await set(recordAutomationEntryTiming$, head, timing.run, signal);
-        const [event, target] = await Promise.all([
-          get(automationEvent$),
-          get(automationTarget$),
-        ]);
+        timing.run.recordElapsed(
+          "api_dispatch_pre_create_agent_workflow_automation_entrypoint_gap",
+          "nested",
+          head.apiStartTime,
+        );
+        const input = await get(automationSource$);
         signal.throwIfAborted();
-        if (event && !target) {
-          await set(
-            revokeDeletedWorkflowAutomationInputs$,
-            { orgId: claim.orgId, automationId: event.automationId },
-            signal,
-          );
+        if (input.kind === "rejected") {
+          if (input.event) {
+            await set(
+              revokeDeletedWorkflowAutomationInputs$,
+              { orgId: claim.orgId, automationId: input.event.automationId },
+              signal,
+            );
+          } else {
+            await set(
+              rejectChatQueueHead$,
+              { head, rejection: input.assembly.rejection },
+              signal,
+            );
+          }
           signal.throwIfAborted();
           return null;
         }
@@ -2697,10 +2650,7 @@ export function createThreadClaimRunObjects(
       const { identityInput, authorization } = await get(authorizeIdentity$);
       signal.throwIfAborted();
       if (!identityInput) {
-        const assembly =
-          head.contextType === "automation"
-            ? await get(earlyAutomationAssembly$)
-            : await get(assembly$);
+        const assembly = await get(assembly$);
         signal.throwIfAborted();
         await set(
           rejectChatQueueHead$,
@@ -2831,7 +2781,7 @@ export function createThreadClaimRunObjects(
         const launch = await get(automationLaunch$);
         signal.throwIfAborted();
         if (launch.kind === "rejected") {
-          return { kind: "rejected" as const, assembly: launch.assembly };
+          return { kind: "rejected" as const, assembly: launch };
         }
         await get(automationAssembly$);
         signal.throwIfAborted();

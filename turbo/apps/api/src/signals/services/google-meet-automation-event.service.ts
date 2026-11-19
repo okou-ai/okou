@@ -652,11 +652,9 @@ const dispatchGoogleMeetTranscriptEventForAutomation$ = command(
       set(
         runWorkflowAutomationNow$,
         {
-          due: {
-            automation: args.automation.automation,
-            agentId: args.automation.agentId,
-            chatThreadId: args.automation.chatThreadId,
-          },
+          automation: args.automation.automation,
+          agentId: args.automation.agentId,
+          chatThreadId: args.automation.chatThreadId,
           automationContext: context,
           connectorSourceId: args.state.connectorId,
           apiStartTime: args.apiStartTime,
