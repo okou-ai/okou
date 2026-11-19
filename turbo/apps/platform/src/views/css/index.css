@@ -312,9 +312,11 @@
     );
 
   /* On the session's first home, the capability rows and the compliance block
-     under them settle in after the greeting: an 8px rise and a fade on the
-     greeting's own curve, one 70ms step apart through
-     `--capability-row-delay`. It lives in this inline block so the utility
+     under them settle in after the greeting: an 8px rise on the greeting's
+     own curve, one 70ms step apart through `--capability-row-delay`. They rise
+     without a fade: a row held at opacity 0 hides the page's largest paint,
+     the Create card's Spiral, from Largest Contentful Paint until the fade
+     has ended. It lives in this inline block so the utility
      carries the value itself: a theme variable is a custom property on
      `:root`, where its own `var(--capability-row-delay)` would resolve before
      any card could set one, leaving every row at 0ms. `animate-*` compiles to
@@ -909,7 +911,6 @@ body {
    `transform-fill`. */
 @keyframes capability-row-in {
   from {
-    opacity: 0;
     transform: translateY(0.5rem);
   }
 }
