@@ -50,12 +50,13 @@ export function mockBrowserCdp(
     readonly nativeBase64?: boolean;
     readonly endpointAliases?: readonly string[];
     readonly enforceFrameWindow?: boolean;
+    readonly onVersionProbe?: (connectionId: number) => void;
   } = {},
 ) {
   context.mocks.browser.nativeTextInsertion();
   const endpoints = new Set([cdpUrl, ...(options.endpointAliases ?? [])]);
   const connectionEndpoints = new Map<number, string>();
-  context.mocks.browser.canvasRendering();
+  const canvas = context.mocks.browser.canvasRendering();
   context.mocks.browser.uint8ArrayFromBase64(options.nativeBase64 ?? true);
   const bitmap =
     options.streaming === false
@@ -756,6 +757,9 @@ export function mockBrowserCdp(
       connectionId: peer.id,
     };
     requests.push(request);
+    if (request.method === "Browser.getVersion") {
+      options.onVersionProbe?.(peer.id);
+    }
     if (request.id === undefined) {
       return null;
     }
@@ -817,6 +821,7 @@ export function mockBrowserCdp(
 
   return {
     event,
+    canvas,
     crash(
       targetId: string,
       notification: "session" | "target" | "both" | "none" = "both",

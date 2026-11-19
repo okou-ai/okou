@@ -918,3 +918,7 @@ browser-viewer-binding-003	turbo/apps/platform/src/views/browser-session/__tests
 browser-viewer-binding-004	turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-binding.test.tsx	Switch to a separate image connection while native attachment is pending	100	passed
 browser-frame-budgets-01.01	turbo/apps/platform/src/views/browser-session/__tests__/browser-frame-budgets.test.tsx	Render a 48 MiB first image on the shared connection	14	passed
 browser-frame-budgets-03	turbo/apps/platform/src/views/browser-session/__tests__/browser-frame-budgets.test.tsx	Reconnect explicitly after an oversized transport message disconnects	26	passed
+browser-frame-window-01.01	turbo/apps/platform/src/views/browser-session/__tests__/browser-frame-window.test.tsx	Three short RTT samples yield a three-frame painted window	27	passed
+browser-frame-window-02	turbo/apps/platform/src/views/browser-session/__tests__/browser-frame-window.test.tsx	Keep the three-frame window while the optional RTT probe is stalled	55	passed
+browser-frame-window-03	turbo/apps/platform/src/views/browser-session/__tests__/browser-frame-window.test.tsx	Keep the three-frame window when the optional RTT probe is rejected	68	passed
+browser-frame-window-05	turbo/apps/platform/src/views/browser-session/__tests__/browser-frame-window.test.tsx	Size the split image socket from its own RTT after retiring the shared probe	85	passed
