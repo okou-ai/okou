@@ -42,7 +42,10 @@ import {
   createConnectedAccountsSignals,
 } from "./thread-connected-accounts.signals";
 import { createThreadConnectorSources } from "./thread-connector-sources.service";
-import { createThreadAutomationContext } from "./thread-automation-context.service";
+import {
+  createThreadAutomationContext,
+  createThreadAutomationPayload,
+} from "./thread-automation-context.service";
 import { createThreadModelSignals } from "./thread-model.signals";
 import { createThreadProjectContext } from "./thread-project-context.service";
 import { createIncompletePrompt } from "./thread-run-prompt/incomplete";
@@ -128,6 +131,7 @@ export interface ThreadContext extends ThreadWorkflowContext {
   readonly wechatContext$: ReturnType<typeof createWechatThreadContext>;
   readonly discordContext$: ReturnType<typeof createDiscordThreadContext>;
   readonly automationContext$: ReturnType<typeof createThreadAutomationContext>;
+  readonly automationPayload$: ReturnType<typeof createThreadAutomationPayload>;
   readonly automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>;
   readonly executionPackageSources$: Computed<
     Promise<ExecutionPackageSources | null>
@@ -254,6 +258,7 @@ export function createThreadContext(
     wechatContext$: integrations.wechatContext$,
     discordContext$,
     automationContext$: integrations.automationContext$,
+    automationPayload$: integrations.automationPayload$,
     automationTarget$: integrations.automationTarget$,
     executionPackageSources$: integrations.executionPackageSources$,
     officialWorkflowObservation$: workflowContext.officialWorkflowObservation$,
@@ -444,6 +449,7 @@ function createThreadIntegrationContexts(
     featureSwitches$,
   );
   const automationContext$ = createThreadAutomationContext(pickedEvent$);
+  const automationPayload$ = createThreadAutomationPayload(automationContext$);
   const automationTarget$ = createAutomationTarget(
     automationContext$,
     bootstrap,
@@ -464,6 +470,7 @@ function createThreadIntegrationContexts(
     agentPhoneContext$,
     wechatContext$,
     automationContext$,
+    automationPayload$,
     automationTarget$,
     executionPackageSources$,
   };
