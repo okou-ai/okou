@@ -3557,6 +3557,20 @@
       "when": 1795082318249,
       "tag": "1586_activate_priority_multi_agent_my_okou",
       "breakpoints": true
+    },
+    {
+      "idx": 1587,
+      "version": "7",
+      "when": 1795096070384,
+      "tag": "1587_expand_autonomy_budget_to_128",
+      "breakpoints": true
+    },
+    {
+      "idx": 1588,
+      "version": "7",
+      "when": 1795096094212,
+      "tag": "1588_validate_expanded_autonomy_budget",
+      "breakpoints": true
     }
   ]
 }
