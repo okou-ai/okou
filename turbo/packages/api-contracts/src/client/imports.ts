@@ -645,7 +645,6 @@ export const clientContractImportManifest = [
   {
     module: "cron",
     contracts: [
-      "cronAggregateRunPhaseTimingsContract",
       "cronBrowserReconcileContract",
       "cronCleanupSandboxesContract",
       "cronCleanupSuggestionsContract",

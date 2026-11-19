@@ -1959,7 +1959,6 @@ export const storeGeneratedImage$ = command(
       recordWebUploadedFile$,
       {
         runId: params.runId,
-        purpose: "artifact",
         externalId: fileId,
         userId: params.userId,
         orgId: params.orgId,

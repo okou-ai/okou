@@ -35,6 +35,7 @@ export interface AdmittedExecutionFacts {
   readonly featureFlags: Readonly<
     Record<
       | FeatureSwitchKey.ArtifactGenerationTiming
+      | FeatureSwitchKey.ArtifactThreePointTiming
       | FeatureSwitchKey.SingleAgent
       | FeatureSwitchKey.ConnectorChatAccountAccess,
       boolean
