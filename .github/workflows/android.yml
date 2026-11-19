@@ -81,29 +81,18 @@ jobs:
           test "$(git rev-parse --is-shallow-repository)" = true
           android/gradlew -p android :app:dependencies --configuration debugCompileClasspath --no-daemon
       - name: Fetch complete history for versioned builds
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
+        # versionCode counts the ancestors of this checkout.
+        run: >-
+          git -c protocol.version=2 fetch --no-tags --no-recurse-submodules
+          --unshallow --filter=tree:0 origin "$GITHUB_SHA"
       - name: Install Android SDK
         run: bash android/scripts/setup-sdk.sh --accept-licenses
       - name: Test native state and application, lint, and assemble
         run: bash android/scripts/check.sh
-      - name: Assemble optimized release
-        run: |
-          export ANDROID_HOME="${ANDROID_HOME:-$HOME/.local/share/android-sdk}"
-          bash .github/scripts/artifacts/build-okou-android-apk.sh "$(cat android/version.txt)" "$RUNNER_TEMP/android-release"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: okou-android-debug-${{ github.sha }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 7
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: okou-android-release-${{ github.sha }}
-          path: |
-            ${{ runner.temp }}/android-release/*-unsigned.apk
-            ${{ runner.temp }}/android-release/*-mapping.txt.gz
           if-no-files-found: error
           retention-days: 7
 
@@ -114,8 +103,10 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
+      - name: Fetch complete history for versioned builds
+        run: >-
+          git -c protocol.version=2 fetch --no-tags --no-recurse-submodules
+          --unshallow --filter=tree:0 origin "$GITHUB_SHA"
       - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
@@ -142,6 +133,17 @@ jobs:
             2>&1 | tee build/reports/instrumentation/gradle.log
           python3 scripts/check-native-results.py \
             app/build/outputs/androidTest-results/managedDevice/release/pixel2Api35 10
+      - name: Retain the unsigned Release APK and R8 mapping
+        if: ${{ !cancelled() && steps.native-tests.outputs.release-directory != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: okou-android-release-${{ github.sha }}
+          path: |
+            ${{ steps.native-tests.outputs.release-directory }}/okou-android-*-unsigned.apk
+            ${{ steps.native-tests.outputs.release-directory }}/okou-android-*-mapping.txt.gz
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
       - name: Restore failed release stack traces
         if: always() && steps.native-tests.outcome != 'success'
         shell: bash

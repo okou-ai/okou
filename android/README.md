@@ -455,12 +455,12 @@ commits skip Android validation after release-context detection succeeds. The
 production release job independently builds, signs and verifies its exact-target
 APK; it does not consume validation artifacts. Ordinary change selection includes
 Android sources/docs, CI inputs, Web semantic colors, and shared font/color-evaluator
-assets. One native job runs all local tests,
-lints, assembles, and uploads the debug APK plus the optimized unsigned Release
-APK and compressed R8 map for seven days. CI uses the production unsigned-build
-script, including metadata/alignment checks and mapping retention.
-A separate Linux/KVM job runs the existing instrumented suite against Release on the managed API 35
-phone. The final `ci-gate-android` check always reports an aggregate result. For
+assets. One job runs the JVM tests and lint, then uploads the Debug APK for seven
+days. A separate Linux/KVM job uses the production unsigned-build script to
+assemble and verify the optimized Release APK, then runs the instrumented suite
+against its signed counterpart on the managed API 35 phone. That job also uploads
+the unsigned APK and compressed R8 map for seven days.
+The final `ci-gate-android` check always reports an aggregate result. For
 non-release changes it requires successful change detection and both selected
 JVM/build and instrumentation jobs to succeed; only explicit unselected results
 permit skipped native checks.

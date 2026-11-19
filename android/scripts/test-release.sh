@@ -27,9 +27,6 @@ cd "$root"
 export ANDROID_HOME=${ANDROID_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/android-sdk}
 mkdir -p "$root/build/reports/release"
 artifacts=$(mktemp -d "$root/build/reports/release/run.XXXXXX")
-if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-  printf 'release-directory=%s\n' "$artifacts" >> "$GITHUB_OUTPUT"
-fi
 echo "Release test artifacts: $artifacts"
 # Screenshot recipes add a temporary driver, not another production ABI. Check
 # the baseline suite's contract before compiling that optional overlay below.
@@ -47,6 +44,9 @@ if ! cmp app/build/generated/native-test.keep app/src/main/keepRules/native-inst
 fi
 bash ../.github/scripts/artifacts/build-okou-android-apk.sh \
   "$(cat version.txt)" "$artifacts"
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+  printf 'release-directory=%s\n' "$artifacts" >> "$GITHUB_OUTPUT"
+fi
 signing=(
   -Pandroid.injected.signing.store.file="$work/test.p12"
   -Pandroid.injected.signing.store.type=PKCS12
