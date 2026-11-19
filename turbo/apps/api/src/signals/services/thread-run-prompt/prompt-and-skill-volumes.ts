@@ -2,8 +2,6 @@ import {
   mergeRunPromptAndSkills,
   renderRunPrompts,
   type SkillVolume,
-  type SeedSkillVolume,
-  type TemplateSkillVolume,
   type SystemPromptVariables,
 } from "../run-prompt-and-skills";
 import { createPhoneUsePrompt } from "./phone-use";
@@ -37,9 +35,6 @@ export interface PromptAndSkillVolumes {
   readonly appendedSystemPrompt: string;
   readonly userPrompt: string;
   readonly skillVolumes: readonly SkillVolume[];
-  readonly seedSkillVolumes: readonly SeedSkillVolume[];
-  readonly connectorSkillVolumes: readonly SkillVolume[];
-  readonly templateSkillVolumes: readonly TemplateSkillVolume[];
   readonly userTimezone: string | undefined;
 }
 
@@ -319,9 +314,6 @@ export function createPromptAndSkillVolumesSignals(
       appendedSystemPrompt: prompts.systemPrompt,
       userPrompt: prompts.userPrompt,
       skillVolumes: combined.skillVolumes,
-      seedSkillVolumes: systemSkills.skillVolumes,
-      connectorSkillVolumes: connectors.skillVolumes,
-      templateSkillVolumes: templates?.skillVolumes ?? [],
       // createUserPrompt already consumed this memoized member observation.
       userTimezone:
         (await get(memberMetadata$)).preferences?.timezone ?? undefined,

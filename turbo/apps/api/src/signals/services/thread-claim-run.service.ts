@@ -2646,10 +2646,7 @@ export function createThreadClaimRunObjects(
       connectorRuntimeTargets: runtimeContext.connectorRuntimeTargets,
       connectorEnvironment: runtimeContext.connectorEnvironment,
       connectorNetworkPolicyInputs: runtimeContext.connectorNetworkPolicyInputs,
-      connectorSkillVolumes: promptAndSkills.connectorSkillVolumes,
       modelProviderPermissions: runtimeContext.modelProviderPermissions,
-      seedSkillVolumes: promptAndSkills.seedSkillVolumes,
-      templateSkillVolumes: promptAndSkills.templateSkillVolumes,
       integrationContext:
         promptAndSkills.systemPromptVariables.integrationContext,
       userTimezone: promptAndSkills.userTimezone,
@@ -3031,16 +3028,14 @@ export function createThreadClaimRunObjects(
           connectorRuntimeTargets: context.connectorRuntimeTargets,
           facts: {
             skillRoot: context.skillRoot,
+            skillMounts: context.skillMounts,
             officialWorkflowBundles: context.officialWorkflowBundles,
-            templateSkillVolumes: context.templateSkillVolumes,
             integration,
             captureNetworkBodies: args.captureNetworkBodies === true,
             modelProvider,
             modelProviderPermissions: context.modelProviderPermissions,
             connectorEnvironment: context.connectorEnvironment,
             connectorNetworkPolicyInputs: context.connectorNetworkPolicyInputs,
-            connectorSkillVolumes: context.connectorSkillVolumes,
-            seedSkillVolumes: context.seedSkillVolumes,
             userTimezone: context.userTimezone,
           },
           apiStartTime: await get(runnerApiStartTime$),
@@ -4501,16 +4496,14 @@ interface ThreadRunnerFacts {
   readonly facts: Pick<
     AdmittedExecutionFacts,
     | "skillRoot"
+    | "skillMounts"
     | "officialWorkflowBundles"
-    | "templateSkillVolumes"
     | "integration"
     | "captureNetworkBodies"
     | "modelProvider"
     | "modelProviderPermissions"
     | "connectorEnvironment"
     | "connectorNetworkPolicyInputs"
-    | "connectorSkillVolumes"
-    | "seedSkillVolumes"
     | "userTimezone"
   >;
   readonly nativeContinuation: ChatThreadContinuation["executionSnapshot"]["nativeContinuation"];

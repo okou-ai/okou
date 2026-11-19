@@ -484,6 +484,17 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
       const first = await owner.runExecution(firstRun.runId);
       const next = await owner.runExecution(nextRun.runId);
       expect(first.execution.cliAgentType).toBe(framework);
+      const memory = first.execution.storageManifest?.storageMounts.find(
+        (mount) => {
+          return mount.name === "memory";
+        },
+      );
+      if (!memory) {
+        throw new Error("Expected the run's Memory mount");
+      }
+      expect(
+        first.execution.contentBundles.templates?.[0]?.beforeMountPaths,
+      ).toStrictEqual([memory.mountPath]);
       await owner.run(() => {
         return remove(kind, id);
       });

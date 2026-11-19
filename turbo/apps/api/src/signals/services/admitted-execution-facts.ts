@@ -9,11 +9,7 @@ import type {
   PermissionManifest,
   ResolvedModelProviderEnvironment,
 } from "./agent-run-contracts";
-import type {
-  SeedSkillVolume,
-  SkillVolume,
-  TemplateSkillVolume,
-} from "./run-prompt-and-skills";
+import type { ResolvedSkillVolume } from "./run-prompt-and-skills";
 
 import type { Environment } from "./run-environment";
 import type { ConnectorServerFirewallMetadataCatalog } from "./connector-server-firewall-catalog.service";
@@ -30,11 +26,10 @@ export interface ExecutionNetworkPolicyInputs {
 export interface AdmittedExecutionFacts {
   readonly executionPackages: CapturedExecutionPackages;
   readonly skillRoot: string;
+  readonly skillMounts: readonly ResolvedSkillVolume[];
   readonly officialWorkflowBundles: PreparedExecutionContext["officialWorkflowBundles"];
   /** Same member observation as the admission Prompt; later edits affect later Runs. */
   readonly userTimezone: string | undefined;
-  /** Accepted immutable Seed contributions, before framework paths and overlays. */
-  readonly seedSkillVolumes: readonly SeedSkillVolume[];
   readonly nativeContinuation: NativeContinuation;
   readonly customWorkflowSelection: PreparedExecutionContext["customWorkflowSelection"];
   readonly featureFlags: Readonly<
@@ -53,10 +48,6 @@ export interface AdmittedExecutionFacts {
   /** First accepted non-secret Connector environment, before source precedence. */
   readonly connectorEnvironment: Environment;
   readonly connectorNetworkPolicyInputs: ExecutionNetworkPolicyInputs | null;
-  /** Same effective Connector selection that supplied the Prompt. */
-  readonly connectorSkillVolumes: readonly SkillVolume[];
-  /** First accepted template snapshot; later edits apply to subsequent Runs. */
-  readonly templateSkillVolumes: readonly TemplateSkillVolume[];
   readonly integration: string | undefined;
   readonly captureNetworkBodies: boolean;
   /** First accepted source and compiled environment, including its Pi configuration. */

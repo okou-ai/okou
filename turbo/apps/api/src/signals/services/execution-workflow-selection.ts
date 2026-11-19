@@ -4,7 +4,6 @@ import {
   PI_SKILLS_ROOT,
   type PreparedExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
-import { templateGuidanceMountPath } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import {
   contentBundleSchema,
   type ContentBundle,
@@ -184,15 +183,14 @@ export function prepareRunPackageMounts(args: {
       : args.framework === "codex"
         ? `${CANONICAL_CODEX_HOME_DIR}/skills`
         : `${CANONICAL_CLAUDE_CONFIG_DIR}/skills`;
-  const winners = normalizeMountOverlay(
+  const skillMounts = normalizeMountOverlay(
     resolveRunSkillVolumes(args.skillVolumes, skillRoot),
   );
   return {
     skillRoot,
-    protectedMountPaths: winners.flatMap((volume) => {
-      return "templateGuidanceBundle" in volume
-        ? [templateGuidanceMountPath(volume.templateGuidanceBundle)]
-        : [];
+    skillMounts,
+    protectedMountPaths: skillMounts.flatMap((mount) => {
+      return "templateGuidanceBundle" in mount ? [mount.mountPath] : [];
     }),
     officialWorkflowBundles:
       args.officialWorkflow?.definitions.map(({ name, contentBundle }) => {
