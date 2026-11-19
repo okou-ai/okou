@@ -25,14 +25,14 @@ test("Works distinguishes Feishu and Lark connection states on the same page", a
       [FeatureSwitchKey.LarkOfficialBot]: false,
     },
   });
-  expect(await findAction("link", "Feishu: Manage")).toHaveAttribute(
+  await expect(findAction("link", "Feishu: Manage")).resolves.toHaveAttribute(
     "href",
     "/settings/feishu",
   );
   expect(
     within(getIntegrationCard("Feishu")).getByText("Connected"),
   ).toBeInTheDocument();
-  expect(await findAction("link", "Lark: Connect")).toHaveAttribute(
+  await expect(findAction("link", "Lark: Connect")).resolves.toHaveAttribute(
     "href",
     "/settings/lark",
   );
@@ -56,7 +56,7 @@ test("Works recognizes an official Lark connection without a custom bot", async 
       [FeatureSwitchKey.LarkOfficialBot]: true,
     },
   });
-  expect(await findAction("link", "Lark: Manage")).toHaveAttribute(
+  await expect(findAction("link", "Lark: Manage")).resolves.toHaveAttribute(
     "href",
     "/settings/lark",
   );
@@ -72,7 +72,9 @@ test("Works keeps the original Teams installation action and copy with cards off
     featureSwitches: { [FeatureSwitchKey.WorksChannelCards]: false },
   });
   const card = getIntegrationCard("Microsoft Teams");
-  expect(await findAction("button", "Install in Teams", card)).toBeEnabled();
+  await expect(
+    findAction("button", "Install in Teams", card),
+  ).resolves.toBeEnabled();
   expect(card).toHaveTextContent(
     "Connect your Microsoft account to finish setup",
   );

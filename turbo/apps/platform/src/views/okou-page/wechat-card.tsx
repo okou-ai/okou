@@ -37,6 +37,10 @@ const wechatIconImg = settingsIconAssetUrl("wechat");
 
 export function WechatCard() {
   const compact = useLastResolved(worksChannelCards$);
+  return compact ? <CompactWechatCard /> : <ClassicWechatCard />;
+}
+
+function ClassicWechatCard() {
   const { t } = useTranslation();
   const statusLoadable = useLastLoadable(wechatStatus$);
   const signal = useGet(pageSignal$);
@@ -50,21 +54,112 @@ export function WechatCard() {
   const startConnection = () => {
     return detach(connect("start", signal), Reason.DomCallback);
   };
-  const cardActions = (
-    <ProviderCardMenu
-      moreOptionsLabel={t(($) => {
-        return $.works.actions.moreOptions;
-      })}
-      disconnectLabel={t(($) => {
-        return $.works.wechat.disconnect;
-      })}
-      disconnecting={disconnecting.state === "loading"}
-      onDisconnect={() => {
-        return detach(disconnect(signal), Reason.DomCallback);
+  return (
+    <Dialog
+      open={flow.open}
+      onOpenChange={(open) => {
+        if (open) {
+          startConnection();
+        } else {
+          detach(close(signal), Reason.DomCallback);
+        }
       }}
-    />
+    >
+      <div
+        data-slot="integration-card"
+        className={surfaceVariants({ className: "flex flex-col" })}
+      >
+        <div className="flex items-center gap-4 p-4">
+          <img src={wechatIconImg} alt="" className="size-7 shrink-0" />
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <div className="text-sm font-medium text-foreground">
+              {t(($) => {
+                return $.works.wechat.name;
+              })}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {status?.status === "reconnect_required"
+                ? t(($) => {
+                    return $.works.wechat.reconnect_required;
+                  })
+                : status && !status.configured
+                  ? t(($) => {
+                      return $.works.wechat.unavailable;
+                    })
+                  : t(($) => {
+                      return $.works.wechat.description;
+                    })}
+            </p>
+            {status?.binding ? (
+              <p className="break-all text-sm text-muted-foreground">
+                {status.binding.workspace.name} · {status.binding.accountId}
+              </p>
+            ) : null}
+          </div>
+          {connected ? (
+            <ConnectedIndicator />
+          ) : (
+            <DialogTrigger
+              render={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 shrink-0 gap-1.5 rounded-lg"
+                />
+              }
+              disabled={!status?.configured}
+            >
+              {status?.status === "reconnect_required"
+                ? t(($) => {
+                    return $.works.wechat.reconnect;
+                  })
+                : t(($) => {
+                    return $.works.wechat.connect;
+                  })}
+            </DialogTrigger>
+          )}
+          {status && status.status !== "disconnected" ? (
+            <ProviderCardMenu
+              moreOptionsLabel={t(($) => {
+                return $.works.actions.moreOptions;
+              })}
+              disconnectLabel={t(($) => {
+                return $.works.wechat.disconnect;
+              })}
+              disconnecting={disconnecting.state === "loading"}
+              onDisconnect={() => {
+                return detach(disconnect(signal), Reason.DomCallback);
+              }}
+            />
+          ) : null}
+        </div>
+      </div>
+      <WechatConnectDialog
+        loading={connecting.state === "loading"}
+        failed={connecting.state === "hasError"}
+        onStart={startConnection}
+        onVerify={() => {
+          return detach(connect("verify", signal), Reason.DomCallback);
+        }}
+      />
+    </Dialog>
   );
+}
 
+function CompactWechatCard() {
+  const { t } = useTranslation();
+  const statusLoadable = useLastLoadable(wechatStatus$);
+  const signal = useGet(pageSignal$);
+  const flow = useGet(wechatFlow$);
+  const close = useSet(closeWechat$);
+  const [connecting, connect] = useLoadableSet(connectWechat$);
+  const [disconnecting, disconnect] = useLoadableSet(disconnectWechat$);
+  const status =
+    statusLoadable.state === "hasData" ? statusLoadable.data : null;
+  const connected = status?.status === "active";
+  const startConnection = () => {
+    return detach(connect("start", signal), Reason.DomCallback);
+  };
   return (
     <Dialog
       open={flow.open}
@@ -80,129 +175,86 @@ export function WechatCard() {
         data-slot="integration-card"
         className={surfaceVariants({ className: "flex min-w-0 flex-col" })}
       >
-        {compact ? (
-          <WorksChannelCardContent
-            actionsPlacement={connected ? "footer" : "header"}
-            showDescription={!connected || !status?.configured}
-            icon={<img src={wechatIconImg} alt="" className="size-5" />}
-            title={t(($) => {
-              return $.works.wechat.name;
-            })}
-            description={
-              <>
-                {status?.status === "reconnect_required"
+        <WorksChannelCardContent
+          actionsPlacement={connected ? "footer" : "header"}
+          showDescription={!connected || !status.configured}
+          icon={<img src={wechatIconImg} alt="" className="size-5" />}
+          title={t(($) => {
+            return $.works.wechat.name;
+          })}
+          description={
+            <>
+              {status?.status === "reconnect_required"
+                ? t(($) => {
+                    return $.works.wechat.reconnect_required;
+                  })
+                : status && !status.configured
                   ? t(($) => {
-                      return $.works.wechat.reconnect_required;
+                      return $.works.wechat.unavailable;
                     })
-                  : status && !status.configured
-                    ? t(($) => {
-                        return $.works.wechat.unavailable;
-                      })
-                    : t(($) => {
-                        return $.works.channelExamples.wechat;
-                      })}
-                {status?.binding && !connected ? (
-                  <p className="mt-1 break-all">
-                    {status.binding.workspace.name} · {status.binding.accountId}
-                  </p>
-                ) : null}
-              </>
-            }
-            actions={
-              <>
-                {connected ? (
-                  <ConnectedIndicator
-                    variant="text"
-                    wrap
-                    connectedDetail={
-                      status?.binding
-                        ? `${status.binding.workspace.name} · ${status.binding.accountId}`
-                        : null
-                    }
-                  />
-                ) : (
-                  <DialogTrigger
-                    render={
-                      <Button
-                        showTooltip
-                        variant="quiet"
-                        size="icon-xs"
-                        className="shrink-0 rounded-md border border-border/60"
-                        aria-label={
-                          status?.status === "reconnect_required"
-                            ? t(($) => {
-                                return $.works.wechat.reconnect;
-                              })
-                            : t(($) => {
-                                return $.works.wechat.connect;
-                              })
-                        }
-                      />
-                    }
-                    disabled={!status?.configured}
-                  >
-                    <Link2 size={16} aria-hidden="true" />
-                  </DialogTrigger>
-                )}
-                {status && status.status !== "disconnected"
-                  ? cardActions
-                  : null}
-              </>
-            }
-          />
-        ) : (
-          <div className="flex items-center gap-4 p-4">
-            <img src={wechatIconImg} alt="" className="size-7 shrink-0" />
-            <div className="flex min-w-0 flex-1 flex-col gap-1">
-              <div className="text-sm font-medium text-foreground">
-                {t(($) => {
-                  return $.works.wechat.name;
-                })}
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {status?.status === "reconnect_required"
-                  ? t(($) => {
-                      return $.works.wechat.reconnect_required;
-                    })
-                  : status && !status.configured
-                    ? t(($) => {
-                        return $.works.wechat.unavailable;
-                      })
-                    : t(($) => {
-                        return $.works.wechat.description;
-                      })}
-              </p>
-              {status?.binding ? (
-                <p className="break-all text-sm text-muted-foreground">
+                  : t(($) => {
+                      return $.works.channelExamples.wechat;
+                    })}
+              {status?.binding && !connected ? (
+                <p className="mt-1 break-all">
                   {status.binding.workspace.name} · {status.binding.accountId}
                 </p>
               ) : null}
-            </div>
-            {connected ? (
-              <ConnectedIndicator />
-            ) : (
-              <DialogTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 shrink-0 gap-1.5 rounded-lg"
-                  />
-                }
-                disabled={!status?.configured}
-              >
-                {status?.status === "reconnect_required"
-                  ? t(($) => {
-                      return $.works.wechat.reconnect;
-                    })
-                  : t(($) => {
-                      return $.works.wechat.connect;
-                    })}
-              </DialogTrigger>
-            )}
-            {status && status.status !== "disconnected" ? cardActions : null}
-          </div>
-        )}
+            </>
+          }
+          actions={
+            <>
+              {connected ? (
+                <ConnectedIndicator
+                  variant="text"
+                  wrap
+                  connectedDetail={
+                    status?.binding
+                      ? `${status.binding.workspace.name} · ${status.binding.accountId}`
+                      : null
+                  }
+                />
+              ) : (
+                <DialogTrigger
+                  render={
+                    <Button
+                      showTooltip
+                      variant="quiet"
+                      size="icon-xs"
+                      className="shrink-0 rounded-md border border-border/60"
+                      aria-label={
+                        status?.status === "reconnect_required"
+                          ? t(($) => {
+                              return $.works.wechat.reconnect;
+                            })
+                          : t(($) => {
+                              return $.works.wechat.connect;
+                            })
+                      }
+                    />
+                  }
+                  disabled={!status?.configured}
+                >
+                  <Link2 size={16} aria-hidden="true" />
+                </DialogTrigger>
+              )}
+              {status && status.status !== "disconnected" ? (
+                <ProviderCardMenu
+                  moreOptionsLabel={t(($) => {
+                    return $.works.actions.moreOptions;
+                  })}
+                  disconnectLabel={t(($) => {
+                    return $.works.wechat.disconnect;
+                  })}
+                  disconnecting={disconnecting.state === "loading"}
+                  onDisconnect={() => {
+                    return detach(disconnect(signal), Reason.DomCallback);
+                  }}
+                />
+              ) : null}
+            </>
+          }
+        />
       </div>
       <WechatConnectDialog
         loading={connecting.state === "loading"}
