@@ -16,31 +16,27 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { changeChatThreadList } from "../../../mocks/mock-helpers.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 import { openQualityInput } from "./browser-settings-test-helpers.ts";
-const context = testContext();
+import {
+  chatListEvent,
+  chatListThread,
+  installChatListStream,
+} from "../../okou-page/__tests__/chat-list-test-helpers.ts";
 
-async function openViewer(
-  targets: NonNullable<Parameters<typeof mockBrowserCdp>[2]>["targets"] = [
-    {
-      targetId: "example-page",
-      title: "Example",
-      url: "https://example.com",
-      windowId: 1,
-    },
-  ],
-) {
-  const threadId = "a0000000-0000-4000-a000-000000000345";
-  const path = `/browsers/${threadId}`;
-  const cdpUrl = "wss://cdp.example.test/browser";
+const context = testContext();
+const THREAD_ID = "a0000000-0000-4000-a000-000000000345";
+
+function viewerConnection(threadId = THREAD_ID): BrowserViewerConnection {
   const time = "2026-08-01T10:00:00.000Z";
-  const viewer: BrowserViewerConnection = {
+  return {
     browser: {
       threadId,
       name: "Research",
       status: "active",
-      viewerUrl: `https://app.okou.ai${path}`,
+      viewerUrl: `https://app.okou.ai/browsers/${threadId}`,
       liveUrl: null,
       screenshotUrl: null,
       timeoutMinutes: 10,
@@ -54,10 +50,32 @@ async function openViewer(
         primaryWindowId: 1,
       },
     },
-    cdpUrl,
+    cdpUrl: "wss://cdp.example.test/browser",
     extension: TEST_BROWSER_EXTENSION,
   };
-  const browser = mockBrowserCdp(context, cdpUrl, { targets });
+}
+
+async function openBrowserPage(threadId = THREAD_ID): Promise<void> {
+  await setupPage({
+    context,
+    path: `/browsers/${threadId}`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
+  });
+}
+
+async function openViewer(
+  targets: NonNullable<Parameters<typeof mockBrowserCdp>[2]>["targets"] = [
+    {
+      targetId: "example-page",
+      title: "Example",
+      url: "https://example.com",
+      windowId: 1,
+    },
+  ],
+) {
+  const viewer = viewerConnection();
+  const browser = mockBrowserCdp(context, viewer.cdpUrl, { targets });
   context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(200, { browser: viewer.browser, viewer });
   });
@@ -65,12 +83,7 @@ async function openViewer(
     return respond(200, { browser: viewer.browser });
   });
 
-  await setupPage({
-    context,
-    path,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
-  });
+  await openBrowserPage();
   await waitFor(() => {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   });
@@ -347,4 +360,147 @@ test("Ignore queued drag events when Escape dismisses image quality", async () =
     await screen.findByRole("textbox", { name: "Image quality" }),
   ).toHaveValue("70");
   expect(captures.at(-1)).toMatchObject({ quality: 70 });
+});
+
+test("Restore the active native viewer when chat authorization returns", async () => {
+  const caseId = 789;
+  const thread = chatListThread(1, "Browser conversation", {
+    cloudBrowserEnabled: false,
+  });
+  const viewer = viewerConnection(thread.id);
+  const source = installChatListStream(context, { caseId, snapshot: [thread] });
+  mockBrowserCdp(context, viewer.cdpUrl, {
+    targets: [
+      {
+        targetId: "example-page",
+        title: "Example",
+        url: "https://example.com",
+        windowId: 1,
+      },
+    ],
+  });
+  let enabled = false;
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return enabled
+      ? respond(200, { browser: viewer.browser, viewer })
+      : respond(403, {
+          error: {
+            code: "BROWSER_AUTHORIZATION_REQUIRED",
+            message: "Cloud browser is not enabled for this chat",
+          },
+        });
+  });
+  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
+    return respond(200, { browser: viewer.browser });
+  });
+
+  const denied = "Cloud browser is not enabled for this chat";
+  await openBrowserPage(thread.id);
+  await expect(screen.findByText(denied)).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByLabelText("Remote browser input"),
+  ).not.toBeInTheDocument();
+
+  enabled = true;
+  const grant = chatListEvent(
+    caseId,
+    2,
+    "computer_use_host_updated",
+    thread.id,
+    { computerUseHostId: null, cloudBrowserEnabled: true },
+  );
+  source.setEvents([grant]);
+  changeChatThreadList();
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.queryByText(denied)).not.toBeInTheDocument();
+
+  enabled = false;
+  source.setEvents([
+    grant,
+    chatListEvent(caseId, 3, "computer_use_host_updated", thread.id, {
+      computerUseHostId: null,
+      cloudBrowserEnabled: false,
+    }),
+  ]);
+  changeChatThreadList();
+  await expect(screen.findByText(denied)).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByLabelText("Remote browser input"),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByText("Browser not live")).not.toBeInTheDocument();
+});
+
+test("Remove live input when renewal is denied without a native disconnect", async () => {
+  const viewer = viewerConnection();
+  const cdp = mockBrowserCdp(context, viewer.cdpUrl, {
+    targets: [
+      {
+        targetId: "example-page",
+        title: "Example",
+        url: "https://example.com",
+        windowId: 1,
+      },
+    ],
+  });
+  const renewing = context.mocks.deferred<void>();
+  const denial = context.mocks.deferred<void>();
+  let revoked = false;
+  const authorizationError = {
+    error: {
+      code: "BROWSER_AUTHORIZATION_REQUIRED",
+      message: "Cloud browser is not enabled for this chat",
+    },
+  };
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return revoked
+      ? respond(403, authorizationError)
+      : respond(200, { browser: viewer.browser, viewer });
+  });
+  context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+    renewing.resolve();
+    await denial.promise;
+    return respond(403, authorizationError);
+  });
+
+  await openBrowserPage();
+  await renewing.promise;
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(cdp.activeConnections()).toBeGreaterThan(0);
+
+  revoked = true;
+  denial.resolve();
+
+  await waitFor(() => {
+    expect(
+      screen.getByText(authorizationError.error.message),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Remote browser input"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Address")).not.toBeInTheDocument();
+    expect(screen.queryByText("Browser not live")).not.toBeInTheDocument();
+  });
+});
+
+test("Show unavailable when native browser acquisition reports a reclaimed lifetime", async () => {
+  context.mocks.api(browserContract.get, ({ query, respond }) => {
+    expect(query?.viewer).toBe("native");
+    return respond(409, {
+      error: {
+        code: "BROWSER_RECLAIMING",
+        message:
+          "This Browser lifetime is unavailable; retry after its current setup or cleanup completes",
+      },
+    });
+  });
+
+  await openBrowserPage();
+
+  await expect(
+    screen.findByText("Browser view unavailable"),
+  ).resolves.toBeInTheDocument();
 });

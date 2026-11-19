@@ -877,16 +877,19 @@ chat-capability-browser-actions-003	turbo/apps/platform/src/views/okou-page/__te
 chat-capability-mail-feedback-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-mail-feedback.test.tsx	Keep inline feedback tied to the source email	23	passed
 chat-capability-voice-incremental-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-incremental.test.tsx	Continue recording after an incremental transcription outage	34	passed
 chat-header-loading-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-header-loading.test.tsx	Open empty email and automation lists in a desktop chat	36	passed
-browser-session-page-002	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Window size settings retain each selected mode when reopened	96	passed
+browser-session-page-002	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Window size settings retain each selected mode when reopened	112	passed
 chat-capability-browser-actions-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Refresh the browser card after delayed attachment and a continuity gap	783	passed
 chat-capability-browser-actions-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Follow suspension and resumption in the live browser panel	846	passed
 chat-capability-mail-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-mail.test.tsx	Send, revisit, and delete mail drafts from chat	30	passed
-browser-session-page-003	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	The Okou viewer shows its host blank page only while the blank tab is selected	122	passed
+browser-session-page-003	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	The Okou viewer shows its host blank page only while the blank tab is selected	138	passed
 chat-header-loading-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-header-loading.test.tsx	Keep header actions focusable and busy while the next chat loads	211	passed
 chat-header-loading-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-header-loading.test.tsx	Open the destination's browser from the mobile menu after navigating	90	passed
 chat-header-loading-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-header-loading.test.tsx	Let each pane open its own chat's mail	138	passed
-browser-session-page-004	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Apply numeric quality on Enter and blur while preserving IME editing	161	passed
-browser-session-page-006	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Apply quality presets and slider keys while preserving Escape focus	189	passed
-browser-session-page-007	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Commit an image quality drag from the numeric field only on release	300	passed
-browser-session-page-008	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Ignore queued drag events when Escape dismisses image quality	323	passed
-browser-session-page-009	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Preserve a chosen quality preset through lossless PNG and JPEG	234	passed
+browser-session-page-004	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Apply numeric quality on Enter and blur while preserving IME editing	174	passed
+browser-session-page-006	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Apply quality presets and slider keys while preserving Escape focus	202	passed
+browser-session-page-007	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Commit an image quality drag from the numeric field only on release	313	passed
+browser-session-page-008	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Ignore queued drag events when Escape dismisses image quality	336	passed
+browser-session-page-009	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Preserve a chosen quality preset through lossless PNG and JPEG	247	passed
+browser-session-page-010	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Show unavailable when native browser acquisition reports a reclaimed lifetime	489	passed
+browser-session-page-028	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Remove live input when renewal is denied without a native disconnect	435	passed
+browser-session-page-032	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Restore the active native viewer when chat authorization returns	365	passed
