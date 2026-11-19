@@ -33,7 +33,7 @@ function originalDraft(): ComposerDraft {
 }
 
 function control(
-  role: "button" | "tab" | "radio",
+  role: "button" | "tab",
   name: string,
   container: ParentNode = document.body,
 ): HTMLElement {
@@ -74,9 +74,7 @@ async function openShelf() {
   const create = within(
     screen.getByRole("group", { name: "Explore Okou capabilities" }),
   ).getByRole("region", { name: "Create" });
-  click(control("button", "Presentation", create));
-  const types = await screen.findByRole("radiogroup", { name: "Create" });
-  click(control("radio", "Website", types));
+  click(control("button", "Website", create));
   const shelf = await screen.findByRole("group", { name: "Website templates" });
   const eye = control("button", `Preview template ${website.title}`, shelf);
   const browse = control("button", "View all", screen.getByRole("tabpanel"));
