@@ -2,7 +2,6 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
-import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 import {
@@ -184,22 +183,4 @@ test("Each panel kind opens at its own width and keeps its own resize", async ()
   click(buttonNamed("Back to artifacts", unavailable));
   await screen.findByTestId("thread-sidebar-artifacts");
   expect(sidebarWidth(shell)).toBe("clamp(400px, 640px, calc(100% - 420px))");
-});
-
-test("A width shared by every panel before carries over to previews only", async () => {
-  context.store.set(
-    localStorageSignals("thread-sidebar-widths").set$,
-    JSON.stringify({ panel: 700, browser: 900 }),
-  );
-  const { shell } = await openResizableSidebar();
-  expect(sidebarWidth(shell)).toBe("clamp(400px, 480px, calc(100% - 420px))");
-
-  click(
-    buttonNamed(
-      "Preview Resize report.txt",
-      screen.getByTestId("thread-sidebar-artifacts"),
-    ),
-  );
-  await screen.findByTestId("thread-sidebar-artifact-unavailable");
-  expect(sidebarWidth(shell)).toBe("clamp(400px, 700px, calc(100% - 420px))");
 });

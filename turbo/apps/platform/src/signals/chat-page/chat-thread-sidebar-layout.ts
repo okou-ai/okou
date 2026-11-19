@@ -41,10 +41,6 @@ const CHAT_THREAD_SIDEBAR_DEFAULT_WIDTHS: Readonly<Record<string, number>> = {
   automations: 480,
   "email-draft": 600,
 };
-// Every panel but the browser once shared this width. Widening a file preview
-// usually set it, so it carries over to previews only; lists start fresh.
-const LEGACY_SHARED_WIDTH_KEY = "panel";
-const LEGACY_SHARED_WIDTH_HEIR = "artifact";
 // The frame margin the sheet gains when the chat list folds away.
 const WORKSPACE_FRAME_GAP = 8;
 const KEYBOARD_STEP = 16;
@@ -65,15 +61,11 @@ function parseSidebarWidths(
   if (!isNonArrayRecord(parsed)) {
     return {};
   }
-  const { [LEGACY_SHARED_WIDTH_KEY]: legacy, ...widths } = Object.fromEntries(
+  return Object.fromEntries(
     Object.entries(parsed).filter((entry): entry is [string, number] => {
       return typeof entry[1] === "number" && Number.isFinite(entry[1]);
     }),
   );
-  // The next write persists the migrated map and drops the legacy key.
-  return legacy === undefined || LEGACY_SHARED_WIDTH_HEIR in widths
-    ? widths
-    : { ...widths, [LEGACY_SHARED_WIDTH_HEIR]: legacy };
 }
 
 /** Fixed width a panel kind opens at, or null when it takes the share. */
