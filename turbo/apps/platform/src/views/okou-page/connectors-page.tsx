@@ -1,5 +1,3 @@
-import { detach, Reason } from "../../signals/utils.ts";
-import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
   BuiltinConnectorAccountDialogs,
   useBuiltinConnectorConnectHandlers,
@@ -1010,7 +1008,6 @@ function ConnectorCatalogHeader() {
 }
 
 function SettingsConnectorCard({ signals }: SettingsConnectorCardProps) {
-  const pageSignal = useGet(pageSignal$);
   const connector = signals.connector;
   const targets = useLastLoadable(signals.targets$);
   const hasAccounts =
@@ -1029,9 +1026,7 @@ function SettingsConnectorCard({ signals }: SettingsConnectorCardProps) {
       connectorLabel={connector.label}
       hasPermissions={connector.permissionSummary.hasPermissions}
       allowAccessIncrease={inventoryStatus === "ready" && hasAccounts}
-      onClick={() => {
-        detach(manageAccess(pageSignal), Reason.DomCallback);
-      }}
+      onClick={manageAccess}
     />
   );
   return (

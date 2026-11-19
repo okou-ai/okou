@@ -10,17 +10,7 @@ export const managedConnectorAccessSlug$ = computed((get) => {
 });
 
 export const setManagedConnectorAccessSlug$ = command(
-  async (
-    { get, set },
-    connectorSlug: ConnectorSlug | null,
-    signal: AbortSignal,
-  ) => {
-    const enabled =
-      connectorSlug !== null &&
-      (await get(featureSwitches$))[
-        FeatureSwitchKey.ConnectorChatAccountAccess
-      ];
-    signal.throwIfAborted();
+  ({ get, set }, connectorSlug: ConnectorSlug | null) => {
     const current = get(managedConnectorAccessSignals$);
     if (current) {
       set(current.close$);
@@ -33,12 +23,8 @@ export const setManagedConnectorAccessSlug$ = command(
   },
 );
 
-export const closeConnectorAccessManagement$ = command(({ get, set }) => {
-  const current = get(managedConnectorAccessSignals$);
-  if (current) {
-    set(current.memberPermissions.close$);
-  }
-  set(managedConnectorAccessSlugState$, null);
+export const closeConnectorAccessManagement$ = command(({ set }) => {
+  set(setManagedConnectorAccessSlug$, null);
 });
 
 export const managedConnectorAccessSignals$ = computed((get) => {

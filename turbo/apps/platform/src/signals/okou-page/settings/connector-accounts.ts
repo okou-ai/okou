@@ -180,12 +180,7 @@ export function createConnectorAccountDefaultSignals(
   const resetSave$ = resetSignal();
   const defaults$ = computed(async (get) => {
     const request = get(request$);
-    if (
-      !request ||
-      !(await get(featureSwitches$))[
-        FeatureSwitchKey.ConnectorChatAccountAccess
-      ]
-    ) {
+    if (!request) {
       return null;
     }
     await get(settingsConnectorAccounts.accounts$);

@@ -8,7 +8,7 @@ import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connec
 import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
-import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { expect, test } from "vitest";
 
 import {
@@ -1138,14 +1138,19 @@ test("Connector account switches A → B → A keep their icon and continue with
     target: { kind: "builtin" as const, connectorSlug: github },
     connectionId,
   };
-  context.mocks.api(chatThreadConnectorSelectionContract.get, ({ respond }) => {
-    return respond(200, {
-      selections: selectedConnectionId
-        ? [{ ...selection, connectionId: selectedConnectionId }]
-        : [],
-      selectedConnections: [],
-    });
-  });
+  context.mocks.api(
+    chatConnectorAccessContract.getThread,
+    ({ params, query, respond }) => {
+      expect(params.threadId).toBe(THREAD_ID);
+      expect(query).toMatchObject(selection.target);
+      return respond(200, {
+        target: selection.target,
+        accounts: [],
+        available: selectedConnectionId !== null,
+        currentConnectionId: selectedConnectionId,
+      });
+    },
+  );
   context.mocks.api(
     runConnectorAccountsContract.approve,
     ({ body, respond }) => {

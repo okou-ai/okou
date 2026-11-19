@@ -3,7 +3,7 @@ import { LoadingSkeleton } from "../../../components/loading-skeleton.tsx";
 // oxlint-disable max-lines-per-function
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { useLastResolved, useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
   SheetDescription,

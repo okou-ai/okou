@@ -2,6 +2,7 @@ import {
   connectorAccountSelectionSchema,
   connectorAccountTargetKey,
 } from "@okouai/api-contracts/validators/connector-accounts";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/client/chat-connector-access";
 import { connectorAccountsContract } from "@okouai/api-contracts/client/connector-accounts";
 import type {
   ConnectorAccountConnection,
@@ -148,31 +149,6 @@ export function parseConnectorAccountActionUrl(
   };
 }
 
-function targetQuery(selection: ConnectorAccountSelection) {
-  return selection.target.kind === "builtin"
-    ? {
-        kind: selection.target.kind,
-        connectorSlug: selection.target.connectorSlug,
-      }
-    : {
-        kind: selection.target.kind,
-        customConnectorId: selection.target.customConnectorId,
-      };
-}
-
-function selectionIsCurrent(
-  current: readonly ConnectorAccountSelection[],
-  requested: ConnectorAccountSelection,
-): boolean {
-  const targetKey = connectorAccountTargetKey(requested.target);
-  return current.some((selection) => {
-    return (
-      connectorAccountTargetKey(selection.target) === targetKey &&
-      selection.connectionId === requested.connectionId
-    );
-  });
-}
-
 // A block names one connector, so it reads that catalog entry rather than the
 // whole catalog status.
 function builtinActionConnector(
@@ -225,7 +201,7 @@ function createConnectorAccountConfirmSignal(
       [200],
       signal,
     );
-    set(connector.reloadAccountPreference$);
+    set(connector.chatAccess.reload$);
     await set(
       runChatActionCallback$,
       {
@@ -248,26 +224,34 @@ function createConnectorAccountActionSignals(
     target.kind === "builtin"
       ? builtinActionConnector(target.connectorSlug)
       : customActionConnector(target.customConnectorId);
+  const accessRevision$ = connector.chatAccess.targetRevision(target);
   const status$ = computed(
     async (get): Promise<ConnectorAccountActionStatus> => {
-      const result = await accept(
-        get(apiClient$)(connectorAccountsContract).connection({
-          params: { connectionId: descriptor.selection.connectionId },
-          query: targetQuery(descriptor.selection),
-        }),
-        [200, 404],
-      );
-      if (result.status === 404) {
+      get(accessRevision$);
+      const client = get(apiClient$);
+      const [account, access] = await Promise.all([
+        accept(
+          client(connectorAccountsContract).connection({
+            params: { connectionId: descriptor.selection.connectionId },
+            query: target,
+          }),
+          [200, 404],
+        ),
+        accept(
+          client(chatConnectorAccessContract).getThread({
+            params: { threadId: descriptor.threadId },
+            query: target,
+          }),
+          [200, 404],
+        ),
+      ]);
+      if (account.status === 404 || access.status === 404) {
         return { kind: "unavailable" };
       }
-      const preference = await get(connector.accounts.preferenceState$);
       return {
         kind: "ready",
-        account: result.body,
-        selected: selectionIsCurrent(
-          preference.selections,
-          descriptor.selection,
-        ),
+        account: account.body,
+        selected: access.body.currentConnectionId === account.body.id,
       };
     },
   );

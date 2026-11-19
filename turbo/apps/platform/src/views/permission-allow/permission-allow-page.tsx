@@ -1,11 +1,5 @@
 import type { ReactNode } from "react";
-import {
-  useLastResolved,
-  useGet,
-  useLastLoadable,
-  useLoadable,
-  useSet,
-} from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Button } from "@okouai/ui";
@@ -51,7 +45,6 @@ import {
 } from "../../signals/chat-page/action-callback.ts";
 import { i18n } from "../../i18n/index.ts";
 
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 
 function TargetPill({
   avatarUrl,
@@ -396,7 +389,6 @@ function ConfirmGrantCard({
   onConfirm,
 }: ConfirmGrantCardProps) {
   const { t } = useTranslation();
-  const features = useLastResolved(featureSwitches$);
   const durationScope = `agent\u0000${target.id}\u0000${connectorSlug}\u0000${permission.name}\u0000${action}\u0000${initialExpiresIn ?? ""}`;
   const expiresInByScope = useGet(permissionGrantExpiresInByScope$);
   const setExpiresInForScope = useSet(setPermissionGrantExpiresIn$);
@@ -425,13 +417,11 @@ function ConfirmGrantCard({
             avatarUrl={target.avatarUrl}
             displayName={target.displayName}
           />
-          {features.state === "hasData" && (
-            <p className="text-sm text-muted-foreground">
-              {t(($) => {
-                return $.authorization.permissionBatch.sharedScopeNote;
-              })}
-            </p>
-          )}
+          <p className="text-sm text-muted-foreground">
+            {t(($) => {
+              return $.authorization.permissionBatch.sharedScopeNote;
+            })}
+          </p>
 
           <div className="w-full flex flex-col gap-3">
             <p className="text-sm font-medium text-foreground">

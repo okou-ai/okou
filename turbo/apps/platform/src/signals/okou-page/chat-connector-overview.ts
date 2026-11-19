@@ -304,5 +304,20 @@ export function createChatConnectorOverviewSignals(threadId?: string) {
     set(resetOwner$);
     set(open$, get(pageSignal$));
   });
-  return { entries$, notifications$, open$, reload$, refreshTarget$, retry$ };
+  return {
+    entries$,
+    notifications$,
+    open$,
+    reload$,
+    refreshTarget$,
+    retry$,
+    targetRevision(target: ConnectorAccountTarget) {
+      const key = connectorAccountTargetKey(target);
+      return computed((get) => {
+        const version = get(version$);
+        const revision = get(patches$).get(key)?.revision ?? 0;
+        return `${version}:${revision}`;
+      });
+    },
+  };
 }

@@ -1,10 +1,5 @@
 import { useLoadableSet } from "ccstate-react/experimental";
-import {
-  useLastResolved,
-  useGet,
-  useLastLoadable,
-  useSet,
-} from "ccstate-react";
+import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import type { ReactNode } from "react";
 import { EllipsisVertical } from "lucide-react";
 import { useTranslation } from "react-i18next";

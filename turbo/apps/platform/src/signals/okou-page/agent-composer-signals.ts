@@ -173,7 +173,6 @@ function createAgentSubmitMessage(
       if (sent) {
         set(resetNewThreadComputerAccess$);
         set(resetChatPageModelSelection$);
-        set(connector.accounts.resetPendingSelections$);
         set(connector.chatAccess.resetPending$);
         set(connector.phoneAccess.resetPending$);
         set(pendingRemoteAccess.reset$);

@@ -47,10 +47,7 @@ import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
-import {
-  chatThreadConnectorSelectionContract,
-  type ChatThreadServiceTier,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 
 import {
@@ -91,9 +88,6 @@ interface ConnectorFixtureOptions {
   >;
   readonly authorizationGates?: Readonly<Record<string, Promise<void>>>;
   readonly accounts?: readonly ConnectorAccountConnection[];
-  readonly threadSelections?: Readonly<
-    Record<string, readonly ConnectorAccountSelection[]>
-  >;
   readonly permissionDetails?: ReadonlyMap<
     ConnectorSlug,
     PublicConnectorCatalogPermissionDetail
@@ -125,11 +119,6 @@ interface OAuthConnectionRequest extends BuiltinConnectionRequest {
   readonly callbackTarget: "app" | undefined;
 }
 
-interface ThreadSelectionUpdate {
-  readonly threadId: string;
-  readonly selection: ConnectorAccountSelection;
-}
-
 interface ComposerConnectorFixture {
   readonly builtinAuthorizationUpdates: readonly BuiltinAuthorizationUpdate[];
   readonly customAuthorizationUpdates: readonly CustomAuthorizationUpdate[];
@@ -142,11 +131,6 @@ interface ComposerConnectorFixture {
   readonly noAuthConnectionRequests: readonly BuiltinConnectionRequest[];
   readonly oauthConnectionRequests: readonly OAuthConnectionRequest[];
   readonly completeOAuth: (connectionId: string) => void;
-  readonly threadSelectionUpdates: readonly ThreadSelectionUpdate[];
-  readonly clearedThreadSelections: readonly {
-    readonly threadId: string;
-    readonly target: ConnectorAccountTarget;
-  }[];
   readonly createdThreadRequests: readonly {
     readonly threadId: string | undefined;
     readonly connectorSelections: readonly ConnectorAccountSelection[];
@@ -573,7 +557,6 @@ export function createComposerConnectorHelpers(context: TestContext) {
     const customAuthorizations = copyAuthorizationRecord(
       options.customAuthorizations,
     );
-    const threadSelections = copyAuthorizationRecord(options.threadSelections);
     const accounts = [
       ...(options.accounts ??
         savedConnectorAccounts(catalog, customConnectors)),
@@ -629,11 +612,6 @@ export function createComposerConnectorHelpers(context: TestContext) {
     const oauthConnectionRequests: OAuthConnectionRequest[] = [];
     const completedAttempts = mockOAuthCompletions(context);
     let oauthAttemptId = crypto.randomUUID();
-    const threadSelectionUpdates: ThreadSelectionUpdate[] = [];
-    const clearedThreadSelections: {
-      threadId: string;
-      target: ConnectorAccountTarget;
-    }[] = [];
     const createdThreadRequests: {
       threadId: string | undefined;
       connectorSelections: ConnectorAccountSelection[];
@@ -983,48 +961,6 @@ export function createComposerConnectorHelpers(context: TestContext) {
       },
     );
     context.mocks.api(
-      chatThreadConnectorSelectionContract.get,
-      ({ params, respond }) => {
-        const selections = threadSelections.get(params.id) ?? [];
-        const selectedConnections = selections.flatMap((selection) => {
-          const connection = accounts.find((candidate) => {
-            return candidate.id === selection.connectionId;
-          });
-          return connection ? [connection] : [];
-        });
-        return respond(200, { selections, selectedConnections });
-      },
-    );
-    context.mocks.api(
-      chatThreadConnectorSelectionContract.update,
-      ({ body, params, respond }) => {
-        const selection = { ...body };
-        threadSelectionUpdates.push({ threadId: params.id, selection });
-        const current = threadSelections.get(params.id) ?? [];
-        threadSelections.set(params.id, [
-          ...current.filter((candidate) => {
-            return !targetMatches(candidate.target, selection.target);
-          }),
-          selection,
-        ]);
-        return respond(200, selection);
-      },
-    );
-    context.mocks.api(
-      chatThreadConnectorSelectionContract.clear,
-      ({ body, params, respond }) => {
-        clearedThreadSelections.push({ threadId: params.id, target: body });
-        const current = threadSelections.get(params.id) ?? [];
-        threadSelections.set(
-          params.id,
-          current.filter((selection) => {
-            return !targetMatches(selection.target, body);
-          }),
-        );
-        return respond(204);
-      },
-    );
-    context.mocks.api(
       customConnectorValuesContract.set,
       ({ body, params, respond }) => {
         customValueRequests.push({
@@ -1170,8 +1106,6 @@ export function createComposerConnectorHelpers(context: TestContext) {
         installBuiltinConnection(request, connectionId);
         completedAttempts.set(oauthAttemptId, connectionId);
       },
-      threadSelectionUpdates,
-      clearedThreadSelections,
       createdThreadRequests,
       lifecycle,
     };

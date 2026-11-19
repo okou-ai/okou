@@ -1,11 +1,4 @@
-import {
-  command,
-  computed,
-  state,
-  type Command,
-  type Computed,
-  type State,
-} from "ccstate";
+import { command, computed, state, type Command, type Computed } from "ccstate";
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
@@ -21,10 +14,6 @@ import {
   withConnectorCompletion,
 } from "../external/connectors.ts";
 import { customConnectors$ } from "./settings/custom-connectors.ts";
-import {
-  createComposerConnectorAccountSignals,
-  type ComposerConnectorAccountSignals,
-} from "./composer-connector-accounts.ts";
 import { resetBuiltinManualGrantForm$ } from "./settings/connectors.ts";
 import { createChatConnectorAccessSignals } from "./chat-connector-access.ts";
 
@@ -81,28 +70,23 @@ export interface ComposerConnectorSignals {
     Promise<void>,
     [ConnectorAccountTarget, AbortSignal]
   >;
-  readonly openAddConnectorsDialog$: Command<Promise<void>, [AbortSignal]>;
-  readonly openConnectorPermissions$: Command<
-    Promise<void>,
-    [BuiltinConnectorBrief, AbortSignal]
-  >;
+  readonly openAddConnectorsDialog$: Command<void, []>;
+  readonly openConnectorPermissions$: Command<void, [BuiltinConnectorBrief]>;
   readonly directoryFinalFocus$: Command<HTMLElement | boolean, []>;
-  readonly setPopoverOpen$: Command<Promise<void>, [boolean, AbortSignal]>;
-  readonly searchConnectors$: Command<Promise<void>, [string, AbortSignal]>;
-  readonly openRemoteAccessDialog$: Command<Promise<void>, [AbortSignal]>;
-  readonly closeRemoteAccessDialog$: Command<Promise<void>, [AbortSignal]>;
+  readonly setPopoverOpen$: Command<void, [boolean]>;
+  readonly searchConnectors$: Command<void, [string]>;
+  readonly openRemoteAccessDialog$: Command<void, []>;
+  readonly closeRemoteAccessDialog$: Command<void, []>;
   readonly triggerElement$: Computed<HTMLElement | null>;
   readonly setTriggerRef$: Command<
     (() => void) | undefined,
     [HTMLElement | null]
   >;
   readonly updateConnectorUiState$: Command<
-    Promise<void>,
-    [Partial<ComposerConnectorUiState>, AbortSignal]
+    void,
+    [Partial<ComposerConnectorUiState>]
   >;
-  readonly accounts: ComposerConnectorAccountSignals;
   readonly chatAccess: ReturnType<typeof createChatConnectorAccessSignals>;
-  readonly reloadAccountPreference$: Command<void, []>;
 }
 
 /** Browse reads ask for no keyword; the category, when set, scopes them. */
@@ -175,18 +159,12 @@ function createConnectorNavigation(
   return {
     openConnectorPermissions$,
     directoryFinalFocus$,
-    searchConnectors$: command(
-      async ({ get, set }, search: string, signal: AbortSignal) => {
-        if (get(chatAccess.target$)) {
-          set(chatAccess.closeTarget$);
-        }
-        await set(
-          ui.updateConnectorUiState$,
-          { popoverSearch: search },
-          signal,
-        );
-      },
-    ),
+    searchConnectors$: command(({ get, set }, search: string) => {
+      if (get(chatAccess.target$)) {
+        set(chatAccess.closeTarget$);
+      }
+      set(ui.updateConnectorUiState$, { popoverSearch: search });
+    }),
   };
 }
 
@@ -244,84 +222,8 @@ function createConnectorTriggerSignals(
   return { triggerElement$, setTriggerRef$ };
 }
 
-function createConnectorUiStateCommands(
-  internalUiState$: State<ComposerConnectorUiState>,
-  resources: ReturnType<typeof createConnectorResourceSignals>,
-) {
-  const resetBuiltinSubscription$ = resetSignal();
-  const applyConnectorUiState$ = command(
-    (
-      { get, set },
-      patch: Partial<ComposerConnectorUiState>,
-      features: Awaited<ReturnType<typeof featureSwitches$.read>>,
-      signal: AbortSignal,
-    ): void => {
-      const chatAccounts =
-        features[FeatureSwitchKey.ConnectorChatAccountAccess];
-      const current = get(internalUiState$);
-      const next = { ...current, ...patch };
-      const hadResourceConsumer =
-        current.popoverOpen || current.remoteAccessDialogOpen;
-      const hasResourceConsumer =
-        next.popoverOpen || next.remoteAccessDialogOpen;
-      const wasOpen =
-        (!chatAccounts && hadResourceConsumer) ||
-        current.showAddDialog ||
-        current.selectedConnectorSlug !== null;
-      const isOpen =
-        (!chatAccounts && hasResourceConsumer) ||
-        next.showAddDialog ||
-        next.selectedConnectorSlug !== null;
-      if (isOpen && !wasOpen) {
-        const signal = set(resetBuiltinSubscription$, get(pageSignal$));
-        set(subscribeBuiltinConnectorChanges$, signal);
-      } else if (!isOpen && wasOpen) {
-        set(resetBuiltinSubscription$);
-      }
-      // The remote dialog takes over the same resources without cancelling
-      // their owner when the connector popover closes.
-      if (hasResourceConsumer && !hadResourceConsumer) {
-        set(resources.open$, !chatAccounts, signal);
-      } else if (!hasResourceConsumer && hadResourceConsumer) {
-        set(resources.close$);
-      }
-      if (patch.selectedConnectorSlug) {
-        set(resetBuiltinManualGrantForm$, patch.selectedConnectorSlug);
-      }
-      set(internalUiState$, next);
-    },
-  );
-  const updateConnectorUiState$ = command(
-    async (
-      { get, set },
-      patch: Partial<ComposerConnectorUiState>,
-      signal: AbortSignal,
-    ) => {
-      signal.throwIfAborted();
-      // Search, sorting and filters only edit local UI state. The four
-      // resource-owning fields below need the current account-mode switch.
-      if (
-        !("popoverOpen" in patch) &&
-        !("remoteAccessDialogOpen" in patch) &&
-        !("showAddDialog" in patch) &&
-        !("selectedConnectorSlug" in patch)
-      ) {
-        set(internalUiState$, (current) => {
-          return { ...current, ...patch };
-        });
-        return;
-      }
-      const features = await get(featureSwitches$);
-      signal.throwIfAborted();
-      set(applyConnectorUiState$, patch, features, signal);
-    },
-  );
-  return { applyConnectorUiState$, updateConnectorUiState$ };
-}
-
 function createConnectorUiSignals(
   resources: ReturnType<typeof createConnectorResourceSignals>,
-  accounts: ComposerConnectorAccountSignals,
   chatAccess: ReturnType<typeof createChatConnectorAccessSignals>,
 ): Pick<
   ComposerConnectorSignals,
@@ -337,10 +239,11 @@ function createConnectorUiSignals(
   | "closeRemoteAccessDialog$"
   | "triggerElement$"
   | "setTriggerRef$"
-> & { clearPermissions$: Command<void, []> } {
+> {
   const internalUiState$ = state(initialComposerConnectorUiState());
   const { triggerElement$, setTriggerRef$ } =
     createConnectorTriggerSignals(chatAccess);
+  const resetBuiltinSubscription$ = resetSignal();
   const connectorUiState$ = computed((get): ComposerConnectorUiState => {
     return get(internalUiState$);
   });
@@ -390,7 +293,6 @@ function createConnectorUiSignals(
       set(updateConnectorUiState$, { popoverOpen: true });
       set(chatAccess.open$, get(pageSignal$));
     } else {
-      set(accounts.closeMenu$);
       set(chatAccess.close$);
       set(updateConnectorUiState$, {
         popoverOpen: false,
@@ -402,35 +304,22 @@ function createConnectorUiSignals(
   const openAccountManager$ = command(
     async ({ set }, target: ConnectorAccountTarget, signal: AbortSignal) => {
       if (await set(chatAccess.accountManager.open$, target, signal)) {
-        await set(setPopoverOpen$, false, signal);
+        set(setPopoverOpen$, false);
       }
     },
   );
-  const openRemoteAccessDialog$ = command(
-    ({ set }, signal: AbortSignal): Promise<void> => {
-      set(accounts.closeMenu$);
-      set(chatAccess.close$);
-      return set(
-        updateConnectorUiState$,
-        {
-          popoverOpen: false,
-          popoverSearch: "",
-          popoverSortOrder: null,
-          ...remoteAccessDialogState(true),
-        },
-        signal,
-      );
-    },
-  );
-  const closeRemoteAccessDialog$ = command(
-    ({ set }, signal: AbortSignal): Promise<void> => {
-      return set(
-        updateConnectorUiState$,
-        { remoteAccessDialogOpen: false },
-        signal,
-      );
-    },
-  );
+  const openRemoteAccessDialog$ = command(({ set }): void => {
+    set(chatAccess.close$);
+    set(updateConnectorUiState$, {
+      popoverOpen: false,
+      popoverSearch: "",
+      popoverSortOrder: null,
+      ...remoteAccessDialogState(true),
+    });
+  });
+  const closeRemoteAccessDialog$ = command(({ set }): void => {
+    set(updateConnectorUiState$, { remoteAccessDialogOpen: false });
+  });
   return {
     connectorUiState$,
     updateConnectorUiState$,
@@ -446,15 +335,6 @@ function createConnectorUiSignals(
     closeRemoteAccessDialog$,
     triggerElement$,
     setTriggerRef$,
-    clearPermissions$: command(({ set }) => {
-      set(internalUiState$, (current) => {
-        return {
-          ...current,
-          permissionConnectorSlug: null,
-          permissionConnector: null,
-        };
-      });
-    }),
   };
 }
 
@@ -463,9 +343,8 @@ export function createComposerConnectorSignals(
 ): ComposerConnectorSignals {
   const resources = createConnectorResourceSignals(threadId);
   const phoneAccess = createPhoneUseAccessSignals(resources, threadId);
-  const accounts = createComposerConnectorAccountSignals(threadId);
   const chatAccess = createChatConnectorAccessSignals(threadId);
-  const ui = createConnectorUiSignals(resources, accounts, chatAccess);
+  const ui = createConnectorUiSignals(resources, chatAccess);
   const addDialogKeyword$ = computed((get) => {
     return get(ui.connectorUiState$).addDialogSearch;
   });
@@ -522,11 +401,6 @@ export function createComposerConnectorSignals(
     addDialogCustomConnectors$,
     ...ui,
     ...createConnectorUiSelectors(ui.connectorUiState$),
-    accounts,
     chatAccess,
-    reloadAccountPreference$: command(({ set }) => {
-      set(accounts.reloadPreference$);
-      set(chatAccess.reload$);
-    }),
   };
 }

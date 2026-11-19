@@ -17,7 +17,7 @@ import type { PhoneDevice } from "@okouai/api-contracts/contracts/phone-use";
 import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import type { ComposerConnectorSignals } from "../../signals/okou-page/connectors.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { detach, Reason, onDomEventFn } from "../../signals/utils.ts";
+import { onDomEventFn } from "../../signals/utils.ts";
 import { LoadingSwitch } from "../components/loading-switch.tsx";
 
 function PhoneRow({
@@ -78,7 +78,6 @@ function PhoneRow({
 }
 
 function PhoneUseDevices({ signals }: { signals: ComposerConnectorSignals }) {
-  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const devices = useLoadable(signals.resources.phoneUseDevices$);
   const lastDevices = useLastResolved(signals.resources.phoneUseDevices$);
@@ -141,10 +140,7 @@ function PhoneUseDevices({ signals }: { signals: ComposerConnectorSignals }) {
             type="button"
             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground transition-colors hover:bg-state-hover"
             onClick={() => {
-              detach(
-                updateUi({ phoneUseSetupOpen: true }, pageSignal),
-                Reason.DomCallback,
-              );
+              updateUi({ phoneUseSetupOpen: true });
             }}
           >
             <Plug size={16} className="shrink-0" />
@@ -173,7 +169,6 @@ export function PhoneUseSetupDialog({
 }: {
   signals: ComposerConnectorSignals;
 }) {
-  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const open = useGet(signals.phoneUseSetupOpen$);
   const updateUi = useSet(signals.updateConnectorUiState$);
@@ -182,7 +177,7 @@ export function PhoneUseSetupDialog({
     <Dialog
       open={open}
       onOpenChange={(phoneUseSetupOpen) => {
-        detach(updateUi({ phoneUseSetupOpen }, pageSignal), Reason.DomCallback);
+        updateUi({ phoneUseSetupOpen });
       }}
     >
       <DialogContent

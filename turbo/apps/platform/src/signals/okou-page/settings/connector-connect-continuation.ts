@@ -1,4 +1,3 @@
-import { detach, Reason } from "../../utils.ts";
 import { command, type Command, type Computed } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 
@@ -319,11 +318,7 @@ const continueConnectorConnectPlan$ = command(
 
 /** Closes the connect dialog of the origin's surface after a connection. */
 const closeConnectorConnectModal$ = command(
-  async (
-    { set },
-    plan: ConnectorConnectPlan,
-    signal: AbortSignal,
-  ): Promise<void> => {
+  ({ set }, plan: ConnectorConnectPlan, signal: AbortSignal): void => {
     set(clearBuiltinConnectorOAuthDeviceAuth$);
     set(clearBuiltinConnectorExternalCode$);
     switch (plan.kind) {
@@ -351,14 +346,10 @@ const closeConnectorConnectModal$ = command(
         return;
       }
       case "composer": {
-        await set(
-          plan.host.connector.updateConnectorUiState$,
-          {
-            selectedConnectorSlug: null,
-            selectedConnector: null,
-          },
-          signal,
-        );
+        set(plan.host.connector.updateConnectorUiState$, {
+          selectedConnectorSlug: null,
+          selectedConnector: null,
+        });
         return;
       }
       case "artifact-drive-sync":
@@ -381,7 +372,7 @@ const finishConnectorConnect$ = command(
     await set(continueConnectorConnectPlan$, plan, connectionId, signal);
     signal.throwIfAborted();
     if (surface === "connect-modal") {
-      await set(closeConnectorConnectModal$, plan, signal);
+      set(closeConnectorConnectModal$, plan, signal);
     } else if (surface === "directed-manual-grant-dialog") {
       set(setManualGrantDialogKey$, null, signal);
     }
@@ -686,11 +677,11 @@ const continueCustomConnectorSucceeded$ = command(
 
 /** Closes the connect dialog of the surface that started the connection. */
 const closeCustomConnectorConnectSurface$ = command(
-  async (
+  (
     { get, set },
     origin: CustomConnectorConnectOrigin,
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): void => {
     switch (origin.kind) {
       case "account": {
         set(closeCustomAccountConnectDialog$);
@@ -707,13 +698,9 @@ const closeCustomConnectorConnectSurface$ = command(
       case "composer": {
         const host = get(composerConnectHosts$).get(origin.hostKey);
         if (host) {
-          await set(
-            host.connector.updateConnectorUiState$,
-            {
-              selectedCustomConnectorId: null,
-            },
-            signal,
-          );
+          set(host.connector.updateConnectorUiState$, {
+            selectedCustomConnectorId: null,
+          });
         }
         return;
       }
@@ -754,10 +741,7 @@ export const submitCustomConnectorConnectionAndContinue$ = command(
           );
         },
         onClose: () => {
-          detach(
-            set(closeCustomConnectorConnectSurface$, origin, signal),
-            Reason.DomCallback,
-          );
+          set(closeCustomConnectorConnectSurface$, origin, signal);
         },
       },
       signal,
@@ -772,10 +756,7 @@ export const cancelCustomConnectorConnectionFrom$ = command(
     signal: AbortSignal,
   ): void => {
     set(cancelCustomConnectorConnection$, () => {
-      detach(
-        set(closeCustomConnectorConnectSurface$, origin, signal),
-        Reason.DomCallback,
-      );
+      set(closeCustomConnectorConnectSurface$, origin, signal);
     });
   },
 );

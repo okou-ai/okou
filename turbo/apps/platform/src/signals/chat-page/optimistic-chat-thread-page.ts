@@ -7,7 +7,6 @@ import type {
   UserMessageDocument,
   UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { ConnectorAccountSelection } from "@okouai/api-contracts/contracts/connector-accounts";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/client/chat-connector-access";
 import { phoneUseContract } from "@okouai/api-contracts/client/phone-use";
 import type { PhoneUseSelection } from "@okouai/api-contracts/contracts/phone-use";
@@ -108,7 +107,6 @@ interface SendNewThreadMessageRequest {
   forward?: ChatForwardContext;
   /** Runs once the new thread is published, before its send is confirmed. */
   onOptimisticSend?: (threadId: string) => void;
-  connectorSelections?: readonly ConnectorAccountSelection[];
   initialConnectorAccess?: PendingChatConnectorAccess;
   initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
   initialPhoneUse?: PhoneUseSelection;
@@ -407,7 +405,6 @@ async function createChatThread(
     readonly models: AvailableRunModelsResponse;
     readonly catalog: ModelCatalog;
     readonly codexExecution: boolean;
-    readonly connectorSelections?: readonly ConnectorAccountSelection[];
     readonly initialConnectorAccess?: PendingChatConnectorAccess;
     readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
     readonly initialPhoneUse?: PhoneUseSelection;
@@ -437,12 +434,6 @@ async function createChatThread(
           ? {}
           : { reasoningEffort: selectedEffort }),
         ...(args.title ? { title: args.title } : {}),
-        ...(args.connectorSelections?.length
-          ? {
-              connectorSelections: [...args.connectorSelections],
-              connectorSelectionPolicy: "required" as const,
-            }
-          : {}),
         ...(args.initialRemoteAccessOverrides?.length
           ? {
               initialRemoteAccessOverrides: [
@@ -455,7 +446,6 @@ async function createChatThread(
     }),
     [201],
     signal,
-    { expectedErrors: { 400: ["CONNECTOR_ACCOUNT_UNAVAILABLE"] } },
   );
   signal.throwIfAborted();
   // The Chat must exist before its scoped preferences can be saved, and all
@@ -720,7 +710,6 @@ const reserveNewThreadSubmissionIdentity$ = command(
             modelSelection,
             computerUseHostId: request.computerUseHostId,
             cloudBrowserEnabled: request.cloudBrowserEnabled,
-            connectorSelections: request.connectorSelections,
             initialConnectorAccess: request.initialConnectorAccess,
             initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
             initialPhoneUse: request.initialPhoneUse,
@@ -786,7 +775,6 @@ function newThreadRecordOptions(args: {
     models: resolved.models,
     catalog: resolved.catalog,
     codexExecution,
-    connectorSelections: request.connectorSelections,
     initialConnectorAccess: request.initialConnectorAccess,
     initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
     initialPhoneUse: request.initialPhoneUse,
@@ -798,7 +786,6 @@ function requiresThreadBeforeSend(
   customDirection: boolean,
 ): boolean {
   return Boolean(
-    request.connectorSelections?.length ||
     request.initialConnectorAccess ||
     request.initialPhoneUse ||
     customDirection,
