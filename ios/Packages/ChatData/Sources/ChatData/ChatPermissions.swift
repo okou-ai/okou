@@ -189,12 +189,16 @@ public struct ChatPermissions: Sendable {
   }
 
   func connectorPermissions(slug: String) async throws -> ChatPermissionSnapshot {
-    let result: MemberConnectorPermissions = try await client.request(
-      "/api/connector-permissions", query: ChatConnectorTarget.builtin(slug).query)
-    let rules = try result.rules(slug: slug)
-    let metadata = try await self.metadata(slug: slug)
+    let rules = try await connectorGrants(slug: slug)
+    let metadata = try await metadata(slug: slug)
     return ChatPermissionSnapshot(
       agentName: nil, metadata: metadata, grants: rules, connectorScoped: true)
+  }
+
+  func connectorGrants(slug: String) async throws -> [ChatPermissionRule] {
+    let result: MemberConnectorPermissions = try await client.request(
+      "/api/connector-permissions", query: ChatConnectorTarget.builtin(slug).query)
+    return try result.rules(slug: slug)
   }
 
   func metadata(slug: String) async throws -> ChatPermissionMetadata? {

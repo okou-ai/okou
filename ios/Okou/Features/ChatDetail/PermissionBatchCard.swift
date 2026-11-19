@@ -35,9 +35,9 @@ private struct PermissionBatchCardContent: View {
   @State private var showsDetails = false
 
   private var isLoading: Bool { phase.state == .loading }
-  private var snapshot: ChatPermissionBatchSnapshot? { phase.data ?? store.snapshot }
+  private var snapshot: ChatPermissionBatchSnapshot? { store.displayedSnapshot(phase.data) }
   private var requiresReadback: Bool { store.requiresReadback || phase.error != nil }
-  private var allAllowed: Bool { phase.data?.allAllowed == true && !requiresReadback }
+  private var allAllowed: Bool { snapshot?.allAllowed == true && !requiresReadback }
   private var needsContinuation: Bool {
     allAllowed && store.action.callbackPrompt != nil && !store.hasContinued
   }
@@ -118,9 +118,9 @@ private struct PermissionBatchDetailsContent: View {
   @Environment(\.dismiss) private var dismiss
 
   private var isLoading: Bool { phase.state == .loading }
-  private var snapshot: ChatPermissionBatchSnapshot? { phase.data ?? store.snapshot }
+  private var snapshot: ChatPermissionBatchSnapshot? { store.displayedSnapshot(phase.data) }
   private var requiresReadback: Bool { store.requiresReadback || phase.error != nil }
-  private var allAllowed: Bool { phase.data?.allAllowed == true && !requiresReadback }
+  private var allAllowed: Bool { snapshot?.allAllowed == true && !requiresReadback }
   private var needsContinuation: Bool {
     allAllowed && store.action.callbackPrompt != nil && !store.hasContinued
   }
@@ -202,11 +202,11 @@ private struct PermissionBatchDetailsContent: View {
             .font(.footnote).foregroundStyle(.secondary)
         }
         Button("Check permissions") { Task { await store.refresh() } }
-          .frame(minHeight: 44).disabled(isLoading || store.isSaving)
+          .frame(minHeight: 44).disabled(isLoading || store.isSaving || store.isContinuing)
       } else if snapshot?.complete != true {
         Text("These permissions are no longer available.")
           .font(.footnote).foregroundStyle(.secondary)
-      } else if allAllowed && !needsContinuation && !store.isSaving {
+      } else if allAllowed && !needsContinuation && !store.isSaving && !store.isContinuing {
         Button("Done") { dismiss() }
           .buttonStyle(OkouButtonStyle(isPrimary: true))
       } else {
@@ -233,7 +233,8 @@ private struct PermissionBatchDetailsContent: View {
         Button {
           Task { [snapshot] in await store.confirm(reviewing: snapshot) }
         } label: {
-          ChatSettingsActionLabel(title: confirmationTitle, isBusy: store.isSaving)
+          ChatSettingsActionLabel(
+            title: confirmationTitle, isBusy: store.isSaving || store.isContinuing)
         }
         .buttonStyle(OkouButtonStyle(isPrimary: true))
         .disabled(!store.canConfirm(reviewing: snapshot) || isLoading || phase.error != nil)
