@@ -115,7 +115,7 @@ export function PlatformFeedEvent({
         </time>
         <div className="mt-auto flex flex-wrap items-center gap-3 pt-6">
           <Button
-            variant="neutral"
+            variant="default"
             disabled={busy}
             pending={activation.state === "loading"}
             onClick={() => {
