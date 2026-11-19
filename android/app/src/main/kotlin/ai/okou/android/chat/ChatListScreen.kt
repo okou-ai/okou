@@ -42,7 +42,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,6 +74,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
@@ -95,7 +95,7 @@ internal fun ChatListScreen(
     newChat: (String?) -> Unit,
     selectedChatId: String?,
 ) {
-    var renamingId by rememberSaveable { mutableStateOf<String?>(null) }
+    var renamingId by remember { mutableStateOf<String?>(null) }
     val renaming =
         renamingId?.let { id -> state.threads.firstOrNull { it.id == id && it.hidden != true } }
     if (renaming != null) {
@@ -311,8 +311,8 @@ private fun RenameChatDialog(
     dismiss: () -> Unit,
     save: (String) -> Unit,
 ) {
-    var input by rememberSaveable { mutableStateOf(currentTitle) }
-    val title = input.trim()
+    var input by remember { mutableStateOf(TextFieldValue(currentTitle)) }
+    val title = input.text.trim()
     val foreground = MaterialTheme.colorScheme.onSurface
     AlertDialog(
         onDismissRequest = dismiss,
