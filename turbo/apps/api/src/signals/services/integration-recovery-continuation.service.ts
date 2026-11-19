@@ -22,10 +22,7 @@ import { loadAgentPhoneQueuedLaunchMaterial$ } from "./agentphone-queued-launch-
 import { loadWechatQueuedLaunchMaterial$ } from "./wechat-context.service";
 import { reconcileWechatThreadTyping$ } from "./wechat-thread-typing.service";
 import { sendAgentPhoneRunTyping } from "./agentphone-run-typing.service";
-import {
-  createFeishuStoredLaunchContext,
-  requiredFeishuLaunchContext,
-} from "./feishu-queued-launch-context.service";
+import { createFeishuRecoveryContext } from "./feishu-queued-launch-context.service";
 import { addFeishuThinkingReaction$ } from "./feishu-thinking-indicator.service";
 import {
   pickEnqueuedChatThread$,
@@ -72,9 +69,8 @@ const showRecoveryIndicator$ = command(
         break;
       }
       case "feishu": {
-        const row = await get(createFeishuStoredLaunchContext(input));
+        const context = await get(createFeishuRecoveryContext(input));
         signal.throwIfAborted();
-        const context = requiredFeishuLaunchContext(row);
         if (context) {
           const reactionId = await set(
             addFeishuThinkingReaction$,

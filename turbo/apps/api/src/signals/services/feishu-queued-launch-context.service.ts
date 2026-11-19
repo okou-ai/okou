@@ -42,9 +42,7 @@ type FeishuLaunchContextRow = Pick<
   readonly connectorSourceId: string | null;
 };
 
-export function requiredFeishuLaunchContext(
-  row: FeishuLaunchContextRow | undefined,
-) {
+function requiredFeishuLaunchContext(row: FeishuLaunchContextRow | undefined) {
   if (
     !row ||
     row.conversationHistory === null ||
@@ -89,12 +87,19 @@ interface FeishuLaunchSource {
   readonly contextId?: string;
 }
 
+type FeishuLaunchInput =
+  FeishuLaunchSource | Computed<Promise<FeishuLaunchSource | null>>;
+
 export type FeishuThreadContext = ReturnType<
   typeof requiredFeishuLaunchContext
 >;
 
-export function createFeishuStoredLaunchContext(args: FeishuLaunchSource) {
+function createFeishuStoredLaunchContext(source: FeishuLaunchInput) {
   return computed(async (get) => {
+    const args = "eventId" in source ? source : await get(source);
+    if (!args) {
+      return undefined;
+    }
     const [row] = await get(db$)
       .select({
         conversationHistory: chatFeishuContext.conversationHistory,
@@ -167,19 +172,29 @@ export function createFeishuStoredLaunchContext(args: FeishuLaunchSource) {
         ),
       )
       .limit(1);
-    return row;
+    return row ? { row, args } : undefined;
+  });
+}
+
+export function createFeishuRecoveryContext(args: FeishuLaunchSource) {
+  const stored$ = createFeishuStoredLaunchContext(args);
+  return computed(async (get): Promise<FeishuThreadContext> => {
+    const stored = await get(stored$);
+    return requiredFeishuLaunchContext(stored?.row);
   });
 }
 
 export function createFeishuLaunchContext(
-  args: FeishuLaunchSource,
+  source: FeishuLaunchInput,
   actorFeatureSwitches$?: Computed<Promise<FeatureSwitchContext>>,
 ) {
+  const stored$ = createFeishuStoredLaunchContext(source);
   return computed(async (get): Promise<FeishuThreadContext> => {
-    const row = await get(createFeishuStoredLaunchContext(args));
-    if (!row) {
+    const stored = await get(stored$);
+    if (!stored) {
       return null;
     }
+    const { row, args } = stored;
     const availability = feishuInstallationAvailabilityReadPlan({
       ...row,
       orgId: args.orgId,

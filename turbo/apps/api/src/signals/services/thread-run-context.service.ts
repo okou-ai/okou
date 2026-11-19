@@ -56,7 +56,7 @@ export function createFeishuThreadContext(
   orgId: string,
   featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
 ): Computed<Promise<FeishuThreadContext>> {
-  return computed(async (get) => {
+  const source$ = computed(async (get) => {
     const pickedEvent = await get(pickedEvent$);
     if (
       !pickedEvent ||
@@ -65,19 +65,15 @@ export function createFeishuThreadContext(
     ) {
       return null;
     }
-    return await get(
-      createFeishuLaunchContext(
-        {
-          eventId: pickedEvent.id,
-          chatThreadId: pickedEvent.chatThreadId,
-          contextId: pickedEvent.contextId,
-          orgId,
-          userId: pickedEvent.userId,
-        },
-        featureSwitches$,
-      ),
-    );
+    return {
+      eventId: pickedEvent.id,
+      chatThreadId: pickedEvent.chatThreadId,
+      contextId: pickedEvent.contextId,
+      orgId,
+      userId: pickedEvent.userId,
+    };
   });
+  return createFeishuLaunchContext(source$, featureSwitches$);
 }
 
 export function createTeamsThreadContext(
