@@ -158,6 +158,26 @@ describe("bulk Agent read-cursor notifications stay bounded", () => {
     );
   });
 
+  it("accepts concurrent Agent marks and publishes one read-cursor update", async () => {
+    const fixture = await createUnreadAgentThreads(2);
+    clearPublishedNotifications();
+
+    await Promise.all([
+      chat.markAgentThreadsRead(fixture.actor, fixture.agentId),
+      chat.markAgentThreadsRead(fixture.actor, fixture.agentId),
+    ]);
+
+    expect(publishedReadCursorPayloads()).toStrictEqual([
+      {
+        agentId: fixture.agentId,
+        threadIds: expect.arrayContaining([...fixture.threadIds]),
+      },
+    ]);
+    await expect(visibleUnreadThreadIds(fixture)).resolves.toStrictEqual(
+      new Set(),
+    );
+  });
+
   it("leaves unread threads older than the seven-day window untouched", async () => {
     // The stale thread's last message is written at the real current time;
     // the app clock then moves eight days ahead, so that message falls outside

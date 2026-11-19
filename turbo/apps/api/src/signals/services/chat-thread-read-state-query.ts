@@ -1,6 +1,7 @@
 import { command, computed } from "ccstate";
 import {
   and,
+  asc,
   desc,
   eq,
   gt,
@@ -214,15 +215,21 @@ export const advanceChatThreadReadCursors$ = command(
       return sql`(${threadId}::uuid, ${watermark.toISOString()}::timestamp)`;
     });
     const watermark = sql`prepared_cursor.watermark`;
-    const updated = await set(writeDb$)
-      .update(chatThreads)
-      .set({ lastReadAt: watermark })
-      .from(
+    const db = set(writeDb$);
+    // Recency can reorder the same threads between requests. Lock eligible
+    // rows by immutable ID inside the statement before applying the update.
+    const eligible = db
+      .select({
+        id: chatThreads.id,
+        watermark: watermark.mapWith(chatThreads.lastReadAt).as("watermark"),
+      })
+      .from(chatThreads)
+      .innerJoin(
         sql`(VALUES ${sql.join(values, sql`, `)}) AS prepared_cursor(thread_id, watermark)`,
+        eq(chatThreads.id, sql`prepared_cursor.thread_id`),
       )
       .where(
         and(
-          eq(chatThreads.id, sql`prepared_cursor.thread_id`),
           eq(chatThreads.userId, args.userId),
           args.unmutedOnly ? eq(chatThreads.muted, false) : undefined,
           or(
@@ -231,6 +238,14 @@ export const advanceChatThreadReadCursors$ = command(
           ),
         ),
       )
+      .orderBy(asc(chatThreads.id))
+      .for("no key update", { of: chatThreads })
+      .as("eligible_cursor");
+    const updated = await db
+      .update(chatThreads)
+      .set({ lastReadAt: sql`${eligible.watermark}` })
+      .from(eligible)
+      .where(eq(chatThreads.id, eligible.id))
       .returning({ id: chatThreads.id });
     signal.throwIfAborted();
     const updatedIds = new Set(
