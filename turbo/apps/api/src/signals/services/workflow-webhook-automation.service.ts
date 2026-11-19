@@ -478,11 +478,9 @@ const startWorkflowWebhookRun$ = command(
     return await set(
       runWorkflowAutomationNow$,
       {
-        due: {
-          automation: args.row.automation,
-          agentId: args.row.agentId,
-          chatThreadId: args.row.chatThreadId,
-        },
+        automation: args.row.automation,
+        agentId: args.row.agentId,
+        chatThreadId: args.row.chatThreadId,
         automationContext: runInput.context,
         apiStartTime: args.apiStartTime,
         triggerSource: "automation-event",

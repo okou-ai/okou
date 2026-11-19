@@ -1545,11 +1545,9 @@ const startGmailWorkflowRun$ = command(
       set(
         runWorkflowAutomationNow$,
         {
-          due: {
-            automation: args.automation.automation,
-            agentId: args.automation.agentId,
-            chatThreadId: args.automation.chatThreadId,
-          },
+          automation: args.automation.automation,
+          agentId: args.automation.agentId,
+          chatThreadId: args.automation.chatThreadId,
           automationContext: runInput.context,
           connectorSourceId: args.connectorSourceId,
           apiStartTime: args.apiStartTime,

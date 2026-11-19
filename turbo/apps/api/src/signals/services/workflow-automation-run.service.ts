@@ -167,7 +167,7 @@ async function flushWorkflowAdmission<T>(
  * `input.rejected`.
  */
 function pendingTickReplacement(args: RunWorkflowAutomationNowArgs) {
-  const { automation, chatThreadId } = args.due;
+  const { automation, chatThreadId } = args;
   return automation.kind === "schedule" &&
     args.replacePendingScheduleTick !== false
     ? { chatThreadId, automationId: automation.id }
@@ -177,15 +177,18 @@ function pendingTickReplacement(args: RunWorkflowAutomationNowArgs) {
 const workflowAutomationInputModel$ = command(
   async (
     { set },
-    due: RunWorkflowAutomationNowArgs["due"],
+    {
+      automation,
+      chatThreadId,
+    }: Pick<RunWorkflowAutomationNowArgs, "automation" | "chatThreadId">,
     signal: AbortSignal,
   ) => {
     const official = await set(
       synchronizeOfficialWorkflowThread$,
       {
-        workflowId: due.automation.workflowId,
-        orgId: due.automation.orgId,
-        userId: due.automation.ownerUserId,
+        workflowId: automation.workflowId,
+        orgId: automation.orgId,
+        userId: automation.ownerUserId,
       },
       signal,
     );
@@ -202,9 +205,9 @@ const workflowAutomationInputModel$ = command(
     return await set(
       resolveEnqueuedChatInputModel$,
       {
-        threadId: due.chatThreadId,
-        orgId: due.automation.orgId,
-        userId: due.automation.ownerUserId,
+        threadId: chatThreadId,
+        orgId: automation.orgId,
+        userId: automation.ownerUserId,
       },
       signal,
     );
@@ -274,10 +277,10 @@ const prepareWorkflowQueueSource$ = command(
         return { steps: [] };
       }
       case "chat-run-finished": {
-        return workflowCallbackReceiptPlan(plan, args.due.automation.id);
+        return workflowCallbackReceiptPlan(plan, args.automation.id);
       }
       case "webhook": {
-        return workflowWebhookReceiptPlan(plan, args.due.automation.id);
+        return workflowWebhookReceiptPlan(plan, args.automation.id);
       }
       case "gmail": {
         return {
@@ -359,7 +362,7 @@ const commitProactiveWorkflowInput$ = command(
     signal: AbortSignal,
   ): Promise<ChatInputEnqueueCommit | null> => {
     const { args, plan, source, model } = input;
-    const { automation, chatThreadId, agentId } = args.due;
+    const { automation, chatThreadId, agentId } = args;
     if (
       source.steps.length !== 0 ||
       automation.officialBlueprintKey === null ||
@@ -434,7 +437,7 @@ const commitProactiveWorkflowInput$ = command(
 
 function usesProactiveWorkflowInput(args: RunWorkflowAutomationNowArgs) {
   const proactiveKind =
-    args.due.automation.officialBlueprintKey === null
+    args.automation.officialBlueprintKey === null
       ? null
       : proactiveWorkflowKind(args.automationContext.workflowName);
   return (
@@ -444,7 +447,7 @@ function usesProactiveWorkflowInput(args: RunWorkflowAutomationNowArgs) {
 }
 
 function workflowRewardSource({ args, plan }: PreparedWorkflowInputCommit) {
-  const { automation } = args.due;
+  const { automation } = args;
   return {
     orgId: automation.orgId,
     userId: automation.ownerUserId,
@@ -509,7 +512,7 @@ const commitWorkflowInput$ = command(
     }
     signal.throwIfAborted();
     const { args, plan, source, replacePendingTicks, model, timing } = input;
-    const { automation, chatThreadId } = args.due;
+    const { automation, chatThreadId } = args;
     const database = set(writeDb$);
     const startedAt = now();
     const currentTime = nowDate();
@@ -662,13 +665,11 @@ function workflowQueueArgs(
   args: RunWorkflowAutomationNowArgs,
   model: EnqueuedChatInputModel,
   displayName: string | null,
-  automation: RunWorkflowAutomationNowArgs["due"]["automation"],
-  chatThreadId: string,
 ) {
   return {
     displayName,
     modelSelection: model.modelSelection,
-    automation,
+    automation: args.automation,
     queueEventId: args.queueEventId,
     workflowName: args.automationContext.workflowName,
     displayPrompt: workflowAutomationDisplayMessage(args.automationContext),
@@ -678,7 +679,7 @@ function workflowQueueArgs(
       args.automationContext.event,
     ),
     connectorSourceId: args.connectorSourceId,
-    chatThreadId,
+    chatThreadId: args.chatThreadId,
     triggerBrief: args.triggerBrief,
   };
 }
@@ -690,8 +691,12 @@ const prepareWorkflowAdmission$ = command(
     timing: ApiDispatchTimingCollector,
     signal: AbortSignal,
   ) => {
-    const { automation, chatThreadId } = args.due;
-    const model = await set(workflowAutomationInputModel$, args.due, signal);
+    const { automation, chatThreadId } = args;
+    const model = await set(
+      workflowAutomationInputModel$,
+      { automation, chatThreadId },
+      signal,
+    );
     const displayName = await set(
       workflowQueueDisplayName$,
       automation.workflowId,
@@ -700,7 +705,7 @@ const prepareWorkflowAdmission$ = command(
     );
     const source = await set(prepareWorkflowQueueSource$, args, signal);
     const plan = workflowAutomationQueueEventPlan(
-      workflowQueueArgs(args, model, displayName, automation, chatThreadId),
+      workflowQueueArgs(args, model, displayName),
     );
     signal.throwIfAborted();
     return {
@@ -718,7 +723,7 @@ export const runWorkflowAutomationNow$ = command(
     args: RunWorkflowAutomationNowArgs,
     signal: AbortSignal,
   ): Promise<RunWorkflowAutomationResult> => {
-    const { automation, chatThreadId } = args.due;
+    const { automation, chatThreadId } = args;
     const timing = workflowAutomationAdmissionTiming(args);
 
     const { scheduleClaim } = args;
