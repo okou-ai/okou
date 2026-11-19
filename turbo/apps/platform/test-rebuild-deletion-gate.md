@@ -69,6 +69,8 @@ met.
 
 ## Latest tally
 
-See [Workflow attribution and recovery screening](test-rebuild-batch-recovery.md)
-for the current count of 15 confirmed frozen deductions and the remaining
-1,519-row gap. Earlier figures above are batch checkpoints.
+See [retirement and access screening](test-rebuild-batch-retirement-and-access.md)
+for the current count of 21 confirmed frozen deductions and the remaining
+1,513-row gap. Earlier figures above and in the
+[Workflow attribution and recovery batch](test-rebuild-batch-recovery.md)
+are batch checkpoints.
