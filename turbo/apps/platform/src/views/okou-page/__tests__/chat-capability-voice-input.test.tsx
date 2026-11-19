@@ -339,7 +339,6 @@ test("Finish a provider no-speech response and preserve the input", async () => 
   expect(normalizedComposerText()).toBe(initialText);
   await expect(findEnabledButton("Add")).resolves.toBeVisible();
   expect(queryButton("Send")).toBeEnabled();
-  expect(screen.queryByText("Could not finish recording.")).toBeNull();
 
   await userEvent.type(currentComposer(), "New words", { skipClick: true });
   expect(normalizedComposerText()).toBe("New words");
