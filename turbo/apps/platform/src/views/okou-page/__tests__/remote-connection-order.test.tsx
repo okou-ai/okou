@@ -104,7 +104,7 @@ test.each([false, true])(
         }),
     ).toStrictEqual(orderedNames);
     click(await screen.findByText("Remote access"));
-    const dialog = screen.getByRole("dialog", { name: "Remote access" });
+    const dialog = await screen.findByRole("dialog", { name: "Remote access" });
     await within(dialog).findByRole("combobox", { name: "SSH android" });
     const list = within(dialog).getByRole("list", {
       name: "Connections",
