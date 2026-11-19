@@ -15,7 +15,16 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 
-test("Window size settings retain each selected mode when reopened", async () => {
+async function openViewer(
+  targets: NonNullable<Parameters<typeof mockBrowserCdp>[2]>["targets"] = [
+    {
+      targetId: "example-page",
+      title: "Example",
+      url: "https://example.com",
+      windowId: 1,
+    },
+  ],
+): Promise<void> {
   const threadId = "a0000000-0000-4000-a000-000000000345";
   const path = `/browsers/${threadId}`;
   const cdpUrl = "wss://cdp.example.test/browser";
@@ -42,16 +51,7 @@ test("Window size settings retain each selected mode when reopened", async () =>
     cdpUrl,
     extension: TEST_BROWSER_EXTENSION,
   };
-  mockBrowserCdp(context, cdpUrl, {
-    targets: [
-      {
-        targetId: "example-page",
-        title: "Example",
-        url: "https://example.com",
-        windowId: 1,
-      },
-    ],
-  });
+  mockBrowserCdp(context, cdpUrl, { targets });
   context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(200, { browser: viewer.browser, viewer });
   });
@@ -68,6 +68,10 @@ test("Window size settings retain each selected mode when reopened", async () =>
   await waitFor(() => {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   });
+}
+
+test("Window size settings retain each selected mode when reopened", async () => {
+  await openViewer();
   const settings = screen.getByLabelText("Browser settings");
   const openWindowSize = async () => {
     click(settings);
@@ -94,4 +98,40 @@ test("Window size settings retain each selected mode when reopened", async () =>
       await screen.findByRole("menuitemradio", { name: label }),
     ).toBeChecked();
   }
+});
+
+test("The Okou viewer shows its host blank page only while the blank tab is selected", async () => {
+  await openViewer([
+    {
+      targetId: "blank-page",
+      title: "about:blank",
+      url: "about:blank",
+      windowId: 1,
+    },
+    {
+      targetId: "example-page",
+      title: "Example",
+      url: "https://example.com",
+      windowId: 1,
+    },
+  ]);
+  const emptyTitle = "Nothing open yet";
+  const guidance =
+    "Okou opens pages here as it works. Enter a URL above to browse yourself.";
+  await expect(screen.findByText(emptyTitle)).resolves.toBeInTheDocument();
+  expect(screen.getByText(guidance)).toBeInTheDocument();
+
+  click(await screen.findByRole("tab", { name: "Example" }));
+  const address = screen.getByLabelText("Address");
+  await waitFor(() => {
+    expect(address).toHaveValue("https://example.com");
+    expect(address).toBeEnabled();
+    expect(screen.queryByText(emptyTitle)).not.toBeInTheDocument();
+    expect(screen.queryByText(guidance)).not.toBeInTheDocument();
+  });
+
+  click(await screen.findByRole("tab", { name: "New tab" }));
+  await expect(screen.findByText(emptyTitle)).resolves.toBeInTheDocument();
+  expect(screen.getByText(guidance)).toBeInTheDocument();
+  expect(address).toBeEnabled();
 });

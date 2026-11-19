@@ -19,6 +19,10 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import {
+  mockBrowserCdp,
+  TEST_BROWSER_EXTENSION,
+} from "../../../__tests__/browser-cdp-fixture.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   CAPABILITY_AGENT_ID,
@@ -771,4 +775,152 @@ test("Open a stopped browser without the refined panel", async () => {
     browser.getByRole("link", { name: "Open this browser in a new page" }),
   ).toHaveAttribute("href", `/browsers/${RUN_THREAD_ID}`);
   expect(browser.getByLabelText("Remote browser input")).toBeDisabled();
+});
+
+test("Refresh the browser card after delayed attachment and a continuity gap", async () => {
+  const channel = "user:test-user-123";
+  const topic = "browserSessionChanged";
+  const gate = context.mocks.ably.deferSubscribeOnChannel(channel, topic);
+  let session = browserSession(
+    "active",
+    INITIAL_SCREENSHOT,
+    "https://example.com/",
+  );
+  installBrowserCardConversation();
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(200, { browser: session });
+  });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    sharedWorkerTestTransport: "message-port",
+  });
+  await readyChat();
+  await gate.started;
+
+  const expectCard = async (label: string, screenshot: string) => {
+    await waitFor(() => {
+      const card = document.querySelector<HTMLElement>(
+        "[data-browser-session-card]",
+      );
+      expect(card).toBeInTheDocument();
+      if (card) {
+        expect(within(card).getByText(label)).toBeInTheDocument();
+        expect(thumbnailSource(card)).toContain(screenshot);
+      }
+    });
+  };
+  await expectCard("Live", "initial.png");
+
+  session = browserSession(
+    "suspended",
+    "https://screens.example.com/stopped.png",
+  );
+  gate.attach();
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(channel, topic),
+    ).toBeTruthy();
+  });
+  context.mocks.ably.triggerOnChannel(channel, topic, {
+    threadId: RUN_THREAD_ID,
+  });
+  await expectCard("Stopped", "stopped.png");
+
+  context.mocks.ably.triggerConnectionState("suspended", {
+    channelName: channel,
+  });
+  session = browserSession(
+    "active",
+    INITIAL_SCREENSHOT,
+    "https://example.com/resumed",
+  );
+  context.mocks.ably.triggerReconnect();
+  await expectCard("Live", "initial.png");
+});
+
+test("Follow suspension and resumption in the live browser panel", async () => {
+  const cdpUrl = "wss://cdp.example.test/browser";
+  const topic = "browserSessionChanged";
+  const initialSession = browserSession(
+    "active",
+    INITIAL_SCREENSHOT,
+    "https://example.com",
+  );
+  if (initialSession.status !== "active") {
+    throw new Error("Expected the browser fixture to be active");
+  }
+  let session: BrowserSession = initialSession;
+  mockBrowserCdp(context, cdpUrl, {
+    targets: [
+      {
+        targetId: "example-page",
+        title: "Example",
+        url: "https://example.com",
+        windowId: 1,
+      },
+    ],
+  });
+  installBrowserCardConversation();
+  context.mocks.api(browserContract.get, ({ query, respond }) => {
+    return respond(200, {
+      browser: session,
+      ...(query?.viewer === "native" && session.status === "active"
+        ? {
+            viewer: {
+              browser: session,
+              cdpUrl,
+              extension: TEST_BROWSER_EXTENSION,
+            },
+          }
+        : {}),
+    });
+  });
+  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
+    return respond(200, { browser: session });
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
+  });
+  await readyChat();
+  const card = await findBrowserCard();
+  await waitFor(() => {
+    expect(within(card).getByText("Live")).toBeInTheDocument();
+    expect(thumbnailSource(card)).toContain("initial.png");
+  });
+  click(card);
+  const panel = within(
+    await screen.findByRole("complementary", { name: "Cloud browser" }),
+  );
+  const expectLivePage = async () => {
+    await waitFor(() => {
+      expect(panel.getByLabelText("Remote browser input")).toBeEnabled();
+      expect(panel.getByLabelText("Address")).toHaveValue(
+        "https://example.com",
+      );
+    });
+  };
+  await expectLivePage();
+  await waitFor(() => {
+    expect(context.mocks.ably.hasSubscription(topic)).toBeTruthy();
+  });
+
+  session = browserSession("suspended", INITIAL_SCREENSHOT);
+  context.mocks.ably.trigger(topic, { threadId: RUN_THREAD_ID });
+  await expect(
+    panel.findByText("Browser not live"),
+  ).resolves.toBeInTheDocument();
+  expect(panel.getByLabelText("Remote browser input")).toBeDisabled();
+  expect(panel.getByRole("button", { name: "Start browser" })).toBeEnabled();
+  await expect(screen.findByText("Stopped")).resolves.toBeInTheDocument();
+
+  session = { ...initialSession, liveUrl: "https://example.com/resumed" };
+  context.mocks.ably.trigger(topic, { threadId: RUN_THREAD_ID });
+  await expectLivePage();
+  await expect(screen.findByText("Live")).resolves.toBeInTheDocument();
 });
