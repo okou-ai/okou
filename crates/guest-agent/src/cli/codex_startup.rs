@@ -1,14 +1,14 @@
 //! Exactly-once telemetry for Codex startup through primary turn readiness.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use guest_telemetry::telemetry::record_sandbox_op;
 
+use super::startup_timing::StartupTiming;
+
 /// Records the complete Codex setup-to-turn-readiness boundary once.
 pub struct CodexStartupTiming {
-    started_at: Instant,
-    completed: AtomicBool,
+    timing: StartupTiming,
 }
 
 impl CodexStartupTiming {
@@ -16,8 +16,7 @@ impl CodexStartupTiming {
     #[must_use]
     pub fn start() -> Self {
         Self {
-            started_at: Instant::now(),
-            completed: AtomicBool::new(false),
+            timing: StartupTiming::new(Instant::now()),
         }
     }
 
@@ -32,15 +31,8 @@ impl CodexStartupTiming {
     }
 
     fn record_at(&self, completed_at: Instant, success: bool) {
-        if self.completed.swap(true, Ordering::Relaxed) {
-            return;
+        if let Some(duration) = self.timing.complete_at(completed_at) {
+            record_sandbox_op("codex_startup", duration, success, None);
         }
-
-        record_sandbox_op(
-            "codex_startup",
-            completed_at.saturating_duration_since(self.started_at),
-            success,
-            None,
-        );
     }
 }
