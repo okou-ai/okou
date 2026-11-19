@@ -21,10 +21,6 @@ import {
   mergeEnvironments,
 } from "./run-environment";
 import {
-  mergeRunSkillVolumes,
-  resolveRunSkillVolumes,
-} from "./run-prompt-and-skills";
-import {
   DEFAULT_DISALLOWED_TOOLS,
   runPlatformEnvironment,
 } from "./run-execution-defaults";
@@ -131,20 +127,11 @@ function createExecutionModel(input$: ExecutionInput$) {
 function createExecutionPackages(input$: ExecutionInput$) {
   return computed(async (get) => {
     const { facts, memoryMounts } = await get(input$);
-    const { skillRoot, officialWorkflowBundles } = facts;
-    // Overlay precedence depends on the accepted mount paths and order.
+    const { skillRoot, skillMounts, officialWorkflowBundles } = facts;
     const storageMounts = memoryMounts.map(({ mount }) => {
       return mount;
     });
-    const volumes = resolveRunSkillVolumes(
-      mergeRunSkillVolumes([
-        facts.connectorSkillVolumes,
-        facts.seedSkillVolumes,
-        facts.templateSkillVolumes,
-      ]),
-      skillRoot,
-    );
-    const winners = normalizeMountOverlay([...volumes, ...storageMounts]);
+    const winners = normalizeMountOverlay([...skillMounts, ...storageMounts]);
     const seedSkillBundles = winners.flatMap((volume) => {
       return "contentBundle" in volume
         ? [{ ...volume.contentBundle, mountPath: volume.mountPath }]

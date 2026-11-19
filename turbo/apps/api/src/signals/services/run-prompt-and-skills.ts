@@ -98,23 +98,17 @@ export function mergeRunPromptAndSkills(
     systemPromptVariables,
     userPromptVariables,
     // Preserve mount precedence while keeping each source's captured order.
-    skillVolumes: mergeRunSkillVolumes([skillVolumes]),
+    skillVolumes: skillVolumes.sort((left, right) => {
+      return (
+        VOLUME_SOURCE_ORDER[left.source] - VOLUME_SOURCE_ORDER[right.source]
+      );
+    }),
   };
 }
 
-/** The same package precedence for prompt and package-only consumers. */
-export function mergeRunSkillVolumes(
-  parts: readonly (readonly SkillVolume[])[],
-): readonly SkillVolume[] {
-  return parts.flat().sort((left, right) => {
-    return VOLUME_SOURCE_ORDER[left.source] - VOLUME_SOURCE_ORDER[right.source];
-  });
-}
-
-type ResolvedSkillVolume =
+export type ResolvedSkillVolume =
   | TemplateSkillVolume
   | {
-      readonly source: BundleSkillSource;
       readonly contentBundle: ContentBundle;
       readonly mountPath: string;
     };
@@ -122,24 +116,17 @@ type ResolvedSkillVolume =
 /** Bind runtime skill paths at run assembly; template paths are already fixed. */
 export function resolveRunSkillVolumes(
   volumes: readonly SkillVolume[],
-  skillsRoot?: string,
+  skillsRoot: string,
 ): readonly ResolvedSkillVolume[] {
-  const skillVolumes: ResolvedSkillVolume[] = [];
-  for (const volume of volumes) {
+  return volumes.map((volume) => {
     if (volume.source === "request_additional_volume") {
-      skillVolumes.push(volume);
-    } else {
-      if (skillsRoot === undefined) {
-        throw new Error("Runtime skills require a mount root at run assembly");
-      }
-      const { skillName, ...storage } = volume;
-      skillVolumes.push({
-        ...storage,
-        mountPath: `${skillsRoot}/${skillName}`,
-      });
+      return volume;
     }
-  }
-  return skillVolumes;
+    return {
+      contentBundle: volume.contentBundle,
+      mountPath: `${skillsRoot}/${volume.skillName}`,
+    };
+  });
 }
 
 interface RenderedRunPrompts {
