@@ -10,6 +10,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.92.1](https://github.com/okou-ai/okou/compare/api-v2.92.0...api-v2.92.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* **api:** classify malformed outlook draft ids ([#48794](https://github.com/okou-ai/okou/issues/48794)) ([4cfd459](https://github.com/okou-ai/okou/commit/4cfd45983a517e8975e1e5021f7eeb7a37ad41b7))
+
+
+### Performance Improvements
+
+* **api:** overlap bundle url cache reads with storage signing ([#48801](https://github.com/okou-ai/okou/issues/48801)) ([c732cf0](https://github.com/okou-ai/okou/commit/c732cf0bb6f00c5f2db1f9881c9f18ade1f48a4d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.88.0
+    * @okouai/core bumped to 8.854.1
+    * @okouai/db bumped to 2.47.0
+    * @okouai/pi-agent-runtime bumped to 1.52.1
+
 ## [2.92.0](https://github.com/okou-ai/okou/compare/api-v2.91.3...api-v2.92.0) (2026-11-18)
 
 

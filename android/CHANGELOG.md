@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.0](https://github.com/okou-ai/okou/compare/android-v0.25.0...android-v0.26.0) (2026-11-19)
+
+
+### Features
+
+* **android:** add chat row mute and archive actions ([#48768](https://github.com/okou-ai/okou/issues/48768)) ([f74ed61](https://github.com/okou-ai/okou/commit/f74ed61ce0b1c050375aa96e01b47a8ff7bb732d))
+
 ## [0.25.0](https://github.com/okou-ai/okou/compare/android-v0.24.0...android-v0.25.0) (2026-11-18)
 
 
