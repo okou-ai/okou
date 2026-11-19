@@ -48,6 +48,8 @@ pub fn validate_workflow_mount(mount_path: &str) -> Result<(), String> {
 pub struct StorageEntry {
     /// Present only for an explicitly captured immutable template bundle.
     pub template_guidance: Option<guest_contracts::storage_manifest::TemplateGuidanceReference>,
+    /// Whether the API explicitly selected this execution package as optional.
+    pub optional: bool,
     pub name: String,
     pub mount_path: String,
     pub vas_storage_name: String,
@@ -127,6 +129,7 @@ fn normalize_storage_mounts(
             .ok_or_else(|| "storage manifest read-only mount requires archiveUrl".to_string())?;
         storages.push(StorageEntry {
             template_guidance: None,
+            optional: false,
             name: mount.name.clone(),
             mount_path: mount.mount_path,
             vas_storage_name: mount.name,
