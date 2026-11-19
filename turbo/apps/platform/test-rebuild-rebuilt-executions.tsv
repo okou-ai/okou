@@ -908,3 +908,8 @@ browser-session-page-037	turbo/apps/platform/src/views/browser-session/__tests__
 browser-session-page-053	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Keep the replacement instance live when an older renewal arrives late	1202	passed
 browser-session-page-055	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Cancel the old heartbeat on navigation and renew only the new chat	1228	passed
 browser-session-page-023	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Discard the old blocked address hint when chat authorization renews	1252	passed
+browser-viewer-acquisition-002	turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-acquisition.test.tsx	Use Start's returned connection while acquisition is stalled without a lifecycle echo	177	passed
+browser-viewer-acquisition-003	turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-acquisition.test.tsx	Use Start's returned connection while acquisition is stalled with one correlated lifecycle echo	177	passed
+browser-viewer-acquisition-007	turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-acquisition.test.tsx	Retire the operation ID after an unrelated notice invalidates Start	223	passed
+browser-viewer-acquisition-008	turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-acquisition.test.tsx	Reconnect acquires a replacement when explicit opening is unavailable	295	passed
+browser-viewer-acquisition-009	turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-acquisition.test.tsx	Acquire a fresh native connection after revoking and renewing a Start grant	319	passed
