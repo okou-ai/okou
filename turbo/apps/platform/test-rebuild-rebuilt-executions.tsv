@@ -25,3 +25,5 @@ permission-batch-page-008	turbo/apps/platform/src/views/permission-allow/__tests
 permission-batch-page-009	turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx	Missing metadata prevents approval and still lets the user dismiss the request	237	passed
 permission-batch-page-011	turbo/apps/platform/src/views/permission-allow/__tests__/permission-batch-page.test.tsx	An unacknowledged grant cannot continue the chat	257	passed
 notification-navigation-001	turbo/apps/platform/src/views/notifications/__tests__/notification-navigation.test.tsx	A relative chat notification opens the linked conversation	8	passed
+service-status-notice-001	turbo/apps/platform/src/views/router/__tests__/service-status-notice.test.tsx	A desktop user can open or dismiss an active service incident	31	passed
+service-status-notice-003	turbo/apps/platform/src/views/router/__tests__/service-status-notice.test.tsx	A mobile user can see an active incident alongside main navigation	53	passed
