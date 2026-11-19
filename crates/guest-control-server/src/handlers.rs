@@ -28,9 +28,6 @@ use crate::wait::{
 
 const THREAD_WRITE_STDERR: &str = "gctl-write-err";
 const THREAD_WRITE_STDIN: &str = "gctl-write-in";
-// Use the large-batch range exercised by the native staging comparison.
-#[cfg(target_os = "linux")]
-const SEALED_BATCH_MIN_BYTES: usize = 4 * 1024 * 1024;
 #[cfg(any(debug_assertions, feature = "test-support"))]
 static DEBUG_GUEST_WRITE_FILE_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
 
@@ -130,11 +127,6 @@ fn handle_write_files(
         }
     };
 
-    #[cfg(target_os = "linux")]
-    if use_sealed_batch(payload.len(), private) {
-        return handle_sealed_batch(payload, connection_cancel, progress);
-    }
-
     let child = match spawn_write_files_command(private, None) {
         Ok(c) => c,
         Err(e) => return (false, format!("Failed to spawn batch write command: {e}")),
@@ -147,11 +139,6 @@ fn handle_write_files(
         progress,
         SystemThreadSpawner,
     )
-}
-
-#[cfg(target_os = "linux")]
-fn use_sealed_batch(payload_len: usize, private: bool) -> bool {
-    !private && payload_len >= SEALED_BATCH_MIN_BYTES
 }
 
 #[cfg(target_os = "linux")]
@@ -192,36 +179,6 @@ fn check_sealed_write(
     } else {
         Ok(())
     }
-}
-
-#[cfg(target_os = "linux")]
-fn handle_sealed_batch(
-    payload: &[u8],
-    connection_cancel: &AtomicBool,
-    progress: &FileWriteRequestProgress,
-) -> (bool, String) {
-    let deadline = batch_deadline();
-    if let Err(error) = check_sealed_write(connection_cancel, deadline) {
-        return (false, error.to_string());
-    }
-    let mut file = match create_batch_input() {
-        Ok(file) => file,
-        Err(error) => {
-            return (false, format!("Failed to create batch input: {error}"));
-        }
-    };
-    for chunk in payload.chunks(256 * 1024) {
-        if let Err(error) = check_sealed_write(connection_cancel, deadline) {
-            return (false, error.to_string());
-        }
-        if let Err(error) = file.write_all(chunk) {
-            return (false, format!("Failed to fill batch input: {error}"));
-        }
-    }
-    if let Err(error) = seal_batch_input(&file) {
-        return (false, format!("Failed to seal batch input: {error}"));
-    }
-    run_sealed_batch(file, deadline, connection_cancel, progress)
 }
 
 #[cfg(target_os = "linux")]

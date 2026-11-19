@@ -11,14 +11,6 @@ use std::sync::Mutex;
 
 static WRITE_FILE_CHILD_TESTS: Mutex<()> = Mutex::new(());
 
-#[cfg(target_os = "linux")]
-#[test]
-fn sealed_batch_requires_large_ordinary_payload() {
-    assert!(!use_sealed_batch(SEALED_BATCH_MIN_BYTES - 1, false));
-    assert!(use_sealed_batch(SEALED_BATCH_MIN_BYTES, false));
-    assert!(!use_sealed_batch(SEALED_BATCH_MIN_BYTES, true));
-}
-
 fn spawn_write_file_test_child(script: &str) -> Child {
     // Use a stable shell binary instead of a freshly written temp
     // executable; some CI filesystems can transiently reject immediate exec
