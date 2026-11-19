@@ -206,8 +206,9 @@ def systemctl(arguments):
                 print(name + " loaded active running Image fixture")
         return 0
     if arguments[0] == "show":
-        if MODE == "slow-claim-retirement" and once():
-            time.sleep(8)
+        if MODE in ("slow-claim-retirement", "claim-observation-timeout") and once():
+            # Outlast the real unit observation timeout.
+            time.sleep(12)
         for unit in (a for a in arguments[1:] if a.endswith(".service")):
             path = ROOT / "units" / (unit + ".json")
             info = json.loads(path.read_text()) if path.exists() else {}
@@ -271,7 +272,10 @@ def runner(arguments):
     print("rootfs_hash=" + "1" * 64, flush=True)
     if MODE != "missing-hash":
         print("snapshot_hash=" + "2" * 64, flush=True)
-    if (ROOT / "block").exists():
+    if MODE == "wait-for-retirement":
+        # Fixture cleanup kills the unit process group.
+        signal.pause()
+    elif (ROOT / "block").exists():
         wait_for(lambda: (ROOT / "release").exists())
     return int(os.environ.get("IMAGE_BUILD_STATUS", "0"))
 
