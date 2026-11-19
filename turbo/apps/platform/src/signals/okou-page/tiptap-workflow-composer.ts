@@ -50,7 +50,10 @@ import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { splitPlainTextUrls } from "../../lib/plain-text-urls.ts";
 import { agents$ } from "../agent.ts";
 import { currentChatAgentRecordId$ } from "../agent-chat.ts";
-import { createWorkflowQuerySnapshot } from "./recent-workflows.ts";
+import {
+  createRecentWorkflowIds,
+  createWorkflowQuerySnapshot,
+} from "./recent-workflows.ts";
 import { detach, onRef, Reason, resetSignal } from "../utils.ts";
 import type { DraftInputSyncTarget, DraftSignals } from "./chat-draft.ts";
 import {
@@ -248,7 +251,10 @@ export interface WorkflowComposerSignals {
     Promise<ComposerChatThreadSuggestionResult>
   >;
   readonly agentId$: Computed<Promise<string | null>>;
-  /** Null while the draft has no text. */
+  readonly loadWorkflows$: Command<
+    Promise<readonly ComposerWorkflow[]>,
+    [AbortSignal]
+  >;
   readonly reloadWorkflows$: Command<Promise<void>, [AbortSignal]>;
   readonly selectedSuggestionIndex$: Computed<number>;
   readonly setSelectedSuggestionIndex$: Command<void, [number]>;
@@ -261,6 +267,7 @@ export interface WorkflowComposerSignals {
   readonly queryWorkflows$: Computed<Promise<
     readonly ComposerWorkflow[]
   > | null>;
+  readonly recentWorkflowIds$: Computed<Promise<readonly string[]>>;
   readonly expandSlashWorkflows$: Command<void, []>;
   /** The composer edge the open slash menu hugs: the half its `/` is in. */
   readonly slashMenuSide$: Computed<SlashMenuSide>;
@@ -341,16 +348,15 @@ function createComposerAgentResources<T extends AgentIdValue>(
   const agentId$ = computed(async (get): Promise<string | null> => {
     return await get(agentIdSource$);
   });
-  const allWorkflows$ = createComposerWorkflows(agentId$);
-  // Empty drafts do not need workflows. The underlying computed retains its
-  // request and result when the draft is cleared and later edited again.
-  const workflows$ = computed((get) => {
-    return get(hasInput$) ? get(allWorkflows$) : null;
-  });
-  const sync$ = createSyncWorkflowNamesCommand(editor, agentId$, allWorkflows$);
+  const resources = createComposerWorkflows(agentId$);
+  const sync$ = createSyncWorkflowNamesCommand(
+    editor,
+    agentId$,
+    resources.load$,
+  );
   const syncForInput$ = command(
     ({ get, set }, mountSignal: AbortSignal): void => {
-      if (!get(hasInput$)) {
+      if (!get(hasInput$) || get(resources.needsLoad$)) {
         detach(
           set(sync$, mountSignal, mountSignal),
           Reason.Daemon,
@@ -360,7 +366,12 @@ function createComposerAgentResources<T extends AgentIdValue>(
     },
   );
   const workflowNames: ComposerWorkflowNames = { sync$, syncForInput$ };
-  return { agentId$, workflows$, workflowNames };
+  return {
+    agentId$,
+    workflowNames,
+    mountWorkflows$: resources.mount$,
+    loadWorkflows$: resources.load$,
+  };
 }
 
 function connectComposerFeedback(
@@ -2043,7 +2054,7 @@ function applyWorkflowNames(editor: Editor, names: readonly string[]): void {
 function createSyncWorkflowNamesCommand(
   editor: Editor,
   agentId$: Computed<Promise<string | null>>,
-  workflows$: Computed<Promise<readonly ComposerWorkflow[]>>,
+  loadWorkflows$: Command<Promise<readonly ComposerWorkflow[]>, [AbortSignal]>,
 ): WorkflowNamesSyncCommand {
   const resetWorkflowNamesSyncSignal$ = resetSignal();
   return command(
@@ -2068,7 +2079,7 @@ function createSyncWorkflowNamesCommand(
       );
       const [agentId, workflows] = await Promise.all([
         get(agentId$),
-        get(workflows$),
+        set(loadWorkflows$, mountSignal),
       ]);
       signal.throwIfAborted();
       if (syncSignal.aborted) {
@@ -2170,7 +2181,7 @@ function createMountCompositionCommand(
     readonly compositionQuery$: State<ComposerCompositionQuery | null>;
     readonly selectedIndex$: State<number | null>;
     readonly previewIndex$: State<number | null>;
-    readonly syncWorkflowQuery$: Command<void, []>;
+    readonly syncWorkflowQuery$: Command<void, [AbortSignal]>;
   },
 ) {
   return command(({ set }, signal: AbortSignal) => {
@@ -2181,7 +2192,7 @@ function createMountCompositionCommand(
         set(compositionQuery$, query);
         set(selectedIndex$, null);
         set(previewIndex$, null);
-        set(syncWorkflowQuery$);
+        set(syncWorkflowQuery$, signal);
       },
       signal,
     );
@@ -2193,7 +2204,7 @@ function createCloseSuggestionMenuCommand(
   interactionActive$: State<boolean>,
   previewIndex$: State<number | null>,
   caretIndex$: State<number>,
-  syncWorkflowQuery$: Command<void, []>,
+  clearWorkflowQuery$: Command<void, []>,
 ) {
   return command(({ set }, restoreEditorFocus = false) => {
     if (restoreEditorFocus) {
@@ -2204,7 +2215,7 @@ function createCloseSuggestionMenuCommand(
     set(interactionActive$, editor.isFocused);
     set(previewIndex$, null);
     set(caretIndex$, -1);
-    set(syncWorkflowQuery$);
+    set(clearWorkflowQuery$);
   });
 }
 
@@ -2367,7 +2378,8 @@ interface MountEditorOptions {
   openTemplatePicker$: WorkflowComposerSignals["openTemplatePicker$"];
   caretIndex$: State<number>;
   mountComposition$: Command<void, [AbortSignal]>;
-  syncWorkflowQuery$: Command<void, []>;
+  mountWorkflows$: Command<Promise<void>, [AbortSignal]>;
+  syncWorkflowQuery$: Command<void, [AbortSignal]>;
   editorInteractionActiveState$: State<boolean>;
   suggestionMenu: ReturnType<typeof createSuggestionMenuBoundary>;
   selectedSuggestionIndexState$: State<number | null>;
@@ -2488,18 +2500,18 @@ function createBindMountedSuggestionInteractionsCommand(
     | "syncWorkflowQuery$"
   >,
 ) {
-  return command(({ set }) => {
+  return command(({ set }, signal: AbortSignal) => {
     runtime.selectionUpdate = (updatedEditor) => {
       set(previewSuggestionIndexState$, null);
       set(caretIndex$, updatedEditor.state.selection.head);
-      set(syncWorkflowQuery$);
+      set(syncWorkflowQuery$, signal);
     };
     runtime.focus = (focusedEditor) => {
       set(selectedSuggestionIndexState$, null);
       set(previewSuggestionIndexState$, null);
       set(editorInteractionActiveState$, true);
       set(caretIndex$, focusedEditor.state.selection.head);
-      set(syncWorkflowQuery$);
+      set(syncWorkflowQuery$, signal);
     };
     runtime.pointerUp = runtime.focus;
     runtime.blur = (event) => {
@@ -2508,7 +2520,7 @@ function createBindMountedSuggestionInteractionsCommand(
       }
       set(previewSuggestionIndexState$, null);
       set(editorInteractionActiveState$, false);
-      set(syncWorkflowQuery$);
+      set(syncWorkflowQuery$, signal);
     };
   });
 }
@@ -2522,6 +2534,7 @@ function createMountEditorCommand({
   openTemplatePicker$,
   caretIndex$,
   mountComposition$,
+  mountWorkflows$,
   syncWorkflowQuery$,
   editorInteractionActiveState$,
   suggestionMenu,
@@ -2547,6 +2560,7 @@ function createMountEditorCommand({
   );
   return onRef(
     command(async ({ get, set }, element: HTMLElement, signal: AbortSignal) => {
+      const mountingWorkflows = set(mountWorkflows$, signal);
       runtime.update = (updatedEditor) => {
         set(legacyTemplateAttachment.sync$);
         set(templateSelection.sync$);
@@ -2562,12 +2576,12 @@ function createMountEditorCommand({
         set(selectedSuggestionIndexState$, null);
         set(previewSuggestionIndexState$, null);
         set(caretIndex$, updatedEditor.state.selection.head);
-        set(syncWorkflowQuery$);
+        set(syncWorkflowQuery$, signal);
         compositionGate.notifySettled();
         // Forward TipTap updates through the React-owned DOM boundary.
         element.dispatchEvent(new Event("input", { bubbles: true }));
       };
-      set(bindSuggestions$);
+      set(bindSuggestions$, signal);
       runtime.replaceFeedbackItems = (items) => {
         set(feedback.replaceFromEditor$, items);
       };
@@ -2634,10 +2648,11 @@ function createMountEditorCommand({
         set(draft.setInputSyncTarget$, null);
         set(previewSuggestionIndexState$, null);
         set(editorInteractionActiveState$, false);
-        set(syncWorkflowQuery$);
+        set(syncWorkflowQuery$, signal);
         editor.unmount();
       });
       await Promise.all([
+        mountingWorkflows,
         set(workflowNames.sync$, signal, signal),
         set(syncAgentMentionAvatars$, signal),
       ]);
@@ -3506,11 +3521,8 @@ export function createWorkflowComposerSignals<
   const compositionGate = createCompositionGate();
   const editor = createWorkflowEditor(runtime, agentMentionAvatarRuntime);
   connectComposerFeedback(feedback, editor);
-  const { agentId$, workflows$, workflowNames } = createComposerAgentResources(
-    editor,
-    agentIdSource$,
-    draft.hasInput$,
-  );
+  const { agentId$, workflowNames, mountWorkflows$, loadWorkflows$ } =
+    createComposerAgentResources(editor, agentIdSource$, draft.hasInput$);
   const templates = createTemplateSignals(editor, draft, openDialog$);
   const activeSlashRange$ = createActiveSlashRange(
     editor,
@@ -3521,7 +3533,7 @@ export function createWorkflowComposerSignals<
   );
   const querySnapshot = createWorkflowQuerySnapshot(
     activeSlashRange$,
-    workflows$,
+    loadWorkflows$,
   );
   const mountComposition$ = createMountCompositionCommand(
     editor,
@@ -3549,6 +3561,7 @@ export function createWorkflowComposerSignals<
     openTemplatePicker$: templates.commands.openTemplatePicker$,
     caretIndex$,
     mountComposition$,
+    mountWorkflows$,
     syncWorkflowQuery$: querySnapshot.sync$,
     editorInteractionActiveState$,
     suggestionMenu,
@@ -3580,7 +3593,9 @@ export function createWorkflowComposerSignals<
       agentId$,
     ),
     agentId$,
+    loadWorkflows$,
     queryWorkflows$: querySnapshot.workflows$,
+    recentWorkflowIds$: createRecentWorkflowIds(querySnapshot.range$),
     reloadWorkflows$: reloadMountedComposerWorkflows$,
     ...createSuggestionSelectionSignals(
       selectedSuggestionIndexState$,
@@ -3593,7 +3608,7 @@ export function createWorkflowComposerSignals<
       editorInteractionActiveState$,
       previewSuggestionIndexState$,
       caretIndex$,
-      querySnapshot.sync$,
+      querySnapshot.clear$,
     ),
     ...createSuggestionMenuRefs(editor, suggestionMenu.ref$),
     ...createSuggestionInsertionCommands(

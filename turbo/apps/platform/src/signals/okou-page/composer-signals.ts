@@ -20,8 +20,12 @@ import {
 import { i18n } from "../../i18n/index.ts";
 import { createComputerUseGuideSignals } from "../computer-use-setup.ts";
 import { command, computed, state, type Command, type Computed } from "ccstate";
-import { onRef } from "../utils.ts";
+import { onRef, settle } from "../utils.ts";
 import { reloadComposerWorkflowRecency$ } from "./composer-workflows.ts";
+import {
+  prepareRecentWorkflowUse$,
+  recordRecentWorkflowUse$,
+} from "./recent-workflows.ts";
 import {
   createPendingRemoteAccessSignals,
   threadRemoteAccess$,
@@ -113,6 +117,7 @@ type ComposerSuggestionSignals = Pick<
   | "slashWorkflowsExpanded$"
   | "slashWorkflowsExpandedHeight$"
   | "queryWorkflows$"
+  | "recentWorkflowIds$"
   | "expandSlashWorkflows$"
   | "slashMenuSide$"
   | "measureSlashMenuSide$"
@@ -440,6 +445,7 @@ function composerSuggestionSignals(
     slashWorkflowsExpanded$: composer.slashWorkflowsExpanded$,
     slashWorkflowsExpandedHeight$: composer.slashWorkflowsExpandedHeight$,
     queryWorkflows$: composer.queryWorkflows$,
+    recentWorkflowIds$: composer.recentWorkflowIds$,
     expandSlashWorkflows$: composer.expandSlashWorkflows$,
     slashMenuSide$: composer.slashMenuSide$,
     measureSlashMenuSide$: composer.measureSlashMenuSide$,
@@ -1074,6 +1080,12 @@ function createSubmitCurrentInput({
         return false;
       }
       signal.throwIfAborted();
+      const workflowUse = await set(
+        prepareRecentWorkflowUse$,
+        visiblePrompt,
+        workflowComposer.loadWorkflows$,
+        signal,
+      );
       const submitted = await set(
         submitMessage$,
         action,
@@ -1082,8 +1094,15 @@ function createSubmitCurrentInput({
       );
       if (submitted) {
         // The server alone decides which visible slash tokens were accepted.
-        set(reloadComposerWorkflowRecency$);
+        await set(reloadComposerWorkflowRecency$, signal);
         await set(taskChips.home.dismissMenu$, menuRevision, signal);
+      }
+      if (submitted && workflowUse) {
+        // Browser history must never turn an accepted send into a send error.
+        // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
+        await settle(() => {
+          return set(recordRecentWorkflowUse$, workflowUse, signal);
+        }, signal);
       }
       return submitted;
     },

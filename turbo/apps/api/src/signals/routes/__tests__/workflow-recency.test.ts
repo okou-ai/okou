@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { aroundEach, describe, expect, it } from "vitest";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cronExecuteWorkflowAutomationsContract } from "@okouai/api-contracts/contracts/cron";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import {
@@ -26,6 +27,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createRouteMocks } from "./helpers/route-test";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const wf = createWorkflowsBddApi(context);
@@ -72,10 +74,13 @@ async function composer(actor: ApiTestUser, agentId: string) {
   return response.body;
 }
 
-async function setup(tier: "pro" | "team" = "pro") {
+const BINGJIE_USER_ID = "user_3EWY21Oe3f15kfs3yYmbGgDb3NV";
+
+async function setup(tier: "pro" | "team" = "pro", enabled = true) {
   await runs.configureRunnerGroup();
-  const { actor } = await wf.setupWorkflowOrg({
-    tier,
+  const actor = wf.user(enabled ? { userId: BINGJIE_USER_ID } : {});
+  await runs.grantProEntitlement(actor, { tier });
+  await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
   const { agentId } = await wf.createAgent(actor);
@@ -103,6 +108,98 @@ async function createWorkflow(
 }
 
 describe("server-owned workflow recency", () => {
+  it("keeps default-off sessions on the baseline without recording slash, manual or Run now usage", async () => {
+    const { actor, agentId } = await setup("pro", false);
+    const workflowId = await createWorkflow(actor, agentId, "recency-disabled");
+    const automation = await accept(
+      automationsClient().create({
+        headers: headers(actor),
+        params: { workflowId },
+        body: { schedule: { type: "loop", intervalSeconds: 3600 } },
+      }),
+      [201],
+    );
+    await flushWaitUntilForTest();
+    context.mocks.ably.publish.mockClear();
+    await chat.requestSendEvent(
+      actor,
+      { agentId, prompt: "/recency-disabled" },
+      [201],
+    );
+    await accept(
+      detailClient().run({ headers: headers(actor), params: { workflowId } }),
+      [200],
+    );
+    await accept(
+      automationsClient().run({
+        headers: headers(actor),
+        params: { id: automation.body.id },
+      }),
+      [201],
+    );
+    await accept(
+      collectionClient().migrateRecency({
+        headers: headers(actor),
+        body: { workflowIds: [workflowId] },
+      }),
+      [403],
+    );
+    await expect(composer(actor, agentId)).resolves.toContainEqual(
+      expect.objectContaining({ id: workflowId, lastUsedAt: null }),
+    );
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
+      "userPreferenceChanged",
+      { kinds: ["workflowRecency"] },
+    );
+  });
+
+  it("hides stored recency when opted out and leaves it unchanged until opted back in", async () => {
+    const { actor, agentId } = await setup();
+    const workflowId = await createWorkflow(actor, agentId, "recency-opt-out");
+    const ignoredId = await createWorkflow(actor, agentId, "recency-off-send");
+    await accept(
+      collectionClient().migrateRecency({
+        headers: headers(actor),
+        body: { workflowIds: [workflowId] },
+      }),
+      [200],
+    );
+    const before = await composer(actor, agentId);
+    if (!actor.orgId) {
+      throw new Error("Expected a workflow workspace");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.WorkflowRecency]: false },
+    );
+    await expect(composer(actor, agentId)).resolves.toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: workflowId, lastUsedAt: null }),
+        expect.objectContaining({ id: ignoredId, lastUsedAt: null }),
+      ]),
+    );
+    await chat.requestSendEvent(
+      actor,
+      { agentId, prompt: "/recency-off-send" },
+      [201],
+    );
+    await accept(
+      collectionClient().migrateRecency({
+        headers: headers(actor),
+        body: { workflowIds: [ignoredId] },
+      }),
+      [403],
+    );
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.WorkflowRecency]: true },
+    );
+    await expect(composer(actor, agentId)).resolves.toStrictEqual(before);
+  });
+
   it("records accepted visible tokens and their private winner, preserving model preferences and replay time", async () => {
     const { actor, agentId } = await setup();
     const publicId = await createWorkflow(actor, agentId, "recency-alpha");
@@ -275,6 +372,84 @@ describe("server-owned workflow recency", () => {
     ).toStrictEqual(remainingIds);
   });
 
+  it.each(["import-first", "send-first", "concurrent"] as const)(
+    "preserves live accepted usage over legacy markers with %s ordering",
+    async (ordering) => {
+      const { actor, agentId } = await setup();
+      const legacyId = await createWorkflow(
+        actor,
+        agentId,
+        "recency-legacy-race",
+      );
+      const actualId = await createWorkflow(
+        actor,
+        agentId,
+        "recency-actual-race",
+      );
+      const importHistory = () => {
+        return accept(
+          collectionClient().migrateRecency({
+            headers: headers(actor),
+            body: { workflowIds: [legacyId] },
+          }),
+          [200],
+        );
+      };
+      const send = () => {
+        return chat.requestSendEvent(
+          actor,
+          { agentId, prompt: "/recency-actual-race" },
+          [201],
+        );
+      };
+      async function requests() {
+        if (ordering === "import-first") {
+          return [await importHistory(), await send()] as const;
+        }
+        if (ordering === "send-first") {
+          const accepted = await send();
+          return [await importHistory(), accepted] as const;
+        }
+        return await Promise.all([importHistory(), send()]);
+      }
+      const [migration, accepted] = await requests();
+      if (ordering !== "concurrent") {
+        expect(migration.body.migrated).toBe(ordering === "import-first");
+      }
+      if (accepted.status !== 201) {
+        throw new Error("Expected the workflow input to be accepted");
+      }
+      const history = await composer(actor, agentId);
+      expect(history).toContainEqual(
+        expect.objectContaining({
+          id: actualId,
+          lastUsedAt: recencyTime(acceptedTime(accepted.body)),
+        }),
+      );
+      expect(history).toContainEqual(
+        expect.objectContaining({
+          id: legacyId,
+          lastUsedAt: migration.body.migrated
+            ? "1970-01-01T00:00:00.000010Z"
+            : null,
+        }),
+      );
+      const ranked = [...history].sort((a, b) => {
+        return (b.lastUsedAt ?? "").localeCompare(a.lastUsedAt ?? "");
+      });
+      expect(ranked[0]?.id).toBe(actualId);
+      const replay = await accept(
+        collectionClient().migrateRecency({
+          headers: headers(actor),
+          body: { workflowIds: [legacyId, actualId] },
+        }),
+        [200],
+      );
+      expect(replay.body).toStrictEqual({ migrated: false });
+      await expect(composer(actor, agentId)).resolves.toStrictEqual(history);
+    },
+  );
+
   it("does not count preparation or automated webhooks, but accepts each manual Run now as a distinct use", async () => {
     const { actor, agentId } = await setup("team");
     const workflowId = await createWorkflow(actor, agentId, "recency-manual");
@@ -440,8 +615,7 @@ describe("server-owned workflow recency", () => {
     await expect(composer(other, agentId)).resolves.toContainEqual(
       expect.objectContaining({ id: workflowId, lastUsedAt: null }),
     );
-    // This member has never initialized preferences. Their first send creates
-    // metadata with both the explicit model selection and recency atomically.
+    // The default-off peer can send, but cannot create or read server history.
     mockNow(Date.parse(acceptedTime(accepted.body)) + 60_000);
     await chat.requestSendEvent(
       other,
@@ -455,7 +629,7 @@ describe("server-owned workflow recency", () => {
     await expect(composer(other, agentId)).resolves.toContainEqual(
       expect.objectContaining({
         id: workflowId,
-        lastUsedAt: recencyTime(now()),
+        lastUsedAt: null,
       }),
     );
     await expect(composer(wf.user(), agentId)).resolves.toStrictEqual([]);
@@ -507,6 +681,13 @@ describe("server-owned workflow recency", () => {
     if (!token) {
       throw new Error("Expected the production Run agent token");
     }
+    await accept(
+      collectionClient().migrateRecency({
+        headers: { authorization: `Bearer ${token}` },
+        body: { workflowIds: [workflowId] },
+      }),
+      [403],
+    );
     await accept(
       setupApp({ context, routes: chatEventsRoutes })(chatEventsContract).send({
         headers: { authorization: `Bearer ${token}` },

@@ -10,6 +10,7 @@ import type { ComposerAgentSuggestion } from "../../signals/okou-page/composer-a
 import type { ComposerChatThreadSuggestion } from "../../signals/okou-page/chat-thread-suggestion-domain.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import { recentWorkflowIds } from "../../signals/okou-page/recent-workflows.ts";
+import { workflowRecencyEnabled$ } from "../../signals/okou-page/composer-workflows.ts";
 import type { ComposerTask } from "../../signals/okou-page/composer-task-chips.ts";
 import { ComposerMentionSuggestionMenu } from "./chat-thread-suggestion.tsx";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
@@ -450,9 +451,18 @@ function useComposerWorkflowSuggestions(
 ) {
   // An in-flight query must not keep another snapshot's selectable rows.
   const workflowsLoadable = useLoadable(composer.suggestion.queryWorkflows$);
-  // Empty drafts do not need the list.
+  const modeLoadable = useLoadable(workflowRecencyEnabled$);
+  const localRecentLoadable = useLoadable(
+    composer.suggestion.recentWorkflowIds$,
+  );
+  // Pending/failed mode resolution cannot expose another owner's rows or
+  // choose the legacy branch. Empty drafts do not need the list.
   const requested =
-    workflowsLoadable.state === "hasData" ? workflowsLoadable.data : undefined;
+    workflowsLoadable.state === "hasData" &&
+    modeLoadable.state === "hasData" &&
+    (modeLoadable.data || localRecentLoadable.state === "hasData")
+      ? workflowsLoadable.data
+      : undefined;
   const workflows = buildComposerSlashWorkflows({
     agentId: composer.agentId,
     workflows: requested ?? [],
@@ -464,9 +474,19 @@ function useComposerWorkflowSuggestions(
         : findWorkflowQueryMatches(
             workflows,
             query,
-            recentWorkflowIds(requested ?? []),
+            modeLoadable.state === "hasData" && modeLoadable.data
+              ? recentWorkflowIds(requested ?? [])
+              : localRecentLoadable.state === "hasData"
+                ? localRecentLoadable.data
+                : [],
           ),
-    loading: workflowsLoadable.state === "loading" || requested === null,
+    loading:
+      workflowsLoadable.state === "loading" ||
+      modeLoadable.state === "loading" ||
+      (modeLoadable.state === "hasData" &&
+        !modeLoadable.data &&
+        localRecentLoadable.state === "loading") ||
+      requested === null,
   };
 }
 

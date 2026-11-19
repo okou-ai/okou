@@ -191,6 +191,15 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Lead the composer's slash menu with chat actions, and open Workflows and Templates as second-level lists.",
     enabled: false,
   },
+  [FeatureSwitchKey.WorkflowRecency]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Workflow recency sync",
+    description:
+      "Sync recent Workflows across devices and import browser history when server history is empty.",
+    enabled: false,
+    enabledUserHashes: ["032a75d8"], // Same account identity in the App and API
+    restrictOverridesToAudience: true,
+  },
   [FeatureSwitchKey.ChatReplyNameLine]: {
     maintainer: "tongx@okou.ai",
     displayName: "Agent name on replies",

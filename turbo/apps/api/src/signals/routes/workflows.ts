@@ -1,4 +1,8 @@
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
+import { migrateWorkflowRecency$ } from "../services/workflow-recency-migration.service";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   readWorkflowCopySnapshot$,
@@ -61,7 +65,10 @@ import { setResHeader$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
-import { publishChatThreadWorkflowsChangedSafely } from "../external/realtime";
+import {
+  publishChatThreadWorkflowsChangedSafely,
+  publishUserPreferenceChangedForUserSafely,
+} from "../external/realtime";
 import { publishSkillImportAfterCommit } from "../services/skill-import-telemetry";
 import { ApiDispatchTimingCollector } from "../services/api-dispatch-timing.service";
 import {
@@ -282,6 +289,68 @@ const listComposerWorkflowsInner$ = computed(async (get) => {
     }),
   };
 });
+
+const migrateWorkflowRecencyBody$ = bodyResultOf(
+  workflowsCollectionContract.migrateRecency,
+);
+
+const migrateWorkflowRecencyInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const body = await get(migrateWorkflowRecencyBody$);
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return body.response;
+    }
+    const features = await set(
+      loadUserFeatureSwitchContext$,
+      auth.orgId,
+      auth.userId,
+      signal,
+    );
+    if (!isFeatureEnabled(FeatureSwitchKey.WorkflowRecency, features)) {
+      return forbidden("Workflow recency is not available");
+    }
+    const visible = await get(
+      composerWorkflows({
+        orgId: auth.orgId,
+        member: memberFromAuth(auth),
+      }),
+    );
+    signal.throwIfAborted();
+    const visibleIds = new Set(
+      visible.map((workflow) => {
+        return workflow.id;
+      }),
+    );
+    // Validate the complete request before filtering. Shared localStorage can
+    // contain another member's or workspace's IDs; those never become history.
+    const workflowIds = [
+      ...new Set(
+        body.data.workflowIds.map((id) => {
+          return id.toLowerCase();
+        }),
+      ),
+    ]
+      .filter((id) => {
+        return visibleIds.has(id);
+      })
+      .slice(0, 10);
+    const migrated = await set(
+      migrateWorkflowRecency$,
+      { orgId: auth.orgId, userId: auth.userId, workflowIds },
+      signal,
+    );
+    if (migrated) {
+      waitUntil(
+        publishUserPreferenceChangedForUserSafely(auth.userId, [
+          "workflowRecency",
+        ]),
+      );
+    }
+    return { status: 200 as const, body: { migrated } };
+  },
+);
 
 export interface WorkflowCreationInput {
   readonly orgId: string;
@@ -1959,6 +2028,13 @@ export const workflowsRoutes: readonly RouteEntry[] = [
   {
     route: workflowsCollectionContract.composer,
     handler: authRoute(workflowReadAuth, listComposerWorkflowsInner$),
+  },
+  {
+    route: workflowsCollectionContract.migrateRecency,
+    handler: authRoute(
+      { ...workflowWriteAuth, accept: ["session"] },
+      migrateWorkflowRecencyInner$,
+    ),
   },
   {
     route: workflowsCollectionContract.create,

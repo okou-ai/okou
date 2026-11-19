@@ -1485,6 +1485,20 @@ export const workflowsCollectionContract = c.router({
     summary:
       "List the slash-command workflows the composer offers for one agent",
   },
+  migrateRecency: {
+    method: "POST",
+    path: "/api/workflows/recency/migrate",
+    headers: authHeadersSchema,
+    body: object({ workflowIds: array(uuid()).max(1000) }).strict(),
+    responses: {
+      200: object({ migrated: boolean() }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+    },
+    summary:
+      "Import ordered legacy workflow history only when server history is empty",
+  },
   create: {
     method: "POST",
     path: "/api/workflows",

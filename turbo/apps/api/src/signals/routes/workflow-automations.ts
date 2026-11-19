@@ -1,4 +1,7 @@
 import { workflowNamespace$ } from "../services/workflow-namespace.service";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { command } from "ccstate";
 import {
   GMAIL_LABEL_NOT_FOUND_ERROR_CODE,
@@ -438,13 +441,24 @@ const runAutomationInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const params = get(pathParamsOf(workflowAutomationsContract.run));
+    const recordWorkflowRecency =
+      auth.tokenType === "session" &&
+      isFeatureEnabled(
+        FeatureSwitchKey.WorkflowRecency,
+        await set(
+          loadUserFeatureSwitchContext$,
+          auth.orgId,
+          auth.userId,
+          signal,
+        ),
+      );
     const result = await set(
       runOwnedWorkflowAutomationNow$,
       {
         orgId: auth.orgId,
         member: memberFromAuth(auth),
         automationId: params.id,
-        ...(auth.tokenType === "session"
+        ...(recordWorkflowRecency
           ? { recordWorkflowRecency: true as const }
           : {}),
         ...(auth.tokenType === "agent" ? { sourceRunId: auth.runId } : {}),

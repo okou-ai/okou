@@ -83,7 +83,8 @@ function payloadRequestsKindsReloadFor(
 }
 
 const handleUserPreferenceChanged$ = command(
-  ({ set }, payload: unknown): boolean => {
+  async ({ set }, payload: unknown, signal: AbortSignal): Promise<boolean> => {
+    signal.throwIfAborted();
     if (
       payloadRequestsKindsReloadFor(payload, [
         "defaultModel",
@@ -93,16 +94,16 @@ const handleUserPreferenceChanged$ = command(
       set(reloadUserModelPreference$);
     }
     if (payloadRequestsKindsReloadFor(payload, ["workflowRecency"])) {
-      set(reloadComposerWorkflowRecency$);
+      await set(reloadComposerWorkflowRecency$, signal);
     }
     return false;
   },
 );
 
 const refreshWorkflowRecencyBaseline$ = command(
-  ({ set }, signal: AbortSignal): boolean => {
+  async ({ set }, signal: AbortSignal): Promise<boolean> => {
     signal.throwIfAborted();
-    set(reloadComposerWorkflowRecency$);
+    await set(reloadComposerWorkflowRecency$, signal);
     return false;
   },
 );

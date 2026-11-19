@@ -32,6 +32,7 @@ describe("Composer workflow recency contract", () => {
       workflow,
       { ...workflow, lastUsedAt: null },
       { ...workflow, lastUsedAt: "2026-01-10T00:00:00.000Z" },
+      { ...workflow, lastUsedAt: "1970-01-01T00:00:00.000010Z" },
     ];
 
     expect(composerWorkflowListResponseSchema.parse(response)).toStrictEqual(

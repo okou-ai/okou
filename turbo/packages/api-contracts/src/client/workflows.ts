@@ -186,6 +186,16 @@ export const workflowsCollectionContract: ClientDescriptor<
       403: true,
     },
   },
+  migrateRecency: {
+    method: "POST",
+    path: "/api/workflows/recency/migrate",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+    },
+  },
   create: {
     method: "POST",
     path: "/api/workflows",

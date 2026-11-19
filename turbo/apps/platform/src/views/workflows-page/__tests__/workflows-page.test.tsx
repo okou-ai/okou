@@ -2253,62 +2253,134 @@ test("Recover when a stale Run now action receives the automatic-only policy rej
   expect(pathname()).toBe(workflowDetailPath("automations"));
 });
 
-test("Run a workflow automation now and promote it in the next composer overview", async () => {
-  const runAutomationIds: string[] = [];
-  mockWorkflowApis([salesResearch()]);
-  mockChatLifecycle(context, { threadId: AUTOMATION_RUN_THREAD_ID });
-  mockRunWorkflowAutomation((automationId) => {
-    runAutomationIds.push(automationId);
-  });
-  context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
-    return respond(200, [
-      {
-        id: OPS_WORKFLOW_ID,
-        name: "alpha",
-        displayName: null,
-        description: null,
+test.each([
+  { serverRecency: false, cacheWriteFails: false },
+  { serverRecency: true, cacheWriteFails: false },
+  { serverRecency: false, cacheWriteFails: true },
+])(
+  "Run now preserves acceptance with server recency $serverRecency and browser cache failure $cacheWriteFails",
+  async ({ serverRecency, cacheWriteFails }) => {
+    const runAutomationIds: string[] = [];
+    const migratedAtAcceptance: boolean[] = [];
+    const user = serverRecency
+      ? {
+          id: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
+          fullName: "Bingjie Zang",
+          email: "bingjie@okou.ai",
+        }
+      : { id: CURRENT_USER_ID, fullName: "Test User" };
+    const workflow = salesResearch();
+    const storage = new Map([
+      ["okou_recent-workflows", JSON.stringify([OPS_WORKFLOW_ID])],
+    ]);
+    vi.spyOn(localStorage, "getItem").mockImplementation((key) => {
+      return storage.get(key) ?? null;
+    });
+    vi.spyOn(localStorage, "setItem").mockImplementation((key, value) => {
+      if (cacheWriteFails && key === "okou_recent-workflows") {
+        throw new DOMException(
+          "Workflow history storage is full",
+          "QuotaExceededError",
+        );
+      }
+      storage.set(key, value);
+    });
+    vi.spyOn(localStorage, "removeItem").mockImplementation((key) => {
+      storage.delete(key);
+    });
+    let migrated = false;
+    context.mocks.api(
+      workflowsCollectionContract.migrateRecency,
+      ({ body, respond }) => {
+        expect(body).toStrictEqual({ workflowIds: [OPS_WORKFLOW_ID] });
+        migrated = true;
+        return respond(200, { migrated: true });
       },
+    );
+    mockWorkflowApis([
       {
-        id: SALES_WORKFLOW_ID,
-        name: "sales-research",
-        displayName: null,
-        description: null,
-        lastUsedAt:
-          runAutomationIds.length > 0 ? "2026-11-16T00:00:00.000000Z" : null,
+        ...workflow,
+        ownerUserId: user.id,
+        createdByUserId: user.id,
+        automations: workflow.automations.map((automation) => {
+          return { ...automation, ownerUserId: user.id };
+        }),
       },
     ]);
-  });
+    mockChatLifecycle(context, { threadId: AUTOMATION_RUN_THREAD_ID });
+    mockRunWorkflowAutomation((automationId) => {
+      migratedAtAcceptance.push(migrated);
+      runAutomationIds.push(automationId);
+    });
+    context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
+      return respond(200, [
+        {
+          id: OPS_WORKFLOW_ID,
+          name: "alpha",
+          displayName: null,
+          description: null,
+          lastUsedAt: migrated ? "1970-01-01T00:00:00.000010Z" : null,
+        },
+        {
+          id: SALES_WORKFLOW_ID,
+          name: "sales-research",
+          displayName: null,
+          description: null,
+          lastUsedAt:
+            runAutomationIds.length > 0 ? "2026-11-16T00:00:00.000000Z" : null,
+        },
+      ]);
+    });
 
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
+    mockBillingTier("team");
+    await setupPage({
+      context,
+      path: workflowDetailPath("automations"),
+      auth: { user },
+      featureSwitches: { [FeatureSwitchKey.WorkflowRecency]: serverRecency },
+    });
 
-  await waitFor(() => {
-    expect(buttonByText("Run now")).toBeInTheDocument();
-  });
-  click(buttonByText("Run now"));
+    await waitFor(() => {
+      expect(buttonByText("Run now")).toBeInTheDocument();
+    });
+    click(buttonByText("Run now"));
 
-  await waitFor(() => {
-    expect(runAutomationIds).toStrictEqual([
-      "workflow-automation-weekday-brief",
-    ]);
-  });
-  await waitFor(() => {
-    expect(pathname()).toBe(`/chats/${AUTOMATION_RUN_THREAD_ID}`);
-  });
-  expect(search()).toBe("");
-  await fill(await findComposerEditor(), "Draft /");
-  await waitFor(() => {
-    const menu = screen.getByTestId("slash-workflow-menu");
-    const names = queryAllByRoleFast("button", menu)
-      .map((button) => {
-        return button.textContent ?? "";
-      })
-      .filter((name) => {
-        return name.startsWith("/");
-      });
-    // The highest priority is nearest the composer in the anchored menu.
-    expect(names).toStrictEqual(["/sales-research", "/alpha"]);
-  });
-});
+    await waitFor(() => {
+      expect(runAutomationIds).toStrictEqual([
+        "workflow-automation-weekday-brief",
+      ]);
+    });
+    expect(migratedAtAcceptance).toStrictEqual([serverRecency]);
+    await waitFor(() => {
+      expect(pathname()).toBe(`/chats/${AUTOMATION_RUN_THREAD_ID}`);
+    });
+    expect(search()).toBe("");
+    await fill(await findComposerEditor(), "Draft /");
+    await waitFor(() => {
+      const menu = screen.getByTestId("slash-workflow-menu");
+      const names = queryAllByRoleFast("button", menu)
+        .map((button) => {
+          return button.textContent ?? "";
+        })
+        .filter((name) => {
+          return name.startsWith("/");
+        });
+      // The highest priority is nearest the composer in the anchored menu.
+      expect(names).toStrictEqual(
+        cacheWriteFails
+          ? ["/alpha", "/sales-research"]
+          : ["/sales-research", "/alpha"],
+      );
+    });
+    expect(storage.get("okou_recent-workflows")).toBe(
+      JSON.stringify(
+        serverRecency || cacheWriteFails
+          ? [OPS_WORKFLOW_ID]
+          : [SALES_WORKFLOW_ID, OPS_WORKFLOW_ID],
+      ),
+    );
+  },
+);
 
 test("Create a Gmail new-message automation with match rules", async () => {
   const createBodies: WorkflowAutomationCreateRequest[] = [];

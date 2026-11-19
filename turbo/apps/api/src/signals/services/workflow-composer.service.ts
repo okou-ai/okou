@@ -1,16 +1,19 @@
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createWorkflowTokenMatcher } from "@okouai/core/workflow-slash-token";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { db$ } from "../external/db";
 import { workflowList, type WorkflowMember } from "./workflow-data.service";
+import { userFeatureSwitchContext } from "./feature-switches.service";
 
 /** The command candidates, including the private-over-public name winner. */
 export function composerWorkflows(args: {
   readonly orgId: string;
   readonly member: WorkflowMember;
-  readonly agentId: string;
+  readonly agentId?: string;
 }) {
   const visible$ = workflowList(args);
   return computed(async (get) => {
@@ -25,7 +28,13 @@ export function memberWorkflowRecency(args: {
   readonly orgId: string;
   readonly userId: string;
 }) {
+  const features$ = userFeatureSwitchContext(args.orgId, args.userId);
   return computed(async (get) => {
+    if (
+      !isFeatureEnabled(FeatureSwitchKey.WorkflowRecency, await get(features$))
+    ) {
+      return new Map<string, string>();
+    }
     const [member] = await get(db$)
       .select({ recentWorkflows: orgMembersMetadata.recentWorkflows })
       .from(orgMembersMetadata)

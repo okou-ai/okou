@@ -207,6 +207,9 @@ import {
   workflowIdsInUserMessage,
 } from "./workflow-composer.service";
 import { workflowRecencyWritePlan } from "./workflow-recency-sql";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 /** Canonical ChatEvent write commands. */
 export const chatEnqueueTiming$ = computed((get) => {
   return get(route$) === chatEventsContract.send
@@ -2446,33 +2449,44 @@ const publishEnqueuedNormalSend$ = command(
 );
 const normalSendWorkflowRecency$ = command(
   async (
-    { get },
+    { get, set },
     args: Pick<
       NormalSendArgs,
       "orgId" | "userId" | "auth" | "body" | "recordWorkflowRecency"
     >,
     signal: AbortSignal,
   ) => {
-    const recentWorkflowIds =
-      args.recordWorkflowRecency &&
-      args.auth.tokenType === "session" &&
-      args.body.userMessage.parts.some((part) => {
+    if (
+      !args.recordWorkflowRecency ||
+      args.auth.tokenType !== "session" ||
+      !args.body.userMessage.parts.some((part) => {
         return part.type === "text" && part.text.includes("/");
       })
-        ? workflowIdsInUserMessage(
-            args.body.userMessage,
-            await get(
-              composerWorkflows({
-                orgId: args.orgId,
-                member: {
-                  userId: args.userId,
-                  role: args.auth.orgRole ?? "member",
-                },
-                agentId: args.body.agentId,
-              }),
-            ),
-          )
-        : [];
+    ) {
+      return [];
+    }
+    const features = await set(
+      loadUserFeatureSwitchContext$,
+      args.orgId,
+      args.userId,
+      signal,
+    );
+    if (!isFeatureEnabled(FeatureSwitchKey.WorkflowRecency, features)) {
+      return [];
+    }
+    const recentWorkflowIds = workflowIdsInUserMessage(
+      args.body.userMessage,
+      await get(
+        composerWorkflows({
+          orgId: args.orgId,
+          member: {
+            userId: args.userId,
+            role: args.auth.orgRole ?? "member",
+          },
+          agentId: args.body.agentId,
+        }),
+      ),
+    );
     signal.throwIfAborted();
     return recentWorkflowIds;
   },

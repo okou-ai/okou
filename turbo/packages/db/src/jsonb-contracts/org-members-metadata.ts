@@ -2,7 +2,7 @@ export type OrgMembersPinnedAgentIds = string[];
 
 export interface OrgMembersRecentWorkflow {
   workflowId: string;
-  /** UTC ISO timestamp of the accepted input that used this workflow. */
+  /** Accepted-input UTC time; imported legacy IDs use epoch-based order markers. */
   lastUsedAt: string;
 }
 
