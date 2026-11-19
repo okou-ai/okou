@@ -547,8 +547,8 @@ private fun ChatRowAction.label(): Int =
 @DrawableRes
 private fun ChatRowAction.icon(): Int =
     when (this) {
-        ChatRowAction.MarkRead -> R.drawable.ic_drafts
-        ChatRowAction.MarkUnread -> R.drawable.ic_mail
+        ChatRowAction.MarkRead -> R.drawable.ic_mark_chat_read
+        ChatRowAction.MarkUnread -> R.drawable.ic_mark_chat_unread
         ChatRowAction.Mute -> R.drawable.ic_notifications_off
         ChatRowAction.Unmute -> R.drawable.ic_notifications
         ChatRowAction.Archive -> R.drawable.ic_archive
