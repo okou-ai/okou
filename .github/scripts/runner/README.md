@@ -131,9 +131,11 @@ admit a fresh run created after closure. Rerunning an older run keeps its
 original creation time. The cutoff lasts for the life of the host lock file.
 Owner state transitions from `claiming` to `ready` only after the marker and
 admission record are committed under the lifecycle lock; cancellation sets
-`cancelled`. A claim interrupted before that commit remains incomplete and
-cannot replay namespace initialization. Losing a committed claim reply still
-reattaches idempotently.
+`cancelled`. A retry after SSH loss while waiting for the lifecycle lock can
+resume the same claim because admission starts with both locks held. If the
+owner is already `claiming` and the original process exits before committing,
+the attempt remains incomplete and cannot replay namespace initialization.
+Losing a committed claim reply still reattaches idempotently.
 Cancellation received before a first claim records a generation cutoff in the
 same ledger. An earlier admitted owner can continue, while a delayed first claim
 at or below the cutoff is rejected.

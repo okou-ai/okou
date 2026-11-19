@@ -73,6 +73,15 @@ def ssh(arguments):
     try:
         process.stdin.write(json.dumps(request).encode())
         process.stdin.close()
+        if MODE == "claim-wait-loss" and request["action"] == "claim" and once():
+            namespace = request["inputs"]["jobRef"]
+            lock = ROOT / "var/lock" / f"vm0-runner-lifecycle-{namespace}.lock"
+            descriptors = Path(f"/proc/{process.pid}/fd")
+            wait_for(lambda: any(fd.resolve() == lock for fd in descriptors.iterdir()))
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+            (ROOT / "claim-wait-cut").touch()
+            return 255
         if MODE == "claim-commit-loss" and request["action"] == "claim" and once():
             wait_for(lambda: (ROOT / "claim-resource-created").exists())
             (ROOT / "claim-cut").touch()

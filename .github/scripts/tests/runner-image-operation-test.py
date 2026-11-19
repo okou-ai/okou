@@ -307,6 +307,28 @@ class ImageOperationTest(unittest.TestCase):
         self.environment["GITHUB_RUN_ID"] = "1234"
         self.invoke("run", "warm", str(self.result))
 
+    def test_claim_retries_after_ssh_loss_while_waiting_for_lifecycle_lock(self):
+        lock = self.root / "var/lock/vm0-runner-lifecycle-pr-123.lock"
+        lock.parent.mkdir(parents=True)
+        lock.touch()
+        self.environment["IMAGE_FAULT"] = "claim-wait-loss"
+        with self.image_call("claim") as claim:
+            with lock.open("r") as holder:
+                fcntl.flock(holder, fcntl.LOCK_EX)
+                self.wait_for(lambda: (self.root / "claim-wait-cut").exists())
+            output, error = claim.communicate(timeout=10)
+            self.assertEqual(claim.returncode, 0, output + error)
+
+        self.assertEqual(self.records("requests"), [{"action": "claim", "phase": None}] * 2)
+        binary_dir = self.root / "var/lib/vm0-runner/bin/pr-123-image-1234"
+        self.assertEqual(len(list(binary_dir.glob(".image-owner-*"))), 1)
+        marker_installs = [
+            call
+            for call in self.records("privileged")
+            if call[:4] == ["install", "-m", "600", "/dev/null"]
+        ]
+        self.assertEqual(len(marker_installs), 1)
+
     def test_claim_budget_includes_prior_worker_retirement(self):
         self.invoke("claim")
         self.invoke("run", "warm", str(self.result))
