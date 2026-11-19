@@ -40,12 +40,10 @@ test("runner behavioral E2E tests select the mock Codex profile", async () => {
   const directory = fileURLToPath(
     new URL("../tests/03-runner/", import.meta.url),
   );
-  // These files intentionally cover real model/provider behavior or mock Claude.
-  const providerTests = new Set([
+  const liveModelTests = new Set([
     "run-t09-auto-steer.bats",
     "run-t10-auto-pi-smoke.bats",
     "run-t11-auto-billing.bats",
-    "run-t21-claude-runtime-regressions.bats",
     "run-t24-auto-continuation.bats",
   ]);
   const files = (await readdir(directory)).filter((file) =>
@@ -63,7 +61,22 @@ test("runner behavioral E2E tests select the mock Codex profile", async () => {
     if (usesBillingIdentity !== (file === "run-t11-auto-billing.bats")) {
       violations.push(`${file}: billing requires an exclusive identity`);
     }
-    if (providerTests.has(file)) continue;
+    const retries = /^\s*BATS_TEST_RETRIES\s*=/mu.test(source);
+    if (liveModelTests.has(file)) {
+      // The pinned Bats JUnit formatter can duplicate a retrying case after
+      // another case in the same file.
+      if (
+        !/^BATS_TEST_RETRIES=1$/mu.test(source) ||
+        source.match(/^\s*@test\b/gmu)?.length !== 1
+      ) {
+        violations.push(`${file}: use one live case with one retry per file`);
+      }
+      continue;
+    }
+    if (retries) {
+      violations.push(`${file}: retries are reserved for live model cases`);
+    }
+    if (file === "run-t21-claude-runtime-regressions.bats") continue;
     if (!/^\s*runner_e2e_use_mock_codex_profile\s*$/m.test(source)) {
       violations.push(`${file}: select the mock Codex profile in setup`);
     }

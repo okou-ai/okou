@@ -2036,8 +2036,8 @@ jobs:
   cli-e2e-02-playwright:
     name: cli-e2e-02-playwright
     runs-on: ubuntu-latest
-    # Leave room to clean up test accounts and upload failure screenshots/traces.
-    timeout-minutes: 10
+    # Two four-minute attempts plus setup, account cleanup, and reporting.
+    timeout-minutes: 20
     concurrency:
       group: cli-e2e-02-playwright-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true
@@ -2448,7 +2448,10 @@ jobs:
           jq -e '
             .include | type == "array" and
             length > 0 and length <= 12 and
-            all(.[]; (.files | type == "array" and length > 0))
+            all(.[];
+              (.files | type == "array" and length > 0) and
+              (.timeoutMinutes | type == "number" and . >= 15)
+            )
           ' <<<"$matrix" >/dev/null
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
       - name: Prepare runner E2E accounts
@@ -2555,7 +2558,7 @@ jobs:
 
   cli-e2e-03-runner:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: ${{ matrix.timeoutMinutes }}
     concurrency:
       group: cli-e2e-03-runner-${{ matrix.index }}-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true
@@ -2657,12 +2660,23 @@ jobs:
           done
 
           result_directory="results/runner-${E2E_RUNNER_SHARD_INDEX}"
+          attempt_directory="$(mktemp -d)"
           mkdir -p "$result_directory"
+          status=0
           BATS_TEST_TIMEOUT=240 ./test/libs/bats/bin/bats \
             -T \
             --report-formatter junit \
             --output "$result_directory" \
-            "${test_files[@]}"
+            --gather-test-outputs-in "$attempt_directory" \
+            "${test_files[@]}" || status=$?
+
+          shopt -s nullglob
+          for log in "$attempt_directory"/*-try1-*.log; do
+            filename="${log##*/}"
+            echo "::warning::Runner E2E retried. See ${filename} in the shard results."
+            mv -- "$log" "$result_directory/"
+          done
+          exit "$status"
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
       - name: Print runner E2E trace log
@@ -2682,7 +2696,7 @@ jobs:
           flags: e2e-runner
           files: e2e/results/runner-${{ matrix.index }}/*.xml
           report_type: test_results
-      - name: Upload runner E2E JUnit XML
+      - name: Upload runner E2E JUnit and retry logs
         if: ${{ !cancelled() }}
         # JUnit artifacts are diagnostic; the BATS step determines test success.
         continue-on-error: true

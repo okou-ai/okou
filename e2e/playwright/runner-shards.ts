@@ -2,16 +2,21 @@ import { readdir, readFile } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 
 const MAX_SHARDS = 12;
+const BASE_JOB_MINUTES = 15;
+// Allow a live case to spend its full 600-second budget on both attempts.
+const LIVE_CASE_JOB_MINUTES = 20;
 
 interface WeightedTestFile {
   readonly path: string;
   readonly weight: number;
+  readonly retries: boolean;
 }
 
 interface RunnerShard {
   readonly files: string[];
   readonly index: number;
   weight: number;
+  timeoutMinutes: number;
 }
 
 async function main(): Promise<void> {
@@ -44,6 +49,7 @@ async function discoverTestFiles(
       return {
         path: relative(process.cwd(), filePath).split(sep).join("/"),
         weight,
+        retries: /^BATS_TEST_RETRIES=1$/mu.test(source),
       };
     }),
   );
@@ -55,7 +61,12 @@ function buildMatrix(files: readonly WeightedTestFile[]): {
   const shardCount = Math.min(MAX_SHARDS, files.length);
   const shards: RunnerShard[] = Array.from(
     { length: shardCount },
-    (_, index) => ({ files: [], index: index + 1, weight: 0 }),
+    (_, index) => ({
+      files: [],
+      index: index + 1,
+      weight: 0,
+      timeoutMinutes: BASE_JOB_MINUTES,
+    }),
   );
   const orderedFiles = [...files].sort((left, right) => {
     if (left.weight !== right.weight) {
@@ -73,6 +84,9 @@ function buildMatrix(files: readonly WeightedTestFile[]): {
     });
     shard.files.push(file.path);
     shard.weight += file.weight;
+    if (file.retries) {
+      shard.timeoutMinutes += LIVE_CASE_JOB_MINUTES;
+    }
   }
 
   for (const shard of shards) {
