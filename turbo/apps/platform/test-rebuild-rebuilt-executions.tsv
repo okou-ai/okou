@@ -105,3 +105,69 @@ artifact-diagram-overlay-003	turbo/apps/platform/src/views/okou-page/__tests__/a
 artifact-action-telemetry-001	turbo/apps/platform/src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	A catalog ZIP records only its two downloads and copies its owner link	50	passed
 artifact-action-telemetry-002	turbo/apps/platform/src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	An Office chip preview records nothing and a binary chip download records type other	150	passed
 artifact-action-telemetry-004	turbo/apps/platform/src/views/okou-page/__tests__/artifact-action-telemetry.test.tsx	A shared-thread video records only its download with the fresh URL	224	passed
+hosted-site-sharing-001	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	Share waits for the current site address before copying it	209	passed
+hosted-site-sharing-002	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	A customized site address updates the preview and is copied only on request	241	passed
+hosted-site-sharing-004	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	On the free plan, turning off the banner opens the plans and keeps it shown	282	passed
+hosted-site-sharing-007	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	A conflicting address save keeps the draft and the current shared address	309	passed
+hosted-site-sharing-008	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	A failed address check keeps Save disabled until a revised address is available	336	passed
+hosted-site-sharing-009	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	A failed address save keeps the draft and the current preview	365	passed
+hosted-site-sharing-010	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	The Customize URL row shows and copies the current address and opens the editor	391	passed
+hosted-site-sharing-011	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	A website settings failure disables copying an unknown address	413	passed
+hosted-site-sharing-014	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	Unavailable banner settings stay unknown when copying the site link	433	passed
+hosted-site-sharing-015	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	The grouped dialog toolbar shares the link before banner settings load	467	passed
+hosted-site-sharing-018	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	A failed clipboard write still records the confirmed banner preference	496	passed
+hosted-site-sharing-019	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	Copy link succeeds when the analytics SDK throws	523	passed
+hosted-site-sharing-024	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	A conflicting banner edit keeps the confirmed preference for copying	554	passed
+hosted-site-sharing-025	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	Owners change visibility in the dialog preview and copy the stable address	595	passed
+hosted-site-sharing-026	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	Owners change visibility in the sidebar preview and copy the stable address	595	passed
+hosted-site-sharing-027	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	Grouped Share stays open while a visibility change refreshes the preview	643	passed
+hosted-site-sharing-033	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	Pending permissions do not claim public access before reporting Only me	689	passed
+hosted-site-sharing-034	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	Unavailable visibility settings keep every audience choice disabled	712	passed
+hosted-site-sharing-035	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	A conflicting visibility change keeps the last confirmed audience	737	passed
+hosted-site-sharing-040	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	Rapid audience choices settle on the latest one	761	passed
+chat-artifact-deletion-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-deletion.test.tsx	A thread artifact can be deleted from the original lightbox toolbar	124	passed
+chat-artifact-deletion-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-deletion.test.tsx	A read-only artifact copies its link and downloads without offering deletion	181	passed
+chat-artifact-sidebar-preview-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-sidebar-preview.test.tsx	A chat artifact opens directly in a closed sidebar and reopens there	77	passed
+chat-artifact-sidebar-preview-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-sidebar-preview.test.tsx	A sent user attachment opens in the sidebar without artifact sharing	135	passed
+chat-artifact-sidebar-preview-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-sidebar-preview.test.tsx	The CSV sidebar preserves quoted fields and duplicate records	158	passed
+chat-private-artifact-previews-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-private-artifact-previews.test.tsx	A relative production artifact reference shows a thumbnail and opens its original	89	passed
+chat-private-artifact-previews-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-private-artifact-previews.test.tsx	Reopening an image preview reuses the original resolved for its thumbnail	110	passed
+chat-private-artifact-previews-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-private-artifact-previews.test.tsx	An uploaded private image without a public URL previews its resolved original	131	passed
+chat-private-artifact-previews-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-private-artifact-previews.test.tsx	Opening a previewed image in split view keeps its resolved original	187	passed
+chat-private-artifact-previews-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-private-artifact-previews.test.tsx	Navigating assistant images reuses the original each thread card resolved	208	passed
+chat-artifact-download-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-download.test.tsx	report.pdf stays downloadable when the browser reads its bytes after the click	66	passed
+chat-artifact-download-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-download.test.tsx	report.png stays downloadable when the browser reads its bytes after the click	66	passed
+chat-artifact-download-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-download.test.tsx	photo.png downloads through a newly granted URL on every click	123	passed
+chat-artifact-download-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-download.test.tsx	proposal.DOCX downloads through a newly granted URL on every click	123	passed
+chat-artifact-download-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-download.test.tsx	report.pdf downloads through a newly granted URL on every click	123	passed
+chat-artifact-download-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-download.test.tsx	A server-denied download keeps the preview available and opens the plans	171	passed
+chat-artifact-action-group-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-action-group.test.tsx	Replacing the sidebar from another chat waits for that chat's metadata	205	passed
+chat-artifact-action-group-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-action-group.test.tsx	The dialog reveals all actions together when ownership resolves before sharing	328	passed
+chat-artifact-action-group-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-action-group.test.tsx	The dialog waits for artifact metadata before choosing its actions	347	passed
+chat-artifact-action-group-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-action-group.test.tsx	The dialog can close while its actions load and reopen with Download	359	passed
+chat-artifact-action-group-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-action-group.test.tsx	The dialog keeps Download separate from deletion and restores More focus on cancel	376	passed
+chat-artifact-action-group-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-action-group.test.tsx	The sidebar keeps Download separate from deletion and restores More focus on cancel	376	passed
+chat-artifact-action-group-012	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-action-group.test.tsx	A read-only dialog copies its link and offers Download without a management menu	442	passed
+chat-artifact-action-group-014	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-action-group.test.tsx	A failed ownership read still releases Download and Close	462	passed
+chat-hosted-site-url-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-url.test.tsx	An owner sees the banner and link visibility settings from a chat deployment link with sidebar preview false	223	passed
+chat-hosted-site-url-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-url.test.tsx	An owner sees the banner and link visibility settings from a chat deployment link with sidebar preview true	223	passed
+chat-hosted-site-url-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-url.test.tsx	Consecutive site renames keep the title and update Share and Resources link copies with sidebar preview false	243	passed
+chat-hosted-site-url-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-url.test.tsx	Consecutive site renames keep the title and update Share and Resources link copies with sidebar preview true	243	passed
+markdown-artifacts-001	turbo/apps/platform/src/views/okou-page/__tests__/markdown-artifacts.test.tsx	Every text link to one image keeps its own label and context	33	passed
+markdown-artifacts-003	turbo/apps/platform/src/views/okou-page/__tests__/markdown-artifacts.test.tsx	Artifact links show icons for their file content	74	passed
+markdown-artifacts-004	turbo/apps/platform/src/views/okou-page/__tests__/markdown-artifacts.test.tsx	Artifact link icons follow the file rather than its label or URL parameters	119	passed
+markdown-artifacts-006	turbo/apps/platform/src/views/okou-page/__tests__/markdown-artifacts.test.tsx	A bare platform URL stays a link while a fenced URL stays code	144	passed
+chat-run-artifact-carryover-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-artifact-carryover.test.tsx	A historical artifact is offered from the final result actions	82	passed
+chat-run-artifact-carryover-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-artifact-carryover.test.tsx	A carried image keeps its label and opens over the related artifacts	149	passed
+chat-run-artifact-carryover-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-artifact-carryover.test.tsx	A carried file without a preview downloads over an existing artifact sidebar	177	passed
+chat-run-artifact-carryover-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-artifact-carryover.test.tsx	Expanding short history reveals formatted text, inline media and an action card	243	passed
+chat-run-artifact-carryover-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-artifact-carryover.test.tsx	Artifacts from a revoked output message are ignored	279	passed
+chat-hosted-site-download-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	A SPA route link downloads every published member as a ZIP	139	passed
+chat-hosted-site-download-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	A public alias link downloads every published member as a ZIP	139	passed
+chat-hosted-site-download-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	A hosted-site link keeps its HTML filename and reports its product type	169	passed
+chat-hosted-site-download-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	A presentation-html link keeps its HTML filename and reports its product type	169	passed
+chat-hosted-site-download-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	An unreadable public site listing reports failure without a partial download	200	passed
+chat-hosted-site-download-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	An unreadable public site member reports failure without a partial download	200	passed
+chat-hosted-site-download-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	A public page stays downloadable when its publication listing returns 404	226	passed
+chat-hosted-site-download-014	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	A direct /assets/cat.png URL downloads only that image	247	passed
+chat-hosted-site-download-016	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-download.test.tsx	A direct /image/ URL downloads only that image	247	passed

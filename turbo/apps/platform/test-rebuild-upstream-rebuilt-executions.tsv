@@ -1,0 +1,4 @@
+upstream_id	test_file	vitest_name	registration_line	status	disposition
+upstream-eaae30ac-chat-run-artifact-carryover-135-01	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-artifact-carryover.test.tsx	Show format download items and report conversion failures in a toast	329	passed	retain (eaae30ac ledger row 249)
+upstream-48919-artifact-toolbar-dialog-ungrouped	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-action-group.test.tsx	The dialog places fullscreen after the separator with action grouping false	489	passed	retain: ungrouped is the default user experience
+upstream-48919-artifact-toolbar-sidebar-grouped	turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-action-group.test.tsx	The sidebar places fullscreen after the separator with action grouping true	489	passed	retain: covers More before the separator and the sidebar close control
