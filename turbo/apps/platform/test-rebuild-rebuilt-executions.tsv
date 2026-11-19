@@ -1419,3 +1419,23 @@ cloudflare-access-settings-008	turbo/apps/platform/src/views/okou-page/__tests__
 cloudflare-access-settings-009	turbo/apps/platform/src/views/okou-page/__tests__/cloudflare-access-settings.test.tsx	Deletion preview permission loss blocks shared deletion	166	passed
 cloudflare-access-settings-011	turbo/apps/platform/src/views/okou-page/__tests__/cloudflare-access-settings.test.tsx	A restriction rejected with CLOUDFLARE_ACCESS_IN_USE preserves its draft and protects provider details	184	passed
 cloudflare-access-settings-014	turbo/apps/platform/src/views/okou-page/__tests__/cloudflare-access-settings.test.tsx	Restriction preview permission loss blocks the scope change	239	passed
+ssh-settings-001	turbo/apps/platform/src/views/okou-page/__tests__/ssh-settings.test.tsx	Password credentials preserve whitespace, clear mode-switched secrets, and discard late key reads	61	passed
+ssh-settings-002	turbo/apps/platform/src/views/okou-page/__tests__/ssh-settings.test.tsx	A known credential rejection leaves the retained input editable	114	passed
+ssh-settings-003	turbo/apps/platform/src/views/okou-page/__tests__/ssh-settings.test.tsx	A concurrent shared-credential edit preserves its draft and blocks stale saving	142	passed
+ssh-settings-004	turbo/apps/platform/src/views/okou-page/__tests__/ssh-settings.test.tsx	An unused credential can be deleted with confirmation and the rendered revision	194	passed
+ssh-settings-006	turbo/apps/platform/src/views/okou-page/__tests__/ssh-settings.test.tsx	A retained tailscale host explains its actual recovery availability	239	passed
+ssh-settings-007	turbo/apps/platform/src/views/okou-page/__tests__/ssh-settings.test.tsx	A retained cloudflare_access host explains its actual recovery availability	239	passed
+ssh-settings-009	turbo/apps/platform/src/views/okou-page/__tests__/ssh-settings.test.tsx	Shows configured credentials independently of hosts	299	passed
+ssh-settings-012	turbo/apps/platform/src/views/okou-page/__tests__/ssh-settings.test.tsx	An oversized key file shows a recoverable error without submitting credentials	322	passed
+ssh-settings-014	turbo/apps/platform/src/views/okou-page/__tests__/ssh-settings.test.tsx	Direct reset keeps its trust warning and uses the original generation	348	passed
+ssh-settings-015	turbo/apps/platform/src/views/okou-page/__tests__/ssh-settings.test.tsx	Cloudflare Access reset keeps its trust warning and uses the original generation	348	passed
+vnc-native-settings-001	turbo/apps/platform/src/views/okou-page/__tests__/vnc-native-settings.test.tsx	A rejected native configuration preserves the draft and both trust layers	175	passed
+vnc-native-settings-002	turbo/apps/platform/src/views/okou-page/__tests__/vnc-native-settings.test.tsx	Mac Cloudflare setup requires origin TLS and keeps its protective controls	271	passed
+vnc-native-settings-004	turbo/apps/platform/src/views/okou-page/__tests__/vnc-native-settings.test.tsx	Native cloudflare_access creation selects a scoped network without an SSH dependency	298	passed
+vnc-native-settings-006	turbo/apps/platform/src/views/okou-page/__tests__/vnc-native-settings.test.tsx	Detached native editing preserves both trust layers and requires explicit rebind	384	passed
+ssh-tailscale-settings-004	turbo/apps/platform/src/views/okou-page/__tests__/ssh-tailscale-settings.test.tsx	Tailscale host creation uses saved login details with a saved network	135	passed
+ssh-tailscale-settings-006	turbo/apps/platform/src/views/okou-page/__tests__/ssh-tailscale-settings.test.tsx	A saved Tailscale host retains its port, credential and learned key during editing	191	passed
+ssh-tailscale-settings-008	turbo/apps/platform/src/views/okou-page/__tests__/ssh-tailscale-settings.test.tsx	Changing carriers preserves endpoint drafts and the independently selected network	231	passed
+ssh-tailscale-settings-009	turbo/apps/platform/src/views/okou-page/__tests__/ssh-tailscale-settings.test.tsx	An unconfirmed SSH creation keeps its draft frozen	250	passed
+ssh-tailscale-settings-010	turbo/apps/platform/src/views/okou-page/__tests__/ssh-tailscale-settings.test.tsx	A retained tailscale VNC dependency opens its exact SSH host for rebind	280	passed
+ssh-tailscale-settings-011	turbo/apps/platform/src/views/okou-page/__tests__/ssh-tailscale-settings.test.tsx	A retained cloudflare_access VNC dependency opens its exact SSH host for rebind	280	passed
