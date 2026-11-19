@@ -9,6 +9,7 @@ import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ChatListScreen
 import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
+import ai.okou.android.chat.ChatTitleSearch
 import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.ConfirmedChat
 import ai.okou.android.chat.ConversationRoute
@@ -58,6 +59,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
@@ -73,6 +75,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+
+private enum class SearchRoute {
+    List,
+    Search,
+    ReturnToSearch,
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,9 +107,14 @@ internal fun OkouApp(
     // Window configuration changes on resize. IME insets only change the space inside the panes.
     val window = LocalConfiguration.current
     val listWidth = workspaceListPaneWidth(window.screenWidthDp, window.screenHeightDp)
-    val showList = listWidth != null || target == WorkspaceTarget.List
-    val showWorkspaceBack = listWidth == null && target != WorkspaceTarget.List
+    var searchRoute by rememberSaveable { mutableStateOf(SearchRoute.List) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var focusSearch by remember { mutableStateOf(false) }
+    val searchActive = chats != null && composer != null && searchRoute == SearchRoute.Search
+    val showList = listWidth != null || searchActive || target == WorkspaceTarget.List
+    val showWorkspaceBack = listWidth == null && !searchActive && target != WorkspaceTarget.List
     val listPosition = rememberLazyListState()
+    val searchPosition = rememberLazyListState()
     val settingsPosition = rememberScrollState()
     val collapsed = rememberCollapsedProjects()
     val conversations = rememberConversationUiState()
@@ -112,6 +125,26 @@ internal fun OkouApp(
     val keyboard = LocalSoftwareKeyboardController.current
     val settingsFocus = remember { FocusRequester() }
     var restoreSettingsFocus by remember { mutableStateOf(false) }
+
+    fun closeSearch() {
+        focus.clearFocus()
+        keyboard?.hide()
+        focusSearch = false
+        searchRoute = SearchRoute.List
+    }
+
+    fun openSearch() {
+        searchQuery = ""
+        searchPosition.requestScrollToItem(0)
+        focusSearch = true
+        searchRoute = SearchRoute.Search
+    }
+
+    LaunchedEffect(listWidth, searchRoute) {
+        if (listWidth != null && searchRoute == SearchRoute.ReturnToSearch) {
+            searchRoute = SearchRoute.List
+        }
+    }
     val thread =
         (target as? WorkspaceTarget.Chat)?.let { chat ->
             list.threads.firstOrNull { it.id == chat.id && it.hidden != true }
@@ -150,6 +183,7 @@ internal fun OkouApp(
             if (thread != null) chats?.history?.open(thread)
             else if (list.listPhase == ChatReadPhase.Ready && navigation.target == target) {
                 navigation = navigation.copy(target = WorkspaceTarget.List)
+                if (searchRoute == SearchRoute.ReturnToSearch) searchRoute = SearchRoute.Search
                 scope.launch { snackbar.showSnackbar(missingChat) }
             }
         }
@@ -177,6 +211,13 @@ internal fun OkouApp(
     }
 
     fun back() {
+        if (navigation.settings == null) {
+            if (searchActive) {
+                closeSearch()
+                return
+            }
+            if (searchRoute == SearchRoute.ReturnToSearch) searchRoute = SearchRoute.Search
+        }
         navigation =
             when (navigation.settings) {
                 SettingsDestination.Instructions ->
@@ -186,7 +227,7 @@ internal fun OkouApp(
             }
     }
 
-    BackHandler(settings != null || showWorkspaceBack, onBack = ::back)
+    BackHandler(settings != null || showWorkspaceBack || searchActive, onBack = ::back)
 
     val title =
         when (settings) {
@@ -210,61 +251,66 @@ internal fun OkouApp(
         contentWindowInsets = WindowInsets.safeDrawing,
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
-            TopAppBar(
-                title = {
-                    if (
-                        settings == null && target == WorkspaceTarget.List && workspaceTitle != null
-                    ) {
-                        workspaceTitle()
-                    } else {
-                        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                },
-                colors =
-                    TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background
-                    ),
-                navigationIcon = {
-                    if (settings != null || showWorkspaceBack) {
-                        IconButton(
-                            onClick = {
-                                focus.clearFocus()
-                                keyboard?.hide()
-                                back()
-                            }
+            if (settings != null || !searchActive || listWidth != null) {
+                TopAppBar(
+                    title = {
+                        if (
+                            settings == null &&
+                                target == WorkspaceTarget.List &&
+                                workspaceTitle != null
                         ) {
-                            Icon(
-                                painterResource(R.drawable.ic_arrow_back),
-                                stringResource(R.string.back),
-                            )
+                            workspaceTitle()
+                        } else {
+                            Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                    }
-                },
-                actions = {
-                    if (settings == null && chats != null && composer != null) {
-                        WorkspaceToolbarActions(
-                            showFilter = showList,
-                            filter = list.filter,
-                            selectFilter = chats::selectFilter,
-                            openUpdate = openUpdate,
-                            settingsFocus = settingsFocus,
-                            openSettings = { restore ->
-                                restoreSettingsFocus = restore
-                                focus.clearFocus()
-                                keyboard?.hide()
-                                navigation =
-                                    navigation.copy(settings = SettingsDestination.Overview)
-                            },
-                        )
-                        LaunchedEffect(Unit) {
-                            if (restoreSettingsFocus) {
-                                restoreSettingsFocus = false
-                                settingsFocus.requestFocus()
+                    },
+                    colors =
+                        TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.background
+                        ),
+                    navigationIcon = {
+                        if (settings != null || showWorkspaceBack) {
+                            IconButton(
+                                onClick = {
+                                    focus.clearFocus()
+                                    keyboard?.hide()
+                                    back()
+                                }
+                            ) {
+                                Icon(
+                                    painterResource(R.drawable.ic_arrow_back),
+                                    stringResource(R.string.back),
+                                )
                             }
                         }
-                    }
-                },
-            )
+                    },
+                    actions = {
+                        if (settings == null && !searchActive && chats != null && composer != null) {
+                            WorkspaceToolbarActions(
+                                showFilter = showList,
+                                filter = list.filter,
+                                selectFilter = chats::selectFilter,
+                                openSearch = if (showList) ::openSearch else null,
+                                openUpdate = openUpdate,
+                                settingsFocus = settingsFocus,
+                                openSettings = { restore ->
+                                    restoreSettingsFocus = restore
+                                    focus.clearFocus()
+                                    keyboard?.hide()
+                                    navigation =
+                                        navigation.copy(settings = SettingsDestination.Overview)
+                                },
+                            )
+                            LaunchedEffect(Unit) {
+                                if (restoreSettingsFocus) {
+                                    restoreSettingsFocus = false
+                                    settingsFocus.requestFocus()
+                                }
+                            }
+                        }
+                    },
+                )
+            }
         },
     ) { insets ->
         Column(Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets)) {
@@ -286,33 +332,56 @@ internal fun OkouApp(
                             else Modifier.width(listWidth.dp).fillMaxHeight(),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
-                            if (list.filter != ChatListFilter.Recent) {
-                                AppliedChatFilter(list.filter) {
-                                    chats?.selectFilter(ChatListFilter.Recent)
+                            if (searchActive && chats != null) {
+                                ChatTitleSearch(
+                                    state = list,
+                                    query = searchQuery,
+                                    onQueryChange = {
+                                        searchQuery = it
+                                        searchPosition.requestScrollToItem(0)
+                                    },
+                                    position = searchPosition,
+                                    focusOnEntry = focusSearch,
+                                    onFocused = { focusSearch = false },
+                                    onClose = ::closeSearch,
+                                    retry = chats::refreshList,
+                                    onOpen = { chat ->
+                                        closeSearch()
+                                        if (listWidth == null) {
+                                            searchRoute = SearchRoute.ReturnToSearch
+                                        }
+                                        openChat(chat)
+                                    },
+                                )
+                            } else {
+                                if (list.filter != ChatListFilter.Recent) {
+                                    AppliedChatFilter(list.filter) {
+                                        chats?.selectFilter(ChatListFilter.Recent)
+                                    }
                                 }
+                                ChatListScreen(
+                                    list,
+                                    { chats?.refresh() },
+                                    { chats?.refreshList() },
+                                    { chats?.refreshMetadata() },
+                                    { chats?.refreshIndicators() },
+                                    ::openChat,
+                                    { id, action ->
+                                        if (composer != null) chats?.performRowAction(id, action)
+                                    },
+                                    { id, title ->
+                                        if (composer != null) chats?.renameThread(id, title)
+                                    },
+                                    collapsed.values,
+                                    collapsed::toggle,
+                                    listPosition,
+                                    ::startNewChat,
+                                    selectedChatId = if (listWidth != null) thread?.id else null,
+                                    actionsEnabled = composer != null,
+                                    refreshEnabled = chats != null,
+                                    startupRecovery = startupRecovery,
+                                )
                             }
-                            ChatListScreen(
-                                list,
-                                { chats?.refresh() },
-                                { chats?.refreshList() },
-                                { chats?.refreshMetadata() },
-                                { chats?.refreshIndicators() },
-                                ::openChat,
-                                { id, action ->
-                                    if (composer != null) chats?.performRowAction(id, action)
-                                },
-                                { id, title ->
-                                    if (composer != null) chats?.renameThread(id, title)
-                                },
-                                collapsed.values,
-                                collapsed::toggle,
-                                listPosition,
-                                ::startNewChat,
-                                selectedChatId = if (listWidth != null) thread?.id else null,
-                                actionsEnabled = composer != null,
-                                refreshEnabled = chats != null,
-                                startupRecovery = startupRecovery,
-                            )
                         }
                     }
                     if (listWidth != null) VerticalDivider()
@@ -320,7 +389,7 @@ internal fun OkouApp(
                         chats != null &&
                             composer != null &&
                             controls != null &&
-                            (listWidth != null || target != WorkspaceTarget.List)
+                            (listWidth != null || (!searchActive && target != WorkspaceTarget.List))
                     ) {
                         Box(
                             Modifier.weight(1f).fillMaxHeight(),
