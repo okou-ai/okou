@@ -1,6 +1,6 @@
 import type { StoredStorageMountEntry } from "@okouai/api-contracts/contracts/runners";
 import type { PersistedStorageMount } from "@okouai/db/types";
-import { computed, type Computed } from "ccstate";
+import { command } from "ccstate";
 import { env } from "../../lib/env";
 import { publicPresignedGetUrlSigner$ } from "../external/s3";
 import type { ExecutionStorageCacheRows } from "./execution-storage-cache-read.service";
@@ -48,11 +48,13 @@ function cacheSnapshot(mounts: readonly AcceptedMemoryMount[]) {
 }
 
 /** Sign the accepted archive at dispatch time using its captured cache row. */
-export function createAcceptedExecutionStorage(
-  mounts$: Computed<Promise<readonly AcceptedMemoryMount[]>>,
-) {
-  return computed(async (get): Promise<ExecutionStorage> => {
-    const mounts = await get(mounts$);
+export const prepareAcceptedExecutionStorage$ = command(
+  async (
+    { get },
+    mounts: readonly AcceptedMemoryMount[],
+    signal: AbortSignal,
+  ): Promise<ExecutionStorage> => {
+    signal.throwIfAborted();
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
     const selected = mounts.map(({ mount, s3Key, archiveSize, fileCount }) => {
       const identity = {
@@ -90,6 +92,7 @@ export function createAcceptedExecutionStorage(
             prefetchedRows: cacheSnapshot(mounts),
             sign: get(publicPresignedGetUrlSigner$),
           });
+    signal.throwIfAborted();
     return {
       storageMounts: selected.map(({ identity, request, archiveSize }) => {
         if (!request) {
@@ -109,5 +112,5 @@ export function createAcceptedExecutionStorage(
       }),
       cacheWrites: signed?.freshValues ?? [],
     };
-  });
-}
+  },
+);

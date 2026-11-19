@@ -1,6 +1,6 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { command, computed, type Computed } from "ccstate";
+import { command } from "ccstate";
 import { and, eq, isNotNull, ne, sql } from "drizzle-orm";
 import { array, boolean, object } from "zod";
 import { normalizeBuildCommitSha } from "../../lib/build-info";
@@ -9,9 +9,13 @@ import { env } from "../../lib/env";
 import { monotonicNow, nowDate } from "../../lib/time";
 import { rawSqlReadDb$ } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
+import { joinAll } from "../utils";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import type { AcceptedMemoryMount } from "./execution-storage.service";
-import { createExecutionRuntimeContext } from "./execution-runtime-context";
+import {
+  executionPackages,
+  prepareExecutionRuntimeContext$,
+} from "./execution-runtime-context";
 import {
   cachedContentBundleUrlSchema,
   contentBundleUrlCacheContext$,
@@ -55,16 +59,14 @@ const executionPublicationFactsSchema = object({
   cachedBundleUrls: array(cachedContentBundleUrlSchema),
 });
 
-/** Constructed before admission commands run; all execution reads depend on their result. */
-export function createDirectRunPreparation(
-  input$: Computed<Promise<AdmittedRunLaunch>>,
-) {
-  const { prepared$, packageContext$ } = createExecutionRuntimeContext(input$);
-  const packages$ = computed(async (get) => {
-    const [input, packageContext] = await Promise.all([
-      get(input$),
-      get(packageContext$),
-    ]);
+const readExecutionPackages$ = command(
+  async (
+    { get },
+    input: AdmittedRunLaunch,
+    packageContext: ReturnType<typeof executionPackages>,
+    signal: AbortSignal,
+  ) => {
+    signal.throwIfAborted();
     const db = get(rawSqlReadDb$);
     const cache = get(contentBundleUrlCacheContext$);
     const { instructionsBundle, workflows } = input.facts.executionPackages;
@@ -83,6 +85,7 @@ export function createDirectRunPreparation(
     ) AS pending,
       NOT EXISTS(SELECT 1 FROM ${chatEvents} WHERE ${and(eq(chatEvents.chatThreadId, input.run.chatThreadId), isNotNull(chatEvents.runId), ne(chatEvents.runId, input.run.id))}) AS "isFirstRun",
       ${contentBundleUrlCacheSnapshotSql(cache, bundleHashes)} AS "cachedBundleUrls"`);
+    signal.throwIfAborted();
     const [row] = parseRawRows(executionPublicationFactsSchema, rows);
     if (!row?.pending) {
       throw new Error("Run is no longer pending for execution publication");
@@ -94,38 +97,31 @@ export function createDirectRunPreparation(
       cache,
       timing: { timestamp, startedAt, readyAt },
     };
-  });
-  return computed(async (get) => {
-    const [input, context, packages] = await Promise.all([
-      get(input$),
-      (async () => {
-        const prepared = await get(prepared$);
-        return { prepared, readyAt: monotonicNow() };
-      })(),
-      get(packages$),
-    ]);
-    return {
-      input,
-      prepared: context.prepared,
-      packages,
-      bundleCacheWaitMs: Math.max(0, packages.timing.readyAt - context.readyAt),
-    };
-  });
-}
-
-type PreparationInput<T> =
-  T extends Computed<Promise<infer Value>> ? Value : never;
-type DirectRunPreparationInput = PreparationInput<
-  ReturnType<typeof createDirectRunPreparation>
->;
+  },
+);
 
 export const prepareDirectRun$ = command(
-  async (
-    { set },
-    { input, prepared, packages, bundleCacheWaitMs }: DirectRunPreparationInput,
-    signal: AbortSignal,
-  ) => {
+  async ({ set }, input: AdmittedRunLaunch, signal: AbortSignal) => {
     signal.throwIfAborted();
+    const packageContext = executionPackages(input);
+    const [runtime, packages] = await joinAll([
+      (async () => {
+        const prepared = await set(
+          prepareExecutionRuntimeContext$,
+          input,
+          packageContext,
+          signal,
+        );
+        return { prepared, readyAt: monotonicNow() };
+      })(),
+      set(readExecutionPackages$, input, packageContext, signal),
+    ]);
+    signal.throwIfAborted();
+    const { prepared } = runtime;
+    const bundleCacheWaitMs = Math.max(
+      0,
+      packages.timing.readyAt - runtime.readyAt,
+    );
     const run = {
       ...input.run,
       isFirstRun: packages.row.isFirstRun,

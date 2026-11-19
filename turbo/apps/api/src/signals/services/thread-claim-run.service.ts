@@ -32,9 +32,10 @@ import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
 import { createOfficialWorkflowSignal } from "./thread-official-workflow.signals";
 import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
 import { OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE } from "./official-workflow-constants";
-import type {
-  ThreadModelError,
-  ThreadModelSelection,
+import {
+  checkRunServiceTier,
+  type ThreadModelError,
+  type ThreadModelSelection,
 } from "./thread-model.signals";
 import { feishuDeliveryFromContext } from "./feishu-queued-launch-context.service";
 import type { SlackThreadContext } from "./slack-queued-launch-context.service";
@@ -377,7 +378,6 @@ function queueHeadRejectionSql(args: {
 interface QueuedPromptGraphInput {
   readonly head: ChatQueueHeadContext;
   readonly timing: ChatCallbackPreCreateTimingCollector;
-  readonly runTiming: ApiDispatchTimingCollector;
 }
 
 class QueuedPromptInputInvalidError extends Error {}
@@ -472,8 +472,6 @@ function queuedPromptRunInput(args: {
     prompt: args.prompt,
     threadId: input.threadId,
     queuedMessage: input.queuedMessage,
-    selectedModel: model.pin.selectedModel,
-    effectiveModelProvider: model.pin.modelProviderType,
     codexServiceTier: model.codexServiceTier,
     reasoningEffort: model.reasoningEffort,
     triggerSource: launch.triggerSource,
@@ -487,15 +485,6 @@ function queuedPromptRunInput(args: {
   };
 }
 
-/** Run command model fields, as selected for the picked event. */
-function threadRunModelFields(model: ThreadModelSelection) {
-  return {
-    modelProvider: model.pin.modelProviderType,
-    selectedModel: model.pin.selectedModel,
-    codexServiceTier: model.codexServiceTier,
-  };
-}
-
 function promptRunCommand(
   input: CreateQueuedChatRunInput,
   admissionTime: number,
@@ -505,13 +494,11 @@ function promptRunCommand(
     // Dispatch timing starts at admission; queue waiting is recorded separately.
     apiStartTime: admissionTime,
     chatThreadId: input.threadId,
-    selectedModel: input.selectedModel,
     codexServiceTier: input.codexServiceTier,
     reasoningEffort: input.reasoningEffort,
     triggerSource: input.triggerSource,
     agentRunPreCreateSource: "chat_callback_auto_send",
     agentRunMetadata: { autonomyBudget: input.autonomyBudget },
-    modelProvider: input.effectiveModelProvider,
     ...(input.realAgentInPreview ? { realAgentInPreview: true } : {}),
     ...(input.captureNetworkBodies ? { captureNetworkBodies: true } : {}),
   };
@@ -659,7 +646,7 @@ function automationSelectionCommand(
     apiStartTime: args.apiStartTime,
     triggerSource: args.triggerSource ?? "automation-schedule",
     chatThreadId,
-    ...threadRunModelFields(model),
+    codexServiceTier: model.codexServiceTier,
     reasoningEffort: model.reasoningEffort ?? null,
   };
 }
@@ -821,8 +808,7 @@ function claimCommitArguments(
 }
 
 /**
- * The first route error among prepared resources, in plan, credit admission
- * and launch order.
+ * The first route error among prepared resources, in plan and launch order.
  */
 function firstPreparationFailure(
   results: readonly unknown[],
@@ -1060,6 +1046,7 @@ function claimLaunchRecord(
 }
 
 type PendingClaimRun = {
+  readonly admittedLaunch: AdmittedRunLaunch;
   readonly kind: "pending";
   readonly marketingRewardEventId: string | null;
   readonly runId: string;
@@ -1101,7 +1088,6 @@ export interface ThreadClaimRunObjects {
   readonly threadHasActiveRun$: Computed<Promise<boolean>>;
   readonly hasFirstPickableChatEvent$: Computed<Promise<boolean>>;
   readonly orgHasCapacity$: Computed<Promise<boolean>>;
-  readonly admittedLaunch$: Computed<Promise<AdmittedRunLaunch>>;
   readonly admitRun$: Command<
     Promise<PendingClaimRun | null>,
     [signal: AbortSignal]
@@ -1131,14 +1117,6 @@ export function createThreadClaimRunObjects(
     return now();
   });
   const internalCommittedRunId$ = state<string | null>(null);
-  const internalAdmittedLaunch$ = state<AdmittedRunLaunch | null>(null);
-  const admittedLaunch$ = computed((get) => {
-    const admitted = get(internalAdmittedLaunch$);
-    if (admitted === null) {
-      throw new Error("Execution requires this graph's committed admission");
-    }
-    return Promise.resolve(admitted);
-  });
   const publishChatQueueHeadConsumed$ = command(
     async (
       { set },
@@ -1308,7 +1286,6 @@ export function createThreadClaimRunObjects(
       return {
         head,
         timing: get(promptTiming$),
-        runTiming: get(claimRunTiming$).run,
       };
     },
   );
@@ -1729,13 +1706,11 @@ export function createThreadClaimRunObjects(
     if (await get(earlyPromptAssembly$)) {
       return null;
     }
-    const { head, runTiming: timing } = await get(promptInput$);
+    const { head } = await get(promptInput$);
     const args = await get(promptArgs$);
     return {
-      timing,
       owner: { userId: args.userId, orgId: args.agent.orgId },
       apiStartTime: head.apiStartTime,
-      agentId: args.agent.id,
     };
   });
   const promptSelection$ = computed(async (get) => {
@@ -1751,12 +1726,11 @@ export function createThreadClaimRunObjects(
       return null;
     }
     return {
-      timing: identity.timing,
       command: {
         owner: identity.owner,
         apiStartTime: identity.apiStartTime,
         chatThreadId: args.threadId,
-        ...threadRunModelFields(model),
+        codexServiceTier: model.codexServiceTier,
         reasoningEffort: model.reasoningEffort,
       },
     };
@@ -1969,9 +1943,7 @@ export function createThreadClaimRunObjects(
       return null;
     }
     return {
-      timing: get(threadContext.dispatchTiming$),
       owner: { orgId: bootstrap.orgId, userId: bootstrap.userId },
-      agentId: bootstrap.agentId,
     };
   });
   const automationSelection$ = computed(async (get) => {
@@ -1982,7 +1954,6 @@ export function createThreadClaimRunObjects(
     ]);
     return identity && !("kind" in model) && args
       ? {
-          timing: identity.timing,
           command: automationSelectionCommand(args, model, identity.owner),
         }
       : null;
@@ -2277,39 +2248,14 @@ export function createThreadClaimRunObjects(
       return input;
     },
   );
-  const selectedAgentId$ = computed(async (get) => {
-    const { agentId, timing } = await get(selectedIdentity$);
-    // A Thread run always names its queue head's Agent.
-    const startedAt = performance.now();
-    return await (async () => {
-      return await Promise.resolve(agentId);
-    })().finally(() => {
-      timing.recordDuration(
-        "api_dispatch_pre_create_agent_resolve_agent_id",
-        "nested",
-        performance.now() - startedAt,
-        now(),
-      );
-    });
-  });
-  const selectedAgent$ = computed(async (get) => {
-    const { timing } = await get(selectedIdentity$);
-    const agentId = await get(selectedAgentId$);
-    if (!agentId) {
-      return null;
-    }
-    const startedAt = performance.now();
-    return await (async () => {
-      // Authorization waits only for the context's Agent snapshot.
-      return await get(bootstrap.agent$);
-    })().finally(() => {
-      timing.recordDuration(
-        "api_dispatch_pre_create_agent_load_agent",
-        "nested",
-        performance.now() - startedAt,
-        now(),
-      );
-    });
+  const selectedAgent$ = computed((get) => {
+    return get(threadContext.dispatchTiming$).measure(
+      "api_dispatch_pre_create_agent_load_agent",
+      "nested",
+      () => {
+        return get(bootstrap.agent$);
+      },
+    );
   });
   const runPreparation$ = computed(
     async (get): Promise<ThreadRunPreparation | CreateRunErrorResult> => {
@@ -2544,6 +2490,13 @@ export function createThreadClaimRunObjects(
     const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
     if (isRouteError(promptAndSkills)) {
       return promptAndSkills;
+    }
+    const tierError = checkRunServiceTier(
+      args.codexServiceTier,
+      contentContext.featureSwitchContext,
+    );
+    if (tierError) {
+      return tierError;
     }
     const launchFramework =
       modelProvider.piModelConfig === undefined ? framework : ("pi" as const);
@@ -3046,32 +2999,6 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const checkClaimAdmission$ = command(async ({ get }, signal: AbortSignal) => {
-    const input = await get(selectionInput$);
-    signal.throwIfAborted();
-    if (!input) {
-      return undefined;
-    }
-    const model = await get(modelRoute$);
-    signal.throwIfAborted();
-    if (isRouteError(model)) {
-      return model;
-    }
-    if (input.command.codexServiceTier !== "ultrafast") {
-      return null;
-    }
-    const context = await get(contentContext$);
-    signal.throwIfAborted();
-    if (isRouteError(context)) {
-      return context;
-    }
-    return isFeatureEnabled(
-      FeatureSwitchKey.CodexSubscriptionUltrafast,
-      context.featureSwitchContext,
-    )
-      ? null
-      : badRequestMessage("Ultrafast is unavailable in this workspace");
-  });
   const authorizeIdentity$ = computed(async (get) => {
     const identityInput = await get(identityInput$);
     if (!identityInput) {
@@ -3277,8 +3204,7 @@ export function createThreadClaimRunObjects(
   );
   const prepareClaimResources$ = command(
     async ({ get, set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
-      const [admission, launch] = await Promise.all([
-        set(checkClaimAdmission$, signal),
+      const [launch] = await Promise.all([
         set(prepareLaunchResources$, head, signal),
         get(preparedStorage$),
         // Connector reads start independently of prompt/model material. A
@@ -3299,7 +3225,6 @@ export function createThreadClaimRunObjects(
           launch.callbackRows,
           launch.assembly,
           launch.identity,
-          admission,
         ] as const,
       };
     },
@@ -3340,7 +3265,7 @@ export function createThreadClaimRunObjects(
         );
         return { kind: "passed" };
       }
-      const [input, runnerLaunch, callbackRows, assembly, identity, admission] =
+      const [input, runnerLaunch, callbackRows, assembly, identity] =
         resources.resources;
       if (assembly.kind !== "assembled") {
         await set(
@@ -3356,7 +3281,7 @@ export function createThreadClaimRunObjects(
         );
         return { kind: "passed" };
       }
-      const failure = firstPreparationFailure([input, admission, runnerLaunch]);
+      const failure = firstPreparationFailure([input, runnerLaunch]);
       if (failure) {
         await set(
           rejectChatQueueHead$,
@@ -3474,6 +3399,7 @@ export function createThreadClaimRunObjects(
       });
       return {
         kind: "pending",
+        admittedLaunch: committed.result.admittedLaunch,
         marketingRewardEventId: committed.result.marketingRewardEventId,
         runId: committed.result.run.id,
         apiStartTime: input.args.apiStartTime,
@@ -3543,7 +3469,6 @@ export function createThreadClaimRunObjects(
         );
         if ("kind" in result && result.kind === "pending") {
           set(internalCommittedRunId$, result.run.id);
-          set(internalAdmittedLaunch$, result.admittedLaunch);
           const launched = context.launchRecord;
           if (launched.kind === "prompt") {
             // Creation is durable even if cancellation or activation fails next.
@@ -3771,7 +3696,6 @@ export function createThreadClaimRunObjects(
     inputResources$,
     hasFirstPickableChatEvent$,
     orgHasCapacity$,
-    admittedLaunch$,
     admitRun$,
     publishPendingRun$,
     finishPendingRun$,
@@ -4249,13 +4173,11 @@ interface ThreadRunOwner {
 /** Captured facts used to prepare one claimed Thread input. */
 interface ThreadRunCommand {
   readonly owner: ThreadRunOwner;
-  readonly modelProvider: ModelFirstPin["modelProviderType"];
   readonly realAgentInPreview?: boolean;
   readonly captureNetworkBodies?: boolean;
   readonly apiStartTime: number;
   readonly triggerSource?: TriggerSource;
   readonly chatThreadId: string;
-  readonly selectedModel: string;
   readonly codexServiceTier?: CodexServiceTier;
   readonly reasoningEffort?: ReasoningEffort | null;
   readonly agentRunMetadata?: AgentRunMetadata;
@@ -4477,13 +4399,10 @@ function buildThreadRunArgs(
 }
 
 interface ThreadRunIdentityInput {
-  readonly timing: ApiDispatchTimingCollector;
   readonly owner: ThreadRunOwner;
-  readonly agentId: string;
 }
 interface ThreadRunSelectionInput {
   readonly command: ThreadRunCommand;
-  readonly timing: ApiDispatchTimingCollector;
 }
 
 // --- Thread-private implementation: launch admission ---

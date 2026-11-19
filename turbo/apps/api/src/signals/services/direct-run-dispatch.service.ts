@@ -8,7 +8,7 @@ import {
 import { OFFICIAL_RUNNER_TOKEN_PREFIX } from "@okouai/api-contracts/contracts/runner-primitives";
 import type { ExecutionContext } from "@okouai/api-contracts/contracts/runners";
 import { runnerState } from "@okouai/db/runtime/runner-state";
-import { command, computed, type Command, type Computed } from "ccstate";
+import { command, type Command } from "ccstate";
 import { and, arrayContains, eq, gt } from "drizzle-orm";
 import { delay } from "signal-timers";
 import { env } from "../../lib/env";
@@ -19,7 +19,6 @@ import { apiStartTime$ } from "../context/hono";
 import { postRunnerDispatch } from "../external/runner-ingress";
 import { failUnacceptedRun$ } from "./agent-run-terminal-transition.service";
 import {
-  createDirectRunPreparation,
   prepareDirectRun$,
   type AdmittedRunLaunch,
   type DirectRunCachePublication,
@@ -33,9 +32,9 @@ import { preparedRunnerReusePreference } from "./runner-reuse-preference";
 import { joinAll, settleIncludingAbort } from "../utils";
 import { recordRunContextSnapshot } from "./run-context-snapshot.service";
 
-function createDirectRunFleet(input$: Computed<Promise<AdmittedRunLaunch>>) {
-  const fleet$ = computed(async (get) => {
-    const input = await get(input$);
+const readDirectRunFleet$ = command(
+  async ({ get }, input: AdmittedRunLaunch, signal: AbortSignal) => {
+    signal.throwIfAborted();
     if (input.profile !== DEFAULT_RUNNER_PROFILE) {
       throw new Error("Unsupported direct Run profile");
     }
@@ -52,6 +51,7 @@ function createDirectRunFleet(input$: Computed<Promise<AdmittedRunLaunch>>) {
           arrayContains(runnerState.admittableProfiles, [input.profile]),
         ),
       );
+    signal.throwIfAborted();
     const candidates = rows.flatMap((row) => {
       if (
         row.runnerHostname === null ||
@@ -113,14 +113,12 @@ function createDirectRunFleet(input$: Computed<Promise<AdmittedRunLaunch>>) {
       }
     }
     return { candidates, preference };
-  });
-  return fleet$;
-}
+  },
+);
 
-type DirectRunFleet =
-  ReturnType<typeof createDirectRunFleet> extends Computed<Promise<infer Fleet>>
-    ? Fleet
-    : never;
+type DirectRunFleet = Awaited<
+  ReturnType<(typeof readDirectRunFleet$)["write"]>
+>;
 type UnacceptedRunResult =
   typeof failUnacceptedRun$ extends Command<Promise<infer Result>, infer _Args>
     ? Result
@@ -141,51 +139,41 @@ type DirectRunDispatchPreparation =
   | { readonly kind: "failed"; readonly result: DirectRunDispatchResult };
 
 /** Return prepared facts so the pick entry can own publication and delivery. */
-export function createDirectRunDispatchPreparation(
-  input$: Computed<Promise<AdmittedRunLaunch>>,
-) {
-  const preparation$ = createDirectRunPreparation(input$);
-  const fleet$ = createDirectRunFleet(input$);
-  return command(
-    async (
-      { get, set },
-      signal: AbortSignal,
-    ): Promise<DirectRunDispatchPreparation> => {
-      const input = await get(input$);
+export const prepareDirectRunDispatch$ = command(
+  async (
+    { set },
+    input: AdmittedRunLaunch,
+    signal: AbortSignal,
+  ): Promise<DirectRunDispatchPreparation> => {
+    signal.throwIfAborted();
+    const prepared = await settleIncludingAbort(async () => {
+      const [publication, fleet] = await joinAll([
+        set(prepareDirectRun$, input, signal),
+        set(readDirectRunFleet$, input, signal),
+      ]);
       signal.throwIfAborted();
-      const prepared = await settleIncludingAbort(async () => {
-        const [publication, fleet] = await joinAll([
-          (async () => {
-            const preparation = await get(preparation$);
-            signal.throwIfAborted();
-            return await set(prepareDirectRun$, preparation, signal);
-          })(),
-          get(fleet$),
-        ]);
-        signal.throwIfAborted();
-        return { input, ...publication, fleet };
-      });
-      signal.throwIfAborted();
-      if (!prepared.ok) {
-        const terminal = await set(
-          failUnacceptedRun$,
-          failureInput(input, null),
-          signal,
-        );
-        return {
+      return { input, ...publication, fleet };
+    });
+    signal.throwIfAborted();
+    if (!prepared.ok) {
+      const terminal = await set(
+        failUnacceptedRun$,
+        failureInput(input, null),
+        signal,
+      );
+      return {
+        kind: "failed",
+        result: {
           kind: "failed",
-          result: {
-            kind: "failed",
-            terminal,
-            failure: new Error("Run execution preparation failed"),
-          },
-        };
-      }
-      const { cachePublication, ...delivery } = prepared.value;
-      return { kind: "prepared", delivery, cachePublication };
-    },
-  );
-}
+          terminal,
+          failure: new Error("Run execution preparation failed"),
+        },
+      };
+    }
+    const { cachePublication, ...delivery } = prepared.value;
+    return { kind: "prepared", delivery, cachePublication };
+  },
+);
 
 interface DeliveryWindow {
   readonly notAfter: number;

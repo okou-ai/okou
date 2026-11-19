@@ -27,7 +27,7 @@ import { nowDate } from "../../lib/time";
 import type { ChatThreadRequestFacts } from "./chat-thread-request-facts";
 import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
 import {
-  createDirectRunDispatchPreparation,
+  prepareDirectRunDispatch$,
   dispatchPreparedRun$,
   type DirectRunDispatchResult,
 } from "./direct-run-dispatch.service";
@@ -101,15 +101,11 @@ function createCapturedClaimObjects(
     context,
     claim.requestFacts,
   );
-  const prepareDispatch$ = createDirectRunDispatchPreparation(
-    preparation.admittedLaunch$,
-  );
   // Reobserve occupancy after release, but retain the same org capacity snapshot.
   // Newly purchased slots take effect only in a subsequent context.
   const orgHasCapacityAfterRelease$ = createOrgHasCapacity(context);
   return {
     ...preparation,
-    prepareDispatch$,
     context,
     orgHasCapacityAfterRelease$,
   };
@@ -494,7 +490,7 @@ function createPickObjects() {
       const [, preparation] = await joinAllInOrder(
         [
           set(claimed.publishPendingRun$, pending, signal),
-          set(claimed.prepareDispatch$, signal),
+          set(prepareDirectRunDispatch$, pending.admittedLaunch, signal),
         ],
         signal,
       );
