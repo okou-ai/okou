@@ -537,10 +537,12 @@ probe_status=0
 master_diagnostics_file=$(cloudflare_ssh_master_diagnostics_file \
   "$TARGET_USER" "$TARGET_HOST" "$current_control_path")
 selected_master_id=$(printf '%s' "$master_diagnostics_file" | sha256sum | cut -c1-24)
-caller_event probe-start
-probe_transport "$current_control_path" "$first_probe_stderr" \
-  || probe_status=$?
-caller_event probe-result "$probe_status"
+if [ ! -f "${master_diagnostics_file}.proxies/retired" ]; then
+  caller_event probe-start
+  probe_transport "$current_control_path" "$first_probe_stderr" \
+    || probe_status=$?
+  caller_event probe-result "$probe_status"
+fi
 
 selected_control_path="$current_control_path"
 if [ "$probe_status" -ne 0 ]; then
@@ -557,6 +559,11 @@ if [ "$probe_status" -ne 0 ]; then
   emit_probe_failure \
     1 "$probe_status" "$first_probe_stderr" warning \
     "$master_diagnostics_file"
+fi
+if [ "$probe_status" -ne 0 ] || [ -f "${master_diagnostics_file}.proxies/retired" ]; then
+  if [ -f "${master_diagnostics_file}.proxies/retired" ]; then
+    caller_event master-retired
+  fi
   # OpenSSH appends a temporary suffix while binding a control socket. Keep
   # this directory name short enough for Linux's Unix socket path limit.
   recovery_dir=$(mktemp -d "${STATE_DIR}/r.XXXXXX")
@@ -586,6 +593,9 @@ if [ "$probe_status" -ne 0 ]; then
   caller_event probe-start
   probe_transport "$recovery_control_path" "$second_probe_stderr" \
     || probe_status=$?
+  if [ "$probe_status" -eq 0 ] && [ -f "${recovery_control_path}.stderr.proxies/retired" ]; then
+    probe_status=255
+  fi
   caller_event probe-result "$probe_status"
   if [ "$probe_status" -ne 0 ]; then
     emit_probe_failure \
