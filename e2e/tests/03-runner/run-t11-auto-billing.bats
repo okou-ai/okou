@@ -6,13 +6,15 @@ load '../../helpers/setup'
 load '../../helpers/runner-chat'
 load '../../helpers/runner-api'
 
+BATS_TEST_RETRIES=1
+
 setup() {
     local credentials="/tmp/e2e-api-credentials-runner-real-codex-built-in.json"
     export E2E_API_TOKEN E2E_API_URL
     E2E_API_TOKEN="$(jq -er '.token | select(type == "string" and length > 0)' "$credentials")"
     E2E_API_URL="$(jq -er '.apiUrl | select(type == "string" and length > 0)' "$credentials")"
     runner_e2e_require_environment
-    runner_e2e_setup_test
+    runner_e2e_setup_live_test
 }
 
 teardown() {

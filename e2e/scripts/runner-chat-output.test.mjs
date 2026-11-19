@@ -9,6 +9,9 @@ import { fileURLToPath } from "node:url";
 const helper = fileURLToPath(
   new URL("../helpers/runner-chat.bash", import.meta.url),
 );
+const apiHelper = fileURLToPath(
+  new URL("../helpers/runner-api.bash", import.meta.url),
+);
 const threadId = "output-test-thread";
 const runId = "output-test-run";
 const steerEventId = "output-test-steer";
@@ -21,6 +24,65 @@ const consumedSteer = {
   revokesEventId: steerEventId,
   payload: { userMessage: { parts: [{ type: "text", text: steerPrompt }] } },
 };
+
+test("live case cleanup deletes its thread when launch fails in a subshell", async (context) => {
+  const directory = await mkdtemp(join(tmpdir(), "runner-chat-cleanup-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const requests = join(directory, "requests");
+  await writeFile(
+    join(directory, "curl"),
+    `#!/usr/bin/env node
+const fs = require("node:fs");
+const url = process.argv.at(-1);
+const method = process.argv[process.argv.indexOf("-X") + 1];
+fs.appendFileSync(process.env.REQUESTS, method + " " + url + "\\n");
+if (method === "POST" && url === "https://preview.example/api/chat/events") {
+  process.stdout.write(JSON.stringify({ threadId: "owned-thread" }));
+} else if (method !== "DELETE" ||
+    url !== "https://preview.example/api/chat-threads/owned-thread") {
+  process.exit(1);
+}
+`,
+    { mode: 0o755 },
+  );
+  const result = spawnSync(
+    "bash",
+    [
+      "-ec",
+      `source "$1"
+source "$2"
+runner_e2e_setup_live_test
+if (runner_chat_send test-agent prompt "" auto); then
+  exit 1
+fi
+runner_e2e_teardown_test`,
+      "runner-chat-cleanup",
+      helper,
+      apiHelper,
+    ],
+    {
+      encoding: "utf8",
+      timeout: 10_000,
+      env: {
+        ...process.env,
+        PATH: `${directory}:${process.env.PATH}`,
+        REQUESTS: requests,
+        BATS_TEST_TMPDIR: directory,
+        E2E_API_TOKEN: "synthetic-e2e-token",
+        E2E_API_URL: "https://preview.example",
+        RUNNER_CHAT_LAUNCH_TIMEOUT_SECONDS: "0",
+      },
+    },
+  );
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /waiting for chat input .* to start a run/);
+  assert.equal(
+    await readFile(requests, "utf8"),
+    "POST https://preview.example/api/chat/events\n" +
+      "DELETE https://preview.example/api/chat-threads/owned-thread\n",
+  );
+});
 
 function message(content, messageRunId = runId) {
   return {

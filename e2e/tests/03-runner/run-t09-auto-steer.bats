@@ -4,25 +4,28 @@
 
 load '../../helpers/setup'
 load '../../helpers/runner-chat'
+load '../../helpers/runner-api'
 
 BATS_TEST_TIMEOUT=600
+BATS_TEST_RETRIES=1
 
-setup_file() {
+setup() {
     local credentials="/tmp/e2e-api-credentials-runner-real-codex.json"
     export E2E_API_TOKEN E2E_API_URL
     E2E_API_TOKEN="$(jq -er '.token | select(type == "string" and length > 0)' "$credentials")"
     E2E_API_URL="$(jq -er '.apiUrl | select(type == "string" and length > 0)' "$credentials")"
     require_runner_api_credentials
+    runner_e2e_setup_live_test
 
-    export RUNNER_AGENT_ID
     RUNNER_AGENT_ID="$(create_runner_agent \
-        "e2e-auto-steer-$(date +%s%3N)-$RANDOM")"
+        "e2e-auto-steer-${TEST_ID}")"
     set_runner_agent_instructions \
         "$RUNNER_AGENT_ID" \
         "Auto steer test instructions."
 }
 
-teardown_file() {
+teardown() {
+    runner_e2e_teardown_test
     if [[ -n "${RUNNER_AGENT_ID:-}" ]]; then
         delete_runner_agent_for_stage0_teardown "$RUNNER_AGENT_ID"
     fi
