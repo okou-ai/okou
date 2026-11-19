@@ -807,11 +807,11 @@ test("Refresh the browser card after delayed attachment and a continuity gap", a
       const card = document.querySelector<HTMLElement>(
         "[data-browser-session-card]",
       );
-      expect(card).toBeInTheDocument();
-      if (card) {
-        expect(within(card).getByText(label)).toBeInTheDocument();
-        expect(thumbnailSource(card)).toContain(screenshot);
+      if (!card) {
+        throw new Error("Browser card is not rendered");
       }
+      expect(within(card).getByText(label)).toBeInTheDocument();
+      expect(thumbnailSource(card)).toContain(screenshot);
     });
   };
   await expectCard("Live", "initial.png");

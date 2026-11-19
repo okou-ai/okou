@@ -764,8 +764,8 @@ browser-user-action-page-026	turbo/apps/platform/src/views/browser-user-action/_
 browser-user-action-page-028	turbo/apps/platform/src/views/browser-user-action/__tests__/browser-user-action-controls.test.tsx	An optional checkbox submits an explicit false rather than the website's true	609	passed
 browser-user-action-page-034	turbo/apps/platform/src/views/browser-user-action/__tests__/browser-user-action-controls.test.tsx	An Agent-required radio group submits its existing valid website choice	638	passed
 browser-user-action-page-036	turbo/apps/platform/src/views/browser-user-action/__tests__/browser-user-action-controls.test.tsx	A required multiple select cannot keep a disabled website choice and drops it on change	674	passed
-chat-capability-browser-actions-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	A Browser input card opens, reopens and completes (task context: true)	266	passed
-chat-capability-browser-actions-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	A Browser input card opens, reopens and completes (task context: false)	266	passed
+chat-capability-browser-actions-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	A Browser input card opens, reopens and completes (task context: true)	276	passed
+chat-capability-browser-actions-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	A Browser input card opens, reopens and completes (task context: false)	276	passed
 chat-capability-browser-actions-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Closing an inline form clears password and code drafts while preserving ordinary text	386	passed
 chat-capability-browser-actions-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Shared inline forms retain sensitive drafts until their final owner closes	426	passed
 chat-capability-browser-actions-012	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	An inline native datetime-local picker keeps a wall-clock string through callback	474	passed
@@ -1208,3 +1208,28 @@ browser-authorization-card-006	turbo/apps/platform/src/views/okou-page/__tests__
 chat-browser-shutdown-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-browser-shutdown.test.tsx	Closing the sidebar confirms its original key release before same-browser reuse	133	passed
 chat-browser-shutdown-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-browser-shutdown.test.tsx	Normal shutdown retains an original native key-release rejection	190	passed
 chat-browser-shutdown-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-browser-shutdown.test.tsx	Normal sidebar close confirms original pointer cleanup independently of capture	215	passed
+chat-navigation-browser-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-browser.test.tsx	A live Browser card resumes a window reclaimed after its summary was read	267	passed
+chat-navigation-browser-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-browser.test.tsx	A summary card and a previous Start cannot authorize a reopened shared viewer	345	passed
+chat-navigation-browser-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-browser.test.tsx	An unauthorized Browser keeps its card and sidebar with an authorization placeholder	442	passed
+chat-navigation-browser-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-browser.test.tsx	A committed Browser grant via event revalidates a denial and observes later revocation	487	passed
+chat-navigation-browser-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-browser.test.tsx	A committed Browser grant via snapshot revalidates a denial and observes later revocation	487	passed
+chat-navigation-browser-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-browser.test.tsx	A canonical regrant restores the Browser after a local disable confirmed by event	669	passed
+chat-navigation-browser-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-browser.test.tsx	Browser tab admission uses a stable picker-independent budget and protects the actual selection	1101	passed
+chat-navigation-browser-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-browser.test.tsx	Browser tab admission settles surviving shell motion after navigation cancels visibility paint	1130	passed
+chat-navigation-browser-012	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-browser.test.tsx	Browser tab admission holds widening when panel finishes before the other width owner	1196	passed
+chat-navigation-browser-016	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-browser.test.tsx	Browser tab admission uses native viewport changes made while disconnected on automatic recovery	1228	passed
+chat-navigation-browser-017	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-browser.test.tsx	The embedded Okou viewer retains its sizing preference when the menu reopens	1259	passed
+chat-navigation-browser-021	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-browser.test.tsx	The embedded Okou viewer owns its shortcuts while the conversation keeps its shortcuts	1298	passed
+chat-navigation-browser-023	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-browser.test.tsx	Open the mobile chat browser and return to the conversation (active=false)	1329	passed
+chat-navigation-browser-025	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-browser.test.tsx	Start and close a browser from the thread sidebar	1390	passed
+chat-navigation-browser-026	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-browser.test.tsx	Open a stopped browser card and offer a new session	1508	passed
+chat-navigation-browser-029	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-browser.test.tsx	Accepted keyboard input on the live page takes the cloud browser over from a working run	1576	passed
+chat-navigation-browser-032	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-browser.test.tsx	Page-input takeover ignores letterboxing and respects the Lab switch (true)	1706	passed
+chat-navigation-browser-036	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-browser.test.tsx	Hand back after using the cloud browser between runs continues in one step	1781	passed
+client-001	turbo/apps/platform/src/signals/browser/__tests__/client.test.ts	a version-probe deadline leaves the CDP connection usable	14	passed
+client-002	turbo/apps/platform/src/signals/browser/__tests__/client.test.ts	closing a viewer rejects pending requests without closing the remote browser	48	passed
+client-003	turbo/apps/platform/src/signals/browser/__tests__/client.test.ts	raw native attachment cancellation preserves its original parent session	75	passed
+client-004	turbo/apps/platform/src/signals/browser/__tests__/client.test.ts	cancelling native bridge startup releases its late original attachment	133	passed
+client-006	turbo/apps/platform/src/signals/browser/__tests__/client.test.ts	native events remain private to the originating connection	177	passed
+client-007	turbo/apps/platform/src/signals/browser/__tests__/client.test.ts	parallel requests keep independent results when replies arrive out of order	231	passed
+client-008	turbo/apps/platform/src/signals/browser/__tests__/client.test.ts	cancelling one request preserves its socket and releases a late original attachment	275	passed
