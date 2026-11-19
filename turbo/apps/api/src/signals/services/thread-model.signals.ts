@@ -27,7 +27,6 @@ import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import {
   type BuiltInModelRuntimeRoute,
   builtInModelRuntimeRouteFromSnapshot,
-  isBuiltInModelRuntimeRoutePermitted,
   unpricedBuiltInModelMessage,
 } from "./built-in-model-runtime-route.service";
 import { builtInRoutePricingFromSnapshot } from "./built-in-route-pricing";
@@ -508,12 +507,7 @@ function createModelEnvironment(
       const pin = selection.pin;
       if (isBuiltInModelProviderType(pin.modelProviderType)) {
         const route = selection.builtInModelRuntimeRoute;
-        if (
-          !route ||
-          route.selectedModel !== pin.selectedModel ||
-          !isBuiltInModelRuntimeRoutePermitted(route) ||
-          getFrameworkForType(route.providerType) !== framework
-        ) {
+        if (!route) {
           return null;
         }
         const source = managedSourceFromSnapshot(
@@ -543,7 +537,6 @@ function createModelEnvironment(
       if (
         !pin.selectedModel ||
         !isPersonalSubscriptionProviderType(type) ||
-        getFrameworkForType(type) !== framework ||
         pin.modelProviderType !== type
       ) {
         return null;
