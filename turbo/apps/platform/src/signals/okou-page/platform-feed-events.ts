@@ -14,6 +14,8 @@ export function createPlatformEventEntry(
 ) {
   const dismissed$ = state(false);
   const enabled$ = state(false);
+  const action$ = state<"enable" | "dismiss" | null>(null);
+  const result$ = state<Promise<void> | undefined>(undefined);
   const dismiss$ = command(async ({ get, set }, signal: AbortSignal) => {
     await accept(
       get(apiClient$)(feedContract).dismiss({
@@ -52,11 +54,21 @@ export function createPlatformEventEntry(
       }),
     });
   });
+  // Paging unmounts card contents, but the visit still owns their operation.
+  const handle$ = command(
+    ({ set }, action: "enable" | "dismiss", signal: AbortSignal) => {
+      const result = set(action === "enable" ? enable$ : dismiss$, signal);
+      set(action$, action);
+      set(result$, result);
+      return result;
+    },
+  );
   return {
     item,
     dismissed$,
-    dismiss$,
-    enable$,
+    action$,
+    result$,
+    handle$,
     readOnRef$: createForYouReadRef(item.id),
   };
 }

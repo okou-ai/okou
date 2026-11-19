@@ -169,13 +169,18 @@ function control(
   return result;
 }
 
-async function openDetails(item = platformEvent()) {
-  let dismissed = false;
+async function openDetails(
+  item = platformEvent(),
+  additional: readonly PlatformEvent[] = [],
+) {
+  let items = [item, ...additional];
   context.mocks.api(feedContract.list, ({ respond }) => {
-    return respond(200, { items: dismissed ? [] : [item] });
+    return respond(200, { items });
   });
-  context.mocks.api(feedContract.dismiss, ({ respond }) => {
-    dismissed = true;
+  context.mocks.api(feedContract.dismiss, ({ params, respond }) => {
+    items = items.filter((candidate) => {
+      return candidate.id !== params.id;
+    });
     return respond(204);
   });
   context.mocks.data.userPreferences({ timezone: "Asia/Shanghai" });
@@ -527,6 +532,65 @@ test.each(["enable", "dismiss"] as const)(
     response.resolve();
     const selected = await screen.findByRole("group", { name: "Every 1 hour" });
     expect(within(selected).getByRole("switch")).toBeChecked();
+  },
+);
+
+test.each(["Enable", "Dismiss"] as const)(
+  "A pending %s stays blocked after paging away and back",
+  async (action) => {
+    context.mocks.browser.matchMedia((query) => {
+      return query === "(prefers-reduced-motion: reduce)";
+    });
+    mockAutomationDestination();
+    const first = platformEvent();
+    const second: PlatformEvent = {
+      ...first,
+      id: "22222222-2222-4222-8222-222222222222",
+      content: { ...first.content, automationName: "Second summary" },
+    };
+    await openDetails(first, [second]);
+    const response = createDeferredPromise<void>(context.signal);
+    const requested = createDeferredPromise<void>(context.signal);
+    if (action === "Enable") {
+      mockAutomationDestination({
+        ...workflow(),
+        automations: [automation(AUTOMATION_ID, true)],
+      });
+      context.mocks.api(
+        workflowAutomationsContract.enable,
+        async ({ respond }) => {
+          requested.resolve();
+          await response.promise;
+          return respond(200, automation(AUTOMATION_ID, true));
+        },
+      );
+    } else {
+      context.mocks.api(feedContract.dismiss, async ({ respond }) => {
+        requested.resolve();
+        await response.promise;
+        return respond(204);
+      });
+    }
+
+    click(control("button", action));
+    await requested.promise;
+    click(control("link", "Next suggestion"));
+    await screen.findByText("Second summary");
+    expect(screen.queryByText("Daily work summary")).not.toBeInTheDocument();
+    click(control("link", "Previous suggestion"));
+    await screen.findByText("Daily work summary");
+    expect(control("button", action)).toHaveAttribute("aria-disabled", "true");
+    expect(
+      control("button", action === "Enable" ? "Dismiss" : "Enable"),
+    ).toBeDisabled();
+
+    response.resolve();
+
+    const completed = await (action === "Enable"
+      ? screen.findByRole("group", { name: "Every 1 hour" })
+      : screen.findByText("Second summary"));
+    expect(completed).toBeInTheDocument();
+    expect(screen.queryByText("Daily work summary")).not.toBeInTheDocument();
   },
 );
 

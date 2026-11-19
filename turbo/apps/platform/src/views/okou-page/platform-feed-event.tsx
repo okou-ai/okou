@@ -1,5 +1,4 @@
-import { useGet, useLastResolved, useSet } from "ccstate-react";
-import { useLoadableSet } from "ccstate-react/experimental";
+import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { AlertTriangle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@okouai/ui";
@@ -19,9 +18,10 @@ export function PlatformFeedEvent({
 }) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
-  const [dismissal, dismiss] = useLoadableSet(entry.dismiss$);
-  const [enabling, enable] = useLoadableSet(entry.enable$);
-  const pending = dismissal.state === "loading" || enabling.state === "loading";
+  const result = useLoadable(entry.result$);
+  const action = useGet(entry.action$);
+  const handle = useSet(entry.handle$);
+  const pending = result.state === "loading";
   const preferences = useLastResolved(userPreferences$);
   const focusTitle = useSet(focusSuggestionTitleOnRef$);
   const { content } = entry.item;
@@ -83,10 +83,10 @@ export function PlatformFeedEvent({
         <div className="mt-auto flex flex-wrap items-center gap-3 pt-6">
           <Button
             variant="neutral"
-            pending={enabling.state === "loading"}
+            pending={pending && action === "enable"}
             disabled={pending}
             onClick={() => {
-              return detach(enable(signal), Reason.DomCallback);
+              return detach(handle("enable", signal), Reason.DomCallback);
             }}
           >
             {t(($) => {
@@ -95,10 +95,10 @@ export function PlatformFeedEvent({
           </Button>
           <Button
             variant="quiet"
-            pending={dismissal.state === "loading"}
+            pending={pending && action === "dismiss"}
             disabled={pending}
             onClick={() => {
-              return detach(dismiss(signal), Reason.DomCallback);
+              return detach(handle("dismiss", signal), Reason.DomCallback);
             }}
           >
             {t(($) => {
@@ -106,7 +106,7 @@ export function PlatformFeedEvent({
             })}
           </Button>
         </div>
-        {(dismissal.state === "hasError" || enabling.state === "hasError") && (
+        {result.state === "hasError" && (
           <p role="alert" className="text-sm text-destructive">
             {t(($) => {
               return $.global.errors.requestFailed;
