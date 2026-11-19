@@ -85,7 +85,8 @@ host is reachable and reports an unconfirmed cleanup otherwise.
 `run HOST warm|build RESULT_PATH`, and `guard HOST COMMAND ...` are internal
 adapters used by `prepare-runner-image.sh`. They require `JOB_REF`, `HEAD_SHA`,
 `TARGET_TRIPLE`, `PROFILE`, `METAL_USER`, `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`,
-`EXPECTED_BINARY_INPUT_DIGEST`, and `RUNNER_IMAGE_RUNNER_SHA256`. Warm/build also
+`EXPECTED_BINARY_INPUT_DIGEST`, and `RUNNER_IMAGE_RUNNER_SHA256`. PR claims also
+require `RUNNER_IMAGE_RUN_CREATED_AT` from the GitHub run record. Warm/build
 consume the workflow's four `R2_*` values. Dependencies are Python 3, SSH and
 remote sudo/systemd with the existing Runner permissions.
 The `validate HOST` preflight checks the complete identity without SSH.
@@ -134,8 +135,10 @@ lock and resource directory paths. No application/database schema changes.
 Closed-PR cleanup records GitHub's latest closure time in the existing lock
 file before removing resources. Each claim and each new worker compares that
 cutoff with the workflow run's GitHub creation time while holding the lock.
-Reopening a PR can admit a fresh run created after closure. Rerunning an older run keeps its
-original creation time. The cutoff lasts for the life of the host lock file.
+Reopening a PR can admit a fresh run created after closure. Rerunning an older
+run keeps its original creation time. Same-owner claims and new worker launches
+require the creation time recorded when that owner was admitted. The cutoff
+lasts for the life of the host lock file.
 Owner state transitions from `claiming` to `ready` only after the marker and
 admission record are committed under the lifecycle lock; cancellation sets
 `cancelled`. A retry after SSH loss while waiting for the lifecycle lock can

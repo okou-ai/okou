@@ -148,12 +148,10 @@ def require_resource(owner):
 
 def check_closure(namespace, lock_fd, run_created_at):
     if namespace.name.startswith("pr-"):
-        cutoff = os.read(lock_fd, 22)
-        if run_created_at is None:
-            if cutoff:
-                raise RuntimeError("image workflow creation time unavailable after PR closure")
-            return
+        if not isinstance(run_created_at, str):
+            raise ValueError("invalid image workflow creation time")
         created = datetime.strptime(run_created_at, "%Y-%m-%dT%H:%M:%SZ")
+        cutoff = os.read(lock_fd, 22)
         if cutoff and created <= datetime.strptime(cutoff.decode("ascii"), "%Y-%m-%dT%H:%M:%SZ\n"):
             raise RuntimeError("image workflow predates PR closure; a fresh run is required")
 
@@ -396,9 +394,11 @@ def claim(request, namespace, owner, retire_matching, deadline):
                 retire(operation, deadline=deadline)
             with lifecycle(lock_path, deadline, wait=False) as lock_fd:
                 if lock_fd is not None:
-                    run_created_at = request.get("runCreatedAt")
-                    if previous is not None:
-                        run_created_at = previous.get("runCreatedAt", run_created_at)
+                    run_created_at = (
+                        previous.get("runCreatedAt")
+                        if previous is not None
+                        else request.get("runCreatedAt")
+                    )
                     check_closure(namespace, lock_fd, run_created_at)
                     if previous is not None:
                         require_resource(previous)

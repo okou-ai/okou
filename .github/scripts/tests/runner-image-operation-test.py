@@ -211,15 +211,21 @@ class ImageOperationTest(unittest.TestCase):
 
     def test_closure_fences_retained_owner_after_failed_cleanup(self):
         self.invoke("claim")
-        directory = self.root / "var/lib/vm0-runner/bin/pr-123-image-1234"
+        runner_root = self.root / "var/lib/vm0-runner"
+        directory = runner_root / "bin/pr-123-image-1234"
         marker = next(directory.glob(".image-owner-*"))
-        directory.chmod(0o555)
+        moved_root = runner_root.with_name("runner-data")
+        runner_root.rename(moved_root)
+        runner_root.symlink_to(moved_root, target_is_directory=True)
         try:
             with self.cleanup_session() as cleanup:
                 self.assertEqual(self.cleanup_reply(cleanup), {"ready": [123]})
-                self.assertEqual(self.clean_namespace(cleanup)["outcome"], "failed")
+                result = self.clean_namespace(cleanup)
+                self.assertEqual(result["outcome"], "failed")
+                self.assertIn("resource ancestor is a symlink", result["error"])
         finally:
-            directory.chmod(0o755)
+            runner_root.unlink()
+            moved_root.rename(runner_root)
         self.assertTrue(marker.is_file())
         reclaim = self.invoke("claim", check=False)
         late = directory / "late"
@@ -235,6 +241,34 @@ class ImageOperationTest(unittest.TestCase):
         fresh = directory.with_name("pr-123-image-1235") / "fresh"
         self.invoke("guard", "touch", str(fresh), input_text="")
         self.assertTrue(fresh.is_file())
+
+    def test_missing_owner_creation_time_blocks_reclaim_and_worker(self):
+        with self.cleanup_session() as cleanup:
+            self.assertEqual(self.cleanup_reply(cleanup), {"ready": [123]})
+            self.assertEqual(self.clean_namespace(cleanup)["outcome"], "already_absent")
+        self.environment["RUNNER_IMAGE_RUN_CREATED_AT"] = "2026-10-03T00:00:00Z"
+        self.invoke("claim")
+        owner_path = self.root / f"vm0-runner-image-{os.getuid()}/pr-123/owner.json"
+        owner = json.loads(owner_path.read_text())
+        del owner["runCreatedAt"]
+        owner_path.write_text(json.dumps(owner))
+
+        reclaim = self.invoke("claim", check=False)
+        self.assertNotEqual(reclaim.returncode, 0, reclaim.stderr)
+        self.assertIn("invalid image workflow creation time", reclaim.stderr)
+        output = self.root / "legacy-write"
+        guard = self.invoke("guard", "touch", str(output), input_text="", check=False)
+        self.assertNotEqual(guard.returncode, 0, guard.stderr)
+        self.assertFalse(output.exists())
+        self.environment["GITHUB_RUN_ATTEMPT"] = "2"
+        self.invoke("claim")
+
+    def test_pr_claim_without_creation_time_cannot_admit_an_owner(self):
+        self.environment["IMAGE_FAULT"] = "missing-claim-time"
+        claim = self.invoke("claim", check=False)
+        self.assertNotEqual(claim.returncode, 0, claim.stderr)
+        self.assertIn("invalid image workflow creation time", claim.stderr)
+        self.assertFalse((self.root / "var/lib/vm0-runner/bin/pr-123-image-1234").exists())
 
     def test_cleanup_fences_a_late_service_and_same_owner_reclaim(self):
         self.invoke("claim")
