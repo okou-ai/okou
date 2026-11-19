@@ -4538,6 +4538,10 @@ function prepareRunnerLaunch(input: {
         FeatureSwitchKey.ArtifactGenerationTiming,
         args.featureSwitchContext,
       ),
+      [FeatureSwitchKey.ArtifactThreePointTiming]: isFeatureEnabled(
+        FeatureSwitchKey.ArtifactThreePointTiming,
+        args.featureSwitchContext,
+      ),
       [FeatureSwitchKey.SingleAgent]: isFeatureEnabled(
         FeatureSwitchKey.SingleAgent,
         args.featureSwitchContext,
