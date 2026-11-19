@@ -1,5 +1,6 @@
 import {
   onboardingCompleteContract,
+  onboardingDraftContract,
   onboardingStatusContract,
   type OnboardingStatusResponse,
 } from "@okouai/api-contracts/contracts/onboarding";
@@ -31,6 +32,10 @@ export function resetMockOnboardingStatus(): void {
 }
 
 export const apiOnboardingHandlers = [
+  // The legacy suites exercise the browser draft flow against a pre-draft API.
+  mockApi(onboardingDraftContract.get, ({ respond }) => {
+    return respond(404, { error: "Not found" });
+  }),
   // GET /api/onboarding/status
   mockApi(onboardingStatusContract.getStatus, ({ respond }) => {
     return respond(200, mockOnboardingStatus);

@@ -106,7 +106,7 @@ function createSourcesFirstPageSetup(
       resumeStep = await set(
         restoreSourcesFirstDraft$,
         { orgId, userId },
-        status.needsOnboarding && status.serverDraftEnabled === true,
+        status.needsOnboarding,
         signal,
       );
     }

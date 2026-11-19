@@ -18,8 +18,10 @@ export const onboardingDrafts = pgTable(
     revision: uuid("revision").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
-  (table) => [
-    primaryKey({ columns: [table.orgId, table.userId] }),
-    index("idx_onboarding_drafts_expires_at").on(table.expiresAt),
-  ],
+  (table) => {
+    return [
+      primaryKey({ columns: [table.orgId, table.userId] }),
+      index("idx_onboarding_drafts_expires_at").on(table.expiresAt),
+    ];
+  },
 );

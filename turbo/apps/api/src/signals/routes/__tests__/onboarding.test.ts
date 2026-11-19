@@ -112,7 +112,6 @@ async function completeAs(
 }
 
 describe("Onboarding draft", () => {
-  const staffOrgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
   const headers = authHeaders();
   const draft: OnboardingDraftPayload = {
     step: "ready",
@@ -136,8 +135,7 @@ describe("Onboarding draft", () => {
   }
 
   it("restores one member's draft and refuses stale edits or another member's reads", async () => {
-    const actor = { ...orgActor("org:member"), orgId: staffOrgId };
-    expect(await statusAs(actor)).toMatchObject({ serverDraftEnabled: true });
+    const actor = orgActor("org:member");
     const client = draftClientAs(actor);
     const stored = await accept(
       client.save({ headers, body: { ...draft, revision: null } }),
@@ -175,7 +173,7 @@ describe("Onboarding draft", () => {
   });
 
   it("expires abandoned drafts and blocks restoration or late saves after completion", async () => {
-    const actor = { ...orgActor("org:member"), orgId: staffOrgId };
+    const actor = orgActor("org:member");
     const client = draftClientAs(actor);
     const started = Date.parse("2026-11-18T00:00:00Z");
     mockNow(started);
@@ -202,12 +200,6 @@ describe("Onboarding draft", () => {
       }),
       [404],
     );
-  });
-
-  it("leaves the browser draft path active outside the rollout", async () => {
-    const actor = orgActor("org:member");
-    expect((await statusAs(actor)).serverDraftEnabled).toBeUndefined();
-    await accept(draftClientAs(actor).get({ headers }), [404]);
   });
 });
 

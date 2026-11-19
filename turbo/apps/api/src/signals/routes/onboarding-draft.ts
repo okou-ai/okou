@@ -8,9 +8,8 @@ import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import {
   deleteOnboardingDraft$,
-  readOnboardingDraft$,
+  onboardingDraft,
   saveOnboardingDraft$,
-  serverOnboardingDraftEnabled$,
 } from "../services/onboarding-draft.service";
 import { needsOnboarding } from "../services/onboarding.service";
 
@@ -25,21 +24,17 @@ const saveBody$ = bodyResultOf(onboardingDraftContract.save);
 const draftAvailable$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "private, no-store");
   const auth = get(organizationAuthContext$);
-  return (
-    (await set(serverOnboardingDraftEnabled$, auth, signal)) &&
-    (await get(needsOnboarding(auth)))
-  );
+  const available = await get(needsOnboarding(auth));
+  signal.throwIfAborted();
+  return available;
 });
 
 const getDraft$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!(await set(draftAvailable$, signal))) {
     return unavailable;
   }
-  const draft = await set(
-    readOnboardingDraft$,
-    get(organizationAuthContext$),
-    signal,
-  );
+  const draft = await get(onboardingDraft(get(organizationAuthContext$)));
+  signal.throwIfAborted();
   return { status: 200 as const, body: { draft } };
 });
 

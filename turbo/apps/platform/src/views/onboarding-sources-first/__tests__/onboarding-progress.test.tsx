@@ -96,7 +96,6 @@ test("A clean browser resumes the server draft and its saved step", async () => 
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
-    serverDraftEnabled: true,
   });
   mockOnboardingConnectorCatalog(context, []);
   context.mocks.api(onboardingDraftContract.get, ({ respond }) => {
@@ -129,7 +128,6 @@ test("The first server save imports both browser draft keys before clearing them
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
-    serverDraftEnabled: true,
   });
   mockOnboardingConnectorCatalog(context, []);
   seedProgress("ready");
@@ -164,12 +162,11 @@ test("A rollback to an older API still resumes the browser draft", async () => {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
-    serverDraftEnabled: true,
   });
   mockOnboardingConnectorCatalog(context, []);
   seedProgress("ready");
   context.mocks.api(onboardingDraftContract.get, ({ respond }) => {
-    return respond(404, { error: { code: "NOT_FOUND", message: "Not found" } });
+    return respond(404, { error: "Not found" });
   });
 
   await setupPage({ context, locale: "en-US", path: ROUTES.onboarding });

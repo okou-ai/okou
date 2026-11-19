@@ -8,7 +8,6 @@ export enum FeatureSwitchKey {
   PhoneUse = "_phoneUse",
   CustomConnectorCloudflareAccess = "customConnectorCloudflareAccess",
   EmailIntegration = "emailIntegration",
-  ServerOnboardingDraft = "serverOnboardingDraft",
   PresentationOutputFormat = "presentationOutputFormat",
   SingleAgent = "singleAgent",
   ProjectTitleReveal = "projectTitleReveal",
