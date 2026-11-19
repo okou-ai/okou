@@ -135,6 +135,55 @@ preview_prepare_step = find_step(
 build_step = find_step(preview_job, "Build canonical app artifact")
 preview_publish_step = find_step(preview_job, "Publish immutable app assets to R2")
 preview_deploy_step = find_step(preview_job, "Deploy standalone app Worker preview")
+preview_verify_step = find_step(preview_job, "Verify public app preview ingress")
+preview_deploy_env = preview_deploy_step["env"]
+assert preview_deploy_env["CLOUDFLARE_API_TOKEN"] == "${{ secrets.CF_API_WORKER_DEPLOY_API_TOKEN }}"
+assert preview_deploy_env["CLERK_PUBLISHABLE_KEY"] == (
+    "${{ github.event_name == 'pull_request' && vars.CLERK_PUBLISHABLE_KEY_PREVIEW || '' }}"
+)
+assert preview_deploy_env["CLERK_SECRET_KEY"] == (
+    "${{ github.event_name == 'pull_request' && secrets.CLERK_SECRET_KEY || '' }}"
+)
+assert preview_deploy_env["EXPECTED_PREVIEW_URL"] == "${{ steps.app-preview.outputs.url }}"
+assert build_step["env"]["VITE_AXIOM_CLIENT_TELEMETRY_TOKEN"] == (
+    "${{ github.event_name != 'pull_request' && vars.AXIOM_CLIENT_TELEMETRY_TOKEN || '' }}"
+)
+
+# The shared bootstrap must never receive PR credentials. Only the version
+# upload receives the private secrets file with that preview's origin.
+preview_source = preview_deploy_step["run"]
+bootstrap, upload_command, upload = preview_source.partition("wrangler versions upload")
+assert upload_command
+assert bootstrap.index("unset CLERK_PUBLISHABLE_KEY CLERK_SECRET_KEY") < bootstrap.index(
+    "wrangler deploy"
+)
+assert "${worker_secret_args[@]}" not in bootstrap
+assert '"${worker_secret_args[@]}"' in upload
+assert "APP_PREVIEW_ORIGIN:$EXPECTED_PREVIEW_URL" in upload
+assert '--var CLERK_SECRET_KEY' not in preview_source
+for fragment in (
+    "pk_test_*",
+    "sk_test_*",
+    "umask 077",
+    'worker_secrets="$(mktemp)"',
+    'trap \'rm -f "$worker_secrets"\' EXIT',
+    'worker_secret_args=(--secrets-file "$worker_secrets")',
+    "CLERK_EDGE_AUTHORIZED_PARTY: env.EXPECTED_PREVIEW_URL",
+):
+    assert fragment in bootstrap, fragment
+
+public_preview = "${{ steps.worker-deploy.outputs.url }}"
+assert preview_job["outputs"]["preview-url"] == public_preview
+assert preview_verify_step["env"]["APP_PREVIEW_URL"] == public_preview
+assert preview_verify_step["env"]["ARTIFACT_SHA"] == "${{ steps.artifact.outputs.sha }}"
+assert "verify-app-preview-ingress.sh" in preview_verify_step["run"]
+assert "if" not in preview_verify_step
+assert not preview_verify_step.get("continue-on-error", False)
+for name in ("cli-e2e-02-browser", "cli-e2e-02-playwright"):
+    consumer = turbo["jobs"][name]
+    assert "deploy-app" in consumer["needs"]
+    assert "needs.deploy-app.result == 'success'" in consumer["if"]
+
 # Canonical ready.json precedes static publication, so an existing artifact
 # must not suppress repair of an earlier partial static publication.
 if "if" in preview_publish_step or preview_publish_step.get("continue-on-error"):
@@ -149,8 +198,11 @@ if not (
     < preview_steps.index(preview_prepare_step)
     < preview_steps.index(preview_publish_step)
     < preview_steps.index(preview_deploy_step)
+    < preview_steps.index(preview_verify_step)
 ):
-    raise RuntimeError("canonical readiness and static publication must precede Worker deployment")
+    raise RuntimeError(
+        "canonical readiness and static publication must precede Worker deployment and ingress verification"
+    )
 
 # Run the actual workflow command and publisher with only AWS controlled.
 # A provider failure must stop the step instead of deploying an incomplete build.

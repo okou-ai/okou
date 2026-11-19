@@ -19,8 +19,8 @@ use crate::telemetry::StorageTelemetry;
 use crate::telemetry::{JobTelemetry, SandboxOpRecord, SandboxOpReporter};
 
 use super::{
-    BackgroundFillOutcome, CACHE_MAX_SIZE, CONCURRENCY, CacheTargetGroup, CountBucket,
-    count_bucket, decoded, process_group_background_fill,
+    BackgroundFillOutcome, CACHE_MAX_SIZE, CONCURRENCY, CacheTargetGroup, decoded,
+    process_group_background_fill,
 };
 
 /// Maximum number of cache-fill groups that may be active across the runner.
@@ -1029,15 +1029,7 @@ async fn join_next_background_fill(
 }
 
 fn background_fill_scheduled_count_action(count: usize) -> &'static str {
-    match count_bucket(count) {
-        CountBucket::Zero => "storage_cache_background_fill_scheduled_count_0",
-        CountBucket::One => "storage_cache_background_fill_scheduled_count_1",
-        CountBucket::Two => "storage_cache_background_fill_scheduled_count_2",
-        CountBucket::ThreeToFour => "storage_cache_background_fill_scheduled_count_3_4",
-        CountBucket::FiveToEight => "storage_cache_background_fill_scheduled_count_5_8",
-        CountBucket::NineToSixteen => "storage_cache_background_fill_scheduled_count_9_16",
-        CountBucket::SeventeenPlus => "storage_cache_background_fill_scheduled_count_17_plus",
-    }
+    storage_count_label!(count, "storage_cache_background_fill_scheduled_count_")
 }
 
 fn background_fill_size_bucket_action(size: u64) -> &'static str {

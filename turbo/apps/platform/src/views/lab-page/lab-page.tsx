@@ -15,7 +15,7 @@ import {
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import {
-  featureSwitch$,
+  featureSwitches$,
   availableFeatureSwitchKeys$,
 } from "../../signals/external/feature-switch.ts";
 import {
@@ -264,7 +264,7 @@ function LabControls(props: {
 
 export function LabPage() {
   const { t } = useTranslation();
-  const features = useLastResolved(featureSwitch$);
+  const features = useLastResolved(featureSwitches$);
   const availableKeys = useLoadable(availableFeatureSwitchKeys$);
   const [toggleLoadable, setFeature] = useLoadableSet(setLabFeatureSwitch$);
   const [resetLoadable, reset] = useLoadableSet(resetLabFeatureSwitches$);

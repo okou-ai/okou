@@ -41,6 +41,7 @@ const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const publicRuns = createPublicAutomationRunApi(context);
 const CRON_SECRET = "automation-disabled-feed-events-cron-secret";
+const AUTOMATION_DESCRIPTION = "Prepare a summary of the owner's open tasks.";
 
 interface Scenario {
   readonly actor: ApiTestUser;
@@ -96,6 +97,7 @@ async function createScenario(
   const workflowId = await workflows.createWorkflow(actor, {
     agentId: defaultAgentId,
     name: workflowName,
+    description: AUTOMATION_DESCRIPTION,
     visibility: "private",
     instruction: "Prepare the owner's scheduled report.",
   });
@@ -168,6 +170,7 @@ function expectDisableNotice(
       workflowId: scenario.workflowId,
       workspaceId: scenario.actor.orgId,
       automationName: scenario.workflowName,
+      automationDescription: AUTOMATION_DESCRIPTION,
       disabledAt,
       consecutiveFailures: 3,
       recoveryScheduled: false,

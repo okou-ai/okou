@@ -1,5 +1,5 @@
 import { Copy, Forward, GitFork, MessageCircle } from "lucide-react";
-import { useGet, useSet } from "ccstate-react";
+import { useLastResolved, useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   Button,
@@ -50,7 +50,7 @@ function FeedbackToolbar({
   onForward?: () => void;
 }) {
   const { t } = useTranslation();
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   return (
     <div className="flex items-center gap-0.5">
       <Button

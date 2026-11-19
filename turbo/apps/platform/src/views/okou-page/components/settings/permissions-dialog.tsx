@@ -4,7 +4,7 @@ import { singleAgentEnabled$ } from "../../../../signals/single-agent.ts";
 // oxlint-disable max-lines-per-function
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useLastResolved, useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
   Sheet,
@@ -193,7 +193,7 @@ function PermissionsDrawerHeader({
       )}
     </>
   );
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const description = connectorScope
     ? t(($) => {
         return $.connectorChatAccess.permissionsDescription;

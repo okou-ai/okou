@@ -79,13 +79,20 @@ against the original SHA-256 before the atomic rename. All requests share the
 400-second staging deadline. Cleanup removes the upload directory when the
 host is reachable and reports an unconfirmed cleanup otherwise.
 
+## Runner host architecture probe
+
+Runner host grouping and image preparation share the `uname -m` probe.
+An SSH exit 255 permits one retry on the same host. The caller validates the
+architecture from a successful probe before using it.
+
 ## Image operation recovery
 
 `python3 runner-image-operation.py claim|cancel HOST`,
 `run HOST warm|build RESULT_PATH`, and `guard HOST COMMAND ...` are internal
 adapters used by `prepare-runner-image.sh`. They require `JOB_REF`, `HEAD_SHA`,
 `TARGET_TRIPLE`, `PROFILE`, `METAL_USER`, `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`,
-`EXPECTED_BINARY_INPUT_DIGEST`, and `RUNNER_IMAGE_RUNNER_SHA256`. Warm/build also
+`EXPECTED_BINARY_INPUT_DIGEST`, and `RUNNER_IMAGE_RUNNER_SHA256`. PR claims also
+require `RUNNER_IMAGE_RUN_CREATED_AT` from the GitHub run record. Warm/build
 consume the workflow's four `R2_*` values. Dependencies are Python 3, SSH and
 remote sudo/systemd with the existing Runner permissions.
 The `validate HOST` preflight checks the complete identity without SSH.
@@ -132,10 +139,12 @@ A same-owner claim cannot recreate a retired marker; a new workflow
 generation is required. The namespace owner records the host-resolved lifecycle
 lock and resource directory paths. No application/database schema changes.
 Closed-PR cleanup records GitHub's latest closure time in the existing lock
-file before removing resources. A new claim compares that cutoff with the
-workflow run's GitHub creation time while holding the lock. Reopening a PR can
-admit a fresh run created after closure. Rerunning an older run keeps its
-original creation time. The cutoff lasts for the life of the host lock file.
+file before removing resources. Each claim and each new worker compares that
+cutoff with the workflow run's GitHub creation time while holding the lock.
+Reopening a PR can admit a fresh run created after closure. Rerunning an older
+run keeps its original creation time. Same-owner claims and new worker launches
+require the creation time recorded when that owner was admitted. The cutoff
+lasts for the life of the host lock file.
 Owner state transitions from `claiming` to `ready` only after the marker and
 admission record are committed under the lifecycle lock; cancellation sets
 `cancelled`. A retry after SSH loss while waiting for the lifecycle lock can
@@ -198,8 +207,9 @@ and PR-close cleanup. It requires `GH_TOKEN`, `GITHUB_REPOSITORY`, `GITHUB_RUN_I
 `METAL_HOSTS` and `METAL_USER`, plus the established SSH tunnel configuration.
 `RUNNER_PR_NUMBERS=42,43` selects those PRs even if inventory is empty, so a
 close event can fence the first image claim. `DRY_RUN=true` observes and selects
-without acquiring lifecycle locks or mutating resources. An incomplete host
-inventory fails even in dry-run mode.
+without acquiring lifecycle locks or mutating resources. Each host's inventory
+allows one retry on SSH exit 255 within its original 180-second deadline.
+An incomplete host inventory fails even in dry-run mode.
 
 The controller starts one ephemeral worker per host for small sorted batches.
 Each worker holds the established namespace flock files itself; all configured

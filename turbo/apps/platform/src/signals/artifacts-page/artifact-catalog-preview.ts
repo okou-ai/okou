@@ -1,6 +1,6 @@
 import type { ArtifactDetail } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { computed } from "ccstate";
-import type { ArtifactCatalogSignals } from "./create-artifact-catalog-signals.ts";
+import type { ArtifactCatalogViewSignals } from "./create-artifact-catalog-signals.ts";
 import type { MermaidDiagramPreviewCommand } from "../mermaid-diagram.ts";
 import { createMarkdownPreviewTree } from "../markdown-preview-tree.ts";
 import {
@@ -25,7 +25,7 @@ interface ArtifactDetailPreview {
 
 /** Resource and text graphs shared by the page and thread catalog sidebars. */
 export function createCatalogArtifactPreviewSignals(
-  artifactCatalog: ArtifactCatalogSignals,
+  artifactCatalog: ArtifactCatalogViewSignals,
   openDiagram$: MermaidDiagramPreviewCommand,
 ) {
   const resourceUrl$ = computed(async (get) => {

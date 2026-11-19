@@ -158,6 +158,26 @@ describe("bulk Agent read-cursor notifications stay bounded", () => {
     );
   });
 
+  it("accepts concurrent Agent marks and publishes one read-cursor update", async () => {
+    const fixture = await createUnreadAgentThreads(2);
+    clearPublishedNotifications();
+
+    await Promise.all([
+      chat.markAgentThreadsRead(fixture.actor, fixture.agentId),
+      chat.markAgentThreadsRead(fixture.actor, fixture.agentId),
+    ]);
+
+    expect(publishedReadCursorPayloads()).toStrictEqual([
+      {
+        agentId: fixture.agentId,
+        threadIds: expect.arrayContaining([...fixture.threadIds]),
+      },
+    ]);
+    await expect(visibleUnreadThreadIds(fixture)).resolves.toStrictEqual(
+      new Set(),
+    );
+  });
+
   it("leaves unread threads older than the seven-day window untouched", async () => {
     // The stale thread's last message is written at the real current time;
     // the app clock then moves eight days ahead, so that message falls outside
@@ -266,8 +286,18 @@ describe("bulk Agent read-cursor notifications stay bounded", () => {
     await expect(visibleUnreadThreadIds(fixture)).resolves.toStrictEqual(
       new Set(fixture.threadIds),
     );
+    const pending = await chat.listThreadUnreads(
+      fixture.actor,
+      fixture.agentId,
+    );
+    const expectedCursors = new Map(
+      pending.map(({ threadId, unreadAt }) => {
+        return [threadId, unreadAt] as const;
+      }),
+    );
     await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
     const secondRead = await readCursors(fixture);
+    expect(secondRead).toStrictEqual(expectedCursors);
     for (const threadId of fixture.threadIds) {
       const first = firstRead.get(threadId);
       const second = secondRead.get(threadId);

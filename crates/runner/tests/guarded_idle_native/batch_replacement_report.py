@@ -12,7 +12,7 @@ import pressure_report as pressure
 import report
 import status_failure_report as failure
 from cleanup_report import COUNTS, accounting, supplied_policy
-from snapshot_report import exact
+from report import exact
 
 PREFIX = "NATIVE_BATCH_REPLACEMENT_WITNESS "
 CASES = {f"BatchReplacement-{mode}" for mode in ("fresh", "snapshot")}

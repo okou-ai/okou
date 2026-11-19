@@ -248,7 +248,7 @@ function GreetingTokens({
 }
 
 function PinPill() {
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   return singleAgent ? null : <LegacyPinPill />;
 }
 
@@ -338,7 +338,7 @@ const AGENT_AVATAR_BORDER = "border border-surface-border";
 const AGENT_AVATAR_IMAGE = "h-full w-full object-cover object-top";
 
 function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const defaultId = useLastResolved(defaultAgentId$);
   return singleAgent && agentId === defaultId ? (
     // My Okou's greeting is the one place Okou is shown large and alone, so it

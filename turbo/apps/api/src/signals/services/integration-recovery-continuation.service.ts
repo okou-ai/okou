@@ -6,8 +6,7 @@ import {
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
-import { chatEvents } from "@okouai/db/schema/chat-event";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import { sendChatAction } from "../external/telegram-client";
 import { publishThreadListChangedSafely } from "../external/realtime";
@@ -16,20 +15,14 @@ import { settle } from "../utils";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { reconcileCanonicalSlackThreadStatus$ } from "./canonical-slack-thread-status.service";
 import { loadSlackQueuedLaunchMaterial$ } from "./slack-queued-launch-context.service";
-import { loadTeamsQueuedLaunchMaterial$ } from "./teams-queued-launch-context.service";
+import { createTeamsQueuedDelivery } from "./teams-queued-launch-context.service";
 import { sendTeamsRunStartIndicator } from "./teams-thinking-indicator.service";
 import { loadTelegramQueuedLaunchMaterial$ } from "./telegram-queued-launch-context.service";
 import { loadAgentPhoneQueuedLaunchMaterial$ } from "./agentphone-queued-launch-context.service";
 import { loadWechatQueuedLaunchMaterial$ } from "./wechat-context.service";
 import { reconcileWechatThreadTyping$ } from "./wechat-thread-typing.service";
 import { sendAgentPhoneRunTyping } from "./agentphone-run-typing.service";
-import {
-  feishuQueuedLaunchContextReadPlan,
-  requiredFeishuLaunchContext,
-} from "./feishu-queued-launch-context.service";
-import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
-import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
-import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { createFeishuRecoveryContext } from "./feishu-queued-launch-context.service";
 import { addFeishuThinkingReaction$ } from "./feishu-thinking-indicator.service";
 import {
   pickEnqueuedChatThread$,
@@ -46,6 +39,15 @@ const showRecoveryIndicator$ = command(
     input: IntegrationRecoveryInput,
     signal: AbortSignal,
   ): Promise<void> => {
+    if (input.contextType === "teams") {
+      signal.throwIfAborted();
+      const activity = await get(createTeamsQueuedDelivery(input));
+      signal.throwIfAborted();
+      if (activity) {
+        await sendTeamsRunStartIndicator({ activity }, signal);
+      }
+      return;
+    }
     const featureSwitchContext = await set(
       loadUserFeatureSwitchContext$,
       input.orgId,
@@ -67,18 +69,8 @@ const showRecoveryIndicator$ = command(
         break;
       }
       case "feishu": {
-        const plan = feishuQueuedLaunchContextReadPlan(source);
-        const [row] = await get(db$)
-          .select(plan.columns)
-          .from(chatEvents)
-          .innerJoin(chatFeishuContext, plan.contextJoin)
-          .innerJoin(feishuChatThreadRoutes, plan.routeJoin)
-          .innerJoin(feishuOrgConnections, plan.connectionJoin)
-          .innerJoin(feishuOrgInstallations, plan.installationJoin)
-          .where(plan.condition)
-          .limit(1);
+        const context = await get(createFeishuRecoveryContext(input));
         signal.throwIfAborted();
-        const context = requiredFeishuLaunchContext(row);
         if (context) {
           const reactionId = await set(
             addFeishuThinkingReaction$,
@@ -92,20 +84,6 @@ const showRecoveryIndicator$ = command(
               .where(eq(chatFeishuContext.id, input.eventId));
             signal.throwIfAborted();
           }
-        }
-        break;
-      }
-      case "teams": {
-        const material = await set(
-          loadTeamsQueuedLaunchMaterial$,
-          source,
-          signal,
-        );
-        if (material) {
-          await sendTeamsRunStartIndicator(
-            { activity: material.teamsDelivery },
-            signal,
-          );
         }
         break;
       }

@@ -42,7 +42,7 @@ import { chatThreadMetaMap$ } from "../../signals/chat-page/chat-thread-event-so
 import { setChatThreadArchivedWithFeedback$ } from "../../signals/chat-page/chat-thread-archive.ts";
 import { openRenameChatThreadDialogForThreadId$ } from "../../signals/chat-page/chat-thread-rename.ts";
 import { startComposerThreadSharing$ } from "../../signals/okou-page/slash-actions.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { modelCatalog$ } from "../../signals/external/model-catalog.ts";
 import { availableRunModels$ } from "../../signals/external/run-models.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -120,7 +120,9 @@ export function slashActionMatches(action: SlashAction, query: string) {
 
 /** Whether the overview leads with actions instead of the workflow rows. */
 export function useSlashActionsEnabled(): boolean {
-  return useGet(featureSwitch$)[FeatureSwitchKey.SlashActions] === true;
+  return (
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.SlashActions] === true
+  );
 }
 
 /**
@@ -352,6 +354,7 @@ function useComposerActions(
   composer: ComposerSignals,
   leave: () => void,
 ): SlashAction[] {
+  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const openConnectors = useSet(composer.connector.openAddConnectorsDialog$);
   const insertText = useSet(composer.editor.insertText$);
@@ -369,7 +372,7 @@ function useComposerActions(
       keywords: ["connect", "connector", "integration"],
       run: () => {
         leave();
-        openConnectors();
+        detach(openConnectors(pageSignal), Reason.DomCallback);
       },
     },
     {
@@ -425,7 +428,10 @@ function useThreadActions(
       keywords: ["new", "chat"],
       run: () => {
         leave();
-        navigateToAgentChat(composer.agentId);
+        detach(
+          navigateToAgentChat(composer.agentId, undefined, pageSignal),
+          Reason.DomCallback,
+        );
       },
     },
     {

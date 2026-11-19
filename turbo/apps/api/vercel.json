@@ -5,10 +5,6 @@
   "installCommand": "cd ../.. && pnpm install",
   "crons": [
     {
-      "path": "/api/cron/aggregate-run-phase-timings",
-      "schedule": "0 17 * * *"
-    },
-    {
       "path": "/api/cron/reconcile-image-generations",
       "schedule": "* * * * *"
     },
@@ -123,10 +119,6 @@
     {
       "path": "/api/cron/steer-run-time-budget",
       "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/cron/get-started-rewards",
-      "schedule": "0 * * * *"
     }
   ]
 }

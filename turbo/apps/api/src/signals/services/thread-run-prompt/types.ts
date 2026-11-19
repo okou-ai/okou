@@ -25,7 +25,6 @@ export type PickedThreadInputEvent = Readonly<
       readonly thread: ChatThreadRequestRow;
       readonly preparation: ChatRunPreparationFacts;
       userMessage: ChatEventUserMessage | null;
-      canonicalModelSelection: typeof chatEvents.$inferSelect.modelSelection;
       sourceAutonomyBudget: typeof agentRuns.$inferSelect.autonomyBudget | null;
     }
 >;

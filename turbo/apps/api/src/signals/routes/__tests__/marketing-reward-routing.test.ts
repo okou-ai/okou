@@ -1,3 +1,5 @@
+import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
+import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { randomUUID } from "node:crypto";
 import { getStartedContract } from "@okouai/api-contracts/contracts/get-started";
 import { marketingRewardSettlementContract } from "@okouai/api-contracts/contracts/marketing-reward-settlement";
@@ -53,7 +55,7 @@ function financialClient() {
   );
 }
 
-test("keeps unselected users on App and recovers a selected check-in from the App ledger after a lost Marketing response", async () => {
+test("forwards authenticated campaign status and recovers a check-in from the ledger after a lost Marketing response", async () => {
   const api = setupApp({ context, routes: getStartedRoutes })(
     getStartedContract,
   );
@@ -63,15 +65,14 @@ test("keeps unselected users on App and recovers a selected check-in from the Ap
     userId: `user_${randomUUID()}`,
     orgId: `org_${randomUUID()}`,
   };
-  mockEnv(
-    "MARKETING_REWARDS_ROUTING",
-    JSON.stringify({ mode: "cohort", userIds: [selected.userId], orgIds: [] }),
-  );
-  mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-  expect((await accept(api.checkin({ headers }), [200])).body.status).toBe(
-    "granted",
-  );
-  const status = (await accept(api.status({ headers }), [200])).body;
+  const status = {
+    serverNow: "2026-11-17T08:00:00.000Z",
+    nextResetAt: "2026-11-18T00:00:00.000Z",
+    claimedToday: false,
+    checkinStreak: 0,
+    quests: [],
+    recentGrants: [],
+  };
   mocks.clerk.session(selected.userId, selected.orgId);
   expect((await api.status({ headers })).status).toBe(503);
   expect((await api.checkin({ headers })).status).toBe(503);
@@ -127,15 +128,6 @@ test("keeps unselected users on App and recovers a selected check-in from the Ap
   expect((await accept(api.checkin({ headers }), [200])).body).toStrictEqual(
     granted.body,
   );
-  mockEnv("MARKETING_REWARDS_ROUTING", undefined);
-  const final = (await accept(api.status({ headers }), [200])).body;
-  expect(final.quests).toContainEqual(
-    expect.objectContaining({
-      key: "checkin",
-      claimedCount: 1,
-      earnedCredits: 100,
-    }),
-  );
 });
 
 test("a Marketing acknowledgement cannot fabricate money and a retained pending request can be funded later exactly once", async () => {
@@ -149,7 +141,6 @@ test("a Marketing acknowledgement cannot fabricate money and a retained pending 
   };
   mocks.clerk.session(actor.userId, actor.orgId);
   mockNow(new Date("2026-11-17T09:00:00.000Z"));
-  mockEnv("MARKETING_REWARDS_ROUTING", JSON.stringify({ mode: "marketing" }));
   mockEnv("MARKETING_REWARDS_CAMPAIGN_SECRET", campaignSecret);
   server.use(
     http.post(`${origin}/api/internal/marketing/get-started/check-in`, () => {
@@ -158,6 +149,16 @@ test("a Marketing acknowledgement cannot fabricate money and a retained pending 
   );
   const pending = await accept(api.checkin({ headers }), [202]);
   expect(pending.body.status).toBe("pending");
+  expect(
+    (
+      await accept(
+        setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+          billingUsagePackCreditsContract,
+        ).get({ headers }),
+        [200],
+      )
+    ).body.bonusCredits,
+  ).toBe(0);
   await flushWaitUntilForTest();
   const source = consumer.received.find((event) => {
     return event.type === "checkin.requested";
@@ -180,14 +181,14 @@ test("a Marketing acknowledgement cannot fabricate money and a retained pending 
   expect((await accept(api.checkin({ headers }), [200])).body).toStrictEqual(
     granted.body,
   );
-  mockEnv("MARKETING_REWARDS_ROUTING", undefined);
   expect(
-    (await accept(api.status({ headers }), [200])).body.quests,
-  ).toContainEqual(
-    expect.objectContaining({
-      key: "checkin",
-      claimedCount: 1,
-      earnedCredits: 100,
-    }),
-  );
+    (
+      await accept(
+        setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+          billingUsagePackCreditsContract,
+        ).get({ headers }),
+        [200],
+      )
+    ).body.bonusCredits,
+  ).toBe(100);
 });

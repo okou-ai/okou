@@ -18,7 +18,6 @@ import { grantGetStartedClaim$ } from "./get-started-member-reward.service";
 import type { GetStartedClaimRow } from "./get-started-rewards.service";
 import { ensureGetStartedRewardWallet$ } from "./get-started-wallet.service";
 import { settleSlackReward$ } from "./slack-reward.service";
-import { getStartedRewardWriter } from "./marketing-reward-ownership";
 
 const readSource$ = command(
   async ({ set }, id: string, signal: AbortSignal) => {
@@ -92,7 +91,6 @@ const publishAutomaticReward$ = command(
     const at = nowDate();
     const publication = completedGetStartedQuestPublication(
       {
-        writer: "marketing",
         orgId: intent.orgId,
         userId: intent.actorUserId,
         questKey: intent.questKey,
@@ -159,7 +157,7 @@ const prepareClaim$ = command(
   },
 );
 
-/** Reuse the existing financial lease so an older reviewer cannot publish afterward. */
+/** Use the existing financial lease to arbitrate concurrent settlements. */
 const acquireClaim$ = command(
   async ({ set }, id: string, signal: AbortSignal) => {
     const at = nowDate();
@@ -201,11 +199,11 @@ const settleClaim$ = command(
       return;
     }
     if (args.intent.questKey === "slack") {
-      await set(settleSlackReward$, { claim, writer: "marketing" }, signal);
+      await set(settleSlackReward$, { claim }, signal);
     } else {
       await set(
         grantGetStartedClaim$,
-        { claim, rewardKey: args.intent.rewardKey, writer: "marketing" },
+        { claim, rewardKey: args.intent.rewardKey },
         signal,
       );
     }
@@ -214,17 +212,8 @@ const settleClaim$ = command(
 );
 
 type Resolution =
-  | { readonly kind: "missing" | "conflict" | "pending" }
+  | { readonly kind: "missing" | "conflict" }
   | { readonly kind: "receipt"; readonly claim: GetStartedClaimRow };
-
-function sourceRewardWriter(source: MarketingRewardSourceEvent) {
-  return source.type === "slack.oauth-authorized"
-    ? getStartedRewardWriter("org", source.orgId)
-    : getStartedRewardWriter(
-        "user",
-        source.version === 4 ? source.creatorUserId : source.userId,
-      );
-}
 
 /** App verifies provenance and financial uniqueness; Marketing owns campaign orchestration. */
 export const resolveMarketingRewardIntent$ = command(
@@ -250,9 +239,6 @@ export const resolveMarketingRewardIntent$ = command(
       (claim && ["granted", "ineligible", "rejected"].includes(claim.status))
     ) {
       return claim ? { kind: "receipt", claim } : { kind: "missing" };
-    }
-    if (sourceRewardWriter(source) !== "marketing") {
-      return { kind: "pending" };
     }
     await set(ensureGetStartedRewardWallet$, intent.orgId, signal);
     if (

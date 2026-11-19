@@ -29,16 +29,10 @@
     <string name="settings">설정</string>
     <string name="back">뒤로</string>
     <string name="appearance">화면 모드</string>
-    <string name="appearance_description">이 기기에서 Okou가 표시되는 방식을 선택하세요.</string>
     <string name="appearance_system">시스템 설정 따르기</string>
     <string name="appearance_light">밝게</string>
     <string name="appearance_dark">어둡게</string>
     <string name="on_this_device">이 기기</string>
-    <string name="appearance_local">화면 모드 설정은 이 기기에만 저장됩니다.</string>
-    <string name="appearance_loading">화면 모드 불러오는 중…</string>
-    <string name="appearance_saving">화면 모드 저장 중…</string>
-    <string name="appearance_read_failed">화면 모드를 불러올 수 없습니다. 다시 시도하세요.</string>
-    <string name="appearance_write_failed">화면 모드를 저장할 수 없습니다. 다시 시도하세요.</string>
     <string name="retry">다시 시도</string>
     <string name="auth_welcome">Okou에 오신 것을 환영합니다</string>
     <string name="auth_restoring">로그인 상태 복원 중…</string>
@@ -55,7 +49,6 @@
     <string name="auth_switch_workspace">워크스페이스 전환</string>
     <string name="auth_browser_unavailable">워크스페이스 설정을 열려면 브라우저를 설치하세요.</string>
     <string name="preferences_title">워크스페이스 환경설정</string>
-    <string name="preferences_description">색상 테마와 언어가 이 워크스페이스에 동기화됩니다.</string>
     <string name="preference_loading">환경설정 새로고침 중…</string>
     <string name="preference_saving">환경설정 저장 중…</string>
     <string name="preference_save_failed">저장을 확인할 수 없습니다. 다시 시도하거나 새로고침하세요.</string>
@@ -63,7 +56,6 @@
     <string name="preference_refresh">환경설정 새로고침</string>
     <string name="preference_color_theme">컬러 테마</string>
     <string name="preference_language">언어</string>
-    <string name="preference_timezone">시간대</string>
     <string name="palette_default">기본</string>
     <string name="palette_golden_hour">Golden hour</string>
     <string name="palette_citrus_spark">Citrus spark</string>
@@ -84,7 +76,6 @@
     <string name="language_hi_in">हिन्दी</string>
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
-    <string name="instructions_section">내 Okou</string>
     <string name="instructions_title">개인 지침</string>
     <string name="instructions_timing">저장한 변경 사항은 이후 작업에 적용됩니다.</string>
     <string name="instructions_loading">지침 불러오는 중…</string>
@@ -148,4 +139,5 @@
     <string name="updates_android_unsupported">이 업데이트에는 최신 Android 시스템이 필요합니다.</string>
     <string name="realtime_connecting">실시간 업데이트에 연결 중…</string>
     <string name="realtime_unavailable">실시간 업데이트를 사용할 수 없습니다. 수동으로 새로고침할 수 있습니다.</string>
+    <string name="settings_account">계정</string>
 </resources>

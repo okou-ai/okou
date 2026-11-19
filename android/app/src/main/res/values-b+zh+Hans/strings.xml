@@ -28,17 +28,11 @@
     <string name="output_catching_up">正在同步已保存的消息。已收到的文本会保留。</string>
     <string name="settings">设置</string>
     <string name="back">返回</string>
-    <string name="appearance">外观</string>
-    <string name="appearance_description">选择 Okou 在此设备上的外观。</string>
+    <string name="appearance">显示模式</string>
     <string name="appearance_system">跟随系统</string>
     <string name="appearance_light">浅色</string>
     <string name="appearance_dark">深色</string>
     <string name="on_this_device">此设备</string>
-    <string name="appearance_local">外观设置仅保存在此设备上。</string>
-    <string name="appearance_loading">正在加载外观…</string>
-    <string name="appearance_saving">正在保存外观…</string>
-    <string name="appearance_read_failed">无法加载外观设置，请重试。</string>
-    <string name="appearance_write_failed">无法保存外观设置，请重试。</string>
     <string name="retry">重试</string>
     <string name="auth_welcome">欢迎使用 Okou</string>
     <string name="auth_restoring">正在恢复登录状态…</string>
@@ -54,8 +48,7 @@
     <string name="auth_workspace">工作区</string>
     <string name="auth_switch_workspace">切换工作区</string>
     <string name="auth_browser_unavailable">请安装浏览器以打开工作区设置页面。</string>
-    <string name="preferences_title">工作区偏好设置</string>
-    <string name="preferences_description">配色和语言会与当前工作区同步。</string>
+    <string name="preferences_title">共享偏好</string>
     <string name="preference_loading">正在刷新偏好设置…</string>
     <string name="preference_saving">正在保存偏好设置…</string>
     <string name="preference_save_failed">无法确认是否保存成功，请重试或刷新。</string>
@@ -63,7 +56,6 @@
     <string name="preference_refresh">刷新偏好设置</string>
     <string name="preference_color_theme">配色主题</string>
     <string name="preference_language">语言</string>
-    <string name="preference_timezone">时区</string>
     <string name="palette_default">默认</string>
     <string name="palette_golden_hour">黄昏时分</string>
     <string name="palette_citrus_spark">柑橘气泡</string>
@@ -84,7 +76,6 @@
     <string name="language_hi_in">हिन्दी</string>
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
-    <string name="instructions_section">我的 Okou</string>
     <string name="instructions_title">个人指令</string>
     <string name="instructions_timing">保存的更改会应用于之后的任务。</string>
     <string name="instructions_loading">正在加载个人指令…</string>
@@ -148,4 +139,5 @@
     <string name="updates_android_unsupported">此更新需要更新版本的 Android 系统。</string>
     <string name="realtime_connecting">正在连接实时更新…</string>
     <string name="realtime_unavailable">实时更新暂不可用，你仍可手动刷新。</string>
+    <string name="settings_account">账户</string>
 </resources>

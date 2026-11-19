@@ -96,7 +96,11 @@ async function setupPdfChat(
     ],
   });
   for (const url of Object.values(platformMessagePdfFontUrls)) {
-    context.mocks.http.get(url, ({ request }) => {
+    const filename = new URL(url, "https://app.okou.ai").pathname
+      .split("/")
+      .at(-1);
+    context.mocks.http.get(`*/${filename}`, ({ request }) => {
+      expect(new URL(request.url).origin).toBe(location.origin);
       return loadFont(request);
     });
   }
@@ -310,7 +314,9 @@ async function exportRenderedPdf(markdown: string) {
   });
   const browser = context.mocks.browser.blobDownload();
   await setupPdfChat(`${ANSWER}\n\n${markdown}`, async (request) => {
-    const filename = fontFiles.get(request.url);
+    const filename = [...fontFiles].find(([url]) => {
+      return new URL(url, location.href).href === request.url;
+    })?.[1];
     if (!filename) {
       throw new Error("Unexpected PDF font request");
     }

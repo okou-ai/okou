@@ -1,6 +1,7 @@
 package ai.okou.android
 
 import ai.okou.android.api.generated.UserPreferencesColorTheme
+import ai.okou.android.api.generated.UserPreferencesTheme
 import android.content.Context
 import android.content.res.Configuration
 import android.util.TypedValue
@@ -21,6 +22,13 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+
+internal fun UserPreferencesTheme.resolveDark(systemDark: Boolean): Boolean =
+    when (this) {
+        UserPreferencesTheme.SYSTEM -> systemDark
+        UserPreferencesTheme.LIGHT -> false
+        UserPreferencesTheme.DARK -> true
+    }
 
 /** Colors follow Web semantic roles; Android owns control geometry and interaction. */
 @Composable

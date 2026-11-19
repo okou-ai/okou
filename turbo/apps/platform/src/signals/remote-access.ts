@@ -215,9 +215,13 @@ export const changeDialogRemoteAccess$ = command(
       const ui = get(signals.connector.connectorUiState$);
       const key = `${protocol}:${connectionId}`;
       if (!ui.remoteAccessEditedHosts.includes(key)) {
-        set(signals.connector.updateConnectorUiState$, {
-          remoteAccessEditedHosts: [...ui.remoteAccessEditedHosts, key],
-        });
+        await set(
+          signals.connector.updateConnectorUiState$,
+          {
+            remoteAccessEditedHosts: [...ui.remoteAccessEditedHosts, key],
+          },
+          signal,
+        );
       }
       if (!signals.threadId) {
         set(

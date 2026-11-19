@@ -3,6 +3,7 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed } from "ccstate";
 import { notFound } from "../../lib/error";
+import { runPhaseMarkEvent } from "../../lib/run-phase-mark";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { apiStartTime$, setResHeader$ } from "../context/hono";
@@ -23,12 +24,9 @@ const markBody$ = bodyResultOf(runPhaseTimingContract.mark);
 const mark$ = command(async ({ get, set }, signal: AbortSignal) => {
   const receivedAt = new Date(get(apiStartTime$));
   set(setResHeader$, "Cache-Control", "no-store");
-  if (
-    !isFeatureEnabled(
-      FeatureSwitchKey.ArtifactGenerationTiming,
-      await get(features$),
-    )
-  ) {
+  const features = await get(features$);
+  signal.throwIfAborted();
+  if (!isFeatureEnabled(FeatureSwitchKey.ArtifactThreePointTiming, features)) {
     return notFound("Run phase timing is unavailable");
   }
   const body = await get(markBody$);
@@ -41,24 +39,9 @@ const mark$ = command(async ({ get, set }, signal: AbortSignal) => {
     throw new Error("Phase marks require Run authentication");
   }
   const mark = body.data;
-  const event = {
-    _time: receivedAt.toISOString(),
-    schema_version: 1,
-    type: "run_phase_mark",
-    run_id: auth.runId,
-    user_id: auth.userId,
-    org_id: auth.orgId,
-    phase: mark.phase,
-    ...(mark.phase === "generation-start"
-      ? {
-          generation_kind: mark.kind,
-          research_skipped: mark.skipResearch,
-        }
-      : {}),
-  };
+  const event = runPhaseMarkEvent(auth, mark, receivedAt);
   const telemetrySignal = AbortSignal.any([signal, AbortSignal.timeout(5000)]);
-  // Acceptance owns one bounded attempt, not delivery. Preserve legal raw marks;
-  // aggregation resolves duplicates, ordering and the Run completion boundary.
+  // Acceptance owns one bounded attempt, not delivery.
   waitUntil(
     settleIncludingAbort(
       ingestAxiomDirect(getDatasetName("web-logs"), [event], telemetrySignal),
@@ -78,7 +61,7 @@ export const runPhaseTimingRoutes: readonly RouteEntry[] = [
         accept: ["agent"],
         requireOrganization: true,
         missingOrganizationStatus: 401,
-        requiredCapability: "run-timing:write",
+        acceptAnySandboxCapability: true,
       },
       mark$,
     ),

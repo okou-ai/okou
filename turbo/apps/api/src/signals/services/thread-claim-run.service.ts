@@ -1,6 +1,6 @@
+import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
 import { loadEmailSourceMessageContext$ } from "./email-source-message.service";
-import { scheduleUserWidgetRefresh$ } from "./ios-widget-push.service";
 import { STAFF_SINGLE_AGENT_ORG_ID } from "@okouai/core/single-agent-migration";
 import { buildEmailPrompt } from "./email-prompt";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
@@ -10,7 +10,6 @@ import { performance } from "node:perf_hooks";
 import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   DEFAULT_PROFILE,
-  type ConnectorRuntimeTargetRegistration,
 } from "@okouai/api-contracts/contracts/runners";
 import {
   autoRunBillingProvider,
@@ -37,12 +36,9 @@ import type {
   ThreadModelError,
   ThreadModelSelection,
 } from "./thread-model.signals";
-import type {
-  FeishuThreadContext,
-  SlackThreadContext,
-  TeamsThreadContext,
-  TelegramThreadContext,
-} from "./thread-run-context.service";
+import { feishuDeliveryFromContext } from "./feishu-queued-launch-context.service";
+import type { SlackThreadContext } from "./slack-queued-launch-context.service";
+import type { TelegramThreadContext } from "./telegram-queued-launch-context.service";
 import {
   createPromptAndSkillVolumesSignals,
   type PromptAndSkillVolumes,
@@ -104,7 +100,6 @@ import {
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import type {
   AgentRunPreCreateSource,
-  AgentRunRequestAgent,
   ResolvedModelProviderEnvironment,
   InternalRunCallback,
 } from "./agent-run-contracts";
@@ -164,11 +159,6 @@ import {
   pendingLaunchClaimProducerStatements,
 } from "./pending-launch-claim-plan";
 import { pendingLaunchInsertSql } from "./pending-launch-sql";
-import {
-  checkCatalogRunRoute,
-  checkOrgPlanRunAdmission,
-  type RunAdmissionInput,
-} from "./run-admission.service";
 
 import { agentphoneDeliveryTargetSchema } from "./agentphone-chat-callback-payload";
 
@@ -195,19 +185,14 @@ import type { ChatThreadContinuation } from "./chat-session-continuity.service";
 
 import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-context.service";
 import { WechatLaunchUnavailableError } from "./wechat-context.service";
-import { isMemberSubscriptionRoute } from "./effective-model-route.service";
 
-import { recordGetStartedWorkflowSql } from "./get-started-workflow.service";
 import { workflowRewardRunEventInsert } from "./workflow-reward-source-publication";
 import { formatIntegrationRunError$ } from "./integration-run-errors.service";
 
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
-import {
-  getFrameworkForType,
-  isBuiltInModelProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { getFrameworkForType } from "@okouai/api-contracts/contracts/model-providers";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import {
   type FeatureSwitchContext,
@@ -278,7 +263,7 @@ import { isPersonalSubscriptionProviderType } from "./model-provider-account.ser
 import type { ModelFirstPin } from "./model-selection.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
-import { teamsDeliveryTargetSchema } from "./teams-chat-callback-payload";
+import { teamsDeliveryFromContext } from "./teams-queued-launch-context.service";
 
 import { telegramDeliveryTargetSchema } from "./telegram-chat-callback-payload";
 
@@ -440,43 +425,6 @@ function queuedSlackDelivery(context: NonNullable<SlackThreadContext>) {
     threadTs: context.threadTs,
     ...(context.routeThreadTs ? { routeThreadTs: context.routeThreadTs } : {}),
   };
-}
-
-function queuedFeishuDelivery(context: NonNullable<FeishuThreadContext>) {
-  return {
-    installationId: context.installationId,
-    connectionId: context.connectionId,
-    chatId: context.chatId,
-    messageId: context.messageId,
-    threadId: context.routeThreadId,
-    replyInThread: context.replyInThread,
-    ...(context.reactionId ? { reactionId: context.reactionId } : {}),
-    files: [...context.messageFiles],
-  };
-}
-
-function queuedTeamsDelivery(context: NonNullable<TeamsThreadContext>) {
-  return teamsDeliveryTargetSchema.parse({
-    tenantId: context.tenantId,
-    tenantName: context.tenantName,
-    teamId: context.teamId,
-    teamName: context.teamName,
-    channelId: context.channelId,
-    conversationId: context.conversationId,
-    conversationType: context.conversationType,
-    threadId: context.threadId,
-    activityId: context.activityId,
-    serviceUrl: context.serviceUrl,
-    connectionId: context.connectionId,
-    teamsUserId: context.senderUserId,
-    teamsUserDisplayName: context.senderDisplayName,
-    teamsUserPrincipalName: context.senderPrincipalName,
-    botId: context.installationBotId,
-    botName: context.installationBotName,
-    files: context.messageFiles.map((file) => {
-      return { fileId: file.fileId, ...file.payload };
-    }),
-  });
 }
 
 function queuedTelegramDelivery(context: NonNullable<TelegramThreadContext>) {
@@ -1512,7 +1460,7 @@ export function createThreadClaimRunObjects(
           return {
             triggerSource: context.platform,
             delivery: {
-              feishuDelivery: queuedFeishuDelivery(context),
+              feishuDelivery: feishuDeliveryFromContext(context),
             },
           };
         }
@@ -1524,7 +1472,7 @@ export function createThreadClaimRunObjects(
           return {
             triggerSource: "teams",
             delivery: {
-              teamsDelivery: queuedTeamsDelivery(context),
+              teamsDelivery: teamsDeliveryFromContext(context),
             },
           };
         }
@@ -1976,25 +1924,6 @@ export function createThreadClaimRunObjects(
       });
     },
   );
-  const recordQueuedWorkflowReward$ = command(
-    async (
-      { set },
-      args: AssembleWorkflowAutomationRunArgs,
-      signal: AbortSignal,
-    ) => {
-      const statement = recordGetStartedWorkflowSql(
-        {
-          orgId: args.due.automation.orgId,
-          userId: args.due.automation.ownerUserId,
-          workflowId: args.due.automation.workflowId,
-          sourceEventId: args.queueEventId,
-        },
-        nowDate(),
-      );
-      await set(writeDb$).execute(statement);
-      signal.throwIfAborted();
-    },
-  );
   const automationModel$ = computed(
     async (get): Promise<ThreadModelSelection | RunFailure> => {
       if (!(await get(automationExecutionInput$))) {
@@ -2003,7 +1932,13 @@ export function createThreadClaimRunObjects(
           message: "Workflow automation no longer exists",
         };
       }
-      const model = await get(threadContext.modelSelection$);
+      const model = await get(threadContext.dispatchTiming$).measure(
+        "api_dispatch_pre_create_agent_workflow_automation_resolve_model_context",
+        "nested",
+        () => {
+          return get(threadContext.modelSelection$);
+        },
+      );
       return "status" in model
         ? {
             kind: "run_error",
@@ -2105,11 +2040,7 @@ export function createThreadClaimRunObjects(
     },
   );
   const prepareAutomationRun$ = command(
-    async (
-      { get },
-      args: AssembleWorkflowAutomationRunArgs,
-      signal: AbortSignal,
-    ): Promise<AssembleWorkflowAutomationRunArgs | null> => {
+    async ({ get }, signal: AbortSignal): Promise<void> => {
       const assembly = await get(assembleWorkflowAutomationRun$);
       signal.throwIfAborted();
       if (assembly.kind === "assembled") {
@@ -2119,9 +2050,6 @@ export function createThreadClaimRunObjects(
           now(),
         );
       }
-      // An assembled launch records its independent Get Started reward; the
-      // caller runs it alongside the launch reads rather than ahead of them.
-      return assembly.kind === "assembled" ? args : null;
     },
   );
   // A head whose automation input can no longer be read is rejected from its
@@ -2235,29 +2163,6 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  /** Resolve the automation's captured model context before launch preparation. */
-  const resolveAutomationModelSnapshot$ = command(
-    async ({ get }, signal: AbortSignal): Promise<void> => {
-      const args = await get(automationExecutionInput$);
-      signal.throwIfAborted();
-      if (!args) {
-        return;
-      }
-      const timing = get(threadContext.dispatchTiming$);
-      const startedAt = performance.now();
-      await (async () => {
-        await get(automationModel$);
-      })().finally(() => {
-        timing.recordDuration(
-          "api_dispatch_pre_create_agent_workflow_automation_resolve_model_context",
-          "nested",
-          performance.now() - startedAt,
-          now(),
-        );
-      });
-      signal.throwIfAborted();
-    },
-  );
   const automationAssembly$ = computed(
     async (get): Promise<ChatQueueRunAssembly> => {
       const early = await get(earlyAutomationAssembly$);
@@ -2305,6 +2210,16 @@ export function createThreadClaimRunObjects(
   });
   const isAutomation$ = computed(async (get) => {
     return (await get(head$)).contextType === "automation";
+  });
+  const inputResources$ = computed(async (get) => {
+    if (await get(isAutomation$)) {
+      await Promise.allSettled([
+        get(automationSourceBudget$),
+        get(automationModel$),
+      ]);
+      return;
+    }
+    await get(threadContext.inputResources$);
   });
   const assembly$ = computed(async (get) => {
     return get(
@@ -2377,27 +2292,25 @@ export function createThreadClaimRunObjects(
       );
     });
   });
-  const selectedAgent$ = computed(
-    async (get): Promise<AgentRunRecord | null> => {
-      const { timing } = await get(selectedIdentity$);
-      const agentId = await get(selectedAgentId$);
-      if (!agentId) {
-        return null;
-      }
-      const startedAt = performance.now();
-      return await (async () => {
-        // Authorization waits only for the context's Agent snapshot.
-        return await get(bootstrap.agent$);
-      })().finally(() => {
-        timing.recordDuration(
-          "api_dispatch_pre_create_agent_load_agent",
-          "nested",
-          performance.now() - startedAt,
-          now(),
-        );
-      });
-    },
-  );
+  const selectedAgent$ = computed(async (get) => {
+    const { timing } = await get(selectedIdentity$);
+    const agentId = await get(selectedAgentId$);
+    if (!agentId) {
+      return null;
+    }
+    const startedAt = performance.now();
+    return await (async () => {
+      // Authorization waits only for the context's Agent snapshot.
+      return await get(bootstrap.agent$);
+    })().finally(() => {
+      timing.recordDuration(
+        "api_dispatch_pre_create_agent_load_agent",
+        "nested",
+        performance.now() - startedAt,
+        now(),
+      );
+    });
+  });
   const runPreparation$ = computed(
     async (get): Promise<ThreadRunPreparation | CreateRunErrorResult> => {
       const [agentResult, model] = await Promise.all([
@@ -2506,6 +2419,7 @@ export function createThreadClaimRunObjects(
       return {
         agentId: agent.id,
         orgId: agent.orgId,
+        agentInstructions: agent.instructionsBundle,
       };
     },
   );
@@ -2590,7 +2504,6 @@ export function createThreadClaimRunObjects(
     return {
       framework: modelProviderFramework(modelProvider),
       modelProvider,
-      connectorRuntimeTargets: connector.environment.runtimeTargets,
       connectorEnvironment: connector.environment,
       connectorNetworkPolicyInputs: connector.networkPolicyInputs,
       modelProviderPermissions: providerPermissions.ok,
@@ -2643,7 +2556,6 @@ export function createThreadClaimRunObjects(
       content,
       resolved,
       modelProvider,
-      connectorRuntimeTargets: runtimeContext.connectorRuntimeTargets,
       connectorEnvironment: runtimeContext.connectorEnvironment,
       connectorNetworkPolicyInputs: runtimeContext.connectorNetworkPolicyInputs,
       modelProviderPermissions: runtimeContext.modelProviderPermissions,
@@ -2673,7 +2585,7 @@ export function createThreadClaimRunObjects(
       return notFound("Agent not found");
     }
     if (
-      agent.visibility === "private" &&
+      agent.visibility !== "public" &&
       agent.owner !== identity.owner.userId
     ) {
       return agentRunsCreateForbidden(
@@ -2682,72 +2594,6 @@ export function createThreadClaimRunObjects(
     }
     return undefined;
   });
-  const checkRunAdmission$ = command(
-    async ({ get }, input: RunAdmissionInput, signal: AbortSignal) => {
-      signal.throwIfAborted();
-      const identity = bootstrap;
-      const [models, memberModels] = await Promise.all([
-        get(identity.modelFacts$),
-        get(identity.memberModels$),
-      ]);
-      signal.throwIfAborted();
-      const personalSubscription = isMemberSubscriptionRoute({
-        catalog: input.catalog,
-        member: memberModels.member,
-        model: input.selectedModel,
-        providerType: input.modelProviderType,
-      });
-      const [official, target] = await Promise.all([
-        get(officialWorkflow$),
-        get(threadContext.automationTarget$),
-      ]);
-      signal.throwIfAborted();
-      const freeOfficialRun =
-        !isRouteError(official) &&
-        official !== undefined &&
-        target !== null &&
-        target.workflow.officialDefinitionName !== null &&
-        target.automation.officialBlueprintKey !== null;
-      if (!input.enforceBuiltInCredits || freeOfficialRun) {
-        return (
-          checkOrgPlanRunAdmission({
-            ...input,
-            capabilities: models.capabilities,
-            personalSubscription,
-          }) ?? null
-        );
-      }
-      const balance = await get(identity.credits$);
-      signal.throwIfAborted();
-      const capabilities = models.capabilities;
-      const availability =
-        capabilities && balance ? { ...capabilities, ...balance } : null;
-      const routeFailure = checkCatalogRunRoute(input.catalog, input);
-      if (routeFailure) {
-        return routeFailure;
-      }
-      if (!availability) {
-        return insufficientCredits();
-      }
-      const failure = checkOrgPlanRunAdmission({
-        ...input,
-        capabilities: availability,
-        personalSubscription,
-      });
-      if (failure) {
-        return failure;
-      }
-      if (
-        !isBuiltInModelProviderType(input.modelProviderType) ||
-        availability.usagePackCredits > 0 ||
-        availability.spendableCredits > 0
-      ) {
-        return null;
-      }
-      return insufficientCredits();
-    },
-  );
-
   const directSendInsufficientCreditsMessage$ = computed(async (get) => {
     const capabilities = await get(bootstrap.plan$);
     const appUrl = env("APP_URL");
@@ -3018,14 +2864,13 @@ export function createThreadClaimRunObjects(
         },
         runner: {
           workflowAutomationId: args.agentRunMetadata.workflowAutomationId,
-          agentId: context.resolved.agentId,
+          agentInstructions: context.resolved.agentInstructions,
           protectedMountPaths: context.protectedMountPaths,
           nativeContinuation:
             args.threadContinuation.executionSnapshot.nativeContinuation,
           realAgentInPreview: args.realAgentInPreview,
           profile: launchSnapshot.runnerProfile,
           featureSwitchContext: context.featureSwitchContext,
-          connectorRuntimeTargets: context.connectorRuntimeTargets,
           facts: {
             skillRoot: context.skillRoot,
             skillMounts: context.skillMounts,
@@ -3108,13 +2953,6 @@ export function createThreadClaimRunObjects(
       if (!args || isRouteError(args)) {
         return args;
       }
-      const customWorkflowSelection = {
-        agentId: args.agentId,
-        ...(args.workflowAutomationId === undefined
-          ? {}
-          : { automationId: args.workflowAutomationId }),
-        protectedMountPaths: [...args.protectedMountPaths],
-      };
       const officialMountPaths = args.facts.officialWorkflowBundles.map(
         ({ mountPath }) => {
           return mountPath;
@@ -3143,6 +2981,7 @@ export function createThreadClaimRunObjects(
       ]);
       signal.throwIfAborted();
       const executionPackages = selectExecutionPackages(packageSources, {
+        agentInstructions: args.agentInstructions,
         skillRoot: args.facts.skillRoot,
         protectedMountPaths: [
           ...args.protectedMountPaths,
@@ -3160,7 +2999,6 @@ export function createThreadClaimRunObjects(
       const okouToken = set(prepareOkouToken$, tokenInput, signal);
       return prepareRunnerLaunch({
         args,
-        customWorkflowSelection,
         executionPackages,
         okouToken,
         disabledPaidTools,
@@ -3208,68 +3046,32 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const checkClaimAdmission$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      if (!(await get(selectionInput$))) {
-        signal.throwIfAborted();
-        return undefined;
-      }
-      const [input, model] = await Promise.all([
-        get(selectedRunInput$),
-        get(modelRoute$),
-      ]);
-      signal.throwIfAborted();
-      if (isRouteError(model)) {
-        if (
-          model.body.error.code === "PROVIDER_UNAVAILABLE" &&
-          isBuiltInModelProviderType(input.command.modelProvider)
-        ) {
-          const credits = await set(
-            checkRunAdmission$,
-            {
-              catalog: await get(claimCatalog$),
-              orgId: claim.orgId,
-              userId: input.command.owner.userId,
-              modelProviderType: "built-in",
-              selectedModel: input.command.selectedModel,
-              enforceBuiltInCredits: true,
-            },
-            signal,
-          );
-          if (credits) {
-            return credits;
-          }
-        }
-        return model;
-      }
-      const rejection = await set(
-        checkRunAdmission$,
-        {
-          catalog: await get(claimCatalog$),
-          orgId: claim.orgId,
-          userId: input.command.owner.userId,
-          modelProviderType: model.type,
-          selectedModel: model.selectedModel,
-          enforceBuiltInCredits: isBuiltInModelProviderType(model.type),
-        },
-        signal,
-      );
-      if (rejection || input.command.codexServiceTier !== "ultrafast") {
-        return rejection;
-      }
-      const context = await get(contentContext$);
-      signal.throwIfAborted();
-      if (isRouteError(context)) {
-        return context;
-      }
-      return isFeatureEnabled(
-        FeatureSwitchKey.CodexSubscriptionUltrafast,
-        context.featureSwitchContext,
-      )
-        ? null
-        : badRequestMessage("Ultrafast is unavailable in this workspace");
-    },
-  );
+  const checkClaimAdmission$ = command(async ({ get }, signal: AbortSignal) => {
+    const input = await get(selectionInput$);
+    signal.throwIfAborted();
+    if (!input) {
+      return undefined;
+    }
+    const model = await get(modelRoute$);
+    signal.throwIfAborted();
+    if (isRouteError(model)) {
+      return model;
+    }
+    if (input.command.codexServiceTier !== "ultrafast") {
+      return null;
+    }
+    const context = await get(contentContext$);
+    signal.throwIfAborted();
+    if (isRouteError(context)) {
+      return context;
+    }
+    return isFeatureEnabled(
+      FeatureSwitchKey.CodexSubscriptionUltrafast,
+      context.featureSwitchContext,
+    )
+      ? null
+      : badRequestMessage("Ultrafast is unavailable in this workspace");
+  });
   const authorizeIdentity$ = computed(async (get) => {
     const identityInput = await get(identityInput$);
     if (!identityInput) {
@@ -3448,21 +3250,17 @@ export function createThreadClaimRunObjects(
   /** Validate the automation source before starting shared launch reads. */
   const prepareLaunchResources$ = command(
     async ({ get, set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
-      let rewardArgs: AssembleWorkflowAutomationRunArgs | null = null;
       if (head.contextType === "automation") {
         const launch = await set(prepareAutomationLaunch$, head, signal);
         signal.throwIfAborted();
         if (launch.kind === "rejected") {
           return { kind: "rejected" as const, assembly: launch.assembly };
         }
-        rewardArgs = await set(prepareAutomationRun$, launch.args, signal);
+        await set(prepareAutomationRun$, signal);
         signal.throwIfAborted();
       }
-      const [runner, , callbackRows, assembly, identity] = await Promise.all([
+      const [runner, callbackRows, assembly, identity] = await Promise.all([
         set(prepareRunnerResources$, signal),
-        rewardArgs
-          ? set(recordQueuedWorkflowReward$, rewardArgs, signal)
-          : undefined,
         get(callbackRows$),
         get(assembly$),
         get(runIdentity$),
@@ -3479,10 +3277,6 @@ export function createThreadClaimRunObjects(
   );
   const prepareClaimResources$ = command(
     async ({ get, set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
-      if (head.contextType === "automation") {
-        await set(resolveAutomationModelSnapshot$, signal);
-        signal.throwIfAborted();
-      }
       const [admission, launch] = await Promise.all([
         set(checkClaimAdmission$, signal),
         set(prepareLaunchResources$, head, signal),
@@ -3718,7 +3512,7 @@ export function createThreadClaimRunObjects(
         runId: identity.runId,
         runnerGroup: launch.runnerGroup,
         profile: launch.profile,
-        dimensions: timingDimensionsForCreateArgs(input.args),
+        dimensions: input.args.timingDimensions,
         triggerSource: input.context.content.triggerSource,
       });
       const preparedCommit: PreparedThreadLaunchCommit = {
@@ -3788,7 +3582,7 @@ export function createThreadClaimRunObjects(
   );
 
   const publishPendingRun$ = command(
-    async ({ set }, pending: PendingClaimRun, signal: AbortSignal) => {
+    async (_context, pending: PendingClaimRun, signal: AbortSignal) => {
       signal.throwIfAborted();
       // Immediate and queued picks have committed their active-run slot here.
       // Pending shell approvals must re-read chat_busy before the runner starts.
@@ -3797,7 +3591,6 @@ export function createThreadClaimRunObjects(
       );
       signal.throwIfAborted();
       // The committed pending Run is the active indicator's only start edge.
-      set(scheduleUserWidgetRefresh$, pending.context.head.userId);
       await publishChatIndicatorsChangedSafely({
         userId: pending.context.head.userId,
         orgId: pending.context.head.orgId,
@@ -3975,7 +3768,7 @@ export function createThreadClaimRunObjects(
   return {
     threadHasActiveRun$,
     threadResources$,
-    inputResources$: threadContext.inputResources$,
+    inputResources$,
     hasFirstPickableChatEvent$,
     orgHasCapacity$,
     admittedLaunch$,
@@ -3984,8 +3777,6 @@ export function createThreadClaimRunObjects(
     finishPendingRun$,
   };
 }
-
-type AgentRunRecord = AgentRunRequestAgent;
 
 // --- Thread-private implementation: launch persistence ---
 
@@ -4013,10 +3804,9 @@ interface PreparedRunnerLaunch {
   readonly runnerGroup: string;
   readonly profile: string;
   readonly reuseKey: string;
-  readonly facts: Omit<AdmittedExecutionFacts, "connectorRuntimeTargets">;
+  readonly facts: AdmittedExecutionFacts;
   readonly runStorageMounts: readonly PersistedStorageMount[];
   readonly memoryMounts: readonly AcceptedMemoryMount[];
-  readonly connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[];
 }
 
 type AgentRunCallbackInsert = typeof agentRunCallbacks.$inferInsert;
@@ -4091,15 +3881,6 @@ interface ThreadLaunchCommitInput {
   readonly callbackRows: readonly AgentRunCallbackInsert[];
   readonly launch: PreparedRunnerLaunch;
   readonly timing: ApiDispatchTimingCollector;
-}
-
-function timingDimensionsForCreateArgs(args: {
-  readonly timingDimensions: ApiDispatchTimingDimensions;
-}): ApiDispatchTimingDimensions {
-  return {
-    run_preparation_retry_count: "0",
-    ...args.timingDimensions,
-  };
 }
 
 interface LaunchRunRowsArgs {
@@ -4281,7 +4062,7 @@ function prepareAtomicLaunchPersistence(
     diagnosticRegistrationPayload:
       agentRunConnectorDiagnosticRegistrationPayloadSchema.parse({
         version: 1,
-        targets: commit.launch.connectorRuntimeTargets,
+        targets: commit.launch.facts.connectorEnvironment.runtimeTargets,
       }),
   };
 }
@@ -4445,7 +4226,7 @@ function recordAtomicLaunchTiming(args: {
     runId: args.committed.run.id,
     runnerGroup: args.committed.admittedLaunch.runnerGroup,
     profile: args.committed.admittedLaunch.profile,
-    dimensions: timingDimensionsForCreateArgs(args.createArgs),
+    dimensions: args.createArgs.timingDimensions,
     triggerSource: args.createArgs.triggerSource,
   });
 }
@@ -4486,12 +4267,13 @@ interface ThreadRunCommand {
 interface ThreadExecution {
   readonly agentId: string;
   readonly orgId: string;
+  readonly agentInstructions: ContentBundle | null;
 }
 
 /** The Thread facts needed to prepare one Runner launch. */
 interface ThreadRunnerFacts {
   readonly workflowAutomationId: string | undefined;
-  readonly agentId: string;
+  readonly agentInstructions: ContentBundle | null;
   readonly protectedMountPaths: readonly string[];
   readonly facts: Pick<
     AdmittedExecutionFacts,
@@ -4512,13 +4294,11 @@ interface ThreadRunnerFacts {
   readonly apiStartTime: number | undefined;
   readonly chatThreadId: string;
   readonly featureSwitchContext: FeatureSwitchContext;
-  readonly connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[];
 }
 
 /** Capture selectors and request receipts; admitted preparation assembles runtime input. */
 function prepareRunnerLaunch(input: {
   readonly args: ThreadRunnerFacts;
-  readonly customWorkflowSelection: AdmittedExecutionFacts["customWorkflowSelection"];
   readonly executionPackages: AdmittedExecutionFacts["executionPackages"];
   readonly okouToken: string;
   readonly disabledPaidTools: readonly PaidToolId[];
@@ -4528,14 +4308,13 @@ function prepareRunnerLaunch(input: {
     ...args.facts,
     executionPackages: input.executionPackages,
     nativeContinuation: args.nativeContinuation,
-    customWorkflowSelection: input.customWorkflowSelection,
     okouToken: input.okouToken,
     disabledPaidTools: input.disabledPaidTools,
     realAgentInPreview: args.realAgentInPreview || undefined,
     apiStartTime: args.apiStartTime,
     featureFlags: {
-      [FeatureSwitchKey.ArtifactGenerationTiming]: isFeatureEnabled(
-        FeatureSwitchKey.ArtifactGenerationTiming,
+      [FeatureSwitchKey.ArtifactThreePointTiming]: isFeatureEnabled(
+        FeatureSwitchKey.ArtifactThreePointTiming,
         args.featureSwitchContext,
       ),
       [FeatureSwitchKey.SingleAgent]: isFeatureEnabled(
@@ -4552,7 +4331,6 @@ function prepareRunnerLaunch(input: {
     runnerGroup: preparedRunnerGroup(),
     profile: args.profile,
     reuseKey: runnerReuseKey(args.chatThreadId),
-    connectorRuntimeTargets: args.connectorRuntimeTargets,
     facts,
   };
 }
@@ -4565,18 +4343,6 @@ function forbidden(message: string): ApiErrorResponse<403, "FORBIDDEN"> {
   return {
     status: 403,
     body: { error: { message, code: "FORBIDDEN" } },
-  };
-}
-
-function insufficientCredits(): ApiErrorResponse<402, "INSUFFICIENT_CREDITS"> {
-  return {
-    status: 402,
-    body: {
-      error: {
-        message: "Insufficient credits. Please add credits to continue.",
-        code: "INSUFFICIENT_CREDITS",
-      },
-    },
   };
 }
 
@@ -4757,7 +4523,7 @@ function flushQueueFirstClaimLostTiming(args: {
     runnerGroup: args.launch.runnerGroup,
     profile: args.launch.profile,
     dimensions: {
-      ...timingDimensionsForCreateArgs(args.createArgs),
+      ...args.createArgs.timingDimensions,
       queue_first_launch_outcome: "claim_lost",
     },
     triggerSource: args.createArgs.triggerSource,
@@ -4869,12 +4635,7 @@ function admittedRunLaunch(
       appendSystemPrompt: rows.content.appendSystemPrompt,
       vars: rows.content.vars,
       modelProvider: rows.modelSelection.modelProviderType,
-      modelProviderId: metadata.modelProviderId,
-      modelProviderAccountIdentity: rows.modelProvider.accountIdentity,
       selectedModel: rows.modelSelection.selectedModel,
-      modelRuntimeProvider: metadata.modelRuntimeProvider,
-      modelRuntimeModel: metadata.modelRuntimeModel,
-      builtInModelKeyId: metadata.builtInModelKeyId,
       modelUsageProvider: metadata.modelUsageProvider,
       modelLongContextMinTotalInputTokens:
         metadata.modelLongContextMinTotalInputTokens,
@@ -4884,8 +4645,10 @@ function admittedRunLaunch(
     memoryMounts: args.launch.memoryMounts,
     facts: {
       ...args.launch.facts,
-      connectorRuntimeTargets:
-        args.persistence.diagnosticRegistrationPayload.targets,
+      connectorEnvironment: {
+        ...args.launch.facts.connectorEnvironment,
+        runtimeTargets: args.persistence.diagnosticRegistrationPayload.targets,
+      },
     },
     runnerGroup: args.launch.runnerGroup,
     profile: args.launch.profile,

@@ -2,7 +2,6 @@
 // Regenerate: cd turbo && pnpm -F @okouai/api-contracts generate:client
 
 import type {
-  cronAggregateRunPhaseTimingsContract as OriginalCronAggregateRunPhaseTimingsContract,
   cronBrowserReconcileContract as OriginalCronBrowserReconcileContract,
   cronCleanupSandboxesContract as OriginalCronCleanupSandboxesContract,
   cronCleanupSuggestionsContract as OriginalCronCleanupSuggestionsContract,
@@ -33,20 +32,6 @@ import type {
   cronTelegramCleanupContract as OriginalCronTelegramCleanupContract,
 } from "../contracts/cron";
 import type { ClientDescriptor } from "./types";
-
-export const cronAggregateRunPhaseTimingsContract: ClientDescriptor<
-  typeof OriginalCronAggregateRunPhaseTimingsContract
-> = {
-  aggregate: {
-    method: "GET",
-    path: "/api/cron/aggregate-run-phase-timings",
-    statuses: {
-      200: true,
-      401: true,
-      500: true,
-    },
-  },
-};
 
 export const cronBrowserReconcileContract: ClientDescriptor<
   typeof OriginalCronBrowserReconcileContract

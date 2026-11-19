@@ -2,10 +2,12 @@ package ai.okou.android.preferences
 
 import ai.okou.android.TestChatService
 import ai.okou.android.api.generated.UpdatePreferencesRequest
+import ai.okou.android.api.generated.UpdatePreferencesRequestTheme
 import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesSupportedLocalesItem
+import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.auth.WorkspaceBootstrap
 import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.chat.ChatListService
@@ -59,6 +61,9 @@ class MemberPreferencesModelTest {
         var write: suspend (UpdatePreferencesRequest) -> UserPreferences = { request ->
             stored =
                 stored.copy(
+                    theme =
+                        request.theme?.let { UserPreferencesTheme.valueOf(it.name) }
+                            ?: stored.theme,
                     colorTheme =
                         request.colorTheme?.let { UserPreferencesColorTheme.valueOf(it.name) }
                             ?: stored.colorTheme,
@@ -239,6 +244,36 @@ class MemberPreferencesModelTest {
     }
 
     @Test
+    fun sharedAppearanceReadsCanonicalModeAndRetriesASave() =
+        check(Service().apply { stored = stored.copy(theme = null) }) { model, api, _ ->
+            assertEquals(UserPreferencesTheme.SYSTEM, model.uiState.value.theme)
+            assertTrue(api.requests.isEmpty())
+
+            api.stored = api.stored.copy(theme = UserPreferencesTheme.DARK)
+            model.refreshFromForeground()
+            runCurrent()
+            assertEquals(UserPreferencesTheme.DARK, model.uiState.value.confirmed.theme)
+
+            val save = api.write
+            api.write = { throw IOException("offline") }
+            model.selectTheme(UserPreferencesTheme.LIGHT)
+            runCurrent()
+            assertEquals(PreferenceStatus.SaveFailed, model.uiState.value.status)
+            assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.theme)
+            assertEquals(UserPreferencesTheme.DARK, model.uiState.value.confirmed.theme)
+            assertEquals(
+                UpdatePreferencesRequest(theme = UpdatePreferencesRequestTheme.LIGHT),
+                api.requests.single(),
+            )
+
+            api.write = save
+            model.retry()
+            runCurrent()
+            assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
+            assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.confirmed.theme)
+        }
+
+    @Test
     fun retiredOwnerRejectsNonCooperativeLateReadAndOldUiActions() {
         val gate = CompletableDeferred<Unit>()
         val service =
@@ -256,6 +291,7 @@ class MemberPreferencesModelTest {
             runCurrent()
             assertEquals(UserPreferencesLocale.EN_US, model.uiState.value.confirmed.locale)
             model.selectColorTheme(UserPreferencesColorTheme.GOLDEN_HOUR)
+            model.selectTheme(UserPreferencesTheme.DARK)
             model.retry()
             runCurrent()
             assertTrue(api.requests.isEmpty())

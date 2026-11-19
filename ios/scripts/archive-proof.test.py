@@ -51,8 +51,6 @@ class ArchiveProofTests(unittest.TestCase):
             "ClerkKeychainAccessGroup": "C5UWSXYB67.ai.okou.ios",
             "NotificationAppGroup": "group.ai.okou.ios",
             "SentryDSN": "https://public@o1.ingest.us.sentry.io/42",
-            "APIBaseURL": "https://api.okou.ai",
-            "ClerkPublishableKey": "pk_live_example",
         }
         write_plist(self.app / "Info.plist", self.info)
         write_plist(
@@ -108,10 +106,6 @@ class ArchiveProofTests(unittest.TestCase):
             "NSExtension": {
                 "NSExtensionPointIdentifier": "com.apple.widgetkit-extension"
             },
-            "ClerkKeychainAccessGroup": "C5UWSXYB67.ai.okou.ios",
-            "NotificationAppGroup": "group.ai.okou.ios",
-            "APIBaseURL": "https://api.okou.ai",
-            "ClerkPublishableKey": "pk_live_example",
         }
         write_plist(self.widgets / "Info.plist", self.widgets_info)
         (self.widgets / "OkouWidgets").write_bytes(
@@ -124,7 +118,9 @@ class ArchiveProofTests(unittest.TestCase):
         symbols.parent.mkdir(parents=True)
         symbols.write_bytes(b"widgets symbols")
 
-    def invoke(self, command, output=None, build_number="42", success=True):
+    def invoke(
+        self, command, output=None, build_number="42", success=True, version=VERSION
+    ):
         result = subprocess.run(
             [
                 "python3",
@@ -133,7 +129,7 @@ class ArchiveProofTests(unittest.TestCase):
                 str(self.source),
                 str(output or self.destination),
                 "--version",
-                VERSION,
+                version,
                 "--build-number",
                 build_number,
             ],
@@ -164,9 +160,11 @@ class ArchiveProofTests(unittest.TestCase):
         extension_executable=None,
         widgets_info=None,
         widgets_signed=True,
+        version=VERSION,
     ):
         ipa = self.work / "Okou.ipa"
-        info = {**self.info, "CFBundleVersion": build_number}
+        release = {"CFBundleShortVersionString": version, "CFBundleVersion": build_number}
+        info = {**self.info, **release}
         with ZipFile(ipa, "w") as package:
             package.writestr("Payload/Okou.app/Info.plist", plistlib.dumps(info))
             package.writestr(
@@ -183,9 +181,7 @@ class ArchiveProofTests(unittest.TestCase):
             prefix = "Payload/Okou.app/PlugIns/OkouNotificationService.appex/"
             package.writestr(
                 prefix + "Info.plist",
-                plistlib.dumps(
-                    {**self.extension_info, "CFBundleVersion": build_number}
-                ),
+                plistlib.dumps({**self.extension_info, **release}),
             )
             package.writestr(
                 prefix + "OkouNotificationService",
@@ -203,8 +199,7 @@ class ArchiveProofTests(unittest.TestCase):
             package.writestr(
                 prefix + "Info.plist",
                 plistlib.dumps(
-                    widgets_info
-                    or {**self.widgets_info, "CFBundleVersion": build_number}
+                    widgets_info or {**self.widgets_info, **release}
                 ),
             )
             package.writestr(
@@ -250,6 +245,61 @@ class ArchiveProofTests(unittest.TestCase):
         self.assertEqual(widgets_info["CFBundleVersion"], "42")
         self.assertEqual(app_info["CFBundleVersion"], "42")
         self.assertEqual(archive_info["ApplicationProperties"]["CFBundleVersion"], "42")
+
+    def test_prepare_stamps_a_later_release_version_without_touching_code(self):
+        # Release metadata reuses the archive compiled before the version bump.
+        package_bundle = self.app / "Package_Resources.bundle/Info.plist"
+        nested_bundle = self.extension / "Package_Resources.bundle/Info.plist"
+        vendor_bundle = self.app / "Vendor.bundle/Info.plist"
+        symbols = self.source / "dSYMs/Okou.app.dSYM/Contents/Info.plist"
+        for path in (package_bundle, nested_bundle, symbols):
+            write_plist(
+                path, {"CFBundleShortVersionString": VERSION, "CFBundleVersion": "1"}
+            )
+        write_plist(vendor_bundle, {"CFBundleShortVersionString": "9.9.9"})
+        original = self.digests(self.source)
+        result = self.invoke("prepare", version="1.3.0")
+        self.assertEqual(result["archiveVersion"], VERSION)
+        self.assertEqual(self.digests(self.source), original)
+        stamped = {
+            "Info.plist",
+            str(APP_PATH / "Info.plist"),
+            str(APP_PATH / "PlugIns/OkouNotificationService.appex/Info.plist"),
+            str(APP_PATH / "PlugIns/OkouWidgets.appex/Info.plist"),
+            str(package_bundle.relative_to(self.source)),
+            str(nested_bundle.relative_to(self.source)),
+        }
+        self.assertEqual(set(result["changedFiles"]), stamped)
+        copied = self.digests(self.destination)
+        # Compiled code, resources, symbols and unrelated bundles are untouched.
+        self.assertEqual(
+            {name: digest for name, digest in copied.items() if name not in stamped},
+            {name: digest for name, digest in original.items() if name not in stamped},
+        )
+        for name in sorted(stamped - {"Info.plist"}):
+            info = plistlib.loads((self.destination / name).read_bytes())
+            self.assertEqual(info["CFBundleShortVersionString"], "1.3.0", name)
+            # Only release identity bundles carry the build number.
+            self.assertEqual(
+                info["CFBundleVersion"], "1" if ".bundle/" in name else "42", name
+            )
+        properties = plistlib.loads((self.destination / "Info.plist").read_bytes())[
+            "ApplicationProperties"
+        ]
+        self.assertEqual(properties["CFBundleShortVersionString"], "1.3.0")
+        self.assertEqual(properties["CFBundleVersion"], "42")
+        # The export is checked against the release, the source against its own build.
+        self.invoke("verify-export", self.package(version="1.3.0"), version="1.3.0")
+        self.assertIn(
+            "wrong release identity",
+            self.invoke("verify-export", self.package(), version="1.3.0", success=False),
+        )
+        self.assertIn(
+            "numeric x.y.z",
+            self.invoke(
+                "prepare", self.work / "Invalid.xcarchive", version="1.3", success=False
+            ),
+        )
 
     def test_prepare_requires_shared_crash_reporting_configuration(self):
         for dsn in ("", "https://public@o1.ingest.us.sentry.io/99"):
@@ -322,18 +372,6 @@ class ArchiveProofTests(unittest.TestCase):
             with self.subTest(changes=changes):
                 write_plist(self.widgets / "Info.plist", {**self.widgets_info, **changes})
                 self.invoke("prepare", success=False)
-                self.assertFalse(self.destination.exists())
-
-    def test_prepare_rejects_a_widget_extension_without_the_shared_session(self):
-        for changes, message in (
-            ({"ClerkKeychainAccessGroup": ""}, "shared storage identities"),
-            ({"NotificationAppGroup": "group.other"}, "shared storage identities"),
-            ({"APIBaseURL": "https://staging.example"}, "API and session service"),
-            ({"ClerkPublishableKey": "pk_test_other"}, "API and session service"),
-        ):
-            with self.subTest(changes=changes):
-                write_plist(self.widgets / "Info.plist", {**self.widgets_info, **changes})
-                self.assertIn(message, self.invoke("prepare", success=False))
                 self.assertFalse(self.destination.exists())
 
     def test_export_rejects_unsigned_or_mismatched_widget_extension(self):

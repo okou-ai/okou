@@ -116,7 +116,9 @@ const synchronizeWorkspaceLayout$ = command(
   ): Promise<void> => {
     signal.throwIfAborted();
     set(sidebarMotion.commit$, preparation);
-    if (get(artifactCatalogSidebar.open$)) {
+    const artifactOpen = await get(artifactCatalogSidebar.open$);
+    signal.throwIfAborted();
+    if (artifactOpen) {
       set(artifactCatalogSidebar.imageCanvas.syncLayout$);
     }
     await set(restoreChatLayoutScroll$, signal);
@@ -262,8 +264,15 @@ export const closeDeletedThreadArtifact$ = command(
 );
 
 export const openThreadArtifacts$ = command(
-  ({ get, set }, thread: ChatPanelSignals) => {
+  ({ get, set }, thread: ChatPanelSignals, mode: "reuse" | "refresh") => {
     set(openOnThread$, thread, { type: "artifacts" }, get(pageSignal$));
+    const catalog = thread.sidebar.artifactCatalog;
+    set(catalog.selectArtifact$, null);
+    if (mode === "refresh") {
+      set(catalog.reload$);
+    } else {
+      set(catalog.reloadSelectedArtifactDetail$);
+    }
   },
 );
 

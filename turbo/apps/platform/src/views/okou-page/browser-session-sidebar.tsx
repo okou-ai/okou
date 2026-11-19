@@ -2,11 +2,11 @@ import { ExternalLink, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button, buttonVariants } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { useGet, useSet } from "ccstate-react";
+import { useLastResolved, useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 
 import type { BrowserSessionSignals } from "../../signals/chat-page/browser-session-block.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { BrowserSessionPanel } from "./browser-session-panel.tsx";
@@ -70,7 +70,9 @@ export function BrowserSessionSidebar({
   overlay,
 }: BrowserSessionSidebarProps) {
   const { t } = useTranslation();
-  const refined = useGet(featureSwitch$)[FeatureSwitchKey.CloudBrowserPanel];
+  const refined =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.CloudBrowserPanel] ===
+    true;
   const actions = <BrowserSessionActions signals={signals} onClose={onClose} />;
   return (
     <aside

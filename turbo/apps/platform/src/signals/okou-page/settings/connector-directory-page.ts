@@ -26,8 +26,8 @@ function createDirectoryCardSignals(
     openAccountManager$: command(({ get, set }) => {
       set(openBuiltinAccountManager$, connector, get(pageSignal$));
     }),
-    manageAccess$: command(({ set }) => {
-      set(setManagedConnectorAccessSlug$, connector.slug);
+    manageAccess$: command(async ({ set }, signal: AbortSignal) => {
+      await set(setManagedConnectorAccessSlug$, connector.slug, signal);
     }),
   };
 }

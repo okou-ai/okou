@@ -52,12 +52,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Honor multiple output formats selected by onboarding task links.",
     enabled: true,
   },
-  [FeatureSwitchKey.ArtifactGenerationTiming]: {
+  [FeatureSwitchKey.ArtifactThreePointTiming]: {
     maintainer: "bingjie@okou.ai",
-    displayName: "Artifact generation phase timing",
+    displayName: "Artifact three-point phase timing",
     description:
-      "Record research and generation boundaries for the current Run.",
-    enabled: true,
+      "Record versioned research, generation, and authenticated completion observations in Axiom.",
+    enabled: false,
+    enabledUserHashes: ["032a75d8"], // Bingjie's account only, independent of workspace
+    restrictOverridesToAudience: true,
   },
   [FeatureSwitchKey.PhoneUse]: {
     maintainer: "lancy@okou.ai",
@@ -95,6 +97,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
+  },
+  [FeatureSwitchKey.MarkdownFirstOutput]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Markdown-first document output",
+    description:
+      "Prefer Markdown for unformatted text documents and offer DOCX and PDF exports.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SingleAgent]: {
     maintainer: "lancy@okou.ai",
@@ -556,7 +566,7 @@ export function filterFeatureSwitchOverrides(
  * `ctx` is required so callers must pass identity (userId/orgId/email) or an
  * explicit `{}`. A switch gated by `enabledUserHashes` / `enabledOrgIdHashes`
  * silently returns `false` when ctx omits identity, which has caused bugs.
- * Client-side callers should usually read the platform `featureSwitch$` signal
+ * Client-side callers should usually read the platform `featureSwitches$` signal
  * instead — it also merges DB overrides on top of identity context.
  */
 export function isFeatureEnabled(

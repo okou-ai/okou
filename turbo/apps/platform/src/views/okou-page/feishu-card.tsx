@@ -3,7 +3,12 @@ import {
   type FeishuPlatform,
 } from "@okouai/core/feishu-platform";
 import type { FormEvent } from "react";
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import {
+  useLastResolved,
+  useGet,
+  useLastLoadable,
+  useSet,
+} from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
   ArrowLeft,
@@ -1444,8 +1449,8 @@ function FeishuBotsCard({
 }) {
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
-  const customEnabled = useGet(feishuCustomEnabled$);
-  const officialEnabled = useGet(larkOfficialEnabled$);
+  const customEnabled = useLastResolved(feishuCustomEnabled$) ?? false;
+  const officialEnabled = useLastResolved(larkOfficialEnabled$) ?? false;
   const showCustomBots =
     customEnabled &&
     (!officialEnabled || loading || hasError || bots.length > 0);
@@ -1553,7 +1558,7 @@ function LarkOfficialRow() {
   const title = t(($) => {
     return $.connectors.providerSettings.lark.official.name;
   });
-  const enabled = useGet(larkOfficialEnabled$);
+  const enabled = useLastResolved(larkOfficialEnabled$) ?? false;
   const data = useLastLoadable(larkOfficialData$);
   const signal = useGet(pageSignal$);
   const [connecting, connect] = useLoadableSet(connectLarkOfficial$);
@@ -2056,7 +2061,7 @@ function feishuSettingsHasError(...states: readonly string[]): boolean {
 export function FeishuSettingsPage() {
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
-  const customEnabled = useGet(feishuCustomEnabled$);
+  const customEnabled = useLastResolved(feishuCustomEnabled$) ?? false;
   const dataLoadable = useLastLoadable(feishuOrgData$);
   const botsLoadable = useLastLoadable(feishuInstallations$);
   const data = loadableData(dataLoadable) ?? null;

@@ -4,12 +4,12 @@ import { dirname, join } from "node:path";
 import { create } from "tar";
 import { http, HttpResponse } from "msw";
 import { onTestFinished } from "vitest";
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import { server } from "../../../../mocks/server";
 
 export async function sourceArchive(revision = "first") {
   const files = new Map<string, Buffer>();
-  for (const name of [...SEED_SKILLS, "ordinary-skill"]) {
+  for (const name of [...BUILT_IN_SKILLS, "ordinary-skill"]) {
     files.set(
       `${name}/SKILL.md`,
       Buffer.from(

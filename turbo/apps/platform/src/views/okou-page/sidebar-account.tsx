@@ -40,7 +40,7 @@ import {
 } from "../../signals/okou-page/account-menu-subscriptions.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import type { AccountAction } from "../../signals/okou-page/nav.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import {
   openSettingsDialogAt$,
   type SettingsSection,
@@ -582,7 +582,7 @@ export function useAccountProfile() {
   const userInfoLoadable = useLoadable(currentUserInfo$);
   const user =
     userInfoLoadable.state === "hasData" ? userInfoLoadable.data : undefined;
-  const features = useLastResolved(featureSwitch$);
+  const features = useLastResolved(featureSwitches$);
   const labEnabled = features?.[FeatureSwitchKey.Lab] ?? false;
   const current = accounts.find((a) => {
     return a.isActive;
@@ -759,7 +759,7 @@ export function AccountDropdown({
   showKeyboardShortcuts?: boolean;
 }) {
   const profile = useAccountProfile();
-  const linkingEnabled = useGet(subscriptionLinkingEnabled$);
+  const linkingEnabled = useLastResolved(subscriptionLinkingEnabled$) ?? false;
   const refreshPersonalProviders = useSet(
     refreshThirdPartySubscriptionsIfStale$,
   );

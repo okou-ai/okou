@@ -31,16 +31,16 @@ export const setupLegacySettingsRedirect$ = command(({ get, set }) => {
   });
 });
 
-export const setupBillingSettingsRedirect$ = command(({ get, set }) => {
-  const params = new URLSearchParams(get(searchParams$));
-  params.delete("tab");
-  params.set("settings", "billing");
-  set(
-    detachedNavigateTo$,
-    get(singleAgentEnabled$) ? ROUTES.home : ROUTES.agents,
-    {
+export const setupBillingSettingsRedirect$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const singleAgent = await get(singleAgentEnabled$);
+    signal.throwIfAborted();
+    const params = new URLSearchParams(get(searchParams$));
+    params.delete("tab");
+    params.set("settings", "billing");
+    set(detachedNavigateTo$, singleAgent ? ROUTES.home : ROUTES.agents, {
       searchParams: params,
       replace: true,
-    },
-  );
-});
+    });
+  },
+);

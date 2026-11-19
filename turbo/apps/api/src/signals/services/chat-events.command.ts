@@ -98,10 +98,8 @@ import {
   preloadAgentRunContext$,
   type AgentRunContextSignals,
 } from "./agent-run-context.signals";
-import type {
-  AgentRunPreCreateSource,
-  AgentRunRequestAgent,
-} from "./agent-run-contracts";
+import type { BootstrapAgent } from "./agent-data.service";
+import type { AgentRunPreCreateSource } from "./agent-run-contracts";
 import {
   resolveDefaultModelFirstPin$,
   resolveRunSelectionModel,
@@ -179,7 +177,6 @@ import {
   withAgentRunSourceAnnotation,
   type ChatAgentRunSourceAnnotation,
 } from "./chat-user-message.service";
-import { recordGetStartedWorkflowSql } from "./get-started-workflow.service";
 import {
   workflowRewardQueuedEventInsert,
   workflowRewardSourceEventId,
@@ -249,7 +246,7 @@ interface InterruptSendBody {
   readonly clientEventId?: string;
 }
 type AgentForChatSend = Pick<
-  AgentRunRequestAgent,
+  BootstrapAgent,
   "id" | "orgId" | "owner" | "visibility"
 >;
 type OrganizationAuthContext = AuthContext & {
@@ -261,7 +258,6 @@ interface NormalSendArgs {
   readonly auth: OrganizationAuthContext;
   readonly userId: string;
   readonly orgId: string;
-  readonly preloadedAgent?: AgentForChatSend;
   readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
   readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly getStartedWorkflowId?: string;
@@ -869,7 +865,7 @@ function authorizeSendAgent(
   if (!agent || agent.id !== args.body.agentId || agent.orgId !== args.orgId) {
     return notFound("Agent not found");
   }
-  if (agent.visibility === "private" && agent.owner !== args.userId) {
+  if (agent.visibility !== "public" && agent.owner !== args.userId) {
     return forbidden("Only the private agent owner can run this agent");
   }
   return agent;
@@ -2055,20 +2051,6 @@ function normalSendFinalWrites(
       ),
     });
     after = "normal_send_workflow_source";
-    writes.push({
-      name: "normal_send_get_started",
-      statement: recordGetStartedWorkflowSql(
-        {
-          orgId: args.orgId,
-          userId: args.userId,
-          workflowId: args.getStartedWorkflowId,
-          sourceEventId: event.id,
-        },
-        nowDate(),
-        normalChatInputWriteGate(after),
-      ),
-    });
-    after = "normal_send_get_started";
   }
   const queue = queuedChatThreadPublicationPlan({
     ...input.queueInput,

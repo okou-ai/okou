@@ -3515,6 +3515,41 @@
       "when": 1795067788125,
       "tag": "1580_activate_quiet_multi_agent_workspaces",
       "breakpoints": true
+    },
+    {
+      "idx": 1581,
+      "version": "7",
+      "when": 1795073103039,
+      "tag": "1581_activate_morning_brief_my_okou",
+      "breakpoints": true
+    },
+    {
+      "idx": 1582,
+      "version": "7",
+      "when": 1795073129666,
+      "tag": "1582_activate_empty_workspaces_my_okou",
+      "breakpoints": true
+    },
+    {
+      "idx": 1583,
+      "version": "7",
+      "when": 1795074528040,
+      "tag": "1583_prepare_built_in_skills",
+      "breakpoints": true
+    },
+    {
+      "idx": 1584,
+      "version": "7",
+      "when": 1795078014577,
+      "tag": "1584_drop_retired_ios_widget_push_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 1585,
+      "version": "7",
+      "when": 1795080448282,
+      "tag": "1585_activate_built_in_skills",
+      "breakpoints": true
     }
   ]
 }

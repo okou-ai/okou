@@ -1,6 +1,6 @@
 import { command, computed, state } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { createArtifactDiagramPreviewSignals } from "../artifact-diagram-preview.ts";
 import { createZoomableImageCanvasSignals } from "../zoomable-image-canvas.ts";
 import { detach, Reason, resetSignal } from "../utils.ts";
@@ -55,10 +55,11 @@ export function createArtifactCatalogSidebarSignals(
   );
 
   return {
-    open$: computed((get) => {
+    open$: computed(async (get) => {
       return (
-        get(featureSwitch$)[FeatureSwitchKey.ArtifactSidebarPreview] &&
-        get(internalOpen$)
+        (await get(featureSwitches$))[
+          FeatureSwitchKey.ArtifactSidebarPreview
+        ] && get(internalOpen$)
       );
     }),
     openArtifact$: command(

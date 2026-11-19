@@ -685,7 +685,7 @@ function OwnerThreadRemoteAccessDialog({
   });
   const onOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
-      close();
+      detach(close(signal), Reason.DomCallback);
     }
   };
   const title = t(($) => {
@@ -771,6 +771,7 @@ function RemoteAccessFilters({
   blocked: boolean;
   hidden: boolean;
 }) {
+  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const ui = useGet(signals.connector.connectorUiState$);
   const updateUi = useSet(signals.connector.updateConnectorUiState$);
@@ -795,10 +796,13 @@ function RemoteAccessFilters({
             aria-pressed={ui.remoteAccessFilter === filter}
             disabled={blocked}
             onClick={() => {
-              return updateUi({
-                remoteAccessFilter: filter,
-                remoteAccessEditedHosts: [],
-              });
+              detach(
+                updateUi(
+                  { remoteAccessFilter: filter, remoteAccessEditedHosts: [] },
+                  pageSignal,
+                ),
+                Reason.DomCallback,
+              );
             }}
           >
             {filter === "all"
@@ -977,6 +981,7 @@ function RemoteAccessInventory({
   initialLoading: boolean;
   readFailed: boolean;
 }) {
+  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const ui = useGet(signals.connector.connectorUiState$);
   const updateUi = useSet(signals.connector.updateConnectorUiState$);
@@ -1012,10 +1017,16 @@ function RemoteAccessInventory({
             size="sm"
             className="mt-3"
             onClick={() => {
-              updateUi({
-                remoteAccessFilter: "all",
-                remoteAccessEditedHosts: [],
-              });
+              detach(
+                updateUi(
+                  {
+                    remoteAccessFilter: "all",
+                    remoteAccessEditedHosts: [],
+                  },
+                  pageSignal,
+                ),
+                Reason.DomCallback,
+              );
             }}
           >
             {t(($) => {

@@ -125,7 +125,7 @@ test("Forward the captured passage after the native selection collapses", async 
   releaseToolbarPointer(button, "mouse");
   fireEvent.click(button);
 
-  const dialog = await screen.findByRole("dialog");
+  const dialog = await screen.findByRole("dialog", { name: "Forward to" });
   expect(within(dialog).getByText(PASSAGE)).toBeInTheDocument();
   expect(queryQuoteButton()).not.toBeInTheDocument();
 });

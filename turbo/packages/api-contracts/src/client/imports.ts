@@ -645,7 +645,6 @@ export const clientContractImportManifest = [
   {
     module: "cron",
     contracts: [
-      "cronAggregateRunPhaseTimingsContract",
       "cronBrowserReconcileContract",
       "cronCleanupSandboxesContract",
       "cronCleanupSuggestionsContract",
@@ -976,7 +975,7 @@ export const clientContractImportManifest = [
   },
   {
     module: "get-started",
-    contracts: ["cronGetStartedContract", "getStartedContract"],
+    contracts: ["getStartedContract"],
     bindings: [
       {
         name: "GET_STARTED_REWARDS_CHANGED_EVENT",
@@ -2013,6 +2012,11 @@ export const clientContractImportManifest = [
     contracts: ["userPreferencesContract"],
     bindings: [
       {
+        name: "COLOR_THEMES",
+        source: "validators/user-preferences",
+        imported: "COLOR_THEMES",
+      },
+      {
         name: "DEFAULT_USER_LOCALE",
         source: "validators/user-preferences",
         imported: "DEFAULT_USER_LOCALE",
@@ -2021,6 +2025,11 @@ export const clientContractImportManifest = [
         name: "SUPPORTED_USER_LOCALES",
         source: "validators/user-preferences",
         imported: "SUPPORTED_USER_LOCALES",
+      },
+      {
+        name: "colorThemeSchema",
+        source: "validators/user-preferences",
+        imported: "colorThemeSchema",
       },
       {
         name: "userLocaleSchema",

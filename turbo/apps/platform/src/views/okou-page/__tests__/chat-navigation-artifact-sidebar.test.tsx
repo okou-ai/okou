@@ -849,11 +849,12 @@ test("Show artifacts that belong to the current thread", async () => {
   });
 });
 
-test("Return to the artifact list when a preview is unavailable", async () => {
+test("Refresh the artifact list when a preview is unavailable", async () => {
   useWideScreen();
   const summary = artifactSummary(DELETED_ID, "file", "Deleted report.txt");
+  const catalog = [summary];
   mockArtifactConversation(context, {
-    catalog: [summary],
+    catalog,
     details: new Map([[DELETED_ID, null]]),
   });
 
@@ -875,16 +876,15 @@ test("Return to the artifact list when a preview is unavailable", async () => {
     expect(buttonNamed("Back to artifacts", unavailable)).toBeVisible();
   });
 
+  catalog.pop();
   click(
     buttonNamed(
       "Back to artifacts",
       screen.getByTestId("thread-sidebar-artifact-unavailable"),
     ),
   );
-  await waitFor(() => {
-    expect(artifactList()).toBeVisible();
-    expect(
-      buttonNamed("Preview Deleted report.txt", artifactList()),
-    ).toBeVisible();
-  });
+  const gallery = await screen.findByTestId("thread-sidebar-artifacts");
+  await expect(
+    within(gallery).findByRole("heading", { name: "No artifacts found" }),
+  ).resolves.toBeInTheDocument();
 });

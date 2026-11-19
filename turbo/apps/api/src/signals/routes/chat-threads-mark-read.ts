@@ -9,7 +9,7 @@ import { pathParamsOf } from "../context/request";
 import { publishChatThreadReadCursorUpdatedSafely } from "../external/realtime";
 import { notFound } from "../../lib/error";
 import {
-  advanceChatThreadReadCursor$,
+  advanceChatThreadReadCursors$,
   createChatThreadReadPreparation,
 } from "../services/chat-thread-read-state-query";
 import type { RouteEntry } from "../route-entry";
@@ -41,11 +41,13 @@ const markReadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const advanced =
     watermark !== undefined &&
     (prepared.lastReadAt === null || watermark > prepared.lastReadAt) &&
-    (await set(
-      advanceChatThreadReadCursor$,
-      { threadId, userId, watermark },
-      signal,
-    ));
+    (
+      await set(
+        advanceChatThreadReadCursors$,
+        { userId, cursors: [{ threadId, watermark }] },
+        signal,
+      )
+    ).length > 0;
   signal.throwIfAborted();
   const lastReadAt =
     (advanced ? watermark : prepared.lastReadAt)?.toISOString() ?? null;

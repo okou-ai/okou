@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.49.1](https://github.com/okou-ai/okou/compare/ios-v0.49.0...ios-v0.49.1) (2026-11-19)
+
+
+### Performance Improvements
+
+* **ios:** streamline batch permission approval ([#48901](https://github.com/okou-ai/okou/issues/48901)) ([01a31c9](https://github.com/okou-ai/okou/commit/01a31c98eeb201647d291affe58ea67f2d050413))
+
 ## [0.49.0](https://github.com/okou-ai/okou/compare/ios-v0.48.6...ios-v0.49.0) (2026-11-19)
 
 

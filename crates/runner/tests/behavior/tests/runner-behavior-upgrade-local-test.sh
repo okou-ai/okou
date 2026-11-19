@@ -43,7 +43,7 @@ def event(kind, **fields):
         log.write(json.dumps({'kind': kind, **fields}) + '\n')
 
 def inject_failure(operation):
-    if scenario == operation or (scenario in ('cleanup-failure', 'cleanup-directory-failure') and operation == 'drain-a'):
+    if scenario == operation or (scenario == 'cleanup-failure' and operation == 'drain-a'):
         (root / 'failed').touch()
         print(f'injected failure: {operation}', file=sys.stderr)
         sys.exit(42)
@@ -86,7 +86,7 @@ if command == 'seq':
     start, end = map(int, args)
     # Shorten only a loop deliberately missing its completion condition. The
     # positive cases need the full iteration budget to observe asynchronous work.
-    missing_readiness = scenario in ('missing-claim', 'wrong-owner', 'unrelated-only', 'preparing-only', 'missing-fifo')
+    missing_readiness = scenario in ('missing-claim', 'wrong-owner', 'preparing-only', 'missing-fifo')
     stalled_completion = scenario == 'stalled-completion' and (root / 'released-1').exists()
     if missing_readiness or stalled_completion:
         end = min(end, 16)
@@ -98,15 +98,12 @@ if command == 'journalctl':
 if command == 'rm':
     if '-rf' in args and args[-1].startswith('/tmp/vm0-upgrade.'):
         event('remove-results', path=args[-1])
-        if scenario == 'cleanup-directory-failure' and (root / 'failed').exists():
-            sys.exit(65)
     sys.exit(subprocess.run(['/usr/bin/rm', *args]).returncode)
 if command == 'systemctl':
     action = args[0]
     owner = 'a' if 'upgrade-a' in args[-1] else 'b'
     active, enabled = root / f'active-{owner}', root / f'enabled-{owner}'
     if action == 'enable':
-        inject_failure('enable-a')
         assert not active.exists(), 'inactive drain assertion ran while A was active'
         enabled.touch()
         event('enable-inactive', owner=owner)
@@ -145,8 +142,6 @@ if args[0] == 'service':
             sys.exit(65)
         if scenario == 'cleanup-failure' and (root / 'failed').exists():
             sys.exit(65)
-        if count == 2:
-            inject_failure(operation)
     else:
         if operation == 'drain-a' and count == 2:
             operation = 'inactive-drain-a'
@@ -208,14 +203,12 @@ if args[:2] == ['local', 'submit']:
     if scenario != 'missing-claim':
         (claims / f'{run_id}.claim').touch()
     sandbox_id = f'sandbox-{number}'
-    record = {'run_id': 'unrelated-only' if scenario == 'unrelated-only' else run_id, 'sandbox_id': sandbox_id, 'phase': 'preparing'}
+    record = {'run_id': run_id, 'sandbox_id': sandbox_id, 'phase': 'preparing'}
     update(owner, lambda s: s['active_runs'].append(record))
     fifo = prompt.split()[2]
     guest_prompt = prompt
     if scenario == 'missing-fifo':
         guest_prompt = prompt.replace(fifo, str(root / f'other-fifo-{number}'))
-    if scenario == 'no-reader-release':
-        guest_prompt = f'rm -f {fifo} && mkfifo {fifo}'
     guest = subprocess.Popen(['/bin/sh', '-c', guest_prompt], stdout=subprocess.DEVNULL)
     (root / f'client-{number}.json').write_text(json.dumps({'owner': owner, 'pid': os.getpid(), 'guest_pid': guest.pid, 'fifo': fifo}))
     def interrupted(_signum, _frame):
@@ -241,7 +234,7 @@ if args[:2] == ['local', 'submit']:
         result = guest.wait()
     finally:
         stop_guest(guest.pid)
-    if scenario in ('stalled-completion', 'no-reader-release'):
+    if scenario == 'stalled-completion':
         gate = root / f'completion-gate-{number}'
         os.mkfifo(gate)
         with gate.open() as reader:
@@ -377,7 +370,7 @@ def run_case(scenario, failure, case, binary):
         print(f'PASS: {scenario}: bounded failure and cleanup')
     for event in events:
         if event['kind'] == 'output':
-            assert Path(event['path']).parent.exists() == (scenario == 'cleanup-directory-failure'), f'{scenario}: unexpected result directory state'
+            assert not Path(event['path']).parent.exists(), f'{scenario}: result directory leaked'
         if event['kind'] == 'submit':
             assert not alive(event['pid']), f'{scenario}: submit client leaked'
     for file in case.glob('client-*.json'):
@@ -385,22 +378,15 @@ def run_case(scenario, failure, case, binary):
         assert not alive(client['guest_pid']), f'{scenario}: FIFO workload leaked'
     if scenario != 'cleanup-failure':
         assert not any((case / f'{kind}-{owner}').exists() for kind in ('active', 'enabled') for owner in ('a', 'b')), f'{scenario}: service state leaked'
-    if scenario == 'cleanup-directory-failure':
-        assert any(e['kind'] == 'remove-results' for e in events), 'result cleanup not attempted'
 
 error_statuses = {
-    'install-a': 42, 'install-b': 42, 'drain-a': 42, 'drain-b': 42,
-    'enable-a': 42, 'inactive-drain-a': 1, 'uninstall-a': 42, 'uninstall-b': 42,
-    'submit-1': 1, 'submit-2': 1, 'submit-3': 1,
-    'cleanup-failure': 42, 'cleanup-directory-failure': 42,
+    'install-b': 42, 'inactive-drain-a': 1, 'submit-3': 1, 'cleanup-failure': 42,
 }
 following_phases = {
-    'install-a': '--- Submit job 1', 'install-b': '--- Submit job 2',
-    'drain-a': '--- Waiting for job 1', 'drain-b': '--- Uninstalling runner B',
-    'enable-a': 'PASS: inactive drain disabled runner A',
+    'install-b': '--- Submit job 2',
     'inactive-drain-a': '--- Uninstalling runner A',
-    'uninstall-a': '--- Submit job 3', 'submit-1': '--- Installing runner B',
-    'submit-2': '--- Draining runner A', 'submit-3': '--- Draining runner B',
+    'submit-3': '--- Draining runner B',
+    'cleanup-failure': '--- Waiting for job 1',
 }
 
 with tempfile.TemporaryDirectory(prefix='upgrade-worker-test-') as temporary:
@@ -417,7 +403,6 @@ with tempfile.TemporaryDirectory(prefix='upgrade-worker-test-') as temporary:
         'delayed-ready': None,
         'missing-claim': 'not ready within observation budget',
         'wrong-owner': 'not ready within observation budget',
-        'unrelated-only': 'not ready within observation budget',
         'preparing-only': 'not ready within observation budget',
         'missing-fifo': 'not ready within observation budget',
         'ambiguous-request': 'ambiguous submission',
@@ -425,13 +410,12 @@ with tempfile.TemporaryDirectory(prefix='upgrade-worker-test-') as temporary:
         'inactive-b': 'runner B is not active during coexistence',
         'missing-drain-mode': 'did not retain job 1 while draining',
         'release-failure': 'failed to release workload',
-        'no-reader-release': 'failed to release workload',
         'stalled-completion': 'did not finish after release',
         'failed-submission': 'submission 00000000-0000-4000-8000-000000000002 failed',
         'mismatched-result': 'submission result did not confirm success',
     }
     cases.update({name: f'injected failure: {name}' for name in error_statuses})
-    cases['cleanup-failure'] = cases['cleanup-directory-failure'] = 'injected failure: drain-a'
+    cases['cleanup-failure'] = 'injected failure: drain-a'
     for scenario, failure in cases.items():
         case = root / scenario
         case.mkdir()

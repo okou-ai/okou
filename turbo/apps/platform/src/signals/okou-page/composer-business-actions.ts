@@ -19,7 +19,7 @@ import { invalidateAgentConnectorAccess$ } from "./composer-agent-connectors.ts"
 import { registerComposerConnectHost$ } from "./composer-connect-hosts.ts";
 import { withCleanup } from "../utils.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 
 export function createComposerTemplateSelection(
   taskChips: ComposerTaskChipsSignals,
@@ -152,8 +152,9 @@ export function createComposerConnectorCompletion(
       signal: AbortSignal,
     ): Promise<boolean> => {
       signal.throwIfAborted();
-      const chatAccounts =
-        get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
+      const chatAccounts = (await get(featureSwitches$))[
+        FeatureSwitchKey.ConnectorChatAccountAccess
+      ];
       if (!chatAccounts && !alreadyAuthorized) {
         await set(
           connector.setConnectorAuthorization$,
@@ -170,14 +171,20 @@ export function createComposerConnectorCompletion(
       return !chatAccounts && !alreadyAuthorized;
     },
   );
-  const completeCustomConnectorAddition$ = command(({ get, set }) => {
-    set(connector.resources.reloadConnected$);
-    if (get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess]) {
-      set(connector.chatAccess.reload$);
-    } else {
-      set(invalidateAgentConnectorAccess$, agentId);
-    }
-  });
+  const completeCustomConnectorAddition$ = command(
+    async ({ get, set }, signal: AbortSignal) => {
+      const enabled = (await get(featureSwitches$))[
+        FeatureSwitchKey.ConnectorChatAccountAccess
+      ];
+      signal.throwIfAborted();
+      set(connector.resources.reloadConnected$);
+      if (enabled) {
+        set(connector.chatAccess.reload$);
+      } else {
+        set(invalidateAgentConnectorAccess$, agentId);
+      }
+    },
+  );
   // A connection started from this composer finds it again by this key.
   const connectHostKey = crypto.randomUUID();
   const registerConnectHost$ = command(({ set }, signal: AbortSignal) => {

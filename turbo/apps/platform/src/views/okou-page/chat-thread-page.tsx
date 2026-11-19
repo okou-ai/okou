@@ -182,7 +182,7 @@ import {
   ChatConversationLandingHighlight,
   ChatConversationLocator,
 } from "./chat-conversation-locator.tsx";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { isStandalonePwa } from "../../lib/keyboard-dismiss-gesture.ts";
 import {
   captureChatWorkHistoryExpanded,
@@ -195,6 +195,7 @@ import {
   PreviewableAudioAttachmentChip,
   PreviewableFileAttachmentChip,
 } from "./attachment-chips.tsx";
+import { ArtifactDownloadMenu } from "./artifact-actions.tsx";
 import { McpMark } from "./components/mcp-mark.tsx";
 import { classifyChatAttachment } from "../../signals/chat-page/parse-body-blocks.ts";
 import type {
@@ -3282,7 +3283,9 @@ function RunSectionDividerRow({
   label: string;
   announce?: boolean;
 }) {
-  const nameLine = useGet(featureSwitch$)[FeatureSwitchKey.ChatReplyNameLine];
+  const nameLine =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ChatReplyNameLine] ===
+    true;
   return (
     <div
       role={announce ? "status" : undefined}
@@ -3744,6 +3747,10 @@ function ScrollToBottomButton({ thread }: { thread: ChatPanelSignals }) {
   const awayFromBottom = useGet(thread.awayFromBottom$);
   const scrollToBottom = useSet(thread.scrollToBottom$);
   const pageSignal = useGet(pageSignal$);
+  // The thinking row sits at the end of the transcript, so a reader scrolled
+  // away from it cannot see that the thread is still working. The button
+  // carries that state instead, for exactly as long as the row would show.
+  const working = useLastResolved(thread.thinkingIndicatorsShown$) === true;
 
   if (!awayFromBottom) {
     return null;
@@ -3753,6 +3760,7 @@ function ScrollToBottomButton({ thread }: { thread: ChatPanelSignals }) {
     <IconTooltipButton
       type="button"
       data-scroll-to-bottom
+      data-working={working ? "" : undefined}
       aria-label={t(($) => {
         return $.chat.thread.scrollToBottom;
       })}
@@ -3761,8 +3769,29 @@ function ScrollToBottomButton({ thread }: { thread: ChatPanelSignals }) {
       }}
       className="absolute bottom-4 left-1/2 z-20 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-md transition-colors hover:bg-background-hover hover:text-foreground"
     >
-      <ArrowDown size={18} />
+      {working ? <ScrollToBottomWorkingDots /> : <ArrowDown size={18} />}
     </IconTooltipButton>
+  );
+}
+
+const SCROLL_TO_BOTTOM_WORKING_DOT_DELAYS = ["0ms", "160ms", "320ms"] as const;
+
+// Three dots span the arrow's 18px, so the button keeps its size and the mark
+// its optical weight when the run finishes and the arrow returns.
+function ScrollToBottomWorkingDots() {
+  return (
+    <span aria-hidden className="flex items-center gap-[3px]">
+      {SCROLL_TO_BOTTOM_WORKING_DOT_DELAYS.map((delay) => {
+        return (
+          <span
+            key={delay}
+            data-scroll-to-bottom-working-dot
+            style={{ animationDelay: delay }}
+            className="size-1 rounded-full bg-current motion-safe:animate-working-dot"
+          />
+        );
+      })}
+    </span>
   );
 }
 
@@ -3982,7 +4011,9 @@ function ChatThreadComposer({
 // ---------------------------------------------------------------------------
 
 function ChatEventSkeletonPair({ compact = false }: { compact?: boolean }) {
-  const nameLine = useGet(featureSwitch$)[FeatureSwitchKey.ChatReplyNameLine];
+  const nameLine =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ChatReplyNameLine] ===
+    true;
   return (
     <>
       {/* User bubble skeleton */}
@@ -4588,7 +4619,7 @@ function InsufficientCreditsCard({ error }: { readonly error: string }) {
   const setSubPage = useSet(setBillingSubPage$);
   const pageSignal = useGet(pageSignal$);
   const creditPurchaseOrigin = useGet(creditPurchaseOrigin$);
-  const billingSurveyEnabled = useGet(billingSurveyEnabled$);
+  const billingSurveyEnabled = useLastResolved(billingSurveyEnabled$) ?? false;
 
   const billingResolved = billingLoadable.state === "hasData";
   const credits = billingResolved ? billingLoadable.data.credits : null;
@@ -5845,7 +5876,7 @@ function AssistantErrorState({
 }
 
 function AssistantBubbleAvatar({ thread }: { thread: ChatPanelSignals }) {
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const defaultId = useLastResolved(defaultAgentId$);
   return singleAgent && thread.agentId === defaultId ? (
     // One per reply; only the replies on screen draw frames, so a long
@@ -5881,7 +5912,7 @@ function LegacyAssistantBubbleAvatar({ thread }: { thread: ChatPanelSignals }) {
 // screen readers address the line by what it shows.
 function AssistantNameLine({ thread }: { thread: ChatPanelSignals }) {
   const name = useGet(assistantName$);
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const defaultId = useLastResolved(defaultAgentId$);
   return singleAgent && thread.agentId === defaultId ? (
     <span className={CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS}>{name}</span>
@@ -6019,7 +6050,9 @@ function SelectablePagedGroupRow({
   const phase = useGet(thread.sharing.phase$);
   const selectedEventIds = useGet(thread.sharing.selectedEventIds$);
   const toggle = useSet(thread.sharing.toggle$);
-  const nameLine = useGet(featureSwitch$)[FeatureSwitchKey.ChatReplyNameLine];
+  const nameLine =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ChatReplyNameLine] ===
+    true;
   const sharing = phase !== "idle";
   const displayGroup = sharing ? chatGroupForSharing(group) : group;
   const content = (
@@ -6373,6 +6406,7 @@ function MessageAttachment({
   attachment: ResolvedMessageAttachment;
   onImageClick: OpenMessageImagePreview;
 }) {
+  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const openVideoLightbox = useSet(openAttachmentVideoLightbox$);
 
@@ -6418,14 +6452,21 @@ function MessageAttachment({
         buttonClassName={CHAT_INLINE_VIDEO_ATTACHMENT_PREVIEW_CLASS}
         filename={a.filename}
         onPreview={() => {
-          openVideoLightbox({
-            threadId,
-            url: a.url,
-            filename: a.filename,
-            contentType: a.signals.contentType,
-            preview: a.signals,
-            shareAvailable: false,
-          });
+          detach(
+            openVideoLightbox(
+              {
+                threadId,
+                url: a.url,
+                filename: a.filename,
+                contentType: a.signals.contentType,
+                preview: a.signals,
+                shareAvailable: false,
+              },
+              undefined,
+              pageSignal,
+            ),
+            Reason.DomCallback,
+          );
         }}
         posterClassName="h-full w-full"
         videoClassName="h-full w-full object-contain"
@@ -6594,7 +6635,8 @@ function UserMessageActions({
   onCopy: () => Promise<boolean>;
 }) {
   const { t } = useTranslation();
-  const showActivityLogs = useGet(featureSwitch$)[FeatureSwitchKey.OkouDebug];
+  const showActivityLogs =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.OkouDebug] === true;
   return (
     <div
       data-chat-user-message-actions
@@ -6852,6 +6894,7 @@ function UserMessageFileReference({
   part: Extract<UserMessagePart, { type: "file" }>;
   signals: ArtifactSignals;
 }) {
+  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const openVideoLightbox = useSet(openAttachmentVideoLightbox$);
   let reference: ReactNode;
@@ -6872,14 +6915,21 @@ function UserMessageFileReference({
         buttonClassName={CHAT_INLINE_VIDEO_ATTACHMENT_PREVIEW_CLASS}
         filename={part.filenameSnapshot}
         onPreview={() => {
-          openVideoLightbox({
-            threadId,
-            url: signals.url,
-            filename: part.filenameSnapshot,
-            contentType: part.contentType,
-            preview: signals,
-            shareAvailable: false,
-          });
+          detach(
+            openVideoLightbox(
+              {
+                threadId,
+                url: signals.url,
+                filename: part.filenameSnapshot,
+                contentType: part.contentType,
+                preview: signals,
+                shareAvailable: false,
+              },
+              undefined,
+              pageSignal,
+            ),
+            Reason.DomCallback,
+          );
         }}
         posterClassName="h-full w-full"
         videoClassName="h-full w-full object-contain"
@@ -7406,7 +7456,9 @@ function WorkflowUserMessage({
   thread: ChatPanelSignals;
 }) {
   const turnOnRef = useSet(thread.locator.turnOnRef$);
-  const nameLine = useGet(featureSwitch$)[FeatureSwitchKey.ChatReplyNameLine];
+  const nameLine =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ChatReplyNameLine] ===
+    true;
   const renderPart = userMessageAnnotationRenderPart(
     event.userMessageRenderDocument,
   );
@@ -7538,20 +7590,29 @@ function PagedUserMessage({
   const pageSignal = useGet(pageSignal$);
   const openImageLightbox = useSet(openAttachmentImageLightbox$);
   const openLightbox: OpenMessageImagePreview = (attachment) => {
-    openImageLightbox({
-      threadId: thread.threadId,
-      url: attachment.url,
-      filename: attachment.filename,
-      contentType: attachment.signals.contentType,
-      preview: attachment.signals,
-      // The user's own attachment, not a published artifact: previewing it
-      // offers no sharing controls.
-      shareAvailable: false,
-    });
+    detach(
+      openImageLightbox(
+        {
+          threadId: thread.threadId,
+          url: attachment.url,
+          filename: attachment.filename,
+          contentType: attachment.signals.contentType,
+          preview: attachment.signals,
+          // The user's own attachment, not a published artifact: previewing it
+          // offers no sharing controls.
+          shareAvailable: false,
+        },
+        undefined,
+        pageSignal,
+      ),
+      Reason.DomCallback,
+    );
   };
   const copyEvent = useSet(thread.copyEvent$);
   const sharingPhase = useGet(thread.sharing.phase$);
-  const nameLine = useGet(featureSwitch$)[FeatureSwitchKey.ChatReplyNameLine];
+  const nameLine =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ChatReplyNameLine] ===
+    true;
   // Under `chatReplyNameLine` a selected group is tinted, so sharing drops the
   // empty copy row together with the pull measured against it.
   const collapseForSharing = nameLine && sharingPhase !== "idle";
@@ -7899,7 +7960,9 @@ function PagedAssistantGroup({
   statusTailEvents,
 }: PagedAssistantGroupProps) {
   const turnOnRef = useSet(thread.locator.turnOnRef$);
-  const nameLine = useGet(featureSwitch$)[FeatureSwitchKey.ChatReplyNameLine];
+  const nameLine =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ChatReplyNameLine] ===
+    true;
   const hasRenderableEvent = group.events.some((event) => {
     return isRenderableAssistantEvent(event);
   });
@@ -8188,10 +8251,15 @@ function RelatedArtifactIcon({ kind }: { readonly kind: ArtifactKind }) {
 }
 
 function RelatedArtifactRow({ card }: { readonly card: RelatedArtifactCard }) {
+  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const openArtifact = useSet(openMarkdownArtifact$);
+  const featureSwitches = useLastResolved(featureSwitches$);
   const sidebarPreview =
-    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactSidebarPreview];
+    featureSwitches?.[FeatureSwitchKey.ArtifactSidebarPreview];
+  const showMarkdownExport =
+    card.signals.kind === "markdown" &&
+    featureSwitches?.[FeatureSwitchKey.MarkdownFirstOutput] === true;
   const name = relatedArtifactDisplayName(card);
   const host = relatedArtifactHost(card.signals.url);
   const kind = artifactFallbackSubtitle(
@@ -8211,7 +8279,7 @@ function RelatedArtifactRow({ card }: { readonly card: RelatedArtifactCard }) {
       )}
       data-chat-run-related-artifact-url={card.signals.url}
       onClick={() => {
-        openArtifact(card, "lightbox");
+        detach(openArtifact(card, "lightbox", pageSignal), Reason.DomCallback);
       }}
     >
       <RelatedArtifactIcon kind={card.signals.kind} />
@@ -8231,7 +8299,24 @@ function RelatedArtifactRow({ card }: { readonly card: RelatedArtifactCard }) {
       />
     </Button>
   );
-  return sidebarPreview ? <DialogClose render={row} /> : row;
+  const previewAction = sidebarPreview ? <DialogClose render={row} /> : row;
+  if (!showMarkdownExport) {
+    return previewAction;
+  }
+  return (
+    <div className="flex min-w-0 items-center gap-1">
+      <div className="min-w-0 flex-1">{previewAction}</div>
+      <ArtifactDownloadMenu
+        ariaLabel={t(($) => {
+          return $.artifacts.actions.downloadOptions;
+        })}
+        previewKind="markdown"
+        filename={card.signals.filename}
+        showGoogleDriveAction={false}
+        url={card.signals.url}
+      />
+    </div>
+  );
 }
 
 function RelatedArtifactsDialog({
@@ -8413,7 +8498,7 @@ function PagedGroupActions({
   const shareMessage = useSet(thread.sharing.shareMessage$);
   const copiedMessageEventId = useGet(thread.sharing.copiedMessageEventId$);
   const sharingPhase = useGet(thread.sharing.phase$);
-  const switches = useGet(featureSwitch$);
+  const switches = useLastResolved(featureSwitches$);
   if (sharingPhase !== "idle") {
     return null;
   }
@@ -8485,7 +8570,7 @@ function PagedGroupActions({
       />
     </div>
   );
-  if (embedded || switches[FeatureSwitchKey.ChatReplyNameLine]) {
+  if (embedded || switches?.[FeatureSwitchKey.ChatReplyNameLine]) {
     return actions;
   }
   return (

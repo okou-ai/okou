@@ -1,4 +1,7 @@
-import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import {
+  artifactCatalogContract,
+  chatArtifactCatalogChangedEvent,
+} from "@okouai/api-contracts/contracts/artifact-catalog";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -14,6 +17,7 @@ import { privateAttachmentUrl } from "./chat-attachment-test-helpers.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   createChatResourcesHelpers,
+  openResources,
   RESOURCE_ARTIFACT_ID,
 } from "./chat-resources-test-helpers.ts";
 
@@ -37,10 +41,23 @@ function artifactEntryNamed(title: string, container: HTMLElement) {
 test("Browse artifacts without source URLs in the popover and sidebar without showing message links", async () => {
   const user = userEvent.setup({ delay: null });
   const report = artifactSummary(RESOURCE_ARTIFACT_ID, "file", "report.pdf");
+  let catalogAvailable = true;
+  let previewFilename = "download-report.pdf";
   await setupResources({
+    open: false,
     sourceUrl: false,
     mock: () => {
       context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
+        if (
+          !catalogAvailable &&
+          query.chatThreadId === NAVIGATION_ARTIFACT_THREAD_ID
+        ) {
+          return respond(500, {
+            error: {
+              message: "The artifact catalog is temporarily unavailable",
+            },
+          });
+        }
         return respond(200, {
           artifacts:
             query.chatThreadId === NAVIGATION_ARTIFACT_THREAD_ID
@@ -58,7 +75,7 @@ test("Browse artifacts without source URLs in the popover and sidebar without sh
                 200,
                 fileArtifactDetail(report, {
                   fileId: "b0000000-0000-4000-a000-000000000999",
-                  filename: "download-report.pdf",
+                  filename: previewFilename,
                   contentType: "application/pdf",
                   url: "https://files.example.test/download-report.pdf",
                 }),
@@ -70,9 +87,14 @@ test("Browse artifacts without source URLs in the popover and sidebar without sh
       );
     },
   });
-  const resources = await screen.findByRole("dialog", {
-    name: "Artifacts and chats",
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscription(
+        chatArtifactCatalogChangedEvent(NAVIGATION_ARTIFACT_THREAD_ID),
+      ),
+    ).toBeTruthy();
   });
+  const resources = await openResources();
   await within(resources).findByText("report.pdf");
   const entry = artifactEntryNamed("report.pdf", resources);
   const clip = entry.querySelector<HTMLElement>("[data-title-reveal]");
@@ -108,6 +130,7 @@ test("Browse artifacts without source URLs in the popover and sidebar without sh
     "https://files.example.test/download-report.pdf#navpanes=0",
   );
 
+  catalogAvailable = false;
   click(buttonNamed("Back to all artifacts", sidebar));
   const artifactList = await screen.findByTestId("thread-sidebar-artifacts");
   await within(artifactList).findByText("report.pdf");
@@ -116,9 +139,10 @@ test("Browse artifacts without source URLs in the popover and sidebar without sh
   ).toBeInTheDocument();
   expect(within(artifactList).queryByRole("tablist")).not.toBeInTheDocument();
 
+  previewFilename = "updated-report.pdf";
   click(buttonNamed("Preview report.pdf", artifactList));
   await within(await screen.findByTestId("artifact-sidebar")).findByText(
-    "download-report.pdf",
+    "updated-report.pdf",
   );
 });
 
@@ -278,6 +302,28 @@ function resourceViewport(panel: HTMLElement) {
   });
   return viewport;
 }
+
+test("Keep gallery paging independent of the resource popover", async () => {
+  const { panel } = await setupOverflowResources(65, {
+    paginated: true,
+    withLinks: false,
+  });
+  const artifacts = within(panel).getByRole("region", { name: "Artifacts" });
+  const more = buttonNamed("Show more", artifacts);
+  click(more);
+  await within(artifacts).findByText("report-60.pdf");
+  click(more);
+  await within(artifacts).findByText("report-65.pdf");
+
+  click(artifactEntryNamed("report-1.pdf", artifacts));
+  const preview = await screen.findByTestId("artifact-sidebar");
+  click(buttonNamed("Back to all artifacts", preview));
+  const gallery = await screen.findByTestId("thread-sidebar-artifacts");
+  await expect(
+    within(gallery).findByRole("heading", { name: "Artifacts 60+" }),
+  ).resolves.toBeInTheDocument();
+  expect(within(gallery).queryByText("report-65.pdf")).not.toBeInTheDocument();
+});
 
 test("Show more resources until the last page, then collapse with the same control", async () => {
   const { panel } = await setupOverflowResources(125, {

@@ -22,7 +22,6 @@ import {
   connectorAccountReconciliationWrites,
 } from "./connector-account-state.service";
 import { builtinTokenCredentialWrites } from "./connector-credential-storage-write.service";
-import { completedGetStartedQuestPublication } from "./get-started-member-reward";
 import {
   tokenConnectionMetadataClauses,
   tokenPublicationFields,
@@ -42,8 +41,6 @@ interface TokenConnectionPublication extends TokenConnectionMetadataPublication 
     typeof connectorAccountReconciliationIdentity
   > | null;
   readonly projection: TokenProjectionPublication;
-  readonly quest:
-    Parameters<typeof completedGetStartedQuestPublication>[0] | null;
 }
 
 const admitted = exists(sql`(SELECT 1 FROM token_connection)`);
@@ -216,17 +213,6 @@ export function builtinTokenConnectionPublicationClauses(
         },
         sql`SELECT id FROM token_connection`,
       )})`,
-    );
-  }
-  if (args.quest !== null) {
-    const reward = completedGetStartedQuestPublication(
-      args.quest,
-      nowDate(),
-      sql`SELECT id FROM token_connection`,
-    );
-    clauses.push(
-      sql`claim AS (${reward.claim})`,
-      sql`token_quest_grant AS (${reward.grant} RETURNING id)`,
     );
   }
   const checks = [...credentials.checks, ...projections.checks];

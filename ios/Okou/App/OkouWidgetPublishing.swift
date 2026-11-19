@@ -8,15 +8,17 @@ import WidgetKit
 /// Publishes the widget snapshot from the workspace's confirmed chat list. The value is derived
 /// from the list on each render; the owning view writes it only when it changes.
 enum OkouWidgetPublishing {
-  static let kind = OkouWidgetSnapshot.widgetKind
+  static let kind = "ai.okou.widgets.status"
+  private static let limit = 12
   private static let log = Logger(subsystem: "ai.okou.ios", category: "widgets")
 
   static func snapshot(
-    userID: String, workspaceID: String, threads: [ChatThread], name: String?,
-    hasDraft: (String) -> Bool
+    workspaceID: String, threads: [ChatThread], name: String?, hasDraft: (String) -> Bool
   ) -> OkouWidgetSnapshot {
     var chats: [OkouWidgetSnapshot.Chat] = []
-    for thread in threads where !thread.isArchived && !thread.isHidden {
+    let visible = threads.filter { !$0.isArchived && !$0.isHidden }
+      .sorted { $0.sortAt > $1.sortAt }
+    for thread in visible {
       let parts = thread.titleParts
       var state = OkouWidgetSnapshot.Chat.State.idle
       if thread.indicator == .active {
@@ -31,9 +33,19 @@ enum OkouWidgetPublishing {
           id: thread.id, title: parts.text, emoji: parts.emoji, state: state,
           isPinned: thread.pinnedAt != nil, activityAt: thread.sortAt))
     }
-    // The snapshot orders and bounds its chats the same way the widget's own refresh does.
+    // Unread results and working chats lead, then pinned ones, then the most recent of the rest.
+    var ordered: [OkouWidgetSnapshot.Chat] = []
+    for chat in chats where chat.state == .finished { ordered.append(chat) }
+    for chat in chats where chat.state == .working { ordered.append(chat) }
+    for chat in chats where chat.isPinned && chat.state != .working && chat.state != .finished {
+      ordered.append(chat)
+    }
+    for chat in chats where !chat.isPinned && chat.state != .working && chat.state != .finished {
+      ordered.append(chat)
+    }
     return OkouWidgetSnapshot(
-      userID: userID, workspaceID: workspaceID, greetings: greetings(name: name), chats: chats)
+      workspaceID: workspaceID, greetings: greetings(name: name),
+      chats: Array(ordered.prefix(limit)))
   }
 
   /// The new-chat taglines that suit each part of the day.

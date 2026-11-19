@@ -29,10 +29,6 @@ export const iosPushRegistrations = pgTable(
       enum: ["production", "sandbox"],
     }).notNull(),
     enabled: boolean("enabled").notNull().default(true),
-    // WidgetKit's token for this installation's widgets; null until a widget is installed.
-    widgetPushToken: text("widget_push_token"),
-    // The last widget push claimed for this binding; it spaces pushes to the device.
-    widgetPushedAt: timestamp("widget_pushed_at"),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => {

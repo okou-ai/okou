@@ -40,7 +40,7 @@ import {
 import { i18n } from "../../i18n/index.ts";
 import { createChatResourceSignals } from "./chat-resources.ts";
 import { createThreadMailSignals } from "./thread-mail.ts";
-import { createArtifactCatalogSignals } from "../artifacts-page/create-artifact-catalog-signals.ts";
+import { createThreadArtifactCatalogs } from "../artifacts-page/create-artifact-catalog-signals.ts";
 import { createChatRelationSignals } from "./chat-relations.ts";
 import {
   createDraftSignals,
@@ -48,7 +48,14 @@ import {
   type DraftSignals,
 } from "../okou-page/chat-draft.ts";
 import { buildDraftPersistencePayload } from "../okou-page/draft-persistence.ts";
-import { debounceCommand, resetSignal, settle } from "../utils.ts";
+import { pageSignal$ } from "../page-signal.ts";
+import {
+  debounceCommand,
+  detach,
+  Reason,
+  resetSignal,
+  settle,
+} from "../utils.ts";
 import type {
   ChatEvent,
   OptimisticChatEvent,
@@ -94,7 +101,7 @@ import {
 import { createPlainMarkdownTree } from "../../lib/markdown/plain-markdown.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import { apiClient$ } from "../api-client.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { modelCatalog$ } from "../external/model-catalog.ts";
 import { availableRunModels$ } from "../external/run-models.ts";
 import {
@@ -1519,22 +1526,13 @@ function createLatestEventSignals(
   };
 }
 
-function createArtifacts(threadId: string) {
-  // Resources stay unfiltered even when the utility sidebar changes its kind.
-  const resourceCatalog = createArtifactCatalogSignals({
-    chatThreadId: threadId,
-  });
-  const artifacts$ = computed(async (get): Promise<ChatThreadArtifactRun[]> => {
+function createThreadArtifactRuns(threadId: string) {
+  return computed(async (get): Promise<ChatThreadArtifactRun[]> => {
     get(artifactCatalogRevision$);
     const client = get(apiClient$)(chatThreadArtifactsContract);
     const result = await accept(client.list({ params: { threadId } }), [200]);
     return result.body.runs;
   });
-
-  return {
-    artifacts$,
-    resourceCatalog,
-  };
 }
 
 interface EventTreeRegistries {
@@ -1998,14 +1996,14 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
       events: readonly ChatEvent[],
       signal: AbortSignal,
     ): Promise<void> => {
+      const features = await get(featureSwitches$);
       signal.throwIfAborted();
       const current = get(internalEventTrees$);
       const { next, richPlans } = planEventTreeUpdates(
         events,
         current,
         chatActionContext,
-        get(featureSwitch$)[FeatureSwitchKey.BatchConnectorPermissions] ===
-          true,
+        features[FeatureSwitchKey.BatchConnectorPermissions],
       );
       if (next) {
         set(internalEventTrees$, next);
@@ -2305,7 +2303,12 @@ function createEventChangeEffects({
     [boolean, AbortSignal]
   >;
 }) {
-  const sidebar = createThreadSidebarSignals(threadId, mailDraftCardSignals);
+  const catalogs = createThreadArtifactCatalogs(threadId);
+  const sidebar = createThreadSidebarSignals(
+    threadId,
+    mailDraftCardSignals,
+    catalogs.gallery,
+  );
   const locallyMarkedReadAt$ = state<string | undefined>(undefined);
   const markThreadReadIfNeeded$ = createMarkThreadReadIfNeeded({
     threadId,
@@ -2351,7 +2354,7 @@ function createEventChangeEffects({
   const eventChangeHandler: ChatEventChangeHandler = Object.freeze({
     command$: afterEventsChange$,
   });
-  return { sidebar, eventChangeHandler };
+  return { sidebar, resourceCatalog: catalogs.resources, eventChangeHandler };
 }
 
 function createChatEventPresentationLifecycle({
@@ -2563,6 +2566,7 @@ function createChatThreadMessagePipeline({
   return {
     scroll,
     sidebar: effects.sidebar,
+    resourceCatalog: effects.resourceCatalog,
     imageNavigation: createThreadImageNavigationSignals(
       projections.eventImageGroups$,
       effects.sidebar.target$,
@@ -2658,7 +2662,6 @@ interface RunTrackingDeps {
   automationSignals: Pick<ChatPanelSignals, "headerAutomations">;
   cancellationRecovery: ReturnType<typeof createCancellationRecoverySignals>;
   reloadConnectorAccountPreference$: Command<void, []>;
-  resourceCatalog: ReturnType<typeof createArtifacts>["resourceCatalog"];
 }
 
 const INITIAL_RENDER_GROUP_COUNT = 5;
@@ -3071,7 +3074,6 @@ function createRunTracking({
   automationSignals,
   cancellationRecovery,
   reloadConnectorAccountPreference$,
-  resourceCatalog,
 }: RunTrackingDeps) {
   const onSubscribed$ = createOnSubscribedCommand({
     threadId,
@@ -3093,10 +3095,7 @@ function createRunTracking({
         {
           threadId,
           invalidations: {
-            artifactCatalog: [
-              resourceCatalog.reload$,
-              messages.sidebar.artifactCatalog.reload$,
-            ],
+            artifactCatalog: [messages.sidebar.artifactCatalog.reload$],
             artifacts: [
               messages.sidebar.artifactCatalog.reloadSelectedArtifactDetail$,
             ],
@@ -3280,6 +3279,8 @@ function createPerformSendMessage(deps: SendMessageDeps) {
       request: ValidatedSendMessageRequest,
       signal: AbortSignal,
     ): Promise<boolean> => {
+      const features = await get(featureSwitches$);
+      signal.throwIfAborted();
       const generationTemplate = generationTemplateForSend(
         request,
         get(draft.generationTemplate$),
@@ -3312,7 +3313,7 @@ function createPerformSendMessage(deps: SendMessageDeps) {
       set(cancelDraftSync$);
       set(draft.clear$);
       const { runOptions, realAgentInPreviewEnabled } = sendRuntimeOptions(
-        get(featureSwitch$),
+        features,
         request.modelSelection.selection,
       );
       await Promise.all([
@@ -3408,7 +3409,8 @@ function createQueueMessage(deps: SendMessageDeps) {
         return false;
       }
       signal.throwIfAborted();
-      const features = get(featureSwitch$);
+      const features = await get(featureSwitches$);
+      signal.throwIfAborted();
       const userMessage = queueUserMessage(options, result);
 
       set(cancelDraftSync$);
@@ -3975,7 +3977,7 @@ export function createChatPanelSignals(
   persistence: ThreadDraftPersistence,
 ): ChatPanelSignals {
   const chatEvents = createChatEventSignals(threadId);
-  const artifact = createArtifacts(threadId);
+  const artifacts$ = createThreadArtifactRuns(threadId);
   const threadDraft$ = createRemoteChatThreadDraft(threadId);
   const threadMeta$ = createThreadMeta(threadId);
   const optimisticCreateUnsettled$ =
@@ -4001,8 +4003,12 @@ export function createChatPanelSignals(
     persistence,
   );
   // The native input graph invokes this only after admitting page input.
-  const onPageInput$ = command(({ set }) => {
-    set(browserPresence.pageInput$);
+  const onPageInput$ = command(({ get, set }) => {
+    detach(
+      set(browserPresence.pageInput$, get(pageSignal$)),
+      Reason.DomCallback,
+      "take over the cloud browser from page input",
+    );
   });
   const messagePipeline = createChatThreadMessagePipeline({
     chatActionContext: { threadId, agentId },
@@ -4017,7 +4023,7 @@ export function createChatPanelSignals(
     liveRunId$: messagePipeline.liveRunId$,
     sendEvent$: chatEvents.sendEvent$,
   });
-  const messages: MessageListSignals = { ...messagePipeline, ...artifact };
+  const messages: MessageListSignals = { ...messagePipeline, artifacts$ };
   const threadOwned = createThreadOwnedSignals(threadId, messages.sidebar);
   const feedback = createChatThreadFeedbackSignals(
     threadId,
@@ -4046,7 +4052,6 @@ export function createChatPanelSignals(
     cancellationRecovery,
     reloadConnectorAccountPreference$:
       composer.connector.reloadAccountPreference$,
-    resourceCatalog: artifact.resourceCatalog,
   });
   const relations = createChatRelationSignals(threadId, messagePipeline);
   return {
@@ -4073,9 +4078,10 @@ export function createChatPanelSignals(
       messagePipeline.latestRunFinishCreatedAt$,
     ),
     resources: createChatResourceSignals(
-      artifact.resourceCatalog,
+      messagePipeline.resourceCatalog,
       messagePipeline.initialEventsReady$,
       relations,
+      messages.sidebar,
     ),
     relations,
     browserPresence,

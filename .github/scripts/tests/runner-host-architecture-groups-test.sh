@@ -36,6 +36,12 @@ if [ "$#" -ne 2 ] || [ "$1" != "uname" ] || [ "$2" != "-m" ]; then
   exit 2
 fi
 
+if [ "${FIRST_FAILURE_HOST:-}" = "$host" ] &&
+  [ "$(grep -Fxc -- "$host" "$SSH_LOG")" -eq 1 ]; then
+  printf 'partial architecture output\n'
+  exit "${FIRST_FAILURE_STATUS:-255}"
+fi
+
 for entry in ${HOST_ARCHES:-}; do
   if [ "${entry%%=*}" = "$host" ]; then
     printf '%s\n' "${entry#*=}"
@@ -287,13 +293,28 @@ fi
 grep -q "duplicate runner host configured: arm-1" "${TMPDIR}/duplicate-case.err" || fail "expected case-insensitive duplicate host message"
 
 status=0
-HOST_ARCHES='' run_clean AWS_METAL_RUNNER_HOSTS='unreachable' "$HOST_GROUPS" matrix >"${TMPDIR}/unreachable.out" 2>"${TMPDIR}/unreachable.err" || status=$?
+HOST_ARCHES='' run_clean SSH_LOG="${TMPDIR}/unreachable.ssh" AWS_METAL_RUNNER_HOSTS='unreachable' "$HOST_GROUPS" matrix >"${TMPDIR}/unreachable.out" 2>"${TMPDIR}/unreachable.err" || status=$?
 [ "$status" -eq 255 ] || fail "expected unreachable host status 255, got: ${status}"
+[ "$(grep -Fxc unreachable "${TMPDIR}/unreachable.ssh")" -eq 2 ] || fail "expected one attempt and one retry"
 [ ! -s "${TMPDIR}/unreachable.out" ] || fail "expected unreachable host not to emit a matrix"
 grep -q "missing mock architecture for unreachable" "${TMPDIR}/unreachable.err" || fail "expected original SSH failure message"
 if grep -q "runner host architecture" "${TMPDIR}/unreachable.err"; then
   fail "expected SSH failure not to emit an architecture diagnostic"
 fi
+
+recovered=$(HOST_ARCHES='arm-1=aarch64 x86-1=x86_64' run_clean \
+  FIRST_FAILURE_HOST=arm-1 SSH_LOG="${TMPDIR}/recovered.ssh" \
+  AWS_METAL_RUNNER_HOSTS='arm-1,x86-1' "$HOST_GROUPS" target-matrix)
+assert_json_eq "$recovered" '[{"id":"arm64","label":"arm64","target":"aarch64-unknown-linux-musl"},{"id":"x86_64","label":"x86_64","target":"x86_64-unknown-linux-musl"}]'
+[ "$(< "${TMPDIR}/recovered.ssh")" = $'arm-1\narm-1\nx86-1' ] || fail "expected only the failed probe to retry"
+
+status=0
+HOST_ARCHES='arm-1=aarch64' run_clean FIRST_FAILURE_HOST=arm-1 FIRST_FAILURE_STATUS=7 \
+  SSH_LOG="${TMPDIR}/hard-failure.ssh" AWS_METAL_RUNNER_HOSTS=arm-1 "$HOST_GROUPS" matrix \
+  >"${TMPDIR}/hard-failure.out" || status=$?
+[ "$status" -eq 7 ] || fail "expected original command status 7"
+[ "$(< "${TMPDIR}/hard-failure.ssh")" = arm-1 ] || fail "hard failure must run once"
+[ ! -s "${TMPDIR}/hard-failure.out" ] || fail "failed probe must not emit any matrix"
 
 status=0
 HOST_ARCHES='empty=' run_clean AWS_METAL_RUNNER_HOSTS='empty' "$HOST_GROUPS" matrix >"${TMPDIR}/empty-host-arch.out" 2>"${TMPDIR}/empty-host-arch.err" || status=$?

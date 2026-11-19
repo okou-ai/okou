@@ -88,8 +88,29 @@ async function openUnifiedWorkspace(
   return { handle, shell };
 }
 
-test("The unified workspace opens the side panel at its share and resizes it from the keyboard", async () => {
+test("The unified workspace opens each side panel at its default width and resizes it from the keyboard", async () => {
   const { handle, shell } = await openUnifiedWorkspace();
+  expect(sidebarWidth(shell)).toBe("clamp(400px, 480px, calc(100% - 420px))");
+
+  handle.focus();
+  fireEvent.keyDown(handle, { key: "ArrowLeft" });
+  // The list's 480px default plus one 16px step.
+  expect(sidebarWidth(shell)).toBe("clamp(400px, 496px, calc(100% - 420px))");
+  expect(handle).toHaveAttribute("aria-valuenow", "496");
+
+  fireEvent.keyDown(handle, { key: "End" });
+  expect(sidebarWidth(shell)).toBe("clamp(400px, 1020px, calc(100% - 420px))");
+
+  fireEvent.keyDown(handle, { key: "Enter" });
+  expect(sidebarWidth(shell)).toBe("clamp(400px, 480px, calc(100% - 420px))");
+
+  click(
+    buttonNamed(
+      "Preview Unified report.txt",
+      screen.getByTestId("thread-sidebar-artifacts"),
+    ),
+  );
+  await screen.findByTestId("thread-sidebar-artifact-unavailable");
   expect(sidebarWidth(shell)).toBe("clamp(400px, 55%, calc(100% - 420px))");
 
   handle.focus();
@@ -97,12 +118,6 @@ test("The unified workspace opens the side panel at its share and resizes it fro
   // 55% of the 1440px workspace plus one 16px step.
   expect(sidebarWidth(shell)).toBe("clamp(400px, 808px, calc(100% - 420px))");
   expect(handle).toHaveAttribute("aria-valuenow", "808");
-
-  fireEvent.keyDown(handle, { key: "End" });
-  expect(sidebarWidth(shell)).toBe("clamp(400px, 1020px, calc(100% - 420px))");
-
-  fireEvent.keyDown(handle, { key: "Enter" });
-  expect(sidebarWidth(shell)).toBe("clamp(400px, 55%, calc(100% - 420px))");
 });
 
 test("Double-clicking the side panel divider restores its default width", async () => {
@@ -113,7 +128,7 @@ test("Double-clicking the side panel divider restores its default width", async 
   expect(sidebarWidth(shell)).toBe("clamp(400px, 540px, calc(100% - 420px))");
 
   fireEvent.doubleClick(handle);
-  expect(sidebarWidth(shell)).toBe("clamp(400px, 55%, calc(100% - 420px))");
+  expect(sidebarWidth(shell)).toBe("clamp(400px, 480px, calc(100% - 420px))");
 });
 
 test("Panel borrowing folds immediately after the list minimum and restores only after 16px of reversal", async () => {

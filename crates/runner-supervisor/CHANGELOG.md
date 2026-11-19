@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.26.8](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.7...runner-supervisor-v0.26.8) (2026-11-19)
+
+## [0.26.7](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.6...runner-supervisor-v0.26.7) (2026-11-19)
+
+
+### Bug Fixes
+
+* **runner:** allow additional dispatch envelope fields ([#48869](https://github.com/okou-ai/okou/issues/48869)) ([debde7f](https://github.com/okou-ai/okou/commit/debde7f0cdde00c191deb4b9a512fc8f0e3c397f))
+
 ## [0.26.6](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.5...runner-supervisor-v0.26.6) (2026-11-19)
 
 ## [0.26.5](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.4...runner-supervisor-v0.26.5) (2026-11-19)

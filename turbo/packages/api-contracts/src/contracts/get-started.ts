@@ -109,16 +109,3 @@ export const getStartedContract = c.router({
     summary: "Claim the current UTC day's check-in bonus",
   },
 });
-
-export const cronGetStartedContract = c.router({
-  process: {
-    method: "GET",
-    path: "/api/cron/get-started-rewards",
-    headers: authHeadersSchema,
-    responses: {
-      200: object({ processed: number().int().nonnegative() }),
-      401: apiErrorSchema,
-    },
-    summary: "Review pending Get started reward claims",
-  },
-});

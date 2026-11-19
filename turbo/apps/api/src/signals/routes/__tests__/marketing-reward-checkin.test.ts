@@ -16,7 +16,7 @@ import { marketingRewardNotificationRoutes } from "../marketing-reward-notificat
 import { createRouteMocks } from "./helpers/route-test";
 import {
   campaignRequest,
-  marketingRewardConsumer,
+  marketingCheckinCampaign,
 } from "./helpers/marketing-reward-consumer";
 
 const context = testContext();
@@ -27,14 +27,11 @@ test("records only authenticated explicit check-ins and retains the first day sn
   const client = setupApp({ context, routes: getStartedRoutes })(
     getStartedContract,
   );
-  const consumer = marketingRewardConsumer();
+  const consumer = marketingCheckinCampaign(context);
   const userId = `user_${randomUUID()}`;
   const orgId = `org_${randomUUID()}`;
   mocks.clerk.session(userId, orgId);
   mockNow(new Date("2026-11-16T23:59:59.123Z"));
-  expect(
-    (await accept(client.status({ headers }), [200])).body.claimedToday,
-  ).toBeFalsy();
   expect((await client.checkin({ headers: {} })).status).toBe(401);
   await flushWaitUntilForTest();
   expect(consumer.received).toStrictEqual([]);
@@ -79,7 +76,7 @@ test("recovers the original check-in day and financial receipt across UTC rollov
   const client = setupApp({ context, routes: getStartedRoutes })(
     getStartedContract,
   );
-  const consumer = marketingRewardConsumer();
+  const consumer = marketingCheckinCampaign(context);
   const userId = `user_${randomUUID()}`;
   const orgId = `org_${randomUUID()}`;
   mocks.clerk.session(userId, orgId);

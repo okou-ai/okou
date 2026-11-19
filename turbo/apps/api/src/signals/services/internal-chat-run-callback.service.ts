@@ -34,11 +34,6 @@ import { serializeError } from "@okouai/core/log-utils";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
-import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
-import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
-import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
-import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { DatabaseError } from "pg";
@@ -133,14 +128,9 @@ import {
   type FeishuDeliveryTarget,
 } from "./feishu-chat-callback-payload";
 import {
-  feishuQueuedLaunchContextReadPlan,
-  feishuQueuedLaunchMaterialFromContext,
-  requiredFeishuLaunchContext,
+  createFeishuLaunchContext,
+  feishuDeliveryFromContext,
 } from "./feishu-queued-launch-context.service";
-import {
-  feishuInstallationAvailabilityReadPlan,
-  feishuInstallationEnabledFromRows,
-} from "./feishu-config";
 import {
   deliverAgentPhoneChatAdmissionFailure$,
   dispatchAgentPhoneChatDeliveryOnce$,
@@ -168,7 +158,6 @@ import {
   dispatchTelegramChatDeliveryOnce$,
 } from "./internal-telegram-chat-run-callback.service";
 import { sendUserPushNotifications$ } from "./push-notifications.service";
-import { scheduleUserWidgetRefresh$ } from "./ios-widget-push.service";
 import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
 import { saveRunSummary$ } from "./run-summary.service";
 import { loadSlackQueuedLaunchMaterial$ } from "./slack-queued-launch-context.service";
@@ -180,7 +169,7 @@ import {
   teamsDeliveryTargetSchema,
   type TeamsDeliveryTarget,
 } from "./teams-chat-callback-payload";
-import { loadTeamsQueuedLaunchMaterial$ } from "./teams-queued-launch-context.service";
+import { createTeamsQueuedDelivery } from "./teams-queued-launch-context.service";
 import {
   telegramDeliveryTargetSchema,
   type TelegramDeliveryTarget,
@@ -1087,7 +1076,6 @@ const insertAssistantErrorEvent$ = command(
       assistantErrorEventTouchOptions(args),
       signal,
     );
-    set(scheduleUserWidgetRefresh$, args.userId);
     await set(publishAssistantErrorEventSignals$, args, signal);
     signal.throwIfAborted();
     return assistantErrorEventResult(displayErrorMessage, inserted);
@@ -1426,7 +1414,6 @@ const insertRunLifecycleMarker$ = command(
       runLifecycleMarkerTouchOptions(args, markerCreatedAt),
       signal,
     );
-    set(scheduleUserWidgetRefresh$, args.userId);
     await set(publishRunLifecycleMarkerSignals$, args, signal);
     signal.throwIfAborted();
     return runLifecycleMarkerResult(inserted);
@@ -3566,7 +3553,7 @@ const loadMessageRejectionDelivery$ = command(
 
 const loadQueuedRejectionChannel$ = command(
   async (
-    { set },
+    { get, set },
     head: QueuedRejectionHead,
     signal: AbortSignal,
   ): Promise<QueuedAdmissionFailureChannel | undefined> => {
@@ -3574,7 +3561,6 @@ const loadQueuedRejectionChannel$ = command(
     if (contextType === null || !isQueuedRejectionDeliveryType(contextType)) {
       return undefined;
     }
-    const db = set(writeDb$);
     const featureSwitchContext = await set(
       loadUserFeatureSwitchContext$,
       head.orgId,
@@ -3595,61 +3581,20 @@ const loadQueuedRejectionChannel$ = command(
           : undefined;
       }
       case "feishu": {
-        const material = await (async () => {
-          const context = await (async () => {
-            const plan = feishuQueuedLaunchContextReadPlan(source);
-            const [row] = await db
-              .select(plan.columns)
-              .from(chatEvents)
-              .innerJoin(chatFeishuContext, plan.contextJoin)
-              .innerJoin(feishuChatThreadRoutes, plan.routeJoin)
-              .innerJoin(feishuOrgConnections, plan.connectionJoin)
-              .innerJoin(feishuOrgInstallations, plan.installationJoin)
-              .where(plan.condition)
-              .limit(1);
-            if (
-              row &&
-              !(await (async () => {
-                const availability = feishuInstallationAvailabilityReadPlan({
-                  ...row,
-                  orgId: source.orgId,
-                });
-                if (availability.kind === "resolved") {
-                  return availability.enabled;
-                }
-                const rows = await db
-                  .select(availability.columns)
-                  .from(userFeatureSwitches)
-                  .where(availability.condition);
-                return feishuInstallationEnabledFromRows(
-                  availability.scope,
-                  rows,
-                );
-              })())
-            ) {
-              return null;
-            }
-            return requiredFeishuLaunchContext(row);
-          })();
-          return feishuQueuedLaunchMaterialFromContext(
-            context,
-            source.featureSwitchContext,
-          );
-        })();
+        const context = await get(createFeishuLaunchContext(source));
         signal.throwIfAborted();
-        return material
-          ? { ...delivery, kind: "Feishu", target: material.feishuDelivery }
+        return context
+          ? {
+              ...delivery,
+              kind: "Feishu",
+              target: feishuDeliveryFromContext(context),
+            }
           : undefined;
       }
       case "teams": {
-        const material = await set(
-          loadTeamsQueuedLaunchMaterial$,
-          source,
-          signal,
-        );
-        return material
-          ? { ...delivery, kind: "Teams", target: material.teamsDelivery }
-          : undefined;
+        const target = await get(createTeamsQueuedDelivery(source));
+        signal.throwIfAborted();
+        return target ? { ...delivery, kind: "Teams", target } : undefined;
       }
       case "discord": {
         const material = await set(

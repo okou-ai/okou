@@ -28,16 +28,7 @@ export ANDROID_HOME=${ANDROID_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/android
 mkdir -p "$root/build/reports/release"
 artifacts=$(mktemp -d "$root/build/reports/release/run.XXXXXX")
 echo "Release test artifacts: $artifacts"
-# Screenshot recipes add a temporary driver, not another production ABI. Check
-# the baseline suite's contract before compiling that optional overlay below.
-abi_arguments=()
-for argument in "$@"; do
-  case "$argument" in
-    -Pokou.screenshotScenarioDir=*) ;;
-    *) abi_arguments+=("$argument") ;;
-  esac
-done
-./gradlew :app:generateNativeTestKeepRules --no-daemon "${abi_arguments[@]}"
+./gradlew :app:generateNativeTestKeepRules --no-daemon "$@"
 if ! cmp app/build/generated/native-test.keep app/src/main/keepRules/native-instrumentation.keep; then
   echo 'Native ABI changed. Review and copy app/build/generated/native-test.keep to app/src/main/keepRules/native-instrumentation.keep.' >&2
   exit 1

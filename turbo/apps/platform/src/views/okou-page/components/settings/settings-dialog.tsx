@@ -12,7 +12,7 @@ import {
   SelectValue,
   cn,
 } from "@okouai/ui";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useLastResolved, useGet, useLoadable, useSet } from "ccstate-react";
 import {
   Bug,
   Building,
@@ -31,7 +31,7 @@ import {
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import {
   closeSettingsModal$,
@@ -155,12 +155,12 @@ function SettingsDialog({
   const activeSection = useGet(settingsActiveSection$);
   const setActiveSection = useSet(setSettingsActiveSection$);
   const signal = useGet(pageSignal$);
-  const features = useGet(featureSwitch$);
+  const features = useLastResolved(featureSwitches$);
   const isAdminLoadable = useLoadable(isOrgAdmin$);
   const isAdmin =
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
-  const showDebug = features[FeatureSwitchKey.OkouDebug] ?? false;
-  const singleAgent = features[FeatureSwitchKey.SingleAgent];
+  const showDebug = features?.[FeatureSwitchKey.OkouDebug] ?? false;
+  const singleAgent = features?.[FeatureSwitchKey.SingleAgent] ?? false;
 
   const sectionMeta = {
     "my-okou": {

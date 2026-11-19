@@ -34,7 +34,7 @@ import {
 } from "@okouai/ui";
 import type { Project } from "@okouai/api-contracts/validators/projects";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import {
   projects$,
   projectsEnabled$,
@@ -117,8 +117,8 @@ function ProjectFoldMenuItem({
 
 function ProjectMoveMenuItems({ project }: { project: Project }) {
   const { t } = useTranslation();
-  const enabled = useGet(projectReorderEnabled$);
-  const projects = useGet(projects$);
+  const enabled = useLastResolved(projectReorderEnabled$) ?? false;
+  const projects = useLastResolved(projects$) ?? [];
   const [moving, move] = useLoadableSet(stepProject$);
   const signal = useGet(pageSignal$);
   if (!enabled) {
@@ -431,7 +431,8 @@ export function ProjectRow({
 }) {
   const { project, expanded } = row;
   const titleRevealEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ProjectTitleReveal];
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ProjectTitleReveal] ===
+    true;
   // A Project's page makes its row the list's current item.
   const active = useGet(selectedProjectId$) === project.id;
   const state =
@@ -521,7 +522,7 @@ export function ProjectStatusRow({
 
 export function ProjectCreateButton({ touch = false }: { touch?: boolean }) {
   const { t } = useTranslation();
-  const enabled = useGet(projectsEnabled$);
+  const enabled = useLastResolved(projectsEnabled$) ?? false;
   const open = useSet(openProjectEditor$);
   if (!enabled) {
     return null;

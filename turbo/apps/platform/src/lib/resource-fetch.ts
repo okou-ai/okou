@@ -19,6 +19,15 @@ export function fetchResource(
   return fetch(url, { ...options, credentials: "omit", signal });
 }
 
+/** Read a build asset through the current app origin, including preview sessions. */
+export function fetchAppAsset(
+  url: string,
+  signal: AbortSignal,
+): Promise<Response> {
+  signal.throwIfAborted();
+  return fetch(new URL(url, location.href), { mode: "same-origin", signal });
+}
+
 /** Transfer a presigned object with native upload progress and no app credentials. */
 export async function uploadResource(
   url: string | URL,

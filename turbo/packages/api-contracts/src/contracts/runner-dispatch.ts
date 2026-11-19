@@ -18,7 +18,7 @@ export const runnerDispatchEnvelopeSchema = object({
   profile: string(),
   notAfter: number().int().nonnegative(),
   executionContext: executionContextSchema,
-}).strict();
+});
 
 export const runnerDispatchResponseSchema = object({
   runnerId: uuid(),

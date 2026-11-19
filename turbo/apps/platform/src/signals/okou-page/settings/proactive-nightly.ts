@@ -3,13 +3,13 @@ import { proactiveLearningContract } from "@okouai/api-contracts/client/proactiv
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$ } from "../../api-client.ts";
 import { searchParams$ } from "../../route.ts";
-import { featureSwitch$ } from "../../external/feature-switch.ts";
+import { featureSwitches$ } from "../../external/feature-switch.ts";
 
 const revision$ = state(0);
 const preference$ = computed(async (get) => {
   get(revision$);
   get(searchParams$);
-  get(featureSwitch$);
+  await get(featureSwitches$);
   return (await accept(get(apiClient$)(proactiveLearningContract).get(), [200]))
     .body;
 });

@@ -11,11 +11,6 @@ import {
   chatEvents,
   type ChatEventUserMessage,
 } from "@okouai/db/schema/chat-event";
-import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
-import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
-import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
-import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
-import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import type { SelectResultFields } from "drizzle-orm/query-builders/select.types";
@@ -25,14 +20,9 @@ import { db$ } from "../external/db";
 import { resolveThreadGenerationTemplates } from "../../lib/thread-generation-template";
 import { loadAgentPhoneQueuedLaunchMaterial$ } from "./agentphone-queued-launch-context.service";
 import {
-  feishuQueuedLaunchContextReadPlan,
-  feishuQueuedLaunchMaterialFromContext,
-  requiredFeishuLaunchContext,
+  createFeishuLaunchContext,
+  feishuPromptFromContext,
 } from "./feishu-queued-launch-context.service";
-import {
-  feishuInstallationAvailabilityReadPlan,
-  feishuInstallationEnabledFromRows,
-} from "./feishu-config";
 import { loadSlackQueuedLaunchMaterial$ } from "./slack-queued-launch-context.service";
 import {
   DiscordQueuedLaunchUnavailableError,
@@ -209,48 +199,11 @@ const loadIntegrationPromptMaterial$ = command(
         return await set(loadSlackQueuedLaunchMaterial$, loaderArgs);
       }
       case "feishu": {
-        const db = get(db$);
-        return await (async () => {
-          const context = await (async () => {
-            const plan = feishuQueuedLaunchContextReadPlan(loaderArgs);
-            const [row] = await db
-              .select(plan.columns)
-              .from(chatEvents)
-              .innerJoin(chatFeishuContext, plan.contextJoin)
-              .innerJoin(feishuChatThreadRoutes, plan.routeJoin)
-              .innerJoin(feishuOrgConnections, plan.connectionJoin)
-              .innerJoin(feishuOrgInstallations, plan.installationJoin)
-              .where(plan.condition)
-              .limit(1);
-            if (
-              row &&
-              !(await (async () => {
-                const availability = feishuInstallationAvailabilityReadPlan({
-                  ...row,
-                  orgId: loaderArgs.orgId,
-                });
-                if (availability.kind === "resolved") {
-                  return availability.enabled;
-                }
-                const rows = await db
-                  .select(availability.columns)
-                  .from(userFeatureSwitches)
-                  .where(availability.condition);
-                return feishuInstallationEnabledFromRows(
-                  availability.scope,
-                  rows,
-                );
-              })())
-            ) {
-              return null;
-            }
-            return requiredFeishuLaunchContext(row);
-          })();
-          return feishuQueuedLaunchMaterialFromContext(
-            context,
-            loaderArgs.featureSwitchContext,
-          );
-        })();
+        const context = await get(createFeishuLaunchContext(loaderArgs));
+        signal.throwIfAborted();
+        return context
+          ? feishuPromptFromContext(context, loaderArgs.featureSwitchContext)
+          : null;
       }
       case "wechat": {
         return await set(loadWechatQueuedLaunchMaterial$, loaderArgs, signal);

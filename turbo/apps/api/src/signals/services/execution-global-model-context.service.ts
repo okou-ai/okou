@@ -2,12 +2,12 @@ import { computed } from "ccstate";
 import { asc, inArray, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { resolveSkillRef } from "@okouai/core/github-url";
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { usagePricing } from "@okouai/db/runtime/usage-pricing";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import { modelRoutes } from "@okouai/db/schema/model-route";
-import { skills as skillCatalog } from "@okouai/db/schema/skill";
+import { builtInSkills } from "@okouai/db/schema/built-in-skill";
 import { array, unknown as zUnknown } from "zod";
 import { db$ } from "../external/db";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
@@ -20,11 +20,10 @@ import { validateModelCatalog } from "./model-catalog.service";
 import { usagePricingByKey } from "./built-in-route-pricing";
 
 const seedSkillColumns = Object.freeze({
-  url: skillCatalog.url,
-  contentBundle: skillCatalog.contentBundle,
+  url: builtInSkills.url,
+  contentBundle: builtInSkills.contentBundle,
 });
 
-/** Every Seed Skill bundle; each run filters and checks its own selection. */
 function seedSkillRows(builder: QueryBuilder) {
   return builder
     .select({
@@ -32,8 +31,8 @@ function seedSkillRows(builder: QueryBuilder) {
         .mapWith(zodDriverValueDecoder(zUnknown()))
         .as("payload"),
     })
-    .from(skillCatalog)
-    .where(inArray(skillCatalog.url, SEED_SKILLS.map(resolveSkillRef)));
+    .from(builtInSkills)
+    .where(inArray(builtInSkills.url, BUILT_IN_SKILLS.map(resolveSkillRef)));
 }
 
 /** Read execution-wide configuration and the model catalog in one snapshot. */

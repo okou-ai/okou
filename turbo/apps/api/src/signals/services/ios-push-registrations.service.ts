@@ -72,7 +72,6 @@ export const updateIosPushRegistration$ = command(
       readonly sessionId: string;
       readonly deviceToken: string;
       readonly environment: "production" | "sandbox";
-      readonly widgetPushToken: string | null;
       readonly enabled: boolean;
     },
     signal: AbortSignal,

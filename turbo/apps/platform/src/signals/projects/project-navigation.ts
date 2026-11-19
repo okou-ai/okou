@@ -13,19 +13,23 @@ export const selectedProjectId$ = computed((get) => {
   return typeof id === "string" ? id : null;
 });
 
-export const locateProject$ = command(({ get, set }, projectId: string) => {
-  if (
-    !get(projects$).some((project) => {
-      return project.id === projectId;
-    })
-  ) {
-    toast.error(
-      i18n.t(($) => {
-        return $.projects.unavailable;
-      }),
-    );
-    return;
-  }
-  set(expandProject$, projectId);
-  set(showChatSidebar$);
-});
+export const locateProject$ = command(
+  async ({ get, set }, projectId: string, signal: AbortSignal) => {
+    const projects = await get(projects$);
+    signal.throwIfAborted();
+    if (
+      !projects.some((project) => {
+        return project.id === projectId;
+      })
+    ) {
+      toast.error(
+        i18n.t(($) => {
+          return $.projects.unavailable;
+        }),
+      );
+      return;
+    }
+    set(expandProject$, projectId);
+    set(showChatSidebar$);
+  },
+);

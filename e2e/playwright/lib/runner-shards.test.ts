@@ -12,6 +12,7 @@ interface RunnerShard {
   readonly files: readonly string[];
   readonly index: number;
   readonly weight: number;
+  readonly timeoutMinutes: number;
 }
 
 interface RunnerShardMatrix {
@@ -32,7 +33,12 @@ test("discovers and deterministically balances non-empty runner shards", async (
         { length: testCount },
         (_, testIndex) => `@test "case ${testIndex + 1}" {\n  true\n}`,
       ).join("\n\n");
-      await writeFile(path, `#!/usr/bin/env bats\n\n${tests}\n`, "utf8");
+      const retrySetting = index === 5 ? "BATS_TEST_RETRIES=1\n\n" : "";
+      await writeFile(
+        path,
+        `#!/usr/bin/env bats\n\n${retrySetting}${tests}\n`,
+        "utf8",
+      );
       expectedFiles.push(relativeToWorkingDirectory(path));
     }
 
@@ -46,6 +52,14 @@ test("discovers and deterministically balances non-empty runner shards", async (
       Array.from({ length: 12 }, (_, index) => index + 1),
     );
     assert(first.include.every((shard) => shard.files.length > 0));
+    const retryingFile = expectedFiles[4];
+    assert(retryingFile);
+    for (const shard of first.include) {
+      assert.equal(
+        shard.timeoutMinutes,
+        shard.files.includes(retryingFile) ? 35 : 15,
+      );
+    }
     assert.deepEqual(
       first.include.flatMap((shard) => shard.files).sort(),
       expectedFiles.sort(),
@@ -112,7 +126,9 @@ function parseShard(value: unknown): RunnerShard {
     !("index" in value) ||
     typeof value.index !== "number" ||
     !("weight" in value) ||
-    typeof value.weight !== "number"
+    typeof value.weight !== "number" ||
+    !("timeoutMinutes" in value) ||
+    typeof value.timeoutMinutes !== "number"
   ) {
     throw new Error("Runner shard planner returned an invalid shard");
   }
@@ -122,7 +138,12 @@ function parseShard(value: unknown): RunnerShard {
     }
     return file;
   });
-  return { files, index: value.index, weight: value.weight };
+  return {
+    files,
+    index: value.index,
+    weight: value.weight,
+    timeoutMinutes: value.timeoutMinutes,
+  };
 }
 
 function relativeToWorkingDirectory(path: string): string {

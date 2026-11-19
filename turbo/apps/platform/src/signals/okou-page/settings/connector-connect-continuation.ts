@@ -1,3 +1,4 @@
+import { detach, Reason } from "../../utils.ts";
 import { command, type Command, type Computed } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { toast } from "@okouai/ui/components/ui/sonner";
@@ -286,7 +287,11 @@ const finishComposerConnectorAddition$ = command(
         { id: `connector-connected-${plan.connector.slug}` },
       );
     }
-    set(plan.host.connector.updateConnectorUiState$, { showAddDialog: false });
+    await set(
+      plan.host.connector.updateConnectorUiState$,
+      { showAddDialog: false },
+      signal,
+    );
   },
 );
 
@@ -389,7 +394,11 @@ const continueConnectorConnectPlan$ = command(
 
 /** Closes the connect dialog of the origin's surface after a connection. */
 const closeConnectorConnectModal$ = command(
-  ({ set }, plan: ConnectorConnectPlan, signal: AbortSignal): void => {
+  async (
+    { set },
+    plan: ConnectorConnectPlan,
+    signal: AbortSignal,
+  ): Promise<void> => {
     set(clearBuiltinConnectorOAuthDeviceAuth$);
     set(clearBuiltinConnectorExternalCode$);
     switch (plan.kind) {
@@ -421,10 +430,14 @@ const closeConnectorConnectModal$ = command(
         return;
       }
       case "composer": {
-        set(plan.host.connector.updateConnectorUiState$, {
-          selectedConnectorSlug: null,
-          selectedConnector: null,
-        });
+        await set(
+          plan.host.connector.updateConnectorUiState$,
+          {
+            selectedConnectorSlug: null,
+            selectedConnector: null,
+          },
+          signal,
+        );
         return;
       }
       case "artifact-drive-sync":
@@ -447,7 +460,7 @@ const finishConnectorConnect$ = command(
     await set(continueConnectorConnectPlan$, plan, connectionId, signal);
     signal.throwIfAborted();
     if (surface === "connect-modal") {
-      set(closeConnectorConnectModal$, plan, signal);
+      await set(closeConnectorConnectModal$, plan, signal);
     } else if (surface === "directed-manual-grant-dialog") {
       set(setManualGrantDialogKey$, null, signal);
     }
@@ -743,7 +756,7 @@ const continueCustomConnectorSucceeded$ = command(
         return;
       }
       case "composer": {
-        set(plan.host.completeCustomConnectorAddition$);
+        await set(plan.host.completeCustomConnectorAddition$, signal);
         return;
       }
     }
@@ -752,11 +765,11 @@ const continueCustomConnectorSucceeded$ = command(
 
 /** Closes the connect dialog of the surface that started the connection. */
 const closeCustomConnectorConnectSurface$ = command(
-  (
+  async (
     { get, set },
     origin: CustomConnectorConnectOrigin,
     signal: AbortSignal,
-  ): void => {
+  ): Promise<void> => {
     switch (origin.kind) {
       case "account": {
         set(closeCustomAccountConnectDialog$);
@@ -773,9 +786,13 @@ const closeCustomConnectorConnectSurface$ = command(
       case "composer": {
         const host = get(composerConnectHosts$).get(origin.hostKey);
         if (host) {
-          set(host.connector.updateConnectorUiState$, {
-            selectedCustomConnectorId: null,
-          });
+          await set(
+            host.connector.updateConnectorUiState$,
+            {
+              selectedCustomConnectorId: null,
+            },
+            signal,
+          );
         }
         return;
       }
@@ -816,7 +833,10 @@ export const submitCustomConnectorConnectionAndContinue$ = command(
           );
         },
         onClose: () => {
-          set(closeCustomConnectorConnectSurface$, origin, signal);
+          detach(
+            set(closeCustomConnectorConnectSurface$, origin, signal),
+            Reason.DomCallback,
+          );
         },
       },
       signal,
@@ -831,7 +851,10 @@ export const cancelCustomConnectorConnectionFrom$ = command(
     signal: AbortSignal,
   ): void => {
     set(cancelCustomConnectorConnection$, () => {
-      set(closeCustomConnectorConnectSurface$, origin, signal);
+      detach(
+        set(closeCustomConnectorConnectSurface$, origin, signal),
+        Reason.DomCallback,
+      );
     });
   },
 );

@@ -71,14 +71,16 @@ final class ChatBatchPermissionTests: XCTestCase {
         threadID: FixtureData.threadID))
   }
 
-  func testBatchApplyWritesOnlyMissingPermissionsWithSelectedDurationAndReadsBack() async throws {
+  func testBatchApplyUsesWriteReceiptAndPreservesGrantsMadeAfterReview() async throws {
     var state = FixtureData.State()
     let originalExpiry = "2098-01-01T00:00:00Z"
-    state.grants = [FixtureData.Grant(expiresAt: originalExpiry)]
+    state.failReadbackAfterWrite = true
     let fixture = fixture(state)
     let service = ChatBatchPermissions(client: fixture.http.client)
     let action = try action()
-    let result = try await service.apply(action, duration: .week, expectedConnectorScoped: false)
+    let reviewed = try await service.load(action)
+    fixture.state.withLock { $0.grants = [FixtureData.Grant(expiresAt: originalExpiry)] }
+    let result = try await service.apply(action, duration: .week, reviewing: reviewed)
     XCTAssertTrue(result.allAllowed)
     XCTAssertEqual(result.allowedCount, 4)
     XCTAssertEqual(
@@ -95,7 +97,13 @@ final class ChatBatchPermissionTests: XCTestCase {
     XCTAssertEqual(grants.count, 3)
     XCTAssertTrue(grants.allSatisfy { $0["action"] == "allow" && $0["expiresIn"] == "7d" })
     XCTAssertEqual(request.value(forHTTPHeaderField: "X-Client-Type"), "iOS")
-    _ = try await service.apply(action, duration: .always, expectedConnectorScoped: false)
+    fixture.state.withLock { $0.grantReadStatus = 200 }
+    let saved = try await service.load(action)
+    XCTAssertTrue(saved.allAllowed)
+    XCTAssertEqual(
+      saved.groups.first?.grant(for: action.items[0])?.expiresAt?.formatted(.iso8601),
+      originalExpiry)
+    _ = try await service.apply(action, duration: .always, reviewing: saved)
     XCTAssertEqual(
       fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, 1)
   }
@@ -107,9 +115,11 @@ final class ChatBatchPermissionTests: XCTestCase {
       if variant == 1 { state.metadataStatus["google-drive"] = 404 }
       if variant == 2 { state.threadAgentID = UUID().uuidString }
       let fixture = fixture(state)
+      let service = ChatBatchPermissions(client: fixture.http.client)
+      let action = try action()
+      let reviewed = try await service.load(action)
       do {
-        _ = try await ChatBatchPermissions(client: fixture.http.client).apply(
-          try action(), duration: .hour, expectedConnectorScoped: false)
+        _ = try await service.apply(action, duration: .hour, reviewing: reviewed)
         XCTFail("Unavailable requests cannot grant permissions")
       } catch {}
       XCTAssertTrue(fixture.state.withLock { $0.requests.allSatisfy { $0.httpMethod == "GET" } })
@@ -131,17 +141,18 @@ final class ChatBatchPermissionTests: XCTestCase {
   }
 
   func testSharedScopeUsesConnectorWritesAndRejectsScopeChangesAfterReview() async throws {
-    var state = FixtureData.State()
-    state.shared = true
-    let fixture = fixture(state)
+    let fixture = fixture()
     let service = ChatBatchPermissions(client: fixture.http.client)
     let action = try action()
+    let reviewed = try await service.load(action)
+    fixture.state.withLock { $0.shared = true }
     do {
-      _ = try await service.apply(action, duration: .day, expectedConnectorScoped: false)
+      _ = try await service.apply(action, duration: .day, reviewing: reviewed)
       XCTFail("A newly broader scope needs another review")
     } catch {}
     XCTAssertTrue(fixture.state.withLock { $0.requests.allSatisfy { $0.httpMethod == "GET" } })
-    let saved = try await service.apply(action, duration: .day, expectedConnectorScoped: true)
+    let shared = try await service.load(action)
+    let saved = try await service.apply(action, duration: .day, reviewing: shared)
     XCTAssertTrue(saved.connectorScoped)
     XCTAssertTrue(saved.allAllowed)
     let writes = fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" } }

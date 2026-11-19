@@ -10,12 +10,8 @@ import {
   DEFAULT_SKILLS_REPO,
   resolveSkillRef,
 } from "@okouai/core/github-url";
-import {
-  parseSkillFrontmatter,
-  type SkillFrontmatter,
-} from "@okouai/core/skill-frontmatter";
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
-import { skills } from "@okouai/db/schema/skill";
+import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
+import { builtInSkills } from "@okouai/db/schema/built-in-skill";
 import { command } from "ccstate";
 import { eq, inArray } from "drizzle-orm";
 import { Parser } from "tar";
@@ -48,13 +44,9 @@ interface ExtractedSkill {
 }
 
 interface SkillSyncContext {
-  readonly skillName: string;
   readonly files: readonly ExtractedFile[];
   readonly url: string;
-  readonly fullPath: string;
-  readonly frontmatter: SkillFrontmatter;
   readonly versionHash: string;
-  readonly totalSize: number;
 }
 
 const log = logger("skills:sync");
@@ -115,7 +107,7 @@ function extractSkillsFromTarball(
       }
 
       const skillName = parts[1]!;
-      if (!SEED_SKILLS.includes(skillName)) {
+      if (!BUILT_IN_SKILLS.includes(skillName)) {
         entry.resume();
         return;
       }
@@ -211,13 +203,6 @@ function buildSkillSyncContext(extracted: ExtractedSkill): SkillSyncContext {
   const skillName = extracted.skillName;
   const files = extracted.files;
   const url = skillUrl(skillName);
-  const fullPath = `${DEFAULT_SKILLS_OWNER}/${DEFAULT_SKILLS_REPO}/tree/${DEFAULT_SKILLS_BRANCH}/${skillName}`;
-  const skillMd = files.find((file) => {
-    return file.path === "SKILL.md";
-  });
-  const frontmatter: SkillFrontmatter = skillMd
-    ? parseSkillFrontmatter(skillMd.content.toString("utf8"))
-    : {};
   const fileEntries: FileEntryWithHash[] = files.map((file) => {
     return {
       path: file.path,
@@ -225,32 +210,13 @@ function buildSkillSyncContext(extracted: ExtractedSkill): SkillSyncContext {
       size: file.size,
     };
   });
-  const totalSize = files.reduce((sum, file) => {
-    return sum + file.size;
-  }, 0);
-
   return {
-    skillName,
     files,
     url,
-    fullPath,
-    frontmatter,
     versionHash: computeSystemSkillHash(url, fileEntries),
-    totalSize,
   };
 }
 
-function skillSourceValues(context: SkillSyncContext, timestamp: Date) {
-  return {
-    name: context.frontmatter.name ?? context.skillName,
-    fullPath: context.fullPath,
-    versionHash: context.versionHash,
-    frontmatter: context.frontmatter,
-    size: context.totalSize,
-    fileCount: context.files.length,
-    syncedAt: timestamp,
-  };
-}
 const commitSeedSkillPublication$ = command(
   async (
     { set },
@@ -262,20 +228,18 @@ const commitSeedSkillPublication$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     signal.throwIfAborted();
-    const database = set(writeDb$);
-    const record = {
-      ...skillSourceValues(args.context, args.timestamp),
-      storageId: null,
-      s3Key: null,
+    const publication = {
+      versionHash: args.context.versionHash,
       contentBundle: args.contentBundle,
       contentBundleSourceVersionHash: args.context.versionHash,
+      updatedAt: args.timestamp,
     };
-    await database
-      .insert(skills)
-      .values({ url: args.context.url, ...record })
+    await set(writeDb$)
+      .insert(builtInSkills)
+      .values({ url: args.context.url, ...publication })
       .onConflictDoUpdate({
-        target: skills.url,
-        set: { ...record, updatedAt: args.timestamp },
+        target: builtInSkills.url,
+        set: publication,
       });
     signal.throwIfAborted();
   },
@@ -290,12 +254,13 @@ const syncSingleSkill$ = command(
     const context = buildSkillSyncContext(extracted);
     const [existingSkill] = await get(db$)
       .select({
-        versionHash: skills.versionHash,
-        contentBundle: skills.contentBundle,
-        contentBundleSourceVersionHash: skills.contentBundleSourceVersionHash,
+        versionHash: builtInSkills.versionHash,
+        contentBundle: builtInSkills.contentBundle,
+        contentBundleSourceVersionHash:
+          builtInSkills.contentBundleSourceVersionHash,
       })
-      .from(skills)
-      .where(eq(skills.url, context.url))
+      .from(builtInSkills)
+      .where(eq(builtInSkills.url, context.url))
       .limit(1);
     signal.throwIfAborted();
     if (
@@ -338,7 +303,7 @@ function validateSeedSkills(
   });
 
   if (missingSkills.length > 0) {
-    log.error("SEED_SKILLS references skills not found in repository", {
+    log.error("BUILT_IN_SKILLS references skills not found in repository", {
       missingSkills: missingSkills.map((name) => {
         return resolveSkillRef(name);
       }),
@@ -351,21 +316,22 @@ export const syncSkills$ = command(
     const headSha = await fetchHeadCommitSha(signal);
     signal.throwIfAborted();
 
-    const seedSkillUrls = SEED_SKILLS.map(skillUrl);
+    const seedSkillUrls = BUILT_IN_SKILLS.map(skillUrl);
     // commitSha is a batch completion marker. A failed or interrupted attempt
     // leaves the set incomplete so the next cron run downloads the same commit
     // and retries its missing work. Historical non-Seed rows belong to retained
     // Registry/Run inputs and must not participate in this batch.
     const existing = await get(db$)
       .select({
-        url: skills.url,
-        commitSha: skills.commitSha,
-        versionHash: skills.versionHash,
-        contentBundle: skills.contentBundle,
-        contentBundleSourceVersionHash: skills.contentBundleSourceVersionHash,
+        url: builtInSkills.url,
+        commitSha: builtInSkills.commitSha,
+        versionHash: builtInSkills.versionHash,
+        contentBundle: builtInSkills.contentBundle,
+        contentBundleSourceVersionHash:
+          builtInSkills.contentBundleSourceVersionHash,
       })
-      .from(skills)
-      .where(inArray(skills.url, seedSkillUrls));
+      .from(builtInSkills)
+      .where(inArray(builtInSkills.url, seedSkillUrls));
     signal.throwIfAborted();
 
     if (
@@ -373,7 +339,7 @@ export const syncSkills$ = command(
       existing.every((skill) => {
         return skill.commitSha === headSha;
       }) &&
-      SEED_SKILLS.every((name) => {
+      BUILT_IN_SKILLS.every((name) => {
         return existing.some((skill) => {
           return (
             skill.url === skillUrl(name) &&
@@ -434,15 +400,15 @@ export const syncSkills$ = command(
       }
     }
 
-    validateSeedSkills(extractedSkills, SEED_SKILLS);
+    validateSeedSkills(extractedSkills, BUILT_IN_SKILLS);
 
-    if (failed === 0 && extractedSkills.length === SEED_SKILLS.length) {
+    if (failed === 0 && extractedSkills.length === BUILT_IN_SKILLS.length) {
       // A missing Seed or failed publication must leave the batch retryable.
       // Advance only this complete Seed set, never retained non-Seed metadata.
       await set(writeDb$)
-        .update(skills)
+        .update(builtInSkills)
         .set({ commitSha: headSha, updatedAt: nowDate() })
-        .where(inArray(skills.url, seedSkillUrls));
+        .where(inArray(builtInSkills.url, seedSkillUrls));
       signal.throwIfAborted();
     }
 

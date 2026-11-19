@@ -11,7 +11,10 @@ import { applicationResourcePriorityHtmlPlugin } from "./scripts/app-resource-pr
 import { clientDescriptorsPlugin } from "./scripts/check-client-descriptors.ts";
 import { clerkCoreHtmlPlugin } from "./scripts/clerk-html.ts";
 import { clerkUiAssetPlugin } from "./scripts/clerk-ui.ts";
-import { MESSAGE_PDF_WORKER_FILE_PATTERN } from "./scripts/message-pdf-worker.ts";
+import {
+  MESSAGE_PDF_FONT_FILE_PATTERN,
+  MESSAGE_PDF_WORKER_FILE_PATTERN,
+} from "./scripts/message-pdf-worker.ts";
 import {
   SHARED_DATABASE_WORKER_FILE_PATTERN,
   sharedDatabaseWorkerHtmlPlugin,
@@ -66,7 +69,9 @@ export default defineConfig(({ command }) => ({
         hostType === "js" &&
         type === "asset" &&
         (SHARED_DATABASE_WORKER_FILE_PATTERN.test(filename) ||
-          MESSAGE_PDF_WORKER_FILE_PATTERN.test(filename))
+          MESSAGE_PDF_WORKER_FILE_PATTERN.test(filename) ||
+          MESSAGE_PDF_FONT_FILE_PATTERN.test(filename) ||
+          /^assets\/pandoc-[^/]+\.wasm$/u.test(filename))
       ) {
         const workerPath = sharedDatabaseWorkerPath(filename, APP_ASSET_BASE);
         return { runtime: `location.origin + ${JSON.stringify(workerPath)}` };

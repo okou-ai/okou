@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.56.8](https://github.com/okou-ai/okou/compare/desktop-v0.56.7...desktop-v0.56.8) (2026-11-19)
+
+
+### Bug Fixes
+
+* **desktop:** keep connectivity-only host request episodes at info ([#48916](https://github.com/okou-ai/okou/issues/48916)) ([3f8a1be](https://github.com/okou-ai/okou/commit/3f8a1be7f3462e681002bf5044bfdf9855681731))
+
 ## [0.56.7](https://github.com/okou-ai/okou/compare/desktop-v0.56.6...desktop-v0.56.7) (2026-11-16)
 
 

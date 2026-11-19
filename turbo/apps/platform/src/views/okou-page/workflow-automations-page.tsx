@@ -1004,6 +1004,7 @@ function WorkflowAutomationDialogFooter({
 }
 
 export function CreateWorkflowAutomationDialog() {
+  const pageSignal = useGet(pageSignal$);
   const singleAgent = useLastResolved(singleAgentWorkflows$);
   const defaultAgentId = useLastResolved(defaultAgentId$);
   const { t } = useTranslation();
@@ -1026,19 +1027,16 @@ export function CreateWorkflowAutomationDialog() {
       return agent.agentId === selectedAgentId;
     }) ?? null;
 
-  const startChatCreation = (agentId: string, prompt: string) => {
-    setOpen(false);
-    navigateToAgentChat(agentId, {
-      searchParams: new URLSearchParams({ prompt }),
-    });
-  };
-
   const selectAgent = (agentId: string) => {
-    startChatCreation(
-      agentId,
+    const prompt =
       intent === "automation-chat"
         ? CREATE_AUTOMATION_CHAT_PROMPT
-        : CREATE_WORKFLOW_WITH_CHAT_PROMPT,
+        : CREATE_WORKFLOW_WITH_CHAT_PROMPT;
+    const searchParams = new URLSearchParams({ prompt });
+    setOpen(false);
+    detach(
+      navigateToAgentChat(agentId, { searchParams }, pageSignal),
+      Reason.DomCallback,
     );
   };
 

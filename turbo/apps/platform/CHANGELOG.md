@@ -13,6 +13,70 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1150.0](https://github.com/okou-ai/okou/compare/app-v0.1149.3...app-v0.1150.0) (2026-11-19)
+
+
+### Features
+
+* **android:** refine settings and sync display mode with web ([#48892](https://github.com/okou-ai/okou/issues/48892)) ([d8bf4f3](https://github.com/okou-ai/okou/commit/d8bf4f304697b69a4a283226315cc72c02d84275))
+
+
+### Bug Fixes
+
+* **app:** give each thread side panel its own remembered width ([#48965](https://github.com/okou-ai/okou/issues/48965)) ([ea3c6e6](https://github.com/okou-ai/okou/commit/ea3c6e6dbab1d95aa2085babdc8b0590715b0d27))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.91.0
+    * @okouai/core bumped to 8.854.6
+    * @okouai/ui bumped to 1.21.63
+
+## [0.1149.3](https://github.com/okou-ai/okou/compare/app-v0.1149.2...app-v0.1149.3) (2026-11-19)
+
+
+### Performance Improvements
+
+* **app:** reuse confirmed user preference writes ([#48940](https://github.com/okou-ai/okou/issues/48940)) ([ec30a96](https://github.com/okou-ai/okou/commit/ec30a968b5fca542bb979aeebbc0a50b5e917a3a))
+* **app:** reuse the chat artifact catalog across views ([#48933](https://github.com/okou-ai/okou/issues/48933)) ([03698f7](https://github.com/okou-ai/okou/commit/03698f76c291f312c82beb556ff7f6e32ef8369d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.90.2
+    * @okouai/core bumped to 8.854.5
+    * @okouai/ui bumped to 1.21.62
+
+## [0.1149.2](https://github.com/okou-ai/okou/compare/app-v0.1149.1...app-v0.1149.2) (2026-11-19)
+
+
+### Bug Fixes
+
+* **app:** clarify paused automation feed cards ([#48887](https://github.com/okou-ai/okou/issues/48887)) ([4b72b66](https://github.com/okou-ai/okou/commit/4b72b660f8279424182640658aa21773cc49ccd4))
+
+
+### Refactoring
+
+* **app:** use a single async feature switch source ([#48862](https://github.com/okou-ai/okou/issues/48862)) ([60b272c](https://github.com/okou-ai/okou/commit/60b272ce6f1087359500c7d8d5ec75e7f3050b30))
+
+
+### Performance Improvements
+
+* **test:** open the custom template shelf directly ([#48920](https://github.com/okou-ai/okou/issues/48920)) ([59fce0b](https://github.com/okou-ai/okou/commit/59fce0b2203f27e682b4a522e4e7d6f713ec8338))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.90.1
+    * @okouai/core bumped to 8.854.4
+    * @okouai/ui bumped to 1.21.61
+
 ## [0.1149.1](https://github.com/okou-ai/okou/compare/app-v0.1149.0...app-v0.1149.1) (2026-11-19)
 
 

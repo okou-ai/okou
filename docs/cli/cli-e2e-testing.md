@@ -103,6 +103,13 @@ and validate this suite. Do not treat a local `./e2e/run.sh` invocation as
 validation for `03-runner`; running the script without file arguments also
 selects the CI-only runner tests.
 
+Cases that require a live model reply run again once after a failure. Use
+`BATS_TEST_RETRIES=1` in a dedicated single-case file and add that file to the
+live-model cases in the model-selection check. Use case-level setup and cleanup
+so each attempt owns its chat state. Runner CI labels retries and attaches the
+first attempt's output to the shard results. The Playwright `chat-smoke` project
+uses its own retry and failure trace. Two failed attempts fail the case.
+
 ## Adding runner BATS tests
 
 Runner BATS files live in `e2e/tests/03-runner`. They share the accounts and

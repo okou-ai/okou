@@ -1,6 +1,6 @@
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import { computed, type Computed } from "ccstate";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import {
@@ -60,7 +60,7 @@ function officialObservationFromTarget(
   ) {
     throw new OfficialWorkflowRunAdmissionError();
   }
-  if (SEED_SKILLS.includes(workflow.name)) {
+  if (BUILT_IN_SKILLS.includes(workflow.name)) {
     throw new OfficialWorkflowRunAdmissionError();
   }
   const catalog = acceptedCatalogFromRow(target.officialCatalog ?? undefined);

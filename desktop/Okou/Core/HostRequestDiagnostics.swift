@@ -27,6 +27,10 @@ struct HostRequestDiagnostics {
     var firstFailure: [String: Any] = [:]
     var recentFailures: [[String: Any]] = []
     var reportedError = false
+    /// Some failed attempt received an HTTP response from the API.
+    var reachedServer = false
+    /// Some failed attempt received a retryable server failure (HTTP 408, 429 or 5xx).
+    var serverFailed = false
 
     func timing(at now: ContinuousClock.Instant, awakeAt awakeNow: SuspendingClock.Instant)
       -> APIRequestTiming
@@ -80,6 +84,9 @@ struct HostRequestDiagnostics {
       episode
       ?? Episode(started: instant, awakeStarted: awakeInstant, initialTiming: operation?.timing)
     current.attempts += 1
+    let statuses = requests.compactMap(\.status)
+    current.reachedServer = current.reachedServer || !statuses.isEmpty
+    current.serverFailed = current.serverFailed || statuses.contains(where: Self.retryableStatus)
     var failure: [String: Any] = [
       "attempt": current.attempts, "observedAt": ISO8601DateFormatter().string(from: Date()),
       "errorType": String(describing: type(of: error)), "retryDelayMs": retryDelay * 1000,
@@ -100,7 +107,7 @@ struct HostRequestDiagnostics {
         // not the provider/deadline failure that ended the operation.
         retryable = true
       } else if let status = requests.last?.status, !(200..<300).contains(status) {
-        retryable = status == 408 || status == 429 || (500..<600).contains(status)
+        retryable = Self.retryableStatus(status)
       } else {
         retryable = true
       }
@@ -115,20 +122,29 @@ struct HostRequestDiagnostics {
     case is CancellationError: retryable = true
     default: retryable = false
     }
-    // Retryable attempts are ordinary recovery work. Keep unexpected errors and
-    // prolonged awake failure visible without reporting every subsequent retry.
-    let sustained = current.timing(at: instant, awakeAt: awakeInstant).awakeDuration >= .seconds(90)
+    // Retryable attempts are ordinary recovery work. Keep unexpected errors visible without
+    // reporting every subsequent retry. Prolonged awake failure escalates only after the API
+    // answered with a retryable failure; attempts that never got one, as through a broken
+    // local proxy, stay at info however long they last.
+    let sustained =
+      current.serverFailed
+      && current.timing(at: instant, awakeAt: awakeInstant).awakeDuration >= .seconds(90)
     if !current.reportedError && (!retryable || sustained) {
       DesktopTelemetry.captureHostRequestEpisode(request: request,
-        id: current.id, outcome: .failed, level: .error,
+        id: current.id, outcome: .failed, reachedServer: current.reachedServer, level: .error,
         context: current.context(at: instant, awakeAt: awakeInstant))
       current.reportedError = true
     } else if current.attempts == 1 {
       DesktopTelemetry.captureHostRequestEpisode(request: request,
-        id: current.id, outcome: .failed,
+        id: current.id, outcome: .failed, reachedServer: current.reachedServer,
         context: current.context(at: instant, awakeAt: awakeInstant))
     }
     episode = current
+  }
+
+  /// Server responses that ordinary retries are expected to outlast.
+  private static func retryableStatus(_ status: Int) -> Bool {
+    status == 408 || status == 429 || (500..<600).contains(status)
   }
 
   mutating func finish(
@@ -143,14 +159,16 @@ struct HostRequestDiagnostics {
     context["finalRequests"] = requests.map(\.context)
     if let operation { context["finalOperation"] = operation.operationContext }
     if let terminalStatus { context["terminalStatus"] = terminalStatus }
-    // A successful retry or stop must not hide a long awake episode whose
+    // A successful retry or stop must not hide a long awake server-failure episode whose
     // threshold was crossed between failed attempts.
-    if !current.reportedError,
+    if !current.reportedError, current.serverFailed,
       current.timing(at: instant, awakeAt: awakeInstant).awakeDuration >= .seconds(90)
     {
       DesktopTelemetry.captureHostRequestEpisode(request: request,
-        id: current.id, outcome: .failed, level: .error, context: context)
+        id: current.id, outcome: .failed, reachedServer: current.reachedServer, level: .error,
+        context: context)
     }
-    DesktopTelemetry.captureHostRequestEpisode(request: request, id: current.id, outcome: outcome, context: context)
+    DesktopTelemetry.captureHostRequestEpisode(request: request,
+      id: current.id, outcome: outcome, reachedServer: current.reachedServer, context: context)
   }
 }

@@ -8,7 +8,7 @@ import { and, eq, exists, ne, or } from "drizzle-orm";
 
 import { optionalEnv } from "../../lib/env";
 import { db$ } from "../external/db";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import {
   agentphoneDeliveryTargetSchema,
   type AgentPhoneDeliveryTarget,
@@ -80,16 +80,20 @@ function requiredAgentPhoneLaunchContext(
   };
 }
 
-const loadAgentPhoneLaunchContext$ = command(
-  async (
-    { get },
-    args: {
-      readonly eventId: string;
-      readonly chatThreadId: string;
-      readonly orgId: string;
-      readonly userId: string;
-    },
-  ) => {
+interface AgentPhoneLaunchSource {
+  readonly eventId: string;
+  readonly chatThreadId: string;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly contextId?: string;
+}
+
+export type AgentPhoneThreadContext = ReturnType<
+  typeof requiredAgentPhoneLaunchContext
+>;
+
+export function createAgentPhoneLaunchContext(args: AgentPhoneLaunchSource) {
+  return computed(async (get): Promise<AgentPhoneThreadContext> => {
     const db = get(db$);
     const [row] = await db
       .select({
@@ -129,6 +133,9 @@ const loadAgentPhoneLaunchContext$ = command(
           eq(chatEvents.id, args.eventId),
           eq(chatEvents.chatThreadId, args.chatThreadId),
           eq(chatEvents.contextType, "agentphone"),
+          args.contextId === undefined
+            ? undefined
+            : eq(chatAgentphoneContext.id, args.contextId),
           or(
             and(
               ne(chatAgentphoneContext.channel, "whatsapp"),
@@ -171,21 +178,17 @@ const loadAgentPhoneLaunchContext$ = command(
       )
       .limit(1);
     return requiredAgentPhoneLaunchContext(row);
-  },
-);
+  });
+}
 
 export const loadAgentPhoneQueuedLaunchMaterial$ = command(
   async (
-    { set },
-    args: {
-      readonly eventId: string;
-      readonly chatThreadId: string;
-      readonly orgId: string;
-      readonly userId: string;
+    { get },
+    args: AgentPhoneLaunchSource & {
       readonly featureSwitchContext: FeatureSwitchContext;
     },
   ): Promise<AgentPhoneQueuedLaunchMaterial | null> => {
-    const context = await set(loadAgentPhoneLaunchContext$, args);
+    const context = await get(createAgentPhoneLaunchContext(args));
     if (!context) {
       return null;
     }

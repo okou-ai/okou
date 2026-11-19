@@ -1,24 +1,30 @@
 import "../../polyfill.ts";
 import "@formatjs/intl-segmenter/polyfill.js";
 
+import { renderMarkdownDocx } from "../markdown-docx/render.ts";
 import { renderMessagePdf } from "./render.ts";
-import type { PdfWorkerRequest, PdfWorkerResponse } from "./types.ts";
+import type { DocumentExportRequest, PdfWorkerResponse } from "./types.ts";
 
-interface PdfWorkerScope {
+interface DocumentExportScope {
   addEventListener(
     type: "message",
-    listener: (event: MessageEvent<PdfWorkerRequest>) => Promise<void>,
+    listener: (event: MessageEvent<DocumentExportRequest>) => Promise<void>,
   ): void;
   postMessage(message: PdfWorkerResponse): void;
 }
 
 // This module has a worker-only Vite entry; the app's tsconfig includes DOM,
 // not WebWorker globals, so describe only the messaging surface we actually use.
-const scope = globalThis as unknown as PdfWorkerScope;
+const scope = globalThis as unknown as DocumentExportScope;
 scope.addEventListener("message", async (event) => {
   // This is the serialization/error boundary: errors must reach the owner so
   // it can reject the export and terminate this single-use worker.
-  const [result] = await Promise.allSettled([renderMessagePdf(event.data)]);
+  const request = event.data;
+  const [result] = await Promise.allSettled([
+    "kind" in request
+      ? renderMarkdownDocx(request.input)
+      : renderMessagePdf(request),
+  ]);
   if (result.status === "fulfilled") {
     scope.postMessage({ ok: true, blob: result.value });
   } else {

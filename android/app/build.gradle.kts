@@ -11,6 +11,7 @@ plugins {
 }
 
 val appVersion = rootProject.file("version.txt").readText().trim()
+val screenshotScenarioDir = providers.gradleProperty("okou.screenshotScenarioDir").orNull
 val apiOrigin = providers.gradleProperty("okou.apiOrigin").getOrElse("https://api.okou.ai")
 val webOrigin = providers.gradleProperty("okou.webOrigin").getOrElse("https://app.okou.ai")
 val clerkPublishableKey =
@@ -67,7 +68,7 @@ android {
         debug { applicationIdSuffix = ".debug" }
         release { optimization { enable = true } }
     }
-    testBuildType = "release"
+    testBuildType = if (screenshotScenarioDir == null) "release" else "debug"
     buildFeatures {
         compose = true
         buildConfig = true
@@ -78,7 +79,7 @@ android {
         .directories
         .add("../../turbo/packages/api-contracts/src/validators/fixtures")
     sourceSets["androidTest"].kotlin.directories.add("src/sharedTest/kotlin")
-    providers.gradleProperty("okou.screenshotScenarioDir").orNull?.let { value ->
+    screenshotScenarioDir?.let { value ->
         val directory = file(value).canonicalFile
         val allowed = rootProject.file("screenshots").canonicalFile.toPath()
         require(directory.toPath().startsWith(allowed) && directory.toPath() != allowed) {
@@ -213,7 +214,7 @@ val generateLicenseAssets =
     }
 
 androidComponents {
-    // Host tests keep Debug-only resource fixtures; instrumentation runs on Release.
+    // Host tests keep Debug-only resource fixtures when the native suite targets Release.
     beforeVariants(selector().withBuildType("debug")) { variant ->
         variant.hostTests.values
             .single { it.type == com.android.build.api.variant.HostTestBuilder.UNIT_TEST_TYPE }
@@ -235,6 +236,7 @@ androidComponents.onVariants { variant ->
     val variantName = variant.name.replaceFirstChar { it.uppercaseChar() }
     val manifest =
         variant.artifacts.get(com.android.build.api.artifact.SingleArtifact.MERGED_MANIFEST)
+    val applicationId = variant.applicationId
     val audit =
         tasks.register<Exec>("check${variantName}AuthenticationManifest") {
             val script = project.file("../scripts/check-auth-manifest.py")
@@ -243,12 +245,13 @@ androidComponents.onVariants { variant ->
             commandLine("python3", script.absolutePath)
             argumentProviders.add(
                 CommandLineArgumentProvider {
-                    listOf(manifest.get().asFile.absolutePath, variant.applicationId.get())
+                    listOf(manifest.get().asFile.absolutePath, applicationId.get())
                 }
             )
         }
     tasks.matching { it.name == "assemble$variantName" }.configureEach { dependsOn(audit) }
-    if (variant.buildType == "release") {
+    val nativeTest = variant.androidTest
+    if (variant.buildType == "release" && nativeTest != null) {
         fun classes(configuration: String) =
             configurations
                 .getByName(configuration)
@@ -295,8 +298,7 @@ androidComponents.onVariants { variant ->
                 { it.appJars },
                 { it.appDirectories },
             )
-        checkNotNull(variant.androidTest)
-            .artifacts
+        nativeTest.artifacts
             .forScope(com.android.build.api.variant.ScopedArtifacts.Scope.PROJECT)
             .use(trace)
             .toGet(
@@ -316,7 +318,6 @@ dependencies {
     implementation(libs.activity.compose)
     implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.lifecycle.runtime.compose)
-    implementation(libs.datastore.preferences)
     implementation(libs.coroutines.android)
     implementation(libs.retrofit)
     implementation(libs.retrofit.serialization)

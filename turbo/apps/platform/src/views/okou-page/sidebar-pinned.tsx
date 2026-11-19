@@ -316,7 +316,7 @@ function PinnedAgentGridTitle({ signals }: PinnedAgentProps) {
 }
 
 export function PinAgentDialogContainer() {
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   return singleAgent ? null : <LegacyPinAgentDialogContainer />;
 }
 
@@ -387,7 +387,7 @@ function PinAgentDialogSession({
 }
 
 export function PinnedAgentListSection() {
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   if (singleAgent) {
     return null;
   }

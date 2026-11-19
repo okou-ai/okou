@@ -9,7 +9,7 @@ import {
   openArtifactSidebar$,
 } from "../chat-page/thread-sidebar-coordinator.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import {
   createMarkdownPreviewTree,
   type MarkdownPreviewTreeComputed,
@@ -316,17 +316,22 @@ export function attachmentSidebarRef(
 }
 
 const routeToOpenArtifactSidebar$ = command(
-  (
+  async (
     { get, set },
     value: AttachmentSidebarPreviewInput,
-    target?: "lightbox",
-  ): boolean => {
+    target: "lightbox" | undefined,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
     // Composer drafts and standalone previews retain their own preview surface.
     if (value.splitViewAvailable === false) {
       return false;
     }
+    const sidebar = (await get(featureSwitches$))[
+      FeatureSwitchKey.ArtifactSidebarPreview
+    ];
+    signal.throwIfAborted();
     const ref = attachmentSidebarRef(value);
-    if (get(featureSwitch$)[FeatureSwitchKey.ArtifactSidebarPreview]) {
+    if (sidebar) {
       return set(
         openArtifactSidebar$,
         ref,
@@ -356,15 +361,17 @@ function imageLightboxState(
 }
 
 export const openImageLightbox$ = command(
-  (
+  async (
     { get, set },
     value: string | AttachmentImageLightboxInput,
-    target?: "lightbox",
+    target: "lightbox" | undefined,
+    signal: AbortSignal,
   ) => {
     const input = typeof value === "string" ? { url: value } : value;
-    if (set(routeToOpenArtifactSidebar$, input, target)) {
+    if (await set(routeToOpenArtifactSidebar$, input, target, signal)) {
       return;
     }
+    signal.throwIfAborted();
     set(attachmentLightboxImageCanvasSignals.reset$);
     const previewSignal = set(resetLightboxPreviewSignal$, get(rootSignal$));
     set(attachmentDiagramPreview.dispose$);
@@ -386,9 +393,14 @@ export const openImageLightbox$ = command(
  * rendered in the reader's browser, so it has no stable link to share.
  */
 export const openDiagramLightbox$ = command(
-  ({ set }, file: File, _trigger: HTMLElement, signal: AbortSignal) => {
+  async ({ set }, file: File, _trigger: HTMLElement, signal: AbortSignal) => {
     signal.throwIfAborted();
-    set(openImageLightbox$, { file, shareAvailable: false });
+    await set(
+      openImageLightbox$,
+      { file, shareAvailable: false },
+      undefined,
+      signal,
+    );
   },
 );
 
@@ -426,14 +438,16 @@ export const navigateImageLightbox$ = command(
 );
 
 export const openDocumentLightbox$ = command(
-  (
+  async (
     { get, set },
     value: AttachmentDocumentLightboxInput,
-    target?: "lightbox",
+    target: "lightbox" | undefined,
+    signal: AbortSignal,
   ) => {
-    if (set(routeToOpenArtifactSidebar$, value, target)) {
+    if (await set(routeToOpenArtifactSidebar$, value, target, signal)) {
       return;
     }
+    signal.throwIfAborted();
     const ownerSignal = set(resetLightboxPreviewSignal$, get(rootSignal$));
     set(attachmentDiagramPreview.dispose$);
     set(internalLightboxDialogVisible$, true);
@@ -474,10 +488,16 @@ export const openDocumentLightbox$ = command(
 
 function createSimpleLightboxOpener(kind: "audio" | "file" | "video") {
   return command(
-    ({ get, set }, value: AttachmentNamedLightboxBase, target?: "lightbox") => {
-      if (set(routeToOpenArtifactSidebar$, value, target)) {
+    async (
+      { get, set },
+      value: AttachmentNamedLightboxBase,
+      target: "lightbox" | undefined,
+      signal: AbortSignal,
+    ) => {
+      if (await set(routeToOpenArtifactSidebar$, value, target, signal)) {
         return;
       }
+      signal.throwIfAborted();
       const ownerSignal = set(resetLightboxPreviewSignal$, get(rootSignal$));
       set(attachmentDiagramPreview.dispose$);
       set(internalLightboxDialogVisible$, true);

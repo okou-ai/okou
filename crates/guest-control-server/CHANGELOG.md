@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.130](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.129...guest-control-server-v0.24.130) (2026-11-19)
+
+
+### Performance Improvements
+
+* **guest-control:** widen the vsock receive window ([#48958](https://github.com/okou-ai/okou/issues/48958)) ([eee19d2](https://github.com/okou-ai/okou/commit/eee19d251e48bf7f1a883d0d5bc13c8f9d952b3c))
+
 ## [0.24.129](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.128...guest-control-server-v0.24.129) (2026-11-19)
 
 ## [0.24.128](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.127...guest-control-server-v0.24.128) (2026-11-18)

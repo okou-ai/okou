@@ -242,7 +242,6 @@ export const clientDescriptorManifest = [
   {
     module: "cron",
     contracts: [
-      "cronAggregateRunPhaseTimingsContract",
       "cronBrowserReconcileContract",
       "cronCleanupSandboxesContract",
       "cronCleanupSuggestionsContract",
@@ -361,7 +360,7 @@ export const clientDescriptorManifest = [
   },
   {
     module: "get-started",
-    contracts: ["cronGetStartedContract", "getStartedContract"],
+    contracts: ["getStartedContract"],
   },
   {
     module: "github-oauth-callback",

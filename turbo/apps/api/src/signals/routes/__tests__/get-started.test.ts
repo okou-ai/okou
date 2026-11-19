@@ -1,3 +1,4 @@
+import { marketingCheckinCampaign } from "./helpers/marketing-reward-consumer";
 import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
 import { getStartedContract } from "@okouai/api-contracts/contracts/get-started";
 import { randomUUID } from "node:crypto";
@@ -15,9 +16,6 @@ const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const client = () => {
   return setupApp({ context, routes: getStartedRoutes })(getStartedContract);
 };
-const status = async () => {
-  return (await accept(client().status({ headers }), [200])).body;
-};
 
 function signedInSession(
   userId = `user_${randomUUID()}`,
@@ -30,14 +28,14 @@ function signedInSession(
 }
 
 beforeEach(() => {
+  marketingCheckinCampaign(context);
   signedInSession(`user_${randomUUID()}`, `org_${randomUUID()}`);
 });
 
-test("status never grants; concurrent check-ins and org switches preserve one award and its exact 168-hour expiry", async () => {
+test("concurrent Marketing check-ins and org switches preserve one award and its exact 168-hour expiry", async () => {
   const userId = `user_${randomUUID()}`;
   signedInSession(userId, `org_${randomUUID()}`);
   mockNow(new Date("2026-09-15T23:59:59.123Z"));
-  expect((await status()).claimedToday).toBeFalsy();
   const results = await Promise.all(
     Array.from({ length: 5 }, () => {
       return accept(client().checkin({ headers }), [200]);
@@ -77,27 +75,10 @@ test("status never grants; concurrent check-ins and org switches preserve one aw
   expect(
     (await accept(client().checkin({ headers }), [200])).body,
   ).toStrictEqual(first);
-  await expect(status()).resolves.toMatchObject({
-    claimedToday: true,
-    nextResetAt: "2026-09-16T00:00:00.000Z",
-    checkinStreak: 1,
-  });
   mockNow(new Date("2026-09-16T00:00:00.000Z"));
-  // A new UTC day has started and nothing is claimed in it yet, so the streak
-  // is still alive on yesterday rather than broken back to zero.
-  await expect(status()).resolves.toMatchObject({
-    claimedToday: false,
-    checkinStreak: 1,
-  });
   expect((await accept(client().checkin({ headers }), [200])).body.id).not.toBe(
     first?.id,
   );
-  expect(
-    (await status()).quests.find((q) => {
-      return q.key === "checkin";
-    })?.claimedCount,
-  ).toBe(2);
-  expect((await status()).checkinStreak).toBe(2);
 });
 
 test("concurrent check-ins across organizations return one personal award and publish credits only in the winning organization", async () => {
@@ -141,19 +122,6 @@ test("concurrent check-ins across organizations return one personal award and pu
   for (const result of results) {
     expect(result.body).toStrictEqual(award);
   }
-  for (const requestHeaders of orgHeaders) {
-    const current = await accept(
-      client().status({ headers: requestHeaders }),
-      [200],
-    );
-    expect(current.body.claimedToday).toBeTruthy();
-    expect(
-      current.body.quests.find((quest) => {
-        return quest.key === "checkin";
-      }),
-    ).toMatchObject({ claimedCount: 1, earnedCredits: 100 });
-  }
-
   const balances = await Promise.all(
     orgHeaders.map((requestHeaders) => {
       return accept(
@@ -215,9 +183,4 @@ test("a personal check-in bonus is visible without a purchased Usage Pack and di
     totalCredits: 0,
     creditGrants: [],
   });
-  expect(
-    (await status()).quests.find((q) => {
-      return q.key === "checkin";
-    })?.claimedCount,
-  ).toBe(1);
 });

@@ -57,16 +57,18 @@ def render(text, context):
 
 assert not expression(addon['if'], values), 'unrelated changes must not select either shard'
 for signal in ['any-changed', 'mitm-addon-test-inputs-changed', 'mitm-addon-pricing-seed-changed']:
-    context = values | {f'needs.detect.outputs.{signal}': 'true'}
-    assert expression(addon['if'], context), f'{signal} must select both shards'
-    for status in ['success', 'failure', 'cancelled', '']:
-        context['needs.mitm-addon-test.result'] = status
-        env = os.environ | {name: render(value, context) for name, value in validate['env'].items()}
-        result = subprocess.run(
-            ['bash', '-euo', 'pipefail', '-c', render(validate['run'], context)],
-            cwd=root, env=env, text=True, capture_output=True, check=False)
-        assert (result.returncode == 0) == (status == 'success'), (
-            f'{signal}, addon result {status!r}: {result.stdout}{result.stderr}')
+    selected = values | {f'needs.detect.outputs.{signal}': 'true'}
+    assert expression(addon['if'], selected), f'{signal} must select both shards'
+
+for status in ['success', 'failure', 'cancelled', '']:
+    context = values | {'needs.detect.outputs.mitm-addon-test-inputs-changed': 'true',
+                        'needs.mitm-addon-test.result': status}
+    env = os.environ | {name: render(value, context) for name, value in validate['env'].items()}
+    result = subprocess.run(
+        ['bash', '-euo', 'pipefail', '-c', render(validate['run'], context)],
+        cwd=root, env=env, text=True, capture_output=True, check=False)
+    assert (result.returncode == 0) == (status == 'success'), (
+        f'addon result {status!r}: {result.stdout}{result.stderr}')
 
 print('mitm-addon-test-sharding-workflow-test: ok')
 PY

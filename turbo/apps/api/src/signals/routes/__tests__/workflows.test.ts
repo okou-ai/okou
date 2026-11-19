@@ -7,7 +7,6 @@ import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { readGetStartedStatus } from "./helpers/get-started";
 import { createPublicAutomationRunApi } from "./helpers/public-automation-run";
 
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
@@ -3168,12 +3167,6 @@ test("promotes a queued workflow after failure and completes it with a real Runn
   if (!actor.orgId) {
     throw new Error("Expected workflow org");
   }
-  const rewards = async () => {
-    return (await readGetStartedStatus(context, actor)).quests.find((q) => {
-      return q.key === "workflow";
-    });
-  };
-  await expect(rewards()).resolves.toMatchObject({ claimedCount: 0 });
   const first = await runWorkflowAndLaunch(actor, workflow.body.id);
   const queued = await accept(
     detailClient().run({
@@ -3201,7 +3194,6 @@ test("promotes a queued workflow after failure and completes it with a real Runn
   if (!next?.runId) {
     throw new Error("Expected the queued workflow to start after failure");
   }
-  await expect(rewards()).resolves.toMatchObject({ claimedCount: 0 });
   await api.heartbeatRunner(runnerGroup);
   const nextExecution = await api.executionInput(next.runId);
   const sessionId = `workflow-session-${next.runId}`;

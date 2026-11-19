@@ -16,7 +16,6 @@ import {
 import type { ModelFirstPin } from "./model-selection.service";
 import {
   emptyEnvironment,
-  type Environment,
   environmentPermissionManifest,
   mergeEnvironments,
 } from "./run-environment";
@@ -36,11 +35,6 @@ export type ExecutionContextRun = Pick<
   | "id"
   | "orgId"
   | "userId"
-  | "modelProviderId"
-  | "modelProviderAccountIdentity"
-  | "modelRuntimeProvider"
-  | "modelRuntimeModel"
-  | "builtInModelKeyId"
   | "modelUsageProvider"
   | "modelLongContextMinTotalInputTokens"
   | "reasoningEffort"
@@ -74,13 +68,6 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
   const runVariables$ = computed(async (get) => {
     return (await get(input$)).run.vars;
   });
-  const connectorEnvironment$ = computed(async (get) => {
-    const { facts } = await get(input$);
-    return {
-      ...facts.connectorEnvironment,
-      runtimeTargets: facts.connectorRuntimeTargets,
-    };
-  });
   const model$ = createExecutionModel(input$);
   const modelRoute$ = computed(async (get) => {
     return (await get(model$)).provider;
@@ -101,7 +88,6 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
   const platform$ = createExecutionPlatform(input$, model$, disabledTools$);
   const environment$ = createExecutionEnvironment(
     input$,
-    connectorEnvironment$,
     modelEnvironment$,
     platform$,
   );
@@ -195,18 +181,16 @@ function createExecutionPlatform(
 
 function createExecutionEnvironment(
   input$: ExecutionInput$,
-  connectorEnvironment$: Computed<Promise<Environment>>,
   modelEnvironment$: ReturnType<typeof createModelProviderEnvironmentSignals>,
   platform$: ReturnType<typeof createExecutionPlatform>,
 ) {
   return computed(async (get) => {
     const { facts } = await get(input$);
-    const [modelEnvironment, platform, connectorEnvironment] =
-      await Promise.all([
-        get(modelEnvironment$),
-        get(platform$),
-        get(connectorEnvironment$),
-      ]);
+    const { connectorEnvironment } = facts;
+    const [modelEnvironment, platform] = await Promise.all([
+      get(modelEnvironment$),
+      get(platform$),
+    ]);
     const data = dataRouterEnvironment();
     const token = facts.okouToken;
     const tokenEnvironment = {
@@ -263,7 +247,6 @@ function createExecutionPreparedContext(
         model,
         packages.officialWorkflowBundles.length > 0,
       ),
-      customWorkflowSelection: facts.customWorkflowSelection,
       featureFlags: facts.featureFlags,
       realAgentInPreview: facts.realAgentInPreview,
       apiStartTime: facts.apiStartTime,

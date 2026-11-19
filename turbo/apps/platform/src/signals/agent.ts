@@ -64,7 +64,7 @@ export const reloadAgentById$ = command(({ set }) => {
 });
 
 export const defaultAgentName$ = computed(async (get) => {
-  if (get(singleAgentEnabled$)) {
+  if (await get(singleAgentEnabled$)) {
     return get(assistantName$);
   }
   const defaultAgent = await get(defaultAgent$);
@@ -94,7 +94,7 @@ export const currentAgentId$ = computed((get) => {
 export const defaultAgentChatPageActive$ = computed(async (get) => {
   const route = get(activeRoute$);
   if (route === "home") {
-    return get(singleAgentEnabled$);
+    return await get(singleAgentEnabled$);
   }
   const agentId = get(currentAgentId$);
   if (route !== "agentChat" || agentId === null) {

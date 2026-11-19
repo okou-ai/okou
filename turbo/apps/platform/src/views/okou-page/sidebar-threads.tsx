@@ -478,7 +478,7 @@ function ChatThreadMenuItems({
 }: Pick<ChatThreadMenuProps, "signals">) {
   const { t } = useTranslation();
   const requestDelete = useSet(signals.requestDelete$);
-  const projectsEnabled = useGet(projectsEnabled$);
+  const projectsEnabled = useLastResolved(projectsEnabled$) ?? false;
   const move = useSet(openProjectMembership$);
 
   return (
@@ -521,7 +521,7 @@ function ChatThreadMenu({
   touch = false,
 }: ChatThreadMenuProps) {
   const projectDialog = useGet(projectDialog$);
-  const projectsEnabled = useGet(projectsEnabled$);
+  const projectsEnabled = useLastResolved(projectsEnabled$) ?? false;
   const menuOpenChanged = useSet(projectThreadMenuOpenChanged$);
   return (
     <TooltipProvider delay={200}>
@@ -582,7 +582,7 @@ function ChatThreadItemLink({
   const select = useSet(signals.select$);
   const renaming = useGet(signals.inlineRenaming$);
   const startInlineRename = useSet(signals.startInlineRename$);
-  const projectsEnabled = useGet(projectsEnabled$);
+  const projectsEnabled = useLastResolved(projectsEnabled$) ?? false;
   const draggingThread = useGet(draggingProjectThread$);
   const startDrag = useSet(startProjectThreadDrag$);
   const endDrag = useSet(endProjectThreadDrag$);

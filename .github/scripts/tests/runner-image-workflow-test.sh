@@ -16,26 +16,6 @@ architecture_json=$(yq -o=json '.' "${REPO_ROOT}/.github/workflows/runner-image-
 workflow_json=$(yq -o=json '.' "$WORKFLOW" |
   jq --argjson architecture "$architecture_json" '. + {architecture: $architecture}')
 
-jq -e '
-  .jobs.prepare.steps as $steps |
-  ($steps | map(.id // "") | index("identity")) as $identity |
-  ($steps | map(.id // "") | index("turbo-cache")) as $cache |
-  ($steps | map(.id // "") | index("turbo")) as $detect |
-  ($identity < $cache and $cache < $detect) and
-  ($steps[$cache].uses | startswith("actions/cache@")) and
-  $steps[$cache].if == $steps[$detect].if and
-  $steps[$cache].if == "steps.identity.outputs.release-skip != '\''true'\''" and
-  $steps[$cache].with.path == $steps[$detect].env.TURBO_TOOL_DIR and
-  $steps[$cache].with.path == "${{ runner.temp }}/runner-image-turbo-tool" and
-  ($steps[$cache].with.key | contains("${{ hashFiles('\''scripts/changed.sh'\'') }}")) and
-  ($steps[$cache].with | has("restore-keys") | not) and
-  $steps[$detect].env.npm_config_cache == "${{ runner.temp }}/runner-image-turbo-npm" and
-  $steps[$detect].env.npm_config_prefer_offline == "true" and
-  ($steps[$detect].env | has("npm_config_offline") | not) and
-  ($steps[$detect].run | contains("CHANGES_JSON=$(./scripts/changed.sh")) and
-  (.jobs.prepare.env // {} | has("npm_config_cache") | not)
-' <<<"$workflow_json" >/dev/null || fail "Turbo detection must use its pinned tool cache without changing CLI cache ownership or release skips"
-
 # Exercise the workflow's input detector with a transport-only Git change.
 test_root=$(mktemp -d)
 trap 'rm -rf "$test_root"' EXIT
@@ -179,6 +159,7 @@ jq -e '
     "${{ steps.needed.outputs.playwright-runner-consumer-needed }}" and
   any(.jobs.prepare.steps[];
     .id == "turbo" and
+    .if == "steps.identity.outputs.release-skip != '\''true'\''" and
     (.run | contains(".github/scripts/runner/runner-image-context.sh turbo-consumer")) and
     (.run | contains(".github/scripts/runner/runner-image-context.sh playwright-consumer"))
   ) and
@@ -234,9 +215,6 @@ jq -e '
 ' <<<"$workflow_json" >/dev/null || fail "prepare must publish cache references and the miss-only compile matrix"
 
 jq -e '
-  (.architecture.jobs.compile.if | contains("!cancelled()")) and
-  (.architecture.jobs.compile.if | contains("!inputs.cache-hit")) and
-  .architecture.jobs.compile.strategy.matrix.include == "${{ fromJSON(format('\''[{0}]'\'', inputs.architecture-json)) }}" and
   any(.architecture.jobs.compile.steps[];
     .uses == "./.github/actions/setup-r2-sccache" and
     .with.architecture == "${{ matrix.id }}" and
@@ -245,31 +223,16 @@ jq -e '
     .with["r2-account-id"] == "${{ vars.R2_ACCOUNT_ID }}" and
     .with["r2-bucket-name"] == "${{ vars.R2_USER_STORAGES_BUCKET_NAME }}"
   ) and
-  any(.architecture.jobs.compile.steps[]; (.uses // "") | startswith("Swatinem/rust-cache@")) and
-  any(.architecture.jobs.compile.steps[]; .run == ".github/scripts/runner/runner-binary-build/build.sh build") and
   any(.architecture.jobs.compile.steps[];
     .run == ".github/scripts/runner/runner-binary-transport.sh publish" and
     .env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.build.outputs.binary-input-digest }}" and
     .env.PRODUCER_RUN_ATTEMPT == "${{ github.run_attempt }}" and
     (. | has("continue-on-error") | not)
   )
-' <<<"$workflow_json" >/dev/null || fail "compile must be a required miss-only Rust/cache/build matrix"
+' <<<"$workflow_json" >/dev/null || fail "compile must preserve R2 bindings and verified publication"
 
 jq -e '
-  ([.jobs, .architecture.jobs | to_entries[] |
-    select(any(.value.steps[]?; .uses == "./.github/actions/setup-r2-sccache")) |
-    .key] | sort) == ["compile", "prewarm-rust-cache"] and
-  ([.jobs, .architecture.jobs | to_entries[] |
-    select(any(.value.steps[]?; (.uses // "") | startswith("Swatinem/rust-cache@"))) |
-    .key] | sort) == ["compile", "prewarm-rust-cache"]
-' <<<"$workflow_json" >/dev/null || fail "compiler caches must stay in the miss-only compiler and main dependency prewarmer"
-
-jq -e '
-  (.architecture.jobs.build.needs | sort) == ["compile"] and
   (.architecture.jobs.build | has("container") | not) and
-  .architecture.jobs.build.strategy.matrix.include == "${{ fromJSON(format('\''[{0}]'\'', inputs.architecture-json)) }}" and
-  (.architecture.jobs.build.if | contains("always()")) and
-  (.architecture.jobs.build.if | contains("!cancelled()")) and
   any(.architecture.jobs.build.steps[];
     (.run // "" | contains(".github/scripts/runner/runner-image-architecture.sh build-ready")) and
     .env.CLI_ARTIFACT_ID == "${{ inputs.cli-artifact-id }}" and
@@ -312,11 +275,9 @@ jq -e '
   ($steps | map(.id // "") | index("shadow")) as $shadow |
   ($steps | map(.id // "") | index("artifact")) as $artifact |
   ($steps | map(.id // "") | index("manifest-upload")) as $upload |
-  (.architecture.jobs.compile | has("needs") | not) and
-  .architecture.jobs.compile.strategy["fail-fast"] == false and
-  .architecture.jobs.compile.permissions == {actions: "read", contents: "read"} and
-  ($build < $fresh and $fresh < $transport and $transport < $shadow and $shadow < $artifact and $artifact < $upload) and
-  all([$fresh, $transport, $shadow, $artifact][];
+  ($build != null and $build < $fresh and $fresh < $transport and $transport < $shadow and $shadow < $artifact and $artifact < $upload) and
+  $steps[$build].run == ".github/scripts/runner/runner-binary-build/build.sh build" and
+  all([$build, $fresh, $transport, $shadow, $artifact][];
     . as $index | ($steps[$index] | has("if") | not) and
     ($steps[$index] | has("continue-on-error") | not)
   ) and

@@ -21,6 +21,10 @@ const POINTER = Object.freeze({
   buttons: 1,
 });
 
+function sidebarWidth(shell: HTMLElement): string {
+  return shell.style.getPropertyValue("--chat-thread-sidebar-width");
+}
+
 function resizeMask(): Element | null {
   return document.querySelector("[data-chat-thread-sidebar-resize-mask]");
 }
@@ -152,4 +156,31 @@ test("Closing the sidebar during a resize removes its blocking mask", async () =
     screen.findByRole("separator", { name: "Resize sidebar" }),
   ).resolves.toBeInTheDocument();
   expect(resizeMask()).toBeNull();
+});
+
+test("Each panel kind opens at its own width and keeps its own resize", async () => {
+  const { handle, shell } = await openResizableSidebar();
+  // A list opens narrow: extra width would only add empty space.
+  expect(sidebarWidth(shell)).toBe("clamp(400px, 480px, calc(100% - 420px))");
+
+  fireEvent.pointerDown(handle, { ...POINTER, clientX: 960 });
+  fireEvent.pointerUp(handle, { ...POINTER, buttons: 0, clientX: 800 });
+  await waitFor(() => {
+    expect(sidebarWidth(shell)).toBe("clamp(400px, 640px, calc(100% - 420px))");
+  });
+
+  click(
+    buttonNamed(
+      "Preview Resize report.txt",
+      screen.getByTestId("thread-sidebar-artifacts"),
+    ),
+  );
+  const unavailable = await screen.findByTestId(
+    "thread-sidebar-artifact-unavailable",
+  );
+  expect(sidebarWidth(shell)).toBe("clamp(400px, 55%, calc(100% - 420px))");
+
+  click(buttonNamed("Back to artifacts", unavailable));
+  await screen.findByTestId("thread-sidebar-artifacts");
+  expect(sidebarWidth(shell)).toBe("clamp(400px, 640px, calc(100% - 420px))");
 });

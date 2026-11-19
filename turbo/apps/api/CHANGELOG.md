@@ -10,6 +10,81 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.94.4](https://github.com/okou-ai/okou/compare/api-v2.94.3...api-v2.94.4) (2026-11-19)
+
+
+### Bug Fixes
+
+* **db:** drop retired ios widget push columns ([#48956](https://github.com/okou-ai/okou/issues/48956)) ([d18d687](https://github.com/okou-ai/okou/commit/d18d6871bd8ebca73e559cbabb73f5b95850d056))
+
+
+### Refactoring
+
+* consolidate artifact timing behind one switch ([#48953](https://github.com/okou-ai/okou/issues/48953)) ([18b57aa](https://github.com/okou-ai/okou/commit/18b57aa53cf9a5451a38b092fe86b6065da5b052))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.91.0
+    * @okouai/core bumped to 8.854.6
+    * @okouai/db bumped to 2.51.2
+    * @okouai/pi-agent-runtime bumped to 1.52.6
+
+## [2.94.3](https://github.com/okou-ai/okou/compare/api-v2.94.2...api-v2.94.3) (2026-11-19)
+
+
+### Refactoring
+
+* **api:** retire legacy reward campaign orchestration ([#48939](https://github.com/okou-ai/okou/issues/48939)) ([d1739be](https://github.com/okou-ai/okou/commit/d1739bed31dcde34fead64d82e54489fda10549f))
+* **api:** share Teams launch context and delivery ([#48937](https://github.com/okou-ai/okou/issues/48937)) ([d972a61](https://github.com/okou-ai/okou/commit/d972a6163eca6ac35450d990345cfd33cc42ba82))
+
+
+### Performance Improvements
+
+* **api:** advance chat read cursors in one write ([#48932](https://github.com/okou-ai/okou/issues/48932)) ([39d40e3](https://github.com/okou-ai/okou/commit/39d40e3eaa0f20f87eaaeebd8df994d805ff3bcf))
+* **api:** defer codex subscription recovery until authorization completes ([#48935](https://github.com/okou-ai/okou/issues/48935)) ([ee65216](https://github.com/okou-ai/okou/commit/ee6521690304375a8a97480de0a506386c987360))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.90.2
+    * @okouai/core bumped to 8.854.5
+    * @okouai/db bumped to 2.51.1
+    * @okouai/pi-agent-runtime bumped to 1.52.5
+
+## [2.94.2](https://github.com/okou-ai/okou/compare/api-v2.94.1...api-v2.94.2) (2026-11-19)
+
+
+### Bug Fixes
+
+* **api:** handle phone use authority read timeouts ([#48681](https://github.com/okou-ai/okou/issues/48681)) ([1b1b28f](https://github.com/okou-ai/okou/commit/1b1b28fef198b6e6548542691746291740cac9fc))
+* **app:** clarify paused automation feed cards ([#48887](https://github.com/okou-ai/okou/issues/48887)) ([4b72b66](https://github.com/okou-ai/okou/commit/4b72b660f8279424182640658aa21773cc49ccd4))
+
+
+### Refactoring
+
+* **api:** pass effective queued model selection to routing ([#48912](https://github.com/okou-ai/okou/issues/48912)) ([4843b38](https://github.com/okou-ai/okou/commit/4843b38b94cf7777598a16287a8d559136bc695c))
+* **api:** use three-point axiom artifact timing ([#48854](https://github.com/okou-ai/okou/issues/48854)) ([d930e21](https://github.com/okou-ai/okou/commit/d930e21f8d3d93278613fcef287ae7b58febdf72))
+
+
+### Performance Improvements
+
+* **api:** capture thread and fifo head in one pick query ([#48897](https://github.com/okou-ai/okou/issues/48897)) ([9c9183b](https://github.com/okou-ai/okou/commit/9c9183b4015b9c8b363e56fd68124ac972bb5baa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.90.1
+    * @okouai/core bumped to 8.854.4
+    * @okouai/db bumped to 2.51.0
+    * @okouai/pi-agent-runtime bumped to 1.52.4
+
 ## [2.94.1](https://github.com/okou-ai/okou/compare/api-v2.94.0...api-v2.94.1) (2026-11-19)
 
 

@@ -1,17 +1,20 @@
 import type { Root, RootContent } from "hast";
 
-import { createDeferredPromise } from "../../signals/utils.ts";
+import { fetchAppAsset } from "../resource-fetch.ts";
 import { platformMessagePdfFontUrls } from "../static-assets.ts";
 import { preparePdfAssets } from "./assets.ts";
 import { parseMessagePdfTree } from "./document.ts";
-import type { PdfWorkerRequest, PdfWorkerResponse } from "./types.ts";
-import { readPdfResource } from "./urls.ts";
+import type { PdfWorkerRequest } from "./types.ts";
+import { runDocumentExportWorker } from "./worker-client.ts";
 
 async function loadFont(
   url: string,
   signal: AbortSignal,
 ): Promise<ArrayBuffer> {
-  const response = await readPdfResource(url, "default", signal);
+  const response = await fetchAppAsset(url, signal);
+  if (!response.ok) {
+    throw new Error(`PDF font could not be loaded (${response.status})`);
+  }
   return response.arrayBuffer();
 }
 
@@ -48,6 +51,7 @@ export async function generateMessagePdfBlob(
   contents: readonly string[],
   imageUrls: ReadonlyMap<string, string>,
   signal: AbortSignal,
+  baseUrl = location.href,
 ): Promise<Blob> {
   signal.throwIfAborted();
   // Reference labels belong to each message, not the combined document.
@@ -73,44 +77,8 @@ export async function generateMessagePdfBlob(
         ? loadFont(platformMessagePdfFontUrls.emoji, signal)
         : undefined,
     ]);
-  signal.throwIfAborted();
-  const worker = new Worker(
-    new URL("./message-pdf-worker.ts", import.meta.url),
-    {
-      type: "module",
-    },
-  );
-  const result = createDeferredPromise<Blob>(signal);
-  worker.addEventListener(
-    "message",
-    (event: MessageEvent<PdfWorkerResponse>) => {
-      if (result.settled()) {
-        return;
-      }
-      if (event.data.ok) {
-        result.resolve(event.data.blob);
-      } else {
-        result.reject(new Error("PDF export worker could not complete"));
-      }
-    },
-    { signal },
-  );
-  const onError = () => {
-    if (!result.settled()) {
-      result.reject(new Error("PDF export worker could not complete"));
-    }
-  };
-  worker.addEventListener("error", onError, { signal });
-  worker.addEventListener("messageerror", onError, { signal });
-  signal.addEventListener(
-    "abort",
-    () => {
-      worker.terminate();
-    },
-    { once: true },
-  );
   const request: PdfWorkerRequest = {
-    baseUrl: location.href,
+    baseUrl,
     tree,
     assets,
     regularFont,
@@ -128,6 +96,5 @@ export async function generateMessagePdfBlob(
   ].filter((font): font is ArrayBuffer => {
     return font !== undefined;
   });
-  worker.postMessage(request, fonts);
-  return result.promise;
+  return runDocumentExportWorker(request, signal, fonts);
 }

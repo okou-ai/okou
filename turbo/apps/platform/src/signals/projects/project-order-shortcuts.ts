@@ -4,11 +4,11 @@ import { setupGlobalShortcut } from "../../lib/setup-global-shortcut.ts";
 import { projectOrderShortcutOwner } from "../../lib/project-order-shortcut-owner.ts";
 import { shouldHandleShortcutPress } from "../okou-page/nav.ts";
 import { selectedProjectId$ } from "./project-navigation.ts";
-import { projectReorderEnabled$, stepProject$ } from "./project-order.ts";
-import { projects$ } from "./projects.ts";
+import { projectReorderFilterAllows$, stepProject$ } from "./project-order.ts";
+import { projectedProjects$ } from "./projects.ts";
 
 export const setupProjectOrderShortcuts$ = command(
-  ({ get, set }, signal: AbortSignal) => {
+  ({ get, set }, projectsEnabled: () => boolean, signal: AbortSignal) => {
     const targetProjectId = (event: KeyboardEvent) => {
       const owner = projectOrderShortcutOwner(event.target);
       return owner
@@ -18,7 +18,11 @@ export const setupProjectOrderShortcuts$ = command(
         : get(selectedProjectId$);
     };
     const shouldHandle = (event: KeyboardEvent) => {
-      if (!shouldHandleShortcutPress(event) || !get(projectReorderEnabled$)) {
+      if (
+        !shouldHandleShortcutPress(event) ||
+        !projectsEnabled() ||
+        !get(projectReorderFilterAllows$)
+      ) {
         return false;
       }
       // An unrelated menu retains its own keys, even on a Project page.
@@ -32,7 +36,7 @@ export const setupProjectOrderShortcuts$ = command(
         return false;
       }
       const id = targetProjectId(event);
-      return get(projects$).some((project) => {
+      return get(projectedProjects$).some((project) => {
         return project.id === id;
       });
     };

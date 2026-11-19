@@ -3,13 +3,13 @@ import { proactiveSuggestionsContract } from "@okouai/api-contracts/client/proac
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$ } from "../../api-client.ts";
 import { searchParams$ } from "../../route.ts";
-import { featureSwitch$ } from "../../external/feature-switch.ts";
+import { featureSwitches$ } from "../../external/feature-switch.ts";
 
 const revision$ = state(0);
 export const proactiveSuggestionsPreference$ = computed(async (get) => {
   get(revision$);
   get(searchParams$);
-  get(featureSwitch$);
+  await get(featureSwitches$);
   const result = await accept(
     get(apiClient$)(proactiveSuggestionsContract).get(),
     [200],

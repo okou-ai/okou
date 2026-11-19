@@ -20,7 +20,7 @@ import { setupForYouPagination$ } from "./for-you.ts";
 
 export const setupForYouPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    if (!get(suggestionsEnabled$)) {
+    if (!(await get(suggestionsEnabled$))) {
       await set(navigateTo$, ROUTES.home, { replace: true }, signal);
       return;
     }

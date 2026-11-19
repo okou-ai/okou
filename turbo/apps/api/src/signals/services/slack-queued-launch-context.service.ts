@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
@@ -79,16 +79,18 @@ function requiredSlackLaunchContext(row: SlackLaunchContextRow | undefined) {
   };
 }
 
-const loadSlackLaunchContext$ = command(
-  async (
-    { get },
-    args: {
-      readonly eventId: string;
-      readonly chatThreadId: string;
-      readonly orgId: string;
-      readonly userId: string;
-    },
-  ) => {
+interface SlackLaunchSource {
+  readonly eventId: string;
+  readonly chatThreadId: string;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly contextId?: string;
+}
+
+export type SlackThreadContext = ReturnType<typeof requiredSlackLaunchContext>;
+
+export function createSlackLaunchContext(args: SlackLaunchSource) {
+  return computed(async (get): Promise<SlackThreadContext> => {
     const db = get(db$);
     const [row] = await db
       .select({
@@ -155,12 +157,15 @@ const loadSlackLaunchContext$ = command(
           eq(chatEvents.id, args.eventId),
           eq(chatEvents.chatThreadId, args.chatThreadId),
           eq(chatEvents.contextType, "slack"),
+          args.contextId === undefined
+            ? undefined
+            : eq(chatSlackContext.id, args.contextId),
         ),
       )
       .limit(1);
     return requiredSlackLaunchContext(row);
-  },
-);
+  });
+}
 
 function mentionUserInfoMap(
   mentionDisplayNames: Readonly<Record<string, string>>,
@@ -174,16 +179,12 @@ function mentionUserInfoMap(
 
 export const loadSlackQueuedLaunchMaterial$ = command(
   async (
-    { set },
-    args: {
-      readonly eventId: string;
-      readonly chatThreadId: string;
-      readonly orgId: string;
-      readonly userId: string;
+    { get },
+    args: SlackLaunchSource & {
       readonly featureSwitchContext: FeatureSwitchContext;
     },
   ): Promise<SlackQueuedLaunchMaterial | null> => {
-    const context = await set(loadSlackLaunchContext$, args);
+    const context = await get(createSlackLaunchContext(args));
     if (!context) {
       return null;
     }

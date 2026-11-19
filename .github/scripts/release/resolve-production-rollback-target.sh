@@ -136,6 +136,7 @@ readonly AGENT_INSTRUCTIONS_RUNNER_READER_COMMIT=da0dc9cd1b21ecdd91200fb1cad8600
 readonly CONTENT_BUNDLE_PREPARATION_COMMIT=fc8f99468cc7946843620ff655ae22c09f9cb2ae
 readonly CONTENT_BUNDLE_REFERENCE_ONLY_API_PATH=.github/rollback-floors/content-bundle-reference-only-api
 readonly SEED_SKILL_BUNDLE_ONLY_API_PATH=.github/rollback-floors/seed-skill-bundle-only-api
+readonly BUILT_IN_SKILL_CATALOG_API_PATH=.github/rollback-floors/built-in-skill-catalog-api
 readonly CONNECTOR_SKILL_BUNDLE_CLAIMS_PATH=.github/rollback-floors/connector-skill-bundle-claims
 readonly SINGLE_CHARACTER_SKILL_READER_PATH=.github/rollback-floors/single-character-skill-bundle-reader
 readonly SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_PATH=.github/rollback-floors/single-character-skill-capability-free-api
@@ -975,6 +976,20 @@ if ! git merge-base --is-ancestor "$seed_skill_bundle_only_api_commit" "$TARGET_
   fail "Rollback target predates the Seed Skill bundle-only publisher: ${seed_skill_bundle_only_api_commit}."
 fi
 
+# The preparation API follows the activated catalog even when its old mirror is stale.
+if ! built_in_skill_catalog_api_commit=$(git show "origin/main:${BUILT_IN_SKILL_CATALOG_API_PATH}"); then
+  fail "Cannot read the built-in Skill catalog API rollback floor from main."
+fi
+if [[ ! "$built_in_skill_catalog_api_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid built-in Skill catalog API rollback floor."
+fi
+if ! git merge-base --is-ancestor "$built_in_skill_catalog_api_commit" origin/main; then
+  fail "Built-in Skill catalog API rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$built_in_skill_catalog_api_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the built-in Skill catalog reader: ${built_in_skill_catalog_api_commit}."
+fi
+
 # Captured Connector bundles must retain Workflow precedence, even after the
 # rollout switch is disabled. Earlier claim readers emit duplicate mount paths.
 connector_skill_bundle_claims_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
@@ -1192,6 +1207,23 @@ if ! git merge-base --is-ancestor "$member_memory_protocol_commit" origin/main; 
 fi
 if ! git merge-base --is-ancestor "$member_memory_protocol_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the supported member Memory protocol: ${member_memory_protocol_commit}."
+fi
+
+
+# The deployed preparation stopped selecting and writing both widget push columns.
+# Candidate rollbacks at or after this release work with the contracted schema.
+widget_push_columns_floor_path=.github/rollback-floors/ios-widget-push-columns-independent-api
+if ! widget_push_columns_floor=$(git show "origin/main:${widget_push_columns_floor_path}"); then
+  fail "Cannot read the iOS widget push columns rollback floor from main."
+fi
+if [[ ! "$widget_push_columns_floor" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid iOS widget push columns rollback floor."
+fi
+if ! git merge-base --is-ancestor "$widget_push_columns_floor" origin/main; then
+  fail "iOS widget push columns rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$widget_push_columns_floor" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the iOS widget push columns retirement: ${widget_push_columns_floor}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

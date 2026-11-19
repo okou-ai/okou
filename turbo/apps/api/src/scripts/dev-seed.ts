@@ -8,14 +8,14 @@ import { escapeLiteral } from "pg";
 import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
 import { resolveSkillRef } from "@okouai/core/github-url";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import {
   contentBundleKey,
   readContentBundle,
 } from "@okouai/core/content-bundle";
 import { usagePricing } from "@okouai/db/runtime/usage-pricing";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
-import { skills } from "@okouai/db/schema/skill";
+import { builtInSkills } from "@okouai/db/schema/built-in-skill";
 import { command, createStore } from "ccstate";
 
 import { closeDbPool, db } from "../lib/db";
@@ -201,7 +201,7 @@ const GPT_5_6_LUNA_USAGE_PRICING = withFastPricing(
 
 function buildSeedSkillValues(
   names: readonly string[],
-): (typeof skills.$inferInsert)[] {
+): (typeof builtInSkills.$inferInsert)[] {
   return names.map((name) => {
     const published = devSeedSkillBundles.find((skill) => {
       return skill.name === name;
@@ -209,21 +209,12 @@ function buildSeedSkillValues(
     if (!published) {
       throw new Error(`Development Seed Skill bundle is missing: ${name}`);
     }
-    const url = resolveSkillRef(name);
-    const fullPath = url.replace("https://github.com/", "");
     return {
-      url,
-      name,
-      fullPath,
+      url: resolveSkillRef(name),
       versionHash: published.versionHash,
-      storageId: null,
-      s3Key: null,
       contentBundle: published.contentBundle,
       contentBundleSourceVersionHash: published.versionHash,
       commitSha: published.commitSha,
-      size: published.size,
-      fileCount: published.fileCount,
-      frontmatter: published.frontmatter,
     };
   });
 }
@@ -730,7 +721,7 @@ export function devSeedUsagePricing(environment: string | undefined) {
 const seedPreparedSkills$ = command(
   async (
     { set },
-    values: (typeof skills.$inferInsert)[],
+    values: (typeof builtInSkills.$inferInsert)[],
     timestamp: Date,
     signal: AbortSignal,
   ) => {
@@ -760,26 +751,19 @@ const seedPreparedSkills$ = command(
     }
     const database = set(writeDb$);
     const upserted = await database
-      .insert(skills)
+      .insert(builtInSkills)
       .values(values)
       .onConflictDoUpdate({
-        target: skills.url,
+        target: builtInSkills.url,
         set: {
-          name: sql`excluded.name`,
-          fullPath: sql`excluded.full_path`,
           versionHash: sql`excluded.version_hash`,
-          storageId: null,
-          s3Key: null,
           contentBundle: sql`excluded.content_bundle`,
           contentBundleSourceVersionHash: sql`excluded.content_bundle_source_version_hash`,
           commitSha: sql`excluded.commit_sha`,
-          frontmatter: sql`excluded.frontmatter`,
-          size: sql`excluded.size`,
-          fileCount: sql`excluded.file_count`,
           updatedAt: timestamp,
         },
       })
-      .returning({ id: skills.id });
+      .returning({ url: builtInSkills.url });
     signal.throwIfAborted();
     return upserted.length;
   },
@@ -852,7 +836,7 @@ async function devSeed() {
   {
     const insertedCount = await store.set(
       seedPreparedSkills$,
-      buildSeedSkillValues(SEED_SKILLS),
+      buildSeedSkillValues(BUILT_IN_SKILLS),
       nowDate(),
       signal,
     );

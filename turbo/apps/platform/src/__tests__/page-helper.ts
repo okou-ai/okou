@@ -322,6 +322,7 @@ async function setupPageAsync(
         );
       });
     },
+    store.watch,
     signal,
   );
   return { ready };

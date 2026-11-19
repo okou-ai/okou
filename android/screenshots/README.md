@@ -37,8 +37,10 @@ bash android/scripts/capture-screenshot-scenario.sh "$scenario" list.png history
 Its `src/` tree supplies the test class
 `ai.okou.android.screenshots.ScreenshotScenario`. Only the selected directory is added to
 `androidTest`, through the manual-only `okou.screenshotScenarioDir` Gradle property. The
-adapter selects that class on the existing AGP-managed API35 phone; ordinary tests neither
-compile nor discover these feature sources. Shared `androidTest` support is still available.
+adapter builds the Debug app (`ai.okou.android.debug`) and runs that class on the existing
+AGP-managed API 35 phone. Use the instrumentation target context's package name for UI
+selectors. Shared `androidTest` support is available to the recipe. The regular native
+suite runs separately against the optimized Release APK.
 
 After observing the intended native UI, call `ScreenshotCapture.capture("list.png")`.
 Use bounded native state/visibility assertions, not stabilization sleeps. The helper writes

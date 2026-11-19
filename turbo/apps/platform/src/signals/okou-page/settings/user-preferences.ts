@@ -4,27 +4,27 @@ import { userPreferencesContract } from "@okouai/api-contracts/client/user-prefe
 import type {
   InitializedUserPreferencesResponse,
   UpdateUserPreferencesRequest,
+  UserPreferencesResponse,
 } from "@okouai/api-contracts/contracts/user-preferences";
-import { apiClient$ } from "../../api-client.ts";
+import { apiClient$, type ApiClientFactory } from "../../api-client.ts";
 import { resolveInitialLocaleFallbackFromBrowser } from "../../../i18n/locale-fallback.ts";
 import { isSupportedLocale } from "../../../i18n/resources.ts";
 import { accept } from "../../../lib/accept.ts";
 
-// ---------------------------------------------------------------------------
-// Reload trigger
-// ---------------------------------------------------------------------------
+interface ConfirmedPreferences {
+  readonly client: ApiClientFactory;
+  readonly fields: Partial<InitializedUserPreferencesResponse>;
+}
 
-const internalReloadPreferences$ = state(0);
+interface PendingPreferenceSaves {
+  readonly client: ApiClientFactory;
+  readonly writes: readonly ReadonlySet<string>[];
+  readonly reconcile: boolean;
+}
 
-const reloadUserPreferences$ = command(({ set }) => {
-  set(internalReloadPreferences$, (x) => {
-    return x + 1;
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Data fetching
-// ---------------------------------------------------------------------------
+const confirmedPreferences$ = state<ConfirmedPreferences | null>(null);
+const pendingPreferenceSaves$ = state<PendingPreferenceSaves | null>(null);
+const preferenceReadRevision$ = state(0);
 
 function initialTimezone(): string {
   const timezone = new Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -42,9 +42,9 @@ function initialLocale() {
     : resolveInitialLocaleFallbackFromBrowser();
 }
 
-export const userPreferences$ = computed(
+const initialUserPreferences$ = computed(
   async (get): Promise<InitializedUserPreferencesResponse> => {
-    get(internalReloadPreferences$);
+    get(preferenceReadRevision$);
     const createClient = get(apiClient$);
     const client = createClient(userPreferencesContract);
     const result = await accept(client.get(), [200, 409]);
@@ -89,9 +89,42 @@ export const userPreferences$ = computed(
   },
 );
 
-// ---------------------------------------------------------------------------
-// Update command
-// ---------------------------------------------------------------------------
+export const userPreferences$ = computed(async (get) => {
+  const client = get(apiClient$);
+  const confirmed = get(confirmedPreferences$);
+  const initial = await get(initialUserPreferences$);
+  return confirmed?.client === client
+    ? { ...initial, ...confirmed.fields }
+    : initial;
+});
+
+function confirmedFields(
+  update: UpdateUserPreferencesRequest,
+  result: UserPreferencesResponse,
+): Partial<InitializedUserPreferencesResponse> {
+  const timezone = update.timezone === undefined ? undefined : result.timezone;
+  const locale = update.locale === undefined ? undefined : result.locale;
+  if (timezone === null || locale === null) {
+    throw new Error("Preference write response omitted a written value");
+  }
+  // Other fields in the response may come from a pre-write snapshot.
+  return {
+    ...(timezone !== undefined && { timezone }),
+    ...(locale !== undefined && { locale }),
+    ...(update.pinnedAgentIds !== undefined && {
+      pinnedAgentIds: result.pinnedAgentIds,
+    }),
+    ...(update.sendMode !== undefined && { sendMode: result.sendMode }),
+    ...(update.cloudBrowserEnabledByDefault !== undefined && {
+      cloudBrowserEnabledByDefault: result.cloudBrowserEnabledByDefault,
+    }),
+    ...(update.theme !== undefined && { theme: result.theme }),
+    ...(update.colorTheme !== undefined && { colorTheme: result.colorTheme }),
+    ...(update.captureNetworkBodiesRemaining !== undefined && {
+      captureNetworkBodiesRemaining: result.captureNetworkBodiesRemaining,
+    }),
+  };
+}
 
 export const updateUserPreference$ = command(
   async (
@@ -99,17 +132,68 @@ export const updateUserPreference$ = command(
     update: UpdateUserPreferencesRequest,
     signal: AbortSignal,
   ) => {
+    signal.throwIfAborted();
     const createClient = get(apiClient$);
     const client = createClient(userPreferencesContract);
-    await accept(
-      client.update({
-        body: update,
-        fetchOptions: { signal },
-      }),
-      [200],
-    );
-    signal.throwIfAborted();
+    const fields = Object.entries(update).flatMap(([key, value]) => {
+      return value === undefined ? [] : [key];
+    });
+    const write = new Set(fields);
+    const pending = get(pendingPreferenceSaves$);
+    const scoped = pending?.client === createClient ? pending : null;
+    const writes = scoped?.writes ?? [];
+    set(pendingPreferenceSaves$, {
+      client: createClient,
+      writes: [...writes, write],
+      reconcile:
+        Boolean(scoped?.reconcile) ||
+        writes.some((other) => {
+          return fields.some((field) => {
+            return other.has(field);
+          });
+        }),
+    });
 
-    set(reloadUserPreferences$);
+    const save = (async () => {
+      const saved = await accept(
+        client.update({
+          body: update,
+          fetchOptions: { signal },
+        }),
+        [200],
+      );
+      signal.throwIfAborted();
+      if (get(apiClient$) === createClient) {
+        const previous = get(confirmedPreferences$);
+        set(confirmedPreferences$, {
+          client: createClient,
+          fields: {
+            ...(previous?.client === createClient ? previous.fields : {}),
+            ...confirmedFields(update, saved.body),
+          },
+        });
+      }
+    })();
+    await save.finally(() => {
+      const current = get(pendingPreferenceSaves$);
+      if (current?.client === createClient) {
+        const remaining = current.writes.filter((entry) => {
+          return entry !== write;
+        });
+        if (remaining.length > 0) {
+          set(pendingPreferenceSaves$, { ...current, writes: remaining });
+        } else {
+          set(pendingPreferenceSaves$, null);
+          // Competing writes to one field may finish in a different order than
+          // they commit. Reconcile once, after the last response.
+          if (current.reconcile && get(apiClient$) === createClient) {
+            set(confirmedPreferences$, null);
+            set(preferenceReadRevision$, (version) => {
+              return version + 1;
+            });
+          }
+        }
+      }
+    });
   },
 );

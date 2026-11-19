@@ -1,3 +1,7 @@
+import {
+  marketingRewardConsumer,
+  settleMarketingRequest,
+} from "./helpers/marketing-reward-consumer";
 import { switchRecoverySubscription } from "./helpers/subscription-recovery";
 import { mockClerkUsers } from "./helpers/clerk-users";
 import { state, createStore } from "ccstate";
@@ -54,7 +58,6 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { readGetStartedStatus } from "./helpers/get-started";
 // INT-03 deep AgentPhone flows: linking through the webhook connect prompt,
 // real run dispatch through the Runner HTTP receiver, and completion replies through
 // typed internal callback dispatch. All state is constructed through public
@@ -1614,7 +1617,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     ).resolves.toMatchObject({ linked: true, phoneHandle: phone });
   });
 
-  it("binds one sender and grants one reward when a connection code is consumed concurrently", async () => {
+  it("binds one sender and settles one reward when a connection code is consumed concurrently", async () => {
+    const consumer = marketingRewardConsumer();
     const bdd = createBddApi(context);
     const integrations = createBddIntegrationApi(context);
     const ap = createAgentPhoneBddApi(context);
@@ -1663,17 +1667,28 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
           return send.body;
         }),
     ).toStrictEqual([expect.stringContaining("invalid or expired")]);
-    const status = await readGetStartedStatus(context, actor);
-    expect(
-      status.quests.find((quest) => {
-        return quest.key === "imessage";
-      }),
-    ).toMatchObject({
-      claimedCount: 1,
-      earnedCredits: 1000,
-      pendingCount: 0,
-      canEarnMore: false,
+    await flushWaitUntilForTest();
+    const facts = consumer.received.filter((event) => {
+      return event.type === "imessage.identity-linked";
     });
+    expect(facts).toHaveLength(1);
+    for (const fact of facts) {
+      await settleMarketingRequest(context, {
+        version: 1,
+        environment: fact.environment,
+        policy: "get-started-v1",
+        sourceEventId: fact.id,
+        questKey: "imessage",
+        sourceKey: "agentphone-link",
+        rewardKey: `imessage:${fact.userId}:agentphone-link`,
+        orgId: fact.orgId,
+        actorUserId: fact.userId,
+        beneficiaryUserId: fact.userId,
+        rewardTarget: "user",
+        rewardAmount: 1000,
+        completedAt: fact.occurredAt,
+      });
+    }
     const balance = await accept(
       setupApp({ context, routes: billingUsagePackCreditsRoutes })(
         billingUsagePackCreditsContract,
@@ -1973,23 +1988,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       });
       expectConnectedWelcome(sends.messages.slice(beforeLink));
     }
-    async function imessageQuest(user: ApiTestUser) {
-      const status = await readGetStartedStatus(context, user);
-      return status.quests.find((quest) => {
-        return quest.key === "imessage";
-      });
-    }
-
-    await expect(imessageQuest(actor)).resolves.toStrictEqual({
-      key: "imessage",
-      rewardAmount: 1000,
-      rewardTarget: "user",
-      claimedCount: 0,
-      limit: 1,
-      earnedCredits: 0,
-      canEarnMore: true,
-      pendingCount: 0,
-    });
 
     await linkWithCode(actor);
     await flushWaitUntilForTest();
@@ -1997,18 +1995,10 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       GET_STARTED_REWARDS_CHANGED_EVENT,
       null,
     );
-    const earned = {
-      claimedCount: 1,
-      earnedCredits: 1000,
-      canEarnMore: false,
-      pendingCount: 0,
-    };
-    await expect(imessageQuest(actor)).resolves.toMatchObject(earned);
 
     // Unlinking and linking another phone is a new link, not a new reward.
     await integrations.requestUnlinkAgentPhone(actor, [204]);
     await linkWithCode(actor);
-    await expect(imessageQuest(actor)).resolves.toMatchObject(earned);
   });
 
   it("rejects an expired connection code", async () => {

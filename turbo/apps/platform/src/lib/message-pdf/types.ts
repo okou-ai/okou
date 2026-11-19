@@ -32,3 +32,13 @@ export interface PdfFormula {
 }
 
 export type PdfMathRenderer = (source: string, display: boolean) => PdfFormula;
+
+export interface DocxWorkerRequest {
+  readonly source: string;
+  readonly assets: PdfAssets;
+  readonly baseUrl: string;
+}
+
+export type DocumentExportRequest =
+  | PdfWorkerRequest
+  | { readonly kind: "docx"; readonly input: DocxWorkerRequest };

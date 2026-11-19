@@ -19,7 +19,6 @@ import { computed, type Computed } from "ccstate";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { object } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { db$, rawSqlReadDb$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
@@ -93,7 +92,7 @@ export interface ThreadAutomationTarget {
 }
 
 type CapturedAutomationTarget = ThreadAutomationTarget & {
-  readonly packageSources: ExecutionPackageSources | null;
+  readonly packageSources: ExecutionPackageSources;
 };
 
 type ThreadModels = ReturnType<typeof createThreadModelSignals>;
@@ -136,7 +135,6 @@ export interface ThreadContext extends ThreadWorkflowContext {
   /** Event-resolved raw rows, independent of guidance/paid-tool assembly. */
   readonly templateSources$: ReturnType<typeof createRunTemplates>["sources$"];
   readonly templates$: ReturnType<typeof createRunTemplates>["templates$"];
-  readonly queuedModel$: ThreadModels["queuedModel$"];
   readonly modelSelection$: ThreadModels["modelSelection$"];
   readonly subscriptionSelection$: ThreadModels["subscriptionSelection$"];
   readonly requestedFramework$: ThreadModels["requestedFramework$"];
@@ -178,6 +176,7 @@ export function createThreadContext(
   );
   const model = createThreadModelContext(
     bootstrap,
+    chatThreadId,
     pickedEvent$,
     integrations.automationTarget$,
     dispatchTiming$,
@@ -266,7 +265,6 @@ export function createThreadContext(
     officialWorkflowObservation$: workflowContext.officialWorkflowObservation$,
     templateSources$: templates.sources$,
     templates$: templates.templates$,
-    queuedModel$: model.queuedModel$,
     modelSelection$: model.modelSelection$,
     subscriptionSelection$: model.subscriptionSelection$,
     requestedFramework$: model.requestedFramework$,
@@ -313,18 +311,36 @@ function createThreadConnectorSourceContext(
 
 function createThreadModelContext(
   bootstrap: AgentRunContextSignals,
+  chatThreadId: string,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>,
   dispatchTiming$: ThreadContext["dispatchTiming$"],
 ) {
-  const modelInput$ = createThreadModelInput(pickedEvent$, automationTarget$);
+  const effectiveSelection$ = computed(async (get) => {
+    const [event, target] = await Promise.all([
+      get(pickedEvent$),
+      get(automationTarget$),
+    ]);
+    if (!event) {
+      return null;
+    }
+    // Official Workflows always route through Auto.
+    return target?.workflow.officialDefinitionName
+      ? {
+          selectedModel: AUTO_SELECTED_MODEL,
+          codexServiceTier: null,
+          reasoningEffort: null,
+        }
+      : event.modelSelection;
+  });
   const creditsWaived$ = createOfficialWorkflowCreditWaiver(
     pickedEvent$,
     automationTarget$,
   );
   return createThreadModelSignals(
     bootstrap,
-    modelInput$,
+    chatThreadId,
+    effectiveSelection$,
     creditsWaived$,
     dispatchTiming$,
   );
@@ -459,29 +475,6 @@ function createThreadIntegrationContexts(
   };
 }
 
-function createThreadModelInput(
-  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  automationTarget$: ThreadContext["automationTarget$"],
-) {
-  return computed(async (get) => {
-    const [event, target] = await Promise.all([
-      get(pickedEvent$),
-      get(automationTarget$),
-    ]);
-    // Platform policy wins over an input captured before this policy shipped.
-    return event && target?.workflow.officialDefinitionName
-      ? {
-          ...event,
-          canonicalModelSelection: {
-            selectedModel: AUTO_SELECTED_MODEL,
-            codexServiceTier: null,
-            reasoningEffort: null,
-          },
-        }
-      : event;
-  });
-}
-
 /** Routing candidate only; exact accepted artifacts and installation ownership
  * are still validated before a Run can be committed. */
 function createOfficialWorkflowCreditWaiver(
@@ -520,7 +513,7 @@ function createAutomationTarget(
         automation: workflowAutomationColumns(),
         agentId: workflows.agentId,
         packageSources: executionPackageSourcesSql(bootstrap).mapWith(
-          nullableDriverValueDecoder(executionPackageSourcesDecoder),
+          executionPackageSourcesDecoder,
         ),
         workflow: {
           id: workflows.id,
@@ -562,7 +555,7 @@ function createAutomationTarget(
 }
 
 const packageSourcesRowSchema = object({
-  packages: executionPackageSourcesSchema.nullable(),
+  packages: executionPackageSourcesSchema,
 });
 
 function createThreadExecutionPackageSources(

@@ -73,6 +73,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       needed: ${{ steps.changes.outputs.needed }}
+      release: ${{ steps.changes.outputs.release }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -94,6 +95,13 @@ jobs:
         run: |
           needed=$(bash ios/scripts/ci-changed.sh)
           echo "needed=$needed" >> "$GITHUB_OUTPUT"
+          # A queued release commit may reuse published validation. Its subject only
+          # selects the resolver, which still classifies the whole group's diff.
+          release=false
+          if [[ "$EVENT_NAME" == merge_group && "$(git log -1 --format=%s)" == 'chore: release'* ]]; then
+            release=true
+          fi
+          echo "release=$release" >> "$GITHUB_OUTPUT"
 
   script-checks:
     runs-on: ubuntu-latest
@@ -122,9 +130,55 @@ jobs:
           python3 ios/scripts/reset-oversized-compilation-cache.test.py
           python3 ios/scripts/install-swiftlint.test.py
 
-  swiftlint-build:
+  resolve-release:
+    # Release metadata reuses the archive and tests already published for its
+    # native inputs. Other merge groups never start this job or wait for it.
     needs: detect
-    if: needs.detect.outputs.needed == 'true'
+    if: github.event_name == 'merge_group' && needs.detect.outputs.needed == 'true' && needs.detect.outputs.release == 'true'
+    runs-on: xcode-27
+    timeout-minutes: 30
+    outputs:
+      reuse: ${{ steps.resolve.outputs.reuse }}
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Keep the bounded squash-group ancestry, not the entire repository history.
+          fetch-depth: 32
+      - name: Configure archive workspace
+        run: echo "IOS_ARCHIVE_DIR=$RUNNER_TEMP/okou-ios-promotion" >> "$GITHUB_ENV"
+      - name: Capture promotion inputs
+        run: |
+          mkdir "$IOS_ARCHIVE_DIR"
+          python3 ios/scripts/archive-promotion.py toolchain "$IOS_ARCHIVE_DIR/toolchain.json"
+          python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/inputs.json"
+      - name: Install AWS CLI
+        run: |
+          if ! command -v aws >/dev/null; then
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install awscli
+          fi
+          aws --version
+      - name: Resolve exact-input archive and test evidence
+        id: resolve
+        env:
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          GH_TOKEN: ${{ github.token }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_STATIC_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_STATIC_BUCKET_NAME }}
+        run: python3 ios/scripts/archive-promotion.py resolve-release "$IOS_ARCHIVE_DIR"
+
+  swiftlint-build:
+    needs: [detect, resolve-release]
+    # A skipped resolver is the ordinary path; only verified reuse omits native jobs.
+    if: >-
+      !cancelled() && needs.detect.outputs.needed == 'true' &&
+      (needs.resolve-release.result == 'skipped' ||
+       (needs.resolve-release.result == 'success' && needs.resolve-release.outputs.reuse == 'false'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container:
@@ -137,7 +191,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: tool-cache
         with:
           path: ios/.tools/swiftlint
           key: native-swiftlint-linux-6.4.2-${{ hashFiles('ios/.swiftlint-version') }}-${{ hashFiles('ios/Tools/SwiftLint/Rules/*.swift', 'ios/Tools/SwiftLint/build.py') }}
@@ -163,10 +218,16 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           overwrite: true
+      # Pull request and queue refs cannot share entries; they would only evict main's.
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: github.ref == 'refs/heads/main' && steps.tool-cache.outputs.cache-hit != 'true'
+        with:
+          path: ios/.tools/swiftlint
+          key: ${{ steps.tool-cache.outputs.cache-primary-key }}
 
   swiftlint:
     needs: [detect, swiftlint-build]
-    if: needs.detect.outputs.needed == 'true'
+    if: "!cancelled() && needs.swiftlint-build.result == 'success'"
     runs-on: ubuntu-latest
     timeout-minutes: 5
     container:
@@ -198,8 +259,11 @@ jobs:
         run: bash ios/scripts/lint.sh
 
   test-packages:
-    needs: detect
-    if: needs.detect.outputs.needed == 'true' && github.event_name != 'push'
+    needs: [detect, resolve-release]
+    if: >-
+      !cancelled() && needs.detect.outputs.needed == 'true' && github.event_name != 'push' &&
+      (needs.resolve-release.result == 'skipped' ||
+       (needs.resolve-release.result == 'success' && needs.resolve-release.outputs.reuse == 'false'))
     runs-on: xcode-27
     timeout-minutes: 15
     env:
@@ -224,8 +288,11 @@ jobs:
           retention-days: 7
 
   prepare-package-sources:
-    needs: detect
-    if: needs.detect.outputs.needed == 'true' && github.event_name != 'push'
+    needs: [detect, resolve-release]
+    if: >-
+      !cancelled() && needs.detect.outputs.needed == 'true' && github.event_name != 'push' &&
+      (needs.resolve-release.result == 'skipped' ||
+       (needs.resolve-release.result == 'success' && needs.resolve-release.outputs.reuse == 'false'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -249,8 +316,9 @@ jobs:
 
   build-test:
     needs: [detect, prepare-package-sources]
-    # Main pushes consume previously built archives in release-please; never rebuild/test.
-    if: needs.detect.outputs.needed == 'true' && github.event_name != 'push'
+    # Source preparation carries the event selection: main pushes consume previously
+    # built archives in release-please and never rebuild/test.
+    if: "!cancelled() && needs.prepare-package-sources.result == 'success'"
     runs-on: xcode-27
     timeout-minutes: 30
     env:
@@ -405,8 +473,11 @@ jobs:
 
   build-archive:
     # Compile in parallel with simulator validation to stay inside the queue deadline.
-    needs: detect
-    if: github.event_name == 'merge_group' && needs.detect.outputs.needed == 'true'
+    needs: [detect, resolve-release]
+    if: >-
+      !cancelled() && github.event_name == 'merge_group' && needs.detect.outputs.needed == 'true' &&
+      (needs.resolve-release.result == 'skipped' ||
+       (needs.resolve-release.result == 'success' && needs.resolve-release.outputs.reuse == 'false'))
     runs-on: xcode-27
     timeout-minutes: 15
     env:
@@ -451,7 +522,12 @@ jobs:
         build-test,
         build-archive,
       ]
-    if: github.event_name == 'merge_group' && needs.detect.outputs.needed == 'true'
+    # Every producer must have run and passed; verified release reuse publishes nothing.
+    if: >-
+      !cancelled() && github.event_name == 'merge_group' && needs.detect.outputs.needed == 'true' &&
+      needs.script-checks.result == 'success' && needs.swiftlint.result == 'success' &&
+      needs.test-packages.result == 'success' && needs.build-test.result == 'success' &&
+      needs.build-archive.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -491,6 +567,7 @@ jobs:
       [
         detect,
         script-checks,
+        resolve-release,
         swiftlint,
         test-packages,
         build-test,
@@ -514,6 +591,8 @@ jobs:
           SCRIPT_CHECKS_RESULT: ${{ needs.script-checks.result }}
           LINT_RESULT: ${{ needs.swiftlint.result }}
           IOS_NEEDED: ${{ needs.detect.outputs.needed }}
+          RELEASE_RESULT: ${{ needs.resolve-release.result }}
+          RELEASE_REUSE: ${{ needs.resolve-release.outputs.reuse }}
           PACKAGES_RESULT: ${{ needs.test-packages.result }}
           BUILD_RESULT: ${{ needs.build-test.result }}
           PREVIEW_RESULT: ${{ needs.build-preview.result }}

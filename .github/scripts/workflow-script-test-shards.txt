@@ -72,7 +72,6 @@
 2 runner-host-architecture-groups-test.sh
 2 runner-image-architecture-test.sh
 2 runner-image-workflow-test.sh
-2 runner-rust-cache-prewarm-workflow-test.sh
 2 setup-r2-sccache-test.sh
 2 smoke-okou-cli-artifact-test.sh
 2 staging-workflow-test.sh
@@ -81,7 +80,6 @@
 2 vm0-monitoring-runner-ingress-collect-test.sh
 2 wait-runner-image-groups-test.sh
 3 ansible-ssh-control-path-test.sh
-3 app-preview-ingress-workflow-test.sh
 3 cancel-superseded-merge-group-runs-test.sh
 3 changed-environment-test.sh
 3 check-file-size-test.sh
@@ -93,7 +91,6 @@
 3 download-verified-test.sh
 3 kms-production-backup-test.sh
 3 crates/kerberos-worker/tests/infrastructure/kerberos-native-cache-test.sh
-3 kerberos-native-cache-workflow-test.sh
 3 mitm-addon-test-sharding-workflow-test.sh
 3 native-only-gates-test.sh
 3 pass-release-pr-ci-gates-test.sh
