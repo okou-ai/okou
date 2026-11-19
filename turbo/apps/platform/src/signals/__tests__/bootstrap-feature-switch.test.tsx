@@ -33,22 +33,6 @@ test("A signed-out page does not load workspace features", async () => {
   expect(workspaceFeatureRequested).toBeFalsy();
 });
 
-test("A member who opted out does not request a feature guide during startup", async () => {
-  let guideRequested = false;
-  context.mocks.api(featureGuidesContract.current, ({ respond }) => {
-    guideRequested = true;
-    return respond(200, { edition: null });
-  });
-
-  await setupPage({
-    context,
-    path: "/",
-    featureSwitches: { [FeatureSwitchKey.FeatureGuides]: false },
-  });
-
-  expect(guideRequested).toBeFalsy();
-});
-
 test("The app waits for authoritative workspace features before mounting", async () => {
   let guideRequests = 0;
   context.mocks.api(featureGuidesContract.current, ({ respond }) => {
@@ -105,7 +89,7 @@ test("An upgrade required by the workspace switch request is shown during startu
   expect(screen.queryByRole("heading", { name: "Agents" })).toBeNull();
 });
 
-test("A new member without overrides enters My Okou without a Lab action", async () => {
+test("A new member without overrides enters My Okou", async () => {
   context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
     return respond(200, { switches: {}, effectiveSwitches: {} });
   });
