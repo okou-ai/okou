@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.110.3](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.2...guest-agent-v0.110.3) (2026-11-19)
+
+
+### Refactoring
+
+* **guest-agent:** share one-time cli startup timing ([#48888](https://github.com/okou-ai/okou/issues/48888)) ([77112fc](https://github.com/okou-ai/okou/commit/77112fc9efd9ec2d2ea23f4563d8c664478f0537))
+
 ## [0.110.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.1...guest-agent-v0.110.2) (2026-11-19)
 
 ## [0.110.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.0...guest-agent-v0.110.1) (2026-11-18)
