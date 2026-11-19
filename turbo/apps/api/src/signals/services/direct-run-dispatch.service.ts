@@ -4,13 +4,18 @@ import {
   DEFAULT_RUNNER_PROFILE_MEMORY_MB,
   RUNNER_DISPATCH_MAX_BODY_BYTES,
   isCanonicalRunnerHostname,
+  type runnerDispatchEnvelopeSchema,
 } from "@okouai/api-contracts/contracts/runner-dispatch";
 import { OFFICIAL_RUNNER_TOKEN_PREFIX } from "@okouai/api-contracts/contracts/runner-primitives";
-import type { ExecutionContext } from "@okouai/api-contracts/contracts/runners";
+import type {
+  ExecutionContext,
+  RunnerPreference,
+} from "@okouai/api-contracts/contracts/runners";
 import { runnerState } from "@okouai/db/runtime/runner-state";
 import { command, type Command } from "ccstate";
 import { and, arrayContains, eq, gt } from "drizzle-orm";
 import { delay } from "signal-timers";
+import type { output } from "zod";
 import { env } from "../../lib/env";
 import { API_INVOCATION_MAX_DURATION_SECONDS } from "../../lib/invocation-budget";
 import { now, nowDate } from "../../lib/time";
@@ -119,6 +124,8 @@ const readDirectRunFleet$ = command(
 type DirectRunFleet = Awaited<
   ReturnType<(typeof readDirectRunFleet$)["write"]>
 >;
+const MAX_HOME_DEFERRAL_MS = 1000;
+const FINAL_HOME_DELIVERY_MARGIN_MS = 1000;
 type UnacceptedRunResult =
   typeof failUnacceptedRun$ extends Command<Promise<infer Result>, infer _Args>
     ? Result
@@ -179,10 +186,88 @@ interface DeliveryWindow {
   readonly notAfter: number;
   readonly monotonicDeadline: number;
 }
+type DispatchEnvelope = output<typeof runnerDispatchEnvelopeSchema>;
+
 function remainingDelivery(window: DeliveryWindow): number {
   return Math.min(
     window.notAfter - now(),
     window.monotonicDeadline - performance.now(),
+  );
+}
+
+function preferredHomeOffer(
+  envelope: DispatchEnvelope,
+  ordinaryBody: string,
+  preference: RunnerPreference,
+  preferredUntil: number,
+  window: DeliveryWindow,
+): { body: string; waitUntil?: number } {
+  if (
+    preferredUntil <= 0 ||
+    preference.kind !== "preference" ||
+    preference.tier !== "predecessorHome" ||
+    preference.home.evidence !== "expected"
+  ) {
+    return { body: ordinaryBody };
+  }
+  const sentAt = now();
+  const waitUntil = Math.floor(
+    Math.min(
+      sentAt + MAX_HOME_DEFERRAL_MS,
+      sentAt + remainingDelivery(window) - FINAL_HOME_DELIVERY_MARGIN_MS,
+      preferredUntil,
+      Date.parse(preference.home.homeWaitUntil),
+    ),
+  );
+  if (waitUntil <= sentAt) {
+    return { body: ordinaryBody };
+  }
+  const body = JSON.stringify({
+    ...envelope,
+    preferredHomeCheckout: {
+      predecessorRunId: preference.predecessorRunId,
+      waitUntil,
+    },
+  });
+  return Buffer.byteLength(body, "utf8") <= RUNNER_DISPATCH_MAX_BODY_BYTES
+    ? { body, waitUntil }
+    : { body: ordinaryBody };
+}
+
+function busyRetry(
+  remaining: number,
+  homeWaitUntil: number | undefined,
+  finalHomeAttempt: boolean,
+): "backoff" | "final" | "stop" {
+  if (finalHomeAttempt) {
+    return "stop";
+  }
+  if (remaining > 0) {
+    return "backoff";
+  }
+  // A definite busy can arrive after the receiver's deferral deadline.
+  return homeWaitUntil === undefined ? "stop" : "final";
+}
+
+function preferredRouteDeadline(
+  preference: RunnerPreference,
+  target: DirectRunTarget,
+): number {
+  return preference.kind === "preference" &&
+    preference.runnerIdentity.runnerId === target.runnerId &&
+    preference.runnerIdentity.heartbeatGeneration === target.heartbeatGeneration
+    ? Date.parse(preference.expiresAt)
+    : 0;
+}
+
+function isCurrentOwner(
+  state: Awaited<ReturnType<(typeof readDirectRunState$)["write"]>>,
+  target: DirectRunTarget,
+): boolean {
+  return (
+    state?.status === "running" &&
+    state.runnerId === target.runnerId &&
+    state.heartbeatGeneration === target.heartbeatGeneration
   );
 }
 function failureInput(input: AdmittedRunLaunch, owner: DirectRunTarget | null) {
@@ -203,6 +288,8 @@ const offerToProcess$ = command(
       readonly target: DirectRunTarget;
       readonly runId: string;
       readonly body: string;
+      readonly envelope: DispatchEnvelope;
+      readonly preference: RunnerPreference;
       readonly token: string;
       readonly window: DeliveryWindow;
       readonly preferredUntil: number;
@@ -212,27 +299,32 @@ const offerToProcess$ = command(
     signal.throwIfAborted();
     let uncertain = false;
     let retry = 0;
+    let offer: ReturnType<typeof preferredHomeOffer> | undefined;
     for (;;) {
       const state = await set(readDirectRunState$, args.runId, signal);
-      if (
-        !state ||
-        state.status !== "running" ||
-        state.runnerId !== args.target.runnerId ||
-        state.heartbeatGeneration !== args.target.heartbeatGeneration
-      ) {
+      if (!isCurrentOwner(state, args.target)) {
         return uncertain ? ("uncertain" as const) : ("stopped" as const);
       }
+      offer ??= preferredHomeOffer(
+        args.envelope,
+        args.body,
+        args.preference,
+        args.preferredUntil,
+        args.window,
+      );
       const remaining = remainingDelivery(args.window);
       if (remaining <= 0) {
         return uncertain ? ("uncertain" as const) : ("not-accepted" as const);
       }
+      const finalHomeAttempt =
+        offer.waitUntil !== undefined && now() >= offer.waitUntil;
       const earlierUncertainty: boolean = uncertain;
       uncertain = true;
       const observation = await postRunnerDispatch(
         {
           target: args.target,
           runId: args.runId,
-          body: args.body,
+          body: offer.body,
           serviceToken: args.token,
           timeoutMs: Math.min(15_000, remaining),
         },
@@ -247,9 +339,19 @@ const offerToProcess$ = command(
       if (observation === "busy" || observation === "not-delivered") {
         uncertain = earlierUncertainty;
       }
-      const preferredRemaining = args.preferredUntil - now();
-      if (!uncertain && (observation !== "busy" || preferredRemaining <= 0)) {
-        return "not-accepted" as const;
+      const preferredRemaining =
+        (offer.waitUntil ?? args.preferredUntil) - now();
+      if (!uncertain) {
+        const retryPolicy =
+          observation === "busy"
+            ? busyRetry(preferredRemaining, offer.waitUntil, finalHomeAttempt)
+            : "stop";
+        if (retryPolicy === "stop") {
+          return "not-accepted" as const;
+        }
+        if (retryPolicy === "final") {
+          continue;
+        }
       }
       const wait = Math.min(
         remainingDelivery(args.window),
@@ -298,13 +400,14 @@ export const dispatchPreparedRun$ = command(
         if (remainingDelivery(window) <= 0) {
           break;
         }
-        const body = JSON.stringify({
+        const envelope = {
           runnerId: target.runnerId,
           heartbeatGeneration: target.heartbeatGeneration,
           profile: input.profile,
           notAfter,
           executionContext,
-        });
+        };
+        const body = JSON.stringify(envelope);
         if (Buffer.byteLength(body, "utf8") > RUNNER_DISPATCH_MAX_BODY_BYTES) {
           break;
         }
@@ -331,18 +434,21 @@ export const dispatchPreparedRun$ = command(
           });
         }
         const preference = fleet.preference;
-        const preferredUntil =
-          preference.kind === "preference" &&
-          preference.runnerIdentity.runnerId === target.runnerId &&
-          preference.runnerIdentity.heartbeatGeneration ===
-            target.heartbeatGeneration
-            ? Date.parse(preference.expiresAt)
-            : 0;
+        const preferredUntil = preferredRouteDeadline(preference, target);
         // An exception after entering this command cannot prove non-acceptance.
         uncertain = true;
         const delivery = await set(
           offerToProcess$,
-          { target, runId: input.run.id, body, token, window, preferredUntil },
+          {
+            target,
+            runId: input.run.id,
+            body,
+            envelope,
+            preference,
+            token,
+            window,
+            preferredUntil,
+          },
           signal,
         );
         uncertain = delivery === "uncertain";
