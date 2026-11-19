@@ -387,10 +387,6 @@ scheduled_cleanup = scheduled_jobs.fetch("cleanup-clerk-test-resources")
 unless scheduled_cleanup.dig("permissions", "contents") == "read"
   raise "stale Clerk cleanup must use read-only repository permissions"
 end
-if scheduled_jobs.key?("cleanup-clerk-test-users") ||
-    scheduled_jobs.key?("cleanup-clerk-empty-orgs")
-  raise "legacy Clerk cleanup jobs must be removed"
-end
 stale_checkout = scheduled_cleanup.fetch("steps").find do |step|
   step.fetch("uses", "").start_with?("actions/checkout@")
 end

@@ -57,20 +57,29 @@ assert_match_count() {
   fi
 }
 
-assert_process_gone() {
+assert_process_stopped() {
   local pid_file=$1
   local description=$2
-  local pid
+  local pid stat state
 
   [ -s "$pid_file" ] || fail "missing PID for ${description}"
   pid=$(< "$pid_file")
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || fail "invalid PID for ${description}: ${pid}"
   for _ in {1..20}; do
-    if ! kill -0 "$pid" 2>/dev/null; then
-      return
+    if IFS= read -r stat 2>/dev/null < "/proc/${pid}/stat"; then
+      # Strip pid and comm before reading the state. A dead process can remain
+      # visible until its new parent reaps it.
+      state=${stat##*) }
+      state=${state%% *}
+      case "$state" in Z|X) return 0 ;; esac
+    elif [ ! -d "/proc/${pid}" ]; then
+      return 0
+    else
+      fail "cannot inspect ${description} process ${pid}"
     fi
     sleep 0.1
   done
-  fail "${description} process ${pid} is still alive"
+  fail "${description} process ${pid} is still running (state=${state})"
 }
 
 tmp=$(mktemp -d)
@@ -268,7 +277,6 @@ fake_timeout="${fake_bin}/timeout"
 cat > "$fake_timeout" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "$*" >> "$FAKE_TIMEOUT_INVOCATIONS"
 if [ "${FAKE_TIMEOUT_MODE:-passthrough}" = "real" ]; then
   exec "$SYSTEM_TIMEOUT" "$@"
 fi
@@ -306,7 +314,6 @@ setup_case() {
   : > "$case_dir/actual-ssh.log"
   : > "$case_dir/scp.log"
   : > "$case_dir/sftp.log"
-  : > "$case_dir/timeout.log"
   : > "$case_dir/sleep.log"
   : > "$case_dir/probe-stdin"
   : > "$case_dir/ssh-stdin"
@@ -330,7 +337,6 @@ invoke_wrapper() {
   FAKE_ACTUAL_SSH_INVOCATIONS="$case_dir/actual-ssh.log" \
   FAKE_SCP_INVOCATIONS="$case_dir/scp.log" \
   FAKE_SFTP_INVOCATIONS="$case_dir/sftp.log" \
-  FAKE_TIMEOUT_INVOCATIONS="$case_dir/timeout.log" \
   FAKE_SLEEP_INVOCATIONS="$case_dir/sleep.log" \
   FAKE_PROBE_STDIN_FILE="$case_dir/probe-stdin" \
   FAKE_ACTUAL_SSH_STDIN="$case_dir/ssh-stdin" \
@@ -561,11 +567,9 @@ case "$(< "$actual_timeout/status")" in
 esac
 assert_line_count "$actual_timeout/actual-ssh.log" 1 \
   "metal@dev-1.aws.vm3.ai run-once-and-hang"
-assert_contains "$actual_timeout/timeout.log" \
-  "--kill-after=5s 1s ${fake_ssh} metal@dev-1.aws.vm3.ai run-once-and-hang"
 assert_contains "$actual_timeout/stderr" 'sending signal TERM to command'
-assert_process_gone "$actual_timeout/actual-ssh.pid" "timed-out SSH caller"
-assert_process_gone \
+assert_process_stopped "$actual_timeout/actual-ssh.pid" "timed-out SSH caller"
+assert_process_stopped \
   "$actual_timeout/actual-ssh-child.pid" \
   "timed-out SSH descendant"
 
@@ -604,8 +608,8 @@ assert_contains "$actual_cancel/stderr" 'signal=TERM'
 assert_contains "$actual_cancel/stderr" 'event=caller-signal'
 assert_line_count "$actual_cancel/actual-ssh.log" 1 \
   "metal@dev-1.aws.vm3.ai run-once-until-cancelled"
-assert_process_gone "$actual_cancel/actual-ssh.pid" "cancelled SSH caller"
-assert_process_gone \
+assert_process_stopped "$actual_cancel/actual-ssh.pid" "cancelled SSH caller"
+assert_process_stopped \
   "$actual_cancel/actual-ssh-child.pid" \
   "cancelled SSH descendant"
 

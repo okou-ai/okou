@@ -20,6 +20,7 @@ export const mailContract: ClientDescriptor<typeof OriginalMailContract> = {
     path: "/api/mail/drafts/link",
     statuses: {
       200: true,
+      400: true,
       401: true,
       403: true,
       404: true,

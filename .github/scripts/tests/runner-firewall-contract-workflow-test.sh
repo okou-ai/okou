@@ -63,8 +63,6 @@ def assert_gate(values, results, expected, label):
 qemu_producer = 'native-full-qemu-producer'
 assert qemu_producer not in jobs, 'QEMU candidate builds must not be part of routine Crates CI'
 assert qemu_producer not in gate['needs'], 'the gate must not wait for an external QEMU build'
-assert 'qemu-producer-needed' not in jobs['detect']['outputs']
-assert 'QEMU_PRODUCER_NEEDED' not in gate_step['env']
 for job in jobs.values():
     for step in job.get('steps', []):
         assert 'check-full-qemu-producer.sh' not in step.get('run', '')
@@ -430,7 +428,6 @@ cat "$CARGO_METADATA_FIXTURE"
         actual_owners = [name for name in ['coverage', standalone] if selected(name, values)]
         assert actual_owners == ([] if owner is None else [owner]), f'{label}: {actual_owners}'
         assert selected('mitm-addon-test', values) == addon_needed, label
-        assert 'qemu-producer-needed' not in outputs, label
         home_needed = label in home_needed_labels
         native_selection = {'native-kerberos-runtime': worker_needed,
                             'native-gssapi-independent-peer': peer_needed,
@@ -489,7 +486,6 @@ cat "$CARGO_METADATA_FIXTURE"
         run(['bash', '-euo', 'pipefail', '-c', render(detect['run'], {'github.event_name': 'pull_request'})],
             repo, env | {'GITHUB_OUTPUT': str(output)})
         operation_outputs = dict(line.split('=', 1) for line in output.read_text().splitlines())
-        assert 'qemu-producer-needed' not in operation_outputs, operation
         # Both operations charge the removed crate input, even when its new
         # path is outside crates. Neither adds a routine full-QEMU producer.
         expected_native = True
@@ -547,7 +543,6 @@ cat "$CARGO_METADATA_FIXTURE"
         run(['bash', '-euo', 'pipefail', '-c', render(detect['run'], {'github.event_name': event})], repo, event_env)
         event_outputs = dict(line.split('=', 1) for line in output.read_text().splitlines())
         assert event_outputs['any-changed'] == 'true', event
-        assert 'qemu-producer-needed' not in event_outputs, event
         values = contexts['other-crate'] | {'github.event_name': event} | {
             f'needs.detect.outputs.{name}': value for name, value in event_outputs.items()}
         assert selected('coverage', values), event

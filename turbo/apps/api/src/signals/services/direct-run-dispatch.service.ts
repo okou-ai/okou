@@ -22,6 +22,7 @@ import {
   createDirectRunPreparation,
   prepareDirectRun$,
   type AdmittedRunLaunch,
+  type DirectRunCachePublication,
 } from "./direct-run-preparation.service";
 import {
   selectDirectRunOwner$,
@@ -31,7 +32,6 @@ import {
 import { preparedRunnerReusePreference } from "./runner-reuse-preference";
 import { joinAll, settleIncludingAbort } from "../utils";
 import { recordRunContextSnapshot } from "./run-context-snapshot.service";
-import type { StoragePresignedUrlCacheWrite } from "./system-storage-presigned-url-cache.service";
 
 function createDirectRunFleet(input$: Computed<Promise<AdmittedRunLaunch>>) {
   const fleet$ = computed(async (get) => {
@@ -136,7 +136,7 @@ type DirectRunDispatchPreparation =
   | {
       readonly kind: "prepared";
       readonly delivery: PreparedRunDelivery;
-      readonly cacheWrites: readonly StoragePresignedUrlCacheWrite[];
+      readonly cachePublication: DirectRunCachePublication;
     }
   | { readonly kind: "failed"; readonly result: DirectRunDispatchResult };
 
@@ -181,8 +181,8 @@ export function createDirectRunDispatchPreparation(
           },
         };
       }
-      const { cacheWrites, ...delivery } = prepared.value;
-      return { kind: "prepared", delivery, cacheWrites };
+      const { cachePublication, ...delivery } = prepared.value;
+      return { kind: "prepared", delivery, cachePublication };
     },
   );
 }

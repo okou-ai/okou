@@ -260,6 +260,8 @@
   public java.lang.Object saveComposerDraft(ai.okou.android.chat.ServerDraftTarget, java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object sendControl(ai.okou.android.api.generated.SendRequest, kotlin.coroutines.Continuation);
   public java.lang.Object sendInput(ai.okou.android.api.generated.SendRequestVariant1, kotlin.coroutines.Continuation);
+  public java.lang.Object setArchived(java.lang.String, boolean, java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object setMuted(java.lang.String, boolean, java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object threadDetail(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object updatePersonalInstructions(java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object updatePreferences(ai.okou.android.api.generated.UpdatePreferencesRequest, kotlin.coroutines.Continuation);
@@ -309,6 +311,8 @@
   public java.lang.Object projectArchive(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object projectEvents(long, kotlin.coroutines.Continuation);
   public java.lang.Object projectSnapshot(kotlin.coroutines.Continuation);
+  public java.lang.Object setArchived(java.lang.String, boolean, java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object setMuted(java.lang.String, boolean, java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object threadDetail(java.lang.String, kotlin.coroutines.Continuation);
 }
 -keep,allowobfuscation class ai.okou.android.chat.ChatListUiState {

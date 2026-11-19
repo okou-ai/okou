@@ -31,4 +31,10 @@
     <string name="chat_mark_unread">标为未读</string>
     <string name="chat_read_action_pending">正在更新已读状态…</string>
     <string name="chat_read_action_failed">无法更新已读状态。</string>
+    <string name="chat_mute">静音聊天</string>
+    <string name="chat_unmute">取消静音</string>
+    <string name="chat_archive">归档聊天</string>
+    <string name="chat_unarchive">取消归档</string>
+    <string name="chat_row_action_pending">正在更新聊天…</string>
+    <string name="chat_row_action_failed">无法确认聊天更改。</string>
 </resources>

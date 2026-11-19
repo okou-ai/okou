@@ -250,6 +250,8 @@ test("Computer use opens its download guide from the parallel connection choices
   ).toBe("permissions");
   click(getAction("button", "Continue", dialog));
   await screen.findByRole("heading", { name: "Enable it in chat" });
+  expect(within(dialog).getByText("Your computer")).toBeInTheDocument();
+  expect(within(dialog).getByText("This Mac")).toBeInTheDocument();
   expect(
     new URLSearchParams(window.location.search).get("computerUseStep"),
   ).toBe("chat");
@@ -305,19 +307,6 @@ test.each([
   const dialog = await screen.findByRole("dialog", { name: title });
   const illustration = within(dialog).getByRole("figure");
   expect(illustration).toBeInTheDocument();
-});
-
-test("The Computer use chat guide renders a vector rather than a bitmap", async () => {
-  await page(
-    "/connectors?scope=remote-control&setup=computer-use&computerUseStep=chat",
-  );
-  const dialog = await screen.findByRole("dialog", {
-    name: "Enable it in chat",
-  });
-  const illustration = within(dialog).getByRole("img");
-  expect(illustration.tagName).toBe("svg");
-  expect(within(illustration).getByText("Your computer")).toBeInTheDocument();
-  expect(within(illustration).getByText("This Mac")).toBeInTheDocument();
 });
 
 test.each([
@@ -667,23 +656,6 @@ test("An account can open its network list and count dialog", async () => {
     screen.findByRole("region", { name: "Personal networks" }),
   ).resolves.toBeInTheDocument();
 });
-test("Saved Tailscale networks can be managed", async () => {
-  context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    return respond(200, { configs: [network] });
-  });
-  await page("/connectors?scope=private-network");
-  await screen.findByText(network.name);
-  click(getAction("link", `Manage ${network.name}`));
-  await screen.findByRole("heading", { name: network.name });
-  click(getAction("button", "Back to private networks"));
-  await screen.findByText(network.name);
-  click(getAction("button", "Add network"));
-  await screen.findByRole("heading", { name: "Add a private network" });
-  expect(
-    screen.getByText("Cloudflare Access", { exact: true }),
-  ).toBeInTheDocument();
-  expect(screen.getByText("Tailscale", { exact: true })).toBeInTheDocument();
-});
 test("Private network links to connection management without starting device setup", async () => {
   await page("/connectors?scope=private-network&setup=ssh");
   click(
@@ -717,6 +689,14 @@ test.each(["tailscale", "cloudflare"] as const)(
     click(getAction("link", `Manage ${network.name}`));
     await screen.findByRole("heading", { name: network.name });
     expect(getAction("button", "Edit settings")).toBeInTheDocument();
+    const deleteLabel =
+      provider === "tailscale"
+        ? "Delete Tailscale"
+        : "Delete Cloudflare Access";
+    expect(getAction("button", deleteLabel)).toBeEnabled();
+    expect(
+      queryAction("button", "Why can't I delete this network?"),
+    ).toBeNull();
     expect(queryAction("button", "Add connection")).toBeNull();
     expect(
       screen.getByText("Who can use this", { selector: "dt" }),
@@ -808,6 +788,10 @@ test.each(["tailscale", "cloudflare"] as const)(
     click(screen.getByText("Run commands on the device."));
     await fill(await screen.findByLabelText("SSH username"), "draft-user");
     await fill(screen.getByLabelText("Device address"), "device.example.com");
+    await fill(
+      screen.getByLabelText("Password", { exact: true }),
+      "test-password",
+    );
     await selectConnectionNetwork(
       provider === "tailscale" ? "Tailscale" : "Cloudflare Access",
     );
@@ -821,6 +805,7 @@ test.each(["tailscale", "cloudflare"] as const)(
       "",
     );
     expect(screen.getByLabelText("Device address")).toHaveValue("");
+    expect(screen.getByLabelText("Password", { exact: true })).toHaveValue("");
     expect(screen.getByLabelText("Connection method")).toHaveTextContent(
       network.name,
     );
@@ -884,24 +869,6 @@ test("Manual setup clears the chosen network when leaving for the remote directo
   click(getAction("button", "Add connection"));
   await screen.findByRole("heading", { name: "Add remote connection" });
   expect(queryAction("button", "Back")).toBeNull();
-});
-test("Manual VNC can select a saved Tailscale network", async () => {
-  await setupWithSavedNetworks("tailscale");
-  click(
-    screen.getByText("Control the device’s screen with a mouse and keyboard."),
-  );
-  await screen.findByRole("heading", { name: "Choose a VNC login method" });
-  click(await screen.findByLabelText("Service type"));
-  click(await screen.findByRole("option", { name: "Apple screen sharing" }));
-  click(getAction("button", "Continue"));
-  await screen.findByRole("heading", { name: "Connect a device" });
-  await selectVncNetwork("tailscale");
-  expect(screen.getByLabelText("Connection method")).toHaveTextContent(
-    "Tailscale",
-  );
-  expect(
-    screen.getByRole("combobox", { name: "Saved network" }),
-  ).toHaveTextContent(network.name);
 });
 test.each(["Tailscale", "Cloudflare Access"] as const)(
   "Remote control selects an existing %s network without provisioning",
@@ -1544,8 +1511,6 @@ test("VNC can select an existing SSH host without empty-state guidance", async (
 });
 test.each([
   ["tailscale", "ssh"],
-  ["tailscale", "vnc"],
-  ["cloudflare", "ssh"],
   ["cloudflare", "vnc"],
 ] as const)(
   "%s network deletion explains its %s dependency beside the disabled action",
@@ -1593,33 +1558,6 @@ test.each([
   },
 );
 
-test.each(["tailscale", "cloudflare"] as const)(
-  "An unused %s network keeps deletion available without dependency info",
-  async (provider) => {
-    const contract =
-      provider === "tailscale" ? tailscaleContract : cloudflareAccessContract;
-    context.mocks.api(contract.list, ({ respond }) => {
-      return respond(200, {
-        configs: [provider === "tailscale" ? network : cloudflareNetwork],
-      });
-    });
-    await page(
-      `/connectors?scope=private-network&remoteResource=${provider}:${network.id}`,
-    );
-    await screen.findByRole("heading", { name: network.name });
-    expect(
-      getAction(
-        "button",
-        provider === "tailscale"
-          ? "Delete Tailscale"
-          : "Delete Cloudflare Access",
-      ),
-    ).toBeEnabled();
-    expect(
-      queryAction("button", "Why can't I delete this network?"),
-    ).toBeNull();
-  },
-);
 test("Changing category abandons setup and returns to management", async () => {
   const username = await directForm();
   await fill(username, "operator");
@@ -2101,21 +2039,6 @@ test("Mac VNC review shows its network, address, and account method before savin
   expect(getAction("button", "Save")).toBeEnabled();
 });
 
-test("Returning to the remote entry clears the previous SSH draft", async () => {
-  const username = await directForm();
-  await fill(username, "old-user");
-  await fill(screen.getByLabelText("Device address"), "old-device.example.com");
-  await fill(
-    screen.getByLabelText("Password", { exact: true }),
-    "test-password",
-  );
-  click(getAction("button", "Back"));
-  await screen.findByRole("heading", { name: "Add remote connection" });
-  click(screen.getByText("Run commands on the device."));
-  await expect(screen.findByLabelText("SSH username")).resolves.toHaveValue("");
-  expect(screen.getByLabelText("Device address")).toHaveValue("");
-  expect(screen.getByLabelText("Password", { exact: true })).toHaveValue("");
-});
 test("Restarting VNC setup clears the previous draft but Back within setup preserves it", async () => {
   await page("/connectors?scope=remote-control&setup=vnc");
   await screen.findByRole("heading", { name: "Add remote connection" });

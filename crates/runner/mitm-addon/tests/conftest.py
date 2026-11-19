@@ -32,11 +32,11 @@ import aws_sigv4_body_admission
 import aws_sigv4_hash_executor
 import builtin_connector_diagnostics
 import codex_model_catalog_cache
-import firewall_auth_client
 import logging_utils
 import managed_openrouter
 import mitm_addon
 import platform_api
+import platform_http_transport
 import public_destination_body_admission
 import registry
 import run_usage
@@ -67,7 +67,7 @@ def _reset_module_state() -> Iterator[None]:
     """
     auth_base_forwarder.reset_forward_request_state_for_tests()
     auth_base_transport.reset_transport_state_for_tests()
-    firewall_auth_client.reset_transport_state_for_tests()
+    platform_http_transport.reset_transport_state_for_tests()
     aws_sigv4_hash_executor.reset_for_tests()
     aws_sigv4_body_admission.reset_for_tests()
     public_destination_body_admission.reset_for_tests()
@@ -94,7 +94,7 @@ def _reset_module_state() -> Iterator[None]:
     logging_utils.reset_log_writer_for_tests()
     auth_base_forwarder.reset_forward_request_state_for_tests()
     auth_base_transport.reset_transport_state_for_tests()
-    firewall_auth_client.reset_transport_state_for_tests()
+    platform_http_transport.reset_transport_state_for_tests()
     aws_sigv4_hash_executor.reset_for_tests()
     aws_sigv4_body_admission.reset_for_tests()
     public_destination_body_admission.reset_for_tests()

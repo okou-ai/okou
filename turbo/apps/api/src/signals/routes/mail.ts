@@ -73,6 +73,9 @@ function linkMutationResponse(result: MailDraftLinkMutationResult) {
         },
       };
     }
+    case "bad_request": {
+      return badRequestMessage(result.message);
+    }
     case "not_found": {
       return notFound(result.message);
     }

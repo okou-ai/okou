@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 """Shared custody and supplied-policy checks for native required-saving proofs."""
 
-import hashlib
-import json
-
 import pressure_report as pressure
 import report
 from snapshot_report import exact
@@ -38,10 +35,8 @@ def coverage(value, policy, closed):
 
 def supplied_policy(collector, result, key):
     raw = collector["metadata"][key]
-    if (not isinstance(raw, str)
-            or hashlib.sha256(raw.encode()).hexdigest() != result["artifacts"]["policy_sha256"]):
-        raise ValueError("cleanup original policy identity changed")
-    policy = json.loads(raw, object_pairs_hook=report.unique_object)
+    policy = report.decode_original_policy(
+        raw, result["artifacts"], "cleanup original policy identity changed")
     if (not pressure.has_policy_shape(policy)
             or policy["operating_floor_bytes"] + policy["cleanup_reserve_bytes"] >= policy["host_total_bytes"]
             or not policy["operating_floor_bytes"] <= policy["critical_available_bytes"]
