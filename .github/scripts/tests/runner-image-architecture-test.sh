@@ -123,19 +123,6 @@ try {
   });
   for (const group of groups) {
     assert.equal(validate("validate", group, "false", "").status, 0);
-    for (const hit of [true, false]) {
-      assert.equal(evaluate(compile.if, { inputs: { "cache-hit": hit }, cancelled: false }), !hit);
-      assert.equal(evaluate(compile.if, { inputs: { "cache-hit": hit }, cancelled: true }), false);
-      for (const result of ["success", "failure", "cancelled", "skipped", "", "neutral"]) {
-        const context = { inputs: { "cache-hit": hit }, needs: { compile: { result } }, cancelled: false };
-        assert.equal(evaluate(image.if, context), true,
-          "image job must inspect unsuccessful compiler results rather than hide them as skips");
-        const expected = (hit && result === "skipped") || (!hit && result === "success");
-        assert.equal(validate("build-ready", group, String(hit), result).status === 0, expected,
-          `${group.id}: hit=${hit}, compile=${result}`);
-        assert.equal(evaluate(image.if, { ...context, cancelled: true }), false);
-      }
-    }
     for (const malformed of [null, [], {}, { ...group, hosts: "arm.fixture" },
       { ...group, target: "unsupported-target" }, { ...group, id: "unknown" },
       { ...group, unameM: "other" }, { ...group, cacheSuffix: "wrong" },
@@ -145,13 +132,19 @@ try {
     assert.notEqual(validate("build-ready", group, "", "skipped").status, 0);
     assert.notEqual(validate("build-ready", group, "unexpected", "success").status, 0);
   }
-  // Both directions: only this instance's terminal compiler is a predecessor.
-  // The other target can remain in progress without becoming an ancestor.
-  for (const [ready, slow] of [[groups[0], groups[1]], [groups[1], groups[0]]]) {
-    for (const hit of [true, false]) {
-      const result = hit ? "skipped" : "success";
-      assert.equal(validate("build-ready", ready, String(hit), result).status, 0);
-      assert.notEqual(validate("build-ready", slow, "false", "in_progress").status, 0);
+  for (const hit of [true, false]) {
+    assert.equal(evaluate(compile.if, { inputs: { "cache-hit": hit }, cancelled: false }), !hit);
+    assert.equal(evaluate(compile.if, { inputs: { "cache-hit": hit }, cancelled: true }), false);
+    for (const result of ["success", "failure", "cancelled", "skipped", "", "in_progress"]) {
+      const context = { inputs: { "cache-hit": hit }, needs: { compile: { result } }, cancelled: false };
+      assert.equal(evaluate(image.if, context), true,
+        "image job must inspect unsuccessful compiler results rather than hide them as skips");
+      assert.equal(evaluate(image.if, { ...context, cancelled: true }), false);
+      const expected = (hit && result === "skipped") || (!hit && result === "success");
+      for (const group of groups) {
+        assert.equal(validate("build-ready", group, String(hit), result).status === 0, expected,
+          `${group.id}: hit=${hit}, compile=${result}`);
+      }
     }
   }
   for (const prepared of ["success", "failure", "cancelled", "skipped"]) {

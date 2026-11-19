@@ -1,5 +1,5 @@
 use std::fmt::Write as _;
-use std::io::{Read as _, Write as _};
+use std::io::Write as _;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tracing_test_support::{
@@ -331,11 +331,13 @@ fn network_log_content(logs: &[serde_json::Value]) -> String {
     String::from_utf8(content).unwrap()
 }
 
-fn append_repeated_bytes(file: &mut std::fs::File, byte: u8, count: u64) {
-    assert_eq!(
-        std::io::copy(&mut std::io::repeat(byte).take(count), file).unwrap(),
-        count
-    );
+fn append_repeated_bytes(file: &mut std::fs::File, byte: u8, mut remaining: u64) {
+    let block = [byte; 64 * 1024];
+    while remaining != 0 {
+        let len = remaining.min(block.len() as u64) as usize;
+        file.write_all(&block[..len]).unwrap();
+        remaining -= len as u64;
+    }
 }
 
 fn one_entry_per_batch_log(sequence: usize) -> serde_json::Value {

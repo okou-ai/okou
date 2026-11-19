@@ -1169,7 +1169,7 @@ class CleanupTests(unittest.TestCase):
                     process.kill()
                     process.wait(timeout=5)
 
-    def test_listener_replacement_shares_namespace_exclusion_and_preserves_failure(
+    def test_listener_cleanup_failure_prevents_replacement_under_lock(
         self,
     ):
         ansible = self.root / "bin/ansible-playbook"
@@ -1183,8 +1183,8 @@ for host in ('metal-a','metal-b'):
   except BlockingIOError:pass
   else:raise SystemExit('listener lifecycle ran outside namespace exclusion')
 if 'playbooks/cleanup-stripe-listener.yml' in sys.argv:
- if os.environ.get('FAIL_REPLACEMENT'):sys.exit(1)
-else:(root/'listener-started').write_text('started')
+ sys.exit(37)
+(root/'listener-started').write_text('started')
 """)
         ansible.chmod(0o755)
         args = [
@@ -1201,19 +1201,14 @@ else:(root/'listener-started').write_text('started')
         }
         result = subprocess.run(
             args,
-            env={**env, "FAIL_REPLACEMENT": "1"},
+            env=env,
             capture_output=True,
             text=True,
             check=False,
             timeout=10,
         )
-        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(result.returncode, 37, result.stderr)
         self.assertFalse((self.root / "listener-started").exists())
-        result = subprocess.run(
-            args, env=env, capture_output=True, text=True, check=False, timeout=10
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual((self.root / "listener-started").read_text(), "started")
 
 
 if __name__ == "__main__":

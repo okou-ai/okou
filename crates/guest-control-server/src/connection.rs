@@ -158,6 +158,10 @@ pub fn connect_vsock() -> io::Result<UnixStream> {
     use rustix::net::{AddressFamily, SocketFlags, SocketType, socket_with};
     use std::os::fd::AsRawFd;
 
+    // Linux vSocket stream buffer options from linux/vm_sockets.h.
+    const SO_VM_SOCKETS_BUFFER_SIZE: libc::c_int = 0;
+    const SO_VM_SOCKETS_BUFFER_MAX_SIZE: libc::c_int = 2;
+
     let fd = socket_with(
         AddressFamily::VSOCK,
         SocketType::STREAM,
@@ -165,6 +169,26 @@ pub fn connect_vsock() -> io::Result<UnixStream> {
         None,
     )
     .map_err(io::Error::from)?;
+
+    // Raise the maximum before setting the active window. The guest advertises
+    // this receive credit during connect, reducing stalls on large host writes.
+    let window: u64 = 4 * 1024 * 1024;
+    for option in [SO_VM_SOCKETS_BUFFER_MAX_SIZE, SO_VM_SOCKETS_BUFFER_SIZE] {
+        // SAFETY: fd owns a live vSocket and Linux reads one initialized u64
+        // value for each of these options.
+        let result = unsafe {
+            libc::setsockopt(
+                fd.as_raw_fd(),
+                libc::AF_VSOCK,
+                option,
+                (&raw const window).cast(),
+                std::mem::size_of_val(&window) as libc::socklen_t,
+            )
+        };
+        if result < 0 {
+            return Err(io::Error::last_os_error());
+        }
+    }
 
     let addr = libc::sockaddr_vm {
         svm_family: libc::AF_VSOCK as u16,

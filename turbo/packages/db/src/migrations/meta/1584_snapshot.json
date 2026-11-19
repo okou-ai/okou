@@ -1,5 +1,5 @@
 {
-  "id": "e7e20bdf-f03b-4789-a173-af2f8c1089c5",
+  "id": "35ebdef0-523f-4c55-a55d-0a2063cc0046",
   "prevId": "6af761ac-0104-4aa6-a9bd-b6e7a7425b36",
   "version": "7",
   "dialect": "postgresql",
@@ -5686,7 +5686,7 @@
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
-          "default": true
+          "default": false
         }
       },
       "indexes": {},
@@ -20054,18 +20054,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "widget_push_token": {
-          "name": "widget_push_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "widget_pushed_at": {
-          "name": "widget_pushed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {

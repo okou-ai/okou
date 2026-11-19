@@ -1209,6 +1209,23 @@ if ! git merge-base --is-ancestor "$member_memory_protocol_commit" "$TARGET_COMM
   fail "Rollback target predates the supported member Memory protocol: ${member_memory_protocol_commit}."
 fi
 
+
+# The deployed preparation stopped selecting and writing both widget push columns.
+# Candidate rollbacks at or after this release work with the contracted schema.
+widget_push_columns_floor_path=.github/rollback-floors/ios-widget-push-columns-independent-api
+if ! widget_push_columns_floor=$(git show "origin/main:${widget_push_columns_floor_path}"); then
+  fail "Cannot read the iOS widget push columns rollback floor from main."
+fi
+if [[ ! "$widget_push_columns_floor" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid iOS widget push columns rollback floor."
+fi
+if ! git merge-base --is-ancestor "$widget_push_columns_floor" origin/main; then
+  fail "iOS widget push columns rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$widget_push_columns_floor" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the iOS widget push columns retirement: ${widget_push_columns_floor}."
+fi
+
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \
   -H "Authorization: Bearer ${VERCEL_TOKEN}" \
   --data-urlencode "teamId=${VERCEL_ORG_ID}" \

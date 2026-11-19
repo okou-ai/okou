@@ -13,6 +13,23 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1149.3](https://github.com/okou-ai/okou/compare/app-v0.1149.2...app-v0.1149.3) (2026-11-19)
+
+
+### Performance Improvements
+
+* **app:** reuse confirmed user preference writes ([#48940](https://github.com/okou-ai/okou/issues/48940)) ([ec30a96](https://github.com/okou-ai/okou/commit/ec30a968b5fca542bb979aeebbc0a50b5e917a3a))
+* **app:** reuse the chat artifact catalog across views ([#48933](https://github.com/okou-ai/okou/issues/48933)) ([03698f7](https://github.com/okou-ai/okou/commit/03698f76c291f312c82beb556ff7f6e32ef8369d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.90.2
+    * @okouai/core bumped to 8.854.5
+    * @okouai/ui bumped to 1.21.62
+
 ## [0.1149.2](https://github.com/okou-ai/okou/compare/app-v0.1149.1...app-v0.1149.2) (2026-11-19)
 
 

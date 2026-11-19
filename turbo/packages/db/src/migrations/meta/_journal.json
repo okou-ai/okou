@@ -3540,8 +3540,15 @@
     {
       "idx": 1584,
       "version": "7",
-      "when": 1795078889398,
-      "tag": "1584_activate_built_in_skills",
+      "when": 1795078014577,
+      "tag": "1584_drop_retired_ios_widget_push_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 1585,
+      "version": "7",
+      "when": 1795080448282,
+      "tag": "1585_activate_built_in_skills",
       "breakpoints": true
     }
   ]

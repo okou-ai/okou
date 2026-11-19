@@ -101,6 +101,7 @@ class NativeChatListTest {
             text(app.getString(R.string.appearance))
             gate.countDown()
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            text(app.getString(R.string.chat_list_title))
             revealText("Project chat")
             scenario.recreate()
             revealText("Project chat")

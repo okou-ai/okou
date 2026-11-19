@@ -195,6 +195,7 @@ import {
   PreviewableAudioAttachmentChip,
   PreviewableFileAttachmentChip,
 } from "./attachment-chips.tsx";
+import { ArtifactDownloadMenu } from "./artifact-actions.tsx";
 import { McpMark } from "./components/mcp-mark.tsx";
 import { classifyChatAttachment } from "../../signals/chat-page/parse-body-blocks.ts";
 import type {
@@ -8227,10 +8228,12 @@ function RelatedArtifactRow({ card }: { readonly card: RelatedArtifactCard }) {
   const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const openArtifact = useSet(openMarkdownArtifact$);
+  const featureSwitches = useLastResolved(featureSwitches$);
   const sidebarPreview =
-    useLastResolved(featureSwitches$)?.[
-      FeatureSwitchKey.ArtifactSidebarPreview
-    ];
+    featureSwitches?.[FeatureSwitchKey.ArtifactSidebarPreview];
+  const showMarkdownExport =
+    card.signals.kind === "markdown" &&
+    featureSwitches?.[FeatureSwitchKey.MarkdownFirstOutput] === true;
   const name = relatedArtifactDisplayName(card);
   const host = relatedArtifactHost(card.signals.url);
   const kind = artifactFallbackSubtitle(
@@ -8270,7 +8273,24 @@ function RelatedArtifactRow({ card }: { readonly card: RelatedArtifactCard }) {
       />
     </Button>
   );
-  return sidebarPreview ? <DialogClose render={row} /> : row;
+  const previewAction = sidebarPreview ? <DialogClose render={row} /> : row;
+  if (!showMarkdownExport) {
+    return previewAction;
+  }
+  return (
+    <div className="flex min-w-0 items-center gap-1">
+      <div className="min-w-0 flex-1">{previewAction}</div>
+      <ArtifactDownloadMenu
+        ariaLabel={t(($) => {
+          return $.artifacts.actions.downloadOptions;
+        })}
+        previewKind="markdown"
+        filename={card.signals.filename}
+        showGoogleDriveAction={false}
+        url={card.signals.url}
+      />
+    </div>
+  );
 }
 
 function RelatedArtifactsDialog({

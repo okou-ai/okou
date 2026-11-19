@@ -1,5 +1,20 @@
 import { enum as zEnum, type infer as zInfer } from "zod";
 
+export const COLOR_THEMES = [
+  // The product's own palette. The App clears palette attributes for it and
+  // uses the shared semantic tokens as they are.
+  "default",
+  "golden-hour",
+  "citrus-spark",
+  "berry-blush",
+  "cotton-sky",
+  "blue-horizon",
+  "daydream",
+  "deep-lagoon",
+] as const;
+export const colorThemeSchema = zEnum(COLOR_THEMES);
+export type ColorTheme = zInfer<typeof colorThemeSchema>;
+
 export const SUPPORTED_USER_LOCALES = [
   "en-US",
   "pt-BR",

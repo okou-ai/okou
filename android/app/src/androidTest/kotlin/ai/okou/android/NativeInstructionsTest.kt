@@ -68,21 +68,25 @@ class NativeInstructionsTest {
                 )
             fun reveal(value: String) {
                 val target = By.pkg(app.packageName).text(value)
+                val scrollable = By.pkg(app.packageName).scrollable(true)
+                assertTrue(
+                    "Instructions control or scrollable content is visible: $value",
+                    device.wait(
+                        object : Condition<UiDevice, Boolean> {
+                            override fun apply(device: UiDevice) =
+                                device.hasObject(target) || device.hasObject(scrollable)
+                        },
+                        10_000,
+                    ) == true,
+                )
                 if (!device.hasObject(target)) {
-                    val scroll =
-                        checkNotNull(
-                            device.wait(
-                                Until.findObject(By.pkg(app.packageName).scrollable(true)),
-                                10_000,
-                            )
-                        )
                     val visible =
                         object : Condition<UiObject2, Boolean> {
                             // Compose exposes virtual descendants in the current window.
                             override fun apply(unused: UiObject2) = device.hasObject(target)
                         }
-                    if (!scroll.scrollUntil(Direction.UP, visible)) {
-                        scroll.scrollUntil(Direction.DOWN, visible)
+                    if (device.findObject(scrollable)?.scrollUntil(Direction.UP, visible) != true) {
+                        device.findObject(scrollable)?.scrollUntil(Direction.DOWN, visible)
                     }
                 }
                 text(value)
@@ -135,8 +139,9 @@ class NativeInstructionsTest {
                     )
                 )
                 .click()
-            assertTrue(entered.await(10, TimeUnit.SECONDS))
             text(app.getString(R.string.appearance))
+            click(R.string.instructions_title)
+            assertTrue(entered.await(10, TimeUnit.SECONDS))
             scenario.onActivity {
                 val editor =
                     checkNotNull(
@@ -149,7 +154,6 @@ class NativeInstructionsTest {
             // The host Compose test covers pending Instructions feedback. Release the actual HTTP
             // response after native first-display proof, before gestures can exhaust its deadline.
             held.countDown()
-            reveal(app.getString(R.string.instructions_section))
             reveal(app.getString(R.string.instructions_current))
             editor().click()
             awaitIme(true)
@@ -159,7 +163,7 @@ class NativeInstructionsTest {
             assertEquals(0, fixture.requests.count { it.method == "PUT" })
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             awaitIme(false)
-            reveal(app.getString(R.string.instructions_section))
+            reveal(app.getString(R.string.instructions_title))
             scenario.recreate()
             reveal(app.getString(R.string.instructions_unsaved))
             assertTrue(editor().text.contains("Native **instructions** 👋"))
@@ -184,6 +188,10 @@ class NativeInstructionsTest {
             click(R.string.instructions_reload)
             reveal(app.getString(R.string.instructions_current))
             assertEquals("Changed on Web", editor().text)
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            reveal(app.getString(R.string.appearance))
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            text(app.getString(R.string.chat_list_title))
         } catch (error: Throwable) {
             failures += error
             try {

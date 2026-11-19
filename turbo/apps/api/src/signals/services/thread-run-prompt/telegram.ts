@@ -3,7 +3,7 @@ import { computed, type Computed } from "ccstate";
 import { getOfficialTelegramBotConfig } from "../../external/telegram-official";
 import { resolveIntegrationNotePrompt } from "../integration-note-prompt.service";
 import { buildTelegramPrompt } from "../telegram-prompt";
-import type { TelegramThreadContext } from "../thread-run-context.service";
+import type { TelegramThreadContext } from "../telegram-queued-launch-context.service";
 import type { RunPromptAndSkills } from "../run-prompt-and-skills";
 import type { PickedThreadInputEvent } from "./types";
 

@@ -861,7 +861,7 @@ describe("Run phase observation transport", () => {
         await createAuthDeviceSupportApi(context).updateFeatureSwitches(
           owned.actor,
           {
-            [FeatureSwitchKey.ArtifactGenerationTiming]: true,
+            [FeatureSwitchKey.ArtifactThreePointTiming]: true,
           },
         );
         const run = await createRunsApi(context).createThreadRun(owned.actor, {
@@ -873,9 +873,11 @@ describe("Run phase observation transport", () => {
         const api = setupApp({ context, routes: runPhaseTimingRoutes })(
           runPhaseTimingContract,
         );
-        const headers = {
-          authorization: `Bearer ${execution.platformEnvironment.OKOU_TOKEN}`,
-        };
+        const token = execution.platformEnvironment.OKOU_TOKEN;
+        if (!token) {
+          throw new Error("Expected a minted Run token");
+        }
+        const headers = { authorization: `Bearer ${token}` };
         const researchAt = new Date(now());
         const generationAt = new Date(researchAt.getTime() + 1000);
         const completionAt = new Date(generationAt.getTime() + 1000);
@@ -939,7 +941,7 @@ describe("Run phase observation transport", () => {
   );
 });
 
-describe("Run phase completion transport", () => {
+describe("Run phase start and completion transport", () => {
   const runs = createRunsApi(context);
   const features = createAuthDeviceSupportApi(context);
   const webhooks = createWebhookCallbackApi(context);
@@ -949,7 +951,6 @@ describe("Run phase completion transport", () => {
   async function callbackFixture(
     options: {
       readonly actor?: ApiTestUser;
-      readonly timingEnabled?: boolean;
       readonly threePointEnabled?: boolean;
     } = {},
   ) {
@@ -974,10 +975,6 @@ describe("Run phase completion transport", () => {
       ),
     );
     return await owned.run(async () => {
-      await features.updateFeatureSwitches(owned.actor, {
-        [FeatureSwitchKey.ArtifactGenerationTiming]:
-          options.timingEnabled ?? true,
-      });
       if (options.threePointEnabled !== undefined) {
         await features.updateFeatureSwitches(owned.actor, {
           [FeatureSwitchKey.ArtifactThreePointTiming]:
@@ -990,10 +987,141 @@ describe("Run phase completion transport", () => {
         model: owned.model,
       });
       const execution = await owned.executionInput(run.runId);
+      const token = execution.platformEnvironment.OKOU_TOKEN;
+      if (!token) {
+        throw new Error("Expected a minted Run token");
+      }
       const headers = { authorization: `Bearer ${execution.sandboxToken}` };
-      return { owned, run, execution, headers, events };
+      const markHeaders = { authorization: `Bearer ${token}` };
+      return { owned, run, execution, headers, markHeaders, events };
     });
   }
+
+  it("preserves duplicate raw starts with signed Run identity and server receipt time", async () => {
+    const f = await callbackFixture();
+    await f.owned.run(async () => {
+      const api = setupApp({ context, routes: runPhaseTimingRoutes })(
+        runPhaseTimingContract,
+      );
+      const recordedAt = new Date(now());
+      mockNow(recordedAt);
+      const marks = [
+        { phase: "research-start" },
+        { phase: "research-start" },
+        { phase: "generation-start", kind: "report", skipResearch: false },
+        { phase: "generation-start", kind: "report", skipResearch: false },
+      ] as const;
+      for (const body of marks) {
+        await accept(api.mark({ headers: f.markHeaders, body }), [202]);
+        await flushWaitUntilForTest();
+      }
+      expect(f.events).toStrictEqual(
+        marks.map((mark) => {
+          return {
+            _time: recordedAt.toISOString(),
+            schema_version: 2,
+            type: "run_phase_mark",
+            source: "callback",
+            run_id: f.run.runId,
+            user_id: f.owned.actor.userId,
+            org_id: f.owned.actor.orgId,
+            phase: mark.phase,
+            ...(mark.phase === "generation-start"
+              ? {
+                  generation_kind: mark.kind,
+                  research_skipped: mark.skipResearch,
+                }
+              : {}),
+          };
+        }),
+      );
+    });
+  });
+
+  it("keeps the start receipt accepted when the telemetry provider is unavailable", async () => {
+    const f = await callbackFixture();
+    let attempts = 0;
+    server.use(
+      http.post(
+        "https://api.axiom.co/v1/datasets/vm0-web-logs-dev/ingest",
+        () => {
+          attempts++;
+          return HttpResponse.json(
+            { error: "temporarily unavailable" },
+            { status: 503 },
+          );
+        },
+      ),
+    );
+    await f.owned.run(async () => {
+      const marked = await accept(
+        setupApp({ context, routes: runPhaseTimingRoutes })(
+          runPhaseTimingContract,
+        ).mark({
+          headers: f.markHeaders,
+          body: { phase: "research-start" },
+        }),
+        [202],
+      );
+      expect(marked.body).toStrictEqual({
+        schemaVersion: 2,
+        status: "accepted",
+      });
+      expect(marked.headers.get("cache-control")).toBe("no-store");
+      await flushWaitUntilForTest();
+      expect(attempts).toBe(1);
+      expect((await runs.readRun(f.owned.actor, f.run.runId)).status).toBe(
+        "running",
+      );
+    });
+  });
+
+  // The real five-second transport deadline needs headroom for API fixture work.
+  it("bounds a stalled start observation without changing its acceptance receipt", async () => {
+    const f = await callbackFixture();
+    const aborted = createDeferredPromise<void>(context.signal);
+    let attempts = 0;
+    server.use(
+      http.post(
+        "https://api.axiom.co/v1/datasets/vm0-web-logs-dev/ingest",
+        async ({ request }) => {
+          attempts++;
+          request.signal.addEventListener(
+            "abort",
+            () => {
+              if (!aborted.settled()) {
+                aborted.resolve();
+              }
+            },
+            { once: true },
+          );
+          await aborted.promise;
+          return HttpResponse.json({ ingested: 1, failed: 0 });
+        },
+      ),
+    );
+    await f.owned.run(async () => {
+      const marked = await accept(
+        setupApp({ context, routes: runPhaseTimingRoutes })(
+          runPhaseTimingContract,
+        ).mark({
+          headers: f.markHeaders,
+          body: { phase: "generation-start", kind: "report" },
+        }),
+        [202],
+      );
+      expect(marked.body).toStrictEqual({
+        schemaVersion: 2,
+        status: "accepted",
+      });
+      await flushWaitUntilForTest();
+      await aborted.promise;
+      expect(attempts).toBe(1);
+      expect((await runs.readRun(f.owned.actor, f.run.runId)).status).toBe(
+        "running",
+      );
+    });
+  }, 10_000);
 
   it("emits one callback observation without start marks and ignores completion replay", async () => {
     const f = await callbackFixture();
@@ -1051,7 +1179,7 @@ describe("Run phase completion transport", () => {
       threePointEnabled: true,
     },
   ])(
-    "preserves the exact v1 start payloads without a completion point for $scenario",
+    "suppresses collection while preserving normal completion for $scenario",
     async ({ userId, threePointEnabled }) => {
       const f = await callbackFixture({
         actor: createBddApi(context).user({ userId }),
@@ -1061,20 +1189,16 @@ describe("Run phase completion transport", () => {
         const api = setupApp({ context, routes: runPhaseTimingRoutes })(
           runPhaseTimingContract,
         );
-        const token = f.execution.platformEnvironment.OKOU_TOKEN;
-        if (!token) {
-          throw new Error("Expected a minted Run token");
-        }
-        const headers = { authorization: `Bearer ${token}` };
+        expect(f.execution.appendSystemPrompt).not.toContain("okou run mark");
         for (const body of [
           { phase: "research-start" },
           { phase: "generation-start", kind: "report", skipResearch: false },
         ] as const) {
-          const marked = await accept(api.mark({ headers, body }), [202]);
-          expect(marked.body).toStrictEqual({
-            schemaVersion: 2,
-            status: "accepted",
-          });
+          const marked = await accept(
+            api.mark({ headers: f.markHeaders, body }),
+            [404],
+          );
+          expect(marked.headers.get("cache-control")).toBe("no-store");
         }
         await completePublicClaudeRun(
           context,
@@ -1085,112 +1209,111 @@ describe("Run phase completion transport", () => {
         expect((await runs.readRun(f.owned.actor, f.run.runId)).status).toBe(
           "completed",
         );
-        const identity = {
-          _time: expect.any(String),
-          schema_version: 1,
-          type: "run_phase_mark",
-          run_id: f.run.runId,
-          user_id: f.owned.actor.userId,
-          org_id: f.owned.actor.orgId,
-        };
-        expect(f.events).toHaveLength(2);
-        expect(f.events).toStrictEqual(
-          expect.arrayContaining([
-            { ...identity, phase: "research-start" },
-            {
-              ...identity,
-              phase: "generation-start",
-              generation_kind: "report",
-              research_skipped: false,
-            },
-          ]),
-        );
+        expect(f.events).toHaveLength(0);
       });
     },
   );
 
-  it("applies a live three-point opt-out without disabling legacy start marks", async () => {
+  it("stops collecting starts and completion points after a live opt-out", async () => {
     const f = await callbackFixture();
     await f.owned.run(async () => {
       const api = setupApp({ context, routes: runPhaseTimingRoutes })(
         runPhaseTimingContract,
       );
-      const token = f.execution.platformEnvironment.OKOU_TOKEN;
-      if (!token) {
-        throw new Error("Expected a minted Run token");
-      }
-      const headers = { authorization: `Bearer ${token}` };
       await accept(
-        api.mark({ headers, body: { phase: "research-start" } }),
+        api.mark({
+          headers: f.markHeaders,
+          body: { phase: "research-start" },
+        }),
         [202],
       );
       await flushWaitUntilForTest();
       await features.updateFeatureSwitches(f.owned.actor, {
         [FeatureSwitchKey.ArtifactThreePointTiming]: false,
       });
-      await accept(
+      const unavailable = await accept(
         api.mark({
-          headers,
+          headers: f.markHeaders,
           body: {
             phase: "generation-start",
             kind: "report",
             skipResearch: false,
           },
         }),
-        [202],
+        [404],
       );
+      expect(unavailable.headers.get("cache-control")).toBe("no-store");
       await completePublicClaudeRun(context, f.run, f.headers, "Report ready");
+      expect((await runs.readRun(f.owned.actor, f.run.runId)).status).toBe(
+        "completed",
+      );
+      expect(f.events).toStrictEqual([
+        {
+          _time: expect.any(String),
+          schema_version: 2,
+          type: "run_phase_mark",
+          source: "callback",
+          run_id: f.run.runId,
+          user_id: f.owned.actor.userId,
+          org_id: f.owned.actor.orgId,
+          phase: "research-start",
+        },
+      ]);
+    });
+  });
+
+  it("collects callback-provenance observations after live enable for an existing Run", async () => {
+    const f = await callbackFixture({ threePointEnabled: false });
+    await f.owned.run(async () => {
+      const api = setupApp({ context, routes: runPhaseTimingRoutes })(
+        runPhaseTimingContract,
+      );
+      await accept(
+        api.mark({
+          headers: f.markHeaders,
+          body: { phase: "research-start" },
+        }),
+        [404],
+      );
+      await flushWaitUntilForTest();
+      expect(f.events).toHaveLength(0);
+      await features.updateFeatureSwitches(f.owned.actor, {
+        [FeatureSwitchKey.ArtifactThreePointTiming]: true,
+      });
+      for (const body of [
+        { phase: "research-start" },
+        { phase: "generation-start", kind: "report", skipResearch: false },
+      ] as const) {
+        await accept(api.mark({ headers: f.markHeaders, body }), [202]);
+      }
+      await completePublicClaudeRun(context, f.run, f.headers, "Task ready");
       expect((await runs.readRun(f.owned.actor, f.run.runId)).status).toBe(
         "completed",
       );
       const identity = {
         _time: expect.any(String),
+        schema_version: 2,
         type: "run_phase_mark",
+        source: "callback",
         run_id: f.run.runId,
         user_id: f.owned.actor.userId,
         org_id: f.owned.actor.orgId,
       };
-      expect(f.events).toHaveLength(2);
+      expect(f.events).toHaveLength(3);
       expect(f.events).toStrictEqual(
         expect.arrayContaining([
+          { ...identity, phase: "research-start" },
           {
             ...identity,
-            schema_version: 2,
-            source: "callback",
-            phase: "research-start",
-          },
-          {
-            ...identity,
-            schema_version: 1,
             phase: "generation-start",
             generation_kind: "report",
             research_skipped: false,
           },
+          { ...identity, phase: "completion-callback" },
         ]),
       );
     });
   });
-
-  it.each(["before launch", "before completion"])(
-    "honors a disabled original timing switch %s without changing completion",
-    async (disabledAt) => {
-      const f = await callbackFixture({
-        timingEnabled: disabledAt !== "before launch",
-      });
-      await f.owned.run(async () => {
-        if (disabledAt === "before completion") {
-          await features.updateFeatureSwitches(f.owned.actor, {
-            [FeatureSwitchKey.ArtifactGenerationTiming]: false,
-          });
-        }
-        await completePublicClaudeRun(context, f.run, f.headers, "Task ready");
-        expect((await runs.readRun(f.owned.actor, f.run.runId)).status).toBe(
-          "completed",
-        );
-        expect(f.events).toHaveLength(0);
-      });
-    },
-  );
 
   it("preserves a reported execution failure without inventing a completion point", async () => {
     const f = await callbackFixture();

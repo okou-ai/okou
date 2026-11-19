@@ -1,4 +1,5 @@
-import { useGet, useSet } from "ccstate-react";
+import { useGet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { Check, SwatchBook } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@okouai/ui";
@@ -10,15 +11,6 @@ import {
   updateColorThemePreference$,
 } from "../../../../signals/theme.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
-
-function useUpdateColorTheme(): (colorTheme: ColorTheme) => void {
-  const updateColorTheme = useSet(updateColorThemePreference$);
-  const pageSignal = useGet(pageSignal$);
-
-  return (colorTheme) => {
-    detach(updateColorTheme(colorTheme, pageSignal), Reason.DomCallback);
-  };
-}
 
 interface ColorThemeOption {
   readonly value: ColorTheme;
@@ -83,7 +75,11 @@ function useColorThemeOptions(): readonly ColorThemeOption[] {
 export function ColorThemeSettings() {
   const { t } = useTranslation();
   const colorTheme = useGet(colorTheme$);
-  const updateColorTheme = useUpdateColorTheme();
+  const pageSignal = useGet(pageSignal$);
+  const [updateLoadable, updateColorTheme] = useLoadableSet(
+    updateColorThemePreference$,
+  );
+  const saving = updateLoadable.state === "loading";
   const options = useColorThemeOptions();
 
   return (
@@ -119,8 +115,9 @@ export function ColorThemeSettings() {
               key={value}
               type="button"
               aria-pressed={selected}
+              disabled={saving}
               onClick={() => {
-                updateColorTheme(value);
+                detach(updateColorTheme(value, pageSignal), Reason.DomCallback);
               }}
               className={cn(
                 "flex min-w-0 items-center gap-2 rounded-lg border bg-background/80 p-2 text-left transition-[border-color,background-color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",

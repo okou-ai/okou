@@ -34,11 +34,6 @@ import { serializeError } from "@okouai/core/log-utils";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
-import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
-import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
-import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
-import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { DatabaseError } from "pg";
@@ -133,14 +128,9 @@ import {
   type FeishuDeliveryTarget,
 } from "./feishu-chat-callback-payload";
 import {
-  feishuQueuedLaunchContextReadPlan,
-  feishuQueuedLaunchMaterialFromContext,
-  requiredFeishuLaunchContext,
+  createFeishuLaunchContext,
+  feishuDeliveryFromContext,
 } from "./feishu-queued-launch-context.service";
-import {
-  feishuInstallationAvailabilityReadPlan,
-  feishuInstallationEnabledFromRows,
-} from "./feishu-config";
 import {
   deliverAgentPhoneChatAdmissionFailure$,
   dispatchAgentPhoneChatDeliveryOnce$,
@@ -3571,7 +3561,6 @@ const loadQueuedRejectionChannel$ = command(
     if (contextType === null || !isQueuedRejectionDeliveryType(contextType)) {
       return undefined;
     }
-    const db = set(writeDb$);
     const featureSwitchContext = await set(
       loadUserFeatureSwitchContext$,
       head.orgId,
@@ -3592,50 +3581,14 @@ const loadQueuedRejectionChannel$ = command(
           : undefined;
       }
       case "feishu": {
-        const material = await (async () => {
-          const context = await (async () => {
-            const plan = feishuQueuedLaunchContextReadPlan(source);
-            const [row] = await db
-              .select(plan.columns)
-              .from(chatEvents)
-              .innerJoin(chatFeishuContext, plan.contextJoin)
-              .innerJoin(feishuChatThreadRoutes, plan.routeJoin)
-              .innerJoin(feishuOrgConnections, plan.connectionJoin)
-              .innerJoin(feishuOrgInstallations, plan.installationJoin)
-              .where(plan.condition)
-              .limit(1);
-            if (
-              row &&
-              !(await (async () => {
-                const availability = feishuInstallationAvailabilityReadPlan({
-                  ...row,
-                  orgId: source.orgId,
-                });
-                if (availability.kind === "resolved") {
-                  return availability.enabled;
-                }
-                const rows = await db
-                  .select(availability.columns)
-                  .from(userFeatureSwitches)
-                  .where(availability.condition);
-                return feishuInstallationEnabledFromRows(
-                  availability.scope,
-                  rows,
-                );
-              })())
-            ) {
-              return null;
-            }
-            return requiredFeishuLaunchContext(row);
-          })();
-          return feishuQueuedLaunchMaterialFromContext(
-            context,
-            source.featureSwitchContext,
-          );
-        })();
+        const context = await get(createFeishuLaunchContext(source));
         signal.throwIfAborted();
-        return material
-          ? { ...delivery, kind: "Feishu", target: material.feishuDelivery }
+        return context
+          ? {
+              ...delivery,
+              kind: "Feishu",
+              target: feishuDeliveryFromContext(context),
+            }
           : undefined;
       }
       case "teams": {

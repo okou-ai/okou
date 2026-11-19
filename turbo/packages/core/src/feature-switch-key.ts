@@ -4,12 +4,12 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
-  ArtifactGenerationTiming = "_artifactGenerationTimingV1",
   ArtifactThreePointTiming = "_artifactThreePointTimingV2",
   PhoneUse = "_phoneUse",
   CustomConnectorCloudflareAccess = "customConnectorCloudflareAccess",
   EmailIntegration = "emailIntegration",
   PresentationOutputFormat = "presentationOutputFormat",
+  MarkdownFirstOutput = "markdownFirstOutput",
   SingleAgent = "singleAgent",
   ProjectTitleReveal = "projectTitleReveal",
   OkouAnimatedAvatar = "okouAnimatedAvatar",
