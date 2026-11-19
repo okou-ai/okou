@@ -14,7 +14,12 @@ import {
   NAVIGATION_ARTIFACT_THREAD_ID,
   openResourceArtifact,
 } from "./chat-navigation-artifact-test-helpers.ts";
-import { resourceButton } from "./chat-resources-test-helpers.ts";
+import {
+  createChatResourcesHelpers,
+  openResources,
+  resourceButton,
+  RESOURCE_ARTIFACT_ID,
+} from "./chat-resources-test-helpers.ts";
 import {
   createChatRunFixtures,
   promptEvent,
@@ -24,6 +29,7 @@ import {
 
 const context = testContext();
 const { installRunChat } = createChatRunFixtures(context);
+const { setupResources } = createChatResourcesHelpers(context);
 const TITLE = "artifact-video-test.mp4";
 const topic = chatArtifactCatalogChangedEvent(RUN_THREAD_ID);
 
@@ -112,6 +118,58 @@ test("Show the latest published video when resources are first opened", async ()
   ).resolves.toBeInTheDocument();
 });
 
+test("Opening resources can recover from a failed gallery refresh", async () => {
+  const report = artifactSummary(RESOURCE_ARTIFACT_ID, "file", "report.pdf");
+  let catalogUnavailable = false;
+  await setupResources({
+    open: false,
+    mock: () => {
+      context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
+        if (catalogUnavailable) {
+          return respond(500, {
+            error: {
+              message: "The artifact catalog is temporarily unavailable",
+            },
+          });
+        }
+        return respond(200, {
+          artifacts:
+            query.chatThreadId === NAVIGATION_ARTIFACT_THREAD_ID
+              ? [report]
+              : [],
+          nextCursor: null,
+        });
+      });
+    },
+  });
+  const galleryTopic = chatArtifactCatalogChangedEvent(
+    NAVIGATION_ARTIFACT_THREAD_ID,
+  );
+  await waitFor(() => {
+    expect(context.mocks.ably.hasSubscription(galleryTopic)).toBeTruthy();
+  });
+  await openResourceArtifact("report.pdf");
+  const preview = await screen.findByTestId("artifact-sidebar");
+  click(buttonNamed("Back to all artifacts", preview));
+  const gallery = await screen.findByTestId("thread-sidebar-artifacts");
+  await within(gallery).findByText("report.pdf");
+
+  catalogUnavailable = true;
+  await act(() => {
+    context.mocks.ably.trigger(galleryTopic);
+  });
+  await within(gallery).findByText("Couldn't load artifacts.");
+
+  catalogUnavailable = false;
+  const resources = await openResources();
+  await expect(
+    within(resources).findByText("report.pdf"),
+  ).resolves.toBeInTheDocument();
+  await expect(
+    within(gallery).findByText("report.pdf"),
+  ).resolves.toBeInTheDocument();
+});
+
 test("Refresh only the notified chat catalog", async () => {
   const chat = await setupPublishingChat();
   click(resourceButton());
@@ -134,7 +192,7 @@ test("Refresh only the notified chat catalog", async () => {
   ).resolves.toBeInTheDocument();
 });
 
-test("Show a newly published video in the already-open artifact gallery", async () => {
+test("Show a newly published video in the open artifact gallery and resources", async () => {
   context.mocks.browser.matchMedia(true);
   const site = artifactSummary(
     "e0000000-0000-4000-a000-000000000998",
@@ -178,11 +236,16 @@ test("Show a newly published video in the already-open artifact gallery", async 
   await expect(
     within(gallery).findByText("Launch site"),
   ).resolves.toBeInTheDocument();
-  catalog.push(
+  const resources = await openResources();
+  await within(resources).findByText("Launch site");
+  catalog.unshift(
     artifactSummary("e0000000-0000-4000-a000-000000000999", "file", TITLE),
   );
   await act(() => {
     context.mocks.ably.trigger(galleryTopic);
   });
   await expect(within(gallery).findByText(TITLE)).resolves.toBeInTheDocument();
+  await expect(
+    within(resources).findByText(TITLE),
+  ).resolves.toBeInTheDocument();
 });

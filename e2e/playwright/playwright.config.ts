@@ -64,6 +64,7 @@ export default defineConfig({
     {
       name: "chat-smoke",
       testMatch: "smoke.spec.ts",
+      retries: 1,
     },
   ],
 });

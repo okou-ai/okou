@@ -37,7 +37,6 @@ import { integrationsSlackUploadCompleteRoutes } from "../integrations-slack-upl
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { ClerkUserNotFoundTestError } from "./helpers/clerk-users";
 import { createRouteMocks } from "./helpers/route-test";
-import { readGetStartedStatus } from "./helpers/get-started";
 import { mockSharedSlackConversations } from "./helpers/slack-conversation-access";
 
 const context = testContext();
@@ -770,23 +769,6 @@ test("installation grants bot and user scopes and connects the OAuth account", a
   );
   expect(location(replay).searchParams.get("error")).toContain("already used");
   await expect(accounts()).resolves.toHaveLength(1);
-  const rewards = await readGetStartedStatus(context, current);
-  expect(rewards.quests).toContainEqual(
-    expect.objectContaining({
-      key: "slack",
-      claimedCount: 1,
-      earnedCredits: 2000,
-      rewardTarget: "org",
-    }),
-  );
-  expect(rewards.quests).toContainEqual(
-    expect.objectContaining({
-      key: "connector",
-      claimedCount: 1,
-      earnedCredits: 100,
-      rewardTarget: "user",
-    }),
-  );
 });
 
 test("connect reuses the same OAuth account and both disconnect operations stay independent", async () => {
@@ -1102,9 +1084,6 @@ test("an admin claims an anonymously installed workspace through install OAuth",
   await expect(integrationStatus()).resolves.toMatchObject({
     isInstalled: false,
   });
-  expect(
-    (await readGetStartedStatus(context, current)).recentGrants,
-  ).toStrictEqual([]);
 
   const connected = await complete(await startInstall(), current);
 
@@ -1115,14 +1094,6 @@ test("an admin claims an anonymously installed workspace through install OAuth",
     isAdmin: true,
   });
   await expect(accounts()).resolves.toHaveLength(1);
-  expect((await readGetStartedStatus(context, current)).quests).toContainEqual(
-    expect.objectContaining({
-      key: "slack",
-      rewardTarget: "org",
-      claimedCount: 1,
-      earnedCredits: 2000,
-    }),
-  );
 });
 
 test("an anonymous reinstall preserves the organization's connected Slack account", async () => {
@@ -1281,32 +1252,12 @@ test.each(callbackAuthenticationModes)(
 test("reconnecting an awarded workspace preserves its single permanent award", async () => {
   const current = actor();
   await complete(await startInstall(), current);
-  const before = await readGetStartedStatus(context, current);
-  const award = before.recentGrants.find((grant) => {
-    return grant.questKey === "slack";
-  });
-  expect(award).toMatchObject({
-    status: "granted",
-    rewardAmount: 2000,
-    rewardTarget: "org",
-  });
   await disconnectChat();
   const reconnect = await integrationStatus();
   if (!reconnect.connectUrl) {
     throw new Error("Expected a reconnect link");
   }
   await complete(await start(reconnect.connectUrl), current);
-  const after = await readGetStartedStatus(context, current);
-  expect(
-    after.quests.find((quest) => {
-      return quest.key === "slack";
-    }),
-  ).toMatchObject({ claimedCount: 1, earnedCredits: 2000, pendingCount: 0 });
-  expect(
-    after.recentGrants.find((grant) => {
-      return grant.questKey === "slack";
-    }),
-  ).toStrictEqual(award);
   await expect(integrationStatus()).resolves.toMatchObject({
     isInstalled: true,
     isConnected: true,

@@ -8,7 +8,7 @@ import { escapeLiteral } from "pg";
 import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
 import { resolveSkillRef } from "@okouai/core/github-url";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import {
   contentBundleKey,
   readContentBundle,
@@ -852,7 +852,7 @@ async function devSeed() {
   {
     const insertedCount = await store.set(
       seedPreparedSkills$,
-      buildSeedSkillValues(SEED_SKILLS),
+      buildSeedSkillValues(BUILT_IN_SKILLS),
       nowDate(),
       signal,
     );

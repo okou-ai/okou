@@ -1,4 +1,3 @@
-import { readGetStartedStatus } from "./helpers/get-started";
 import { randomUUID } from "node:crypto";
 
 import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
@@ -259,11 +258,6 @@ describe("Steam OpenID connector", () => {
       connectionStatus: "connected",
       oauthScopes: [],
     });
-    expect(
-      (await readGetStartedStatus(context, actor)).quests.find((q) => {
-        return q.key === "connector";
-      })?.claimedCount,
-    ).toBe(0);
   });
 
   it("keeps the active Steam connection until a verified replacement succeeds", async () => {

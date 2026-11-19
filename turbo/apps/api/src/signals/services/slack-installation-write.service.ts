@@ -8,7 +8,6 @@ import { env } from "../../lib/env";
 import { writeDb$ } from "../external/db";
 import { pendingSlackRewardSql } from "./slack-installation-reward";
 import { ensureGetStartedRewardWallet$ } from "./get-started-wallet.service";
-import { settleSlackWorkspaceRewards$ } from "./slack-reward.service";
 import { marketingRewardLinkEventInsert } from "./marketing-reward-event-publication";
 
 type SlackInstallation = typeof slackOrgInstallations.$inferSelect;
@@ -170,11 +169,6 @@ export const persistSlackInstallation$ = command(
     }
     await set(ensureGetStartedRewardWallet$, args.orgId, signal);
     const installed = await set(commitSlackInstallation$, args, signal);
-    await set(
-      settleSlackWorkspaceRewards$,
-      { orgId: args.orgId, workspaceId: args.workspaceId },
-      signal,
-    );
     return installed;
   },
 );

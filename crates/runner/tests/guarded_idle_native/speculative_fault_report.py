@@ -12,7 +12,7 @@ import later_parking_report as later
 import report
 import status_failure_report as failure
 from cleanup_report import accounting, coverage, supplied_policy
-from snapshot_report import exact
+from report import exact
 
 PREFIX = "NATIVE_SPECULATIVE_FAULT_WITNESS "
 CASES = {f"Speculative{fault}-{mode}" for fault in ("Drop", "Panic") for mode in ("fresh", "snapshot")}

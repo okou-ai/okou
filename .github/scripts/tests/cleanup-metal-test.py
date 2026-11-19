@@ -59,6 +59,17 @@ SSH = r"""#!/usr/bin/env python3
 import json,os,shlex,signal,subprocess,sys
 from pathlib import Path
 root=Path(os.environ['FIXTURE']);host=sys.argv[1].split('@')[1];args=sys.argv[2:]
+history=root/host/'ssh.log'
+if args[:4]==['sudo','python3','-','inventory']:
+ with history.open('a') as log:log.write('inventory\n')
+ if host=='metal-b':
+  failure=os.environ.get('INVENTORY_FAILURE')
+  if failure=='reset-once' and history.read_text()=='inventory\n':
+   print('{"9999":',flush=True);sys.exit(255)
+  if failure=='command':sys.exit(7)
+  if failure=='malformed':print('{"9999":');sys.exit(0)
+elif args[:3]==['sudo','python3','-c'] and args[4:5]==['session']:
+ with history.open('a') as log:log.write('session\n')
 if os.environ.get('OFFLINE')==host:sys.exit(255)
 if len(args)==1 and args[0].startswith('sudo bash -c '):
  namespace=os.environ['JOB_REF'];lock=root/host/'var/lock'/f'vm0-runner-lifecycle-{namespace}.lock';lock.parent.mkdir(parents=True,exist_ok=True)
@@ -861,9 +872,40 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(config.exists())
         self.assertIn('"candidates": [42]', result.stdout)
+        for host in ("metal-a", "metal-b"):
+            self.assertEqual((self.root / host / "ssh.log").read_text(), "inventory\n")
         result = self.controller(OFFLINE="metal-b")
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertTrue(config.exists())
+        self.assertEqual((self.root / "metal-a/ssh.log").read_text(), "inventory\n" * 2)
+        self.assertEqual((self.root / "metal-b/ssh.log").read_text(), "inventory\n" * 3)
+
+    def test_inventory_recovers_single_disconnect_before_cleanup(self):
+        config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
+        result = self.controller(INVENTORY_FAILURE="reset-once")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(config.exists())
+        self.assertIn('"cleaned": 1', result.stdout)
+        self.assertEqual(
+            (self.root / "metal-a/ssh.log").read_text(), "inventory\nsession\n"
+        )
+        self.assertEqual(
+            (self.root / "metal-b/ssh.log").read_text(),
+            "inventory\ninventory\nsession\n",
+        )
+
+    def test_inventory_command_and_json_failures_stop_without_retry(self):
+        config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
+        for calls, failure in enumerate(("command", "malformed"), start=1):
+            with self.subTest(failure=failure):
+                result = self.controller(INVENTORY_FAILURE=failure)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertTrue(config.exists())
+                for host in ("metal-a", "metal-b"):
+                    self.assertEqual(
+                        (self.root / host / "ssh.log").read_text(),
+                        "inventory\n" * calls,
+                    )
 
     def test_namespace_selection_is_explicit_and_fails_closed(self):
         selected = self.resource("var/lib/vm0-runner/stripe/pr-42/config")

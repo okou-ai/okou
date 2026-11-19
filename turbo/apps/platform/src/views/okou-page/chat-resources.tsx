@@ -4,6 +4,7 @@ import {
   useGet,
   useLastLoadable,
   useLastResolved,
+  useLoadableState,
   useSet,
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -75,6 +76,7 @@ function ChatResourcesButtonInner({
   const resources = thread.resources;
   const open = useGet(resources.open$);
   const setOpen = useSet(resources.setOpen$);
+  const galleryCatalogState = useLoadableState(resources.openGalleryCatalog$);
   const visible = !transitioning && open;
   const copyLabel = t(($) => {
     return $.chat.resources.copyLink;
@@ -90,7 +92,7 @@ function ChatResourcesButtonInner({
     <Popover
       open={visible}
       onOpenChange={(nextOpen) => {
-        setOpen(nextOpen);
+        setOpen(nextOpen, galleryCatalogState === "hasError");
       }}
     >
       <ChatHeaderIconButton

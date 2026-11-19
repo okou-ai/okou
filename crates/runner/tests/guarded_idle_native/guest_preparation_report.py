@@ -15,7 +15,7 @@ import progress_report as foreground
 import later_parking_report as later
 import pressure_report as pressure
 import report
-from snapshot_report import exact
+from report import exact
 
 
 @dataclass(frozen=True)

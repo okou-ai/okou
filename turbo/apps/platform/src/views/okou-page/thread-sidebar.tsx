@@ -47,15 +47,13 @@ import type { ImageArtifactNavigationItem } from "./artifact-image-navigation.ts
 
 const ARTIFACT_AUTO_LOAD_THRESHOLD_PX = 800;
 
-/**
- * Return from an artifact detail to the thread's gallery and refresh its first page.
- */
-function useOpenThreadArtifacts(thread: ChatPanelSignals): () => void {
+function useOpenThreadArtifacts(
+  thread: ChatPanelSignals,
+  mode: "reuse" | "refresh" = "reuse",
+): () => void {
   const open = useSet(openThreadArtifacts$);
-  const reloadArtifacts = useSet(thread.sidebar.artifactCatalog.reload$);
   return () => {
-    open(thread);
-    reloadArtifacts();
+    open(thread, mode);
   };
 }
 
@@ -260,7 +258,7 @@ function ThreadArtifactUnavailable({
 }) {
   const { t } = useTranslation();
   const close = useSet(thread.sidebar.close$);
-  const backToArtifacts = useOpenThreadArtifacts(thread);
+  const backToArtifacts = useOpenThreadArtifacts(thread, "refresh");
   return (
     <aside
       aria-label={t(($) => {

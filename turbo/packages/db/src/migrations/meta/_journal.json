@@ -3529,6 +3529,13 @@
       "when": 1795073129666,
       "tag": "1582_activate_empty_workspaces_my_okou",
       "breakpoints": true
+    },
+    {
+      "idx": 1583,
+      "version": "7",
+      "when": 1795074528040,
+      "tag": "1583_prepare_built_in_skills",
+      "breakpoints": true
     }
   ]
 }

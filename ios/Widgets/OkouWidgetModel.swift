@@ -154,7 +154,7 @@ extension OkouWidgetSnapshot {
   static var sample: OkouWidgetSnapshot {
     let now = Date.now
     return OkouWidgetSnapshot(
-      userID: nil, workspaceID: "sample",
+      workspaceID: "sample",
       greetings: Greetings(
         morning: "Coffee's ready.", day: "What's the move?", evening: "Another win today?",
         night: "Saved your seat."),

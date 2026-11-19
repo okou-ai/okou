@@ -131,6 +131,16 @@ def unique_object(pairs):
     return result
 
 
+def same_json(actual, expected):
+    """Compare evidence without ignoring differences between booleans and integers."""
+    return json.dumps(actual, sort_keys=True) == json.dumps(expected, sort_keys=True)
+
+
+def exact(actual, expected, reason):
+    if not same_json(actual, expected):
+        raise ValueError(reason)
+
+
 def decode_original_policy(raw_policy, artifacts, mismatch_message):
     """Verify the captured policy bytes before decoding their JSON."""
     if (not isinstance(raw_policy, str)

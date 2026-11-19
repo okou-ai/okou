@@ -3,16 +3,11 @@ import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
-import {
-  appOwnedRewardPredicate,
-  getStartedRewardWriter,
-  type MarketingRewardWriter,
-} from "./marketing-reward-ownership";
 import { ensureGetStartedRewardWallet$ } from "./get-started-wallet.service";
 import { expireOrgCredits$ } from "./org-credit-expiration.service";
 import {
@@ -30,12 +25,8 @@ import {
 type Claim = typeof getStartedClaims.$inferSelect;
 
 const commitSlackReward$ = command(
-  async (
-    { set },
-    plan: { readonly claim: Claim; readonly writer: MarketingRewardWriter },
-    signal: AbortSignal,
-  ) => {
-    const { claim, writer } = plan;
+  async ({ set }, plan: { readonly claim: Claim }, signal: AbortSignal) => {
+    const { claim } = plan;
     const at = nowDate();
     const recordId = randomUUID();
     const expiresAt = new Date(at.getTime() + GET_STARTED_REWARD_TTL_MS);
@@ -58,7 +49,6 @@ const commitSlackReward$ = command(
         .where(
           and(
             eq(getStartedClaims.orgId, claim.orgId),
-            sql`${getStartedRewardWriter("org", claim.orgId) === writer}`,
             unsettledSlackClaim(claim.id),
           ),
         )
@@ -102,13 +92,10 @@ const commitSlackReward$ = command(
 export const settleSlackReward$ = command(
   async (
     { set },
-    plan: { readonly claim: Claim; readonly writer: MarketingRewardWriter },
+    plan: { readonly claim: Claim },
     signal: AbortSignal,
   ): Promise<void> => {
-    const { claim, writer } = plan;
-    if (getStartedRewardWriter("org", claim.orgId) !== writer) {
-      return;
-    }
+    const { claim } = plan;
     await set(ensureGetStartedRewardWallet$, claim.orgId, signal);
     await set(expireOrgCredits$, claim.orgId, signal);
     const db = set(writeDb$);
@@ -137,54 +124,5 @@ export const settleSlackReward$ = command(
         .where(unsettledSlackClaim(claim.id));
       signal.throwIfAborted();
     }
-  },
-);
-
-/** Both OAuth redelivery and the existing claims worker resume durable receipts. */
-export const settleSlackWorkspaceRewards$ = command(
-  async (
-    { set },
-    args: { readonly orgId: string; readonly workspaceId: string },
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const claims = await set(writeDb$)
-      .select()
-      .from(getStartedClaims)
-      .where(
-        and(
-          eq(getStartedClaims.questKey, "slack"),
-          eq(getStartedClaims.orgId, args.orgId),
-          eq(getStartedClaims.sourceKey, args.workspaceId),
-          inArray(getStartedClaims.status, ["pending", "reviewing"]),
-        ),
-      )
-      .orderBy(getStartedClaims.createdAt, getStartedClaims.id)
-      .limit(10);
-    signal.throwIfAborted();
-    for (const claim of claims) {
-      await set(settleSlackReward$, { claim, writer: "app" }, signal);
-    }
-  },
-);
-
-export const processPendingSlackRewards$ = command(
-  async ({ set }, signal: AbortSignal): Promise<number> => {
-    const claims = await set(writeDb$)
-      .select()
-      .from(getStartedClaims)
-      .where(
-        and(
-          eq(getStartedClaims.questKey, "slack"),
-          inArray(getStartedClaims.status, ["pending", "reviewing"]),
-          appOwnedRewardPredicate("org", getStartedClaims.orgId),
-        ),
-      )
-      .orderBy(getStartedClaims.nextAttemptAt, getStartedClaims.id)
-      .limit(10);
-    signal.throwIfAborted();
-    for (const claim of claims) {
-      await set(settleSlackReward$, { claim, writer: "app" }, signal);
-    }
-    return claims.length;
   },
 );

@@ -1,3 +1,4 @@
+import { marketingCheckinCampaign } from "./helpers/marketing-reward-consumer";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -21,6 +22,7 @@ const returnUrl = "http://app.localhost:3002/settings/billing";
 const portalUrl = "https://billing.stripe.com/session/customer-publication";
 
 function clients() {
+  marketingCheckinCampaign(context);
   const app = setupApp({
     context,
     routes: [
@@ -160,16 +162,20 @@ test("preserves an organization check-in completed during external customer prep
   signIn();
   const api = clients();
   const customerId = `cus_${randomUUID()}`;
+  let originalReceiptId: string | undefined;
   context.mocks.stripe.customers.create.mockImplementationOnce(async () => {
-    await accept(api.getStarted.checkin({ headers }), [200]);
+    originalReceiptId = (
+      await accept(api.getStarted.checkin({ headers }), [200])
+    ).body.id;
     return { id: customerId };
   });
   await accept(api.portal.create({ headers, body: { returnUrl } }), [200]);
   expect(
-    (await accept(api.getStarted.status({ headers }), [200])).body,
+    (await accept(api.getStarted.checkin({ headers }), [200])).body,
   ).toMatchObject({
-    claimedToday: true,
-    checkinStreak: 1,
+    id: originalReceiptId,
+    status: "granted",
+    rewardAmount: 100,
   });
   expect((await accept(api.status.get({ headers }), [200])).body).toMatchObject(
     {

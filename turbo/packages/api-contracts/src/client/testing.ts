@@ -354,11 +354,8 @@ import { feishuOauthContract as OriginalFeishuOauthContract } from "../contracts
 import { feishuOauthContract } from "./feishu-oauth";
 import { friendReferralsContract as OriginalFriendReferralsContract } from "../contracts/friend-referrals";
 import { friendReferralsContract } from "./friend-referrals";
-import {
-  cronGetStartedContract as OriginalCronGetStartedContract,
-  getStartedContract as OriginalGetStartedContract,
-} from "../contracts/get-started";
-import { cronGetStartedContract, getStartedContract } from "./get-started";
+import { getStartedContract as OriginalGetStartedContract } from "../contracts/get-started";
+import { getStartedContract } from "./get-started";
 import { githubAppSetupCallbackContract as OriginalGithubAppSetupCallbackContract } from "../contracts/github-oauth-callback";
 import { githubAppSetupCallbackContract } from "./github-oauth-callback";
 import { githubOauthContract as OriginalGithubOauthContract } from "../contracts/github-oauth";
@@ -1063,7 +1060,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [feishuEventsContract, OriginalFeishuEventsContract],
   [feishuOauthContract, OriginalFeishuOauthContract],
   [friendReferralsContract, OriginalFriendReferralsContract],
-  [cronGetStartedContract, OriginalCronGetStartedContract],
   [getStartedContract, OriginalGetStartedContract],
   [githubAppSetupCallbackContract, OriginalGithubAppSetupCallbackContract],
   [githubOauthContract, OriginalGithubOauthContract],

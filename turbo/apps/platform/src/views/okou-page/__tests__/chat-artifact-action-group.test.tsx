@@ -171,14 +171,14 @@ function mockPreview({
   });
 }
 
-async function openPreview(surface: Surface) {
+async function openPreview(surface: Surface, groupedActions = true) {
   await setupPage({
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
     featureSwitches: {
       [FeatureSwitchKey.ArtifactSidebarPreview]: surface === "sidebar",
-      [FeatureSwitchKey.ArtifactPreviewActionGroup]: true,
+      [FeatureSwitchKey.ArtifactPreviewActionGroup]: groupedActions,
     },
   });
   click(await findNamedLink(report.title));
@@ -198,6 +198,42 @@ function readyDownload(preview: HTMLElement, surface: Surface) {
     return download;
   });
 }
+
+test.each([
+  { surface: "dialog", groupedActions: false },
+  { surface: "dialog", groupedActions: true },
+  { surface: "sidebar", groupedActions: false },
+  { surface: "sidebar", groupedActions: true },
+] as const)(
+  "the $surface places fullscreen after the separator with action grouping $groupedActions",
+  async ({ surface, groupedActions }) => {
+    mockPreview();
+    const preview = await openPreview(surface, groupedActions);
+    const download = await readyDownload(preview, surface);
+    const lastArtifactAction = groupedActions
+      ? buttonNamed("More artifact actions", preview)
+      : download;
+    const separator = within(preview).getByRole("separator");
+    const fullscreen = buttonNamed("Enter fullscreen", preview);
+    const close = buttonNamed(
+      surface === "sidebar" ? "Close artifact" : "Close",
+      preview,
+    );
+    expect(separator).toHaveAttribute("aria-orientation", "vertical");
+    expect(
+      lastArtifactAction.compareDocumentPosition(separator) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      separator.compareDocumentPosition(fullscreen) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      fullscreen.compareDocumentPosition(close) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  },
+);
 
 test("replacing the sidebar from another chat waits for that chat's metadata", async () => {
   const leftThreadId = "b0000000-0000-4000-a000-000000000941";

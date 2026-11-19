@@ -264,8 +264,15 @@ export const closeDeletedThreadArtifact$ = command(
 );
 
 export const openThreadArtifacts$ = command(
-  ({ get, set }, thread: ChatPanelSignals) => {
+  ({ get, set }, thread: ChatPanelSignals, mode: "reuse" | "refresh") => {
     set(openOnThread$, thread, { type: "artifacts" }, get(pageSignal$));
+    const catalog = thread.sidebar.artifactCatalog;
+    set(catalog.selectArtifact$, null);
+    if (mode === "refresh") {
+      set(catalog.reload$);
+    } else {
+      set(catalog.reloadSelectedArtifactDetail$);
+    }
   },
 );
 

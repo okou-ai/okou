@@ -29,7 +29,6 @@ import {
   type AgentPhoneChannel,
   type AgentPhoneUserLink,
 } from "./agentphone-shared.service";
-import { completedGetStartedQuestPublication } from "./get-started-member-reward";
 import { slackRewardWalletEntitlement } from "./slack-installation-reward";
 import { marketingRewardLinkEventInsert } from "./marketing-reward-event-publication";
 
@@ -278,13 +277,6 @@ function phoneLinkPublicationPlan(
     WHERE ${notExists(builder.select({ id: existing.id }).from(existing))}
     ON CONFLICT DO NOTHING RETURNING *
   `);
-  const publication = completedGetStartedQuestPublication(
-    { ...identity, questKey: "imessage", sourceKey: "agentphone-link" },
-    at,
-    builder.select({ id: inserted.id }).from(inserted).getSQL(),
-  );
-  const claim = builder.$with("claim", {}).as(publication.claim);
-  const reward = builder.$with("phone_link_reward", {}).as(publication.grant);
   const marketingRewardEventId = randomUUID();
   const sourceEvent = builder.$with("phone_link_source_event", {}).as(
     marketingRewardLinkEventInsert(
@@ -308,8 +300,6 @@ function phoneLinkPublicationPlan(
       entitlement,
       existing,
       inserted,
-      claim,
-      reward,
       sourceEvent,
     ],
     admitted,

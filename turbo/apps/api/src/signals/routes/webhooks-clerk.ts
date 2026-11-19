@@ -1,8 +1,5 @@
 import { deliverMarketingRewardEvents$ } from "../services/marketing-reward-event-delivery.service";
-import {
-  acceptGetStartedInvitation$,
-  InvitationRewardSlotConflict,
-} from "../services/get-started-invitation-acceptance.service";
+import { acceptGetStartedInvitation$ } from "../services/get-started-invitation-acceptance.service";
 import type { AcceptedGetStartedInvitation } from "../services/get-started-invitation-acceptance";
 import { initializeMemberMemory$ } from "../services/member-memory-initialization.service";
 import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
@@ -514,10 +511,6 @@ const handleDeletedUserWebhook$ = command(
   },
 );
 
-/**
- * A lost invitation reward slot race rolled the acceptance back once; 503 asks
- * Clerk to redeliver (its existing delivery retry), which decides again.
- */
 const acceptInvitationReward$ = command(
   async (
     { set },
@@ -543,9 +536,6 @@ const acceptInvitationReward$ = command(
         );
       }
       return null;
-    }
-    if (outcome.error instanceof InvitationRewardSlotConflict) {
-      return jsonError("Invitation reward slot changed; redeliver", 503);
     }
     throw outcome.error;
   },

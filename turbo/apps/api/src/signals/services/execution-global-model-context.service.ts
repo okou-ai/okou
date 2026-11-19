@@ -1,12 +1,13 @@
 import { computed } from "ccstate";
-import { asc, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, exists, inArray, not, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { resolveSkillRef } from "@okouai/core/github-url";
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { usagePricing } from "@okouai/db/runtime/usage-pricing";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import { modelRoutes } from "@okouai/db/schema/model-route";
+import { builtInSkills } from "@okouai/db/schema/built-in-skill";
 import { skills as skillCatalog } from "@okouai/db/schema/skill";
 import { array, unknown as zUnknown } from "zod";
 import { db$ } from "../external/db";
@@ -24,8 +25,19 @@ const seedSkillColumns = Object.freeze({
   contentBundle: skillCatalog.contentBundle,
 });
 
-/** Every Seed Skill bundle; each run filters and checks its own selection. */
+/** Select one catalog for the whole Run snapshot, including when rolling back. */
 function seedSkillRows(builder: QueryBuilder) {
+  const urls = BUILT_IN_SKILLS.map(resolveSkillRef);
+  const active = exists(
+    builder
+      .select({ enabled: sql`1` })
+      .from(builtInSkills)
+      .where(eq(builtInSkills.authoritative, true)),
+  );
+  const preparedColumns = {
+    url: builtInSkills.url,
+    contentBundle: builtInSkills.contentBundle,
+  };
   return builder
     .select({
       payload: contextJsonProjection(seedSkillColumns)
@@ -33,7 +45,17 @@ function seedSkillRows(builder: QueryBuilder) {
         .as("payload"),
     })
     .from(skillCatalog)
-    .where(inArray(skillCatalog.url, SEED_SKILLS.map(resolveSkillRef)));
+    .where(and(inArray(skillCatalog.url, urls), not(active)))
+    .unionAll(
+      builder
+        .select({
+          payload: contextJsonProjection(preparedColumns)
+            .mapWith(zodDriverValueDecoder(zUnknown()))
+            .as("payload"),
+        })
+        .from(builtInSkills)
+        .where(and(inArray(builtInSkills.url, urls), active)),
+    );
 }
 
 /** Read execution-wide configuration and the model catalog in one snapshot. */

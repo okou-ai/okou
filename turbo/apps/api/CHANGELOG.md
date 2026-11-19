@@ -10,6 +10,35 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.94.2](https://github.com/okou-ai/okou/compare/api-v2.94.1...api-v2.94.2) (2026-11-19)
+
+
+### Bug Fixes
+
+* **api:** handle phone use authority read timeouts ([#48681](https://github.com/okou-ai/okou/issues/48681)) ([1b1b28f](https://github.com/okou-ai/okou/commit/1b1b28fef198b6e6548542691746291740cac9fc))
+* **app:** clarify paused automation feed cards ([#48887](https://github.com/okou-ai/okou/issues/48887)) ([4b72b66](https://github.com/okou-ai/okou/commit/4b72b660f8279424182640658aa21773cc49ccd4))
+
+
+### Refactoring
+
+* **api:** pass effective queued model selection to routing ([#48912](https://github.com/okou-ai/okou/issues/48912)) ([4843b38](https://github.com/okou-ai/okou/commit/4843b38b94cf7777598a16287a8d559136bc695c))
+* **api:** use three-point axiom artifact timing ([#48854](https://github.com/okou-ai/okou/issues/48854)) ([d930e21](https://github.com/okou-ai/okou/commit/d930e21f8d3d93278613fcef287ae7b58febdf72))
+
+
+### Performance Improvements
+
+* **api:** capture thread and fifo head in one pick query ([#48897](https://github.com/okou-ai/okou/issues/48897)) ([9c9183b](https://github.com/okou-ai/okou/commit/9c9183b4015b9c8b363e56fd68124ac972bb5baa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.90.1
+    * @okouai/core bumped to 8.854.4
+    * @okouai/db bumped to 2.51.0
+    * @okouai/pi-agent-runtime bumped to 1.52.4
+
 ## [2.94.1](https://github.com/okou-ai/okou/compare/api-v2.94.0...api-v2.94.1) (2026-11-19)
 
 

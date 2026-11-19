@@ -6,7 +6,7 @@ import json
 import batch_aba_report as batch
 import progress_report as foreground
 import report
-from snapshot_report import exact
+from report import exact
 
 
 def wire(value, response=False, state="Resumed"):

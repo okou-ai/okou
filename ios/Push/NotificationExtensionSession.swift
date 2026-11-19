@@ -35,23 +35,17 @@ final class NotificationExtensionSession {
       clerk: clerk, apiURL: apiURL, version: version, directory: directory)
   }
 
-  /// An API client for this account and workspace. Throws `scopeUnavailable` when the shared
-  /// session is signed out or belongs to another account or workspace.
-  func client(userID: String, workspaceID: String) async throws -> APIClient {
+  func synchronize(_ destination: NotificationDestination) async throws {
     if clerk.environment == nil { try await clerk.refreshEnvironment() }
     try await clerk.refreshClient()
     try Task.checkCancellation()
     guard let identity = clerk.session, clerk.isAuthFlowComplete,
-      clerk.user?.id == userID,
-      identity.lastActiveOrganizationId == workspaceID
+      clerk.user?.id == destination.userId,
+      identity.lastActiveOrganizationId == destination.workspaceId
     else { throw SessionError.scopeUnavailable }
-    return APIClient(baseURL: apiURL, clientVersion: version, session: session) { [self] in
-      try await token(userID: userID, workspaceID: workspaceID, sessionID: identity.id)
+    let client = APIClient(baseURL: apiURL, clientVersion: version, session: session) { [self] in
+      try await token(destination: destination, sessionID: identity.id)
     }
-  }
-
-  func synchronize(_ destination: NotificationDestination) async throws {
-    let client = try await client(userID: destination.userId, workspaceID: destination.workspaceId)
     let cache = ChatCache(
       scope: ChatCacheScope(
         apiBaseURL: apiURL,
@@ -90,14 +84,14 @@ final class NotificationExtensionSession {
   }
 
   private func token(
-    userID: String, workspaceID: String, sessionID: String
+    destination: NotificationDestination, sessionID: String
   ) async throws -> String {
     guard let identity = clerk.session, identity.id == sessionID,
-      clerk.user?.id == userID,
-      identity.lastActiveOrganizationId == workspaceID,
+      clerk.user?.id == destination.userId,
+      identity.lastActiveOrganizationId == destination.workspaceId,
       let token = try await identity.getToken(),
-      clerk.session?.id == sessionID, clerk.user?.id == userID,
-      clerk.session?.lastActiveOrganizationId == workspaceID
+      clerk.session?.id == sessionID, clerk.user?.id == destination.userId,
+      clerk.session?.lastActiveOrganizationId == destination.workspaceId
     else { throw SessionError.scopeUnavailable }
     // This only fences the requested cache scope. The API verifies the JWT signature
     // and session permissions; a decoded client claim never grants access.
@@ -108,8 +102,8 @@ final class NotificationExtensionSession {
     encoded += String(repeating: "=", count: (4 - encoded.count % 4) % 4)
     guard let data = Data(base64Encoded: encoded),
       let claims = try? JSONDecoder().decode(Claims.self, from: data),
-      claims.sub == userID, claims.sid == sessionID,
-      (claims.o?.id ?? claims.organizationID) == workspaceID
+      claims.sub == destination.userId, claims.sid == sessionID,
+      (claims.o?.id ?? claims.organizationID) == destination.workspaceId
     else { throw SessionError.scopeUnavailable }
     try Task.checkCancellation()
     return token

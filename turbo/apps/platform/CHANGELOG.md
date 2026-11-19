@@ -13,6 +13,32 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1149.2](https://github.com/okou-ai/okou/compare/app-v0.1149.1...app-v0.1149.2) (2026-11-19)
+
+
+### Bug Fixes
+
+* **app:** clarify paused automation feed cards ([#48887](https://github.com/okou-ai/okou/issues/48887)) ([4b72b66](https://github.com/okou-ai/okou/commit/4b72b660f8279424182640658aa21773cc49ccd4))
+
+
+### Refactoring
+
+* **app:** use a single async feature switch source ([#48862](https://github.com/okou-ai/okou/issues/48862)) ([60b272c](https://github.com/okou-ai/okou/commit/60b272ce6f1087359500c7d8d5ec75e7f3050b30))
+
+
+### Performance Improvements
+
+* **test:** open the custom template shelf directly ([#48920](https://github.com/okou-ai/okou/issues/48920)) ([59fce0b](https://github.com/okou-ai/okou/commit/59fce0b2203f27e682b4a522e4e7d6f713ec8338))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.90.1
+    * @okouai/core bumped to 8.854.4
+    * @okouai/ui bumped to 1.21.61
+
 ## [0.1149.1](https://github.com/okou-ai/okou/compare/app-v0.1149.0...app-v0.1149.1) (2026-11-19)
 
 

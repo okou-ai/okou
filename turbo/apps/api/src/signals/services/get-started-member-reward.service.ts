@@ -16,10 +16,6 @@ import {
 } from "./get-started-member-reward";
 import { slackRewardIneligibleValues } from "./slack-installation-reward";
 import { ensureGetStartedRewardWallet$ } from "./get-started-wallet.service";
-import {
-  getStartedRewardWriter,
-  type MarketingRewardWriter,
-} from "./marketing-reward-ownership";
 
 const currentClaim$ = command(
   async (
@@ -59,11 +55,9 @@ const publishReward$ = command(
   async (
     { set },
     plan: {
-      readonly writer?: MarketingRewardWriter;
       readonly claim: GetStartedClaimRow;
       readonly rewardKey: string;
       readonly slot: number | null;
-      readonly evidenceText?: string;
       readonly at: Date;
     },
     signal: AbortSignal,
@@ -71,11 +65,9 @@ const publishReward$ = command(
     const db = set(writeDb$);
     const { rowCount } = await db.execute(
       getStartedMemberRewardSql({
-        writer: plan.writer,
         claim: plan.claim,
         rewardKey: plan.rewardKey,
         rewardSlot: plan.slot,
-        evidenceText: plan.evidenceText,
         at: plan.at,
       }),
     );
@@ -89,10 +81,8 @@ export const grantGetStartedClaim$ = command(
   async (
     { set },
     args: {
-      readonly writer?: MarketingRewardWriter;
       readonly claim: GetStartedClaimRow;
       readonly rewardKey: string;
-      readonly evidenceText?: string;
     },
     signal: AbortSignal,
   ): Promise<GetStartedClaimRow> => {
@@ -113,12 +103,6 @@ export const grantGetStartedClaim$ = command(
     }
     if (!claim.beneficiaryUserId) {
       throw new Error("Personal reward has no beneficiary");
-    }
-    if (
-      getStartedRewardWriter("user", claim.beneficiaryUserId) !==
-      (args.writer ?? "app")
-    ) {
-      return claim;
     }
     if (
       claim.leaseId !== args.claim.leaseId ||
@@ -149,11 +133,9 @@ export const grantGetStartedClaim$ = command(
       set(
         publishReward$,
         {
-          writer: args.writer,
           claim,
           rewardKey: args.rewardKey,
           slot,
-          evidenceText: args.evidenceText,
           at: nowDate(),
         },
         signal,
@@ -173,7 +155,7 @@ export const grantGetStartedClaim$ = command(
     ) {
       throw result.error;
     }
-    // Keep the original lease: a stale reviewer must never decline a replacement owner.
+    // Keep the original lease: a stale redeemer must never decline a replacement owner.
     const reason = isUniqueViolation(result.error, "uq_get_started_reward_key")
       ? "already_redeemed"
       : "limit_reached";

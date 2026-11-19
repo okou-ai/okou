@@ -121,7 +121,7 @@ def validate(directory):
         age, cost = condition.get("age_ns"), condition.get("read_duration_ns")
         if (set(condition) != {"kind", "policy", "available_bytes", "age_ns",
                                "read_duration_ns", "allocated", "profile_can_fit"}
-                or condition["kind"] != kind or json.dumps(condition["policy"], sort_keys=True) != json.dumps(policy, sort_keys=True)
+                or condition["kind"] != kind or not report.same_json(condition["policy"], policy)
                 or allocated != [2, 4096, 1] or any(type(v) is not int for v in allocated)
                 or not integer(available) or available > policy["host_total_bytes"]
                 or not integer(age) or not integer(cost) or cost > age

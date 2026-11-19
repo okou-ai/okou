@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import { and, eq, lt, or, sql } from "drizzle-orm";
-import { iosPushRegistrations } from "@okouai/db/schema/ios-push-registration";
+import { iosPushRegistrations } from "@okouai/db/runtime/ios-push-registration";
 import { writeDb$ } from "../external/db";
 import {
   clerk$,
@@ -72,7 +72,6 @@ export const updateIosPushRegistration$ = command(
       readonly sessionId: string;
       readonly deviceToken: string;
       readonly environment: "production" | "sandbox";
-      readonly widgetPushToken: string | null;
       readonly enabled: boolean;
     },
     signal: AbortSignal,

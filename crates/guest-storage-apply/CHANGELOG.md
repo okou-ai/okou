@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.29](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.28...guest-storage-apply-v0.32.29) (2026-11-19)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** avoid per-mount descriptor enumeration ([#48889](https://github.com/okou-ai/okou/issues/48889)) ([8c34cc4](https://github.com/okou-ai/okou/commit/8c34cc4ec611ead8f26d6aa1bfefd713fa567ec1))
+
 ## [0.32.28](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.27...guest-storage-apply-v0.32.28) (2026-11-19)
 
 

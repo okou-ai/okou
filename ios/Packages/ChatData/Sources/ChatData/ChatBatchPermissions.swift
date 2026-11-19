@@ -57,12 +57,22 @@ public struct ChatBatchPermissions: Sendable {
       let agentId: String
       let displayName: String?
     }
-    let agent: Agent = try await client.request("/api/agents/\(action.agentID)")
+    async let agentRequest: Agent = client.request("/api/agents/\(action.agentID)")
+    async let groups = loadGroups(action, connectorScoped: shared)
+    let agent = try await agentRequest
     guard UUID(uuidString: agent.agentId) == UUID(uuidString: action.agentID) else {
       throw APIClientError.invalidResponse
     }
+    return try await ChatPermissionBatchSnapshot(
+      enabled: true, agentName: agent.displayName, connectorScoped: shared, groups: groups)
+  }
+
+  private func loadGroups(
+    _ action: ChatPermissionBatchAction, connectorScoped: Bool,
+    reviewing reviewed: ChatPermissionBatchSnapshot? = nil
+  ) async throws -> [ChatPermissionBatchSnapshot.Group] {
     let grants: [ChatPermissionRule]
-    if shared {
+    if connectorScoped {
       grants = []
     } else {
       let result: [ChatPermissionGrant] = try await client.request(
@@ -74,22 +84,22 @@ public struct ChatBatchPermissions: Sendable {
     }
     let permissions = ChatPermissions(client: client)
     let slugs = Set(action.items.map(\.connectorSlug))
-    let groups = try await withThrowingTaskGroup(
+    return try await withThrowingTaskGroup(
       of: ChatPermissionBatchSnapshot.Group.self
     ) { tasks in
       for slug in slugs {
         tasks.addTask {
+          async let rules =
+            connectorScoped
+            ? permissions.connectorGrants(slug: slug)
+            : grants.filter { $0.connectorSlug == slug }
           let metadata: ChatPermissionMetadata?
-          let rules: [ChatPermissionRule]
-          if shared {
-            let snapshot = try await permissions.connectorPermissions(slug: slug)
-            metadata = snapshot.metadata
-            rules = snapshot.grants
+          if let reviewed {
+            metadata = reviewed.groups.first { $0.connectorSlug == slug }?.metadata
           } else {
             metadata = try await permissions.metadata(slug: slug)
-            rules = grants.filter { $0.connectorSlug == slug }
           }
-          return ChatPermissionBatchSnapshot.Group(
+          return try await ChatPermissionBatchSnapshot.Group(
             connectorSlug: slug, items: action.items.filter { $0.connectorSlug == slug },
             metadata: metadata, grants: rules)
         }
@@ -98,8 +108,6 @@ public struct ChatBatchPermissions: Sendable {
       for try await group in tasks { result.append(group) }
       return result.sorted { $0.connectorSlug < $1.connectorSlug }
     }
-    return ChatPermissionBatchSnapshot(
-      enabled: true, agentName: agent.displayName, connectorScoped: shared, groups: groups)
   }
 
   public func validateContext(_ action: ChatPermissionBatchAction) async throws {
@@ -112,15 +120,25 @@ public struct ChatBatchPermissions: Sendable {
 
   public func apply(
     _ action: ChatPermissionBatchAction, duration: ChatPermissionAction.Duration,
-    expectedConnectorScoped: Bool
+    reviewing reviewed: ChatPermissionBatchSnapshot
   ) async throws -> ChatPermissionBatchSnapshot {
-    try await validateContext(action)
-    let current = try await load(action)
-    guard current.complete else {
+    async let context: Void = validateContext(action)
+    let features: SidebarFeatureSwitches = try await client.request("/api/feature-switches")
+    guard features.effectiveSwitches["batchConnectorPermissions"] == true else {
       throw ChatError.invalidContract("These permissions are no longer available.")
     }
-    guard current.connectorScoped == expectedConnectorScoped else {
+    let shared = features.effectiveSwitches["connectorChatAccountAccess"] == true
+    guard shared == reviewed.connectorScoped else {
       throw ChatError.invalidContract("Permission scope changed. Review the request again.")
+    }
+    // Keep fresh grants to preserve expirations and reconcile concurrent changes. The
+    // write endpoint independently checks permission validity against its current catalog.
+    let current = try await ChatPermissionBatchSnapshot(
+      enabled: true, agentName: reviewed.agentName, connectorScoped: shared,
+      groups: loadGroups(action, connectorScoped: shared, reviewing: reviewed))
+    try await context
+    guard current.complete else {
+      throw ChatError.invalidContract("These permissions are no longer available.")
     }
     struct Grant: Encodable {
       let permission: String
@@ -141,6 +159,7 @@ public struct ChatBatchPermissions: Sendable {
     }
     try Task.checkCancellation()
     if groups.isEmpty { return current }
+    var confirmed: [String: [ChatPermissionRule]] = [:]
     if current.connectorScoped {
       let permissions = ChatPermissions(client: client)
       // This path can partially succeed across connectors. The owner must read back on failure.
@@ -159,6 +178,7 @@ public struct ChatBatchPermissions: Sendable {
             }
           })
         else { throw APIClientError.invalidResponse }
+        confirmed[group.connectorSlug] = saved
       }
     } else {
       struct Body: Encodable {
@@ -179,9 +199,26 @@ public struct ChatBatchPermissions: Sendable {
           }
         })
       else { throw APIClientError.invalidResponse }
+      let acknowledged = saved.filter {
+        UUID(uuidString: $0.agentId) == UUID(uuidString: action.agentID)
+      }.map(\.rule)
+      for group in current.groups {
+        let changed = acknowledged.filter { $0.connectorSlug == group.connectorSlug }
+        confirmed[group.connectorSlug] =
+          group.grants.filter { previous in
+            !changed.contains { $0.permission == previous.permission }
+          } + changed
+      }
     }
     try Task.checkCancellation()
-    let updated = try await load(action)
+    let updated = ChatPermissionBatchSnapshot(
+      enabled: current.enabled, agentName: current.agentName,
+      connectorScoped: current.connectorScoped,
+      groups: current.groups.map { group in
+        ChatPermissionBatchSnapshot.Group(
+          connectorSlug: group.connectorSlug, items: group.items, metadata: group.metadata,
+          grants: confirmed[group.connectorSlug] ?? group.grants)
+      })
     guard updated.allAllowed else { throw APIClientError.invalidResponse }
     return updated
   }

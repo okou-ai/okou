@@ -158,7 +158,6 @@ import {
   dispatchTelegramChatDeliveryOnce$,
 } from "./internal-telegram-chat-run-callback.service";
 import { sendUserPushNotifications$ } from "./push-notifications.service";
-import { scheduleUserWidgetRefresh$ } from "./ios-widget-push.service";
 import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
 import { saveRunSummary$ } from "./run-summary.service";
 import { loadSlackQueuedLaunchMaterial$ } from "./slack-queued-launch-context.service";
@@ -1077,7 +1076,6 @@ const insertAssistantErrorEvent$ = command(
       assistantErrorEventTouchOptions(args),
       signal,
     );
-    set(scheduleUserWidgetRefresh$, args.userId);
     await set(publishAssistantErrorEventSignals$, args, signal);
     signal.throwIfAborted();
     return assistantErrorEventResult(displayErrorMessage, inserted);
@@ -1416,7 +1414,6 @@ const insertRunLifecycleMarker$ = command(
       runLifecycleMarkerTouchOptions(args, markerCreatedAt),
       signal,
     );
-    set(scheduleUserWidgetRefresh$, args.userId);
     await set(publishRunLifecycleMarkerSignals$, args, signal);
     signal.throwIfAborted();
     return runLifecycleMarkerResult(inserted);
