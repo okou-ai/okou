@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { buildArtifactPrefix } from "../../../lib/file-url";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { publicChatActor } from "./helpers/public-chat-actor";
@@ -143,33 +142,23 @@ describe("Published Agent instructions in direct Runs", () => {
         }
         return await send(command);
       });
-      const clientEventId = randomUUID();
-      const sent = await chat.requestSendEvent(
-        member,
-        {
-          agentId: owned.agentId,
-          prompt: "Launch with the authorized Agent",
-          model: "gpt-6-luna",
-          clientEventId,
-          userMessage: {
-            version: 1,
-            parts: [
-              { type: "text", text: "Launch with the authorized Agent" },
-              {
-                type: "file",
-                fileId,
-                filenameSnapshot: filename,
-                contentType: "text/plain",
-              },
-            ],
-          },
+      const { runId } = await chat.sendAndLaunch(member, {
+        agentId: owned.agentId,
+        prompt: "Launch with the authorized Agent",
+        model: "gpt-6-luna",
+        userMessage: {
+          version: 1,
+          parts: [
+            { type: "text", text: "Launch with the authorized Agent" },
+            {
+              type: "file",
+              fileId,
+              filenameSnapshot: filename,
+              contentType: "text/plain",
+            },
+          ],
         },
-        [201],
-      );
-      if (sent.status !== 201) {
-        throw new Error("Expected the authorized member send");
-      }
-      await flushWaitUntilForTest();
+      });
       const rejected = await chat.requestSendEvent(
         member,
         {
@@ -182,19 +171,6 @@ describe("Published Agent instructions in direct Runs", () => {
       expect(rejected.body).toMatchObject({
         error: { message: "Only the private agent owner can run this agent" },
       });
-      await bdd.updateAgentMetadata(owned.actor, owned.agentId, {
-        visibility: "public",
-      });
-      const { events } = await chat.listThreadEvents(
-        member,
-        sent.body.threadId,
-      );
-      const runId = events.find((event) => {
-        return event.revokesEventId === clientEventId;
-      })?.runId;
-      if (!runId) {
-        throw new Error("Expected the authorized member send to launch");
-      }
       const { execution } = await owned.runExecution(runId);
       expect(
         readExecutionContentBundle(

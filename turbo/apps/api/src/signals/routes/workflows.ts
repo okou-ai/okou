@@ -1565,7 +1565,7 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   // The workflow is run on its owning agent; the caller must be able to run
   // that agent (public agents are runnable by any member, private ones only by
   // their owner).
-  if (agent.visibility === "private" && agent.owner !== auth.userId) {
+  if (agent.visibility !== "public" && agent.owner !== auth.userId) {
     return forbidden("Only the private agent owner can run this agent");
   }
   if (workflow.officialDefinitionName !== null) {
@@ -1646,7 +1646,6 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       body,
       userId: auth.userId,
       orgId: auth.orgId,
-      preloadedAgent: agent,
       agentRunPreCreateSource: "workflow_slash_command",
       getStartedWorkflowId: workflow.id,
     },

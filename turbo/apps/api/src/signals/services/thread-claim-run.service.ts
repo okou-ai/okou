@@ -2600,7 +2600,7 @@ export function createThreadClaimRunObjects(
       return notFound("Agent not found");
     }
     if (
-      agent.visibility === "private" &&
+      agent.visibility !== "public" &&
       agent.owner !== identity.owner.userId
     ) {
       return agentRunsCreateForbidden(
@@ -3062,14 +3062,12 @@ export function createThreadClaimRunObjects(
     },
   );
   const checkClaimAdmission$ = command(async ({ get }, signal: AbortSignal) => {
-    if (!(await get(selectionInput$))) {
-      signal.throwIfAborted();
+    const input = await get(selectionInput$);
+    signal.throwIfAborted();
+    if (!input) {
       return undefined;
     }
-    const [input, model] = await Promise.all([
-      get(selectedRunInput$),
-      get(modelRoute$),
-    ]);
+    const model = await get(modelRoute$);
     signal.throwIfAborted();
     if (isRouteError(model)) {
       return model;
