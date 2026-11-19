@@ -123,6 +123,26 @@ describe("isFeatureEnabled", () => {
     }
   });
 
+  it("defaults Markdown-first output to staff and honors external opt-in", () => {
+    const key = FeatureSwitchKey.MarkdownFirstOutput;
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    for (const context of [
+      {},
+      { userId: "external-user", orgId: "external-org" },
+    ]) {
+      expect(isFeatureEnabled(key, context)).toBe(false);
+      expect(getAllFeatureStates(context)[key]).toBe(false);
+    }
+    const optedIn = { orgId: "external-org", overrides: { [key]: true } };
+    expect(isFeatureEnabled(key, optedIn)).toBe(true);
+    expect(getAllFeatureStates(optedIn)[key]).toBe(true);
+    expect(isFeatureEnabled(key, staff)).toBe(true);
+    expect(getAllFeatureStates(staff)[key]).toBe(true);
+    expect(
+      isFeatureEnabled(key, { ...staff, overrides: { [key]: false } }),
+    ).toBe(false);
+  });
+
   it("enables presentation format for staff and honors Lab overrides", () => {
     const key = FeatureSwitchKey.PresentationOutputFormat;
     const identity = {

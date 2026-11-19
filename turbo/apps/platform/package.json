@@ -75,6 +75,7 @@
     "micromark-util-sanitize-uri": "^2.0.1",
     "onnxruntime-web": "1.30.0",
     "path-to-regexp": "^8.4.0",
+    "pandoc-wasm": "1.1.0",
     "pdfmake": "^0.3.12",
     "posthog-js": "^1.422.5",
     "qrcode.react": "4.2.0",

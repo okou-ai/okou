@@ -228,6 +228,11 @@ type ArtifactAction =
         | "inline_table";
     }
   | {
+      readonly action: "markdown_export";
+      readonly surface: "dialog" | "page";
+      readonly format: "pdf" | "docx";
+    }
+  | {
       readonly action: "google_drive_sync";
       readonly surface: "dialog" | "page" | "inline_table";
       readonly target: "file" | "document" | "spreadsheet" | "presentation";

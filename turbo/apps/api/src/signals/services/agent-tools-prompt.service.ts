@@ -31,9 +31,18 @@ const instructionsAndMemoryGuidance = Object.freeze([
  * messaging and file rules live in `# Integration Note`, next to the
  * `# Current Integration` block they describe.
  */
-function buildIntegrationToolsPrompt(): readonly string[] {
+function buildIntegrationToolsPrompt(
+  markdownFirstOutputEnabled: boolean,
+): readonly string[] {
   const localFileContext = [
-    "Honor the user's explicitly requested delivery format. Otherwise, choose a suitable format based on the user's preferences and how they will use the result, such as DOCX, PDF, XLSX, CSV, PPTX, HTML, or images; short content can be answered directly in chat. No format has default priority. Decide the format before choosing production and delivery tools.",
+    markdownFirstOutputEnabled
+      ? "Honor the user's explicitly requested delivery format. Otherwise, for text-focused documents and reports, prefer Markdown as the primary deliverable so it can be opened quickly in Okou. Use HTML for visually rich or interactive deliverables; do not create DOCX or PDF copies unless requested, exported by the user, or required by a selected generation template. Decide the format before choosing production and delivery tools."
+      : "Honor the user's explicitly requested delivery format. Otherwise, choose a suitable format based on the user's preferences and how they will use the result, such as DOCX, PDF, XLSX, CSV, PPTX, HTML, or images; short content can be answered directly in chat. No format has default priority. Decide the format before choosing production and delivery tools.",
+    ...(markdownFirstOutputEnabled
+      ? [
+          "For Markdown deliverables, use portable Markdown with a clear heading hierarchy, concise lists, and simple tables. Avoid raw HTML unless the content requires a rich visual layout. Keep Markdown as the source of truth and let the user export DOCX or PDF from the artifact actions when they need those formats.",
+        ]
+      : []),
     `Prefer the workspace directory (\`${CANONICAL_WORKING_DIR}\`) for file operations and project work.`,
     "A `[Web file]` block from any integration refers to a file stored by Okou. Use `okou web download-file -h` to download it with its `[ID]`.",
     "Local dev servers are useful for agent-side verification, but they are not by themselves a user-facing deliverable.",
@@ -59,6 +68,7 @@ export interface AgentToolsPromptInputs {
   readonly larkOfficialEnabled: boolean;
   readonly wechatEnabled: boolean;
   readonly presentationConvertEnabled: boolean;
+  readonly markdownFirstOutputEnabled: boolean;
   readonly cloudBrowserEnabled: boolean;
   readonly batchConnectorPermissionsEnabled: boolean;
   readonly chatConnectorAccountsEnabled: boolean;
@@ -102,6 +112,10 @@ export function buildAgentToolsPromptInputs(args: {
     ),
     presentationConvertEnabled: isFeatureEnabled(
       FeatureSwitchKey.PresentationConvert,
+      context,
+    ),
+    markdownFirstOutputEnabled: isFeatureEnabled(
+      FeatureSwitchKey.MarkdownFirstOutput,
       context,
     ),
     cloudBrowserEnabled: args.cloudBrowserEnabled,
@@ -233,7 +247,7 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
           "- Lark messages: when the task explicitly asks to send or post to Lark, use `okou lark message send --help` for chats, DMs, and replies.",
         ]
       : []),
-    ...buildIntegrationToolsPrompt(),
+    ...buildIntegrationToolsPrompt(args.markdownFirstOutputEnabled),
     "- Presentation page images: use `okou presentation screenshot --input <deck.ppt|deck.pptx|deck.pdf|page.html|layouts-dir|url> --out <dir>` to render any presentation source to ordered `page-001.png` files at one fixed page size. PPT, PPTX, and PDF are rasterised through LibreOffice and Poppler; HTML pages, layout directories, and URLs are captured through a browser, one image per slide. It only writes local image files: it uploads nothing, publishes nothing, and is unrelated to `okou presentation-template publish`, so it is the right tool whenever page images are the goal, including review and analysis. Prefer it over `pdftoppm`, `soffice`, or hand-driven `agent-browser` screenshot calls, because a screenshot of a page the browser never painted looks like a successful screenshot. Run `okou presentation screenshot --help` for the current interface.",
     "- Static web artifacts can be published with `okou host <dir> --site <slug> [--spa]`; for HTML presentations, include `--artifact-kind presentation-html`; run `okou host --help` for details.",
     PRESENTATION_DELIVERY_INSTRUCTION,

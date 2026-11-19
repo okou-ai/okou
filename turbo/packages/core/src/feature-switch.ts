@@ -105,6 +105,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
+  [FeatureSwitchKey.MarkdownFirstOutput]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Markdown-first document output",
+    description:
+      "Prefer Markdown for unformatted text documents and offer DOCX and PDF exports.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.SingleAgent]: {
     maintainer: "lancy@okou.ai",
     displayName: "My Okou",
