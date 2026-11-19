@@ -67,22 +67,6 @@ export function workflowAutomationSelectedAccountReadPlan(
   };
 }
 
-export function workflowAutomationDefaultAccountReadPlan(
-  args: WorkflowAutomationAccountScope,
-) {
-  return {
-    columns: { connectorId: connectors.id },
-    from: connectors,
-    where: and(
-      eq(connectors.orgId, args.orgId),
-      eq(connectors.userId, args.userId),
-      eq(connectors.connectorSlug, args.connectorSlug),
-      eq(connectors.isDefault, true),
-    ),
-    limit: 1,
-  };
-}
-
 export function workflowAutomationConnectorSelectionSql(args: {
   readonly orgId: string;
   readonly userId: string;
