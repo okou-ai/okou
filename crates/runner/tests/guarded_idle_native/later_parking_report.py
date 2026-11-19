@@ -36,9 +36,7 @@ def history_operation(evidence, identities, reason):
 
 
 def clock(value, begin, end):
-    if not report.positive_integer(value) or not begin < value < end:
-        raise ValueError("later parking phase clocks lost ordering")
-    return value
+    return report.validate_phase_clock(value, begin, end, "later parking phase clocks lost ordering")
 
 
 def covered(value, policy):
