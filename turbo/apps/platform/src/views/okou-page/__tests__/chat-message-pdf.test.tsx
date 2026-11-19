@@ -21,7 +21,10 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { renderMessagePdf } from "../../../lib/message-pdf/render.ts";
-import { platformMessagePdfFontUrls } from "../../../lib/static-assets.ts";
+import {
+  platformMessagePdfFontUrls,
+  platformPreviewMessagePdfFontUrls,
+} from "../../../lib/static-assets.ts";
 import type {
   PdfWorkerRequest,
   PdfWorkerResponse,
@@ -65,6 +68,7 @@ async function setupPdfChat(
   filenameResponse: () => Response = () => {
     return HttpResponse.json("Launch-plan");
   },
+  host = "app.okou.ai",
 ) {
   context.mocks.http.post(
     `*${chatThreadPdfFilenameContract.generate.path}`,
@@ -95,19 +99,29 @@ async function setupPdfChat(
       },
     ],
   });
-  for (const url of Object.values(platformMessagePdfFontUrls)) {
+  const production = host === "app.okou.ai";
+  const fontUrls = production
+    ? platformMessagePdfFontUrls
+    : platformPreviewMessagePdfFontUrls;
+  for (const url of Object.values(fontUrls)) {
     const filename = new URL(url, "https://app.okou.ai").pathname
       .split("/")
       .at(-1);
-    context.mocks.http.get(`*/${filename}`, ({ request }) => {
-      expect(new URL(request.url).origin).toBe(location.origin);
+    const pattern = production
+      ? `https://static.okou.io/platform/message-pdf/fonts/${filename}`
+      : `*/${filename}`;
+    context.mocks.http.get(pattern, ({ request }) => {
+      expect(new URL(request.url).origin).toBe(
+        production ? "https://static.okou.io" : location.origin,
+      );
+      expect(request.credentials).toBe(production ? "omit" : "same-origin");
       return loadFont(request);
     });
   }
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
+    host,
   });
   await screen.findByText(ANSWER);
   await waitFor(() => {
@@ -115,45 +129,51 @@ async function setupPdfChat(
   });
 }
 
-test("Generate first, then offer a native PDF download whose bytes survive repeated clicks", async () => {
-  const response = context.mocks.deferred<PdfWorkerResponse>();
-  context.mocks.browser.dedicatedWorker(() => {
-    return response.promise;
-  });
-  const browser = context.mocks.browser.blobDownload();
-  await setupPdfChat();
+test.each(["app.okou.ai", "pr-1-app.omby.ai"])(
+  "Offer a native PDF download whose bytes survive repeated clicks on %s",
+  async (host) => {
+    const response = context.mocks.deferred<PdfWorkerResponse>();
+    context.mocks.browser.dedicatedWorker(() => {
+      return response.promise;
+    });
+    const browser = context.mocks.browser.blobDownload();
+    await setupPdfChat(ANSWER, undefined, undefined, host);
 
-  button("Generate PDF").focus();
-  await userEvent.keyboard("{Enter}");
-  await waitFor(() => {
-    expect(button("Generating PDF…")).toHaveAttribute("aria-disabled", "true");
-  });
-  expect(button("Generating PDF…")).toHaveFocus();
-  const pdf = new Blob(["%PDF-1.7\n%%EOF"], { type: "application/pdf" });
-  response.resolve({ ok: true, blob: pdf });
-  await waitFor(() => {
-    expect(downloadLink()).toHaveAttribute("download", "Launch-plan.pdf");
-  });
-  const link = downloadLink();
-  expect(link).toHaveFocus();
-  const url = link.href;
-  expect(browser.blobForUrl(url)).toBe(pdf);
-  expect(fireEvent.click(link)).toBeTruthy();
-  expect(fireEvent.click(link)).toBeTruthy();
-  expect(browser.blobForUrl(url)).toBe(pdf);
+    button("Generate PDF").focus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(button("Generating PDF…")).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+    });
+    expect(button("Generating PDF…")).toHaveFocus();
+    const pdf = new Blob(["%PDF-1.7\n%%EOF"], { type: "application/pdf" });
+    response.resolve({ ok: true, blob: pdf });
+    await waitFor(() => {
+      expect(downloadLink()).toHaveAttribute("download", "Launch-plan.pdf");
+    });
+    const link = downloadLink();
+    expect(link).toHaveFocus();
+    const url = link.href;
+    expect(browser.blobForUrl(url)).toBe(pdf);
+    expect(fireEvent.click(link)).toBeTruthy();
+    expect(fireEvent.click(link)).toBeTruthy();
+    expect(browser.blobForUrl(url)).toBe(pdf);
 
-  const newChat = queryAllByRoleFast("button").find((element) => {
-    return element.getAttribute("aria-label") === "New chat";
-  });
-  if (!newChat) {
-    throw new Error("New chat button not found");
-  }
-  click(newChat);
-  await waitFor(() => {
-    expect(location.pathname).not.toBe(`/chats/${THREAD_ID}`);
-  });
-  expect(browser.blobForUrl(url)).toBeNull();
-});
+    const newChat = queryAllByRoleFast("button").find((element) => {
+      return element.getAttribute("aria-label") === "New chat";
+    });
+    if (!newChat) {
+      throw new Error("New chat button not found");
+    }
+    click(newChat);
+    await waitFor(() => {
+      expect(location.pathname).not.toBe(`/chats/${THREAD_ID}`);
+    });
+    expect(browser.blobForUrl(url)).toBeNull();
+  },
+);
 
 test.each([
   {

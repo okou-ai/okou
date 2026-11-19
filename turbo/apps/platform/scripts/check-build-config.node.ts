@@ -359,7 +359,7 @@ await test("production build isolates the configured lazy dependency", async () 
   );
 });
 
-await test("production workers and PDF fonts stay on the app origin", async () => {
+await test("workers and Pandoc stay on the app origin and PDF fonts use the default asset URL", async () => {
   const loaded = await productionConfigPromise;
 
   assert.ok(loaded);
@@ -386,19 +386,11 @@ await test("production workers and PDF fonts stay on the app origin", async () =
         'location.origin + "/okou-app/assets/message-pdf-worker-AbCd1234.js"',
     },
   );
+  assert.deepEqual(renderBuiltUrl("assets/pandoc-AbCd1234.wasm", context), {
+    runtime: 'location.origin + "/okou-app/assets/pandoc-AbCd1234.wasm"',
+  });
   for (const filename of [
-    "NotoSansCJKsc-Regular-AbCd1234.otf",
-    "NotoSansCJKsc-Bold-AbCd1234.otf",
-    "sarasa-gothic-sc-italic-AbCd1234.ttf",
-    "sarasa-gothic-sc-bolditalic-AbCd1234.ttf",
-    "noto-emoji-emoji-400-normal-AbCd1234.woff",
-  ]) {
-    assert.equal(
-      renderBuiltUrl(`assets/${filename}`, context),
-      `/okou-app/assets/${filename}`,
-    );
-  }
-  for (const filename of [
+    "assets/NotoSansCJKsc-Regular-AbCd1234.otf",
     "assets/index-AbCd1234.js",
     "assets/other-worker-AbCd1234.js",
     "assets/message-pdf-worker-AbCd1234.js.map",
@@ -1069,7 +1061,7 @@ await test("emits the fixed page topology and two external workers", async () =>
     assert.ok(emittedVendorChunk?.type === "chunk");
     assert.match(
       emittedVendorChunk.code,
-      /=\s*"\/okou-app\/assets\/NotoSansCJKsc-Regular-[^"/]+\.otf"/u,
+      /=\s*"https:\/\/static\.okou\.io\/okou-app\/assets\/NotoSansCJKsc-Regular-[^"/]+\.otf"/u,
     );
     assert.ok(
       emittedVendorChunk.moduleIds.some((moduleId) => {

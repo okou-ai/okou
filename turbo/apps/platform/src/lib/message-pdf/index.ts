@@ -1,17 +1,31 @@
 import type { Root, RootContent } from "hast";
 
+import { resolvePlatformEnvironment } from "../platform-host.ts";
 import { fetchAppAsset } from "../resource-fetch.ts";
-import { platformMessagePdfFontUrls } from "../static-assets.ts";
+import {
+  platformMessagePdfFontUrls,
+  platformPreviewMessagePdfFontUrls,
+} from "../static-assets.ts";
 import { preparePdfAssets } from "./assets.ts";
 import { parseMessagePdfTree } from "./document.ts";
 import type { PdfWorkerRequest } from "./types.ts";
+import { readPdfResource } from "./urls.ts";
 import { runDocumentExportWorker } from "./worker-client.ts";
 
 async function loadFont(
   url: string,
+  production: boolean,
   signal: AbortSignal,
 ): Promise<ArrayBuffer> {
-  const response = await fetchAppAsset(url, signal);
+  if (production) {
+    return (await readPdfResource(url, "default", signal)).arrayBuffer();
+  }
+  // The preview gateway serves the bundled font at the same asset path.
+  const asset = new URL(url, location.href);
+  const response = await fetchAppAsset(
+    `${asset.pathname}${asset.search}`,
+    signal,
+  );
   if (!response.ok) {
     throw new Error(`PDF font could not be loaded (${response.status})`);
   }
@@ -62,20 +76,21 @@ export async function generateMessagePdfBlob(
     }),
   };
   const needed = requiredExtraFonts(tree);
+  const production = resolvePlatformEnvironment() === "production";
+  const fontUrls = production
+    ? platformMessagePdfFontUrls
+    : platformPreviewMessagePdfFontUrls;
+  const readFont = (url: string) => {
+    return loadFont(url, production, signal);
+  };
   const [assets, regularFont, boldFont, italicFont, boldItalicFont, emojiFont] =
     await Promise.all([
       preparePdfAssets(tree, imageUrls, signal),
-      loadFont(platformMessagePdfFontUrls.regular, signal),
-      loadFont(platformMessagePdfFontUrls.bold, signal),
-      needed.italic
-        ? loadFont(platformMessagePdfFontUrls.italic, signal)
-        : undefined,
-      needed.boldItalic
-        ? loadFont(platformMessagePdfFontUrls.boldItalic, signal)
-        : undefined,
-      needed.emoji
-        ? loadFont(platformMessagePdfFontUrls.emoji, signal)
-        : undefined,
+      readFont(fontUrls.regular),
+      readFont(fontUrls.bold),
+      needed.italic ? readFont(fontUrls.italic) : undefined,
+      needed.boldItalic ? readFont(fontUrls.boldItalic) : undefined,
+      needed.emoji ? readFont(fontUrls.emoji) : undefined,
     ]);
   const request: PdfWorkerRequest = {
     baseUrl,
