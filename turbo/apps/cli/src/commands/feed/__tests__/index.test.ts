@@ -161,6 +161,37 @@ it("converts convenient text input into the same saved composer format", async (
   );
   expect(log).toHaveBeenCalledWith(JSON.stringify({ ...item, priority: 0 }));
 });
+it("continues the same conversation for the text action and the user's own direction", async () => {
+  const threadId = "b0000000-0000-4000-a000-000000000001";
+  server.use(
+    http.post("http://localhost:3000/api/feed/items", async ({ request }) => {
+      expect(await request.json()).toMatchObject({
+        content: {
+          customOption: { id: "custom", threadId },
+          options: [{ id: "default", threadId }],
+        },
+      });
+      return HttpResponse.json(item);
+    }),
+  );
+  await run(
+    "create",
+    "--type",
+    "suggestion",
+    "--id",
+    id,
+    "--title",
+    content.content.title,
+    "--text",
+    "Review the launch plan.",
+    "--background",
+    "Launch background: source launch-plan-v2. Budget and owner are not confirmed.",
+    "--thread-id",
+    threadId,
+    "--json",
+  );
+  expect(log).toHaveBeenCalledWith(JSON.stringify(item));
+});
 it("rejects structured input mixed with field flags instead of silently publishing the file's priority", async () => {
   const directory = await mkdtemp(join(tmpdir(), "suggestion-test-"));
   try {

@@ -26,7 +26,7 @@ A creation file contains nested Feed content:
 
 - id: the stable UUID; type: suggestion; priority: integer, larger first. Put title (concise subject and action), rationale (why it matters now), options and customOption inside content. State is server-owned and must not appear in create/update files.
 - content.options: one to three objects with stable short id, label, description, nullable threadId and draft. Use the exact existing authorized thread ID when continuing that conversation; null starts a new one. Each draft must be self-contained, including verified current background, source references and required files.
-- content.customOption: a neutral background quote for the user's own direction, with id custom and threadId null. Refresh it together with changed facts. It must not inherit a preset action or authorization.
+- content.customOption: a neutral background quote for the user's own direction, with id custom. Its threadId decides where that direction goes, so the user is not asked: use the exact existing authorized thread ID when the card is about that conversation and the user's reply belongs there; null starts a new one. Refresh it together with changed facts. It must not inherit a preset action or authorization.
 
 An option draft uses the saved composer format:
 
@@ -34,7 +34,7 @@ An option draft uses the saved composer format:
 
 The required customOption format is:
 
-\`{ "id": "custom", "threadId": null, "draft": { "draftUserMessage": { "version": 1, "parts": [{ "type": "feedback", "quote": "Current neutral background, unresolved questions and exact source references", "note": [] }] }, "draftAttachments": null } }\`
+\`{ "id": "custom", "threadId": null or "<existing thread UUID>", "draft": { "draftUserMessage": { "version": 1, "parts": [{ "type": "feedback", "quote": "Current neutral background, unresolved questions and exact source references", "note": [] }] }, "draftAttachments": null } }\`
 
 Optional file parts must match draftAttachments. The app supplies the fixed custom row and feedback controls; do not generate custom, Dismiss, Already done, Not planned or Less like this as preset options. Never modify the live composer or execute the suggested work.
 

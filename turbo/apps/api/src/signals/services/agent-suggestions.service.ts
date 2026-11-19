@@ -224,13 +224,11 @@ export const createSuggestion$ = command(
         "Suggestions are turned off in For you sources. Existing cards remain available.",
       );
     }
-    for (const option of input.content.options) {
-      const invalid = await set(
-        validateThread$,
-        owner,
-        option.threadId,
-        signal,
-      );
+    for (const { threadId } of [
+      ...input.content.options,
+      input.content.customOption,
+    ]) {
+      const invalid = await set(validateThread$, owner, threadId, signal);
       if (invalid) {
         return invalid;
       }
@@ -401,17 +399,13 @@ export const updateSuggestion$ = command(
     ) {
       return badRequestMessage("Suggestion expiry must be in the future.");
     }
-    if (input.content?.options) {
-      for (const option of input.content.options) {
-        const invalid = await set(
-          validateThread$,
-          owner,
-          option.threadId,
-          signal,
-        );
-        if (invalid) {
-          return invalid;
-        }
+    for (const { threadId } of [
+      ...(input.content?.options ?? []),
+      ...(input.content?.customOption ? [input.content.customOption] : []),
+    ]) {
+      const invalid = await set(validateThread$, owner, threadId, signal);
+      if (invalid) {
+        return invalid;
       }
     }
     const item = await set(changeSuggestion$, owner, id, input, signal);

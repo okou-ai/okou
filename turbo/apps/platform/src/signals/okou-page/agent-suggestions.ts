@@ -107,64 +107,43 @@ interface SuggestionThreadTarget {
   readonly title: string | null;
 }
 
-/** A custom direction starts a new chat or continues a chat the card names. */
+/**
+ * A custom direction continues the chat the card names, or starts a new chat
+ * when the card names none or that chat is no longer available.
+ */
 export type SuggestionDirectionTarget =
   { readonly kind: "new"; readonly agentId: string } | SuggestionThreadTarget;
 
-/** Chats the card's actions continue or reference, in the order they name them. */
-function relatedThreadIds(item: Suggestion): readonly string[] {
-  const ids = new Set<string>();
-  for (const option of item.content.options) {
-    if (option.threadId) {
-      ids.add(option.threadId);
-    }
-  }
-  for (const option of item.content.options) {
-    for (const part of option.draft.draftUserMessage?.parts ?? []) {
-      if (part.type === "chat_thread") {
-        ids.add(part.threadId);
-      }
-    }
-  }
-  return [...ids];
-}
-
 interface SuggestionDirectionSession {
   readonly entry: AgentSuggestionEntry;
-  readonly agentId: string;
+  readonly target: SuggestionDirectionTarget;
   /** Closes the composer and settles the card once a send is accepted. */
-  readonly finish: (
-    target: SuggestionDirectionTarget,
-    threadId: string,
-    submission: ComposerSubmission,
-  ) => void;
+  readonly finish: (threadId: string, submission: ComposerSubmission) => void;
 }
 
 const internalDirectionSession$ = state<SuggestionDirectionSession | null>(
   null,
 );
-const internalDirectionTarget$ = state<SuggestionDirectionTarget | null>(null);
 const internalDirectionComposer$ = state<Promise<ComposerSignals> | null>(null);
 const resetDirection$ = resetSignal();
-const resetDirectionTarget$ = resetSignal();
 
 /**
- * One unsaved composer per chosen target, so neither the default Agent's
+ * One unsaved composer for the card's target, so neither the default Agent's
  * draft nor the target thread's saved draft is read or replaced.
  */
 const directionGraph$ = computed((get) => {
   const session = get(internalDirectionSession$);
-  const target = get(internalDirectionTarget$);
-  if (!session || !target) {
+  if (!session) {
     return null;
   }
+  const { target } = session;
   if (target.kind === "new") {
     return {
       kind: target.kind,
       composer: createInPlaceAgentComposerSignals(
         target.agentId,
         (threadId, submission) => {
-          session.finish(target, threadId, submission);
+          session.finish(threadId, submission);
         },
         session.entry.item.content.title,
       ),
@@ -176,51 +155,27 @@ const directionGraph$ = computed((get) => {
       target.id,
       target.agentId,
       (submission) => {
-        session.finish(target, target.id, submission);
+        session.finish(target.id, submission);
       },
     ),
   };
 });
 
-/** The card whose custom direction is being written, and where it can go. */
+/** The card whose custom direction is being written, and where it goes. */
 export const suggestionDirection$ = computed((get) => {
   const session = get(internalDirectionSession$);
-  if (!session) {
-    return null;
-  }
-  const threads = get(chatThreadMetaMap$);
-  return {
-    itemId: session.entry.item.id,
-    agentId: session.agentId,
-    threads: relatedThreadIds(session.entry.item).flatMap(
-      (id): SuggestionThreadTarget[] => {
-        const meta = threads.get(id);
-        return meta
-          ? [{ kind: "thread", id, agentId: meta.agentId, title: meta.title }]
-          : [];
-      },
-    ),
-  };
-});
-
-export const suggestionDirectionTarget$ = computed((get) => {
-  return get(internalDirectionTarget$);
+  return session
+    ? { itemId: session.entry.item.id, target: session.target }
+    : null;
 });
 
 export const suggestionDirectionComposer$ = computed((get) => {
   return get(internalDirectionComposer$);
 });
 
-/** Returns the editor to its choice of target. */
-export const resetSuggestionDirectionTarget$ = command(({ set }) => {
-  set(resetDirectionTarget$);
-  set(internalDirectionTarget$, null);
-  set(internalDirectionComposer$, null);
-});
-
 const closeSuggestionDirection$ = command(({ set }) => {
   set(resetDirection$);
-  set(resetSuggestionDirectionTarget$);
+  set(internalDirectionComposer$, null);
   set(internalDirectionSession$, null);
 });
 
@@ -254,13 +209,12 @@ const finishSuggestionDirection$ = command(
     { get, set },
     session: SuggestionDirectionSession,
     sent: {
-      readonly target: SuggestionDirectionTarget;
       readonly threadId: string;
       readonly submission: ComposerSubmission;
     },
     pageSignal: AbortSignal,
   ): void => {
-    const { target, threadId, submission } = sent;
+    const { threadId, submission } = sent;
     if (get(internalDirectionSession$) === session) {
       set(closeSuggestionDirection$);
     }
@@ -273,7 +227,7 @@ const finishSuggestionDirection$ = command(
     ) {
       return;
     }
-    if (target.kind === "new") {
+    if (session.target.kind === "new") {
       showSuggestionSent();
     } else {
       toast.success(
@@ -336,28 +290,10 @@ const prepareDirectionComposer$ = command(
   },
 );
 
-/** Opens the composer of `target` for the open card. */
-export const chooseSuggestionDirectionTarget$ = command(
-  async (
-    { get, set },
-    target: SuggestionDirectionTarget,
-    parentSignal: AbortSignal,
-  ): Promise<ComposerSignals> => {
-    if (!get(internalDirectionSession$)) {
-      throw new Error("Suggestion direction is unavailable");
-    }
-    const signal = set(resetDirectionTarget$, parentSignal);
-    set(internalDirectionTarget$, target);
-    const prepared = set(prepareDirectionComposer$, signal);
-    set(internalDirectionComposer$, prepared);
-    return await prepared;
-  },
-);
-
 /**
- * Opens the custom direction editor for a card. A card without related chats
- * goes straight to a new chat of the default Agent; otherwise the member first
- * chooses between a new chat and one of those chats.
+ * Opens the custom direction editor for a card. The card decides where the
+ * member's direction goes: the chat it names, or a new chat of the default
+ * Agent when it names none or that chat is gone.
  */
 export const openSuggestionDirection$ = command(
   async (
@@ -367,7 +303,7 @@ export const openSuggestionDirection$ = command(
   ): Promise<void> => {
     set(directionFocusReturnId$, null);
     const signal = set(resetDirection$, pageSignal);
-    set(resetSuggestionDirectionTarget$);
+    set(internalDirectionComposer$, null);
     const agentId = await get(defaultAgentId$);
     signal.throwIfAborted();
     if (!agentId) {
@@ -376,14 +312,25 @@ export const openSuggestionDirection$ = command(
     if (get(entry.hidden$)) {
       return;
     }
+    const { threadId } = entry.item.content.customOption;
+    const thread =
+      threadId === null ? null : get(chatThreadMetaMap$).get(threadId);
     const session: SuggestionDirectionSession = {
       entry,
-      agentId,
-      finish: (target, threadId, submission) => {
+      target:
+        threadId !== null && thread
+          ? {
+              kind: "thread",
+              id: threadId,
+              agentId: thread.agentId,
+              title: thread.title,
+            }
+          : { kind: "new", agentId },
+      finish: (sentThreadId, submission) => {
         set(
           finishSuggestionDirection$,
           session,
-          { target, threadId, submission },
+          { threadId: sentThreadId, submission },
           pageSignal,
         );
       },
@@ -395,18 +342,14 @@ export const openSuggestionDirection$ = command(
       () => {
         if (get(internalDirectionSession$) === session) {
           set(internalDirectionSession$, null);
-          set(resetSuggestionDirectionTarget$);
+          set(internalDirectionComposer$, null);
         }
       },
       { once: true },
     );
-    if (get(suggestionDirection$)?.threads.length === 0) {
-      await set(
-        chooseSuggestionDirectionTarget$,
-        { kind: "new", agentId },
-        signal,
-      );
-    }
+    const prepared = set(prepareDirectionComposer$, signal);
+    set(internalDirectionComposer$, prepared);
+    await prepared;
   },
 );
 
