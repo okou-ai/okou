@@ -35,6 +35,10 @@ import {
 } from "./crypto.utils";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import {
+  subscriptionSwitchRecoveries,
+  type SubscriptionRecovery,
+} from "./subscription-switch-recovery.service";
+import {
   upsertPersonalModelProviderAccount$,
   type PersonalProviderAccountErrorResponse,
   type PersonalProviderAccountMutation,
@@ -108,6 +112,7 @@ type ClaudeCodeDeviceAuthStartResult =
 type ClaudeCodeDeviceAuthCompleteResult =
   | {
       readonly status: "complete";
+      readonly recoveries: readonly SubscriptionRecovery[];
       readonly body: {
         readonly provider: ModelProviderResponse;
         readonly created: boolean;
@@ -810,7 +815,7 @@ const importClaudeCodeOAuthToken$ = command(
 
 const completeLoadedClaudeCodeDeviceAuth$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly session: ModelProviderAuthSession;
       readonly orgId: string;
@@ -865,6 +870,16 @@ const completeLoadedClaudeCodeDeviceAuth$ = command(
     }
     const authorizationCode = parsedAuthorizationCode.ok;
 
+    // Capture the active account before claiming the session or exchanging its one-time code.
+    const recoveries = await get(
+      subscriptionSwitchRecoveries({
+        orgId: args.orgId,
+        userId: args.userId,
+        type: CLAUDE_CODE_DEVICE_AUTH_CONNECTOR_TYPE,
+      }),
+    );
+    signal.throwIfAborted();
+
     const claimed = await set(claimCompleting$, { session });
     signal.throwIfAborted();
     if (!claimed) {
@@ -885,6 +900,7 @@ const completeLoadedClaudeCodeDeviceAuth$ = command(
         authorizationCode,
         state: providerState.state,
         codeVerifier: providerState.codeVerifier,
+        recoveries,
       },
       signal,
     );
@@ -903,6 +919,7 @@ const importClaimedClaudeCodeDeviceAuth$ = command(
       readonly authorizationCode: string;
       readonly state: string;
       readonly codeVerifier: string;
+      readonly recoveries: readonly SubscriptionRecovery[];
     },
     signal: AbortSignal,
   ): Promise<ClaudeCodeDeviceAuthCompleteResult> => {
@@ -988,6 +1005,7 @@ const importClaimedClaudeCodeDeviceAuth$ = command(
 
     return {
       status: "complete",
+      recoveries: args.recoveries,
       body: imported.value,
     };
   },
