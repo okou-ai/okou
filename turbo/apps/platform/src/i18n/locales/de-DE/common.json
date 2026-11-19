@@ -1050,13 +1050,11 @@
       "invalid": "Dieser Berechtigungslink ist ungültig oder nicht verfügbar.",
       "loadFailed": "Nicht alle angeforderten Berechtigungen konnten überprüft werden. Es können keine Berechtigungen geändert werden.",
       "loading": "Berechtigungen werden geladen",
-      "myOkouScopeNote": "Gilt für deine Nutzung von Okou in diesem Workspace, nicht nur für die aktuelle Aufgabe.",
       "myOkouSharedScopeNote": "Gilt für diesen Connector in deinen Chats in diesem Workspace. Deine Teammitglieder haben eigene Berechtigungen.",
       "notNow": "Nicht jetzt",
       "pending_one": "{{count}} Berechtigung ausstehend",
       "pending_other": "{{count}} Berechtigungen ausstehend",
       "review": "Berechtigungen prüfen",
-      "scopeNote": "Gilt für diesen Agenten, nicht nur für die aktuelle Aufgabe.",
       "sharedScopeNote": "Die Berechtigungen für diesen Connector gelten für alle deine Chats und Agenten.",
       "title": "Folgende Berechtigungen erlauben"
     }
