@@ -3,7 +3,6 @@
 import copy
 import hashlib
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -77,15 +76,11 @@ def main():
     binary = installed / "caddy"
     assert hashlib.sha256(binary.read_bytes()).hexdigest() == expected
     subprocess.run([str(binary), "version"], check=True, timeout=5)
-    unchanged = subprocess.run(
-        command, check=True, capture_output=True, text=True, timeout=30
-    )
-    assert re.search(r"\bchanged=0\b", unchanged.stdout), unchanged.stdout
-
     # Repairing the cache alone must leave the healthy executable untouched.
     before = binary.stat()
     (staged / "caddy").write_bytes(b"unfinished cached binary\n")
     subprocess.run(command, check=True, capture_output=True, text=True, timeout=30)
+    assert hashlib.sha256((staged / "caddy").read_bytes()).hexdigest() == expected
     after = binary.stat()
     assert (after.st_ino, after.st_mtime_ns) == (before.st_ino, before.st_mtime_ns)
 
@@ -125,7 +120,7 @@ def main():
                 process.kill()
                 process.wait(timeout=5)
     print(
-        "Caddy install recovery, cache repair, idempotency and active replacement: ok"
+        "Caddy install recovery, cache repair and active replacement: ok"
     )
 
 

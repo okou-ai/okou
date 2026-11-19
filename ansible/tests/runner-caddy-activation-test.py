@@ -259,7 +259,6 @@ def main():
                     raise AssertionError(
                         "Caddy unexpectedly activated on an occupied port"
                     )
-            provision(config_publication, marker="after", status=410)
             provision(marker="after", status=410)
             assert http_status() == 410
             cases.append("failed activation retains prior receipt and recovers")

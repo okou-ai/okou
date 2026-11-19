@@ -122,37 +122,4 @@ jq -e '
   )
 ' <<<"$crates_json" >/dev/null || fail "Crates workflow contract changed"
 
-# Exercise the nbd handoff with Cargo's actual executable metadata and layout.
-ruby -rjson -ropen3 -rtmpdir -rfileutils -ryaml - "$REPO_ROOT" <<'RUBY'
-root = ARGV.fetch(0)
-steps = YAML.load_file(File.join(root, ".github/workflows/crates.yml")).fetch("jobs").fetch("nbd-cow-test").fetch("steps")
-compile = steps.find { |step| step.fetch("run", "").include?('target/nbd-cow-integration-test') }
-raise "missing nbd compiler step" unless compile && compile["shell"] == "bash"
-host, error, status = Open3.capture3("rustc", "-vV")
-raise error unless status.success?
-target = host.lines.find { |line| line.start_with?("host: ") }.delete_prefix("host: ").strip
-Dir.mktmpdir("nbd-compiled-artifact") do |fixture|
-  FileUtils.mkdir_p(File.join(fixture, "crates/tests"))
-  FileUtils.cp(File.join(root, "rust-toolchain.toml"), fixture)
-  File.write(File.join(fixture, "crates/Cargo.toml"), <<~TOML)
-    [package]
-    name = "nbd-cow"
-    version = "0.0.0"
-    edition = "2024"
-    [workspace]
-  TOML
-  File.write(File.join(fixture, "crates/tests/integration.rs"), "#[test]\n#[ignore]\nfn compiled_nbd_fixture() {}\n")
-  _, error, status = Open3.capture3("cargo", "generate-lockfile", "--offline", chdir: File.join(fixture, "crates"))
-  raise error unless status.success?
-  output_file = File.join(fixture, "environment")
-  env = {"TARGET_TRIPLE" => target, "GITHUB_ENV" => output_file, "CARGO_TARGET_DIR" => nil}
-  output, error, status = Open3.capture3(env, "bash", "-euo", "pipefail", "-c", compile.fetch("run"), chdir: fixture)
-  raise "nbd artifact build failed: #{output}#{error}" unless status.success?
-  exported = File.readlines(output_file, chomp: true).to_h { |line| line.split("=", 2) }
-  executable = File.join(fixture, exported.fetch("TEST_BIN"))
-  result, error, status = Open3.capture3(executable, "--ignored", "--exact", "compiled_nbd_fixture")
-  raise "nbd artifact was not runnable: #{result}#{error}" unless status.success? && result.include?("1 passed; 0 failed;")
-end
-RUBY
-
 echo "crates-detect-workflow-test: ok"

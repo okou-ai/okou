@@ -45,7 +45,7 @@ The [permanent retirement record](../../.github/kms-migration-32264/permanent-re
 owns the migration/recovery requirements. A setup report or source relocation
 does not clear key/account retirement. Retire this command only after its
 operational owner confirms no supported setup/reconciliation caller remains
-and updates the protected workflow and CI adapter together. Preserve required
+and updates the protected workflow and its fixtures together. Preserve required
 audit services, policy inputs and historical evidence.
 
 ## Inert verification
@@ -53,11 +53,9 @@ audit services, policy inputs and historical evidence.
 From the repository root:
 
 ```bash
-bash .github/scripts/tests/aws-audit-target-setup-test.sh
+uv run --no-project --with boto3==1.40.0 python ops/aws-audit-32264/tests/aws-audit-target-setup-test.py
 ```
 
-The CI adapter installs the pinned SDK into an owned temporary directory, runs
-`tests/aws-audit-target-setup-test.py`, propagates its exit status and cleans up.
-The suite uses synthetic credentials and botocore stubs; it exercises identity,
-authorization, delivery evidence and redaction without live AWS access. The
-adapter remains registered in the workflow-script test shard manifest.
+Run this check when maintaining the audit command or its policies. The suite
+uses synthetic credentials and botocore stubs to exercise identity,
+authorization, delivery evidence and redaction without live AWS access.

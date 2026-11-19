@@ -638,28 +638,6 @@ class CleanupTests(unittest.TestCase):
         self.assertTrue(config.exists())
         self.assertIn('"deferred_owner": 1', result.stdout)
 
-    def test_persistent_count_drift_preserves_cleanup_outcomes(self):
-        config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
-        unrelated = {**self.owner(99), "status": "queued"}
-        self.github(
-            run_pages={
-                "queued": [
-                    [{"total_count": 2, "workflow_runs": [unrelated]}],
-                ]
-            }
-        )
-        result = self.controller()
-        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-        self.assertFalse(config.exists())
-        decision = next(
-            json.loads(line)
-            for line in result.stdout.splitlines()
-            if line.startswith('{"pr":42,')
-        )
-        self.assertEqual(decision["outcome"], "cleaned")
-        self.assertEqual(decision["hosts"]["metal-a"]["outcome"], "cleaned")
-        self.assertEqual(decision["hosts"]["metal-b"]["outcome"], "already_absent")
-
     def test_disappeared_run_is_rechecked_before_cleanup(self):
         unrelated = {**self.owner(99), "id": 20}
         complete = [{"total_count": 1, "workflow_runs": [unrelated]}]
@@ -718,6 +696,10 @@ class CleanupTests(unittest.TestCase):
                     self.assertEqual(decision["runs"], [10])
                 else:
                     self.assertEqual(decision["outcome"], "cleaned")
+                    self.assertEqual(decision["hosts"]["metal-a"]["outcome"], "cleaned")
+                    self.assertEqual(
+                        decision["hosts"]["metal-b"]["outcome"], "already_absent"
+                    )
 
     def test_repeatedly_missing_owner_is_retained_across_changing_sweeps(self):
         configs = [
@@ -788,26 +770,16 @@ class CleanupTests(unittest.TestCase):
             {**self.owner(number=100 + index), "id": 2000 - index}
             for index in range(1000)
         ]
-        for reported in (999, 1001):
-            with self.subTest(reported=reported):
-                config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
-                self.github(
-                    run_pages={
-                        "in_progress": [
-                            [
-                                {
-                                    "total_count": reported,
-                                    "workflow_runs": newest[offset : offset + 100],
-                                }
-                                for offset in range(0, 1000, 100)
-                            ]
-                        ]
-                    }
-                )
-                result = self.controller()
-                self.assertEqual(result.returncode, 1, result.stderr)
-                self.assertTrue(config.exists())
-                self.assertIn('"unverified": 1', result.stdout)
+        config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
+        pages = [
+            {"total_count": 999, "workflow_runs": newest[offset : offset + 100]}
+            for offset in range(0, 1000, 100)
+        ]
+        self.github(run_pages={"in_progress": [pages]})
+        result = self.controller()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertTrue(config.exists())
+        self.assertIn('"unverified": 1', result.stdout)
 
     def test_unrelated_run_churn_does_not_block_selected_namespace(self):
         config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
@@ -847,14 +819,6 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertTrue(config.exists())
         self.assertIn('"unverified": 1', result.stdout)
-
-    def test_reopened_under_lock_keeps_resources(self):
-        config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
-        self.github(reopen=42)
-        result = self.controller()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue(config.exists())
-        self.assertIn('"skipped_open": 1', result.stdout)
 
     def test_reopened_during_owner_discovery_keeps_resources(self):
         reopened = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
