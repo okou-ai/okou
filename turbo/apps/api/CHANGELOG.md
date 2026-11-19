@@ -10,6 +10,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.94.4](https://github.com/okou-ai/okou/compare/api-v2.94.3...api-v2.94.4) (2026-11-19)
+
+
+### Bug Fixes
+
+* **db:** drop retired ios widget push columns ([#48956](https://github.com/okou-ai/okou/issues/48956)) ([d18d687](https://github.com/okou-ai/okou/commit/d18d6871bd8ebca73e559cbabb73f5b95850d056))
+
+
+### Refactoring
+
+* consolidate artifact timing behind one switch ([#48953](https://github.com/okou-ai/okou/issues/48953)) ([18b57aa](https://github.com/okou-ai/okou/commit/18b57aa53cf9a5451a38b092fe86b6065da5b052))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.91.0
+    * @okouai/core bumped to 8.854.6
+    * @okouai/db bumped to 2.51.2
+    * @okouai/pi-agent-runtime bumped to 1.52.6
+
 ## [2.94.3](https://github.com/okou-ai/okou/compare/api-v2.94.2...api-v2.94.3) (2026-11-19)
 
 

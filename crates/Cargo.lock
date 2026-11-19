@@ -2042,7 +2042,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.110.3"
+version = "0.110.4"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2082,7 +2082,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.223"
+version = "0.1.224"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2151,7 +2151,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.24.129"
+version = "0.24.130"
 dependencies = [
  "chrono",
  "cli-test-support",
@@ -2171,7 +2171,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.201"
+version = "0.12.202"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -2201,7 +2201,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.20.115"
+version = "0.20.116"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -4106,7 +4106,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.249.61"
+version = "0.249.62"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4180,7 +4180,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.22.7"
+version = "0.22.8"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4253,7 +4253,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.18.7"
+version = "0.18.8"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4462,7 +4462,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.11.7"
+version = "0.11.8"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4507,7 +4507,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.26.7"
+version = "0.26.8"
 dependencies = [
  "api-contracts",
  "async-trait",

@@ -13,6 +13,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1150.0](https://github.com/okou-ai/okou/compare/app-v0.1149.3...app-v0.1150.0) (2026-11-19)
+
+
+### Features
+
+* **android:** refine settings and sync display mode with web ([#48892](https://github.com/okou-ai/okou/issues/48892)) ([d8bf4f3](https://github.com/okou-ai/okou/commit/d8bf4f304697b69a4a283226315cc72c02d84275))
+
+
+### Bug Fixes
+
+* **app:** give each thread side panel its own remembered width ([#48965](https://github.com/okou-ai/okou/issues/48965)) ([ea3c6e6](https://github.com/okou-ai/okou/commit/ea3c6e6dbab1d95aa2085babdc8b0590715b0d27))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.91.0
+    * @okouai/core bumped to 8.854.6
+    * @okouai/ui bumped to 1.21.63
+
 ## [0.1149.3](https://github.com/okou-ai/okou/compare/app-v0.1149.2...app-v0.1149.3) (2026-11-19)
 
 

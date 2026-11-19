@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.34.6](https://github.com/okou-ai/okou/compare/cli-v10.34.5...cli-v10.34.6) (2026-11-19)
+
+
+### Refactoring
+
+* consolidate artifact timing behind one switch ([#48953](https://github.com/okou-ai/okou/issues/48953)) ([18b57aa](https://github.com/okou-ai/okou/commit/18b57aa53cf9a5451a38b092fe86b6065da5b052))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.91.0
+    * @okouai/core bumped to 8.854.6
+    * @okouai/pi-agent-runtime bumped to 1.52.6
+
 ## [10.34.5](https://github.com/okou-ai/okou/compare/cli-v10.34.4...cli-v10.34.5) (2026-11-19)
 
 

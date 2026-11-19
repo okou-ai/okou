@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.854.6](https://github.com/okou-ai/okou/compare/core-v8.854.5...core-v8.854.6) (2026-11-19)
+
+
+### Refactoring
+
+* consolidate artifact timing behind one switch ([#48953](https://github.com/okou-ai/okou/issues/48953)) ([18b57aa](https://github.com/okou-ai/okou/commit/18b57aa53cf9a5451a38b092fe86b6065da5b052))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.91.0
+
 ## [8.854.5](https://github.com/okou-ai/okou/compare/core-v8.854.4...core-v8.854.5) (2026-11-19)
 
 
