@@ -29,7 +29,7 @@ index c1bf9b4..b109dbf 100644
 +
 +let instance
 +export async function convert(options, stdin, files) {
-+    instance ??= fetch(wasmUrl, {credentials: "omit"}).then(async response => {
++    instance ??= fetch(wasmUrl).then(async response => {
 +        if (!response.ok) {
 +            throw new Error("Pandoc WASM could not be loaded")
 +        }
