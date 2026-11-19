@@ -10,7 +10,7 @@ import { rootSignal$ } from "../root-signal.ts";
 import { navigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
 import { onRef, resetSignal } from "../utils.ts";
-import { chatThreadMetaMap$ } from "../chat-page/chat-thread-event-sourcing.ts";
+import { createThreadMetaLookup } from "../chat-page/chat-thread-event-sourcing.ts";
 import {
   createInPlaceThreadComposerSignals,
   ensureDraft$,
@@ -124,6 +124,7 @@ interface SuggestionDirectionSession {
 const internalDirectionSession$ = state<SuggestionDirectionSession | null>(
   null,
 );
+const resolveDirectionThreadMeta$ = createThreadMetaLookup();
 const internalDirectionComposer$ = state<Promise<ComposerSignals> | null>(null);
 const resetDirection$ = resetSignal();
 
@@ -309,12 +310,17 @@ export const openSuggestionDirection$ = command(
     if (!agentId) {
       throw new Error("Suggestion target is unavailable");
     }
+    const { threadId } = entry.item.content.customOption;
+    // Only the thread source can say the named chat is gone; a chat the local
+    // list has not loaded yet still receives the direction.
+    const thread =
+      threadId === null
+        ? null
+        : (await set(resolveDirectionThreadMeta$, threadId, signal)).meta;
+    signal.throwIfAborted();
     if (get(entry.hidden$)) {
       return;
     }
-    const { threadId } = entry.item.content.customOption;
-    const thread =
-      threadId === null ? null : get(chatThreadMetaMap$).get(threadId);
     const session: SuggestionDirectionSession = {
       entry,
       target:

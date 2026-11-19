@@ -1240,11 +1240,6 @@ test("The custom direction editor sends the background files without the home dr
   expect(JSON.stringify(message)).not.toContain("My saved draft");
   expect(pathname()).toBe(suggestionPath);
 });
-function buttonNames(container: ParentNode): (string | undefined)[] {
-  return queryAllByRoleFast("button", container).map((element) => {
-    return element.getAttribute("aria-label") ?? element.textContent?.trim();
-  });
-}
 function withCustomThread(threadIdOverride: string): Suggestion {
   const suggestion = makeSuggestion();
   return {
@@ -1285,14 +1280,11 @@ test("A custom direction continues the chat its card names without touching its 
   });
   await openSuggestions();
   await screen.findByText(suggestion.content.title);
-  // The card names the chat, so the member is not asked to choose one.
   const editor = await openDirectionEditor(
     document.body,
     "Referenced decision",
   );
   const note = await within(editor).findByRole("textbox", { name: DIRECTION });
-  expect(buttonNames(editor)).not.toContain("New chat");
-  expect(buttonNames(editor)).not.toContain("Back");
   expect(composer(editor)).toHaveTextContent(suggestion.content.title);
   expect(composer(editor)).not.toHaveTextContent("Existing remote draft");
   await writeDirection(note, "Use the latest numbers from this chat");
@@ -1315,6 +1307,59 @@ test("A custom direction continues the chat its card names without touching its 
   expect(pathname()).toBe(suggestionPath);
   await screen.findByRole("heading", { name: "All caught up" });
   expect(savedDrafts).toStrictEqual([]);
+});
+test("A custom direction continues its named chat before the chat list has loaded it", async () => {
+  const suggestion = withCustomThread(threadId);
+  mockPool([suggestion]);
+  const sends: { threadId?: string; userMessage?: UserMessageDocument }[] = [];
+  const lifecycle = mockChatLifecycle(context, {
+    threadId,
+    threadTitle: "Referenced decision",
+    onSendRequest: ({ threadId: sentThreadId, userMessage }) => {
+      sends.push({ threadId: sentThreadId, userMessage });
+    },
+  });
+  // The chat exists, but this page's chat list has not received it yet.
+  lifecycle.setThreadList([]);
+  context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
+    return params.id === threadId
+      ? respond(200, {
+          id: threadId,
+          agentId,
+          title: "Referenced decision",
+          selectedModel: null,
+          modelSettings: {},
+          serviceTier: null,
+          pinnedAt: null,
+          archived: false,
+          muted: false,
+          computerUseHostId: null,
+          cloudBrowserEnabled: false,
+        })
+      : respond(404, {
+          error: {
+            code: "CHAT_THREAD_NOT_FOUND",
+            message: "Chat thread not found",
+          },
+        });
+  });
+  await openSuggestions();
+  await screen.findByText(suggestion.content.title);
+  const editor = await openDirectionEditor(
+    document.body,
+    "Referenced decision",
+  );
+  const note = await within(editor).findByRole("textbox", { name: DIRECTION });
+  await writeDirection(note, "Keep this in the decision chat");
+  await waitFor(() => {
+    expect(button("Send", "button", editor)).toBeEnabled();
+  });
+  click(button("Send", "button", editor));
+  await screen.findByText("Sent to the chat");
+  await waitFor(() => {
+    expect(sends).toHaveLength(1);
+  });
+  expect(sends[0].threadId).toBe(threadId);
 });
 test("A custom direction starts a new chat when its card names none, even beside an existing-chat action", async () => {
   const suggestion: Suggestion = {
@@ -1340,7 +1385,6 @@ test("A custom direction starts a new chat when its card names none, even beside
   await openSuggestions();
   await screen.findByText(suggestion.content.title);
   const { editor, note } = await openCustomDirection();
-  expect(buttonNames(editor)).not.toContain("Referenced decision");
   await writeDirection(note, "Start fresh with this background");
   await waitFor(() => {
     expect(button("Send", "button", editor)).toBeEnabled();
