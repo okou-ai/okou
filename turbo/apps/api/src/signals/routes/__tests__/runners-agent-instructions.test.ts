@@ -1,5 +1,9 @@
+import { ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
+import { buildArtifactPrefix } from "../../../lib/file-url";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { publicChatActor } from "./helpers/public-chat-actor";
@@ -92,7 +96,7 @@ describe("Published Agent instructions in direct Runs", () => {
     });
   });
 
-  it("rejects later member inputs after the Agent becomes private and retains published instructions", async () => {
+  it("launches a member send with the Agent instructions authorized before attachment verification", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const bdd = createBddApi(context);
@@ -107,15 +111,66 @@ describe("Published Agent instructions in direct Runs", () => {
       await createChatEventsFixture(context).configureSubscriptionPiModel(
         member,
       );
-      const queued = await api.createThreadRun(member, {
-        agentId: owned.agentId,
-        prompt: "require current Agent eligibility",
-        model: "gpt-6-luna",
+      const chat = createChatFilesBddApi(context);
+      const fileId = randomUUID();
+      const filename = "attachment.txt";
+      chat.mockCompletedUploadObject(member, fileId, filename, 42);
+      const s3 = installWorkflowVolumeS3Fixture(context, new Map(), {
+        bundlesOnly: true,
       });
-      await bdd.updateAgentMetadata(owned.actor, owned.agentId, {
-        visibility: "private",
+      await bdd.updateAgentInstructions(
+        owned.actor,
+        owned.agentId,
+        "Instructions at send authorization",
+      );
+      const send = context.mocks.s3.send.getMockImplementation();
+      if (!send) {
+        throw new Error("Expected the object store fixture");
+      }
+      context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+        if (
+          command instanceof ListObjectsV2Command &&
+          command.input.Prefix === buildArtifactPrefix(member.userId, fileId)
+        ) {
+          await bdd.updateAgentInstructions(
+            owned.actor,
+            owned.agentId,
+            "Instructions for subsequent Runs",
+          );
+          await bdd.updateAgentMetadata(owned.actor, owned.agentId, {
+            visibility: "private",
+          });
+        }
+        return await send(command);
       });
-      const rejected = await createChatFilesBddApi(context).requestSendEvent(
+      const clientEventId = randomUUID();
+      const sent = await chat.requestSendEvent(
+        member,
+        {
+          agentId: owned.agentId,
+          prompt: "Launch with the authorized Agent",
+          model: "gpt-6-luna",
+          clientEventId,
+          userMessage: {
+            version: 1,
+            parts: [
+              { type: "text", text: "Launch with the authorized Agent" },
+              {
+                type: "file",
+                fileId,
+                filenameSnapshot: filename,
+                contentType: "text/plain",
+              },
+            ],
+          },
+        },
+        [201],
+      );
+      if (sent.status !== 201) {
+        throw new Error("Expected the authorized member send");
+      }
+      await flushWaitUntilForTest();
+      const rejected = await chat.requestSendEvent(
         member,
         {
           agentId: owned.agentId,
@@ -130,11 +185,25 @@ describe("Published Agent instructions in direct Runs", () => {
       await bdd.updateAgentMetadata(owned.actor, owned.agentId, {
         visibility: "public",
       });
-      const { execution } = await owned.runExecution(queued.runId);
-      expect(execution.contentBundles.instructions).toMatchObject({
-        sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
-        archiveBytes: expect.any(Number),
-      });
+      const { events } = await chat.listThreadEvents(
+        member,
+        sent.body.threadId,
+      );
+      const runId = events.find((event) => {
+        return event.revokesEventId === clientEventId;
+      })?.runId;
+      if (!runId) {
+        throw new Error("Expected the authorized member send to launch");
+      }
+      const { execution } = await owned.runExecution(runId);
+      expect(
+        readExecutionContentBundle(
+          s3.objects,
+          execution.contentBundles.instructions!,
+        )
+          .get("instructions.md")
+          ?.toString(),
+      ).toBe("Instructions at send authorization");
     });
   });
 });

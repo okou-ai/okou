@@ -826,12 +826,6 @@ const preparedExecutionContextObjectSchema = object({
   seedSkillBundles: array(storedSkillBundleSchema),
   // Current explicitly selected template guidance.
   templateGuidanceBundles: array(storedTemplateGuidanceBundleSchema),
-  // API-only intent. No custom Workflow body or attachment is frozen here.
-  customWorkflowSelection: object({
-    agentId: uuid(),
-    automationId: uuid().optional(),
-    protectedMountPaths: array(string()),
-  }).strict(),
   storageMounts: array(storedStorageMountEntrySchema).superRefine(
     uniqueStorageMountPaths,
   ),

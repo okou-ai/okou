@@ -131,12 +131,15 @@ export interface BootstrapEnvironment {
   readonly variables: readonly BootstrapVariable[];
 }
 
+type RunContextAgent = BootstrapAgent &
+  Pick<typeof agents.$inferSelect, "instructionsBundle">;
+
 /** The only cross-graph read-only signal interface; no state or commands. */
 export interface AgentRunContextSignals {
   readonly userId: string;
   readonly orgId: string;
   readonly agentId: string;
-  readonly agent$: Computed<Promise<BootstrapAgent | null>>;
+  readonly agent$: Computed<Promise<RunContextAgent | null>>;
   readonly orgRows$: Computed<Promise<ExecutionOrgRows>>;
   readonly orgMetadata$: Computed<Promise<RunOrgMetadata | null>>;
   readonly plan$: Computed<Promise<OrgPlanCapabilities | null>>;
@@ -322,6 +325,7 @@ function contextAgentSelection() {
     displayName: agents.displayName,
     description: agents.description,
     sound: agents.sound,
+    instructionsBundle: agents.instructionsBundle,
   };
 }
 
@@ -560,7 +564,7 @@ function createIdentityContext(
     supplied?.orgId === orgId && supplied.userId === userId
       ? supplied
       : undefined;
-  const agent$ = computed(async (get): Promise<BootstrapAgent | null> => {
+  const agent$ = computed(async (get): Promise<RunContextAgent | null> => {
     const [row, org] = await Promise.all([get(agentRow$), get(orgMetadata$)]);
     return row ? { ...row, defaultAgentId: org?.defaultAgentId ?? null } : null;
   });

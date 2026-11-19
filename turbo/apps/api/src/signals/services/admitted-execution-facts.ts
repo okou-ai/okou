@@ -30,7 +30,6 @@ export interface AdmittedExecutionFacts {
   /** Same member observation as the admission Prompt; later edits affect later Runs. */
   readonly userTimezone: string | undefined;
   readonly nativeContinuation: NativeContinuation;
-  readonly customWorkflowSelection: PreparedExecutionContext["customWorkflowSelection"];
   readonly featureFlags: Readonly<
     Record<
       | FeatureSwitchKey.ArtifactGenerationTiming
