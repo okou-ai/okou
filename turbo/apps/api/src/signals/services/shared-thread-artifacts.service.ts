@@ -313,7 +313,7 @@ function createSharedThreadPublication(plan: SharedThreadArtifactPlan) {
   return computed(async (get) => {
     const db = get(db$);
     const { ownerId, orgId, threadId } = plan.policy;
-    const attachmentIds = plan.privateAttachmentIds;
+    const attachmentIds = [...plan.privateAttachmentIds];
     // Recheck cached attachment metadata alongside the existing publication read.
     const attachmentsAvailable =
       attachmentIds.length === 0

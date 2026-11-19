@@ -94,7 +94,7 @@ export interface SharedThreadArtifactPlan {
   readonly messages: SharedMessage[];
   readonly policy: SharedThreadArtifactPolicy;
   readonly copies: readonly SnapshotCopy[];
-  readonly privateAttachmentIds: readonly string[];
+  readonly privateAttachmentIds: ReadonlySet<string>;
 }
 
 export function sharedThreadArtifactsBucket(): string {
@@ -319,7 +319,6 @@ const privateFileSnapshot$ = command(
     signal.throwIfAborted();
     if (file) {
       if (
-        file.id !== reference.id ||
         file.userId !== args.userId ||
         file.orgId !== args.orgId ||
         file.materializationStatus !== "ready" ||
@@ -614,16 +613,17 @@ export const prepareSharedThreadArtifacts$ = command(
     const pendingResources = new Map<string, Promise<SnapshotResource>>();
     const reservedTokens = new Set<string>();
     const copies: SnapshotCopy[] = [];
-    const privateAttachmentIds: string[] = [];
+    const privateAttachmentIds = new Set<string>();
     const legacyAttachmentIds = legacyAttachmentReferences(args);
 
-    async function allocate(
-      reference: ResourceReference,
-    ): Promise<SnapshotResource> {
+    async function allocate(reference: ResourceReference) {
       const attachment = args.attachmentCopies.get(reference.id);
-      const preparedFile = attachment?.privateRecord ?? undefined;
+      const preparedFile =
+        attachment?.privateRecord?.materializationStatus === "ready"
+          ? attachment.privateRecord
+          : undefined;
       const file =
-        args.audience !== undefined && attachment && !preparedFile
+        args.audience !== undefined && attachment && !attachment.privateRecord
           ? await set(
               legacyAttachmentSnapshot$,
               { ...args, reservedTokens, id: reference.id },
@@ -641,7 +641,7 @@ export const prepareSharedThreadArtifacts$ = command(
         throw new SharedThreadArtifactUnavailable();
       }
       if (preparedFile) {
-        privateAttachmentIds.push(preparedFile.id);
+        privateAttachmentIds.add(preparedFile.id);
       }
       resources.set(reference.id, file.resource);
       copies.push(file.copy);
