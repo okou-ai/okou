@@ -73,7 +73,7 @@ export function PlatformFeedEvent({
           </Link>
         }
       />
-      <div className="mt-6 space-y-3 rounded-3xl bg-nested-fill p-4">
+      <div className="mb-6 mt-6 space-y-3 rounded-3xl bg-nested-fill p-4">
         <p className="text-xs text-muted-foreground">
           {t(($) => {
             return $.feedEvents.automationDisabled.systemSource;
@@ -108,7 +108,7 @@ export function PlatformFeedEvent({
           )}
         </time>
       </div>
-      <footer className="mt-6 flex items-center justify-between gap-3 border-t border-border pt-4">
+      <footer className="mt-auto flex items-center justify-between gap-3 border-t border-border pt-4">
         <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="default"

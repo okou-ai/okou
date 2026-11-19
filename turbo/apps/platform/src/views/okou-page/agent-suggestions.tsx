@@ -370,7 +370,7 @@ export function AgentSuggestionCard({
           ) : null
         }
       />
-      <div className="mt-6 flex flex-col gap-2">
+      <div className="mb-6 mt-6 flex flex-col gap-2">
         {item.content.options.map((option) => {
           return (
             <Button
@@ -477,7 +477,7 @@ function SuggestionFeedback({
     },
   ];
   return (
-    <div className="mt-6 border-t border-border pt-4">
+    <div className="mt-auto border-t border-border pt-4">
       <p
         id={`feedback-label-${item.id}`}
         className="mb-2 text-xs text-muted-foreground"
