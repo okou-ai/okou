@@ -3,6 +3,7 @@
 
 import type {
   onboardingCompleteContract as OriginalOnboardingCompleteContract,
+  onboardingDraftContract as OriginalOnboardingDraftContract,
   onboardingRecommendationContract as OriginalOnboardingRecommendationContract,
   onboardingSourcesContract as OriginalOnboardingSourcesContract,
   onboardingStatusContract as OriginalOnboardingStatusContract,
@@ -19,6 +20,31 @@ export const onboardingCompleteContract: ClientDescriptor<
       200: true,
       400: true,
       401: true,
+    },
+  },
+};
+
+export const onboardingDraftContract: ClientDescriptor<
+  typeof OriginalOnboardingDraftContract
+> = {
+  get: {
+    method: "GET",
+    path: "/api/onboarding/draft",
+    statuses: {
+      200: true,
+      401: true,
+      404: true,
+    },
+  },
+  save: {
+    method: "PUT",
+    path: "/api/onboarding/draft",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      404: true,
+      409: true,
     },
   },
 };

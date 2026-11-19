@@ -1,26 +1,15 @@
-import { enum as zEnum, number, object } from "zod";
+import {
+  ONBOARDING_STARTING_PROMPT_MAX_LENGTH,
+  onboardingStartingPromptFormatSchema,
+} from "@okouai/api-contracts/validators/onboarding";
 import { i18n } from "../../i18n/index.ts";
 
-export const STARTING_PROMPT_MAX_LENGTH = 1000;
+export const STARTING_PROMPT_MAX_LENGTH = ONBOARDING_STARTING_PROMPT_MAX_LENGTH;
 
-export const ONBOARDING_OUTPUT_FORMATS = [
-  "image",
-  "presentation",
-  "website",
-  // Document keeps the persisted ID so version-2 drafts survive app rollbacks.
-  "report",
-  "research",
-  "people",
-] as const;
+export const ONBOARDING_OUTPUT_FORMATS =
+  onboardingStartingPromptFormatSchema.options;
 
 export type OnboardingOutputFormat = (typeof ONBOARDING_OUTPUT_FORMATS)[number];
-
-/** Version-2 browser drafts store the format paragraph inside the prompt. */
-export const persistedStartingPromptOutputSchema = object({
-  format: zEnum(ONBOARDING_OUTPUT_FORMATS),
-  start: number().int().min(0).max(STARTING_PROMPT_MAX_LENGTH),
-  end: number().int().min(0).max(STARTING_PROMPT_MAX_LENGTH),
-});
 
 export interface StartingPromptOutput {
   readonly format: OnboardingOutputFormat;

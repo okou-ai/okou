@@ -1,3 +1,4 @@
+import { eraseOnboardingDrafts$ } from "./onboarding-draft.service";
 import { deletePersonalInstructions$ } from "./personal-instructions.service";
 import { deleteMarketingContentGrants$ } from "./marketing-handoff.service";
 import { deleteTeamsOwnerAccounts$ } from "./teams-workspace-identity.service";
@@ -242,6 +243,8 @@ export const cleanupClerkDeletedOrg$ = command(
     await set(stopClerkDeletedOwnerSchedules$, owner, signal);
     await set(stopClerkDeletedOwnerRuns$, owner, signal);
     signal.throwIfAborted();
+    await set(eraseOnboardingDrafts$, owner);
+    signal.throwIfAborted();
     await set(deletePersonalInstructions$, owner, signal);
     await set(eraseRemoteOwnerData$, owner, signal);
   },
@@ -264,6 +267,8 @@ export const cleanupClerkDeletedUser$ = command(
     await set(deleteEmailOwnerData$, owner, signal);
     await set(stopClerkDeletedOwnerSchedules$, owner, signal);
     await set(stopClerkDeletedOwnerRuns$, owner, signal);
+    signal.throwIfAborted();
+    await set(eraseOnboardingDrafts$, owner);
     signal.throwIfAborted();
     await set(deletePersonalInstructions$, owner, signal);
     await set(eraseRemoteOwnerData$, owner, signal);

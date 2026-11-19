@@ -1,4 +1,7 @@
-import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
+import {
+  onboardingCompleteContract,
+  onboardingDraftContract,
+} from "@okouai/api-contracts/contracts/onboarding";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -88,6 +91,93 @@ test.each([ROUTES.home, ROUTES.onboarding])(
     await screen.findByRole("heading", { name: "Connect a work tool" });
   },
 );
+
+test("A clean browser resumes the server draft and its saved step", async () => {
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
+    serverDraftEnabled: true,
+  });
+  mockOnboardingConnectorCatalog(context, []);
+  context.mocks.api(onboardingDraftContract.get, ({ respond }) => {
+    return respond(200, {
+      draft: {
+        revision: "f0000000-0000-4000-a000-000000000001",
+        step: "ready",
+        answers: {
+          industry: "marketing",
+          experienced: false,
+          provider: null,
+          startingPromptDraft: "Restore this task from my other device",
+          startingPromptKey: "marketing:gmail",
+          startingPromptOutput: null,
+          recommendationJobId: null,
+          recommendationStartedAt: null,
+        },
+      },
+    });
+  });
+
+  await setupPage({ context, locale: "en-US", path: ROUTES.onboarding });
+  await screen.findByRole("heading", { name: "Let’s start your first task" });
+  expect(screen.getByLabelText("Your first task")).toHaveValue(
+    "Restore this task from my other device",
+  );
+});
+
+test("The first server save imports both browser draft keys before clearing them", async () => {
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
+    serverDraftEnabled: true,
+  });
+  mockOnboardingConnectorCatalog(context, []);
+  seedProgress("ready");
+  context.mocks.api(onboardingDraftContract.get, ({ respond }) => {
+    return respond(200, { draft: null });
+  });
+  const writes: unknown[] = [];
+  context.mocks.api(onboardingDraftContract.save, ({ body, respond }) => {
+    writes.push(body);
+    return respond(200, { revision: "f0000000-0000-4000-a000-000000000001" });
+  });
+
+  await setupPage({ context, locale: "en-US", path: ROUTES.onboarding });
+  await screen.findByRole("heading", { name: "Let’s start your first task" });
+  expect(screen.getByLabelText("Your first task")).toHaveValue(
+    "Draft my launch plan",
+  );
+  await waitFor(() => {
+    expect(context.store.get(draftStorage.get$)).toBeNull();
+    expect(context.store.get(stepStorage.get$)).toBeNull();
+  });
+  expect(writes).toMatchObject([
+    {
+      step: "ready",
+      revision: null,
+      answers: { startingPromptDraft: "Draft my launch plan" },
+    },
+  ]);
+});
+
+test("A rollback to an older API still resumes the browser draft", async () => {
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
+    serverDraftEnabled: true,
+  });
+  mockOnboardingConnectorCatalog(context, []);
+  seedProgress("ready");
+  context.mocks.api(onboardingDraftContract.get, ({ respond }) => {
+    return respond(404, { error: { code: "NOT_FOUND", message: "Not found" } });
+  });
+
+  await setupPage({ context, locale: "en-US", path: ROUTES.onboarding });
+  await screen.findByRole("heading", { name: "Let’s start your first task" });
+  expect(screen.getByLabelText("Your first task")).toHaveValue(
+    "Draft my launch plan",
+  );
+});
 
 test("An explicit step URL takes precedence over saved progress", async () => {
   context.mocks.data.onboardingStatus({

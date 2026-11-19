@@ -85,6 +85,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       fnv1a("qa-signup-20261112-21e53024@okou.io"),
     ],
   },
+  [FeatureSwitchKey.ServerOnboardingDraft]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Server onboarding drafts",
+    description: "Resume source-first onboarding across devices.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.PresentationOutputFormat]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Presentation output format",

@@ -13,6 +13,7 @@ import { initContract, authHeadersSchema } from "./base";
 import { apiErrorSchema } from "./errors";
 import { publicConnectorCatalogConnectListResponseSchema } from "./connector-catalog";
 import {
+  onboardingDraftPayloadSchema,
   onboardingIndustrySchema,
   onboardingSubscriptionProviderSchema,
   ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
@@ -33,6 +34,7 @@ const c = initContract();
  */
 export const onboardingStatusResponseSchema = object({
   needsOnboarding: boolean(),
+  serverDraftEnabled: literal(true).optional(),
   onboardingComplete: boolean(),
   isAdmin: boolean(),
   hasOrg: boolean(),
@@ -142,6 +144,38 @@ export const onboardingSourcesContract = c.router({
       503: apiErrorSchema,
     },
     summary: "List onboarding source connectors with connection status",
+  },
+});
+
+const onboardingDraftSnapshotSchema = onboardingDraftPayloadSchema.extend({
+  revision: uuid(),
+});
+
+export const onboardingDraftContract = c.router({
+  get: {
+    method: "GET",
+    path: "/api/onboarding/draft",
+    headers: authHeadersSchema,
+    responses: {
+      200: object({ draft: onboardingDraftSnapshotSchema.nullable() }),
+      401: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Get the signed-in member's in-progress onboarding draft",
+  },
+  save: {
+    method: "PUT",
+    path: "/api/onboarding/draft",
+    headers: authHeadersSchema,
+    body: onboardingDraftPayloadSchema.extend({ revision: uuid().nullable() }),
+    responses: {
+      200: object({ revision: uuid() }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+    },
+    summary: "Save the signed-in member's in-progress onboarding draft",
   },
 });
 

@@ -103,7 +103,12 @@ function createSourcesFirstPageSetup(
     if (status.hasOrg) {
       const { orgId, userId } = await get(authenticatedIdentity$);
       signal.throwIfAborted();
-      resumeStep = set(restoreSourcesFirstDraft$, { orgId, userId });
+      resumeStep = await set(
+        restoreSourcesFirstDraft$,
+        { orgId, userId },
+        status.needsOnboarding && status.serverDraftEnabled === true,
+        signal,
+      );
     }
     if (!status.needsOnboarding) {
       set(clearSourcesFirstDraft$);

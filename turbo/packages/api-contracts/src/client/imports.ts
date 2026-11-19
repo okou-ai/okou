@@ -1325,6 +1325,7 @@ export const clientContractImportManifest = [
     module: "onboarding",
     contracts: [
       "onboardingCompleteContract",
+      "onboardingDraftContract",
       "onboardingRecommendationContract",
       "onboardingSourcesContract",
       "onboardingStatusContract",

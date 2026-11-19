@@ -1,3 +1,4 @@
+import { deleteOnboardingDraft$ } from "./onboarding-draft.service";
 import { deleteTeamsOwnerAccounts$ } from "./teams-workspace-identity.service";
 import { deleteWechatOwnerData$ } from "./wechat-owner-cleanup.service";
 import { deleteEmailOwnerData$ } from "./email-channel-maintenance.service";
@@ -93,6 +94,8 @@ const cleanupMemberMessageIntegrations$ = command(
 
 const deleteMemberInitialization$ = command(
   async ({ set }, args: OrgMemberCleanupInput, signal: AbortSignal) => {
+    await set(deleteOnboardingDraft$, args);
+    signal.throwIfAborted();
     const db = set(writeDb$);
     const deleted = db.$with("deleted_member_initialization").as(
       db

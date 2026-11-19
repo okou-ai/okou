@@ -1,12 +1,16 @@
 import { command } from "ccstate";
 import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
 
+import { logger } from "../../lib/log";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
+import { deleteOnboardingDraft$ } from "../services/onboarding-draft.service";
+import { tapError } from "../utils";
 import { completeOnboarding$ } from "../services/onboarding.service";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 
+const L = logger("onboarding-complete.route");
 const completeBody$ = bodyResultOf(onboardingCompleteContract.complete);
 
 const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -21,7 +25,7 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   // keeps it away from the organization-wide state an admin's completion writes.
   const role = auth.orgRole ?? "member";
 
-  return await set(
+  const result = await set(
     completeOnboarding$,
     {
       orgId: auth.orgId,
@@ -32,6 +36,14 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     },
     signal,
   );
+  await tapError(set(deleteOnboardingDraft$, auth), () => {
+    L.warn("Could not remove completed onboarding draft", {
+      orgId: auth.orgId,
+      userId: auth.userId,
+    });
+  });
+  signal.throwIfAborted();
+  return result;
 });
 
 export const onboardingCompleteRoutes: readonly RouteEntry[] = [
