@@ -54,10 +54,7 @@ import { captureArtifactAction } from "../../lib/posthog.ts";
 import { artifactDownloadType } from "../../lib/artifact-download-type.ts";
 import type { PlatformConnectorAccountMutationIntent } from "../../signals/connector-domain.ts";
 import { downloadAttachment$ } from "../../signals/attachment-download.ts";
-import {
-  generateMarkdownArtifactExport$,
-  type MarkdownArtifactExportResult,
-} from "../../signals/chat-page/markdown-artifact-export.ts";
+import { downloadMarkdownArtifact$ } from "../../signals/chat-page/markdown-artifact-export.ts";
 import { artifactPaywallLocked$ } from "../../signals/okou-page/artifact-paywall.ts";
 import { ProBadge } from "./components/model-provider-picker.tsx";
 import {
@@ -820,23 +817,15 @@ function useArtifactDriveMenu({
 }
 
 type MarkdownArtifactExportFormat = "pdf" | "docx";
-type MarkdownArtifactExportLoadable =
-  | { readonly state: "idle" }
-  | { readonly state: "loading" }
-  | {
-      readonly state: "hasData";
-      readonly data: MarkdownArtifactExportResult;
-    }
-  | { readonly state: "hasError"; readonly error: unknown };
 
 function MarkdownArtifactExportItem({
   format,
   onExport,
-  operation,
+  pending,
 }: {
   readonly format: MarkdownArtifactExportFormat;
   readonly onExport: () => void;
-  readonly operation: MarkdownArtifactExportLoadable;
+  readonly pending: boolean;
 }): ReactElement {
   const { t } = useTranslation();
   const label = t(
@@ -845,19 +834,12 @@ function MarkdownArtifactExportItem({
     },
     { format: format.toUpperCase() },
   );
-  const pending = operation.state === "loading";
-  const download = operation.state === "hasData" ? operation.data : undefined;
   return (
     <DropdownMenuItem
       aria-label={label}
       aria-busy={pending || undefined}
       disabled={pending}
-      onClick={download ? undefined : onExport}
-      render={
-        download ? (
-          <a href={download.href} download={download.filename} />
-        ) : undefined
-      }
+      onClick={onExport}
     >
       {pending ? (
         <Loader2 size={20} className="animate-spin" />
@@ -874,27 +856,29 @@ function MarkdownArtifactExportItem({
 }
 
 function MarkdownArtifactExportItems({
-  docxOperation,
-  onExportDocx,
-  onExportPdf,
-  pdfOperation,
+  docxPending,
+  onExport,
+  pdfPending,
 }: {
-  readonly docxOperation: MarkdownArtifactExportLoadable;
-  readonly onExportDocx: () => void;
-  readonly onExportPdf: () => void;
-  readonly pdfOperation: MarkdownArtifactExportLoadable;
+  readonly docxPending: boolean;
+  readonly onExport: (format: MarkdownArtifactExportFormat) => void;
+  readonly pdfPending: boolean;
 }): ReactElement {
   return (
     <>
       <MarkdownArtifactExportItem
         format="pdf"
-        operation={pdfOperation}
-        onExport={onExportPdf}
+        pending={pdfPending}
+        onExport={() => {
+          onExport("pdf");
+        }}
       />
       <MarkdownArtifactExportItem
         format="docx"
-        operation={docxOperation}
-        onExport={onExportDocx}
+        pending={docxPending}
+        onExport={() => {
+          onExport("docx");
+        }}
       />
     </>
   );
@@ -930,7 +914,7 @@ function ArtifactDownloadMenuItem({
 }
 
 async function showMarkdownExportError(
-  operation: Promise<MarkdownArtifactExportResult>,
+  operation: Promise<void>,
   signal: AbortSignal,
 ): Promise<void> {
   const [outcome] = await Promise.allSettled([operation]);
@@ -971,10 +955,10 @@ export function ArtifactDownloadMenu({
   const [downloadLoadable, downloadAttachment] =
     useLoadableSet(downloadAttachment$);
   const [pdfExportLoadable, exportMarkdownPdf] = useLoadableSet(
-    generateMarkdownArtifactExport$,
+    downloadMarkdownArtifact$,
   );
   const [docxExportLoadable, exportMarkdownDocx] = useLoadableSet(
-    generateMarkdownArtifactExport$,
+    downloadMarkdownArtifact$,
   );
   const pageSignal = useGet(pageSignal$);
   const lightbox = useGet(lightboxUrl$);
@@ -984,11 +968,11 @@ export function ArtifactDownloadMenu({
     featureSwitches?.[FeatureSwitchKey.MarkdownFirstOutput] === true;
   const markdownExportSignal =
     surface === "dialog" ? (lightbox?.ownerSignal ?? pageSignal) : pageSignal;
-  const markdownExportPending =
-    pdfExportLoadable.state === "loading" ||
-    docxExportLoadable.state === "loading";
+  const pdfExportPending = pdfExportLoadable.state === "loading";
+  const docxExportPending = docxExportLoadable.state === "loading";
   const paywallLocked = useLastResolved(artifactPaywallLocked$) === true;
   const downloadPending = downloadLoadable.state === "loading";
+  const menuBusy = downloadPending || pdfExportPending || docxExportPending;
   const downloadName = artifactDownloadFilename(artifactKind, filename, url);
   const drive = useArtifactDriveMenu({
     filename,
@@ -1031,9 +1015,7 @@ export function ArtifactDownloadMenu({
       <ArtifactActionTooltip label={label}>
         <DropdownMenuTrigger
           aria-label={label}
-          aria-busy={
-            downloadPending || markdownExportPending ? "true" : undefined
-          }
+          aria-busy={menuBusy || undefined}
           disabled={downloadPending}
           render={
             <Button
@@ -1045,7 +1027,7 @@ export function ArtifactDownloadMenu({
             />
           }
         >
-          {downloadPending || markdownExportPending ? (
+          {menuBusy ? (
             <Loader2 size={iconSize} className="animate-spin" />
           ) : (
             <Download size={iconSize} />
@@ -1060,14 +1042,9 @@ export function ArtifactDownloadMenu({
         />
         {markdownExportEnabled && (
           <MarkdownArtifactExportItems
-            docxOperation={docxExportLoadable}
-            onExportDocx={() => {
-              startMarkdownExport("docx");
-            }}
-            onExportPdf={() => {
-              startMarkdownExport("pdf");
-            }}
-            pdfOperation={pdfExportLoadable}
+            docxPending={docxExportPending}
+            onExport={startMarkdownExport}
+            pdfPending={pdfExportPending}
           />
         )}
         {drive}
