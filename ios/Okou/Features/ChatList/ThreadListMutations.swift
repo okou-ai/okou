@@ -274,8 +274,9 @@ final class ThreadListMutations {
         ))
       projectThreads(threads)
     }
-    return await updateThread(id, includingIndicators: true, onFailure: onFailure) {
-      [commands] in
+    return await updateThread(
+      id, includingIndicators: true, onFailure: onFailure
+    ) { [commands] in
       try await commands.deleteThread(threadID: id, eventID: eventID)
     }
   }
