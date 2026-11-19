@@ -209,6 +209,33 @@ class ImageOperationTest(unittest.TestCase):
         self.assertEqual(self.records("executions"), [])
         self.assertFalse((self.root / "var/lib/vm0-runner/bin/pr-123-image-1234").exists())
 
+    def test_closure_fences_retained_owner_after_failed_cleanup(self):
+        self.invoke("claim")
+        directory = self.root / "var/lib/vm0-runner/bin/pr-123-image-1234"
+        marker = next(directory.glob(".image-owner-*"))
+        directory.chmod(0o555)
+        try:
+            with self.cleanup_session() as cleanup:
+                self.assertEqual(self.cleanup_reply(cleanup), {"ready": [123]})
+                self.assertEqual(self.clean_namespace(cleanup)["outcome"], "failed")
+        finally:
+            directory.chmod(0o755)
+        self.assertTrue(marker.is_file())
+        reclaim = self.invoke("claim", check=False)
+        late = directory / "late"
+        guard = self.invoke("guard", "touch", str(late), input_text="", check=False)
+        self.assertNotEqual(reclaim.returncode, 0, reclaim.stderr)
+        self.assertIn("image workflow predates PR closure", reclaim.stderr)
+        self.assertNotEqual(guard.returncode, 0, guard.stderr)
+        self.assertFalse(late.exists())
+        self.environment.update(
+            GITHUB_RUN_ID="1235", RUNNER_IMAGE_RUN_CREATED_AT="2026-10-03T00:00:00Z"
+        )
+        self.invoke("claim")
+        fresh = directory.with_name("pr-123-image-1235") / "fresh"
+        self.invoke("guard", "touch", str(fresh), input_text="")
+        self.assertTrue(fresh.is_file())
+
     def test_cleanup_fences_a_late_service_and_same_owner_reclaim(self):
         self.invoke("claim")
         self.environment["IMAGE_FAULT"] = "pending-launch"

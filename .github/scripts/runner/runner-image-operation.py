@@ -148,8 +148,12 @@ def require_resource(owner):
 
 def check_closure(namespace, lock_fd, run_created_at):
     if namespace.name.startswith("pr-"):
-        created = datetime.strptime(run_created_at, "%Y-%m-%dT%H:%M:%SZ")
         cutoff = os.read(lock_fd, 22)
+        if run_created_at is None:
+            if cutoff:
+                raise RuntimeError("image workflow creation time unavailable after PR closure")
+            return
+        created = datetime.strptime(run_created_at, "%Y-%m-%dT%H:%M:%SZ")
         if cutoff and created <= datetime.strptime(cutoff.decode("ascii"), "%Y-%m-%dT%H:%M:%SZ\n"):
             raise RuntimeError("image workflow predates PR closure; a fresh run is required")
 
@@ -392,15 +396,20 @@ def claim(request, namespace, owner, retire_matching, deadline):
                 retire(operation, deadline=deadline)
             with lifecycle(lock_path, deadline, wait=False) as lock_fd:
                 if lock_fd is not None:
+                    run_created_at = request.get("runCreatedAt")
+                    if previous is not None:
+                        run_created_at = previous.get("runCreatedAt", run_created_at)
+                    check_closure(namespace, lock_fd, run_created_at)
                     if previous is not None:
                         require_resource(previous)
                     else:
-                        check_closure(namespace, lock_fd, request.get("runCreatedAt"))
                         for operation in retired:
                             shutil.rmtree(operation)
                         claimed = dict(
                             owner, operations=[], state="claiming", lifecycleLock=lock_path
                         )
+                        if run_created_at is not None:
+                            claimed["runCreatedAt"] = run_created_at
                         atomic_json(owner_path, claimed)
                         work_deadline = min(deadline, time.monotonic() + CLAIM_WORK_SECONDS)
                         claim_resource(namespace, claimed, work_deadline)
@@ -632,10 +641,11 @@ def worker(operation):
         owner = json.loads((operation.parent / "owner.json").read_text())
         if not owner_admitted(owner, owner_for(inputs)):
             raise RuntimeError("image operation owner superseded or cancelled")
-        with lifecycle(owner["lifecycleLock"], intent["deadline"]):
+        with lifecycle(owner["lifecycleLock"], intent["deadline"]) as lock_fd:
             # Cleanup may have run while this service was queued. Admission
             # belongs to the managed namespace, not merely to a live unit.
             require_resource(owner)
+            check_closure(operation.parent, lock_fd, owner.get("runCreatedAt"))
             if intent["phase"] == "guard":
                 execute(operation, intent, intent["command"], intent["stdin"].encode(), {})
                 return
