@@ -30,3 +30,6 @@ service-status-notice-003	turbo/apps/platform/src/views/router/__tests__/service
 hosted-site-authorization-002	turbo/apps/platform/src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	The authorization bridge returns visitors to the website access page when denied	33	passed
 hosted-site-authorization-004	turbo/apps/platform/src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	The authorization bridge returns visitors to the website access page when unavailable	33	passed
 hosted-site-authorization-006	turbo/apps/platform/src/views/hosted-site-authorization/__tests__/hosted-site-authorization.test.tsx	Organization selection preserves the hosted-site authorization continuation	62	passed
+shared-thread-presentation-001	turbo/apps/platform/src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	An unavailable public conversation offers sign-in with a return to the same link	14	passed
+shared-thread-presentation-002	turbo/apps/platform/src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	Anonymous readers see the public title, prompt and rendered Markdown	41	passed
+shared-thread-presentation-005	turbo/apps/platform/src/views/shared-thread-page/__tests__/shared-thread-presentation.test.tsx	A shared user's prompt keeps literal Markdown and opens links safely	83	passed
