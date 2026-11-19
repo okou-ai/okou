@@ -102,14 +102,15 @@ function confirmedFields(
   update: UpdateUserPreferencesRequest,
   result: UserPreferencesResponse,
 ): Partial<InitializedUserPreferencesResponse> {
+  const timezone = update.timezone === undefined ? undefined : result.timezone;
+  const locale = update.locale === undefined ? undefined : result.locale;
+  if (timezone === null || locale === null) {
+    throw new Error("Preference write response omitted a written value");
+  }
   // Other fields in the response may come from a pre-write snapshot.
   return {
-    ...(update.timezone !== undefined && {
-      timezone: result.timezone ?? update.timezone,
-    }),
-    ...(update.locale !== undefined && {
-      locale: result.locale ?? update.locale,
-    }),
+    ...(timezone !== undefined && { timezone }),
+    ...(locale !== undefined && { locale }),
     ...(update.pinnedAgentIds !== undefined && {
       pinnedAgentIds: result.pinnedAgentIds,
     }),

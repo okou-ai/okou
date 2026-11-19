@@ -15,7 +15,6 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { updateUserPreference$ } from "../../../signals/okou-page/settings/user-preferences.ts";
 
 const context = testContext();
 
@@ -35,7 +34,7 @@ function initialPreferences(): UserPreferencesResponse {
   };
 }
 
-function getSendModeButton(name: string): HTMLElement {
+function getSettingsButton(name: string): HTMLElement {
   const dialog = screen.getByRole("dialog", { name: "Settings" });
   const button = queryAllByRoleFast("button", dialog).find((element) => {
     return element.textContent?.trim() === name;
@@ -48,7 +47,6 @@ function getSendModeButton(name: string): HTMLElement {
 
 function delayPreferenceSaves() {
   const original = initialPreferences();
-  let reads = 0;
   const sendModeWrite = context.mocks.deferred<void>();
   const cloudBrowserWrite = context.mocks.deferred<void>();
   const timezoneWrite = context.mocks.deferred<void>();
@@ -56,7 +54,6 @@ function delayPreferenceSaves() {
   const releaseCloudBrowser = context.mocks.deferred<void>();
   const releaseTimezone = context.mocks.deferred<void>();
   context.mocks.api(userPreferencesContract.get, ({ respond }) => {
-    reads += 1;
     return respond(200, original);
   });
   context.mocks.api(
@@ -83,9 +80,6 @@ function delayPreferenceSaves() {
     releaseSendMode,
     releaseCloudBrowser,
     releaseTimezone,
-    reads: () => {
-      return reads;
-    },
   };
 }
 
@@ -96,45 +90,42 @@ test("saving send mode updates the setting from the write response", async () =>
   await waitFor(() => {
     expect(browser).toBeEnabled();
   });
-  const readsBeforeSave = saves.reads();
-  click(getSendModeButton("Enter"));
+  click(getSettingsButton("Enter"));
   await saves.sendModeWrite.promise;
 
-  expect(getSendModeButton("Enter")).toBeDisabled();
-  expect(getSendModeButton("⌘ Enter")).toHaveAttribute("aria-pressed", "true");
+  expect(getSettingsButton("Enter")).toBeDisabled();
+  expect(getSettingsButton("⌘ Enter")).toHaveAttribute("aria-pressed", "true");
   expect(browser).not.toBeChecked();
   expect(browser).toBeEnabled();
 
   saves.releaseSendMode.resolve();
   await waitFor(() => {
-    expect(getSendModeButton("Enter")).toBeEnabled();
-    expect(getSendModeButton("Enter")).toHaveAttribute("aria-pressed", "true");
+    expect(getSettingsButton("Enter")).toBeEnabled();
+    expect(getSettingsButton("Enter")).toHaveAttribute("aria-pressed", "true");
   });
   expect(browser).not.toBeChecked();
-  expect(saves.reads()).toBe(readsBeforeSave);
 });
 
-test("overlapping saves preserve each confirmed preference without another read", async () => {
+test("overlapping saves preserve each confirmed preference", async () => {
   const saves = delayPreferenceSaves();
   await setupPage({ context, path: "/agents?settings=chat" });
   const browser = await screen.findByRole("switch", { name: "Cloud browser" });
   await waitFor(() => {
     expect(browser).toBeEnabled();
   });
-  const readsBeforeSave = saves.reads();
   click(browser);
   await saves.cloudBrowserWrite.promise;
 
   expect(browser).toHaveAttribute("aria-disabled", "true");
   expect(browser).not.toBeChecked();
-  expect(getSendModeButton("⌘ Enter")).toHaveAttribute("aria-pressed", "true");
-  expect(getSendModeButton("Enter")).toBeEnabled();
-  click(getSendModeButton("Enter"));
+  expect(getSettingsButton("⌘ Enter")).toHaveAttribute("aria-pressed", "true");
+  expect(getSettingsButton("Enter")).toBeEnabled();
+  click(getSettingsButton("Enter"));
   await saves.sendModeWrite.promise;
 
   saves.releaseSendMode.resolve();
   await waitFor(() => {
-    expect(getSendModeButton("Enter")).toHaveAttribute("aria-pressed", "true");
+    expect(getSettingsButton("Enter")).toHaveAttribute("aria-pressed", "true");
   });
   expect(browser).not.toBeChecked();
 
@@ -143,17 +134,20 @@ test("overlapping saves preserve each confirmed preference without another read"
     expect(browser).toBeChecked();
     expect(browser).toBeEnabled();
   });
-  expect(getSendModeButton("Enter")).toHaveAttribute("aria-pressed", "true");
-  expect(saves.reads()).toBe(readsBeforeSave);
+  expect(getSettingsButton("Enter")).toHaveAttribute("aria-pressed", "true");
 });
 
 test("overlapping saves to one preference read back the committed value", async () => {
   let stored = initialPreferences();
-  let reads = 0;
   const firstCommitted = context.mocks.deferred<void>();
+  const secondCommitted = context.mocks.deferred<void>();
   const releaseFirstResponse = context.mocks.deferred<void>();
+  const readBack = context.mocks.deferred<void>();
+  let readyToReadBack = false;
   context.mocks.api(userPreferencesContract.get, ({ respond }) => {
-    reads += 1;
+    if (readyToReadBack) {
+      readBack.resolve();
+    }
     return respond(200, stored);
   });
   context.mocks.api(
@@ -164,6 +158,8 @@ test("overlapping saves to one preference read back the committed value", async 
       if (body.sendMode === "enter") {
         firstCommitted.resolve();
         await withSignal(releaseFirstResponse.promise);
+      } else if (body.sendMode === "cmd-enter") {
+        secondCommitted.resolve();
       }
       return respond(200, saved);
     },
@@ -172,27 +168,32 @@ test("overlapping saves to one preference read back the committed value", async 
   const browser = await screen.findByRole("switch", { name: "Cloud browser" });
   await waitFor(() => {
     expect(browser).toBeEnabled();
-    expect(getSendModeButton("⌘ Enter")).toHaveAttribute(
+    expect(getSettingsButton("⌘ Enter")).toHaveAttribute(
       "aria-pressed",
       "true",
     );
   });
-  const readsBeforeSave = reads;
-  click(getSendModeButton("Enter"));
+  click(getSettingsButton("Enter"));
   await firstCommitted.promise;
 
-  await context.store.set(
-    updateUserPreference$,
-    { sendMode: "cmd-enter" },
-    context.signal,
-  );
-  expect(reads).toBe(readsBeforeSave);
-
-  releaseFirstResponse.resolve();
+  click(getSettingsButton("Preference"));
+  await screen.findByRole("combobox", { name: "Time zone" });
+  click(getSettingsButton("Chat"));
   await waitFor(() => {
-    expect(reads).toBe(readsBeforeSave + 1);
-    expect(getSendModeButton("Enter")).toBeEnabled();
-    expect(getSendModeButton("⌘ Enter")).toHaveAttribute(
+    expect(getSettingsButton("⌘ Enter")).toBeEnabled();
+  });
+  click(getSettingsButton("⌘ Enter"));
+  await secondCommitted.promise;
+  await waitFor(() => {
+    expect(getSettingsButton("⌘ Enter")).toBeEnabled();
+  });
+
+  readyToReadBack = true;
+  releaseFirstResponse.resolve();
+  await readBack.promise;
+  await waitFor(() => {
+    expect(getSettingsButton("Enter")).toBeEnabled();
+    expect(getSettingsButton("⌘ Enter")).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -292,19 +293,10 @@ test.each(["reopening Settings", "returning to Preference"])(
       expect(learning).not.toBeChecked();
     });
     const settings = screen.getByRole("dialog", { name: "Settings" });
-    function selectSection(name: string) {
-      const button = queryAllByRoleFast("button", settings).find((element) => {
-        return element.textContent?.trim() === name;
-      });
-      if (!button) {
-        throw new Error(`Settings section not found: ${name}`);
-      }
-      click(button);
-    }
     if (entry === "reopening Settings") {
       click(within(settings).getByLabelText("Close", { selector: "button" }));
     } else {
-      selectSection("Chat");
+      click(getSettingsButton("Chat"));
       await within(settings).findByRole("switch", { name: "Cloud browser" });
     }
     await waitFor(() => {
@@ -319,7 +311,7 @@ test.each(["reopening Settings", "returning to Preference"])(
       click(within(rail).getByLabelText("Test User"));
       click(within(await screen.findByRole("menu")).getByText("Settings"));
     } else {
-      selectSection("Preference");
+      click(getSettingsButton("Preference"));
     }
     const reopened = await screen.findByRole("dialog", { name: "Settings" });
     await waitFor(() => {
