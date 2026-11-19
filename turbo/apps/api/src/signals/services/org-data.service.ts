@@ -1,3 +1,4 @@
+import { eraseOnboardingDrafts$ } from "./onboarding-draft.service";
 import { deletePersonalInstructions$ } from "./personal-instructions.service";
 import { deleteWechatOwnerData$ } from "./wechat-owner-cleanup.service";
 import { deleteEmailOwnerData$ } from "./email-channel-maintenance.service";
@@ -649,6 +650,11 @@ export const deleteOrg$ = command(
       signal.throwIfAborted();
     }
 
+    await set(eraseOnboardingDrafts$, {
+      kind: "organization",
+      orgId: args.orgId,
+    });
+    signal.throwIfAborted();
     await client.organizations.deleteOrganization(args.orgId);
     signal.throwIfAborted();
     await set(

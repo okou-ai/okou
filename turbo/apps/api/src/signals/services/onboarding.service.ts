@@ -191,6 +191,17 @@ function memberNeedsOnboarding(
   });
 }
 
+export function needsOnboarding(
+  auth: AuthContext & { readonly orgId: string },
+): Computed<Promise<boolean>> {
+  const { orgId, userId, orgRole } = auth;
+  return orgRole === "admin"
+    ? computed(async (get) => {
+        return !(await get(onboardingComplete(orgId)));
+      })
+    : memberNeedsOnboarding(orgId, userId);
+}
+
 function defaultAgentInfo(
   orgId: string,
   composeId: string,

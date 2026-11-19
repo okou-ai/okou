@@ -3,17 +3,21 @@ import { randomUUID } from "node:crypto";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import {
   onboardingCompleteContract,
+  onboardingDraftContract,
   onboardingStatusContract,
 } from "@okouai/api-contracts/contracts/onboarding";
+import type { OnboardingDraftPayload } from "@okouai/api-contracts/validators/onboarding";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 
 import { accept, testContext } from "../../../__tests__/test-context";
+import { mockNow } from "../../../lib/time";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRouteMocks } from "./helpers/route-test";
 import { billingStatusRoutes } from "../billing-status";
 import { onboardingCompleteRoutes } from "../onboarding-complete";
+import { onboardingDraftRoutes } from "../onboarding-draft";
 import { onboardingStatusRoutes } from "../onboarding-status";
 import { runModelsRoutes } from "../run-models";
 
@@ -106,6 +110,98 @@ async function completeAs(
   );
   return response.body;
 }
+
+describe("Onboarding draft", () => {
+  const headers = authHeaders();
+  const draft: OnboardingDraftPayload = {
+    step: "ready",
+    answers: {
+      industry: "marketing",
+      experienced: true,
+      provider: null,
+      startingPromptDraft: "Draft a product launch plan",
+      startingPromptKey: "marketing",
+      startingPromptOutput: null,
+      recommendationJobId: null,
+      recommendationStartedAt: null,
+    },
+  };
+
+  function draftClientAs(actor: OrgActor) {
+    mocks.clerk.session(actor.userId, actor.orgId, actor.role);
+    return setupApp({ context, routes: onboardingDraftRoutes })(
+      onboardingDraftContract,
+    );
+  }
+
+  it("restores one member's draft and refuses stale edits or another member's reads", async () => {
+    const actor = orgActor("org:member");
+    const client = draftClientAs(actor);
+    const stored = await accept(
+      client.save({ headers, body: { ...draft, revision: null } }),
+      [200],
+    );
+    const updated = await accept(
+      client.save({
+        headers,
+        body: {
+          ...draft,
+          step: "capabilities",
+          revision: stored.body.revision,
+        },
+      }),
+      [200],
+    );
+
+    await accept(
+      client.save({
+        headers,
+        body: { ...draft, revision: stored.body.revision },
+      }),
+      [409],
+    );
+    const restored = await accept(client.get({ headers }), [200]);
+    expect(restored.body.draft).toStrictEqual({
+      ...draft,
+      step: "capabilities",
+      revision: updated.body.revision,
+    });
+    expect(
+      (await accept(draftClientAs(memberOf(actor)).get({ headers }), [200]))
+        .body.draft,
+    ).toBeNull();
+  });
+
+  it("expires abandoned drafts and blocks restoration or late saves after completion", async () => {
+    const actor = orgActor("org:member");
+    const client = draftClientAs(actor);
+    const started = Date.parse("2026-11-18T00:00:00Z");
+    mockNow(started);
+    await accept(
+      client.save({ headers, body: { ...draft, revision: null } }),
+      [200],
+    );
+
+    mockNow(started + 7 * 24 * 60 * 60 * 1000);
+    expect(
+      (await accept(client.get({ headers }), [200])).body.draft,
+    ).toBeNull();
+    const second = await accept(
+      client.save({ headers, body: { ...draft, revision: null } }),
+      [200],
+    );
+    mockDefaultAgentStorage();
+    await completeAs(actor);
+    await accept(client.get({ headers }), [404]);
+    await accept(
+      client.save({
+        headers,
+        body: { ...draft, revision: second.body.revision },
+      }),
+      [404],
+    );
+  });
+});
 
 describe("GET /api/onboarding/status", () => {
   it("returns 401 when the request is unauthenticated", async () => {
