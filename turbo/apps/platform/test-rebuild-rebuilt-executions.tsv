@@ -499,3 +499,11 @@ chat-capability-phone-use-011	turbo/apps/platform/src/views/okou-page/__tests__/
 chat-thread-sidebar-resize-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-sidebar-resize.test.tsx	A captured touch resize ends on pointerup and leaves the sidebar usable	78	passed
 chat-thread-sidebar-resize-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-sidebar-resize.test.tsx	A second touch cannot move or end the active resize	113	passed
 chat-thread-sidebar-resize-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-sidebar-resize.test.tsx	Closing the sidebar during a resize removes its blocking mask	133	passed
+chat-capability-connectors-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	with an unconnected banking conversation > connect banking and expose the connected accounts	338	passed
+chat-capability-connectors-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	with an active banking grant > revoke active banking access after continuing the conversation	422	passed
+chat-capability-connectors-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	Read a canonical custom default only on action activation (connected)	466	passed
+chat-capability-connectors-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	Read a canonical custom default only on action activation (reconnect-required)	466	passed
+chat-capability-connectors-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	Reconnect a saved custom MCP default before resuming	613	passed
+chat-capability-connectors-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	Keep an incomplete custom MCP reconnect open without resuming	625	passed
+chat-capability-connectors-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	Continue a chat with the saved default account of a connected connector	636	passed
+chat-capability-connectors-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connectors.test.tsx	Enable a single no-auth connector without an unnecessary dialog	701	passed
