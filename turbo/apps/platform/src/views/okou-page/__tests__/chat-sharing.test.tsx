@@ -252,9 +252,7 @@ async function expectOneSelectedGroup(selection: HTMLElement) {
   await waitFor(() => {
     expect(selection).toBeChecked();
     expect(selection).toHaveAccessibleName("Deselect message group");
-    expect(requiredButtonNamed("Share").closest("footer")).toHaveTextContent(
-      "1 selected",
-    );
+    expect(screen.getAllByText("1 selected").length).toBeGreaterThan(0);
   });
 }
 
@@ -266,7 +264,7 @@ async function expectNoSelectedGroups(selection: HTMLElement) {
   });
 }
 
-test("The row label toggles a message group once", async () => {
+test("The selection column toggles a message group once", async () => {
   const { promptGroup, selection } = await prepareGroupSelection();
   expect(selection).not.toBeChecked();
   click(within(promptGroup).getByText("Select message group"));
@@ -285,6 +283,36 @@ test("With Agent name on replies, the selection column toggles a group and marks
   click(selection);
   await expectNoSelectedGroups(selection);
   expect(promptGroup).not.toHaveAttribute("data-selected");
+});
+
+test("Select all, clear all, and individual selection use the same message groups", async () => {
+  const { answerGroup, promptGroup, createRequests } =
+    await setupMessageSharing();
+  const promptSelection = within(promptGroup).getByRole("checkbox");
+  const answerSelection = within(answerGroup).getByRole("checkbox");
+  click(requiredButtonNamed("Select all"));
+  await waitFor(() => {
+    expect(promptSelection).toBeChecked();
+    expect(answerSelection).toBeChecked();
+    expect(requiredButtonNamed("Deselect all")).toBeEnabled();
+  });
+  click(requiredButtonNamed("Deselect all"));
+  await expectNoSelectedGroups(promptSelection);
+  expect(answerSelection).not.toBeChecked();
+  click(promptSelection);
+  await expectOneSelectedGroup(promptSelection);
+  click(requiredButtonNamed("Select all"));
+  await waitFor(() => {
+    expect(answerSelection).toBeChecked();
+  });
+  click(answerSelection);
+  await waitFor(() => {
+    expect(requiredButtonNamed("Select all")).toBeEnabled();
+  });
+  click(requiredButtonNamed("Select all"));
+  click(requiredButtonNamed("Share"));
+  await screen.findByRole("textbox", { name: "Shared chat link" });
+  expect(createRequests).toStrictEqual([[PROMPT_EVENT_ID, ANSWER_EVENT_ID]]);
 });
 
 test("The checkbox toggles a message group once", async () => {
@@ -344,9 +372,7 @@ test("Message text and code copying remain separate from group selection", async
   });
   click(screen.getByText(ANSWER));
   expect(selection).toBeChecked();
-  expect(requiredButtonNamed("Share").closest("footer")).toHaveTextContent(
-    "1 selected",
-  );
+  expect(screen.getAllByText("1 selected").length).toBeGreaterThan(0);
 });
 
 test("A growing selected message group becomes partial and can select its new messages", async () => {
@@ -395,9 +421,7 @@ test("A growing selected message group becomes partial and can select its new me
     expect(selection).toBeChecked();
   });
   expect(selection).not.toBePartiallyChecked();
-  expect(requiredButtonNamed("Share").closest("footer")).toHaveTextContent(
-    "1 selected",
-  );
+  expect(screen.getAllByText("1 selected").length).toBeGreaterThan(0);
 
   await user.click(selection);
   expect(selection).not.toBeChecked();
@@ -636,21 +660,21 @@ test("Replacing a selected live answer clears it before the next answer is share
   );
   expect(nextSelection).not.toBeChecked();
   const shareButton = requiredButtonNamed("Share");
-  expect.soft(shareButton.closest("footer")).toHaveTextContent("0 selected");
+  expect(screen.getAllByText("0 selected").length).toBeGreaterThan(0);
   expect.soft(shareButton).toBeDisabled();
 
   click(nextSelection);
   await waitFor(() => {
     expect(nextSelection).toBeChecked();
   });
-  expect.soft(shareButton.closest("footer")).toHaveTextContent("1 selected");
+  expect(screen.getAllByText("1 selected").length).toBeGreaterThan(0);
   click(requiredButtonNamed("Share"));
 
   await screen.findByRole("textbox", { name: "Shared chat link" });
   expect(createRequests).toStrictEqual([[nextAnswerId]]);
 });
 
-test("A selected answer remains shareable after later turns move it outside the render window", async () => {
+test("Select all includes the complete transcript after selected messages move outside the render window", async () => {
   const chatEvents: MockChatEventInput[] = [
     ...standardConversation(),
     {
@@ -700,9 +724,7 @@ test("A selected answer remains shareable after later turns move it outside the 
   click(selection);
   await waitFor(() => {
     expect(selection).toBeChecked();
-    expect(requiredButtonNamed("Share").closest("footer")).toHaveTextContent(
-      "1 selected",
-    );
+    expect(screen.getAllByText("1 selected").length).toBeGreaterThan(0);
   });
 
   act(() => {
@@ -740,12 +762,27 @@ test("A selected answer remains shareable after later turns move it outside the 
   await screen.findByText("Follow-up answer 12");
   expect(screen.queryByText(ANSWER)).not.toBeInTheDocument();
   const shareButton = requiredButtonNamed("Share");
-  expect(shareButton.closest("footer")).toHaveTextContent("1 selected");
+  expect(screen.getAllByText("1 selected").length).toBeGreaterThan(0);
   expect(shareButton).toBeEnabled();
+  click(requiredButtonNamed("Select all"));
+  await waitFor(() => {
+    expect(screen.getAllByText("26 selected").length).toBeGreaterThan(0);
+  });
   click(shareButton);
 
   await screen.findByRole("textbox", { name: "Shared chat link" });
-  expect(createRequests).toStrictEqual([[ANSWER_EVENT_ID]]);
+  expect(createRequests).toStrictEqual([
+    [
+      PROMPT_EVENT_ID,
+      ANSWER_EVENT_ID,
+      ...Array.from({ length: 12 }, (_, index) => {
+        return [
+          `later-prompt-${String(index + 1)}`,
+          `later-answer-${String(index + 1)}`,
+        ];
+      }).flat(),
+    ],
+  ]);
 });
 
 test.each(["running", "failed"] as const)(
@@ -834,19 +871,21 @@ test.each(["running", "failed"] as const)(
     expect(document.querySelector("[data-chat-run-status-tail]")).toBeNull();
     expect(document.querySelector("[data-thinking-indicator]")).toBeNull();
     expect(screen.queryByText("This run couldn't finish")).toBeNull();
-    click(answerSelection);
+    click(requiredButtonNamed("Select all"));
 
     await waitFor(() => {
-      expect(screen.getAllByText("1 selected").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("2 selected").length).toBeGreaterThan(0);
       expect(answerSelection).toBeChecked();
     });
     expect(
       document.querySelectorAll('[role="checkbox"][aria-checked="true"]'),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
 
     click(requiredButtonNamed("Share"));
     await screen.findByRole("textbox", { name: "Shared chat link" });
-    expect(createRequests).toStrictEqual([[GROUPED_ANSWER_EVENT_IDS.at(-1)]]);
+    expect(createRequests).toStrictEqual([
+      [PROMPT_EVENT_ID, GROUPED_ANSWER_EVENT_IDS.at(-1)],
+    ]);
     expect(screen.queryByTestId("chat-event-actions")).toBeNull();
     expect(screen.queryByText("Launch answer 1")).toBeNull();
     expect(document.querySelector("[data-chat-run-status-tail]")).toBeNull();
@@ -900,7 +939,7 @@ test("Sharing while awaiting the first answer hides the run indicator until canc
   });
 });
 
-test("An oversized message group cannot be added to a shared snapshot", async () => {
+test("An oversized Select all leaves the existing selection intact", async () => {
   const oversizedBody = `Oversized message\n\n<!--${"界".repeat(524_289)}-->`;
   mockConversation([
     {
@@ -936,10 +975,21 @@ test("An oversized message group cannot be added to a shared snapshot", async ()
     name: "Select message group",
   });
 
-  click(within(oversizedGroup).getByText("Select message group"));
-
+  click(oversizedSelection);
   await screen.findByText("Select fewer messages to share");
   expect(oversizedSelection).not.toBeChecked();
+
+  const promptSelection = within(
+    selectableGroupForText("A normal message remains available"),
+  ).getByRole("checkbox");
+  click(promptSelection);
+  await expectOneSelectedGroup(promptSelection);
+  click(requiredButtonNamed("Select all"));
+
+  await screen.findAllByText("Select fewer messages to share");
+  expect(oversizedSelection).not.toBeChecked();
+  expect(promptSelection).toBeChecked();
+  expect(requiredButtonNamed("Share")).toBeEnabled();
   expect(screen.getByText("A normal message remains available")).toBeVisible();
 });
 

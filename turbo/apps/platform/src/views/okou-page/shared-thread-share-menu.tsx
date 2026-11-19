@@ -14,7 +14,7 @@ import {
 } from "@okouai/ui";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Check, Globe, Share2, Users } from "lucide-react";
+import { Check, ChevronDown, Globe, Share2, Users } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { currentOrgInfo$ } from "../../signals/auth.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -130,8 +130,7 @@ export function SharedThreadAudiencePicker({
       <PopoverTrigger
         render={
           <Button
-            variant="outline"
-            size="sm"
+            variant="neutral"
             disabled={disabled}
             aria-label={t(($) => {
               return $.artifacts.sharing.accessLabel;
@@ -150,6 +149,7 @@ export function SharedThreadAudiencePicker({
             : t(($) => {
                 return $.artifacts.sharing.organizationOptionUnnamed;
               })}
+        <ChevronDown className="text-muted-foreground" />
       </PopoverTrigger>
       <ShareMenuContent
         label={t(($) => {

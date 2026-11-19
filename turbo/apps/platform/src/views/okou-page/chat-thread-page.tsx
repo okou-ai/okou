@@ -1,3 +1,4 @@
+import { ChatShareSelectionControls } from "./chat-share-selection-controls.tsx";
 import {
   ChatComposerFooter,
   ChatPageHeader,
@@ -209,7 +210,6 @@ import {
 import {
   asInputChatEvent,
   chatEventDisplayError,
-  isInputChatEvent,
   isRenderableAssistantEvent,
   isWorkflowUserMessage,
   rendersUserBubble,
@@ -229,7 +229,10 @@ import {
   type ChatThreadRowSignals,
 } from "../../signals/chat-page/chat-thread-rows.ts";
 import { chatEventRenderKey } from "../../signals/chat-page/chat-event-group-keys.ts";
-import { chatGroupForSharing } from "../../signals/chat-page/chat-thread-sharing.ts";
+import {
+  chatGroupForSharing,
+  shareableEventFromChatEvent,
+} from "../../signals/chat-page/chat-thread-sharing.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
 import { CustomConnectorConnectDialog } from "./components/settings/custom-connector-connect-dialog.tsx";
@@ -409,12 +412,6 @@ type UserMessageAnnotationRenderPart = Extract<
   { readonly type: "source" | "automation" }
 >;
 
-function isUserMessageNonContentPart(
-  part: UserMessagePart,
-): part is UserMessageNonContentPart {
-  return part.type === "source" || part.type === "automation";
-}
-
 type UserMessageHiddenPart = Extract<
   UserMessageRenderPart["part"],
   {
@@ -457,12 +454,6 @@ function runModelDisplayName(
     : model;
 }
 
-function userMessageNonContentPart(
-  document: UserMessageDocument | undefined,
-): UserMessageNonContentPart | undefined {
-  return document?.parts.find(isUserMessageNonContentPart);
-}
-
 function userMessageAnnotationRenderPart(
   document: UserMessageRenderDocument | undefined,
 ): UserMessageAnnotationRenderPart | undefined {
@@ -470,14 +461,6 @@ function userMessageAnnotationRenderPart(
     (renderPart): renderPart is UserMessageAnnotationRenderPart => {
       return renderPart.type === "source" || renderPart.type === "automation";
     },
-  );
-}
-
-function eventNonContentPart(
-  event: EnrichedChatEvent,
-): UserMessageNonContentPart | undefined {
-  return userMessageNonContentPart(
-    isInputChatEvent(event) ? event.userMessage : undefined,
   );
 }
 
@@ -584,20 +567,12 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const sharingPhase = useGet(thread.sharing.phase$);
-  const selectedCount = useGet(thread.sharing.selectedCount$);
   const startSharing = useSet(thread.sharing.start$);
   const closeSharing = useSet(thread.sharing.close$);
   if (sharingPhase !== "idle") {
     return (
       <ChatPageHeader>
-        <span className="text-sm font-medium text-foreground">
-          {t(
-            ($) => {
-              return $.chat.sharing.selectedCount;
-            },
-            { count: selectedCount },
-          )}
-        </span>
+        <ChatShareSelectionControls sharing={thread.sharing} />
         <Button
           variant="ghost"
           size="sm"
@@ -3677,7 +3652,7 @@ function ChatThreadBottomBar({
     ? `${window.location.origin}/share/threads/${sharedThreadId}`
     : null;
   return withChatScrollLayout(
-    <footer className="relative shrink-0 border-t border-border/60 px-4 py-3 sm:px-6">
+    <footer className="relative @container shrink-0 border-t border-border/60 px-4 py-3 sm:px-6">
       <div className="mx-auto flex w-full max-w-[900px] flex-col gap-2">
         {shareUrl ? (
           <SharedThreadCreatedLink
@@ -3686,17 +3661,9 @@ function ChatThreadBottomBar({
             shareUrl={shareUrl}
           />
         ) : (
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-3 @lg:flex-row @lg:items-center @lg:justify-between">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground">
-                {t(
-                  ($) => {
-                    return $.chat.sharing.selectedCount;
-                  },
-                  { count: selectedCount },
-                )}
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {t(($) => {
                   return $.chat.sharing.visibilityDescription;
                 })}
@@ -6001,36 +5968,24 @@ function PagedGroupRow({
   );
 }
 
-function shareableEventFromChatEvent(
-  event: EnrichedChatEvent,
-): { readonly id: string; readonly text: string } | null {
-  if (event.seqId === undefined) {
-    return null;
-  }
-  if (event.eventType === "output.message") {
-    return event.content && event.content.length > 0
-      ? { id: event.id, text: event.content }
-      : null;
-  }
-  if (
-    event.eventType !== "input.prompt" &&
-    event.eventType !== "input.automation"
-  ) {
-    return null;
-  }
-  const displayText = messageDocumentToDisplayText(event.userMessage)?.trim();
-  if (displayText) {
-    return { id: event.id, text: displayText };
-  }
-  const automation = eventNonContentPart(event);
-  if (automation?.type !== "automation") {
-    return null;
-  }
-  const automationText =
-    automation.automationBrief?.trim() || automation.workflowName.trim();
-  return automationText.length > 0
-    ? { id: event.id, text: automationText }
-    : null;
+function shareGroupDates(
+  group: ChatEventGroup,
+  dateDividers: ReadonlyMap<string, ChatDateDivider>,
+  sharing: boolean,
+) {
+  const firstEventId = group.events[0]?.id;
+  const leadingDate =
+    sharing && group.role === "user" && firstEventId
+      ? dateDividers.get(firstEventId)
+      : undefined;
+  const contentDates = leadingDate
+    ? new Map(
+        [...dateDividers].filter(([id]) => {
+          return id !== firstEventId;
+        }),
+      )
+    : dateDividers;
+  return { leadingDate, contentDates };
 }
 
 function SelectablePagedGroupRow({
@@ -6052,30 +6007,36 @@ function SelectablePagedGroupRow({
     true;
   const sharing = phase !== "idle";
   const displayGroup = sharing ? chatGroupForSharing(group) : group;
+  const events = displayGroup.events.flatMap((event) => {
+    const shareable = shareableEventFromChatEvent(event);
+    return shareable ? [shareable] : [];
+  });
+  const { leadingDate, contentDates } = shareGroupDates(
+    displayGroup,
+    dateDividers,
+    sharing && events.length > 0,
+  );
   const content = (
     <PagedGroupRow
       group={displayGroup}
       thread={thread}
       modelChanges={modelChanges}
       stackFirstOnPrevious={sharing ? false : stackFirstOnPrevious}
-      dateDividers={dateDividers}
+      dateDividers={contentDates}
       runWorkSection={sharing ? undefined : runWorkSection}
       statusRow={sharing ? undefined : statusRow}
       statusTailEvents={sharing ? undefined : statusTailEvents}
     />
   );
-  const events = displayGroup.events.flatMap((event) => {
-    const shareable = shareableEventFromChatEvent(event);
-    return shareable ? [shareable] : [];
-  });
   if (phase === "idle" || events.length === 0) {
     return content;
   }
   const selectedCount = events.filter((event) => {
     return selectedEventIds.has(event.id);
   }).length;
+  const hasSelection = selectedCount > 0;
   const allSelected = selectedCount === events.length;
-  const indeterminate = selectedCount > 0 && !allSelected;
+  const indeterminate = hasSelection && !allSelected;
 
   const toggleGroup = () => {
     if (phase !== "selecting") {
@@ -6122,48 +6083,33 @@ function SelectablePagedGroupRow({
     </div>
   );
 
-  if (nameLine) {
-    return (
+  return (
+    <>
+      {leadingDate ? <ChatThreadDateDivider divider={leadingDate} /> : null}
       <div
         data-chat-share-selectable-group
         data-chat-scroll-anchor-alias-event-ids={aliasEventIds}
-        data-selected={allSelected || undefined}
+        data-selected={hasSelection || undefined}
         className={cn(
-          // The padding the tint needs is spent by the negative margin, so
-          // the group keeps the height it has outside sharing.
           "relative -mx-2 -my-1.5 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2 rounded-xl px-2 py-1.5 transition-colors",
-          // Once the gutter has room, the selection column sits outside the
-          // reading column, so starting a share does not move the transcript.
-          // The 900px column is centred in 24px of padding, so the 54px gutter
-          // clears the scroll viewport's edge only from a 960px container.
-          "@[960px]:-mr-3 @[960px]:-ml-[54px] @[960px]:grid-cols-[2.25rem_minmax(0,1fr)] @[960px]:gap-2.5 @[960px]:pr-3",
+          // Keep the checkbox outside the reading column only once the pane
+          // has enough gutter for it and, in the avatar layout, the avatar.
+          nameLine
+            ? "@[960px]:-mr-3 @[960px]:-ml-[54px] @[960px]:grid-cols-[2.25rem_minmax(0,1fr)] @[960px]:gap-2.5 @[960px]:pr-3"
+            : "@[1060px]:-mr-3 @[1060px]:-ml-[100px] @[1060px]:grid-cols-[2.25rem_minmax(0,1fr)] @[1060px]:gap-2.5 @[1060px]:pr-3",
           "data-selected:bg-state-selected",
           phase === "selecting" &&
-            (allSelected
+            (hasSelection
               ? "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-selected-hover"
               : "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-hover"),
         )}
       >
-        {/* The selection column owns selection. Message content stays
-            outside it so text selection, links, and message actions keep
-            their owners. */}
         <ShareGroupSelectionColumn role={group.role} {...selection} />
-        {messages}
+        <div className={cn("min-w-0", !nameLine && "@[900px]:pl-[46px]")}>
+          {messages}
+        </div>
       </div>
-    );
-  }
-
-  return (
-    <div
-      data-chat-share-selectable-group
-      data-chat-scroll-anchor-alias-event-ids={aliasEventIds}
-      className="relative -my-1 flex flex-col gap-2 rounded-lg py-1"
-    >
-      {/* The full-width label owns selection. Message content stays outside
-          it so text selection, links, and message actions keep their owners. */}
-      <ShareGroupLabelRow {...selection} />
-      {messages}
-    </div>
+    </>
   );
 }
 
@@ -6195,36 +6141,6 @@ function shareGroupCheckboxHoverClass({
     !allSelected &&
     !indeterminate &&
     "group-hover/share-selection:border-foreground group-hover/share-selection:bg-state-hover-overlay"
-  );
-}
-
-function ShareGroupLabelRow(props: ShareGroupSelectionProps) {
-  const { t } = useTranslation();
-  const { allSelected, indeterminate, selecting, onToggle } = props;
-  return (
-    <Field.Root
-      className="group/share-selection relative"
-      disabled={!selecting}
-    >
-      <Field.Label
-        className={cn(
-          buttonVariants({ variant: "quiet", size: "lg" }),
-          "w-full justify-start pr-10 pl-3 data-disabled:pointer-events-none data-disabled:opacity-50",
-        )}
-      >
-        {shareGroupSelectionLabel(t, allSelected)}
-      </Field.Label>
-      <Checkbox
-        checked={allSelected}
-        indeterminate={indeterminate}
-        disabled={!selecting}
-        className={cn(
-          "absolute top-1/2 right-3 h-5 w-5 -translate-y-1/2 border-muted-foreground",
-          shareGroupCheckboxHoverClass(props),
-        )}
-        onCheckedChange={onToggle}
-      />
-    </Field.Root>
   );
 }
 
@@ -6262,10 +6178,7 @@ function ShareGroupSelectionColumn({
           checked={allSelected}
           indeterminate={indeterminate}
           disabled={!selecting}
-          className={cn(
-            "h-5 w-5 border-muted-foreground",
-            shareGroupCheckboxHoverClass(props),
-          )}
+          className={cn(shareGroupCheckboxHoverClass(props))}
           onCheckedChange={onToggle}
         />
       </span>

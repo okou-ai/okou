@@ -1,3 +1,4 @@
+import { ChatShareSelectionControls } from "./chat-share-selection-controls.tsx";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { ProjectDialogs } from "../projects/project-dialogs.tsx";
 import { PersonalSubscriptionDialogs } from "./subscription-linking.tsx";
@@ -232,7 +233,6 @@ function MobileShareButtonLeaf() {
 function MobileSharingOverlayInner({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const phase = useGet(thread.sharing.phase$);
-  const selectedCount = useGet(thread.sharing.selectedCount$);
   const close = useSet(thread.sharing.close$);
   const pageSignal = useGet(pageSignal$);
   if (phase === "idle") {
@@ -240,14 +240,7 @@ function MobileSharingOverlayInner({ thread }: { thread: ChatPanelSignals }) {
   }
   return (
     <div className="absolute inset-0 z-20 flex items-center justify-between bg-background px-4">
-      <span className="text-sm font-medium text-foreground">
-        {t(
-          ($) => {
-            return $.chat.sharing.selectedCount;
-          },
-          { count: selectedCount },
-        )}
-      </span>
+      <ChatShareSelectionControls sharing={thread.sharing} />
       <Button
         variant="ghost"
         size="sm"
