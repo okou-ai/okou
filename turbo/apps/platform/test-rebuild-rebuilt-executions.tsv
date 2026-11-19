@@ -530,13 +530,13 @@ integrations-wechat-008	turbo/apps/platform/src/views/okou-page/__tests__/integr
 integrations-wechat-010	turbo/apps/platform/src/views/okou-page/__tests__/integrations-wechat.test.tsx	an unavailable reconnect link offers the same QR connection flow on the settings page	247	passed
 integrations-wechat-011	turbo/apps/platform/src/views/okou-page/__tests__/integrations-wechat.test.tsx	a rejected reconnect remains unconnected and shows recovery guidance	301	passed
 directed-connect-page-004	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Connect a custom OAuth connector from a directed link	395	passed
-directed-connect-page-008	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Connect a no-auth connector and continue the originating chat	566	passed
-directed-connect-page-009	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Complete OpenID and continue the originating chat	646	passed
-directed-connect-page-011	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Show the saved builtin account's configuration_invalid reason in the connect dialog	703	passed
-directed-connect-page-012	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Reconnect the expired public OAuth account	775	passed
-directed-connect-page-013	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Reconnect the exact account and continue the originating chat only after success	909	passed
-directed-connect-page-014	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Connect a manual grant and continue the originating chat	987	passed
-directed-authorize-page-006	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Closing directed OAuth before completion leaves GitHub disconnected	1073	passed
+directed-connect-page-008	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Connect a no-auth connector and continue the originating chat	571	passed
+directed-connect-page-009	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Complete OpenID and continue the originating chat	651	passed
+directed-connect-page-011	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Show the saved builtin account's configuration_invalid reason in the connect dialog	708	passed
+directed-connect-page-012	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Reconnect the expired public OAuth account	780	passed
+directed-connect-page-013	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Reconnect the exact account and continue the originating chat only after success	914	passed
+directed-connect-page-014	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Connect a manual grant and continue the originating chat	1002	passed
+directed-authorize-page-006	turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx	Closing directed OAuth before completion leaves GitHub disconnected	1088	passed
 preferences-page-001	turbo/apps/platform/src/views/okou-page/__tests__/preferences-page.test.tsx	A missing workspace theme follows the system and explicit choices are saved	94	passed
 preferences-page-002	turbo/apps/platform/src/views/okou-page/__tests__/preferences-page.test.tsx	A saved workspace mode overrides the cookie and saves independently of the palette	138	passed
 preferences-page-004	turbo/apps/platform/src/views/okou-page/__tests__/preferences-page.test.tsx	A cached palette is visible during startup and cleared when the workspace uses the default	274	passed

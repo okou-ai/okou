@@ -529,6 +529,11 @@ test("Continue from an existing connector authorization link using the saved acc
     }
     return respond(201, { threadId });
   });
+  context.mocks.api(builtinConnectorNoAuthGrantContract.connect, () => {
+    throw new Error(
+      "Continuing with a saved account must not create another account",
+    );
+  });
   context.mocks.api(userBuiltinConnectorsContract.update, () => {
     throw new Error("A connection link cannot grant agent access");
   });
@@ -917,7 +922,10 @@ test("Reconnect the exact account and continue the originating chat only after s
   const connectionId = "00000000-0000-4000-a000-000000000701";
   const threadId = "00000000-0000-4000-a000-000000000103";
   const callbackPrompt = "Re-check the work Axiom account, then continue";
+  const reconnectStarted = context.mocks.deferred<void>();
+  const releaseReconnect = context.mocks.deferred<void>();
   let submittedAccount: unknown = null;
+  let reconnected = false;
   let continuationPrompt: string | null = null;
   context.mocks.api(
     connectorAccountsContract.connection,
@@ -934,12 +942,12 @@ test("Reconnect the exact account and continue the originating chat only after s
         externalUsername: null,
         externalEmail: null,
         oauthScopes: [],
-        connectionStatus:
-          submittedAccount === null ? "reconnect-required" : "connected",
+        connectionStatus: reconnected ? "connected" : "reconnect-required",
         missingRequiredFields: [],
         configuredFieldKeys: ["apiToken"],
-        reconnectReason:
-          submittedAccount === null ? "authorization_expired_or_revoked" : null,
+        reconnectReason: reconnected
+          ? null
+          : "authorization_expired_or_revoked",
         tokenExpiresAt: null,
         createdAt: "2026-01-01T00:00:00Z",
         updatedAt: "2026-01-01T00:00:00Z",
@@ -948,12 +956,16 @@ test("Reconnect the exact account and continue the originating chat only after s
   );
   context.mocks.api(
     builtinConnectorManualGrantContract.connect,
-    ({ body, respond }) => {
+    async ({ body, respond, withSignal }) => {
       submittedAccount = body.account;
+      reconnectStarted.resolve();
+      await withSignal(releaseReconnect.promise);
+      reconnected = true;
       return respond(200, { connectionId: connectionId });
     },
   );
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    expect(reconnected).toBeTruthy();
     continuationPrompt = body.prompt ?? null;
     return respond(201, {
       threadId,
@@ -974,6 +986,9 @@ test("Reconnect the exact account and continue the originating chat only after s
   await fill(within(dialog).getByPlaceholderText("public-xaat"), "xaat-work");
   expect(continuationPrompt).toBeNull();
   click(getButtonByText("Save"));
+  await reconnectStarted.promise;
+  expect(continuationPrompt).toBeNull();
+  releaseReconnect.resolve();
 
   await waitFor(() => {
     expect(submittedAccount).toStrictEqual({
