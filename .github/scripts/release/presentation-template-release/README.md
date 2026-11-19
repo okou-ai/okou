@@ -15,9 +15,9 @@ family independently. Its `format` choice defaults to `html`:
 | `html` | `../presentation-template-release.json`      | `Template-Presentation`        | Existing style roots and `template:html-ppt-*-runbook` IDs |
 | `pptx` | `../presentation-template-release-pptx.json` | `Template-Presentation-Native` | `*-native` roots and `template:pptx-*-runbook` IDs         |
 
-The HTML configuration contains 23 packages and preserves its historical
-digest-pinned downloads. The PPTX configuration contains 24 packages with
-independent hash namespaces. Their `storageId` values are used for version IDs.
+Each configuration contains 23 packages. HTML configuration, hash namespaces and
+historical digest-pinned downloads are unchanged. Native hash namespaces are
+independent; their `storageId` values do not create or resolve Storage rows.
 The native build checks the generator, type declarations, locked npm manifests
 and default JSON palette, not HTML layout/CSS files. Bloom retains its original
 nested `assets/bloom/palettes.json`; the other native packages use the flat
@@ -32,8 +32,7 @@ the selected resources. Both configurations are bundled with the same dispatched
 tooling. Build, verify and publish commands accept `--format html|pptx`; omitting
 it retains HTML, and a bundle from the other format is rejected.
 
-For the **first publication of a native resource**, also select
-`initialize_missing_heads=true`.
+For the **first native publication**, also select `initialize_missing_heads=true`.
 This explicit option is restricted to PPTX and defaults to false. The production
 database must already include `1561_presentation_pptx_resource_heads.sql`, and the
 serving API/CLI must recognize the native resource IDs. For PPTX the CI cutover
@@ -41,8 +40,8 @@ gate additionally checks both serving API commits against the native config's
 main-owned `readerPreparationCommit`, without changing HTML's reader floor or
 the global rollback policy. Only approve the initial publication after verifying
 those prerequisites and the bundle's source commit.
-Updates to existing native resources leave initialization disabled. A missing
-HEAD requires reconciliation.
+Subsequent native updates leave initialization disabled. Missing HEADs then fail
+for reconciliation instead of being silently reconstructed.
 
 For example, after the publisher changes are merged to main:
 

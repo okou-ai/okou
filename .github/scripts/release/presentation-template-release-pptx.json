@@ -6,6 +6,7 @@
     "ref": "main",
     "directory": "Template-Presentation-Native"
   },
+  "deferredTemplates": ["plain-native"],
   "templates": [
     {
       "slug": "bloom-native",
@@ -96,12 +97,6 @@
       "resourceId": "template:pptx-pixel-glitch-runbook",
       "defaultColorSystem": "bauhaus_primary",
       "storageId": "670dd7aa-9566-5321-b2c4-f820da70d0f8"
-    },
-    {
-      "slug": "plain-native",
-      "resourceId": "template:pptx-plain-runbook",
-      "defaultColorSystem": "nordic_frost",
-      "storageId": "050c43b4-d2d2-40cc-ac98-670a9b7a4d7c"
     },
     {
       "slug": "playful-launch-native",

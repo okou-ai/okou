@@ -3039,7 +3039,7 @@ export function findPresentationReverseTemplateResource(
 // listTemplates.
 
 export interface PresentationRunbookPackage {
-  /** Template style id the user selects, including legacy `template:html-ppt-*` ids. */
+  /** Picker template id (the legacy `template:html-ppt-*` id the user selects). */
   readonly templateId: string;
   /** Pull id for the runbook archive; distinct from `templateId`. */
   readonly resourceId: string;
@@ -3332,20 +3332,7 @@ function presentationRunbookPackages(
 
 const PRESENTATION_RUNBOOK_PACKAGES = {
   html: presentationRunbookPackages("html"),
-  pptx: [
-    ...presentationRunbookPackages("pptx"),
-    {
-      templateId: "template:pptx-plain",
-      resourceId: "template:pptx-plain-runbook",
-      outputFormat: "pptx",
-      slug: "plain-native",
-      defaultColorSystem: "nordic_frost",
-      name: "Plain Presentation",
-      description:
-        "Understated and readable. Suits briefings, research summaries and reports. Quiet gradients and centered layouts leave room for editable charts, tables and text.",
-      source: { path: "plain-native" },
-    },
-  ],
+  pptx: presentationRunbookPackages("pptx"),
 } satisfies Record<
   PresentationOutputFormat,
   readonly PresentationRunbookPackage[]
