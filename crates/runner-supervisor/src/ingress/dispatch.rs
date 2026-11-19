@@ -95,6 +95,13 @@ impl Drop for DispatchWork {
     }
 }
 
+pub(crate) async fn reject_queued(mut receiver: mpsc::Receiver<DispatchWork>) {
+    receiver.close();
+    while let Some(work) = receiver.recv().await {
+        work.settle(Disposition::Rejected);
+    }
+}
+
 pub(crate) fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

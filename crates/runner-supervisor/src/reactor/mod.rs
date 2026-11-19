@@ -49,6 +49,7 @@ use crate::home_image_cache::HomeImageCache;
 use crate::idle_pool::ParkingGate;
 #[cfg(test)]
 use crate::idle_pool::{IdlePool, IdlePoolConfig};
+use crate::ingress::dispatch;
 use crate::kmsg_log;
 use crate::lifecycle::{LifecycleController, RunnerMode};
 use crate::network_log_drain::DrainableLineReaderExit;
@@ -928,6 +929,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             shared: &shared,
             provider: &provider_state,
             exec_config: &exec_config,
+            device_rate_limits: &capacity.device_rate_limits,
         },
         signals,
         startup::StartupInventory {
@@ -971,6 +973,8 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         startup_mode,
         mut home_cache_observation,
         mut heartbeat,
+        acceptance_slots,
+        mut dispatch_rx,
     } = started;
 
     let mut jobs: JoinSet<JobResult> = JoinSet::new();
@@ -1084,31 +1088,14 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         #[cfg(test)]
         test_observer: test_hooks.test_observer.clone(),
     };
-    let mut acceptance_tasks = AcceptanceTasks::new(AcceptanceContext {
-        mode_rx: mode_rx.clone(),
-        cancel_tokens: provider_state.cancel_tokens.clone(),
-        spawn_ctx: spawn_ctx.clone(),
-    });
-    let (dispatch_intake, mut dispatch_rx) =
-        crate::ingress::dispatch::DispatchIntake::new(acceptance_tasks.slots());
-    if let Some(ingress) = &ingress {
-        let preferred_home_probe = exec_config.home_cache.clone().map(|cache| {
-            crate::ingress::dispatch::PreferredHomeProbe::new(
-                cache,
-                spawn_ctx.home_cache_snapshot.clone(),
-                runner
-                    .profiles
-                    .iter()
-                    .map(|(name, profile)| (name.clone(), profile.home_disk_mb))
-                    .collect(),
-                spawn_ctx.active_runs.clone(),
-                Arc::clone(&shared.idle_pool),
-                spawn_ctx.device_rate_limits.clone(),
-                mode_rx.clone(),
-            )
-        });
-        ingress.enable_dispatch(dispatch_intake.with_preferred_home_probe(preferred_home_probe));
-    }
+    let mut acceptance_tasks = AcceptanceTasks::new(
+        AcceptanceContext {
+            mode_rx: mode_rx.clone(),
+            cancel_tokens: provider_state.cancel_tokens.clone(),
+            spawn_ctx: spawn_ctx.clone(),
+        },
+        acceptance_slots,
+    );
     let mut blank_pool_tick = tokio::time::interval_at(
         tokio::time::Instant::now() + Duration::from_secs(1),
         Duration::from_secs(1),
@@ -1625,10 +1612,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     // independently and must finish before idle or provider teardown; successful
     // outcomes still enter the existing activation/executor ownership path.
     drop(discover_fut);
-    dispatch_rx.close();
-    while let Some(work) = dispatch_rx.recv().await {
-        work.settle(crate::ingress::dispatch::Disposition::Rejected);
-    }
+    dispatch::reject_queued(dispatch_rx).await;
     teardown.event("drop_discover_fut");
     home_cache_observation.stop_watching();
     let phase = teardown.phase_start("acceptance_drain");

@@ -68,6 +68,103 @@ fn envelope(identity: RunnerProcessIdentity, run_id: RunId) -> Value {
 }
 
 #[tokio::test]
+async fn supplied_http_during_initial_running_heartbeat_follows_startup_outcome() {
+    for cancel_startup in [false, true] {
+        let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
+        let peer = super::startup::configure_public_ingress(&mut config).await;
+        config.ingress_service_probe = Arc::new(|| Box::pin(async { true }));
+        Arc::get_mut(&mut config.exec_config)
+            .unwrap()
+            .runner_hostname = Some(HOST.into());
+        let identity = config.runner.identity;
+        let socket = config
+            .paths
+            .home
+            .ingress_dir()
+            .join(format!("{}.sock", identity.runner_id()));
+        let status = env._temp_dir.path().join("status.json");
+        env.handle.block_heartbeats();
+        let runner = tokio::spawn(run(config));
+        peer.wait_connected().await;
+        peer.allow_health();
+        assert!(
+            env.handle
+                .wait_heartbeat_in_flight(1, Duration::from_secs(5))
+                .await
+        );
+        {
+            let heartbeats = env.handle.heartbeats.lock().unwrap();
+            assert_eq!(heartbeats.len(), 1);
+            assert_eq!(heartbeats[0].mode, "running");
+            assert_eq!(heartbeats[0].runner_hostname.as_deref(), Some(HOST));
+            assert!(heartbeats[0].ingress_service_active);
+        }
+        wait_status_mode(&status, "starting", Duration::from_secs(5)).await;
+
+        let run_id = RunId::new_v4();
+        let body = envelope(identity, run_id).to_string();
+        let mut stream = tokio::net::UnixStream::connect(&socket).await.unwrap();
+        stream
+            .write_all(
+                format!(
+                    "POST /runners/{}/control/runs/{run_id}/dispatch HTTP/1.1\r\nHost: {HOST}\r\nAuthorization: Bearer {TOKEN}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nExpect: 100-continue\r\n\r\n",
+                    identity.runner_id(),
+                    body.len()
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        // The server begins reading this offer while the Running heartbeat is
+        // still unacknowledged. A final response here would skip body intake.
+        const CONTINUE: &[u8] = b"HTTP/1.1 100 Continue\r\n\r\n";
+        let mut interim = [0; CONTINUE.len()];
+        tokio::time::timeout(Duration::from_secs(5), stream.read_exact(&mut interim))
+            .await
+            .expect("Runner should take the offer headers during the first Running heartbeat")
+            .unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&interim),
+            String::from_utf8_lossy(CONTINUE)
+        );
+        stream.write_all(body.as_bytes()).await.unwrap();
+
+        if cancel_startup {
+            // Keep the ACK blocked so the response must come from rollback.
+            env.trigger_stopping().await;
+            let (status, _, response) = read_dispatch_response(stream).await;
+            assert_eq!(
+                (status, &response["disposition"]),
+                (200, &json!("rejected"))
+            );
+            env.handle.unblock_heartbeats();
+        } else {
+            env.handle.unblock_heartbeats();
+            let (status, _, response) = read_dispatch_response(stream).await;
+            assert_eq!(
+                (status, &response["disposition"]),
+                (200, &json!("accepted"))
+            );
+            let completion = env
+                .handle
+                .wait_completion(run_id, Duration::from_secs(5))
+                .await
+                .expect("the original offer should execute after startup acknowledgment");
+            assert_eq!(completion.exit_code, 0);
+        }
+        peer.shutdown().await;
+        shutdown(&env, runner).await;
+        wait_status_mode(&status, "stopped", Duration::from_secs(5)).await;
+        assert_eq!(
+            env.handle.completions.lock().unwrap().len(),
+            usize::from(!cancel_startup)
+        );
+        assert!(env.cancel_tokens.handle(run_id).await.is_none());
+        assert!(!socket.exists());
+    }
+}
+
+#[tokio::test]
 async fn supplied_http_caller_disconnect_does_not_cancel_accepted_execution() {
     let gate = sandbox_mock::MockLifecycleGate::new();
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
@@ -92,8 +189,7 @@ async fn supplied_http_caller_disconnect_does_not_cancel_accepted_execution() {
     .await;
     let run_id = RunId::new_v4();
     let body = envelope(identity, run_id).to_string();
-    let mut stream = tokio::net::UnixStream::connect(&socket).await.unwrap();
-    stream.write_all(format!("POST /runners/{}/control/runs/{run_id}/dispatch HTTP/1.1\r\nHost: {HOST}\r\nAuthorization: Bearer {TOKEN}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}", identity.runner_id(), body.len()).as_bytes()).await.unwrap();
+    let stream = send_dispatch(&socket, identity, run_id, &body).await;
     // Observe real executor entry, then discard the unread HTTP response.
     gate.wait_entered(1, Duration::from_secs(5)).await.unwrap();
     drop(stream);
@@ -170,11 +266,16 @@ async fn assert_supplied_panic(point: OuterJobPanicPoint) {
         });
     }
     let body = supplied.to_string();
-    let mut stream = tokio::net::UnixStream::connect(&socket).await.unwrap();
-    stream.write_all(format!("POST /runners/{}/control/runs/{run_id}/dispatch HTTP/1.1\r\nHost: {HOST}\r\nAuthorization: Bearer {TOKEN}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}", identity.runner_id(), body.len()).as_bytes()).await.unwrap();
+    let stream = send_dispatch(&socket, identity, run_id, &body).await;
     let live_runner = if producer.is_some() {
         // Finalizing preparation runs in its own task. Its panic must settle
         // the original Run while the reactor keeps serving other work.
+        let (status, _, response) = read_dispatch_response(stream).await;
+        assert_eq!(
+            (status, &response["disposition"]),
+            (200, &json!("accepted")),
+            "finalizing successor did not reach activation: {response}"
+        );
         Some(runner)
     } else {
         assert!(
@@ -369,8 +470,21 @@ async fn client(
     run_id: RunId,
     body: &str,
 ) -> (u16, String, Value) {
+    read_dispatch_response(send_dispatch(socket, identity, run_id, body).await).await
+}
+
+async fn send_dispatch(
+    socket: &Path,
+    identity: RunnerProcessIdentity,
+    run_id: RunId,
+    body: &str,
+) -> tokio::net::UnixStream {
     let mut stream = tokio::net::UnixStream::connect(socket).await.unwrap();
     stream.write_all(format!("POST /runners/{}/control/runs/{run_id}/dispatch HTTP/1.1\r\nHost: {HOST}\r\nAuthorization: Bearer {TOKEN}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}", identity.runner_id(), body.len()).as_bytes()).await.unwrap();
+    stream
+}
+
+async fn read_dispatch_response(mut stream: tokio::net::UnixStream) -> (u16, String, Value) {
     let mut bytes = Vec::new();
     tokio::time::timeout(Duration::from_secs(15), stream.read_to_end(&mut bytes))
         .await
