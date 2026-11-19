@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.854.4](https://github.com/okou-ai/okou/compare/core-v8.854.3...core-v8.854.4) (2026-11-19)
+
+
+### Refactoring
+
+* **api:** use three-point axiom artifact timing ([#48854](https://github.com/okou-ai/okou/issues/48854)) ([d930e21](https://github.com/okou-ai/okou/commit/d930e21f8d3d93278613fcef287ae7b58febdf72))
+* **app:** use a single async feature switch source ([#48862](https://github.com/okou-ai/okou/issues/48862)) ([60b272c](https://github.com/okou-ai/okou/commit/60b272ce6f1087359500c7d8d5ec75e7f3050b30))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.90.1
+
 ## [8.854.3](https://github.com/okou-ai/okou/compare/core-v8.854.2...core-v8.854.3) (2026-11-19)
 
 
