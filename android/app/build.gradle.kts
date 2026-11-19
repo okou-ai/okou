@@ -223,6 +223,11 @@ androidComponents {
 
 androidComponents.onVariants { variant ->
     variant.outputs.forEach { it.versionCode.set(appVersionCode) }
+    // AGP includes this filename in the inputs of tasks upstream of packaging.
+    // Keep those inputs stable when the native test build adds a signing key.
+    if (variant.buildType == "release") {
+        variant.outputs.single().outputFileName.set("app-release.apk")
+    }
     variant.sources.res?.addGeneratedSourceDirectory(generateBrandFonts) { it.outputDirectory }
     variant.sources.assets?.addGeneratedSourceDirectory(generateLicenseAssets) {
         it.outputDirectory
