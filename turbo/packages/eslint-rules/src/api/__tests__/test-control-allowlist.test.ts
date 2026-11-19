@@ -55,7 +55,7 @@ tester.run("test-control-allowlist", testControlAllowlist, {
     },
     {
       filename: routeTest,
-      code: 'import { encryptSecretForTests } from "./helpers/encrypt-secret";',
+      code: 'import { readFixtureForTests } from "./helpers/fixtures";',
       options,
     },
   ],

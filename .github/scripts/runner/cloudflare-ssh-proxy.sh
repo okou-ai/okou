@@ -175,6 +175,10 @@ cleanup() {
   local status="$1"
   trap - EXIT
   terminate_cloudflared
+  if [ "$RETAIN_DIAGNOSTICS" = "true" ] \
+    && python3 "$SCRIPT_DIR/cloudflare-ssh-log.py" peer-reset "$PROXY_DIR"; then
+    touch -- "$proxy_root/retired" && proxy_event master-retired || true
+  fi
   stop_tcp_sampler
   proxy_event proxy-exit "$status"
   if [ "$RETAIN_DIAGNOSTICS" = "false" ] && [ -n "$PROXY_DIR" ]; then
