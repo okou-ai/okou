@@ -841,7 +841,6 @@ function ArtifactCloseAction({ onClose }: { onClose: () => void }) {
         data-testid="artifact-sidebar-close"
         variant="quiet"
         size="icon-sm"
-        className="rounded-full"
       >
         <X size={16} />
       </Button>
