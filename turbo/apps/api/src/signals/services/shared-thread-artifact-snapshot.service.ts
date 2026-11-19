@@ -45,6 +45,7 @@ import {
   privateArtifactRecord$,
   privateArtifactUrl,
   privateArtifactsBucket,
+  type PrivateArtifactRecord,
 } from "./private-artifact-storage.service";
 import {
   ArtifactDeliveryAliasConflict,
@@ -93,6 +94,7 @@ export interface SharedThreadArtifactPlan {
   readonly messages: SharedMessage[];
   readonly policy: SharedThreadArtifactPolicy;
   readonly copies: readonly SnapshotCopy[];
+  readonly privateAttachmentIds: ReadonlySet<string>;
 }
 
 export function sharedThreadArtifactsBucket(): string {
@@ -301,14 +303,19 @@ const allocateSnapshotReference$ = command(
 const privateFileSnapshot$ = command(
   async (
     { set },
-    args: SnapshotOwner & { readonly reservedTokens: Set<string> },
+    args: SnapshotOwner & {
+      readonly reservedTokens: Set<string>;
+      readonly preparedFile?: PrivateArtifactRecord;
+    },
     reference: ResourceReference,
     signal: AbortSignal,
   ) => {
     if (reference.kind === "html") {
       return null;
     }
-    const file = await set(privateArtifactRecord$, reference.id, signal);
+    const file =
+      args.preparedFile ??
+      (await set(privateArtifactRecord$, reference.id, signal));
     signal.throwIfAborted();
     if (file) {
       if (
@@ -573,6 +580,19 @@ const prepareSharedThreadPreviews$ = command(
   },
 );
 
+function legacyAttachmentReferences(args: {
+  readonly audience?: SharedThreadAudience;
+  readonly attachmentCopies: ReadonlyMap<string, SharedThreadAttachmentCopy>;
+}) {
+  return new Map(
+    args.audience === undefined
+      ? []
+      : [...args.attachmentCopies].flatMap(([id, copy]) => {
+          return copy.privateRecord ? [] : [[copy.attachment.url, id] as const];
+        }),
+  );
+}
+
 /** Discover only the selected messages and their managed static dependencies. */
 export const prepareSharedThreadArtifacts$ = command(
   async (
@@ -593,23 +613,17 @@ export const prepareSharedThreadArtifacts$ = command(
     const pendingResources = new Map<string, Promise<SnapshotResource>>();
     const reservedTokens = new Set<string>();
     const copies: SnapshotCopy[] = [];
-    const legacyAttachmentIds = new Map(
-      args.audience === undefined
-        ? []
-        : [...args.attachmentCopies].flatMap(([id, copy]) => {
-            return copy.isPrivate ? [] : [[copy.attachment.url, id] as const];
-          }),
-    );
+    const privateAttachmentIds = new Set<string>();
+    const legacyAttachmentIds = legacyAttachmentReferences(args);
 
-    async function allocate(
-      reference: ResourceReference,
-    ): Promise<SnapshotResource> {
-      const attachment =
-        args.audience === undefined
-          ? undefined
-          : args.attachmentCopies.get(reference.id);
+    async function allocate(reference: ResourceReference) {
+      const attachment = args.attachmentCopies.get(reference.id);
+      const preparedFile =
+        attachment?.privateRecord?.materializationStatus === "ready"
+          ? attachment.privateRecord
+          : undefined;
       const file =
-        attachment && !attachment.isPrivate
+        args.audience !== undefined && attachment && !attachment.privateRecord
           ? await set(
               legacyAttachmentSnapshot$,
               { ...args, reservedTokens, id: reference.id },
@@ -618,13 +632,16 @@ export const prepareSharedThreadArtifacts$ = command(
             )
           : await set(
               privateFileSnapshot$,
-              { ...args, reservedTokens },
+              { ...args, reservedTokens, preparedFile },
               reference,
               signal,
             );
       signal.throwIfAborted();
       if (!file) {
         throw new SharedThreadArtifactUnavailable();
+      }
+      if (preparedFile) {
+        privateAttachmentIds.add(preparedFile.id);
       }
       resources.set(reference.id, file.resource);
       copies.push(file.copy);
@@ -705,7 +722,10 @@ export const prepareSharedThreadArtifacts$ = command(
       signal,
     );
     const policy = snapshotPolicy(args, resources, previews);
-    return { messages, plan: { messages, policy, copies } };
+    return {
+      messages,
+      plan: { messages, policy, copies, privateAttachmentIds },
+    };
   },
 );
 
