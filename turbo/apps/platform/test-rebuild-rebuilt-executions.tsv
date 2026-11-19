@@ -293,3 +293,22 @@ chat-resources-catalog-009	turbo/apps/platform/src/views/okou-page/__tests__/cha
 chat-resources-catalog-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-resources-catalog.test.tsx	Disable show more while loading and keep resource pages unique	260	passed
 chat-resources-catalog-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-resources-catalog.test.tsx	Retain loaded resources after a paging failure and retry with show more	305	passed
 chat-resources-catalog-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-resources-catalog.test.tsx	Copy the focused resource after moving between open copy tooltips	345	passed
+chat-composer-model-recovery-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-recovery.test.tsx	Connect Codex before sending with a personal route	116	passed
+chat-composer-model-recovery-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-recovery.test.tsx	Reconnect the personal provider used by the selected model	191	passed
+chat-composer-model-panel-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-panel.test.tsx	Show the final model groups before subscription usage resolves	36	passed
+chat-composer-model-panel-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-panel.test.tsx	Pick only chat models, with effort and Fast in the same panel	92	passed
+chat-composer-model-panel-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-panel.test.tsx	Keep the panel open while changing effort, Fast and model	114	passed
+chat-composer-model-panel-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-panel.test.tsx	Keep the model panel usable as the temporary model notice appears and clears	142	passed
+chat-composer-model-panel-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-panel.test.tsx	Select Ultrafast in the composer for a Codex model that offers it	174	passed
+chat-composer-model-resolution-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-resolution.test.tsx	Edit only the model for an existing thread	45	passed
+chat-composer-model-resolution-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-resolution.test.tsx	Switch only the thread to Auto when its model is no longer selectable	63	passed
+chat-composer-model-resolution-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-resolution.test.tsx	Send without repairing an Auto thread storing null	96	passed
+chat-composer-model-resolution-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-resolution.test.tsx	Send without repairing an Auto thread storing auto	96	passed
+chat-composer-model-resolution-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-resolution.test.tsx	Keep the stored selection when sending on an available model	131	passed
+chat-composer-model-selection-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-selection.test.tsx	Temporarily choose a model for a new chat	95	passed
+chat-composer-model-selection-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-selection.test.tsx	Follow model preference changes made in another session	140	passed
+chat-composer-model-selection-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-selection.test.tsx	Switch chat models immediately and adjust Fast in the same panel	155	passed
+chat-composer-model-selection-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-selection.test.tsx	Choose effort for a new chat and keep Fast independent	178	passed
+chat-composer-model-selection-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-selection.test.tsx	Keep independent effort selections when changing models	226	passed
+chat-composer-model-selection-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-selection.test.tsx	Show the Pi fallback without overwriting a saved native preference	265	passed
+chat-composer-model-selection-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-selection.test.tsx	Save the preferred effort for future chats when Pi displays a fallback	287	passed
