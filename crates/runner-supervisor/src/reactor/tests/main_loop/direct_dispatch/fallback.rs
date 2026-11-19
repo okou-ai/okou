@@ -35,6 +35,7 @@ async fn preferred_dispatch_retries_after_cross_process_home_publication() {
 
     let peer = super::super::startup::configure_public_ingress(&mut config).await;
     let identity = config.runner.identity;
+    let cache_dir = config.paths.home.home_image_cache_dir();
     let socket = config
         .paths
         .home
@@ -102,21 +103,13 @@ async fn preferred_dispatch_retries_after_cross_process_home_publication() {
         drop(other_publication);
     }
 
-    let before = env.handle.heartbeat_count();
+    // Invalidate the receiver's directory watch before the independent publisher
+    // commits. Inventory takes the checkout lock too, so its heartbeat cannot
+    // establish that the successor's nonblocking checkout will acquire it.
+    let moved = cache_dir.with_extension("moved");
+    tokio::fs::rename(&cache_dir, &moved).await.unwrap();
+    tokio::fs::rename(&moved, &cache_dir).await.unwrap();
     publish_staged_home(publication, predecessor).await;
-    assert!(
-        wait_heartbeat_matching_after(&env.handle, before, WAIT, |heartbeat| {
-            heartbeat.held_home_states.iter().any(|state| {
-                state.reuse_key == key
-                    && state
-                        .home_caches
-                        .iter()
-                        .any(|home| home.source_run_id == predecessor)
-            })
-        })
-        .await,
-        "published source must be observed before retrying from the ready path"
-    );
     assert_eq!(
         client(&socket, identity, run_id, &body).await.2["disposition"],
         "accepted"
