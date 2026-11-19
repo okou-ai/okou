@@ -1,5 +1,4 @@
 import type {
-  ConnectorRuntimeTargetRegistration,
   NativeContinuation,
   PreparedExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
@@ -45,7 +44,6 @@ export interface AdmittedExecutionFacts {
   readonly disabledPaidTools: readonly PaidToolId[];
   readonly realAgentInPreview: boolean | undefined;
   readonly apiStartTime: number | undefined;
-  readonly connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[];
   /** First accepted non-secret Connector environment, before source precedence. */
   readonly connectorEnvironment: Environment;
   readonly connectorNetworkPolicyInputs: ExecutionNetworkPolicyInputs | null;
