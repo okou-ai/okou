@@ -1,9 +1,18 @@
 import type { ChatEventType } from "@okouai/api-contracts/contracts/chat-events";
 import {
+  chatEventRunlessInputPredicate,
   chatEvents,
   type ChatEventUserMessage,
 } from "@okouai/db/schema/chat-event";
-import { and, eq, exists, isNull, notExists, type SQL } from "drizzle-orm";
+import {
+  and,
+  eq,
+  exists,
+  inArray,
+  isNull,
+  notExists,
+  type SQL,
+} from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import type { ChildAutonomyBudget } from "./autonomy-budget.service";
 
@@ -43,14 +52,22 @@ export interface QueuedUserMessage {
     | { readonly kind: "unavailable"; readonly message: string };
 }
 
-/** Captured candidate identity; the launch owner revalidates the FIFO head. */
-export interface QueueFirstRunAssociation {
-  readonly threadId: string;
-  readonly eventId: string;
-}
-
 const queuedChatEvent = alias(chatEvents, "queued_chat_event");
 const queuedChatEventRevoker = alias(chatEvents, "queued_chat_event_revoker");
+
+export function queuedThreadInputCondition(threadId: string) {
+  return and(
+    eq(chatEvents.chatThreadId, threadId),
+    chatEventRunlessInputPredicate(chatEvents.runId, chatEvents.eventType),
+    inArray(chatEvents.eventType, ["input.prompt", "input.automation"]),
+    notExists(
+      new QueryBuilder()
+        .select({ id: queuedChatEventRevoker.id })
+        .from(queuedChatEventRevoker)
+        .where(eq(queuedChatEventRevoker.revokesEventId, chatEvents.id)),
+    ),
+  );
+}
 
 /** Whether the outer ChatEvent row is an unclaimed, unrevoked prompt. */
 export function queuedUserMessageExists(): SQL {

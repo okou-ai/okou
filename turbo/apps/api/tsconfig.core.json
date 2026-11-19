@@ -521,7 +521,6 @@
     "src/signals/services/workflow-schedule-settlement.ts",
     "src/signals/services/workflow-schedule-failure-policy.ts",
     "src/signals/services/morning-brief-schedule-claim.service.ts",
-    "src/signals/services/pending-launch-admission-plan.ts",
     "src/signals/services/pending-launch-claim-plan.ts",
     "src/signals/services/personal-subscription-recovery.service.ts",
     "src/signals/services/pi-model-configuration-error.ts",
