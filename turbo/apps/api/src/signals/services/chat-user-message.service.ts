@@ -38,6 +38,23 @@ interface UserMessageFile {
   readonly contentType: string;
 }
 
+/** PostgreSQL JSONB rejects the escapes JSON.stringify emits for lone surrogates. */
+export function repairUserMessageText<Part extends UserMessagePart>(document: {
+  readonly version: 1;
+  readonly parts: readonly Part[];
+}): { version: 1; parts: Part[] } {
+  return {
+    version: document.version,
+    parts: document.parts.map((part) => {
+      if (part.type !== "text") {
+        return part;
+      }
+      const text = part.text.replace(/\p{Surrogate}/gu, "\uFFFD");
+      return text === part.text ? part : { ...part, text };
+    }),
+  };
+}
+
 type UserMessageFilePart = Extract<UserMessagePart, { readonly type: "file" }>;
 
 function userMessageFileParts(

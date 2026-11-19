@@ -173,6 +173,7 @@ import {
   agentRunSourceTitleSnapshot,
   hasAgentRunSourceAnnotation,
   projectUserMessage,
+  repairUserMessageText,
   userMessagePhysicalFiles,
   withAgentRunSourceAnnotation,
   type ChatAgentRunSourceAnnotation,
@@ -1453,15 +1454,16 @@ function normalSendUserMessage(
   args: NormalSendArgs,
   agentRunSource: ChatAgentRunSourceAnnotation | null,
 ): UserMessageDocument {
+  const userMessage = repairUserMessageText(args.body.userMessage);
   if (agentRunSource !== null) {
-    return withAgentRunSourceAnnotation(args.body.userMessage, agentRunSource);
+    return withAgentRunSourceAnnotation(userMessage, agentRunSource);
   }
   return args.auth.tokenType !== "oauth"
-    ? args.body.userMessage
+    ? userMessage
     : {
-        ...args.body.userMessage,
+        ...userMessage,
         parts: [
-          ...args.body.userMessage.parts,
+          ...userMessage.parts,
           {
             type: "source",
             kind: "mcp",
