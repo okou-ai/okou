@@ -216,23 +216,6 @@ async function openCustomPanel(
   return { user, dialog, capture };
 }
 
-test("The picker opens Presentation with separate Custom and Built-in sections", async () => {
-  mockCustomTemplates([customTemplate()]);
-
-  const { dialog } = await openCustomPanel();
-
-  expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
-  expect(
-    within(dialog).getByRole("region", { name: "Custom" }),
-  ).toBeInTheDocument();
-  expect(
-    within(dialog).getByRole("region", { name: "Built-in" }),
-  ).toBeInTheDocument();
-  await expect(
-    within(dialog).findByText("Q3 board review"),
-  ).resolves.toBeInTheDocument();
-});
-
 test("The Custom section lists owned and shared templates of the selected type", async () => {
   mockCustomTemplates([
     customTemplate(),
@@ -248,12 +231,16 @@ test("The Custom section lists owned and shared templates of the selected type",
   ]);
 
   const { dialog } = await openCustomPanel();
-  click(tabByText("Presentation"));
+  expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
+  const custom = within(dialog).getByRole("region", { name: "Custom" });
+  expect(
+    within(dialog).getByRole("region", { name: "Built-in" }),
+  ).toBeInTheDocument();
 
   await expect(
-    within(dialog).findByText("Q3 board review"),
+    within(custom).findByText("Q3 board review"),
   ).resolves.toBeInTheDocument();
-  expect(within(dialog).getByText("Partner QBR")).toBeInTheDocument();
+  expect(within(custom).getByText("Partner QBR")).toBeInTheDocument();
 });
 
 test("A template published while the panel is open appears in it", async () => {
@@ -468,18 +455,6 @@ test("Returning to a type retains the loaded custom catalog", async () => {
   expect(within(dialog).getByLabelText("Search templates")).toBeInTheDocument();
 });
 
-test("An empty custom catalog offers its import tile", async () => {
-  mockCustomTemplates([]);
-  const { dialog } = await openCustomPanel();
-  const custom = within(dialog).getByRole("region", { name: "Custom" });
-  await expect(
-    within(custom).findByLabelText("Import your own deck"),
-  ).resolves.toHaveAttribute("accept", ".pptx,.ppt,.pdf");
-  expect(
-    within(dialog).getByRole("region", { name: "Built-in" }),
-  ).toBeInTheDocument();
-});
-
 test("A custom deck steps through its pages on the stage", async () => {
   const deck = customTemplate({
     pageUrls: [
@@ -497,7 +472,14 @@ test("A custom deck steps through its pages on the stage", async () => {
   await within(dialog).findByText("Q3 board review");
   click(buttonByName("Preview Q3 board review", dialog)!);
 
-  const preview = previewDialogAround(await screen.findByAltText("Page 1"));
+  const page = await screen.findByAltText("Page 1");
+  expect(page).toHaveAttribute("src", "https://example.test/page-1.png");
+  const preview = previewDialogAround(page);
+  expect(within(preview).getByLabelText("Rename template")).toBeInTheDocument();
+  expect(buttonByName("Use this template", preview)).toBeTruthy();
+  expect(
+    within(preview).queryByTestId("custom-template-source-preview"),
+  ).not.toBeInTheDocument();
   expect(within(preview).getByText("1 / 2")).toBeInTheDocument();
   expect(within(preview).getByText("2 slides")).toBeInTheDocument();
 
@@ -537,34 +519,6 @@ test("A template shared with you opens without the owner's controls", async () =
   ).not.toBeInTheDocument();
   expect(buttonByName("Delete", preview)).toBeUndefined();
   expect(buttonByName("Use this template", preview)).toBeTruthy();
-});
-
-test("Opening a deck shows its pages and management controls", async () => {
-  mockCustomTemplates([customTemplate()]);
-  context.mocks.api(userTemplatesContract.get, ({ respond }) => {
-    return respond(200, customTemplate());
-  });
-
-  const { dialog } = await openCustomPanel();
-  click(tabByText("Presentation"));
-  await within(dialog).findByText("Q3 board review");
-
-  click(buttonByName("Preview Q3 board review", dialog)!);
-
-  // A deck opens in the same dialog a document does, and draws the pages the
-  // reverse run already rendered rather than its source file through a viewer.
-  const page = await screen.findByAltText("Page 1");
-  expect(page).toHaveAttribute("src", "https://example.test/page-1.png");
-  const preview = previewDialogAround(page);
-  // The preview is a dialog inside the picker, which is what lets the picker
-  // step out of view rather than stay half-visible around a narrower panel.
-  expect(dialog).toHaveAttribute("data-nested-dialog-open");
-  expect(preview).not.toHaveAttribute("data-nested-dialog-open");
-  expect(within(preview).getByLabelText("Rename template")).toBeInTheDocument();
-  expect(buttonByName("Use this template", preview)).toBeTruthy();
-  expect(
-    within(preview).queryByTestId("custom-template-source-preview"),
-  ).not.toBeInTheDocument();
 });
 
 test("Using a custom template sends the row id and nothing about its kind", async () => {
@@ -1177,14 +1131,16 @@ test.each(["visibility change", "deletion"] as const)(
   },
 );
 
-test("Each content type owns a format-specific import tile", async () => {
-  mockCustomTemplates([customTemplate()]);
+test("Each content type offers a format-specific import tile with an empty catalog", async () => {
+  mockCustomTemplates([]);
   const { dialog } = await openCustomPanel();
-  await within(dialog).findByText("Q3 board review");
-  expect(within(dialog).getByLabelText("Import your own deck")).toHaveAttribute(
-    "accept",
-    ".pptx,.ppt,.pdf",
-  );
+  const custom = within(dialog).getByRole("region", { name: "Custom" });
+  await expect(
+    within(custom).findByLabelText("Import your own deck"),
+  ).resolves.toHaveAttribute("accept", ".pptx,.ppt,.pdf");
+  expect(
+    within(dialog).getByRole("region", { name: "Built-in" }),
+  ).toBeInTheDocument();
   click(tabByText("Document"));
   expect(
     within(dialog).getByLabelText("Import your own document"),

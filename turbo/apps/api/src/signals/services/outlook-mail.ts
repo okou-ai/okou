@@ -10,11 +10,39 @@ import {
   string,
   enum as zEnum,
   url as zUrl,
+  unknown as zUnknown,
   type infer as zInfer,
 } from "zod";
+import { readBoundedResponseText, safeJsonParse, settle } from "../utils";
 import type { MailDraftValue } from "./mail-details";
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0/me";
+const MAX_GRAPH_ERROR_BODY_BYTES = 16 * 1024;
+const graphErrorCodeSchema = zEnum([
+  "ErrorInvalidIdMalformed",
+  "BadRequest",
+  "badRequest",
+  "ErrorInvalidRequest",
+  "ErrorAccessDenied",
+]);
+const graphErrorNodeSchema = object({
+  code: zUnknown().optional(),
+  innerError: zUnknown().optional(),
+  innererror: zUnknown().optional(),
+});
+const graphErrorResponseSchema = object({ error: graphErrorNodeSchema });
+type GraphErrorCode =
+  | zInfer<typeof graphErrorCodeSchema>
+  | "missing"
+  | "unrecognized"
+  | "unavailable";
+type GraphOperation =
+  | "get_message"
+  | "list_attachments"
+  | "get_attachment"
+  | "send_draft"
+  | "delete_draft";
+
 const addressSchema = object({
   emailAddress: object({ address: email(), name: string().optional() }),
 });
@@ -64,10 +92,61 @@ export class OutlookAuthorizationError extends Error {
 }
 
 export class OutlookRequestError extends Error {
-  constructor(readonly status: number) {
-    super(`Outlook rejected the mail operation (HTTP ${status})`);
+  constructor(
+    readonly status: number,
+    readonly operation: GraphOperation,
+    readonly graphErrorCode?: GraphErrorCode,
+  ) {
+    const diagnostic = graphErrorCode ? `; Graph code: ${graphErrorCode}` : "";
+    super(`Outlook rejected the mail operation (HTTP ${status}${diagnostic})`);
     this.name = "OutlookRequestError";
   }
+
+  get isInvalidMessageId(): boolean {
+    return (
+      this.operation === "get_message" &&
+      this.status === 400 &&
+      this.graphErrorCode === "ErrorInvalidIdMalformed"
+    );
+  }
+}
+
+async function readGraphErrorCode(
+  response: Response,
+  signal: AbortSignal,
+): Promise<GraphErrorCode> {
+  const body = await settle(
+    readBoundedResponseText(response, MAX_GRAPH_ERROR_BODY_BYTES, signal),
+    signal,
+  );
+  if (!body.ok || body.value.kind !== "text") {
+    return "unavailable";
+  }
+  const parsed = graphErrorResponseSchema.safeParse(
+    safeJsonParse(body.value.text),
+  );
+  if (!parsed.success) {
+    return "unavailable";
+  }
+
+  // Provider messages and arbitrary codes can contain addresses or mail data.
+  // Select the most specific allowlisted code from the Graph error chain.
+  let diagnostic: GraphErrorCode = "missing";
+  let current: zInfer<typeof graphErrorNodeSchema> | undefined =
+    parsed.data.error;
+  while (current) {
+    const code = graphErrorCodeSchema.safeParse(current.code);
+    if (code.success) {
+      diagnostic = code.data;
+    } else if (diagnostic === "missing" && current.code !== undefined) {
+      diagnostic = "unrecognized";
+    }
+    const inner = graphErrorNodeSchema.safeParse(
+      current.innerError ?? current.innererror,
+    );
+    current = inner.success ? inner.data : undefined;
+  }
+  return diagnostic;
 }
 
 function headers(accessToken: string): Record<string, string> {
@@ -78,6 +157,7 @@ function headers(accessToken: string): Record<string, string> {
 }
 
 async function graphRequest(
+  operation: GraphOperation,
   args: {
     readonly url: string;
     readonly accessToken: string;
@@ -85,17 +165,23 @@ async function graphRequest(
   },
   signal: AbortSignal,
 ): Promise<Response> {
+  const method = args.method ?? "GET";
   const response = await fetch(args.url, {
-    method: args.method ?? "GET",
+    method,
     headers: headers(args.accessToken),
     signal,
   });
   if (response.status === 401) {
     throw new OutlookAuthorizationError();
   }
-  // Do not include provider bodies: they can contain addresses and message data.
   if (!response.ok && response.status !== 404) {
-    throw new OutlookRequestError(response.status);
+    // A mutation's definitive rejection must be handled as soon as its
+    // status is known, even if the provider stalls while writing its body.
+    throw new OutlookRequestError(
+      response.status,
+      operation,
+      method === "GET" ? await readGraphErrorCode(response, signal) : undefined,
+    );
   }
   return response;
 }
@@ -114,6 +200,7 @@ async function getFileAttachment(
   signal: AbortSignal,
 ): Promise<zInfer<typeof fileAttachmentSchema> | null> {
   const response = await graphRequest(
+    "get_attachment",
     {
       accessToken: args.accessToken,
       url: `${GRAPH_BASE}/messages/${encodeURIComponent(args.messageId)}/attachments/${encodeURIComponent(args.attachmentId)}`,
@@ -143,6 +230,7 @@ export async function outlookGetMessage(
 ): Promise<OutlookMailValue | null> {
   const messageUrl = `${GRAPH_BASE}/messages/${encodeURIComponent(args.messageId)}`;
   const response = await graphRequest(
+    "get_message",
     {
       accessToken: args.accessToken,
       url: `${messageUrl}?$select=id,conversationId,isDraft,from,toRecipients,ccRecipients,bccRecipients,replyTo,subject,body,webLink,sentDateTime,internetMessageHeaders`,
@@ -166,6 +254,7 @@ export async function outlookGetMessage(
       throw new Error("Outlook returned an invalid attachment page URL");
     }
     const pageResponse = await graphRequest(
+      "list_attachments",
       { url: next, accessToken: args.accessToken },
       signal,
     );
@@ -283,6 +372,7 @@ export async function outlookSendDraft(
   signal: AbortSignal,
 ): Promise<void> {
   const response = await graphRequest(
+    "send_draft",
     {
       ...args,
       url: `${GRAPH_BASE}/messages/${encodeURIComponent(args.messageId)}/send`,
@@ -291,7 +381,7 @@ export async function outlookSendDraft(
     signal,
   );
   if (response.status !== 202) {
-    throw new OutlookRequestError(response.status);
+    throw new OutlookRequestError(response.status, "send_draft");
   }
 }
 
@@ -300,6 +390,7 @@ export async function outlookDeleteDraft(
   signal: AbortSignal,
 ): Promise<void> {
   await graphRequest(
+    "delete_draft",
     {
       ...args,
       url: `${GRAPH_BASE}/messages/${encodeURIComponent(args.messageId)}`,

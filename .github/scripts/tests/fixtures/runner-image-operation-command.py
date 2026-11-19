@@ -55,6 +55,9 @@ def ssh(arguments):
     record("requests", {"action": request["action"], "phase": request.get("phase")})
     if MODE == "ssh-error":
         return 7
+    if MODE in ("slow-claim-retirement", "short-claim-budget") and request["action"] == "claim":
+        # Model a reconciliation request arriving with two seconds for host work.
+        request["claimBudget"] = 7
     # Map the remote tmpfs into this endpoint's isolated filesystem.
     state_root = ROOT / "missing" if MODE == "missing-state-root" else ROOT
     arguments = ["TMPDIR=" + str(state_root) if a == "TMPDIR=/dev/shm" else a for a in arguments]
@@ -64,10 +67,21 @@ def ssh(arguments):
         stdout=subprocess.PIPE,
         start_new_session=True,
     )
+    if request["action"] == "claim":
+        record("claim-servers", process.pid)
     detached = False
     try:
         process.stdin.write(json.dumps(request).encode())
         process.stdin.close()
+        if MODE == "claim-wait-loss" and request["action"] == "claim" and once():
+            namespace = request["inputs"]["jobRef"]
+            lock = ROOT / "var/lock" / f"vm0-runner-lifecycle-{namespace}.lock"
+            descriptors = Path(f"/proc/{process.pid}/fd")
+            wait_for(lambda: any(fd.resolve() == lock for fd in descriptors.iterdir()))
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+            (ROOT / "claim-wait-cut").touch()
+            return 255
         if MODE == "claim-commit-loss" and request["action"] == "claim" and once():
             wait_for(lambda: (ROOT / "claim-resource-created").exists())
             (ROOT / "claim-cut").touch()
@@ -82,9 +96,15 @@ def ssh(arguments):
                 / request["inputs"]["jobRef"]
                 / "gate"
             )
-            wait_for(
-                lambda: any(p.resolve() == gate for p in Path(f"/proc/{process.pid}/fd").iterdir())
-            )
+
+            def gate_opened():
+                for descriptor in Path(f"/proc/{process.pid}/fd").iterdir():
+                    with contextlib.suppress(FileNotFoundError, ProcessLookupError):
+                        if descriptor.readlink() == gate:
+                            return True
+                return False
+
+            wait_for(gate_opened)
             if once():
                 record("detached-servers", process.pid)
                 detached = True
@@ -145,7 +165,7 @@ def ssh(arguments):
 def systemd_run(arguments):
     record("systemd", arguments)
     if any(argument.startswith("--on-active=") for argument in arguments):
-        if MODE == "pending-launch":
+        if MODE in ("pending-launch", "late-prior-launch"):
             (ROOT / "launch-pending").touch()
             wait_for(lambda: (ROOT / "release-launch").exists())
         return 0  # Record the real retention contract without waiting one hour.
@@ -182,10 +202,20 @@ def systemctl(arguments):
                 print(name + " loaded active running Image fixture")
         return 0
     if arguments[0] == "show":
+        if MODE == "slow-claim-retirement" and once():
+            time.sleep(8)
         for unit in (a for a in arguments[1:] if a.endswith(".service")):
             path = ROOT / "units" / (unit + ".json")
             info = json.loads(path.read_text()) if path.exists() else {}
             running = bool(info) and alive(info["pid"])
+            if (
+                MODE == "pause-retirement-observation"
+                and not info
+                and (ROOT / "launch-pending").exists()
+                and once()
+            ):
+                (ROOT / "retirement-observation-paused").touch()
+                wait_for(lambda: (ROOT / "resume-retirement-observation").exists())
             paused = ROOT / "active-observation-paused"
             if MODE == "pause-active-observation" and running and not paused.exists():
                 # Hold an already captured active snapshot while the real
@@ -281,7 +311,7 @@ def main():
         if (
             status == 0
             and arguments[:4] == ["install", "-m", "600", "/dev/null"]
-            and MODE == "claim-commit-loss"
+            and MODE in ("claim-commit-loss", "pause-claim-commit")
             and not (ROOT / "claim-cut").exists()
         ):
             (ROOT / "claim-resource-created").touch()

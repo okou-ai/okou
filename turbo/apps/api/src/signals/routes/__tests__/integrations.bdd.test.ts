@@ -339,56 +339,6 @@ async function observeSlackRun(runnerGroup: string): Promise<string> {
   );
 }
 
-async function observeQueuedWebAndSlackRuns(args: {
-  readonly actor: ApiTestUser;
-  readonly runnerGroup: string;
-  readonly expectedSlackSessionId: string;
-}): Promise<{
-  readonly webRunId: string;
-  readonly run2Id?: string;
-  readonly execution2?: Awaited<ReturnType<typeof runs.executionInput>>;
-}> {
-  const firstDispatchedRunId = await observeDispatchedRun(
-    args.runnerGroup,
-    "Expected the queued Web run in the shared thread queue",
-  );
-  const firstDispatchedRunIsSlack =
-    (await readRunLog(args.actor, firstDispatchedRunId)).triggerSource ===
-    "slack";
-  if (!firstDispatchedRunIsSlack) {
-    return { webRunId: firstDispatchedRunId };
-  }
-
-  const execution2 = await runs.executionInput(firstDispatchedRunId);
-  expect(execution2.nativeContinuation?.sessionId).toBe(
-    args.expectedSlackSessionId,
-  );
-  return {
-    webRunId: await observeDispatchedRun(
-      args.runnerGroup,
-      "Expected the queued Web run in the shared thread queue",
-    ),
-    run2Id: firstDispatchedRunId,
-    execution2,
-  };
-}
-
-async function ensureSlackExecution(args: {
-  readonly runnerGroup: string;
-  readonly run2Id: string | undefined;
-  readonly execution2:
-    Awaited<ReturnType<typeof runs.executionInput>> | undefined;
-}): Promise<{
-  readonly run2Id: string;
-  readonly execution2: Awaited<ReturnType<typeof runs.executionInput>>;
-}> {
-  if (args.run2Id !== undefined && args.execution2 !== undefined) {
-    return { run2Id: args.run2Id, execution2: args.execution2 };
-  }
-  const run2Id = await observeSlackRun(args.runnerGroup);
-  return { run2Id, execution2: await runs.executionInput(run2Id) };
-}
-
 async function completeSlackTriggeredRun(args: {
   readonly runId: string;
   readonly sandboxToken: string;
@@ -2849,7 +2799,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await flushWaitUntilForTest();
   });
 
-  it("keeps queued Web and Slack inputs on one canonical route", async () => {
+  it("keeps queued Web and Slack sends on one canonical session", async () => {
     const actor = bdd.user();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
@@ -2973,31 +2923,49 @@ describe("INT-01: Slack app deep webhook flows", () => {
         return part.type === "source";
       }),
     ).toStrictEqual({ type: "source", kind: "slack" });
-    expect(
-      slackInputMessageByText(queuedEvents, "keep the web session separate")
-        ?.runId,
-    ).toBeUndefined();
+    const queuedWebInput = slackInputMessageByText(
+      queuedEvents,
+      "keep the web session separate",
+    );
+    expect(queuedWebInput).toMatchObject({ eventType: "input.prompt" });
+    expect(queuedWebInput?.runId).toBeUndefined();
 
     // Draining the thread launches the queued Web input first, then the Slack
     // reply with the launch context admitted for it.
+    context.mocks.slack.chat.postMessage.mockClear();
     await completeSlackTriggeredRun({
       runId: run1Id,
       sandboxToken: execution1.sandboxToken,
       cliAgentType: execution1.cliAgentType,
-      assistantText: "Canonical Slack answer one",
+      assistantText: "Executing command...",
+      resultText: "Canonical Slack answer one",
     });
-    await flushWaitUntilForTest();
-    const queuedRuns = await observeQueuedWebAndSlackRuns({
-      actor,
+    await flushWaitUntilAndAssert(() => {
+      expect(
+        context.mocks.slack.chat.postMessage,
+      ).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          channel: channelId,
+          thread_ts: threadTs,
+          text: "Canonical Slack answer one",
+        }),
+      );
+    });
+    const slackSessionId = `bdd-slack-cli-${run1Id}`;
+    await expect(runs.readRun(actor, run1Id)).resolves.toMatchObject({
+      result: { frameworkSessionId: slackSessionId },
+    });
+    const webRunId = await observeDispatchedRun(
       runnerGroup,
-      expectedSlackSessionId: `bdd-slack-cli-${run1Id}`,
-    });
+      "Expected the queued Web run before the Slack reply",
+    );
     expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
-    const webRunId = queuedRuns.webRunId;
     await expect(readRunLog(actor, webRunId)).resolves.toMatchObject({
       triggerSource: "web",
     });
     const webExecution = await runs.executionInput(webRunId);
+    expect(webExecution.nativeContinuation?.sessionId).toBe(slackSessionId);
+    context.mocks.slack.chat.postMessage.mockClear();
     await completeSlackTriggeredRun({
       runId: webRunId,
       sandboxToken: webExecution.sandboxToken,
@@ -3005,14 +2973,18 @@ describe("INT-01: Slack app deep webhook flows", () => {
       assistantText: "Web answer stays off Slack",
     });
     await flushWaitUntilForTest();
+    expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
     expect(context.mocks.webpush.sendNotification).toHaveBeenCalledTimes(1);
-    const { run2Id, execution2 } = await ensureSlackExecution({
-      runnerGroup,
-      run2Id: queuedRuns.run2Id,
-      execution2: queuedRuns.execution2,
+    const webSessionId = `bdd-slack-cli-${webRunId}`;
+    await expect(runs.readRun(actor, webRunId)).resolves.toMatchObject({
+      result: { frameworkSessionId: webSessionId },
     });
+    const run2Id = await observeSlackRun(runnerGroup);
+    const execution2 = await runs.executionInput(run2Id);
+    expect(execution2.nativeContinuation?.sessionId).toBe(webSessionId);
     await expect(readRunLog(actor, run2Id)).resolves.toMatchObject({
       triggerSource: "slack",
+      prompt: expect.stringContaining("stay canonical on the same route"),
     });
     expect(execution2.prompt).toContain("stay canonical on the same route");
     expect(execution2.prompt).toContain("session-notes.txt");
@@ -3031,224 +3003,28 @@ describe("INT-01: Slack app deep webhook flows", () => {
       cliAgentType: execution2.cliAgentType,
       assistantText: "Canonical Slack answer two",
     });
-    await flushWaitUntilForTest();
-    expect(context.mocks.webpush.sendNotification).toHaveBeenCalledTimes(1);
-  });
-
-  describe("queued Web and Slack sends on one canonical session", () => {
-    async function prepareCanonicalSession() {
-      const actor = bdd.user();
-      runs.acceptStorageDownloads();
-      runs.acceptTelemetryIngest();
-      const runnerGroup = await runs.configureRunnerGroup();
-      integrations.configureSlackAppMocks();
-      await runs.grantProEntitlement(actor);
-      await runs.ensurePersonalSubscriptionModel(actor, {
-        model: "claude-fable-5-1",
-      });
-      if (!actor.orgId) {
-        throw new Error("Expected canonical Slack actor to belong to an org");
-      }
-      const orgId = actor.orgId;
-      const slackUserId = uniqueSlackUserId();
-      const { teamId, botUserId } = await integrations.installSlackWorkspace(
-        actor,
-        {
-          installerSlackUserId: slackUserId,
-        },
-      );
-      const channelId = "C_BDD_CANONICAL_SESSION_REUSE";
-      const threadTs = "2911.000100";
-      const event = {
-        type: "app_mention",
-        user: slackUserId,
-        text: `<@${botUserId}> establish the canonical session`,
-        ts: threadTs,
-        channel: channelId,
-        channel_type: "channel",
-      };
-      const eventBody = JSON.stringify({
-        type: "event_callback",
-        team_id: teamId,
-        event_id: `EvBDD${randomUUID().replace(/-/g, "")}`,
-        event,
-      });
-      await integrations.requestSlackEvent(
-        eventBody,
-        integrations.signedSlackIngressHeaders(eventBody),
-        [200],
-      );
-      await flushWaitUntilForTest();
-
-      const run1Id = await observeSlackRun(runnerGroup);
-      // The Slack route's thread and the agent it launched with are public
-      // through the caller's thread lifecycle.
-      const { chatThreadId: canonicalChatThreadId, agentId: defaultAgentId } =
-        await ownedThreadWhere(actor, launchedBy(run1Id));
-      const execution1 = await runs.executionInput(run1Id);
-      return {
-        actor,
-        orgId,
-        runnerGroup,
-        teamId,
-        channelId,
-        threadTs,
-        event,
-        canonicalChatThreadId,
-        run1Id,
-        execution1,
-        defaultAgentId,
-      };
-    }
-
-    let prepared: Awaited<ReturnType<typeof prepareCanonicalSession>>;
-    beforeEach(async () => {
-      prepared = await prepareCanonicalSession();
-    });
-
-    it("keeps queued Web and Slack sends on one canonical session", async () => {
-      const {
-        actor,
-        runnerGroup,
-        teamId,
-        channelId,
-        threadTs,
-        event,
-        canonicalChatThreadId,
-        run1Id,
-        execution1,
-        defaultAgentId,
-      } = prepared;
-      const queuedWebMessage = await chat.requestSendEvent(
-        actor,
-        {
-          agentId: defaultAgentId,
-          prompt: "keep the web session separate",
-          threadId: canonicalChatThreadId,
-          clientEventId: randomUUID(),
-        },
-        [201],
-      );
-      expect(queuedWebMessage.body).toMatchObject({
-        threadId: canonicalChatThreadId,
-      });
-
-      const stickyBody = JSON.stringify({
-        type: "event_callback",
-        team_id: teamId,
-        event_id: `EvBDD${randomUUID().replace(/-/g, "")}`,
-        event: {
-          ...event,
-          text: "stay canonical on the same route",
-          ts: "2911.000200",
-          thread_ts: threadTs,
-        },
-      });
-      await integrations.requestSlackEvent(
-        stickyBody,
-        integrations.signedSlackIngressHeaders(stickyBody),
-        [200],
-      );
-      await flushWaitUntilForTest();
-
-      context.mocks.slack.chat.postMessage.mockClear();
-      await completeSlackTriggeredRun({
-        runId: run1Id,
-        sandboxToken: execution1.sandboxToken,
-        cliAgentType: execution1.cliAgentType,
-        assistantText: "Executing command...",
-        resultText: "Canonical Slack answer one",
-      });
-      await flushWaitUntilAndAssert(() => {
-        expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledOnce();
-        expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
-          expect.objectContaining({
-            channel: channelId,
-            thread_ts: threadTs,
-            text: "Canonical Slack answer one",
-          }),
-        );
-      });
-      await flushWaitUntilForTest();
-      const run1 = await runs.readRun(actor, run1Id);
-      const slackSessionId = run1.result?.frameworkSessionId;
-      if (!slackSessionId) {
-        throw new Error(
-          "Expected the first canonical Slack run to save a session",
-        );
-      }
-
-      const queuedRuns = await observeQueuedWebAndSlackRuns({
-        actor,
-        runnerGroup,
-        expectedSlackSessionId: `bdd-slack-cli-${run1Id}`,
-      });
-      const webRunId = queuedRuns.webRunId;
-      let execution2 = queuedRuns.execution2;
-      let run2Id = queuedRuns.run2Id;
-
-      const webExecution = await runs.executionInput(webRunId);
-      expect(webExecution.nativeContinuation?.sessionId).toBe(
-        `bdd-slack-cli-${run1Id}`,
-      );
-      context.mocks.slack.chat.postMessage.mockClear();
-      await completeSlackTriggeredRun({
-        runId: webRunId,
-        sandboxToken: webExecution.sandboxToken,
-        cliAgentType: webExecution.cliAgentType,
-        assistantText: "Web answer stays off Slack",
-      });
-      await flushWaitUntilForTest();
-      expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
-      const webRun = await runs.readRun(actor, webRunId);
-      const webSessionId = webRun.result?.frameworkSessionId;
-      if (!webSessionId) {
-        throw new Error("Expected the Web run to save its canonical session");
-      }
-      expect(webSessionId).toBe(`bdd-slack-cli-${webRunId}`);
-
-      ({ run2Id, execution2 } = await ensureSlackExecution({
-        runnerGroup,
-        run2Id,
-        execution2,
-      }));
-      expect(execution2.nativeContinuation?.sessionId).toBe(
-        `bdd-slack-cli-${webRunId}`,
-      );
-      await expect(readRunLog(actor, webRunId)).resolves.toMatchObject({
-        triggerSource: "web",
-      });
-      const slackRunLog = await readRunLog(actor, run2Id);
-      expect(slackRunLog.triggerSource).toBe("slack");
-      expect(slackRunLog.prompt).toContain("stay canonical on the same route");
-      await completeSlackTriggeredRun({
-        runId: run2Id,
-        sandboxToken: execution2.sandboxToken,
-        cliAgentType: execution2.cliAgentType,
-        assistantText: "Canonical Slack answer two",
-      });
-      await flushWaitUntilAndAssert(() => {
-        expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledOnce();
-        expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
-          expect.objectContaining({
-            channel: channelId,
-            thread_ts: threadTs,
-            text: "Canonical Slack answer two",
-          }),
-        );
-      });
+    await flushWaitUntilAndAssert(() => {
       expect(
-        (await chat.listThreadEvents(actor, canonicalChatThreadId)).events,
-      ).toStrictEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            eventType: "output.message",
-            content: "Canonical Slack answer two",
-          }),
-        ]),
+        context.mocks.slack.chat.postMessage,
+      ).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          channel: channelId,
+          thread_ts: threadTs,
+          text: "Canonical Slack answer two",
+        }),
       );
-      const run2 = await runs.readRun(actor, run2Id);
-      expect(run2.result?.frameworkSessionId).toBe(`bdd-slack-cli-${run2Id}`);
+    });
+    expect(context.mocks.webpush.sendNotification).toHaveBeenCalledTimes(1);
+    expect(
+      (await chat.listThreadEvents(actor, canonicalChatThreadId)).events,
+    ).toContainEqual(
+      expect.objectContaining({
+        eventType: "output.message",
+        content: "Canonical Slack answer two",
+      }),
+    );
+    await expect(runs.readRun(actor, run2Id)).resolves.toMatchObject({
+      result: { frameworkSessionId: `bdd-slack-cli-${run2Id}` },
     });
   });
 

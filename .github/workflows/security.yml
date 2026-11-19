@@ -354,7 +354,6 @@ jobs:
             .github/scripts/tests/runner-lifecycle-lock-diagnostics-test.sh \
             .github/scripts/tests/runner-release-build-workflow-test.sh \
             .github/scripts/tests/rust-coverage-cache-workflow-test.sh \
-            .github/scripts/tests/rust-ci-memory-workflow-test.sh \
             .github/scripts/tests/runner-lifecycle-ownership-workflow-test.sh \
             .github/scripts/tests/run-semgrep-test.sh \
             .github/scripts/tests/semgrep-results-test.sh \

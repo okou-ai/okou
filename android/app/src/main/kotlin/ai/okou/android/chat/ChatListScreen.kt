@@ -48,6 +48,10 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -75,7 +79,7 @@ internal fun ChatListScreen(
     retryMetadata: () -> Unit,
     refreshIndicators: () -> Unit,
     open: (ConfirmedChat) -> Unit,
-    changeReadState: (String, ChatReadAction) -> Unit,
+    performRowAction: (String, ChatRowAction) -> Unit,
     collapsed: List<String>,
     toggleProject: (String) -> Unit,
     listState: LazyListState,
@@ -236,10 +240,10 @@ internal fun ChatListScreen(
                                     thread.id == selectedChatId,
                                     runningFrame,
                                     row = section.firstChatRow + index,
-                                    readAction = state.readAction(thread),
-                                    readActionPending = thread.id in state.pendingReadActions,
-                                    changeReadState = { action ->
-                                        changeReadState(thread.id, action)
+                                    actions = state.rowActions(thread),
+                                    pendingAction = state.pendingRowActions[thread.id],
+                                    performAction = { action ->
+                                        performRowAction(thread.id, action)
                                     },
                                 ) {
                                     open(thread)
@@ -335,14 +339,14 @@ private fun ChatRow(
     isSelected: Boolean,
     runningFrame: LongState,
     row: Int,
-    readAction: ChatReadAction?,
-    readActionPending: Boolean,
-    changeReadState: (ChatReadAction) -> Unit,
+    actions: List<ChatRowAction>,
+    pendingAction: ChatRowAction?,
+    performAction: (ChatRowAction) -> Unit,
     open: () -> Unit,
 ) {
-    var menuOpen by remember(readAction) { mutableStateOf(false) }
+    var menuOpen by remember(actions) { mutableStateOf(false) }
     val openMenu: (() -> Unit)? =
-        if (readAction != null && !readActionPending) ({ menuOpen = true }) else null
+        if (actions.isNotEmpty() && pendingAction == null) ({ menuOpen = true }) else null
     val labels =
         listOfNotNull(
             status.label(),
@@ -350,7 +354,12 @@ private fun ChatRow(
             if (thread.muted == true && status == ChatRowStatus.Running) {
                 stringResource(R.string.chat_muted)
             } else null,
-            if (readActionPending) stringResource(R.string.chat_read_action_pending) else null,
+            pendingAction?.let {
+                stringResource(
+                    if (it.updatesChat) R.string.chat_row_action_pending
+                    else R.string.chat_read_action_pending
+                )
+            },
         )
     val shape = RoundedCornerShape(8.dp)
     val colors = MaterialTheme.colorScheme
@@ -369,6 +378,20 @@ private fun ChatRow(
                         openMenu()
                         true
                     } else false
+                }
+                .pointerInput(actions, pendingAction) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            if (
+                                event.type == PointerEventType.Press &&
+                                    event.buttons.isSecondaryPressed
+                            ) {
+                                event.changes.forEach { it.consume() }
+                                openMenu?.invoke()
+                            }
+                        }
+                    }
                 }
                 .combinedClickable(
                     onClick = open,
@@ -397,31 +420,34 @@ private fun ChatRow(
                 ChatStatusGlyph(status, runningFrame, row)
             }
         }
-        if (readAction != null) {
+        if (actions.isNotEmpty()) {
             DropdownMenu(
-                expanded = menuOpen && !readActionPending,
+                expanded = menuOpen && pendingAction == null,
                 onDismissRequest = { menuOpen = false },
             ) {
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            stringResource(
-                                when (readAction) {
-                                    ChatReadAction.MarkRead -> R.string.chat_mark_read
-                                    ChatReadAction.MarkUnread -> R.string.chat_mark_unread
-                                }
-                            )
-                        )
-                    },
-                    onClick = {
-                        menuOpen = false
-                        changeReadState(readAction)
-                    },
-                )
+                for (action in actions) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(action.label())) },
+                        onClick = {
+                            menuOpen = false
+                            performAction(action)
+                        },
+                    )
+                }
             }
         }
     }
 }
+
+private fun ChatRowAction.label(): Int =
+    when (this) {
+        ChatRowAction.MarkRead -> R.string.chat_mark_read
+        ChatRowAction.MarkUnread -> R.string.chat_mark_unread
+        ChatRowAction.Mute -> R.string.chat_mute
+        ChatRowAction.Unmute -> R.string.chat_unmute
+        ChatRowAction.Archive -> R.string.chat_archive
+        ChatRowAction.Unarchive -> R.string.chat_unarchive
+    }
 
 @Composable
 private fun ChatRowStatus.label(): String? =

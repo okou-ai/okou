@@ -13,7 +13,10 @@ import {
   createAcceptedExecutionStorage,
   type AcceptedMemoryMount,
 } from "./execution-storage.service";
-import { executionSkillRoot } from "./execution-workflow-selection";
+import {
+  assertOfficialWorkflowMounts,
+  executionSkillRoot,
+} from "./execution-workflow-selection";
 import type { ModelFirstPin } from "./model-selection.service";
 import {
   emptyEnvironment,
@@ -103,7 +106,7 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
       return (await get(input$)).memoryMounts;
     }),
   );
-  const packages$ = createExecutionPackages(input$, storage$);
+  const packages$ = createExecutionPackages(input$);
   const platform$ = createExecutionPlatform(input$, model$, disabledTools$);
   const environment$ = createExecutionEnvironment(
     input$,
@@ -130,15 +133,14 @@ function createExecutionModel(input$: ExecutionInput$) {
   });
 }
 
-function createExecutionPackages(
-  input$: ExecutionInput$,
-  storage$: ReturnType<typeof createAcceptedExecutionStorage>,
-) {
+function createExecutionPackages(input$: ExecutionInput$) {
   return computed(async (get) => {
-    const { run, facts } = await get(input$);
-    const framework = run.framework;
-    const skillRoot = executionSkillRoot(framework);
-    const storage = await get(storage$);
+    const { run, facts, memoryMounts } = await get(input$);
+    const skillRoot = executionSkillRoot(run.framework);
+    // Overlay precedence depends on the accepted mount paths and order.
+    const storageMounts = memoryMounts.map(({ mount }) => {
+      return mount;
+    });
     const volumes = resolveRunSkillVolumes(
       mergeRunSkillVolumes([
         facts.connectorSkillVolumes,
@@ -147,10 +149,7 @@ function createExecutionPackages(
       ]),
       skillRoot,
     );
-    const winners = normalizeMountOverlay([
-      ...volumes,
-      ...storage.storageMounts,
-    ]);
+    const winners = normalizeMountOverlay([...volumes, ...storageMounts]);
     const seedSkillBundles = winners.flatMap((volume) => {
       return "contentBundle" in volume
         ? [{ ...volume.contentBundle, mountPath: volume.mountPath }]
@@ -168,10 +167,15 @@ function createExecutionPackages(
           ]
         : [];
     });
+    const officialWorkflowBundles = executionOfficialBundles(run, skillRoot);
+    assertOfficialWorkflowMounts(
+      officialWorkflowBundles,
+      storageMounts,
+      skillRoot,
+    );
     return {
-      cliAgentType: framework,
-      storageMounts: storage.storageMounts,
-      officialWorkflowBundles: executionOfficialBundles(run, skillRoot),
+      skillRoot,
+      officialWorkflowBundles,
       seedSkillBundles,
       templateGuidanceBundles,
     };
