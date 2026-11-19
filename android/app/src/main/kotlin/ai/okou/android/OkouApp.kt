@@ -72,6 +72,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -275,10 +276,61 @@ internal fun OkouApp(
                     is WorkspaceTarget.Chat ->
                         thread?.title?.takeIf { it.isNotBlank() }
                             ?: stringResource(R.string.chat_untitled)
-                    is WorkspaceTarget.NewChat ->
-                        list.projects.firstOrNull { it.id == target.projectId }?.name
-                            ?: stringResource(R.string.composer_new)
+                    is WorkspaceTarget.NewChat -> stringResource(R.string.composer_new)
                 }
+        }
+    val projectId = newChat?.projectId ?: thread?.projectId
+    val projectSubtitle =
+        projectId?.let { id -> list.projects.firstOrNull { it.id == id }?.name ?: id }
+    val detailTitleStyle =
+        MaterialTheme.typography.titleMedium.copy(
+            fontSize = 18.sp,
+            lineHeight = 24.sp,
+            letterSpacing = 0.sp,
+            fontWeight = FontWeight(550),
+        )
+    val projectSubtitleStyle =
+        MaterialTheme.typography.bodySmall.copy(
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            letterSpacing = 0.sp,
+        )
+    val settingsTitleStyle =
+        MaterialTheme.typography.titleLarge.copy(
+            fontSize = 20.sp,
+            lineHeight = 28.sp,
+            letterSpacing = 0.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+    val detailTitle =
+        @Composable {
+            Column {
+                Text(
+                    title,
+                    style = detailTitleStyle,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (projectSubtitle != null) {
+                    Text(
+                        projectSubtitle,
+                        style = projectSubtitleStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    val appBarHeight =
+        with(LocalDensity.current) {
+            val textHeight =
+                if (settings != null) settingsTitleStyle.lineHeight.toDp()
+                else
+                    detailTitleStyle.lineHeight.toDp() +
+                        if (projectSubtitle != null) projectSubtitleStyle.lineHeight.toDp()
+                        else 0.dp
+            maxOf(64.dp, textHeight + 16.dp)
         }
 
     val toolbarActions =
@@ -361,7 +413,17 @@ internal fun OkouApp(
                 Box(Modifier.windowInsetsPadding(TopAppBarDefaults.windowInsets)) { listToolbar() }
             } else if (settings != null || listWidth == null && !searchActive) {
                 TopAppBar(
-                    title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    title = {
+                        if (settings != null) {
+                            Text(
+                                title,
+                                style = settingsTitleStyle,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        } else detailTitle()
+                    },
+                    expandedHeight = appBarHeight,
                     colors =
                         TopAppBarDefaults.topAppBarColors(
                             containerColor = MaterialTheme.colorScheme.background
@@ -469,18 +531,7 @@ internal fun OkouApp(
                                         ),
                                     contentAlignment = Alignment.CenterStart,
                                 ) {
-                                    Text(
-                                        title,
-                                        style =
-                                            MaterialTheme.typography.titleMedium.copy(
-                                                fontSize = 18.sp,
-                                                lineHeight = 24.sp,
-                                                letterSpacing = 0.sp,
-                                                fontWeight = FontWeight(550),
-                                            ),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
+                                    detailTitle()
                                 }
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outline)
                             }

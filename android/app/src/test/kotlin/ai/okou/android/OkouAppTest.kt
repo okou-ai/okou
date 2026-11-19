@@ -204,7 +204,8 @@ class OkouAppTest {
     fun updateToolbarKeepsTheLabelReadableWithLargerText() {
         render(fontScale = 1.3f, openUpdate = {})
         val layouts = mutableListOf<TextLayoutResult>()
-        compose.onNodeWithText("View update", useUnmergedTree = true).performSemanticsAction(
+        compose.onNodeWithText("Update").assertWidthIsEqualTo(104.dp).assertHeightIsEqualTo(48.dp)
+        compose.onNodeWithText("Update", useUnmergedTree = true).performSemanticsAction(
             SemanticsActions.GetTextLayoutResult
         ) {
             it(layouts)
@@ -229,7 +230,7 @@ class OkouAppTest {
         compose.onNodeWithContentDescription("Filter").performClick()
         compose.onNodeWithText("Inbox").assertIsSelected().assertHeightIsEqualTo(48.dp)
         compose
-            .onNodeWithTag("chat_filter_popup")
+            .onNodeWithTag("workspace_popup")
             .assertWidthIsEqualTo(244.dp)
             .assertHeightIsEqualTo(265.dp)
         compose.onNodeWithText("Mark all as read").assertIsNotEnabled()
@@ -243,9 +244,14 @@ class OkouAppTest {
     }
 
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun updateOverflowOpensTheSameFilterMenu() {
         render(openUpdate = {})
         compose.onNodeWithContentDescription("More actions").performClick()
+        compose
+            .onNodeWithTag("workspace_popup")
+            .assertWidthIsEqualTo(244.dp)
+            .assertHeightIsEqualTo(158.dp)
         compose.onNodeWithText("Filter").performClick()
         compose.onNodeWithText("Inbox").assertIsSelected()
         compose.onNodeWithText("Mark all as read").assertIsNotEnabled()

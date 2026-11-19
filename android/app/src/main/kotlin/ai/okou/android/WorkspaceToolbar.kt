@@ -10,6 +10,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,8 +26,6 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -55,7 +55,6 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
@@ -119,7 +118,8 @@ internal fun WorkspaceListToolbar(
     ) {
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) { title() }
         Row(
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            Modifier.width(156.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             actions()
@@ -142,8 +142,7 @@ internal fun WorkspaceToolbarActions(
     var anchorFocused by remember { mutableStateOf(false) }
     val settingsAnchor =
         Modifier.focusRequester(settingsFocus).onFocusChanged { anchorFocused = it.isFocused }
-    val foreground = MaterialTheme.colorScheme.onSurface
-    val textButtonColors = ButtonDefaults.textButtonColors(contentColor = foreground)
+    val colors = MaterialTheme.colorScheme
     val filterMenu =
         @Composable {
             ChatFilterMenu(
@@ -181,23 +180,27 @@ internal fun WorkspaceToolbarActions(
             Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings))
         }
     } else {
-        val updateIconSize = 24.dp
         TextButton(
             onClick = openUpdate,
-            // Preserve the label's width budget when adding the leading icon.
-            modifier = Modifier.widthIn(max = 136.dp + updateIconSize + ButtonDefaults.IconSpacing),
-            colors = textButtonColors,
+            modifier = Modifier.width(104.dp).heightIn(min = 48.dp),
+            shape = RoundedCornerShape(14.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+            colors =
+                ButtonDefaults.textButtonColors(
+                    containerColor = colors.inverseSurface,
+                    contentColor = colors.inverseOnSurface,
+                ),
         ) {
             Icon(
                 painterResource(R.drawable.ic_download),
                 contentDescription = null,
-                modifier = Modifier.size(updateIconSize),
+                modifier = Modifier.size(18.dp),
             )
-            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+            Spacer(Modifier.width(4.dp))
             Text(
-                stringResource(R.string.updates_view),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                stringResource(R.string.updates_toolbar),
+                style = filterLabelStyle(),
+                fontWeight = FontWeight(550),
             )
         }
         Box {
@@ -215,16 +218,11 @@ internal fun WorkspaceToolbarActions(
                     stringResource(R.string.chat_more_actions),
                 )
             }
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            WorkspaceMenu(expanded = expanded, close = { expanded = false }) {
                 if (showFilter) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.chat_filter)) },
-                        leadingIcon = {
-                            Icon(
-                                painterResource(R.drawable.ic_filter_list),
-                                contentDescription = null,
-                            )
-                        },
+                    WorkspaceMenuRow(
+                        label = stringResource(R.string.chat_filter),
+                        icon = R.drawable.ic_filter_list,
                         onClick = {
                             expanded = false
                             filterOpen = true
@@ -232,22 +230,18 @@ internal fun WorkspaceToolbarActions(
                     )
                 }
                 if (openSearch != null) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.chat_search)) },
-                        leadingIcon = {
-                            Icon(painterResource(R.drawable.ic_search), contentDescription = null)
-                        },
+                    WorkspaceMenuRow(
+                        label = stringResource(R.string.chat_search),
+                        icon = R.drawable.ic_search,
                         onClick = {
                             expanded = false
                             openSearch()
                         },
                     )
                 }
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.settings)) },
-                    leadingIcon = {
-                        Icon(painterResource(R.drawable.ic_settings), contentDescription = null)
-                    },
+                WorkspaceMenuRow(
+                    label = stringResource(R.string.settings),
+                    icon = R.drawable.ic_settings,
                     onClick = {
                         expanded = false
                         openSettings(restoreAnchor)
@@ -268,6 +262,38 @@ private fun ChatFilterMenu(
     canMarkAllRead: Boolean,
     markAllRead: () -> Unit,
 ) {
+    WorkspaceMenu(expanded, close) {
+        WorkspaceMenuRow(
+            label = stringResource(R.string.chat_mark_all_read),
+            icon = R.drawable.ic_done_all,
+            enabled = canMarkAllRead,
+            onClick = {
+                close()
+                markAllRead()
+            },
+        )
+        HorizontalDivider(Modifier.padding(horizontal = 6.dp, vertical = 5.dp))
+        Column(Modifier.selectableGroup()) {
+            ChatListFilter.entries.forEach { choice ->
+                WorkspaceMenuRow(
+                    label = stringResource(choice.label()),
+                    selected = filter == choice,
+                    onClick = {
+                        selectFilter(choice)
+                        close()
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceMenu(
+    expanded: Boolean,
+    close: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     if (!expanded) return
     val colors = MaterialTheme.colorScheme
     val window = LocalConfiguration.current
@@ -275,7 +301,7 @@ private fun ChatFilterMenu(
     val position =
         remember(density) {
             with(density) {
-                FilterPopupPosition(12.dp.roundToPx(), 8.dp.roundToPx(), 4.dp.roundToPx())
+                WorkspaceMenuPosition(12.dp.roundToPx(), 8.dp.roundToPx(), 4.dp.roundToPx())
             }
         }
     Popup(
@@ -287,42 +313,19 @@ private fun ChatFilterMenu(
             modifier =
                 Modifier.width((window.screenWidthDp - 24).coerceIn(1, 244).dp)
                     .heightIn(max = (window.screenHeightDp - 80).coerceAtLeast(48).dp)
-                    .testTag("chat_filter_popup"),
+                    .testTag("workspace_popup"),
             shape = RoundedCornerShape(16.dp),
             color = colors.surface,
             shadowElevation = 6.dp,
             border = BorderStroke(1.dp, colors.outline),
         ) {
-            Column(Modifier.verticalScroll(rememberScrollState()).padding(7.dp)) {
-                FilterMenuRow(
-                    label = stringResource(R.string.chat_mark_all_read),
-                    icon = R.drawable.ic_done_all,
-                    enabled = canMarkAllRead,
-                    onClick = {
-                        close()
-                        markAllRead()
-                    },
-                )
-                HorizontalDivider(Modifier.padding(horizontal = 6.dp, vertical = 5.dp))
-                Column(Modifier.selectableGroup()) {
-                    ChatListFilter.entries.forEach { choice ->
-                        FilterMenuRow(
-                            label = stringResource(choice.label()),
-                            selected = filter == choice,
-                            onClick = {
-                                selectFilter(choice)
-                                close()
-                            },
-                        )
-                    }
-                }
-            }
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(7.dp), content = content)
         }
     }
 }
 
 @Composable
-private fun FilterMenuRow(
+private fun WorkspaceMenuRow(
     label: String,
     onClick: () -> Unit,
     @DrawableRes icon: Int? = null,
@@ -333,7 +336,7 @@ private fun FilterMenuRow(
         if (selected == null) Modifier.clickable(enabled, role = Role.Button, onClick = onClick)
         else Modifier.selectable(selected, enabled, role = Role.RadioButton, onClick = onClick)
     val foreground = MaterialTheme.colorScheme.onSurface
-    val color = if (enabled) foreground else foreground.copy(alpha = 0.38f)
+    val color = if (enabled) foreground else foreground.copy(alpha = 0.4f)
     Row(
         Modifier.fillMaxWidth()
             .heightIn(min = 48.dp)
@@ -361,7 +364,7 @@ private fun filterLabelStyle() =
         letterSpacing = 0.sp,
     )
 
-private class FilterPopupPosition(
+private class WorkspaceMenuPosition(
     private val edge: Int,
     private val topEdge: Int,
     private val gap: Int,

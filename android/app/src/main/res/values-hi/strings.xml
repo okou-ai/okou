@@ -118,6 +118,7 @@
     <string name="updates_preparing">अपडेट तैयार हो रहा है…</string>
     <string name="updates_check">अपडेट जाँचें</string>
     <string name="updates_view">अपडेट देखें</string>
+    <string name="updates_toolbar">अपडेट</string>
     <string name="updates_later">बाद में</string>
     <string name="updates_download">अपडेट डाउनलोड करें</string>
     <string name="updates_install">अपडेट इंस्टॉल करें</string>

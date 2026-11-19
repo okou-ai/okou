@@ -79,7 +79,7 @@ class NativeUpdateTest {
                 device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000)
             device.awaitChatList(app)
             gate.complete(Unit)
-            val updateAction = app.getString(R.string.updates_view)
+            val updateAction = app.getString(R.string.updates_toolbar)
             assertNotNull(text(updateAction))
             assertTrue(
                 device.wait(Until.gone(By.desc(app.getString(R.string.chat_filter))), 10_000)
