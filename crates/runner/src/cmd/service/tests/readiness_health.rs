@@ -138,17 +138,20 @@ async fn wait_running_health_child() {
             "{error}"
         );
         server.assert_finished().await;
+    } else if scenario == "healthy" {
+        assert_eq!(wait_running(args, &home).await.unwrap(), 35);
     } else {
-        let result = wait_running(args, &home).await;
-        if scenario == "healthy" {
-            assert_eq!(result.unwrap(), 35);
-        } else {
-            let error = result.unwrap_err().to_string();
-            assert!(
-                error.contains("failed runner health verification"),
-                "{error}"
-            );
-        }
+        let (result, rechecks) =
+            crate::cmd::doctor::with_advanced_recheck_delays(wait_running(args, &home)).await;
+        let error = result.unwrap_err().to_string();
+        assert!(
+            error.contains("failed runner health verification"),
+            "{error}"
+        );
+        assert_eq!(
+            rechecks, 3,
+            "persistent warnings must exhaust the recheck budget"
+        );
     }
     assert!(root.join("cat-called").exists());
 }
