@@ -623,24 +623,6 @@ Enable a credential-free connector directly from chat. [Registration](https://gi
 - **Then** Enable a credential-free connector directly from chat.
 - **Disposition** retain.
 
-## chat-message-pdf-001
-
-Offer a native PDF download whose bytes survive repeated clicks on app.okou.ai. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-message-pdf.test.tsx#L132).
-
-- **Given** A completed chat result is exportable on the device in this example.
-- **When** Export as PDF and click the resulting download twice.
-- **Then** Both downloads expose the same generated PDF bytes through a native download.
-- **Disposition** retain.
-
-## upstream-eaae30ac-chat-message-pdf-132-02
-
-Offer a native PDF download whose bytes survive repeated clicks on pr-1-app.omby.ai. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-message-pdf.test.tsx#L132).
-
-- **Given** A completed chat result is exportable on the device in this example.
-- **When** Export as PDF and click the resulting download twice.
-- **Then** Both downloads expose the same generated PDF bytes through a native download.
-- **Disposition** retain.
-
 ## chat-navigation-artifact-drive-006
 
 Recheck Drive authorization after leaving and reopening the chat page. [Registration](https://github.com/okou-ai/okou/blob/4bf10b89e09adce4c9253418d2ad8de1937e3e9e/turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx#L706).

@@ -13,7 +13,7 @@ upstream_from	upstream_to	path_change	test_file	frozen_executions_in_file	frozen
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.test.tsx	10	5	pending
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-scroll.test.tsx	6	3	pending
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	16	8	pending
-03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-pdf.test.tsx	14	7	pending
+03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-pdf.test.tsx	14	7	reconciled
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-navigation-artifact-drive.test.tsx	22	11	pending
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-artifact-carryover.test.tsx	10	5	pending
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-history.test.tsx	24	12	pending

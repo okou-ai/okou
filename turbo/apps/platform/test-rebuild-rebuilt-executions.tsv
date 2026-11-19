@@ -279,3 +279,10 @@ chat-composer-keyboard-003	turbo/apps/platform/src/views/okou-page/__tests__/cha
 chat-composer-keyboard-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-keyboard.test.tsx	Use the appropriate Enter behavior on touch devices	194	passed
 chat-composer-model-catalog-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-catalog.test.tsx	Offer the active catalog models in catalog order with catalog names	32	passed
 chat-composer-model-catalog-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-catalog.test.tsx	Offer Auto from canonical available-model and catalog responses	49	passed
+chat-message-pdf-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-pdf.test.tsx	Generating a PDF offers a native download whose bytes survive repeated clicks	133	passed
+chat-message-pdf-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-pdf.test.tsx	An empty filename result keeps the default PDF filename	186	passed
+chat-message-pdf-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-pdf.test.tsx	PDF text and typography render CJK emphasis	275	passed
+chat-message-pdf-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-pdf.test.tsx	Whitespace-only emphasis still exports the surrounding text	324	passed
+chat-message-pdf-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-pdf.test.tsx	Exported table text stays inside the page and merged columns preserve all cells	338	passed
+chat-message-pdf-012	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-pdf.test.tsx	A table row taller than a page retains every line in the exported PDF	370	passed
+chat-message-pdf-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-pdf.test.tsx	Exported short table rows keep each detail and status on their identifier's page	389	passed
