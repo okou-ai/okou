@@ -34,6 +34,26 @@ export function createArtifactCatalogSidebarSignals(
     );
   });
 
+  const loadPreview$ = command(
+    async ({ get, set }, artifactId: string, signal: AbortSignal) => {
+      const detail = await get(catalog.selectedArtifactDetail$);
+      signal.throwIfAborted();
+      if (!detail) {
+        return;
+      }
+      if (detail.kind === "shared-thread") {
+        window.location.assign(
+          `/share/threads/${encodeURIComponent(detail.sharedThread.id)}`,
+        );
+        return;
+      }
+      await set(catalog.ensureSelectedArtifactPreview$, artifactId, signal);
+      signal.throwIfAborted();
+      await set(refreshWorkspaceLayout$, signal);
+      signal.throwIfAborted();
+    },
+  );
+
   return {
     open$: computed((get) => {
       return (
@@ -42,7 +62,7 @@ export function createArtifactCatalogSidebarSignals(
       );
     }),
     openArtifact$: command(
-      async ({ get, set }, artifactId: string, signal: AbortSignal) => {
+      async ({ set }, artifactId: string, signal: AbortSignal) => {
         signal.throwIfAborted();
         const openSignal = set(resetOpenSignal$, signal);
         set(diagram.dispose$);
@@ -56,26 +76,17 @@ export function createArtifactCatalogSidebarSignals(
         set(imageCanvas.reset$);
         set(catalog.selectArtifact$, artifactId);
         set(internalOpen$, true);
-        const detail = await get(catalog.selectedArtifactDetail$);
+        // Dismissing this preview must not cancel the still-live catalog route.
+        const [result] = await Promise.allSettled([
+          set(loadPreview$, artifactId, openSignal),
+        ]);
         signal.throwIfAborted();
-        openSignal.throwIfAborted();
-        if (!detail) {
-          return;
+        if (
+          result.status === "rejected" &&
+          (!openSignal.aborted || result.reason !== openSignal.reason)
+        ) {
+          throw result.reason;
         }
-        if (detail.kind === "shared-thread") {
-          window.location.assign(
-            `/share/threads/${encodeURIComponent(detail.sharedThread.id)}`,
-          );
-          return;
-        }
-        await set(
-          catalog.ensureSelectedArtifactPreview$,
-          artifactId,
-          openSignal,
-        );
-        signal.throwIfAborted();
-        openSignal.throwIfAborted();
-        await set(refreshWorkspaceLayout$, openSignal);
       },
     ),
     close$,

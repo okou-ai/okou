@@ -17,6 +17,7 @@ import {
   openVideoLightbox$,
 } from "../okou-page/attachment-chips.ts";
 import {
+  hash$,
   historyState$,
   pathname$,
   replaceSearchParams$,
@@ -79,29 +80,6 @@ export const scrollArtifactCardIntoViewRef$ = onRef(
   }),
 );
 
-const ARTIFACT_PREVIEW_HISTORY_STATE_KEY = "artifactCatalogPreviewId";
-const ARTIFACT_SCROLL_HISTORY_STATE_KEY = "artifactCatalogScrollId";
-
-function artifactIdFromHistoryState(
-  state: unknown,
-  key:
-    | typeof ARTIFACT_PREVIEW_HISTORY_STATE_KEY
-    | typeof ARTIFACT_SCROLL_HISTORY_STATE_KEY,
-): string | null {
-  if (typeof state !== "object" || state === null) {
-    return null;
-  }
-  const value =
-    key === ARTIFACT_PREVIEW_HISTORY_STATE_KEY &&
-    ARTIFACT_PREVIEW_HISTORY_STATE_KEY in state
-      ? state.artifactCatalogPreviewId
-      : key === ARTIFACT_SCROLL_HISTORY_STATE_KEY &&
-          ARTIFACT_SCROLL_HISTORY_STATE_KEY in state
-        ? state.artifactCatalogScrollId
-        : null;
-  return typeof value === "string" ? value : null;
-}
-
 export function artifactIdFromCatalogSearchParams(
   params: URLSearchParams,
 ): string | null {
@@ -115,55 +93,43 @@ export function artifactIdFromCatalogSearchParams(
 export function artifactCatalogScrollTargetFromHistoryState(
   historyState: unknown,
 ): string | null {
-  return artifactIdFromHistoryState(
-    historyState,
-    ARTIFACT_SCROLL_HISTORY_STATE_KEY,
-  );
+  if (
+    typeof historyState !== "object" ||
+    historyState === null ||
+    !("artifactCatalogScrollId" in historyState)
+  ) {
+    return null;
+  }
+  const artifactId = historyState.artifactCatalogScrollId;
+  return typeof artifactId === "string" ? artifactId : null;
 }
-
-/**
- * Give a routed preview its own entry above the catalog. Browser Back can then
- * close the preview while leaving the user on the matching artifact tab.
- */
-export const prepareArtifactCatalogPreviewHistory$ = command(
-  ({ get, set }, artifactId: string, previewSearchParams: URLSearchParams) => {
-    if (
-      artifactIdFromHistoryState(
-        get(historyState$),
-        ARTIFACT_PREVIEW_HISTORY_STATE_KEY,
-      ) === artifactId
-    ) {
-      return;
-    }
-    const catalogSearchParams = new URLSearchParams(previewSearchParams);
-    catalogSearchParams.delete("artifact");
-    set(replaceSearchParams$, catalogSearchParams, {
-      [ARTIFACT_SCROLL_HISTORY_STATE_KEY]: artifactId,
-    });
-    set(updateSearchParams$, previewSearchParams, {
-      [ARTIFACT_PREVIEW_HISTORY_STATE_KEY]: artifactId,
-      [ARTIFACT_SCROLL_HISTORY_STATE_KEY]: artifactId,
-    });
-  },
-);
 
 export const closeArtifactCatalogPreview$ = command(
   ({ get, set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
     set(artifactCatalogSidebar.close$);
-    const artifactId = artifactIdFromCatalogSearchParams(get(searchParams$));
-    const previewArtifactId = artifactIdFromHistoryState(
-      get(historyState$),
-      ARTIFACT_PREVIEW_HISTORY_STATE_KEY,
-    );
-    if (
-      get(pathname$) === ROUTES.artifacts &&
-      artifactId !== null &&
-      artifactId === previewArtifactId
-    ) {
-      window.history.back();
+    set(closeLightboxWithDialogExit$, signal);
+    if (get(pathname$) !== ROUTES.artifacts) {
       return;
     }
-    set(closeLightboxWithDialogExit$, signal);
+    const searchParams = new URLSearchParams(get(searchParams$));
+    const artifactId = artifactIdFromCatalogSearchParams(searchParams);
+    if (artifactId === null) {
+      return;
+    }
+    searchParams.delete("artifact");
+    const historyState = get(historyState$);
+    set(
+      replaceSearchParams$,
+      searchParams,
+      {
+        ...(typeof historyState === "object" && historyState !== null
+          ? historyState
+          : {}),
+        artifactCatalogScrollId: artifactId,
+      },
+      get(hash$),
+    );
   },
 );
 

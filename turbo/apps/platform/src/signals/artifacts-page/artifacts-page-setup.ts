@@ -16,7 +16,6 @@ import {
   artifactIdFromCatalogSearchParams,
   loadThroughArtifactCatalog$,
   openArtifact$,
-  prepareArtifactCatalogPreviewHistory$,
   reloadArtifactCatalog$,
   setArtifactCatalogKindFromRoute$,
 } from "./artifact-catalog-signals.ts";
@@ -30,6 +29,7 @@ export const setupArtifactsPage$ = command(
       "abort",
       () => {
         set(artifactCatalogSidebar.close$);
+        set(closeLightboxImmediately$);
       },
       { once: true },
     );
@@ -46,9 +46,7 @@ export const setupArtifactsPage$ = command(
       { topic: artifactChangedTopic, invalidations: [reloadArtifactCatalog$] },
       signal,
     );
-    if (artifactId) {
-      set(prepareArtifactCatalogPreviewHistory$, artifactId, routeSearchParams);
-    } else {
+    if (!artifactId) {
       set(closeLightboxImmediately$);
     }
     const scrollToArtifactId =

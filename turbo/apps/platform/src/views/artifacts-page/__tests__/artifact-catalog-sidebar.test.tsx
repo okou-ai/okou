@@ -116,7 +116,7 @@ test.each([false, true])(
   },
 );
 
-test("A routed website preview opens in the sidebar and Close returns to its catalog", async () => {
+test("Closing a routed website sidebar keeps its catalog query and hash", async () => {
   mockCatalog({
     ...artifact({ title: "Release website", kind: "hosted-site" }),
     kind: "hosted-site",
@@ -132,7 +132,7 @@ test("A routed website preview opens in the sidebar and Close returns to its cat
   });
   await setupPage({
     context,
-    path: `/artifacts?tab=hosted-site&artifact=${ARTIFACT_ID}`,
+    path: `/artifacts?tab=hosted-site&artifact=${ARTIFACT_ID}&source=search#release-catalog`,
     featureSwitches: {
       [FeatureSwitchKey.ArtifactSidebarPreview]: true,
     },
@@ -149,9 +149,15 @@ test("A routed website preview opens in the sidebar and Close returns to its cat
   click(getButtonByName("Exit fullscreen", preview));
   click(getButtonByName("Close artifact", preview));
   await waitFor(() => {
-    expect(window.location.search).toBe("?tab=hosted-site");
+    expect(window.location.search).toBe("?tab=hosted-site&source=search");
     expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
   });
+  expect(window.location.pathname).toBe("/artifacts");
+  expect(window.location.hash).toBe("#release-catalog");
+  expect(getButtonByName("Show website artifacts")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await expect(
     findArtifactAction("Release website"),
   ).resolves.toBeInTheDocument();
@@ -214,6 +220,54 @@ test("An avatar sidebar reuses the private video URL already shown by its card",
   await expect(
     within(sidebar).findByLabelText("Video preview for avatar.mp4"),
   ).resolves.toHaveAttribute("src", firstUrl);
+  expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
+});
+
+test("Closing a routed sidebar while it loads lets catalog setup finish", async () => {
+  const release = context.mocks.deferred<void>();
+  const detail = fileDetail("pending.pdf", "application/pdf");
+  context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
+    if (query.cursor === "pending-page") {
+      return respond(200, { artifacts: [detail], nextCursor: null });
+    }
+    return respond(200, {
+      artifacts: [
+        artifact({
+          id: "a0000000-0000-4000-a000-000000000002",
+          title: "first-page.txt",
+        }),
+      ],
+      nextCursor: "pending-page",
+    });
+  });
+  context.mocks.api(artifactCatalogContract.get, async ({ respond }) => {
+    await release.promise;
+    return respond(200, detail);
+  });
+  const pageSetup = setupPage({
+    context,
+    path: `/artifacts?tab=file&artifact=${ARTIFACT_ID}&source=search#catalog`,
+    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: true },
+  });
+  try {
+    const preview = await screen.findByRole("complementary", {
+      name: "Artifact",
+    });
+    click(getButtonByName("Close artifact", preview));
+    await waitFor(() => {
+      expect(window.location.search).toBe("?tab=file&source=search");
+      expect(preview).not.toBeInTheDocument();
+    });
+  } finally {
+    release.resolve();
+    await pageSetup;
+  }
+  await expect(findArtifactAction("pending.pdf")).resolves.toBeInTheDocument();
+  await expect(
+    findArtifactAction("first-page.txt"),
+  ).resolves.toBeInTheDocument();
+  expect(window.location.hash).toBe("#catalog");
+  expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
   expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
 });
 
