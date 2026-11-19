@@ -67,8 +67,13 @@ and product branches before grouping parameter rows. Keep the automation
 retry sample and further rebuild work pending until the deletion gate is
 met.
 
-## Latest tally
+## Current gate
 
-See [authorization, subscription and recovery screening](test-rebuild-batch-authorization-feedback.md)
-for the current count of 64 confirmed frozen deductions and the remaining
-1,470-row gap. Earlier figures are batch checkpoints.
+[Positive selection](test-rebuild-positive-selection.md) supersedes the
+earlier duplicate-by-duplicate screening method. The full frozen
+selection retains 2,681 of 5,111 executions and projects a reduction of
+2,430 (47.54%). This exceeds the 1,534-execution threshold by 896.
+Earlier figures above describe their historical batches.
+
+Upstream executions remain separate. Confirm the projected savings
+against registered execution totals during the rebuild.
