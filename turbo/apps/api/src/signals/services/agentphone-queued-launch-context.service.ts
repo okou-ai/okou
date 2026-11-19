@@ -221,26 +221,36 @@ export const loadAgentPhoneQueuedLaunchMaterial$ = command(
     }
     return {
       prompt: context.messageText,
-      appendSystemPrompt: buildAgentPhonePrompt(
-        {
-          sharedNumber: optionalEnv("AGENTPHONE_PHONE_NUMBER") ?? "",
-          phoneHandle: context.phoneHandle,
-          conversationId: context.conversationId,
-          groupId: context.groupId,
-          channel: context.channel,
-          isGroup: context.isGroup,
-          messageId: context.messageId,
-          agentphoneAgentId: context.agentphoneAgentId,
-        },
-        resolveIntegrationNotePrompt({
-          triggerSource: "agentphone",
-          agentPhoneChannel: context.channel,
-          featureSwitchContext: args.featureSwitchContext,
-        }),
-        context.threadContext,
+      appendSystemPrompt: agentphoneSystemPromptFromContext(
+        context,
+        args.featureSwitchContext,
       ),
       agentphoneDelivery: agentphoneDeliveryFromContext(context),
       userInfoExtras: { agentphoneHandle: context.phoneHandle },
     };
   },
 );
+
+export function agentphoneSystemPromptFromContext(
+  context: NonNullable<AgentPhoneThreadContext>,
+  featureSwitchContext: FeatureSwitchContext,
+) {
+  return buildAgentPhonePrompt(
+    {
+      sharedNumber: optionalEnv("AGENTPHONE_PHONE_NUMBER") ?? "",
+      phoneHandle: context.phoneHandle,
+      conversationId: context.conversationId,
+      groupId: context.groupId,
+      channel: context.channel,
+      isGroup: context.isGroup,
+      messageId: context.messageId,
+      agentphoneAgentId: context.agentphoneAgentId,
+    },
+    resolveIntegrationNotePrompt({
+      triggerSource: "agentphone",
+      agentPhoneChannel: context.channel,
+      featureSwitchContext,
+    }),
+    context.threadContext,
+  );
+}

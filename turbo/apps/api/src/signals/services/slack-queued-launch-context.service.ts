@@ -205,26 +205,10 @@ export const loadSlackQueuedLaunchMaterial$ = command(
     if (!context) {
       return null;
     }
-    const messagePrompt = resolveUserMentions(
-      context.messageText,
-      mentionUserInfoMap(context.mentionDisplayNames),
-    );
     return {
-      prompt: canonicalSlackAgentPrompt(
-        messagePrompt,
-        context.messageFiles,
-        context.messageAssets,
-      ),
-      appendSystemPrompt: buildSlackSystemPrompt({
-        botUserId: context.botUserId,
-        channelId: context.channelId,
-        channelType: context.channelType,
-        threadTs: context.threadTs,
-        integrationNote: resolveIntegrationNotePrompt({
-          triggerSource: "slack",
-          featureSwitchContext: args.featureSwitchContext,
-        }),
-        executionContext: context.conversationContext,
+      ...slackPromptFromContext({
+        context,
+        featureSwitchContext: args.featureSwitchContext,
       }),
       slackDelivery: slackDeliveryFromContext(context),
       userInfoExtras:
@@ -241,3 +225,34 @@ export const loadSlackQueuedLaunchMaterial$ = command(
     };
   },
 );
+
+export function slackPromptFromContext({
+  context,
+  featureSwitchContext,
+}: {
+  readonly context: NonNullable<SlackThreadContext>;
+  readonly featureSwitchContext: FeatureSwitchContext;
+}) {
+  const messagePrompt = resolveUserMentions(
+    context.messageText,
+    mentionUserInfoMap(context.mentionDisplayNames),
+  );
+  return {
+    prompt: canonicalSlackAgentPrompt(
+      messagePrompt,
+      context.messageFiles,
+      context.messageAssets,
+    ),
+    appendSystemPrompt: buildSlackSystemPrompt({
+      botUserId: context.botUserId,
+      channelId: context.channelId,
+      channelType: context.channelType,
+      threadTs: context.threadTs,
+      integrationNote: resolveIntegrationNotePrompt({
+        triggerSource: "slack",
+        featureSwitchContext,
+      }),
+      executionContext: context.conversationContext,
+    }),
+  };
+}
