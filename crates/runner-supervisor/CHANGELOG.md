@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.9](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.8...runner-supervisor-v0.26.9) (2026-11-19)
+
+
+### Bug Fixes
+
+* **runner:** defer preferred dispatch on home checkout contention ([#48947](https://github.com/okou-ai/okou/issues/48947)) ([1e9c38b](https://github.com/okou-ai/okou/commit/1e9c38ba98266756be0ffd55f1ed09b1ef816b59))
+
 ## [0.26.8](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.7...runner-supervisor-v0.26.8) (2026-11-19)
 
 ## [0.26.7](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.6...runner-supervisor-v0.26.7) (2026-11-19)

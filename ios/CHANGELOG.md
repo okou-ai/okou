@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.50.0](https://github.com/okou-ai/okou/compare/ios-v0.49.1...ios-v0.50.0) (2026-11-19)
+
+
+### Features
+
+* **api:** roll out chat connector accounts and retire the switch ([#48841](https://github.com/okou-ai/okou/issues/48841)) ([a5a153e](https://github.com/okou-ai/okou/commit/a5a153e20f5e7e9e3d3d7761772bd80720b3f684))
+
+
+### Bug Fixes
+
+* **ios:** play chat media through the playback audio session ([#48962](https://github.com/okou-ai/okou/issues/48962)) ([b475198](https://github.com/okou-ai/okou/commit/b4751988cb0fe6df4a694528b08fde1b1ba44687)) [#48955](https://github.com/okou-ai/okou/issues/48955)
+
+
+### CI
+
+* **ios:** reuse published archives and tests for release metadata ([#48938](https://github.com/okou-ai/okou/issues/48938)) ([f545101](https://github.com/okou-ai/okou/commit/f545101921e62153a1b699a7e6a567e491b76d3a))
+
 ## [0.49.1](https://github.com/okou-ai/okou/compare/ios-v0.49.0...ios-v0.49.1) (2026-11-19)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.30](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.29...guest-storage-apply-v0.32.30) (2026-11-19)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** reuse fully read archive connections ([#48983](https://github.com/okou-ai/okou/issues/48983)) ([1c3a9ee](https://github.com/okou-ai/okou/commit/1c3a9ee21d5f8fcfa4bf737982ba85b27ae52621))
+
 ## [0.32.29](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.28...guest-storage-apply-v0.32.29) (2026-11-19)
 
 
