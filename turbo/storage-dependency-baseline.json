@@ -7,11 +7,6 @@
   "sites": [
     {
       "file": "turbo/apps/api/src/scripts/dev-seed.ts",
-      "uses": 6,
-      "dependency": "module:turbo/packages/db/src/schema/skill"
-    },
-    {
-      "file": "turbo/apps/api/src/scripts/dev-seed.ts",
       "dependency": "sql:storage_versions",
       "uses": 1
     },
@@ -19,16 +14,6 @@
       "file": "turbo/apps/api/src/scripts/dev-seed.ts",
       "dependency": "sql:storages",
       "uses": 4
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/cron-sync-skills.service.ts",
-      "uses": 7,
-      "dependency": "module:turbo/packages/db/src/schema/skill"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/execution-global-model-context.service.ts",
-      "uses": 5,
-      "dependency": "module:turbo/packages/db/src/schema/skill"
     },
     {
       "file": "turbo/packages/db/scripts/migrations/025-presentation-template-copy/copy.ts",

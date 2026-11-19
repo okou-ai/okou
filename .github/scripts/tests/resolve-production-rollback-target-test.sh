@@ -56,6 +56,12 @@ case "${1:-}" in
       fi
     elif [ "${3:-}" = "7474747474747474747474747474747474747474" ]; then
       [ "${MOCK_CONNECTOR_SKILL_BUNDLE_CLAIMS_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "$MOCK_BUILT_IN_SKILL_CATALOG_API_FLOOR" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_BUILT_IN_SKILL_CATALOG_API_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_BUILT_IN_SKILL_CATALOG_API_VALID:-1}" = "1" ]
+      fi
     elif [ "${3:-}" = "7373737373737373737373737373737373737373" ]; then
       [ "${MOCK_SEED_SKILL_BUNDLE_ONLY_API_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "$MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_FLOOR" ]; then
@@ -493,6 +499,11 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_REGISTRY_ARCHIVE_READER_COMMIT-$MOCK_REGISTRY_ARCHIVE_READER_FLOOR}"
       exit 0
     fi
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/built-in-skill-catalog-api" ]; then
+      [ "${MOCK_BUILT_IN_SKILL_CATALOG_API_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_BUILT_IN_SKILL_CATALOG_API_COMMIT-$MOCK_BUILT_IN_SKILL_CATALOG_API_FLOOR}"
+      exit 0
+    fi
     if [[ "$*" == *rollback-floors/content-bundle-reference-only-api* ]]; then
       [ "${MOCK_CONTENT_BUNDLE_REFERENCE_API_AVAILABLE:-1}" = "1" ] || exit 1
       printf '%s\n' "${MOCK_CONTENT_BUNDLE_REFERENCE_API_COMMIT-$MOCK_CONTENT_BUNDLE_REFERENCE_API_FLOOR}"
@@ -653,6 +664,7 @@ run_resolver() {
     MOCK_REGISTRY_ARCHIVE_READER_FLOOR="$registry_archive_reader_floor" \
     MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_FLOOR="$template_guidance_bundle_reader_floor" \
     MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_FLOOR="$template_guidance_bundle_writer_floor" \
+    MOCK_BUILT_IN_SKILL_CATALOG_API_FLOOR="$(<"${repo_root}/.github/rollback-floors/built-in-skill-catalog-api")" \
     MOCK_CONTENT_BUNDLE_REFERENCE_API_FLOOR="$content_bundle_reference_api_floor" \
     TARGET_COMMIT="$target_commit" \
     VERCEL_ORG_ID=test-org \
@@ -2359,6 +2371,21 @@ for expectation in \
   [ ! -s "${tmp_dir}/seed-skill-bundle-only-api.output" ] || fail "incompatible Seed publisher must not publish rollback outputs"
   if grep -Eq '^(curl|ssh|git rev-list) ' "${tmp_dir}/boundaries.log"; then
     fail "Seed publisher floor must fail before artifact or host access"
+  fi
+done
+
+for expectation in \
+  "MOCK_BUILT_IN_SKILL_CATALOG_API_AVAILABLE=0|Cannot read the built-in Skill catalog API rollback floor" \
+  "MOCK_BUILT_IN_SKILL_CATALOG_API_COMMIT=invalid|Missing or invalid built-in Skill catalog API rollback floor" \
+  "MOCK_BUILT_IN_SKILL_CATALOG_API_ON_MAIN=0|Built-in Skill catalog API rollback floor is not on main" \
+  "MOCK_BUILT_IN_SKILL_CATALOG_API_VALID=0|Rollback target predates the built-in Skill catalog reader"; do
+  : >"${tmp_dir}/boundaries.log"
+  setting=${expectation%%|*}
+  message=${expectation#*|}
+  assert_failure "$message" run_resolver "${tmp_dir}/built-in-skill-catalog-api.output" "$setting"
+  [ ! -s "${tmp_dir}/built-in-skill-catalog-api.output" ] || fail "incompatible catalog reader must not publish rollback outputs"
+  if grep -Eq '^(curl|ssh|git rev-list) ' "${tmp_dir}/boundaries.log"; then
+    fail "built-in catalog floor must fail before artifact or host access"
   fi
 done
 
