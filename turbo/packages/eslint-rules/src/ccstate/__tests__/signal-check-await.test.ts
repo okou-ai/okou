@@ -110,6 +110,16 @@ ruleTester.run("signal-check-await", rule, {
       code: `
         command(async ({ signal }) => {
           const data = await fetch(url);
+          signal?.throwIfAborted();
+          process(data);
+        })
+      `,
+      errors: [{ messageId: "missingSignalCheck" }],
+    },
+    {
+      code: `
+        command(async ({ signal }) => {
+          const data = await fetch(url);
           process(data);
         })
       `,

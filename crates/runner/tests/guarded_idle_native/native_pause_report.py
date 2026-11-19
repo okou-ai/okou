@@ -13,7 +13,7 @@ import speculative_fault_report as saving
 import status_failure_report as failure
 from native_transition_report import wait_progress, wire
 from cleanup_report import supplied_policy
-from snapshot_report import exact
+from report import exact
 
 PREFIX = "NATIVE_PAUSE_WITNESS "
 FAULTS = ("PauseDrop", "PauseObserverUnwind", "PauseProducerUnwind")

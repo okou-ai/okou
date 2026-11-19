@@ -36,7 +36,7 @@ def home(value, sandbox_id, filesystem_uuid=None):
     actual_uuid = block[104:120].hex()
     if filesystem_uuid is not None and actual_uuid != filesystem_uuid:
         raise ValueError("actual returned home generation changed")
-    startup.exact(value, {"path": str(path), "bytes": report.NATIVE_HOME_BYTES, "ext4_magic": "53ef",
+    report.exact(value, {"path": str(path), "bytes": report.NATIVE_HOME_BYTES, "ext4_magic": "53ef",
         "filesystem_uuid": actual_uuid, "superblock_hex": block_hex,
         "superblock_sha256": hashlib.sha256(block).hexdigest()}, "actual returned home bytes/hash changed")
     return path, actual_uuid
@@ -65,7 +65,7 @@ def validate(directory):
         create.ordered([terminal[4]["monotonic_ns"], events[-1]["monotonic_ns"], terminal[-1]["monotonic_ns"]])
         initial, accepted, waiting, late, cleanup, cleaned, producers, closed = [e["evidence"] for e in events]
         growth = startup.BYTES+policy["replacement_preparation_bytes"]
-        startup.exact(initial, {"policy": policy, "inputs_sha256": hashlib.sha256(raw.encode()).hexdigest(),
+        report.exact(initial, {"policy": policy, "inputs_sha256": hashlib.sha256(raw.encode()).hexdigest(),
             "snapshot_sha256": output["artifacts"]["snapshot_files"]["memory.bin"], "snapshot_bytes": startup.BYTES,
             "stage": stage,
             "allocated": [2,4096,1], "checkpoint_models_stalled_io": False}, "returned Guest original inputs changed")
@@ -81,7 +81,7 @@ def validate(directory):
         if fs_uuid == "0"*32 or fs_uuid in home_uuids:
             raise ValueError("actual returned home filesystem generation replayed")
         home_uuids.add(fs_uuid)
-        startup.exact(created, {"sandbox_id": sandbox_id, "returned_ns": created.get("returned_ns"), "home": created["home"]}, "returned creation shape changed")
+        report.exact(created, {"sandbox_id": sandbox_id, "returned_ns": created.get("returned_ns"), "home": created["home"]}, "returned creation shape changed")
         if not isinstance(stages, list) or [s.get("stage") for s in stages] != list(STAGES[:STAGES.index(stage)+1]):
             raise ValueError("actual successful Guest stages missing/substituted")
         backing = stages[0].get("backing_generation")
@@ -91,9 +91,9 @@ def validate(directory):
         create.ordered([events[0]["monotonic_ns"], created["returned_ns"], *(s.get("completed_ns") for s in stages), events[1]["monotonic_ns"]])
         for item in stages:
             home(item.get("home"), sandbox_id, fs_uuid)
-            startup.exact(item, {"stage": item["stage"], "completed_ns": item["completed_ns"], "sandbox_id": sandbox_id,
+            report.exact(item, {"stage": item["stage"], "completed_ns": item["completed_ns"], "sandbox_id": sandbox_id,
                 "backing_generation": backing, "actual_success": True, "home": item["home"]}, "successful actual Guest stage changed")
-        startup.exact(actual, {"created": created, "stages": stages, "cleanup": None}, "Guest cleaned before cancelled result")
+        report.exact(actual, {"created": created, "stages": stages, "cleanup": None}, "Guest cleaned before cancelled result")
         samples = accepted.get("samples")
         reads.samples(samples, events[0]["monotonic_ns"], events[1]["monotonic_ns"], policy)
         fresh = pressure.sustained_ready_samples(samples, events[1]["monotonic_ns"], policy)
@@ -101,7 +101,7 @@ def validate(directory):
                 or not any(v["available_bytes"] == accepted["available_bytes"] for v in fresh)):
             raise ValueError("actual returned Guest lacks sustained fresh Ready")
         create.accounting(accepted.get("accounting"), growth)
-        startup.exact(accepted, {"actual": actual, "samples": samples, "available_bytes": accepted["available_bytes"],
+        report.exact(accepted, {"actual": actual, "samples": samples, "available_bytes": accepted["available_bytes"],
             "allocated": [4,8192,2], "accounting": accepted["accounting"], "release_byte_withheld": True}, "accepted Guest lost full custody")
         create.ordered([events[1]["monotonic_ns"], *(waiting.get(k) for k in ("cancelled_ns", "first_dropped_ns", "second_pending_ns", "foreground_acquired_ns")), events[2]["monotonic_ns"]])
         create.accounting(waiting.get("accounting"), growth)
@@ -110,12 +110,12 @@ def validate(directory):
         if generation in generations:
             raise ValueError("returned heartbeat generation replayed")
         generations.add(generation)
-        startup.exact(waiting, {**{k: waiting[k] for k in ("cancelled_ns", "first_dropped_ns", "second_pending_ns", "foreground_acquired_ns", "accounting", "heartbeat", "observer")},
+        report.exact(waiting, {**{k: waiting[k] for k in ("cancelled_ns", "first_dropped_ns", "second_pending_ns", "foreground_acquired_ns", "accounting", "heartbeat", "observer")},
             "first_pending": True, "first_dropped": True, "second_pending": True, "release_byte_withheld": True,
             "allocated": [4,8192,2]}, "cancelled Guest observer custody changed")
         create.ordered([events[2]["monotonic_ns"], late.get("released_ns"), late.get("joined_ns"), events[3]["monotonic_ns"]])
         create.accounting(late.get("accounting"), growth, True)
-        startup.exact(late, {**{k: late[k] for k in ("released_ns", "joined_ns", "accounting")},
+        report.exact(late, {**{k: late[k] for k in ("released_ns", "joined_ns", "accounting")},
             "resource_id": sandbox_id, "prepared": stage == "park", "allocated": [4,8192,2]}, "late result dropped actual Guest/full lease")
         cleanup_actual = cleanup.get("actual", {})
         completion = cleanup_actual.get("cleanup")
@@ -127,28 +127,28 @@ def validate(directory):
         clean_accounting = completion.get("accounting")
         if not isinstance(clean_accounting, dict) or not pressure.integer(clean_accounting.get("tracked_tasks"), 1):
             raise ValueError("required cleanup physical owner missing")
-        startup.exact(clean_accounting, {"registered_operations": 2, "started": 1, "ordinary_growth_bytes": growth,
+        report.exact(clean_accounting, {"registered_operations": 2, "started": 1, "ordinary_growth_bytes": growth,
             "cleanup_growth_bytes": policy["tail_growth_bytes"], "tracked_tasks": clean_accounting["tracked_tasks"], "uncertain": 1}, "required cleanup discarded uncertain Fresh growth or its required tail")
-        startup.exact(completion, {"sandbox_id": sandbox_id, "backing_generation": backing, "positive_backing_wait": True,
+        report.exact(completion, {"sandbox_id": sandbox_id, "backing_generation": backing, "positive_backing_wait": True,
             "workspace": str(path.parent), "workspace_absent": True, "last_home": completion["last_home"],
             "cleanup_ns": completion.get("cleanup_ns"), "allocated": [4,8192,2], "accounting": clean_accounting}, "actual cleanup lost exact backing/workspace/full leases")
-        startup.exact(cleanup_actual, {"created": created, "stages": stages, "cleanup": completion}, "cleanup switched actual Guest")
+        report.exact(cleanup_actual, {"created": created, "stages": stages, "cleanup": completion}, "cleanup switched actual Guest")
         create.ordered([events[3]["monotonic_ns"], completion["cleanup_ns"], cleanup.get("pending_ns"), events[4]["monotonic_ns"]])
         foreground.observer(cleanup.get("observer"), cleanup["pending_ns"], events[4]["monotonic_ns"])
         if foreground.heartbeat(cleanup.get("heartbeat"), 2, cleanup["pending_ns"], events[4]["monotonic_ns"], allocated=(4,8192)) != generation:
             raise ValueError("cleanup heartbeat generation changed")
-        startup.exact(cleanup, {**{k: cleanup[k] for k in ("actual", "pending_ns", "heartbeat", "observer")},
+        report.exact(cleanup, {**{k: cleanup[k] for k in ("actual", "pending_ns", "heartbeat", "observer")},
             "cleanup_pending": True, "release_byte_withheld": True,
             "allocated": [4,8192,2], "accounting": clean_accounting}, "required cleanup custody/wait changed")
         create.ordered([events[4]["monotonic_ns"], cleaned.get("release_ns"), cleaned.get("joined_ns"), events[5]["monotonic_ns"]])
         create.accounting(cleaned.get("accounting"), growth, True)
-        startup.exact(cleaned, {**{k: cleaned[k] for k in ("release_ns", "joined_ns", "accounting")}, "resource_id": sandbox_id,
+        report.exact(cleaned, {**{k: cleaned[k] for k in ("release_ns", "joined_ns", "accounting")}, "resource_id": sandbox_id,
             "positive_backing_wait": True, "blank_count": 0, "allocated": [2,4096,1]}, "late cleanup failed to join before lease release")
         create.accounting(producers.get("accounting"), growth, True)
-        startup.exact(producers, {"preparation_joined": True, "pressure_stopped": True, "heartbeat_joined": True,
+        report.exact(producers, {"preparation_joined": True, "pressure_stopped": True, "heartbeat_joined": True,
             "provider_joined": True, "peer_joined": True, "snapshot_reverified": True,
             "allocated": [2,4096,1], "accounting": producers["accounting"]}, "returned Guest dependencies not joined before original saving")
-        startup.exact(closed, {"registered_operations": 1, "tracked_tasks": 0, "started": 0, "uncertain": 1,
+        report.exact(closed, {"registered_operations": 1, "tracked_tasks": 0, "started": 0, "uncertain": 1,
             "ordinary_growth_bytes": growth, "cleanup_growth_bytes": 0, "closed": True, "allocated": [0,0,0]}, "closed returned Guest P2 uncertainty discarded")
         output["cases"][case]["returned_guest"] = events
     output.update(format="native-returned-guest-report-v2", native_returned_guest_complete=True,

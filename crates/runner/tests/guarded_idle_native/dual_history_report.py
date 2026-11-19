@@ -9,7 +9,7 @@ import re
 import batch_replacement_report as replacement
 import later_parking_report as later
 import report
-from snapshot_report import exact
+from report import exact
 
 PREFIX = "NATIVE_DUAL_HISTORY_WITNESS "
 CASES = {f"DualHistory{outcome}-{mode}" for outcome in ("Success", "Nonzero")

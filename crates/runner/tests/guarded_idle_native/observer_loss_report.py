@@ -9,7 +9,7 @@ import progress_report as foreground
 from cleanup_report import COUNTS, accounting, coverage, supplied_policy
 import status_failure_report as failure
 import report
-from snapshot_report import exact
+from report import exact
 
 PREFIX = "NATIVE_OBSERVER_LOSS_WITNESS "
 CASES = {f"Observer{kind}-{mode}" for kind in ("Drop", "Panic") for mode in ("fresh", "snapshot")}
