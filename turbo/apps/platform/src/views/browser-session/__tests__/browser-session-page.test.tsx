@@ -4,6 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/browser";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -693,3 +694,255 @@ test.each([
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   },
 );
+
+function heartbeatErrors() {
+  const spy = vi.spyOn(console, "error");
+  const original = spy.getMockImplementation();
+  const start = spy.mock.calls.length;
+  spy.mockImplementation((...args: unknown[]) => {
+    if (
+      args[1] !== "Browser heartbeat failed; scheduled renewal will continue"
+    ) {
+      original?.(...args);
+    }
+  });
+  return () => {
+    return spy.mock.calls.slice(start).filter((args) => {
+      return (
+        args[1] === "Browser heartbeat failed; scheduled renewal will continue"
+      );
+    });
+  };
+}
+
+function expiredSession(browser: BrowserViewerConnection["browser"]) {
+  const { window: _window, ...previous } = browser;
+  return {
+    ...previous,
+    status: "suspended" as const,
+    liveUrl: null,
+    idleExpiresAt: null,
+    suspendedAt: "2026-08-01T11:00:00.000Z",
+    suspensionReason: "idle" as const,
+  };
+}
+
+async function openViewerWithRenewal(
+  failure: 502 | 503,
+  outcome: "continue" | "suspend" | "missing",
+) {
+  const viewer = viewerConnection();
+  const suspended = expiredSession(viewer.browser);
+  let expired = false;
+  let renewals = 0;
+  const firstRenewal = context.mocks.deferred<void>();
+  const retry = context.mocks.deferred<void>();
+  const retryStarted = context.mocks.deferred<void>();
+  const renewed = context.mocks.deferred<void>();
+  const logged = heartbeatErrors();
+  mockBrowserCdp(context, viewer.cdpUrl, {
+    targets: [
+      {
+        targetId: "example-page",
+        title: "Example",
+        url: "https://example.com",
+        windowId: 1,
+      },
+    ],
+  });
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return expired
+      ? respond(200, { browser: suspended, viewer: null })
+      : respond(200, { browser: viewer.browser, viewer });
+  });
+  context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+    renewals += 1;
+    if (renewals === 1) {
+      await firstRenewal.promise;
+      return respond(failure, {
+        error: {
+          code: "BROWSER_UNAVAILABLE",
+          message: "Browser service temporarily unavailable",
+        },
+      });
+    }
+    if (renewals > 2) {
+      renewed.resolve();
+    }
+    retryStarted.resolve();
+    await retry.promise;
+    expired = outcome !== "continue";
+    if (outcome === "missing") {
+      return respond(404, {
+        error: {
+          code: "BROWSER_NOT_FOUND",
+          message: "Browser no longer exists",
+        },
+      });
+    }
+    return respond(200, { browser: expired ? suspended : viewer.browser });
+  });
+
+  await openBrowserPage();
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  firstRenewal.resolve();
+  await retryStarted.promise;
+  expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+
+  return { retry, renewed, logged };
+}
+
+test.each([
+  { label: "a suspended-session response", outcome: "suspend" },
+  { label: "an expired-session 404", outcome: "missing" },
+] as const)(
+  "Pause the viewer when $label confirms expiry after a temporary outage",
+  async ({ outcome }) => {
+    const { retry, logged } = await openViewerWithRenewal(503, outcome);
+    retry.resolve();
+
+    await expect(
+      screen.findByText("Browser not live"),
+    ).resolves.toBeInTheDocument();
+    expect(screen.getByText("Start browser").closest("button")).toBeEnabled();
+    expect(
+      screen.queryByText("Cloud browser is not enabled for this chat"),
+    ).not.toBeInTheDocument();
+    expect(logged()).toStrictEqual([
+      expect.arrayContaining([expect.objectContaining({ status: 503 })]),
+    ]);
+  },
+);
+
+test("Keep the mounted viewer usable after a temporary 502 renewal failure", async () => {
+  const { retry, renewed, logged } = await openViewerWithRenewal(
+    502,
+    "continue",
+  );
+  retry.resolve();
+  await renewed.promise;
+
+  const address = screen.getByLabelText("Address");
+  await fill(address, "https://example.comx");
+  expect(address).toHaveValue("https://example.comx");
+  expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  expect(logged()).toContainEqual(
+    expect.arrayContaining([expect.objectContaining({ status: 502 })]),
+  );
+});
+
+test("Switch to the reopened native window and keep renewing its viewer", async () => {
+  const initial = viewerConnection();
+  const windowZero = {
+    ...initial,
+    browser: {
+      ...initial.browser,
+      window: { ...initial.browser.window, primaryWindowId: 0 },
+    },
+  };
+  let viewer = windowZero;
+  let renewals = 0;
+  const firstRenewal = context.mocks.deferred<void>();
+  const replacementRenewal = context.mocks.deferred<void>();
+  mockBrowserCdp(context, viewer.cdpUrl, {
+    targets: [
+      {
+        targetId: "first-window",
+        title: "Current chat",
+        url: "https://example.com",
+        windowId: 0,
+      },
+      {
+        targetId: "other-window",
+        title: "Other chat",
+        url: "https://other.example.com",
+        windowId: 1,
+      },
+    ],
+  });
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(200, { browser: viewer.browser, viewer });
+  });
+  context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+    renewals += 1;
+    if (renewals === 1) {
+      await firstRenewal.promise;
+      return respond(200, { browser: viewer.browser });
+    }
+    replacementRenewal.resolve();
+    return respond(200, { browser: viewer.browser });
+  });
+
+  await openBrowserPage();
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+    expect(renewals).toBe(1);
+  });
+  expect(await findViewerControl("tab", "Current chat")).toBeInTheDocument();
+
+  viewer = initial;
+  firstRenewal.resolve();
+
+  await replacementRenewal.promise;
+  await waitFor(() => {
+    expect(viewerControl("tab", "Other chat")).toBeInTheDocument();
+    expect(viewerControl("tab", "Current chat")).toBeUndefined();
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+});
+
+test("Search from the address field after restarting a browser used with an IME", async () => {
+  const viewer = viewerConnection();
+  const suspended = expiredSession(viewer.browser);
+  let live = false;
+  mockBrowserCdp(context, viewer.cdpUrl, {
+    targets: [
+      {
+        targetId: "blank-page",
+        title: "about:blank",
+        url: "about:blank",
+        windowId: 1,
+      },
+    ],
+  });
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return live
+      ? respond(200, { browser: viewer.browser, viewer })
+      : respond(200, { browser: suspended, viewer: null });
+  });
+  context.mocks.api(browserContract.open, ({ respond }) => {
+    live = true;
+    return respond(200, { browser: viewer.browser, viewer });
+  });
+  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
+    return respond(200, { browser: viewer.browser });
+  });
+
+  await openBrowserPage();
+  const start = await screen.findByText("Start browser");
+  const initialAddress = screen.getByLabelText("Address");
+  fireEvent.compositionStart(initialAddress);
+  fireEvent.change(initialAddress, { target: { value: "composing search" } });
+  fireEvent.keyDown(initialAddress, { key: "Enter", isComposing: true });
+  expect(initialAddress).toHaveValue("composing search");
+  expect(start).toBeInTheDocument();
+  click(start);
+
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  const address = screen.getByLabelText("Address");
+  await fill(address, "annual report");
+  const search = screen.getByLabelText("Search Google");
+  expect(search).toBeEnabled();
+  await userEvent.setup({ delay: null }).keyboard("{Enter}");
+
+  await waitFor(() => {
+    expect(address).toHaveValue(
+      "https://www.google.com/search?q=annual+report",
+    );
+  });
+});

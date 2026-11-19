@@ -897,3 +897,8 @@ browser-session-page-014	turbo/apps/platform/src/views/browser-session/__tests__
 browser-session-page-016	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Send fresh input only to the replacement runtime	618	passed
 browser-session-page-017	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Revalidation in window zero with provider URL suspends input until the viewer returns	659	passed
 browser-session-page-018	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Revalidation in window zero with null provider URL suspends input until the viewer returns	659	passed
+browser-session-page-022	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Search from the address field after restarting a browser used with an IME	897	passed
+browser-session-page-038	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Pause the viewer when a suspended-session response confirms expiry after a temporary outage	797	passed
+browser-session-page-039	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Keep the mounted viewer usable after a temporary 502 renewal failure	819	passed
+browser-session-page-045	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Pause the viewer when an expired-session 404 confirms expiry after a temporary outage	797	passed
+browser-session-page-050	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Switch to the reopened native window and keep renewing its viewer	836	passed

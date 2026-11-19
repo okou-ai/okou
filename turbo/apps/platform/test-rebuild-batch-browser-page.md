@@ -40,3 +40,23 @@ then the remaining lease and authorization cases.
   the replacement premise.
 
 Fourteen expanded runtime rows now match fourteen selected IDs.
+
+## Restart and lease recovery
+
+- `022` enters a composing address draft while stopped, restarts using the
+  native open contract, and submits a Google search by keyboard.
+- `038` and `045` use an explicit retry gate after a 503. The two retries
+  confirm expiry via a suspended-session response and a 404, respectively.
+  In both cases the current presentation is confirmed as suspended.
+- `039` observes a logged HTTP 502 and waits for another renewal after
+  the successful retry. The native viewer remains live and address remains editable.
+- `050` holds the initial renewal and returns the reopened window in its
+  response. The viewer shows the replacement tab and renews again.
+
+Nineteen expanded rows now match nineteen selected IDs. The BDD remains
+for the nine unchecked cases. In particular, `024` and `025` describe
+separate session and native connection reads alongside an outstanding lease
+on initial page open. The current GET performs combined native acquisition,
+and keep-alive mounts only after an active presentation is loaded. An initial
+authorization denial cannot currently construct either pending-lease Given
+through the standalone route.
