@@ -48,3 +48,5 @@ shared-thread-diagrams-001	turbo/apps/platform/src/views/shared-thread-page/__te
 shared-artifact-fullscreen-001	turbo/apps/platform/src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	A browser without native fullscreen still offers a reversible full-view preview	108	passed
 shared-artifact-fullscreen-002	turbo/apps/platform/src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Native fullscreen keeps both the preview and its exit action inside the fullscreen element	124	passed
 shared-artifact-fullscreen-003	turbo/apps/platform/src/views/shared-artifact-page/__tests__/shared-artifact-fullscreen.test.tsx	Closing a diagram keeps the document fullscreen and restores focus to its diagram control	140	passed
+chat-json-preview-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-json-preview.test.tsx	A private chat attachment preserves the exact large number in the sidebar JSON tree	72	passed
+chat-json-preview-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-json-preview.test.tsx	A truncated JSON response shows only the received source and disables the tree	84	passed
