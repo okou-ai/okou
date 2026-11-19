@@ -198,7 +198,7 @@ test("Offer PDF and Word export actions in the Markdown artifact preview", async
   const markdownUrl = artifactUrl("generated-preview", "summary.md");
   context.mocks.browser.blobDownload();
   context.mocks.browser.dedicatedWorker(() => {
-    return { ok: true, blob: new Blob(["word"]) };
+    return Promise.resolve({ ok: true, blob: new Blob(["word"]) });
   });
   context.mocks.http.get(markdownUrl, () => {
     return HttpResponse.text("# Summary");
