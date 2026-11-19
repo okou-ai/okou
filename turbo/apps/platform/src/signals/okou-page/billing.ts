@@ -23,7 +23,6 @@ import type {
   MemberUsagePack,
   PlanPurchasePreviewResponse,
   UsagePackCheckoutRequest,
-  UsagePackCreditsResponse,
   UsagePackMigrationStateResponse,
   UsagePackPurchasePreviewResponse,
 } from "@okouai/api-contracts/contracts/billing";
@@ -44,11 +43,6 @@ import { invalidateAvailableRunModels$ } from "../external/run-models.ts";
 import { isOrgAdmin$ } from "../org.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 import { replaceSearchParams$, searchParams$ } from "../route.ts";
-import {
-  settle,
-  trackAsyncResource,
-  type TrackedAsyncResource,
-} from "../utils.ts";
 import { reloadUsageRecords$ } from "./settings/personal-usage-record.ts";
 import {
   setUsagePackMigrationPreview$,
@@ -384,40 +378,20 @@ export const setConcurrencyTargetQuantity$ = command(
     });
   },
 );
-const billingStatusResource$ = computed(
-  (get): TrackedAsyncResource<BillingStatusResponse> => {
-    get(billingReload$);
-    get(accountMenuBillingStatusReload$);
-    const createClient = get(apiClient$);
-    const client = createClient(billingStatusContract);
-    const load = async (): Promise<BillingStatusResponse> => {
-      const result = await accept(client.get(), [200]);
-      return result.body;
-    };
-    return trackAsyncResource(load());
-  },
-);
-
-const usagePackCreditsResource$ = computed(
-  (get): TrackedAsyncResource<UsagePackCreditsResponse> => {
-    get(billingReload$);
-    get(accountMenuUsagePackCreditsReload$);
-    const createClient = get(apiClient$);
-    const client = createClient(billingUsagePackCreditsContract);
-    const load = async (): Promise<UsagePackCreditsResponse> => {
-      const result = await accept(client.get(), [200]);
-      return result.body;
-    };
-    return trackAsyncResource(load());
-  },
-);
-
-export const billingStatusAsync$ = computed((get) => {
-  return get(billingStatusResource$).promise;
+export const billingStatusAsync$ = computed(async (get) => {
+  get(billingReload$);
+  get(accountMenuBillingStatusReload$);
+  const client = get(apiClient$)(billingStatusContract);
+  const result = await accept(client.get(), [200]);
+  return result.body;
 });
 
-export const usagePackCreditsAsync$ = computed((get) => {
-  return get(usagePackCreditsResource$).promise;
+export const usagePackCreditsAsync$ = computed(async (get) => {
+  get(billingReload$);
+  get(accountMenuUsagePackCreditsReload$);
+  const client = get(apiClient$)(billingUsagePackCreditsContract);
+  const result = await accept(client.get(), [200]);
+  return result.body;
 });
 
 const usagePackCatalogResponse$ = computed(async (get) => {
@@ -473,89 +447,19 @@ export const reloadBillingStatus$ = command(({ set }) => {
   });
 });
 
-const reloadAccountMenuBillingStatusResource$ = command(({ set }) => {
-  set(accountMenuBillingStatusReload$, (value) => {
-    return value + 1;
-  });
-});
-
-const reloadAccountMenuUsagePackCreditsResource$ = command(({ set }) => {
-  set(accountMenuUsagePackCreditsReload$, (value) => {
-    return value + 1;
-  });
-});
-
-interface AccountMenuCreditResources {
-  readonly billing: TrackedAsyncResource<BillingStatusResponse> | null;
-  readonly usagePack: TrackedAsyncResource<UsagePackCreditsResponse> | null;
-}
-
-const readAccountMenuCreditResources$ = command(
-  ({ get }, isAdmin: boolean): AccountMenuCreditResources => {
-    return {
-      billing: isAdmin ? get(billingStatusResource$) : null,
-      usagePack: get(usagePackCreditsResource$),
-    };
-  },
-);
-
-const reloadSettledAccountMenuCreditResources$ = command(
-  (
-    { set },
-    resources: AccountMenuCreditResources,
-  ): AccountMenuCreditResources => {
-    const billingPending = resources.billing?.pending() ?? false;
-    const usagePackPending = resources.usagePack?.pending() ?? false;
-    if (resources.billing && !billingPending) {
-      set(reloadAccountMenuBillingStatusResource$);
-    }
-    if (resources.usagePack && !usagePackPending) {
-      set(reloadAccountMenuUsagePackCreditsResource$);
-    }
-    return {
-      billing: billingPending ? resources.billing : null,
-      usagePack: usagePackPending ? resources.usagePack : null,
-    };
-  },
-);
-
-const joinAccountMenuCreditResources$ = command(
-  async (
-    { set },
-    resources: AccountMenuCreditResources,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const [billingResult, usagePackResult] = await Promise.all([
-      resources.billing
-        ? // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
-          settle(resources.billing.promise, signal)
-        : Promise.resolve(null),
-      resources.usagePack
-        ? // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
-          settle(resources.usagePack.promise, signal)
-        : Promise.resolve(null),
-    ]);
-    signal.throwIfAborted();
-    if (billingResult && !billingResult.ok) {
-      set(reloadAccountMenuBillingStatusResource$);
-    }
-    if (usagePackResult && !usagePackResult.ok) {
-      set(reloadAccountMenuUsagePackCreditsResource$);
-    }
-  },
-);
-
 export const reloadAccountMenuCreditBalances$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     const isAdmin = await get(isOrgAdmin$);
     signal.throwIfAborted();
-    const resources = set(readAccountMenuCreditResources$, isAdmin);
-    const pendingResources = set(
-      reloadSettledAccountMenuCreditResources$,
-      resources,
-    );
-    await set(joinAccountMenuCreditResources$, pendingResources, signal);
+    if (isAdmin) {
+      set(accountMenuBillingStatusReload$, (value) => {
+        return value + 1;
+      });
+    }
+    set(accountMenuUsagePackCreditsReload$, (value) => {
+      return value + 1;
+    });
   },
 );
 

@@ -562,6 +562,7 @@ export const clientDescriptorManifest = [
     module: "onboarding",
     contracts: [
       "onboardingCompleteContract",
+      "onboardingDraftContract",
       "onboardingRecommendationContract",
       "onboardingSourcesContract",
       "onboardingStatusContract",

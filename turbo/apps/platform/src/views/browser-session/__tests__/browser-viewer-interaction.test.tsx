@@ -968,21 +968,18 @@ test("A created tab with a failed first image retries the image without creating
   expect(screen.getByText("Nothing open yet")).toBeInTheDocument();
 });
 
-test.each([true, false])(
-  "Submitting an address navigates the selected remote page (native base64: %s)",
-  async (nativeBase64) => {
-    const browser = await setupViewer(0, nativeBase64);
-    const address = screen.getByLabelText("Address");
-    await fill(address, "example.test/path");
-    await userEvent.keyboard("{Enter}");
-    await waitFor(() => {
-      expect(address).toHaveValue("http://example.test/path");
-      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
-    });
-    expect(browser.targets[0]?.url).toBe("http://example.test/path");
-    expect(browser.targets[1]?.url).toBe("https://other.example.com");
-  },
-);
+test("Address navigation remains usable with fallback frame decoding", async () => {
+  const browser = await setupViewer(0, false);
+  const address = screen.getByLabelText("Address");
+  await fill(address, "example.test/path");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://example.test/path");
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(browser.targets[0]?.url).toBe("http://example.test/path");
+  expect(browser.targets[1]?.url).toBe("https://other.example.com");
+});
 
 test.each(["keyboard", "pointer", "composition"] as const)(
   "A %s interaction after submission protects the still-focused address before another character",

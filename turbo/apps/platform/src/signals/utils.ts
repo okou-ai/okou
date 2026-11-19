@@ -1,5 +1,5 @@
 import { command, state, type Command } from "ccstate";
-import { delay, timeout } from "signal-timers";
+import { delay } from "signal-timers";
 import { IN_VITEST } from "../env.ts";
 import { now } from "../lib/time.ts";
 import { ApiError } from "../lib/api-error.ts";
@@ -228,26 +228,6 @@ export async function withCleanup<T>(
   }
 }
 
-/** Add an owner-bound deadline, preserving the owner's reason on cancellation. */
-export function abortAfter(
-  ms: number,
-  parentSignal: AbortSignal,
-  timeoutReason: unknown = new DOMException(
-    "Operation timed out",
-    "AbortError",
-  ),
-): AbortSignal {
-  const controller = new AbortController();
-  timeout(
-    () => {
-      controller.abort(timeoutReason);
-    },
-    ms,
-    { signal: parentSignal },
-  );
-  return AbortSignal.any([parentSignal, controller.signal]);
-}
-
 const MAX_LOOP_COUNT_IN_TEST = 100;
 // A round that fails before reaching its own wait must not retry in a spin.
 const FAILED_LOOP_ROUND_MIN_DELAY_MS = 1000;
@@ -463,28 +443,6 @@ export function waitForToken<T>(
       aborted.reject(new DOMException("Token read settled", "AbortError"));
     }
   });
-}
-
-/** Track whether a ccstate-owned async load is still available for joining. */
-export interface TrackedAsyncResource<T> {
-  readonly pending: () => boolean;
-  readonly promise: Promise<T>;
-}
-
-export function trackAsyncResource<T>(
-  promise: Promise<T>,
-): TrackedAsyncResource<T> {
-  let pending = true;
-  // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-  const trackedPromise = withCleanup(promise, () => {
-    pending = false;
-  });
-  return {
-    pending: () => {
-      return pending;
-    },
-    promise: trackedPromise,
-  };
 }
 
 export function waitForBrowserPaint(signal: AbortSignal): Promise<void> {

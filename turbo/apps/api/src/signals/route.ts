@@ -184,6 +184,7 @@ import {
   proactiveLearningRoutes,
 } from "./routes/proactive-preferences";
 import { onboardingCompleteRoutes } from "./routes/onboarding-complete";
+import { onboardingDraftRoutes } from "./routes/onboarding-draft";
 import { onboardingRecommendationRoutes } from "./routes/onboarding-recommendations";
 import { onboardingSourcesRoutes } from "./routes/onboarding-sources";
 import { onboardingStatusRoutes } from "./routes/onboarding-status";
@@ -435,6 +436,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...runsRoutes,
   ...runsCancelRoutes,
   ...onboardingCompleteRoutes,
+  ...onboardingDraftRoutes,
   ...onboardingRecommendationRoutes,
   ...onboardingStatusRoutes,
   ...onboardingSourcesRoutes,

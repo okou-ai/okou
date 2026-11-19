@@ -6,7 +6,7 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import { timeout } from "signal-timers";
+import { delay, timeout } from "signal-timers";
 
 import {
   claimBrowserFailure,
@@ -14,7 +14,6 @@ import {
   detachBrowser,
 } from "../reporting.ts";
 import {
-  abortAfter,
   createDeferredPromise,
   isAbortError,
   Reason,
@@ -4900,7 +4899,6 @@ function createDisposalInputDrain(
     | "retirements$"
   >,
 ) {
-  const resetWait$ = resetSignal();
   const settleInput$ = command(({ get, set }) => {
     return Promise.allSettled(
       [...get(context.retirements$).values()]
@@ -4924,26 +4922,8 @@ function createDisposalInputDrain(
       if (!get(context.retirements$).size) {
         return;
       }
-      // This local grace owns only the wait, never the original input effects.
-      const wait = set(resetWait$, signal);
-      const expired = createDeferredPromise<void>(
-        { rejection: "owner" },
-        abortAfter(1000, wait),
-      );
-      using _wait = {
-        [Symbol.dispose]: () => {
-          if (!expired.settled()) {
-            expired.resolve();
-          }
-          set(resetWait$, AbortSignal.abort());
-        },
-      };
-      // Retirement retains/reports input failures. Capture and bridge cleanup
-      // must not delay this join or prevent transport close when the grace ends.
-      await Promise.race([
-        set(settleInput$),
-        Promise.allSettled([expired.promise]),
-      ]);
+      // Give the original input a chance to settle before closing transport.
+      await Promise.race([set(settleInput$), delay(1000, { signal })]);
       signal.throwIfAborted();
     },
   );

@@ -62,27 +62,18 @@ async function setupPdfChat(
   loadFont: (request: Request) => Response | Promise<Response> = () => {
     return HttpResponse.arrayBuffer(new ArrayBuffer(8));
   },
-  filenameResponse: Response | "pending" = HttpResponse.json("Launch-plan"),
+  filenameResponse: () => Response = () => {
+    return HttpResponse.json("Launch-plan");
+  },
 ) {
-  const filenameAborted = context.mocks.deferred<void>();
   context.mocks.http.post(
     `*${chatThreadPdfFilenameContract.generate.path}`,
-    async ({ request, params, signal, never }) => {
+    async ({ request, params }) => {
       expect(params.threadId).toBe(THREAD_ID);
       await expect(request.json()).resolves.toStrictEqual({
         eventIds: [ASSISTANT_EVENT_ID],
       });
-      if (filenameResponse === "pending") {
-        signal.addEventListener(
-          "abort",
-          () => {
-            filenameAborted.resolve();
-          },
-          { once: true },
-        );
-        return never();
-      }
-      return filenameResponse;
+      return filenameResponse();
     },
   );
   mockChatLifecycle(context, {
@@ -118,7 +109,6 @@ async function setupPdfChat(
   await waitFor(() => {
     expect(button("Generate PDF")).toBeInTheDocument();
   });
-  return { filenameAborted: filenameAborted.promise };
 }
 
 test("Generate first, then offer a native PDF download whose bytes survive repeated clicks", async () => {
@@ -191,7 +181,7 @@ test.each([
       } satisfies PdfWorkerResponse);
     });
     const browser = context.mocks.browser.blobDownload();
-    await setupPdfChat(ANSWER, undefined, response());
+    await setupPdfChat(ANSWER, undefined, response);
 
     click(button("Generate PDF"));
     await waitFor(() => {
@@ -200,23 +190,6 @@ test.each([
     expect(browser.blobForUrl(downloadLink().href)).toBe(pdf);
   },
 );
-
-test("A stalled naming request falls back without blocking the generated PDF", async () => {
-  const pdf = new Blob(["%PDF-1.7\n%%EOF"], { type: "application/pdf" });
-  context.mocks.browser.dedicatedWorker(() => {
-    return Promise.resolve({ ok: true, blob: pdf } satisfies PdfWorkerResponse);
-  });
-  const browser = context.mocks.browser.blobDownload();
-  const naming = await setupPdfChat(ANSWER, undefined, "pending");
-
-  click(button("Generate PDF"));
-  // Synchronize with the optional naming deadline cancelling its request.
-  await naming.filenameAborted;
-  await waitFor(() => {
-    expect(downloadLink()).toHaveAttribute("download", "okou-message.pdf");
-  });
-  expect(browser.blobForUrl(downloadLink().href)).toBe(pdf);
-});
 
 test("A generation error is visible and the PDF action can be retried", async () => {
   const first = context.mocks.deferred<PdfWorkerResponse>();

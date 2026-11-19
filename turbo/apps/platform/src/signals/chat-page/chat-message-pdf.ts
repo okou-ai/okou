@@ -9,7 +9,7 @@ import { apiClient$ } from "../api-client.ts";
 import { createObjectUrlResource } from "../object-url-resource.ts";
 import { attachmentDownloadSource$ } from "../attachment-download-source.ts";
 import { eventBodyPlan } from "./parse-body-blocks.ts";
-import { abortAfter, onRef } from "../utils.ts";
+import { onRef } from "../utils.ts";
 
 /** Pass the committed DOM owner's lifetime directly to the click action. */
 export class GenerateMessagePdfEvent extends Event {
@@ -45,14 +45,38 @@ interface MessagePdfDownload {
   readonly ref: (element: HTMLAnchorElement | null) => (() => void) | undefined;
 }
 
-/** Generate bytes only; the user downloads them with a second, native click. */
-export const generateMessagePdf$ = command(
+const requestPdfFilename$ = command(
   async (
-    { get, set },
-    input: MessagePdfInput,
+    { get },
+    threadId: string,
+    eventIds: readonly string[],
     signal: AbortSignal,
-  ): Promise<MessagePdfDownload> => {
+  ): Promise<string> => {
+    const [name] = await Promise.allSettled([
+      accept(
+        get(apiClient$)(chatThreadPdfFilenameContract).generate({
+          params: { threadId: threadId },
+          body: { eventIds: [...eventIds] },
+          fetchOptions: { signal: signal },
+        }),
+        [200],
+        signal,
+        { showErrorToast: false },
+      ),
+    ]);
     signal.throwIfAborted();
+    return name.status === "fulfilled" && name.value.body
+      ? `${name.value.body}.pdf`
+      : "okou-message.pdf";
+  },
+);
+
+const generatePdfContent$ = command(
+  async (
+    { set },
+    input: Pick<MessagePdfInput, "contents" | "trees">,
+    signal: AbortSignal,
+  ): Promise<Blob> => {
     const imageSources = new Set<string>();
     for (const tree of input.trees) {
       visit(tree, "element", (node) => {
@@ -76,30 +100,30 @@ export const generateMessagePdf$ = command(
     const sources = input.contents.map((content) => {
       return eventBodyPlan(content).treeSource;
     });
-    const blob = await generateMessagePdfBlob(sources, imageUrls, signal);
+    return await generateMessagePdfBlob(sources, imageUrls, signal);
+  },
+);
+
+/** Generate bytes only; the user downloads them with a second, native click. */
+export const generateMessagePdf$ = command(
+  async (
+    { set },
+    input: MessagePdfInput,
+    signal: AbortSignal,
+  ): Promise<MessagePdfDownload> => {
     signal.throwIfAborted();
-    // Naming is optional: older API deployments and request failures must not
-    // prevent downloading already-generated PDF bytes.
-    const namingSignal = abortAfter(3000, signal);
-    const [name] = await Promise.allSettled([
-      accept(
-        get(apiClient$)(chatThreadPdfFilenameContract).generate({
-          params: { threadId: input.threadId },
-          body: { eventIds: [...input.eventIds] },
-          fetchOptions: { signal: namingSignal },
-        }),
-        [200],
-        namingSignal,
-        { showErrorToast: false },
-      ),
-    ]);
+    const filename = set(
+      requestPdfFilename$,
+      input.threadId,
+      input.eventIds,
+      signal,
+    );
+    const fileContent = set(generatePdfContent$, input, signal);
+    const [name, blob] = await Promise.all([filename, fileContent]);
     signal.throwIfAborted();
     const transferFocus = document.activeElement === input.trigger;
     return {
-      filename:
-        name.status === "fulfilled" && name.value.body
-          ? `${name.value.body}.pdf`
-          : "okou-message.pdf",
+      filename: name,
       // Acquire the URL only when the download link commits. Each attachment
       // gets its own resource, including a React Strict Mode reattachment.
       ref: (element) => {

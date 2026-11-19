@@ -3487,6 +3487,13 @@
       "when": 1795053710241,
       "tag": "1576_activate_active_multi_agent_workspaces",
       "breakpoints": true
+    },
+    {
+      "idx": 1577,
+      "version": "7",
+      "when": 1795061951933,
+      "tag": "1577_onboarding_drafts",
+      "breakpoints": true
     }
   ]
 }
