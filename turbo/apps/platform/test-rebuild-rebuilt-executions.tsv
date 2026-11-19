@@ -776,3 +776,100 @@ chat-capability-browser-actions-025	turbo/apps/platform/src/views/okou-page/__te
 chat-capability-browser-actions-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx	Render a live managed browser card	720	passed
 custom-connector-cloudflare-authoring-011	turbo/apps/platform/src/views/okou-page/__tests__/custom-connector-cloudflare-authoring.test.tsx	Resolve a http dependency through its settings link before a fresh network deletion	544	passed
 custom-connector-cloudflare-authoring-012	turbo/apps/platform/src/views/okou-page/__tests__/custom-connector-cloudflare-authoring.test.tsx	Resolve a mcp dependency through its settings link before a fresh network deletion	544	passed
+chat-capability-voice-forwarding-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-forwarding.test.tsx	Keep forwarding suggestions isolated during preview navigation	109	passed
+chat-capability-voice-forwarding-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-forwarding.test.tsx	Keep forwarding suggestions isolated during IME composition	135	passed
+chat-capability-voice-forwarding-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-forwarding.test.tsx	Keep forwarding suggestions isolated during dismissal	152	passed
+chat-capability-voice-draft-loading-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-draft-loading.test.tsx	Wait for nonempty PCM before showing the waveform and preserve the opening audio	67	passed
+chat-capability-voice-polish-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-polish.test.tsx	Apply VAD to the new audio of a one-second tail: silent	32	passed
+chat-capability-voice-quota-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-quota.test.tsx	Offer role-aware recovery when voice quota is exhausted	86	passed
+chat-capability-voice-quota-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-quota.test.tsx	Offer a Team upgrade when a Pro admin exhausts voice quota	109	passed
+chat-capability-voice-quota-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-quota.test.tsx	Ask an admin when a member exhausts voice quota	151	passed
+chat-capability-voice-input-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-input.test.tsx	Transcribe a voice draft with its editor context	74	passed
+chat-capability-voice-input-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-input.test.tsx	Keep a silent voice draft recording until the user stops it	132	passed
+chat-capability-voice-input-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-input.test.tsx	Finish a provider no-speech response and preserve the input	147	passed
+chat-capability-voice-recording-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-recording.test.tsx	Include the final worklet chunk before transcribing	42	passed
+chat-run-composer-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-composer.test.tsx	Enable completion notifications after a visible send	50	passed
+chat-run-composer-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-composer.test.tsx	Send a large image with Auto	81	passed
+chat-run-composer-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-composer.test.tsx	Show follow-up instructions in the active conversation	128	passed
+chat-run-steer-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-steer.test.tsx	Keep the work boundary and elapsed time stable through steer delivery and completion	121	passed
+chat-run-steer-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-steer.test.tsx	Keep the selected prompt and status row when a run claims the prompt	227	passed
+chat-run-steer-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-steer.test.tsx	Stop interrupts the live run and keeps the queued follow-up	263	passed
+chat-run-state-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-state.test.tsx	Show one cancellation outcome for an interrupted run	101	passed
+chat-run-state-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-state.test.tsx	Show thinking as soon as a new prompt is sent	135	passed
+chat-run-state-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-state.test.tsx	Keep the composer and transcript in sync as a sent prompt is queued, claimed and finished	192	passed
+chat-run-state-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-state.test.tsx	Keep a prompt waiting for steer delivery in the message history	275	passed
+chat-run-status-tail-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-status-tail.test.tsx	Retire the previous error as soon as a new message is sent, before acknowledgement or output	145	passed
+chat-run-status-tail-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-status-tail.test.tsx	A subsequent failed response replaces the previous error while retaining its result	160	passed
+chat-run-status-tail-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-status-tail.test.tsx	Derive the latest response from recorded input in the same run when opening a chat	199	passed
+chat-run-status-tail-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-status-tail.test.tsx	Retire completion and followups while retaining the result actions	220	passed
+chat-list-configuration-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-list-configuration.test.tsx	Conversation configuration arriving before creation is retained	46	passed
+chat-list-configuration-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-list-configuration.test.tsx	Service tier and Computer Use settings update independently	94	passed
+chat-list-entry-navigation-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-list-entry-navigation.test.tsx	Without For you, the first chat moves up to New chat and New chat moves down into the list	49	passed
+chat-list-entry-navigation-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-list-entry-navigation.test.tsx	The side pane moves only between chats and never onto the entries	81	passed
+chat-list-cache-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-list-cache.test.tsx	Cached conversations appear before remote synchronization	25	passed
+chat-list-cache-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-list-cache.test.tsx	A complete cached conversation list remains navigable	62	passed
+chat-list-cache-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-list-cache.test.tsx	Signed-out pages do not sync private conversations	104	passed
+chat-list-event-order-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-list-event-order.test.tsx	Conversation lifecycle events produce the current list	59	passed
+chat-list-event-order-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-list-event-order.test.tsx	A pinned conversation stays above newer unpinned items	93	passed
+chat-list-event-order-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-list-event-order.test.tsx	Pinned ordering follows pin time through activity updates	123	passed
+chat-list-optimistic-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optimistic.test.tsx	A new conversation appears before server confirmation	134	passed
+chat-list-optimistic-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optimistic.test.tsx	An optimistic QuickTime preview does not list artifacts before thread creation	149	passed
+chat-list-optimistic-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optimistic.test.tsx	The changed model survives the first send before server confirmation	216	passed
+chat-list-optimistic-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optimistic.test.tsx	Server confirmation settles a new conversation without duplication	241	passed
+chat-capability-feedback-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-feedback.test.tsx	Offer passage actions only for a valid assistant selection	28	passed
+chat-capability-feedback-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-feedback.test.tsx	Combine inline feedback with the rest of a message draft	60	passed
+chat-capability-feedback-submission-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-feedback-submission.test.tsx	Reconcile inline feedback when the selected model is unavailable	26	passed
+chat-capability-model-recovery-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-model-recovery.test.tsx	Match model-provider recovery guidance to the failure	18	passed
+chat-capability-run-history-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-run-history.test.tsx	Fold each workflow run's work behind its own result	84	passed
+chat-capability-automations-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-automations.test.tsx	Browse an active scheduled workflow and its available controls	174	passed
+chat-capability-automations-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-automations.test.tsx	Refresh the automation list when the thread's automations change	201	passed
+chat-capability-automations-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-automations.test.tsx	An earlier chat automation save preserves a newer editor for Active release schedule	234	passed
+chat-capability-workflows-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-workflows.test.tsx	Edit schedule and Gmail workflow triggers	73	passed
+chat-capability-workflows-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-workflows.test.tsx	Present workflow trigger events as meaningful chat history	124	passed
+chat-capability-history-visibility-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-history-visibility.test.tsx	Preserve selected template labels in chat history	33	passed
+chat-capability-history-visibility-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-history-visibility.test.tsx	Show only the selected conversation when switching chats	105	passed
+chat-relations-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-relations.test.tsx	Draw the source and related chats together once children answer	283	passed
+chat-relations-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-relations.test.tsx	Start the next chat closed and draw its panel once its relationships answer	325	passed
+chat-relations-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-relations.test.tsx	Show the first source and created chats with their status	388	passed
+chat-relations-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-relations.test.tsx	Link the first-run agent source directly to its parent run	447	passed
+chat-relations-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-relations.test.tsx	List an agent origin once when it is also a related chat	469	passed
+chat-relations-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-relations.test.tsx	Keep the agent origin first in the collapsed preview when it is the oldest related chat	512	passed
+chat-relations-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-relations.test.tsx	Open a related chat's messages and link each to the run it started	560	passed
+chat-relations-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-relations.test.tsx	Follow a sent message card to the run it started in the other chat	637	passed
+chat-relations-012	turbo/apps/platform/src/views/okou-page/__tests__/chat-relations.test.tsx	Open a related chat from its row in one click, while its caret opens the history	692	passed
+chat-relations-017	turbo/apps/platform/src/views/okou-page/__tests__/chat-relations.test.tsx	Show a queued related chat's status as text	751	passed
+chat-relations-020	turbo/apps/platform/src/views/okou-page/__tests__/chat-relations.test.tsx	Close an open message history when the Chats section collapses	780	passed
+chat-relations-rename-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-relations-rename.test.tsx	Show the current parent title when loading historical sources	127	passed
+chat-relations-rename-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-relations-rename.test.tsx	Update the parent chat row when another tab renames the parent	160	passed
+chat-sharing-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-sharing.test.tsx	The row label toggles a message group once	261	passed
+chat-sharing-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-sharing.test.tsx	Message text and code copying remain separate from group selection	280	passed
+chat-sharing-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-sharing.test.tsx	A growing selected message group becomes partial and can select its new messages	325	passed
+chat-sharing-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-sharing.test.tsx	Share selected message groups as a public conversation snapshot	372	passed
+chat-sharing-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-sharing.test.tsx	Hide passage actions throughout sharing and restore them afterward	402	passed
+chat-sharing-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-sharing.test.tsx	Back-to-back user messages keep their frame apart while sharing	439	passed
+chat-sharing-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-sharing.test.tsx	Sharing a running answer shows only its latest message and restores the expanded history on close	464	passed
+chat-sharing-014	turbo/apps/platform/src/views/okou-page/__tests__/chat-sharing.test.tsx	Sharing a failed answer shows only its latest message and restores the expanded history on close	464	passed
+chat-sharing-016	turbo/apps/platform/src/views/okou-page/__tests__/chat-sharing.test.tsx	An oversized message group cannot be added to a shared snapshot	554	passed
+chat-sharing-017	turbo/apps/platform/src/views/okou-page/__tests__/chat-sharing.test.tsx	Select an audience before creating a share and change it after creation	568	passed
+chat-sharing-018	turbo/apps/platform/src/views/okou-page/__tests__/chat-sharing.test.tsx	Choose Organization and copy a message share without replacing the composer	659	passed
+chat-sharing-020	turbo/apps/platform/src/views/okou-page/__tests__/chat-sharing.test.tsx	Dismiss the audience menu without copying	690	passed
+chat-sharing-022	turbo/apps/platform/src/views/okou-page/__tests__/chat-sharing.test.tsx	A failed message share (403) reverts the optimistic copy and keeps the composer	709	passed
+chat-sharing-026	turbo/apps/platform/src/views/okou-page/__tests__/chat-sharing.test.tsx	A denied clipboard write reverts the optimistic message share confirmation	737	passed
+chat-scroll-020	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Preserve the visible message as content grows	210	passed
+chat-scroll-023	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Preserve the reading position when new messages are added	238	passed
+chat-scroll-024	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Loading older messages preserves the reading position	261	passed
+chat-scroll-025	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Load earlier messages once scrolling stops near the top	276	passed
+chat-scroll-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Restore history once after a narrow automation sidebar reveals the transcript	349	passed
+chat-scroll-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Restore tail once after a narrow automation sidebar reveals the transcript	366	passed
+chat-scroll-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx	Keep a fresh live history capture after tail when incoming messages arrive while hidden	385	passed
+chat-thread-header-actions-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-header-actions.test.tsx	Undo a header archive from its toast and return to the thread	131	passed
+chat-thread-header-actions-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-header-actions.test.tsx	Show the archive API error after leaving the thread	168	passed
+chat-thread-header-actions-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-header-actions.test.tsx	Mute from the mobile header and unmute from the desktop header	184	passed
+chat-thread-header-actions-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-header-actions.test.tsx	Keep Share and More in the header and match the sidebar menu order	235	passed
+chat-thread-header-actions-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-header-actions.test.tsx	Keep primary icon actions accessible and open emails from the desktop menu	289	passed
+chat-thread-header-actions-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-header-actions.test.tsx	Keep menu pin changes responsive across resize and save	333	passed
+chat-thread-header-actions-014	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-header-actions.test.tsx	Continue saving the next pin change after an earlier request fails	391	passed
+chat-thread-link-chips-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-link-chips.test.tsx	Links to App chats read as chat chips in messages and replies	75	passed
+chat-thread-timeline-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-timeline.test.tsx	A conversation containing only today's messages does not need a Today divider	55	passed
+chat-thread-timeline-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-timeline.test.tsx	Messages in the same user turn receive a date boundary at local midnight	73	passed
+chat-thread-timeline-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-timeline.test.tsx	An assistant reply can open a new date section	106	passed
