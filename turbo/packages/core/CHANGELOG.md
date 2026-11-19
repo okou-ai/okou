@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.856.0](https://github.com/okou-ai/okou/compare/core-v8.855.1...core-v8.856.0) (2026-11-19)
+
+
+### Features
+
+* **app:** gate an okou rail entry behind a staff switch ([#49130](https://github.com/okou-ai/okou/issues/49130)) ([3ce54fd](https://github.com/okou-ai/okou/commit/3ce54fd46e6166a3b4cf828052e20a375f4ade08))
+* **platform:** confirm deletion of project threads ([#49121](https://github.com/okou-ai/okou/issues/49121)) ([89d08cc](https://github.com/okou-ai/okou/commit/89d08ccd4ff5399208552bff0e1f3dbbf08414fb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.93.0
+
 ## [8.855.1](https://github.com/okou-ai/okou/compare/core-v8.855.0...core-v8.855.1) (2026-11-19)
 
 

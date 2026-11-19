@@ -10,6 +10,32 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.95.2](https://github.com/okou-ai/okou/compare/api-v2.95.1...api-v2.95.2) (2026-11-19)
+
+
+### Bug Fixes
+
+* **api:** isolate invalid connector configuration during run admission ([#49122](https://github.com/okou-ai/okou/issues/49122)) ([dcc6776](https://github.com/okou-ai/okou/commit/dcc6776d57ff2286294c4566c2dd59217f303f55))
+* raise the automatic run limit to 128 hops ([#49055](https://github.com/okou-ai/okou/issues/49055)) ([dd33709](https://github.com/okou-ai/okou/commit/dd3370985e018240a46347ec0be5780ee23d7fec))
+
+
+### Refactoring
+
+* **api:** consolidate queued automation preflight ([#49132](https://github.com/okou-ai/okou/issues/49132)) ([97077ee](https://github.com/okou-ai/okou/commit/97077ee58e164b9fb998c0fe39a0f12278888d8e))
+* **api:** resolve mail drafts through chat connector accounts ([#49080](https://github.com/okou-ai/okou/issues/49080)) ([cfb5cb9](https://github.com/okou-ai/okou/commit/cfb5cb9f06ac07a0db130b07c6dc6bb74ce2f92a))
+* **api:** simplify automation assembly and launch results ([#49061](https://github.com/okou-ai/okou/issues/49061)) ([8c96a1e](https://github.com/okou-ai/okou/commit/8c96a1e0cedeb5d7d3c736b47b89ce22a939a1db))
+* **api:** unify runner dispatch offer policy ([#49115](https://github.com/okou-ai/okou/issues/49115)) ([0eb6d55](https://github.com/okou-ai/okou/commit/0eb6d5575c679c18fa5d33fd00b1a674079477e3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.93.0
+    * @okouai/core bumped to 8.856.0
+    * @okouai/db bumped to 2.53.1
+    * @okouai/pi-agent-runtime bumped to 1.52.9
+
 ## [2.95.1](https://github.com/okou-ai/okou/compare/api-v2.95.0...api-v2.95.1) (2026-11-19)
 
 

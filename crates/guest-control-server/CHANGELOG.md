@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.24.132](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.131...guest-control-server-v0.24.132) (2026-11-19)
+
+
+### Performance Improvements
+
+* **guest-control:** receive large storage inputs into owned buffers ([#49059](https://github.com/okou-ai/okou/issues/49059)) ([d928b49](https://github.com/okou-ai/okou/commit/d928b49f7e1d59d8edf6e62fbdaa500a47302ced))
+* **guest-control:** stream all sealed file batches ([#49136](https://github.com/okou-ai/okou/issues/49136)) ([471ba7e](https://github.com/okou-ai/okou/commit/471ba7eec9c058281609232a6058b35177ac7e29))
+
 ## [0.24.131](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.130...guest-control-server-v0.24.131) (2026-11-19)
 
 
