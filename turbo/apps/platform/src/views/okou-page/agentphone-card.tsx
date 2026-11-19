@@ -1,3 +1,4 @@
+import { WorksChannelCardContent } from "./components/works-channel-card-content.tsx";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { CircleCheck, EllipsisVertical } from "lucide-react";
@@ -55,10 +56,10 @@ function AgentPhoneCardActions({
               render={
                 <span
                   data-testid="agentphone-connected-indicator"
-                  className="inline-flex min-w-0 max-w-52 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-1.5 py-1 text-xs font-medium text-secondary-foreground"
+                  className="mr-auto inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-lg border border-border bg-background px-1.5 py-1 text-xs font-medium text-secondary-foreground"
                 >
-                  <CircleCheck className="h-3 w-3 text-green-600" />
-                  <span className="min-w-0 truncate">
+                  <CircleCheck className="h-3 w-3 shrink-0 text-green-600" />
+                  <span className="min-w-0 break-all">
                     {connectedPhone ??
                       t(($) => {
                         return $.connectors.providerSettings.works.connected;
@@ -163,34 +164,28 @@ export function AgentPhoneCard() {
     <>
       <div
         data-slot="integration-card"
-        className={surfaceVariants({ className: "flex flex-col" })}
+        className={surfaceVariants({ className: "flex min-w-0 flex-col" })}
       >
-        <div className="flex items-center gap-4 p-4">
-          <div className="shrink-0 inline-flex h-7 w-7 items-center justify-center overflow-hidden">
-            <img src={imessageIconImg} alt="" className="h-7 w-7" />
-          </div>
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <div className="flex min-w-0 items-center gap-2">
-              <div className="truncate text-sm font-medium text-foreground">
-                {t(($) => {
-                  return $.connectors.providerSettings.agentphone.phoneLabel;
-                })}
-              </div>
-            </div>
-            <div className="truncate text-sm text-muted-foreground">
-              {t(($) => {
-                return $.connectors.providerSettings.agentphone.description;
-              })}
-            </div>
-          </div>
-          <AgentPhoneCardActions
-            canConnect={agentPhoneNumber !== null}
-            onConnect={() => {
-              requestConnectionCode();
-              setConnectOpen(true);
-            }}
-          />
-        </div>
+        <WorksChannelCardContent
+          icon={<img src={imessageIconImg} alt="" className="size-5" />}
+          title={t(($) => {
+            return $.connectors.providerSettings.agentphone.phoneLabel;
+          })}
+          description={t(($) => {
+            return $.connectors.providerSettings.agentphone.description;
+          })}
+          actions={
+            <>
+              <AgentPhoneCardActions
+                canConnect={agentPhoneNumber !== null}
+                onConnect={() => {
+                  requestConnectionCode();
+                  setConnectOpen(true);
+                }}
+              />
+            </>
+          }
+        />
       </div>
       <AgentPhoneConnectDialog
         phoneNumber={agentPhoneNumber}

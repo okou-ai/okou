@@ -1,3 +1,4 @@
+import { WorksChannelCardContent } from "./components/works-channel-card-content.tsx";
 import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
@@ -1142,31 +1143,28 @@ export function FeishuCard({
       }
       data-slot="integration-card"
       data-testid={`${platform}-setup-button`}
-      className={surfaceVariants({ className: "block" })}
+      className={surfaceVariants({
+        interactive: true,
+        className: "flex min-w-0 flex-col",
+      })}
     >
-      <div className="flex items-center gap-4 p-4">
-        <div className="inline-flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden">
-          <img src={feishuIconImg} alt="" className="h-7 w-7" />
-        </div>
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <div className="text-sm font-medium text-foreground">
+      <WorksChannelCardContent
+        icon={<img src={feishuIconImg} alt="" className="size-5" />}
+        title={t(($) => {
+          return $.connectors.providerSettings[platform].documentTitle;
+        })}
+        description={t(($) => {
+          return $.connectors.providerSettings[platform].routeDescription;
+        })}
+        actions={
+          <span className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-xs font-medium text-secondary-foreground">
+            <Settings size={14} />
             {t(($) => {
-              return $.connectors.providerSettings[platform].documentTitle;
+              return $.connectors.providerSettings[platform].manage;
             })}
-          </div>
-          <div className="truncate text-sm text-muted-foreground">
-            {t(($) => {
-              return $.connectors.providerSettings[platform].routeDescription;
-            })}
-          </div>
-        </div>
-        <span className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-xs font-medium text-secondary-foreground">
-          <Settings size={14} />
-          {t(($) => {
-            return $.connectors.providerSettings[platform].manage;
-          })}
-        </span>
-      </div>
+          </span>
+        }
+      />
     </Link>
   );
 }

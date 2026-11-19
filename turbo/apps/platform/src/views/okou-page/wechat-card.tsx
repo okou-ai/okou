@@ -1,3 +1,4 @@
+import { WorksChannelCardContent } from "./components/works-channel-card-content.tsx";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -54,17 +55,15 @@ export function WechatCard() {
     >
       <div
         data-slot="integration-card"
-        className={surfaceVariants({ className: "flex flex-col" })}
+        className={surfaceVariants({ className: "flex min-w-0 flex-col" })}
       >
-        <div className="flex items-center gap-4 p-4">
-          <img src={wechatIconImg} alt="" className="size-7 shrink-0" />
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <div className="text-sm font-medium text-foreground">
-              {t(($) => {
-                return $.works.wechat.name;
-              })}
-            </div>
-            <p className="text-sm text-muted-foreground">
+        <WorksChannelCardContent
+          icon={<img src={wechatIconImg} alt="" className="size-5" />}
+          title={t(($) => {
+            return $.works.wechat.name;
+          })}
+          description={
+            <>
               {status?.status === "reconnect_required"
                 ? t(($) => {
                     return $.works.wechat.reconnect_required;
@@ -76,50 +75,54 @@ export function WechatCard() {
                   : t(($) => {
                       return $.works.wechat.description;
                     })}
-            </p>
-            {status?.binding ? (
-              <p className="break-all text-sm text-muted-foreground">
-                {status.binding.workspace.name} · {status.binding.accountId}
-              </p>
-            ) : null}
-          </div>
-          {connected ? (
-            <ConnectedIndicator />
-          ) : (
-            <DialogTrigger
-              render={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 shrink-0 gap-1.5 rounded-lg"
-                />
-              }
-              disabled={!status?.configured}
-            >
-              {status?.status === "reconnect_required"
-                ? t(($) => {
-                    return $.works.wechat.reconnect;
-                  })
-                : t(($) => {
-                    return $.works.wechat.connect;
+              {status?.binding ? (
+                <p className="mt-1 break-all">
+                  {status.binding.workspace.name} · {status.binding.accountId}
+                </p>
+              ) : null}
+            </>
+          }
+          actions={
+            <>
+              {connected ? (
+                <ConnectedIndicator wrap />
+              ) : (
+                <DialogTrigger
+                  render={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 shrink-0 gap-1.5 rounded-lg"
+                    />
+                  }
+                  disabled={!status?.configured}
+                >
+                  {status?.status === "reconnect_required"
+                    ? t(($) => {
+                        return $.works.wechat.reconnect;
+                      })
+                    : t(($) => {
+                        return $.works.wechat.connect;
+                      })}
+                </DialogTrigger>
+              )}
+              {status && status.status !== "disconnected" ? (
+                <ProviderCardMenu
+                  moreOptionsLabel={t(($) => {
+                    return $.works.actions.moreOptions;
                   })}
-            </DialogTrigger>
-          )}
-          {status && status.status !== "disconnected" ? (
-            <ProviderCardMenu
-              moreOptionsLabel={t(($) => {
-                return $.works.actions.moreOptions;
-              })}
-              disconnectLabel={t(($) => {
-                return $.works.wechat.disconnect;
-              })}
-              disconnecting={disconnecting.state === "loading"}
-              onDisconnect={() => {
-                return detach(disconnect(signal), Reason.DomCallback);
-              }}
-            />
-          ) : null}
-        </div>
+                  disconnectLabel={t(($) => {
+                    return $.works.wechat.disconnect;
+                  })}
+                  disconnecting={disconnecting.state === "loading"}
+                  onDisconnect={() => {
+                    return detach(disconnect(signal), Reason.DomCallback);
+                  }}
+                />
+              ) : null}
+            </>
+          }
+        />
       </div>
       <WechatConnectDialog
         loading={connecting.state === "loading"}

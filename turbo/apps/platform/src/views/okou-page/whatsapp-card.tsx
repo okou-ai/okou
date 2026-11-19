@@ -1,3 +1,4 @@
+import { WorksChannelCardContent } from "./components/works-channel-card-content.tsx";
 import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import type { WhatsappLinkCodeResponse } from "@okouai/api-contracts/contracts/integrations-whatsapp";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
@@ -146,63 +147,66 @@ export function WhatsappCard() {
     <Dialog open={open} onOpenChange={setOpen}>
       <div
         data-slot="integration-card"
-        className={surfaceVariants({ className: "flex flex-col" })}
+        className={surfaceVariants({ className: "flex min-w-0 flex-col" })}
       >
-        <div className="flex items-center gap-4 p-4">
-          <WhatsappMark size={28} className="shrink-0 text-green-600" />
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <div className="text-sm font-medium text-foreground">
-              {t(($) => {
-                return $.works.whatsapp.name;
-              })}
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {status && !status.configured
-                ? t(($) => {
-                    return $.works.whatsapp.unavailable;
-                  })
-                : t(($) => {
-                    return $.works.whatsapp.description;
-                  })}
-            </p>
-          </div>
-          {status?.linked ? (
+        <WorksChannelCardContent
+          icon={<WhatsappMark size={20} className="text-green-600" />}
+          title={t(($) => {
+            return $.works.whatsapp.name;
+          })}
+          description={
+            status && !status.configured
+              ? t(($) => {
+                  return $.works.whatsapp.unavailable;
+                })
+              : t(($) => {
+                  return $.works.whatsapp.description;
+                })
+          }
+          actions={
             <>
-              <ConnectedIndicator connectedDetail={status.phoneHandle} />
-              <ProviderCardMenu
-                moreOptionsLabel={t(($) => {
-                  return $.works.whatsapp.options;
-                })}
-                disconnectLabel={t(($) => {
-                  return $.works.actions.disconnect;
-                })}
-                disconnecting={disconnectLoadable.state === "loading"}
-                onDisconnect={() => {
-                  return detach(disconnect(signal), Reason.DomCallback);
-                }}
-              />
+              {status?.linked ? (
+                <>
+                  <ConnectedIndicator
+                    wrap
+                    connectedDetail={status.phoneHandle}
+                  />
+                  <ProviderCardMenu
+                    moreOptionsLabel={t(($) => {
+                      return $.works.whatsapp.options;
+                    })}
+                    disconnectLabel={t(($) => {
+                      return $.works.actions.disconnect;
+                    })}
+                    disconnecting={disconnectLoadable.state === "loading"}
+                    onDisconnect={() => {
+                      return detach(disconnect(signal), Reason.DomCallback);
+                    }}
+                  />
+                </>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 shrink-0 gap-1.5 rounded-lg"
+                  disabled={!status?.configured}
+                  aria-label={t(($) => {
+                    return $.works.whatsapp.connect;
+                  })}
+                  onClick={() => {
+                    setOpen(true);
+                    generateCode();
+                  }}
+                >
+                  {t(($) => {
+                    return $.connectors.actions.connect;
+                  })}
+                </Button>
+              )}
             </>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 shrink-0 gap-1.5 rounded-lg"
-              disabled={!status?.configured}
-              aria-label={t(($) => {
-                return $.works.whatsapp.connect;
-              })}
-              onClick={() => {
-                setOpen(true);
-                generateCode();
-              }}
-            >
-              {t(($) => {
-                return $.connectors.actions.connect;
-              })}
-            </Button>
-          )}
-        </div>
+          }
+        />
       </div>
       <WhatsappConnectContent
         phone={phone}

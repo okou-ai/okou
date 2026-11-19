@@ -1,6 +1,7 @@
+import { WorksChannelCardContent } from "./components/works-channel-card-content.tsx";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { CircleCheck, EllipsisVertical, Mail } from "lucide-react";
-import { Badge, Button, cn, surfaceVariants } from "@okouai/ui";
+import { Badge, Button, surfaceVariants } from "@okouai/ui";
 import {
   Popover,
   PopoverContent,
@@ -43,110 +44,110 @@ export function EmailCard() {
     <>
       <div
         data-slot="integration-card"
-        className={surfaceVariants({ className: "flex flex-col" })}
+        className={surfaceVariants({ className: "flex min-w-0 flex-col" })}
       >
-        <div className="flex items-center gap-4 p-4">
-          <Mail
-            aria-hidden="true"
-            className="h-7 w-7 shrink-0 text-foreground"
-          />
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <div className="truncate text-sm font-medium text-foreground">
+        <WorksChannelCardContent
+          icon={<Mail aria-hidden="true" className="size-5 text-foreground" />}
+          title={t(($) => {
+            return $.works.email.title;
+          })}
+          description={
+            <>
               {t(($) => {
-                return $.works.email.title;
+                return $.works.email.description;
               })}
-            </div>
-            <div className="flex h-5 min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
-              <span className={cn("truncate", address && "hidden sm:inline")}>
-                {t(($) => {
-                  return $.works.email.description;
-                })}
-                {address ? " ·" : null}
-              </span>
               {address ? (
                 <a
                   href={`mailto:${address}`}
-                  className="max-w-full shrink-0 truncate underline underline-offset-4 hover:text-foreground"
+                  className="block break-all underline underline-offset-4 hover:text-foreground"
                 >
                   {address}
                 </a>
               ) : null}
-            </div>
-          </div>
-          {email ? (
-            <>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Badge className="min-w-0 max-w-20 shrink-0 text-xs font-medium text-secondary-foreground sm:max-w-52">
-                        <CircleCheck className="shrink-0 text-green-600" />
-                        <span className="truncate">{email}</span>
-                        {emails.length > 1 ? (
-                          <span className="shrink-0">+{emails.length - 1}</span>
-                        ) : null}
-                      </Badge>
-                    }
-                  />
-                  <TooltipContent>{emails.join(", ")}</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <Popover>
-                <PopoverTrigger
-                  render={
-                    <Button
-                      ref={setTrigger}
-                      showTooltip
-                      type="button"
-                      variant="quiet"
-                      size="icon-xs"
-                      className="shrink-0"
-                      aria-label={t(($) => {
-                        return $.works.email.options;
-                      })}
-                    >
-                      <EllipsisVertical size={16} />
-                    </Button>
-                  }
-                />
-                <PopoverContent
-                  align="end"
-                  className="flex w-40 flex-col gap-0.5 p-2"
-                  // Manage hands focus to the dialog, which returns to the card action.
-                  finalFocus={dialogOpen ? false : undefined}
-                >
-                  <PopoverClose
-                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-state-hover hover:text-accent-foreground"
-                    onClick={() => {
-                      setConnectOpen(true);
-                    }}
-                  >
-                    {t(($) => {
-                      return $.works.email.manage;
-                    })}
-                  </PopoverClose>
-                </PopoverContent>
-              </Popover>
             </>
-          ) : status.state === "hasData" && status.data.configured ? (
-            <Button
-              ref={setTrigger}
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 shrink-0 gap-1.5 rounded-lg"
-              onClick={() => {
-                detach(addEmail(signal), Reason.DomCallback);
-              }}
-            >
-              {t(($) => {
-                return $.works.email.addEmail;
-              })}
-            </Button>
-          ) : (
-            <span className="h-8 w-20 shrink-0" aria-hidden="true" />
-          )}
-        </div>
+          }
+          actions={
+            <>
+              {email ? (
+                <>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Badge className="mr-auto min-w-0 max-w-full text-xs font-medium text-secondary-foreground">
+                            <CircleCheck className="shrink-0 text-green-600" />
+                            <span className="whitespace-normal break-all">
+                              {email}
+                            </span>
+                            {emails.length > 1 ? (
+                              <span className="shrink-0">
+                                +{emails.length - 1}
+                              </span>
+                            ) : null}
+                          </Badge>
+                        }
+                      />
+                      <TooltipContent>{emails.join(", ")}</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <Popover>
+                    <PopoverTrigger
+                      render={
+                        <Button
+                          ref={setTrigger}
+                          showTooltip
+                          type="button"
+                          variant="quiet"
+                          size="icon-xs"
+                          className="shrink-0"
+                          aria-label={t(($) => {
+                            return $.works.email.options;
+                          })}
+                        >
+                          <EllipsisVertical size={16} />
+                        </Button>
+                      }
+                    />
+                    <PopoverContent
+                      align="end"
+                      className="flex w-40 flex-col gap-0.5 p-2"
+                      // Manage hands focus to the dialog, which returns to the card action.
+                      finalFocus={dialogOpen ? false : undefined}
+                    >
+                      <PopoverClose
+                        className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-state-hover hover:text-accent-foreground"
+                        onClick={() => {
+                          setConnectOpen(true);
+                        }}
+                      >
+                        {t(($) => {
+                          return $.works.email.manage;
+                        })}
+                      </PopoverClose>
+                    </PopoverContent>
+                  </Popover>
+                </>
+              ) : status.state === "hasData" && status.data.configured ? (
+                <Button
+                  ref={setTrigger}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 shrink-0 gap-1.5 rounded-lg"
+                  onClick={() => {
+                    detach(addEmail(signal), Reason.DomCallback);
+                  }}
+                >
+                  {t(($) => {
+                    return $.works.email.addEmail;
+                  })}
+                </Button>
+              ) : (
+                <span className="h-8 w-20 shrink-0" aria-hidden="true" />
+              )}
+            </>
+          }
+        />
       </div>
       <EmailConnectDialog />
     </>
