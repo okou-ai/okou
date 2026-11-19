@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use futures_util::FutureExt;
 use tokio::task::JoinSet;
@@ -23,6 +23,7 @@ use crate::activation::{
 use crate::executor::{
     BlankPoolSelection, RunnerPreSpawnPhase, RunnerPreSpawnTiming, validate_resume_session_id,
 };
+use crate::home_image_cache::HomeImagePreparePolicy;
 use crate::idle_lifecycle::SharedIdlePool;
 use crate::job_acceptance::{
     AcceptanceResources, SandboxAcceptedResource, rollback_sandbox_accepted_resource,
@@ -38,9 +39,8 @@ use crate::status::StatusTracker;
 use crate::telemetry::JobTelemetry;
 use runner_provider::{ExecutionJob, JobCandidate};
 use runner_provider::{RunCancellationRegistration, RunCancellationRegistry};
-#[cfg(test)]
 use runner_types::ids::RunId;
-use runner_types::types::CompleteRequest;
+use runner_types::types::{CompleteRequest, ExecutionContext};
 
 pub(super) struct LocalJob {
     pub(super) candidate: JobCandidate,
@@ -518,25 +518,38 @@ fn finish_spawn_job_request(
     } = resource;
     drop(idle_snapshot);
 
-    let home_image_prepare_policy = if ctx.exec_config.home_cache.is_some()
+    let preferred = if required_home_source_run_id.is_none()
+        && job.is_supplied()
+        && ctx.exec_config.home_cache.is_some()
+    {
+        preferred_home_checkout(job.context())
+    } else {
+        None
+    };
+
+    let home_image_prepare_policy = if let Some((_, deadline)) = preferred {
+        HomeImagePreparePolicy::TryCacheUntil(deadline)
+    } else if ctx.exec_config.home_cache.is_some()
         && job.context().reuse_key().is_some_and(|key| {
             ctx.home_cache_snapshot
                 .has_compatible_home_hint(key, &profile_name)
-        }) {
-        crate::home_image_cache::HomeImagePreparePolicy::TryCacheWithLockWait
+        })
+    {
+        HomeImagePreparePolicy::TryCacheWithLockWait
     } else if job.is_supplied() {
         // Assigned direct work can check a ready home without waiting for an
         // unknown owner; advisory inventory need not observe every publication.
-        crate::home_image_cache::HomeImagePreparePolicy::TryCacheWithoutLockWait
+        HomeImagePreparePolicy::TryCacheWithoutLockWait
     } else {
-        crate::home_image_cache::HomeImagePreparePolicy::SkipCache
+        HomeImagePreparePolicy::SkipCache
     };
 
     Ok(SpawnJobRequest {
         job,
         sandbox_id,
         job_profile: JobProfile {
-            required_home_source_run_id,
+            required_home_source_run_id: required_home_source_run_id
+                .or(preferred.map(|(source, _)| source)),
             profile_name,
             rootfs_hash,
             vcpu,
@@ -554,6 +567,26 @@ fn finish_spawn_job_request(
         pre_spawn_timing,
         active_run_guard,
     })
+}
+
+fn preferred_home_checkout(context: &ExecutionContext) -> Option<(RunId, tokio::time::Instant)> {
+    const MAX_PREFERRED_HOME_WAIT: Duration = Duration::from_millis(500);
+    let checkout = context.preferred_home_checkout?;
+    if context.is_first_run == Some(true) || checkout.predecessor_run_id == context.run_id {
+        return None;
+    }
+    context.reuse_key()?;
+    let now = tokio::time::Instant::now();
+    let wall_now = u64::try_from(chrono::Utc::now().timestamp_millis()).ok()?;
+    let remaining = Duration::from_millis(checkout.not_after.checked_sub(wall_now)?);
+    if remaining.is_zero() {
+        return None;
+    }
+    // One absolute budget follows the accepted job through executor retries.
+    Some((
+        checkout.predecessor_run_id,
+        now + remaining.min(MAX_PREFERRED_HOME_WAIT),
+    ))
 }
 
 async fn complete_without_sandbox(

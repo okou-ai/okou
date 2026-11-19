@@ -21,6 +21,7 @@ pub fn execution_context_for_test(run_id: RunId) -> ExecutionContext {
         environment: None,
         platform_environment: HashMap::new(),
         native_continuation: None,
+        preferred_home_checkout: None,
         local_resume_session_id: None,
         secret_values: None,
         local_secret_env_keys: None,

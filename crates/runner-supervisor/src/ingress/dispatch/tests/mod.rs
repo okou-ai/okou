@@ -29,6 +29,36 @@ fn submit(
 }
 
 #[tokio::test]
+async fn preferred_home_checkout_survives_direct_dispatch() {
+    let identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 1).unwrap();
+    let run_id = RunId::new_v4();
+    let predecessor = RunId::new_v4();
+    let (intake, mut receiver) = DispatchIntake::new(Arc::new(Semaphore::new(1)));
+    let mut payload =
+        serde_json::from_str::<serde_json::Value>(&body(identity, run_id, 2_000)).unwrap();
+    payload["executionContext"]["preferredHomeCheckout"] =
+        json!({ "predecessorRunId": predecessor, "notAfter": 1_500 });
+    let submitted = submit(
+        &Arc::new(intake),
+        identity,
+        run_id,
+        payload.to_string(),
+        1_000,
+    );
+    let work = receiver.recv().await.unwrap();
+    let checkout = work
+        .context
+        .as_ref()
+        .unwrap()
+        .preferred_home_checkout
+        .unwrap();
+    assert_eq!(checkout.predecessor_run_id, predecessor);
+    assert_eq!(checkout.not_after, 1_500);
+    work.settle(Disposition::Accepted);
+    assert_eq!(submitted.await.unwrap(), Disposition::Accepted);
+}
+
+#[tokio::test]
 async fn idle_listener_releases_expired_history_on_its_own_tick() {
     use crate::ingress::IngressRuntime;
     use crate::ingress::test_support::{HOST, TOKEN};

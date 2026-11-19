@@ -308,6 +308,20 @@ pub async fn acquire_with_contention_timeout(
     .await
 }
 
+/// Attempt once even if expired. Only a busy lock may use the remaining time.
+pub async fn acquire_with_contention_deadline(
+    path: PathBuf,
+    deadline: tokio::time::Instant,
+) -> HostResult<TryLock> {
+    acquire_with_deadline_after_busy(
+        path,
+        LockMode::Exclusive,
+        || deadline,
+        std::future::ready(()),
+    )
+    .await
+}
+
 /// Observe actual contention before arming the production retry timeout.
 /// Only owner tests enable this hook; the acquisition and retry loop are unchanged.
 #[cfg(feature = "test-support")]
@@ -331,11 +345,30 @@ async fn acquire_with_contention_timeout_after_busy(
     contention_timeout: Duration,
     after_busy: impl std::future::Future<Output = ()>,
 ) -> HostResult<TryLock> {
+    acquire_with_deadline_after_busy(
+        path,
+        mode,
+        || tokio::time::Instant::now() + contention_timeout,
+        after_busy,
+    )
+    .await
+}
+
+async fn acquire_with_deadline_after_busy(
+    path: PathBuf,
+    mode: LockMode,
+    deadline: impl FnOnce() -> tokio::time::Instant,
+    after_busy: impl std::future::Future<Output = ()>,
+) -> HostResult<TryLock> {
     match acquire_result_once(&path, mode).await? {
         LockAcquire::Acquired(lock) => Ok(TryLock::Acquired(lock)),
         LockAcquire::Busy => {
             after_busy.await;
-            match tokio::time::timeout(contention_timeout, acquire_after_busy(&path, mode)).await {
+            let deadline = deadline();
+            if deadline <= tokio::time::Instant::now() {
+                return Ok(TryLock::Busy);
+            }
+            match tokio::time::timeout_at(deadline, acquire_after_busy(&path, mode)).await {
                 Ok(result) => result.map(TryLock::Acquired),
                 Err(_) => Ok(TryLock::Busy),
             }

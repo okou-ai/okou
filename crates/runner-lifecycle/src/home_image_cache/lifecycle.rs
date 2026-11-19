@@ -457,6 +457,12 @@ impl HomeImageCache {
             }
         }
 
+        if let HomeImagePreparePolicy::TryCacheUntil(deadline) = lock_policy {
+            return Ok(
+                runner_host::lock::acquire_with_contention_deadline(lock_path, deadline).await?,
+            );
+        }
+
         Ok(runner_host::lock::acquire_with_contention_timeout(
             lock_path,
             HOME_IMAGE_PREPARE_LOCK_TIMEOUT,
@@ -694,6 +700,12 @@ impl HomeImageCache {
                         owner = owner.as_str(),
                         wait_ms = duration_ms(HOME_IMAGE_PREPARE_LOCK_TIMEOUT),
                         "home image cache lock remained busy; using fresh home image"
+                    ),
+                    HomeImagePreparePolicy::TryCacheUntil(_) => info!(
+                        run_id = %common.run_id,
+                        cache_key,
+                        owner = owner.as_str(),
+                        "preferred predecessor Home lock busy at deadline; using fresh home image"
                     ),
                     HomeImagePreparePolicy::TryCacheWithoutLockWait
                     | HomeImagePreparePolicy::SkipCache => {

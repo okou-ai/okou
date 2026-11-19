@@ -310,12 +310,33 @@ export const dispatchPreparedRun$ = command(
         if (remainingDelivery(window) <= 0) {
           break;
         }
+        const preference = fleet.preference;
+        const preferred =
+          preference.kind === "preference" &&
+          preference.runnerIdentity.runnerId === target.runnerId &&
+          preference.runnerIdentity.heartbeatGeneration ===
+            target.heartbeatGeneration
+            ? preference
+            : null;
+        const preferredUntil = preferred ? Date.parse(preferred.expiresAt) : 0;
+        const preferredHomeCheckout =
+          preferred?.tier === "predecessorHome" &&
+          preferred.home.evidence === "expected"
+            ? {
+                predecessorRunId: preferred.predecessorRunId,
+                notAfter: Math.min(
+                  notAfter,
+                  preferredUntil,
+                  Date.parse(preferred.home.homeWaitUntil),
+                ),
+              }
+            : null;
         const body = JSON.stringify({
           runnerId: target.runnerId,
           heartbeatGeneration: target.heartbeatGeneration,
           profile: input.profile,
           notAfter,
-          executionContext,
+          executionContext: { ...executionContext, preferredHomeCheckout },
         });
         if (Buffer.byteLength(body, "utf8") > RUNNER_DISPATCH_MAX_BODY_BYTES) {
           break;
@@ -342,14 +363,6 @@ export const dispatchPreparedRun$ = command(
             recordedAt: nowDate(),
           });
         }
-        const preference = fleet.preference;
-        const preferredUntil =
-          preference.kind === "preference" &&
-          preference.runnerIdentity.runnerId === target.runnerId &&
-          preference.runnerIdentity.heartbeatGeneration ===
-            target.heartbeatGeneration
-            ? Date.parse(preference.expiresAt)
-            : 0;
         // An exception after entering this command cannot prove non-acceptance.
         uncertain = true;
         const delivery = await set(

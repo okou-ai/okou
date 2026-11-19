@@ -1026,20 +1026,21 @@ pub(super) async fn prepare_home_image(
         },
         home_drive_required: true,
     };
+    let policy = params.home_image_prepare_policy;
     let lease = if let Some(source) = params.required_home_source_run_id {
-        cache
-            .prepare_from_source(request, source, params.home_image_prepare_policy)
-            .await
+        cache.prepare_from_source(request, source, policy).await
     } else {
-        match params.home_image_prepare_policy {
-            HomeImagePreparePolicy::TryCacheWithLockWait => cache.prepare(request).await,
-            HomeImagePreparePolicy::TryCacheWithoutLockWait | HomeImagePreparePolicy::SkipCache => {
-                cache
-                    .prepare_with_policy(request, params.home_image_prepare_policy)
-                    .await
-            }
-        }
+        cache.prepare_with_policy(request, policy).await
     };
+    if matches!(policy, HomeImagePreparePolicy::TryCacheUntil(_)) {
+        telemetry.record_with_outcome(
+            "runner_preferred_home_image_checkout",
+            prepare_started.elapsed(),
+            lease.is_cache_hit(),
+            home_image_prepare_error(lease.result()),
+            Some(if lease.is_cache_hit() { "hit" } else { "miss" }),
+        );
+    }
     let prepare_error = home_image_prepare_error(lease.result());
     telemetry.record(
         RUNNER_FRESH_HOME_IMAGE_PREPARE,

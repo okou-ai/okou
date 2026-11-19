@@ -1,4 +1,26 @@
 use super::*;
+
+#[tokio::test]
+async fn expired_contention_deadline_still_attempts_an_uncontended_lock() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("preferred-home.lock");
+    let held = try_acquire(path.clone()).await.unwrap();
+    let deadline = tokio::time::Instant::now();
+
+    assert!(matches!(
+        acquire_with_contention_deadline(path.clone(), deadline)
+            .await
+            .unwrap(),
+        TryLock::Busy
+    ));
+    drop(held);
+    assert!(matches!(
+        acquire_with_contention_deadline(path, deadline)
+            .await
+            .unwrap(),
+        TryLock::Acquired(_)
+    ));
+}
 use std::future::{Future as _, poll_fn};
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::sync::mpsc;
