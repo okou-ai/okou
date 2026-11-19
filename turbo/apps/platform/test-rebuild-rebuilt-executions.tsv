@@ -379,3 +379,22 @@ chat-composer-connector-focus-002	turbo/apps/platform/src/views/okou-page/__test
 chat-composer-connector-focus-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-focus.test.tsx	keeps mobile connector search unfocused after loading	127	passed
 chat-composer-connector-focus-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-focus.test.tsx	preserves trigger focus when closed before loading	116	passed
 chat-composer-connector-focus-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-focus.test.tsx	Searching connector names returns from account navigation to connector results	139	passed
+chat-composer-connector-overview-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.test.tsx	Load 20 connectors once and reuse the Chat cache on reopening	102	passed
+chat-composer-connector-overview-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.test.tsx	Patch only the notified target while closed and fully calibrate after lost continuity	186	passed
+chat-composer-connector-overview-007	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.test.tsx	Expose a failed target refresh and keep notifications working after retry	263	passed
+chat-composer-connector-overview-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.test.tsx	Load full readiness only for an opened panel's selected off-page account	337	passed
+chat-composer-connector-overview-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.test.tsx	Release the cached subscription on navigation and reload the returning Chat	395	passed
+chat-composer-connector-status-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx	Saved connectors with unavailable defaults stay visible for account repair	76	passed
+chat-composer-connector-status-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx	Healthy saved accounts stay connected while zero-account connectors remain available to add	111	passed
+chat-composer-connector-status-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx	A saved custom connector remains available for account management	144	passed
+chat-composer-connector-status-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx	Connecting a custom account updates the directory when it is reopened	159	passed
+chat-composer-connector-status-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx	Pending connected membership does not expose an ordinary add action as if no account exists	200	passed
+chat-composer-connector-status-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx	Connected inventory failure leaves managed Feishu in its own lifecycle	221	passed
+chat-composer-connectors-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	Configure connector permissions from the composer	86	passed
+chat-composer-connectors-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	Show only the connector actions that are useful in chat	130	passed
+chat-composer-connectors-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	Start connector setup from chat	196	passed
+chat-composer-connectors-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	Complete connector authorization from chat	255	passed
+chat-composer-connectors-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	Respect integration-managed connector availability in chat	303	passed
+chat-composer-connectors-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	Search beyond featured connectors from chat	358	passed
+chat-composer-connectors-015	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	Exclude unconnected integration-managed connectors from chat setup	395	passed
+chat-composer-connectors-016	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx	Enable a credential-free connector directly from chat	428	passed

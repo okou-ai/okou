@@ -1,0 +1,431 @@
+import { screen, waitFor } from "@testing-library/react";
+import { expect, test } from "vitest";
+
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
+import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
+
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  builtinConnector,
+  connectorAccount,
+  chatConnectorOverviewFixture,
+  createComposerConnectorHelpers,
+  SCOUT_THREAD_ID,
+  SCOUT_AGENT_ID,
+} from "./chat-composer-connectors-test-helpers.ts";
+import {
+  findComposer,
+  findFastControl,
+} from "./chat-message-experience-test-helpers.ts";
+
+const context = testContext();
+const { installComposerConnectorFixture } =
+  createComposerConnectorHelpers(context);
+
+function fixture(count: number) {
+  const accounts = Array.from({ length: count }, (_, index) => {
+    return connectorAccount({
+      id: `f0000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`,
+      target: {
+        kind: "builtin",
+        connectorSlug: connectorSlugSchema.parse(
+          `probe-${String(index + 1).padStart(2, "0")}`,
+        ),
+      },
+      displayName: `Account ${index + 1}`,
+      isDefault: true,
+    });
+  });
+  const catalog = accounts.map((_account, index) => {
+    return builtinConnector({
+      slug: connectorSlugSchema.parse(
+        `probe-${String(index + 1).padStart(2, "0")}`,
+      ),
+      label: `Probe ${index + 1}`,
+    });
+  });
+  installComposerConnectorFixture({ catalog, accounts });
+  const entries = catalog.map((connector) => {
+    return chatConnectorOverviewFixture({
+      target: { kind: "builtin", connectorSlug: connector.slug },
+      label: connector.label,
+      icon: connector.icon,
+      accounts,
+    });
+  });
+  return { entries, accounts };
+}
+
+async function setup(
+  draft = false,
+  sharedWorkerTestTransport: "direct" | "message-port" = "direct",
+) {
+  await setupPage({
+    context,
+    path: draft
+      ? `/agents/${SCOUT_AGENT_ID}/chat`
+      : `/chats/${SCOUT_THREAD_ID}`,
+    locale: "en-US",
+    sharedWorkerTestTransport,
+    featureSwitches: {},
+  });
+  await findComposer();
+}
+
+async function openMenu() {
+  click(await findFastControl("button", "Connectors"));
+  return await screen.findByRole("dialog", { name: "Connectors" });
+}
+
+async function expectFirstAccountOff(popup: HTMLElement) {
+  const row = await findFastControl("button", "Probe 1", popup);
+  click(row);
+  const control = await screen.findByRole("switch", {
+    name: "Account 1 access",
+  });
+  await waitFor(() => {
+    expect(control).not.toBeChecked();
+  });
+  click(row);
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Probe 1" })).toBeNull();
+  });
+}
+
+test("Load 20 connectors once and reuse the Chat cache on reopening", async () => {
+  const { entries } = fixture(20);
+  let full = 0;
+  let target = 0;
+  let oldReads = 0;
+  context.mocks.api(
+    chatConnectorAccessContract.overview,
+    ({ query, respond }) => {
+      expect(query.threadId).toBe(SCOUT_THREAD_ID);
+      full += 1;
+      return respond(200, entries);
+    },
+  );
+  context.mocks.api(
+    chatConnectorAccessContract.overviewTarget,
+    ({ respond }) => {
+      target += 1;
+      return respond(200, { connector: entries[0] });
+    },
+  );
+  context.mocks.api(connectedConnectorsContract.list, ({ respond }) => {
+    oldReads += 1;
+    return respond(200, { builtinConnectors: [], customConnectors: [] });
+  });
+  context.mocks.api(
+    chatConnectorAccessContract.getThread,
+    async ({ never }) => {
+      oldReads += 1;
+      return await never();
+    },
+  );
+  context.mocks.api(
+    chatConnectorAccessContract.accountDefaults,
+    async ({ never }) => {
+      oldReads += 1;
+      return await never();
+    },
+  );
+  context.mocks.api(connectorAccountsContract.connection, async ({ never }) => {
+    oldReads += 1;
+    return await never();
+  });
+  const popup = await openAfterSetup();
+  await waitFor(() => {
+    return expect(
+      queryAllByRoleFast("button", popup).filter((button) => {
+        return button.textContent?.includes("Probe ");
+      }),
+    ).toHaveLength(20);
+  });
+  expect({ full, target, oldReads }).toStrictEqual({
+    full: 1,
+    target: 0,
+    oldReads: 0,
+  });
+  click(await findFastControl("button", "Connectors"));
+  await waitFor(() => {
+    return expect(
+      screen.queryByRole("dialog", { name: "Connectors" }),
+    ).toBeNull();
+  });
+  const reopened = await openMenu();
+  await waitFor(() => {
+    return expect(
+      queryAllByRoleFast("button", reopened).filter((button) => {
+        return button.textContent?.includes("Probe ");
+      }),
+    ).toHaveLength(20);
+  });
+  expect({ full, target, oldReads }).toStrictEqual({
+    full: 1,
+    target: 0,
+    oldReads: 0,
+  });
+});
+
+async function openAfterSetup(
+  draft = false,
+  transport: "direct" | "message-port" = "direct",
+) {
+  await setup(draft, transport);
+  return await openMenu();
+}
+
+test("Patch only the notified target while closed and fully calibrate after lost continuity", async () => {
+  const { entries } = fixture(2);
+  let full = 0;
+  let targets = 0;
+  let changed = entries[0];
+  let removed = false;
+  context.mocks.api(chatConnectorAccessContract.overview, ({ respond }) => {
+    full += 1;
+    return respond(200, removed ? [entries[1]] : [changed, entries[1]]);
+  });
+  context.mocks.api(
+    chatConnectorAccessContract.overviewTarget,
+    ({ query, respond }) => {
+      expect(query).toMatchObject({
+        kind: "builtin",
+        connectorSlug: "probe-01",
+        threadId: SCOUT_THREAD_ID,
+      });
+      targets += 1;
+      return respond(200, { connector: removed ? null : changed });
+    },
+  );
+  // Exercise Ably channel continuity through the production worker protocol.
+  await openAfterSetup(false, "message-port");
+  await findFastControl("button", "Probe 1");
+  click(await findFastControl("button", "Connectors"));
+  await waitFor(() => {
+    return expect(
+      screen.queryByRole("dialog", { name: "Connectors" }),
+    ).toBeNull();
+  });
+  changed = {
+    ...changed,
+    currentConnectionId: null,
+    accounts: changed.accounts.map((account) => {
+      return {
+        ...account,
+        defaultEnabled: false,
+        overrideEnabled: null,
+        enabled: false,
+        isDefault: false,
+      };
+    }),
+  };
+  context.mocks.ably.trigger("connector:changed", {
+    connectorSlug: "probe-01",
+  });
+  await waitFor(() => {
+    return expect(targets).toBe(1);
+  });
+  const reopened = await openMenu();
+  await expectFirstAccountOff(reopened);
+  expect(full).toBe(1);
+  removed = true;
+  context.mocks.ably.trigger("connector:changed", {
+    connectorSlug: "probe-01",
+  });
+  await waitFor(() => {
+    return expect({
+      full,
+      targets,
+      rows: queryAllByRoleFast("button", reopened).filter((button) => {
+        return button.textContent?.includes("Probe ");
+      }).length,
+    }).toStrictEqual({ full: 1, targets: 2, rows: 1 });
+  });
+  await findFastControl("button", "Probe 2", reopened);
+  context.mocks.ably.triggerConnectionState("suspended");
+  context.mocks.ably.triggerConnectionState("connected");
+  // Thread and connector subscriptions can each recalibrate after lost
+  // continuity, so wait for a full read rather than a transient count.
+  await waitFor(() => {
+    return expect(full).toBeGreaterThan(1);
+  });
+  await findFastControl("button", "Probe 2");
+});
+
+test("Expose a failed target refresh and keep notifications working after retry", async () => {
+  const { entries } = fixture(2);
+  let current = entries[0];
+  let full = 0;
+  let targets = 0;
+  let fail = true;
+  context.mocks.api(chatConnectorAccessContract.overview, ({ respond }) => {
+    full += 1;
+    return respond(200, [current, entries[1]]);
+  });
+  context.mocks.api(
+    chatConnectorAccessContract.overviewTarget,
+    ({ query, respond }) => {
+      targets += 1;
+      if (query.kind === "builtin" && query.connectorSlug === "probe-02") {
+        return respond(200, { connector: entries[1] });
+      }
+      return fail
+        ? respond(503, {
+            error: {
+              code: "PROVIDER_UNAVAILABLE",
+              message: "Catalog unavailable",
+            },
+          })
+        : respond(200, { connector: current });
+    },
+  );
+  const popup = await openAfterSetup(false, "message-port");
+  await findFastControl("button", "Probe 1", popup);
+  context.mocks.ably.trigger("connector:changed", {
+    connectorSlug: "probe-01",
+  });
+  await findFastControl("button", "Try again", popup);
+  expect(popup).toHaveTextContent("Probe 1");
+  expect({ full, targets }).toStrictEqual({ full: 1, targets: 1 });
+  context.mocks.ably.trigger("connector:changed", {
+    connectorSlug: "probe-02",
+  });
+  await waitFor(() => {
+    return expect(targets).toBe(2);
+  });
+  await findFastControl("button", "Probe 2", popup);
+  const retry = await findFastControl("button", "Try again", popup);
+  fail = false;
+  click(retry);
+  await findFastControl("button", "Probe 1", popup);
+  await waitFor(() => {
+    return expect(
+      queryAllByRoleFast("button", popup).some((button) => {
+        return button.textContent === "Try again";
+      }),
+    ).toBeFalsy();
+  });
+  expect(full).toBe(2);
+  current = {
+    ...current,
+    currentConnectionId: null,
+    accounts: current.accounts.map((account) => {
+      return {
+        ...account,
+        defaultEnabled: false,
+        overrideEnabled: null,
+        enabled: false,
+        isDefault: false,
+      };
+    }),
+  };
+  context.mocks.ably.trigger("connector:changed", {
+    connectorSlug: "probe-01",
+  });
+  await expectFirstAccountOff(popup);
+  expect({ full, targets }).toStrictEqual({ full: 2, targets: 3 });
+});
+
+test("Load full readiness only for an opened panel's selected off-page account", async () => {
+  const target = { kind: "builtin", connectorSlug: "github" } as const;
+  const work = connectorAccount({
+    id: "f0000000-0000-4000-a000-000000000091",
+    target,
+    displayName: "Work",
+    isDefault: true,
+  });
+  const selected = {
+    ...connectorAccount({
+      id: "f0000000-0000-4000-a000-000000000092",
+      target,
+      displayName: "Off-page current",
+      isDefault: false,
+    }),
+    connectionStatus: "reconnect-required" as const,
+    reconnectReason: "credential_expired" as const,
+  };
+  installComposerConnectorFixture({
+    catalog: [builtinConnector({ slug: "github", label: "GitHub" })],
+    accounts: [work, selected],
+  });
+  const entry = chatConnectorOverviewFixture({
+    target,
+    label: "GitHub",
+    accounts: [work, selected],
+  });
+  let details = 0;
+  context.mocks.api(chatConnectorAccessContract.overview, ({ respond }) => {
+    return respond(200, [{ ...entry, currentConnectionId: selected.id }]);
+  });
+  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
+    return respond(200, {
+      connections: [work],
+      nextCursor: "next-page",
+      defaultConnection: work,
+    });
+  });
+  context.mocks.api(
+    connectorAccountsContract.connection,
+    ({ params, respond }) => {
+      expect(params.connectionId).toBe(selected.id);
+      details += 1;
+      return respond(200, selected);
+    },
+  );
+  const popup = await openAfterSetup();
+  const row = await findFastControl("button", "GitHub2 accounts", popup);
+  expect(details).toBe(0);
+  click(row);
+  const access = await screen.findByRole("switch", {
+    name: "Off-page current access",
+  });
+  expect(access).toBeChecked();
+  expect(screen.getByText("Reconnect required")).toBeInTheDocument();
+  expect(details).toBe(1);
+});
+
+test("Release the cached subscription on navigation and reload the returning Chat", async () => {
+  const { entries } = fixture(1);
+  let full = 0;
+  let targets = 0;
+  context.mocks.api(chatConnectorAccessContract.overview, ({ respond }) => {
+    full += 1;
+    return respond(200, entries);
+  });
+  context.mocks.api(
+    chatConnectorAccessContract.overviewTarget,
+    ({ respond }) => {
+      targets += 1;
+      return respond(200, { connector: entries[0] });
+    },
+  );
+  await openAfterSetup();
+  await findFastControl("button", "Probe 1");
+  click(await findFastControl("button", "Connectors"));
+  click(await findFastControl("button", "New chat"));
+  await waitFor(() => {
+    expect(window.location.pathname).toBe(`/agents/${SCOUT_AGENT_ID}/chat`);
+  });
+  await findComposer();
+  await waitFor(() => {
+    return expect(
+      context.mocks.ably.hasSubscription("connector:changed"),
+    ).toBeFalsy();
+  });
+  window.history.back();
+  await waitFor(() => {
+    expect(window.location.pathname).toBe(`/chats/${SCOUT_THREAD_ID}`);
+  });
+  await findComposer();
+  const reopened = await openMenu();
+  await findFastControl("button", "Probe 1", reopened);
+  expect({ full, targets }).toStrictEqual({ full: 2, targets: 0 });
+});
