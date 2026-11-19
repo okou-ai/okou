@@ -438,9 +438,11 @@
       "closePreviewMenu": "關閉預覽選單",
       "download": "下載",
       "downloadArtifact": "下載成果",
+      "downloadMarkdownAs": "下載為 {{format}}",
       "downloadOptions": "下載選項",
       "enterFullscreen": "進入全屏",
       "exitFullscreen": "退出全屏",
+      "markdownExportFailed": "匯出失敗。選擇一種格式即可重試。",
       "more": "更多成果操作",
       "nextImage": "下一張圖片成果",
       "openNewTab": "在新標籤頁開啟",
@@ -1045,12 +1047,10 @@
       "invalid": "此權限連結無效或無法使用。",
       "loadFailed": "無法驗證所有請求的權限，因此無法變更任何權限。",
       "loading": "正在載入權限",
-      "myOkouScopeNote": "適用於你在本工作區使用 Okou，不限於目前任務。",
       "myOkouSharedScopeNote": "適用於你在本工作區所有聊天中使用此連接器。同事的授權各自獨立。",
       "notNow": "暫不允許",
       "pending_other": "待允許 {{count}} 項權限",
       "review": "檢視並授權",
-      "scopeNote": "適用於此代理程式，而不僅限於目前的任務。",
       "sharedScopeNote": "此連接器的權限由你的所有聊天和智能體共用。",
       "title": "允許以下權限"
     }
@@ -1644,7 +1644,11 @@
       "dismiss": "忽略",
       "dismissRecorded": "已收起這則建議",
       "doneRecorded": "已記下，這件事已經處理了",
+      "dontNudge": "別催了",
+      "dontNudgeRecorded": "已記錄，請不要再催這件事",
+      "editDraft": "在原對話中準備草稿",
       "editReason": "修改原因",
+      "feedbackPrompt": "這則建議怎麼樣？",
       "feedLabel": "動態",
       "forYou": {
         "loading": "正在載入建議",
@@ -1678,9 +1682,11 @@
       "reasonLabel": "補充原因（選填）",
       "saveReason": "儲存",
       "sending": "正在傳送…",
+      "sendNew": "傳送到新對話",
       "sent": "已傳送到新聊天",
       "unavailable": "這則建議已無法使用，建議清單已重新整理。",
-      "undoFeedback": "復原"
+      "undoFeedback": "復原",
+      "viewSource": "查看來源"
     },
     "attachments": {
       "attach": "新增附件",
@@ -2096,13 +2102,8 @@
       "unavailableTitle": "帳戶不可用"
     },
     "connectors": {
-      "accountForThread": "本次對話使用的帳戶",
-      "add": "新增 {{connectorName}}",
       "addConnectors": "新增連接器",
-      "authorized": "{{connectorName}} 已連線，並已授權給 {{agentName}}",
       "back": "返回",
-      "configurePermissions": "配置 {{connectorName}} 權限",
-      "customAuthorizeDescription": "檢視並連線這個自定義連接器，然後授權給智能體。",
       "directory": {
         "allCategories": "全部",
         "askAdmin": "請管理員開啟",
@@ -2129,14 +2130,8 @@
         "tabCustom": "自定義",
         "tabDiscover": "發現"
       },
-      "fallsBackTo": "回退到 {{account}}",
       "find": "查詢連接器…",
-      "loadFailed": "無法載入連接器。",
-      "noUsableAccount": "沒有可用帳戶",
-      "remove": "移除 {{connectorName}}",
-      "selectedAccountFor": "{{connector}} · 已選帳戶：{{account}}",
-      "title": "連接器",
-      "useDefault": "使用預設"
+      "title": "連接器"
     },
     "documentTitle": "聊天",
     "errors": {
@@ -2935,28 +2930,12 @@
     "totalAccounts": "{{value}} 個帳號"
   },
   "connectors": {
-    "access": {
-      "accessFor": "{{action}}{{agent}}的{{connector}}訪問權限",
-      "accessUpdated": "{{connector}}訪問權限已更新",
-      "clearSearch": "清除智能體搜尋",
-      "description": "選擇哪些智能體可以使用這個連接器。",
-      "loading": "正在載入智能體…",
-      "managePermissions": "管理權限",
-      "managePermissionsFor": "管理{{agent}}的{{connector}}權限",
-      "noAgents": "沒有找到智能體",
-      "noMatchingAgents": "沒有匹配「{{search}}」的智能體",
-      "permissionsUpdated": "權限已更新",
-      "search": "查詢智能體",
-      "title": "管理{{connector}}訪問權限",
-      "unnamedAgent": "未命名"
-    },
     "accounts": {
       "accountName": "帳號名稱",
       "accountsUnavailable": "這個連接器不支援帳號管理。",
       "actions": "帳號操作",
       "addAccount": "新增帳號",
       "connected": "已連線",
-      "default": "預設",
       "disconnectAccount": "斷開帳號連線",
       "disconnectDescription": "這會把該帳號與 Okou 斷開。使用它的會話將回到預設繼承。對方平臺上的帳號不會被刪除。",
       "disconnectDescriptionWithCount": "這會把該帳號與 Okou 斷開。{{value}} 個會話將回到預設繼承。對方平臺上的帳號不會被刪除。",
@@ -2971,8 +2950,6 @@
       "find": "查詢帳號",
       "loading": "正在載入帳號…",
       "loadMore": "載入更多",
-      "makeDefault": "設為預設",
-      "managerDescription": "新的執行會使用你的預設帳號。",
       "managerTitle": "管理{{connector}}帳號",
       "namePromptDescription": "可以跳過，稍後再命名。",
       "namePromptTitle": "給你的{{connector}}帳號起個名字",
@@ -2986,7 +2963,6 @@
     },
     "actions": {
       "apply": "應用",
-      "authorize": "授權",
       "cancel": "取消",
       "close": "關閉",
       "closeWindow": "關閉視窗",
@@ -3033,7 +3009,6 @@
     },
     "card": {
       "accessFor": "{{action}}{{connector}}訪問權限",
-      "authorized": "已授權",
       "connectAria": "連線{{connector}}",
       "connected": "已連線",
       "connectionExpired": "連線已過期",
@@ -3046,11 +3021,7 @@
     },
     "catalog": {
       "access": {
-        "add": "新增訪問權限",
-        "manage": "管理{{connector}}訪問權限",
-        "summaryMany": "{{value}} 個智能體",
-        "unavailable": "無法訪問",
-        "usedBy": "使用方： "
+        "manage": "管理{{connector}}訪問權限"
       },
       "categories": {
         "ai": {
@@ -3121,18 +3092,13 @@
         "searchAll": "搜尋全部連接器"
       },
       "empty": {
-        "agent": "此智能體暫無連接器",
         "connected": "暫無已連線的連接器",
-        "search": "沒有與「{{search}}」匹配的連接器",
-        "unshared": "每個連接器都已共享給智能體"
+        "search": "沒有與「{{search}}」匹配的連接器"
       },
       "filterCategory": "分類",
       "filters": {
-        "agents": "智能體",
         "all": "全部",
-        "allAgents": "全部智能體",
-        "aria": "篩選連接器",
-        "unshared": "未共享給任何智能體"
+        "aria": "篩選連接器"
       },
       "filterWith": "篩選：{{category}}",
       "myOkouDescription": "連結第三方服務，供你的 Okou 使用。",
@@ -3162,8 +3128,7 @@
         "seeMore_other": "檢視{{names}}及其他 {{count}} 個",
         "top": "熱門連接器"
       },
-      "title": "連接器",
-      "unnamedAgent": "未命名"
+      "title": "連接器"
     },
     "connectDialog": {
       "connectedAs": "已以{{username}}身份連線",
@@ -3307,9 +3272,6 @@
       }
     },
     "directed": {
-      "authorizeAgent": "授權{{agent}}",
-      "authorized": "{{connector}}已授權",
-      "authorizeDocumentTitle": "授權{{connector}}",
       "connectDocumentTitle": "連線{{connector}}",
       "connected": "{{connector}}已連線",
       "needsConnector": "{{agent}}需要{{connector}}才能繼續",
@@ -3337,10 +3299,8 @@
       "allowOptions": "{{permission}}的允許選項",
       "always": "始終",
       "clearSearch": "清除權限搜尋",
-      "descriptionAgent": "設定此智能體可以透過該連接器執行哪些操作。",
       "find": "查詢權限",
       "findPlaceholder": "查詢權限…",
-      "forTarget": "用於{{target}}",
       "loadError": "無法載入權限資訊",
       "loading": "正在載入權限…",
       "metadataMissing": "未找到{{connector}}的權限資訊",
@@ -4082,7 +4042,6 @@
     }
   },
   "myOkou": {
-    "access": "你在此工作區的存取權限",
     "conflict": "指令已在其他地方更新。本機草稿已保留，請先檢視或複製，再重新載入已儲存的內容。",
     "description": "在此工作區中，專屬於你的 Okou 指令",
     "discard": "捨棄",
@@ -7108,6 +7067,18 @@
       "uninstall": "解除安裝",
       "uninstalling": "正在解除安裝…",
       "updatePermissions": "更新權限"
+    },
+    "channelExamples": {
+      "email": "將郵件轉寄給 Okou，請它整理重點或草擬回覆。",
+      "feishu": "把草稿傳給飛書裡的 Okou，請它改寫成方便分享的團隊近況。",
+      "github": "有人建立提取要求時，執行工作流程，準備一份程式碼審查清單。",
+      "lark": "把草稿傳給 Lark 裡的 Okou，請它改寫成方便分享的團隊近況。",
+      "phone": "用 iPhone 傳簡訊給 {{assistantName}}，說說你的想法，請它寫份初稿。",
+      "slack": "在 Slack 頻道裡 @Okou，貼上草稿，請它提供修改建議。",
+      "teams": "在 Teams 聊天中貼上會議筆記，請 Okou 幫你列出待辦事項。",
+      "telegram": "把兩個方案傳給 Telegram 裡的 Okou，請它幫你比較各自的優缺點。",
+      "wechat": "把兩個方案傳給微信裡的 Okou，請它幫你比較各自的優缺點。",
+      "whatsapp": "把兩個方案傳給 WhatsApp 裡的 Okou，請它幫你比較各自的優缺點。"
     },
     "connected": "已連線",
     "connectedWithDetail": "已連線（{{detail}}）",

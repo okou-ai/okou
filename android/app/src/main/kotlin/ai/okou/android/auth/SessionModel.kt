@@ -13,7 +13,10 @@ import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.chatScopeHash
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.instructions.PersonalInstructionsModel
+import ai.okou.android.preferences.MemberAppearance
+import ai.okou.android.preferences.MemberAppearanceCache
 import ai.okou.android.preferences.MemberPreferencesModel
+import ai.okou.android.preferences.appearance
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -29,7 +32,9 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 enum class SessionStage {
@@ -55,12 +60,26 @@ data class ReadyWorkspace(
     val recovery: AssistantRecoveryModel,
 )
 
+sealed interface OpeningWorkspace {
+    val identity: WorkspaceIdentity
+
+    data class CheckingAccess(override val identity: WorkspaceIdentity) : OpeningWorkspace
+
+    data class Authorized(
+        override val identity: WorkspaceIdentity,
+        val organization: Organization,
+        val chats: ChatListModel,
+    ) : OpeningWorkspace
+}
+
 data class SessionUiState(
     val generation: Long,
     val stage: SessionStage = SessionStage.Restoring,
     val memberships: List<WorkspaceMembership> = emptyList(),
     val ready: ReadyWorkspace? = null,
     val working: Boolean = false,
+    val cachedAppearance: MemberAppearance? = null,
+    val opening: OpeningWorkspace? = null,
 )
 
 /** One owner for authorization, pending work and the currently permitted workspace resource. */
@@ -72,6 +91,7 @@ class SessionModel(
     private val instructionsDrafts: PersonalInstructionsDraftStore,
     private val composerJournal: ComposerJournalStore,
     private val runControlJournal: RunControlJournalStore,
+    private val appearanceCache: MemberAppearanceCache,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     updatesRequired: Flow<Boolean> = emptyFlow(),
 ) : ViewModel() {
@@ -127,42 +147,61 @@ class SessionModel(
     private fun prepare(snapshot: AuthenticationState) {
         val session = checkNotNull(snapshot.session)
         val ticket = generation
-        mutable.value = SessionUiState(generation, SessionStage.LoadingWorkspace, working = true)
+        val initialIdentity =
+            session.workspaceId
+                ?.takeIf { snapshot.complete && session.active }
+                ?.let { WorkspaceIdentity(apiOrigin, session.userId, session.sessionId, it) }
+        mutable.value =
+            SessionUiState(
+                ticket,
+                SessionStage.LoadingWorkspace,
+                working = true,
+                opening = initialIdentity?.let { OpeningWorkspace.CheckingAccess(it) },
+            )
         operation =
             viewModelScope.launch {
+                val appearanceRead =
+                    initialIdentity?.let { identity ->
+                        launch readCache@{
+                            val appearance = appearanceCache.load(identity) ?: return@readCache
+                            val state = mutable.value
+                            if (current(ticket, snapshot) && state.opening != null) {
+                                mutable.value = state.copy(cachedAppearance = appearance)
+                            }
+                        }
+                    }
                 try {
                     authentication.refresh(session)
                     requireCurrent(ticket, snapshot)
                     val memberships = authentication.memberships(session)
                     requireCurrent(ticket, snapshot)
-                    if (
-                        !snapshot.complete ||
-                            !session.active ||
-                            session.workspaceId == null ||
-                            memberships.none { it.id == session.workspaceId }
-                    ) {
+                    val membership =
+                        initialIdentity?.let { identity ->
+                            memberships.firstOrNull { it.id == identity.workspaceId }
+                        }
+                    if (initialIdentity == null || membership == null) {
                         mutable.value =
                             SessionUiState(generation, SessionStage.ChooseWorkspace, memberships)
                         return@launch
                     }
                     val identity =
-                        WorkspaceIdentity(
-                            apiOrigin,
-                            session.userId,
-                            session.sessionId,
-                            session.workspaceId,
-                            chatScopeHash(
-                                listOf(memberships.first { it.id == session.workspaceId }.role) +
-                                    snapshot.membershipAccess
-                                        ?.firstOrNull { it.workspaceId == session.workspaceId }
-                                        ?.let {
-                                            listOf(
-                                                it.role,
-                                                if (it.permissions == null) "unknown" else "known",
-                                            ) + it.permissions.orEmpty().sorted()
-                                        }
-                                        .orEmpty()
-                            ),
+                        initialIdentity.copy(
+                            authorizationScope =
+                                chatScopeHash(
+                                    listOf(membership.role) +
+                                        snapshot.membershipAccess
+                                            ?.firstOrNull {
+                                                it.workspaceId == initialIdentity.workspaceId
+                                            }
+                                            ?.let {
+                                                listOf(
+                                                    it.role,
+                                                    if (it.permissions == null) "unknown"
+                                                    else "known",
+                                                ) + it.permissions.orEmpty().sorted()
+                                            }
+                                            .orEmpty()
+                                )
                         )
                     val owner =
                         factory.create(
@@ -176,147 +215,148 @@ class SessionModel(
                             },
                         )
                     workspace = owner
-                    val data = owner.bootstrap()
+                    val organization = owner.organization()
                     currentCoroutineContext().ensureActive()
                     requireCurrent(ticket, snapshot)
                     val store = ViewModelStore()
                     presentation = store
-                    val preferences =
-                        ViewModelProvider(
-                            store,
-                            viewModelFactory {
-                                initializer {
-                                    MemberPreferencesModel(
-                                        data.preferences,
-                                        owner,
-                                        authorized = { current(ticket, snapshot) },
-                                        onFailure = { error ->
-                                            workspaceFailure(ticket, snapshot, error)
-                                        },
-                                    )
-                                }
-                            },
-                        )[MemberPreferencesModel::class.java]
                     val chats =
-                        ViewModelProvider(
-                            store,
-                            viewModelFactory {
-                                initializer {
-                                    ChatListModel(
-                                        owner,
-                                        chatCache,
-                                        identity,
-                                        authorized = { current(ticket, snapshot) },
-                                        onFailure = { error ->
-                                            workspaceFailure(ticket, snapshot, error)
-                                        },
-                                        dispatcher = dispatcher,
-                                        realtime = owner,
-                                    )
-                                }
-                            },
-                        )[ChatListModel::class.java]
-                    val controls =
-                        ViewModelProvider(
-                            store,
-                            viewModelFactory {
-                                initializer {
-                                    RunControlsModel(
-                                        owner,
-                                        runControlJournal,
-                                        identity,
-                                        chats.history,
-                                        { current(ticket, snapshot) },
-                                        { workspaceFailure(ticket, snapshot, it) },
-                                        dispatcher,
-                                    )
-                                }
-                            },
-                        )[RunControlsModel::class.java]
-                    val recovery =
-                        ViewModelProvider(
-                            store,
-                            viewModelFactory {
-                                initializer {
-                                    AssistantRecoveryModel(
-                                        owner,
-                                        chats.history,
-                                        controls,
-                                        { current(ticket, snapshot) },
-                                        { workspaceFailure(ticket, snapshot, it) },
-                                        dispatcher,
-                                    )
-                                }
-                            },
-                        )[AssistantRecoveryModel::class.java]
-                    mutable.value =
-                        SessionUiState(
-                            generation,
-                            SessionStage.Ready,
-                            memberships,
-                            ReadyWorkspace(
+                        store.workspaceModel {
+                            ChatListModel(
+                                owner,
+                                chatCache,
                                 identity,
-                                data.organization,
-                                preferences,
-                                chats,
-                                ViewModelProvider(
-                                    store,
-                                    viewModelFactory {
-                                        initializer {
-                                            PersonalInstructionsModel(
-                                                owner,
-                                                instructionsDrafts,
-                                                identity,
-                                                { current(ticket, snapshot) },
-                                                { error ->
-                                                    workspaceFailure(ticket, snapshot, error)
-                                                },
-                                            )
-                                        }
-                                    },
-                                )[PersonalInstructionsModel::class.java],
-                                ViewModelProvider(
-                                    store,
-                                    viewModelFactory {
-                                        initializer {
-                                            ChatComposerModel(
-                                                owner,
-                                                composerJournal,
-                                                identity,
-                                                { current(ticket, snapshot) },
-                                                { error ->
-                                                    workspaceFailure(ticket, snapshot, error)
-                                                },
-                                                chats::refreshAfterSend,
-                                                recovery,
-                                            )
-                                        }
-                                    },
-                                )[ChatComposerModel::class.java],
-                                controls,
-                                recovery,
-                            ),
-                        )
+                                authorized = { current(ticket, snapshot) },
+                                onFailure = { error -> workspaceFailure(ticket, snapshot, error) },
+                                dispatcher = dispatcher,
+                                realtime = owner,
+                            )
+                        }
+                    val opened = OpeningWorkspace.Authorized(identity, organization, chats)
+                    mutable.value = mutable.value.copy(memberships = memberships, opening = opened)
                     chats.refresh()
+                    finishPreparation(ticket, snapshot, opened)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
-                    if (current(ticket, snapshot)) {
-                        workspace?.close()
-                        workspace = null
-                        val stage =
-                            when {
-                                error is ApiFailure.UpdateRequired -> SessionStage.UpdateRequired
-                                error is ApiFailure.Unauthenticated ||
-                                    error is ApiFailure.Http &&
-                                        error.status in setOf(401, 403, 404) ->
-                                    SessionStage.AccessRemoved
-                                else -> SessionStage.Unavailable
-                            }
-                        mutable.value = SessionUiState(generation, stage)
+                    if (current(ticket, snapshot) && !workspaceFailure(ticket, snapshot, error)) {
+                        val state = mutable.value
+                        retire()
+                        mutable.value =
+                            SessionUiState(
+                                generation,
+                                SessionStage.Unavailable,
+                                cachedAppearance = state.cachedAppearance,
+                                opening =
+                                    initialIdentity?.let { OpeningWorkspace.CheckingAccess(it) },
+                            )
                     }
+                } finally {
+                    appearanceRead?.cancel()
                 }
             }
+    }
+
+    private suspend fun finishPreparation(
+        ticket: Long,
+        snapshot: AuthenticationState,
+        opened: OpeningWorkspace.Authorized,
+    ) {
+        requireCurrent(ticket, snapshot)
+        val owner = checkNotNull(workspace)
+        val store = checkNotNull(presentation)
+        val initial =
+            try {
+                owner.preferences()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (current(ticket, snapshot) && !workspaceFailure(ticket, snapshot, error)) {
+                    mutable.value =
+                        mutable.value.copy(stage = SessionStage.Unavailable, working = false)
+                }
+                return
+            }
+        currentCoroutineContext().ensureActive()
+        requireCurrent(ticket, snapshot)
+        val preferences =
+            store.workspaceModel {
+                MemberPreferencesModel(
+                    initial,
+                    owner,
+                    authorized = { current(ticket, snapshot) },
+                    onFailure = { error -> workspaceFailure(ticket, snapshot, error) },
+                )
+            }
+        val identity = opened.identity
+        val chats = opened.chats
+        val controls =
+            store.workspaceModel {
+                RunControlsModel(
+                    owner,
+                    runControlJournal,
+                    identity,
+                    chats.history,
+                    { current(ticket, snapshot) },
+                    { workspaceFailure(ticket, snapshot, it) },
+                    dispatcher,
+                )
+            }
+        val recovery =
+            store.workspaceModel {
+                AssistantRecoveryModel(
+                    owner,
+                    chats.history,
+                    controls,
+                    { current(ticket, snapshot) },
+                    { workspaceFailure(ticket, snapshot, it) },
+                    dispatcher,
+                )
+            }
+        val instructions =
+            store.workspaceModel {
+                PersonalInstructionsModel(
+                    owner,
+                    instructionsDrafts,
+                    identity,
+                    { current(ticket, snapshot) },
+                    { workspaceFailure(ticket, snapshot, it) },
+                )
+            }
+        val composer =
+            store.workspaceModel {
+                ChatComposerModel(
+                    owner,
+                    composerJournal,
+                    identity,
+                    { current(ticket, snapshot) },
+                    { workspaceFailure(ticket, snapshot, it) },
+                    chats::refreshAfterSend,
+                    recovery,
+                )
+            }
+        mutable.value =
+            mutable.value.copy(
+                stage = SessionStage.Ready,
+                ready =
+                    ReadyWorkspace(
+                        identity,
+                        opened.organization,
+                        preferences,
+                        chats,
+                        instructions,
+                        composer,
+                        controls,
+                        recovery,
+                    ),
+                working = false,
+                cachedAppearance = null,
+                opening = null,
+            )
+        preferences.uiState
+            .map { it.confirmed.appearance }
+            .distinctUntilChanged()
+            .collect { appearanceCache.save(identity, it) }
     }
 
     private fun current(ticket: Long, snapshot: AuthenticationState): Boolean {
@@ -337,26 +377,43 @@ class SessionModel(
     fun isPresentationCurrent(expectedGeneration: Long): Boolean = acceptsAction(expectedGeneration)
 
     fun refreshPreferences() {
-        mutable.value.ready?.preferences?.refreshFromForeground()
-        mutable.value.ready?.chats?.refresh()
+        val state = mutable.value
+        state.ready?.preferences?.refreshFromForeground()
+        (state.ready?.chats ?: (state.opening as? OpeningWorkspace.Authorized)?.chats)?.refresh()
     }
 
-    private fun workspaceFailure(ticket: Long, snapshot: AuthenticationState, error: Exception) {
-        if (!current(ticket, snapshot)) return
+    private fun workspaceFailure(
+        ticket: Long,
+        snapshot: AuthenticationState,
+        error: Exception,
+    ): Boolean {
+        if (!current(ticket, snapshot)) return false
         val stage =
             when {
                 error is ApiFailure.UpdateRequired -> SessionStage.UpdateRequired
                 error is ApiFailure.Unauthenticated ||
                     error is ApiFailure.Http && error.status in setOf(401, 403, 404) ->
                     SessionStage.AccessRemoved
-                else -> return
+                else -> return false
             }
+        if (stage == SessionStage.UpdateRequired) requiredUpdate = true
         retire()
         mutable.value = SessionUiState(generation, stage)
+        return true
     }
 
     fun retry(expectedGeneration: Long) {
         if (!acceptsAction(expectedGeneration)) return
+        val state = mutable.value
+        val opened = state.opening as? OpeningWorkspace.Authorized
+        if (opened != null) {
+            if (state.working) return
+            val snapshot = checkNotNull(observed)
+            mutable.value = state.copy(stage = SessionStage.LoadingWorkspace, working = true)
+            operation =
+                viewModelScope.launch { finishPreparation(expectedGeneration, snapshot, opened) }
+            return
+        }
         authentication.initialize()
         reconcile(authentication.state.value, force = true)
     }
@@ -410,3 +467,7 @@ class SessionModel(
         retire()
     }
 }
+
+private inline fun <reified T : ViewModel> ViewModelStore.workspaceModel(
+    crossinline create: () -> T
+): T = ViewModelProvider(this, viewModelFactory { initializer { create() } })[T::class.java]

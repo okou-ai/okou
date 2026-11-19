@@ -222,7 +222,6 @@ function ConnectDialogFooter({
 
 interface CustomConnectorConnectDialogProps {
   readonly connector: CustomConnectorResponse;
-  readonly agentId?: string;
   /** Where the connection was started; it decides what follows and closes. */
   readonly origin: CustomConnectorConnectOrigin;
   readonly accountOptions: CustomConnectorAccountMutationOptions;
@@ -392,7 +391,6 @@ function CustomConnectorSecretDescription({
 
 function CustomConnectorConnectDialogContent({
   connector,
-  agentId,
   origin,
   accountOptions,
   accountMode,
@@ -441,7 +439,6 @@ function CustomConnectorConnectDialogContent({
       submit(
         {
           connector,
-          agentId,
           values,
           accountOptions,
           accountMode,

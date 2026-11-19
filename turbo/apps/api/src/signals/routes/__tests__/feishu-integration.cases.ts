@@ -6604,7 +6604,7 @@ export function registerFeishuIntegrationTests(
         });
         expect(selections.body.selections).toStrictEqual([]);
         expect(selections.body.selectedConnections).toStrictEqual([]);
-        await own(() => {
+        const updated = await own(() => {
           return accept(
             chatThreadConnectorSelectionsClient().update({
               headers: { authorization: "Bearer clerk-session" },
@@ -6617,8 +6617,12 @@ export function registerFeishuIntegrationTests(
                 },
               },
             }),
-            [400],
+            [200],
           );
+        });
+        expect(updated.body).toStrictEqual({
+          connectionId: connectorId,
+          target: { kind: "custom", customConnectorId: customConnector.id },
         });
         const genericCreate = await own(() => {
           return accept(
@@ -6646,7 +6650,7 @@ export function registerFeishuIntegrationTests(
         expect(genericCreate.body.error.code).toBe(
           "CONNECTOR_ACCOUNT_UNAVAILABLE",
         );
-        expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
+        expect(context.mocks.ably.publish).toHaveBeenCalledWith(
           `chatThreadDetailChanged:${created.chatThreadId}`,
           null,
         );

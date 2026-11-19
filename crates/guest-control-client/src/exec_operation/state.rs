@@ -566,13 +566,6 @@ impl Drop for PendingExecControlGuard {
     }
 }
 
-pub(in crate::exec_operation) fn output_policy_streams(policy: ExecOutputPolicy) -> bool {
-    matches!(
-        policy,
-        ExecOutputPolicy::Stream { .. } | ExecOutputPolicy::CaptureAndStream { .. }
-    )
-}
-
 pub(in crate::exec_operation) fn stream_queue_capacity_for(
     stdout: ExecOutputPolicy,
     stderr: ExecOutputPolicy,
@@ -592,7 +585,7 @@ pub(in crate::exec_operation) fn stream_queue_capacity_for(
             format!("exec stream queue capacity must be at most {MAX_EXEC_STREAM_CAPACITY}"),
         ));
     }
-    let streams_output = output_policy_streams(stdout) || output_policy_streams(stderr);
+    let streams_output = stdout.stream_limits().is_some() || stderr.stream_limits().is_some();
     if !streams_output && requested.is_some() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -607,36 +600,21 @@ pub(in crate::exec_operation) fn stream_queue_capacity_for(
 }
 
 pub(in crate::exec_operation) fn capture_state(policy: ExecOutputPolicy) -> ExecCaptureState {
-    match policy {
-        ExecOutputPolicy::Discard | ExecOutputPolicy::Stream { .. } => ExecCaptureState::Discard,
-        ExecOutputPolicy::Capture { limit_bytes }
-        | ExecOutputPolicy::CaptureAndStream {
-            capture_limit_bytes: limit_bytes,
-            ..
-        } => ExecCaptureState::Capture {
+    match policy.capture_limit_bytes() {
+        None => ExecCaptureState::Discard,
+        Some(limit_bytes) => ExecCaptureState::Capture {
             limit_bytes: limit_bytes as usize,
         },
     }
 }
 
 pub(in crate::exec_operation) fn stream_state(policy: ExecOutputPolicy) -> Option<ExecStreamState> {
-    match policy {
-        ExecOutputPolicy::Stream {
-            limit_bytes,
-            chunk_limit_bytes,
-        }
-        | ExecOutputPolicy::CaptureAndStream {
-            stream_limit_bytes: limit_bytes,
-            chunk_limit_bytes,
-            ..
-        } => Some(ExecStreamState {
-            limit_bytes: limit_bytes as usize,
-            chunk_limit_bytes: chunk_limit_bytes as usize,
-            emitted_bytes: 0,
-            truncated: false,
-        }),
-        ExecOutputPolicy::Discard | ExecOutputPolicy::Capture { .. } => None,
-    }
+    policy.stream_limits().map(|limits| ExecStreamState {
+        limit_bytes: limits.total_limit_bytes as usize,
+        chunk_limit_bytes: limits.chunk_limit_bytes as usize,
+        emitted_bytes: 0,
+        truncated: false,
+    })
 }
 
 pub(in crate::exec_operation) fn register_exec_operation_start(

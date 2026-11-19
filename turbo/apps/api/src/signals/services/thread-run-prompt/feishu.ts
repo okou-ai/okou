@@ -1,9 +1,10 @@
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { computed, type Computed } from "ccstate";
 import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
-import { buildFeishuSystemPrompt } from "../feishu-dispatch.service";
-import { resolveIntegrationNotePrompt } from "../integration-note-prompt.service";
-import type { FeishuThreadContext } from "../thread-run-context.service";
+import {
+  feishuPromptFromContext,
+  type FeishuThreadContext,
+} from "../feishu-queued-launch-context.service";
 import type { RunPromptAndSkills } from "../run-prompt-and-skills";
 import type { PickedThreadInputEvent } from "./types";
 
@@ -31,24 +32,14 @@ export function createFeishuThreadPrompt(
     if (context.senderOpenId) {
       identity.push(`${providerName} open ID: ${context.senderOpenId}`);
     }
+    const { prompt, appendSystemPrompt } = feishuPromptFromContext(
+      context,
+      await get(featureSwitches$),
+    );
     return {
-      userPromptVariables: { message: context.messageText },
+      userPromptVariables: { message: prompt },
       systemPromptVariables: {
-        integrationContext: buildFeishuSystemPrompt({
-          platform: context.platform,
-          chatType: context.chatType,
-          installationId: context.installationId,
-          tenantKey: context.tenantKey,
-          chatId: context.chatId,
-          threadId: context.threadId,
-          messageId: context.messageId,
-          senderOpenId: context.senderOpenId,
-          integrationNote: resolveIntegrationNotePrompt({
-            triggerSource: context.platform,
-            featureSwitchContext: await get(featureSwitches$),
-          }),
-          history: context.conversationHistory,
-        }),
+        integrationContext: appendSystemPrompt,
         channelUserIdentity: identity.join("\n"),
       },
       skillVolumes: [],

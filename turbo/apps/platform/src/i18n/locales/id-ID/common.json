@@ -438,9 +438,11 @@
       "closePreviewMenu": "Tutup menu pratinjau",
       "download": "Unduh",
       "downloadArtifact": "Unduh artefak",
+      "downloadMarkdownAs": "Unduh sebagai {{format}}",
       "downloadOptions": "Opsi unduhan",
       "enterFullscreen": "Masuk ke layar penuh",
       "exitFullscreen": "Keluar dari layar penuh",
+      "markdownExportFailed": "Ekspor gagal. Pilih format untuk mencoba lagi.",
       "more": "Aksi artefak lainnya",
       "nextImage": "Artefak gambar berikutnya",
       "openNewTab": "Buka di tab baru",
@@ -1045,12 +1047,10 @@
       "invalid": "Tautan izin ini tidak valid atau tidak tersedia.",
       "loadFailed": "Tidak dapat memverifikasi semua izin yang diminta. Tidak ada izin yang dapat diubah.",
       "loading": "Memuat izin",
-      "myOkouScopeNote": "Berlaku untuk penggunaan Okou Anda di ruang kerja ini, bukan hanya tugas saat ini.",
       "myOkouSharedScopeNote": "Berlaku untuk konektor ini di seluruh chat Anda dalam ruang kerja ini. Rekan tim memiliki izin sendiri.",
       "notNow": "Tidak sekarang",
       "pending_other": "{{count}} izin untuk disetujui",
       "review": "Tinjau izin",
-      "scopeNote": "Berlaku untuk agen ini, bukan hanya tugas saat ini.",
       "sharedScopeNote": "Berlaku untuk konektor ini di semua chat dan agen Anda.",
       "title": "Berikan izin berikut"
     }
@@ -1644,7 +1644,11 @@
       "dismiss": "Abaikan",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
+      "dontNudge": "Jangan desak saya",
+      "dontNudgeRecorded": "Dicatat: jangan desak saya lagi soal ini",
+      "editDraft": "Siapkan draf di chat yang ada",
       "editReason": "Edit reason",
+      "feedbackPrompt": "Bagaimana saran ini?",
       "feedLabel": "Feed",
       "forYou": {
         "loading": "Memuat saran",
@@ -1678,9 +1682,11 @@
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
       "sending": "Mengirim…",
+      "sendNew": "Kirim ke chat baru",
       "sent": "Dikirim ke chat baru",
       "unavailable": "Saran itu sudah tidak tersedia. Daftar saran telah diperbarui.",
-      "undoFeedback": "Undo"
+      "undoFeedback": "Undo",
+      "viewSource": "Lihat sumber"
     },
     "attachments": {
       "attach": "Lampirkan",
@@ -2096,13 +2102,8 @@
       "unavailableTitle": "Akun tidak tersedia"
     },
     "connectors": {
-      "accountForThread": "Akun untuk utas ini",
-      "add": "Tambahkan {{connectorName}}",
       "addConnectors": "Tambahkan konektor",
-      "authorized": "{{connectorName}} terhubung dan diotorisasi untuk {{agentName}}",
       "back": "Kembali",
-      "configurePermissions": "Konfigurasikan izin {{connectorName}}",
-      "customAuthorizeDescription": "Tinjau, hubungkan, dan otorisasi konektor kustom ini untuk agen.",
       "directory": {
         "allCategories": "Semua",
         "askAdmin": "Minta admin untuk mengaktifkan",
@@ -2129,14 +2130,8 @@
         "tabCustom": "Kustom",
         "tabDiscover": "Temukan"
       },
-      "fallsBackTo": "Beralih kembali ke {{account}}",
       "find": "Cari konektor...",
-      "loadFailed": "Gagal memuat konektor.",
-      "noUsableAccount": "Tidak ada akun yang dapat digunakan",
-      "remove": "Hapus {{connectorName}}",
-      "selectedAccountFor": "{{connector}} · Akun terpilih: {{account}}",
-      "title": "Konektor",
-      "useDefault": "Gunakan default"
+      "title": "Konektor"
     },
     "documentTitle": "Chat",
     "errors": {
@@ -2935,28 +2930,12 @@
     "totalAccounts": "{{value}} akun"
   },
   "connectors": {
-    "access": {
-      "accessFor": "{{action}} akses {{connector}} untuk {{agent}}",
-      "accessUpdated": "Akses {{connector}} diperbarui",
-      "clearSearch": "Hapus pencarian agen",
-      "description": "Pilih agen yang dapat menggunakan konektor ini.",
-      "loading": "Memuat agen...",
-      "managePermissions": "Kelola izin",
-      "managePermissionsFor": "Kelola izin {{connector}} untuk {{agent}}",
-      "noAgents": "Tidak ada agen ditemukan",
-      "noMatchingAgents": "Tidak ada agen yang cocok dengan \"{{search}}\"",
-      "permissionsUpdated": "Izin diperbarui",
-      "search": "Cari agen",
-      "title": "Kelola akses {{connector}}",
-      "unnamedAgent": "Tanpa nama"
-    },
     "accounts": {
       "accountName": "Nama akun",
       "accountsUnavailable": "Akun tidak tersedia untuk konektor ini.",
       "actions": "Tindakan akun",
       "addAccount": "Tambah akun",
       "connected": "Terhubung",
-      "default": "Default",
       "disconnectAccount": "Putuskan akun",
       "disconnectDescription": "Ini memutuskan akun dari Okou. Thread yang menggunakannya akan kembali ke pewarisan default. Akun di penyedia tidak akan dihapus.",
       "disconnectDescriptionWithCount": "Ini memutuskan akun dari Okou. {{value}} thread akan kembali ke pewarisan default. Akun di penyedia tidak akan dihapus.",
@@ -2971,8 +2950,6 @@
       "find": "Cari akun",
       "loading": "Memuat akun…",
       "loadMore": "Muat lebih banyak",
-      "makeDefault": "Jadikan default",
-      "managerDescription": "Run baru menggunakan akun default Anda.",
       "managerTitle": "Kelola akun {{connector}}",
       "namePromptDescription": "Anda dapat melewati langkah ini dan memberi nama akun nanti.",
       "namePromptTitle": "Beri nama akun {{connector}} Anda",
@@ -2986,7 +2963,6 @@
     },
     "actions": {
       "apply": "Terapkan",
-      "authorize": "Otorisasi",
       "cancel": "Batal",
       "close": "Tutup",
       "closeWindow": "Tutup jendela",
@@ -3033,7 +3009,6 @@
     },
     "card": {
       "accessFor": "{{action}} akses {{connector}}",
-      "authorized": "Diotorisasi",
       "connectAria": "Hubungkan {{connector}}",
       "connected": "Terhubung",
       "connectionExpired": "Koneksi kedaluwarsa",
@@ -3046,11 +3021,7 @@
     },
     "catalog": {
       "access": {
-        "add": "Tambah akses",
-        "manage": "Kelola akses {{connector}}",
-        "summaryMany": "{{value}} agen",
-        "unavailable": "Akses tidak tersedia",
-        "usedBy": "Digunakan oleh "
+        "manage": "Kelola akses {{connector}}"
       },
       "categories": {
         "ai": {
@@ -3121,18 +3092,13 @@
         "searchAll": "Cari semua konektor"
       },
       "empty": {
-        "agent": "Tidak ada konektor untuk agen ini",
         "connected": "Tidak ada konektor yang terhubung",
-        "search": "Tidak ada konektor yang cocok dengan \"{{search}}\"",
-        "unshared": "Setiap konektor sudah dibagikan ke sebuah agen"
+        "search": "Tidak ada konektor yang cocok dengan \"{{search}}\""
       },
       "filterCategory": "Kategori",
       "filters": {
-        "agents": "Agen",
         "all": "Semua",
-        "allAgents": "Semua agen",
-        "aria": "Filter konektor",
-        "unshared": "Tidak dibagikan ke agen mana pun"
+        "aria": "Filter konektor"
       },
       "filterWith": "Filter: {{category}}",
       "myOkouDescription": "Hubungkan layanan pihak ketiga untuk digunakan Okou Anda.",
@@ -3162,8 +3128,7 @@
         "seeMore_other": "Lihat {{names}} dan {{count}} lainnya",
         "top": "Konektor teratas"
       },
-      "title": "Konektor",
-      "unnamedAgent": "Tanpa nama"
+      "title": "Konektor"
     },
     "connectDialog": {
       "connectedAs": "Terhubung sebagai {{username}}",
@@ -3307,9 +3272,6 @@
       }
     },
     "directed": {
-      "authorizeAgent": "Otorisasi {{agent}}",
-      "authorized": "{{connector}} diotorisasi",
-      "authorizeDocumentTitle": "Otorisasi {{connector}}",
       "connectDocumentTitle": "Hubungkan {{connector}}",
       "connected": "{{connector}} terhubung",
       "needsConnector": "{{agent}} membutuhkan {{connector}} untuk melanjutkan",
@@ -3337,10 +3299,8 @@
       "allowOptions": "Opsi izinkan {{permission}}",
       "always": "Selalu",
       "clearSearch": "Hapus pencarian izin",
-      "descriptionAgent": "Konfigurasikan tindakan yang diizinkan dilakukan agen ini melalui konektor ini.",
       "find": "Cari izin",
       "findPlaceholder": "Cari izin...",
-      "forTarget": "untuk {{target}}",
       "loadError": "Gagal memuat metadata izin",
       "loading": "Memuat izin...",
       "metadataMissing": "Tidak ada metadata izin untuk {{connector}}",
@@ -4082,7 +4042,6 @@
     }
   },
   "myOkou": {
-    "access": "Akses Anda di ruang kerja ini",
     "conflict": "Instruksi tersimpan berubah di tempat lain. Draf Anda tetap disimpan. Tinjau atau salin sebelum memuat ulang instruksi tersimpan.",
     "description": "Instruksi Anda untuk Okou di ruang kerja ini",
     "discard": "Buang",
@@ -7108,6 +7067,18 @@
       "uninstall": "Copot pemasangan",
       "uninstalling": "Mencopot pemasangan…",
       "updatePermissions": "Perbarui izin"
+    },
+    "channelExamples": {
+      "email": "Teruskan email ke Okou dan minta ringkasan atau draf balasan.",
+      "feishu": "Kirim draf ke Okou di Feishu dan minta versi singkat untuk dibagikan kepada tim.",
+      "github": "Saat pull request dibuka, jalankan alur kerja untuk menyiapkan daftar periksa peninjauan.",
+      "lark": "Kirim draf ke Okou di Lark dan minta versi singkat untuk dibagikan kepada tim.",
+      "phone": "Kirim ide ke {{assistantName}} dari iPhone dan minta bantuan membuat draf awal.",
+      "slack": "Sebut Okou di kanal Slack dan minta masukan tentang draf yang sedang Anda tulis.",
+      "teams": "Tempel catatan rapat di Teams dan minta Okou merangkum tugas yang perlu ditindaklanjuti.",
+      "telegram": "Kirim dua pilihan ke Okou di Telegram dan minta perbandingan kelebihan serta kekurangannya.",
+      "wechat": "Kirim dua pilihan ke Okou di WeChat dan minta perbandingan kelebihan serta kekurangannya.",
+      "whatsapp": "Kirim dua pilihan ke Okou di WhatsApp dan minta perbandingan kelebihan serta kekurangannya."
     },
     "connected": "Terhubung",
     "connectedWithDetail": "Terhubung ({{detail}})",

@@ -1,6 +1,8 @@
 package ai.okou.android.updates
 
 import ai.okou.android.R
+import ai.okou.android.SettingsIcon
+import ai.okou.android.SettingsRow
 import ai.okou.android.api.generated.AndroidUpdatesRelease
 import android.text.format.Formatter
 import androidx.compose.foundation.Image
@@ -136,40 +138,25 @@ fun UpdateHost(
 }
 
 @Composable
-fun AppUpdateSettings(state: UpdateUiState, open: () -> Unit, check: () -> Unit) {
-    Text(
+internal fun AppUpdateSettings(state: UpdateUiState, open: () -> Unit) {
+    val summary =
+        when {
+            state.preparing -> stringResource(R.string.updates_preparing)
+            state.check == UpdateCheck.Checking -> stringResource(R.string.updates_checking)
+            state.available ->
+                stringResource(
+                    R.string.updates_available,
+                    checkNotNull(state.displayedRelease).version,
+                )
+            state.check == UpdateCheck.Failed -> stringResource(R.string.updates_error_check)
+            state.check == UpdateCheck.Checked -> stringResource(R.string.updates_current)
+            else -> state.installedVersion
+        }
+    SettingsRow(
         stringResource(R.string.updates_title),
-        style = MaterialTheme.typography.titleLarge,
-        modifier = Modifier.semantics { heading() },
-    )
-    Text(
-        stringResource(R.string.updates_installed, state.installedVersion),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    if (!state.preparing && state.available) {
-        ActionText(
-            stringResource(R.string.updates_available, state.displayedRelease!!.version),
-            open,
-        )
-    } else {
-        if (!state.preparing && state.check == UpdateCheck.Checked)
-            Text(stringResource(R.string.updates_current))
-        if (state.check == UpdateCheck.Failed)
-            Text(
-                stringResource(R.string.updates_error_check),
-                color = MaterialTheme.colorScheme.error,
-            )
-    }
-    ActionText(
-        stringResource(
-            when {
-                state.preparing -> R.string.updates_preparing
-                state.check == UpdateCheck.Checking -> R.string.updates_checking
-                else -> R.string.updates_check
-            }
-        ),
-        check,
-        !state.preparing && state.check != UpdateCheck.Checking,
+        leading = { SettingsIcon(R.drawable.ic_download) },
+        value = summary,
+        onClick = open,
     )
 }
 

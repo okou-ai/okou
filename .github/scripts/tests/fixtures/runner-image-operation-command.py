@@ -30,6 +30,15 @@ def alive(pid):
         return False
 
 
+def process_opened(pid, path):
+    with contextlib.suppress(FileNotFoundError, ProcessLookupError):
+        for descriptor in Path(f"/proc/{pid}/fd").iterdir():
+            with contextlib.suppress(FileNotFoundError, ProcessLookupError):
+                if descriptor.readlink() == path:
+                    return True
+    return False
+
+
 def wait_for(predicate):
     deadline = time.monotonic() + 12
     while not predicate():
@@ -78,8 +87,7 @@ def ssh(arguments):
         if MODE == "claim-wait-loss" and request["action"] == "claim" and once():
             namespace = request["inputs"]["jobRef"]
             lock = ROOT / "var/lock" / f"vm0-runner-lifecycle-{namespace}.lock"
-            descriptors = Path(f"/proc/{process.pid}/fd")
-            wait_for(lambda: any(fd.resolve() == lock for fd in descriptors.iterdir()))
+            wait_for(lambda: process_opened(process.pid, lock))
             os.killpg(process.pid, signal.SIGKILL)
             process.wait()
             (ROOT / "claim-wait-cut").touch()
@@ -99,14 +107,7 @@ def ssh(arguments):
                 / "gate"
             )
 
-            def gate_opened():
-                for descriptor in Path(f"/proc/{process.pid}/fd").iterdir():
-                    with contextlib.suppress(FileNotFoundError, ProcessLookupError):
-                        if descriptor.readlink() == gate:
-                            return True
-                return False
-
-            wait_for(gate_opened)
+            wait_for(lambda: process_opened(process.pid, gate))
             if once():
                 record("detached-servers", process.pid)
                 detached = True
@@ -121,11 +122,6 @@ def ssh(arguments):
             wait_for(lambda: (ROOT / "launch-pending").exists())
             record("detached-servers", process.pid)
             detached = True
-            return 255
-        if fault and MODE == "lost-launch" and once():
-            wait_for(lambda: any((ROOT / "units").glob("*.json")))
-            os.killpg(process.pid, signal.SIGKILL)
-            process.wait()
             return 255
         for line in process.stdout:
             frame = json.loads(line)
@@ -177,6 +173,9 @@ def systemd_run(arguments):
     command = arguments[arguments.index("/usr/bin/python3") :]
     if MODE == "absent-launch":
         return 1
+    if MODE == "launch-timeout-without-unit":
+        # The submission client hangs before systemd accepts the request.
+        signal.pause()
     with open(os.devnull, "wb") as sink:
         process = subprocess.Popen(
             command,
@@ -192,6 +191,9 @@ def systemd_run(arguments):
     )
     temporary.write_text(json.dumps({"pid": process.pid, "description": description}))
     temporary.replace(path)
+    if MODE == "launch-timeout-after-acceptance":
+        # The service survives the unresponsive submission client.
+        signal.pause()
     return 0
 
 
@@ -266,8 +268,7 @@ def runner(arguments):
         sys.stdout.write("x" * (65536 - len(secret) // 2) + secret + "\n")
         sys.stdout.write("x" * (1024 * 1024 + 100) + "\n")
         sys.stdout.flush()
-    rootfs = "g" * 64 if MODE == "invalid-hash" else "1" * 64
-    print("rootfs_hash=" + rootfs, flush=True)
+    print("rootfs_hash=" + "1" * 64, flush=True)
     if MODE != "missing-hash":
         print("snapshot_hash=" + "2" * 64, flush=True)
     if (ROOT / "block").exists():

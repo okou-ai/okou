@@ -332,6 +332,10 @@ export function privateArtifactFromRow(
   };
 }
 
+export type PrivateArtifactRecord = NonNullable<
+  ReturnType<typeof privateArtifactFromRow>
+>;
+
 export const privateArtifactRecord$ = command(
   async ({ get }, id: string, signal: AbortSignal) => {
     // Historical file IDs are not all UUIDs; the database key is a UUID.

@@ -1,9 +1,6 @@
 import { command, computed, state } from "ccstate";
-import { userPermissionGrantsContract } from "@okouai/api-contracts/client/user-permission-grants";
-import type {
-  ApplyUserPermissionGrantsBatchRequest,
-  UserPermissionGrantExpiresIn,
-} from "@okouai/api-contracts/contracts/user-permission-grants";
+
+import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/client/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
@@ -32,12 +29,11 @@ import {
 
 function createBatchResources(descriptor: PermissionBatchActionDescriptor) {
   const agent$ = agentById(descriptor.agentId);
-  const grants$ = permissionGrantsForConnectors({
-    agentId: descriptor.agentId,
-    connectorSlugs: descriptor.items.map((item) => {
+  const grants$ = permissionGrantsForConnectors(
+    descriptor.items.map((item) => {
       return item.connectorSlug;
     }),
-  });
+  );
   const metadataResources = [
     ...new Set(
       descriptor.items.map((item) => {
@@ -127,7 +123,7 @@ function missingPermissionGroups(
   grants: readonly PlatformUserPermissionGrant[],
   metadata: readonly PlatformConnectorPermissionMetadata[],
   expiresIn: UserPermissionGrantExpiresIn,
-): ApplyUserPermissionGrantsBatchRequest["groups"] {
+) {
   return metadata.flatMap((entry) => {
     const missing = descriptor.items.filter((item) => {
       return (
@@ -171,8 +167,7 @@ function allBatchPermissionsAllowed(
 }
 
 function mergeBatchAcknowledgements(
-  agentId: string | undefined,
-  groups: ApplyUserPermissionGrantsBatchRequest["groups"],
+  groups: ReturnType<typeof missingPermissionGroups>,
   previous: readonly PlatformUserPermissionGrant[],
   returned: readonly PlatformUserPermissionGrant[],
 ): readonly PlatformUserPermissionGrant[] {
@@ -182,10 +177,6 @@ function mergeBatchAcknowledgements(
     for (const requested of group.grants) {
       const grant = returned.find((candidate) => {
         return (
-          (agentId === undefined
-            ? candidate.agentId === undefined
-            : candidate.agentId !== undefined &&
-              chatActionIdMatches(candidate.agentId, agentId)) &&
           candidate.connectorSlug === group.connectorSlug &&
           candidate.permission === requested.permission
         );
@@ -242,19 +233,15 @@ function createBatchSaveCommand(
         expiresIn,
       );
       let acknowledged = grants;
-      const features = await get(featureSwitches$);
+
       signal.throwIfAborted();
-      if (
-        groups.length &&
-        features[FeatureSwitchKey.ConnectorChatAccountAccess]
-      ) {
+      if (groups.length) {
         const saved: PlatformUserPermissionGrant[] = [];
         for (const group of groups) {
           saved.push(
             ...(await set(
               applyUserPermissionGrants$,
               {
-                agentId: descriptor.agentId,
                 connectorSlug: group.connectorSlug,
                 mode: "patch",
                 grants: group.grants,
@@ -263,28 +250,7 @@ function createBatchSaveCommand(
             )),
           );
         }
-        acknowledged = mergeBatchAcknowledgements(
-          undefined,
-          groups,
-          grants,
-          saved,
-        );
-      } else if (groups.length) {
-        const client = get(apiClient$)(userPermissionGrantsContract);
-        const result = await accept(
-          client.applyBatch({
-            body: { agentId: descriptor.agentId, groups },
-            fetchOptions: { signal },
-          }),
-          [200],
-        );
-        signal.throwIfAborted();
-        acknowledged = mergeBatchAcknowledgements(
-          descriptor.agentId,
-          groups,
-          grants,
-          result.body,
-        );
+        acknowledged = mergeBatchAcknowledgements(groups, grants, saved);
       }
       if (!allBatchPermissionsAllowed(descriptor, acknowledged, metadata)) {
         throw new Error(

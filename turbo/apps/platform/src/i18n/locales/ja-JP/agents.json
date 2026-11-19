@@ -10,24 +10,6 @@
     "save": "保存",
     "saving": "保存中…"
   },
-  "authorization": {
-    "closeSearch": "検索を閉じる",
-    "connectorsLink": "コネクター",
-    "connectorsSaved": "コネクターを保存しました",
-    "customConnectors": {
-      "description": "組織が登録したカスタムコネクターです。",
-      "saved": "カスタムコネクターを保存しました"
-    },
-    "description": "実行中、エージェントは接続済みサービスを安全に利用できます。アクセスはいつでも管理または無効化できます。",
-    "findConnectors": "コネクターを検索",
-    "noConnectorsAfterLink": "ページで最初のサービスを接続してください。",
-    "noConnectorsAlt": "コネクターなし",
-    "noConnectorsBeforeLink": "接続済みのサービスはまだありません。",
-    "noResults": "「{{search}}」の結果はありません",
-    "permissionLoadError": "権限の読み込みに失敗しました",
-    "permissionsUpdated": "権限が更新されました",
-    "searchPlaceholder": "コネクターを検索..."
-  },
   "avatar": {
     "accessibilityDescription": "エージェントのアバターのスタイル、色、顔の詳細をカスタマイズします。",
     "actions": {
@@ -79,7 +61,6 @@
     },
     "sectionNavigation": "エージェント詳細セクション",
     "tabs": {
-      "authorization": "アクセス権限",
       "instructions": "指示",
       "profile": "プロフィール"
     },

@@ -1,12 +1,17 @@
 package ai.okou.android.auth
 
-import ai.okou.android.AppearanceMode
-import ai.okou.android.AppearanceUiState
 import ai.okou.android.OkouApp
 import ai.okou.android.R
+import ai.okou.android.SettingsGroup
+import ai.okou.android.SettingsIcon
+import ai.okou.android.SettingsRow
+import ai.okou.android.SettingsScreen
+import ai.okou.android.SettingsSection
+import ai.okou.android.api.generated.Organization
 import ai.okou.android.chat.WorkspaceRealtimeLifecycle
 import ai.okou.android.instructions.PersonalInstructionsSettings
 import ai.okou.android.preferences.MemberPreferencesSettings
+import ai.okou.android.state.SettingsDestination
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -25,6 +30,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -56,39 +62,74 @@ import com.clerk.ui.auth.AuthView
 @Composable
 fun SessionRoot(
     state: SessionUiState,
-    appearance: AppearanceUiState,
-    selectAppearance: (AppearanceMode) -> Unit,
-    retryAppearance: () -> Unit,
     retry: () -> Unit,
     chooseWorkspace: (String) -> Unit,
     signOut: () -> Unit,
     openWorkspaceSetup: () -> Unit,
-    appUpdates: @Composable () -> Unit = {},
+    appUpdates: @Composable (() -> Unit)? = null,
     openUpdate: (() -> Unit)? = null,
 ) {
     val textButtonColors =
         ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         val ready = state.ready
-        if (state.stage == SessionStage.Ready && ready != null) {
-            key(ready.identity, state.generation) {
-                WorkspaceRealtimeLifecycle(ready.chats.updates)
+        val opened = state.opening as? OpeningWorkspace.Authorized
+        val identity = ready?.identity ?: state.opening?.identity
+        val organization = ready?.organization ?: opened?.organization
+        if (identity != null) {
+            key(
+                identity.apiOrigin,
+                identity.userId,
+                identity.sessionId,
+                identity.workspaceId,
+                state.generation,
+            ) {
+                if (ready != null) WorkspaceRealtimeLifecycle(ready.chats.updates)
                 OkouApp(
-                    ready.chats,
-                    ready.composer,
-                    ready.controls,
-                    appearance,
-                    selectAppearance,
-                    retryAppearance,
-                    account = { WorkspaceActions(state, chooseWorkspace, signOut) },
-                    workspacePreferences = {
-                        MemberPreferencesSettings(ready.preferences)
-                        PersonalInstructionsSettings(ready.instructions)
-                        appUpdates()
+                    ready?.chats ?: opened?.chats,
+                    ready?.composer,
+                    ready?.controls,
+                    settingsContent = { destination, openInstructions ->
+                        if (ready != null) {
+                            when (destination) {
+                                SettingsDestination.Overview ->
+                                    SettingsScreen(
+                                        appUpdates = appUpdates,
+                                        workspacePreferences = {
+                                            MemberPreferencesSettings(ready.preferences)
+                                        },
+                                        workspace = { WorkspaceSettings(state, chooseWorkspace) },
+                                        account = { AccountSettings(openInstructions, signOut) },
+                                    )
+                                SettingsDestination.Instructions ->
+                                    PersonalInstructionsSettings(ready.instructions)
+                            }
+                        }
                     },
-                    recovery = ready.recovery,
-                    workspaceTitle = { WorkspaceTitle(state, chooseWorkspace) },
+                    recovery = ready?.recovery,
+                    workspaceTitle =
+                        organization?.let { { WorkspaceTitle(it, state, chooseWorkspace) } },
                     openUpdate = openUpdate,
+                    startupRecovery =
+                        if (state.stage == SessionStage.Unavailable) {
+                            {
+                                Column {
+                                    Text(
+                                        stringResource(R.string.auth_unavailable),
+                                        modifier =
+                                            Modifier.semantics {
+                                                liveRegion = LiveRegionMode.Polite
+                                            },
+                                    )
+                                    TextButton(onClick = retry, colors = textButtonColors) {
+                                        Text(stringResource(R.string.retry))
+                                    }
+                                    TextButton(onClick = signOut, colors = textButtonColors) {
+                                        Text(stringResource(R.string.auth_sign_out))
+                                    }
+                                }
+                            }
+                        } else null,
                 )
             }
         } else if (state.stage == SessionStage.SignIn) {
@@ -223,24 +264,25 @@ private fun OkouAuthLogo() {
 }
 
 @Composable
-private fun WorkspaceActions(
-    state: SessionUiState,
-    chooseWorkspace: (String) -> Unit,
-    signOut: () -> Unit,
-) {
+private fun WorkspaceSettings(state: SessionUiState, chooseWorkspace: (String) -> Unit) {
     var choosing by remember { mutableStateOf(false) }
-    val textButtonColors =
-        ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(stringResource(R.string.auth_workspace), style = MaterialTheme.typography.titleLarge)
-        Text(checkNotNull(state.ready).organization.name)
-        if (state.memberships.size > 1) {
-            OutlinedButton(onClick = { choosing = true }) {
-                Text(stringResource(R.string.auth_switch_workspace))
-            }
-        }
-        TextButton(onClick = signOut, colors = textButtonColors) {
-            Text(stringResource(R.string.auth_sign_out))
+    val organization = checkNotNull(state.ready).organization
+    val canSwitch = state.memberships.size > 1
+    SettingsSection(stringResource(R.string.auth_workspace)) {
+        SettingsGroup {
+            SettingsRow(
+                organization.name,
+                leading = {
+                    val logo = remember(organization.id) { workspaceLogo(organization.id) }
+                    Image(
+                        painterResource(logo),
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp).clip(RoundedCornerShape(6.dp)),
+                    )
+                },
+                value = if (canSwitch) stringResource(R.string.auth_switch_workspace) else null,
+                onClick = if (canSwitch) ({ choosing = true }) else null,
+            )
         }
     }
     if (choosing) {
@@ -249,9 +291,32 @@ private fun WorkspaceActions(
 }
 
 @Composable
-private fun WorkspaceTitle(state: SessionUiState, chooseWorkspace: (String) -> Unit) {
-    val workspace = checkNotNull(state.ready).organization
-    val canSwitch = state.memberships.size > 1
+private fun AccountSettings(openInstructions: () -> Unit, signOut: () -> Unit) {
+    SettingsSection(stringResource(R.string.settings_account)) {
+        SettingsGroup {
+            SettingsRow(
+                stringResource(R.string.instructions_title),
+                leading = { SettingsIcon(R.drawable.ic_settings) },
+                onClick = openInstructions,
+            )
+            HorizontalDivider()
+            SettingsRow(
+                stringResource(R.string.auth_sign_out),
+                leading = { SettingsIcon(R.drawable.ic_logout) },
+                onClick = signOut,
+                showChevron = false,
+            )
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceTitle(
+    workspace: Organization,
+    state: SessionUiState,
+    chooseWorkspace: (String) -> Unit,
+) {
+    val canSwitch = state.ready != null && state.memberships.size > 1
     var choosing by remember { mutableStateOf(false) }
     val identity: @Composable RowScope.() -> Unit = {
         val logo = remember(workspace.id) { workspaceLogo(workspace.id) }
@@ -269,7 +334,7 @@ private fun WorkspaceTitle(state: SessionUiState, chooseWorkspace: (String) -> U
         )
         if (canSwitch) {
             Icon(
-                painterResource(R.drawable.ic_chat_chevron_down),
+                painterResource(R.drawable.ic_expand_more),
                 stringResource(R.string.auth_switch_workspace),
                 Modifier.padding(start = 4.dp).size(16.dp),
             )

@@ -91,6 +91,7 @@ function context(event = "pull_request", sameRepo = true) {
   needs.prepare.outputs["job-ref"] = event === "push" ? "staging" : "pr-123";
   return {
     needs,
+    vars: {},
     steps: { "api-worker-checks": { outcome: "success" } },
     github: {
       event_name: event,

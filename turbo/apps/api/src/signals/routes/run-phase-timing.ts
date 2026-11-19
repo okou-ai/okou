@@ -26,7 +26,7 @@ const mark$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
   const features = await get(features$);
   signal.throwIfAborted();
-  if (!isFeatureEnabled(FeatureSwitchKey.ArtifactGenerationTiming, features)) {
+  if (!isFeatureEnabled(FeatureSwitchKey.ArtifactThreePointTiming, features)) {
     return notFound("Run phase timing is unavailable");
   }
   const body = await get(markBody$);
@@ -39,29 +39,9 @@ const mark$ = command(async ({ get, set }, signal: AbortSignal) => {
     throw new Error("Phase marks require Run authentication");
   }
   const mark = body.data;
-  const event = isFeatureEnabled(
-    FeatureSwitchKey.ArtifactThreePointTiming,
-    features,
-  )
-    ? runPhaseMarkEvent(auth, mark, receivedAt)
-    : {
-        _time: receivedAt.toISOString(),
-        schema_version: 1,
-        type: "run_phase_mark",
-        run_id: auth.runId,
-        user_id: auth.userId,
-        org_id: auth.orgId,
-        phase: mark.phase,
-        ...(mark.phase === "generation-start"
-          ? {
-              generation_kind: mark.kind,
-              research_skipped: mark.skipResearch,
-            }
-          : {}),
-      };
+  const event = runPhaseMarkEvent(auth, mark, receivedAt);
   const telemetrySignal = AbortSignal.any([signal, AbortSignal.timeout(5000)]);
-  // Acceptance owns one bounded attempt, not delivery. Preserve legal raw marks;
-  // the three-point rollout adds the authenticated completion callback.
+  // Acceptance owns one bounded attempt, not delivery.
   waitUntil(
     settleIncludingAbort(
       ingestAxiomDirect(getDatasetName("web-logs"), [event], telemetrySignal),
@@ -81,7 +61,7 @@ export const runPhaseTimingRoutes: readonly RouteEntry[] = [
         accept: ["agent"],
         requireOrganization: true,
         missingOrganizationStatus: 401,
-        requiredCapability: "run-timing:write",
+        acceptAnySandboxCapability: true,
       },
       mark$,
     ),

@@ -6,30 +6,22 @@ import {
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
-import { chatEvents } from "@okouai/db/schema/chat-event";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import { sendChatAction } from "../external/telegram-client";
 import { publishThreadListChangedSafely } from "../external/realtime";
 import { logger } from "../../lib/log";
 import { settle } from "../utils";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { reconcileCanonicalSlackThreadStatus$ } from "./canonical-slack-thread-status.service";
-import { loadSlackQueuedLaunchMaterial$ } from "./slack-queued-launch-context.service";
+import { createSlackQueuedDelivery } from "./slack-queued-launch-context.service";
 import { createTeamsQueuedDelivery } from "./teams-queued-launch-context.service";
 import { sendTeamsRunStartIndicator } from "./teams-thinking-indicator.service";
-import { loadTelegramQueuedLaunchMaterial$ } from "./telegram-queued-launch-context.service";
-import { loadAgentPhoneQueuedLaunchMaterial$ } from "./agentphone-queued-launch-context.service";
-import { loadWechatQueuedLaunchMaterial$ } from "./wechat-context.service";
+import { createTelegramQueuedDelivery } from "./telegram-queued-launch-context.service";
+import { createAgentPhoneQueuedDelivery } from "./agentphone-queued-launch-context.service";
+import { loadWechatQueuedDelivery$ } from "./wechat-context.service";
 import { reconcileWechatThreadTyping$ } from "./wechat-thread-typing.service";
 import { sendAgentPhoneRunTyping } from "./agentphone-run-typing.service";
-import {
-  feishuQueuedLaunchContextReadPlan,
-  requiredFeishuLaunchContext,
-} from "./feishu-queued-launch-context.service";
-import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
-import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
-import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { createFeishuRecoveryContext } from "./feishu-queued-launch-context.service";
 import { addFeishuThinkingReaction$ } from "./feishu-thinking-indicator.service";
 import {
   pickEnqueuedChatThread$,
@@ -46,48 +38,31 @@ const showRecoveryIndicator$ = command(
     input: IntegrationRecoveryInput,
     signal: AbortSignal,
   ): Promise<void> => {
-    if (input.contextType === "teams") {
-      signal.throwIfAborted();
-      const activity = await get(createTeamsQueuedDelivery(input));
-      signal.throwIfAborted();
-      if (activity) {
-        await sendTeamsRunStartIndicator({ activity }, signal);
-      }
-      return;
-    }
-    const featureSwitchContext = await set(
-      loadUserFeatureSwitchContext$,
-      input.orgId,
-      input.userId,
-      signal,
-    );
-    const source = { ...input, featureSwitchContext };
+    signal.throwIfAborted();
     switch (input.contextType) {
-      case "slack": {
-        const material = await set(loadSlackQueuedLaunchMaterial$, source);
+      case "teams": {
+        const activity = await get(createTeamsQueuedDelivery(input));
         signal.throwIfAborted();
-        if (material) {
+        if (activity) {
+          await sendTeamsRunStartIndicator({ activity }, signal);
+        }
+        break;
+      }
+      case "slack": {
+        const target = await get(createSlackQueuedDelivery(input));
+        signal.throwIfAborted();
+        if (target) {
           await set(
             reconcileCanonicalSlackThreadStatus$,
-            { ...material.slackDelivery, chatThreadId: input.chatThreadId },
+            { ...target, chatThreadId: input.chatThreadId },
             signal,
           );
         }
         break;
       }
       case "feishu": {
-        const plan = feishuQueuedLaunchContextReadPlan(source);
-        const [row] = await get(db$)
-          .select(plan.columns)
-          .from(chatEvents)
-          .innerJoin(chatFeishuContext, plan.contextJoin)
-          .innerJoin(feishuChatThreadRoutes, plan.routeJoin)
-          .innerJoin(feishuOrgConnections, plan.connectionJoin)
-          .innerJoin(feishuOrgInstallations, plan.installationJoin)
-          .where(plan.condition)
-          .limit(1);
+        const context = await get(createFeishuRecoveryContext(input));
         signal.throwIfAborted();
-        const context = requiredFeishuLaunchContext(row);
         if (context) {
           const reactionId = await set(
             addFeishuThinkingReaction$,
@@ -105,23 +80,18 @@ const showRecoveryIndicator$ = command(
         break;
       }
       case "telegram": {
-        const material = await set(loadTelegramQueuedLaunchMaterial$, source);
+        const target = await get(createTelegramQueuedDelivery(input));
         signal.throwIfAborted();
         const botToken = getOfficialTelegramBotConfig().botToken;
-        if (material && botToken) {
-          await sendChatAction(
-            botToken,
-            material.telegramDelivery.chatId,
-            "typing",
-          );
+        if (target && botToken) {
+          await sendChatAction(botToken, target.chatId, "typing");
           signal.throwIfAborted();
         }
         break;
       }
       case "agentphone": {
-        const material = await set(loadAgentPhoneQueuedLaunchMaterial$, source);
+        const target = await get(createAgentPhoneQueuedDelivery(input));
         signal.throwIfAborted();
-        const target = material?.agentphoneDelivery;
         if (
           target?.conversationId &&
           (target.channel === "imessage" || target.channel === "whatsapp")
@@ -134,18 +104,12 @@ const showRecoveryIndicator$ = command(
         break;
       }
       case "wechat": {
-        const material = await set(
-          loadWechatQueuedLaunchMaterial$,
-          source,
-          signal,
-        );
-        if (material) {
+        const target = await set(loadWechatQueuedDelivery$, input, signal);
+        signal.throwIfAborted();
+        if (target) {
           await set(
             reconcileWechatThreadTyping$,
-            {
-              chatThreadId: input.chatThreadId,
-              target: material.wechatDelivery,
-            },
+            { chatThreadId: input.chatThreadId, target },
             signal,
           );
         }

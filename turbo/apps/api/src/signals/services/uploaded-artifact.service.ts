@@ -107,7 +107,7 @@ export const uploadedArtifactPreviewImageUrl$ = command(
   },
 );
 
-export const uploadedArtifactObject$ = command(
+export const resolveUploadedArtifact$ = command(
   async ({ get, set }, args: UploadedArtifactIdentity, signal: AbortSignal) => {
     const record = await set(privateArtifactRecord$, args.id, signal);
     if (record) {
@@ -124,30 +124,44 @@ export const uploadedArtifactObject$ = command(
         throw new Error(`Private artifact ${args.id} has no content length`);
       }
       return {
-        key: record.key,
-        bucket: record.bucket,
-        url: privateArtifactUrl(record.id, record.filename, record.metadata),
-        layout: record.layout,
-        filename: record.filename,
-        contentType: record.contentType,
-        size: head.contentLength,
-        lastModified: head.lastModified,
-        purpose: record.metadata.purpose,
-        producingRunId: record.metadata.producingRunId,
-        isPrivate: true,
+        privateRecord: record,
+        object: {
+          key: record.key,
+          bucket: record.bucket,
+          url: privateArtifactUrl(record.id, record.filename, record.metadata),
+          layout: record.layout,
+          filename: record.filename,
+          contentType: record.contentType,
+          size: head.contentLength,
+          lastModified: head.lastModified,
+          purpose: record.metadata.purpose,
+          producingRunId: record.metadata.producingRunId,
+          isPrivate: true,
+        },
       };
     }
     // Historical public objects remain readable without rewriting their URLs.
     const object = await set(resolvedArtifactObject$, args, signal);
     return object
       ? {
-          ...object,
-          bucket: env("R2_USER_ARTIFACTS_BUCKET_NAME"),
-          isPrivate: false,
-          purpose: undefined,
-          producingRunId: undefined,
+          privateRecord: null,
+          object: {
+            ...object,
+            bucket: env("R2_USER_ARTIFACTS_BUCKET_NAME"),
+            isPrivate: false,
+            purpose: undefined,
+            producingRunId: undefined,
+          },
         }
       : null;
+  },
+);
+
+export const uploadedArtifactObject$ = command(
+  async ({ set }, args: UploadedArtifactIdentity, signal: AbortSignal) => {
+    const resolved = await set(resolveUploadedArtifact$, args, signal);
+    signal.throwIfAborted();
+    return resolved?.object ?? null;
   },
 );
 

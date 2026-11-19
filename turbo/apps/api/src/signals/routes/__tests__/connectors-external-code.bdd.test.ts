@@ -1,3 +1,4 @@
+import { mockNintendoStoreExternalCodeProvider } from "./helpers/connector-auth-provider-fixtures";
 /**
  * CONN-02: external-code authorization sessions through public APIs.
  *
@@ -98,50 +99,6 @@ function jwtPayload(payload: Readonly<Record<string, string>>): string {
     return Buffer.from(JSON.stringify(value)).toString("base64url");
   };
   return `${encode({ alg: "none" })}.${encode(payload)}.`;
-}
-
-function mockNintendoStoreExternalCodeProvider(): {
-  readonly sessionTokenBodies: URLSearchParams[];
-  readonly tokenBodies: Readonly<Record<string, unknown>>[];
-} {
-  const sessionTokenBodies: URLSearchParams[] = [];
-  const tokenBodies: Readonly<Record<string, unknown>>[] = [];
-
-  server.use(
-    http.post(NINTENDO_STORE_SESSION_TOKEN_URL, async ({ request }) => {
-      const body = new URLSearchParams(await request.text());
-      sessionTokenBodies.push(body);
-      return HttpResponse.json({
-        session_token: "bdd-nintendo-session-token",
-      });
-    }),
-    http.post(NINTENDO_STORE_TOKEN_URL, async ({ request }) => {
-      const body: unknown = await request.json();
-      if (!isRecord(body)) {
-        throw new Error("Expected Nintendo Store token body object");
-      }
-      tokenBodies.push(body);
-      return HttpResponse.json({
-        access_token: "bdd-nintendo-access-token",
-        expires_in: 3600,
-        id_token: jwtPayload({
-          sub: "bdd-nintendo-account-id",
-          preferred_username: "bdd-nintendo-player",
-          email: "bdd-nintendo@example.test",
-        }),
-        token_type: "Bearer",
-        scope: "openid user user.mii user.email user.links[].id",
-      });
-    }),
-    http.get(NINTENDO_STORE_PROFILE_URL, () => {
-      return HttpResponse.json({
-        country: "HK",
-        language: "zh-TW",
-      });
-    }),
-  );
-
-  return { sessionTokenBodies, tokenBodies };
 }
 
 function mockNintendoSwitchParentalControlsExternalCodeProvider(): {

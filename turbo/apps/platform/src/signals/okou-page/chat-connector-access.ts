@@ -375,6 +375,7 @@ export function createChatConnectorAccessSignals(threadId?: string) {
     closeTarget$,
     setOverride$,
     reload$: cache.reload$,
+    targetRevision: cache.targetRevision,
     retry$: cache.retry$,
     current$,
     navigation,

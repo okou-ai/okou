@@ -32,10 +32,12 @@ async function discovery(token: string) {
 }
 
 describe("builtin MCP discovery authority", () => {
-  it("keeps absent and deleted account bindings unavailable without choosing a default", async () => {
+  it("refreshes discovery as Chat accounts become available and are deleted", async () => {
     const owned = await publicChatActor(context);
+    owned.ownsFeatureSwitches();
     await owned.run(async () => {
       const { actor, agentId } = owned;
+
       const absentRun = await owned.sendChatRun(actor, {
         agentId,
         prompt: "Discover without a binding",
@@ -49,7 +51,9 @@ describe("builtin MCP discovery authority", () => {
         "api-token",
         { apiKey: "owned-default" },
       );
-      expect((await discovery(absentToken)).body.connectors).toStrictEqual([]);
+      expect((await discovery(absentToken)).body.connectors).toMatchObject([
+        { connectionId: account.id, runtimeAvailable: true },
+      ]);
       await chat.cancelChatRun(
         actor,
         absentRun.runId,
@@ -69,22 +73,31 @@ describe("builtin MCP discovery authority", () => {
           runtimeAvailable: true,
         },
       ]);
-      await connectors.connectManualGrant(actor, "manual-mcp", "api-token", {
-        apiKey: "healthy-sibling",
-      });
+      const sibling = await connectors.connectManualGrant(
+        actor,
+        "manual-mcp",
+        "api-token",
+        {
+          apiKey: "healthy-sibling",
+        },
+      );
       await connectors.deleteBuiltinConnectorAccount(
         actor,
         "manual-mcp",
         account.id,
       );
-      expect((await discovery(token)).body.connectors).toStrictEqual([]);
+      expect((await discovery(token)).body.connectors).toMatchObject([
+        { connectionId: sibling.id, runtimeAvailable: true },
+      ]);
     });
   });
 
   it("returns reconnect guidance for the exact non-default account", async () => {
     const owned = await publicChatActor(context);
+    owned.ownsFeatureSwitches();
     await owned.run(async () => {
       const { actor, agentId } = owned;
+
       mockEnv("APP_URL", "https://app.okou.ai");
       await connectors.connectManualGrant(actor, "manual-mcp", "api-token", {
         apiKey: "default-secret",
@@ -152,7 +165,18 @@ describe("builtin MCP discovery authority", () => {
         "manual-mcp",
         selected.id,
       );
-      await accept(client().reauthorizeOAuth({ headers, body }), [409]);
+      const remaining = await connectors.readDefaultBuiltinAccount(
+        actor,
+        "manual-mcp",
+      );
+      const reconnected = await accept(
+        client().reauthorizeOAuth({ headers, body }),
+        [200],
+      );
+      expect(reconnected.body).toMatchObject({
+        kind: "reconnect",
+        connectionId: remaining.id,
+      });
     });
   });
 });

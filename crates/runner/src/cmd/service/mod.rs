@@ -115,6 +115,9 @@ struct ServiceWaitRunningArgs {
     /// Maximum time to wait for status.json mode=running.
     #[arg(long, default_value_t = 120)]
     timeout_secs: u64,
+    /// Verify the ready instance's runtime health before emitting capacity.
+    #[arg(long)]
+    check_health: bool,
 }
 
 #[derive(Args)]
@@ -154,7 +157,10 @@ pub async fn run_service(args: ServiceArgs) -> RunnerResult<()> {
         ServiceCommand::Drain(a) => drain_resume::run_drain(a).await,
         ServiceCommand::Resume(a) => drain_resume::run_resume(a).await,
         ServiceCommand::PruneIdle(a) => prune_idle::run(a).await,
-        ServiceCommand::WaitRunning(a) => wait_running(a).await,
+        ServiceCommand::WaitRunning(a) => {
+            println!("{}", wait_running(a, &HomePaths::new()?).await?);
+            Ok(())
+        }
         ServiceCommand::UnitState(a) => state::run(a).await,
         ServiceCommand::Status(a) => status(a).await,
         ServiceCommand::Logs(a) => logs(a).await,
@@ -556,7 +562,7 @@ fn wait_running_remaining(
     Ok(remaining)
 }
 
-async fn wait_running(args: ServiceWaitRunningArgs) -> RunnerResult<()> {
+async fn wait_running(args: ServiceWaitRunningArgs, home: &HomePaths) -> RunnerResult<usize> {
     if args.timeout_secs == 0 {
         return Err(RunnerError::Internal(
             "--timeout-secs must be greater than zero".into(),
@@ -568,7 +574,6 @@ async fn wait_running(args: ServiceWaitRunningArgs) -> RunnerResult<()> {
         .checked_add(TokioDuration::from_secs(args.timeout_secs))
         .ok_or_else(|| RunnerError::Internal("--timeout-secs is too large".into()))?;
     let mut last_observation = "not checked".to_string();
-    let home = HomePaths::new()?;
     let config_path = match read_unit_config_path_bounded(
         &unit,
         wait_running_remaining(deadline, args.timeout_secs, &unit, &last_observation)?,
@@ -586,7 +591,7 @@ async fn wait_running(args: ServiceWaitRunningArgs) -> RunnerResult<()> {
             return Err(wait_running_timeout_error(
                 args.timeout_secs,
                 &unit,
-                &last_observation,
+                "systemctl cat timed out while resolving the runner config",
             ));
         }
     };
@@ -603,7 +608,7 @@ async fn wait_running(args: ServiceWaitRunningArgs) -> RunnerResult<()> {
                 return Err(wait_running_timeout_error(
                     args.timeout_secs,
                     &unit,
-                    &last_observation,
+                    &format!("{last_observation}; systemctl show timed out checking active state"),
                 ));
             }
         };
@@ -615,12 +620,13 @@ async fn wait_running(args: ServiceWaitRunningArgs) -> RunnerResult<()> {
             )));
         }
 
-        let base_dir = match tokio::time::timeout_at(
-            deadline,
-            selected_config_base_dir(&unit, &config_path, &home),
-        )
-        .await
-        {
+        let selection = tokio::time::timeout_at(deadline, async {
+            let live_runners = live_runner_instances::try_list(home).await?;
+            let instance =
+                selected_config_live_instance_from_instances(&unit, &config_path, &live_runners)?;
+            Ok::<_, RunnerError>((instance, live_runners))
+        });
+        let (instance, live_runners) = match selection.await {
             Ok(result) => result?,
             Err(_) => {
                 return Err(wait_running_timeout_error(
@@ -630,11 +636,12 @@ async fn wait_running(args: ServiceWaitRunningArgs) -> RunnerResult<()> {
                 ));
             }
         };
-        match base_dir {
-            Some(base_dir) => {
+        match instance {
+            Some(instance) => {
+                let base_dir = &instance.base_dir;
                 let status = match tokio::time::timeout_at(
                     deadline,
-                    status_file::read_as::<StatusForReadiness>(&base_dir),
+                    status_file::read_as::<StatusForReadiness>(base_dir),
                 )
                 .await
                 {
@@ -650,8 +657,16 @@ async fn wait_running(args: ServiceWaitRunningArgs) -> RunnerResult<()> {
                 match status {
                     Ok(Some(status)) => match status.mode.as_str() {
                         "running" => {
-                            println!("{}", status.max_concurrent);
-                            return Ok(());
+                            if args.check_health {
+                                super::doctor::check_ready_runner(
+                                    home,
+                                    &unit,
+                                    &live_runners,
+                                    &instance,
+                                )
+                                .await?;
+                            }
+                            return Ok(status.max_concurrent);
                         }
                         "starting" => {
                             last_observation = "mode=starting".to_string();
@@ -673,7 +688,7 @@ async fn wait_running(args: ServiceWaitRunningArgs) -> RunnerResult<()> {
                     },
                     Ok(None) => {
                         last_observation =
-                            format!("{} missing", status_file::path(&base_dir).display());
+                            format!("{} missing", status_file::path(base_dir).display());
                     }
                     Err(StatusFileReadError::Read { path, error }) => {
                         return Err(RunnerError::Internal(format!(

@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.249.63](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.62...runner-rs-v0.249.63) (2026-11-19)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.62](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.61...runner-rs-v0.249.62) (2026-11-19)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.61](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.60...runner-rs-v0.249.61) (2026-11-19)
+
+
+### Refactoring
+
+* **runner:** centralize exact native receipt comparison ([#48945](https://github.com/okou-ai/okou/issues/48945)) ([cadf499](https://github.com/okou-ai/okou/commit/cadf4997761a1699b926df059d876cb9cca13b43))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.60](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.59...runner-rs-v0.249.60) (2026-11-19)
 
 ### Release Dependencies

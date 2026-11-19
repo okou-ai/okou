@@ -2,6 +2,7 @@ package ai.okou.android.chat
 
 import ai.okou.android.R
 import ai.okou.android.api.generated.IndicatorsThreadsValue
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -94,6 +95,9 @@ internal fun ChatListScreen(
     listState: LazyListState,
     newChat: (String?) -> Unit,
     selectedChatId: String?,
+    actionsEnabled: Boolean,
+    refreshEnabled: Boolean,
+    startupRecovery: @Composable (() -> Unit)?,
 ) {
     var renamingId by remember { mutableStateOf<String?>(null) }
     val renaming =
@@ -162,13 +166,13 @@ internal fun ChatListScreen(
     val refreshLabel = stringResource(R.string.chat_refresh)
     PullToRefreshBox(
         isRefreshing = state.confirmedAt != null && state.listPhase == ChatReadPhase.Loading,
-        onRefresh = refresh,
+        onRefresh = { if (refreshEnabled) refresh() },
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.TopCenter,
     ) {
         LazyColumn(
             Modifier.widthIn(max = 720.dp).fillMaxSize().testTag("chat_list").semantics {
-                if (state.listPhase != ChatReadPhase.Loading) {
+                if (refreshEnabled && state.listPhase != ChatReadPhase.Loading) {
                     customActions =
                         listOf(
                             CustomAccessibilityAction(refreshLabel) {
@@ -187,8 +191,14 @@ internal fun ChatListScreen(
                     style = MaterialTheme.typography.headlineLarge,
                     modifier = Modifier.semantics { heading() },
                 )
-                ChatAction(R.string.composer_new, { newChat(null) })
+                ChatAction(
+                    R.string.composer_new,
+                    { newChat(null) },
+                    enabled = actionsEnabled,
+                    icon = R.drawable.ic_edit_square,
+                )
             }
+            if (startupRecovery != null) item { startupRecovery() }
             if (state.source == ChatListSource.Cache) item { ChatNotice(R.string.chat_cached) }
             if (state.listPhase == ChatReadPhase.Loading)
                 item {
@@ -252,6 +262,8 @@ internal fun ChatListScreen(
                                     ChatAction(
                                         R.string.composer_new_project,
                                         { newChat(project.id) },
+                                        enabled = actionsEnabled,
+                                        icon = R.drawable.ic_edit_square,
                                     )
                                 }
                             }
@@ -269,7 +281,10 @@ internal fun ChatListScreen(
                                     thread.id == selectedChatId,
                                     runningFrame,
                                     row = section.firstChatRow + index,
-                                    actions = state.rowActions(thread, group, index),
+                                    actions =
+                                        if (actionsEnabled) state.rowActions(thread, group, index)
+                                        else emptyList(),
+                                    enabled = actionsEnabled,
                                     pendingAction = state.pendingRowActions[thread.id],
                                     performAction = { action ->
                                         if (action == ChatRowAction.Rename) renamingId = thread.id
@@ -381,7 +396,7 @@ private fun ProjectRow(
     ) {
         Icon(
             painterResource(
-                if (collapsed) R.drawable.ic_chat_chevron_end else R.drawable.ic_chat_chevron_down
+                if (collapsed) R.drawable.ic_chevron_right else R.drawable.ic_expand_more
             ),
             contentDescription = null,
             modifier = Modifier.size(16.dp),
@@ -410,6 +425,7 @@ private fun ChatRow(
     runningFrame: LongState,
     row: Int,
     actions: List<ChatRowAction>,
+    enabled: Boolean,
     pendingAction: ChatRowAction?,
     performAction: (ChatRowAction) -> Unit,
     open: () -> Unit,
@@ -464,6 +480,7 @@ private fun ChatRow(
                     }
                 }
                 .combinedClickable(
+                    enabled = enabled,
                     onClick = open,
                     onLongClick = openMenu,
                     onLongClickLabel = stringResource(R.string.chat_actions),
@@ -498,6 +515,9 @@ private fun ChatRow(
                 for (action in actions) {
                     DropdownMenuItem(
                         text = { Text(stringResource(action.label())) },
+                        leadingIcon = {
+                            Icon(painterResource(action.icon()), contentDescription = null)
+                        },
                         onClick = {
                             menuOpen = false
                             performAction(action)
@@ -524,6 +544,22 @@ private fun ChatRowAction.label(): Int =
         ChatRowAction.MovePinDown -> R.string.chat_move_pin_down
     }
 
+@DrawableRes
+private fun ChatRowAction.icon(): Int =
+    when (this) {
+        ChatRowAction.MarkRead -> R.drawable.ic_drafts
+        ChatRowAction.MarkUnread -> R.drawable.ic_mail
+        ChatRowAction.Mute -> R.drawable.ic_notifications_off
+        ChatRowAction.Unmute -> R.drawable.ic_notifications
+        ChatRowAction.Archive -> R.drawable.ic_archive
+        ChatRowAction.Unarchive -> R.drawable.ic_unarchive
+        ChatRowAction.Rename -> R.drawable.ic_edit
+        ChatRowAction.Pin -> R.drawable.ic_keep
+        ChatRowAction.Unpin -> R.drawable.ic_keep_off
+        ChatRowAction.MovePinUp -> R.drawable.ic_arrow_upward
+        ChatRowAction.MovePinDown -> R.drawable.ic_arrow_downward
+    }
+
 @Composable
 private fun ChatRowStatus.label(): String? =
     when (this) {
@@ -546,7 +582,7 @@ private fun ChatStatusGlyph(status: ChatRowStatus, runningFrame: LongState, row:
                 Canvas(Modifier.size(14.dp)) { drawRunningWave(color, runningFrame.longValue, row) }
             ChatRowStatus.Muted ->
                 Icon(
-                    painterResource(R.drawable.ic_chat_muted),
+                    painterResource(R.drawable.ic_notifications_off),
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(16.dp),
@@ -557,12 +593,25 @@ private fun ChatStatusGlyph(status: ChatRowStatus, runningFrame: LongState, row:
 }
 
 @Composable
-private fun ChatAction(label: Int, action: () -> Unit, enabled: Boolean = true) {
+private fun ChatAction(
+    label: Int,
+    action: () -> Unit,
+    enabled: Boolean = true,
+    @DrawableRes icon: Int? = null,
+) {
     TextButton(
         onClick = action,
         enabled = enabled,
         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
+        if (icon != null) {
+            Icon(
+                painterResource(icon),
+                contentDescription = null,
+                modifier = Modifier.size(ButtonDefaults.IconSize),
+            )
+            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+        }
         Text(stringResource(label))
     }
 }

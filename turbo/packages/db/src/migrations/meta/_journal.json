@@ -3536,6 +3536,27 @@
       "when": 1795074528040,
       "tag": "1583_prepare_built_in_skills",
       "breakpoints": true
+    },
+    {
+      "idx": 1584,
+      "version": "7",
+      "when": 1795078014577,
+      "tag": "1584_drop_retired_ios_widget_push_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 1585,
+      "version": "7",
+      "when": 1795080448282,
+      "tag": "1585_activate_built_in_skills",
+      "breakpoints": true
+    },
+    {
+      "idx": 1586,
+      "version": "7",
+      "when": 1795082318249,
+      "tag": "1586_activate_priority_multi_agent_my_okou",
+      "breakpoints": true
     }
   ]
 }

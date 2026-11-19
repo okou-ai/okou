@@ -55,7 +55,7 @@ public actor ChatCommands {
       projectId: projectID)
     let created: CreatedThread = try await client.request(
       "/api/chat-threads", method: "POST", body: JSONEncoder().encode(body))
-    if let options = composerOptions, options.chatAccountAccess {
+    if let options = composerOptions {
       let access = ChatComposerAccess(client: client)
       for choice in options.initialConnectorAccessOverrides {
         try await access.setConnectorAccess(
@@ -329,7 +329,7 @@ public actor ChatCommands {
 
     enum CodingKeys: String, CodingKey {
       case agentId, clientThreadId, eventId, model, serviceTier, reasoningEffort, projectId
-      case connectorSelections, connectorSelectionPolicy, initialRemoteAccessOverrides
+      case initialRemoteAccessOverrides
     }
 
     func encode(to encoder: Encoder) throws {
@@ -341,13 +341,6 @@ public actor ChatCommands {
       try container.encodeIfPresent(serviceTier, forKey: .serviceTier)
       try container.encodeIfPresent(reasoningEffort, forKey: .reasoningEffort)
       try container.encodeIfPresent(projectId, forKey: .projectId)
-      if composerOptions?.chatAccountAccess != true {
-        try container.encodeIfPresent(
-          composerOptions?.connectorSelections, forKey: .connectorSelections)
-        if composerOptions?.connectorSelections.isEmpty == false {
-          try container.encode("required", forKey: .connectorSelectionPolicy)
-        }
-      }
       try container.encodeIfPresent(
         composerOptions?.initialRemoteAccessOverrides, forKey: .initialRemoteAccessOverrides)
     }

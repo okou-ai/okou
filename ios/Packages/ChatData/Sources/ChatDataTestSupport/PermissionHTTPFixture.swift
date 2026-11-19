@@ -54,10 +54,6 @@ public final class PermissionHTTPFixture: Sendable {
       return try state.withLock { value in
         value.requests.append(request)
         let path = request.url!.path
-        if path == "/api/feature-switches" {
-          return ChatHTTPResponse(
-            body: "{\"effectiveSwitches\":{\"connectorChatAccountAccess\":false}}")
-        }
         let threadPath = "/api/chat-threads/\(Self.threadID)"
         if path == threadPath + "/activity-summary" {
           let body = try JSONDecoder().decode([String: String].self, from: chatRequestBody(request))
@@ -86,12 +82,11 @@ public final class PermissionHTTPFixture: Sendable {
               {"permissions":{"connectorSlug":"gmail","label":"Gmail","permissions":[{"name":"\(value.permission)","description":"Send email from your account"}],"defaultPolicy":{"permissionDefault":"\(value.defaultPolicy)","unknownPolicy":"ask"}}}
               """)
         }
-        if path == "/api/user-permission-grants" { return ChatHTTPResponse(body: value.grants) }
-        if path == "/api/user-permission-grants/apply" {
-          return try Self.applyPermission(request, state: &value)
-        }
-        if path == threadPath + "/connector-selections" {
-          return ChatHTTPResponse(body: "{\"selections\":[]}")
+        if path == "/api/connector-permissions" {
+          if request.httpMethod == "PUT" {
+            return try Self.applyPermission(request, state: &value)
+          }
+          return Self.memberPermissions(grants: value.grants)
         }
         if path == threadPath + "/event-snapshot" {
           return ChatHTTPResponse(
@@ -161,13 +156,18 @@ public final class PermissionHTTPFixture: Sendable {
       value.loseApplyResponseOnce = false
       return Self.error(503, "Permission response lost")
     }
-    return ChatHTTPResponse(body: value.grants)
+    return Self.memberPermissions(grants: value.grants)
+  }
+
+  private static func memberPermissions(grants: String) -> ChatHTTPResponse {
+    ChatHTTPResponse(
+      body: "{\"target\":{\"kind\":\"builtin\",\"connectorSlug\":\"gmail\"},\"grants\":\(grants)}")
   }
 
   public static func grant(
     action: String = "allow", permission: String = "mail.send", expiration: String? = nil
   ) -> String {
-    "[{\"agentId\":\"\(agentID)\",\"connectorSlug\":\"gmail\",\"permission\":\"\(permission)\",\"action\":\"\(action)\",\"expiresAt\":\(expiration.map { "\"\($0)\"" } ?? "null")}]"
+    "[{\"permission\":\"\(permission)\",\"action\":\"\(action)\",\"expiresAt\":\(expiration.map { "\"\($0)\"" } ?? "null")}]"
   }
 
   private static func error(_ status: Int, _ message: String) -> ChatHTTPResponse {

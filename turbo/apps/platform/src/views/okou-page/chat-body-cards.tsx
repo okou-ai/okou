@@ -659,7 +659,6 @@ function CustomConnectorActionCard({
 }: {
   signals: CustomConnectorSignals;
 }) {
-  const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const connectorLoadable = useLastLoadable(signals.connector$);
   const connector = useLastResolved(signals.connector$);
@@ -692,9 +691,6 @@ function CustomConnectorActionCard({
         />
       }
       label={connector.displayName}
-      description={t(($) => {
-        return $.chat.connectors.customAuthorizeDescription;
-      })}
       connected={connected}
       complete={complete}
       reconnectRequired={false}

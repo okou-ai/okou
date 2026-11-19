@@ -5,7 +5,7 @@ import { sendMode$ } from "../../send-mode.ts";
 import { updateUserPreference$ } from "./user-preferences.ts";
 
 /**
- * Update send mode preference. After saving, await the refetched value so the
+ * Update send mode preference. After saving, await the confirmed value so the
  * UI never flashes back to the old value before the signal updates.
  */
 export const updateSendMode$ = command(

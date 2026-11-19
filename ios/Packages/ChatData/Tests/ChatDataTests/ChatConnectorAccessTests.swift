@@ -77,16 +77,15 @@ final class ChatConnectorAccessTests: XCTestCase {
     ]
     let fixture = makeFixture(state)
     let service = ChatComposerAccess(client: fixture.http.client)
-    let before = try await service.permissions(slug: "slack", agentID: FixtureData.agentID)
-    XCTAssertTrue(before.connectorScoped)
+    let before = try await service.permissions(slug: "slack")
     let expiration = before.grants.first { $0.permission == "write" }?.expiresAt
     try await service.savePermissions(
-      slug: "slack", agentID: FixtureData.agentID,
+      slug: "slack",
       edits: [ChatPermissionEdit(permission: "read", action: "allow", expiresIn: "24h")])
-    let otherAgent = try await service.permissions(slug: "slack", agentID: FixtureData.customID)
+    let saved = try await service.permissions(slug: "slack")
     XCTAssertEqual(
-      otherAgent.metadata.policy(for: "read", grants: otherAgent.grants, at: .now), .allow)
-    XCTAssertEqual(otherAgent.grants.first { $0.permission == "write" }?.expiresAt, expiration)
+      saved.metadata.policy(for: "read", grants: saved.grants, at: .now), .allow)
+    XCTAssertEqual(saved.grants.first { $0.permission == "write" }?.expiresAt, expiration)
     let off = try await service.connectorAccess(
       target: .builtin("slack"), threadID: FixtureData.threadID)
     XCTAssertFalse(off.available)
@@ -97,8 +96,8 @@ final class ChatConnectorAccessTests: XCTestCase {
     try await service.setCurrentAccount(
       target: .builtin("slack"), connectionID: FixtureData.siblingID, threadID: FixtureData.threadID
     )
-    let afterSwitch = try await service.permissions(slug: "slack", agentID: FixtureData.agentID)
-    XCTAssertEqual(afterSwitch.grants, otherAgent.grants)
+    let afterSwitch = try await service.permissions(slug: "slack")
+    XCTAssertEqual(afterSwitch.grants, saved.grants)
   }
 
   func testPermissionActionWritesMemberScopeAndExactDurationThenReadsBack() async throws {
@@ -115,7 +114,6 @@ final class ChatConnectorAccessTests: XCTestCase {
     let reviewed = try await service.load(action)
     let receipt = try await service.apply(action, duration: .day, reviewing: reviewed)
     let saved = try await service.load(action)
-    XCTAssertTrue(saved.connectorScoped)
     XCTAssertEqual(receipt.grants, saved.grants)
     XCTAssertEqual(saved.metadata?.policy(for: "read", grants: saved.grants, at: .now), .allow)
     let request = try XCTUnwrap(
@@ -156,7 +154,7 @@ final class ChatConnectorAccessTests: XCTestCase {
     XCTAssertEqual(defaults.first { $0.isDefault }?.id, FixtureData.accountID)
   }
 
-  func testBuiltinAndCustomConnectionsCompleteWithoutAgentAuthorizationInNewMode() async throws {
+  func testBuiltinAndCustomConnectionsMakeAccountsAvailableToChatsByDefault() async throws {
     for custom in [false, true] {
       var state = ConnectorAccessHTTPFixture.State()
       state.custom = custom
@@ -171,25 +169,12 @@ final class ChatConnectorAccessTests: XCTestCase {
       let initial = try await service.status(action)
       let status = try XCTUnwrap(initial)
       let result = try await service.start(
-        action, status: status, method: status.builtin?.authMethods.first, values: [:], options: [:]
+        status: status, method: status.builtin?.authMethods.first, values: [:], options: [:]
       )
       let accountID = try result.operatedID
       let readback = try await service.status(action.confirming(accountID: accountID))
       let completed = try XCTUnwrap(readback)
-      XCTAssertTrue(completed.complete)
-      XCTAssertFalse(completed.requiresAgentAuthorization)
-      if !custom {
-        let request = try XCTUnwrap(
-          fixture.state.withLock {
-            $0.requests.first {
-              $0.url!.path == "/api/connectors/slack/no-auth"
-            }
-          })
-        let body = try XCTUnwrap(
-          JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any])
-        XCTAssertNil(body["authorizeAgent"])
-        XCTAssertNil(body["agentId"])
-      }
+      XCTAssertTrue(completed.connected)
       let defaults = try await ChatComposerAccess(client: fixture.http.client).accountDefaults(
         target: completed.target)
       XCTAssertTrue(try XCTUnwrap(defaults.first).defaultEnabled)
@@ -218,7 +203,6 @@ final class ChatConnectorAccessTests: XCTestCase {
 
   private func options() -> ChatComposerOptions {
     var value = ChatComposerOptions()
-    value.chatAccountAccess = true
     value.initialConnectorAccessOverrides = [
       ChatConnectorAccessOverride(
         target: .builtin("slack"), connectionId: FixtureData.siblingID, enabled: true)

@@ -73,8 +73,6 @@ data class WorkspaceIdentity(
     val authorizationScope: String = "",
 )
 
-data class WorkspaceBootstrap(val organization: Organization, val preferences: UserPreferences)
-
 interface WorkspaceSession :
     Closeable,
     ChatListService,
@@ -83,7 +81,7 @@ interface WorkspaceSession :
     RealtimeService,
     RunControlService,
     AssistantRecoveryService {
-    suspend fun bootstrap(): WorkspaceBootstrap
+    suspend fun organization(): Organization
 
     suspend fun preferences(): UserPreferences
 
@@ -317,12 +315,12 @@ class CanonicalWorkspaceSession(
             }
         }
 
-    override suspend fun bootstrap(): WorkspaceBootstrap {
+    override suspend fun organization(): Organization {
         val organization = api.organization()
         check(organization.id == identity.workspaceId) {
             "Workspace response belongs to another identity"
         }
-        return WorkspaceBootstrap(organization, preferences())
+        return organization
     }
 
     override suspend fun preferences(): UserPreferences {

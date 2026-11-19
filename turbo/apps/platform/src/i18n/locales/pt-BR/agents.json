@@ -10,24 +10,6 @@
     "save": "Salvar",
     "saving": "Salvando…"
   },
-  "authorization": {
-    "closeSearch": "Fechar busca",
-    "connectorsLink": "Conectores",
-    "connectorsSaved": "Conectores salvos",
-    "customConnectors": {
-      "description": "Conectores personalizados registrados pela sua organização.",
-      "saved": "Conectores personalizados salvos"
-    },
-    "description": "Durante a execução, o agente pode usar seus serviços conectados com segurança. Você pode gerenciar ou desativar o acesso a qualquer momento.",
-    "findConnectors": "Encontrar conectores",
-    "noConnectorsAfterLink": " para conectar seu primeiro serviço.",
-    "noConnectorsAlt": "Nenhum conector",
-    "noConnectorsBeforeLink": "Nenhum serviço conectado ainda. Acesse a página ",
-    "noResults": "Nenhum resultado para “{{search}}”",
-    "permissionLoadError": "Falha ao carregar as concessões de permissão",
-    "permissionsUpdated": "Permissões atualizadas",
-    "searchPlaceholder": "Encontrar conectores..."
-  },
   "avatar": {
     "accessibilityDescription": "Personalize o estilo, a cor e os detalhes faciais do avatar do agente.",
     "actions": {
@@ -79,7 +61,6 @@
     },
     "sectionNavigation": "Seção de detalhes do agente",
     "tabs": {
-      "authorization": "Autorização",
       "instructions": "Instruções",
       "profile": "Perfil"
     },

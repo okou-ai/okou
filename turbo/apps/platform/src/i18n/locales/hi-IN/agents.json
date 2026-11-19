@@ -10,24 +10,6 @@
     "save": "सहेजें",
     "saving": "सहेजा जा रहा है..."
   },
-  "authorization": {
-    "closeSearch": "खोज बंद करें",
-    "connectorsLink": "कनेक्टर्स",
-    "connectorsSaved": "कनेक्टर सहेजे गए",
-    "customConnectors": {
-      "description": "आपके संगठन द्वारा पंजीकृत कस्टम कनेक्टर।",
-      "saved": "कस्टम कनेक्टर सहेजे गए"
-    },
-    "description": "चलते समय, एजेंट आपकी कनेक्टेड सेवाओं का सुरक्षित रूप से उपयोग कर सकता है। आप किसी भी समय एक्सेस को प्रबंधित या बंद कर सकते हैं।",
-    "findConnectors": "कनेक्टर खोजें",
-    "noConnectorsAfterLink": "अपनी पहली सेवा कनेक्ट करने के लिए पेज।",
-    "noConnectorsAlt": "कोई कनेक्टर नहीं",
-    "noConnectorsBeforeLink": "अभी तक कोई कनेक्टेड सेवा नहीं है. की ओर जाएं",
-    "noResults": "\"{{search}}\" के लिए कोई परिणाम नहीं",
-    "permissionLoadError": "अनुमति अनुदान लोड करने में विफल",
-    "permissionsUpdated": "अनुमतियाँ अद्यतन की गईं",
-    "searchPlaceholder": "कनेक्टर ढूंढें..."
-  },
   "avatar": {
     "accessibilityDescription": "एजेंट अवतार शैली, रंग और चेहरे के विवरण को अनुकूलित करें।",
     "actions": {
@@ -79,7 +61,6 @@
     },
     "sectionNavigation": "एजेंट विवरण अनुभाग",
     "tabs": {
-      "authorization": "प्राधिकार",
       "instructions": "निर्देश",
       "profile": "प्रोफ़ाइल"
     },

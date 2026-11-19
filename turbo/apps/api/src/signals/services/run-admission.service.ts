@@ -48,16 +48,6 @@ type OrgPlanRunAdmissionCapabilities = Pick<
   "status" | "restrictedBuiltInModels"
 >;
 
-/** One captured admission phase, including its already-owned catalog snapshot. */
-export interface RunAdmissionInput {
-  readonly catalog: ModelCatalog;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly modelProviderType: string | null | undefined;
-  readonly selectedModel: string | null | undefined;
-  readonly enforceBuiltInCredits: boolean;
-}
-
 /** Preserve the unsignalled availability phase and its single expiry sample. */
 export const resolveOrgCreditAvailability$ = command(
   async (
@@ -128,7 +118,7 @@ export const resolveOrgCreditAvailability$ = command(
  * before admission; this only stops an unresolved ID from reaching a runner.
  * Every run model, Built-in or personal subscription, is a catalog model.
  */
-export function checkCatalogRunRoute(
+function checkCatalogRunRoute(
   catalog: ModelCatalog,
   params: {
     readonly modelProviderType: string | null | undefined;

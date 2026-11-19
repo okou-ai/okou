@@ -246,10 +246,8 @@ function BatchHeader({
 
 function BatchPermissionDetails({ batch }: BatchViewProps) {
   const { t } = useTranslation();
-  const features = useLastResolved(featureSwitches$);
-  const singleAgent = features?.[FeatureSwitchKey.SingleAgent] ?? false;
-  const sharedPermissions =
-    features?.[FeatureSwitchKey.ConnectorChatAccountAccess] ?? false;
+  const singleAgent =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.SingleAgent] ?? false;
   const {
     complete,
     loadFailed,
@@ -282,12 +280,8 @@ function BatchPermissionDetails({ batch }: BatchViewProps) {
       <p className="text-sm text-muted-foreground">
         {t(($) => {
           return singleAgent
-            ? sharedPermissions
-              ? $.authorization.permissionBatch.myOkouSharedScopeNote
-              : $.authorization.permissionBatch.myOkouScopeNote
-            : sharedPermissions
-              ? $.authorization.permissionBatch.sharedScopeNote
-              : $.authorization.permissionBatch.scopeNote;
+            ? $.authorization.permissionBatch.myOkouSharedScopeNote
+            : $.authorization.permissionBatch.sharedScopeNote;
         })}
       </p>
       {groups.length === 0 && !ready && !loadFailed && (

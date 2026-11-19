@@ -5,11 +5,6 @@ import Foundation
 /// One composer's immutable Agent/thread scope owns the shared overview reads.
 @MainActor
 final class ComposerConnectorResources {
-  struct Connected: Sendable {
-    let chatAccountAccess: Bool
-    let connectors: [ChatComposerConnector]
-  }
-
   struct Remote: Sendable {
     let overview: ChatRemotesOverview
     let access: ChatThreadRemoteAccess?
@@ -22,21 +17,21 @@ final class ComposerConnectorResources {
   private let agentID: String
   private let threadID: String?
   private let sleep: @Sendable (Duration) async throws -> Void
-  private let didLoadConnected: @MainActor (Connected) -> Void
+  private let didLoadConnected: @MainActor ([ChatComposerConnector]) -> Void
   private let didLoadRemote: @MainActor (Remote) -> Void
   private let didFail: @MainActor (Error) -> Void
   private let options: CCState.State<ChatComposerOptions>
   private let revision = CCState.State(0)
   private let lifetime = CCState.State(true)
   private let reload: Command<Void, ChatComposerOptions>
-  private var connectedTask: Task<Connected, Error>?
+  private var connectedTask: Task<[ChatComposerConnector], Error>?
   private var remoteTask: Task<Remote, Error>?
   private var closed = false
 
   init(
     service: ChatComposerAccess, agentID: String, threadID: String?, options: ChatComposerOptions,
     sleep: @escaping @Sendable (Duration) async throws -> Void,
-    didLoadConnected: @escaping @MainActor (Connected) -> Void,
+    didLoadConnected: @escaping @MainActor ([ChatComposerConnector]) -> Void,
     didLoadRemote: @escaping @MainActor (Remote) -> Void,
     didFail: @escaping @MainActor (Error) -> Void
   ) {
@@ -58,23 +53,19 @@ final class ComposerConnectorResources {
 
   lazy var connected = makeConnected()
 
-  private func makeConnected() -> Computed<Task<Connected, Error>> {
+  private func makeConnected() -> Computed<Task<[ChatComposerConnector], Error>> {
     Computed { [weak self] get, options in
       guard let self, !closed, try get(lifetime) else { throw CancellationError() }
       _ = try get(revision)
       let pending = try get(self.options)
       let signal = options.signal
-      let task = Task<Connected, Error> { @MainActor [weak self, service, agentID, threadID] in
+      let task = Task { @MainActor [weak self, service, agentID, threadID] in
         guard let self else { throw CancellationError() }
         do {
           let value = try await read {
             try await service.validate(agentID: agentID, threadID: threadID)
             try Task.checkCancellation()
-            let enabled = try await service.chatAccountAccessEnabled()
-            try Task.checkCancellation()
-            let values = try await service.connectors(
-              agentID: agentID, chatAccountAccess: enabled, threadID: threadID, options: pending)
-            return Connected(chatAccountAccess: enabled, connectors: values)
+            return try await service.connectors(threadID: threadID, options: pending)
           }
           try Task.checkCancellation()
           try signal.checkCancellation()
@@ -134,7 +125,9 @@ final class ComposerConnectorResources {
     }
   }
 
-  func requests() throws -> (connected: Task<Connected, Error>, remote: Task<Remote, Error>) {
+  func requests() throws -> (
+    connected: Task<[ChatComposerConnector], Error>, remote: Task<Remote, Error>
+  ) {
     // Start both independent sections before a caller awaits either endpoint.
     let connected = try store.get(connected)
     let remote = try store.get(remote)

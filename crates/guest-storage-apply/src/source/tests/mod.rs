@@ -50,6 +50,7 @@ fn assert_body_read_attribution(body_ready_before_read: bool) {
                 body: body_rx,
                 inner_duration: inner_duration.clone(),
             },
+            None,
             metrics.clone(),
         );
         let (mut reader, failure) = source.into_parts();

@@ -24,33 +24,47 @@ internal sealed interface WorkspaceTarget {
     data class NewChat(val projectId: String?) : WorkspaceTarget
 }
 
+internal enum class SettingsDestination {
+    Overview,
+    Instructions,
+}
+
 internal data class WorkspaceNavigation(
     val target: WorkspaceTarget = WorkspaceTarget.List,
-    val settingsOpen: Boolean = false,
+    val settings: SettingsDestination? = null,
 )
 
 @Composable
 internal fun rememberWorkspaceNavigation(): MutableState<WorkspaceNavigation> =
     rememberSaveable(
         stateSaver =
-            listSaver(
-                save = { navigation: WorkspaceNavigation ->
+            listSaver<WorkspaceNavigation, Any>(
+                save = { navigation ->
                     val (kind, id) =
                         when (val target = navigation.target) {
                             WorkspaceTarget.List -> "list" to ""
                             is WorkspaceTarget.Chat -> "chat" to target.id
                             is WorkspaceTarget.NewChat -> "new" to target.projectId.orEmpty()
                         }
-                    listOf(kind, id, navigation.settingsOpen)
+                    listOf(kind, id, navigation.settings?.name.orEmpty())
                 },
-                restore = { (kind, id, settingsOpen) ->
+                restore = { (kind, id, settings) ->
                     val target =
                         when (kind) {
                             "chat" -> WorkspaceTarget.Chat(id as String)
                             "new" -> WorkspaceTarget.NewChat((id as String).ifEmpty { null })
                             else -> WorkspaceTarget.List
                         }
-                    WorkspaceNavigation(target, settingsOpen as Boolean)
+                    val destination =
+                        when (settings) {
+                            // Earlier versions saved only whether Settings was open.
+                            true,
+                            SettingsDestination.Overview.name -> SettingsDestination.Overview
+                            SettingsDestination.Instructions.name ->
+                                SettingsDestination.Instructions
+                            else -> null
+                        }
+                    WorkspaceNavigation(target, destination)
                 },
             )
     ) {

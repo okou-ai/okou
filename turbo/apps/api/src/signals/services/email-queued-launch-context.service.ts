@@ -19,17 +19,16 @@ import type { EmailDeliveryTarget } from "./email-chat-callback-payload";
 import { buildEmailPrompt } from "./email-prompt";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 
-export const loadEmailQueuedLaunchMaterial$ = command(
-  async (
-    { get },
-    args: {
-      readonly eventId: string;
-      readonly chatThreadId: string;
-      readonly orgId: string;
-      readonly userId: string;
-      readonly featureSwitchContext: FeatureSwitchContext;
-    },
-  ) => {
+interface EmailQueuedSource {
+  readonly eventId: string;
+  readonly chatThreadId: string;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly featureSwitchContext: FeatureSwitchContext;
+}
+
+function createEmailQueuedContext(args: EmailQueuedSource) {
+  return computed(async (get) => {
     if (
       !isFeatureEnabled(
         FeatureSwitchKey.EmailIntegration,
@@ -91,6 +90,31 @@ export const loadEmailQueuedLaunchMaterial$ = command(
         ),
       )
       .limit(1);
+    return row ?? null;
+  });
+}
+
+function emailDeliveryFromContext(
+  row: EmailDeliveryTarget,
+): EmailDeliveryTarget {
+  return {
+    emailMessageId: row.emailMessageId,
+    userLinkId: row.userLinkId,
+    agentId: row.agentId,
+  };
+}
+
+export function createEmailQueuedDelivery(args: EmailQueuedSource) {
+  const context$ = createEmailQueuedContext(args);
+  return computed(async (get) => {
+    const context = await get(context$);
+    return context ? emailDeliveryFromContext(context) : null;
+  });
+}
+
+export const loadEmailQueuedLaunchMaterial$ = command(
+  async ({ get }, args: EmailQueuedSource) => {
+    const row = await get(createEmailQueuedContext(args));
     if (!row) {
       return null;
     }
@@ -112,11 +136,7 @@ export const loadEmailQueuedLaunchMaterial$ = command(
           featureSwitchContext: args.featureSwitchContext,
         }),
       ),
-      emailDelivery: {
-        emailMessageId: row.emailMessageId,
-        userLinkId: row.userLinkId,
-        agentId: row.agentId,
-      } satisfies EmailDeliveryTarget,
+      emailDelivery: emailDeliveryFromContext(row),
       userInfoExtras: {},
     };
   },

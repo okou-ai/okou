@@ -166,7 +166,10 @@ class ImageOperationTest(unittest.TestCase):
     def process_opened(self, pid, path):
         descriptors = Path(f"/proc/{pid}/fd")
         with contextlib.suppress(FileNotFoundError, ProcessLookupError):
-            return any(descriptor.resolve() == path for descriptor in descriptors.iterdir())
+            for descriptor in descriptors.iterdir():
+                with contextlib.suppress(FileNotFoundError, ProcessLookupError):
+                    if descriptor.readlink() == path:
+                        return True
         return False
 
     def claim_waiter_opened(self, lock):
@@ -179,15 +182,7 @@ class ImageOperationTest(unittest.TestCase):
         lock = self.root / "var/lock/vm0-runner-lifecycle-pr-123.lock"
         with self.cleanup_session() as cleanup:
             # Synchronize on the actual lock contender opening the same file.
-            def contender_opened():
-                for descriptor in Path(f"/proc/{cleanup.pid}/fd").iterdir():
-                    # An unrelated descriptor can close during enumeration.
-                    with contextlib.suppress(FileNotFoundError, ProcessLookupError):
-                        if descriptor.readlink() == lock:
-                            return True
-                return False
-
-            self.wait_for(contender_opened)
+            self.wait_for(lambda: self.process_opened(cleanup.pid, lock))
             self.assertFalse(select.select([cleanup.stdout], [], [], 0)[0])
             (self.root / "release").touch()
             output, error = process.communicate(timeout=15)
@@ -542,24 +537,45 @@ class ImageOperationTest(unittest.TestCase):
     def assert_one_build(self):
         self.assertEqual([r["phase"] for r in self.records("executions")], ["build"])
 
-    def test_healthy_and_truncated_result_keep_original_execution(self):
-        for fault in ("", "partial-result"):
-            with self.subTest(fault=fault):
-                (self.root / "fault-used").unlink(missing_ok=True)
-                self.environment["IMAGE_FAULT"] = fault
-                self.environment["GITHUB_RUN_ATTEMPT"] = str(
-                    int(self.environment["GITHUB_RUN_ATTEMPT"]) + 1
-                )
-                self.invoke("claim")
-                outcome = self.invoke("run", "build", str(self.result))
-                result = json.loads(self.result.read_text())
-                self.assertEqual(result["status"], 0)
-                self.assertEqual(result["rootfsHash"], "1" * 64)
-                self.assertEqual(result["snapshotHash"], "2" * 64)
-                self.assertIn("image-progress", outcome.stdout)
-                self.assertNotIn(self.environment["R2_SECRET_ACCESS_KEY"], outcome.stdout)
-        self.assertEqual(len(self.records("executions")), 2)
-        self.assertEqual(sum(r["action"] == "run" for r in self.records("requests")), 3)
+    def test_launch_timeout_observes_the_original_accepted_service(self):
+        self.invoke("claim")
+        self.environment["IMAGE_FAULT"] = "launch-timeout-after-acceptance"
+        self.invoke("run", "build", str(self.result))
+        result = json.loads(self.result.read_text())
+        self.assertEqual(result["status"], 0)
+        self.assertEqual(result["rootfsHash"], "1" * 64)
+        self.assertEqual(result["snapshotHash"], "2" * 64)
+        self.assert_one_build()
+        self.assertEqual(
+            sum("--service-type=exec" in entry for entry in self.records("systemd")),
+            1,
+        )
+
+    def test_launch_timeout_without_a_service_keeps_outcome_unknown(self):
+        self.invoke("claim")
+        self.environment["IMAGE_FAULT"] = "launch-timeout-without-unit"
+        result = self.invoke("run", "build", str(self.result), check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("execution outcome unknown", result.stderr)
+        self.assertFalse(self.result.exists())
+        self.assertFalse(self.records("executions"))
+        self.assertEqual(
+            sum("--service-type=exec" in entry for entry in self.records("systemd")),
+            1,
+        )
+
+    def test_truncated_result_reattaches_to_verified_build(self):
+        self.environment["IMAGE_FAULT"] = "partial-result"
+        self.invoke("claim")
+        outcome = self.invoke("run", "build", str(self.result))
+        result = json.loads(self.result.read_text())
+        self.assertEqual(result["status"], 0)
+        self.assertEqual(result["rootfsHash"], "1" * 64)
+        self.assertEqual(result["snapshotHash"], "2" * 64)
+        self.assertIn("image-progress", outcome.stdout)
+        self.assertNotIn(self.environment["R2_SECRET_ACCESS_KEY"], outcome.stdout)
+        self.assert_one_build()
+        self.assertEqual(sum(r["action"] == "run" for r in self.records("requests")), 2)
         calls = json.dumps(self.records("privileged"))
         self.assertNotIn(self.environment["R2_SECRET_ACCESS_KEY"], calls)
         self.assertIn("--property=RuntimeMaxSec=570", calls)
@@ -571,15 +587,6 @@ class ImageOperationTest(unittest.TestCase):
                     path.read_bytes(),
                     str(path),
                 )
-
-    def test_lost_launch_reply_reattaches_without_replay(self):
-        process = self.start_blocked("lost-launch")
-        self.wait_for(lambda: sum(r["action"] == "run" for r in self.records("requests")) == 2)
-        (self.root / "release").touch()
-        output, error = process.communicate(timeout=15)
-        self.assertEqual(process.returncode, 0, output + error)
-        self.assert_one_build()
-        self.assertEqual(json.loads(self.result.read_text())["status"], 0)
 
     def test_lost_reply_while_original_launch_is_still_submitting(self):
         self.environment["IMAGE_FAULT"] = "pending-launch"
@@ -666,18 +673,28 @@ class ImageOperationTest(unittest.TestCase):
         self.assertEqual(sum(r["action"] == "run" for r in self.records("requests")), 2)
 
     def test_invalid_results_fail_without_replay(self):
-        for index, fault in enumerate(
-            ("missing-hash", "invalid-hash", "wrong-result", "invalid-result-hash")
-        ):
+        faults = {
+            "missing-hash": "invalid image result hash",
+            "wrong-result": "invalid or mismatched image result",
+            "invalid-result-hash": "invalid image result hash",
+        }
+        for attempt, (fault, error) in enumerate(faults.items(), start=2):
             with self.subTest(fault=fault):
-                self.environment.update(IMAGE_FAULT=fault, GITHUB_RUN_ATTEMPT=str(index + 2))
+                self.environment.update(IMAGE_FAULT=fault, GITHUB_RUN_ATTEMPT=str(attempt))
                 self.result.unlink(missing_ok=True)
+                previous_executions = len(self.records("executions"))
                 self.invoke("claim")
+                previous_requests = len(self.records("requests"))
                 result = self.invoke("run", "build", str(self.result), check=False)
                 self.assertNotEqual(result.returncode, 0)
-                if self.result.exists():
-                    self.assertNotEqual(json.loads(self.result.read_text())["status"], 0)
-        self.assertEqual(len(self.records("executions")), 4)
+                self.assertIn(error, result.stderr)
+                self.assertFalse(self.result.exists())
+                self.assertEqual(len(self.records("executions")), previous_executions + 1)
+                requests = self.records("requests")[previous_requests:]
+                self.assertEqual(
+                    [request["action"] for request in requests],
+                    ["run", "cancel"],
+                )
 
     def test_cancellation_retires_worker_and_preserves_lease_successor(self):
         process = self.start_blocked()

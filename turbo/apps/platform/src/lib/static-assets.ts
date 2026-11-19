@@ -1,3 +1,8 @@
+import pdfRegularFontUrl from "@fontpkg/noto-sans-cjk-sc/NotoSansCJKsc-Regular.otf?url";
+import pdfBoldFontUrl from "@fontpkg/noto-sans-cjk-sc/NotoSansCJKsc-Bold.otf?url";
+import pdfItalicFontUrl from "@fontpkg/sarasa-gothic-sc/sarasa-gothic-sc-italic.ttf?url";
+import pdfBoldItalicFontUrl from "@fontpkg/sarasa-gothic-sc/sarasa-gothic-sc-bolditalic.ttf?url";
+import pdfEmojiFontUrl from "@fontsource/noto-emoji/files/noto-emoji-emoji-400-normal.woff?url";
 import { resolvePlatformRuntimeConfig } from "./platform-host.ts";
 
 const PLATFORM_RUNTIME_CONFIG = resolvePlatformRuntimeConfig();
@@ -22,6 +27,14 @@ export const platformMessagePdfFontUrls = Object.freeze({
   emoji: platformStaticAssetUrl(
     "message-pdf/fonts/noto-emoji-emoji-400-normal-61c7949ebb9d.woff",
   ),
+});
+
+export const platformPreviewMessagePdfFontUrls = Object.freeze({
+  regular: pdfRegularFontUrl,
+  bold: pdfBoldFontUrl,
+  italic: pdfItalicFontUrl,
+  boldItalic: pdfBoldItalicFontUrl,
+  emoji: pdfEmojiFontUrl,
 });
 
 export const platformEmptyPrivateAgentsImg = platformStaticAssetUrl(

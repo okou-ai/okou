@@ -92,6 +92,21 @@ use crate::telemetry::{ArchiveSizeMismatch, JobTelemetry, SandboxOpRecord};
 use runner_host::lock;
 use runner_host::paths::{HomePaths, short_digest, touch_mtime};
 
+// One range and suffix per bucket, with static labels for every action family.
+macro_rules! storage_count_label {
+    ($count:expr, $prefix:literal) => {
+        match $count {
+            0 => concat!($prefix, "0"),
+            1 => concat!($prefix, "1"),
+            2 => concat!($prefix, "2"),
+            3..=4 => concat!($prefix, "3_4"),
+            5..=8 => concat!($prefix, "5_8"),
+            9..=16 => concat!($prefix, "9_16"),
+            _ => concat!($prefix, "17_plus"),
+        }
+    };
+}
+
 mod background_fill;
 pub mod decoded;
 mod guest_application;
@@ -3487,86 +3502,23 @@ fn add_passthrough_summary(
 }
 
 fn passthrough_hit_count_action(count: usize) -> &'static str {
-    match count_bucket(count) {
-        CountBucket::Zero => "storage_cache_passthrough_hit_count_0",
-        CountBucket::One => "storage_cache_passthrough_hit_count_1",
-        CountBucket::Two => "storage_cache_passthrough_hit_count_2",
-        CountBucket::ThreeToFour => "storage_cache_passthrough_hit_count_3_4",
-        CountBucket::FiveToEight => "storage_cache_passthrough_hit_count_5_8",
-        CountBucket::NineToSixteen => "storage_cache_passthrough_hit_count_9_16",
-        CountBucket::SeventeenPlus => "storage_cache_passthrough_hit_count_17_plus",
-    }
+    storage_count_label!(count, "storage_cache_passthrough_hit_count_")
 }
 
 fn passthrough_miss_count_action(count: usize) -> &'static str {
-    match count_bucket(count) {
-        CountBucket::Zero => "storage_cache_passthrough_miss_count_0",
-        CountBucket::One => "storage_cache_passthrough_miss_count_1",
-        CountBucket::Two => "storage_cache_passthrough_miss_count_2",
-        CountBucket::ThreeToFour => "storage_cache_passthrough_miss_count_3_4",
-        CountBucket::FiveToEight => "storage_cache_passthrough_miss_count_5_8",
-        CountBucket::NineToSixteen => "storage_cache_passthrough_miss_count_9_16",
-        CountBucket::SeventeenPlus => "storage_cache_passthrough_miss_count_17_plus",
-    }
+    storage_count_label!(count, "storage_cache_passthrough_miss_count_")
 }
 
 fn passthrough_lock_busy_count_action(count: usize) -> &'static str {
-    match count_bucket(count) {
-        CountBucket::Zero => "storage_cache_passthrough_lock_busy_count_0",
-        CountBucket::One => "storage_cache_passthrough_lock_busy_count_1",
-        CountBucket::Two => "storage_cache_passthrough_lock_busy_count_2",
-        CountBucket::ThreeToFour => "storage_cache_passthrough_lock_busy_count_3_4",
-        CountBucket::FiveToEight => "storage_cache_passthrough_lock_busy_count_5_8",
-        CountBucket::NineToSixteen => "storage_cache_passthrough_lock_busy_count_9_16",
-        CountBucket::SeventeenPlus => "storage_cache_passthrough_lock_busy_count_17_plus",
-    }
+    storage_count_label!(count, "storage_cache_passthrough_lock_busy_count_")
 }
 
 fn background_fill_deferred_count_action(count: usize) -> &'static str {
-    match count_bucket(count) {
-        CountBucket::Zero => "storage_cache_background_fill_deferred_count_0",
-        CountBucket::One => "storage_cache_background_fill_deferred_count_1",
-        CountBucket::Two => "storage_cache_background_fill_deferred_count_2",
-        CountBucket::ThreeToFour => "storage_cache_background_fill_deferred_count_3_4",
-        CountBucket::FiveToEight => "storage_cache_background_fill_deferred_count_5_8",
-        CountBucket::NineToSixteen => "storage_cache_background_fill_deferred_count_9_16",
-        CountBucket::SeventeenPlus => "storage_cache_background_fill_deferred_count_17_plus",
-    }
-}
-
-#[derive(Clone, Copy)]
-enum CountBucket {
-    Zero,
-    One,
-    Two,
-    ThreeToFour,
-    FiveToEight,
-    NineToSixteen,
-    SeventeenPlus,
-}
-
-fn count_bucket(count: usize) -> CountBucket {
-    match count {
-        0 => CountBucket::Zero,
-        1 => CountBucket::One,
-        2 => CountBucket::Two,
-        3 | 4 => CountBucket::ThreeToFour,
-        5..=8 => CountBucket::FiveToEight,
-        9..=16 => CountBucket::NineToSixteen,
-        _ => CountBucket::SeventeenPlus,
-    }
+    storage_count_label!(count, "storage_cache_background_fill_deferred_count_")
 }
 
 fn count_bucket_outcome(count: usize) -> &'static str {
-    match count_bucket(count) {
-        CountBucket::Zero => "0",
-        CountBucket::One => "1",
-        CountBucket::Two => "2",
-        CountBucket::ThreeToFour => "3_4",
-        CountBucket::FiveToEight => "5_8",
-        CountBucket::NineToSixteen => "9_16",
-        CountBucket::SeventeenPlus => "17_plus",
-    }
+    storage_count_label!(count, "")
 }
 
 /// Resolve a planned archive to the guest `file://` stage path.

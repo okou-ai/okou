@@ -167,6 +167,11 @@
   /* Shimmer sweep for the thinking label, on the same contract. */
   --animate-shimmer: okou-shimmer 3.5s linear infinite;
 
+  /* Scroll-to-bottom while the thread works: three dots in a staggered wave.
+     The 0% frame holds through each dot's delay so the later dots start at
+     rest instead of at full opacity. */
+  --animate-working-dot: okou-working-dot 1.2s ease-in-out infinite both;
+
   /* The new-chat greeting arrives one word at a time. Every number lives in
      the keyframes below rather than on the element, and the fill is `both` so
      the 0% frame is also what a word holds while it waits out its delay -
@@ -694,6 +699,21 @@ body {
   }
   to {
     background-position: -100% center;
+  }
+}
+
+/* A short lift with a brightening peak; the remaining 40% of the cycle rests
+   so the three staggered dots read as one wave rather than a constant jitter. */
+@keyframes okou-working-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.5;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
   }
 }
 

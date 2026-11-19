@@ -155,16 +155,10 @@ function createExecutionPromptSources(
     return get(bootstrap.memberRoutes$);
   });
   const authorizedConnectors$ = computed(async (get) => {
-    const [connectors, features] = await Promise.all([
+    const [connectors, selection] = await Promise.all([
       get(bootstrap.authorizedConnectors$),
-      get(bootstrap.featureSwitches$),
+      get(threadContext.connectorSelection$),
     ]);
-    if (
-      !isFeatureEnabled(FeatureSwitchKey.ConnectorChatAccountAccess, features)
-    ) {
-      return connectors;
-    }
-    const selection = await get(threadContext.connectorSelection$);
     if ("status" in selection) {
       throw new Error("Connector prompt requires an available Chat");
     }

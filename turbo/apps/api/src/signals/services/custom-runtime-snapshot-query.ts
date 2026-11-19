@@ -5,7 +5,6 @@ import {
 import { connectors } from "@okouai/db/schema/connector";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
-import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { and, eq, inArray, ne, exists, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
@@ -26,15 +25,7 @@ import { userFeatureSwitchRowCondition } from "./feature-switch-scope";
 import { FEISHU_CUSTOM_CONNECTOR_PERMISSION_BUNDLE_REF } from "./feishu-custom-connector-permissions";
 
 const sectionDecoder = zodEnumDriverValueDecoder(
-  zEnum([
-    "definition",
-    "catalog",
-    "account",
-    "storage",
-    "value",
-    "feature",
-    "grant",
-  ]),
+  zEnum(["definition", "catalog", "account", "storage", "value", "feature"]),
 );
 const authModeDecoder = zodEnumDriverValueDecoder(
   zEnum(["none", "manual", "oauth", "automatic"]),
@@ -278,20 +269,12 @@ const emptySections = Object.freeze({
   feature_switches: sql`NULL::jsonb`
     .mapWith(nullableDriverValueDecoder(userFeatureSwitches.switches))
     .as("feature_switches"),
-  grant_customConnectorId: sql`NULL::uuid`
-    .mapWith(nullableDriverValueDecoder(pgTextDecoder))
-    .as("grant_customConnectorId"),
-  grant_permissionNames: sql`NULL::text[]`
-    .mapWith(nullableDriverValueDecoder(userCustomConnectors.permissionNames))
-    .as("grant_permissionNames"),
 });
 
 interface CustomRuntimeSnapshotInput {
-  readonly memberPermissions?: boolean;
   readonly scope: {
     readonly orgId: string;
     readonly userId: string;
-    readonly agentId: string;
   };
   readonly registrations: readonly {
     readonly customConnectorId: string;
@@ -592,28 +575,6 @@ function customRuntimeFeatureRows(scope: CustomRuntimeSnapshotInput["scope"]) {
     .where(userFeatureSwitchRowCondition(scope.orgId, scope.userId));
 }
 
-function customRuntimeGrantRows(
-  scope: CustomRuntimeSnapshotInput["scope"],
-  customConnectorIds: readonly string[],
-) {
-  return new QueryBuilder()
-    .select({
-      section: sql`'grant'`.mapWith(sectionDecoder).as("section"),
-      ...emptySections,
-      grant_customConnectorId: userCustomConnectors.customConnectorId,
-      grant_permissionNames: userCustomConnectors.permissionNames,
-    })
-    .from(userCustomConnectors)
-    .where(
-      and(
-        eq(userCustomConnectors.orgId, scope.orgId),
-        eq(userCustomConnectors.userId, scope.userId),
-        eq(userCustomConnectors.agentId, scope.agentId),
-        inArray(userCustomConnectors.customConnectorId, customConnectorIds),
-      ),
-    );
-}
-
 export function customRuntimeSnapshotReadQuery(
   args: CustomRuntimeSnapshotInput,
 ) {
@@ -625,7 +586,6 @@ export function customRuntimeSnapshotReadQuery(
     storage,
     storedValues,
     sourceIds,
-    customConnectorIds,
   } = customRuntimeSnapshotReadPlan(args);
   const emptyRows = queryBuilder
     .select({
@@ -641,9 +601,6 @@ export function customRuntimeSnapshotReadQuery(
     .unionAll(customRuntimeStorageRows(storage))
     .unionAll(customRuntimeValueRows(storedValues))
     .unionAll(customRuntimeFeatureRows(args.scope));
-  if (!args.memberPermissions) {
-    rows.unionAll(customRuntimeGrantRows(args.scope, customConnectorIds));
-  }
   const sections = queryBuilder.$with("custom_runtime_sections").as(rows);
   return queryBuilder
     .with(
@@ -841,23 +798,11 @@ export function customRuntimeSnapshotSectionsFromRows(
       },
     ];
   });
-  const grantRows = rows.flatMap((row) => {
-    if (row.section !== "grant") {
-      return [];
-    }
-    return [
-      {
-        customConnectorId: requiredSlot(row.grant_customConnectorId),
-        permissionNames: requiredSlot(row.grant_permissionNames),
-      },
-    ];
-  });
   return {
     definitionRows,
     catalogRows,
     accountRows,
     storageRows: runtimeStorageRows,
     featureRows,
-    grantRows,
   };
 }

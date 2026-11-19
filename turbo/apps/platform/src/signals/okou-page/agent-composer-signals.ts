@@ -88,7 +88,6 @@ const noOpEventAction$ = command(
 
 interface AgentComposerOptions {
   readonly forward?: ChatForwardContext;
-  readonly title?: string;
   /**
    * A dialog composer sends from its own unsaved draft and keeps the current
    * page, leaving the Agent's saved composer untouched.
@@ -122,17 +121,12 @@ function createAgentSubmitMessage(
       const initialPhoneUse = features[FeatureSwitchKey.PhoneUse]
         ? get(connector.phoneAccess.pending$)
         : null;
-      const chatAccessEnabled =
-        features[FeatureSwitchKey.ConnectorChatAccountAccess];
-      const connectorPreference = chatAccessEnabled
-        ? null
-        : await get(connector.accounts.preferenceState$);
+
       signal.throwIfAborted();
       const send = options.inPlace
         ? sendNewThreadWithoutNavigation$
         : sendNewThread$;
       const initialRemoteAccessOverrides = get(pendingRemoteAccess.overrides$);
-      const connectorSelections = connectorPreference?.selections ?? [];
       const pendingConnectorAccess = get(connector.chatAccess.pending$);
       const hasPendingConnectorAccess =
         pendingConnectorAccess.overrides.length > 0 ||
@@ -141,7 +135,6 @@ function createAgentSubmitMessage(
         send,
         {
           agentId,
-          title: options.title,
           ...(options.projectId ? { projectId: options.projectId } : {}),
           draft,
           prompt: submission.prompt,
@@ -165,8 +158,7 @@ function createAgentSubmitMessage(
           ...(options.onOptimisticSend
             ? { onOptimisticSend: options.onOptimisticSend }
             : {}),
-          ...(connectorSelections.length > 0 ? { connectorSelections } : {}),
-          ...(chatAccessEnabled && hasPendingConnectorAccess
+          ...(hasPendingConnectorAccess
             ? { initialConnectorAccess: pendingConnectorAccess }
             : {}),
           ...(initialRemoteAccessOverrides.length > 0
@@ -179,7 +171,6 @@ function createAgentSubmitMessage(
       if (sent) {
         set(resetNewThreadComputerAccess$);
         set(resetChatPageModelSelection$);
-        set(connector.accounts.resetPendingSelections$);
         set(connector.chatAccess.resetPending$);
         set(connector.phoneAccess.resetPending$);
         set(pendingRemoteAccess.reset$);
@@ -194,7 +185,7 @@ function createAgentComposerSignalsWithDraft(
   agentDraft: EnsuredAgentDraft,
   options: AgentComposerOptions = {},
 ) {
-  const connector = createComposerConnectorSignals(agentId);
+  const connector = createComposerConnectorSignals();
   const pendingRemoteAccess = createPendingRemoteAccessSignals();
   const submitMessage$ = createAgentSubmitMessage(
     agentId,
@@ -251,20 +242,6 @@ export function createForwardAgentComposerSignals(
     createAgentDraftSignals(agentId),
     { forward, inPlace: true, onOptimisticSend, projectId },
   );
-}
-
-/** A dialog composer for a prepared draft that starts a new thread in place. */
-export function createInPlaceAgentComposerSignals(
-  agentId: string,
-  agentDraft: EnsuredAgentDraft,
-  onOptimisticSend: (threadId: string) => void,
-  title: string,
-) {
-  return createAgentComposerSignalsWithDraft(agentId, agentDraft, {
-    inPlace: true,
-    onOptimisticSend,
-    title,
-  });
 }
 
 interface AgentComposerContext {

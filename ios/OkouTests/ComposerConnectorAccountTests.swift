@@ -21,7 +21,7 @@ final class ComposerConnectorAccountTests: XCTestCase {
     let second = try resources.store.get(resources.page)
     let values = try await (first.value, second.value)
     XCTAssertEqual(values.0.accounts.map(\.id), [FixtureData.accountID])
-    XCTAssertEqual(values.1.defaultAccount?.id, FixtureData.accountID)
+    XCTAssertEqual(values.1.access.accounts.first(where: \.isDefault)?.id, FixtureData.accountID)
     XCTAssertEqual(fixture.pageRequests.count, 1)
     await resources.loadMore()
     let all = try await resources.store.get(resources.page).value
@@ -130,29 +130,33 @@ final class ComposerConnectorAccountTests: XCTestCase {
     await fulfillment(of: [cancelled], timeout: 3)
     gate.open()
     if case .success = await pending.result { XCTFail("A retired owner returned account data") }
-    await old.apply(.select(FixtureData.siblingID))
+    await old.apply(.access(FixtureData.accountID, false))
     await composer.refresh()
     let current = try open(composer)
     let page = try await current.store.get(current.page).value
-    XCTAssertEqual(page.selectedID, FixtureData.accountID)
+    XCTAssertEqual(page.access.currentConnectionId, FixtureData.accountID)
     XCTAssertTrue(fixture.writes.isEmpty)
   }
 
-  func testLegacyDraftSelectionAndUseDefaultSurviveClosingWithoutChangingDefaults() async throws {
-    let fixture = AccountPageFixture(modern: false)
+  func testDraftAccountOverrideSurvivesClosingAndReturnsToItsInheritedDefault() async throws {
+    let fixture = AccountPageFixture()
     let composer = await makeComposer(fixture)
     defer { composer.close() }
     let resources = try open(composer)
-    await resources.apply(.select(FixtureData.siblingID))
+    await resources.apply(.access(FixtureData.accountID, false))
     resources.close()
     let reopened = try open(composer)
-    let selected = try await reopened.store.get(reopened.page).value
-    XCTAssertEqual(selected.selectedID, FixtureData.siblingID)
-    XCTAssertEqual(selected.defaultAccount?.id, FixtureData.accountID)
-    await reopened.apply(.select(nil))
+    let disabled = try await reopened.store.get(reopened.page).value
+    XCTAssertEqual(disabled.access.currentConnectionId, FixtureData.siblingID)
+    let account = try XCTUnwrap(disabled.access.accounts.first { $0.id == FixtureData.accountID })
+    XCTAssertTrue(account.defaultEnabled)
+    XCTAssertEqual(account.overrideEnabled, false)
+    await reopened.apply(.access(FixtureData.accountID, nil))
     let inherited = try await reopened.store.get(reopened.page).value
-    XCTAssertNil(inherited.selectedID)
-    XCTAssertEqual(inherited.defaultAccount?.id, FixtureData.accountID)
+    let restored = try XCTUnwrap(inherited.access.accounts.first { $0.id == FixtureData.accountID })
+    XCTAssertNil(restored.overrideEnabled)
+    XCTAssertTrue(restored.enabled)
+    XCTAssertTrue(fixture.writes.isEmpty)
   }
 
   func testDefaultManagementDoesNotReplaceTheChatsExplicitCurrentAccount() async throws {
@@ -160,24 +164,28 @@ final class ComposerConnectorAccountTests: XCTestCase {
     let composer = await makeComposer(fixture, thread: true)
     defer { composer.close() }
     let chat = try open(composer)
-    await chat.apply(.select(FixtureData.accountID))
+    try await composer.service.setCurrentAccount(
+      target: .builtin("slack"), connectionID: FixtureData.accountID, threadID: FixtureData.threadID
+    )
+    await composer.refresh()
     let management = try open(composer, defaults: true)
     await management.apply(.defaultAccount(FixtureData.siblingID))
     let value = try await management.store.get(management.page).value
     XCTAssertEqual(value.defaults.first(where: \.isDefault)?.connectionId, FixtureData.siblingID)
     let current = try await chat.store.get(chat.page).value
-    XCTAssertEqual(current.selectedID, FixtureData.accountID)
+    XCTAssertEqual(current.access.currentConnectionId, FixtureData.accountID)
     await management.apply(.defaultEnabled(FixtureData.siblingID, false))
     let disabled = try await management.store.get(management.page).value
     XCTAssertEqual(
       disabled.defaults.first { $0.connectionId == FixtureData.siblingID }?.defaultEnabled, false)
   }
 
-  func testDismissedSelectionCompletesAndRefreshesAReopenedDestination() async throws {
+  func testDismissedAccessChangeCompletesAndRefreshesAReopenedDestination() async throws {
     let gate = ModelResponseGate()
-    let started = expectation(description: "Selection reached HTTP")
+    let started = expectation(description: "Account access change reached HTTP")
     let fixture = AccountPageFixture { request in
-      guard request.url?.path.hasSuffix("/connector-current") == true else { return }
+      guard request.httpMethod == "PUT", request.url?.path.contains("/connector-access/") == true
+      else { return }
       started.fulfill()
       await gate.wait()
     }
@@ -187,7 +195,7 @@ final class ComposerConnectorAccountTests: XCTestCase {
       gate.open()
     }
     let resources = try open(composer)
-    let write = Task { await resources.apply(.select(FixtureData.siblingID)) }
+    let write = Task { await resources.apply(.access(FixtureData.accountID, false)) }
     addTeardownBlock {
       write.cancel()
       gate.open()
@@ -197,33 +205,33 @@ final class ComposerConnectorAccountTests: XCTestCase {
     composer.closeAccounts()
     let reopened = try open(composer)
     let before = try await reopened.store.get(reopened.page).value
-    XCTAssertEqual(before.selectedID, FixtureData.accountID)
+    XCTAssertEqual(before.access.currentConnectionId, FixtureData.accountID)
     gate.open()
     await write.value
     let after = try await reopened.store.get(reopened.page).value
-    XCTAssertEqual(after.selectedID, FixtureData.siblingID)
+    XCTAssertEqual(after.access.currentConnectionId, FixtureData.siblingID)
     XCTAssertTrue(composer.canSend)
     XCTAssertEqual(fixture.writes.count, 1)
   }
 
-  func testRejectedSelectionRequiresReadbackAndNeverReplaysTheWrite() async throws {
+  func testRejectedAccessChangeRequiresReadbackAndNeverReplaysTheWrite() async throws {
     let fixture = AccountPageFixture()
-    fixture.backend.state.withLock { $0.rejectCurrentOnce = true }
+    fixture.backend.state.withLock { $0.rejectOverrideOnce = true }
     let composer = await makeComposer(fixture, thread: true)
     defer { composer.close() }
     let resources = try open(composer)
-    await resources.apply(.select(FixtureData.siblingID))
+    await resources.apply(.access(FixtureData.accountID, false))
     XCTAssertFalse(composer.canSend)
-    await resources.apply(.select(FixtureData.siblingID))
+    await resources.apply(.access(FixtureData.accountID, false))
     XCTAssertEqual(fixture.writes.count, 1)
     await resources.retry()
     let confirmed = try await resources.store.get(resources.page).value
-    XCTAssertEqual(confirmed.selectedID, FixtureData.accountID)
+    XCTAssertEqual(confirmed.access.currentConnectionId, FixtureData.accountID)
     XCTAssertTrue(composer.canSend)
     XCTAssertEqual(fixture.writes.count, 1)
   }
 
-  func testCustomAccountsKeepTheirOwnTargetAcrossPaginationAndSelection() async throws {
+  func testCustomAccountsKeepTheirOwnTargetAcrossPaginationAndAccessChanges() async throws {
     let fixture = AccountPageFixture(custom: true)
     let composer = await makeComposer(fixture, thread: true)
     defer { composer.close() }
@@ -231,9 +239,9 @@ final class ComposerConnectorAccountTests: XCTestCase {
     await resources.loadMore()
     let value = try await resources.store.get(resources.page).value
     XCTAssertEqual(value.accounts.map(\.id), [FixtureData.accountID, FixtureData.siblingID])
-    await resources.apply(.select(FixtureData.siblingID))
+    await resources.apply(.access(FixtureData.accountID, false))
     let selected = try await resources.store.get(resources.page).value
-    XCTAssertEqual(selected.selectedID, FixtureData.siblingID)
+    XCTAssertEqual(selected.access.currentConnectionId, FixtureData.siblingID)
     XCTAssertTrue(
       fixture.pageRequests.allSatisfy {
         AccountPageFixture.query("customConnectorId", $0) == FixtureData.customID
@@ -243,22 +251,6 @@ final class ComposerConnectorAccountTests: XCTestCase {
       JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any])
     let target = try XCTUnwrap(body["target"] as? [String: String])
     XCTAssertEqual(target["customConnectorId"], FixtureData.customID)
-  }
-
-  func testLegacyThreadSelectionReadbackIncludesAnOffPageSelectedAccount() async throws {
-    let fixture = AccountPageFixture(modern: false)
-    let composer = await makeComposer(fixture, thread: true)
-    defer { composer.close() }
-    let resources = try open(composer)
-    await resources.apply(.select(FixtureData.siblingID))
-    resources.update(search: "Work")
-    let selected = try await resources.store.get(resources.page).value
-    XCTAssertEqual(selected.selectedID, FixtureData.siblingID)
-    XCTAssertEqual(selected.accounts.map(\.id), [FixtureData.siblingID, FixtureData.accountID])
-    await resources.apply(.select(nil))
-    let inherited = try await resources.store.get(resources.page).value
-    XCTAssertNil(inherited.selectedID)
-    XCTAssertEqual(inherited.accounts.map(\.id), [FixtureData.accountID])
   }
 
   func testFirstPageErrorStaysCachedUntilExplicitRetry() async throws {
@@ -338,26 +330,6 @@ final class ComposerConnectorAccountTests: XCTestCase {
     XCTAssertEqual(fixture.pageRequests.count, 2)
   }
 
-  func testAccountScopeChangeRetiresTheOldEditorBeforeAnotherAction() async throws {
-    let fixture = AccountPageFixture()
-    let composer = await makeComposer(fixture, thread: true)
-    defer { composer.close() }
-    let old = try open(composer)
-    _ = try await old.store.get(old.page).value
-    fixture.state.withLock { $0.modern = false }
-    await composer.refresh()
-    await old.apply(.select(FixtureData.siblingID))
-    XCTAssertTrue(old.isClosed)
-    XCTAssertTrue(fixture.writes.isEmpty)
-    let reopened = try open(composer)
-    await reopened.apply(.select(FixtureData.siblingID))
-    let value = try await reopened.store.get(reopened.page).value
-    XCTAssertEqual(value.selectedID, FixtureData.siblingID)
-    XCTAssertEqual(
-      fixture.writes.last?.url?.path,
-      "/api/chat-threads/\(FixtureData.threadID)/connector-selections")
-  }
-
   private func makeComposer(_ fixture: AccountPageFixture, thread: Bool = false) async
     -> ComposerConnectorStore
   {
@@ -389,11 +361,9 @@ final class ComposerConnectorAccountTests: XCTestCase {
 final class AccountPageFixture: Sendable {
   private typealias FixtureData = ConnectorHTTPFixtures
   struct State: Sendable {
-    var modern = true
     var failMore = false
     var failFirst = false
     var requests: [URLRequest] = []
-    var selections: [String: String] = [:]
   }
   final class ServerState: Sendable {
     private let value = Mutex(State())
@@ -414,7 +384,7 @@ final class AccountPageFixture: Sendable {
   }
 
   init(
-    modern: Bool = true, custom: Bool = false,
+    custom: Bool = false,
     before: @escaping @Sendable (URLRequest) async -> Void = { _ in }
   ) {
     var initial = ConnectorAccessHTTPFixture.State()
@@ -423,51 +393,12 @@ final class AccountPageFixture: Sendable {
     let backend = ConnectorAccessHTTPFixture(initial: initial, onUnhandledRequest: { XCTFail($0) })
     self.backend = backend
     let state = state
-    state.withLock { $0.modern = modern }
     http = ChatHTTPFixture { request in
       var request = request
       request.httpBody = chatRequestBody(request)
       state.withLock { $0.requests.append(request) }
       await before(request)
       let path = request.url!.path
-      if path == "/api/feature-switches" {
-        return ChatHTTPResponse(
-          body:
-            "{\"effectiveSwitches\":{\"connectorChatAccountAccess\":\(state.withLock { $0.modern })}}"
-        )
-      }
-      if path.hasPrefix("/api/agents/"), path.hasSuffix("/connector-access") {
-        return ChatHTTPResponse(
-          body: #"{"enabledConnectorSlugs":["slack"],"customConnectorIds":[]}"#)
-      }
-      if path.hasSuffix("/connector-selections") {
-        let thread = request.url!.deletingLastPathComponent().lastPathComponent
-        let method = request.httpMethod ?? "GET"
-        if method != "GET" {
-          let body =
-            try JSONSerialization.jsonObject(with: chatRequestBody(request)) as! [String: Any]
-          state.withLock {
-            $0.selections[thread] = method == "DELETE" ? nil : body["connectionId"] as? String
-          }
-          return ChatHTTPResponse(status: method == "DELETE" ? 204 : 200, body: "{}")
-        }
-        let selected = state.withLock { $0.selections[thread] }
-        let target =
-          custom
-          ? "{\"kind\":\"custom\",\"customConnectorId\":\"\(FixtureData.customID)\"}"
-          : #"{"kind":"builtin","connectorSlug":"slack"}"#
-        let selections =
-          selected.map { "[{\"target\":\(target),\"connectionId\":\"\($0)\"}]" } ?? "[]"
-        let connections =
-          selected.map {
-            "["
-              + FixtureData.account(
-                id: $0, custom: custom, isDefault: false, label: "Personal account")
-              + "]"
-          } ?? "[]"
-        return ChatHTTPResponse(
-          body: "{\"selections\":\(selections),\"selectedConnections\":\(connections)}")
-      }
       if path == "/api/connector-accounts/connections" {
         let cursor = Self.query("cursor", request)
         let search = Self.query("search", request) ?? ""

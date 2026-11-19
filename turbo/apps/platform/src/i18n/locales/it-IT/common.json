@@ -452,9 +452,11 @@
       "closePreviewMenu": "Chiudi il menu di anteprima",
       "download": "Scarica",
       "downloadArtifact": "Scarica artefatto",
+      "downloadMarkdownAs": "Scarica come {{format}}",
       "downloadOptions": "Opzioni di download",
       "enterFullscreen": "Entra a schermo intero",
       "exitFullscreen": "Esci dallo schermo intero",
+      "markdownExportFailed": "Esportazione non riuscita. Seleziona un formato per riprovare.",
       "more": "Altre azioni sugli artefatti",
       "nextImage": "Artefatto dell'immagine successiva",
       "openNewTab": "Apri in una nuova scheda",
@@ -1069,14 +1071,12 @@
       "invalid": "Questo link di autorizzazione non è valido o non è disponibile.",
       "loadFailed": "Impossibile verificare tutte le autorizzazioni richieste. Nessuna autorizzazione può essere modificata.",
       "loading": "Caricamento delle autorizzazioni",
-      "myOkouScopeNote": "Si applica al tuo uso di Okou in questo spazio di lavoro, non solo all’attività corrente.",
       "myOkouSharedScopeNote": "Si applica a questo connettore nelle tue chat di questo spazio di lavoro. I colleghi hanno le proprie autorizzazioni.",
       "notNow": "Non ora",
       "pending_one": "{{count}} autorizzazione da consentire",
       "pending_many": "{{count}} autorizzazioni da consentire",
       "pending_other": "{{count}} autorizzazioni da consentire",
       "review": "Esamina autorizzazioni",
-      "scopeNote": "Si applica a questo agente, non solo all’attività corrente.",
       "sharedScopeNote": "Si applica a questo connettore in tutte le tue chat e i tuoi agenti.",
       "title": "Concedi le seguenti autorizzazioni"
     }
@@ -1673,7 +1673,11 @@
       "dismiss": "Ignora",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
+      "dontNudge": "Non insistere",
+      "dontNudgeRecorded": "Annotato: non insistere più su questo",
+      "editDraft": "Prepara una bozza nella chat esistente",
       "editReason": "Edit reason",
+      "feedbackPrompt": "Cosa pensi di questo suggerimento?",
       "feedLabel": "Feed",
       "forYou": {
         "loading": "Caricamento dei suggerimenti",
@@ -1707,9 +1711,11 @@
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
       "sending": "Invio in corso…",
+      "sendNew": "Invia a una nuova chat",
       "sent": "Inviato in una nuova chat",
       "unavailable": "Questo suggerimento non è più disponibile. I suggerimenti sono stati aggiornati.",
-      "undoFeedback": "Undo"
+      "undoFeedback": "Undo",
+      "viewSource": "Vedi origine"
     },
     "attachments": {
       "attach": "Allega",
@@ -2132,13 +2138,8 @@
       "unavailableTitle": "Account non disponibile"
     },
     "connectors": {
-      "accountForThread": "Account per questo thread",
-      "add": "Aggiungi {{connectorName}}",
       "addConnectors": "Aggiungi connettori",
-      "authorized": "{{connectorName}} connesso e autorizzato per {{agentName}}",
       "back": "Indietro",
-      "configurePermissions": "Configura le autorizzazioni {{connectorName}}",
-      "customAuthorizeDescription": "Esamina, connetti e autorizza questo connettore personalizzato per l'agente.",
       "directory": {
         "allCategories": "Tutti",
         "askAdmin": "Chiedi a un amministratore di abilitarlo",
@@ -2171,14 +2172,8 @@
         "tabCustom": "Personalizzati",
         "tabDiscover": "Scopri"
       },
-      "fallsBackTo": "Passa a {{account}} come alternativa",
       "find": "Trova connettori...",
-      "loadFailed": "Impossibile caricare i connettori.",
-      "noUsableAccount": "Nessun account utilizzabile",
-      "remove": "Rimuovi {{connectorName}}",
-      "selectedAccountFor": "{{connector}} · Account selezionato: {{account}}",
-      "title": "Connettori",
-      "useDefault": "Usa predefinito"
+      "title": "Connettori"
     },
     "documentTitle": "Chat",
     "errors": {
@@ -3000,28 +2995,12 @@
     "totalAccounts": "{{value}} account"
   },
   "connectors": {
-    "access": {
-      "accessFor": "{{action}} l'accesso a {{connector}} per {{agent}}",
-      "accessUpdated": "Accesso a {{connector}} aggiornato",
-      "clearSearch": "Cancella ricerca agente",
-      "description": "Scegli quali agenti possono utilizzare questo connettore.",
-      "loading": "Caricamento agenti...",
-      "managePermissions": "Gestisci le autorizzazioni",
-      "managePermissionsFor": "Gestisci le autorizzazioni di {{connector}} per {{agent}}",
-      "noAgents": "Nessun agente trovato",
-      "noMatchingAgents": "Nessun agente corrispondente a \"{{search}}\"",
-      "permissionsUpdated": "Autorizzazioni aggiornate",
-      "search": "Trova agenti",
-      "title": "Gestisci l'accesso a {{connector}}",
-      "unnamedAgent": "Senza nome"
-    },
     "accounts": {
       "accountName": "Nome account",
       "accountsUnavailable": "Gli account non sono disponibili per questo connettore.",
       "actions": "Azioni account",
       "addAccount": "Aggiungi account",
       "connected": "Connesso",
-      "default": "Predefinito",
       "disconnectAccount": "Disconnetti account",
       "disconnectDescription": "Questo disconnette l'account da Okou. Le conversazioni che lo usano torneranno all'ereditarietà predefinita. L'account del provider non verrà eliminato.",
       "disconnectDescriptionWithCount": "Questo disconnette l'account da Okou. {{value}} conversazioni torneranno all'ereditarietà predefinita. L'account del provider non verrà eliminato.",
@@ -3038,8 +3017,6 @@
       "find": "Cerca account",
       "loading": "Caricamento account…",
       "loadMore": "Carica altro",
-      "makeDefault": "Imposta come predefinito",
-      "managerDescription": "Le nuove esecuzioni usano il tuo account predefinito.",
       "managerTitle": "Gestisci gli account di {{connector}}",
       "namePromptDescription": "Puoi saltare questo passaggio e assegnare un nome all'account in seguito.",
       "namePromptTitle": "Assegna un nome al tuo account {{connector}}",
@@ -3053,7 +3030,6 @@
     },
     "actions": {
       "apply": "Applicare",
-      "authorize": "Autorizza",
       "cancel": "Annulla",
       "close": "Chiudi",
       "closeWindow": "Chiudi la finestra",
@@ -3100,7 +3076,6 @@
     },
     "card": {
       "accessFor": "{{action}} {{connector}} accesso",
-      "authorized": "Autorizzato",
       "connectAria": "Connetti {{connector}}",
       "connected": "Connesso",
       "connectionExpired": "Connessione scaduta",
@@ -3113,11 +3088,7 @@
     },
     "catalog": {
       "access": {
-        "add": "Aggiungi accesso",
-        "manage": "Gestisci l'accesso {{connector}}",
-        "summaryMany": "{{value}} agenti",
-        "unavailable": "Accesso non disponibile",
-        "usedBy": "Utilizzato da "
+        "manage": "Gestisci l'accesso {{connector}}"
       },
       "categories": {
         "ai": {
@@ -3188,18 +3159,13 @@
         "searchAll": "Cerca in tutti i connettori"
       },
       "empty": {
-        "agent": "Nessun connettore per questo agente",
         "connected": "Nessun connettore collegato",
-        "search": "Nessun connettore corrispondente a \"{{search}}\"",
-        "unshared": "Ogni connettore è condiviso con un agente"
+        "search": "Nessun connettore corrispondente a \"{{search}}\""
       },
       "filterCategory": "Categoria",
       "filters": {
-        "agents": "Agenti",
         "all": "Tutto",
-        "allAgents": "Tutti gli agenti",
-        "aria": "Connettori filtro",
-        "unshared": "Non condiviso con nessun agente"
+        "aria": "Connettori filtro"
       },
       "filterWith": "Filtro: {{category}}",
       "myOkouDescription": "Collega servizi esterni per il tuo Okou.",
@@ -3230,8 +3196,7 @@
         "seeMore_other": "Vedi {{names}} e altri {{count}}",
         "top": "Connettori principali"
       },
-      "title": "Connettori",
-      "unnamedAgent": "Senza nome"
+      "title": "Connettori"
     },
     "connectDialog": {
       "connectedAs": "Connesso come {{username}}",
@@ -3375,9 +3340,6 @@
       }
     },
     "directed": {
-      "authorizeAgent": "Autorizza {{agent}}",
-      "authorized": "{{connector}} autorizzato",
-      "authorizeDocumentTitle": "Autorizza {{connector}}",
       "connectDocumentTitle": "Connetti {{connector}}",
       "connected": "{{connector}} connesso",
       "needsConnector": "{{agent}} necessita di {{connector}} per procedere",
@@ -3407,10 +3369,8 @@
       "allowOptions": "{{permission}} consenti opzioni",
       "always": "Sempre",
       "clearSearch": "Cancella la ricerca dei permessi",
-      "descriptionAgent": "Configura quali azioni questo agente può eseguire tramite questo connettore.",
       "find": "Trova i permessi",
       "findPlaceholder": "Trova autorizzazioni...",
-      "forTarget": "per {{target}}",
       "loadError": "Impossibile caricare i metadati delle autorizzazioni",
       "loading": "Caricamento permessi...",
       "metadataMissing": "Nessun metadato di autorizzazione trovato per {{connector}}",
@@ -4158,7 +4118,6 @@
     }
   },
   "myOkou": {
-    "access": "Il tuo accesso in questo spazio di lavoro",
     "conflict": "Le istruzioni salvate sono state modificate altrove. La bozza è conservata. Rivedila o copiala prima di ricaricare le istruzioni salvate.",
     "description": "Le tue istruzioni per Okou in questo spazio di lavoro",
     "discard": "Scarta",
@@ -7210,6 +7169,18 @@
       "uninstall": "Disinstallare",
       "uninstalling": "Disinstallazione…",
       "updatePermissions": "Aggiorna autorizzazioni"
+    },
+    "channelExamples": {
+      "email": "Inoltra un’email a Okou e chiedi un riassunto o una bozza di risposta.",
+      "feishu": "Invia una bozza a Okou su Feishu e chiedi una versione breve da condividere con il team.",
+      "github": "All’apertura di una pull request, avvia un flusso di lavoro che prepari una lista di punti da verificare.",
+      "lark": "Invia una bozza a Okou su Lark e chiedi una versione breve da condividere con il team.",
+      "phone": "Invia un’idea a {{assistantName}} dal tuo iPhone e chiedi una prima bozza.",
+      "slack": "Menziona Okou in un canale Slack e chiedi un parere su una bozza.",
+      "teams": "Incolla gli appunti della riunione in Teams e chiedi a Okou di elencare le attività da svolgere.",
+      "telegram": "Invia due opzioni a Okou su Telegram e chiedi quali sono i pro e i contro di ciascuna.",
+      "wechat": "Invia due opzioni a Okou su WeChat e chiedi quali sono i pro e i contro di ciascuna.",
+      "whatsapp": "Invia due opzioni a Okou su WhatsApp e chiedi quali sono i pro e i contro di ciascuna."
     },
     "connected": "Connesso",
     "connectedWithDetail": "Connesso ({{detail}})",

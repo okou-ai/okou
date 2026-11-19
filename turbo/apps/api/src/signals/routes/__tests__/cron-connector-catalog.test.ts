@@ -503,9 +503,9 @@ describe("connector catalog valid lifecycle", () => {
         [FeatureSwitchKey.CodexExecution]: false,
       });
       installWorkflowVolumeS3Fixture(context, objects);
-      await fixture.api.enableAgentConnectors(owner.actor, owner.agentId, [
-        "x",
-      ]);
+      await connectorsApi.connectManualGrant(owner.actor, "x", "api-token", {
+        credential: "published-x-credential",
+      });
     });
     const run = await owner.sendChatRun(owner.actor, {
       agentId: owner.agentId,
@@ -646,6 +646,7 @@ describe("connector catalog valid lifecycle", () => {
   it("mounts all 17 normally published connector skill versions", async () => {
     clearMockNow();
     const owned = await publicChatActor(context, { clockTime: now() });
+    owned.ownsFeatureSwitches();
     const fixture = createChatEventsFixture(context);
     await owned.run(async () => {
       await fixture.api.createPersonalModelProvider(owned.actor, {
@@ -687,14 +688,14 @@ describe("connector catalog valid lifecycle", () => {
         published: readPublishedArchive(context, start),
       });
     }
-    await owned.run(() => {
-      return connectorsApi.updateAgentCustomConnectors(
-        owned.actor,
-        owned.agentId,
-        skills.map((skill) => {
-          return skill.connector.id;
-        }),
-      );
+    await owned.run(async () => {
+      for (const { connector } of skills) {
+        await connectorsApi.setCustomConnectorValues(
+          owned.actor,
+          connector.id,
+          [{ key: "secret", kind: "secret", value: "skill-fixture-token" }],
+        );
+      }
     });
     for (const prompt of [
       "Use all published connector skills",
@@ -758,11 +759,9 @@ describe("connector catalog valid lifecycle", () => {
     });
     const published = readPublishedArchive(context, start);
     await owned.run(() => {
-      return connectorsApi.updateAgentCustomConnectors(
-        owned.actor,
-        owned.agentId,
-        [connector.id],
-      );
+      return connectorsApi.setCustomConnectorValues(owned.actor, connector.id, [
+        { key: "secret", kind: "secret", value: "queued-skill-api-token" },
+      ]);
     });
     const queued = await owned.queueChatRun(owned.actor, {
       agentId: owned.agentId,

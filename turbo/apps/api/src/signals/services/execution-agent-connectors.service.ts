@@ -6,16 +6,9 @@ import type {
 } from "./custom-connector-definition-selection";
 import { normaliseCustomConnectorConnectionDefinition } from "./custom-connector.service";
 
-export interface AgentConnectorSelectionScope {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly agentId: string;
-}
-
 export interface SelectedCustomConnector {
   readonly customConnectorId: string;
   readonly connectorSlug: string;
-  readonly permissionNames: readonly string[];
   readonly storageVersion: number;
   readonly skillStorageVersionId: string | null;
   readonly skillContentBundle: ContentBundle | null;
@@ -32,16 +25,13 @@ export interface AgentConnectorSelection {
 
 export function agentConnectorSelectionFromRows(
   builtinRows: readonly { readonly connectorSlug: string }[],
-  customRows: readonly (SelectedDefinitionRow & {
-    readonly permissionNames: readonly string[];
-  })[],
+  customRows: readonly SelectedDefinitionRow[],
 ): AgentConnectorSelection {
   const customConnectors = customRows
     .map((row): SelectedCustomConnector => {
       return {
         customConnectorId: row.connector.id,
         connectorSlug: row.connector.slug,
-        permissionNames: [...row.permissionNames].sort(),
         storageVersion: row.connector.storageVersion,
         skillStorageVersionId: row.connector.skillStorageVersionId,
         skillContentBundle: row.connector.skillContentBundle,

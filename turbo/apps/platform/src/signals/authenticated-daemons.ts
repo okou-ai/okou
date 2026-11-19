@@ -8,7 +8,6 @@ import { subscribeTailscaleChanged$ } from "./tailscale.ts";
 import { setupRunModelRealtime$ } from "./external/run-model-realtime.ts";
 import { setupUserPreferenceRealtime$ } from "./external/user-model-preference.ts";
 import { setupBillingRealtime$ } from "./okou-page/billing.ts";
-import { subscribeAgentConnectorAccess$ } from "./okou-page/composer-agent-connectors.ts";
 import { subscribeCustomTemplatesChanged$ } from "./okou-page/custom-template-library.ts";
 import { setupGetStartedRewards$ } from "./okou-page/get-started.ts";
 import { subscribePresentationTemplatesChanged$ } from "./okou-page/presentation-template-library.ts";
@@ -38,7 +37,6 @@ const runAppRealtimeDaemons$ = command(
     set(setupBillingRealtime$, signal);
     set(setupUserPreferenceRealtime$, signal);
     set(setupRunModelRealtime$, signal);
-    set(subscribeAgentConnectorAccess$, signal);
     set(subscribeCustomTemplatesChanged$, signal);
     set(subscribeVncObservations$, signal);
     set(subscribeCloudflareAccessChanged$, signal);

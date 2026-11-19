@@ -446,6 +446,22 @@ test("copies only selected artifacts, rewrites the snapshot, and preserves sourc
   expect(meta.headers.get("cache-control")).toBe("no-store");
 });
 
+test("snapshots a private file referenced by an uppercase UUID in a historical URL", async () => {
+  const f = await fixture();
+  mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+  const file = await f.upload();
+  const legacyUrl = `https://api.okou.ai/api/web/file-url?file_id=${file.id.toUpperCase()}`;
+  const selection = await f.selection(legacyUrl);
+  const created = await accept(share(f.actor, selection), [201]);
+  const shared = await accept(
+    api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+    [200],
+  );
+  expect(shared.body.messages[0]?.content).toMatch(
+    /^https:\/\/app\.okou\.ai\/artifacts\/[a-z0-9]{10}\.pdf$/u,
+  );
+});
+
 test("leaves ordinary relative API paths unchanged", async () => {
   const f = await fixture();
   const content = "The client calls /api/users before rendering.";

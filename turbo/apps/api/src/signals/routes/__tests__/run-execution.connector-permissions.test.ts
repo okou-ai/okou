@@ -87,9 +87,7 @@ test("uses current permission definitions after publication with a warm executio
     { accessToken: "execution-catalog-figma-token" },
     agentId,
   );
-  await connectors.updateFeatureSwitches(actor, {
-    connectorChatAccountAccess: false,
-  });
+
   const original = connectorCatalogArtifactSchema.parse(
     structuredClone(API_TEST_CONNECTOR_CATALOG_ARTIFACT),
   );
@@ -215,276 +213,234 @@ test("uses current permission definitions after publication with a warm executio
   await cancelChatRun(actor, run.runId, sandboxHeaders);
 });
 
-describe.each([false, true])(
-  "Execution connector permissions (Chat accounts: %s)",
-  (chatAccounts) => {
-    it.each(["add", "revoke"] as const)(
-      "applies a %s grant change made after the Run was queued",
-      async (change) => {
-        const { actor, agentId } = await entitledNativeChatActor();
-        mockGitHubConnectorOAuth();
-        server.use(
-          http.delete(
-            "https://api.github.com/applications/github-client-id/grant",
-            () => {
-              return new HttpResponse(null, { status: 204 });
-            },
-          ),
-        );
-        const started = await connectors.startOauth(
-          actor,
-          "github",
-          "oauth",
-          agentId,
-        );
-        const state = new URL(started.authorizationUrl).searchParams.get(
-          "state",
-        );
-        if (!state) {
-          throw new Error(
-            "Expected OAuth state from the public start response",
-          );
-        }
-        const completed = await connectors.completeOauthCallbackResult(
-          "github",
-          {
-            state,
-            code: randomUUID(),
+describe("Execution connector permissions", () => {
+  it.each(["add", "revoke"] as const)(
+    "applies a %s grant change made after the Run was queued",
+    async (change) => {
+      const { actor, agentId } = await entitledNativeChatActor();
+      mockGitHubConnectorOAuth();
+      server.use(
+        http.delete(
+          "https://api.github.com/applications/github-client-id/grant",
+          () => {
+            return new HttpResponse(null, { status: 204 });
           },
-        );
-        expect(completed.body.status).toBe("success");
-        const runs = createRunsApi(context);
-        const grant = {
-          agentId,
-          connectorSlug: "github" as const,
-          permission: "user:read",
-          action: "deny" as const,
-        };
-        if (change === "revoke") {
-          await runs.applyUserPermissionGrant(actor, grant);
-          await connectors.updateFeatureSwitches(actor, {
-            connectorChatAccountAccess: true,
-          });
-          await sharedGrants(actor, "github", [
-            { permission: grant.permission, action: grant.action },
-          ]);
-        }
-        await connectors.updateFeatureSwitches(actor, {
-          connectorChatAccountAccess: chatAccounts,
-        });
-        await executeAndCancel(actor, agentId);
-        const queued = await queueChatRun(actor, {
-          agentId,
-          prompt: "use the current GitHub permissions for execution",
-        });
-        if (change === "add") {
-          if (chatAccounts) {
-            await sharedGrants(actor, "github", [
-              { permission: grant.permission, action: grant.action },
-            ]);
-          } else {
-            await runs.applyUserPermissionGrant(actor, grant);
-          }
-        } else if (chatAccounts) {
-          await sharedGrants(actor, "github", [], "replace");
-        } else {
-          await expect(
-            runs.replaceUserPermissionGrants(actor, {
-              agentId,
-              connectorSlug: "github",
-              grants: [],
-            }),
-          ).resolves.toStrictEqual([]);
-        }
-        const run = await queued.launch();
-        const { execution, sandboxHeaders } = await runExecution(run.runId);
-        expect(execution.connectorRuntimeTargets).toContainEqual(
-          expect.objectContaining({ kind: "builtin", connectorSlug: "github" }),
-        );
-        expect(execution.networkPolicies?.github).toMatchObject(
-          change === "add"
-            ? {
-                deny: expect.arrayContaining(["user:read"]),
-                allow: expect.not.arrayContaining(["user:read"]),
-              }
-            : {
-                allow: expect.arrayContaining(["user:read"]),
-                deny: expect.not.arrayContaining(["user:read"]),
-              },
-        );
-        expect(execution.networkPolicies?.github?.allow).toContain(
-          "notifications:read",
-        );
-        await cancelChatRun(actor, run.runId, sandboxHeaders);
-        const accounts = await connectors.listBuiltinConnectorAccounts(
+        ),
+      );
+      const started = await connectors.startOauth(
+        actor,
+        "github",
+        "oauth",
+        agentId,
+      );
+      const state = new URL(started.authorizationUrl).searchParams.get("state");
+      if (!state) {
+        throw new Error("Expected OAuth state from the public start response");
+      }
+      const completed = await connectors.completeOauthCallbackResult("github", {
+        state,
+        code: randomUUID(),
+      });
+      expect(completed.body.status).toBe("success");
+      const runs = createRunsApi(context);
+      const grant = {
+        agentId,
+        connectorSlug: "github" as const,
+        permission: "user:read",
+        action: "deny" as const,
+      };
+      if (change === "revoke") {
+        await runs.applyUserPermissionGrant(actor, grant);
+
+        await sharedGrants(actor, "github", [
+          { permission: grant.permission, action: grant.action },
+        ]);
+      }
+
+      await executeAndCancel(actor, agentId);
+      const queued = await queueChatRun(actor, {
+        agentId,
+        prompt: "use the current GitHub permissions for execution",
+      });
+      if (change === "add") {
+        await sharedGrants(actor, "github", [
+          { permission: grant.permission, action: grant.action },
+        ]);
+      } else {
+        await sharedGrants(actor, "github", [], "replace");
+      }
+      const run = await queued.launch();
+      const { execution, sandboxHeaders } = await runExecution(run.runId);
+      expect(execution.connectorRuntimeTargets).toContainEqual(
+        expect.objectContaining({ kind: "builtin", connectorSlug: "github" }),
+      );
+      expect(execution.networkPolicies?.github).toMatchObject(
+        change === "add"
+          ? {
+              deny: expect.arrayContaining(["user:read"]),
+              allow: expect.not.arrayContaining(["user:read"]),
+            }
+          : {
+              allow: expect.arrayContaining(["user:read"]),
+              deny: expect.not.arrayContaining(["user:read"]),
+            },
+      );
+      expect(execution.networkPolicies?.github?.allow).toContain(
+        "notifications:read",
+      );
+      await cancelChatRun(actor, run.runId, sandboxHeaders);
+      const accounts = await connectors.listBuiltinConnectorAccounts(
+        actor,
+        "github",
+      );
+      for (const account of accounts) {
+        await connectors.deleteBuiltinConnectorAccount(
           actor,
           "github",
+          account.id,
         );
-        for (const account of accounts) {
-          await connectors.deleteBuiltinConnectorAccount(
-            actor,
-            "github",
-            account.id,
-          );
-        }
-      },
-    );
+      }
+    },
+  );
 
-    it.each([
-      "active",
-      "expired-before-preparation",
-      "expired-during-preparation",
-    ] as const)(
-      "evaluates the captured permission source and temporary deadline: %s",
-      async (expiry) => {
-        const expired = expiry !== "active";
-        const startedAt = now();
-        mockNow(startedAt);
-        const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-        mockSlackConnectorOAuth();
-        const started = await connectors.startOauth(
-          actor,
-          "slack",
-          "oauth",
-          agentId,
-        );
-        const state = new URL(started.authorizationUrl).searchParams.get(
-          "state",
-        );
-        if (!state) {
-          throw new Error(
-            "Expected OAuth state from the public start response",
+  it.each([
+    "active",
+    "expired-before-preparation",
+    "expired-during-preparation",
+  ] as const)(
+    "evaluates the captured permission source and temporary deadline: %s",
+    async (expiry) => {
+      const expired = expiry !== "active";
+      const startedAt = now();
+      mockNow(startedAt);
+      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+      mockSlackConnectorOAuth();
+      const started = await connectors.startOauth(
+        actor,
+        "slack",
+        "oauth",
+        agentId,
+      );
+      const state = new URL(started.authorizationUrl).searchParams.get("state");
+      if (!state) {
+        throw new Error("Expected OAuth state from the public start response");
+      }
+      const completed = await connectors.completeOauthCallbackResult("slack", {
+        state,
+        code: randomUUID(),
+      });
+      expect(completed.body.status).toBe("success");
+      const runs = createRunsApi(context);
+      const grant = {
+        permission: "chat:write",
+        action: "allow" as const,
+        expiresIn: "1h" as const,
+      };
+      await runs.applyUserPermissionGrant(actor, {
+        agentId,
+        connectorSlug: "slack",
+        ...(!expired
+          ? { permission: grant.permission, action: "deny" as const }
+          : { ...grant, expiresIn: "always" }),
+      });
+
+      await sharedGrants(actor, "slack", [{ ...grant, expiresIn: "1h" }]);
+
+      const expiresAt = startedAt + 60 * 60 * 1000;
+      const prompt =
+        "use the current Slack write grant and its original expiry";
+      let run: Awaited<ReturnType<typeof sendChatRun>>;
+      if (expiry === "expired-during-preparation") {
+        const memory = createPublicRunnerMemory(context, actor);
+        run = await memory.run(async () => {
+          memory.installObjects();
+          const writer = await memory.startExecution(
+            agentId,
+            "Publish Memory for the next Run",
           );
-        }
-        const completed = await connectors.completeOauthCallbackResult(
-          "slack",
-          { state, code: randomUUID() },
-        );
-        expect(completed.body.status).toBe("success");
-        const runs = createRunsApi(context);
-        const grant = {
-          permission: "chat:write",
-          action: "allow" as const,
-          expiresIn: "1h" as const,
-        };
-        await runs.applyUserPermissionGrant(actor, {
-          agentId,
-          connectorSlug: "slack",
-          ...(chatAccounts && !expired
-            ? { permission: grant.permission, action: "deny" as const }
-            : { ...grant, expiresIn: chatAccounts ? "always" : "1h" }),
-        });
-        await connectors.updateFeatureSwitches(actor, {
-          connectorChatAccountAccess: true,
-        });
-        await sharedGrants(actor, "slack", [
-          { ...grant, expiresIn: chatAccounts ? "1h" : "always" },
-        ]);
-        await connectors.updateFeatureSwitches(actor, {
-          connectorChatAccountAccess: chatAccounts,
-        });
-        const expiresAt = startedAt + 60 * 60 * 1000;
-        const prompt =
-          "use the current Slack write grant and its original expiry";
-        let run: Awaited<ReturnType<typeof sendChatRun>>;
-        if (expiry === "expired-during-preparation") {
-          const memory = createPublicRunnerMemory(context, actor);
-          run = await memory.run(async () => {
-            memory.installObjects();
-            const writer = await memory.startExecution(
-              agentId,
-              "Publish Memory for the next Run",
-            );
-            expect(writer.execution.networkPolicies?.slack?.allow).toContain(
-              "chat:write",
-            );
-            const versionId = await memory.publish(writer, [
-              { path: "MEMORY.md", content: "A fact the next Run can recall" },
-            ]);
-            mockNow(expiresAt - 1);
-            await runs.registerDirectRunner(runnerGroup);
-            const presigner = context.mocks.s3.getSignedUrl;
-            const sign = presigner.getMockImplementation();
-            if (!sign) {
-              throw new Error("Expected the Memory presigner fixture");
-            }
-            presigner.mockImplementation((...args) => {
-              const command = args[1];
-              if (
-                command instanceof GetObjectCommand &&
-                command.input.Key?.endsWith(`/${versionId}/archive.tar.gz`)
-              ) {
-                // The grant is active at admission and expires while the
-                // accepted Memory mount is being prepared.
-                mockNow(expiresAt);
-                presigner.mockImplementation(sign);
-              }
-              return sign(...args);
-            });
-            const hydrated = await memory.startExecution(agentId, prompt);
-            expect(hydrated.memory).toMatchObject({
-              versionId,
-              archiveUrl: expect.any(String),
-            });
-            expect(now()).toBe(expiresAt);
-            return hydrated.run;
-          });
-        } else {
-          await executeAndCancel(actor, agentId);
-          const queued = await queueChatRun(actor, { agentId, prompt });
-          mockNow(
-            expiry === "expired-before-preparation"
-              ? expiresAt
-              : startedAt + 30 * 60 * 1000,
-          );
-          await runs.registerDirectRunner(runnerGroup);
-          run = await queued.launch();
-        }
-        // Delivered input keeps its permission source after a mode change.
-        await connectors.updateFeatureSwitches(actor, {
-          connectorChatAccountAccess: !chatAccounts,
-        });
-        const { execution, sandboxHeaders } = await runExecution(run.runId);
-        expect(execution.networkPolicies?.slack?.allow).toStrictEqual(
-          expired
-            ? expect.not.arrayContaining(["chat:write"])
-            : expect.arrayContaining(["chat:write"]),
-        );
-        if (expired) {
-          expect(execution.networkPolicies?.slack?.deny).toContain(
+          expect(writer.execution.networkPolicies?.slack?.allow).toContain(
             "chat:write",
           );
-          expect(execution.networkPolicyRefreshes?.slack).toBeUndefined();
-        } else {
-          expect(execution.networkPolicyRefreshes?.slack).toStrictEqual({
-            nextRefreshAt: new Date(expiresAt).toISOString(),
+          const versionId = await memory.publish(writer, [
+            { path: "MEMORY.md", content: "A fact the next Run can recall" },
+          ]);
+          mockNow(expiresAt - 1);
+          await runs.registerDirectRunner(runnerGroup);
+          const presigner = context.mocks.s3.getSignedUrl;
+          const sign = presigner.getMockImplementation();
+          if (!sign) {
+            throw new Error("Expected the Memory presigner fixture");
+          }
+          presigner.mockImplementation((...args) => {
+            const command = args[1];
+            if (
+              command instanceof GetObjectCommand &&
+              command.input.Key?.endsWith(`/${versionId}/archive.tar.gz`)
+            ) {
+              // The grant is active at admission and expires while the
+              // accepted Memory mount is being prepared.
+              mockNow(expiresAt);
+              presigner.mockImplementation(sign);
+            }
+            return sign(...args);
           });
-          // Active-Run sync follows current settings, independently of the
-          // published execution decision. Restore the mode before testing expiry.
-          await connectors.updateFeatureSwitches(actor, {
-            connectorChatAccountAccess: chatAccounts,
+          const hydrated = await memory.startExecution(agentId, prompt);
+          expect(hydrated.memory).toMatchObject({
+            versionId,
+            archiveUrl: expect.any(String),
           });
-          mockNow(expiresAt);
-          const synced = await runs.syncConnectorRuntime(run.runId, {
-            targets: execution.connectorRuntimeTargets.filter((target) => {
-              return (
-                target.kind === "builtin" && target.connectorSlug === "slack"
-              );
+          expect(now()).toBe(expiresAt);
+          return hydrated.run;
+        });
+      } else {
+        await executeAndCancel(actor, agentId);
+        const queued = await queueChatRun(actor, { agentId, prompt });
+        mockNow(
+          expiry === "expired-before-preparation"
+            ? expiresAt
+            : startedAt + 30 * 60 * 1000,
+        );
+        await runs.registerDirectRunner(runnerGroup);
+        run = await queued.launch();
+      }
+      // Delivered input keeps its permission source after a mode change.
+
+      const { execution, sandboxHeaders } = await runExecution(run.runId);
+      expect(execution.networkPolicies?.slack?.allow).toStrictEqual(
+        expired
+          ? expect.not.arrayContaining(["chat:write"])
+          : expect.arrayContaining(["chat:write"]),
+      );
+      if (expired) {
+        expect(execution.networkPolicies?.slack?.deny).toContain("chat:write");
+        expect(execution.networkPolicyRefreshes?.slack).toBeUndefined();
+      } else {
+        expect(execution.networkPolicyRefreshes?.slack).toStrictEqual({
+          nextRefreshAt: new Date(expiresAt).toISOString(),
+        });
+        // Active-Run sync follows current settings, independently of the
+        // published execution decision. Restore the mode before testing expiry.
+
+        mockNow(expiresAt);
+        const synced = await runs.syncConnectorRuntime(run.runId, {
+          targets: execution.connectorRuntimeTargets.filter((target) => {
+            return (
+              target.kind === "builtin" && target.connectorSlug === "slack"
+            );
+          }),
+        });
+        expect(synced).toContainEqual(
+          expect.objectContaining({
+            target: { kind: "builtin", connectorSlug: "slack" },
+            state: "available",
+            networkPolicy: expect.objectContaining({
+              deny: expect.arrayContaining(["chat:write"]),
+              allow: expect.not.arrayContaining(["chat:write"]),
             }),
-          });
-          expect(synced).toContainEqual(
-            expect.objectContaining({
-              target: { kind: "builtin", connectorSlug: "slack" },
-              state: "available",
-              networkPolicy: expect.objectContaining({
-                deny: expect.arrayContaining(["chat:write"]),
-                allow: expect.not.arrayContaining(["chat:write"]),
-              }),
-            }),
-          );
-        }
-        await cancelChatRun(actor, run.runId, sandboxHeaders);
-      },
-    );
-  },
-);
+          }),
+        );
+      }
+      await cancelChatRun(actor, run.runId, sandboxHeaders);
+    },
+  );
+});

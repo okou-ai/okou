@@ -1542,8 +1542,8 @@ describe("POST /api/mail/drafts/link", () => {
     });
   });
 
-  it("clears the exact thread selection when its pinned Gmail account is deleted", async () => {
-    const { fixture, connectorId, defaultAccessToken } =
+  it("selects the surviving default when its pinned Gmail account is deleted", async () => {
+    const { fixture, connectorId, defaultConnectorId, defaultAccessToken } =
       await preparePinnedNonDefaultGmailDraft();
     await expect(readThreadSelections(fixture)).resolves.toMatchObject({
       selections: [{ connectionId: connectorId }],
@@ -1553,9 +1553,14 @@ describe("POST /api/mail/drafts/link", () => {
       "gmail",
       connectorId,
     );
-    await expect(readThreadSelections(fixture)).resolves.toStrictEqual({
-      selections: [],
-      selectedConnections: [],
+    await expect(readThreadSelections(fixture)).resolves.toMatchObject({
+      selections: [
+        {
+          connectionId: defaultConnectorId,
+          target: { kind: "builtin", connectorSlug: "gmail" },
+        },
+      ],
+      selectedConnections: [{ id: defaultConnectorId }],
     });
 
     // With the pinned account gone, the thread links through the default

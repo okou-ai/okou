@@ -66,7 +66,8 @@ export default defineConfig(({ command }) => ({
         hostType === "js" &&
         type === "asset" &&
         (SHARED_DATABASE_WORKER_FILE_PATTERN.test(filename) ||
-          MESSAGE_PDF_WORKER_FILE_PATTERN.test(filename))
+          MESSAGE_PDF_WORKER_FILE_PATTERN.test(filename) ||
+          /^assets\/pandoc-[^/]+\.wasm$/u.test(filename))
       ) {
         const workerPath = sharedDatabaseWorkerPath(filename, APP_ASSET_BASE);
         return { runtime: `location.origin + ${JSON.stringify(workerPath)}` };

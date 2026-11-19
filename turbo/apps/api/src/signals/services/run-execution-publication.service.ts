@@ -18,7 +18,7 @@ import {
 } from "./execution-content-bundle";
 import type { ContentBundleUrlCacheContext } from "./content-bundle-presigned-url-cache";
 import type { StoragePresignedUrlCacheWrite } from "./system-storage-presigned-url-cache.service";
-import type { ExecutionWorkflow } from "./execution-workflow-selection";
+import type { CapturedExecutionPackages } from "./execution-workflow-selection";
 import {
   activeNetworkPolicyRefreshesFromGrants,
   mergeNetworkPolicyRefreshes,
@@ -31,9 +31,7 @@ export interface ExecutionPublicationRun extends ExecutionContextRun {
   readonly isFirstRun: boolean;
 }
 
-interface ExecutionPackageSelection {
-  readonly workflows: readonly ExecutionWorkflow[];
-  readonly instructionsBundle: ContentBundle | null;
+interface ExecutionPackageSelection extends CapturedExecutionPackages {
   readonly cachedBundleUrls: readonly {
     readonly sha256: string;
     readonly url: string;
@@ -92,11 +90,10 @@ const signExecutionContentBundles$ = command(
       signatures.set(identity, signed);
       return signed;
     };
-    const signedInstructions =
-      args.packages.instructionsBundle === null
-        ? undefined
-        : await signBundle(args.packages.instructionsBundle);
-    const instructions = signedInstructions?.bundle;
+    const { bundle: instructions } = await signBundle(
+      args.packages.instructionsBundle,
+    );
+    signal.throwIfAborted();
     const workflowMountPaths = new Set(
       args.packages.workflows.map((workflow) => {
         return `${args.skillRoot}/${workflow.name}`;
@@ -230,7 +227,6 @@ function executionContextBody(args: {
   readonly firewallToken: string;
 }) {
   const {
-    customWorkflowSelection: _customWorkflowSelection,
     officialWorkflowBundles: _officialWorkflowBundles,
     seedSkillBundles: _seedSkillBundles,
     templateGuidanceBundles: _templateGuidanceBundles,

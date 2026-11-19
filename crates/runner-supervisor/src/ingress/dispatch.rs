@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_provider::decode_execution_publication;
@@ -12,6 +12,9 @@ use runner_types::{ids::RunId, types::ExecutionContext};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};
+
+mod preferred_home;
+pub(crate) use preferred_home::PreferredHomeProbe;
 
 pub(super) const MAX_BODY: usize =
     api_contracts::generated::constants::runners::DISPATCH_MAX_BODY_BYTES as usize;
@@ -39,6 +42,15 @@ struct Envelope {
     profile: String,
     not_after: u64,
     execution_context: Box<serde_json::value::RawValue>,
+    preferred_home_checkout: Option<PreferredHomeCheckout>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PreferredHomeCheckout {
+    predecessor_run_id: RunId,
+    // Bounds deferral before custody. A late retry still selects this source.
+    wait_until: u64,
 }
 
 struct Record {
@@ -52,11 +64,13 @@ pub(crate) struct DispatchIntake {
     sender: mpsc::Sender<DispatchWork>,
     slots: Arc<Semaphore>,
     latest_time_ms: AtomicU64,
+    preferred_home_probe: Option<PreferredHomeProbe>,
 }
 
 pub(crate) struct DispatchWork {
     pub context: Option<ExecutionContext>,
     pub profile: String,
+    pub preferred_home_source: Option<RunId>,
     pub deadline: tokio::time::Instant,
     pub permit: Option<OwnedSemaphorePermit>,
     verdict: watch::Sender<Disposition>,
@@ -99,9 +113,15 @@ impl DispatchIntake {
                 sender,
                 slots,
                 latest_time_ms: AtomicU64::new(0),
+                preferred_home_probe: None,
             },
             receiver,
         )
+    }
+
+    pub fn with_preferred_home_probe(mut self, probe: Option<PreferredHomeProbe>) -> Self {
+        self.preferred_home_probe = probe;
+        self
     }
 
     pub(super) fn try_reserve(&self) -> Option<OwnedSemaphorePermit> {
@@ -173,7 +193,7 @@ impl DispatchIntake {
         }
         // Freeze the remaining validity on a monotonic clock before decoding or
         // waiting for local resources. Wall-clock adjustment must not extend it.
-        let deadline = received_at + std::time::Duration::from_millis(envelope.not_after - now);
+        let deadline = received_at + Duration::from_millis(envelope.not_after - now);
         let context =
             match decode_execution_publication(envelope.execution_context.get().as_bytes()) {
                 Ok(context) if context.run_id == run_id && !context.sandbox_token.is_empty() => {
@@ -181,8 +201,35 @@ impl DispatchIntake {
                 }
                 _ => return Disposition::Unknown,
             };
-        let mut context = Some(context);
         let mut permit = Some(permit);
+        let preferred_home = envelope.preferred_home_checkout.filter(|hint| {
+            hint.predecessor_run_id != run_id
+                && hint.wait_until <= envelope.not_after
+                && context.reuse_key().is_some_and(|key| !key.is_empty())
+        });
+        let probe = self.preferred_home_probe.as_ref().and_then(|probe| {
+            let hint = preferred_home.as_ref()?;
+            let remaining = hint.wait_until.checked_sub(now)?;
+            if remaining > preferred_home::MAX_WAIT_MS {
+                return None;
+            }
+            probe.start(
+                &context,
+                &envelope.profile,
+                hint.predecessor_run_id,
+                received_at + Duration::from_millis(remaining),
+            )
+        });
+        let mut contended = false;
+        if let Some(probe) = probe {
+            // The dedicated hint probe cannot reserve ordinary admission capacity.
+            drop(permit.take());
+            contended = probe.await;
+            if !contended {
+                permit = self.try_reserve();
+            }
+        }
+        let mut context = Some(context);
         let mut to_submit = None;
         let receiver = {
             let mut records = self.records.lock().unwrap_or_else(|e| e.into_inner());
@@ -200,12 +247,21 @@ impl DispatchIntake {
                 }
                 record.verdict.subscribe()
             } else {
+                let Some(admission_permit) = permit.take() else {
+                    // No custody was published. The caller can retry these bytes.
+                    drop(records);
+                    if contended {
+                        tracing::info!(%run_id, "preferred dispatch deferred on Home checkout contention");
+                    }
+                    return Disposition::Busy;
+                };
                 let (verdict, receiver) = watch::channel(Disposition::Pending);
                 to_submit = Some(DispatchWork {
                     context: context.take(),
                     profile: envelope.profile,
+                    preferred_home_source: preferred_home.map(|hint| hint.predecessor_run_id),
                     deadline,
-                    permit: permit.take(),
+                    permit: Some(admission_permit),
                     verdict: verdict.clone(),
                 });
                 records.insert(

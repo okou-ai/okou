@@ -195,6 +195,7 @@ import {
   PreviewableAudioAttachmentChip,
   PreviewableFileAttachmentChip,
 } from "./attachment-chips.tsx";
+import { ArtifactDownloadMenu } from "./artifact-actions.tsx";
 import { McpMark } from "./components/mcp-mark.tsx";
 import { classifyChatAttachment } from "../../signals/chat-page/parse-body-blocks.ts";
 import type {
@@ -3746,6 +3747,10 @@ function ScrollToBottomButton({ thread }: { thread: ChatPanelSignals }) {
   const awayFromBottom = useGet(thread.awayFromBottom$);
   const scrollToBottom = useSet(thread.scrollToBottom$);
   const pageSignal = useGet(pageSignal$);
+  // The thinking row sits at the end of the transcript, so a reader scrolled
+  // away from it cannot see that the thread is still working. The button
+  // carries that state instead, for exactly as long as the row would show.
+  const working = useLastResolved(thread.thinkingIndicatorsShown$) === true;
 
   if (!awayFromBottom) {
     return null;
@@ -3755,6 +3760,7 @@ function ScrollToBottomButton({ thread }: { thread: ChatPanelSignals }) {
     <IconTooltipButton
       type="button"
       data-scroll-to-bottom
+      data-working={working ? "" : undefined}
       aria-label={t(($) => {
         return $.chat.thread.scrollToBottom;
       })}
@@ -3763,8 +3769,29 @@ function ScrollToBottomButton({ thread }: { thread: ChatPanelSignals }) {
       }}
       className="absolute bottom-4 left-1/2 z-20 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-md transition-colors hover:bg-background-hover hover:text-foreground"
     >
-      <ArrowDown size={18} />
+      {working ? <ScrollToBottomWorkingDots /> : <ArrowDown size={18} />}
     </IconTooltipButton>
+  );
+}
+
+const SCROLL_TO_BOTTOM_WORKING_DOT_DELAYS = ["0ms", "160ms", "320ms"] as const;
+
+// Three dots span the arrow's 18px, so the button keeps its size and the mark
+// its optical weight when the run finishes and the arrow returns.
+function ScrollToBottomWorkingDots() {
+  return (
+    <span aria-hidden className="flex items-center gap-[3px]">
+      {SCROLL_TO_BOTTOM_WORKING_DOT_DELAYS.map((delay) => {
+        return (
+          <span
+            key={delay}
+            data-scroll-to-bottom-working-dot
+            style={{ animationDelay: delay }}
+            className="size-1 rounded-full bg-current motion-safe:animate-working-dot"
+          />
+        );
+      })}
+    </span>
   );
 }
 
@@ -4303,7 +4330,6 @@ function ActiveChatConnectorActionConnectModal() {
     return connector && accountOptions ? (
       <CustomConnectorConnectDialog
         connector={connector}
-        agentId={active.agentId}
         accountOptions={accountOptions}
         origin={{ kind: "chat-action" }}
       />
@@ -4314,7 +4340,6 @@ function ActiveChatConnectorActionConnectModal() {
     return (
       <ConnectModal
         item={active.catalogItem}
-        agentId={active.agentId}
         accountLabel={accountLabelOf(active.account)}
         accountMode={{
           kind: "reconnect",
@@ -4344,7 +4369,6 @@ function ActiveChatConnectorActionConnectModal() {
   return (
     <ConnectModal
       item={active.catalogItem}
-      agentId={active.agentId}
       accountOptions={accountOptions}
       reconnectAuthMethod={reconnectAuthMethod}
       onClose={close}
@@ -8227,10 +8251,12 @@ function RelatedArtifactRow({ card }: { readonly card: RelatedArtifactCard }) {
   const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const openArtifact = useSet(openMarkdownArtifact$);
+  const featureSwitches = useLastResolved(featureSwitches$);
   const sidebarPreview =
-    useLastResolved(featureSwitches$)?.[
-      FeatureSwitchKey.ArtifactSidebarPreview
-    ];
+    featureSwitches?.[FeatureSwitchKey.ArtifactSidebarPreview];
+  const showMarkdownExport =
+    card.signals.kind === "markdown" &&
+    featureSwitches?.[FeatureSwitchKey.MarkdownFirstOutput] === true;
   const name = relatedArtifactDisplayName(card);
   const host = relatedArtifactHost(card.signals.url);
   const kind = artifactFallbackSubtitle(
@@ -8270,7 +8296,24 @@ function RelatedArtifactRow({ card }: { readonly card: RelatedArtifactCard }) {
       />
     </Button>
   );
-  return sidebarPreview ? <DialogClose render={row} /> : row;
+  const previewAction = sidebarPreview ? <DialogClose render={row} /> : row;
+  if (!showMarkdownExport) {
+    return previewAction;
+  }
+  return (
+    <div className="flex min-w-0 items-center gap-1">
+      <div className="min-w-0 flex-1">{previewAction}</div>
+      <ArtifactDownloadMenu
+        ariaLabel={t(($) => {
+          return $.artifacts.actions.downloadOptions;
+        })}
+        previewKind="markdown"
+        filename={card.signals.filename}
+        showGoogleDriveAction={false}
+        url={card.signals.url}
+      />
+    </div>
+  );
 }
 
 function RelatedArtifactsDialog({

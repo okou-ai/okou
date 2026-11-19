@@ -22,18 +22,6 @@ export interface InternalRunCallback {
 export type AgentRunPreCreateSource =
   "chat_callback_auto_send" | "workflow_slash_command";
 
-export interface AgentRunRequestAgent {
-  readonly id: string;
-  readonly name: string;
-  readonly orgId: string;
-  readonly defaultAgentId: string | null;
-  readonly owner: string;
-  readonly visibility: "public" | "private";
-  readonly displayName: string | null;
-  readonly description: string | null;
-  readonly sound: string | null;
-}
-
 export interface ResolvedModelProviderEnvironment {
   readonly credentialOwner: "builtin" | "member";
   /** Canonical account identity from the same source snapshot as the environment. */

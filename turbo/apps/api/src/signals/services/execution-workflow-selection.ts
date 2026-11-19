@@ -18,7 +18,7 @@ import { and, eq, isNull, notInArray, or, sql } from "drizzle-orm";
 import { array, object, string, unknown, uuid, type infer as Infer } from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import {
-  agentInstructionsSelectionSql,
+  memberInstructionsSelectionSql,
   type ExecutionPackageScope,
 } from "./execution-instructions-selection";
 import type { OfficialWorkflowObservation } from "./official-workflow-run.service";
@@ -30,7 +30,6 @@ import { normalizeMountOverlay } from "./storage-mount-overlay";
 import type { ThreadAutomationTarget } from "./thread-context.signals";
 
 export const executionPackageSourcesSchema = object({
-  agentInstructions: unknown(),
   memberInstructions: unknown(),
   workflows: array(
     object({ id: uuid(), name: string(), contentBundle: unknown() }),
@@ -44,26 +43,21 @@ export const executionPackageSourcesDecoder = zodDriverValueDecoder(
   executionPackageSourcesSchema,
 );
 
-export interface ExecutionWorkflow {
-  readonly id: string;
-  readonly name: string;
-  readonly contentBundle: ContentBundle;
-}
-
 export interface CapturedExecutionPackages {
-  readonly workflows: readonly ExecutionWorkflow[];
+  readonly workflows: readonly {
+    readonly name: string;
+    readonly contentBundle: ContentBundle;
+  }[];
   readonly instructionsBundle: ContentBundle;
 }
 
 /**
  * Shared projection for prompt picks and the Automation target statement.
- * Capture both Instructions references so the read can start before mode
- * selection. Mount exclusions depend on the name and can be applied to the
- * captured winner without reading the other rows of that name again.
+ * Mount exclusions apply to the captured winner for each Workflow name.
  */
 export function executionPackageSourcesSql(scope: ExecutionPackageScope) {
   return sql`(
-    WITH ${agentInstructionsSelectionSql(scope)}, selected_workflows AS (
+    WITH selected_workflows AS (
       SELECT DISTINCT ON (${workflows.name}) ${workflows.id} AS id,
         ${workflows.name} AS name, ${workflows.contentBundle} AS "contentBundle"
       FROM ${workflows}
@@ -82,22 +76,20 @@ export function executionPackageSourcesSql(scope: ExecutionPackageScope) {
         ${workflows.createdAt}, ${workflows.id}
     )
     SELECT jsonb_build_object(
-      'agentInstructions', selected_agent."agentInstructions",
-      'memberInstructions', selected_agent."memberInstructions",
+      'memberInstructions', ${memberInstructionsSelectionSql(scope)},
       'workflows', (SELECT COALESCE(jsonb_agg(to_jsonb(selected_workflows) ORDER BY name), '[]'::jsonb)
         FROM selected_workflows)
-    ) FROM selected_agent
+    )
   )`;
 }
 
 export function resolveOrdinaryAutomationWorkflowName(
   target: Pick<ThreadAutomationTarget, "automation" | "workflow">,
   scope: ExecutionPackageScope,
-  sources: ExecutionPackageSources | null,
+  sources: ExecutionPackageSources,
 ): string | null {
   const { automation, workflow } = target;
   if (
-    !sources ||
     automation.orgId !== scope.orgId ||
     automation.ownerUserId !== scope.userId ||
     workflow.orgId !== scope.orgId ||
@@ -127,6 +119,7 @@ export function selectExecutionPackages(
   sources: ExecutionPackageSources | null,
   input: {
     readonly singleAgent: boolean;
+    readonly agentInstructions: ContentBundle | null;
     readonly skillRoot: string;
     readonly protectedMountPaths: readonly string[];
     readonly ordinaryAutomation: Pick<
@@ -149,12 +142,13 @@ export function selectExecutionPackages(
     }
   }
   const instructionsBundle = contentBundleSchema.safeParse(
-    input.singleAgent ? sources.memberInstructions : sources.agentInstructions,
+    input.singleAgent ? sources.memberInstructions : input.agentInstructions,
   );
   if (!instructionsBundle.success) {
     return null;
   }
-  const selectedWorkflows: ExecutionWorkflow[] = [];
+  const selectedWorkflows: CapturedExecutionPackages["workflows"][number][] =
+    [];
   for (const workflow of sources.workflows) {
     if (isProtected(workflow.name)) {
       continue;
@@ -163,7 +157,10 @@ export function selectExecutionPackages(
     if (!contentBundle.success) {
       return null;
     }
-    selectedWorkflows.push({ ...workflow, contentBundle: contentBundle.data });
+    selectedWorkflows.push({
+      name: workflow.name,
+      contentBundle: contentBundle.data,
+    });
   }
   return {
     instructionsBundle: instructionsBundle.data,

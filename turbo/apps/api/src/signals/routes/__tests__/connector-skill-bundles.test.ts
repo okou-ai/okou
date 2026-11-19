@@ -1,3 +1,4 @@
+import { connectNintendoStore } from "./helpers/connector-auth-provider-fixtures";
 import { describe, expect, it } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { workflowsCollectionContract } from "@okouai/api-contracts/contracts/workflows";
@@ -18,95 +19,88 @@ import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 const context = testContext();
 
 describe("Connector Skill bundle delivery", () => {
-  it.each([false, true])(
-    "delivers current custom configuration and Skill bytes (Chat accounts: %s)",
-    async (chatAccounts) => {
-      const owner = await publicChatActor(context);
-      owner.ownsFeatureSwitches();
-      const fixture = createChatEventsFixture(context);
-      const api = createConnectorBddApi(context);
-      const { selected, s3, connectionId } = await owner.run(async () => {
-        const s3 = installWorkflowVolumeS3Fixture(context);
-        const selected = await api.createCustomConnector(owner.actor, {
-          displayName: "Default bundle delivery",
-          prefixTemplates: ["https://default-skill.example.test/api/"],
-          fields: [],
-          headerInjections: [],
-          queryInjections: [],
-          authMode: "none",
-          skillMarkdown: "Selected Skill instructions.",
-        });
-        const account = await api.setCustomConnectorValues(
-          owner.actor,
-          selected.id,
-          [],
-        );
-        await api.updateAgentCustomConnectors(owner.actor, owner.agentId, [
-          selected.id,
-        ]);
-        await api.updateFeatureSwitches(owner.actor, {
-          [FeatureSwitchKey.ConnectorChatAccountAccess]: chatAccounts,
-        });
-        return { selected, s3, connectionId: account.connectionId };
+  it("delivers current custom configuration and Skill bytes", async () => {
+    const owner = await publicChatActor(context);
+    owner.ownsFeatureSwitches();
+    const fixture = createChatEventsFixture(context);
+    const api = createConnectorBddApi(context);
+    const { selected, s3, connectionId } = await owner.run(async () => {
+      const s3 = installWorkflowVolumeS3Fixture(context);
+      const selected = await api.createCustomConnector(owner.actor, {
+        displayName: "Default bundle delivery",
+        prefixTemplates: ["https://default-skill.example.test/api/"],
+        fields: [],
+        headerInjections: [],
+        queryInjections: [],
+        authMode: "none",
+        skillMarkdown: "Selected Skill instructions.",
       });
-      const queued = await owner.queueChatRun(owner.actor, {
-        agentId: owner.agentId,
-        model: "claude-fable-5-1",
-        prompt: "Use the selected custom Skill",
+      const account = await api.setCustomConnectorValues(
+        owner.actor,
+        selected.id,
+        [],
+      );
+      await api.updateAgentCustomConnectors(owner.actor, owner.agentId, [
+        selected.id,
+      ]);
+
+      return { selected, s3, connectionId: account.connectionId };
+    });
+    const queued = await owner.queueChatRun(owner.actor, {
+      agentId: owner.agentId,
+      model: "claude-fable-5-1",
+      prompt: "Use the selected custom Skill",
+    });
+    await owner.run(async () => {
+      await api.updateCustomConnector(owner.actor, selected.id, {
+        displayName: "Default bundle delivery",
+        prefixTemplates: ["https://updated-skill.example.test/api/"],
+        fields: [],
+        headerInjections: [],
+        queryInjections: [],
+        authMode: "none",
+        skillMarkdown: "Selected Skill instructions.",
       });
-      await owner.run(async () => {
-        await api.updateCustomConnector(owner.actor, selected.id, {
-          displayName: "Default bundle delivery",
-          prefixTemplates: ["https://updated-skill.example.test/api/"],
-          fields: [],
-          headerInjections: [],
-          queryInjections: [],
-          authMode: "none",
-          skillMarkdown: "Selected Skill instructions.",
-        });
-        await api.setCustomConnectorValues(owner.actor, selected.id, [], {
-          intent: "reconnect",
-          connectionId,
-        });
+      await api.setCustomConnectorValues(owner.actor, selected.id, [], {
+        intent: "reconnect",
+        connectionId,
       });
-      const run = await queued.launch();
-      const execution = await owner.runExecution(run.runId);
-      const firewall = execution.execution.firewalls?.find((entry) => {
-        return (
-          entry.kind === "inline" && entry.customConnectorId === selected.id
-        );
-      });
-      expect(firewall).toMatchObject({
-        kind: "inline",
-        customConnectorId: selected.id,
-        firewall: {
-          apis: [
-            expect.objectContaining({
-              base: "https://updated-skill.example.test/api/",
-            }),
-          ],
-        },
-      });
-      const mountPath = `/home/user/.claude/skills/${getCustomConnectorSkillName(selected.slug, selected.id)}`;
-      const bundle = execution.execution.contentBundles.skills.find(
-        (candidate) => {
-          return candidate.mountPath === mountPath;
-        },
-      )!;
-      expect(
-        readExecutionContentBundle(s3.objects, bundle)
-          .get("SKILL.md")
-          ?.toString(),
-      ).toContain("Selected Skill instructions.");
-      await owner.run(() => {
-        return fixture.failChatRun(
-          run.runId,
-          execution.sandboxHeaders,
-          "Default bundle inspected",
-        );
-      });
-    },
-  );
+    });
+    const run = await queued.launch();
+    const execution = await owner.runExecution(run.runId);
+    const firewall = execution.execution.firewalls?.find((entry) => {
+      return entry.kind === "inline" && entry.customConnectorId === selected.id;
+    });
+    expect(firewall).toMatchObject({
+      kind: "inline",
+      customConnectorId: selected.id,
+      firewall: {
+        apis: [
+          expect.objectContaining({
+            base: "https://updated-skill.example.test/api/",
+          }),
+        ],
+      },
+    });
+    const mountPath = `/home/user/.claude/skills/${getCustomConnectorSkillName(selected.slug, selected.id)}`;
+    const bundle = execution.execution.contentBundles.skills.find(
+      (candidate) => {
+        return candidate.mountPath === mountPath;
+      },
+    )!;
+    expect(
+      readExecutionContentBundle(s3.objects, bundle)
+        .get("SKILL.md")
+        ?.toString(),
+    ).toContain("Selected Skill instructions.");
+    await owner.run(() => {
+      return fixture.failChatRun(
+        run.runId,
+        execution.sandboxHeaders,
+        "Default bundle inspected",
+      );
+    });
+  });
 
   it.each([
     {
@@ -146,7 +140,6 @@ describe("Connector Skill bundle delivery", () => {
           { ...owner.actor, orgId: owner.actor.orgId },
           {
             [FeatureSwitchKey.CodexExecution]: framework === "codex",
-            // These delivery cases override Skills with retained Agent Workflows.
             [FeatureSwitchKey.SingleAgent]: false,
           },
         );
@@ -157,12 +150,10 @@ describe("Connector Skill bundle delivery", () => {
           displayName: "Unselected connector",
           skillMarkdown: "Unselected private instructions.",
         });
-        await api.updateAgentCustomConnectors(owner.actor, owner.agentId, [
-          selected.id,
+        await api.setCustomConnectorValues(owner.actor, selected.id, [
+          { key: "secret", kind: "secret", value: "selected-skill-key" },
         ]);
-        await fixture.api.enableAgentConnectors(owner.actor, owner.agentId, [
-          "nintendo-store",
-        ]);
+        await connectNintendoStore(api, owner.actor);
         return { selected, s3 };
       });
       const other = await publicChatActor(context);

@@ -127,7 +127,7 @@ export function subscriptionSwitchRecoveries(
   });
 }
 
-type SubscriptionRecovery = Awaited<
+export type SubscriptionRecovery = Awaited<
   ReturnType<ReturnType<typeof subscriptionSwitchRecoveries>["read"]>
 >[number];
 

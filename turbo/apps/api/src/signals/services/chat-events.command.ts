@@ -98,10 +98,8 @@ import {
   preloadAgentRunContext$,
   type AgentRunContextSignals,
 } from "./agent-run-context.signals";
-import type {
-  AgentRunPreCreateSource,
-  AgentRunRequestAgent,
-} from "./agent-run-contracts";
+import type { BootstrapAgent } from "./agent-data.service";
+import type { AgentRunPreCreateSource } from "./agent-run-contracts";
 import {
   resolveDefaultModelFirstPin$,
   resolveRunSelectionModel,
@@ -175,6 +173,7 @@ import {
   agentRunSourceTitleSnapshot,
   hasAgentRunSourceAnnotation,
   projectUserMessage,
+  repairUserMessageText,
   userMessagePhysicalFiles,
   withAgentRunSourceAnnotation,
   type ChatAgentRunSourceAnnotation,
@@ -248,7 +247,7 @@ interface InterruptSendBody {
   readonly clientEventId?: string;
 }
 type AgentForChatSend = Pick<
-  AgentRunRequestAgent,
+  BootstrapAgent,
   "id" | "orgId" | "owner" | "visibility"
 >;
 type OrganizationAuthContext = AuthContext & {
@@ -260,7 +259,6 @@ interface NormalSendArgs {
   readonly auth: OrganizationAuthContext;
   readonly userId: string;
   readonly orgId: string;
-  readonly preloadedAgent?: AgentForChatSend;
   readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
   readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly getStartedWorkflowId?: string;
@@ -868,7 +866,7 @@ function authorizeSendAgent(
   if (!agent || agent.id !== args.body.agentId || agent.orgId !== args.orgId) {
     return notFound("Agent not found");
   }
-  if (agent.visibility === "private" && agent.owner !== args.userId) {
+  if (agent.visibility !== "public" && agent.owner !== args.userId) {
     return forbidden("Only the private agent owner can run this agent");
   }
   return agent;
@@ -1456,15 +1454,16 @@ function normalSendUserMessage(
   args: NormalSendArgs,
   agentRunSource: ChatAgentRunSourceAnnotation | null,
 ): UserMessageDocument {
+  const userMessage = repairUserMessageText(args.body.userMessage);
   if (agentRunSource !== null) {
-    return withAgentRunSourceAnnotation(args.body.userMessage, agentRunSource);
+    return withAgentRunSourceAnnotation(userMessage, agentRunSource);
   }
   return args.auth.tokenType !== "oauth"
-    ? args.body.userMessage
+    ? userMessage
     : {
-        ...args.body.userMessage,
+        ...userMessage,
         parts: [
-          ...args.body.userMessage.parts,
+          ...userMessage.parts,
           {
             type: "source",
             kind: "mcp",

@@ -6,8 +6,17 @@ import { createRunMarkCommand } from "../mark";
 
 const endpoint = "https://api.okou.ai/api/runs/current/phase-mark";
 const receipt = { schemaVersion: 2, status: "accepted" };
-function token(capabilities: readonly string[]) {
-  return `vm0_sandbox_e30.${Buffer.from(JSON.stringify({ scope: "okou", capabilities, userId: "owner", orgId: "org", runId: "a0000000-0000-4000-8000-000000000001" })).toString("base64url")}.signature`;
+function token() {
+  const payload = Buffer.from(
+    JSON.stringify({
+      scope: "okou",
+      capabilities: [],
+      userId: "owner",
+      orgId: "org",
+      runId: "a0000000-0000-4000-8000-000000000001",
+    }),
+  ).toString("base64url");
+  return `vm0_sandbox_e30.${payload}.signature`;
 }
 function run(args: string[]) {
   return createRunMarkCommand()
@@ -21,7 +30,8 @@ function run(args: string[]) {
 }
 
 beforeEach(() => {
-  vi.stubEnv("OKOU_TOKEN", token(["run-timing:write"]));
+  vi.stubEnv("OKOU_TOKEN", token());
+  vi.stubEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
   vi.spyOn(console, "log").mockImplementation(() => {
     return undefined;
   });
@@ -31,6 +41,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 describe("run phase markers", () => {
@@ -67,15 +78,17 @@ describe("run phase markers", () => {
     expect(console.error).not.toHaveBeenCalled();
   });
 
-  it("prints the acceptance receipt without claiming delivery", async () => {
-    server.use(
-      http.post(endpoint, async ({ request }) => {
-        expect(await request.json()).toEqual({ phase: "research-start" });
-        return HttpResponse.json(receipt, { status: 202 });
-      }),
-    );
+  it("prints the acceptance receipt for an authenticated Run token with no capabilities", async () => {
+    const requests = vi.fn(async ({ request }: { request: Request }) => {
+      expect(request.headers.get("authorization")).toBe(`Bearer ${token()}`);
+      expect(await request.json()).toEqual({ phase: "research-start" });
+      return HttpResponse.json(receipt, { status: 202 });
+    });
+    server.use(http.post(endpoint, requests));
     await run(["research-start", "--json"]);
+    expect(requests).toHaveBeenCalledTimes(1);
     expect(console.log).toHaveBeenCalledWith(JSON.stringify(receipt));
+    expect(process.exitCode ?? 0).toBe(0);
   });
 
   it.each([401, 403, 404, 500])(
@@ -98,6 +111,7 @@ describe("run phase markers", () => {
         }),
       );
       expect(console.error).not.toHaveBeenCalled();
+      expect(process.exitCode ?? 0).toBe(0);
     },
   );
 
@@ -140,23 +154,7 @@ describe("run phase markers", () => {
       }),
     );
     expect(requests).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not contact the API when the Run lacks the capability", async () => {
-    vi.stubEnv("OKOU_TOKEN", token(["run-usage:read"]));
-    const requests = vi.fn(() => {
-      return HttpResponse.json(receipt, { status: 202 });
-    });
-    server.use(http.post(endpoint, requests));
-    await run(["research-start", "--json"]);
-    expect(requests).not.toHaveBeenCalled();
-    expect(console.log).toHaveBeenCalledWith(
-      JSON.stringify({
-        schemaVersion: 2,
-        status: "unavailable",
-        reason: "missing-capability",
-      }),
-    );
+    expect(process.exitCode ?? 0).toBe(0);
   });
 
   it("does not claim a malformed response was accepted", async () => {
@@ -190,5 +188,6 @@ describe("run phase markers", () => {
       }),
     );
     expect(console.error).not.toHaveBeenCalled();
+    expect(process.exitCode ?? 0).toBe(0);
   });
 });

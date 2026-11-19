@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 import {
   CopyObjectCommand,
+  DeleteObjectsCommand,
   GetObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
@@ -112,7 +113,9 @@ function readStoredObject(
 ) {
   const object = objects.get(`${command.input.Bucket}/${command.input.Key}`);
   if (!object) {
-    throw Object.assign(new Error("Object not found"), { name: "NotFound" });
+    throw Object.assign(new Error("Object not found"), {
+      name: command instanceof GetObjectCommand ? "NoSuchKey" : "NotFound",
+    });
   }
   if (
     command instanceof GetObjectCommand &&
@@ -159,6 +162,7 @@ export function installSharedThreadStorage(context: TestContext) {
       command instanceof HeadObjectCommand ||
       command instanceof GetObjectCommand ||
       command instanceof ListObjectsV2Command ||
+      command instanceof DeleteObjectsCommand ||
       command instanceof PutObjectCommand ||
       command instanceof CopyObjectCommand
     )) {
@@ -193,6 +197,12 @@ export function installSharedThreadStorage(context: TestContext) {
     }
     if (command instanceof PutObjectCommand) {
       return await putStoredObject(objects, command, rejectCopies);
+    }
+    if (command instanceof DeleteObjectsCommand) {
+      for (const { Key } of command.input.Delete?.Objects ?? []) {
+        objects.delete(`${bucket}/${Key}`);
+      }
+      return {};
     }
     if (command instanceof CopyObjectCommand) {
       return copyStoredObject(objects, command, rejectCopies);

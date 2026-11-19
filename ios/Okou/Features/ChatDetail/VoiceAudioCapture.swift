@@ -28,7 +28,7 @@ final class NativeVoiceAudioCapture: VoiceAudioCapture {
     }
     try Task.checkCancellation()
     let owner = UUID()
-    try await VoiceRecordingAudioSession.shared.activate(owner: owner)
+    try await AppAudioSession.shared.acquire(.recording, owner: owner)
     do {
       try Task.checkCancellation()
       let audio = AVAudioSession.sharedInstance()
@@ -72,7 +72,7 @@ final class NativeVoiceAudioCapture: VoiceAudioCapture {
       return stream
     } catch {
       stop()
-      await VoiceRecordingAudioSession.shared.deactivate(owner: owner)
+      await AppAudioSession.shared.release(owner: owner)
       throw error
     }
   }
@@ -94,7 +94,7 @@ final class NativeVoiceAudioCapture: VoiceAudioCapture {
     encoder = nil
     if let owner = sessionOwner {
       sessionOwner = nil
-      Task { await VoiceRecordingAudioSession.shared.deactivate(owner: owner) }
+      Task { await AppAudioSession.shared.release(owner: owner) }
     }
   }
 
@@ -106,27 +106,6 @@ final class NativeVoiceAudioCapture: VoiceAudioCapture {
       case .unsupportedFormat: "This microphone's audio format is unavailable. Try another input."
       }
     }
-  }
-}
-
-/// System audio activation can block. Its process-wide owner serializes work off
-/// the UI actor and prevents a retired recording from deactivating a new one.
-private actor VoiceRecordingAudioSession {
-  static let shared = VoiceRecordingAudioSession()
-  private var owner: UUID?
-
-  func activate(owner: UUID) throws {
-    let audio = AVAudioSession.sharedInstance()
-    try audio.setCategory(
-      .playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetoothHFP])
-    try audio.setActive(true)
-    self.owner = owner
-  }
-
-  func deactivate(owner: UUID) {
-    guard self.owner == owner else { return }
-    try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-    self.owner = nil
   }
 }
 

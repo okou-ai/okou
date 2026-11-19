@@ -208,7 +208,6 @@ val generateBrandFonts =
 val generateLicenseAssets =
     tasks.register<PrepareBrandFiles>("generateLicenseAssets") {
         sourceFiles.from(fileTree("../../ios/Okou/Resources/Fonts") { include("*-LICENSE.txt") })
-        sourceFiles.from("../../ios/Okou/DesignSystem/Foundations/Lucide-LICENSE.txt")
         outputDirectory.set(layout.buildDirectory.dir("generated/brand/assets"))
         fonts.set(false)
     }
@@ -318,7 +317,6 @@ dependencies {
     implementation(libs.activity.compose)
     implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.lifecycle.runtime.compose)
-    implementation(libs.datastore.preferences)
     implementation(libs.coroutines.android)
     implementation(libs.retrofit)
     implementation(libs.retrofit.serialization)

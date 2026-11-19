@@ -124,6 +124,22 @@ function recentMessagesQuery(connectionId: string, id: string) {
     .orderBy(desc(wechatMessages.sequence))
     .limit(20);
 }
+
+function wechatDeliveryFromContext(
+  row: Pick<
+    typeof chatWechatContext.$inferSelect,
+    "connectionId" | "generation" | "id" | "senderId" | "messageId"
+  >,
+) {
+  return {
+    connectionId: row.connectionId,
+    generation: row.generation,
+    contextId: row.id,
+    senderId: row.senderId,
+    messageId: row.messageId,
+  };
+}
+
 // Drizzle's typed query is executed by the owning signal; no database capability
 // is passed through service arguments.
 function launchMaterial(
@@ -170,13 +186,7 @@ function launchMaterial(
           ]
         : []),
     ].join("\n\n"),
-    wechatDelivery: {
-      connectionId: row.connectionId,
-      generation: row.generation,
-      contextId: row.id,
-      senderId: row.senderId,
-      messageId: row.messageId,
-    },
+    wechatDelivery: wechatDeliveryFromContext(row),
   };
 }
 export function createWechatThreadContext(
@@ -226,23 +236,37 @@ export function createWechatThreadContext(
     return launchMaterial(row, history);
   });
 }
-export const loadWechatQueuedLaunchMaterial$ = command(
+const loadWechatQueuedContext$ = command(
   async ({ get, set }, args: Source, signal: AbortSignal) => {
     if (!(await set(wechatEnabled$, args.orgId, args.userId, signal))) {
       return null;
     }
-    const rows = await get(db$)
+    const [row] = await get(db$)
       .select()
       .from(contextQuery(args).as("wechat_context"));
     signal.throwIfAborted();
-    const row = rows[0];
-    const history = row
-      ? await get(db$)
-          .select()
-          .from(
-            recentMessagesQuery(row.connectionId, row.id).as("wechat_recent"),
-          )
-      : [];
+    return row ?? null;
+  },
+);
+
+export const loadWechatQueuedDelivery$ = command(
+  async ({ set }, args: Source, signal: AbortSignal) => {
+    const row = await set(loadWechatQueuedContext$, args, signal);
+    signal.throwIfAborted();
+    return row ? wechatDeliveryFromContext(row) : null;
+  },
+);
+
+export const loadWechatQueuedLaunchMaterial$ = command(
+  async ({ get, set }, args: Source, signal: AbortSignal) => {
+    const row = await set(loadWechatQueuedContext$, args, signal);
+    signal.throwIfAborted();
+    if (!row) {
+      return null;
+    }
+    const history = await get(db$)
+      .select()
+      .from(recentMessagesQuery(row.connectionId, row.id).as("wechat_recent"));
     signal.throwIfAborted();
     return launchMaterial(row, history);
   },

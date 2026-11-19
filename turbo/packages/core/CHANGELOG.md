@@ -1,5 +1,42 @@
 # Changelog
 
+## [8.855.0](https://github.com/okou-ai/okou/compare/core-v8.854.6...core-v8.855.0) (2026-11-19)
+
+
+### Features
+
+* **api:** roll out chat connector accounts and retire the switch ([#48841](https://github.com/okou-ai/okou/issues/48841)) ([a5a153e](https://github.com/okou-ai/okou/commit/a5a153e20f5e7e9e3d3d7761772bd80720b3f684))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.92.0
+
+## [8.854.6](https://github.com/okou-ai/okou/compare/core-v8.854.5...core-v8.854.6) (2026-11-19)
+
+
+### Refactoring
+
+* consolidate artifact timing behind one switch ([#48953](https://github.com/okou-ai/okou/issues/48953)) ([18b57aa](https://github.com/okou-ai/okou/commit/18b57aa53cf9a5451a38b092fe86b6065da5b052))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.91.0
+
+## [8.854.5](https://github.com/okou-ai/okou/compare/core-v8.854.4...core-v8.854.5) (2026-11-19)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.90.2
+
 ## [8.854.4](https://github.com/okou-ai/okou/compare/core-v8.854.3...core-v8.854.4) (2026-11-19)
 
 

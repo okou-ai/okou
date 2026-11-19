@@ -31,9 +31,18 @@ const instructionsAndMemoryGuidance = Object.freeze([
  * messaging and file rules live in `# Integration Note`, next to the
  * `# Current Integration` block they describe.
  */
-function buildIntegrationToolsPrompt(): readonly string[] {
+function buildIntegrationToolsPrompt(
+  markdownFirstOutputEnabled: boolean,
+): readonly string[] {
   const localFileContext = [
-    "Honor the user's explicitly requested delivery format. Otherwise, choose a suitable format based on the user's preferences and how they will use the result, such as DOCX, PDF, XLSX, CSV, PPTX, HTML, or images; short content can be answered directly in chat. No format has default priority. Decide the format before choosing production and delivery tools.",
+    markdownFirstOutputEnabled
+      ? "Honor the user's explicitly requested delivery format. Otherwise, for text-focused documents and reports, prefer Markdown as the primary deliverable so it can be opened quickly in Okou. Use HTML for visually rich or interactive deliverables; do not create DOCX or PDF copies unless requested, exported by the user, or required by a selected generation template. Decide the format before choosing production and delivery tools."
+      : "Honor the user's explicitly requested delivery format. Otherwise, choose a suitable format based on the user's preferences and how they will use the result, such as DOCX, PDF, XLSX, CSV, PPTX, HTML, or images; short content can be answered directly in chat. No format has default priority. Decide the format before choosing production and delivery tools.",
+    ...(markdownFirstOutputEnabled
+      ? [
+          "For Markdown deliverables, use portable Markdown with a clear heading hierarchy, concise lists, and simple tables. Avoid raw HTML unless the content requires a rich visual layout. Keep Markdown as the source of truth and let the user export DOCX or PDF from the artifact actions when they need those formats.",
+        ]
+      : []),
     `Prefer the workspace directory (\`${CANONICAL_WORKING_DIR}\`) for file operations and project work.`,
     "A `[Web file]` block from any integration refers to a file stored by Okou. Use `okou web download-file -h` to download it with its `[ID]`.",
     "Local dev servers are useful for agent-side verification, but they are not by themselves a user-facing deliverable.",
@@ -59,10 +68,9 @@ export interface AgentToolsPromptInputs {
   readonly larkOfficialEnabled: boolean;
   readonly wechatEnabled: boolean;
   readonly presentationConvertEnabled: boolean;
+  readonly markdownFirstOutputEnabled: boolean;
   readonly cloudBrowserEnabled: boolean;
   readonly batchConnectorPermissionsEnabled: boolean;
-  readonly chatConnectorAccountsEnabled: boolean;
-  readonly artifactGenerationTimingEnabled: boolean;
   readonly artifactThreePointTimingEnabled: boolean;
 }
 
@@ -75,19 +83,11 @@ export function buildAgentToolsPromptInputs(args: {
   const context = args.featureSwitchContext;
   return {
     singleAgent: args.singleAgent,
-    artifactGenerationTimingEnabled: isFeatureEnabled(
-      FeatureSwitchKey.ArtifactGenerationTiming,
-      context,
-    ),
     artifactThreePointTimingEnabled: isFeatureEnabled(
       FeatureSwitchKey.ArtifactThreePointTiming,
       context,
     ),
     disabledPaidTools: args.disabledPaidTools,
-    chatConnectorAccountsEnabled: isFeatureEnabled(
-      FeatureSwitchKey.ConnectorChatAccountAccess,
-      context,
-    ),
     wechatEnabled: isFeatureEnabled(
       FeatureSwitchKey.WechatIntegration,
       context,
@@ -102,6 +102,10 @@ export function buildAgentToolsPromptInputs(args: {
     ),
     presentationConvertEnabled: isFeatureEnabled(
       FeatureSwitchKey.PresentationConvert,
+      context,
+    ),
+    markdownFirstOutputEnabled: isFeatureEnabled(
+      FeatureSwitchKey.MarkdownFirstOutput,
       context,
     ),
     cloudBrowserEnabled: args.cloudBrowserEnabled,
@@ -170,11 +174,9 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
     "- VNC chat access: in Web Chat, use `okou vnc request-access <connection-id> --reason <purpose>` for a configured VNC host missing from authorized inventory. This covers every saved VNC security profile and Direct, SSH, Cloudflare Access, and Tailscale routes. First inspect the configured VNC transport and any SSH-backed KDC: if a required SSH host is not authorized, request its access with `okou ssh request-access` and end the Run; after approval, recheck all dependencies before requesting VNC access. Never grant SSH implicitly or treat its approval as VNC access. Share the exact VNC review URL and end the Run; owner approval continues automatically. Use `--require-permission` for accompanying diagnosed connector approvals, with continuation only on the host request.",
     "- Remote SSH failures: after a connection failure or unexpected disconnect, prefer the actual failed operation's Attempt ID: `okou ssh diagnose <connection-id> --attempt-id <attempt-id> --json`, adding `--session-id <id>` when known. Use IDs from that failed operation. Without an Attempt ID, a connection/session-only query returns the latest matching retained failure; verify its operation, connection, session, and time before attributing it. If the exact attempt is not retained, report its evidence as unavailable; do not substitute another failure. This is passive history within this Run, not a current-connectivity check; unavailable evidence does not establish a cause. Never automatically replay an uncertain command or check.",
     "- Current Run usage: use `okou run usage --json` to inspect observed provider-token usage for the currently assigned Run.",
-    ...(args.artifactGenerationTimingEnabled
+    ...(args.artifactThreePointTimingEnabled
       ? [
-          args.artifactThreePointTimingEnabled
-            ? "- Artifact phase timing: only for artifact creation tasks, the only AI phase marks are research-start and generation-start: the coordinating agent calls `okou run mark research-start` once immediately before the first task-specific source search, reading, or analysis, and calls `okou run mark generation-start --kind <kind>` once immediately before the first actual creation of the primary deliverable, including writing a document or submitting a generation request; planning, help, and template discovery are not generation. `--kind` is required: image, presentation, document, spreadsheet, website, report, video, audio, mixed, or other. Use mixed for multiple primary types and other only deliberately, never as a fallback. Add `--skip-research` only if no research occurred; never use it to repair a missing or failed mark. Combine each mark with the next work action in the same tool invocation when possible, isolating its exit status so work continues. Research after generation starts belongs to generation: do not mark again. The authenticated successful Agent completion callback automatically supplies the third mark, `completion-callback`; never call an end marker. These marks measure stages, not artifact or output success; acceptance does not confirm telemetry delivery. Never retry telemetry, wait for telemetry confirmation, or interrupt the user's work for it."
-            : "- Artifact phase timing: only for artifact creation tasks, the coordinating agent calls `okou run mark research-start` once immediately before the first task-specific source search, reading, or analysis. Call `okou run mark generation-start --kind <kind>` once immediately before the first actual creation of the primary deliverable, including writing a document or submitting a generation request; planning, help, and template discovery are not generation. `--kind` is required: image, presentation, document, spreadsheet, website, report, video, audio, mixed, or other. Use mixed for multiple primary types and other only deliberately, never as a fallback. Add `--skip-research` only if no research occurred; never use it to repair a missing or failed mark. Combine each mark with the next work action in the same tool invocation when possible, isolating its exit status so work continues. Research after generation starts belongs to generation: do not mark again. Run completion supplies the end time; do not call an end marker. Never retry telemetry, wait for telemetry confirmation, or interrupt the user's work for it.",
+          "- Artifact phase timing: only for artifact creation tasks, the only AI phase marks are research-start and generation-start: the coordinating agent calls `okou run mark research-start` once immediately before the first task-specific source search, reading, or analysis, and calls `okou run mark generation-start --kind <kind>` once immediately before the first actual creation of the primary deliverable, including writing a document or submitting a generation request; planning, help, and template discovery are not generation. `--kind` is required: image, presentation, document, spreadsheet, website, report, video, audio, mixed, or other. Use mixed for multiple primary types and other only deliberately, never as a fallback. Add `--skip-research` only if no research occurred; never use it to repair a missing or failed mark. Combine each mark with the next work action in the same tool invocation when possible, isolating its exit status so work continues. Research after generation starts belongs to generation: do not mark again. The authenticated successful Agent completion callback automatically supplies the third mark, `completion-callback`; never call an end marker. These marks measure stages, not artifact or output success; acceptance does not confirm telemetry delivery. Never retry telemetry, wait for telemetry confirmation, or interrupt the user's work for it.",
         ]
       : []),
     "- VNC: use `okou vnc host list --json` to find owner-authorized hosts, then `okou vnc session start` with an explicit shared/exclusive mode. Read `okou vnc --help` and the relevant subcommand's `--help` before use. Use fresh `okou vnc screenshot` geometry for coordinate input, never replay uncertain input automatically, and close sessions with `okou vnc session close`.",
@@ -233,7 +235,7 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
           "- Lark messages: when the task explicitly asks to send or post to Lark, use `okou lark message send --help` for chats, DMs, and replies.",
         ]
       : []),
-    ...buildIntegrationToolsPrompt(),
+    ...buildIntegrationToolsPrompt(args.markdownFirstOutputEnabled),
     "- Presentation page images: use `okou presentation screenshot --input <deck.ppt|deck.pptx|deck.pdf|page.html|layouts-dir|url> --out <dir>` to render any presentation source to ordered `page-001.png` files at one fixed page size. PPT, PPTX, and PDF are rasterised through LibreOffice and Poppler; HTML pages, layout directories, and URLs are captured through a browser, one image per slide. It only writes local image files: it uploads nothing, publishes nothing, and is unrelated to `okou presentation-template publish`, so it is the right tool whenever page images are the goal, including review and analysis. Prefer it over `pdftoppm`, `soffice`, or hand-driven `agent-browser` screenshot calls, because a screenshot of a page the browser never painted looks like a successful screenshot. Run `okou presentation screenshot --help` for the current interface.",
     "- Static web artifacts can be published with `okou host <dir> --site <slug> [--spa]`; for HTML presentations, include `--artifact-kind presentation-html`; run `okou host --help` for details.",
     PRESENTATION_DELIVERY_INSTRUCTION,
@@ -244,10 +246,8 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
       : []),
     "- Third-party services (GitHub, Slack, Notion, 4,000+ more) can be accessed through connectors. `okou connector search <service-name>` searches every supported service and reports which matching connectors are available to the current run. For supported services, connectors provide a smoother and safer experience: provider credentials stay outside the sandbox and are resolved at the network boundary. When a user wants to connect a third-party service, search for it first. List connected: `okou connector list`. Inspect: `okou connector status <slug>`.",
     "- Connector accounts: inspect the current account with `okou connector status <slug> --json` and list alternatives with `okou connector account list <slug> --json`. Use only an exact `connectionId` returned by these commands; never invent an ID or reuse one from another connector.",
-    `- Disconnect a saved connector account with \`okou connector account disconnect <selector> --connection-id <uuid>\` using an exact ID discovered for that connector. It applies directly without an approval step and removes the user's saved account ${args.singleAgent ? "throughout this workspace" : "across all Agents"}. Read \`okou connector account disconnect --help\` for reconnection risks. Use \`okou connector account impact\` to inspect affected references first. ${args.chatConnectorAccountsEnabled ? "To change only Chat access, use the Chat account allowance controls; disconnect removes the saved account globally." : args.singleAgent ? "To remove only your Okou access while keeping the account connected, use `okou connector unauthorize <selector>` instead." : "To remove only this Agent's access while keeping the account connected, use `okou connector unauthorize <selector>` instead."}`,
-    args.chatConnectorAccountsEnabled
-      ? `- Connector account access follows this Chat. Inventory includes enabled and isCurrent. Switch an enabled account directly in this Run with \`okou connector account switch <slug> --connection-id <uuid>\`; a successful switch also saves this Chat's current account for subsequent Runs. For a disabled account, request exact owner approval with \`okou connector account switch-request <slug> --connection-id <uuid> --callback-prompt <prompt>\`. Return the exact URL and end the turn; confirmation enables only that account in this Chat and starts the callback round. Firewall permissions are shared across this member's ${args.singleAgent ? "Chats and accounts in this workspace" : "Chats, Agents and accounts"}; switching does not reset them. Listener accounts do not grant execution access.`
-      : "- Request one account switch in the current web chat with `okou connector account switch-request <slug> --connection-id <uuid> --callback-prompt <prompt>`. This changes only the current thread's override for future runs, not the current run or global default. Keep the callback prompt concise and do not include secrets because it is included in the URL. Share the returned link and end the turn; Okou starts the callback round only after the user confirms and the selection succeeds.",
+    `- Disconnect a saved connector account with \`okou connector account disconnect <selector> --connection-id <uuid>\` using an exact ID discovered for that connector. It applies directly without an approval step and removes the user's saved account ${args.singleAgent ? "throughout this workspace" : "across all Agents"}. Read \`okou connector account disconnect --help\` for reconnection risks. Use \`okou connector account impact\` to inspect affected references first. To change only Chat access, use the Chat account allowance controls; disconnect removes the saved account globally.`,
+    `- Connector account access follows this Chat. Inventory includes enabled and isCurrent. Switch an enabled account directly in this Run with \`okou connector account switch <slug> --connection-id <uuid>\`; a successful switch also saves this Chat's current account for subsequent Runs. For a disabled account, request exact owner approval with \`okou connector account switch-request <slug> --connection-id <uuid> --callback-prompt <prompt>\`. Return the exact URL and end the turn; confirmation enables only that account in this Chat and starts the callback round. Firewall permissions are shared across this member's ${args.singleAgent ? "Chats and accounts in this workspace" : "Chats, Agents and accounts"}; switching does not reset them. Listener accounts do not grant execution access.`,
     "- Custom connectors: when the user wants to add their own custom connector, run `okou connector custom -h` first and follow its guidance.",
     "- Model availability and provider routing are workspace model settings, separate from connectors. Use `okou model ls` to list allowed models and `okou model switch` for model-switching guidance.",
     "- Personal subscriptions: use `okou subscription list --json` and `okou subscription show <id> --json` to inspect connected Claude Code / Codex accounts, usage windows, natural reset times, and remaining reset credits. `okou subscription switch <id>` changes only the default account for that provider for subsequent unpinned runs; current runs keep their captured account. Use `okou subscription reset-link <id>` to produce a Codex Reset Card link, return the exact URL, and let the user click Reset. Generating or opening the link does not reset usage.",

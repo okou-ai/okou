@@ -7,7 +7,7 @@ import type {
   PublicConnectorCatalogStatusItem,
   PublicConnectorCatalogPermissionDetail,
 } from "@okouai/api-contracts/contracts/connector-catalog";
-import type { UserPermissionGrantResponse } from "@okouai/api-contracts/contracts/user-permission-grants";
+import type { ConnectorPermissions } from "@okouai/api-contracts/contracts/connector-permissions";
 
 export type PlatformConnectorConnectionStatus =
   "not-connected" | "connected" | "scope-mismatch" | "reconnect-required";
@@ -31,13 +31,8 @@ export type PlatformConnectorCatalogConnectItem =
   PublicConnectorCatalogConnectItem & BuiltinConnectorAccountView;
 export type PlatformConnectorPermissionMetadata =
   PublicConnectorCatalogPermissionDetail;
-export type PlatformUserPermissionGrant = Pick<
-  UserPermissionGrantResponse,
-  "connectorSlug" | "permission" | "action" | "expiresAt"
-> &
-  Partial<
-    Pick<UserPermissionGrantResponse, "agentId" | "createdAt" | "updatedAt">
-  >;
+export type PlatformUserPermissionGrant =
+  ConnectorPermissions["grants"][number] & { readonly connectorSlug: string };
 export type PlatformConnectorAccountMutationIntent = Extract<
   ConnectorAccountMutationIntent,
   { readonly intent: "add" | "reconnect" }

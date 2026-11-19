@@ -3,7 +3,6 @@ import type {
   GenerationTemplateRequest,
   ImageAnnotation,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { formatUserPresentationTemplateId } from "@okouai/core/presentation-template-selection";
 import type {
   ChatAttachment,
@@ -15,11 +14,9 @@ import type { ComposerTemplateAttachment } from "./tiptap-workflow-composer.ts";
 import type { ComposerUiSignalGroups } from "./chat-composer.ts";
 import type { ComposerConnectorSignals } from "./connectors.ts";
 import { loadCustomTemplateCatalog$ } from "./custom-template-library.ts";
-import { invalidateAgentConnectorAccess$ } from "./composer-agent-connectors.ts";
+
 import { registerComposerConnectHost$ } from "./composer-connect-hosts.ts";
 import { withCleanup } from "../utils.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitches$ } from "../external/feature-switch.ts";
 
 export function createComposerTemplateSelection(
   taskChips: ComposerTaskChipsSignals,
@@ -142,49 +139,11 @@ export function createComposerDraftActions(
 
 export function createComposerConnectorCompletion(
   connector: ComposerConnectorSignals,
-  agentId: string,
 ) {
-  const completeConnectorAddition$ = command(
-    async (
-      { get, set },
-      connectorSlug: ConnectorSlug,
-      alreadyAuthorized: boolean,
-      signal: AbortSignal,
-    ): Promise<boolean> => {
-      signal.throwIfAborted();
-      const chatAccounts = (await get(featureSwitches$))[
-        FeatureSwitchKey.ConnectorChatAccountAccess
-      ];
-      if (!chatAccounts && !alreadyAuthorized) {
-        await set(
-          connector.setConnectorAuthorization$,
-          { kind: "builtin", connectorSlug },
-          true,
-          signal,
-        );
-      }
-      signal.throwIfAborted();
-      set(connector.resources.reloadConnected$);
-      if (chatAccounts) {
-        set(connector.chatAccess.reload$);
-      }
-      return !chatAccounts && !alreadyAuthorized;
-    },
-  );
-  const completeCustomConnectorAddition$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const enabled = (await get(featureSwitches$))[
-        FeatureSwitchKey.ConnectorChatAccountAccess
-      ];
-      signal.throwIfAborted();
-      set(connector.resources.reloadConnected$);
-      if (enabled) {
-        set(connector.chatAccess.reload$);
-      } else {
-        set(invalidateAgentConnectorAccess$, agentId);
-      }
-    },
-  );
+  const refreshConnectors$ = command(({ set }) => {
+    set(connector.resources.reloadConnected$);
+    set(connector.chatAccess.reload$);
+  });
   // A connection started from this composer finds it again by this key.
   const connectHostKey = crypto.randomUUID();
   const registerConnectHost$ = command(({ set }, signal: AbortSignal) => {
@@ -192,17 +151,14 @@ export function createComposerConnectorCompletion(
       registerComposerConnectHost$,
       connectHostKey,
       {
-        agentId,
         connector,
-        completeConnectorAddition$,
-        completeCustomConnectorAddition$,
+        refreshConnectors$,
       },
       signal,
     );
   });
   return {
-    completeConnectorAddition$,
-    completeCustomConnectorAddition$,
+    refreshConnectors$,
     connectHostKey,
     registerConnectHost$,
   };

@@ -1,7 +1,14 @@
-//! Retry history lasts only through the original delivery window.
+//! Dispatch intake preserves admission capacity and retry ownership.
 
 use super::*;
+use crate::home_image_cache::HomeImageCache;
+use runner_host::paths::RunnerPaths;
+use runner_lifecycle::{
+    active_runs::ActiveRuns, home_image_cache::snapshot::HomeCacheStateSnapshot,
+    idle_pool::IdlePool, lifecycle::RunnerMode,
+};
 use serde_json::json;
+use tokio::sync::{Mutex as AsyncMutex, Notify, oneshot};
 use tokio::task::JoinHandle;
 
 fn body(identity: RunnerProcessIdentity, run_id: RunId, not_after: u64) -> String {
@@ -26,6 +33,147 @@ fn submit(
             .submit(identity, run_id, bytes.as_bytes(), permit, now)
             .await
     })
+}
+
+fn preferred_probe(cache: HomeImageCache, mode: watch::Receiver<RunnerMode>) -> PreferredHomeProbe {
+    PreferredHomeProbe::new(
+        cache,
+        HomeCacheStateSnapshot::new(),
+        [("vm0/default".to_owned(), 1)].into(),
+        ActiveRuns::new(Arc::new(Notify::new())),
+        Arc::new(AsyncMutex::new(IdlePool::new(Default::default()))),
+        None,
+        mode,
+    )
+}
+
+fn preferred_body(identity: RunnerProcessIdentity, run_id: RunId, source: RunId) -> String {
+    let mut preferred: serde_json::Value =
+        serde_json::from_str(&body(identity, run_id, 2_000)).unwrap();
+    preferred["executionContext"]["reuseKey"] = json!("thread:preferred-admission");
+    preferred["preferredHomeCheckout"] = json!({
+        "predecessorRunId": source,
+        "waitUntil": 1_500,
+    });
+    preferred.to_string()
+}
+
+#[test]
+fn ordinary_dispatch_can_take_the_only_admission_slot_during_a_home_probe() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .start_paused(true)
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let root = tempfile::tempdir().unwrap();
+        let cache = HomeImageCache::new(RunnerPaths::new(root.path().to_path_buf()));
+        let (_mode, mode) = watch::channel(RunnerMode::Running);
+        let probe = preferred_probe(cache, mode);
+        let (intake, mut receiver) = DispatchIntake::new(Arc::new(Semaphore::new(1)));
+        let intake = intake.with_preferred_home_probe(Some(probe));
+
+        // Occupy the single blocking worker so the real probe stays pending.
+        let (started, waiting) = oneshot::channel();
+        let (release, released) = oneshot::channel();
+        let worker = tokio::task::spawn_blocking(move || {
+            started.send(()).unwrap();
+            let _ = released.blocking_recv();
+        });
+        waiting.await.unwrap();
+
+        let identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 1).unwrap();
+        let preferred_id = RunId::new_v4();
+        let preferred = preferred_body(identity, preferred_id, RunId::new_v4());
+        let mut pending = Box::pin(intake.submit(
+            identity,
+            preferred_id,
+            preferred.as_bytes(),
+            intake.try_reserve().unwrap(),
+            1_000,
+        ));
+        assert!(futures_util::poll!(pending.as_mut()).is_pending());
+        assert!(receiver.try_recv().is_err(), "probing must precede custody");
+
+        let ordinary_id = RunId::new_v4();
+        let ordinary = body(identity, ordinary_id, 2_000);
+        let ordinary_permit = intake.try_reserve().expect("probe released the slot");
+        let ordinary = intake.submit(
+            identity,
+            ordinary_id,
+            ordinary.as_bytes(),
+            ordinary_permit,
+            1_000,
+        );
+        tokio::pin!(ordinary);
+        assert!(futures_util::poll!(ordinary.as_mut()).is_pending());
+        let work = receiver
+            .try_recv()
+            .expect("ordinary work entered admission");
+        assert_eq!(work.context.as_ref().unwrap().run_id, ordinary_id);
+        work.settle(Disposition::Accepted);
+        drop(work);
+        assert_eq!(ordinary.await, Disposition::Accepted);
+
+        release.send(()).unwrap();
+        worker.await.unwrap();
+        let work = tokio::select! {
+            work = receiver.recv() => work.expect("preferred work entered admission"),
+            result = &mut pending => panic!("preferred dispatch finished before admission: {result:?}"),
+        };
+        assert_eq!(work.context.as_ref().unwrap().run_id, preferred_id);
+        work.settle(Disposition::Accepted);
+        assert_eq!(pending.await, Disposition::Accepted);
+    });
+}
+
+#[tokio::test]
+async fn same_bytes_are_admitted_at_preference_expiry_while_home_is_still_locked() {
+    use crate::home_image_cache::{HomeImageLeaseIdentity, HomeImageLeaseRequest};
+    use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
+
+    let root = tempfile::tempdir().unwrap();
+    let cache = HomeImageCache::new(RunnerPaths::new(root.path().to_path_buf()));
+    let source = RunId::new_v4();
+    let lease = cache
+        .lease_active(HomeImageLeaseRequest {
+            identity: HomeImageLeaseIdentity {
+                run_id: source,
+                sandbox_id: sandbox::SandboxId::new_v4(),
+                profile_name: "vm0/default",
+                rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                reuse_key: Some("thread:preferred-admission"),
+                working_dir: CANONICAL_WORKING_DIR,
+                image_size_bytes: 1024 * 1024,
+            },
+            home_drive_available: true,
+        })
+        .await;
+    let (_mode, mode) = watch::channel(RunnerMode::Running);
+    let (intake, mut receiver) = DispatchIntake::new(Arc::new(Semaphore::new(1)));
+    let intake = Arc::new(intake.with_preferred_home_probe(Some(preferred_probe(cache, mode))));
+    let identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 1).unwrap();
+    let run_id = RunId::new_v4();
+    let body = preferred_body(identity, run_id, source);
+
+    let mut first = submit(&intake, identity, run_id, body.clone(), 1_000);
+    tokio::select! {
+        result = &mut first => assert_eq!(result.unwrap(), Disposition::Busy),
+        _ = receiver.recv() => panic!("contended offer took custody before expiry"),
+    }
+
+    // Advance only the request clock. The original Home lock stays held.
+    let mut retry = submit(&intake, identity, run_id, body, 1_500);
+    let work = tokio::select! {
+        work = receiver.recv() => work.expect("same-byte retry entered admission"),
+        result = &mut retry => panic!("same-byte retry finished before admission: {result:?}"),
+    };
+    assert_eq!(work.context.as_ref().unwrap().run_id, run_id);
+    assert_eq!(work.preferred_home_source, Some(source));
+    work.settle(Disposition::Accepted);
+    assert_eq!(retry.await.unwrap(), Disposition::Accepted);
+    drop(lease);
 }
 
 #[tokio::test]

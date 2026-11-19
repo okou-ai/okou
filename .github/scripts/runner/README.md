@@ -159,7 +159,9 @@ at or below the cutoff is rejected.
 Warm/build run once in transient services. Identity covers the exact source,
 binary inputs/bytes, target, profile, host, adapter source and workflow run/attempt.
 Launch intent precedes submission; intent without a result or live unit fails
-unknown only after the launch gate is free and that absence is rechecked. A
+unknown only after the launch gate is free and that absence is rechecked.
+If execution service submission times out, the caller observes the original
+operation within its existing deadline. A
 reconnection waits for an in-flight submission without blocking on the worker's
 mutation gate or submitting the command again, including when intent appears
 after the reconnection has started waiting for that gate. Only 124/141/255 can
@@ -212,9 +214,18 @@ allows one retry on SSH exit 255 within its original 180-second deadline.
 An incomplete host inventory fails even in dry-run mode.
 
 The controller starts one ephemeral worker per host for small sorted batches.
-Each worker holds the established namespace flock files itself; all configured
-hosts must report readiness before fresh GitHub authorization. PR state and stabilized owner discovery are fresh under
-those locks. Exact owner association protects older CI generations; unresolved
+An SSH exit 255 before a complete readiness frame permits one reacquisition on
+that host within the original 70-second deadline. Each worker holds the namespace
+flock itself. All configured hosts must report readiness before fresh GitHub
+authorization. Before dispatching cleanup, the controller checks each session's
+process and output pipe so a closed channel cannot appear active during diagnostics.
+If a previously ready session exits 255 before dispatch, the controller can retire
+the batch's sessions and restart preparation once within that host's remaining
+readiness budget. The controller requests release from the other sessions before
+retiring their channels. It reacquires the full lock set in the original host
+order and refreshes GitHub authorization before sending cleanup.
+PR state and stabilized owner discovery are fresh under those locks.
+Exact owner association protects older CI generations; unresolved
 association fails closed instead of guessing from a reused branch. Proven live
 owners are reported as deferred, and reopened PRs are retained. Other batches
 continue after errors; failed/unknown cleanup and lock outcomes fail the job.
@@ -267,6 +278,12 @@ separate `vm0-ci-image-DIGEST-expire` names and remain image-owned.
 
 Stripe replacement uses the same lifecycle exclusion. Its Ansible playbooks
 remain deployment adapters; closed-PR teardown does not start Ansible per PR.
+
+Preview startup runs the selected Runner's health checks as part of
+`runner service wait-running --check-health`. The command emits numeric
+capacity on stdout after the same Runner instance passes health verification.
+Health diagnostics go to stderr. Failed verification uses the same partial
+start cleanup as other startup failures.
 
 The shared Stripe and preview Runner lock wrapper sends an explicit release
 request after the protected command succeeds. Each host closes its flock before

@@ -966,9 +966,7 @@ describe("Email integration", () => {
     "reads the forwarded message through the selected %s API without disclosing a disabled account",
     async (provider) => {
       const { actor, group } = await entitledActor();
-      await connectorsApi.updateFeatureSwitches(actor, {
-        connectorChatAccountAccess: true,
-      });
+
       const mailbox = await connectEmailMailbox(actor, provider, actor.email);
       const disabled = await connectEmailMailbox(
         actor,
@@ -1520,9 +1518,7 @@ describe("Email integration", () => {
 
   it("preserves the received message without making a mailbox request when reads are denied", async () => {
     const { actor, group } = await entitledActor();
-    await connectorsApi.updateFeatureSwitches(actor, {
-      connectorChatAccountAccess: true,
-    });
+
     await connectEmailMailbox(actor, "gmail", actor.email);
     verifiedDirectory(actor);
     await setGmailContextReadPermission("deny");
@@ -1562,9 +1558,7 @@ describe("Email integration", () => {
     };
     githubSource("2".repeat(40), acceptedSource.archive);
     expect((await sync()).body.failed).toBe(0);
-    await connectorsApi.updateFeatureSwitches(actor, {
-      connectorChatAccountAccess: true,
-    });
+
     await connectEmailMailbox(actor, "gmail", actor.email);
     verifiedDirectory(actor);
     await setGmailContextReadPermission("allow");
@@ -1629,9 +1623,6 @@ describe("Email integration", () => {
 
   it("recalls a picked email before its mailbox lookup finishes", async () => {
     const { actor } = await entitledActor();
-    await connectorsApi.updateFeatureSwitches(actor, {
-      connectorChatAccountAccess: true,
-    });
     await connectEmailMailbox(actor, "gmail", actor.email);
     verifiedDirectory(actor);
     await setGmailContextReadPermission("allow");
@@ -1702,9 +1693,7 @@ describe("Email integration", () => {
 
   it("refreshes rejected Gmail credentials before fetching and appending the exact message", async () => {
     const { actor, group } = await entitledActor();
-    await connectorsApi.updateFeatureSwitches(actor, {
-      connectorChatAccountAccess: true,
-    });
+
     await connectEmailMailbox(actor, "gmail", actor.email);
     verifiedDirectory(actor);
     await setGmailContextReadPermission("allow");
@@ -1803,9 +1792,7 @@ describe("Email integration", () => {
 
   it("does not append a provider message with a different RFC Message-ID", async () => {
     const { actor, group } = await entitledActor();
-    await connectorsApi.updateFeatureSwitches(actor, {
-      connectorChatAccountAccess: true,
-    });
+
     await connectEmailMailbox(actor, "gmail", actor.email);
     verifiedDirectory(actor);
     await setGmailContextReadPermission("allow");

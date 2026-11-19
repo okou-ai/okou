@@ -11,7 +11,6 @@ final class ComposerConnectorStore {
   let threadID: String?
   private(set) var agentID: String?
   private(set) var connectors: [ChatComposerConnector] = []
-  private(set) var chatAccountAccess = false
   private(set) var remotes: ChatRemotesOverview?
   private(set) var threadAccess: ChatThreadRemoteAccess?
   private(set) var currentComputerAccess: ChatComputerAccess?
@@ -73,7 +72,7 @@ final class ComposerConnectorStore {
     guard let slug, let connector = connectors.first(where: { $0.target == .builtin(slug) }),
       connector.hasPermissions
     else { return false }
-    return !chatAccountAccess || connector.access?.accounts.isEmpty == false
+    return !connector.access.accounts.isEmpty
   }
 
   func configure(agentID: String?) {
@@ -96,7 +95,6 @@ final class ComposerConnectorStore {
     self.agentID = agentID
     pendingOptions = agentID.flatMap { pendingByAgent[$0] } ?? ChatComposerOptions()
     connectors = []
-    chatAccountAccess = false
     remotes = nil
     threadAccess = nil
     currentComputerAccess = nil
@@ -154,14 +152,11 @@ final class ComposerConnectorStore {
     return ComposerConnectorResources(
       service: service, agentID: agentID, threadID: threadID, options: pendingOptions,
       sleep: readRetrySleep,
-      didLoadConnected: { [weak self] value in
+      didLoadConnected: { [weak self] entries in
         guard let self, !closed, request == generation else { return }
-        if chatAccountAccess != value.chatAccountAccess { closeAccounts() }
         // Confirmed business values are also consumed by drafts and account actions.
-        connectors = value.connectors
-        chatAccountAccess = value.chatAccountAccess
-        pendingOptions.chatAccountAccess = value.chatAccountAccess
-        if chatAccountAccess, threadID == nil {
+        connectors = entries
+        if threadID == nil {
           let touched = Set(
             pendingOptions.connectorSelections.map { $0.target.key }
               + pendingOptions.initialConnectorAccessOverrides.map { $0.target.key })
@@ -211,11 +206,6 @@ final class ComposerConnectorStore {
         }
       }
     }
-  }
-
-  func setAuthorized(_ connector: ChatComposerConnector, enabled: Bool) async {
-    guard !chatAccountAccess, let agentID else { return }
-    await perform { try await service.setAuthorized(connector, agentID: agentID, enabled: enabled) }
   }
 
   func hosts(_ protocol: ChatRemoteProtocol) -> [ChatRemoteHost] {
@@ -269,38 +259,10 @@ final class ComposerConnectorStore {
       pendingOptions.computerAccess = value
     }
   }
-  func selectAccount(target: ChatConnectorTarget, connectionID: String?) async {
-    guard !closed, !isSaving else { return }
-    if let threadID {
-      if chatAccountAccess {
-        guard let connectionID else { return }
-        await perform {
-          try await service.setCurrentAccount(
-            target: target, connectionID: connectionID, threadID: threadID)
-        }
-      } else {
-        await perform {
-          try await service.selectAccount(
-            target: target, connectionID: connectionID, threadID: threadID)
-        }
-      }
-    } else {
-      pendingOptions.connectorSelections.removeAll { $0.target == target }
-      if let connectionID {
-        pendingOptions.connectorSelections.append(
-          ChatConnectorSelection(target: target, connectionId: connectionID))
-      }
-      if chatAccountAccess {
-        updatePendingAccess(target: target)
-        await refresh()
-      }
-    }
-  }
-
   func setAccountAccess(
     target: ChatConnectorTarget, connectionID: String, enabled: Bool?
   ) async {
-    guard chatAccountAccess, !closed, !isSaving else { return }
+    guard !closed, !isSaving else { return }
     if let threadID {
       await perform {
         try await service.setConnectorAccess(
@@ -309,7 +271,7 @@ final class ComposerConnectorStore {
       return
     }
     if !pendingOptions.connectorSelections.contains(where: { $0.target == target }),
-      let current = connectors.first(where: { $0.target == target })?.access?.currentConnectionId
+      let current = connectors.first(where: { $0.target == target })?.access.currentConnectionId
     {
       pendingOptions.connectorSelections.append(
         ChatConnectorSelection(target: target, connectionId: current))
@@ -326,10 +288,8 @@ final class ComposerConnectorStore {
   }
 
   private func updatePendingAccess(target: ChatConnectorTarget) {
-    guard let index = connectors.firstIndex(where: { $0.target == target }),
-      let previous = connectors[index].access
-    else { return }
-    let next = previous.pending(
+    guard let index = connectors.firstIndex(where: { $0.target == target }) else { return }
+    let next = connectors[index].access.pending(
       overrides: pendingOptions.initialConnectorAccessOverrides,
       selections: pendingOptions.connectorSelections)
     pendingOptions.connectorSelections.removeAll { $0.target == target }
@@ -402,8 +362,7 @@ final class ComposerConnectorStore {
     let task = Task { @MainActor [self] in
       defer { if request == generation { permissionWrite = nil } }
       await perform {
-        try await service.savePermissions(
-          slug: owner.slug, agentID: owner.agentID, edits: edits, reset: reset)
+        try await service.savePermissions(slug: owner.slug, edits: edits, reset: reset)
       }
       guard !closed, !Task.isCancelled, request == generation else { return }
       if let presented = permissions,
@@ -440,7 +399,7 @@ final class ComposerConnectorStore {
     owner: ComposerConnectorAccountResources, action: ComposerConnectorAccountResources.Action
   ) async {
     guard !closed, !owner.isClosed, accountPages.contains(where: { $0 === owner }),
-      owner.agentID == agentID, owner.chatAccountAccess == chatAccountAccess,
+      owner.agentID == agentID,
       connectors.contains(where: { $0.target == owner.connector.target }),
       accountWrite == nil, !isSaving, !uncertain
     else { return }
@@ -448,11 +407,8 @@ final class ComposerConnectorStore {
     let target = owner.connector.target
     let task = Task { @MainActor [self] in
       defer { if request == generation { accountWrite = nil } }
-      guard !closed, !Task.isCancelled, request == generation,
-        owner.chatAccountAccess == chatAccountAccess
-      else { return }
+      guard !closed, !Task.isCancelled, request == generation else { return }
       switch action {
-      case .select(let id): await selectAccount(target: target, connectionID: id)
       case .access(let id, let enabled):
         await setAccountAccess(target: target, connectionID: id, enabled: enabled)
       case .defaultAccount(let id):

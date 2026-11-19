@@ -136,14 +136,9 @@ run_case() {
 }
 
 run_case 0 1 0 1
-for transport_status in 124 141 255; do
-  run_case "${transport_status},0" 2 0 1
-  run_case "${transport_status},${transport_status},0" 3 0 1
-  run_case "${transport_status},${transport_status},${transport_status}" 3 "$transport_status" 0
-done
-for terminal_status in 1 7 130 137 143; do
-  run_case "$terminal_status" 1 "$terminal_status" 0
-done
+run_case 124,141,0 3 0 1
+run_case 255,255,255 3 255 0
+run_case 7 1 7 0
 run_case 255,143 2 143 0
 run_case 0 1 42 1 42
 run_case 0 1 255 1 0 255

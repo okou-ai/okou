@@ -57,7 +57,7 @@ function session(actor: ApiTestUser) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
 }
 
-async function owner(enabled = true) {
+async function owner() {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
@@ -65,11 +65,6 @@ async function owner(enabled = true) {
   const runnerGroup = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
-  if (enabled) {
-    await connectors.updateFeatureSwitches(actor, {
-      connectorChatAccountAccess: true,
-    });
-  }
   const { agentId } = await bdd.createAgent(actor, { visibility: "private" });
   const thread = await chat.createThread(actor, { agentId });
   return { actor, agentId, threadId: thread.id, runnerGroup };
@@ -201,23 +196,6 @@ describe("Chat connector execution", () => {
     expect(resolved.body).toMatchObject({
       headers: { Authorization: "Bearer selected-native-key" },
     });
-  });
-
-  it("retains Agent-gated startup and hides the new approval and switch APIs when disabled", async () => {
-    const value = await owner(false);
-    const account = await addAccount(value.actor, "A");
-    const run = await start(value);
-    expect(run.execution.connectorRuntimeTargets ?? []).toStrictEqual([]);
-    await accept(client().list({ headers: run.headers }), [403]);
-    session(value.actor);
-    await accept(
-      client().approve({
-        headers: sessionHeaders,
-        params: { threadId: value.threadId },
-        body: { target: builtin, connectionId: account.id },
-      }),
-      [404],
-    );
   });
 
   it("starts without Agent grants, switches HTTP identity and persists the Chat current account for the next Run", async () => {
@@ -455,9 +433,6 @@ describe("Chat connector execution", () => {
       [403],
     );
     const foreign = bdd.user();
-    await connectors.updateFeatureSwitches(foreign, {
-      connectorChatAccountAccess: true,
-    });
     const foreignAccount = await addAccount(foreign, "foreign");
     await accept(
       client().select({

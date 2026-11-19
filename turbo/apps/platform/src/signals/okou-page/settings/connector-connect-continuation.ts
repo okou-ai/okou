@@ -1,9 +1,6 @@
-import { detach, Reason } from "../../utils.ts";
 import { command, type Command, type Computed } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { toast } from "@okouai/ui/components/ui/sonner";
-import { i18n } from "../../../i18n/index.ts";
-import { agents$ } from "../../agent.ts";
+
 import { captureSourceOnboardingConnected$ } from "../../bootstrap/source-onboarding-telemetry.ts";
 import {
   routeChatActionCallback$,
@@ -22,10 +19,6 @@ import {
   completeExactReconnectChatAction$,
   refreshCustomConnectorChatAccount$,
 } from "../../chat-page/connector-action-block.ts";
-import {
-  completeDirectedConnectorAuthorization$,
-  setDirectedAuthorizeConnectModalKey$,
-} from "../../connectors-page/directed-authorize-slug.ts";
 import { completeDirectedConnectorAction$ } from "../../connectors-page/directed-connector-callback.ts";
 import {
   reloadDirectedConnectAccounts$,
@@ -42,7 +35,6 @@ import {
   composerConnectHosts$,
   type ComposerConnectHost,
 } from "../composer-connect-hosts.ts";
-import type { ComposerConnectorData } from "../connectors.ts";
 import {
   closeBuiltinAccountConnectDialog$,
   closeCustomAccountConnectDialog$,
@@ -88,7 +80,6 @@ export type ConnectorConnectOrigin =
   /** The standalone connect route that a chat action linked to. */
   | { readonly kind: "directed-connect"; readonly agentId: string | null }
   /** The standalone authorize route that a chat action linked to. */
-  | { readonly kind: "directed-authorize"; readonly agentId: string }
   /** The composer registered under this key. */
   | { readonly kind: "composer"; readonly hostKey: string }
   /** Syncing this artifact to Google Drive, which needed a connection. */
@@ -154,11 +145,6 @@ type ConnectorConnectPlan =
       readonly agentId: string | null;
       readonly callback: ChatActionCallback;
     }
-  | {
-      readonly kind: "directed-authorize";
-      readonly agentId: string;
-      readonly callback: ChatActionCallback;
-    }
   | ({ readonly kind: "artifact-drive-sync" } & ArtifactDriveSyncTarget)
   | ({
       readonly kind: "artifact-drive-reconnect";
@@ -167,10 +153,6 @@ type ConnectorConnectPlan =
       readonly kind: "composer";
       readonly host: ComposerConnectHost;
       readonly connector: ConnectedConnector;
-      /** The composer's connector data before this connection changed it. */
-      readonly dataAtStart: Promise<
-        [PromiseSettledResult<ComposerConnectorData>]
-      >;
     };
 
 /**
@@ -215,13 +197,6 @@ const resolveConnectorConnectPlan$ = command(
           callback: get(routeChatActionCallback$),
         };
       }
-      case "directed-authorize": {
-        return {
-          kind: "directed-authorize",
-          agentId: origin.agentId,
-          callback: get(routeChatActionCallback$),
-        };
-      }
       case "artifact-drive-sync":
       case "artifact-drive-reconnect": {
         return origin;
@@ -235,9 +210,6 @@ const resolveConnectorConnectPlan$ = command(
           kind: "composer",
           host,
           connector,
-          // Settled at once, so a failed read cannot reject unobserved while
-          // the connection is in progress.
-          dataAtStart: Promise.allSettled([get(host.connector.data$)]),
         };
       }
     }
@@ -245,53 +217,14 @@ const resolveConnectorConnectPlan$ = command(
 );
 
 const finishComposerConnectorAddition$ = command(
-  async (
-    { get, set },
+  (
+    { set },
     plan: Extract<ConnectorConnectPlan, { kind: "composer" }>,
     signal: AbortSignal,
-  ): Promise<void> => {
-    const [dataAtStart] = await plan.dataAtStart;
+  ): void => {
     signal.throwIfAborted();
-    // An unreadable authorization reads as not yet authorized, as the composer
-    // showed before this connection.
-    const authorization =
-      dataAtStart.status === "fulfilled"
-        ? dataAtStart.value.authorization
-        : undefined;
-    const alreadyAuthorized =
-      authorization?.agentId === plan.host.agentId &&
-      authorization.enabledConnectorSlugs.includes(plan.connector.slug);
-    const newlyAuthorized = await set(
-      plan.host.completeConnectorAddition$,
-      plan.connector.slug,
-      alreadyAuthorized,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (newlyAuthorized) {
-      const agents = await get(agents$);
-      signal.throwIfAborted();
-      toast.success(
-        i18n.t(
-          ($) => {
-            return $.chat.connectors.authorized;
-          },
-          {
-            connectorName: plan.connector.label ?? plan.connector.slug,
-            agentName:
-              agents.find((agent) => {
-                return agent.agentId === plan.host.agentId;
-              })?.displayName ?? "",
-          },
-        ),
-        { id: `connector-connected-${plan.connector.slug}` },
-      );
-    }
-    await set(
-      plan.host.connector.updateConnectorUiState$,
-      { showAddDialog: false },
-      signal,
-    );
+    set(plan.host.refreshConnectors$);
+    set(plan.host.connector.updateConnectorUiState$, { showAddDialog: false });
   },
 );
 
@@ -356,17 +289,8 @@ const continueConnectorConnectPlan$ = command(
         );
         return;
       }
-      case "directed-authorize": {
-        await set(
-          completeDirectedConnectorAuthorization$,
-          plan.agentId,
-          plan.callback,
-          signal,
-        );
-        return;
-      }
       case "composer": {
-        await set(finishComposerConnectorAddition$, plan, signal);
+        set(finishComposerConnectorAddition$, plan, signal);
         return;
       }
       case "artifact-drive-reconnect": {
@@ -382,7 +306,7 @@ const continueConnectorConnectPlan$ = command(
             connectionId,
             filename: plan.filename,
             mode: plan.mode,
-            authorize: false,
+            authorize: true,
           },
           signal,
         );
@@ -394,11 +318,7 @@ const continueConnectorConnectPlan$ = command(
 
 /** Closes the connect dialog of the origin's surface after a connection. */
 const closeConnectorConnectModal$ = command(
-  async (
-    { set },
-    plan: ConnectorConnectPlan,
-    signal: AbortSignal,
-  ): Promise<void> => {
+  ({ set }, plan: ConnectorConnectPlan, signal: AbortSignal): void => {
     set(clearBuiltinConnectorOAuthDeviceAuth$);
     set(clearBuiltinConnectorExternalCode$);
     switch (plan.kind) {
@@ -425,19 +345,11 @@ const closeConnectorConnectModal$ = command(
         set(setDirectedConnectModalKey$, null, signal);
         return;
       }
-      case "directed-authorize": {
-        set(setDirectedAuthorizeConnectModalKey$, null, signal);
-        return;
-      }
       case "composer": {
-        await set(
-          plan.host.connector.updateConnectorUiState$,
-          {
-            selectedConnectorSlug: null,
-            selectedConnector: null,
-          },
-          signal,
-        );
+        set(plan.host.connector.updateConnectorUiState$, {
+          selectedConnectorSlug: null,
+          selectedConnector: null,
+        });
         return;
       }
       case "artifact-drive-sync":
@@ -460,7 +372,7 @@ const finishConnectorConnect$ = command(
     await set(continueConnectorConnectPlan$, plan, connectionId, signal);
     signal.throwIfAborted();
     if (surface === "connect-modal") {
-      await set(closeConnectorConnectModal$, plan, signal);
+      set(closeConnectorConnectModal$, plan, signal);
     } else if (surface === "directed-manual-grant-dialog") {
       set(setManualGrantDialogKey$, null, signal);
     }
@@ -756,7 +668,7 @@ const continueCustomConnectorSucceeded$ = command(
         return;
       }
       case "composer": {
-        await set(plan.host.completeCustomConnectorAddition$, signal);
+        set(plan.host.refreshConnectors$);
         return;
       }
     }
@@ -765,11 +677,11 @@ const continueCustomConnectorSucceeded$ = command(
 
 /** Closes the connect dialog of the surface that started the connection. */
 const closeCustomConnectorConnectSurface$ = command(
-  async (
+  (
     { get, set },
     origin: CustomConnectorConnectOrigin,
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): void => {
     switch (origin.kind) {
       case "account": {
         set(closeCustomAccountConnectDialog$);
@@ -786,13 +698,9 @@ const closeCustomConnectorConnectSurface$ = command(
       case "composer": {
         const host = get(composerConnectHosts$).get(origin.hostKey);
         if (host) {
-          await set(
-            host.connector.updateConnectorUiState$,
-            {
-              selectedCustomConnectorId: null,
-            },
-            signal,
-          );
+          set(host.connector.updateConnectorUiState$, {
+            selectedCustomConnectorId: null,
+          });
         }
         return;
       }
@@ -833,10 +741,7 @@ export const submitCustomConnectorConnectionAndContinue$ = command(
           );
         },
         onClose: () => {
-          detach(
-            set(closeCustomConnectorConnectSurface$, origin, signal),
-            Reason.DomCallback,
-          );
+          set(closeCustomConnectorConnectSurface$, origin, signal);
         },
       },
       signal,
@@ -851,10 +756,7 @@ export const cancelCustomConnectorConnectionFrom$ = command(
     signal: AbortSignal,
   ): void => {
     set(cancelCustomConnectorConnection$, () => {
-      detach(
-        set(closeCustomConnectorConnectSurface$, origin, signal),
-        Reason.DomCallback,
-      );
+      set(closeCustomConnectorConnectSurface$, origin, signal);
     });
   },
 );

@@ -1,15 +1,8 @@
 import { useLoadableSet } from "ccstate-react/experimental";
-import {
-  useLastResolved,
-  useGet,
-  useLastLoadable,
-  useSet,
-} from "ccstate-react";
+import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import type { ReactNode } from "react";
 import { EllipsisVertical } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitches$ } from "../../../../signals/external/feature-switch.ts";
 
 import {
   surfaceVariants,
@@ -21,10 +14,7 @@ import {
 } from "@okouai/ui";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
-  closeCustomConnectorDialog$,
-  customConnectorAuthorizedAgentsById$,
   customConnectorDialog$,
-  openCustomConnectorAccessDialog$,
   openCustomConnectorDeleteDialog$,
   openCustomConnectorEditDialog$,
 } from "../../../../signals/okou-page/settings/custom-connectors.ts";
@@ -34,11 +24,7 @@ import { CustomConnectorIcon } from "./custom-connector-icon.tsx";
 import { CustomConnectorCreateDialog } from "./custom-connector-create-dialog.tsx";
 import { CustomConnectorConnectDialog } from "./custom-connector-connect-dialog.tsx";
 import { CustomConnectorDeleteConfirm } from "./custom-connector-delete-confirm.tsx";
-import { CustomConnectorAccessManagementDialog } from "./connector-access-management-dialog.tsx";
-import {
-  ConnectorAgentAccessButton,
-  connectorAgentAccessStatus,
-} from "./connector-agent-access-button.tsx";
+
 import { customConnectorTarget } from "./custom-connector-display.ts";
 import { connectedConnectorTargetKeys$ } from "../../../../signals/okou-page/connector-accounts.ts";
 import { ConnectorAccountManagerDialog } from "./connector-account-manager-dialog.tsx";
@@ -68,7 +54,6 @@ interface CustomConnectorRowProps {
   readonly isAdmin: boolean;
   readonly onConnect: () => void;
   readonly onEdit: () => void;
-  readonly onManageAccess: () => void;
   readonly onDelete: () => void;
   readonly hasAccounts: boolean;
   readonly inventoryStatus: ConnectorInventoryStatus;
@@ -76,51 +61,9 @@ interface CustomConnectorRowProps {
   readonly connecting: boolean;
 }
 
-function CustomConnectorAgentAccess(props: {
-  readonly connector: CustomConnectorResponse;
-  readonly allowAccessIncrease: boolean;
-  readonly onManageAccess: () => void;
-}) {
-  const enabled =
-    useLastResolved(featureSwitches$)?.[
-      FeatureSwitchKey.ConnectorChatAccountAccess
-    ];
-  return enabled ? null : <LegacyCustomConnectorAgentAccess {...props} />;
-}
-
-function LegacyCustomConnectorAgentAccess({
-  connector,
-  allowAccessIncrease,
-  onManageAccess,
-}: {
-  readonly connector: CustomConnectorResponse;
-  readonly allowAccessIncrease: boolean;
-  readonly onManageAccess: () => void;
-}) {
-  const authorizedAgentsByIdLoadable = useLastLoadable(
-    customConnectorAuthorizedAgentsById$,
-  );
-  const authorizedAgents =
-    authorizedAgentsByIdLoadable.state === "hasData"
-      ? (authorizedAgentsByIdLoadable.data.get(connector.id) ?? [])
-      : [];
-
-  return (
-    <ConnectorAgentAccessButton
-      agents={authorizedAgents}
-      status={connectorAgentAccessStatus(authorizedAgentsByIdLoadable.state)}
-      allowAccessIncrease={allowAccessIncrease}
-      connectorLabel={connector.displayName}
-      onClick={onManageAccess}
-    />
-  );
-}
-
 interface CustomConnectorCardContentProps {
   readonly connector: CustomConnectorResponse;
   readonly hasActions: boolean;
-  readonly allowAccessIncrease: boolean;
-  readonly onManageAccess: () => void;
   readonly hasAccounts: boolean;
   readonly inventoryStatus: ConnectorInventoryStatus;
 }
@@ -177,13 +120,10 @@ function CustomConnectorCardHeader({
 }
 
 function CustomConnectorCardFooter({
-  connector,
   hasActions,
-  allowAccessIncrease,
-  onManageAccess,
   hasAccounts,
   inventoryStatus,
-}: CustomConnectorCardContentProps) {
+}: Omit<CustomConnectorCardContentProps, "connector">) {
   return (
     <div
       className={`flex h-11 items-center justify-between gap-2 border-t border-border/50 pl-5 ${
@@ -194,13 +134,6 @@ function CustomConnectorCardFooter({
         connected={hasAccounts}
         status={inventoryStatus}
       />
-      <div className="relative z-20 min-w-0 max-w-full">
-        <CustomConnectorAgentAccess
-          connector={connector}
-          allowAccessIncrease={allowAccessIncrease}
-          onManageAccess={onManageAccess}
-        />
-      </div>
     </div>
   );
 }
@@ -324,7 +257,6 @@ function CustomConnectorRow({
   isAdmin,
   onConnect,
   onEdit,
-  onManageAccess,
   onDelete,
   hasAccounts,
   inventoryStatus,
@@ -340,15 +272,12 @@ function CustomConnectorRow({
     <CustomConnectorCardContent
       connector={connector}
       hasActions={hasActions}
-      allowAccessIncrease={hasAccounts}
-      onManageAccess={onManageAccess}
       hasAccounts={hasAccounts}
       inventoryStatus={inventoryStatus}
     />
   );
 
-  // Isolate the complete row so Access and the sibling More trigger (z-20)
-  // stay above the whole-card action (z-10) within the card's own context.
+  // Keep the More trigger above the whole-card action within this card.
   return (
     <div
       className="relative isolate"
@@ -378,30 +307,11 @@ function CustomConnectorRow({
 
 function CustomConnectorDialogs() {
   const dialog = useGet(customConnectorDialog$);
-  const closeDialog = useSet(closeCustomConnectorDialog$);
-  const connectedTargetsLoadable = useLastLoadable(
-    connectedConnectorTargetKeys$,
-  );
-  const hasAccessAccount =
-    dialog.kind === "access" && connectedTargetsLoadable.state === "hasData"
-      ? connectedTargetsLoadable.data.has(`custom:${dialog.connector.id}`)
-      : undefined;
-  const allowAccessIncrease =
-    dialog.kind === "access" &&
-    connectedTargetsLoadable.state === "hasData" &&
-    hasAccessAccount === true;
   return (
     <>
       {dialog.kind === "create" && <CustomConnectorCreateDialog />}
       {dialog.kind === "edit" && (
         <CustomConnectorCreateDialog connector={dialog.connector} />
-      )}
-      {dialog.kind === "access" && (
-        <CustomConnectorAccessManagementDialog
-          connector={dialog.connector}
-          allowAccessIncrease={allowAccessIncrease}
-          onClose={closeDialog}
-        />
       )}
       {dialog.kind === "delete" && (
         <CustomConnectorDeleteConfirm
@@ -433,7 +343,6 @@ export function CustomConnectorGrid({
     connectedTargetsLoadable.state,
   );
   const openEdit = useSet(openCustomConnectorEditDialog$);
-  const openAccess = useSet(openCustomConnectorAccessDialog$);
   const openDelete = useSet(openCustomConnectorDeleteDialog$);
   const [connection, connectAccountAuthorization] = useLoadableSet(
     connectCustomConnectorAuthorizationAndContinue$,
@@ -476,9 +385,6 @@ export function CustomConnectorGrid({
             }}
             onEdit={() => {
               return openEdit(connector);
-            }}
-            onManageAccess={() => {
-              return openAccess(connector);
             }}
             onDelete={() => {
               return openDelete(connector);

@@ -8,10 +8,22 @@ setup() {
     runner_e2e_use_mock_codex_profile
     runner_e2e_require_environment
     runner_e2e_setup_test
+    run install_permission_test_browser
+    assert_success
 }
 
 teardown() {
     runner_e2e_teardown_test postmark
+}
+
+install_permission_test_browser() {
+    cd "$BATS_TEST_DIRNAME/../.." || return
+    pnpm exec playwright install --only-shell chromium
+}
+
+apply_postmark_permission() {
+    cd "$BATS_TEST_DIRNAME/../.." || return
+    pnpm exec tsx playwright/runner-permission-approval.ts "$1"
 }
 
 @test "runner refreshes connector permissions during an active run" {
@@ -30,6 +42,9 @@ teardown() {
     CONNECTOR_ACCOUNT_ID=$(jq -er \
         '.connectionId | select(type == "string" and length > 0)' \
         <<<"$output")
+    run apply_postmark_permission deny
+    echo "$output"
+    assert_success
 
     # Raw DNS has dedicated runner coverage. Pin the provider's public sink so
     # this test owns only firewall permission transitions, using a synthetic token.
@@ -109,22 +124,7 @@ EOF
     echo "$output"
     assert_success
 
-    local grant_payload
-    grant_payload=$(jq -nc \
-        --arg agentId "$AGENT_ID" \
-        '{
-            agentId: $agentId,
-            connectorSlug: "postmark",
-            mode: "patch",
-            grants: [{
-                permission: "templates.manage",
-                action: "allow",
-                expiresIn: "1h"
-            }]
-        }')
-    run runner_api_curl "/api/user-permission-grants/apply" \
-        -X PUT \
-        -d "$grant_payload"
+    run apply_postmark_permission allow
     echo "$output"
     assert_success
 

@@ -8,10 +8,9 @@ import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/con
 import { isIntegrationManagedCustomConnectorProviderAdapter } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
   getAllFeatureStates,
-  isFeatureEnabled,
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -188,14 +187,7 @@ const ownerAuth = {
   missingOrganizationStatus: 401,
   accept: ["session"],
 } as const;
-const unavailable = notFound("Chat connector account access is not available");
 const missing = notFound("Chat or connector account not found");
-const featureAvailable$ = command(async ({ get, set }, signal: AbortSignal) => {
-  set(setResHeader$, "Cache-Control", "no-store");
-  const context = await get(context$);
-  signal.throwIfAborted();
-  return isFeatureEnabled(FeatureSwitchKey.ConnectorChatAccountAccess, context);
-});
 
 const overviewScope$ = computed((get) => {
   return {
@@ -218,9 +210,7 @@ const overviewTarget$ = chatConnectorOverview(
   connectedConnectorBriefs(overviewTargetScope$, context$),
 );
 const overviewHandler$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await set(featureAvailable$, signal))) {
-    return unavailable;
-  }
+  set(setResHeader$, "Cache-Control", "no-store");
   const result = await settle(get(overview$));
   signal.throwIfAborted();
   if (!result.ok) {
@@ -235,9 +225,7 @@ const overviewHandler$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 const overviewTargetHandler$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    if (!(await set(featureAvailable$, signal))) {
-      return unavailable;
-    }
+    set(setResHeader$, "Cache-Control", "no-store");
     const result = await settle(get(overviewTarget$));
     signal.throwIfAborted();
     if (!result.ok) {

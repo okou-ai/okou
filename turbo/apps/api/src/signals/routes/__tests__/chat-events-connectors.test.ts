@@ -1,3 +1,4 @@
+import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 import { randomUUID } from "node:crypto";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
@@ -334,35 +335,25 @@ describe("CHAT-02: thread connector account selection", () => {
     beforeEach(async () => {
       preparedScenario = await prepareScenario();
     });
-    it("keeps an out-of-scope thread choice and uses it again after reauthorization", async () => {
+    it("does not expose a disabled connector and resumes with it after enabling", async () => {
       const { fixture } = preparedScenario;
-      await api.enableAgentConnectors(fixture.actor, fixture.agentId, []);
+      const access = createChatConnectorAccessApi(context);
+      const selection = {
+        target: { kind: "builtin", connectorSlug: "openai" },
+        connectionId: fixture.connectionId,
+      } as const;
+      await access.setDefault(fixture.actor, selection, false);
       const run = await sendChatRun(fixture.actor, {
         agentId: fixture.agentId,
         threadId: fixture.threadId,
-        prompt: "Do not use the connector removed from the agent scope",
+        prompt: "Do not use the disabled account",
       });
       const execution = await runExecution(run.runId);
       expect(
         execution.execution.secretConnectorMetadataMap?.OPENAI_TOKEN,
       ).toBeUndefined();
       await cancelChatRun(fixture.actor, run.runId, execution.sandboxHeaders);
-      await api.enableAgentConnectors(fixture.actor, fixture.agentId, [
-        "openai",
-      ]);
-      const selections = await accept(
-        chatThreadConnectorSelectionsClient().get({
-          headers: sessionHeaders(fixture.actor),
-          params: { id: fixture.threadId },
-        }),
-        [200],
-      );
-      expect(selections.body.selections).toStrictEqual([
-        {
-          connectionId: fixture.connectionId,
-          target: { kind: "builtin", connectorSlug: "openai" },
-        },
-      ]);
+      await access.setDefault(fixture.actor, selection, true);
       const reauthorized = await sendChatRun(fixture.actor, {
         agentId: fixture.agentId,
         threadId: fixture.threadId,
@@ -456,7 +447,12 @@ describe("CHAT-02: thread connector account selection", () => {
         threadId = thread.id;
       }
 
-      await api.enableAgentConnectors(actor, agentId, []);
+      const access = createChatConnectorAccessApi(context);
+      const selection = {
+        target: { kind: "builtin", connectorSlug: "openai" },
+        connectionId: connection.id,
+      } as const;
+      await access.setDefault(actor, selection, false);
       const unauthorized = await sendChatRun(actor, {
         agentId,
         threadId,
@@ -477,7 +473,7 @@ describe("CHAT-02: thread connector account selection", () => {
         return;
       }
 
-      await api.enableAgentConnectors(actor, agentId, ["openai"]);
+      await access.setDefault(actor, selection, true);
       const reauthorized = await sendChatRun(actor, {
         agentId,
         threadId,
@@ -677,15 +673,9 @@ describe("CHAT-02: thread connector account selection", () => {
     await cleanup();
   });
 
-  it("uses the default custom account when a preferred account cannot render the updated host template", async () => {
+  it("omits a custom connector whose current account cannot render the updated host template", async () => {
     const fixture = await publicChatActor(context);
     const { actor, agentId, run: own } = fixture;
-    fixture.ownsFeatureSwitches();
-    await own(() => {
-      return connectors.updateFeatureSwitches(actor, {
-        connectorChatAccountAccess: false,
-      });
-    });
     const body = {
       ...manualHttpCustomConnectorCreateBody({
         slug: `_host-fallback-${randomUUID()}`,
@@ -700,7 +690,7 @@ describe("CHAT-02: thread connector account selection", () => {
     const custom = await own(() => {
       return connectors.createCustomConnector(actor, body);
     });
-    const fallback = await own(() => {
+    await own(() => {
       return connectors.setCustomConnectorValues(actor, custom.id, [
         { key: "secret", kind: "secret", value: "fallback-account-secret" },
         { key: "tenant", kind: "variable", value: "healthy" },
@@ -758,25 +748,9 @@ describe("CHAT-02: thread connector account selection", () => {
       prompt: "Use the available custom account after the host template update",
     });
     const { execution } = await fixture.runExecution(run.runId);
-    expect(execution.connectorRuntimeTargets).toContainEqual({
-      kind: "custom",
-      customConnectorId: custom.id,
-      sourceId: fallback.connectionId,
-      baseUrlVars: { tenant: "healthy" },
-    });
-    expect(execution.firewalls).toContainEqual(
-      expect.objectContaining({
-        kind: "inline",
-        customConnectorId: custom.id,
-        sourceId: fallback.connectionId,
-        firewall: expect.objectContaining({
-          apis: [
-            expect.objectContaining({
-              base: "https://healthy.fallback.example.test/",
-            }),
-          ],
-        }),
-      }),
+    expect(execution.connectorRuntimeTargets).toStrictEqual([]);
+    expect(execution.firewalls).not.toContainEqual(
+      expect.objectContaining({ kind: "inline", customConnectorId: custom.id }),
     );
   });
 

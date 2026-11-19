@@ -46,7 +46,6 @@ export function useMailReconnect(
             method: authMethod,
             origin: { kind: "none" },
             options: {
-              authorizeVisibleAgents: true,
               connectorLabel: connector.label,
               connectorIcon: connector.icon,
               account: { intent: "reconnect", connectionId },

@@ -22,7 +22,7 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
-  it("defaults new workspace memberships to My Okou and honors retained overrides", () => {
+  it("defaults SingleAgent on across workspaces and honors overrides", () => {
     const key = FeatureSwitchKey.SingleAgent;
     for (const orgId of ["external-org", "org_3ANttyrbWYJk6JKRSTRLEsbsDLe"]) {
       const identity = { userId: "existing-account", orgId };
@@ -37,7 +37,6 @@ describe("isFeatureEnabled", () => {
   });
 
   it.each([
-    FeatureSwitchKey.ConnectorChatAccountAccess,
     FeatureSwitchKey.ArtifactSidebarPreview,
     FeatureSwitchKey.ArtifactPreviewActionGroup,
   ])("defaults %s to staff and honors Lab overrides", (key) => {
@@ -121,6 +120,26 @@ describe("isFeatureEnabled", () => {
         expect(getAllFeatureStates(optedOut)[key]).toBe(false);
       }
     }
+  });
+
+  it("defaults Markdown-first output to staff and honors external opt-in", () => {
+    const key = FeatureSwitchKey.MarkdownFirstOutput;
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    for (const context of [
+      {},
+      { userId: "external-user", orgId: "external-org" },
+    ]) {
+      expect(isFeatureEnabled(key, context)).toBe(false);
+      expect(getAllFeatureStates(context)[key]).toBe(false);
+    }
+    const optedIn = { orgId: "external-org", overrides: { [key]: true } };
+    expect(isFeatureEnabled(key, optedIn)).toBe(true);
+    expect(getAllFeatureStates(optedIn)[key]).toBe(true);
+    expect(isFeatureEnabled(key, staff)).toBe(true);
+    expect(getAllFeatureStates(staff)[key]).toBe(true);
+    expect(
+      isFeatureEnabled(key, { ...staff, overrides: { [key]: false } }),
+    ).toBe(false);
   });
 
   it("enables presentation format for staff and honors Lab overrides", () => {
@@ -423,9 +442,6 @@ describe("getFeatureSwitchMetadata", () => {
     expect(metadata[FeatureSwitchKey.PresentationConvert].rolloutStage).toBe(
       "alpha",
     );
-    expect(
-      metadata[FeatureSwitchKey.ConnectorChatAccountAccess].rolloutStage,
-    ).toBe("beta");
     expect(
       metadata[FeatureSwitchKey.PresentationOutputFormat].rolloutStage,
     ).toBe("beta");

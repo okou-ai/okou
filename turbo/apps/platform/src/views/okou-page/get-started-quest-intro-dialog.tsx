@@ -535,7 +535,6 @@ function SelectedQuestConnectModal({
     <ConnectModal
       item={selected}
       accountOptions={accountOptions}
-      authorizeVisibleAgentsOnConnect
       onClose={() => {
         setSelectedSlug(null);
       }}

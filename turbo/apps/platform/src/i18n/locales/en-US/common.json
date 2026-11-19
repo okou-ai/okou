@@ -438,9 +438,11 @@
       "closePreviewMenu": "Close preview menu",
       "download": "Download",
       "downloadArtifact": "Download artifact",
+      "downloadMarkdownAs": "Download as {{format}}",
       "downloadOptions": "Download options",
       "enterFullscreen": "Enter fullscreen",
       "exitFullscreen": "Exit fullscreen",
+      "markdownExportFailed": "Export failed. Select an export option to try again.",
       "more": "More artifact actions",
       "nextImage": "Next image artifact",
       "openNewTab": "Open in new tab",
@@ -1048,13 +1050,11 @@
       "invalid": "This permission link is invalid or unavailable.",
       "loadFailed": "Could not verify all requested permissions. No permissions can be changed.",
       "loading": "Loading permissions",
-      "myOkouScopeNote": "Applies to your use of Okou in this workspace, not only the current task.",
       "myOkouSharedScopeNote": "Applies to this connector across your chats in this workspace. Your teammates have their own permissions.",
       "notNow": "Not now",
       "pending_one": "{{count}} permission to allow",
       "pending_other": "{{count}} permissions to allow",
       "review": "Review permissions",
-      "scopeNote": "Applies to this agent, not only the current task.",
       "sharedScopeNote": "Applies to this connector across all your chats and agents.",
       "title": "Allow the following permissions"
     }
@@ -1648,7 +1648,11 @@
       "dismiss": "Dismiss",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
+      "dontNudge": "Don’t nudge me",
+      "dontNudgeRecorded": "Noted — please don’t nudge me about this again",
+      "editDraft": "Prepare a draft in the existing chat",
       "editReason": "Edit reason",
+      "feedbackPrompt": "How is this suggestion?",
       "feedLabel": "Feed",
       "forYou": {
         "loading": "Loading suggestions",
@@ -1682,9 +1686,11 @@
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
       "sending": "Sending…",
+      "sendNew": "Send to a new chat",
       "sent": "Sent to a new chat",
       "unavailable": "That suggestion is no longer available. Suggestions have been refreshed.",
-      "undoFeedback": "Undo"
+      "undoFeedback": "Undo",
+      "viewSource": "View source"
     },
     "attachments": {
       "attach": "Attach",
@@ -2102,13 +2108,8 @@
       "unavailableTitle": "Account unavailable"
     },
     "connectors": {
-      "accountForThread": "Account for this chat",
-      "add": "Add {{connectorName}}",
       "addConnectors": "Add connectors",
-      "authorized": "{{connectorName}} connected and authorized for {{agentName}}",
       "back": "Back",
-      "configurePermissions": "Configure {{connectorName}} permissions",
-      "customAuthorizeDescription": "Review, connect, and authorize this custom connector for the agent.",
       "directory": {
         "allCategories": "All",
         "askAdmin": "Ask an admin to enable",
@@ -2138,14 +2139,8 @@
         "tabCustom": "Custom",
         "tabDiscover": "Discover"
       },
-      "fallsBackTo": "Falls back to {{account}}",
       "find": "Find connectors...",
-      "loadFailed": "Couldn't load connectors.",
-      "noUsableAccount": "No usable account",
-      "remove": "Remove {{connectorName}}",
-      "selectedAccountFor": "{{connector}} · Selected account: {{account}}",
-      "title": "Connectors",
-      "useDefault": "Use default"
+      "title": "Connectors"
     },
     "documentTitle": "Chat",
     "errors": {
@@ -2950,28 +2945,12 @@
     "totalAccounts": "{{value}} accounts"
   },
   "connectors": {
-    "access": {
-      "accessFor": "{{action}} {{connector}} access for {{agent}}",
-      "accessUpdated": "{{connector}} access updated",
-      "clearSearch": "Clear agent search",
-      "description": "Choose which agents can use this connector.",
-      "loading": "Loading agents...",
-      "managePermissions": "Manage permissions",
-      "managePermissionsFor": "Manage {{connector}} permissions for {{agent}}",
-      "noAgents": "No agents found",
-      "noMatchingAgents": "No agents matching \"{{search}}\"",
-      "permissionsUpdated": "Permissions updated",
-      "search": "Find agents",
-      "title": "Manage {{connector}} access",
-      "unnamedAgent": "Unnamed"
-    },
     "accounts": {
       "accountName": "Account name",
       "accountsUnavailable": "Accounts are unavailable for this connector.",
       "actions": "Account actions",
       "addAccount": "Add account",
       "connected": "Connected",
-      "default": "Default",
       "disconnectAccount": "Disconnect account",
       "disconnectDescription": "This disconnects the account from Okou. Threads using it will return to default inheritance. The provider account will not be deleted.",
       "disconnectDescriptionWithCount": "This disconnects the account from Okou. {{value}} threads will return to default inheritance. The provider account will not be deleted.",
@@ -2985,8 +2964,6 @@
       "find": "Find accounts",
       "loading": "Loading accounts…",
       "loadMore": "Load more",
-      "makeDefault": "Make default",
-      "managerDescription": "New runs use your default account.",
       "managerTitle": "Manage {{connector}} accounts",
       "namePromptDescription": "You can skip this and name the account later.",
       "namePromptTitle": "Name your {{connector}} account",
@@ -3000,7 +2977,6 @@
     },
     "actions": {
       "apply": "Apply",
-      "authorize": "Authorize",
       "cancel": "Cancel",
       "close": "Close",
       "closeWindow": "Close window",
@@ -3047,7 +3023,6 @@
     },
     "card": {
       "accessFor": "{{action}} {{connector}} access",
-      "authorized": "Authorized",
       "connectAria": "Connect {{connector}}",
       "connected": "Connected",
       "connectionExpired": "Connection expired",
@@ -3060,11 +3035,7 @@
     },
     "catalog": {
       "access": {
-        "add": "Add access",
-        "manage": "Manage {{connector}} access",
-        "summaryMany": "{{value}} agents",
-        "unavailable": "Access unavailable",
-        "usedBy": "Used by "
+        "manage": "Manage {{connector}} access"
       },
       "categories": {
         "ai": {
@@ -3135,18 +3106,13 @@
         "searchAll": "Search all connectors"
       },
       "empty": {
-        "agent": "No connectors for this agent",
         "connected": "No connected connectors",
-        "search": "No connectors matching \"{{search}}\"",
-        "unshared": "Every connector is shared with an agent"
+        "search": "No connectors matching \"{{search}}\""
       },
       "filterCategory": "Category",
       "filters": {
-        "agents": "Agents",
         "all": "All",
-        "allAgents": "All agents",
-        "aria": "Filter connectors",
-        "unshared": "Not shared with any agent"
+        "aria": "Filter connectors"
       },
       "filterWith": "Filter: {{category}}",
       "myOkouDescription": "Connect third-party services for your Okou to use.",
@@ -3176,8 +3142,7 @@
         "seeMore_other": "See {{names}} and {{count}} more",
         "top": "Top connectors"
       },
-      "title": "Connectors",
-      "unnamedAgent": "Unnamed"
+      "title": "Connectors"
     },
     "connectDialog": {
       "connectedAs": "Connected as {{username}}",
@@ -3321,9 +3286,6 @@
       }
     },
     "directed": {
-      "authorizeAgent": "Authorize {{agent}}",
-      "authorized": "{{connector}} authorized",
-      "authorizeDocumentTitle": "Authorize {{connector}}",
       "connectDocumentTitle": "Connect {{connector}}",
       "connected": "{{connector}} connected",
       "needsConnector": "{{agent}} needs {{connector}} to proceed",
@@ -3351,10 +3313,8 @@
       "allowOptions": "{{permission}} allow options",
       "always": "Always",
       "clearSearch": "Clear permission search",
-      "descriptionAgent": "Configure which actions this agent is allowed to perform via this connector.",
       "find": "Find permissions",
       "findPlaceholder": "Find permissions...",
-      "forTarget": "for {{target}}",
       "loadError": "Failed to load permission metadata",
       "loading": "Loading permissions...",
       "metadataMissing": "No permission metadata found for {{connector}}",
@@ -4098,7 +4058,6 @@
     }
   },
   "myOkou": {
-    "access": "Your access in this workspace",
     "conflict": "Your saved instructions changed elsewhere. Your draft is kept here. Review or copy it before reloading the latest saved instructions.",
     "description": "Your instructions for Okou in this workspace",
     "discard": "Discard",
@@ -7130,6 +7089,18 @@
       "uninstall": "Uninstall",
       "uninstalling": "Uninstalling…",
       "updatePermissions": "Update Permissions"
+    },
+    "channelExamples": {
+      "email": "Forward an email to Okou and ask for a summary or a draft reply.",
+      "feishu": "Send Okou a draft in Feishu and ask for a shorter version to share with your team.",
+      "github": "When a pull request opens, run a workflow to prepare a review checklist.",
+      "lark": "Send Okou a draft in Lark and ask for a shorter version to share with your team.",
+      "phone": "Text {{assistantName}} a rough idea from your iPhone and ask for a first draft.",
+      "slack": "Mention Okou in a Slack channel and ask for a second opinion on a draft.",
+      "teams": "Paste your meeting notes into Teams and ask Okou to pull out the action items.",
+      "telegram": "Send Okou two options in Telegram and ask for the pros and cons of each.",
+      "wechat": "Send Okou two options in WeChat and ask for the pros and cons of each.",
+      "whatsapp": "Send Okou two options in WhatsApp and ask for the pros and cons of each."
     },
     "connected": "Connected",
     "connectedWithDetail": "Connected ({{detail}})",

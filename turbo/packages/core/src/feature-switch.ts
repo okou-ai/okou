@@ -52,13 +52,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Honor multiple output formats selected by onboarding task links.",
     enabled: true,
   },
-  [FeatureSwitchKey.ArtifactGenerationTiming]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Artifact generation phase timing",
-    description:
-      "Record research and generation boundaries for the current Run.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ArtifactThreePointTiming]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Artifact three-point phase timing",
@@ -105,6 +98,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
+  [FeatureSwitchKey.MarkdownFirstOutput]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Markdown-first document output",
+    description:
+      "Prefer Markdown for unformatted text documents and offer DOCX and PDF exports.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.SingleAgent]: {
     maintainer: "lancy@okou.ai",
     displayName: "My Okou",
@@ -137,14 +138,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
-  },
-  [FeatureSwitchKey.ConnectorChatAccountAccess]: {
-    maintainer: "liangyou@okou.ai",
-    displayName: "Chat connector accounts",
-    description:
-      "Configure Chat connector accounts and shared member connector permissions.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.FeatureGuides]: {
     maintainer: "yuma@okou.ai",
@@ -210,6 +203,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Describe each Who can access option in the share menu with one line, and anchor Copy link as a full-width footer under a divider.",
     enabled: true,
+  },
+  [FeatureSwitchKey.WorksChannelCards]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Works channel cards",
+    description:
+      "Show Works channels in a compact grid with usage examples and icon actions for connecting and managing accounts.",
+    enabled: false,
   },
   [FeatureSwitchKey.HostedSiteShareRows]: {
     maintainer: "ming@okou.ai",

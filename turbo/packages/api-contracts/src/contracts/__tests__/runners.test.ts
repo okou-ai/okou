@@ -138,15 +138,25 @@ it("ignores additional dispatch metadata and validates known fields", () => {
     runnerDispatchEnvelopeSchema.safeParse({ ...envelope, notAfter: "2000" })
       .success,
   ).toBe(false);
+  const preferredHomeCheckout = {
+    predecessorRunId: "00000000-0000-4000-8000-000000000002",
+    waitUntil: 1_500,
+  };
+  expect(
+    runnerDispatchEnvelopeSchema.parse({ ...envelope, preferredHomeCheckout })
+      .preferredHomeCheckout,
+  ).toStrictEqual(preferredHomeCheckout);
+  expect(
+    runnerDispatchEnvelopeSchema.safeParse({
+      ...envelope,
+      preferredHomeCheckout: { ...preferredHomeCheckout, waitUntil: -1 },
+    }).success,
+  ).toBe(false);
 });
 
 function preparedExecutionContextFixture() {
   return {
     cliAgentType: "claude-code",
-    customWorkflowSelection: {
-      agentId: "11111111-1111-4111-8111-111111111111",
-      protectedMountPaths: [],
-    },
     officialWorkflowBundles: [],
     seedSkillBundles: [],
     templateGuidanceBundles: [],
@@ -209,11 +219,10 @@ describe("runner execution context contract", () => {
   });
 
   it.each([
-    { featureFlags: { singleAgent: true, connectorChatAccountAccess: false } },
+    { featureFlags: { singleAgent: true, retainedDiagnosticFlag: false } },
     {
       featureFlags: {
         singleAgent: false,
-        connectorChatAccountAccess: true,
         retainedDiagnosticFlag: true,
       },
     },
@@ -291,27 +300,6 @@ describe("prepared Seed Skill bundle contract", () => {
           ],
         }).success,
       ).toBe(false);
-    }
-  });
-});
-
-describe("admitted Workflow selection contract", () => {
-  it("preserves admitted agent, automation and mount-precedence selections", () => {
-    const agentId = "11111111-1111-4111-8111-111111111111";
-    const automationId = "33333333-3333-4333-8333-333333333333";
-    for (const selection of [
-      { agentId, protectedMountPaths: [] },
-      {
-        agentId,
-        automationId,
-        protectedMountPaths: ["/home/user/.codex/skills/official-workflow"],
-      },
-    ]) {
-      expect(
-        preparedExecutionContextSchema.shape.customWorkflowSelection.parse(
-          selection,
-        ),
-      ).toStrictEqual(selection);
     }
   });
 });

@@ -10,24 +10,6 @@
     "save": "Simpan",
     "saving": "Menyimpan…"
   },
-  "authorization": {
-    "closeSearch": "Tutup pencarian",
-    "connectorsLink": "Konektor",
-    "connectorsSaved": "Konektor disimpan",
-    "customConnectors": {
-      "description": "Konektor kustom yang didaftarkan oleh organisasi Anda.",
-      "saved": "Konektor kustom disimpan"
-    },
-    "description": "Saat dijalankan, agen dapat menggunakan layanan yang terhubung dengan aman. Anda dapat mengelola atau mematikan akses kapan saja.",
-    "findConnectors": "Temukan konektor",
-    "noConnectorsAfterLink": " untuk menghubungkan layanan pertama Anda.",
-    "noConnectorsAlt": "Tidak ada konektor",
-    "noConnectorsBeforeLink": "Belum ada layanan terhubung. Buka ",
-    "noResults": "Tidak ada hasil untuk “{{search}}”",
-    "permissionLoadError": "Gagal memuat pemberian izin",
-    "permissionsUpdated": "Izin diperbarui",
-    "searchPlaceholder": "Cari konektor..."
-  },
   "avatar": {
     "accessibilityDescription": "Sesuaikan gaya, warna, dan detail wajah avatar agen.",
     "actions": {
@@ -79,7 +61,6 @@
     },
     "sectionNavigation": "Bagian detail agen",
     "tabs": {
-      "authorization": "Otorisasi",
       "instructions": "Instruksi",
       "profile": "Profil"
     },

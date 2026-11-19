@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.11.9](https://github.com/okou-ai/okou/compare/runner-storage-v0.11.8...runner-storage-v0.11.9) (2026-11-19)
+
+## [0.11.8](https://github.com/okou-ai/okou/compare/runner-storage-v0.11.7...runner-storage-v0.11.8) (2026-11-19)
+
+
+### Refactoring
+
+* **runner-storage:** share storage cache count labels ([#48963](https://github.com/okou-ai/okou/issues/48963)) ([4d6b26b](https://github.com/okou-ai/okou/commit/4d6b26bbd87df2beebe4edb59280c394f4c7ec0b))
+
 ## [0.11.7](https://github.com/okou-ai/okou/compare/runner-storage-v0.11.6...runner-storage-v0.11.7) (2026-11-19)
 
 ## [0.11.6](https://github.com/okou-ai/okou/compare/runner-storage-v0.11.5...runner-storage-v0.11.6) (2026-11-19)

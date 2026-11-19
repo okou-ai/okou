@@ -107,10 +107,32 @@ that value can arrive separately; preserve pending intent until confirmation
 instead of accepting a newer action against an obsolete value. IO failure must
 not masquerade as a saved preference, and cancellation retains its native meaning.
 
-Resolve an explicit app appearance from the correct generated day/night
-resources, independently of the phone's mode. Keep the Activity context and its
-owners intact; a configuration-specific Resources instance is sufficient for
-token lookup. Native system-bar presentation follows the resolved app mode.
+Resolve a saved display mode from the active workspace member preferences.
+Follow system derives from the device configuration and supplies the first
+display until an identified member's appearance is available. A confirmed,
+identity-scoped cache can color the workspace loading state while requests run.
+The current server response owns the workspace values. Apply the matching
+generated day or night resources and use the resolved appearance for system
+bars. Keep the Activity context and its owners intact during resource lookup.
+
+### Interface Icons
+
+Use [Material Symbols Outlined](https://fonts.google.com/icons) for app actions.
+Choose the symbol named in the Android design, such as `filter_list` for Filter
+and `more_horiz` for More. Use the 24dp Android XML with the default weight 400,
+grade 0 and fill 0. The bundled vectors come from
+[Google's Material Symbols sources](https://github.com/google/material-design-icons/tree/10ecc14790612ca8fd164e3f4ffe9c16fc50d5b7/symbols/android).
+Keep one `res/drawable/ic_<symbol>.xml` per symbol and preserve its path and
+viewport. Remove the exported vector's `android:tint` so the Compose control
+supplies the tint. Set `android:autoMirrored` for directional navigation such
+as Back and end chevrons.
+
+Render vectors with `Icon(painterResource(...))`. Use a 24dp icon in the top app
+bar and a native `IconButton` with at least a 48 × 48dp touch target for a
+standalone action. Give that icon a localized action label. Use
+`contentDescription = null` when visible text or the parent control already
+describes it. Workspace logos, brand marks and system controls keep their own
+assets. Ship the Apache-2.0 license with the local vectors in `assets/licenses`.
 
 ### Saved Instance State
 

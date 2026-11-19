@@ -596,14 +596,10 @@ export function createComposerSignals(
   );
   const fileInput = createComposerFileInputSignals();
   const connector =
-    options.connector ??
-    createComposerConnectorSignals(options.agentId, options.threadId);
+    options.connector ?? createComposerConnectorSignals(options.threadId);
   const draftSignals = composerDraftSignals(options.draft, fileInput);
   const annotation = createComposerAttachmentAnnotation(draft, draftSignals);
-  const connectorCompletion = createComposerConnectorCompletion(
-    connector,
-    options.agentId,
-  );
+  const connectorCompletion = createComposerConnectorCompletion(connector);
   return {
     agentId: options.agentId,
     threadId: options.threadId,

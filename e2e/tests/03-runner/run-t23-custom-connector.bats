@@ -442,16 +442,11 @@ EOF
     run jq -e \
         --arg connectionId "$selected_connection_id" \
         --arg customConnectorId "$CUSTOM_CONNECTOR_ID" '
-            .selections == [{
-                connectionId: $connectionId,
-                target: {
-                    kind: "custom",
-                    customConnectorId: $customConnectorId
-                }
-            }] and
-            (.selectedConnections | length) == 1 and
-            .selectedConnections[0].id == $connectionId and
-            .selectedConnections[0].isDefault == false
+            def target:
+                .kind == "custom" and .customConnectorId == $customConnectorId;
+            [.selections[] | select(.target | target) | .connectionId] == [$connectionId] and
+            [.selectedConnections[] | select(.target | target) | {id, isDefault}]
+                == [{id: $connectionId, isDefault: false}]
         ' <<<"$selection_read_response"
     echo "$output"
     assert_success

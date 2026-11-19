@@ -7,6 +7,7 @@ import {
   CHAT_THREAD_SIDEBAR_DEFAULT_SHARE,
   CHAT_THREAD_SIDEBAR_MIN_THREAD_WIDTH,
   CHAT_THREAD_SIDEBAR_MIN_WIDTH,
+  chatThreadSidebarDefaultWidth,
   chatThreadSidebarResizing$,
   chatThreadSidebarResizeHandleRef$,
   chatThreadSidebarWidths$,
@@ -137,8 +138,11 @@ export function ChatThreadSidebarShell({
   widthKey = "default",
   workspace,
 }: ChatThreadSidebarShellProps) {
-  // The remembered panel width; each panel kind keeps its own.
-  const width = useGet(chatThreadSidebarWidths$)[widthKey] ?? null;
+  // The remembered panel width; each panel kind keeps its own and opens at
+  // its own default until resized.
+  const width =
+    useGet(chatThreadSidebarWidths$)[widthKey] ??
+    chatThreadSidebarDefaultWidth(widthKey);
   const resizing = useGet(chatThreadSidebarResizing$);
   const workspaceResizing = useGet(workspaceResizing$);
   const { style, transition } = chatThreadSidebarLayout(

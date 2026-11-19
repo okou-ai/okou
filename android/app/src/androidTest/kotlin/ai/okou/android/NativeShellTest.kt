@@ -5,7 +5,6 @@ import android.app.UiModeManager
 import android.content.res.Configuration
 import android.view.KeyEvent
 import androidx.core.view.WindowCompat
-import androidx.datastore.preferences.core.emptyPreferences
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.takeScreenshot
 import androidx.test.core.graphics.writeToTestStorage
@@ -22,8 +21,6 @@ import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -47,17 +44,17 @@ class NativeShellTest {
             requireNotNull(scenario).onActivity { systemDark = isNight(it) }
             val manual = if (systemDark) R.string.appearance_light else R.string.appearance_dark
             click(R.string.settings)
+            openAppearance()
             awaitSelectable(R.string.appearance_system)
-            click(manual)
-            awaitSelected(manual)
+            selectAppearance(manual)
             awaitBars(light = systemDark)
             closeActivity()
             launch()
             awaitBars(light = systemDark)
             click(R.string.settings)
+            openAppearance()
             awaitSelected(manual)
-            click(R.string.appearance_system)
-            awaitSelected(R.string.appearance_system)
+            selectAppearance(R.string.appearance_system)
             awaitBars(light = !systemDark)
         }
 
@@ -70,14 +67,16 @@ class NativeShellTest {
             awaitActivity("Android initial light configuration applies") { !isNight(it) }
             awaitBars(light = true)
             click(R.string.settings)
-            awaitSelectable(R.string.appearance_system)
+            openAppearance()
+            awaitSelected(R.string.appearance_system)
+            dismissAppearance()
             mode.nightMode = UiModeManager.MODE_NIGHT_YES
             awaitActivity("Android night configuration applies") { isNight(it) }
-            awaitSelected(R.string.appearance_system)
+            text(R.string.appearance_system)
             awaitBars(light = false)
             mode.nightMode = UiModeManager.MODE_NIGHT_NO
             awaitActivity("Android light configuration applies") { !isNight(it) }
-            awaitSelected(R.string.appearance_system)
+            text(R.string.appearance_system)
             awaitBars(light = true)
             assertTrue("System Back key injected", device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             text(R.string.chat_list_title)
@@ -91,22 +90,18 @@ class NativeShellTest {
                 check(automation.clearCache()) { "Native accessibility cache could not be cleared" }
                 return device.findObject(target)
             }
-            fun reveal(target: BySelector, value: String): UiObject2 {
+            fun reveal(target: BySelector, value: String, firstChoice: Int? = null): UiObject2 {
                 if (findCurrent(target) == null) {
-                    val container =
-                        requireNotNull(
-                            device.wait(
-                                Until.findObject(By.pkg(app.packageName).scrollable(true)),
-                                WAIT,
-                            )
-                        )
+                    val selector = By.pkg(app.packageName).scrollable(true)
+                    if (firstChoice != null) selector.hasDescendant(appearanceOption(firstChoice))
+                    fun container() = requireNotNull(device.wait(Until.findObject(selector), WAIT))
                     val visible =
                         object : Condition<UiObject2, Boolean> {
                             override fun apply(container: UiObject2) = findCurrent(target) != null
                         }
-                    // Settings and restored pickers can retain a position below the target.
-                    if (!container.scrollUntil(Direction.UP, visible)) {
-                        container.scrollUntil(Direction.DOWN, visible)
+                    // The sheet starts at the first choice. The overview can retain a scroll.
+                    if (firstChoice != null || !container().scrollUntil(Direction.UP, visible)) {
+                        container().scrollUntil(Direction.DOWN, visible)
                     }
                 }
                 return requireNotNull(
@@ -129,15 +124,18 @@ class NativeShellTest {
                         .hasDescendant(label(id)),
                     app.getString(id),
                 )
-            fun option(id: Int) = reveal(appearanceOption(id).enabled(true), app.getString(id))
-            fun dismissPicker(firstChoice: Int, selected: Int) {
-                // The selected option may be offscreen; first identify the actual picker.
+            fun option(id: Int, firstChoice: Int) =
+                reveal(appearanceOption(id).enabled(true), app.getString(id), firstChoice)
+            fun openPicker(row: Int, firstChoice: Int) {
+                button(row).click()
                 await("Preference picker is open") {
                     findCurrent(appearanceOption(firstChoice)) != null
                 }
+            }
+            fun dismissPicker(firstChoice: Int, selected: Int) {
                 assertTrue(
                     "Confirmed preference selection: ${app.getString(selected)}",
-                    option(selected).isChecked,
+                    option(selected, firstChoice).isChecked,
                 )
                 assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
                 await("Preference picker is dismissed") {
@@ -146,31 +144,34 @@ class NativeShellTest {
             }
             launch()
             click(R.string.settings)
-            awaitSelectable(R.string.appearance_system)
-            // Start below the palette, as in the original failed Settings hierarchy.
-            button(R.string.updates_check)
-            button(R.string.palette_default).click()
-            option(R.string.palette_blue_horizon).click()
-            button(R.string.palette_blue_horizon).click()
+            button(R.string.updates_title).click()
+            text(R.string.updates_check)
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            await("Update details are dismissed") {
+                findCurrent(label(R.string.updates_check)) == null
+            }
+            openPicker(R.string.preference_color_theme, R.string.palette_default)
+            option(R.string.palette_blue_horizon, R.string.palette_default).click()
+            openPicker(R.string.preference_color_theme, R.string.palette_default)
             dismissPicker(R.string.palette_default, R.string.palette_blue_horizon)
-            button(R.string.language_en_us).click()
-            option(R.string.language_zh_hant).click()
+            openPicker(R.string.language_en_us, R.string.language_en_us)
+            option(R.string.language_zh_hant, R.string.language_en_us).click()
             awaitActivity("Traditional Chinese is applied by Android") {
                 it.resources.configuration.locales[0].toLanguageTag() == "zh-Hant"
             }
-            button(R.string.language_zh_hant).click()
+            openPicker(R.string.language_zh_hant, R.string.language_en_us)
             dismissPicker(R.string.language_en_us, R.string.language_zh_hant)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             text(R.string.chat_list_title)
             closeActivity()
             launch()
             click(R.string.settings)
-            button(R.string.palette_blue_horizon).click()
+            openPicker(R.string.palette_blue_horizon, R.string.palette_default)
             dismissPicker(R.string.palette_default, R.string.palette_blue_horizon)
             await("Restored palette label is Traditional Chinese") {
                 findCurrent(By.pkg(app.packageName).text("藍色地平線")) != null
             }
-            button(R.string.language_zh_hant).click()
+            openPicker(R.string.language_zh_hant, R.string.language_en_us)
             dismissPicker(R.string.language_en_us, R.string.language_zh_hant)
         }
 
@@ -200,6 +201,33 @@ class NativeShellTest {
     // Compose exposes the label as a child of the native checkable option.
     private fun appearanceOption(id: Int): BySelector =
         By.pkg(app.packageName).checkable(true).hasDescendant(label(id))
+
+    private fun appearanceRow() =
+        By.pkg(app.packageName)
+            .clickable(true)
+            .checkable(false)
+            .enabled(true)
+            .hasDescendant(label(R.string.appearance))
+
+    private fun openAppearance() {
+        requireNotNull(device.wait(Until.findObject(appearanceRow()), WAIT)).click()
+    }
+
+    private fun selectAppearance(id: Int) {
+        requireNotNull(device.wait(Until.findObject(appearanceOption(id).enabled(true)), WAIT))
+            .click()
+        await("Appearance choice is applied") {
+            !device.hasObject(appearanceOption(id)) &&
+                device.hasObject(appearanceRow().hasDescendant(label(id)))
+        }
+    }
+
+    private fun dismissAppearance() {
+        assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+        await("Appearance sheet is dismissed") {
+            !device.hasObject(appearanceOption(R.string.appearance_system))
+        }
+    }
 
     private fun awaitSelectable(id: Int) =
         await("Appearance controls finish loading") {
@@ -251,8 +279,6 @@ class NativeShellTest {
 
     /** Capture before cleanup; preserve every primary/diagnostic/restoration failure. */
     private fun onIsolatedDevice(name: String, test: () -> Unit) {
-        val store = app.appearancePreferences
-        val preferences = runBlocking { store.data.first() }
         val apiFixture = app as TestOkouApplication
         val apiPreferences = apiFixture.snapshotApiPreferences()
         val cacheSnapshot =
@@ -264,7 +290,7 @@ class NativeShellTest {
         val failures = mutableListOf<Throwable>()
         try {
             automation.adoptShellPermissionIdentity("android.permission.MODIFY_DAY_NIGHT_MODE")
-            runBlocking { store.updateData { emptyPreferences() } }
+            apiFixture.restoreApiPreferences(emptyMap())
             test()
         } catch (failure: Throwable) {
             failures += failure
@@ -292,7 +318,6 @@ class NativeShellTest {
             restore { cacheSnapshot.restore() }
             restore { apiFixture.restoreApiPreferences(apiPreferences) }
             restore { locales.applicationLocales = applicationLocales }
-            restore { runBlocking { store.updateData { preferences } } }
             restore { mode.nightMode = nightMode }
             restore { automation.dropShellPermissionIdentity() }
         }

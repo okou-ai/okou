@@ -10,24 +10,6 @@
     "save": "Save",
     "saving": "Saving…"
   },
-  "authorization": {
-    "closeSearch": "Close search",
-    "connectorsLink": "Connectors",
-    "connectorsSaved": "Connectors saved",
-    "customConnectors": {
-      "description": "Custom connectors registered by your org.",
-      "saved": "Custom connectors saved"
-    },
-    "description": "When running, the agent can securely use your connected services. You can manage or turn off access anytime.",
-    "findConnectors": "Find connectors",
-    "noConnectorsAfterLink": " page to connect your first service.",
-    "noConnectorsAlt": "No connectors",
-    "noConnectorsBeforeLink": "No connected services yet. Head to the ",
-    "noResults": "No results for “{{search}}”",
-    "permissionLoadError": "Failed to load permission grants",
-    "permissionsUpdated": "Permissions updated",
-    "searchPlaceholder": "Find connectors..."
-  },
   "avatar": {
     "accessibilityDescription": "Customize the agent avatar style, color, and facial details.",
     "actions": {
@@ -79,7 +61,6 @@
     },
     "sectionNavigation": "Agent details section",
     "tabs": {
-      "authorization": "Authorization",
       "instructions": "Instructions",
       "profile": "Profile"
     },

@@ -7,6 +7,7 @@ import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListFilter
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ChatListScreen
+import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.ConfirmedChat
@@ -14,6 +15,7 @@ import ai.okou.android.chat.ConversationRoute
 import ai.okou.android.chat.RealtimeNotice
 import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.RunControlsPanel
+import ai.okou.android.state.SettingsDestination
 import ai.okou.android.state.WorkspaceTarget
 import ai.okou.android.state.rememberCollapsedProjects
 import ai.okou.android.state.rememberConversationUiState
@@ -22,6 +24,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -29,10 +32,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -71,27 +77,32 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun OkouApp(
-    chats: ChatListModel,
-    composer: ChatComposerModel,
-    controls: RunControlsModel,
-    appearance: AppearanceUiState,
-    selectMode: (AppearanceMode) -> Unit,
-    retryAppearance: () -> Unit,
-    account: @Composable () -> Unit = {},
-    workspacePreferences: @Composable () -> Unit = {},
+    chats: ChatListModel?,
+    composer: ChatComposerModel?,
+    controls: RunControlsModel?,
+    settingsContent: @Composable (SettingsDestination, openInstructions: () -> Unit) -> Unit,
     recovery: AssistantRecoveryModel? = null,
     workspaceTitle: @Composable (() -> Unit)? = null,
     openUpdate: (() -> Unit)? = null,
+    startupRecovery: @Composable (() -> Unit)? = null,
 ) {
-    val list by chats.uiState.collectAsStateWithLifecycle()
+    val list =
+        chats?.uiState?.collectAsStateWithLifecycle()?.value
+            ?: ChatListUiState(
+                listPhase =
+                    if (startupRecovery == null) ChatReadPhase.Loading else ChatReadPhase.Idle
+            )
     var navigation by rememberWorkspaceNavigation()
-    val target = navigation.target
+    // Keep saved navigation available for Ready without entering a protected destination early.
+    val settings = navigation.settings.takeIf { composer != null }
+    val target = if (composer != null) navigation.target else WorkspaceTarget.List
     // Window configuration changes on resize. IME insets only change the space inside the panes.
     val window = LocalConfiguration.current
     val listWidth = workspaceListPaneWidth(window.screenWidthDp, window.screenHeightDp)
     val showList = listWidth != null || target == WorkspaceTarget.List
     val showWorkspaceBack = listWidth == null && target != WorkspaceTarget.List
     val listPosition = rememberLazyListState()
+    val settingsPosition = rememberScrollState()
     val collapsed = rememberCollapsedProjects()
     val conversations = rememberConversationUiState()
     val snackbar = remember { SnackbarHostState() }
@@ -114,26 +125,29 @@ internal fun OkouApp(
             )
         LaunchedEffect(action, message) {
             snackbar.showSnackbar(message)
-            chats.dismissRowActionFailure(action)
+            chats?.dismissRowActionFailure(action)
         }
     }
 
     fun openChat(chat: ConfirmedChat) {
+        val activeComposer = composer ?: return
+        val activeChats = chats ?: return
         conversations.open(chat.id)
         navigation = navigation.copy(target = WorkspaceTarget.Chat(chat.id))
-        composer.acknowledge(chat.id)
-        chats.history.open(chat)
+        activeComposer.acknowledge(chat.id)
+        activeChats.history.open(chat)
     }
 
     fun startNewChat(projectId: String?) {
-        composer.beginNew(projectId)
+        val activeComposer = composer ?: return
+        activeComposer.beginNew(projectId)
         conversations.open(ComposerTarget(projectId = projectId).key)
         navigation = navigation.copy(target = WorkspaceTarget.NewChat(projectId))
     }
 
     LaunchedEffect(target, thread, list.listPhase) {
         if (target is WorkspaceTarget.Chat) {
-            if (thread != null) chats.history.open(thread)
+            if (thread != null) chats?.history?.open(thread)
             else if (list.listPhase == ChatReadPhase.Ready && navigation.target == target) {
                 navigation = navigation.copy(target = WorkspaceTarget.List)
                 scope.launch { snackbar.showSnackbar(missingChat) }
@@ -143,7 +157,8 @@ internal fun OkouApp(
     val newChat = target as? WorkspaceTarget.NewChat
     val newTarget = newChat?.let { ComposerTarget(projectId = it.projectId) }
     val createdId =
-        newTarget?.let { draft ->
+        if (newTarget != null && composer != null) {
+            val draft = newTarget
             val input = composer.uiState.collectAsStateWithLifecycle()
             val created by
                 remember(input, draft) {
@@ -152,7 +167,7 @@ internal fun OkouApp(
                     }
                 }
             created
-        }
+        } else null
     val createdChat =
         createdId?.let { id -> list.threads.firstOrNull { it.id == id && it.hidden != true } }
     LaunchedEffect(newChat, createdChat) {
@@ -163,24 +178,31 @@ internal fun OkouApp(
 
     fun back() {
         navigation =
-            if (navigation.settingsOpen) navigation.copy(settingsOpen = false)
-            else navigation.copy(target = WorkspaceTarget.List)
+            when (navigation.settings) {
+                SettingsDestination.Instructions ->
+                    navigation.copy(settings = SettingsDestination.Overview)
+                SettingsDestination.Overview -> navigation.copy(settings = null)
+                null -> navigation.copy(target = WorkspaceTarget.List)
+            }
     }
 
-    BackHandler(navigation.settingsOpen || showWorkspaceBack, onBack = ::back)
+    BackHandler(settings != null || showWorkspaceBack, onBack = ::back)
 
     val title =
-        if (navigation.settingsOpen) stringResource(R.string.settings)
-        else
-            when (target) {
-                WorkspaceTarget.List -> stringResource(R.string.app_name)
-                is WorkspaceTarget.Chat ->
-                    thread?.title?.takeIf { it.isNotBlank() }
-                        ?: stringResource(R.string.chat_untitled)
-                is WorkspaceTarget.NewChat ->
-                    list.projects.firstOrNull { it.id == target.projectId }?.name
-                        ?: stringResource(R.string.composer_new)
-            }
+        when (settings) {
+            SettingsDestination.Overview -> stringResource(R.string.settings)
+            SettingsDestination.Instructions -> stringResource(R.string.instructions_title)
+            null ->
+                when (target) {
+                    WorkspaceTarget.List -> stringResource(R.string.app_name)
+                    is WorkspaceTarget.Chat ->
+                        thread?.title?.takeIf { it.isNotBlank() }
+                            ?: stringResource(R.string.chat_untitled)
+                    is WorkspaceTarget.NewChat ->
+                        list.projects.firstOrNull { it.id == target.projectId }?.name
+                            ?: stringResource(R.string.composer_new)
+                }
+        }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -191,9 +213,7 @@ internal fun OkouApp(
             TopAppBar(
                 title = {
                     if (
-                        !navigation.settingsOpen &&
-                            target == WorkspaceTarget.List &&
-                            workspaceTitle != null
+                        settings == null && target == WorkspaceTarget.List && workspaceTitle != null
                     ) {
                         workspaceTitle()
                     } else {
@@ -205,7 +225,7 @@ internal fun OkouApp(
                         containerColor = MaterialTheme.colorScheme.background
                     ),
                 navigationIcon = {
-                    if (navigation.settingsOpen || showWorkspaceBack) {
+                    if (settings != null || showWorkspaceBack) {
                         IconButton(
                             onClick = {
                                 focus.clearFocus()
@@ -213,12 +233,15 @@ internal fun OkouApp(
                                 back()
                             }
                         ) {
-                            Icon(painterResource(R.drawable.ic_back), stringResource(R.string.back))
+                            Icon(
+                                painterResource(R.drawable.ic_arrow_back),
+                                stringResource(R.string.back),
+                            )
                         }
                     }
                 },
                 actions = {
-                    if (!navigation.settingsOpen) {
+                    if (settings == null && chats != null && composer != null) {
                         WorkspaceToolbarActions(
                             showFilter = showList,
                             filter = list.filter,
@@ -229,7 +252,8 @@ internal fun OkouApp(
                                 restoreSettingsFocus = restore
                                 focus.clearFocus()
                                 keyboard?.hide()
-                                navigation = navigation.copy(settingsOpen = true)
+                                navigation =
+                                    navigation.copy(settings = SettingsDestination.Overview)
                             },
                         )
                         LaunchedEffect(Unit) {
@@ -244,16 +268,17 @@ internal fun OkouApp(
         },
     ) { insets ->
         Column(Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets)) {
-            if (navigation.settingsOpen) {
-                SettingsScreen(
-                    appearance,
-                    selectMode,
-                    retryAppearance,
-                    account,
-                    workspacePreferences,
-                )
+            if (settings != null) {
+                val scroll =
+                    if (settings == SettingsDestination.Overview) settingsPosition
+                    else rememberScrollState()
+                SettingsPage(scroll) {
+                    settingsContent(settings) {
+                        navigation = navigation.copy(settings = SettingsDestination.Instructions)
+                    }
+                }
             } else {
-                RealtimeNotice(chats.updates)
+                if (chats != null && composer != null) RealtimeNotice(chats.updates)
                 Row(Modifier.fillMaxSize()) {
                     if (showList) {
                         Column(
@@ -263,28 +288,40 @@ internal fun OkouApp(
                         ) {
                             if (list.filter != ChatListFilter.Recent) {
                                 AppliedChatFilter(list.filter) {
-                                    chats.selectFilter(ChatListFilter.Recent)
+                                    chats?.selectFilter(ChatListFilter.Recent)
                                 }
                             }
                             ChatListScreen(
                                 list,
-                                chats::refresh,
-                                chats::refreshList,
-                                chats::refreshMetadata,
-                                chats::refreshIndicators,
+                                { chats?.refresh() },
+                                { chats?.refreshList() },
+                                { chats?.refreshMetadata() },
+                                { chats?.refreshIndicators() },
                                 ::openChat,
-                                chats::performRowAction,
-                                chats::renameThread,
+                                { id, action ->
+                                    if (composer != null) chats?.performRowAction(id, action)
+                                },
+                                { id, title ->
+                                    if (composer != null) chats?.renameThread(id, title)
+                                },
                                 collapsed.values,
                                 collapsed::toggle,
                                 listPosition,
                                 ::startNewChat,
                                 selectedChatId = if (listWidth != null) thread?.id else null,
+                                actionsEnabled = composer != null,
+                                refreshEnabled = chats != null,
+                                startupRecovery = startupRecovery,
                             )
                         }
                     }
                     if (listWidth != null) VerticalDivider()
-                    if (listWidth != null || target != WorkspaceTarget.List) {
+                    if (
+                        chats != null &&
+                            composer != null &&
+                            controls != null &&
+                            (listWidth != null || target != WorkspaceTarget.List)
+                    ) {
                         Box(
                             Modifier.weight(1f).fillMaxHeight(),
                             contentAlignment = Alignment.TopCenter,
@@ -297,6 +334,13 @@ internal fun OkouApp(
                                             contentAlignment = Alignment.Center,
                                         ) {
                                             Button(onClick = { startNewChat(null) }) {
+                                                Icon(
+                                                    painterResource(R.drawable.ic_edit_square),
+                                                    contentDescription = null,
+                                                    modifier =
+                                                        Modifier.size(ButtonDefaults.IconSize),
+                                                )
+                                                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
                                                 Text(stringResource(R.string.composer_new))
                                             }
                                         }

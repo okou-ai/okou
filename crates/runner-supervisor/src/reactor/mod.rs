@@ -1092,7 +1092,22 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     let (dispatch_intake, mut dispatch_rx) =
         crate::ingress::dispatch::DispatchIntake::new(acceptance_tasks.slots());
     if let Some(ingress) = &ingress {
-        ingress.enable_dispatch(dispatch_intake);
+        let preferred_home_probe = exec_config.home_cache.clone().map(|cache| {
+            crate::ingress::dispatch::PreferredHomeProbe::new(
+                cache,
+                spawn_ctx.home_cache_snapshot.clone(),
+                runner
+                    .profiles
+                    .iter()
+                    .map(|(name, profile)| (name.clone(), profile.home_disk_mb))
+                    .collect(),
+                spawn_ctx.active_runs.clone(),
+                Arc::clone(&shared.idle_pool),
+                spawn_ctx.device_rate_limits.clone(),
+                mode_rx.clone(),
+            )
+        });
+        ingress.enable_dispatch(dispatch_intake.with_preferred_home_probe(preferred_home_probe));
     }
     let mut blank_pool_tick = tokio::time::interval_at(
         tokio::time::Instant::now() + Duration::from_secs(1),

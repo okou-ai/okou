@@ -1,6 +1,14 @@
+import { worksChannelCards$ } from "../../signals/works-page/works-channel-cards.ts";
+import { WorksChannelCardContent } from "./components/works-channel-card-content.tsx";
+import { Link2 } from "lucide-react";
 import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import type { WhatsappLinkCodeResponse } from "@okouai/api-contracts/contracts/integrations-whatsapp";
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import {
+  useLastResolved,
+  useGet,
+  useLastLoadable,
+  useSet,
+} from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { QRCodeSVG } from "qrcode.react";
@@ -127,6 +135,11 @@ export function WhatsappConnectContent({
 }
 
 export function WhatsappCard() {
+  const compact = useLastResolved(worksChannelCards$);
+  return compact ? <CompactWhatsappCard /> : <ClassicWhatsappCard />;
+}
+
+function ClassicWhatsappCard() {
   const { t } = useTranslation();
   const statusLoadable = useLastLoadable(whatsappLinkStatus$);
   const status =
@@ -203,6 +216,100 @@ export function WhatsappCard() {
             </Button>
           )}
         </div>
+      </div>
+      <WhatsappConnectContent
+        phone={phone}
+        code={code}
+        loading={codeLoadable.state === "loading"}
+        failed={codeLoadable.state === "hasError"}
+        onGenerate={generateCode}
+      />
+    </Dialog>
+  );
+}
+
+function CompactWhatsappCard() {
+  const { t } = useTranslation();
+  const statusLoadable = useLastLoadable(whatsappLinkStatus$);
+  const status =
+    statusLoadable.state === "hasData" ? statusLoadable.data : null;
+  const [codeLoadable, createCode] = useLoadableSet(createWhatsappLinkCode$);
+  const [disconnectLoadable, disconnect] = useLoadableSet(disconnectWhatsapp$);
+  const signal = useGet(pageSignal$);
+  const open = useGet(whatsappConnectDialogOpen$);
+  const setOpen = useSet(setWhatsappConnectDialogOpen$);
+  const code = codeLoadable.state === "hasData" ? codeLoadable.data : null;
+  const phone = status?.agentPhoneNumber;
+  const generateCode = () => {
+    return detach(createCode(signal), Reason.DomCallback);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <div
+        data-slot="integration-card"
+        className={surfaceVariants({ className: "flex min-w-0 flex-col" })}
+      >
+        <WorksChannelCardContent
+          actionsPlacement={status?.linked ? "footer" : "header"}
+          showDescription={!status?.linked || !status.configured}
+          icon={<WhatsappMark size={20} className="text-green-600" />}
+          title={t(($) => {
+            return $.works.whatsapp.name;
+          })}
+          description={
+            status && !status.configured
+              ? t(($) => {
+                  return $.works.whatsapp.unavailable;
+                })
+              : t(($) => {
+                  return $.works.channelExamples.whatsapp;
+                })
+          }
+          actions={
+            <>
+              {status?.linked ? (
+                <>
+                  <ConnectedIndicator
+                    variant="text"
+                    wrap
+                    connectedDetail={status.phoneHandle}
+                  />
+                  <ProviderCardMenu
+                    moreOptionsLabel={t(($) => {
+                      return $.works.whatsapp.options;
+                    })}
+                    disconnectLabel={t(($) => {
+                      return $.works.actions.disconnect;
+                    })}
+                    disconnecting={disconnectLoadable.state === "loading"}
+                    onDisconnect={() => {
+                      return detach(disconnect(signal), Reason.DomCallback);
+                    }}
+                  />
+                </>
+              ) : (
+                <Button
+                  showTooltip
+                  type="button"
+                  variant="quiet"
+                  size="icon-xs"
+                  className="shrink-0 rounded-md border border-border/60"
+                  disabled={!status?.configured}
+                  aria-label={t(($) => {
+                    return $.works.whatsapp.connect;
+                  })}
+                  onClick={() => {
+                    setOpen(true);
+                    generateCode();
+                  }}
+                >
+                  <Link2 size={16} aria-hidden="true" />
+                </Button>
+              )}
+            </>
+          }
+        />
       </div>
       <WhatsappConnectContent
         phone={phone}

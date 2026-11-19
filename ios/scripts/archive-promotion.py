@@ -105,7 +105,7 @@ def inputs(commit, tools):
             input=b"".join(oid + b"\n" for _, _, oid in files),
         )
     )
-    archive, tests = [], []
+    sources = []
     for path, mode, oid in files:
         header = blobs.readline().split()
         if len(header) != 3 or header[:2] != [oid, b"blob"]:
@@ -113,7 +113,6 @@ def inputs(commit, tools):
         data = blobs.read(int(header[2]))
         if blobs.read(1) != b"\n":
             raise ValueError(f"Truncated promotion input blob: {path}")
-        archive.append([path, mode, digest(data)])
         if path == "ios/version.txt":
             if not re.fullmatch(SEMVER, data.decode().strip()):
                 raise ValueError("Invalid iOS release version")
@@ -124,14 +123,17 @@ def inputs(commit, tools):
                 raise ValueError(
                     "Expected exactly one release-please marketing version"
                 )
-        tests.append([path, mode, digest(data)])
-    if not any(entry[0] == "ios/version.txt" for entry in archive):
+        sources.append([path, mode, digest(data)])
+    if not any(entry[0] == "ios/version.txt" for entry in sources):
         raise ValueError("Missing iOS promotion inputs")
+    # The release version is bundle metadata stamped at promotion, so compiled
+    # archives and executed tests share one version-normalized identity.
+    identity = digest(json_bytes([sources, tools]))
     return {
         "version": 1,
         "toolchain": tools,
-        "archiveInputSha256": digest(json_bytes([archive, tools])),
-        "testInputSha256": digest(json_bytes([tests, tools])),
+        "archiveInputSha256": identity,
+        "testInputSha256": identity,
     }
 
 
@@ -236,6 +238,32 @@ def release_only(base):
     return True
 
 
+def same_native_sources(sha):
+    """Compare trees; release-version files still need normalized fingerprints."""
+    unchanged = subprocess.run(
+        [
+            "git",
+            "diff",
+            "--quiet",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-renames",
+            sha,
+            "HEAD",
+            "--",
+            *INPUT_PATHS,
+            ":(exclude)ios/CHANGELOG.md",
+            ":(exclude)ios/version.txt",
+            ":(exclude)ios/Config/Shared.xcconfig",
+        ],
+        check=False,
+    )
+    if unchanged.returncode == 1:
+        return False
+    unchanged.check_returncode()
+    return True
+
+
 def main_input_commits(base):
     seen = set()
     for path in INPUT_PATHS:
@@ -269,27 +297,8 @@ def release_pr_tests(base):
     for sha in main_input_commits(base):
         if not git_bytes("ls-tree", sha, "--", "ios/version.txt"):
             continue
-        unchanged = subprocess.run(
-            [
-                "git",
-                "diff",
-                "--quiet",
-                "--no-ext-diff",
-                "--no-textconv",
-                "--no-renames",
-                sha,
-                "HEAD",
-                "--",
-                *INPUT_PATHS,
-                ":(exclude)ios/CHANGELOG.md",
-                ":(exclude)ios/version.txt",
-                ":(exclude)ios/Config/Shared.xcconfig",
-            ],
-            check=False,
-        )
-        if unchanged.returncode == 1:
+        if not same_native_sources(sha):
             continue
-        unchanged.check_returncode()
         if inputs(sha, {})["testInputSha256"] != target:
             continue
         runs = json.loads(
@@ -516,6 +525,83 @@ def resolve_tests(work):
     )
 
 
+def queued_producer():
+    """Oldest fetched ancestor that already carried these native inputs."""
+    target = inputs("HEAD", {})["testInputSha256"]
+    producer = None
+    for sha in command("git", "rev-list", "--first-parent", "HEAD").splitlines()[1:]:
+        if not same_native_sources(sha):
+            break
+        producer = sha
+    if producer and inputs(producer, {})["testInputSha256"] == target:
+        return producer
+    return None
+
+
+def validating(sha):
+    """Whether a main merge group for this commit can still publish."""
+    repository = os.environ["GITHUB_REPOSITORY"]
+    runs = json.loads(
+        command(
+            "gh",
+            "api",
+            f"repos/{repository}/actions/workflows/ios.yml/runs"
+            f"?head_sha={sha}&event=merge_group&per_page=100",
+        )
+    )["workflow_runs"]
+    return any(
+        run["head_sha"] == sha
+        and run["event"] == "merge_group"
+        and run["path"] == ".github/workflows/ios.yml"
+        and run["status"] != "completed"
+        for run in runs
+    )
+
+
+def resolve_release(work, wait_seconds):
+    """Select reuse only for release metadata with a verified archive and tests.
+
+    A queue entry ahead of this group may still be validating the same native
+    inputs. This group cannot merge before it, so wait for its publication
+    instead of repeating its build and tests. A missing record selects the
+    complete native path; corrupt or unverifiable records fail.
+    """
+    target = read_json(work / "inputs.json")
+    reuse = False
+    if os.environ["GITHUB_EVENT_NAME"] == "merge_group" and release_only(
+        os.environ["MERGE_GROUP_BASE_SHA"]
+    ):
+        store = Store()
+        key = f"okou-ios/inputs/{target['archiveInputSha256']}/ready.json"
+        probe = work / "ready-probe.json"
+        published = store.get(key, probe)
+        if not published:
+            producer = queued_producer()
+            deadline = time.monotonic() + wait_seconds
+            while (
+                not published
+                and producer
+                and time.monotonic() < deadline
+                and validating(producer)
+            ):
+                time.sleep(min(15, max(0, deadline - time.monotonic())))
+                published = store.get(key, probe)
+            # Readiness is written last and before its builder run completes.
+            published = published or store.get(key, probe)
+        if published:
+            existing = work / "release-reuse"
+            existing.mkdir()
+            download_archive(existing, store, target, 0)
+            reuse = True
+    with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
+        output.write(f"reuse={str(reuse).lower()}\n")
+    print(
+        "Reuse exact-input test evidence and the published archive"
+        if reuse
+        else "Run complete native validation"
+    )
+
+
 def publish(work):
     target = read_json(work / "inputs.json")
     if read_json(work / "test-inputs.json") != target:
@@ -587,11 +673,11 @@ def publish(work):
     ):
         existing_work = work / "existing-ready"
         existing_work.mkdir()
-        download_archive(existing_work, store, target, 0, manifest["iosVersion"])
+        download_archive(existing_work, store, target, 0)
     print(f"Published immutable archive: {prefix}")
 
 
-def download_archive(work, store, target, wait_seconds, version):
+def download_archive(work, store, target, wait_seconds):
     ready_file = work / "ready.json"
     key = f"okou-ios/inputs/{target['archiveInputSha256']}/ready.json"
     deadline = time.monotonic() + wait_seconds
@@ -620,8 +706,8 @@ def download_archive(work, store, target, wait_seconds, version):
         if manifest[field] != target[field] or actual[field] != target[field]:
             raise ValueError(f"Archive input mismatch: {field}")
     verify_evidence(manifest["testEvidence"], target)
-    if manifest["iosVersion"] != version:
-        raise ValueError("Release version mismatch")
+    if not re.fullmatch(SEMVER, manifest["iosVersion"]):
+        raise ValueError("Invalid archive version")
     prefix = (
         f"okou-ios/archives/{target['archiveInputSha256']}/{manifest['commitSha']}/"
         f"{manifest['runId']}/{manifest['runAttempt']}"
@@ -643,7 +729,7 @@ def consume(work, wait_seconds):
     version = git_bytes("show", "HEAD:ios/version.txt").decode().strip()
     if version != os.environ["IOS_VERSION"]:
         raise ValueError("Release version mismatch")
-    manifest, ready = download_archive(work, Store(), target, wait_seconds, version)
+    manifest, ready = download_archive(work, Store(), target, wait_seconds)
     archive_file = work / "archive.tar.gz"
     archive_root = (work / "Original.xcarchive").resolve()
 
@@ -675,6 +761,7 @@ def consume(work, wait_seconds):
         "version": 1,
         "releaseTarget": command("git", "rev-parse", "HEAD"),
         "iosVersion": version,
+        "archiveVersion": manifest["iosVersion"],
         "archiveInputSha256": target["archiveInputSha256"],
         "builderCommit": manifest["commitSha"],
         "builderRunId": manifest["runId"],
@@ -706,11 +793,16 @@ def main():
     release.add_argument("--base", required=True)
     release_pr = sub.add_parser("release-pr-tests")
     release_pr.add_argument("--base", required=True)
-    for operation in ("resolve-tests", "publish", "consume"):
+    for operation, wait in (
+        ("resolve-tests", None),
+        ("resolve-release", 1500),
+        ("publish", None),
+        ("consume", 600),
+    ):
         part = sub.add_parser(operation)
         part.add_argument("work", type=Path)
-        if operation == "consume":
-            part.add_argument("--wait-seconds", type=int, default=600)
+        if wait is not None:
+            part.add_argument("--wait-seconds", type=int, default=wait)
     args = parser.parse_args()
     if args.operation == "toolchain":
         write_json(args.output, toolchain())
@@ -727,6 +819,8 @@ def main():
         print(json.dumps(release_pr_tests(args.base)))
     elif args.operation == "resolve-tests":
         resolve_tests(args.work)
+    elif args.operation == "resolve-release":
+        resolve_release(args.work, args.wait_seconds)
     elif args.operation == "publish":
         publish(args.work)
     else:

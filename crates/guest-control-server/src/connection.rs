@@ -1,4 +1,6 @@
 mod dispatcher;
+#[cfg(target_os = "linux")]
+mod large_write;
 
 use std::io::{self, Read};
 use std::os::unix::net::UnixStream;
@@ -158,6 +160,10 @@ pub fn connect_vsock() -> io::Result<UnixStream> {
     use rustix::net::{AddressFamily, SocketFlags, SocketType, socket_with};
     use std::os::fd::AsRawFd;
 
+    // Linux vSocket stream buffer options from linux/vm_sockets.h.
+    const SO_VM_SOCKETS_BUFFER_SIZE: libc::c_int = 0;
+    const SO_VM_SOCKETS_BUFFER_MAX_SIZE: libc::c_int = 2;
+
     let fd = socket_with(
         AddressFamily::VSOCK,
         SocketType::STREAM,
@@ -165,6 +171,26 @@ pub fn connect_vsock() -> io::Result<UnixStream> {
         None,
     )
     .map_err(io::Error::from)?;
+
+    // Raise the maximum before setting the active window. The guest advertises
+    // this receive credit during connect, reducing stalls on large host writes.
+    let window: u64 = 4 * 1024 * 1024;
+    for option in [SO_VM_SOCKETS_BUFFER_MAX_SIZE, SO_VM_SOCKETS_BUFFER_SIZE] {
+        // SAFETY: fd owns a live vSocket and Linux reads one initialized u64
+        // value for each of these options.
+        let result = unsafe {
+            libc::setsockopt(
+                fd.as_raw_fd(),
+                libc::AF_VSOCK,
+                option,
+                (&raw const window).cast(),
+                std::mem::size_of_val(&window) as libc::socklen_t,
+            )
+        };
+        if result < 0 {
+            return Err(io::Error::last_os_error());
+        }
+    }
 
     let addr = libc::sockaddr_vm {
         svm_family: libc::AF_VSOCK as u16,
@@ -532,14 +558,44 @@ fn handle_connection_with_outcome(
     .map_err(|error| session.failure(error))?;
     let mut buf = [0u8; READ_BUFFER_SIZE];
     loop {
-        // Read from stream (reader is separate, no lock needed)
-        let n = reader
-            .read(&mut buf)
+        #[cfg(target_os = "linux")]
+        let trailing = if let Some(frame) =
+            decoder.take_incomplete_frame(MSG_WRITE_FILES, large_write::STREAMED_BATCH_MIN_BYTES)
+        {
+            let Some((file, retained)) = large_write::receive(&mut reader, &mut buf, &frame)
+                .map_err(|error| session.failure(error))?
+            else {
+                break;
+            };
+            // The final read can contain the start of another frame. Preserve
+            // the decoder's length preflight before dispatching anything from it.
+            guest_control_proto::Decoder::validate_buffered_framing(
+                buf.get(..retained).unwrap_or_default(),
+            )
+            .map_err(to_io_error)
             .map_err(|error| session.failure(error))?;
+            dispatcher
+                .dispatch_sealed_write(frame.seq, file)
+                .map_err(|error| session.failure(error))?;
+            session.mark_real_host_work(MSG_WRITE_FILES);
+            Some(retained)
+        } else {
+            None
+        };
+        #[cfg(not(target_os = "linux"))]
+        let trailing = None;
 
-        if n == 0 {
-            break;
-        }
+        let n = if let Some(retained) = trailing {
+            retained
+        } else {
+            let n = reader
+                .read(&mut buf)
+                .map_err(|error| session.failure(error))?;
+            if n == 0 {
+                break;
+            }
+            n
+        };
 
         // n <= buf.len() is guaranteed by read()
         match decoder.decode_with(buf.get(..n).unwrap_or_default(), |msg| {

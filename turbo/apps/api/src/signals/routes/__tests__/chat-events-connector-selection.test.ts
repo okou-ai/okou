@@ -1,8 +1,10 @@
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { chatThreadRoutes } from "../chat-threads";
+import { chatConnectorAccessRoutes } from "../chat-connector-access";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { publicChatActor } from "./helpers/public-chat-actor";
@@ -17,7 +19,7 @@ function selectionsClient() {
 }
 
 describe("thread connector selection", () => {
-  it("retains both selected accounts for a Run and clears only the requested selection", async () => {
+  it("keeps active Run accounts and uses an allowed replacement for queued input", async () => {
     const {
       actor,
       agentId,
@@ -30,13 +32,9 @@ describe("thread connector selection", () => {
       return api.updateUserModelPreference(actor, "claude-fable-5-1");
     });
     const defaultConnection = await own(() => {
-      return connectors.connectManualGrant(
-        actor,
-        "openai",
-        "api-token",
-        { apiKey: "thread-openai-key" },
-        agentId,
-      );
+      return connectors.connectManualGrant(actor, "openai", "api-token", {
+        apiKey: "thread-openai-key",
+      });
     });
     const connection = await own(() => {
       return connectors.connectManualGrant(
@@ -44,7 +42,7 @@ describe("thread connector selection", () => {
         "openai",
         "api-token",
         { apiKey: "thread-selected-openai-key" },
-        agentId,
+        undefined,
         { intent: "add", displayName: "Selected sibling" },
       );
     });
@@ -62,13 +60,9 @@ describe("thread connector selection", () => {
       }),
     ).toMatchObject({ isDefault: false });
     const runtimeConnection = await own(() => {
-      return connectors.connectManualGrant(
-        actor,
-        "runtime",
-        "api-token",
-        { apiKey: "thread-runtime-key" },
-        agentId,
-      );
+      return connectors.connectManualGrant(actor, "runtime", "api-token", {
+        apiKey: "thread-runtime-key",
+      });
     });
     const thread = await own(() => {
       return chat.createThread(actor, {
@@ -76,14 +70,18 @@ describe("thread connector selection", () => {
         title: "Selected connector thread",
       });
     });
+    const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
+      chatConnectorAccessContract,
+    );
+    const openAITarget = { kind: "builtin", connectorSlug: "openai" } as const;
     await own(() => {
       return accept(
-        selectionsClient().update({
+        access.setThreadCurrent({
           headers: sessionHeaders(actor),
-          params: { id: thread.id },
+          params: { threadId: thread.id },
           body: {
             connectionId: connection.id,
-            target: { kind: "builtin", connectorSlug: "openai" },
+            target: openAITarget,
           },
         }),
         [200],
@@ -91,9 +89,9 @@ describe("thread connector selection", () => {
     });
     await own(() => {
       return accept(
-        selectionsClient().update({
+        access.setThreadCurrent({
           headers: sessionHeaders(actor),
-          params: { id: thread.id },
+          params: { threadId: thread.id },
           body: {
             connectionId: runtimeConnection.id,
             target: { kind: "builtin", connectorSlug: "runtime" },
@@ -114,7 +112,7 @@ describe("thread connector selection", () => {
     expect(selections.body.selections).toStrictEqual([
       {
         connectionId: connection.id,
-        target: { kind: "builtin", connectorSlug: "openai" },
+        target: openAITarget,
       },
       {
         connectionId: runtimeConnection.id,
@@ -174,18 +172,19 @@ describe("thread connector selection", () => {
     const waiting = await sendWaitingChatInput(actor, {
       agentId,
       threadId: thread.id,
-      prompt: "Use the selections current when this queued input is picked",
+      prompt: "Use the account allowed when this queued input is picked",
     });
-    await own(() => {
+    const override = await own(() => {
       return accept(
-        selectionsClient().clear({
+        access.setThreadOverride({
           headers: sessionHeaders(actor),
-          params: { id: thread.id },
-          body: { kind: "builtin", connectorSlug: "openai" },
+          params: { threadId: thread.id, connectionId: connection.id },
+          body: { target: openAITarget, enabled: false },
         }),
-        [204],
+        [200],
       );
     });
+    expect(override.body.currentConnectionId).toBe(defaultConnection.id);
     const remaining = await own(() => {
       return accept(
         selectionsClient().get({
@@ -196,6 +195,7 @@ describe("thread connector selection", () => {
       );
     });
     expect(remaining.body.selections).toStrictEqual([
+      { connectionId: defaultConnection.id, target: openAITarget },
       {
         connectionId: runtimeConnection.id,
         target: { kind: "builtin", connectorSlug: "runtime" },
@@ -207,7 +207,7 @@ describe("thread connector selection", () => {
         "runtime",
         "api-token",
         { apiKey: "thread-runtime-key-updated" },
-        agentId,
+        undefined,
         { intent: "reconnect", connectionId: runtimeConnection.id },
       );
     });

@@ -1,17 +1,34 @@
 import type { Root, RootContent } from "hast";
 
-import { createDeferredPromise } from "../../signals/utils.ts";
-import { platformMessagePdfFontUrls } from "../static-assets.ts";
+import { resolvePlatformEnvironment } from "../platform-host.ts";
+import { fetchAppAsset } from "../resource-fetch.ts";
+import {
+  platformMessagePdfFontUrls,
+  platformPreviewMessagePdfFontUrls,
+} from "../static-assets.ts";
 import { preparePdfAssets } from "./assets.ts";
 import { parseMessagePdfTree } from "./document.ts";
-import type { PdfWorkerRequest, PdfWorkerResponse } from "./types.ts";
+import type { PdfWorkerRequest } from "./types.ts";
 import { readPdfResource } from "./urls.ts";
+import { runDocumentExportWorker } from "./worker-client.ts";
 
 async function loadFont(
   url: string,
+  production: boolean,
   signal: AbortSignal,
 ): Promise<ArrayBuffer> {
-  const response = await readPdfResource(url, "default", signal);
+  if (production) {
+    return (await readPdfResource(url, "default", signal)).arrayBuffer();
+  }
+  // The preview gateway serves the bundled font at the same asset path.
+  const asset = new URL(url, location.href);
+  const response = await fetchAppAsset(
+    `${asset.pathname}${asset.search}`,
+    signal,
+  );
+  if (!response.ok) {
+    throw new Error(`PDF font could not be loaded (${response.status})`);
+  }
   return response.arrayBuffer();
 }
 
@@ -48,6 +65,7 @@ export async function generateMessagePdfBlob(
   contents: readonly string[],
   imageUrls: ReadonlyMap<string, string>,
   signal: AbortSignal,
+  baseUrl = location.href,
 ): Promise<Blob> {
   signal.throwIfAborted();
   // Reference labels belong to each message, not the combined document.
@@ -58,59 +76,24 @@ export async function generateMessagePdfBlob(
     }),
   };
   const needed = requiredExtraFonts(tree);
+  const production = resolvePlatformEnvironment() === "production";
+  const fontUrls = production
+    ? platformMessagePdfFontUrls
+    : platformPreviewMessagePdfFontUrls;
+  const readFont = (url: string) => {
+    return loadFont(url, production, signal);
+  };
   const [assets, regularFont, boldFont, italicFont, boldItalicFont, emojiFont] =
     await Promise.all([
       preparePdfAssets(tree, imageUrls, signal),
-      loadFont(platformMessagePdfFontUrls.regular, signal),
-      loadFont(platformMessagePdfFontUrls.bold, signal),
-      needed.italic
-        ? loadFont(platformMessagePdfFontUrls.italic, signal)
-        : undefined,
-      needed.boldItalic
-        ? loadFont(platformMessagePdfFontUrls.boldItalic, signal)
-        : undefined,
-      needed.emoji
-        ? loadFont(platformMessagePdfFontUrls.emoji, signal)
-        : undefined,
+      readFont(fontUrls.regular),
+      readFont(fontUrls.bold),
+      needed.italic ? readFont(fontUrls.italic) : undefined,
+      needed.boldItalic ? readFont(fontUrls.boldItalic) : undefined,
+      needed.emoji ? readFont(fontUrls.emoji) : undefined,
     ]);
-  signal.throwIfAborted();
-  const worker = new Worker(
-    new URL("./message-pdf-worker.ts", import.meta.url),
-    {
-      type: "module",
-    },
-  );
-  const result = createDeferredPromise<Blob>(signal);
-  worker.addEventListener(
-    "message",
-    (event: MessageEvent<PdfWorkerResponse>) => {
-      if (result.settled()) {
-        return;
-      }
-      if (event.data.ok) {
-        result.resolve(event.data.blob);
-      } else {
-        result.reject(new Error("PDF export worker could not complete"));
-      }
-    },
-    { signal },
-  );
-  const onError = () => {
-    if (!result.settled()) {
-      result.reject(new Error("PDF export worker could not complete"));
-    }
-  };
-  worker.addEventListener("error", onError, { signal });
-  worker.addEventListener("messageerror", onError, { signal });
-  signal.addEventListener(
-    "abort",
-    () => {
-      worker.terminate();
-    },
-    { once: true },
-  );
   const request: PdfWorkerRequest = {
-    baseUrl: location.href,
+    baseUrl,
     tree,
     assets,
     regularFont,
@@ -128,6 +111,5 @@ export async function generateMessagePdfBlob(
   ].filter((font): font is ArrayBuffer => {
     return font !== undefined;
   });
-  worker.postMessage(request, fonts);
-  return result.promise;
+  return runDocumentExportWorker(request, signal, fonts);
 }

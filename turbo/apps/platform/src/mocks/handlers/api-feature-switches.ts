@@ -3,8 +3,9 @@
  *
  * Mock handlers for /api/feature-switches endpoint.
  *
- * Stateless: defaults model a retained multi-Agent member. Tests override the GET response
- * via `setMockFeatureSwitches` from `./api-feature-switches.helpers.ts` —
+ * Stateless: defaults model a retained member using Agent-scoped access.
+ * Tests override the GET response via `setMockFeatureSwitches` from
+ * `./api-feature-switches.helpers.ts` —
  * that file imports `server` (msw/node) and is intentionally separate so
  * default handlers stay free of test override side effects.
  */

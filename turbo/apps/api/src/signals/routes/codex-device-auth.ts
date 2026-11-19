@@ -1,7 +1,4 @@
-import {
-  subscriptionSwitchRecoveries,
-  enqueueSubscriptionRecovery$,
-} from "../services/subscription-switch-recovery.service";
+import { enqueueSubscriptionRecovery$ } from "../services/subscription-switch-recovery.service";
 import { waitUntil } from "../context/wait-until";
 import { continueIntegrationRecovery$ } from "../services/integration-recovery-continuation.service";
 import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
@@ -83,11 +80,6 @@ const completeCodexDeviceAuthInner$ = command(
       return body.response;
     }
 
-    const recoveries = await get(
-      subscriptionSwitchRecoveries({ ...auth, type: "codex-oauth-token" }),
-    );
-    signal.throwIfAborted();
-
     const result = await set(
       completeCodexDeviceAuth$,
       {
@@ -110,7 +102,7 @@ const completeCodexDeviceAuthInner$ = command(
         };
       }
       case "complete": {
-        for (const recovery of recoveries) {
+        for (const recovery of result.recoveries) {
           const input = await set(
             enqueueSubscriptionRecovery$,
             {

@@ -30,13 +30,9 @@ export interface AdmittedExecutionFacts {
   /** Same member observation as the admission Prompt; later edits affect later Runs. */
   readonly userTimezone: string | undefined;
   readonly nativeContinuation: NativeContinuation;
-  readonly customWorkflowSelection: PreparedExecutionContext["customWorkflowSelection"];
   readonly featureFlags: Readonly<
     Record<
-      | FeatureSwitchKey.ArtifactGenerationTiming
-      | FeatureSwitchKey.ArtifactThreePointTiming
-      | FeatureSwitchKey.SingleAgent
-      | FeatureSwitchKey.ConnectorChatAccountAccess,
+      FeatureSwitchKey.ArtifactThreePointTiming | FeatureSwitchKey.SingleAgent,
       boolean
     >
   >;

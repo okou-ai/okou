@@ -71,8 +71,10 @@ export async function buildBundle({
   }
 
   const config = await loadConfig(outputFormat);
+  const deferredTemplates = new Set(config.deferredTemplates);
+  const sourceTemplates = await sourceSlugs(sourceDir);
   assertSameSet(
-    await sourceSlugs(sourceDir),
+    sourceTemplates.filter((slug) => !deferredTemplates.has(slug)),
     config.templates.map((release) => release.slug),
     "Template source set",
   );

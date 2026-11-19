@@ -187,11 +187,10 @@ pub(super) fn validate_output_policies(
     stdout_policy: ExecOutputPolicy,
     stderr_policy: ExecOutputPolicy,
 ) -> Result<(), String> {
-    let stdout_capture = capture_limit_bytes(stdout_policy);
-    let stderr_capture = capture_limit_bytes(stderr_policy);
+    let stdout_capture = stdout_policy.capture_limit_bytes().unwrap_or(0) as usize;
+    let stderr_capture = stderr_policy.capture_limit_bytes().unwrap_or(0) as usize;
     let capture_total = stdout_capture
-        .unwrap_or(0)
-        .checked_add(stderr_capture.unwrap_or(0))
+        .checked_add(stderr_capture)
         .ok_or_else(|| "exec capture limits overflow".to_string())?;
     let capture_budget = exec_result_capture_budget(stdout_policy, stderr_policy);
     if capture_total > capture_budget {
@@ -232,7 +231,7 @@ fn exec_result_capture_budget(
 }
 
 fn exec_result_output_overhead(policy: ExecOutputPolicy) -> usize {
-    if capture_limit_bytes(policy).is_some() {
+    if policy.capture_limit_bytes().is_some() {
         EXEC_CAPTURED_OUTPUT_OVERHEAD
     } else {
         EXEC_DISCARDED_OUTPUT_LEN
@@ -241,38 +240,16 @@ fn exec_result_output_overhead(policy: ExecOutputPolicy) -> usize {
 
 pub(super) fn output_settings(policy: ExecOutputPolicy) -> OutputSettings {
     OutputSettings {
-        capture_limit_bytes: capture_limit_bytes(policy),
+        capture_limit_bytes: policy.capture_limit_bytes().map(|limit| limit as usize),
         stream: stream_config(policy),
     }
 }
 
-fn capture_limit_bytes(policy: ExecOutputPolicy) -> Option<usize> {
-    match policy {
-        ExecOutputPolicy::Discard | ExecOutputPolicy::Stream { .. } => None,
-        ExecOutputPolicy::Capture { limit_bytes } => Some(limit_bytes as usize),
-        ExecOutputPolicy::CaptureAndStream {
-            capture_limit_bytes,
-            ..
-        } => Some(capture_limit_bytes as usize),
-    }
-}
-
 fn stream_config(policy: ExecOutputPolicy) -> Option<BoundedStreamConfig> {
-    match policy {
-        ExecOutputPolicy::Stream {
-            limit_bytes,
-            chunk_limit_bytes,
-        }
-        | ExecOutputPolicy::CaptureAndStream {
-            stream_limit_bytes: limit_bytes,
-            chunk_limit_bytes,
-            ..
-        } => Some(BoundedStreamConfig {
-            chunk_limit_bytes: chunk_limit_bytes as usize,
-            stream_limit_bytes: limit_bytes as usize,
-        }),
-        ExecOutputPolicy::Discard | ExecOutputPolicy::Capture { .. } => None,
-    }
+    policy.stream_limits().map(|limits| BoundedStreamConfig {
+        chunk_limit_bytes: limits.chunk_limit_bytes as usize,
+        stream_limit_bytes: limits.total_limit_bytes as usize,
+    })
 }
 
 pub(super) fn spawn_exec_operation_drain<R, S>(
@@ -387,15 +364,12 @@ where
 }
 
 pub(super) fn empty_output_for_policy(policy: ExecOutputPolicy) -> ExecCapturedOutput<'static> {
-    match policy {
-        ExecOutputPolicy::Capture { .. } | ExecOutputPolicy::CaptureAndStream { .. } => {
-            ExecCapturedOutput::Captured {
-                bytes: &[],
-                truncated: false,
-            }
+    if policy.capture_limit_bytes().is_some() {
+        ExecCapturedOutput::Captured {
+            bytes: &[],
+            truncated: false,
         }
-        ExecOutputPolicy::Discard | ExecOutputPolicy::Stream { .. } => {
-            ExecCapturedOutput::Discarded
-        }
+    } else {
+        ExecCapturedOutput::Discarded
     }
 }

@@ -36,9 +36,6 @@ export async function startS3(t, { current, mode, concurrent } = {}) {
     const body = Buffer.concat(chunks);
     requests.push({ method: request.method, key });
     if (request.method === "GET") {
-      if (mode === "denied" && key === currentKey) {
-        return fail(response, 403, "AccessDenied");
-      }
       const object = objects.get(key);
       if (!object) return fail(response, 404, "NoSuchKey");
       response.writeHead(200, {
@@ -68,12 +65,6 @@ export async function startS3(t, { current, mode, concurrent } = {}) {
         request.headers["if-match"] !== (previous && etag(previous)))
     ) {
       return fail(response, 412, "PreconditionFailed");
-    }
-    if (
-      (mode === "snapshot-failure" && key !== currentKey) ||
-      (mode === "current-failure" && key === currentKey)
-    ) {
-      return fail(response, 503, "ServiceUnavailable");
     }
     objects.set(
       key,

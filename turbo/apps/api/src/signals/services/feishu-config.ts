@@ -5,7 +5,10 @@ import {
 } from "./feature-switch-scope";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
 
 import {
   FEISHU_PLATFORMS,
@@ -217,9 +220,18 @@ export function feishuInstallationEnabledFromRows(
   },
   rows: readonly UserFeatureSwitchOverrideRow[],
 ): boolean {
-  const context = featureSwitchContextFromRows(scope.orgId, scope.userId, rows);
+  return isFeishuInstallationFeatureEnabled(
+    scope.installationType,
+    featureSwitchContextFromRows(scope.orgId, scope.userId, rows),
+  );
+}
+
+export function isFeishuInstallationFeatureEnabled(
+  installationType: "custom" | "official" | undefined,
+  context: FeatureSwitchContext,
+): boolean {
   return isFeatureEnabled(
-    scope.installationType === "official"
+    installationType === "official"
       ? FeatureSwitchKey.LarkOfficialBot
       : FEISHU_PLATFORMS.lark.featureSwitch,
     context,

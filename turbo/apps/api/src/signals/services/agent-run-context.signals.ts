@@ -75,10 +75,8 @@ import {
 import type { ConnectorExecutionRuntimeSelection } from "./connector-catalog-runtime.service";
 import type { CustomConnectorExecutionDefinition } from "./custom-connector-definition-selection";
 import { customConnectorPermissionBundleDependencySlug } from "./custom-connector-permission-bundle.service";
-import type {
-  AgentConnectorSelection,
-  AgentConnectorSelectionScope,
-} from "./execution-agent-connectors.service";
+import type { AgentConnectorSelection } from "./execution-agent-connectors.service";
+import type { ConnectorMember } from "./member-connector-selection";
 import {
   agentSelectionColumns,
   createAgentSelectionContext,
@@ -131,12 +129,15 @@ export interface BootstrapEnvironment {
   readonly variables: readonly BootstrapVariable[];
 }
 
+type RunContextAgent = BootstrapAgent &
+  Pick<typeof agents.$inferSelect, "instructionsBundle">;
+
 /** The only cross-graph read-only signal interface; no state or commands. */
 export interface AgentRunContextSignals {
   readonly userId: string;
   readonly orgId: string;
   readonly agentId: string;
-  readonly agent$: Computed<Promise<BootstrapAgent | null>>;
+  readonly agent$: Computed<Promise<RunContextAgent | null>>;
   readonly orgRows$: Computed<Promise<ExecutionOrgRows>>;
   readonly orgMetadata$: Computed<Promise<RunOrgMetadata | null>>;
   readonly plan$: Computed<Promise<OrgPlanCapabilities | null>>;
@@ -161,9 +162,9 @@ export interface AgentRunContextSignals {
   readonly requestTemplateInputId$: Computed<Promise<string | undefined>>;
   readonly requestTemplateSources$: ReturnType<typeof createRunTemplateSources>;
   readonly connectorSelection$: Computed<Promise<AgentConnectorSelection>>;
-  /** Connectors the Agent may use, derived from its connector selection. */
+  /** The member's saved connector scope before applying Chat access. */
   readonly connectorScope$: Computed<Promise<AgentConnectorScopeSnapshot>>;
-  /** The Agent's permission grants, expanded into firewall policies. */
+  /** The member's connector permission grants, expanded into firewall policies. */
   readonly permissionPolicies$: Computed<Promise<FirewallPolicies | null>>;
   readonly runVariables$: Computed<Promise<Record<string, string>>>;
   readonly authorizedConnectors$: Computed<Promise<AuthorizedConnectors>>;
@@ -322,6 +323,7 @@ function contextAgentSelection() {
     displayName: agents.displayName,
     description: agents.description,
     sound: agents.sound,
+    instructionsBundle: agents.instructionsBundle,
   };
 }
 
@@ -505,7 +507,7 @@ function createSelectedImageModel(
 }
 
 function createRequestInputSources(
-  scope: AgentConnectorSelectionScope,
+  scope: ConnectorMember & { readonly agentId: string },
   requestInputs: Parameters<typeof createAgentRunContextSignals>[3],
 ) {
   const requestThreadConnectorIdentity$ = computed(() => {
@@ -560,7 +562,7 @@ function createIdentityContext(
     supplied?.orgId === orgId && supplied.userId === userId
       ? supplied
       : undefined;
-  const agent$ = computed(async (get): Promise<BootstrapAgent | null> => {
+  const agent$ = computed(async (get): Promise<RunContextAgent | null> => {
     const [row, org] = await Promise.all([get(agentRow$), get(orgMetadata$)]);
     return row ? { ...row, defaultAgentId: org?.defaultAgentId ?? null } : null;
   });
@@ -587,12 +589,7 @@ function createIdentityContext(
           ]);
           return capturedFeatureSwitchContext(scope, member, overrides, agent);
         });
-  const connectorContext = createConnectorContextGroups(
-    userId,
-    orgId,
-    agentId,
-    featureSwitchContext$,
-  );
+  const connectorContext = createConnectorContextGroups(userId, orgId, agentId);
   const memory$ = computed(async (get): Promise<MemberMemoryContext> => {
     const requests = memberMemoryReadPlan(scope);
     const db = get(db$);
@@ -866,16 +863,9 @@ function bootstrapConnectorAccountRows(
 }
 
 /** Related accounts, definitions, bindings, values and grants share one observation. */
-function createAgentEnvironment(
-  identity$: Computed<Promise<AgentConnectorSelectionScope>>,
-  featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
-) {
+function createAgentEnvironment(member: ConnectorMember) {
   return computed(async (get) => {
-    const [identity, features] = await Promise.all([
-      get(identity$),
-      get(featureSwitches$),
-    ]);
-    const { userId, orgId } = identity;
+    const { userId, orgId } = member;
     const db = get(db$);
     const variableRows = bootstrapVariableRows(userId, orgId);
     const variableSnapshot = bootstrapVariableSnapshot(variableRows);
@@ -902,14 +892,7 @@ function createAgentEnvironment(
         accountRows: contextJsonRows(accountRows).mapWith(
           bootstrapAccountRowsDecoder,
         ),
-        ...agentSelectionColumns(
-          identity,
-          nowDate(),
-          isFeatureEnabled(
-            FeatureSwitchKey.ConnectorChatAccountAccess,
-            features,
-          ),
-        ),
+        ...agentSelectionColumns(member, nowDate()),
       })
       .from(variableSnapshot);
     const acquisitionCapture: PgPoolAcquisitionCapture = { acquisitions: [] };
@@ -1066,12 +1049,8 @@ function createConnectorContextGroups(
   userId: string,
   orgId: string,
   agentId: string,
-  featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
 ) {
-  const identity$ = computed(() => {
-    return Promise.resolve({ userId, orgId, agentId });
-  });
-  const sources = createConnectorSources(identity$, featureSwitches$);
+  const sources = createConnectorSources({ userId, orgId });
   const runVariables$ = computed(async (get) => {
     const snapshot = await get(sources.environmentSnapshot$);
     return buildAgentRunVariables({ agentId, variables: snapshot.variables });
@@ -1085,21 +1064,15 @@ function createConnectorContextGroups(
   };
 }
 
-function createConnectorSources(
-  identity$: Computed<Promise<AgentConnectorSelectionScope>>,
-  featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
-) {
-  const environmentSnapshot$ = createAgentEnvironment(
-    identity$,
-    featureSwitches$,
-  );
+function createConnectorSources(member: ConnectorMember) {
+  const environmentSnapshot$ = createAgentEnvironment(member);
   const { connectorSelection$, permissionGrants$ } =
     createAgentSelectionContext(environmentSnapshot$);
   const customConnectorDefinitions$ = computed(async (get) => {
     return (await get(connectorSelection$)).customConnectorDefinitions;
   });
   const connectorSnapshot$ = computed(async (get) => {
-    const { userId, orgId } = await get(identity$);
+    const { userId, orgId } = member;
     const [snapshot, definitions] = await Promise.all([
       get(environmentSnapshot$),
       get(customConnectorDefinitions$),

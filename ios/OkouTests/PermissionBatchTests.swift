@@ -53,7 +53,7 @@ final class PermissionBatchTests: XCTestCase {
     let saved = try await ChatBatchPermissions(client: fixture.http.client).load(card.action)
     XCTAssertTrue(saved.allAllowed)
     let requests = fixture.state.withLock { $0.requests }
-    XCTAssertEqual(requests.filter { $0.httpMethod == "PUT" }.count, 1)
+    XCTAssertEqual(requests.filter { $0.httpMethod == "PUT" }.count, 2)
     XCTAssertEqual(requests.filter { $0.url!.path == "/api/chat/events" }.count, 1)
   }
 
@@ -94,21 +94,29 @@ final class PermissionBatchTests: XCTestCase {
     XCTAssertTrue(card.displayedSnapshot(reviewed)?.allAllowed == true)
 
     let requests = fixture.state.withLock { Array($0.requests.dropFirst(firstRequest)) }
-    let write = try XCTUnwrap(requests.firstIndex { $0.httpMethod == "PUT" })
+    let writes = requests.indices.filter { requests[$0].httpMethod == "PUT" }
+    XCTAssertEqual(writes.count, 2)
+    XCTAssertTrue(writes.allSatisfy { requests[$0].url!.path == "/api/connector-permissions" })
+    let firstWrite = try XCTUnwrap(writes.first)
+    let lastWrite = try XCTUnwrap(writes.last)
     let continuation = try XCTUnwrap(requests.firstIndex { $0.url!.path == "/api/chat/events" })
     let metadata = "/api/chat-threads/\(FixtureData.threadID)/metadata"
     XCTAssertEqual(
-      requests[..<write].map { $0.url!.path }.sorted(),
-      [metadata, "/api/feature-switches", "/api/user-permission-grants"].sorted())
-    XCTAssertEqual(requests[(write + 1)..<continuation].map { $0.url!.path }, [metadata])
+      requests[..<firstWrite].map { $0.url!.path }.sorted(),
+      [
+        metadata, "/api/feature-switches", "/api/connector-permissions",
+        "/api/connector-permissions"
+      ]
+      .sorted())
+    XCTAssertEqual(
+      requests[..<continuation].dropFirst(lastWrite + 1).map { $0.url!.path }, [metadata])
     gate.open()
     await confirmation.value
     XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permissions" })
   }
 
-  func testPartialSharedSaveReadsBackAndOnlyRetriesMissingConnector() async throws {
+  func testPartialSaveReadsBackAndOnlyRetriesMissingConnector() async throws {
     var state = FixtureData.State()
-    state.shared = true
     state.failConnector = "google-drive"
     let fixture = fixture(state)
     let (conversation, card) = try await setup(fixture)
@@ -132,7 +140,7 @@ final class PermissionBatchTests: XCTestCase {
 
   func testLostWriteResponseDoesNotAutomaticallyContinueOrRepeatGrant() async throws {
     var state = FixtureData.State()
-    state.loseBatchResponseOnce = true
+    state.loseResponseForConnector = "google-drive"
     let fixture = fixture(state)
     let (conversation, card) = try await setup(fixture)
     defer { conversation.close() }
@@ -144,12 +152,12 @@ final class PermissionBatchTests: XCTestCase {
     XCTAssertNil(card.error)
     XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permissions" })
     XCTAssertEqual(
-      fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, 1)
+      fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, 2)
   }
 
   func testUnconfirmedWriteRequiresSuccessfulReadBeforeExplicitRetry() async throws {
     var state = FixtureData.State()
-    state.loseBatchResponseOnce = true
+    state.loseResponseForConnector = "google-drive"
     state.failReadbackAfterWrite = true
     let fixture = fixture(state)
     let (conversation, card) = try await setup(fixture)
@@ -159,19 +167,19 @@ final class PermissionBatchTests: XCTestCase {
     XCTAssertFalse(card.canConfirm)
     await card.confirm()
     XCTAssertEqual(
-      fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, 1)
+      fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, 2)
     XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
     fixture.state.withLock { $0.grantReadStatus = 200 }
     await card.refresh()
     await card.confirm()
     XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permissions" })
     XCTAssertEqual(
-      fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, 1)
+      fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, 2)
   }
 
   func testContinueAfterRevocationRequiresAnotherExplicitGrantConfirmation() async throws {
     var state = FixtureData.State()
-    state.loseBatchResponseOnce = true
+    state.loseResponseForConnector = "google-drive"
     let fixture = fixture(state)
     let (conversation, card) = try await setup(fixture)
     defer { conversation.close() }
@@ -183,12 +191,12 @@ final class PermissionBatchTests: XCTestCase {
     XCTAssertFalse(card.allAllowed)
     XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
     XCTAssertEqual(
-      fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, 1)
+      fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, 2)
     // The next confirmation now approves the missing permission, not a continuation.
     await card.confirm()
     XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permissions" })
     XCTAssertEqual(
-      fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, 2)
+      fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, 3)
   }
 
   func testLostContinuationReceiptReadsEventBeforeRetryingAndDoesNotRegrant() async throws {
@@ -217,7 +225,7 @@ final class PermissionBatchTests: XCTestCase {
     XCTAssertFalse(card.needsContinuation)
     XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permissions" })
     let requests = fixture.state.withLock { $0.requests }
-    XCTAssertEqual(requests.filter { $0.httpMethod == "PUT" }.count, 1)
+    XCTAssertEqual(requests.filter { $0.httpMethod == "PUT" }.count, 2)
     XCTAssertEqual(requests.filter { $0.url!.path == "/api/chat/events" }.count, 1)
   }
 
@@ -288,30 +296,6 @@ final class PermissionBatchTests: XCTestCase {
     XCTAssertEqual(fixture.state.withLock { $0.requests.count }, count)
   }
 
-  func testConfirmUsesTheDisplayedSharedScopeAfterAnotherBatchCardRefreshes() async throws {
-    let fixture = fixture()
-    let (conversation, card) = try await setup(fixture)
-    defer { conversation.close() }
-    let action = try XCTUnwrap(
-      ChatPermissionBatchAction(
-        value: FixtureData.actionURL(callback: false, duration: "24h"),
-        webURL: fixture.http.baseURL,
-        agentID: FixtureData.agentID, threadID: FixtureData.threadID))
-    fixture.state.withLock { $0.shared = true }
-    await conversation.permissionActions.card(action).refresh()
-    let displayed = try await card.read.load()
-    XCTAssertTrue(displayed.connectorScoped)
-    XCTAssertTrue(card.canConfirm(reviewing: displayed))
-    await card.confirm(reviewing: displayed)
-    XCTAssertNil(card.error)
-    let saved = try await ChatBatchPermissions(client: fixture.http.client).load(card.action)
-    XCTAssertTrue(saved.allAllowed)
-    XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permissions" })
-    let writes = fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" } }
-    XCTAssertEqual(writes.count, 2)
-    XCTAssertTrue(writes.allSatisfy { $0.url!.path == "/api/connector-permissions" })
-  }
-
   func testEquivalentBatchReadsSurviveOneCancelledWaiterAndKeepSeparateDuration() async throws {
     let blocks = Mutex(false)
     let began = expectation(description: "Shared batch grant HTTP began")
@@ -319,7 +303,7 @@ final class PermissionBatchTests: XCTestCase {
     let fixture = FixtureData(
       onUnhandledRequest: { XCTFail($0) },
       beforeRequest: { request in
-        if request.url!.path == "/api/user-permission-grants", blocks.withLock({ $0 }) {
+        if Self.isGmailPermissionRead(request), blocks.withLock({ $0 }) {
           began.fulfill()
           await gate.wait()
         }
@@ -353,7 +337,7 @@ final class PermissionBatchTests: XCTestCase {
     XCTAssertEqual(other.duration, .day)
     XCTAssertEqual(
       fixture.state.withLock {
-        $0.requests.filter { $0.url!.path == "/api/user-permission-grants" }.count
+        $0.requests.filter(Self.isGmailPermissionRead).count
       }, 2)
     XCTAssertTrue(fixture.state.withLock { $0.requests.allSatisfy { $0.httpMethod == "GET" } })
   }
@@ -366,7 +350,7 @@ final class PermissionBatchTests: XCTestCase {
     let fixture = FixtureData(
       onUnhandledRequest: { XCTFail($0) },
       beforeRequest: { request in
-        if request.url!.path == "/api/user-permission-grants", blocks.withLock({ $0 }) {
+        if Self.isGmailPermissionRead(request), blocks.withLock({ $0 }) {
           await withTaskCancellationHandler {
             began.fulfill()
             await gate.wait()
@@ -431,6 +415,11 @@ final class PermissionBatchTests: XCTestCase {
       XCTAssertTrue(fixture.state.withLock { $0.requests.allSatisfy { $0.httpMethod == "GET" } })
       XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
     }
+  }
+
+  private nonisolated static func isGmailPermissionRead(_ request: URLRequest) -> Bool {
+    request.url?.path == "/api/connector-permissions" && request.httpMethod == "GET"
+      && request.url?.query()?.contains("connectorSlug=gmail") == true
   }
 
   private func fixture(_ state: FixtureData.State = .init()) -> FixtureData {

@@ -6,7 +6,6 @@ import {
 } from "@okouai/api-contracts/contracts/run-phase-timing";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import { getClientConfig } from "../core/client-factory";
-import { decodeSandboxTokenPayload } from "../sandbox-token";
 
 type PhaseMarkOutcome =
   | RunPhaseMarkResult
@@ -14,7 +13,6 @@ type PhaseMarkOutcome =
       readonly schemaVersion: 2;
       readonly status: "unavailable";
       readonly reason:
-        | "missing-capability"
         | "http-error"
         | "invalid-response"
         | "timeout-delivery-unknown"
@@ -25,13 +23,6 @@ type PhaseMarkOutcome =
 export async function markRunPhase(
   body: RunPhaseMark,
 ): Promise<PhaseMarkOutcome> {
-  if (!decodeSandboxTokenPayload()?.capabilities.includes("run-timing:write")) {
-    return {
-      schemaVersion: 2,
-      status: "unavailable",
-      reason: "missing-capability",
-    };
-  }
   const signal = AbortSignal.timeout(500);
   try {
     const client = initClient(runPhaseTimingContract, await getClientConfig());

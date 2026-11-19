@@ -34,15 +34,10 @@ function accounts() {
     connectorAccountsContract,
   );
 }
-async function ownerWithThread(enabled = true, actor = bdd.user()) {
+async function ownerWithThread({ actor = bdd.user() } = {}) {
   bdd.acceptAgentStorageWrites();
   const agent = await bdd.createAgent(actor);
   const thread = await chat.createThread(actor, { agentId: agent.agentId });
-  if (enabled) {
-    await connectors.updateFeatureSwitches(actor, {
-      connectorChatAccountAccess: true,
-    });
-  }
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   return { actor, agentId: agent.agentId, threadId: thread.id };
 }
@@ -262,17 +257,13 @@ describe("Chat connector account configuration", () => {
     ).toBeNull();
   });
 
-  it("isolates overview reads by member, organization, Chat ownership and feature gate", async () => {
-    const owner = await ownerWithThread(false);
+  it("isolates overview reads by member, organization and Chat ownership", async () => {
+    const owner = await ownerWithThread();
     await addAccount(owner.actor, "Owner");
-    await accept(client().overview({ headers, query: {} }), [404]);
-    await connectors.updateFeatureSwitches(owner.actor, {
-      connectorChatAccountAccess: true,
+
+    const other = await ownerWithThread({
+      actor: bdd.user({ orgId: owner.actor.orgId }),
     });
-    const other = await ownerWithThread(
-      true,
-      bdd.user({ orgId: owner.actor.orgId }),
-    );
     await addAccount(other.actor, "Other member");
     await addAccount(
       bdd.user({ userId: owner.actor.userId }),
@@ -492,10 +483,9 @@ describe("Chat connector account configuration", () => {
     });
   });
 
-  it("gates owner configuration and rejects foreign accounts, Chats and mismatched targets", async () => {
-    const owner = await ownerWithThread(false);
+  it("rejects foreign accounts, Chats and mismatched targets", async () => {
+    const owner = await ownerWithThread();
     const a = await addAccount(owner.actor, "Owner");
-    await accept(client().accountDefaults({ headers, query: target }), [404]);
     expect(
       (
         await accept(
@@ -508,13 +498,10 @@ describe("Chat connector account configuration", () => {
         )
       ).body.id,
     ).toBe(a.id);
-    await connectors.updateFeatureSwitches(owner.actor, {
-      connectorChatAccountAccess: true,
+
+    const other = await ownerWithThread({
+      actor: bdd.user({ orgId: owner.actor.orgId }),
     });
-    const other = await ownerWithThread(
-      true,
-      bdd.user({ orgId: owner.actor.orgId }),
-    );
     const foreign = await addAccount(other.actor, "Foreign");
     const otherOrg = await addAccount(
       bdd.user({ userId: owner.actor.userId }),

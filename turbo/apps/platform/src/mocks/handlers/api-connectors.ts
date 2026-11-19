@@ -1,3 +1,4 @@
+import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
 import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
@@ -373,6 +374,9 @@ export function connectorCatalogConnectItem(
 }
 
 export const apiConnectorsHandlers = [
+  mockApi(connectorPermissionsContract.get, ({ query, respond }) => {
+    return respond(200, { target: query, grants: [] });
+  }),
   mockApi(chatConnectorAccessContract.overview, ({ respond }) =>
     respond(200, []),
   ),
