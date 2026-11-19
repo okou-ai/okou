@@ -148,8 +148,6 @@ final class ConversationHistoryFixture: Sendable {
     case "/api/connector-accounts/connections":
       return ChatHTTPResponse(
         body: #"{"connections":[],"nextCursor":null,"defaultConnection":null}"#)
-    case "/api/agents/\(Self.agentID)/user-connectors":
-      return ChatHTTPResponse(body: #"{"enabledConnectorSlugs":[]}"#)
     case path + "/connector-selections": return ChatHTTPResponse(body: "{\"selections\":[]}")
     case path + "/metadata":
       return ChatHTTPResponse(
@@ -169,7 +167,6 @@ final class ConversationHistoryFixture: Sendable {
       path + "/activity-summary": "POST",
       "/api/connector-catalog/slack": "GET",
       "/api/connector-accounts/connections": "GET",
-      "/api/agents/\(Self.agentID)/user-connectors": "GET",
       path + "/usage": "POST",
       "/api/web/file-url": "GET",
       path + "/event-snapshot": "GET",
