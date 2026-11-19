@@ -69,6 +69,6 @@ met.
 
 ## Latest tally
 
-See [browser values, export and preference recovery](test-rebuild-batch-browser-export-preferences.md)
-for the current count of 55 confirmed frozen deductions and the remaining
-1,479-row gap. Earlier figures are batch checkpoints.
+See [browser reconciliation and sidebar screening](test-rebuild-batch-reconciliation-and-sidebar.md)
+for the current count of 57 confirmed frozen deductions and the remaining
+1,477-row gap. Earlier figures are batch checkpoints.
