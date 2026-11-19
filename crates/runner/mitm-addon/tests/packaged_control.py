@@ -158,8 +158,6 @@ def launch(
                     break
                 except FileNotFoundError, ConnectionRefusedError:
                     time.sleep(0.02)
-            with socket.create_connection(("127.0.0.1", port), timeout=2):
-                pass
             # Exercise the production HTTP hook alongside control without any
             # upstream connection: unavailable registry must fail closed locally.
             proxy = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
