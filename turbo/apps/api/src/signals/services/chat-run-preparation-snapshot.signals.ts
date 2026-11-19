@@ -179,12 +179,10 @@ export function createChatRunPreparationSnapshot(
     // Only this request's actual FIFO head may use its canonical input facts.
     const owned =
       requestFacts?.input.id === picked.id ? requestFacts.input : undefined;
-    const modelSelection = owned ? owned.modelSelection : picked.modelSelection;
     const pickedEvent: PickedThreadInputEvent = {
       ...picked,
       userMessage: owned ? owned.userMessage : picked.userMessage,
-      modelSelection,
-      canonicalModelSelection: modelSelection,
+      modelSelection: owned ? owned.modelSelection : picked.modelSelection,
       requiredOfficialWorkflowIds: owned
         ? (owned.requiredOfficialWorkflowIds ?? null)
         : picked.requiredOfficialWorkflowIds,
