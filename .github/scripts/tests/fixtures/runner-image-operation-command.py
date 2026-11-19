@@ -173,6 +173,9 @@ def systemd_run(arguments):
     command = arguments[arguments.index("/usr/bin/python3") :]
     if MODE == "absent-launch":
         return 1
+    if MODE == "launch-timeout-without-unit":
+        # The submission client hangs before systemd accepts the request.
+        signal.pause()
     with open(os.devnull, "wb") as sink:
         process = subprocess.Popen(
             command,
@@ -188,6 +191,9 @@ def systemd_run(arguments):
     )
     temporary.write_text(json.dumps({"pid": process.pid, "description": description}))
     temporary.replace(path)
+    if MODE == "launch-timeout-after-acceptance":
+        # The service survives the unresponsive submission client.
+        signal.pause()
     return 0
 
 

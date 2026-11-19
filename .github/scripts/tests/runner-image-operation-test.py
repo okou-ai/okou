@@ -537,6 +537,33 @@ class ImageOperationTest(unittest.TestCase):
     def assert_one_build(self):
         self.assertEqual([r["phase"] for r in self.records("executions")], ["build"])
 
+    def test_launch_timeout_observes_the_original_accepted_service(self):
+        self.invoke("claim")
+        self.environment["IMAGE_FAULT"] = "launch-timeout-after-acceptance"
+        self.invoke("run", "build", str(self.result))
+        result = json.loads(self.result.read_text())
+        self.assertEqual(result["status"], 0)
+        self.assertEqual(result["rootfsHash"], "1" * 64)
+        self.assertEqual(result["snapshotHash"], "2" * 64)
+        self.assert_one_build()
+        self.assertEqual(
+            sum("--service-type=exec" in entry for entry in self.records("systemd")),
+            1,
+        )
+
+    def test_launch_timeout_without_a_service_keeps_outcome_unknown(self):
+        self.invoke("claim")
+        self.environment["IMAGE_FAULT"] = "launch-timeout-without-unit"
+        result = self.invoke("run", "build", str(self.result), check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("execution outcome unknown", result.stderr)
+        self.assertFalse(self.result.exists())
+        self.assertFalse(self.records("executions"))
+        self.assertEqual(
+            sum("--service-type=exec" in entry for entry in self.records("systemd")),
+            1,
+        )
+
     def test_truncated_result_reattaches_to_verified_build(self):
         self.environment["IMAGE_FAULT"] = "partial-result"
         self.invoke("claim")
