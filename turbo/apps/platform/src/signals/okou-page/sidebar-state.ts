@@ -156,9 +156,11 @@ export const setThreeColumnSearchOpen$ = command(({ set }, open: boolean) => {
 });
 
 const internalThreeColumnSearchFilter$ = state<ThreeColumnSearchFilter>("all");
-export const threeColumnSearchFilter$ = computed((get) => {
+export const threeColumnSearchFilter$ = computed(async (get) => {
   const filter = get(internalThreeColumnSearchFilter$);
-  return get(singleAgentEnabled$) && filter === "agents" ? "all" : filter;
+  return (await get(singleAgentEnabled$)) && filter === "agents"
+    ? "all"
+    : filter;
 });
 export const setThreeColumnSearchFilter$ = command(
   ({ set }, filter: ThreeColumnSearchFilter) => {

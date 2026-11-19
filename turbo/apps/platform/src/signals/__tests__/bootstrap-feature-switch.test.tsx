@@ -35,6 +35,7 @@ test("A signed-out page does not load workspace features", async () => {
 
 test("The app waits for authoritative workspace features before mounting", async () => {
   let guideRequests = 0;
+  let workspaceSwitchRequests = 0;
   context.mocks.api(featureGuidesContract.current, ({ respond }) => {
     guideRequests++;
     return respond(200, { edition: null });
@@ -44,6 +45,7 @@ test("The app waits for authoritative workspace features before mounting", async
   context.mocks.api(
     featureSwitchesContract.get,
     async ({ respond, withSignal }) => {
+      workspaceSwitchRequests++;
       requestStarted.resolve(undefined);
       await withSignal(releaseResponse.promise);
       const switches = {
@@ -69,6 +71,7 @@ test("The app waits for authoritative workspace features before mounting", async
   await waitFor(() => {
     expect(guideRequests).toBe(1);
   });
+  expect(workspaceSwitchRequests).toBe(1);
 });
 
 test("An upgrade required by the workspace switch request is shown during startup", async () => {

@@ -41,12 +41,13 @@ export const navigateToNewChat$ = command(
     if (!agentId) {
       return;
     }
-    set(
+    await set(
       navigateToAgentChat$,
       agentId,
       get(mobileChatViewport$)
         ? { searchParams: new URLSearchParams({ compose: "1" }) }
-        : {},
+        : undefined,
+      signal,
     );
   },
 );
@@ -81,7 +82,7 @@ const navigateAdjacentPinnedAgent$ = command(
     direction: PinnedAgentShortcutDirection,
     signal: AbortSignal,
   ) => {
-    if (get(singleAgentEnabled$)) {
+    if (await get(singleAgentEnabled$)) {
       return;
     }
     const currentAgentId = await get(currentChatAgentId$);
@@ -141,7 +142,7 @@ export function shouldHandleShortcutPress(event: KeyboardEvent): boolean {
 }
 
 export const setupGlobalKeyboardShortcuts$ = command(
-  ({ get, set }, signal: AbortSignal) => {
+  ({ set }, isSingleAgent: () => boolean, signal: AbortSignal) => {
     set(setupThreadNumberShortcuts$, signal);
     set(setupKeyboardShortcutHints$, signal);
     setupGlobalShortcut(
@@ -177,7 +178,7 @@ export const setupGlobalKeyboardShortcuts$ = command(
         "ctrl+shift+[": {
           allowInEditableTarget: true,
           shouldHandle: () => {
-            return !get(singleAgentEnabled$);
+            return !isSingleAgent();
           },
           run: async () => {
             await set(navigateAdjacentPinnedAgent$, "prev", signal);
@@ -186,7 +187,7 @@ export const setupGlobalKeyboardShortcuts$ = command(
         "ctrl+shift+]": {
           allowInEditableTarget: true,
           shouldHandle: () => {
-            return !get(singleAgentEnabled$);
+            return !isSingleAgent();
           },
           run: async () => {
             await set(navigateAdjacentPinnedAgent$, "next", signal);

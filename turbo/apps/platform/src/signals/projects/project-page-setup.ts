@@ -50,7 +50,7 @@ export const setupProjectPage$ = command(
 
     await set(hydrateProjects$, signal);
     signal.throwIfAborted();
-    const project = get(projects$).find((item) => {
+    const project = (await get(projects$)).find((item) => {
       return item.id === projectId;
     });
     if (!project) {
@@ -59,7 +59,7 @@ export const setupProjectPage$ = command(
           return $.projects.unavailable;
         }),
       );
-      set(navigateToAgentChat$, agentId, { replace: true });
+      await set(navigateToAgentChat$, agentId, { replace: true }, signal);
       return;
     }
     set(updateDocumentTitle$, project.name);

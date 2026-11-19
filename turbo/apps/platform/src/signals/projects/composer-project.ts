@@ -28,7 +28,7 @@ export interface ComposerProjectSignals {
    */
   readonly pending$: Computed<boolean>;
   /** Start this chat in another Project, or `null` for none. */
-  readonly select$: Command<void, [string | null]>;
+  readonly select$: Command<Promise<void>, [string | null, AbortSignal]>;
 }
 
 export function createComposerProjectSignals(
@@ -38,7 +38,7 @@ export function createComposerProjectSignals(
   return {
     projectId,
     available$: computed(async (get) => {
-      if (!get(projectsEnabled$)) {
+      if (!(await get(projectsEnabled$))) {
         return false;
       }
       return agentId === (await get(defaultAgentId$));
@@ -46,18 +46,21 @@ export function createComposerProjectSignals(
     pending$: computed((get) => {
       return projectId !== null && get(unconfirmedProjectIds$).has(projectId);
     }),
-    select$: command(({ set }, next: string | null) => {
-      if (next === projectId) {
-        return;
-      }
-      if (next === null) {
-        set(navigateToAgentChat$, agentId);
-        return;
-      }
-      set(detachedNavigateTo$, ROUTES.project, {
-        pathParams: { projectId: next },
-      });
-    }),
+    select$: command(
+      async ({ set }, next: string | null, signal: AbortSignal) => {
+        signal.throwIfAborted();
+        if (next === projectId) {
+          return;
+        }
+        if (next === null) {
+          await set(navigateToAgentChat$, agentId, undefined, signal);
+          return;
+        }
+        set(detachedNavigateTo$, ROUTES.project, {
+          pathParams: { projectId: next },
+        });
+      },
+    ),
   };
 }
 

@@ -15,9 +15,10 @@ export const activeRoute$ = computed((get): RouteKey | null => {
 });
 
 /** The agent chat page: `/agents/:agentId/chat`, or `/` under My Okou. */
-export const agentChatPageActive$ = computed((get): boolean => {
+export const agentChatPageActive$ = computed(async (get): Promise<boolean> => {
   const route = get(activeRoute$);
   return (
-    route === "agentChat" || (route === "home" && get(singleAgentEnabled$))
+    route === "agentChat" ||
+    (route === "home" && (await get(singleAgentEnabled$)))
   );
 });

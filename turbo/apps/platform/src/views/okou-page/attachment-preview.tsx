@@ -1,3 +1,5 @@
+import { detach, Reason } from "../../signals/utils.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { Eye, FileMusic, Play, Video } from "lucide-react";
@@ -168,6 +170,7 @@ function AttachmentAnchorChip({
   preview: AttachmentPreviewSignals;
   text$?: TextPreviewComputed;
 }) {
+  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const publicUrl = publicAttachmentUrl(url);
   const openDocument = useSet(openDocumentLightbox$);
@@ -207,13 +210,20 @@ function AttachmentAnchorChip({
         }
         event.preventDefault();
         event.currentTarget.blur();
-        openDocument({
-          kind,
-          url,
-          filename,
-          preview,
-          ...(text$ ? { text$ } : {}),
-        });
+        detach(
+          openDocument(
+            {
+              kind,
+              url,
+              filename,
+              preview,
+              ...(text$ ? { text$ } : {}),
+            },
+            undefined,
+            pageSignal,
+          ),
+          Reason.DomCallback,
+        );
       }}
       aria-label={t(
         ($) => {
@@ -379,6 +389,7 @@ function HtmlSitePreviewCard({
   previewImageUrl?: string;
   url: string;
 }) {
+  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const publicUrl = publicAttachmentUrl(url);
   const openDocument = useSet(openDocumentLightbox$);
@@ -394,7 +405,14 @@ function HtmlSitePreviewCard({
         }
         event.preventDefault();
         event.currentTarget.blur();
-        openDocument({ kind: "html", url, filename, preview });
+        detach(
+          openDocument(
+            { kind: "html", url, filename, preview },
+            undefined,
+            pageSignal,
+          ),
+          Reason.DomCallback,
+        );
       }}
       ariaLabel={t(
         ($) => {
@@ -565,6 +583,7 @@ function AudioPreview({
   preview: AttachmentPreviewSignals;
   url: string;
 }) {
+  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const openAudioLightbox = useSet(openAudioLightbox$);
   const lightboxOpen = useGet(lightboxUrl$) !== null;
@@ -578,7 +597,14 @@ function AudioPreview({
       type="button"
       onClick={(event) => {
         event.currentTarget.blur();
-        openAudioLightbox({ url, filename, contentType, preview });
+        detach(
+          openAudioLightbox(
+            { url, filename, contentType, preview },
+            undefined,
+            pageSignal,
+          ),
+          Reason.DomCallback,
+        );
       }}
       disabled={lightboxOpen}
       aria-label={t(
@@ -620,6 +646,7 @@ function VideoThumbnailPreview({
   preview: AttachmentPreviewSignals;
   url: string;
 }) {
+  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const openVideoLightbox = useSet(openVideoLightbox$);
   const lightboxOpen = useGet(lightboxUrl$) !== null;
@@ -630,7 +657,14 @@ function VideoThumbnailPreview({
       type="button"
       onClick={(event) => {
         event.currentTarget.blur();
-        openVideoLightbox({ url, filename, contentType, preview });
+        detach(
+          openVideoLightbox(
+            { url, filename, contentType, preview },
+            undefined,
+            pageSignal,
+          ),
+          Reason.DomCallback,
+        );
       }}
       disabled={lightboxOpen}
       aria-label={t(

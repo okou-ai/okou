@@ -1,3 +1,5 @@
+import { detach, Reason } from "../../signals/utils.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Check, Folder, FolderPlus, X } from "lucide-react";
@@ -29,8 +31,9 @@ function ComposerProjectMenuItems({
   readonly project: ComposerProjectSignals;
 }) {
   const { t } = useTranslation();
-  const projects = useGet(projects$);
+  const projects = useLastResolved(projects$) ?? [];
   const select = useSet(project.select$);
+  const pageSignal = useGet(pageSignal$);
   const openEditor = useSet(openProjectEditor$);
   return (
     <>
@@ -52,7 +55,7 @@ function ComposerProjectMenuItems({
             key={item.id}
             disabled={current}
             onClick={() => {
-              select(item.id);
+              detach(select(item.id, pageSignal), Reason.DomCallback);
             }}
           >
             <ProjectFolderIcon
@@ -71,7 +74,7 @@ function ComposerProjectMenuItems({
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={() => {
-              select(null);
+              detach(select(null, pageSignal), Reason.DomCallback);
             }}
           >
             <X className="text-muted-foreground" aria-hidden="true" />
@@ -111,8 +114,9 @@ function ComposerProjectChip({
 }) {
   const { t } = useTranslation();
   const available = useComposerProjectAvailable(project);
-  const projects = useGet(projects$);
+  const projects = useLastResolved(projects$) ?? [];
   const select = useSet(project.select$);
+  const pageSignal = useGet(pageSignal$);
   const current = projects.find((item) => {
     return item.id === project.projectId;
   });
@@ -133,7 +137,7 @@ function ComposerProjectChip({
           { name: current.name },
         )}
         onRemove={() => {
-          select(null);
+          detach(select(null, pageSignal), Reason.DomCallback);
         }}
       />
     </>

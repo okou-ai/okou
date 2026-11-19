@@ -429,7 +429,7 @@ function SidebarWorkspaceFrame({
   pwaNavigation: boolean;
 }) {
   const activeRoute = useGet(activeRoute$);
-  const agentChatPage = useGet(agentChatPageActive$);
+  const agentChatPage = useLastResolved(agentChatPageActive$);
   const sharedWorkspace = agentChatPage || activeRoute === "project";
 
   return activeRoute === "chat" || sharedWorkspace ? (
@@ -458,7 +458,7 @@ function SidebarWorkspace({
 }) {
   const chatListVisible = useGet(pwaChatListVisible$);
   const activeRoute = useGet(activeRoute$);
-  const agentChatPage = useGet(agentChatPageActive$);
+  const agentChatPage = useLastResolved(agentChatPageActive$);
 
   const workspaceHeader = (
     <>

@@ -48,7 +48,14 @@ import {
   type DraftSignals,
 } from "../okou-page/chat-draft.ts";
 import { buildDraftPersistencePayload } from "../okou-page/draft-persistence.ts";
-import { debounceCommand, resetSignal, settle } from "../utils.ts";
+import { pageSignal$ } from "../page-signal.ts";
+import {
+  debounceCommand,
+  detach,
+  Reason,
+  resetSignal,
+  settle,
+} from "../utils.ts";
 import type {
   ChatEvent,
   OptimisticChatEvent,
@@ -94,7 +101,7 @@ import {
 import { createPlainMarkdownTree } from "../../lib/markdown/plain-markdown.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import { apiClient$ } from "../api-client.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { modelCatalog$ } from "../external/model-catalog.ts";
 import { availableRunModels$ } from "../external/run-models.ts";
 import {
@@ -1998,14 +2005,14 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
       events: readonly ChatEvent[],
       signal: AbortSignal,
     ): Promise<void> => {
+      const features = await get(featureSwitches$);
       signal.throwIfAborted();
       const current = get(internalEventTrees$);
       const { next, richPlans } = planEventTreeUpdates(
         events,
         current,
         chatActionContext,
-        get(featureSwitch$)[FeatureSwitchKey.BatchConnectorPermissions] ===
-          true,
+        features[FeatureSwitchKey.BatchConnectorPermissions],
       );
       if (next) {
         set(internalEventTrees$, next);
@@ -3280,6 +3287,8 @@ function createPerformSendMessage(deps: SendMessageDeps) {
       request: ValidatedSendMessageRequest,
       signal: AbortSignal,
     ): Promise<boolean> => {
+      const features = await get(featureSwitches$);
+      signal.throwIfAborted();
       const generationTemplate = generationTemplateForSend(
         request,
         get(draft.generationTemplate$),
@@ -3312,7 +3321,7 @@ function createPerformSendMessage(deps: SendMessageDeps) {
       set(cancelDraftSync$);
       set(draft.clear$);
       const { runOptions, realAgentInPreviewEnabled } = sendRuntimeOptions(
-        get(featureSwitch$),
+        features,
         request.modelSelection.selection,
       );
       await Promise.all([
@@ -3408,7 +3417,8 @@ function createQueueMessage(deps: SendMessageDeps) {
         return false;
       }
       signal.throwIfAborted();
-      const features = get(featureSwitch$);
+      const features = await get(featureSwitches$);
+      signal.throwIfAborted();
       const userMessage = queueUserMessage(options, result);
 
       set(cancelDraftSync$);
@@ -4001,8 +4011,12 @@ export function createChatPanelSignals(
     persistence,
   );
   // The native input graph invokes this only after admitting page input.
-  const onPageInput$ = command(({ set }) => {
-    set(browserPresence.pageInput$);
+  const onPageInput$ = command(({ get, set }) => {
+    detach(
+      set(browserPresence.pageInput$, get(pageSignal$)),
+      Reason.DomCallback,
+      "take over the cloud browser from page input",
+    );
   });
   const messagePipeline = createChatThreadMessagePipeline({
     chatActionContext: { threadId, agentId },

@@ -3,7 +3,7 @@ import { command, computed, state } from "ccstate";
 import { delay } from "signal-timers";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../external/feature-switch.ts";
+import { featureSwitches$ } from "../../external/feature-switch.ts";
 
 import { accept } from "../../../lib/accept.ts";
 import { now } from "../../../lib/time.ts";
@@ -142,7 +142,9 @@ const resolveConnectorPostConnectOptions$ = command(
         account = { intent: "add" };
       }
     }
-    if (get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess]) {
+    if (
+      (await get(featureSwitches$))[FeatureSwitchKey.ConnectorChatAccountAccess]
+    ) {
       return {
         ...options,
         account,
@@ -520,11 +522,14 @@ export type ConnectorsConnectionFilter =
   | { readonly kind: "agent"; readonly agentId: string };
 
 export const connectorsConnectionFilter$ = computed(
-  (get): ConnectorsConnectionFilter => {
+  async (get): Promise<ConnectorsConnectionFilter> => {
     // The directory browses a catalog, and category is the only dimension that
     // organises it. The scope you already own is organised by who uses those
     // connectors instead, so that is the one place this control applies.
-    if (get(singleAgentEnabled$) || get(connectorsScope$) !== "connected") {
+    if (
+      (await get(singleAgentEnabled$)) ||
+      get(connectorsScope$) !== "connected"
+    ) {
       return { kind: "all" };
     }
     const raw = get(searchParams$).get(CONNECTORS_CONNECTION_FILTER_PARAM);
@@ -598,7 +603,7 @@ export const relatedCatalogItems$ = computed(async (get) => {
 
 export const filteredConnectorCatalogItems$ = computed(async (get) => {
   const keyword = get(connectorsSearch$);
-  const effectiveFilter = get(connectorsConnectionFilter$);
+  const effectiveFilter = await get(connectorsConnectionFilter$);
   const category = get(connectorsCategoryFilter$);
   const scope = get(connectorsScope$);
 
@@ -1018,7 +1023,7 @@ const authorizeConnectorForDefaultOkou$ = command(
 
 const authorizeConnectorForVisibleAgents$ = command(
   async ({ get, set }, connectorSlug: ConnectorSlug, signal: AbortSignal) => {
-    if (get(singleAgentEnabled$)) {
+    if (await get(singleAgentEnabled$)) {
       await set(authorizeConnectorForDefaultOkou$, connectorSlug, signal);
       return;
     }
@@ -1053,7 +1058,9 @@ const finishConnectorConnection$ = command(
   ): Promise<boolean> => {
     if (
       options.authorizeVisibleAgents &&
-      !get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess]
+      !(await get(featureSwitches$))[
+        FeatureSwitchKey.ConnectorChatAccountAccess
+      ]
     ) {
       await set(authorizeConnectorForVisibleAgents$, connectorSlug, signal);
     }

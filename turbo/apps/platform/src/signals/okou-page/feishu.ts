@@ -1,6 +1,6 @@
 import { larkOfficialContract } from "@okouai/api-contracts/client/lark-official";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
@@ -89,8 +89,8 @@ export const FEISHU_SETUP_STEPS = [
   "publish",
 ] as const satisfies readonly FeishuSetupStep[];
 
-export const feishuCustomEnabled$ = computed((get) => {
-  return get(featureSwitch$)[
+export const feishuCustomEnabled$ = computed(async (get) => {
+  return (await get(featureSwitches$))[
     FEISHU_PLATFORMS[get(feishuPlatform$)].featureSwitch
   ];
 });
@@ -98,7 +98,7 @@ export const feishuCustomEnabled$ = computed((get) => {
 export const feishuOrgData$ = computed(
   async (get): Promise<FeishuConnectStatus> => {
     get(reload$);
-    if (!get(feishuCustomEnabled$)) {
+    if (!(await get(feishuCustomEnabled$))) {
       return {
         platform: get(feishuPlatform$),
         isInstalled: false,
@@ -546,16 +546,16 @@ export const resetFeishuSettingsUi$ = command(({ set }) => {
   });
 });
 
-export const larkOfficialEnabled$ = computed((get) => {
+export const larkOfficialEnabled$ = computed(async (get) => {
   return (
     get(feishuPlatform$) === "lark" &&
-    get(featureSwitch$)[FeatureSwitchKey.LarkOfficialBot]
+    (await get(featureSwitches$))[FeatureSwitchKey.LarkOfficialBot]
   );
 });
 
 export const larkOfficialData$ = computed(async (get) => {
   get(reload$);
-  if (!get(larkOfficialEnabled$)) {
+  if (!(await get(larkOfficialEnabled$))) {
     return null;
   }
   const client = get(apiClient$)(larkOfficialContract);

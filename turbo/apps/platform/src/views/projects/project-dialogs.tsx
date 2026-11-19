@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { useGet, useSet } from "ccstate-react";
+import { useLastResolved, useGet, useSet } from "ccstate-react";
 import { Button, Input, Popover, PopoverContent } from "@okouai/ui";
 import {
   Drawer,
@@ -319,7 +319,7 @@ function ProjectMembershipPicker({
   dialog: Extract<ProjectDialog, { kind: "membership" }>;
 }) {
   const { t } = useTranslation();
-  const projects = useGet(projects$);
+  const projects = useLastResolved(projects$) ?? [];
   const search = useGet(projectSearch$);
   const setSearch = useSet(setProjectSearch$);
   const current = useGet(eventDrivenChatThreads$).find((thread) => {
@@ -507,7 +507,7 @@ function DeleteProjectDialog({
   );
 }
 export function ProjectDialogs() {
-  const enabled = useGet(projectsEnabled$);
+  const enabled = useLastResolved(projectsEnabled$) ?? false;
   const dialog = useGet(projectDialogSession$);
   if (!enabled || !dialog) {
     return null;

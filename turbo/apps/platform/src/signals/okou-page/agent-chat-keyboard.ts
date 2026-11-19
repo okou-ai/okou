@@ -50,7 +50,9 @@ const setupChatListNavigationShortcuts$ = command(
 );
 
 export const setupAgentChatKeyboardShortcuts$ = command(
-  ({ get, set }, signal: AbortSignal) => {
+  async ({ get, set }, signal: AbortSignal) => {
+    const singleAgent = await get(singleAgentEnabled$);
+    signal.throwIfAborted();
     setupGlobalShortcut(
       {
         [COMPOSER_VOICE_INPUT_SHORTCUT]: {
@@ -66,7 +68,7 @@ export const setupAgentChatKeyboardShortcuts$ = command(
     // without My Okou stands outside the list.
     set(
       setupChatListNavigationShortcuts$,
-      get(singleAgentEnabled$) ? NEW_CHAT_ENTRY_KEY : null,
+      singleAgent ? NEW_CHAT_ENTRY_KEY : null,
       signal,
     );
   },

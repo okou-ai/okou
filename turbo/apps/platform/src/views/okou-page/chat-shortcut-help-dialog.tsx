@@ -1,5 +1,5 @@
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
-import { useGet, useSet } from "ccstate-react";
+import { useLastResolved, useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { activeRoute$ } from "../../signals/active-route.ts";
 import type { RouteKey } from "../../signals/route-paths.ts";
@@ -313,8 +313,8 @@ function localizeShortcutSections(
 
 export function ChatShortcutHelpDialog() {
   const { t } = useTranslation();
-  const singleAgent = useGet(singleAgentEnabled$);
-  const projects = useGet(projectsEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
+  const projects = useLastResolved(projectsEnabled$) ?? false;
   const shortcutHelpOpen = useGet(chatShortcutHelpOpen$);
   const setShortcutHelpOpen = useSet(setChatShortcutHelpOpen$);
   const activeRoute = useGet(activeRoute$);

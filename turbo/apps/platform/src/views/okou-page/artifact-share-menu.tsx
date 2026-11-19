@@ -36,7 +36,7 @@ import type {
   ArtifactShareIdentity,
   AttachmentPreviewSignals,
 } from "../../signals/attachment-resource-url.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
 function ShareChoiceText({
@@ -82,7 +82,9 @@ export function SharePermissionChoices({
 }) {
   const { t } = useTranslation();
   const described =
-    useGet(featureSwitch$)[FeatureSwitchKey.ShareAudienceDescriptions];
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.ShareAudienceDescriptions
+    ];
   const options = [
     {
       audience: "private",
@@ -278,7 +280,9 @@ export function ShareSkeleton({
 }) {
   const { t } = useTranslation();
   const described =
-    useGet(featureSwitch$)[FeatureSwitchKey.ShareAudienceDescriptions];
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.ShareAudienceDescriptions
+    ];
   return (
     <div
       role="status"
@@ -358,7 +362,9 @@ export function ShareMenuContent({
 }) {
   const { t } = useTranslation();
   const described =
-    useGet(featureSwitch$)[FeatureSwitchKey.ShareAudienceDescriptions];
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.ShareAudienceDescriptions
+    ];
   return (
     <PopoverContent
       aria-label={label}

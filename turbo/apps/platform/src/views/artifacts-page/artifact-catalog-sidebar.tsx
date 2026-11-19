@@ -1,4 +1,4 @@
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { Button } from "@okouai/ui";
 import { Loader2, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -11,7 +11,7 @@ import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox
 
 export function ArtifactCatalogSidebar() {
   const { t } = useTranslation();
-  const open = useGet(artifactCatalogSidebar.open$);
+  const open = useLastResolved(artifactCatalogSidebar.open$);
   const detail = useLoadable(artifactCatalogSidebar.detail$);
   const fullscreen = useGet(artifactCatalogSidebar.fullscreen$);
   const toggleFullscreen = useSet(artifactCatalogSidebar.toggleFullscreen$);

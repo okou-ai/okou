@@ -863,7 +863,7 @@ function SpotlightSearchFilterBar({
   readonly resultCount: number;
   readonly onSelect: (filter: ThreeColumnSearchFilter) => void;
 }) {
-  const singleAgent = useGet(singleAgentEnabled$);
+  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
   const { t } = useTranslation("agents");
   const options: readonly {
     readonly value: ThreeColumnSearchFilter;
@@ -1207,7 +1207,7 @@ export function ThreeColumnSearchDialog({
   const query = useGet(chatListQuery$);
   const setQuery = useSet(setChatListQuery$);
   const signal = useGet(pageSignal$);
-  const filter = useGet(threeColumnSearchFilter$);
+  const filter = useLastResolved(threeColumnSearchFilter$) ?? "all";
   const setFilter = useSet(setThreeColumnSearchFilter$);
   const threadLoadable = useLoadable(threeColumnSearchChatThreads$);
   const shortcutIndex = useSet(threadNumberShortcutIndex$);

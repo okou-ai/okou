@@ -691,7 +691,7 @@ export function ArtifactCatalogPage({
 }) {
   const { t } = useTranslation();
   const viewportRef = useSet(artifactCatalogViewportRef$);
-  const sidebarOpen = useGet(artifactCatalogSidebar.open$);
+  const sidebarOpen = useLastResolved(artifactCatalogSidebar.open$) ?? false;
   const selectedKind = useGet(selectedArtifactCatalogKind$);
   const setKind = useSet(setArtifactCatalogKind$);
   const openArtifact = useSet(openArtifact$);

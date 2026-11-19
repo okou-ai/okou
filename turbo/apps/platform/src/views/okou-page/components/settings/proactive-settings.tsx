@@ -4,11 +4,11 @@ import type {
   ProactiveWorkflowKind,
 } from "@okouai/api-contracts/contracts/proactive";
 import { Switch } from "@okouai/ui/components/ui/switch";
-import { useGet, useLastLoadable, useLoadable } from "ccstate-react";
+import { useLastResolved, useGet, useLastLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
 import {
@@ -103,17 +103,15 @@ function ProactivePreference({ kind }: { kind: ProactiveWorkflowKind }) {
 }
 
 export function ProactiveSuggestionsSettings() {
-  const flags = useLoadable(featureSwitch$);
-  return flags.state === "hasData" &&
-    flags.data[FeatureSwitchKey.AgentSuggestion] ? (
+  const flags = useLastResolved(featureSwitches$);
+  return flags?.[FeatureSwitchKey.AgentSuggestion] ? (
     <ProactivePreference kind="suggestions" />
   ) : null;
 }
 
 export function ProactiveLearningSettings() {
-  const flags = useLoadable(featureSwitch$);
-  return flags.state === "hasData" &&
-    flags.data[FeatureSwitchKey.ProactiveLearning] ? (
+  const flags = useLastResolved(featureSwitches$);
+  return flags?.[FeatureSwitchKey.ProactiveLearning] ? (
     <ProactivePreference kind="learning" />
   ) : null;
 }

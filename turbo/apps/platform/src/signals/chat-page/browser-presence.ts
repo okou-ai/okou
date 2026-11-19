@@ -2,9 +2,7 @@ import { command, computed, state, type Command, type Computed } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { i18n } from "../../i18n/index.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
-import { pageSignal$ } from "../page-signal.ts";
-import { detach, Reason } from "../utils.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { textToMessageDocument } from "../okou-page/user-message-document-codec.ts";
 import type { ChatEventSignals } from "./chat-event-signals.ts";
 
@@ -19,7 +17,7 @@ export interface BrowserPresenceSignals {
    */
   readonly takeOver$: Command<Promise<void>, [string, AbortSignal]>;
   /** Native page input observes the current Lab switch and locale. */
-  readonly pageInput$: Command<void, []>;
+  readonly pageInput$: Command<Promise<void>, [AbortSignal]>;
   /**
    * Settles once the Run has been told about the latest take over. Handing back
    * before then could reach the Run ahead of the take-over message.
@@ -135,20 +133,20 @@ export function createBrowserPresenceSignals({
     },
   );
 
-  const pageInput$ = command(({ get, set }) => {
-    if (!get(featureSwitch$)[FeatureSwitchKey.CloudBrowserPanel]) {
+  const pageInput$ = command(async ({ get, set }, signal: AbortSignal) => {
+    const enabled = (await get(featureSwitches$))[
+      FeatureSwitchKey.CloudBrowserPanel
+    ];
+    signal.throwIfAborted();
+    if (!enabled) {
       return;
     }
-    detach(
-      set(
-        takeOver$,
-        i18n.t(($) => {
-          return $.browserSession.presence.takeOverMessage;
-        }),
-        get(pageSignal$),
-      ),
-      Reason.DomCallback,
-      "take over the cloud browser from page input",
+    await set(
+      takeOver$,
+      i18n.t(($) => {
+        return $.browserSession.presence.takeOverMessage;
+      }),
+      signal,
     );
   });
 

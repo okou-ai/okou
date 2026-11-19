@@ -14,10 +14,10 @@ import {
 } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { PhoneDevice } from "@okouai/api-contracts/contracts/phone-use";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import type { ComposerConnectorSignals } from "../../signals/okou-page/connectors.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { onDomEventFn } from "../../signals/utils.ts";
+import { detach, Reason, onDomEventFn } from "../../signals/utils.ts";
 import { LoadingSwitch } from "../components/loading-switch.tsx";
 
 function PhoneRow({
@@ -78,6 +78,7 @@ function PhoneRow({
 }
 
 function PhoneUseDevices({ signals }: { signals: ComposerConnectorSignals }) {
+  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const devices = useLoadable(signals.resources.phoneUseDevices$);
   const lastDevices = useLastResolved(signals.resources.phoneUseDevices$);
@@ -140,7 +141,10 @@ function PhoneUseDevices({ signals }: { signals: ComposerConnectorSignals }) {
             type="button"
             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground transition-colors hover:bg-state-hover"
             onClick={() => {
-              updateUi({ phoneUseSetupOpen: true });
+              detach(
+                updateUi({ phoneUseSetupOpen: true }, pageSignal),
+                Reason.DomCallback,
+              );
             }}
           >
             <Plug size={16} className="shrink-0" />
@@ -159,7 +163,8 @@ export function PhoneUseConnectorMenuSection({
 }: {
   signals: ComposerConnectorSignals;
 }) {
-  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.PhoneUse];
+  const enabled =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.PhoneUse] === true;
   return enabled ? <PhoneUseDevices signals={signals} /> : null;
 }
 
@@ -168,6 +173,7 @@ export function PhoneUseSetupDialog({
 }: {
   signals: ComposerConnectorSignals;
 }) {
+  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const open = useGet(signals.phoneUseSetupOpen$);
   const updateUi = useSet(signals.updateConnectorUiState$);
@@ -176,7 +182,7 @@ export function PhoneUseSetupDialog({
     <Dialog
       open={open}
       onOpenChange={(phoneUseSetupOpen) => {
-        updateUi({ phoneUseSetupOpen });
+        detach(updateUi({ phoneUseSetupOpen }, pageSignal), Reason.DomCallback);
       }}
     >
       <DialogContent

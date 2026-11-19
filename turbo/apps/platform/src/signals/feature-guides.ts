@@ -10,7 +10,7 @@ import { forceUpgradeDialogOpen$ } from "./force-upgrade.ts";
 import { settingsDialogOpen$ } from "./okou-page/settings/settings-dialog.ts";
 import { apiClient$ } from "./api-client.ts";
 import { authenticatedSessionKey$ } from "./auth.ts";
-import { featureSwitch$ } from "./external/feature-switch.ts";
+import { featureSwitches$ } from "./external/feature-switch.ts";
 import { talkDraft$ } from "./okou-page/chat-draft.ts";
 import {
   createCarouselSelection,
@@ -62,7 +62,9 @@ export const featureGuide$ = computed(
     const searchParams = get(searchParams$);
     const preview = searchParams.get("featureGuidePreview") === "1";
     const edition = searchParams.get("featureGuideEdition") ?? undefined;
-    const enabled = get(featureSwitch$)[FeatureSwitchKey.FeatureGuides];
+    const enabled = (await get(featureSwitches$))[
+      FeatureSwitchKey.FeatureGuides
+    ];
     if (!owner || !enabled) {
       return null;
     }
@@ -87,16 +89,16 @@ export const featureGuide$ = computed(
   },
 );
 
-export const featureGuideReady$ = computed((get) => {
+export const featureGuideReady$ = computed(async (get) => {
   if (
-    !get(featureSwitch$)[FeatureSwitchKey.FeatureGuides] ||
+    !(await get(featureSwitches$))[FeatureSwitchKey.FeatureGuides] ||
     !get(appContentReady$)
   ) {
     return false;
   }
   const draft = get(talkDraft$);
   return (
-    get(agentChatPageActive$) &&
+    (await get(agentChatPageActive$)) &&
     !get(settingsDialogOpen$) &&
     !get(forceUpgradeDialogOpen$) &&
     !get(draft.input$).trim() &&

@@ -1,7 +1,7 @@
 import { command, computed } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { clerk$, currentUserInfo$ } from "../auth.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { refreshThirdPartySubscriptionsIfStale$ } from "../external/third-party-subscriptions.ts";
 import { reloadAccountMenuCreditBalances$ } from "./billing.ts";
 import {
@@ -28,7 +28,9 @@ export const initializePwaMePage$ = command(
     signal.throwIfAborted();
     const cacheKey = clerk.session?.id ?? user?.id ?? null;
 
-    if (get(featureSwitch$)[FeatureSwitchKey.SubscriptionLinkingEntry]) {
+    if (
+      (await get(featureSwitches$))[FeatureSwitchKey.SubscriptionLinkingEntry]
+    ) {
       set(refreshThirdPartySubscriptionsIfStale$);
     }
 

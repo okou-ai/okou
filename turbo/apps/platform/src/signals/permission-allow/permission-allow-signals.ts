@@ -8,7 +8,7 @@ import type {
 import { userPermissionGrantsContract } from "@okouai/api-contracts/client/user-permission-grants";
 import { connectorPermissionsContract } from "@okouai/api-contracts/client/connector-permissions";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import {
   UNKNOWN_PERMISSION_GRANT,
   type FirewallPolicyValue,
@@ -175,7 +175,7 @@ export function permissionGrantsForConnectors(params: {
     async (get): Promise<readonly PlatformUserPermissionGrant[]> => {
       get(internalUserPermissionGrantsReload$);
       if (
-        !(await get(featureSwitch$))[
+        !(await get(featureSwitches$))[
           FeatureSwitchKey.ConnectorChatAccountAccess
         ]
       ) {
@@ -250,7 +250,7 @@ export const applyUserPermissionGrants$ = command(
     if (!params.agentId) {
       throw new Error("Permission grant scope is required");
     }
-    const features = await get(featureSwitch$);
+    const features = await get(featureSwitches$);
     signal.throwIfAborted();
     if (features[FeatureSwitchKey.ConnectorChatAccountAccess]) {
       const result = await accept(

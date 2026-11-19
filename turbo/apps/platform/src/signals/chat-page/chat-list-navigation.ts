@@ -28,10 +28,10 @@ export const FOR_YOU_ENTRY_KEY = "entry:for-you";
  * The entries above the list's scroll viewport, in the order they appear.
  * Keyboard navigation passes them like rows, and filters never hide them.
  */
-const chatListEntryKeys$ = computed((get): readonly string[] => {
+const chatListEntryKeys$ = computed(async (get): Promise<readonly string[]> => {
   return [
-    ...(get(singleAgentEnabled$) ? [NEW_CHAT_ENTRY_KEY] : []),
-    ...(get(suggestionsEnabled$) ? [FOR_YOU_ENTRY_KEY] : []),
+    ...((await get(singleAgentEnabled$)) ? [NEW_CHAT_ENTRY_KEY] : []),
+    ...((await get(suggestionsEnabled$)) ? [FOR_YOU_ENTRY_KEY] : []),
   ];
 });
 
@@ -98,7 +98,8 @@ export const navigateChatList$ = command(
   ): Promise<void> => {
     const navigation = await get(currentChatThreadNavigationList$);
     signal.throwIfAborted();
-    const entryKeys = get(chatListEntryKeys$);
+    const entryKeys = await get(chatListEntryKeys$);
+    signal.throwIfAborted();
     const excludedKey =
       request.excludedThreadId === null
         ? null

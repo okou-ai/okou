@@ -5,12 +5,12 @@ import {
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { SegmentControl, SegmentControlItem, Switch } from "@okouai/ui";
-import { useGet, useLastResolved } from "ccstate-react";
+import { useLastResolved } from "ccstate-react";
 import { Zap } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import { featureSwitch$ } from "../../../signals/external/feature-switch.ts";
+import { featureSwitches$ } from "../../../signals/external/feature-switch.ts";
 import { modelCatalog$ } from "../../../signals/external/model-catalog.ts";
 import { availableRunModels$ } from "../../../signals/external/run-models.ts";
 import {
@@ -25,8 +25,8 @@ export function useChatEffort(
 ) {
   const models = useLastResolved(availableRunModels$);
   const catalog = useLastResolved(modelCatalog$);
-  const features = useGet(featureSwitch$);
-  const codexExecution = features[FeatureSwitchKey.CodexExecution];
+  const features = useLastResolved(featureSwitches$);
+  const codexExecution = features?.[FeatureSwitchKey.CodexExecution] ?? false;
   const runModel = models?.models.find((entry) => {
     return entry.model === selection?.selectedModel;
   });

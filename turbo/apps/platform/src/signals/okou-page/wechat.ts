@@ -7,7 +7,7 @@ import type {
   WechatPollStatus,
 } from "@okouai/api-contracts/contracts/integrations-wechat";
 import { apiClient$ } from "../api-client.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { accept } from "../../lib/accept.ts";
 import { resetSignal, waitLoopUntil } from "../utils.ts";
@@ -29,7 +29,7 @@ export const setWechatCode$ = command(({ set }, code: string) => {
   return set(code$, code);
 });
 export const wechatStatus$ = computed(async (get) => {
-  if (!get(featureSwitch$)[FeatureSwitchKey.WechatIntegration]) {
+  if (!(await get(featureSwitches$))[FeatureSwitchKey.WechatIntegration]) {
     return null;
   }
   get(reload$);

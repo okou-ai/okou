@@ -58,7 +58,7 @@ export const setChatThreadArchivedWithFeedback$ = command(
     await Promise.all([
       set(setChatThreadArchived$, { threadId, archived }, signal),
       leaving
-        ? get(singleAgentEnabled$)
+        ? (await get(singleAgentEnabled$))
           ? set(navigateTo$, ROUTES.home, undefined, signal)
           : set(
               navigateTo$,

@@ -50,9 +50,6 @@ function applySwitches(
 }
 
 const internalReloadFeatureSwitches$ = state(0);
-const internalFeatureSwitchState$ = state<
-  Record<FeatureSwitchKey, boolean> | undefined
->(undefined);
 
 export const availableFeatureSwitchKeys$ = computed(async (get) => {
   get(authenticatedSessionKey$);
@@ -91,29 +88,14 @@ export const featureSwitches$ = computed(async (get) => {
   return getAllFeatureStates({ ...identity, overrides: combined });
 });
 
-export const featureSwitch$ = computed((get) => {
-  const switches = get(internalFeatureSwitchState$);
-  if (switches === undefined) {
-    throw new Error("Feature switches were not initialized during bootstrap");
-  }
-  return switches;
-});
-
-export const applyFeatureSwitches$ = command(
-  ({ set }, switches: Record<FeatureSwitchKey, boolean>) => {
-    set(internalFeatureSwitchState$, switches);
-  },
-);
-
 const reloadFeatureSwitch$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     set(internalReloadFeatureSwitches$, (value) => {
       return value + 1;
     });
-    const switches = await get(featureSwitches$);
+    await get(featureSwitches$);
     signal.throwIfAborted();
-    set(applyFeatureSwitches$, switches);
   },
 );
 
