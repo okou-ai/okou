@@ -180,3 +180,88 @@ test("A catalog notification adds a published video to the open gallery beside i
     within(resources).findByText(TITLE),
   ).resolves.toBeInTheDocument();
 });
+
+test("Opening resources can recover from a failed gallery refresh", async () => {
+  const report = artifactSummary(
+    "e0000000-0000-4000-a000-000000000998",
+    "file",
+    "report.pdf",
+  );
+  const galleryTopic = chatArtifactCatalogChangedEvent(
+    NAVIGATION_ARTIFACT_THREAD_ID,
+  );
+  let catalogUnavailable = false;
+  context.mocks.browser.matchMedia(true);
+  mockArtifactConversation(context, {
+    catalog: [report],
+    details: new Map([
+      [
+        report.id,
+        {
+          ...report,
+          kind: "file" as const,
+          file: {
+            id: "b0000000-0000-4000-a000-000000000998",
+            filename: "report.pdf",
+            contentType: "application/pdf",
+            size: 128,
+            url: "https://files.example.test/report.pdf",
+            previewImageUrl: null,
+          },
+        },
+      ],
+    ]),
+    chatEvents: [
+      {
+        id: "gallery-recovery-user",
+        role: "user",
+        content: "Find useful resources",
+        runId: "gallery-recovery-run",
+        createdAt: "2026-09-01T10:00:00Z",
+      },
+    ],
+  });
+  context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
+    if (catalogUnavailable) {
+      return respond(500, {
+        error: { message: "The artifact catalog is temporarily unavailable" },
+      });
+    }
+    return respond(200, {
+      artifacts:
+        query.chatThreadId === NAVIGATION_ARTIFACT_THREAD_ID ? [report] : [],
+      nextCursor: null,
+    });
+  });
+  await setupPage({ context, path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}` });
+  await screen.findByText("Find useful resources");
+  await waitFor(() => {
+    expect(context.mocks.ably.hasSubscription(galleryTopic)).toBeTruthy();
+  });
+  await openResourceArtifact("report.pdf");
+  click(
+    buttonNamed(
+      "Back to all artifacts",
+      await screen.findByTestId("artifact-sidebar"),
+    ),
+  );
+  const gallery = await screen.findByTestId("thread-sidebar-artifacts");
+  await within(gallery).findByText("report.pdf");
+
+  catalogUnavailable = true;
+  await act(() => {
+    context.mocks.ably.trigger(galleryTopic);
+  });
+  await expect(
+    within(gallery).findByText("Couldn't load artifacts."),
+  ).resolves.toBeInTheDocument();
+
+  catalogUnavailable = false;
+  const resources = await openResources();
+  await expect(
+    within(resources).findByText("report.pdf"),
+  ).resolves.toBeInTheDocument();
+  await expect(
+    within(gallery).findByText("report.pdf"),
+  ).resolves.toBeInTheDocument();
+});

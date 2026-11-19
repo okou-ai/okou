@@ -286,3 +286,10 @@ chat-message-pdf-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-mess
 chat-message-pdf-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-pdf.test.tsx	Exported table text stays inside the page and merged columns preserve all cells	338	passed
 chat-message-pdf-012	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-pdf.test.tsx	A table row taller than a page retains every line in the exported PDF	370	passed
 chat-message-pdf-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-message-pdf.test.tsx	Exported short table rows keep each detail and status on their identifier's page	389	passed
+chat-resources-catalog-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-resources-catalog.test.tsx	Browse artifacts without source URLs in the popover and sidebar without showing message links	68	passed
+chat-resources-catalog-005	turbo/apps/platform/src/views/okou-page/__tests__/chat-resources-catalog.test.tsx	Copy an artifact's on-demand detail URL without opening its preview	174	passed
+chat-resources-catalog-006	turbo/apps/platform/src/views/okou-page/__tests__/chat-resources-catalog.test.tsx	Copying a private artifact reports failure without exposing its signed or authenticated URL	186	passed
+chat-resources-catalog-009	turbo/apps/platform/src/views/okou-page/__tests__/chat-resources-catalog.test.tsx	Show more resources until the last page, then collapse with the same control	230	passed
+chat-resources-catalog-010	turbo/apps/platform/src/views/okou-page/__tests__/chat-resources-catalog.test.tsx	Disable show more while loading and keep resource pages unique	260	passed
+chat-resources-catalog-011	turbo/apps/platform/src/views/okou-page/__tests__/chat-resources-catalog.test.tsx	Retain loaded resources after a paging failure and retry with show more	305	passed
+chat-resources-catalog-013	turbo/apps/platform/src/views/okou-page/__tests__/chat-resources-catalog.test.tsx	Copy the focused resource after moving between open copy tooltips	345	passed
