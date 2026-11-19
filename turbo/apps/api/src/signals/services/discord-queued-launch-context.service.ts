@@ -33,18 +33,15 @@ export interface DiscordQueuedLaunchMaterial {
   readonly userInfoExtras?: undefined;
 }
 
-export const loadDiscordQueuedLaunchMaterial$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly eventId: string;
-      readonly chatThreadId: string;
-      readonly orgId: string;
-      readonly userId: string;
-      readonly featureSwitchContext: FeatureSwitchContext;
-    },
-    signal: AbortSignal,
-  ): Promise<DiscordQueuedLaunchMaterial | null> => {
+interface DiscordLaunchSource {
+  readonly eventId: string;
+  readonly chatThreadId: string;
+  readonly orgId: string;
+  readonly userId: string;
+}
+
+const loadDiscordQueuedContext$ = command(
+  async ({ get, set }, args: DiscordLaunchSource, signal: AbortSignal) => {
     const db = get(db$);
     const [context] = await db
       .select({
@@ -109,9 +106,32 @@ export const loadDiscordQueuedLaunchMaterial$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (!access) {
+    return access ? { context, target, access } : null;
+  },
+);
+
+export const loadDiscordQueuedDelivery$ = command(
+  async ({ set }, args: DiscordLaunchSource, signal: AbortSignal) => {
+    const loaded = await set(loadDiscordQueuedContext$, args, signal);
+    signal.throwIfAborted();
+    return loaded?.target ?? null;
+  },
+);
+
+export const loadDiscordQueuedLaunchMaterial$ = command(
+  async (
+    { set },
+    args: DiscordLaunchSource & {
+      readonly featureSwitchContext: FeatureSwitchContext;
+    },
+    signal: AbortSignal,
+  ): Promise<DiscordQueuedLaunchMaterial | null> => {
+    const loaded = await set(loadDiscordQueuedContext$, args, signal);
+    signal.throwIfAborted();
+    if (!loaded) {
       return null;
     }
+    const { context, target, access } = loaded;
     const message = requiredUserMessageForEvent(
       "input.prompt",
       context.userMessage,

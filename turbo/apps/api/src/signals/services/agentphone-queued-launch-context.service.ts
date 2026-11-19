@@ -181,6 +181,33 @@ export function createAgentPhoneLaunchContext(args: AgentPhoneLaunchSource) {
   });
 }
 
+function agentphoneDeliveryFromContext(
+  context: NonNullable<AgentPhoneThreadContext>,
+) {
+  return agentphoneDeliveryTargetSchema.parse({
+    messageId: context.messageId,
+    conversationId: context.conversationId,
+    ...(context.isGroup ? { groupId: context.groupId } : {}),
+    channel: context.channel,
+    isGroup: context.isGroup,
+    rootMessageId: context.rootMessageId,
+    phoneHandle: context.phoneHandle,
+    fromNumber: context.fromNumber,
+    toNumber: context.toNumber,
+    userLinkId: context.userLinkId,
+    agentId: context.agentId,
+    agentphoneAgentId: context.agentphoneAgentId,
+  });
+}
+
+export function createAgentPhoneQueuedDelivery(args: AgentPhoneLaunchSource) {
+  const context$ = createAgentPhoneLaunchContext(args);
+  return computed(async (get) => {
+    const context = await get(context$);
+    return context ? agentphoneDeliveryFromContext(context) : null;
+  });
+}
+
 export const loadAgentPhoneQueuedLaunchMaterial$ = command(
   async (
     { get },
@@ -212,20 +239,7 @@ export const loadAgentPhoneQueuedLaunchMaterial$ = command(
         }),
         context.threadContext,
       ),
-      agentphoneDelivery: agentphoneDeliveryTargetSchema.parse({
-        messageId: context.messageId,
-        conversationId: context.conversationId,
-        ...(context.isGroup ? { groupId: context.groupId } : {}),
-        channel: context.channel,
-        isGroup: context.isGroup,
-        rootMessageId: context.rootMessageId,
-        phoneHandle: context.phoneHandle,
-        fromNumber: context.fromNumber,
-        toNumber: context.toNumber,
-        userLinkId: context.userLinkId,
-        agentId: context.agentId,
-        agentphoneAgentId: context.agentphoneAgentId,
-      }),
+      agentphoneDelivery: agentphoneDeliveryFromContext(context),
       userInfoExtras: { agentphoneHandle: context.phoneHandle },
     };
   },

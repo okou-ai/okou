@@ -177,6 +177,23 @@ function mentionUserInfoMap(
   );
 }
 
+function slackDeliveryFromContext(context: NonNullable<SlackThreadContext>) {
+  return {
+    ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
+    channelId: context.channelId,
+    threadTs: context.threadTs,
+    ...(context.routeThreadTs ? { routeThreadTs: context.routeThreadTs } : {}),
+  };
+}
+
+export function createSlackQueuedDelivery(args: SlackLaunchSource) {
+  const context$ = createSlackLaunchContext(args);
+  return computed(async (get) => {
+    const context = await get(context$);
+    return context ? slackDeliveryFromContext(context) : null;
+  });
+}
+
 export const loadSlackQueuedLaunchMaterial$ = command(
   async (
     { get },
@@ -209,14 +226,7 @@ export const loadSlackQueuedLaunchMaterial$ = command(
         }),
         executionContext: context.conversationContext,
       }),
-      slackDelivery: {
-        ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
-        channelId: context.channelId,
-        threadTs: context.threadTs,
-        ...(context.routeThreadTs
-          ? { routeThreadTs: context.routeThreadTs }
-          : {}),
-      },
+      slackDelivery: slackDeliveryFromContext(context),
       userInfoExtras:
         context.senderDisplayName || context.senderUserId
           ? {
