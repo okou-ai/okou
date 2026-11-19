@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_search">Rechercher</string>
+    <string name="chat_search_hint">Rechercher des chats</string>
+    <string name="chat_search_clear">Effacer la recherche</string>
+    <string name="chat_search_recent">Chats récents</string>
+    <string name="chat_search_empty">Aucun chat correspondant</string>
+</resources>
