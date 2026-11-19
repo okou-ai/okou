@@ -36,7 +36,8 @@ export function ForYouCardHeading({
           </p>
         )}
       </div>
-      <div className="flex items-center justify-center px-2.5 max-[360px]:px-2 sm:px-3">
+      <div className="relative mx-2.5 self-stretch max-[360px]:mx-2 sm:mx-3">
+        {/* Decorative artwork follows the copy height without stretching it. */}
         {illustration && (
           <img
             data-slot="for-you-illustration"
@@ -45,7 +46,7 @@ export function ForYouCardHeading({
             draggable={false}
             width={152}
             height={136}
-            className="h-27 w-full select-none object-contain max-[360px]:h-25 sm:h-34"
+            className="absolute inset-0 m-auto h-full max-h-27 w-full select-none object-contain max-[360px]:max-h-25 sm:max-h-34"
           />
         )}
       </div>
