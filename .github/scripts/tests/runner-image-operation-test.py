@@ -307,8 +307,8 @@ class ImageOperationTest(unittest.TestCase):
             finally:
                 (self.root / "release-launch").touch()
 
-        self.wait_for(lambda: (self.root / "legacy-worker-finished").exists())
-        self.assertEqual(self.records("executions"), [])
+        self.wait_for(lambda: bool(self.records("legacy-image-admission")))
+        self.assertEqual(self.records("legacy-image-admission"), [False])
         self.assertFalse(marker.exists())
         self.assertTrue(sibling_marker.is_file())
 
