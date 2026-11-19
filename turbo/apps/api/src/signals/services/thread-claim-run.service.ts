@@ -544,21 +544,6 @@ function queuedPromptPreparationRejection(
   };
 }
 
-interface QueuedAutomationEvent {
-  readonly id: string;
-  readonly chatThreadId: string;
-  readonly automationId: string;
-  readonly triggerBrief: string | null;
-  readonly workflowName: string | null;
-  readonly eventType: string | null;
-  readonly eventPayload: WorkflowAutomationEventPayload | null;
-}
-
-interface LaunchTarget {
-  readonly automation: typeof workflowAutomations.$inferSelect;
-  readonly agentId: string;
-}
-
 type AutonomyBudgetResult =
   | { readonly kind: "ok"; readonly autonomyBudget: number }
   | {
@@ -594,7 +579,6 @@ function buildWorkflowAutomationQueuedLaunchMaterial(args: {
     proactiveWorkflowKind(args.workflowName) === "learning"
       ? { recordLastRunId: false, recordLastRunAt: false }
       : {}),
-    allowClaimedOnceScheduleAutomation: args.automation.scheduleType === "once",
   };
 }
 
@@ -627,11 +611,18 @@ type RejectedQueueRunAssembly = Extract<
   { readonly kind: "rejected" }
 >;
 
-/** The queued automation's launch arguments, or the rejection of its head. */
 type QueuedAutomationLaunch =
   | {
       readonly kind: "launch";
-      readonly args: QueuedAutomationLaunchArgs;
+      readonly automation: AutomationRow;
+      readonly chatThreadId: string;
+      readonly queueEventId: string;
+      readonly apiStartTime: number;
+      readonly triggerBrief: string | undefined;
+      readonly callbacks: readonly InternalRunCallback[];
+      readonly autonomyBudget: number;
+      readonly recordLastRunId: boolean;
+      readonly recordLastRunAt: boolean;
     }
   | { readonly kind: "rejected"; readonly assembly: RejectedQueueRunAssembly };
 
@@ -639,31 +630,6 @@ function rejectedAutomationLaunch(
   assembly: RejectedQueueRunAssembly,
 ): QueuedAutomationLaunch {
   return { kind: "rejected", assembly };
-}
-
-function queuedAutomationLaunchArguments(args: {
-  readonly head: ChatQueueHeadContext;
-  readonly event: QueuedAutomationEvent;
-  readonly target: LaunchTarget;
-  readonly material: NonNullable<
-    ReturnType<typeof buildWorkflowAutomationQueuedLaunchMaterial>
-  >;
-  readonly autonomyBudget: number;
-}): QueuedAutomationLaunchArgs {
-  const { head, event, target, material, autonomyBudget } = args;
-  return {
-    automation: target.automation,
-    chatThreadId: event.chatThreadId,
-    disableClaimedOnceSchedule: material.allowClaimedOnceScheduleAutomation,
-    queueEventId: event.id,
-    apiStartTime: head.apiStartTime,
-    triggerBrief: event.triggerBrief ?? undefined,
-    triggerSource: manualTriggerSource(target.automation),
-    callbacks: material.callbacks,
-    autonomyBudget,
-    recordLastRunId: material.recordLastRunId,
-    recordLastRunAt: material.recordLastRunAt,
-  };
 }
 
 const log = logger("ChatQueueConsume");
@@ -827,7 +793,6 @@ interface WorkflowAutomationQueuedLaunchMaterial {
   readonly callbacks: ReturnType<typeof buildWorkflowAutomationCallbacks>;
   readonly recordLastRunId: boolean;
   readonly recordLastRunAt: boolean;
-  readonly allowClaimedOnceScheduleAutomation: boolean;
 }
 
 function buildWorkflowAutomationCallbacks(
@@ -871,20 +836,6 @@ function buildWorkflowAutomationCallbacks(
     payload: { threadId: chatThreadId, agentId },
   });
   return callbacks;
-}
-
-interface QueuedAutomationLaunchArgs {
-  readonly automation: AutomationRow;
-  readonly chatThreadId: string;
-  readonly queueEventId: string;
-  readonly disableClaimedOnceSchedule: boolean;
-  readonly apiStartTime: number;
-  readonly triggerBrief?: string;
-  readonly triggerSource: ReturnType<typeof manualTriggerSource>;
-  readonly callbacks: readonly InternalRunCallback[];
-  readonly autonomyBudget: number;
-  readonly recordLastRunId: boolean;
-  readonly recordLastRunAt: boolean;
 }
 
 function withEmailSystemPrompt(
@@ -1883,12 +1834,12 @@ export function createThreadClaimRunObjects(
           },
         };
       };
-      const [event, loadedTarget] = await Promise.all([
+      const [event, target] = await Promise.all([
         get(automationEvent$),
         get(automationTarget$),
         get(automationSourceBudget$),
       ]);
-      if (!event || !loadedTarget) {
+      if (!event || !target) {
         return rejectedAutomationLaunch(
           unreadable(
             !event
@@ -1898,16 +1849,15 @@ export function createThreadClaimRunObjects(
         );
       }
       if (
-        loadedTarget.workflow.officialDefinitionName !== null &&
+        target.workflow.officialDefinitionName !== null &&
         event.eventType === "manual" &&
-        proactiveWorkflowKind(loadedTarget.workflow.officialDefinitionName) !==
+        proactiveWorkflowKind(target.workflow.officialDefinitionName) !==
           "learning"
       ) {
         return rejectedAutomationLaunch(
           unreadable(OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE),
         );
       }
-      const target = loadedTarget;
       const [material, autonomyBudget] = await Promise.all([
         get(automationMaterial$),
         get(automationBudget$),
@@ -1935,13 +1885,15 @@ export function createThreadClaimRunObjects(
       }
       return {
         kind: "launch",
-        args: queuedAutomationLaunchArguments({
-          head,
-          event,
-          target,
-          material,
-          autonomyBudget: autonomyBudget.autonomyBudget,
-        }),
+        automation: target.automation,
+        chatThreadId: event.chatThreadId,
+        queueEventId: event.id,
+        apiStartTime: head.apiStartTime,
+        triggerBrief: event.triggerBrief ?? undefined,
+        callbacks: material.callbacks,
+        autonomyBudget: autonomyBudget.autonomyBudget,
+        recordLastRunId: material.recordLastRunId,
+        recordLastRunAt: material.recordLastRunAt,
       };
     },
   );
@@ -1955,8 +1907,7 @@ export function createThreadClaimRunObjects(
       if (launch.kind === "rejected") {
         return launch.assembly;
       }
-      const { args } = launch;
-      const { automation, chatThreadId } = args;
+      const { automation, chatThreadId } = launch;
       const reject = (error: {
         readonly code: string;
         readonly message: string;
@@ -1982,22 +1933,22 @@ export function createThreadClaimRunObjects(
         kind: "assembled",
         run: {
           owner: { orgId: bootstrap.orgId, userId: bootstrap.userId },
-          apiStartTime: args.apiStartTime,
-          triggerSource: args.triggerSource,
+          apiStartTime: launch.apiStartTime,
+          triggerSource: manualTriggerSource(automation),
           chatThreadId,
           codexServiceTier: model.codexServiceTier,
           reasoningEffort: model.reasoningEffort ?? null,
           agentRunMetadata: workflowAutomationRunMetadata(
             automation,
-            args.triggerBrief,
-            args.autonomyBudget,
+            launch.triggerBrief,
+            launch.autonomyBudget,
           ),
         },
         officialWorkflow,
         promptAndSkills,
         producerBinding: {
           kind: "automation",
-          queueEventId: args.queueEventId,
+          queueEventId: launch.queueEventId,
         },
         rejection: { kind: "automation", userId: automation.ownerUserId },
         launchRecord: {
@@ -2006,16 +1957,16 @@ export function createThreadClaimRunObjects(
           orgId: automation.orgId,
           userId: automation.ownerUserId,
           threadId: chatThreadId,
-          recordLastRunId: args.recordLastRunId,
-          recordLastRunAt: args.recordLastRunAt,
-          disableClaimedOnceSchedule: args.disableClaimedOnceSchedule,
+          recordLastRunId: launch.recordLastRunId,
+          recordLastRunAt: launch.recordLastRunAt,
+          disableClaimedOnceSchedule: automation.scheduleType === "once",
         },
       };
     },
   );
   const automationCallbacks$ = computed(async (get) => {
     const launch = await get(automationLaunch$);
-    return launch.kind === "launch" ? launch.args.callbacks : undefined;
+    return launch.kind === "launch" ? launch.callbacks : undefined;
   });
   const isAutomation$ = computed(async (get) => {
     return (await get(head$)).contextType === "automation";
