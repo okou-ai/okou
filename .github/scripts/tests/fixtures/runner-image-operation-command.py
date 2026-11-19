@@ -263,7 +263,8 @@ def runner(arguments):
         sys.stdout.write("x" * (1024 * 1024 + 100) + "\n")
         sys.stdout.flush()
     print("rootfs_hash=" + "1" * 64, flush=True)
-    print("snapshot_hash=" + "2" * 64, flush=True)
+    if MODE != "missing-hash":
+        print("snapshot_hash=" + "2" * 64, flush=True)
     if (ROOT / "block").exists():
         wait_for(lambda: (ROOT / "release").exists())
     return int(os.environ.get("IMAGE_BUILD_STATUS", "0"))

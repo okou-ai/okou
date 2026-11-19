@@ -647,6 +647,7 @@ class ImageOperationTest(unittest.TestCase):
 
     def test_invalid_results_fail_without_replay(self):
         faults = {
+            "missing-hash": "invalid image result hash",
             "wrong-result": "invalid or mismatched image result",
             "invalid-result-hash": "invalid image result hash",
         }
