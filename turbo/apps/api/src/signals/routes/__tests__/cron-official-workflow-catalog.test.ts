@@ -602,6 +602,7 @@ async function expectPublishedMorningBriefRecovery(
         automationId,
         workflowId,
         workspaceId: owned.actor.orgId,
+        automationDescription: expect.stringMatching(/\S/u),
         consecutiveFailures: 3,
         recoveryScheduled: true,
       }),

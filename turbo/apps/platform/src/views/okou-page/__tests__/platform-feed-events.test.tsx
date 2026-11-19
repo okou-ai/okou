@@ -31,6 +31,8 @@ const AUTOMATION_ID = "e0000000-0000-4000-a000-000000000201";
 const OTHER_AUTOMATION_ID = "e0000000-0000-4000-a000-000000000202";
 const DISABLED_AT = "2026-11-05T03:00:00.000Z";
 const CREATED_AT = "2026-11-06T03:00:00.000Z";
+const AUTOMATION_DESCRIPTION =
+  "Send a short summary of open tasks each weekday.";
 
 function auth(workspaceId = WORKSPACE_ID): SetupPageAuth {
   return {
@@ -67,6 +69,7 @@ function platformEvent(): PlatformEvent {
       workflowId: WORKFLOW_ID,
       workspaceId: WORKSPACE_ID,
       automationName: "Daily work summary",
+      automationDescription: AUTOMATION_DESCRIPTION,
       disabledAt: DISABLED_AT,
       consecutiveFailures: 3,
       recoveryScheduled: false,
@@ -161,7 +164,7 @@ async function openDetails(item = platformEvent()) {
     auth: auth(),
     featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: true },
   });
-  await screen.findByRole("heading", { name: "Automation disabled" });
+  await screen.findByRole("heading", { name: "Automation paused" });
   return screen.getByRole("main");
 }
 
@@ -176,8 +179,7 @@ test("A fast event destination replaces its initially hidden loading status", as
     await response.promise;
     return respond(200, automation());
   });
-  const dialog = await openDetails();
-  click(control("link", "View automation", dialog));
+  await setupPage({ context, path: destination(), auth: auth() });
   const loading = await screen.findByLabelText("Loading automation");
   expect(loading).not.toBeVisible();
   response.resolve();
@@ -194,8 +196,7 @@ test("A pending event destination shows a lightweight status until access resolv
     await response.promise;
     return respond(200, automation());
   });
-  const dialog = await openDetails();
-  click(control("link", "View automation", dialog));
+  await setupPage({ context, path: destination(), auth: auth() });
   const loading = await screen.findByLabelText("Loading automation");
   await waitFor(() => {
     expect(loading).toBeVisible();
@@ -234,10 +235,9 @@ test("A failed destination can retry through the loading status and reach the sa
   expect(within(selected).getByRole("switch")).not.toBeChecked();
 });
 
-test("View automation rechecks access and focuses the exact current automation without enabling it or its sibling", async () => {
+test("The linked destination rechecks access and focuses the exact current automation", async () => {
   mockAutomationDestination();
-  const dialog = await openDetails();
-  click(control("link", "View automation", dialog));
+  await setupPage({ context, path: destination(), auth: auth() });
   const selected = await screen.findByRole("group", { name: "Every 1 hour" });
   await waitFor(() => {
     expect(selected).toHaveFocus();
@@ -387,28 +387,100 @@ test("A failed dismissal stays visible and can be retried without changing its a
       : respond(204);
   });
   await openDetails();
-  expect(screen.getByText("Platform event")).toBeInTheDocument();
+  expect(screen.getByText("System update")).toBeInTheDocument();
   click(control("button", "Dismiss"));
   await screen.findByRole("alert");
   expect(
-    screen.getByRole("heading", { name: "Automation disabled" }),
+    screen.getByRole("heading", { name: "Automation paused" }),
   ).toBeInTheDocument();
   fail = false;
   click(control("button", "Dismiss"));
   await screen.findByText("All caught up");
 });
 
-test("An event preserves its actual disable time in the member's timezone and exact automation link", async () => {
+test("A pause update explains the failure, shows the description, and links to the exact automation in a new tab", async () => {
   const card = await openDetails();
   expect(within(card).getByText("Daily work summary")).toBeInTheDocument();
-  expect(within(card).getByText("Platform event")).toBeInTheDocument();
-  const timestamp = within(card).getByText(/^Disabled at /u);
+  expect(within(card).getByText(AUTOMATION_DESCRIPTION)).toBeInTheDocument();
+  expect(within(card).getByText("System update")).toBeInTheDocument();
+  const reason = within(card).getByText(/3 consecutive run attempts/u);
+  const timestamp = within(card).getByText(/^Paused on /u);
   expect(timestamp).toHaveAttribute("datetime", DISABLED_AT);
   expect(timestamp).toHaveTextContent("2026");
   expect(timestamp).toHaveTextContent("11:00 AM");
-  expect(control("link", "View automation", card)).toHaveAttribute(
-    "href",
-    destination(),
-  );
+  const link = control("link", "View automation", reason);
+  expect(link).toHaveAttribute("href", destination());
+  expect(link).toHaveAttribute("target", "_blank");
+  expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  click(link);
+  expect(pathname()).toBe("/for-you");
+  expect(control("button", "Enable", card)).toBeInTheDocument();
+  expect(control("button", "Dismiss", card)).toBeInTheDocument();
   expect(card).not.toHaveTextContent(WORKSPACE_ID);
+});
+
+test("Enable keeps the update available after rejection and clears it after enabling the linked automation", async () => {
+  const item = platformEvent();
+  const enabled = new Set([OTHER_AUTOMATION_ID]);
+  const response = createDeferredPromise<void>(context.signal);
+  let reject = true;
+  context.mocks.api(workflowAutomationsContract.get, ({ params, respond }) => {
+    return respond(200, automation(params.id, enabled.has(params.id)));
+  });
+  context.mocks.api(
+    workflowAutomationsContract.enable,
+    async ({ params, respond }) => {
+      if (reject) {
+        return respond(409, {
+          error: { code: "CONFLICT", message: "Try again" },
+        });
+      }
+      await response.promise;
+      enabled.add(params.id);
+      return respond(200, automation(params.id, true));
+    },
+  );
+  context.mocks.api(feedContract.dismiss, ({ params, respond }) => {
+    expect(params.id).toBe(item.id);
+    expect(enabled.has(AUTOMATION_ID)).toBeTruthy();
+    return respond(204);
+  });
+
+  const card = await openDetails(item);
+  click(control("button", "Enable", card));
+  await within(card).findByText("We couldn’t complete that action. Try again.");
+  expect(enabled.has(AUTOMATION_ID)).toBeFalsy();
+  reject = false;
+  click(control("button", "Enable", card));
+  expect(control("button", "Enable", card)).toHaveAttribute(
+    "aria-busy",
+    "true",
+  );
+  expect(control("button", "Dismiss", card)).toBeDisabled();
+  response.resolve();
+  await screen.findByRole("heading", { name: "All caught up" });
+  expect(enabled).toStrictEqual(new Set([AUTOMATION_ID, OTHER_AUTOMATION_ID]));
+});
+
+test("Enable closes an update for a recovered automation without restarting it", async () => {
+  const item = platformEvent();
+  item.content.recoveryScheduled = true;
+  let restarts = 0;
+  context.mocks.api(workflowAutomationsContract.get, ({ respond }) => {
+    return respond(200, automation(AUTOMATION_ID, true));
+  });
+  context.mocks.api(workflowAutomationsContract.enable, ({ respond }) => {
+    restarts += 1;
+    return respond(200, automation(AUTOMATION_ID, true));
+  });
+  context.mocks.api(feedContract.dismiss, ({ respond }) => {
+    return respond(204);
+  });
+  const card = await openDetails(item);
+  expect(
+    within(card).getByText(/An automatic recovery attempt was scheduled/u),
+  ).toBeInTheDocument();
+  click(control("button", "Enable", card));
+  await screen.findByRole("heading", { name: "All caught up" });
+  expect(restarts).toBe(0);
 });

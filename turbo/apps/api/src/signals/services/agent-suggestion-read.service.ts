@@ -4,8 +4,26 @@ import {
   suggestionRow,
 } from "./agent-suggestions-lifecycle";
 import { command } from "ccstate";
-import { and, asc, desc, eq, gt, inArray, ne, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
+import { agents } from "@okouai/db/schema/agent";
 import { feedItems } from "@okouai/db/schema/feed-item";
+import { workflows } from "@okouai/db/schema/workflow";
+import {
+  officialWorkflowCatalogReleases,
+  officialWorkflowCatalogState,
+  officialWorkflowDefinitionRevisions,
+} from "@okouai/db/schema/official-workflow-catalog";
 import {
   SUGGESTION_RETENTION_MS,
   suggestionReceiptSchema,
@@ -13,8 +31,18 @@ import {
   platformEventSchema,
 } from "@okouai/api-contracts/contracts/feed";
 import { db$ } from "../external/db";
+import { organizationAuthContext$ } from "../auth/auth-context";
+import {
+  nullableDriverValueDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { withSuggestionConsumeToken } from "./agent-suggestion-consumption-token";
+import { visibleWorkflowCondition } from "./workflow-data.service";
+import {
+  acceptedCatalogDefinitionRevision,
+  acceptedOfficialWorkflowCatalogReadPlan,
+} from "./official-workflow-catalog-read.service";
 
 interface Owner {
   readonly orgId: string;
@@ -113,6 +141,62 @@ const recentSuggestionReceipts$ = command(
     });
   },
 );
+
+/** Resolve current descriptions for the same workflows the signed-in member can open. */
+const feedAutomationDescriptions$ = command(
+  async ({ get }, workflowIds: readonly string[], signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    if (auth.tokenType !== "session" || workflowIds.length === 0) {
+      return new Map<string, string | null>();
+    }
+    const catalog = acceptedOfficialWorkflowCatalogReadPlan();
+    const rows = await get(db$)
+      .select({
+        id: workflows.id,
+        description: sql`coalesce(
+          ${officialWorkflowDefinitionRevisions.payload}->'workflow'->>'description',
+          ${workflows.description}
+        )`.mapWith(nullableDriverValueDecoder(pgTextDecoder)),
+      })
+      .from(workflows)
+      .innerJoin(agents, eq(agents.id, workflows.agentId))
+      .leftJoin(
+        officialWorkflowCatalogState,
+        and(isNotNull(workflows.officialDefinitionName), catalog.condition),
+      )
+      .leftJoin(officialWorkflowCatalogReleases, catalog.join)
+      .leftJoin(
+        officialWorkflowDefinitionRevisions,
+        and(
+          eq(
+            officialWorkflowDefinitionRevisions.definitionName,
+            workflows.officialDefinitionName,
+          ),
+          eq(
+            officialWorkflowDefinitionRevisions.revision,
+            acceptedCatalogDefinitionRevision(workflows.officialDefinitionName),
+          ),
+        ),
+      )
+      .where(
+        and(
+          eq(workflows.orgId, auth.orgId),
+          inArray(workflows.id, workflowIds),
+          visibleWorkflowCondition({
+            userId: auth.userId,
+            role: auth.orgRole ?? "member",
+          }),
+        ),
+      );
+    signal.throwIfAborted();
+    return new Map(
+      rows.map(({ id, description }) => {
+        return [id, description] as const;
+      }),
+    );
+  },
+);
+
 export const readFeedItems$ = command(
   async (
     { get, set },
@@ -158,11 +242,29 @@ export const readFeedItems$ = command(
         suggestionSchema.parse(suggestionRow(row)),
       );
     });
-    const receipts =
-      type === "event"
-        ? []
-        : await set(recentSuggestionReceipts$, owner, signal);
-    return { status: 200 as const, body: { items, receipts } };
+    const [receipts, descriptions] = await Promise.all([
+      type === "event" ? [] : set(recentSuggestionReceipts$, owner, signal),
+      set(
+        feedAutomationDescriptions$,
+        items.flatMap((item) => {
+          return item.type === "event" ? [item.content.workflowId] : [];
+        }),
+        signal,
+      ),
+    ]);
+    const describedItems = items.map((item) => {
+      if (item.type !== "event") {
+        return item;
+      }
+      const description = descriptions.get(item.content.workflowId)?.trim();
+      return description
+        ? {
+            ...item,
+            content: { ...item.content, automationDescription: description },
+          }
+        : item;
+    });
+    return { status: 200 as const, body: { items: describedItems, receipts } };
   },
 );
 export const readSuggestionManagement$ = command(
