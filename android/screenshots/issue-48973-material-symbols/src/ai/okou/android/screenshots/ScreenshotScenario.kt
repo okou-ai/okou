@@ -2,7 +2,7 @@ package ai.okou.android.screenshots
 
 import ai.okou.android.BuildConfig
 import ai.okou.android.ChatCacheSnapshot
-import ai.okou.android.ChatListApiFixture
+import ai.okou.android.ComposerApiFixture
 import ai.okou.android.MainActivity
 import ai.okou.android.R
 import ai.okou.android.ScreenshotCapture
@@ -10,6 +10,7 @@ import ai.okou.android.TestOkouApplication
 import ai.okou.android.api.generated.AndroidUpdates
 import ai.okou.android.api.generated.AndroidUpdatesRelease
 import ai.okou.android.auth.SessionModel
+import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.updates.AppUpdates
 import ai.okou.android.updates.UpdateRecord
 import ai.okou.android.updates.UpdateService
@@ -21,6 +22,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
+import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import java.io.File
@@ -44,7 +46,7 @@ class ScreenshotScenario {
         val oldUpdates = app.updateOwner
         val preferences = app.snapshotApiPreferences()
         val cache = ChatCacheSnapshot(app.noBackupFilesDir.resolve("chat-list"), app.chatCache)
-        val fixture = ChatListApiFixture()
+        val fixture = ComposerApiFixture()
         val exposeUpdate = CompletableDeferred<Unit>()
         val updates = appUpdates(exposeUpdate)
         app.chatService = fixture.service
@@ -101,7 +103,31 @@ class ScreenshotScenario {
             find(text(R.string.composer_new)).click()
             val editor = By.pkg(app.packageName).clazz("android.widget.EditText").enabled(true)
             find(editor).text = "Review the design"
-            find(text(R.string.composer_send).enabled(true))
+            check(
+                device.wait(
+                    object : Condition<UiDevice, Boolean> {
+                        override fun apply(device: UiDevice): Boolean {
+                            var ready = false
+                            checkNotNull(scenario).onActivity { activity ->
+                                ready =
+                                    ViewModelProvider(activity)[SessionModel::class.java]
+                                        .uiState
+                                        .value
+                                        .ready
+                                        ?.composer
+                                        ?.uiState
+                                        ?.value
+                                        ?.canSend(ComposerTarget()) == true
+                            }
+                            return ready &&
+                                device.findObject(text(R.string.composer_send))?.isEnabled == true
+                        }
+                    },
+                    10_000,
+                )
+            ) {
+                "Composer did not become ready to send"
+            }
             ScreenshotCapture.capture("05-composer.png")
             find(description(R.string.back)).click()
 
