@@ -893,3 +893,7 @@ browser-session-page-009	turbo/apps/platform/src/views/browser-session/__tests__
 browser-session-page-010	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Show unavailable when native browser acquisition reports a reclaimed lifetime	489	passed
 browser-session-page-028	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Remove live input when renewal is denied without a native disconnect	435	passed
 browser-session-page-032	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Restore the active native viewer when chat authorization returns	365	passed
+browser-session-page-014	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Synchronize the replacement display measured while the viewer is concealed	576	passed
+browser-session-page-016	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Send fresh input only to the replacement runtime	618	passed
+browser-session-page-017	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Revalidation in window zero with provider URL suspends input until the viewer returns	659	passed
+browser-session-page-018	turbo/apps/platform/src/views/browser-session/__tests__/browser-session-page.test.tsx	Revalidation in window zero with null provider URL suspends input until the viewer returns	659	passed

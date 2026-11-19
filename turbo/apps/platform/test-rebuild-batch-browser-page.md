@@ -24,3 +24,19 @@ The ten runtime executions match ten selected IDs in both directions.
 Eighteen selected cases are still open. Retain the file's BDD. Continue with
 `014`, `016`–`018` for replacement viewer measurements and authority,
 then the remaining lease and authorization cases.
+
+## Replacement viewer
+
+- `014` waits for the replacement socket to be created and held with the
+  live canvas concealed. The production viewer sends the new measured
+  720×480 size after the fixture releases the socket.
+- `016` holds the old native text receipt through a runtime identity change
+  on the same CDP endpoint. It compares the receiving session IDs and the
+  rendered replacement address.
+- `017` and `018` are two expanded window-zero rows. With either provider
+  URL, a new runtime's held socket disables input, and the current page
+  receives the fresh text once the replacement returns. Revalidating the
+  unchanged runtime kept one socket, so that probe could not exercise
+  the replacement premise.
+
+Fourteen expanded runtime rows now match fourteen selected IDs.

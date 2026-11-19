@@ -504,3 +504,192 @@ test("Show unavailable when native browser acquisition reports a reclaimed lifet
     screen.findByText("Browser view unavailable"),
   ).resolves.toBeInTheDocument();
 });
+
+async function openReplaceableViewer(liveUrl: string | null = null) {
+  const initial = viewerConnection();
+  const initialBrowser = {
+    ...initial.browser,
+    liveUrl,
+    window: { ...initial.browser.window, primaryWindowId: 0 },
+  };
+  let viewer = { ...initial, browser: initialBrowser };
+  const cdp = mockBrowserCdp(context, viewer.cdpUrl, {
+    targets: [
+      {
+        targetId: "old-page",
+        title: "Old page",
+        url: "https://old.example.test",
+        windowId: 0,
+      },
+      {
+        targetId: "new-page",
+        title: "New page",
+        url: "https://new.example.test",
+        windowId: 1,
+      },
+    ],
+  });
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(200, { browser: viewer.browser, viewer });
+  });
+  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
+    return respond(200, { browser: viewer.browser });
+  });
+  await openBrowserPage();
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    expect(
+      context.mocks.ably.hasSubscription("browserSessionChanged"),
+    ).toBeTruthy();
+  });
+  return {
+    cdp,
+    revalidate(replacementWindow: number) {
+      cdp.setAutoOpen(false);
+      viewer = {
+        ...viewer,
+        browser: {
+          ...viewer.browser,
+          window: {
+            instanceId: "a0000000-0000-4000-a000-000000000347",
+            primaryWindowId: replacementWindow,
+          },
+        },
+      };
+      context.mocks.ably.trigger("browserSessionChanged", {
+        threadId: THREAD_ID,
+      });
+    },
+  };
+}
+
+function typeRemote(text: string) {
+  const input = screen.getByLabelText("Remote browser input");
+  input.focus();
+  fireEvent.input(input, {
+    target: { value: text },
+    data: text,
+    inputType: "insertText",
+  });
+}
+
+test("Synchronize the replacement display measured while the viewer is concealed", async () => {
+  let size = new DOMRect(0, 0, 900, 600);
+  const fallback = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      return this.hasAttribute("data-browser-canvas")
+        ? size
+        : fallback.call(this);
+    },
+  );
+  const { cdp, revalidate } = await openReplaceableViewer();
+  const resize = (width: number, height: number) => {
+    return expect.objectContaining({
+      method: "Browser.setContentsSize",
+      params: expect.objectContaining({ width, height }),
+    });
+  };
+  await waitFor(() => {
+    expect(cdp.requests).toContainEqual(resize(900, 600));
+  });
+  const oldConnectionCount = cdp.connections();
+
+  revalidate(1);
+  await waitFor(() => {
+    expect(cdp.connections()).toBeGreaterThan(oldConnectionCount);
+    expect(
+      screen.queryByRole("img", { name: "Live browser view" }),
+    ).not.toBeInTheDocument();
+  });
+  size = new DOMRect(0, 0, 720, 480);
+  fireEvent.resize(window);
+  const beforeReveal = cdp.requests.length;
+  cdp.openConnection();
+
+  await waitFor(() => {
+    expect(
+      screen.getByRole("img", { name: "Live browser view" }),
+    ).toBeInTheDocument();
+    expect(cdp.requests.slice(beforeReveal)).toContainEqual(resize(720, 480));
+  });
+});
+
+test("Send fresh input only to the replacement runtime", async () => {
+  const { cdp, revalidate } = await openReplaceableViewer();
+  expect(screen.getByLabelText("Address")).toHaveValue(
+    "https://old.example.test",
+  );
+  const oldSession = cdp.pageSession("old-page");
+  const pending = cdp.holdNext("Input.insertText");
+  typeRemote("old pending text");
+  await pending.received;
+  expect(cdp.input).toContainEqual({
+    method: "Input.insertText",
+    params: { text: "old pending text" },
+    sessionId: oldSession,
+  });
+  const oldConnectionCount = cdp.connections();
+
+  revalidate(1);
+  await waitFor(() => {
+    expect(cdp.connections()).toBeGreaterThan(oldConnectionCount);
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  });
+  cdp.openConnection();
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    expect(screen.getByLabelText("Address")).toHaveValue(
+      "https://new.example.test",
+    );
+  });
+  const fresh = {
+    method: "Input.insertText",
+    params: { text: "replacement text" },
+    sessionId: cdp.pageSession("new-page"),
+  };
+  await pending.release();
+  typeRemote("replacement text");
+  await waitFor(() => {
+    expect(cdp.input).toContainEqual(fresh);
+  });
+  expect(cdp.input).not.toContainEqual({ ...fresh, sessionId: oldSession });
+});
+
+test.each([
+  { label: "provider URL", liveUrl: "https://viewer.example/live" },
+  { label: "null provider URL", liveUrl: null },
+])(
+  "Revalidation in window zero with $label suspends input until the viewer returns",
+  async ({ liveUrl }) => {
+    const { cdp, revalidate } = await openReplaceableViewer(liveUrl);
+    expect(screen.getByLabelText("Address")).toHaveValue(
+      "https://old.example.test",
+    );
+    const oldConnectionCount = cdp.connections();
+
+    revalidate(0);
+    await waitFor(() => {
+      expect(cdp.connections()).toBeGreaterThan(oldConnectionCount);
+      expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    });
+    typeRemote("stale text");
+    cdp.openConnection();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    typeRemote("current text");
+
+    await waitFor(() => {
+      expect(cdp.input).toContainEqual({
+        method: "Input.insertText",
+        params: { text: "current text" },
+        sessionId: cdp.pageSession("old-page"),
+      });
+    });
+    expect(cdp.input).not.toContainEqual(
+      expect.objectContaining({ params: { text: "stale text" } }),
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  },
+);
