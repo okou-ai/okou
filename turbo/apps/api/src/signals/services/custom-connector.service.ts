@@ -3084,7 +3084,6 @@ export const deleteCustomConnector$ = command(
             reportConnectorRuntimeWakeupDiscoveryFailure({
               orgId: wakeup.scope.orgId,
               scopedToUser: wakeup.scope.userId !== undefined,
-              scopedToAgent: wakeup.scope.agentId !== undefined,
               targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
               error: result.error,
             });
@@ -3774,7 +3773,6 @@ export const setCustomConnectorValues$ = command(
             reportConnectorRuntimeWakeupDiscoveryFailure({
               orgId: wakeup.scope.orgId,
               scopedToUser: wakeup.scope.userId !== undefined,
-              scopedToAgent: wakeup.scope.agentId !== undefined,
               targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
               error: result.error,
             });
@@ -3912,7 +3910,6 @@ export const deleteCustomConnectorAccountAndPublish$ = command(
             reportConnectorRuntimeWakeupDiscoveryFailure({
               orgId: wakeup.scope.orgId,
               scopedToUser: wakeup.scope.userId !== undefined,
-              scopedToAgent: wakeup.scope.agentId !== undefined,
               targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
               error: result.error,
             });

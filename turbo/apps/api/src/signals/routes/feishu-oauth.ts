@@ -513,23 +513,10 @@ const finishFeishuOAuthConnection$ = command(
       }
       return result;
     })();
-    // A committed connection must invalidate clients before surfacing abort.
-    if (signal.aborted) {
-      if (!connection.connected) {
-        signal.throwIfAborted();
-      }
-    }
+    signal.throwIfAborted();
     if (!connection.connected) {
       return { result: "account_in_use", marketingRewardEventId: null };
     }
-
-    signal.throwIfAborted();
-    await publishUserSignal(
-      [args.state.userId],
-      "composerAgentConnectorsChanged",
-      { agentId: args.installation.defaultAgentId },
-    );
-    signal.throwIfAborted();
 
     await (async () => {
       const plan = feishuOrgChangedAdminReadPlan(args.state.orgId);

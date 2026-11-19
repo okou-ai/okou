@@ -1060,7 +1060,6 @@ function automaticNoAuthWakeupFailure(
   return {
     orgId: wakeup.scope.orgId,
     scopedToUser: wakeup.scope.userId !== undefined,
-    scopedToAgent: wakeup.scope.agentId !== undefined,
     targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
     error,
   };

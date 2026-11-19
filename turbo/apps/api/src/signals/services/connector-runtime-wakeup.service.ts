@@ -20,7 +20,6 @@ const L = logger("ConnectorRuntimeWakeup");
 interface ConnectorRuntimeWakeupScope {
   readonly orgId: string;
   readonly userId?: string;
-  readonly agentId?: string;
 }
 
 export function connectorRuntimeWakeupRunColumns() {
@@ -52,9 +51,6 @@ export function connectorRuntimeWakeupCondition(
   ];
   if (scope.userId !== undefined) {
     conditions.push(eq(agentRuns.userId, scope.userId));
-  }
-  if (scope.agentId !== undefined) {
-    conditions.push(eq(agentRuns.agentId, scope.agentId));
   }
   return and(...conditions);
 }
@@ -120,7 +116,6 @@ export async function publishConnectorRuntimeWakeupRows(
     L.warn("Failed to publish connector runtime sync wakeups", {
       orgId: args.scope.orgId,
       scopedToUser: args.scope.userId !== undefined,
-      scopedToAgent: args.scope.agentId !== undefined,
       targetCount: targets.length,
       examinedRunCount: rows.length,
       batchCount: batches.length,
@@ -135,7 +130,6 @@ export async function publishConnectorRuntimeWakeupRows(
   L.debug("Published connector runtime sync wakeups", {
     orgId: args.scope.orgId,
     scopedToUser: args.scope.userId !== undefined,
-    scopedToAgent: args.scope.agentId !== undefined,
     targetCount: targets.length,
     examinedRunCount: rows.length,
     matchedWakeupCount: wakeups.length,
@@ -150,7 +144,6 @@ export async function publishConnectorRuntimeWakeupRows(
 export function reportConnectorRuntimeWakeupDiscoveryFailure(args: {
   readonly orgId: string;
   readonly scopedToUser: boolean;
-  readonly scopedToAgent: boolean;
   readonly targetCount: number;
   readonly error: unknown;
 }): void {
@@ -192,7 +185,6 @@ export const publishConnectorRuntimeSyncWakeups$ = command(
       L.warn("Failed to discover connector runtime sync wakeups", {
         orgId: args.scope.orgId,
         scopedToUser: args.scope.userId !== undefined,
-        scopedToAgent: args.scope.agentId !== undefined,
         targetCount: targets.length,
         error: result.error,
       });

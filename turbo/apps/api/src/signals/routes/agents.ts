@@ -846,10 +846,8 @@ const updateAgentUserConnectorsInner$ = command(
     );
     const operation = body.data.operation ?? "replace";
     if (operation !== "remove") {
-      // Agent connector selection is persisted execution configuration, not a
-      // discovery surface. Validate that each connector can execute, but do
-      // not consult feature switches or authored visibility: rollout changes
-      // must not invalidate direct API updates or an existing agent config.
+      // Validate stored connector slugs against catalog capability. Catalog
+      // visibility and rollout switches govern discovery.
       const resolver = await set(readConnectorResolver$, uniqueConnectorSlugs);
       signal.throwIfAborted();
       const resolved = await resolver.resolveSlugs({

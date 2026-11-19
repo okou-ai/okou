@@ -6,6 +6,7 @@ import { array, object, string } from "zod";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
@@ -44,14 +45,13 @@ async function startRun(
   return run.runId;
 }
 
-async function createConnector(actor: ApiTestUser, permissioned = false) {
+async function createConnector(actor: ApiTestUser) {
   return await connectors.createCustomConnector(
     actor,
     manualHttpCustomConnectorCreateBody({
       slug: `_wakeup-${randomUUID()}`,
       displayName: "Runtime wakeup test",
       prefixTemplates: [`https://${randomUUID()}.wakeup.example.test/`],
-      ...(permissioned ? { permissionBundleRef: "builtin:slack@1" } : {}),
     }),
   );
 }
@@ -68,7 +68,7 @@ function message(runId: string, customConnectorId: string) {
 }
 
 describe("connector runtime wakeups", () => {
-  it("notifies every active Runner group in the workspace after deleting a connector", async () => {
+  it("notifies eligible Runner groups after connector deletion even if one batch fails", async () => {
     const { actor, agentId, runnerGroup } = await prepareActor("team");
     const custom = await createConnector(actor);
     const runId = await startRun(actor, agentId, runnerGroup);
@@ -77,28 +77,83 @@ describe("connector runtime wakeups", () => {
     const otherRun = await startRun(actor, otherAgent.agentId, secondGroup);
     const cancelled = await startRun(actor, agentId, secondGroup);
     await runs.requestCancelRun(actor, cancelled, [200]);
+    const expected = [
+      { runnerGroup, runId },
+      { runnerGroup: secondGroup, runId: otherRun },
+    ];
+    for (let index = 0; index < 3; index += 1) {
+      const group = await runs.configureRunnerGroup();
+      expected.push({
+        runnerGroup: group,
+        runId: await startRun(actor, agentId, group),
+      });
+    }
     const outsider = await prepareActor();
     await startRun(outsider.actor, outsider.agentId, outsider.runnerGroup);
     context.mocks.ably.batchPublish.mockClear();
 
-    await connectors.deleteCustomConnector(actor, custom.id);
+    const started = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    let active = 0;
+    let peak = 0;
+    context.mocks.ably.batchPublish.mockImplementation(async (spec) => {
+      const first = !started.settled();
+      active += 1;
+      peak = Math.max(peak, active);
+      if (first) {
+        started.resolve();
+      }
+      await release.promise;
+      active -= 1;
+      if (first) {
+        throw new Error("Ably rejected the first batch");
+      }
+      return {
+        successCount: spec.channels.length,
+        failureCount: 0,
+        results: spec.channels.map((channel) => {
+          return {
+            channel,
+            messageId: "accepted-batch",
+            serials: spec.messages.map(() => {
+              return null;
+            }),
+          };
+        }),
+      };
+    });
+    const deleting = connectors.deleteCustomConnector(actor, custom.id);
+    const firstOutcome = await settleIncludingAbort(
+      Promise.race([started.promise, deleting]),
+    );
+    if (!release.settled()) {
+      release.resolve();
+    }
+    await deleting;
+    if (!firstOutcome.ok) {
+      throw firstOutcome.error;
+    }
+    expect(peak).toBeLessThanOrEqual(4);
     expect(
       context.mocks.ably.batchPublish.mock.calls.map(([spec]) => {
         return spec;
       }),
     ).toStrictEqual(
-      expect.arrayContaining([
-        {
-          channels: [`runner-group:${runnerGroup}`],
-          messages: [message(runId, custom.id)],
-        },
-        {
-          channels: [`runner-group:${secondGroup}`],
-          messages: [message(otherRun, custom.id)],
-        },
-      ]),
+      expect.arrayContaining(
+        expected.map((run) => {
+          return {
+            channels: [`runner-group:${run.runnerGroup}`],
+            messages: [message(run.runId, custom.id)],
+          };
+        }),
+      ),
     );
-    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(2);
+    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(
+      expected.length,
+    );
+    await expect(
+      connectors.listCustomConnectors(actor),
+    ).resolves.not.toContainEqual(expect.objectContaining({ id: custom.id }));
   });
 
   it.each([
