@@ -11,6 +11,7 @@ use tokio::sync::oneshot;
 use tokio::time::{self, Instant};
 
 use crate::connection::FrameWriteDecision;
+use crate::protocol_error;
 use crate::request_progress::RequestWriteProgress;
 use crate::{
     CompositeNormalOperation, FrameWriteObserver, RequestTimeoutError, RequestTimeoutStage, Shared,
@@ -137,7 +138,7 @@ async fn start_exec_operation_on_shared_with_tracking_and_admission(
             stdin_bytes: request.stdin_bytes,
         },
     )
-    .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
+    .map_err(protocol_error::invalid_input)?;
     let deadline = exec_start_deadline(request.start_write_timeout)?;
 
     let ExecOperationRegistration {
@@ -307,7 +308,7 @@ where
             stdin_bytes: request.stdin_bytes,
         },
     )
-    .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
+    .map_err(protocol_error::invalid_input)?;
     if request.start_timeout.is_zero() {
         return Err(supervised_start_timeout_error(
             RequestTimeoutStage::BeforeFrameWrite,
