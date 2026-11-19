@@ -2,7 +2,7 @@ import { command, computed, state } from "ccstate";
 import { and, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { iosNotificationsContract } from "@okouai/api-contracts/contracts/ios-notifications";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { iosPushRegistrations } from "@okouai/db/runtime/ios-push-registration";
+import { iosPushRegistrations } from "@okouai/db/schema/ios-push-registration";
 import {
   chatEvents,
   chatEventTerminalPredicate,

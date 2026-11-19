@@ -28,6 +28,7 @@ template_guidance_bundle_writer_floor=$(<"${repo_root}/.github/rollback-floors/t
 content_bundle_reference_api_floor=$(<"${repo_root}/.github/rollback-floors/content-bundle-reference-only-api")
 home_cache_capacity_reader_floor=$(<"${repo_root}/.github/rollback-floors/home-cache-capacity-reader")
 member_memory_protocol_floor=$(<"${repo_root}/.github/rollback-floors/member-memory-dual-writer")
+widget_push_columns_floor=$(<"${repo_root}/.github/rollback-floors/ios-widget-push-columns-independent-api")
 
 cat >"${fake_bin}/git" <<'SH'
 #!/usr/bin/env bash
@@ -240,6 +241,12 @@ case "${1:-}" in
       [ "${MOCK_RUNNER_STEER_ENDPOINTS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "45b537a596a153a91b76c3bc7223187840f52775" ]; then
       [ "${MOCK_VIDEO_GENERATION_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "$MOCK_WIDGET_PUSH_COLUMNS_FLOOR" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_WIDGET_PUSH_COLUMNS_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_WIDGET_PUSH_COLUMNS_VALID:-1}" = "1" ]
+      fi
     elif [ "${3:-}" = "$MOCK_MEMBER_MEMORY_PROTOCOL_FLOOR" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_MEMBER_MEMORY_PROTOCOL_ON_MAIN:-1}" = "1" ]
@@ -498,6 +505,11 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_CONTENT_BUNDLE_REFERENCE_API_COMMIT-$MOCK_CONTENT_BUNDLE_REFERENCE_API_FLOOR}"
       exit 0
     fi
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/ios-widget-push-columns-independent-api" ]; then
+      [ "${MOCK_WIDGET_PUSH_COLUMNS_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_WIDGET_PUSH_COLUMNS_COMMIT-$MOCK_WIDGET_PUSH_COLUMNS_FLOOR}"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/member-memory-dual-writer" ]; then
       [ "${MOCK_MEMBER_MEMORY_PROTOCOL_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_MEMBER_MEMORY_PROTOCOL_COMMIT-$MOCK_MEMBER_MEMORY_PROTOCOL_FLOOR}"
@@ -649,6 +661,7 @@ run_resolver() {
     MOCK_DATA_ROUTER_STATELESS_MCP_API_FLOOR="$data_router_stateless_mcp_api_floor" \
     MOCK_HOME_CACHE_CAPACITY_READER_FLOOR="$home_cache_capacity_reader_floor" \
     MOCK_MEMBER_MEMORY_PROTOCOL_FLOOR="$member_memory_protocol_floor" \
+    MOCK_WIDGET_PUSH_COLUMNS_FLOOR="$widget_push_columns_floor" \
     MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR="$official_workflow_bundle_reader_floor" \
     MOCK_REGISTRY_ARCHIVE_READER_FLOOR="$registry_archive_reader_floor" \
     MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_FLOOR="$template_guidance_bundle_reader_floor" \
@@ -2444,6 +2457,20 @@ for memory_case in \
   [ ! -s "${tmp_dir}/memory-policy.output" ] || fail "invalid Memory floor must not publish outputs"
   if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
     fail "Memory floor must reject before provider or host access"
+  fi
+done
+
+for widget_case in \
+  "MOCK_WIDGET_PUSH_COLUMNS_AVAILABLE=0|Cannot read the iOS widget push columns rollback floor from main" \
+  "MOCK_WIDGET_PUSH_COLUMNS_COMMIT=invalid|Missing or invalid iOS widget push columns rollback floor" \
+  "MOCK_WIDGET_PUSH_COLUMNS_ON_MAIN=0|iOS widget push columns rollback floor is not on main" \
+  "MOCK_WIDGET_PUSH_COLUMNS_VALID=0|Rollback target predates the iOS widget push columns retirement"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${widget_case#*|}" \
+    run_resolver "${tmp_dir}/widget-push-policy.output" "${widget_case%%|*}"
+  [ ! -s "${tmp_dir}/widget-push-policy.output" ] || fail "invalid widget push columns floor must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "Widget push columns floor must reject before provider or host access"
   fi
 done
 

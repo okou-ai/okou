@@ -5,7 +5,7 @@ import * as projectSchema from "./schema/project";
 import * as projectEventSchema from "./schema/project-event";
 import * as projectSnapshotSchema from "./schema/project-snapshot";
 import * as halloweenSchema from "./schema/halloween";
-import * as iosPushRegistrationSchema from "./runtime/ios-push-registration";
+import * as iosPushRegistrationSchema from "./schema/ios-push-registration";
 import * as dataRouterRequestSchema from "./schema/data-router-request";
 import * as wechatSchema from "./schema/wechat";
 import * as whatsappSchema from "./schema/whatsapp";
