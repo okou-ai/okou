@@ -50,7 +50,6 @@ const SKILL_IMPORT_TOKEN_PREFIX = "vm0_skillimport_v2_";
 const RUN_CONTROL_TOKEN_TTL_SECONDS = 3 * 60 * 60;
 
 const CONDITIONAL_CAPABILITIES = [
-  ["run-timing:write", FeatureSwitchKey.ArtifactGenerationTiming],
   ["phone-use:read", FeatureSwitchKey.PhoneUse],
   ["phone-use:write", FeatureSwitchKey.PhoneUse],
   ["instructions:read", FeatureSwitchKey.SingleAgent],

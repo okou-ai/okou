@@ -52,13 +52,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Honor multiple output formats selected by onboarding task links.",
     enabled: true,
   },
-  [FeatureSwitchKey.ArtifactGenerationTiming]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Artifact generation phase timing",
-    description:
-      "Record research and generation boundaries for the current Run.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ArtifactThreePointTiming]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Artifact three-point phase timing",
