@@ -94,6 +94,7 @@ jobs:
           name: okou-android-debug-${{ github.sha }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          overwrite: true
           retention-days: 7
 
   instrumentation:
