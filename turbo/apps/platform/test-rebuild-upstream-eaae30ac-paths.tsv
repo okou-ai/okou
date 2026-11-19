@@ -6,9 +6,9 @@ upstream_from	upstream_to	path_change	test_file	frozen_executions_in_file	frozen
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx	11	6	pending
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-cards.test.tsx	33	17	pending
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-account-selection.test.tsx	4	2	reconciled
-03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-chat-connector-access.test.tsx	18	9	pending
-03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-accounts.test.tsx	10	5	pending
-03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-focus.test.tsx	11	6	pending
+03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-chat-connector-access.test.tsx	18	9	reconciled
+03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-accounts.test.tsx	10	5	reconciled
+03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-focus.test.tsx	11	6	reconciled
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-loading.test.tsx	8	4	reconciled
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.test.tsx	10	5	pending
 03698f76	eaae30ac	modified	turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-scroll.test.tsx	6	3	reconciled
