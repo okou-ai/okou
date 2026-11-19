@@ -122,15 +122,26 @@ async fn expired_contention_deadline_still_attempts_an_uncontended_lock() {
 
 #[test]
 fn contention_deadline_prevents_a_ready_retry_from_opening_the_lock() {
-    assert_deadline_leaves_lock_untouched(false);
+    assert_deadline_leaves_lock_untouched(RetryAtExpiry::Ready);
 }
 
 #[test]
 fn contention_deadline_cancels_a_probe_queued_before_expiry() {
-    assert_deadline_leaves_lock_untouched(true);
+    assert_deadline_leaves_lock_untouched(RetryAtExpiry::Queued);
 }
 
-fn assert_deadline_leaves_lock_untouched(queue_retry_before_deadline: bool) {
+#[test]
+fn contention_deadline_fences_a_worker_resumed_before_the_waiter() {
+    assert_deadline_leaves_lock_untouched(RetryAtExpiry::WorkerFirst);
+}
+
+enum RetryAtExpiry {
+    Ready,
+    Queued,
+    WorkerFirst,
+}
+
+fn assert_deadline_leaves_lock_untouched(retry: RetryAtExpiry) {
     const WATCHDOG: Duration = Duration::from_secs(2);
     let runtime = tokio::runtime::Builder::new_current_thread()
         .max_blocking_threads(1)
@@ -159,8 +170,8 @@ fn assert_deadline_leaves_lock_untouched(queue_retry_before_deadline: bool) {
             }
         }
 
-        // Keep the only blocking worker occupied so any queued probe runs
-        // after the waiter returns. Opening the lock would tighten its mode.
+        // Control when the only blocking worker can run a queued probe.
+        // Opening the lock would tighten its mode.
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         let (release_tx, release_rx) = mpsc::channel();
         let blocker = tokio::task::spawn_blocking(move || {
@@ -180,7 +191,7 @@ fn assert_deadline_leaves_lock_untouched(queue_retry_before_deadline: bool) {
             std::task::Poll::Ready(())
         })
         .await;
-        if queue_retry_before_deadline {
+        if !matches!(retry, RetryAtExpiry::Ready) {
             tokio::time::advance(LOCK_RETRY_INITIAL_DELAY + Duration::from_millis(1)).await;
             poll_fn(|context| {
                 assert!(acquisition.as_mut().poll(context).is_pending());
@@ -191,18 +202,26 @@ fn assert_deadline_leaves_lock_untouched(queue_retry_before_deadline: bool) {
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
         tokio::time::advance(remaining + Duration::from_millis(1)).await;
         tokio::time::resume();
-        let result = tokio::time::timeout(WATCHDOG, acquisition).await.unwrap();
-        assert!(matches!(result.unwrap(), TryLock::Busy));
-
-        release_tx.send(()).unwrap();
-        blocker.await.unwrap();
-        assert_eq!(
-            tokio::task::spawn_blocking(move || mode(&path))
+        let drain_worker = async {
+            release_tx.send(()).unwrap();
+            blocker.await.unwrap();
+            let mode_after_probe = tokio::task::spawn_blocking(move || mode(&path))
                 .await
-                .unwrap(),
-            0o644
-        );
-        drop(holder);
+                .unwrap();
+            drop(holder);
+            assert_eq!(mode_after_probe, 0o644);
+        };
+        let wait_for_expiry = async {
+            let result = tokio::time::timeout(WATCHDOG, acquisition).await.unwrap();
+            assert!(matches!(result.unwrap(), TryLock::Busy));
+        };
+        if matches!(retry, RetryAtExpiry::WorkerFirst) {
+            drain_worker.await;
+            wait_for_expiry.await;
+        } else {
+            wait_for_expiry.await;
+            drain_worker.await;
+        }
     });
 }
 
