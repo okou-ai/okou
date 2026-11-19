@@ -63,6 +63,7 @@ export interface AgentToolsPromptInputs {
   readonly batchConnectorPermissionsEnabled: boolean;
   readonly chatConnectorAccountsEnabled: boolean;
   readonly artifactGenerationTimingEnabled: boolean;
+  readonly artifactThreePointTimingEnabled: boolean;
 }
 
 export function buildAgentToolsPromptInputs(args: {
@@ -76,6 +77,10 @@ export function buildAgentToolsPromptInputs(args: {
     singleAgent: args.singleAgent,
     artifactGenerationTimingEnabled: isFeatureEnabled(
       FeatureSwitchKey.ArtifactGenerationTiming,
+      context,
+    ),
+    artifactThreePointTimingEnabled: isFeatureEnabled(
+      FeatureSwitchKey.ArtifactThreePointTiming,
       context,
     ),
     disabledPaidTools: args.disabledPaidTools,
@@ -167,7 +172,9 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
     "- Current Run usage: use `okou run usage --json` to inspect observed provider-token usage for the currently assigned Run.",
     ...(args.artifactGenerationTimingEnabled
       ? [
-          "- Artifact phase timing: only for artifact creation tasks, the only AI phase marks are research-start and generation-start: the coordinating agent calls `okou run mark research-start` once immediately before the first task-specific source search, reading, or analysis, and calls `okou run mark generation-start --kind <kind>` once immediately before the first actual creation of the primary deliverable, including writing a document or submitting a generation request; planning, help, and template discovery are not generation. `--kind` is required: image, presentation, document, spreadsheet, website, report, video, audio, mixed, or other. Use mixed for multiple primary types and other only deliberately, never as a fallback. Add `--skip-research` only if no research occurred; never use it to repair a missing or failed mark. Combine each mark with the next work action in the same tool invocation when possible, isolating its exit status so work continues. Research after generation starts belongs to generation: do not mark again. The authenticated successful Agent completion callback automatically supplies the third mark, `completion-callback`; never call an end marker. These marks measure stages, not artifact or output success; acceptance does not confirm telemetry delivery. Never retry telemetry, wait for telemetry confirmation, or interrupt the user's work for it.",
+          args.artifactThreePointTimingEnabled
+            ? "- Artifact phase timing: only for artifact creation tasks, the only AI phase marks are research-start and generation-start: the coordinating agent calls `okou run mark research-start` once immediately before the first task-specific source search, reading, or analysis, and calls `okou run mark generation-start --kind <kind>` once immediately before the first actual creation of the primary deliverable, including writing a document or submitting a generation request; planning, help, and template discovery are not generation. `--kind` is required: image, presentation, document, spreadsheet, website, report, video, audio, mixed, or other. Use mixed for multiple primary types and other only deliberately, never as a fallback. Add `--skip-research` only if no research occurred; never use it to repair a missing or failed mark. Combine each mark with the next work action in the same tool invocation when possible, isolating its exit status so work continues. Research after generation starts belongs to generation: do not mark again. The authenticated successful Agent completion callback automatically supplies the third mark, `completion-callback`; never call an end marker. These marks measure stages, not artifact or output success; acceptance does not confirm telemetry delivery. Never retry telemetry, wait for telemetry confirmation, or interrupt the user's work for it."
+            : "- Artifact phase timing: only for artifact creation tasks, the coordinating agent calls `okou run mark research-start` once immediately before the first task-specific source search, reading, or analysis. Call `okou run mark generation-start --kind <kind>` once immediately before the first actual creation of the primary deliverable, including writing a document or submitting a generation request; planning, help, and template discovery are not generation. `--kind` is required: image, presentation, document, spreadsheet, website, report, video, audio, mixed, or other. Use mixed for multiple primary types and other only deliberately, never as a fallback. Add `--skip-research` only if no research occurred; never use it to repair a missing or failed mark. Combine each mark with the next work action in the same tool invocation when possible, isolating its exit status so work continues. Research after generation starts belongs to generation: do not mark again. Run completion supplies the end time; do not call an end marker. Never retry telemetry, wait for telemetry confirmation, or interrupt the user's work for it.",
         ]
       : []),
     "- VNC: use `okou vnc host list --json` to find owner-authorized hosts, then `okou vnc session start` with an explicit shared/exclusive mode. Read `okou vnc --help` and the relevant subcommand's `--help` before use. Use fresh `okou vnc screenshot` geometry for coordinate input, never replay uncertain input automatically, and close sessions with `okou vnc session close`.",

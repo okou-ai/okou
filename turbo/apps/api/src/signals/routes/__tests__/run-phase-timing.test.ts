@@ -7,6 +7,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { runPhaseTimingRoutes } from "../run-phase-timing";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import { publicChatActor } from "./helpers/public-chat-actor";
@@ -21,14 +22,28 @@ const client = () => {
   );
 };
 const receipt = Object.freeze({ schemaVersion: 2, status: "accepted" });
+const timingOwnerId = "user_3EWY21Oe3f15kfs3yYmbGgDb3NV";
+const legacyTimingPrompt =
+  "- Artifact phase timing: only for artifact creation tasks, the coordinating agent calls `okou run mark research-start` once immediately before the first task-specific source search, reading, or analysis. Call `okou run mark generation-start --kind <kind>` once immediately before the first actual creation of the primary deliverable, including writing a document or submitting a generation request; planning, help, and template discovery are not generation. `--kind` is required: image, presentation, document, spreadsheet, website, report, video, audio, mixed, or other. Use mixed for multiple primary types and other only deliberately, never as a fallback. Add `--skip-research` only if no research occurred; never use it to repair a missing or failed mark. Combine each mark with the next work action in the same tool invocation when possible, isolating its exit status so work continues. Research after generation starts belongs to generation: do not mark again. Run completion supplies the end time; do not call an end marker. Never retry telemetry, wait for telemetry confirmation, or interrupt the user's work for it.";
 
-async function fixture(enabled?: boolean) {
-  const owned = await publicChatActor(context);
+async function fixture(
+  options: {
+    readonly actor?: ApiTestUser;
+    readonly timingEnabled?: boolean;
+    readonly threePointEnabled?: boolean;
+  } = {},
+) {
+  const owned = await publicChatActor(context, { actor: options.actor });
   owned.ownsFeatureSwitches();
   return await owned.run(async () => {
-    if (enabled !== undefined) {
+    if (options.timingEnabled !== undefined) {
       await features.updateFeatureSwitches(owned.actor, {
-        [FeatureSwitchKey.ArtifactGenerationTiming]: enabled,
+        [FeatureSwitchKey.ArtifactGenerationTiming]: options.timingEnabled,
+      });
+    }
+    if (options.threePointEnabled !== undefined) {
+      await features.updateFeatureSwitches(owned.actor, {
+        [FeatureSwitchKey.ArtifactThreePointTiming]: options.threePointEnabled,
       });
     }
     const run = await runs.createThreadRun(owned.actor, {
@@ -57,13 +72,10 @@ async function fixture(enabled?: boolean) {
 }
 
 describe("current Run phase timing", () => {
-  it("enables timing by default and accepts legal observations without requiring phase order", async () => {
+  it("preserves the two-point prompt and accepts legal observations for a non-audience user", async () => {
     const f = await fixture();
-    expect(f.execution.appendSystemPrompt).toContain(
-      "okou run mark research-start",
-    );
-    expect(f.execution.appendSystemPrompt).toContain(
-      "okou run mark generation-start --kind <kind>",
+    expect(f.execution.appendSystemPrompt?.split("\n")).toContain(
+      legacyTimingPrompt,
     );
     for (const mark of [
       { phase: "generation-start", kind: "report", skipResearch: false },
@@ -73,6 +85,70 @@ describe("current Run phase timing", () => {
     ] satisfies readonly RunPhaseMark[]) {
       await expect(f.mark(mark)).resolves.toStrictEqual(receipt);
     }
+  });
+
+  it("gives the allowlisted owner the completion-callback prompt and preserves mark authorization after opting out", async () => {
+    await setupApp({ context, routes: runPhaseTimingRoutes, isolatePg: true });
+    const f = await fixture({
+      actor: createBddApi(context).user({ userId: timingOwnerId }),
+    });
+    expect(f.execution.appendSystemPrompt).toContain(
+      "the only AI phase marks are research-start and generation-start",
+    );
+    expect(f.execution.appendSystemPrompt).toContain(
+      "The authenticated successful Agent completion callback automatically supplies the third mark, `completion-callback`",
+    );
+    await expect(f.mark({ phase: "research-start" })).resolves.toStrictEqual(
+      receipt,
+    );
+    await features.updateFeatureSwitches(f.owned.actor, {
+      [FeatureSwitchKey.ArtifactThreePointTiming]: false,
+    });
+    await expect(
+      f.mark({
+        phase: "generation-start",
+        kind: "report",
+        skipResearch: false,
+      }),
+    ).resolves.toStrictEqual(receipt);
+  });
+
+  it("preserves the exact two-point prompt and capability for an owner who opts out of three-point timing", async () => {
+    await setupApp({ context, routes: runPhaseTimingRoutes, isolatePg: true });
+    const f = await fixture({
+      actor: createBddApi(context).user({ userId: timingOwnerId }),
+      threePointEnabled: false,
+    });
+    expect(f.execution.appendSystemPrompt?.split("\n")).toContain(
+      legacyTimingPrompt,
+    );
+    await expect(f.mark({ phase: "research-start" })).resolves.toStrictEqual(
+      receipt,
+    );
+    await expect(
+      f.mark({
+        phase: "generation-start",
+        kind: "report",
+        skipResearch: false,
+      }),
+    ).resolves.toStrictEqual(receipt);
+  });
+
+  it("keeps a non-audience stored opt-in on the two-point prompt without removing the timing capability", async () => {
+    const f = await fixture({ threePointEnabled: true });
+    expect(f.execution.appendSystemPrompt?.split("\n")).toContain(
+      legacyTimingPrompt,
+    );
+    await expect(f.mark({ phase: "research-start" })).resolves.toStrictEqual(
+      receipt,
+    );
+    await expect(
+      f.mark({
+        phase: "generation-start",
+        kind: "report",
+        skipResearch: false,
+      }),
+    ).resolves.toStrictEqual(receipt);
   });
 
   it("accepts a generation observation with the default skip declaration", async () => {
@@ -112,8 +188,12 @@ describe("current Run phase timing", () => {
     ).resolves.toStrictEqual(receipt);
   });
 
-  it("honors an explicit false override for prompts, capabilities and mark authorization", async () => {
-    const f = await fixture(false);
+  it("requires the original timing switch for the owner's prompt, capability and mark authorization", async () => {
+    await setupApp({ context, routes: runPhaseTimingRoutes, isolatePg: true });
+    const f = await fixture({
+      actor: createBddApi(context).user({ userId: timingOwnerId }),
+      timingEnabled: false,
+    });
     expect(f.execution.appendSystemPrompt).not.toContain("okou run mark");
     await accept(
       client().mark({ headers: f.headers, body: { phase: "research-start" } }),

@@ -14,7 +14,11 @@ export function createRunPhaseCallback(identity: SandboxAuth) {
       const features = await awaitWithSignal(get(features$), signal);
       signal.throwIfAborted();
       if (
-        !isFeatureEnabled(FeatureSwitchKey.ArtifactGenerationTiming, features)
+        !isFeatureEnabled(
+          FeatureSwitchKey.ArtifactGenerationTiming,
+          features,
+        ) ||
+        !isFeatureEnabled(FeatureSwitchKey.ArtifactThreePointTiming, features)
       ) {
         return;
       }

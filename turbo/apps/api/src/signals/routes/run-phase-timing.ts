@@ -24,12 +24,9 @@ const markBody$ = bodyResultOf(runPhaseTimingContract.mark);
 const mark$ = command(async ({ get, set }, signal: AbortSignal) => {
   const receivedAt = new Date(get(apiStartTime$));
   set(setResHeader$, "Cache-Control", "no-store");
-  if (
-    !isFeatureEnabled(
-      FeatureSwitchKey.ArtifactGenerationTiming,
-      await get(features$),
-    )
-  ) {
+  const features = await get(features$);
+  signal.throwIfAborted();
+  if (!isFeatureEnabled(FeatureSwitchKey.ArtifactGenerationTiming, features)) {
     return notFound("Run phase timing is unavailable");
   }
   const body = await get(markBody$);
@@ -41,10 +38,30 @@ const mark$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (auth.tokenType !== "agent") {
     throw new Error("Phase marks require Run authentication");
   }
-  const event = runPhaseMarkEvent(auth, body.data, receivedAt);
+  const mark = body.data;
+  const event = isFeatureEnabled(
+    FeatureSwitchKey.ArtifactThreePointTiming,
+    features,
+  )
+    ? runPhaseMarkEvent(auth, mark, receivedAt)
+    : {
+        _time: receivedAt.toISOString(),
+        schema_version: 1,
+        type: "run_phase_mark",
+        run_id: auth.runId,
+        user_id: auth.userId,
+        org_id: auth.orgId,
+        phase: mark.phase,
+        ...(mark.phase === "generation-start"
+          ? {
+              generation_kind: mark.kind,
+              research_skipped: mark.skipResearch,
+            }
+          : {}),
+      };
   const telemetrySignal = AbortSignal.any([signal, AbortSignal.timeout(5000)]);
   // Acceptance owns one bounded attempt, not delivery. Preserve legal raw marks;
-  // the authenticated Agent completion callback supplies the final stage mark.
+  // the three-point rollout adds the authenticated completion callback.
   waitUntil(
     settleIncludingAbort(
       ingestAxiomDirect(getDatasetName("web-logs"), [event], telemetrySignal),

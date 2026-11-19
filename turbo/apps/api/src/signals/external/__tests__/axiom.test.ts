@@ -15,6 +15,11 @@ import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
 import { runPhaseTimingRoutes } from "../../routes/run-phase-timing";
+import { webhooksAgentCompleteRoutes } from "../../routes/webhooks-agent-complete";
+import {
+  createBddApi,
+  type ApiTestUser,
+} from "../../routes/__tests__/helpers/api-bdd";
 import { createAuthDeviceSupportApi } from "../../routes/__tests__/helpers/api-bdd-auth-device-support";
 import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "../../routes/__tests__/helpers/api-bdd-webhooks";
@@ -27,6 +32,7 @@ import {
 } from "../sandbox-op-log";
 
 const context = testContext();
+const timingOwnerId = "user_3EWY21Oe3f15kfs3yYmbGgDb3NV";
 
 function sdkClientForDataset(
   mocks: ReturnType<typeof getApiTestMocks>,
@@ -833,7 +839,14 @@ describe("Run phase observation transport", () => {
     async (skipResearch) => {
       // Telemetry-client exception: these optional events have no raw API read
       // route. Construct every stage through its authenticated production API.
-      const owned = await publicChatActor(context);
+      await setupApp({
+        context,
+        routes: runPhaseTimingRoutes,
+        isolatePg: true,
+      });
+      const owned = await publicChatActor(context, {
+        actor: createBddApi(context).user({ userId: timingOwnerId }),
+      });
       owned.ownsFeatureSwitches();
       const events: unknown[] = [];
       context.mocks.axiom.useRealTelemetry.mockReturnValue(true);
@@ -939,8 +952,17 @@ describe("Run phase completion transport", () => {
 
   // The ingestion request is the telemetry client's external contract.
   // All Run state is created and completed through public API endpoints.
-  async function callbackFixture(enabled = true) {
-    const owned = await publicChatActor(context);
+  async function callbackFixture(
+    options: {
+      readonly actor?: ApiTestUser;
+      readonly timingEnabled?: boolean;
+      readonly threePointEnabled?: boolean;
+    } = {},
+  ) {
+    const owned = await publicChatActor(context, {
+      actor:
+        options.actor ?? createBddApi(context).user({ userId: timingOwnerId }),
+    });
     owned.ownsFeatureSwitches();
     const events: unknown[] = [];
     context.mocks.axiom.useRealTelemetry.mockReturnValue(true);
@@ -959,8 +981,15 @@ describe("Run phase completion transport", () => {
     );
     return await owned.run(async () => {
       await features.updateFeatureSwitches(owned.actor, {
-        [FeatureSwitchKey.ArtifactGenerationTiming]: enabled,
+        [FeatureSwitchKey.ArtifactGenerationTiming]:
+          options.timingEnabled ?? true,
       });
+      if (options.threePointEnabled !== undefined) {
+        await features.updateFeatureSwitches(owned.actor, {
+          [FeatureSwitchKey.ArtifactThreePointTiming]:
+            options.threePointEnabled,
+        });
+      }
       const run = await runs.createThreadRun(owned.actor, {
         agentId: owned.agentId,
         prompt: "Complete a normally authenticated Run",
@@ -968,11 +997,16 @@ describe("Run phase completion transport", () => {
       });
       const execution = await owned.executionInput(run.runId);
       const headers = { authorization: `Bearer ${execution.sandboxToken}` };
-      return { owned, run, headers, events };
+      return { owned, run, execution, headers, events };
     });
   }
 
   it("emits one callback observation without start marks and ignores completion replay", async () => {
+    await setupApp({
+      context,
+      routes: webhooksAgentCompleteRoutes,
+      isolatePg: true,
+    });
     const f = await callbackFixture();
     await f.owned.run(async () => {
       await completePublicClaudeRun(context, f.run, f.headers, "Task ready");
@@ -1011,10 +1045,162 @@ describe("Run phase completion transport", () => {
     });
   });
 
+  it.each([
+    {
+      scenario: "owner opt-out",
+      userId: timingOwnerId,
+      threePointEnabled: false,
+    },
+    {
+      scenario: "non-audience default",
+      userId: undefined,
+      threePointEnabled: undefined,
+    },
+    {
+      scenario: "non-audience stored opt-in",
+      userId: undefined,
+      threePointEnabled: true,
+    },
+  ])(
+    "preserves the exact v1 start payloads without a completion point for $scenario",
+    async ({ userId, threePointEnabled }) => {
+      if (userId === timingOwnerId) {
+        await setupApp({
+          context,
+          routes: runPhaseTimingRoutes,
+          isolatePg: true,
+        });
+      }
+      const f = await callbackFixture({
+        actor: createBddApi(context).user({ userId }),
+        threePointEnabled,
+      });
+      await f.owned.run(async () => {
+        const api = setupApp({ context, routes: runPhaseTimingRoutes })(
+          runPhaseTimingContract,
+        );
+        const token = f.execution.platformEnvironment.OKOU_TOKEN;
+        if (!token) {
+          throw new Error("Expected a minted Run token");
+        }
+        const headers = { authorization: `Bearer ${token}` };
+        for (const body of [
+          { phase: "research-start" },
+          { phase: "generation-start", kind: "report", skipResearch: false },
+        ] as const) {
+          const marked = await accept(api.mark({ headers, body }), [202]);
+          expect(marked.body).toStrictEqual({
+            schemaVersion: 2,
+            status: "accepted",
+          });
+        }
+        await completePublicClaudeRun(
+          context,
+          f.run,
+          f.headers,
+          "Report ready",
+        );
+        expect((await runs.readRun(f.owned.actor, f.run.runId)).status).toBe(
+          "completed",
+        );
+        const identity = {
+          _time: expect.any(String),
+          schema_version: 1,
+          type: "run_phase_mark",
+          run_id: f.run.runId,
+          user_id: f.owned.actor.userId,
+          org_id: f.owned.actor.orgId,
+        };
+        expect(f.events).toHaveLength(2);
+        expect(f.events).toStrictEqual(
+          expect.arrayContaining([
+            { ...identity, phase: "research-start" },
+            {
+              ...identity,
+              phase: "generation-start",
+              generation_kind: "report",
+              research_skipped: false,
+            },
+          ]),
+        );
+      });
+    },
+  );
+
+  it("applies a live three-point opt-out without disabling legacy start marks", async () => {
+    await setupApp({ context, routes: runPhaseTimingRoutes, isolatePg: true });
+    const f = await callbackFixture();
+    await f.owned.run(async () => {
+      const api = setupApp({ context, routes: runPhaseTimingRoutes })(
+        runPhaseTimingContract,
+      );
+      const token = f.execution.platformEnvironment.OKOU_TOKEN;
+      if (!token) {
+        throw new Error("Expected a minted Run token");
+      }
+      const headers = { authorization: `Bearer ${token}` };
+      await accept(
+        api.mark({ headers, body: { phase: "research-start" } }),
+        [202],
+      );
+      await flushWaitUntilForTest();
+      await features.updateFeatureSwitches(f.owned.actor, {
+        [FeatureSwitchKey.ArtifactThreePointTiming]: false,
+      });
+      await accept(
+        api.mark({
+          headers,
+          body: {
+            phase: "generation-start",
+            kind: "report",
+            skipResearch: false,
+          },
+        }),
+        [202],
+      );
+      await completePublicClaudeRun(context, f.run, f.headers, "Report ready");
+      expect((await runs.readRun(f.owned.actor, f.run.runId)).status).toBe(
+        "completed",
+      );
+      const identity = {
+        _time: expect.any(String),
+        type: "run_phase_mark",
+        run_id: f.run.runId,
+        user_id: f.owned.actor.userId,
+        org_id: f.owned.actor.orgId,
+      };
+      expect(f.events).toHaveLength(2);
+      expect(f.events).toStrictEqual(
+        expect.arrayContaining([
+          {
+            ...identity,
+            schema_version: 2,
+            source: "callback",
+            phase: "research-start",
+          },
+          {
+            ...identity,
+            schema_version: 1,
+            phase: "generation-start",
+            generation_kind: "report",
+            research_skipped: false,
+          },
+        ]),
+      );
+    });
+  });
+
   it.each(["before launch", "before completion"])(
-    "honors a disabled timing switch %s without changing completion",
+    "honors a disabled original timing switch %s without changing completion",
     async (disabledAt) => {
-      const f = await callbackFixture(disabledAt !== "before launch");
+      await setupApp({
+        context,
+        routes: webhooksAgentCompleteRoutes,
+        isolatePg: true,
+      });
+      const f = await callbackFixture({
+        timingEnabled: disabledAt !== "before launch",
+      });
       await f.owned.run(async () => {
         if (disabledAt === "before completion") {
           await features.updateFeatureSwitches(f.owned.actor, {
@@ -1031,6 +1217,11 @@ describe("Run phase completion transport", () => {
   );
 
   it("preserves a reported execution failure without inventing a completion point", async () => {
+    await setupApp({
+      context,
+      routes: webhooksAgentCompleteRoutes,
+      isolatePg: true,
+    });
     const f = await callbackFixture();
     await f.owned.run(async () => {
       const failed = await webhooks.requestAgentComplete(
@@ -1048,6 +1239,11 @@ describe("Run phase completion transport", () => {
   });
 
   it("waits for valid native completion output before recording the callback point", async () => {
+    await setupApp({
+      context,
+      routes: webhooksAgentCompleteRoutes,
+      isolatePg: true,
+    });
     const f = await callbackFixture();
     await f.owned.run(async () => {
       await webhooks.requestAgentComplete(
@@ -1082,6 +1278,11 @@ describe("Run phase completion transport", () => {
   });
 
   it("preserves cancelled output recovery without recording a normal completion point", async () => {
+    await setupApp({
+      context,
+      routes: webhooksAgentCompleteRoutes,
+      isolatePg: true,
+    });
     const f = await callbackFixture();
     await f.owned.run(async () => {
       await runs.requestCancelRun(f.owned.actor, f.run.runId, [200]);
@@ -1100,6 +1301,11 @@ describe("Run phase completion transport", () => {
 
   // The real five-second transport deadline needs headroom for API fixture work.
   it("bounds a stalled completion observation without changing normal completion", async () => {
+    await setupApp({
+      context,
+      routes: webhooksAgentCompleteRoutes,
+      isolatePg: true,
+    });
     const f = await callbackFixture();
     const aborted = createDeferredPromise<void>(context.signal);
     let attempts = 0;
@@ -1138,6 +1344,11 @@ describe("Run phase completion transport", () => {
   }, 10_000);
 
   it("keeps normal completion successful when the telemetry provider is unavailable", async () => {
+    await setupApp({
+      context,
+      routes: webhooksAgentCompleteRoutes,
+      isolatePg: true,
+    });
     const f = await callbackFixture();
     let attempts = 0;
     server.use(
