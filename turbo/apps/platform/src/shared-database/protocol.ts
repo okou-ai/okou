@@ -105,8 +105,9 @@ const realtimeSubscribeRequestSchema = object({
 })
   .strict()
   .refine(
-    ({ scope, topic }) =>
-      scope !== "run-output" || uuid().safeParse(topic).success,
+    ({ scope, topic }) => {
+      return scope !== "run-output" || uuid().safeParse(topic).success;
+    },
     { message: "Run-output subscriptions require a run UUID" },
   );
 
