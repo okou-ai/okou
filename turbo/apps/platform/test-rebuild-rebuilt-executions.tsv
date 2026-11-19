@@ -665,3 +665,18 @@ custom-connector-cloudflare-authoring-010	turbo/apps/platform/src/views/okou-pag
 custom-connector-create-lifecycle-001	turbo/apps/platform/src/views/okou-page/__tests__/custom-connector-create-lifecycle.test.tsx	A completed creation preserves a newer connector draft and directory search	21	passed
 custom-connector-delete-lifecycle-001	turbo/apps/platform/src/views/okou-page/__tests__/custom-connector-delete-lifecycle.test.tsx	A completed deletion preserves a newer connector draft	20	passed
 custom-connector-edit-lifecycle-002	turbo/apps/platform/src/views/okou-page/__tests__/custom-connector-edit-lifecycle.test.tsx	A completed edit preserves a newer connector draft	23	passed
+permission-editor-001	turbo/apps/platform/src/views/team-page/__tests__/permission-editor.test.tsx	Apply reflects effective permission-policy changes	58	passed
+permission-editor-002	turbo/apps/platform/src/views/team-page/__tests__/permission-editor.test.tsx	A denied permission does not keep the group's expiration	81	passed
+permission-editor-003	turbo/apps/platform/src/views/team-page/__tests__/permission-editor.test.tsx	An individual permission duration overrides its group	117	passed
+team-permissions-001	turbo/apps/platform/src/views/team-page/__tests__/team-permissions.test.tsx	A user can apply a temporary connector policy	37	passed
+team-permissions-006	turbo/apps/platform/src/views/team-page/__tests__/team-permissions.test.tsx	A user can change one connector permission from temporary to permanent	78	passed
+team-permissions-007	turbo/apps/platform/src/views/team-page/__tests__/team-permissions.test.tsx	A user can find and save a permission beyond the initially visible list	139	passed
+team-permissions-008	turbo/apps/platform/src/views/team-page/__tests__/team-permissions.test.tsx	Other endpoints starts from and can return to the connector default	185	passed
+team-navigation-001	turbo/apps/platform/src/views/team-page/__tests__/team-navigation.test.tsx	Chat connector accounts keeps agent editing available without old authorization controls: 	31	passed
+team-navigation-002	turbo/apps/platform/src/views/team-page/__tests__/team-navigation.test.tsx	Chat connector accounts keeps agent editing available without old authorization controls: ?tab=authorization	31	passed
+team-navigation-004	turbo/apps/platform/src/views/team-page/__tests__/team-navigation.test.tsx	The agent header opens avatar customization on the current avatar	63	passed
+team-navigation-007	turbo/apps/platform/src/views/team-page/__tests__/team-navigation.test.tsx	A user starts a chat from an agent's detail page	113	passed
+markdown-permission-batch-002	turbo/apps/platform/src/views/okou-page/__tests__/markdown-permission-batch.test.tsx	A batch card shows three service logos and exposes every service in its overflow tooltip	169	passed
+markdown-permission-batch-003	turbo/apps/platform/src/views/okou-page/__tests__/markdown-permission-batch.test.tsx	A partially allowed batch shows the remaining permission count	198	passed
+markdown-permission-batch-004	turbo/apps/platform/src/views/okou-page/__tests__/markdown-permission-batch.test.tsx	A batch stays reviewable while service details load and enables duration only when ready	223	passed
+markdown-permission-batch-005	turbo/apps/platform/src/views/okou-page/__tests__/markdown-permission-batch.test.tsx	A batch card reports saving and then allowed after the user confirms	275	passed
