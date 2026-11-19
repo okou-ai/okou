@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use guest_contracts::agent_instructions::InstructionOperation;
 use guest_contracts::storage_resources::StorageResourceUsage;
 use serde::{Serialize, Serializer};
@@ -125,7 +126,7 @@ struct GuestStorageManifestRequest {
     timeout_ms: u32,
     run_id: String,
     runtime_dir: String,
-    manifest_json: Vec<u8>,
+    manifest_json: Bytes,
     request_ownership_us: Option<u64>,
     enqueue_ready: Instant,
     operation_guard: OperationGuard,
@@ -174,6 +175,7 @@ impl GuestStorageManifestWorker {
     pub(crate) fn submit(
         &self,
         submission: GuestStorageManifestSubmission<'_>,
+        retain_manifest: impl FnOnce(&[u8]) -> Bytes,
         operation_guard: OperationGuard,
         admission: SingleActivePermit,
     ) -> Result<(), GuestStorageManifestSubmitError> {
@@ -185,7 +187,7 @@ impl GuestStorageManifestWorker {
                 timeout_ms: submission.timeout_ms,
                 run_id: submission.run_id.to_owned(),
                 runtime_dir: submission.runtime_dir.to_owned(),
-                manifest_json: submission.manifest_json.to_vec(),
+                manifest_json: retain_manifest(submission.manifest_json),
                 operation_guard,
                 admission,
                 request_ownership_us: None,
@@ -353,7 +355,7 @@ struct RunManifestInput<'a> {
     timeout_ms: u32,
     run_id: &'a str,
     runtime_dir: &'a str,
-    manifest_json: Vec<u8>,
+    manifest_json: Bytes,
     connection_cancel: &'a AtomicBool,
     process_containment_mode: ProcessContainmentMode,
     drain_deadline: Duration,

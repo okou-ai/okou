@@ -4,6 +4,7 @@ version = "0.24.130"
 edition.workspace = true
 
 [dependencies]
+bytes.workspace = true
 chrono = { workspace = true, features = ["std"] }
 guest-contracts.workspace = true
 process-control-ipc.workspace = true

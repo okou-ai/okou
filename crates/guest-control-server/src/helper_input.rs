@@ -9,13 +9,13 @@ pub(crate) struct FixedInputWriter {
 impl FixedInputWriter {
     pub(crate) fn spawn(
         mut stdin: ChildStdin,
-        input: Vec<u8>,
+        input: impl AsRef<[u8]> + Send + 'static,
         thread_name: &'static str,
     ) -> io::Result<Self> {
         let handle = thread::Builder::new()
             .name(thread_name.to_string())
             .spawn(move || {
-                let result = stdin.write_all(&input);
+                let result = stdin.write_all(input.as_ref());
                 drop(stdin);
                 result
             })?;
